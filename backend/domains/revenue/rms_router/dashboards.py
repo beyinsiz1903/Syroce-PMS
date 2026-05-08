@@ -39,6 +39,22 @@ PRICING_MIN_HISTORY_DAYS = 14
 KPI_MIN_BOOKINGS = 1
 
 
+def _compute_nights(check_in, check_out) -> int:
+    """Bookings collection'da `nights` field'ı stored DEĞİL — check_out − check_in
+    farkından hesaplanır. Boş/format bozuksa 1 fallback (en az 1 gece)."""
+    try:
+        ci = str(check_in or "")[:10]
+        co = str(check_out or "")[:10]
+        if not ci or not co:
+            return 1
+        ci_d = datetime.fromisoformat(ci)
+        co_d = datetime.fromisoformat(co)
+        n = (co_d - ci_d).days
+        return max(1, n)
+    except Exception:
+        return 1
+
+
 async def is_rms_demo_mode(tenant_id: str) -> bool:
     """Read tenant.settings.rms_demo_mode (default False).
 
@@ -227,12 +243,13 @@ async def get_rms_dashboard_kpis(
             {"tenant_id": tid, "check_in": {"$gte": period_start},
              "status": {"$in": booking_statuses}},
             {"_id": 0, "total_amount": 1, "nights": 1, "base_rate": 1, "channel": 1,
-             "source_channel": 1, "status": 1, "check_in": 1, "room_type": 1},
+             "source_channel": 1, "status": 1, "check_in": 1, "check_out": 1,
+             "room_type": 1, "room_id": 1, "room_number": 1},
         ).to_list(10000),
         db.bookings.find(
             {"tenant_id": tid, "check_in": {"$gte": prev_period_start, "$lt": prev_period_end},
              "status": {"$in": booking_statuses}},
-            {"_id": 0, "total_amount": 1, "nights": 1},
+            {"_id": 0, "total_amount": 1, "nights": 1, "check_in": 1, "check_out": 1},
         ).to_list(10000),
         db.bookings.count_documents(
             {"tenant_id": tid, "check_in": {"$gte": period_start}, "status": "cancelled"}
@@ -256,11 +273,40 @@ async def get_rms_dashboard_kpis(
     else:
         total_rooms = real_total_rooms
 
+    # Bookings.nights field stored DEĞİL — check_out − check_in farkından hesaplanır.
+    # `b.get("nights", 1)` her zaman 1 dönüyordu → ADR/RevPAR ve oda-tipi/kanal
+    # gece sayıları gerçek değer yerine her rezervasyona "1 gece" atıyordu.
+    for b in current_bookings:
+        b["_computed_nights"] = (
+            int(b["nights"]) if isinstance(b.get("nights"), (int, float)) and b.get("nights")
+            else _compute_nights(b.get("check_in"), b.get("check_out"))
+        )
+    for b in prev_bookings:
+        b["_computed_nights"] = (
+            int(b["nights"]) if isinstance(b.get("nights"), (int, float)) and b.get("nights")
+            else _compute_nights(b.get("check_in"), b.get("check_out"))
+        )
+
+    # Bookings'te `room_type` alanı stored değil; `room_id` üzerinden rooms
+    # koleksiyonundan çözülür. Dashboard daha önce her rezervasyonu "Standard"
+    # olarak gruplamıştı — gerçek oda tipi dağılımı görünmüyordu.
+    room_ids = {b.get("room_id") for b in current_bookings if b.get("room_id")}
+    room_type_map: dict[str, str] = {}
+    if room_ids:
+        rooms_docs = await db.rooms.find(
+            {"tenant_id": tid, "id": {"$in": list(room_ids)}},
+            {"_id": 0, "id": 1, "room_type": 1, "type": 1},
+        ).to_list(len(room_ids))
+        for rd in rooms_docs:
+            rid = rd.get("id")
+            if rid:
+                room_type_map[rid] = rd.get("room_type") or rd.get("type") or "Standard"
+
     total_with_cancelled = len(current_bookings) + cancelled
 
     # Calculate KPIs
     total_revenue = sum(b.get("total_amount", 0) for b in current_bookings)
-    total_nights = sum(b.get("nights", 1) for b in current_bookings)
+    total_nights = sum(b["_computed_nights"] for b in current_bookings)
     sold_room_nights = total_nights
     total_room_nights = total_rooms * days
 
@@ -271,7 +317,7 @@ async def get_rms_dashboard_kpis(
 
     # Previous period KPIs
     prev_revenue = sum(b.get("total_amount", 0) for b in prev_bookings)
-    prev_nights = sum(b.get("nights", 1) for b in prev_bookings)
+    prev_nights = sum(b["_computed_nights"] for b in prev_bookings)
     prev_adr = round(prev_revenue / prev_nights, 0) if prev_nights > 0 else 0
     prev_revpar = round(prev_revenue / (total_rooms * days), 0) if total_rooms > 0 else 0
     prev_occ = round(prev_nights / total_room_nights * 100, 1) if total_room_nights > 0 else 0
@@ -286,7 +332,7 @@ async def get_rms_dashboard_kpis(
             channel_map[ch] = {"count": 0, "revenue": 0, "nights": 0}
         channel_map[ch]["count"] += 1
         channel_map[ch]["revenue"] += b.get("total_amount", 0)
-        channel_map[ch]["nights"] += b.get("nights", 1)
+        channel_map[ch]["nights"] += b["_computed_nights"]
 
     channel_labels = {"direct": "Direkt", "booking_com": "Booking.com",
                       "expedia": "Expedia", "airbnb": "Airbnb", "own_website": "Web Sitesi"}
@@ -302,14 +348,20 @@ async def get_rms_dashboard_kpis(
         })
     channels.sort(key=lambda x: x["revenue"], reverse=True)
 
-    # Room type breakdown
+    # Room type breakdown — bookings.room_id → rooms.room_type lookup,
+    # b.get("room_type") legacy/external (Exely/HotelRunner) için fallback.
     rt_map = {}
     for b in current_bookings:
-        rt = b.get("room_type", "Standard")
+        rt = (
+            b.get("room_type")
+            or room_type_map.get(b.get("room_id"))
+            or "Belirtilmemiş"
+        )
         if rt not in rt_map:
-            rt_map[rt] = {"count": 0, "revenue": 0}
+            rt_map[rt] = {"count": 0, "revenue": 0, "nights": 0}
         rt_map[rt]["count"] += 1
         rt_map[rt]["revenue"] += b.get("total_amount", 0)
+        rt_map[rt]["nights"] += b["_computed_nights"]
 
     room_type_perf = [{"room_type": rt, **data} for rt, data in rt_map.items()]
 
