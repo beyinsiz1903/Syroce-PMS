@@ -60,57 +60,271 @@ def _next_backoff_seconds(retry_count: int) -> int:
     return RETRY_BACKOFF_STEPS[idx]
 
 # ── ISO 3-letter country mapping (TGA payload requires ISO-3166-1 alpha-3) ──
-# Yaygın ülkeler — tam liste değil; bilinmeyenler "ZZZ" olarak işaretlenir.
-ISO3_BY_KEY: dict[str, str] = {
-    # 2-letter ISO
-    "TR": "TUR", "DE": "DEU", "GB": "GBR", "UK": "GBR", "US": "USA",
-    "RU": "RUS", "FR": "FRA", "NL": "NLD", "IT": "ITA", "BE": "BEL",
-    "AT": "AUT", "CH": "CHE", "PL": "POL", "UA": "UKR", "ES": "ESP",
-    "PT": "PRT", "SE": "SWE", "NO": "NOR", "DK": "DNK", "FI": "FIN",
-    "IE": "IRL", "GR": "GRC", "BG": "BGR", "RO": "ROU", "HU": "HUN",
-    "CZ": "CZE", "SK": "SVK", "IL": "ISR", "SA": "SAU", "AE": "ARE",
-    "QA": "QAT", "KW": "KWT", "JP": "JPN", "CN": "CHN", "KR": "KOR",
-    "IN": "IND", "AU": "AUS", "CA": "CAN", "BR": "BRA", "MX": "MEX",
-    "AZ": "AZE", "GE": "GEO", "KZ": "KAZ", "UZ": "UZB", "IR": "IRN",
-    "IQ": "IRQ", "EG": "EGY", "JO": "JOR", "LB": "LBN", "MA": "MAR",
-    # Türkçe / İngilizce isimler
-    "TÜRKİYE": "TUR", "TURKIYE": "TUR", "TURKEY": "TUR",
-    "ALMANYA": "DEU", "GERMANY": "DEU",
-    "BIRLEŞIK KRALLIK": "GBR", "BİRLEŞİK KRALLIK": "GBR",
+# Tam ISO-3166-1 sözlüğü `pycountry` üzerinden çözümlenir; aşağıdaki tablo
+# yalnızca pycountry'nin tanımadığı yerel/halk dilindeki isimleri (Türkçe
+# karşılıklar, "Russia" yerine resmi "Russian Federation" gibi farklılıklar,
+# yaygın kısaltmalar) kapsar.
+_ALIAS_OVERRIDES: dict[str, str] = {
+    # ── Türkçe ülke isimleri (pycountry yalnızca İngilizce/resmi isimleri bilir) ──
+    "TURKIYE": "TUR", "TÜRKİYE": "TUR", "TURKEY": "TUR",
+    "ALMANYA": "DEU",
     "INGILTERE": "GBR", "İNGILTERE": "GBR", "ENGLAND": "GBR",
+    "BIRLESIK KRALLIK": "GBR", "BİRLEŞİK KRALLIK": "GBR",
+    "BIRLEŞIK KRALLIK": "GBR", "BIRLESIK KRALLİK": "GBR",
+    "ABD": "USA", "AMERIKA": "USA", "AMERİKA": "USA",
+    "AMERIKA BIRLESIK DEVLETLERI": "USA",
+    "AMERİKA BİRLEŞİK DEVLETLERİ": "USA",
     "RUSYA": "RUS", "RUSSIA": "RUS",
-    "FRANSA": "FRA", "FRANCE": "FRA",
-    "HOLLANDA": "NLD", "NETHERLANDS": "NLD",
-    "İTALYA": "ITA", "ITALYA": "ITA", "ITALY": "ITA",
-    "ABD": "USA",
-    "BELÇIKA": "BEL", "BELÇİKA": "BEL", "BELGIUM": "BEL",
-    "AVUSTURYA": "AUT", "AUSTRIA": "AUT",
-    "İSVIÇRE": "CHE", "ISVICRE": "CHE", "SWITZERLAND": "CHE",
-    "POLONYA": "POL", "POLAND": "POL",
-    "UKRAYNA": "UKR", "UKRAINE": "UKR",
-    "İSPANYA": "ESP", "ISPANYA": "ESP", "SPAIN": "ESP",
-    "İSRAIL": "ISR", "ISRAIL": "ISR", "ISRAEL": "ISR",
-    "AZERBAYCAN": "AZE", "AZERBAIJAN": "AZE",
-    "GÜRCISTAN": "GEO", "GURCISTAN": "GEO", "GEORGIA": "GEO",
-    "KAZAKISTAN": "KAZ", "KAZAKHSTAN": "KAZ",
-    "İRAN": "IRN", "IRAN": "IRN",
+    "FRANSA": "FRA",
+    "HOLLANDA": "NLD",
+    "ITALYA": "ITA", "İTALYA": "ITA",
+    "BELCIKA": "BEL", "BELÇİKA": "BEL", "BELÇIKA": "BEL",
+    "AVUSTURYA": "AUT",
+    "ISVICRE": "CHE", "İSVİÇRE": "CHE", "İSVIÇRE": "CHE",
+    "ISVEC": "SWE", "İSVEÇ": "SWE",
+    "NORVEC": "NOR", "NORVEÇ": "NOR",
+    "DANIMARKA": "DNK",
+    "FINLANDIYA": "FIN", "FİNLANDİYA": "FIN",
+    "IRLANDA": "IRL", "İRLANDA": "IRL",
+    "YUNANISTAN": "GRC", "YUNANİSTAN": "GRC",
+    "BULGARISTAN": "BGR", "BULGARİSTAN": "BGR",
+    "ROMANYA": "ROU",
+    "MACARISTAN": "HUN",
+    "CEKYA": "CZE", "ÇEKYA": "CZE", "CEK CUMHURIYETI": "CZE",
+    "ÇEK CUMHURİYETİ": "CZE",
+    "SLOVAKYA": "SVK",
+    "POLONYA": "POL",
+    "UKRAYNA": "UKR",
+    "ISPANYA": "ESP", "İSPANYA": "ESP",
+    "PORTEKIZ": "PRT", "PORTEKİZ": "PRT",
+    "ISRAIL": "ISR", "İSRAİL": "ISR",
+    "SUUDI ARABISTAN": "SAU", "SUUDİ ARABİSTAN": "SAU",
+    "BIRLESIK ARAP EMIRLIKLERI": "ARE",
+    "BİRLEŞİK ARAP EMİRLİKLERİ": "ARE",
+    "KATAR": "QAT",
+    "KUVEYT": "KWT",
+    "BAHREYN": "BHR",
+    "UMMAN": "OMN",
+    "JAPONYA": "JPN",
+    "CIN": "CHN", "ÇİN": "CHN",
+    "GUNEY KORE": "KOR", "GÜNEY KORE": "KOR", "SOUTH KOREA": "KOR",
+    "KUZEY KORE": "PRK", "NORTH KOREA": "PRK",
+    "HINDISTAN": "IND", "HİNDİSTAN": "IND",
+    "AVUSTRALYA": "AUS",
+    "YENI ZELANDA": "NZL", "YENİ ZELANDA": "NZL",
+    "KANADA": "CAN",
+    "BREZILYA": "BRA", "BREZİLYA": "BRA",
+    "MEKSIKA": "MEX", "MEKSİKA": "MEX",
+    "ARJANTIN": "ARG", "ARJANTİN": "ARG",
+    "SILI": "CHL", "ŞİLİ": "CHL",
+    "KOLOMBIYA": "COL", "KOLOMBİYA": "COL",
+    "PERU": "PER",
+    "VENEZUELA": "VEN",
+    "AZERBAYCAN": "AZE",
+    "GURCISTAN": "GEO", "GÜRCİSTAN": "GEO",
+    "ERMENISTAN": "ARM", "ERMENİSTAN": "ARM",
+    "KAZAKISTAN": "KAZ", "KAZAKİSTAN": "KAZ",
+    "OZBEKISTAN": "UZB", "ÖZBEKİSTAN": "UZB",
+    "TURKMENISTAN": "TKM", "TÜRKMENİSTAN": "TKM",
+    "KIRGIZISTAN": "KGZ",
+    "TACIKISTAN": "TJK", "TACİKİSTAN": "TJK",
+    "MOGOLISTAN": "MNG", "MOĞOLİSTAN": "MNG",
+    "TAYLAND": "THA",
+    "VIETNAM": "VNM", "VİETNAM": "VNM",
+    "ENDONEZYA": "IDN",
+    "MALEZYA": "MYS",
+    "FILIPINLER": "PHL", "FİLİPİNLER": "PHL",
+    "SINGAPUR": "SGP", "SİNGAPUR": "SGP",
+    "PAKISTAN": "PAK",
+    "BANGLADES": "BGD", "BANGLADEŞ": "BGD",
+    "SRI LANKA": "LKA",
+    "NEPAL": "NPL",
+    "AFGANISTAN": "AFG", "AFGANİSTAN": "AFG",
+    "IRAN": "IRN", "İRAN": "IRN",
+    "IRAK": "IRQ",
+    "SURIYE": "SYR", "SURİYE": "SYR",
+    "URDUN": "JOR", "ÜRDÜN": "JOR",
+    "LUBNAN": "LBN", "LÜBNAN": "LBN",
+    "FILISTIN": "PSE", "FİLİSTİN": "PSE", "PALESTINE": "PSE",
+    "MISIR": "EGY", "MISİR": "EGY",
+    "FAS": "MAR",
+    "CEZAYIR": "DZA", "CEZAYİR": "DZA",
+    "TUNUS": "TUN",
+    "LIBYA": "LBY", "LİBYA": "LBY",
+    "SUDAN": "SDN",
+    "ETIYOPYA": "ETH", "ETİYOPYA": "ETH",
+    "KENYA": "KEN",
+    "TANZANYA": "TZA",
+    "UGANDA": "UGA",
+    "GUNEY AFRIKA": "ZAF", "GÜNEY AFRİKA": "ZAF",
+    "NIJERYA": "NGA", "NİJERYA": "NGA",
+    "GANA": "GHA",
+    "SENEGAL": "SEN",
+    "MAKEDONYA": "MKD", "KUZEY MAKEDONYA": "MKD",
+    "SIRBISTAN": "SRB", "SİRBİSTAN": "SRB", "SERBIA": "SRB",
+    "HIRVATISTAN": "HRV", "HİRVATİSTAN": "HRV",
+    "SLOVENYA": "SVN",
+    "BOSNA HERSEK": "BIH", "BOSNA-HERSEK": "BIH",
+    "KARADAG": "MNE", "KARADAĞ": "MNE", "MONTENEGRO": "MNE",
+    "ARNAVUTLUK": "ALB",
+    "KOSOVA": "XKX", "KOSOVO": "XKX",
+    "MOLDOVA": "MDA",
+    "BELARUS": "BLR",
+    "LITVANYA": "LTU",
+    "LETONYA": "LVA",
+    "ESTONYA": "EST",
+    "IZLANDA": "ISL", "İZLANDA": "ISL",
+    "MALTA": "MLT",
+    "KIBRIS": "CYP", "GUNEY KIBRIS": "CYP", "GÜNEY KIBRIS": "CYP",
+    "KKTC": "TUR",  # KKTC pasaportları TGA'da TR uyrukla raporlanır
+    "LUKSEMBURG": "LUX", "LÜKSEMBURG": "LUX",
+    "MONAKO": "MCO",
+    "VATIKAN": "VAT", "VATİKAN": "VAT",
+    "ANDORRA": "AND",
+    "SAN MARINO": "SMR",
+    "LIHTENSTAYN": "LIE", "LİHTENŞTAYN": "LIE",
+    # Yaygın İngilizce kısaltma/alias'lar
+    "USA": "USA", "U.S.": "USA", "U.S.A.": "USA",
+    "UK": "GBR", "U.K.": "GBR", "GREAT BRITAIN": "GBR",
+    "TAIWAN": "TWN", "HONG KONG": "HKG", "MACAU": "MAC",
+    "BRUNEI": "BRN",
+    "LAOS": "LAO",
+    "BURMA": "MMR", "MYANMAR": "MMR",
+    "IVORY COAST": "CIV",
+    "CAPE VERDE": "CPV",
+    "EAST TIMOR": "TLS",
+    "VATICAN": "VAT", "HOLY SEE": "VAT",
+    "CONGO": "COG", "DR CONGO": "COD", "DRC": "COD",
 }
+
+
+def _norm_variants(s: str) -> list[str]:
+    """Bir ham ülke metni için makul arama anahtarları döner.
+
+    Üretilen varyantlar:
+      1. Boşlukları sıkıştırılmış default upper-case.
+      2. Türkçe locale-aware upper varyantı (i→İ, ı→I).
+      3. Dotless varyantı (İ→I, ı→i sonra upper).
+      4. Diakritiksiz ASCII-fold edilmiş upper-case
+         (örn. "Çin" → "CIN", "İsviçre" → "ISVICRE", "Côte d'Ivoire" → "COTE D'IVOIRE").
+      5. Ek olarak noktalama temizlenmiş hâli (örn. "U.S.A." → "USA",
+         "Côte d'Ivoire" → "COTE DIVOIRE").
+    """
+    import unicodedata
+
+    base = " ".join(str(s).strip().split())
+    if not base:
+        return []
+    folded = "".join(
+        ch for ch in unicodedata.normalize("NFKD", base)
+        if not unicodedata.combining(ch)
+    )
+    raw = [
+        base.upper(),
+        base.replace("i", "İ").replace("ı", "I").upper(),
+        base.replace("İ", "I").replace("ı", "i").upper(),
+        folded.upper(),
+    ]
+    # Noktalama temizlenmiş ek varyant
+    import re
+    raw.append(re.sub(r"[^\w\s]", "", folded).upper())
+    raw.append(re.sub(r"[^\w]", "", folded).upper())
+    seen: set[str] = set()
+    out: list[str] = []
+    for v in raw:
+        v = " ".join(v.split())
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def _build_iso3_index() -> dict[str, str]:
+    """Tüm ISO-3166-1 ülke kayıtları + CLDR Türkçe isimler + alias
+    override'ları → arama indexi.
+
+    Katmanlar (öncelik artan sırada — sonradan yazılanlar baskındır):
+      1. ``pycountry``: alpha_2, alpha_3, İngilizce name/official/common.
+      2. CLDR (``babel.Locale('tr')``): tam dünya Türkçe isimleri
+         (~263 territory). Diakritiksiz ASCII-fold varyantı da indekslenir,
+         böylece "Cin"/"Isvicre" gibi yazımlar da çözülür.
+      3. ``_ALIAS_OVERRIDES``: halk dili kısaltmalar (UK/USA/Russia/Turkey…).
+    """
+    index: dict[str, str] = {}
+    try:
+        import pycountry  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover - paket eksik kalırsa fallback
+        logger.warning("[tga] pycountry not installed; only alias overrides active")
+        pycountry = None  # type: ignore[assignment]
+    else:
+        for c in pycountry.countries:
+            a3 = c.alpha_3
+            for attr in ("alpha_2", "alpha_3", "name", "official_name", "common_name"):
+                v = getattr(c, attr, None)
+                if not v:
+                    continue
+                for key in _norm_variants(str(v)):
+                    index[key] = a3
+
+    # CLDR Türkçe ülke isimleri — 263 territory için tam kapsama
+    try:
+        from babel import Locale  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover
+        logger.warning("[tga] babel not installed; Turkish CLDR names skipped")
+    else:
+        try:
+            tr = Locale("tr").territories
+            # alpha_2 → alpha_3 dönüşümü için pycountry indirect lookup
+            a2_to_a3: dict[str, str] = {}
+            if pycountry is not None:
+                for c in pycountry.countries:
+                    a2_to_a3[c.alpha_2] = c.alpha_3
+            for code, name in tr.items():
+                # Yalnızca ISO-3166-1 ülke kodları (2-harf, region birleşimleri değil)
+                if not (isinstance(code, str) and len(code) == 2 and code.isalpha()):
+                    continue
+                a3 = a2_to_a3.get(code)
+                if not a3:
+                    continue
+                for key in _norm_variants(name):
+                    index.setdefault(key, a3)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("[tga] babel CLDR territories load failed: %s", exc)
+
+    # Override'lar pycountry/CLDR'ı geçersiz kılar (örn. KKTC→TUR, ABD→USA)
+    for raw_key, a3 in _ALIAS_OVERRIDES.items():
+        for key in _norm_variants(raw_key):
+            index[key] = a3
+    return index
+
+
+# Geriye dönük uyumluluk: dış kod hâlâ `ISO3_BY_KEY` referansı kullanabilir.
+ISO3_BY_KEY: dict[str, str] = _build_iso3_index()
 
 
 def _to_iso3(raw: str | None) -> str:
     """Ham ülke (TR / 'Türkiye' / 'GERMANY' / 'tr' …) → ISO-3166-1 alpha-3.
 
-    Bilinmeyen ülkeler `ZZZ` döner — TGA'nın bilinmeyen/diğer kategorisidir.
+    Çözümleme sırası:
+      1. Boş/None → ``ZZZ`` (gerçek bilinmeyen).
+      2. Tam ISO-3166-1 sözlüğünden (pycountry) alpha_2/alpha_3/isim eşleşmesi.
+      3. Türkçe ve halk dili alias'lar (`_ALIAS_OVERRIDES`).
+      4. Hiçbiri eşleşmezse ``ZZZ``.
     """
     if not raw:
         return "ZZZ"
-    s = str(raw).strip().upper()
-    # Zaten 3 harfli ISO ise ve mapping'de değer olarak varsa
-    if len(s) == 3 and s.isalpha():
-        # heuristik: 3 harfli + listemizde ISO3 değeri olarak geçiyorsa kabul
-        if s in set(ISO3_BY_KEY.values()):
-            return s
-    return ISO3_BY_KEY.get(s, "ZZZ")
+    s = str(raw).strip()
+    if not s:
+        return "ZZZ"
+    iso3_values = {v for v in ISO3_BY_KEY.values()}
+    for key in _norm_variants(s):
+        hit = ISO3_BY_KEY.get(key)
+        if hit:
+            return hit
+        # 3 harfli geçerli ISO3 doğrudan kabul (örn. mapping kapsamı dışı yeni kod)
+        if len(key) == 3 and key.isalpha() and key in iso3_values:
+            return key
+    return "ZZZ"
 
 
 # ── Config (per tenant) ─────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ anyio==4.11.0
 APScheduler==3.11.2
 async-timeout==5.0.1
 attrs==25.4.0
+babel==2.18.0
 bcrypt==4.0.1
 bidict==0.23.1
 billiard==4.2.4
@@ -131,6 +132,7 @@ py-serializable==2.1.0
 pyasn1==0.6.3
 pyasn1_modules==0.4.2
 pycodestyle==2.14.0
+pycountry==26.2.16
 pycparser==2.23
 pydantic==2.12.5
 pydantic_core==2.41.5
