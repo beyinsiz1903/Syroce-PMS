@@ -2210,7 +2210,21 @@
       "orderNo": "Order",
       "items": "items",
       "dataRefreshed": "POS data refreshed",
-      "dataLoadFailed": "POS data could not be loaded"
+      "dataLoadFailed": "POS data could not be loaded",
+      "newOrder": "New Order",
+      "openFnB": "F&B Module",
+      "kitchenDisplay": "Kitchen Display",
+      "activeOrders": "Active Orders",
+      "inProgress": "In progress",
+      "today": "Today",
+      "perOrder": "Per order",
+      "delayedCount": "{n} delayed",
+      "delayedWarning": "{n} orders have been waiting for over 30 minutes.",
+      "viewKitchen": "Open kitchen display",
+      "preparing": "Preparing",
+      "ready": "Ready",
+      "served": "Served",
+      "table": "Table"
     },
     "staff": {
       "title": "Task Management",

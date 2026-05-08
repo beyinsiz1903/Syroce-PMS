@@ -2210,7 +2210,21 @@
       "orderNo": "Sipariş",
       "items": "kalem",
       "dataRefreshed": "POS verileri yenilendi",
-      "dataLoadFailed": "POS verileri yüklenemedi"
+      "dataLoadFailed": "POS verileri yüklenemedi",
+      "newOrder": "Yeni Sipariş",
+      "openFnB": "F&B Modülü",
+      "kitchenDisplay": "Mutfak Ekranı",
+      "activeOrders": "Aktif Sipariş",
+      "inProgress": "Hazırlanıyor",
+      "today": "Bugün",
+      "perOrder": "Sipariş başı",
+      "delayedCount": "{n} gecikmiş",
+      "delayedWarning": "{n} sipariş 30 dakikadan uzun süredir bekliyor.",
+      "viewKitchen": "Mutfak ekranını aç",
+      "preparing": "Hazırlanıyor",
+      "ready": "Hazır",
+      "served": "Servis edildi",
+      "table": "Masa"
     },
     "staff": {
       "title": "Görev Yönetimi",
