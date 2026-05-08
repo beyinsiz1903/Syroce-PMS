@@ -6,7 +6,7 @@
       "icon": "Rocket",
       "articles": [
         {"slug": "hizli-baslangic", "title": "Hızlı Başlangıç Rehberi", "tags": ["genel", "kurulum"]},
-        {"slug": "kullanici-rolleri", "title": "Kullanıcı Rolleri ve Yetkilendirme", "tags": ["yetki"]}
+        {"slug": "kullanici-rolleri", "title": "Kullanıcı Rolleri ve Yetkilendirme", "tags": ["yetki", "rbac"]}
       ]
     },
     {
@@ -15,7 +15,14 @@
       "icon": "Hotel",
       "articles": [
         {"slug": "rezervasyon-olusturma", "title": "Rezervasyon Oluşturma", "tags": ["rezervasyon", "front-office"]},
-        {"slug": "check-in-checkout", "title": "Check-in / Check-out Akışı", "tags": ["pms"]}
+        {"slug": "check-in-checkout", "title": "Check-in / Check-out Akışı", "tags": ["pms"]},
+        {"slug": "online-checkin", "title": "Online Check-in (Self-Service)", "tags": ["misafir", "qr"]},
+        {"slug": "housekeeping", "title": "Housekeeping (Kat Hizmetleri)", "tags": ["housekeeping", "oda"]},
+        {"slug": "maintenance", "title": "Bakım İş Emirleri", "tags": ["maintenance", "ariza"]},
+        {"slug": "night-audit", "title": "Gece Denetimi (Night Audit)", "tags": ["audit", "donem"]},
+        {"slug": "shift-handover", "title": "Vardiya Devri", "tags": ["vardiya", "operasyon"]},
+        {"slug": "lost-found", "title": "Kayıp Eşya Yönetimi", "tags": ["misafir", "operasyon"]},
+        {"slug": "room-qr", "title": "Oda QR Talepleri", "tags": ["qr", "misafir"]}
       ]
     },
     {
@@ -23,8 +30,35 @@
       "title": "Finans & Vergi",
       "icon": "DollarSign",
       "articles": [
-        {"slug": "konaklama-vergisi", "title": "Konaklama Vergisi Beyannamesi", "tags": ["vergi", "kvb", "elektraweb"]},
-        {"slug": "folio-yonetimi", "title": "Folio ve Adisyon Yönetimi", "tags": ["folio", "muhasebe"]}
+        {"slug": "konaklama-vergisi", "title": "Konaklama Vergisi Beyannamesi", "tags": ["vergi", "kvb"]},
+        {"slug": "folio-yonetimi", "title": "Folio ve Adisyon Yönetimi", "tags": ["folio", "muhasebe"]},
+        {"slug": "kasa-pos", "title": "Kasa & POS (Cashier)", "tags": ["kasa", "odeme", "pci"]},
+        {"slug": "erken-gec-fiyatlandirma", "title": "Erken Giriş / Geç Çıkış Fiyatlandırması", "tags": ["fiyat", "ayar"]}
+      ]
+    },
+    {
+      "key": "kanallar",
+      "title": "Kanallar & Channel Manager",
+      "icon": "Hotel",
+      "articles": [
+        {"slug": "channel-manager", "title": "Channel Manager — Exely & HotelRunner", "tags": ["ota", "exely", "hotelrunner", "sxi"]}
+      ]
+    },
+    {
+      "key": "ai_rms",
+      "title": "AI & Gelir Yönetimi",
+      "icon": "Rocket",
+      "articles": [
+        {"slug": "rms-dashboard", "title": "RMS Dashboard — Talep, Esneklik, Tahmin", "tags": ["ai", "ml", "rms", "fiyat"]}
+      ]
+    },
+    {
+      "key": "misafir",
+      "title": "Misafir Deneyimi",
+      "icon": "Hotel",
+      "articles": [
+        {"slug": "digital-key", "title": "Dijital Anahtar & Mobil Uygulamalar", "tags": ["mobil", "anahtar"]},
+        {"slug": "mailing-messaging", "title": "Mailing & Mesajlaşma (Outbound)", "tags": ["mail", "mesaj", "outbound"]}
       ]
     },
     {
@@ -33,6 +67,32 @@
       "icon": "Package",
       "articles": [
         {"slug": "satinalma-zinciri", "title": "Satın Alma Zinciri (Talep → Teklif → Sipariş → Mal Kabul)", "tags": ["procurement", "grn"]}
+      ]
+    },
+    {
+      "key": "raporlar",
+      "title": "Raporlar",
+      "icon": "FileText",
+      "articles": [
+        {"slug": "rapor-builder", "title": "Özel Rapor Builder & Zamanlayıcı", "tags": ["rapor", "builder", "scheduler"]}
+      ]
+    },
+    {
+      "key": "guvenlik",
+      "title": "Güvenlik & KVKK",
+      "icon": "ScrollText",
+      "articles": [
+        {"slug": "2fa-totp", "title": "2FA / TOTP Etkinleştirme", "tags": ["guvenlik", "2fa"]},
+        {"slug": "kvkk-quick-id", "title": "KVKK & Quick-ID Kimlik Fotoğrafları", "tags": ["kvkk", "quick-id", "kimlik"]},
+        {"slug": "audit-log", "title": "Audit Timeline (Denetim Zaman Çizelgesi)", "tags": ["audit", "log"]}
+      ]
+    },
+    {
+      "key": "yonetim",
+      "title": "Yönetim",
+      "icon": "Hotel",
+      "articles": [
+        {"slug": "ik-personel", "title": "İK & Personel Yönetimi", "tags": ["hr", "personel", "bordro"]}
       ]
     },
     {
