@@ -3,6 +3,9 @@ import axios from "axios";
 import { toast } from "sonner";
 
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { Button } from '@/components/ui/button';
 import {
   Building2,
   Calculator,
@@ -16,6 +19,7 @@ import {
   Lock,
   Percent,
   Printer,
+  Receipt,
   RefreshCw,
   Save,
   Send,
@@ -31,12 +35,21 @@ const TABS = [
   { key: "calculator", label: "Hesaplayıcı", icon: Calculator },
 ];
 
-const STATUS_BADGE = {
-  draft: { label: "Taslak", cls: "bg-gray-100 text-gray-700" },
-  finalized: { label: "Onaylı", cls: "bg-amber-100 text-amber-800" },
-  submitted: { label: "Gönderildi", cls: "bg-blue-100 text-blue-800" },
-  paid: { label: "Ödendi", cls: "bg-emerald-100 text-emerald-800" },
+// Beyanname state machine → Sprint A StatusBadge intent eşlemesi.
+// (Eski local STATUS_BADGE map kullanılmıyordu; <StatusBadge> JSX'i import
+// edilmemiş bir component'e referans veriyordu — Geçmiş/Beyanname tab'larında
+// runtime ReferenceError'a sebep oluyordu. v95.6 fix.)
+const STATUS_INTENT = {
+  draft:     { intent: 'neutral', label: 'Taslak' },
+  finalized: { intent: 'warning', label: 'Onaylı' },
+  submitted: { intent: 'info',    label: 'Gönderildi' },
+  paid:      { intent: 'success', label: 'Ödendi' },
 };
+
+function DeclStatusBadge({ status }) {
+  const s = STATUS_INTENT[status] || { intent: 'default', label: status || '-' };
+  return <StatusBadge intent={s.intent}>{s.label}</StatusBadge>;
+}
 
 function fmtTRY(v) {
   return new Intl.NumberFormat("tr-TR", {
@@ -268,6 +281,23 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
     <>
       <div className="p-4 lg:p-6 space-y-4">
 
+      <PageHeader
+        icon={Receipt}
+        title="Konaklama Vergisi"
+        subtitle="7194 sayılı Kanun — aylık matrah, beyanname ve GİB tahakkuk takibi"
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { loadConfig(); loadHistory(); }}
+            disabled={loading}
+          >
+            <RefreshCw className="w-4 h-4 mr-1.5" />
+            Yenile
+          </Button>
+        }
+      />
+
       <div className="border-b">
         <div className="flex flex-wrap gap-1">
           {TABS.map((t) => {
@@ -449,7 +479,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                 <div className="flex flex-wrap items-center gap-2 text-sm bg-amber-50 border border-amber-200 rounded p-3">
                   <Lock className="h-4 w-4 text-amber-700" />
                   <span className="font-medium">Bu dönem kilitli:</span>
-                  <StatusBadge status={finalized.status} />
+                  <DeclStatusBadge status={finalized.status} />
                   <span className="text-gray-600">
                     Onay: {(finalized.finalized_at || "").slice(0, 16).replace("T", " ")}
                   </span>
@@ -563,7 +593,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                 {history.map((d) => (
                   <tr key={d.id} className="border-t">
                     <td className="px-3 py-2 font-mono">{d.period}</td>
-                    <td className="px-3 py-2"><StatusBadge status={d.status} /></td>
+                    <td className="px-3 py-2"><DeclStatusBadge status={d.status} /></td>
                     <td className="px-3 py-2 text-right">{fmtTRY(d.total_base)}</td>
                     <td className="px-3 py-2 text-right font-semibold">{fmtTRY(d.total_tax)}</td>
                     <td className="px-3 py-2">{d.due_date}</td>
@@ -634,15 +664,6 @@ function KPI({ title, value, highlight }) {
       <div className="text-xs text-gray-500">{title}</div>
       <div className={`text-lg font-semibold ${highlight ? "text-amber-700" : ""}`}>{value}</div>
     </div>
-  );
-}
-
-function StatusBadge({ status }) {
-  const meta = STATUS_BADGE[status] || STATUS_BADGE.draft;
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${meta.cls}`}>
-      {meta.label}
-    </span>
   );
 }
 
