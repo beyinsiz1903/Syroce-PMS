@@ -42,20 +42,23 @@ const ReportsTab = () => {
     return { monthStart, monthEnd };
   };
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (force = false) => {
     setLoading(true);
     const { monthStart, monthEnd } = getDateRange();
     const safe = (p) => p.catch(() => ({ data: null }));
+    // "Yenile" butonu force=true ile çağrılır → backend cache atlanır (her endpoint'te `?nocache=1`).
+    const nc = force ? '&nocache=1' : '';
+    const ncQ = force ? '?nocache=1' : '';
     try {
       const [occRes, revRes, flashRes, fcRes, fc30Res, mktRes, hkRes, dsRes] = await Promise.all([
-        safe(axios.get(`/reports/occupancy?start_date=${monthStart}&end_date=${monthEnd}`)),
-        safe(axios.get(`/reports/revenue?start_date=${monthStart}&end_date=${monthEnd}`)),
-        safe(axios.get('/reports/daily-flash')),
-        safe(axios.get('/reports/forecast?days=7')),
-        safe(axios.get('/reports/forecast?days=30')),
-        safe(axios.get(`/reports/market-segment?start_date=${monthStart}&end_date=${monthEnd}`)),
-        safe(axios.get(`/reports/housekeeping-efficiency?start_date=${monthStart}&end_date=${monthEnd}`)),
-        safe(axios.get('/reports/daily-summary')),
+        safe(axios.get(`/reports/occupancy?start_date=${monthStart}&end_date=${monthEnd}${nc}`)),
+        safe(axios.get(`/reports/revenue?start_date=${monthStart}&end_date=${monthEnd}${nc}`)),
+        safe(axios.get(`/reports/daily-flash${ncQ}`)),
+        safe(axios.get(`/reports/forecast?days=7${nc}`)),
+        safe(axios.get(`/reports/forecast?days=30${nc}`)),
+        safe(axios.get(`/reports/market-segment?start_date=${monthStart}&end_date=${monthEnd}${nc}`)),
+        safe(axios.get(`/reports/housekeeping-efficiency?start_date=${monthStart}&end_date=${monthEnd}${nc}`)),
+        safe(axios.get(`/reports/daily-summary${ncQ}`)),
       ]);
       setOccupancy(occRes.data);
       setRevenue(revRes.data);
@@ -71,7 +74,7 @@ const ReportsTab = () => {
     setLoading(false);
   }, []);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { loadAll(false); }, [loadAll]);
 
   const occRate = occupancy?.occupancy_rate ?? occupancy?.current_occupancy_rate ?? 0;
   const adr = revenue?.adr ?? 0;
@@ -158,7 +161,7 @@ const ReportsTab = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold">Raporlar & Analiz</h2>
-        <Button variant="outline" size="sm" onClick={loadAll} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={() => loadAll(true)} disabled={loading}>
           <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Yenile
         </Button>
       </div>

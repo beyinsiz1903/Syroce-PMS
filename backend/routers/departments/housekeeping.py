@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPBearer
 
 from core.database import db
@@ -502,6 +502,7 @@ async def get_housekeeping_efficiency_report(
     end_date: str,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),  # v85 DU: HK efficiency rapor
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     """Housekeeping Efficiency Report"""
     start = datetime.fromisoformat(start_date)

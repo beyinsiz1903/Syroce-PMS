@@ -2,7 +2,7 @@
 import logging
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.security import HTTPBearer
 
 security = HTTPBearer()
@@ -44,6 +44,7 @@ async def get_occupancy_report(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
     _perm=Depends(require_op("view_reports")),  # v71 Bug DH
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     start = datetime.fromisoformat(start_date)
     end = datetime.fromisoformat(end_date)
@@ -89,6 +90,7 @@ async def get_revenue_report(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
     _perm=Depends(require_op("view_reports")),  # v71 Bug DH
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     # Default: son 30 gün (Tur 2 fix)
     if not end_date:
@@ -134,6 +136,7 @@ async def get_daily_summary(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
     _perm=Depends(require_op("view_reports")),  # v71 Bug DH
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()
     start_of_day = datetime.combine(target_date, datetime.min.time())
@@ -156,6 +159,7 @@ async def get_forecast(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("reports")),
     _perm=Depends(require_op("view_reports")),  # v71 Bug DH
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     today = datetime.now(UTC).date()
     window_start = datetime.combine(today, datetime.min.time())

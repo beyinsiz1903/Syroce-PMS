@@ -4,7 +4,7 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 security = HTTPBearer()
@@ -389,6 +389,7 @@ async def get_daily_flash_report(
     date_str: str | None = None,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_reports")),  # v85 DU: daily flash GM/CFO
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     """Daily Flash Report - GM/CFO Dashboard"""
     target_date = datetime.fromisoformat(date_str).date() if date_str else datetime.now(UTC).date()

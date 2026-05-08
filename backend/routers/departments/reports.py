@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.security import HTTPBearer
 
 from core.database import db
@@ -131,6 +131,7 @@ async def get_market_segment_report(
     end_date: str,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v84 DT: market segment performance
+    _nocache: bool = Query(False, alias="nocache"),
 ):
     """Market Segment & Rate Type Performance Report"""
     start = datetime.fromisoformat(start_date)

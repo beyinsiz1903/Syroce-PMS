@@ -576,6 +576,11 @@ def cached(
     def decorator(func: Callable):
         @wraps(func)
         async def wrapper(*args, **kwargs):
+            # Manuel "Yenile" akışları için cache atlama:
+            # endpoint'e `?nocache=1` eklenirse `_nocache` kwarg'ı True gelir.
+            # Kwarg'ı pop ederiz → cache key kararlı kalır + fresh fetch yapılır + sonuç tazelenir.
+            nocache = bool(kwargs.pop('_nocache', False))
+
             if not cache.enabled:
                 return await func(*args, **kwargs)
 
@@ -585,17 +590,19 @@ def cached(
                 tenant_id = f"{tenant_id}:r={role}"
             cache_key = _build_cache_key(func, key_prefix, tenant_id, args, kwargs)
 
-            # Try to get from cache
-            cached_value = cache.get(cache_key)
-            if cached_value is not None:
-                logger.debug(f"Cache hit: {cache_key}")
-                return cached_value
+            if not nocache:
+                cached_value = cache.get(cache_key)
+                if cached_value is not None:
+                    logger.debug(f"Cache hit: {cache_key}")
+                    return cached_value
+                logger.debug(f"Cache miss: {cache_key}")
+            else:
+                logger.debug(f"Cache bypass (nocache=1): {cache_key}")
 
-            # Cache miss - call function
-            logger.debug(f"Cache miss: {cache_key}")
             result = await func(*args, **kwargs)
 
-            # Store in cache (Pydantic models are auto-serialized)
+            # Store in cache (Pydantic models are auto-serialized) — nocache turu da
+            # tazelenmiş sonucu yazar, böylece sonraki isteklere fayda sağlar.
             cache.set(cache_key, result, ttl=ttl)
 
             return result
