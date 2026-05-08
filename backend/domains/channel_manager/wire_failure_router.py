@@ -8,9 +8,11 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 
+from cache_manager import cached
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from modules.pms_core.role_permission_service import require_op
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +20,11 @@ router = APIRouter(prefix="/api/channel-manager/wire-failures", tags=["Wire Fail
 
 
 @router.get("/summary")
+@cached(ttl=60, key_prefix="wire_failures_summary")
 async def get_failure_summary(
     days: int = Query(default=7, ge=1, le=90),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """Get wire failure summary across all providers."""
     tenant_id = current_user.tenant_id
@@ -57,12 +61,14 @@ async def get_failure_summary(
         "status": {"$ne": "resolved"},
     })
 
-    # Observability errors
+    # Observability errors — TENANT-SCOPED (önceki sürüm tüm kiracıların toplamını dönüyordu, çok-kiracı sızıntısı)
     obs_errors = await db.observability_errors.count_documents({
+        "tenant_id": tenant_id,
         "timestamp": {"$gte": cutoff},
     })
 
-    total = ari_fails + exely_fails + dlq_count + cp_fails
+    # observability_errors KPI'da görünüyordu ama total_failures'a dahil değildi → "Toplam Hata: 55" iken altta 265 göstererek tutarsız KPI üretiyordu.
+    total = ari_fails + exely_fails + dlq_count + cp_fails + obs_errors
 
     return {
         "period_days": days,
@@ -84,6 +90,7 @@ async def get_recent_failures(
     limit: int = Query(default=50, ge=1, le=200),
     provider: str = Query(default="all"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """Get recent wire failures with details."""
     tenant_id = current_user.tenant_id
@@ -171,9 +178,11 @@ async def get_recent_failures(
 
 
 @router.get("/trend")
+@cached(ttl=120, key_prefix="wire_failures_trend")
 async def get_failure_trend(
     days: int = Query(default=30, ge=1, le=90),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """Get daily failure trend for charts."""
     tenant_id = current_user.tenant_id
