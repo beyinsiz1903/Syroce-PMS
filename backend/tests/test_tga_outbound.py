@@ -192,12 +192,38 @@ class TestToIso3:
         assert tga._to_iso3("usa") == "USA"
 
     def test_country_name_turkish(self):
-        # Mapping anahtarları zaten upper-case; ``str.upper()`` ile eşleşmesi
-        # garanti olan formları kullanıyoruz (TR upper'ı İ değil I üretir,
-        # bu yüzden "TURKIYE" / "TÜRKİYE" anahtarları ayrı ayrı tutulur).
+        # Diakritik-bağımsız normalize sayesinde tüm yaygın varyantlar TUR'a
+        # düşer. Özellikle "Türkiye" → str.upper() = "TÜRKIYE" (dotted İ
+        # değil düz I üretir, RFC 3491/Türkçe i kuralı) ve regression olarak
+        # bu varyant da mapping'de bulunabilmeli.
         assert tga._to_iso3("turkiye") == "TUR"
         assert tga._to_iso3("almanya") == "DEU"
         assert tga._to_iso3("rusya") == "RUS"
+
+    def test_country_name_turkish_diacritic_variants(self):
+        """Regression: ``"Türkiye".upper()`` Python'da "TÜRKIYE" üretir
+        (dotted İ değil düz I) — bu varyant eskiden mapping'de yoktu ve
+        ZZZ'ye düşüyordu, TGA demografi raporunu yanlış kategorize ediyordu.
+        Diakritik-bağımsız normalize sonrası tüm büyük/küçük harf + Ü/İ
+        kombinasyonları TUR'a düşmeli.
+        """
+        for variant in (
+            "Türkiye", "türkiye", "TÜRKİYE", "TÜRKIYE",
+            "TURKIYE", "TURKİYE", "tÜrKiYe",
+        ):
+            assert tga._to_iso3(variant) == "TUR", variant
+        # Diğer diakritikli ülke isimleri de dayanıklı olmalı
+        assert tga._to_iso3("Almanya") == "DEU"
+        assert tga._to_iso3("İspanya") == "ESP"
+        assert tga._to_iso3("ispanya") == "ESP"
+        assert tga._to_iso3("İsviçre") == "CHE"
+        assert tga._to_iso3("isviçre") == "CHE"
+        assert tga._to_iso3("Belçika") == "BEL"
+        assert tga._to_iso3("belçika") == "BEL"
+        assert tga._to_iso3("İtalya") == "ITA"
+        assert tga._to_iso3("Gürcistan") == "GEO"
+        assert tga._to_iso3("İran") == "IRN"
+        assert tga._to_iso3("Birleşik Krallık") == "GBR"
 
     def test_country_name_english(self):
         assert tga._to_iso3("Germany") == "DEU"
