@@ -25,24 +25,32 @@ export default function MailingPage({ user, tenant, onLogout }) {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    try {
-      const [c, t, r, cp, au] = await Promise.all([
-        axios.get(`${API}/credits`),
-        axios.get(`${API}/templates`),
-        axios.get(`${API}/recipients`),
-        axios.get(`${API}/campaigns`),
-        axios.get(`${API}/automations`),
-      ]);
-      setCredits(c.data);
-      setTemplates(t.data || []);
-      setRecipients(r.data || []);
-      setCampaigns(cp.data || []);
-      setAutomations(au.data?.automations || []);
-    } catch (e) {
-      toast.error('Mailing verileri yüklenemedi');
-    } finally {
-      setLoading(false);
+    // Promise.allSettled — bir endpoint düşse bile diğer sekmeler render olsun.
+    // Daha önce Promise.all ile tek bir 5xx tüm sayfayı blank bırakıyordu
+    // ("Mailing verileri yüklenemedi" toast + boş ekran).
+    const results = await Promise.allSettled([
+      axios.get(`${API}/credits`),
+      axios.get(`${API}/templates`),
+      axios.get(`${API}/recipients`),
+      axios.get(`${API}/campaigns`),
+      axios.get(`${API}/automations`),
+    ]);
+    const [c, t, r, cp, au] = results;
+    if (c.status === 'fulfilled') setCredits(c.value.data);
+    if (t.status === 'fulfilled') setTemplates(t.value.data || []);
+    if (r.status === 'fulfilled') setRecipients(r.value.data || []);
+    if (cp.status === 'fulfilled') setCampaigns(cp.value.data || []);
+    if (au.status === 'fulfilled') setAutomations(au.value.data?.automations || []);
+    const failedLabels = [
+      [c, 'kredi'], [t, 'şablonlar'], [r, 'alıcılar'],
+      [cp, 'kampanya geçmişi'], [au, 'otomasyon'],
+    ].filter(([res]) => res.status === 'rejected').map(([, l]) => l);
+    if (failedLabels.length === results.length) {
+      toast.error('Mailing verileri yüklenemedi — sunucu yanıt vermiyor');
+    } else if (failedLabels.length > 0) {
+      toast.warning(`Bazı veriler yüklenemedi: ${failedLabels.join(', ')}`);
     }
+    setLoading(false);
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
