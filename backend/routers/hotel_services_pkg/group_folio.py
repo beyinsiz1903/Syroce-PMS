@@ -258,7 +258,7 @@ async def record_group_payment(
 async def record_group_bulk_payment(
     data: GroupBulkPaymentRequest,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v96 DW
+    _perm=Depends(require_op("post_payment")),
 ):
     """Record a bulk payment distributed across all active bookings in a group."""
     _ensure_hotel_context(current_user)
