@@ -26,6 +26,14 @@ from cache_manager import cached
 from core.database import db
 from core.helpers import create_audit_log
 from core.security import get_current_user
+from core.tga_outbound import (
+    build_batch_envelope,
+    build_daily_payload,
+    get_tga_config,
+    list_send_log,
+    send_batch,
+    set_tga_config,
+)
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v98 DW
 
@@ -446,3 +454,106 @@ async def save_star_checklist(
         logger.debug("regulatory_star_checklist cache invalidation skipped: %s", e)
     # Bypass cache on the immediate read-back (write-through guarantee).
     return await get_star_checklist(current_user, _nocache=True)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# TGA Tesis Entegrasyon — Türkiye Turizm Tanıtım ve Geliştirme Ajansı
+# Doc: https://tesis-entegrasyon.tga.gov.tr/docs
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TgaConfigPayload(BaseModel):
+    belge_no: str | None = None
+    vergi_no: str | None = None
+    api_key: str | None = None  # boş bırakılırsa mevcut korunur
+    environment: str | None = Field(default=None, pattern="^(test|live)$")
+    enabled: bool | None = None
+
+
+@router.get("/tga/config")
+async def tga_config_get(
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_op("manage_settings")),
+) -> dict[str, Any]:
+    return await get_tga_config(current_user.tenant_id)
+
+
+@router.put("/tga/config")
+async def tga_config_set(
+    payload: TgaConfigPayload,
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_op("manage_settings")),
+) -> dict[str, Any]:
+    try:
+        out = await set_tga_config(
+            current_user.tenant_id,
+            belge_no=payload.belge_no,
+            vergi_no=payload.vergi_no,
+            api_key=payload.api_key,
+            environment=payload.environment,
+            enabled=payload.enabled,
+        )
+    except ValueError as ve:
+        raise HTTPException(400, str(ve)) from ve
+    await create_audit_log(
+        tenant_id=current_user.tenant_id, user=current_user,
+        action="UPDATE_TGA_CONFIG", entity_type="integration_tga",
+        entity_id=current_user.tenant_id,
+        changes={k: v for k, v in payload.model_dump().items()
+                 if v is not None and k != "api_key"})
+    return out
+
+
+@router.get("/tga/preview")
+async def tga_preview(
+    date: str = Query(..., description="YYYY-MM-DD"),
+    days: int = Query(1, ge=1, le=7),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_op("manage_settings")),
+) -> dict[str, Any]:
+    """Belirtilen tarihe kadar son `days` günün TGA payload önizlemesi
+    (gönderim YAPILMAZ)."""
+    try:
+        end_d = datetime.fromisoformat(date).date()
+    except Exception as ex:
+        raise HTTPException(400, "date must be YYYY-MM-DD") from ex
+    if days == 1:
+        body = await build_daily_payload(current_user.tenant_id, end_d)
+        return {"single": body}
+    envelope = await build_batch_envelope(current_user.tenant_id, end_d, days=days)
+    # API anahtarı önizleme yanıtında dönmez — envelope sadece veri tarafı.
+    return envelope
+
+
+@router.post("/tga/send")
+async def tga_send_manual(
+    end_date: str = Query(..., description="YYYY-MM-DD (dahil)"),
+    days: int = Query(7, ge=1, le=7),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_op("manage_settings")),
+) -> dict[str, Any]:
+    try:
+        end_d = datetime.fromisoformat(end_date).date()
+    except Exception as ex:
+        raise HTTPException(400, "end_date must be YYYY-MM-DD") from ex
+    res = await send_batch(
+        current_user.tenant_id, end_d, days=days, triggered_by="manual",
+    )
+    await create_audit_log(
+        tenant_id=current_user.tenant_id, user=current_user,
+        action="SEND_TGA_BATCH", entity_type="integration_tga",
+        entity_id=current_user.tenant_id,
+        changes={"end_date": end_date, "days": days,
+                 "status": res.get("status"),
+                 "http_status": res.get("http_status")})
+    return res
+
+
+@router.get("/tga/log")
+async def tga_log(
+    days: int = Query(30, ge=1, le=180),
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(require_op("manage_settings")),
+) -> dict[str, Any]:
+    items = await list_send_log(current_user.tenant_id, days=days)
+    return {"days": days, "count": len(items), "items": items}

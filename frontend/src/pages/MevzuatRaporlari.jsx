@@ -4,11 +4,12 @@ import { toast } from "sonner";
 
 import {
   AlertTriangle, Award, BarChart3, CheckCircle2, ClipboardCheck,
-  Download, FileText, Loader2, RefreshCw, ScrollText, Save, ShieldCheck,
+  Download, FileText, Loader2, RefreshCw, ScrollText, Save, Send, ShieldCheck, Wifi, WifiOff,
 } from "lucide-react";
 
 const TABS = [
   { key: "tuik", label: "TÜİK Aylık Anketi", icon: BarChart3 },
+  { key: "tga", label: "TGA Tesis Entegrasyon", icon: Send },
   { key: "inspection", label: "Bakanlık Denetim Hazırlık", icon: ShieldCheck },
   { key: "stars", label: "Yıldız Sınıflama Self-Check", icon: Award },
 ];
@@ -97,9 +98,81 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
     finally { setSavingCl(false); }
   };
 
+  // ── TGA Tesis Entegrasyon
+  const [tgaCfg, setTgaCfg] = useState(null);
+  const [tgaForm, setTgaForm] = useState({
+    belge_no: "", vergi_no: "", api_key: "",
+    environment: "test", enabled: false,
+  });
+  const [tgaLog, setTgaLog] = useState([]);
+  const [tgaPreview, setTgaPreview] = useState(null);
+  const [tgaSaving, setTgaSaving] = useState(false);
+  const [tgaSending, setTgaSending] = useState(false);
+  const [tgaPreviewing, setTgaPreviewing] = useState(false);
+
+  const loadTgaCfg = async () => {
+    try {
+      const { data } = await axios.get("/regulatory/tga/config");
+      setTgaCfg(data);
+      setTgaForm({
+        belge_no: data.belge_no || "",
+        vergi_no: data.vergi_no || "",
+        api_key: "",
+        environment: data.environment || "test",
+        enabled: !!data.enabled,
+      });
+    } catch { toast.error("TGA ayarları yüklenemedi"); }
+  };
+  const loadTgaLog = async () => {
+    try {
+      const { data } = await axios.get("/regulatory/tga/log", { params: { days: 30 } });
+      setTgaLog(data.items || []);
+    } catch { /* sessiz */ }
+  };
+  const saveTgaCfg = async () => {
+    setTgaSaving(true);
+    try {
+      const body = { ...tgaForm };
+      if (!body.api_key) delete body.api_key;
+      const { data } = await axios.put("/regulatory/tga/config", body);
+      setTgaCfg(data);
+      setTgaForm((f) => ({ ...f, api_key: "" }));
+      toast.success("TGA ayarları kaydedildi");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Kayıt başarısız");
+    } finally { setTgaSaving(false); }
+  };
+  const previewTga = async () => {
+    setTgaPreviewing(true);
+    try {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const { data } = await axios.get("/regulatory/tga/preview", {
+        params: { date: yesterday, days: 1 },
+      });
+      setTgaPreview(data.single || data);
+    } catch { toast.error("Önizleme alınamadı"); }
+    finally { setTgaPreviewing(false); }
+  };
+  const sendTgaNow = async () => {
+    setTgaSending(true);
+    try {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const { data } = await axios.post("/regulatory/tga/send", null, {
+        params: { end_date: yesterday, days: 7 },
+      });
+      if (data.status === "sent") toast.success(`TGA'ya gönderildi (HTTP ${data.http_status})`);
+      else if (data.status === "skipped") toast.error(`Atlandı: ${data.reason}`);
+      else toast.error(`Başarısız: ${data.error || "HTTP " + data.http_status}`);
+      await loadTgaLog();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Gönderim başarısız");
+    } finally { setTgaSending(false); }
+  };
+
   useEffect(() => {
     if (tab === "inspection" && !readiness) loadReadiness();
     if (tab === "stars" && !checklist) loadChecklist();
+    if (tab === "tga" && !tgaCfg) { loadTgaCfg(); loadTgaLog(); }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [tab]);
 
@@ -222,6 +295,181 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
               </p>
             </>
           )}
+        </div>
+      )}
+
+      {tab === "tga" && (
+        <div className="space-y-4">
+          {/* Bilgi kutusu */}
+          <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 text-xs text-sky-900 leading-relaxed">
+            <strong>TGA Tesis Entegrasyon API'si:</strong> Türkiye Turizm Tanıtım ve Geliştirme Ajansı,
+            konaklama tesislerinden günlük operasyonel veri toplar. Sistem her 6 saatte bir
+            son 7 günü otomatik gönderir; manuel tetikleme de mümkündür.
+            <br />
+            <strong>Ön gereklilik:</strong> TGA'dan tesisinize özel <em>X-API-Key</em> ile
+            <em> Tesis Belge No</em> alınmış olmalı.
+            Dokümantasyon: <a href="https://tesis-entegrasyon.tga.gov.tr/docs"
+              target="_blank" rel="noreferrer" className="underline">tesis-entegrasyon.tga.gov.tr/docs</a>
+          </div>
+
+          {/* Ayarlar kartı */}
+          <div className="bg-white border rounded-lg p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Send className="h-4 w-4" /> Bağlantı Ayarları
+              </h3>
+              {tgaCfg && (
+                <span className={`text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 ${
+                  tgaCfg.enabled ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                  {tgaCfg.enabled ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+                  {tgaCfg.enabled ? "Aktif" : "Pasif"} · {tgaCfg.environment === "live" ? "CANLI" : "TEST"}
+                </span>
+              )}
+            </div>
+
+            {!tgaCfg ? (
+              <div className="text-sm text-gray-500 flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" /> Yükleniyor…
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-600 block mb-1">Tesis Belge No</label>
+                    <input type="text" placeholder="örn. TR-07-12345"
+                      className="w-full border rounded px-3 py-2 text-sm"
+                      value={tgaForm.belge_no}
+                      onChange={(e) => setTgaForm({ ...tgaForm, belge_no: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 block mb-1">Vergi No</label>
+                    <input type="text" placeholder="10 hane"
+                      className="w-full border rounded px-3 py-2 text-sm"
+                      value={tgaForm.vergi_no}
+                      onChange={(e) => setTgaForm({ ...tgaForm, vergi_no: e.target.value })} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-xs text-gray-600 block mb-1">
+                      X-API-Key {tgaCfg.api_key_set && <span className="text-emerald-600">(kayıtlı — boş bırak: değişmez)</span>}
+                    </label>
+                    <input type="password" placeholder="pk_live_…"
+                      className="w-full border rounded px-3 py-2 text-sm font-mono"
+                      value={tgaForm.api_key}
+                      onChange={(e) => setTgaForm({ ...tgaForm, api_key: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 block mb-1">Ortam</label>
+                    <select className="w-full border rounded px-3 py-2 text-sm"
+                      value={tgaForm.environment}
+                      onChange={(e) => setTgaForm({ ...tgaForm, environment: e.target.value })}>
+                      <option value="test">Test</option>
+                      <option value="live">Canlı</option>
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <label className="inline-flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={tgaForm.enabled}
+                        onChange={(e) => setTgaForm({ ...tgaForm, enabled: e.target.checked })} />
+                      Otomatik gönderimi aktifleştir
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={saveTgaCfg} disabled={tgaSaving}
+                    className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded text-sm disabled:opacity-50">
+                    {tgaSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Kaydet
+                  </button>
+                  <button onClick={previewTga} disabled={tgaPreviewing}
+                    className="flex items-center gap-2 border px-4 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50">
+                    {tgaPreviewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    Dünün Verisini Önizle
+                  </button>
+                  <button onClick={sendTgaNow} disabled={tgaSending || !tgaCfg.enabled || !tgaCfg.api_key_set}
+                    className="flex items-center gap-2 bg-sky-700 hover:bg-sky-800 text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+                    title={!tgaCfg.enabled ? "Önce ayarları aktifleştirin" : !tgaCfg.api_key_set ? "Önce API anahtarı kaydedin" : "Son 7 günü TGA'ya gönder"}>
+                    {tgaSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    Şimdi Gönder (Son 7 Gün)
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Önizleme */}
+          {tgaPreview && (
+            <div className="bg-white border rounded-lg p-4 space-y-3">
+              <h3 className="font-semibold text-sm">Payload Önizleme — {tgaPreview.rapor_tarihi}</h3>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                <KPI title="Toplam Oda" value={fmtNum(tgaPreview.toplam_oda)} />
+                <KPI title="Toplam Kişi" value={fmtNum(tgaPreview.toplam_kisi)} />
+                <KPI title="Giren Oda" value={fmtNum(tgaPreview.giren_oda)} />
+                <KPI title="Giren Kişi" value={fmtNum(tgaPreview.giren_kisi)} />
+                <KPI title="Net Oda Geliri" value={fmtNum(tgaPreview.net_oda_geliri)} highlight />
+              </div>
+              <details className="text-xs">
+                <summary className="cursor-pointer text-gray-600 hover:text-gray-900">Demografik & Kanal dökümünü göster</summary>
+                <pre className="mt-2 bg-gray-50 border rounded p-2 overflow-auto max-h-80 text-[11px]">
+                  {JSON.stringify({ demografik_veriler: tgaPreview.demografik_veriler, kanal_veriler: tgaPreview.kanal_veriler }, null, 2)}
+                </pre>
+              </details>
+            </div>
+          )}
+
+          {/* Log */}
+          <div className="bg-white border rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-sm flex items-center gap-2">
+                <ScrollText className="h-4 w-4" /> Son 30 Gün Gönderim Geçmişi
+              </h3>
+              <button onClick={loadTgaLog}
+                className="text-xs flex items-center gap-1 text-blue-600 hover:underline">
+                <RefreshCw className="h-3 w-3" /> Yenile
+              </button>
+            </div>
+            {tgaLog.length === 0 ? (
+              <div className="text-sm text-gray-500 italic">Henüz gönderim kaydı yok.</div>
+            ) : (
+              <div className="overflow-auto border rounded">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left px-3 py-2">Zaman</th>
+                      <th className="text-left px-3 py-2">Tarih Aralığı</th>
+                      <th className="text-left px-3 py-2">Ortam</th>
+                      <th className="text-left px-3 py-2">Tetikleyici</th>
+                      <th className="text-center px-3 py-2">Durum</th>
+                      <th className="text-right px-3 py-2">HTTP</th>
+                      <th className="text-right px-3 py-2">Toplam Oda</th>
+                      <th className="text-right px-3 py-2">Net Gelir</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tgaLog.map((it, i) => {
+                      const ok = it.status === "sent";
+                      const skip = it.status === "skipped";
+                      return (
+                        <tr key={i} className="border-t">
+                          <td className="px-3 py-1.5 font-mono">{(it.started_at || "").slice(0, 16).replace("T", " ")}</td>
+                          <td className="px-3 py-1.5">son {it.days}g · {it.end_date}</td>
+                          <td className="px-3 py-1.5">{it.environment === "live" ? "CANLI" : "TEST"}</td>
+                          <td className="px-3 py-1.5">{it.triggered_by}</td>
+                          <td className={`px-3 py-1.5 text-center font-semibold ${
+                            ok ? "text-emerald-700" : skip ? "text-slate-500" : "text-rose-700"}`}>
+                            {ok ? "Gönderildi" : skip ? "Atlandı" : "Hata"}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono">{it.http_status || "—"}</td>
+                          <td className="px-3 py-1.5 text-right">{fmtNum(it.request_summary?.toplam_oda_sum)}</td>
+                          <td className="px-3 py-1.5 text-right">{fmtNum(it.request_summary?.net_oda_geliri_sum)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
