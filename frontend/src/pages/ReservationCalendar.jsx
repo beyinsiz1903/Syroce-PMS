@@ -119,14 +119,22 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const dateRange = getDateRange(currentDate, daysToShow);
 
   // ─── Data Loading ─────────────────────────────────────────────
-  // Race-safe: hızlı ok navigasyonunda eski fetch sonucu yeni state'i ezmesin.
-  // useEffect cleanup ile cancelled flag set edilir; yarışı kaybeden response
-  // setBookings çağırmaz.
+  // Race-safe + debounced: hızlı ok navigasyonunda her tıklama fetch tetiklemez,
+  // 250 ms hareketsizlik beklenir → sadece son tarih için tek fetch atılır.
+  // cleanup hem timer'ı hem aktif fetch'i iptal eder (eski response state'i ezmesin).
+  // İlk yüklemede gecikme olmasın diye bookings boşken (ilk render) anında çağırılır.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => {
     let cancelled = false;
-    loadCalendarData(() => cancelled);
-    return () => { cancelled = true; };
+    const isInitial = bookings.length === 0;
+    const delay = isInitial ? 0 : 250;
+    const timer = setTimeout(() => {
+      if (!cancelled) loadCalendarData(() => cancelled);
+    }, delay);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [currentDate, daysToShow]);
 
   // Fetch hotel business date once on mount
