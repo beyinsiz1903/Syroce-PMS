@@ -189,12 +189,22 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
     history: null,
   };
 
-  const fetchContracts = useCallback(async () => {
+  const fetchContracts = useCallback(async ({ silent = false } = {}) => {
     setLoading(true);
+    const status = tabToStatus[tab];
+    const params = status ? { status } : {};
+    // 4xx hariç (auth/yetki) tek retry: backend restart / 502/503 / network için.
+    const tryOnce = () => axios.get('/marketplace/incoming-requests', { params }).then(r => r.data);
     try {
-      const status = tabToStatus[tab];
-      const params = status ? { status } : {};
-      const { data } = await axios.get('/marketplace/incoming-requests', { params });
+      let data;
+      try {
+        data = await tryOnce();
+      } catch (firstErr) {
+        const st = firstErr?.response?.status;
+        if (st && st >= 400 && st < 500) throw firstErr;
+        await new Promise(r => setTimeout(r, 1500));
+        data = await tryOnce();
+      }
       let list = data.contracts || [];
       if (tab === 'history') {
         list = list.filter(c => ['rejected', 'terminated', 'expired', 'withdrawn'].includes(c.status));
@@ -202,14 +212,18 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
       setContracts(list);
       setCounts(data.counts || {});
     } catch (e) {
-      toast.error('Sözleşmeler yüklenemedi: ' + (e.response?.data?.detail || e.message));
+      // eslint-disable-next-line no-console
+      console.error('[IncomingAgencyContracts] fetch failed:', e?.response?.status, e?.response?.data);
+      if (!silent) {
+        toast.error('Sözleşmeler yüklenemedi: ' + (e.response?.data?.detail || e.message));
+      }
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- tab değişiminde refetch
   }, [tab]);
 
-  useEffect(() => { fetchContracts(); }, [fetchContracts]);
+  useEffect(() => { fetchContracts({ silent: true }); }, [fetchContracts]);
 
   const openApprove = (c) => {
     setApproveDlg(c);
