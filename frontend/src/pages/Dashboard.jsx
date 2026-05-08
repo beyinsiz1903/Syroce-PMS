@@ -908,7 +908,8 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                 <CardContent>
                   <div className="grid grid-cols-10 gap-1">
                     {occupancyData.slice(0, 30).map((day, index) => {
-                      const rate = typeof day.occupancy_rate === 'number' ? day.occupancy_rate : 0;
+                      const rawRate = typeof day.occupancy_rate === 'number' ? day.occupancy_rate : 0;
+                      const rate = Math.min(Math.max(rawRate, 0), 100);
                       const color = 
                         rate >= 90 ? 'bg-red-600' :
                         rate >= 80 ? 'bg-amber-500' :
@@ -921,7 +922,11 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                         <div
                           key={index}
                           className={`${color} rounded p-2 text-center text-white text-xs font-semibold cursor-pointer hover:scale-110 transition-transform`}
-                          title={`${new Date(day.date).toLocaleDateString()}: ${rate.toFixed(1)}% occupied`}
+                          title={
+                            rawRate > 100
+                              ? `${new Date(day.date).toLocaleDateString()}: %${rate.toFixed(1)} (ham: %${rawRate.toFixed(1)} — overbooking)`
+                              : `${new Date(day.date).toLocaleDateString()}: %${rate.toFixed(1)} doluluk`
+                          }
                         >
                           {new Date(day.date).getDate()}
                           <div className="text-[10px]">{rate.toFixed(0)}%</div>

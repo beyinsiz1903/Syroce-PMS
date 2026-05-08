@@ -235,11 +235,13 @@ async def get_occupancy_trend(
             if check_in.date() <= current.date() < check_out.date():
                 occupied += 1
 
-        occupancy_rate = (occupied / total_rooms * 100) if total_rooms > 0 else 0
+        raw_rate = (occupied / total_rooms * 100) if total_rooms > 0 else 0
+        occupancy_rate = min(raw_rate, 100.0)
 
         trend_data.append({
             'date': current.strftime('%Y-%m-%d'),
             'occupancy_rate': round(occupancy_rate, 2),
+            'occupancy_rate_raw': round(raw_rate, 2),
             'occupied_rooms': occupied,
             'total_rooms': total_rooms
         })
