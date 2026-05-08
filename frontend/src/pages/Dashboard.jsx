@@ -9,6 +9,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 
 import { Hotel, FileText, TrendingUp, TrendingDown, Minus, Award, ShoppingCart, Users, BedDouble, Calendar, Package, Shield, Sparkles, Bot, Star, Building, Gift, UserCheck, MessageCircle, Target, Instagram, Zap, Monitor, ArrowRight } from 'lucide-react';
 import CommandCenter from '@/components/CommandCenter';
+import { runIdle } from '@/lib/idle';
 import { useCurrency } from '@/context/CurrencyContext';
 import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -219,11 +220,17 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
   useEffect(() => {
     const now = Date.now();
     const isCacheValid = dashboardCache.timestamp && (now - dashboardCache.timestamp < dashboardCache.CACHE_DURATION);
-    
+
+    let cancelIdle = () => {};
     if (!isCacheValid) {
+      // KPI'lar (PMS dashboard + invoice stats) ana ekranın görsel iskeleti
+      // — hemen yüklensin. AI briefing ve grafik verileri (4 chart endpoint)
+      // ikincil; idle'a alınınca KPI'lar saniyeler önce ekrana basılır.
       loadDashboardStats();
-      loadAIBriefing();
-      loadChartData();
+      cancelIdle = runIdle(() => {
+        loadAIBriefing();
+        loadChartData();
+      }, { timeout: 4000 });
     }
 
     // Prefetch commonly used routes in background

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { runIdle } from '@/lib/idle';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { confirmDialog } from '@/lib/dialogs';
 import {
@@ -59,14 +60,14 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
   const load = async () => {
     setLoading(true);
     try {
-      const today = new Date().toISOString().slice(0, 10);
-      // Promise.allSettled: tek bir uç hata verirse diğer kartlar boş kalmasın.
-      const [s, t, r, a, sum] = await Promise.allSettled([
+      // Birincil veriler (4 endpoint): randevu listesi ve katalog (hizmet,
+      // terapist, oda) — sayfa render'ı için kritik. Günlük özet (KPI rozeti)
+      // ikincil; idle'da yüklensin → birincil render hızlanır.
+      const [s, t, r, a] = await Promise.allSettled([
         axios.get('/spa/services'),
         axios.get('/spa/therapists'),
         axios.get('/spa/rooms'),
         axios.get('/spa/appointments', { params: filter }),
-        axios.get('/spa/daily-summary', { params: { date: today } }),
       ]);
       const failed = [];
       if (s.status === 'fulfilled') setServices(s.value.data.services || []);
@@ -77,9 +78,16 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
       else { setRooms([]); failed.push('Odalar'); }
       if (a.status === 'fulfilled') setAppointments(a.value.data.appointments || []);
       else { setAppointments([]); failed.push('Randevular'); }
-      if (sum.status === 'fulfilled') setSummary(sum.value.data);
-      else { setSummary(null); failed.push('Günlük özet'); }
       if (failed.length) toast.error(`Yüklenemedi: ${failed.join(', ')}`);
+
+      // Günlük özet — idle'da arka plandan yükle.
+      runIdle(async () => {
+        try {
+          const today = new Date().toISOString().slice(0, 10);
+          const sum = await axios.get('/spa/daily-summary', { params: { date: today } });
+          setSummary(sum.data);
+        } catch { setSummary(null); }
+      });
     } finally { setLoading(false); }
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
