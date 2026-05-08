@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, Query
 
 from core.database import db
 from core.security import get_current_user
+from modules.pms_core.role_permission_service import require_op
 from domains.channel_manager import unified_repository as repo
 from domains.channel_manager.data_model import (
     COLL_RAW_CHANNEL_EVENTS,
@@ -51,6 +52,7 @@ async def trace_reservation(
     external_reservation_id: str,
     provider: str | None = None,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """
     End-to-end trace for a single reservation:
@@ -131,6 +133,7 @@ async def trace_reservation(
 async def mapping_health(
     provider: str | None = None,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """
     Mapping health score per provider.
@@ -164,6 +167,7 @@ async def mapping_health(
 async def ingest_metrics(
     hours: int = Query(default=24, ge=1, le=168),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """
     Ingest pipeline metrics for the last N hours:
@@ -240,6 +244,7 @@ async def ingest_metrics(
 @router.get("/metrics/lineage")
 async def lineage_metrics(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """
     Reservation lineage metrics:
@@ -288,6 +293,7 @@ async def lineage_metrics(
 @router.get("/metrics/reconciliation")
 async def reconciliation_metrics(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """
     Reconciliation case metrics:
@@ -324,6 +330,7 @@ async def reconciliation_metrics(
 @router.get("/providers/capabilities")
 async def provider_capabilities(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """
     Full provider capability matrix.
@@ -376,6 +383,7 @@ async def provider_capabilities(
 @router.get("/reconciliation/truth-table")
 async def truth_table(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """
     The system's constitutional document for data ownership.
@@ -393,6 +401,7 @@ async def truth_table(
 @router.get("/status")
 async def lockdown_status(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
 ):
     """
     Overall system lockdown status.
