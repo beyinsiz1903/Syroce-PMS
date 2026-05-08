@@ -32,14 +32,31 @@ router = APIRouter(prefix="/api/integrations/afsadakat", tags=["af-sadakat"])
 
 
 # ── Tenant: launch & status ─────────────────────────────────────
+def _is_platform_super(user: User) -> bool:
+    """Süper-admin / platform admin tüm tenant'larda Af-sadakat'a
+    erişebilir — entitlement gate'i bu rollerde uygulanmaz."""
+    from core.security import _is_super_admin
+    if _is_super_admin(user):
+        return True
+    role = (user.role or "").lower()
+    if role in ("super_admin", "platform_admin"):
+        return True
+    roles = getattr(user, "roles", None) or []
+    return any((r or "").lower() in ("super_admin", "platform_admin") for r in roles)
+
+
 @router.get("/status")
 async def status(current_user: User = Depends(get_current_user)) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
+    is_super = _is_platform_super(current_user)
     has = await tenant_has_module(current_user.tenant_id, AFSADAKAT_PRODUCT_KEY)
     creds = await get_tenant_credentials(current_user.tenant_id)
     return {
-        "entitled": has,
+        "entitled": bool(has or is_super),
+        "entitlement_source": "super_admin" if (is_super and not has) else (
+            "subscription" if has else "none"
+        ),
         "provisioned": bool(creds and creds.get("status") == "active"),
         "mode": (creds or {}).get("mode"),
         "ext_tenant_id": (creds or {}).get("ext_tenant_id"),
@@ -52,7 +69,10 @@ async def launch(current_user: User = Depends(get_current_user)) -> dict:
     """Mint an SSO token and return the Af-sadakat URL to open."""
     if not current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
-    if not await tenant_has_module(current_user.tenant_id, AFSADAKAT_PRODUCT_KEY):
+    is_super = _is_platform_super(current_user)
+    if not is_super and not await tenant_has_module(
+        current_user.tenant_id, AFSADAKAT_PRODUCT_KEY
+    ):
         raise HTTPException(
             status_code=403,
             detail="Sadakat & Inbox modülü için aktif abonelik bulunamadı",

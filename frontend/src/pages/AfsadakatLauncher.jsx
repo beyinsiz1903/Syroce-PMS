@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Sparkles, ExternalLink, Loader2, ShieldCheck, AlertCircle,
-  ShoppingBag, Wrench,
+  ShoppingBag, Wrench, Crown,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -66,13 +66,19 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
   const entitled = !!status?.entitled;
   const provisioned = !!status?.provisioned;
   const externalReady = !!status?.external_configured;
+  const isSuperAdmin = user?.role === "super_admin"
+    || user?.role === "platform_admin"
+    || (Array.isArray(user?.roles)
+        && user.roles.some((r) => r === "super_admin" || r === "platform_admin"));
+  const viaSuper = status?.entitlement_source === "super_admin" || (isSuperAdmin && !status?.entitled);
+  const effectiveEntitled = entitled || isSuperAdmin;
 
   return (
     <>
       <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-violet-600" />
+            <Sparkles className="w-6 h-6 text-indigo-600" />
             Sadakat & Omni Inbox
           </h1>
           <p className="text-sm text-slate-600 mt-1">
@@ -81,7 +87,7 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
           </p>
         </div>
 
-        {!entitled && (
+        {!effectiveEntitled && (
           <Card className="border-amber-200 bg-amber-50">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2 text-amber-900">
@@ -100,20 +106,34 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
           </Card>
         )}
 
-        {entitled && (
+        {effectiveEntitled && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-emerald-600" />
                 Bağlantı Durumu
+                {viaSuper && (
+                  <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 ml-1">
+                    <Crown className="w-3 h-3 mr-1" /> Süper-admin erişimi
+                  </Badge>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {viaSuper && (
+                <div className="border-l-4 border-indigo-400 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+                  Bu tenant'ın aktif Af-sadakat aboneliği yok; süper-admin yetkinizle
+                  modüle doğrudan erişiyorsunuz. Üretim kullanımı için tenant adına
+                  Modül Pazarı'ndan abonelik başlatılmalıdır.
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="flex items-center justify-between border rounded-md px-3 py-2">
                   <span className="text-slate-600">Abonelik</span>
-                  <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
-                    Aktif
+                  <Badge className={entitled
+                    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                    : "bg-slate-100 text-slate-700 border-slate-200"}>
+                    {entitled ? "Aktif" : "Yok (süper-admin)"}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between border rounded-md px-3 py-2">
