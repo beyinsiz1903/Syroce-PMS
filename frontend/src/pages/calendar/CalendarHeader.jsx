@@ -15,12 +15,10 @@ const CalendarHeader = ({
   bookings,
   conflicts,
   syncing,
-  showAIPanel,
   onNavigatePrevious,
   onNavigateNext,
   onGoToDate,
   onSyncReservations,
-  onToggleAI,
   onShowFindRoomDialog,
   onShowNewBookingDialog,
   onShowUnassigned,
@@ -175,17 +173,6 @@ const CalendarHeader = ({
             <select className="border rounded px-2 py-1 text-xs" data-testid="status-filter">
               <option>Hepsi</option>
             </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant={showAIPanel ? "default" : "outline"}
-              onClick={onToggleAI}
-              className="h-7 text-xs px-2"
-              data-testid="ai-toggle"
-            >
-              Renklendirme
-            </Button>
           </div>
         </div>
       </div>

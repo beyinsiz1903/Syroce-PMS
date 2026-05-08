@@ -26,14 +26,9 @@ const CalendarGrid = ({
   conflicts,
   draggingBooking,
   dragOverCell,
-  showAIPanel,
   showDeluxePanel,
   groupColorMap,
   setGroupColorMap,
-  // AI helpers
-  aiRoomMoves,
-  aiOverbookingSolutions,
-  aiNoShowPredictions,
   groupBookings: deluxeGroupBookings,
   // Handlers
   onCellClick,
@@ -61,16 +56,6 @@ const CalendarGrid = ({
       date >= new Date(c.overlap_start) &&
       date < new Date(c.overlap_end)
     );
-  };
-
-  const getAIRecommendation = (bookingId) => {
-    const roomMove = aiRoomMoves.find(r => r.booking_id === bookingId);
-    const overbooking = aiOverbookingSolutions.find(s => s.booking_id === bookingId);
-    return roomMove || overbooking;
-  };
-
-  const getNoShowRisk = (bookingId) => {
-    return aiNoShowPredictions.find(p => p.booking_id === bookingId);
   };
 
   const isGroupBooking = (bookingId) => {
@@ -446,16 +431,6 @@ const CalendarGrid = ({
                                         {booking.adults && <span>Ks: {(booking.adults || 0) + (booking.children || 0)}</span>}
                                       </div>
                                       <div className="absolute top-0.5 right-0.5 flex flex-col space-y-0.5 items-end">
-                                        {showAIPanel && getAIRecommendation(booking.id) && (
-                                          <div className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-[7px] font-bold px-0.5 py-0 rounded animate-pulse" title="AI Recommendation">
-                                            AI
-                                          </div>
-                                        )}
-                                        {showAIPanel && getNoShowRisk(booking.id) && getNoShowRisk(booking.id).risk_level === 'high' && (
-                                          <div className="bg-red-600 text-white text-[7px] font-bold px-0.5 py-0 rounded" title={`High No-Show Risk: ${getNoShowRisk(booking.id).risk_score}%`}>
-                                            !
-                                          </div>
-                                        )}
                                         {showDeluxePanel && isGroupBooking(booking.id) && (
                                           <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-white text-[7px] font-bold px-0.5 py-0 rounded" title={`Group: ${getGroupInfo(booking.id)?.company_name}`}>
                                             G

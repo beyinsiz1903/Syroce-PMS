@@ -84,12 +84,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [moveData, setMoveData] = useState(null);
   const [moveReason, setMoveReason] = useState('');
 
-  // Enterprise / AI Mode
-  const [showAIPanel, setShowAIPanel] = useState(false);
-  const [aiOverbookingSolutions, setAiOverbookingSolutions] = useState([]);
-  const [aiRoomMoves, setAiRoomMoves] = useState([]);
-  const [aiRateRecommendations, setAiRateRecommendations] = useState([]);
-  const [aiNoShowPredictions, setAiNoShowPredictions] = useState([]);
   const [showDeluxePanel, setShowDeluxePanel] = useState(false);
   const [groupBookings, setGroupBookings] = useState([]);
   const [oversellProtection, setOversellProtection] = useState([]);
@@ -263,25 +257,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     } finally { setSyncing(false); }
   };
 
-  // ─── AI / Deluxe Data Loading ─────────────────
-  const loadAIRecommendations = async () => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const sd = currentDate.toISOString().split('T')[0];
-      const ed = new Date(currentDate.getTime() + daysToShow * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const [overbookingRes, roomMovesRes, ratesRes, noShowRes] = await Promise.all([
-        axios.post('/ai/solve-overbooking', null, { params: { date: today } }).catch(() => ({ data: { solutions: [] } })),
-        axios.post('/ai/recommend-room-moves', null, { params: { date: today } }).catch(() => ({ data: { recommendations: [] } })),
-        axios.post('/ai/recommend-rates', null, { params: { start_date: sd, end_date: ed } }).catch(() => ({ data: { recommendations: [] } })),
-        axios.post('/ai/predict-no-shows', null, { params: { date: today } }).catch(() => ({ data: { predictions: [] } }))
-      ]);
-      setAiOverbookingSolutions(overbookingRes.data.solutions || []);
-      setAiRoomMoves(roomMovesRes.data.recommendations || []);
-      setAiRateRecommendations(ratesRes.data.recommendations || []);
-      setAiNoShowPredictions(noShowRes.data.predictions || []);
-    } catch (error) { console.error('Failed to load AI recommendations:', error); }
-  };
-
+  // ─── Deluxe Data Loading ─────────────────
   const loadDeluxeFeatures = async () => {
     try {
       const sd = currentDate.toISOString().split('T')[0];
@@ -627,12 +603,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   };
 
   // ─── Toggle Handlers ──────────────────────────────────────
-  const toggleAIMode = () => {
-    const newState = !showAIPanel;
-    setShowAIPanel(newState);
-    if (newState && (calendarMeta.rooms || 0) > 0) loadAIRecommendations();
-  };
-
   const toggleDeluxeMode = () => {
     const newState = !showDeluxePanel;
     setShowDeluxePanel(newState);
@@ -677,12 +647,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           bookings={bookings}
           conflicts={conflicts}
           syncing={syncing}
-          showAIPanel={showAIPanel}
           onNavigatePrevious={navigatePrevious}
           onNavigateNext={navigateNext}
           onGoToDate={goToDate}
           onSyncReservations={handleSyncReservations}
-          onToggleAI={toggleAIMode}
           onShowFindRoomDialog={() => setShowFindRoomDialog(true)}
           onShowNewBookingDialog={() => {
             setSelectedRoom(null);
@@ -753,13 +721,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           conflicts={conflicts}
           draggingBooking={draggingBooking}
           dragOverCell={dragOverCell}
-          showAIPanel={showAIPanel}
           showDeluxePanel={showDeluxePanel}
           groupColorMap={groupColorMap}
           setGroupColorMap={setGroupColorMap}
-          aiRoomMoves={aiRoomMoves}
-          aiOverbookingSolutions={aiOverbookingSolutions}
-          aiNoShowPredictions={aiNoShowPredictions}
           groupBookings={groupBookings}
           onCellClick={handleCellClick}
           onDragStart={handleDragStart}
