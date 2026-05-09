@@ -1,41 +1,45 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/ui/page-header';
+import { KpiCard } from '@/components/ui/kpi-card';
+import { StatusBadge } from '@/components/ui/status-badge';
 import {
   ShieldCheck, AlertTriangle, CheckCircle2, Cloud, MinusCircle,
-  Download, FileText, RefreshCw, Lock,
+  Download, FileText, RefreshCw, Lock, ShieldAlert,
 } from 'lucide-react';
 
 const STATUS_META = {
-  met: { label: 'Karşılandı', color: 'bg-emerald-100 text-emerald-800 border-emerald-200', icon: CheckCircle2 },
-  partial: { label: 'Kısmen', color: 'bg-amber-100 text-amber-800 border-amber-200', icon: AlertTriangle },
-  shared: { label: 'Paylaşılan', color: 'bg-sky-100 text-sky-800 border-sky-200', icon: Cloud },
-  not_applicable: { label: 'Geçersiz', color: 'bg-gray-100 text-gray-700 border-gray-200', icon: MinusCircle },
+  met:            { label: 'Karşılandı',  intent: 'success', icon: CheckCircle2,  border: 'border-l-emerald-500' },
+  partial:        { label: 'Kısmen',      intent: 'warning', icon: AlertTriangle, border: 'border-l-amber-500' },
+  shared:         { label: 'Paylaşılan',  intent: 'info',    icon: Cloud,         border: 'border-l-sky-500' },
+  not_applicable: { label: 'Geçersiz',    intent: 'neutral', icon: MinusCircle,   border: 'border-l-slate-400' },
 };
 
-const StatusBadge = ({ status }) => {
+const ControlStatus = ({ status }) => {
   const meta = STATUS_META[status] || STATUS_META.not_applicable;
   const Icon = meta.icon;
   return (
-    <Badge className={`${meta.color} border`}>
-      <Icon className="w-3 h-3 mr-1" /> {meta.label}
-    </Badge>
+    <StatusBadge intent={meta.intent} icon={Icon}>{meta.label}</StatusBadge>
   );
 };
 
-const PCIComplianceDashboard = ({ user, tenant, onLogout }) => {
+export default function PCIComplianceDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(null);
+  const [anonymize, setAnonymize] = useState(true);  // KVKK varsayılan: anonim
 
-  const load = async () => {
+  const load = useCallback(async (refresh = false) => {
     setLoading(true);
     try {
-      const r = await axios.get('/compliance/pci/controls');
+      const r = await axios.get('/compliance/pci/controls', {
+        params: refresh ? { refresh: 1 } : {},
+      });
       setData(r.data);
     } catch (e) {
       const msg = e.response?.status === 403
@@ -45,13 +49,16 @@ const PCIComplianceDashboard = ({ user, tenant, onLogout }) => {
     } finally {
       setLoading(false);
     }
-  };
-  useEffect(() => { load(); }, []);
+  }, []);
+
+  useEffect(() => { load(false); }, [load]);
 
   const download = async (kind) => {
     setDownloading(kind);
     try {
-      const path = kind === 'csv' ? '/compliance/pci/report.csv' : '/compliance/pci/attestation';
+      const path = kind === 'csv'
+        ? '/compliance/pci/report.csv'
+        : `/compliance/pci/attestation${anonymize ? '?anonymize=true' : ''}`;
       const r = await axios.get(path, { responseType: 'blob' });
       const blob = new Blob([r.data], { type: r.headers['content-type'] });
       const url = URL.createObjectURL(blob);
@@ -71,152 +78,173 @@ const PCIComplianceDashboard = ({ user, tenant, onLogout }) => {
     }
   };
 
-  if (loading) {
+  const summary = data?.summary;
+  const controls = data?.controls || [];
+  const totalReq = summary?.total_requirements ?? 12;
+  const met = summary?.counts?.met ?? 0;
+  const partial = summary?.counts?.partial ?? 0;
+  const shared = summary?.counts?.shared ?? 0;
+  const notApp = summary?.counts?.not_applicable ?? 0;
+  const score = summary?.implementation_score_pct ?? 0;
+
+  // Sprint A skeleton loading
+  if (loading && !data) {
     return (
-      <div className="p-8 text-center text-gray-500">
-        <RefreshCw className="w-6 h-6 animate-spin inline mr-2" /> Yükleniyor…
+      <div className="max-w-6xl mx-auto p-4 space-y-4">
+        <Skeleton className="h-12 w-full max-w-md" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-full" />)}
+        </div>
+        <Skeleton className="h-16 w-full" />
+        {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-32 w-full" />)}
       </div>
     );
   }
+
   if (!data) {
     return (
-      <div className="p-8 text-center text-gray-500">
-        Rapor mevcut değil.
-        <div className="mt-2"><Button onClick={load}>Tekrar Dene</Button></div>
+      <div className="max-w-6xl mx-auto p-8 text-center">
+        <ShieldAlert className="w-10 h-10 text-rose-500 mx-auto mb-3" />
+        <div className="text-slate-700 mb-3">Rapor mevcut değil.</div>
+        <Button variant="outline" onClick={() => load(true)}>
+          <RefreshCw className="w-4 h-4 mr-1.5" /> Tekrar Dene
+        </Button>
       </div>
     );
   }
 
-  const { summary, controls } = data;
-
   return (
-    <>
     <div className="max-w-6xl mx-auto p-4 space-y-4">
-      <div className="flex items-start justify-end flex-wrap gap-3">
-        <div className="hidden"></div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={load}>
-            <RefreshCw className="w-4 h-4 mr-2" /> Yenile
-          </Button>
-          <Button variant="outline" onClick={() => download('csv')} disabled={downloading === 'csv'}>
-            <Download className="w-4 h-4 mr-2" /> CSV
-          </Button>
-          <Button onClick={() => download('json')} disabled={downloading === 'json'}>
-            <FileText className="w-4 h-4 mr-2" /> Beyan Paketi (JSON)
-          </Button>
-        </div>
-      </div>
+      {/* Sprint A PageHeader */}
+      <PageHeader
+        icon={ShieldCheck}
+        title="PCI-DSS Uyum Paneli"
+        subtitle={`${summary?.version || 'PCI-DSS v4.0'} — ${totalReq} gereksinimden ${met}'i tam, ${partial}'i kısmi, ${shared}'i paylaşılan, ${notApp}'i geçersiz`}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => load(true)} disabled={loading}>
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Yenile
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => download('csv')} disabled={downloading === 'csv'}>
+              <Download className="w-4 h-4 mr-1.5" /> CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => download('json')} disabled={downloading === 'json'}>
+              <FileText className="w-4 h-4 mr-1.5" /> Beyan Paketi (JSON)
+            </Button>
+          </div>
+        }
+      />
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryCard
-          title="Uygulama Skoru"
-          value={`%${summary.implementation_score_pct}`}
+      {/* KPI Grid (Sprint A KpiCard, intent paleti) */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <KpiCard
           icon={ShieldCheck}
-          accent="indigo"
-          subtitle={`${summary.fully_met}/${summary.fully_met + summary.needs_attention} kontrol`}
+          label="Uygulama Skoru"
+          value={`%${score}`}
+          sub={`${met}/${met + partial} kontrol`}
+          intent="info"
         />
-        <SummaryCard
-          title="Tam Karşılanan"
-          value={summary.counts.met}
+        <KpiCard
           icon={CheckCircle2}
-          accent="emerald"
+          label="Tam Karşılanan"
+          value={met}
+          intent="success"
         />
-        <SummaryCard
-          title="Eylem Gerekli"
-          value={summary.counts.partial}
+        <KpiCard
           icon={AlertTriangle}
-          accent="amber"
+          label="Eylem Gerekli"
+          value={partial}
+          intent="warning"
         />
-        <SummaryCard
-          title="Paylaşılan"
-          value={summary.counts.shared}
+        <KpiCard
           icon={Cloud}
-          accent="sky"
+          label="Paylaşılan"
+          value={shared}
+          intent="info"
+          sub="Cloud / müşteri"
+        />
+        <KpiCard
+          icon={MinusCircle}
+          label="Geçersiz (N/A)"
+          value={notApp}
+          intent="neutral"
         />
       </div>
 
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex gap-3 text-sm">
-        <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-        <div className="text-amber-900">
-          <strong>Bilgilendirme:</strong> Bu panel teknik kontrollerin durumunu gösteren
-          bir öz-değerlendirmedir. Resmi PCI-DSS sertifikası için yetkili bir QSA
-          (Qualified Security Assessor) değerlendirmesi gereklidir. Kart verisi
-          işlemediğiniz akışlar için SAQ-A form'u yeterli olabilir.
-        </div>
-      </div>
+      {/* Disclaimer (Sprint A: Card + warning palette) */}
+      <Card className="border-amber-200 bg-amber-50">
+        <CardContent className="p-3 flex gap-3 text-sm">
+          <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+          <div className="text-amber-900">
+            <strong>Bilgilendirme:</strong> Bu panel teknik kontrollerin durumunu
+            gösteren bir öz-değerlendirmedir. Resmi PCI-DSS sertifikası için yetkili
+            bir QSA (Qualified Security Assessor) değerlendirmesi gereklidir.
+            Kart verisi işlemediğiniz akışlar için SAQ-A formu yeterli olabilir.
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Requirements list */}
-      <div className="space-y-3">
-        {controls.map((c) => (
-          <Card key={c.req_id} className="border-l-4" style={{ borderLeftColor: borderColor(c.status) }}>
-            <CardHeader className="pb-2">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
+      {/* Anonim indirme tercihi (KVKK) */}
+      <Card>
+        <CardContent className="p-3 flex items-center justify-between gap-3 text-sm flex-wrap">
+          <label className="flex items-center gap-2 cursor-pointer text-slate-700">
+            <input
+              type="checkbox"
+              className="w-4 h-4"
+              checked={anonymize}
+              onChange={(e) => setAnonymize(e.target.checked)}
+            />
+            <span>JSON beyan paketinde kişisel detayları (e-posta, kullanıcı kimliği) gizle <span className="text-slate-500">(KVKK/GDPR önerilen)</span></span>
+          </label>
+          <span className="text-xs text-slate-500">JSON paketi imza anahtarı (ATTESTATION_SIGNING_KEY/JWT_SECRET) ayarlıysa HMAC-SHA256 ile imzalanır.</span>
+        </CardContent>
+      </Card>
+
+      {/* Requirements grid (12 gereksinim — desktop 2 sütun) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {controls.map((c) => {
+          const meta = STATUS_META[c.status] || STATUS_META.not_applicable;
+          return (
+            <Card key={c.req_id} className={`border-l-4 ${meta.border}`}>
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
                   <CardTitle className="text-base">
-                    <span className="text-gray-400 font-mono mr-2">Req {c.req_id}</span>
+                    <span className="text-slate-400 font-mono mr-2">Req {c.req_id}</span>
                     {c.title}
                   </CardTitle>
+                  <ControlStatus status={c.status} />
                 </div>
-                <StatusBadge status={c.status} />
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0 space-y-3">
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                  Uygulanan Kontroller
-                </div>
-                <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
-                  {c.evidence.map((e, i) => <li key={i}>{e}</li>)}
-                </ul>
-              </div>
-              {c.recommendations.length > 0 && (
-                <div>
-                  <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">
-                    Öneriler
+              </CardHeader>
+              <CardContent className="pt-0 space-y-3">
+                {(c.evidence?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                      Uygulanan Kontroller
+                    </div>
+                    <ul className="list-disc list-inside text-sm text-slate-700 space-y-0.5">
+                      {c.evidence.map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
                   </div>
-                  <ul className="list-disc list-inside text-sm text-amber-800 space-y-0.5">
-                    {c.recommendations.map((r, i) => <li key={i}>{r}</li>)}
-                  </ul>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+                )}
+                {(c.recommendations?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">
+                      Öneriler
+                    </div>
+                    <ul className="list-disc list-inside text-sm text-amber-800 space-y-0.5">
+                      {c.recommendations.map((r, i) => <li key={i}>{r}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </div>
-    </>
   );
-};
+}
 
-const SummaryCard = ({ title, value, icon: Icon, accent, subtitle }) => {
-  const colors = {
-    indigo: 'bg-indigo-50 text-indigo-600',
-    emerald: 'bg-emerald-50 text-emerald-600',
-    amber: 'bg-amber-50 text-amber-600',
-    sky: 'bg-sky-50 text-sky-600',
-  };
-  return (
-    <Card>
-      <CardContent className="p-4 flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-lg ${colors[accent]} flex items-center justify-center shrink-0`}>
-          <Icon className="w-5 h-5" />
-        </div>
-        <div className="min-w-0">
-          <div className="text-xs text-gray-500 truncate">{title}</div>
-          <div className="text-2xl font-bold text-gray-900 leading-tight">{value}</div>
-          {subtitle && <div className="text-xs text-gray-500">{subtitle}</div>}
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
-
-const borderColor = (status) => ({
-  met: '#10b981',
-  partial: '#f59e0b',
-  shared: '#0ea5e9',
-  not_applicable: '#9ca3af',
-}[status] || '#9ca3af');
-
-export default PCIComplianceDashboard;
+function VERSION_LABEL(s) {
+  return s?.version || 'PCI-DSS v4.0';
+}
