@@ -97,6 +97,14 @@ async def phase_c_domain_indexes_and_workers(app):
     except Exception as e:
         logger.warning(f"TGA scheduler start error: {e}")
 
+    # Report Scheduler — kullanıcı tanımlı periyodik rapor e-postaları.
+    try:
+        from workers.report_scheduler_worker import start as _start_report_sched
+        if _start_report_sched():
+            logger.info("Report scheduler worker started")
+    except Exception as e:
+        logger.warning(f"Report scheduler worker start error: {e}")
+
     # Marketplace indexes + product seed
     try:
         from core.subscriptions import ensure_indexes as _ms_indexes

@@ -9,8 +9,11 @@ import os
 import random
 import smtplib
 from datetime import datetime
+from email.mime.application import MIMEApplication
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email import encoders
 
 
 class EmailService:
@@ -189,20 +192,52 @@ class EmailService:
         </html>
         """
 
-    def _send_email_smtp(self, to_email: str, subject: str, html_content: str, text_content: str) -> bool:
-        """Send email via AWS SES SMTP"""
-        try:
-            # Create message
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = subject
-            msg['From'] = f"{self.sender_name} <{self.sender_email}>"
-            msg['To'] = to_email
+    def _send_email_smtp(
+        self,
+        to_email: str,
+        subject: str,
+        html_content: str,
+        text_content: str,
+        attachments: list | None = None,
+    ) -> bool:
+        """Send email via AWS SES SMTP.
 
-            # Add both plain text and HTML versions
-            part1 = MIMEText(text_content, 'plain', 'utf-8')
-            part2 = MIMEText(html_content, 'html', 'utf-8')
-            msg.attach(part1)
-            msg.attach(part2)
+        attachments: optional list of (filename: str, mime_type: str, content_bytes: bytes).
+        """
+        try:
+            # If attachments are present, use mixed root with alternative inside
+            if attachments:
+                msg = MIMEMultipart('mixed')
+                msg['Subject'] = subject
+                msg['From'] = f"{self.sender_name} <{self.sender_email}>"
+                msg['To'] = to_email
+                alt = MIMEMultipart('alternative')
+                alt.attach(MIMEText(text_content, 'plain', 'utf-8'))
+                alt.attach(MIMEText(html_content, 'html', 'utf-8'))
+                msg.attach(alt)
+                for filename, mime_type, content in attachments:
+                    try:
+                        if mime_type and mime_type.lower().startswith('application/pdf'):
+                            part = MIMEApplication(content, _subtype='pdf')
+                        elif mime_type and mime_type.lower().startswith('text/'):
+                            part = MIMEText(content.decode('utf-8', errors='replace'),
+                                            mime_type.split('/', 1)[1], 'utf-8')
+                        else:
+                            maintype, _, subtype = (mime_type or 'application/octet-stream').partition('/')
+                            part = MIMEBase(maintype or 'application', subtype or 'octet-stream')
+                            part.set_payload(content)
+                            encoders.encode_base64(part)
+                        part.add_header('Content-Disposition', 'attachment', filename=filename)
+                        msg.attach(part)
+                    except Exception as _ae:
+                        logger.warning(f"attachment {filename} skipped: {_ae}")
+            else:
+                msg = MIMEMultipart('alternative')
+                msg['Subject'] = subject
+                msg['From'] = f"{self.sender_name} <{self.sender_email}>"
+                msg['To'] = to_email
+                msg.attach(MIMEText(text_content, 'plain', 'utf-8'))
+                msg.attach(MIMEText(html_content, 'html', 'utf-8'))
 
             # Connect to SMTP server
             server = smtplib.SMTP(self.smtp_host, self.smtp_port)

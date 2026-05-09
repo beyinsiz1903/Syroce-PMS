@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -18,10 +17,13 @@ import {
   Tooltip, TooltipContent, TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { confirmDialog } from '@/lib/dialogs';
+import { PageHeader } from "@/components/ui/page-header";
+import { KpiCard } from "@/components/ui/kpi-card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Calendar, Clock, Mail, Plus, Play, Pause, Trash2, Edit,
   Send, RefreshCw, AlertTriangle, CheckCircle, XCircle,
-  FileText, BarChart3, Loader2, RotateCcw, Eye,
+  FileText, BarChart3, Loader2, RotateCcw, Eye, ScrollText, Info,
 } from "lucide-react";
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || "";
@@ -33,15 +35,16 @@ const headers = () => ({
 const FREQ_LABELS = { daily: "Günlük", weekly: "Haftalık", monthly: "Aylık" };
 const FORMAT_LABELS = { pdf: "PDF", csv: "CSV", link: "Link" };
 const DAY_LABELS = {
-  monday: "Pazartesi", tuesday: "Sali", wednesday: "Carsamba",
-  thursday: "Persembe", friday: "Cuma", saturday: "Cumartesi", sunday: "Pazar",
+  monday: "Pazartesi", tuesday: "Salı", wednesday: "Çarşamba",
+  thursday: "Perşembe", friday: "Cuma", saturday: "Cumartesi", sunday: "Pazar",
 };
-const STATUS_MAP = {
-  sent: { label: "Gonderildi", variant: "default", icon: CheckCircle, color: "text-green-600" },
-  failed: { label: "Basarisiz", variant: "destructive", icon: XCircle, color: "text-red-600" },
-  partial: { label: "Kismi", variant: "secondary", icon: AlertTriangle, color: "text-yellow-600" },
-  processing: { label: "Isleniyor", variant: "outline", icon: Loader2, color: "text-blue-600" },
-  retrying: { label: "Tekrar Deneniyor", variant: "outline", icon: RotateCcw, color: "text-amber-600" },
+const STATUS_INTENT = {
+  sent:       { label: "Gönderildi",      intent: "success", icon: CheckCircle },
+  failed:     { label: "Başarısız",       intent: "danger",  icon: XCircle },
+  partial:    { label: "Kısmi",           intent: "warning", icon: AlertTriangle },
+  processing: { label: "İşleniyor",       intent: "info",    icon: Loader2 },
+  retrying:   { label: "Tekrar Deneniyor", intent: "warning", icon: RotateCcw },
+  mock:       { label: "Mock (SMTP yok)", intent: "neutral", icon: Info },
 };
 
 const EMPTY_FORM = {
@@ -50,7 +53,7 @@ const EMPTY_FORM = {
   day_of_month: 1, include_charts: true, notes: "", date_range: "auto",
 };
 
-export default function ReportScheduler({ user, tenant, onLogout }) {
+export default function ReportScheduler() {
   const [schedules, setSchedules] = useState([]);
   const [history, setHistory] = useState([]);
   const [reportTypes, setReportTypes] = useState([]);
@@ -68,6 +71,8 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
   const [detailEntry, setDetailEntry] = useState(null);
 
   const [historyFilter, setHistoryFilter] = useState("all");
+
+  const pollRef = useRef(null);
 
   const api = useCallback(async (path, opts = {}) => {
     const res = await fetch(BACKEND + path, { headers: headers(), ...opts });
@@ -97,7 +102,32 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
     }
   }, [api]);
 
+  // Sessiz refresh: polling sırasında loader spinner çıkmaz
+  const refreshSilent = useCallback(async () => {
+    try {
+      const [sData, hData] = await Promise.all([
+        api("/api/report-scheduler/schedules"),
+        api("/api/report-scheduler/history?limit=100"),
+      ]);
+      setSchedules(sData.schedules || []);
+      setHistory(hData.history || []);
+    } catch {/* swallow polling errors */}
+  }, [api]);
+
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Processing/retrying olan kayıt varsa 4 sn'de bir polling
+  useEffect(() => {
+    const hasInflight = history.some(h => h.status === "processing" || h.status === "retrying");
+    if (hasInflight) {
+      pollRef.current = setInterval(refreshSilent, 4000);
+      return () => clearInterval(pollRef.current);
+    }
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, [history, refreshSilent]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -123,6 +153,15 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
     setModalOpen(true);
   };
 
+  // Modal kapanınca formu sıfırla — eski "Düzenle" değerleri "Yeni" tıklayınca taşmasın.
+  const handleModalChange = (open) => {
+    setModalOpen(open);
+    if (!open) {
+      setEditingId(null);
+      setForm(EMPTY_FORM);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -142,7 +181,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
           method: "POST", body: JSON.stringify(payload),
         });
       }
-      setModalOpen(false);
+      handleModalChange(false);
       loadData();
     } catch (e) {
       setError(e.message);
@@ -210,11 +249,18 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
     return rt ? rt.label : key;
   };
 
+  const formInvalid =
+    !form.name ||
+    !form.report_type ||
+    !form.recipients ||
+    (form.frequency === "weekly" && !form.day_of_week) ||
+    (form.frequency === "monthly" && (!form.day_of_month || form.day_of_month < 1 || form.day_of_month > 28));
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
-        <span className="ml-3 text-gray-500">Yükleniyor...</span>
+        <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
+        <span className="ml-3 text-slate-500 text-sm">Yükleniyor...</span>
       </div>
     );
   }
@@ -223,53 +269,34 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
     <>
     <div className="space-y-6 p-4 md:p-6 max-w-7xl mx-auto">
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
-          <span className="text-sm text-red-700">{error}</span>
-          <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setError(null)}>Kapat</Button>
+        <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+          <span className="text-sm text-rose-700 flex-1">{error}</span>
+          <Button variant="ghost" size="sm" onClick={() => setError(null)}>Kapat</Button>
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Rapor Zamanlayici</h1>
-          <p className="text-sm text-gray-500 mt-1">Otomatik rapor gonderim zamanlamalarini yönetin</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={loadData}>
-            <RefreshCw className="h-4 w-4 mr-1" /> Yenile
-          </Button>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="h-4 w-4 mr-1" /> Yeni Zamanlama
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        icon={ScrollText}
+        title="Rapor Zamanlayıcı"
+        subtitle="Otomatik rapor gönderim zamanlamalarını yönetin"
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={loadData}>
+              <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+            </Button>
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="h-4 w-4 mr-1.5" /> Yeni Zamanlama
+            </Button>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-indigo-600">{stats.total}</div>
-            <div className="text-xs text-gray-500 mt-1">Toplam Zamanlama</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-green-600">{stats.active}</div>
-            <div className="text-xs text-gray-500 mt-1">Aktif</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-blue-600">{stats.totalSent}</div>
-            <div className="text-xs text-gray-500 mt-1">Gonderilen</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-red-600">{stats.totalFailed}</div>
-            <div className="text-xs text-gray-500 mt-1">Basarisiz</div>
-          </CardContent>
-        </Card>
+        <KpiCard icon={Calendar}    label="Toplam Zamanlama" value={stats.total}      intent="info" />
+        <KpiCard icon={Play}        label="Aktif"            value={stats.active}     intent="success" />
+        <KpiCard icon={CheckCircle} label="Gönderilen"       value={stats.totalSent}  intent="success" />
+        <KpiCard icon={XCircle}     label="Başarısız"        value={stats.totalFailed} intent="danger" />
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -278,7 +305,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
             <Calendar className="h-4 w-4" /> Zamanlamalar
           </TabsTrigger>
           <TabsTrigger value="history" className="gap-1">
-            <FileText className="h-4 w-4" /> Gonderim Geçmişi
+            <FileText className="h-4 w-4" /> Gönderim Geçmişi
           </TabsTrigger>
         </TabsList>
 
@@ -286,11 +313,11 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
           {schedules.length === 0 ? (
             <Card>
               <CardContent className="p-12 text-center">
-                <Mail className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="font-semibold text-gray-700 mb-2">Henüz zamanlama yok</h3>
-                <p className="text-sm text-gray-500 mb-4">Yeni bir rapor zamanlama olusturarak baslayin</p>
+                <Mail className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+                <h3 className="font-semibold text-slate-700 mb-2">Henüz zamanlama yok</h3>
+                <p className="text-sm text-slate-500 mb-4">Yeni bir rapor zamanlaması oluşturarak başlayın</p>
                 <Button size="sm" onClick={openCreate}>
-                  <Plus className="h-4 w-4 mr-1" /> Olustur
+                  <Plus className="h-4 w-4 mr-1.5" /> Oluştur
                 </Button>
               </CardContent>
             </Card>
@@ -302,44 +329,44 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-semibold text-gray-900 truncate">{s.name}</h3>
-                          <Badge variant={s.is_active ? "default" : "secondary"}>
+                          <h3 className="font-semibold text-slate-900 truncate">{s.name}</h3>
+                          <StatusBadge intent={s.is_active ? "success" : "neutral"}>
                             {s.is_active ? "Aktif" : "Pasif"}
-                          </Badge>
-                          <Badge variant="outline">{FREQ_LABELS[s.frequency] || s.frequency}</Badge>
-                          <Badge variant="outline">{FORMAT_LABELS[s.format] || s.format}</Badge>
-                          {s.last_status && (
-                            <Badge variant={STATUS_MAP[s.last_status]?.variant || "outline"}>
-                              {STATUS_MAP[s.last_status]?.label || s.last_status}
-                            </Badge>
+                          </StatusBadge>
+                          <StatusBadge intent="info">{FREQ_LABELS[s.frequency] || s.frequency}</StatusBadge>
+                          <StatusBadge intent="neutral">{FORMAT_LABELS[s.format] || s.format}</StatusBadge>
+                          {s.last_status && STATUS_INTENT[s.last_status] && (
+                            <StatusBadge intent={STATUS_INTENT[s.last_status].intent} icon={STATUS_INTENT[s.last_status].icon}>
+                              {STATUS_INTENT[s.last_status].label}
+                            </StatusBadge>
                           )}
                         </div>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-gray-500">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-slate-500">
                           <span className="flex items-center gap-1">
                             <BarChart3 className="h-3 w-3" /> {getReportLabel(s.report_type)}
                           </span>
                           <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3" /> {s.send_time}
-                            {s.frequency === "weekly" && s.day_of_week && ` - ${DAY_LABELS[s.day_of_week] || s.day_of_week}`}
-                            {s.frequency === "monthly" && s.day_of_month && ` - Ayin ${s.day_of_month}. gunu`}
+                            {s.frequency === "weekly" && s.day_of_week && ` — ${DAY_LABELS[s.day_of_week] || s.day_of_week}`}
+                            {s.frequency === "monthly" && s.day_of_month && ` — Ayın ${s.day_of_month}. günü`}
                           </span>
                           <span className="flex items-center gap-1">
-                            <Mail className="h-3 w-3" /> {(s.recipients || []).length} alici
+                            <Mail className="h-3 w-3" /> {(s.recipients || []).length} alıcı
                           </span>
                           {s.total_sent > 0 && (
                             <span className="flex items-center gap-1">
-                              <CheckCircle className="h-3 w-3 text-green-500" /> {s.total_sent} gonderildi
+                              <CheckCircle className="h-3 w-3 text-emerald-500" /> {s.total_sent} gönderildi
                             </span>
                           )}
                           {s.total_failed > 0 && (
                             <span className="flex items-center gap-1">
-                              <XCircle className="h-3 w-3 text-red-500" /> {s.total_failed} başarısız
+                              <XCircle className="h-3 w-3 text-rose-500" /> {s.total_failed} başarısız
                             </span>
                           )}
                         </div>
                         {s.next_run && (
-                          <div className="text-xs text-indigo-600 mt-1">
-                            Sonraki gonderim: {new Date(s.next_run).toLocaleString("tr-TR")}
+                          <div className="text-xs text-slate-600 mt-1">
+                            Sonraki gönderim: {new Date(s.next_run).toLocaleString("tr-TR")}
                           </div>
                         )}
                       </div>
@@ -352,7 +379,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
                               {actionLoading[s._id] === "send" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>Simdi Gonder</TooltipContent>
+                          <TooltipContent>Şimdi Gönder</TooltipContent>
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -374,7 +401,7 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700"
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-600 hover:text-rose-700"
                               onClick={() => handleDelete(s._id)}
                               disabled={!!actionLoading[s._id]}>
                               <Trash2 className="h-4 w-4" />
@@ -394,14 +421,15 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
         <TabsContent value="history" className="mt-4 space-y-4">
           <div className="flex items-center gap-2">
             <Select value={historyFilter} onValueChange={setHistoryFilter}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-44">
                 <SelectValue placeholder="Filtrele" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tumunu Goster</SelectItem>
-                <SelectItem value="sent">Gonderildi</SelectItem>
-                <SelectItem value="failed">Basarisiz</SelectItem>
-                <SelectItem value="partial">Kismi</SelectItem>
+                <SelectItem value="all">Tümünü Göster</SelectItem>
+                <SelectItem value="sent">Gönderildi</SelectItem>
+                <SelectItem value="failed">Başarısız</SelectItem>
+                <SelectItem value="partial">Kısmi</SelectItem>
+                <SelectItem value="mock">Mock (SMTP yok)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -409,9 +437,9 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
           {filteredHistory.length === 0 ? (
             <Card>
               <CardContent className="p-12 text-center">
-                <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="font-semibold text-gray-700">Gönderim geçmişi boş</h3>
-                <p className="text-sm text-gray-500 mt-1">Zamanlamalar çalıştığında burada görünecek</p>
+                <FileText className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+                <h3 className="font-semibold text-slate-700">Gönderim geçmişi boş</h3>
+                <p className="text-sm text-slate-500 mt-1">Zamanlamalar çalıştığında burada görünecek</p>
               </CardContent>
             </Card>
           ) : (
@@ -424,30 +452,26 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
                       <TableHead>Rapor</TableHead>
                       <TableHead>Tarih</TableHead>
                       <TableHead>Durum</TableHead>
-                      <TableHead>Alicilar</TableHead>
+                      <TableHead>Alıcılar</TableHead>
                       <TableHead>Tetikleyen</TableHead>
                       <TableHead className="text-right">İşlem</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredHistory.map((h) => {
-                      const st = STATUS_MAP[h.status] || STATUS_MAP.processing;
-                      const StIcon = st.icon;
+                      const st = STATUS_INTENT[h.status] || STATUS_INTENT.processing;
                       return (
                         <TableRow key={h._id}>
                           <TableCell className="font-medium max-w-[160px] truncate">{h.schedule_name}</TableCell>
                           <TableCell className="text-sm">{h.report_label || getReportLabel(h.report_type)}</TableCell>
-                          <TableCell className="text-sm text-gray-500 whitespace-nowrap">
+                          <TableCell className="text-sm text-slate-500 whitespace-nowrap">
                             {h.sent_at ? new Date(h.sent_at).toLocaleString("tr-TR") : "-"}
                           </TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-1">
-                              <StIcon className={`h-4 w-4 ${st.color}`} />
-                              <span className="text-sm">{st.label}</span>
-                            </div>
+                            <StatusBadge intent={st.intent} icon={st.icon}>{st.label}</StatusBadge>
                           </TableCell>
                           <TableCell className="text-sm">{(h.recipients || []).length}</TableCell>
-                          <TableCell className="text-sm text-gray-500">{h.triggered_by === "system" ? "Otomatik" : h.triggered_by}</TableCell>
+                          <TableCell className="text-sm text-slate-500">{h.triggered_by === "system" ? "Otomatik" : h.triggered_by}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
                               <Tooltip>
@@ -483,20 +507,20 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+      <Dialog open={modalOpen} onOpenChange={handleModalChange}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingId ? "Zamanlama Düzenle" : "Yeni Zamanlama Olustur"}</DialogTitle>
+            <DialogTitle>{editingId ? "Zamanlama Düzenle" : "Yeni Zamanlama Oluştur"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-gray-700">Zamanlama Adi *</label>
+              <label className="text-sm font-medium text-slate-700">Zamanlama Adı *</label>
               <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="ornegin: Günlük Doluluk Raporu" className="mt-1" />
+                placeholder="örn: Günlük Doluluk Raporu" className="mt-1" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-medium text-gray-700">Rapor Tipi *</label>
+                <label className="text-sm font-medium text-slate-700">Rapor Tipi *</label>
                 <Select value={form.report_type} onValueChange={(v) => setForm((f) => ({ ...f, report_type: v }))}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="Rapor seçin" /></SelectTrigger>
                   <SelectContent>
@@ -507,20 +531,20 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
                 </Select>
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700">Format</label>
+                <label className="text-sm font-medium text-slate-700">Format</label>
                 <Select value={form.format} onValueChange={(v) => setForm((f) => ({ ...f, format: v }))}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="pdf">PDF</SelectItem>
-                    <SelectItem value="csv">CSV</SelectItem>
-                    <SelectItem value="link">Link</SelectItem>
+                    <SelectItem value="pdf">PDF (e-posta eki)</SelectItem>
+                    <SelectItem value="csv">CSV (e-posta eki)</SelectItem>
+                    <SelectItem value="link">Link (sadece bağlantı)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-medium text-gray-700">Frekans *</label>
+                <label className="text-sm font-medium text-slate-700">Frekans *</label>
                 <Select value={form.frequency} onValueChange={(v) => setForm((f) => ({ ...f, frequency: v }))}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -531,14 +555,14 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
                 </Select>
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700">Gonderim Saati</label>
+                <label className="text-sm font-medium text-slate-700">Gönderim Saati</label>
                 <Input type="time" value={form.send_time}
                   onChange={(e) => setForm((f) => ({ ...f, send_time: e.target.value }))} className="mt-1" />
               </div>
             </div>
             {form.frequency === "weekly" && (
               <div>
-                <label className="text-sm font-medium text-gray-700">Gonderim Gunu</label>
+                <label className="text-sm font-medium text-slate-700">Gönderim Günü *</label>
                 <Select value={form.day_of_week} onValueChange={(v) => setForm((f) => ({ ...f, day_of_week: v }))}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -551,28 +575,32 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
             )}
             {form.frequency === "monthly" && (
               <div>
-                <label className="text-sm font-medium text-gray-700">Ayin Gunu (1-28)</label>
+                <label className="text-sm font-medium text-slate-700">Ayın Günü (1-28) *</label>
                 <Input type="number" min={1} max={28} value={form.day_of_month}
                   onChange={(e) => setForm((f) => ({ ...f, day_of_month: Number(e.target.value) }))} className="mt-1" />
+                <p className="text-xs text-slate-500 mt-1 flex items-start gap-1">
+                  <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                  Şubat ayında 29-31 olmadığı için aralık 1-28 ile sınırlandırılmıştır.
+                </p>
               </div>
             )}
             <div>
-              <label className="text-sm font-medium text-gray-700">Alicilar (virgul ile ayirin) *</label>
+              <label className="text-sm font-medium text-slate-700">Alıcılar (virgül ile ayırın) *</label>
               <Input value={form.recipients}
                 onChange={(e) => setForm((f) => ({ ...f, recipients: e.target.value }))}
                 placeholder="ad@otel.com, yonetici@otel.com" className="mt-1" />
-              <p className="text-xs text-gray-400 mt-1">Birden fazla alici için virgul ile ayirin</p>
+              <p className="text-xs text-slate-500 mt-1">Birden fazla alıcı için virgül ile ayırın</p>
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700">Notlar</label>
+              <label className="text-sm font-medium text-slate-700">Notlar</label>
               <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
                 placeholder="Opsiyonel açıklama" className="mt-1" />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setModalOpen(false)}>İptal</Button>
-            <Button onClick={handleSave} disabled={saving || !form.name || !form.report_type || !form.recipients}>
-              {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Kaydediliyor</> : (editingId ? "Guncelle" : "Olustur")}
+            <Button variant="outline" onClick={() => handleModalChange(false)}>İptal</Button>
+            <Button onClick={handleSave} disabled={saving || formInvalid}>
+              {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" /> Kaydediliyor</> : (editingId ? "Güncelle" : "Oluştur")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -581,46 +609,62 @@ export default function ReportScheduler({ user, tenant, onLogout }) {
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Gonderim Detayi</DialogTitle>
+            <DialogTitle>Gönderim Detayı</DialogTitle>
           </DialogHeader>
           {detailEntry && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
-                <span className="text-gray-500">Zamanlama:</span>
+                <span className="text-slate-500">Zamanlama:</span>
                 <span className="font-medium">{detailEntry.schedule_name}</span>
-                <span className="text-gray-500">Rapor:</span>
+                <span className="text-slate-500">Rapor:</span>
                 <span>{detailEntry.report_label || detailEntry.report_type}</span>
-                <span className="text-gray-500">Tarih:</span>
+                <span className="text-slate-500">Tarih:</span>
                 <span>{detailEntry.sent_at ? new Date(detailEntry.sent_at).toLocaleString("tr-TR") : "-"}</span>
-                <span className="text-gray-500">Durum:</span>
+                <span className="text-slate-500">Durum:</span>
                 <span>
-                  <Badge variant={STATUS_MAP[detailEntry.status]?.variant || "outline"}>
-                    {STATUS_MAP[detailEntry.status]?.label || detailEntry.status}
-                  </Badge>
+                  {STATUS_INTENT[detailEntry.status] && (
+                    <StatusBadge intent={STATUS_INTENT[detailEntry.status].intent} icon={STATUS_INTENT[detailEntry.status].icon}>
+                      {STATUS_INTENT[detailEntry.status].label}
+                    </StatusBadge>
+                  )}
                 </span>
-                <span className="text-gray-500">Tetikleyen:</span>
+                <span className="text-slate-500">Tetikleyen:</span>
                 <span>{detailEntry.triggered_by === "system" ? "Otomatik" : detailEntry.triggered_by}</span>
-                <span className="text-gray-500">Alicilar:</span>
-                <span>{(detailEntry.recipients || []).join(", ")}</span>
+                <span className="text-slate-500">Alıcılar:</span>
+                <span className="break-all">{(detailEntry.recipients || []).join(", ")}</span>
               </div>
               {detailEntry.error_message && (
-                <div className="bg-red-50 border border-red-200 rounded p-3 text-red-700 text-xs">
-                  {detailEntry.error_message}
+                <div className="bg-rose-50 border border-rose-200 rounded p-3 text-rose-700 text-xs whitespace-pre-wrap break-words">
+                  {String(detailEntry.error_message)}
                 </div>
               )}
               {detailEntry.delivery_details && (
-                <div className="bg-gray-50 rounded p-3 text-xs space-y-1">
-                  <div>Gonderilen: {detailEntry.delivery_details.sent_count || 0}</div>
-                  <div>Basarisiz: {detailEntry.delivery_details.failed_count || 0}</div>
+                <div className="bg-slate-50 rounded p-3 text-xs space-y-1">
+                  <div>Gönderilen: {detailEntry.delivery_details.sent_count || 0}</div>
+                  <div>Başarısız: {detailEntry.delivery_details.failed_count || 0}</div>
+                  {detailEntry.delivery_details.mock_count > 0 && (
+                    <div className="text-slate-600">Mock (SMTP yok): {detailEntry.delivery_details.mock_count}</div>
+                  )}
+                  {detailEntry.delivery_details.attachment_count > 0 && (
+                    <div>Ek dosya sayısı: {detailEntry.delivery_details.attachment_count}</div>
+                  )}
                   {(detailEntry.delivery_details.failed_recipients || []).length > 0 && (
-                    <div className="text-red-600">
-                      Basarisiz alicilar: {detailEntry.delivery_details.failed_recipients.join(", ")}
+                    <div className="text-rose-600 break-all">
+                      Başarısız alıcılar: {detailEntry.delivery_details.failed_recipients.join(", ")}
+                    </div>
+                  )}
+                  {(detailEntry.delivery_details.report_summary || []).length > 0 && (
+                    <div className="pt-2 border-t border-slate-200">
+                      <div className="font-medium text-slate-700 mb-1">Rapor özeti:</div>
+                      {detailEntry.delivery_details.report_summary.map((r, i) => (
+                        <div key={i} className="text-slate-600">• {r.label}: {String(r.value)}</div>
+                      ))}
                     </div>
                   )}
                 </div>
               )}
               {detailEntry.retry_count > 0 && (
-                <div className="text-xs text-gray-500">Tekrar deneme sayısı: {detailEntry.retry_count}</div>
+                <div className="text-xs text-slate-500">Tekrar deneme sayısı: {detailEntry.retry_count}</div>
               )}
             </div>
           )}

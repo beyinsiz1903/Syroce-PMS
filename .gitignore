@@ -180,3 +180,10 @@ android-sdk/
 
 # Quick-ID local PII backups (never commit)
 quick-id/backups/
+
+# Celery beat sqlite/dat schedule files (runtime artifact)
+celerybeat-schedule
+celerybeat-schedule.*
+backend/celerybeat-schedule
+backend/celerybeat-schedule.*
+
