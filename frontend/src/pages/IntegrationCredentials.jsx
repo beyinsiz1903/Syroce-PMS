@@ -10,16 +10,18 @@ import { confirmDialog } from '@/lib/dialogs';
 import {
   KeyRound, Shield, Eye, EyeOff, RefreshCw, Trash2, ExternalLink,
   CheckCircle2, XCircle, Save, Lock, Cloud, Bot, Mail, Activity, Database, Plug,
+  CreditCard,
 } from "lucide-react";
 
 const CATEGORY_META = {
-  ai:             { label: "AI & LLM",            icon: Bot,      color: "from-indigo-500/10 to-indigo-500/10", border: "border-indigo-500/30" },
-  email:          { label: "E-posta",             icon: Mail,     color: "from-blue-500/10 to-cyan-500/10",     border: "border-blue-500/30" },
-  monitoring:    { label: "İzleme & Uyarı",      icon: Activity, color: "from-amber-500/10 to-amber-500/10",  border: "border-amber-500/30" },
-  infrastructure:{ label: "Altyapı",              icon: Database, color: "from-slate-500/10 to-slate-700/10",   border: "border-slate-500/30" },
-  integrations:  { label: "3. Parti Servisler",   icon: Plug,     color: "from-emerald-500/10 to-teal-500/10",  border: "border-emerald-500/30" },
-  aws:           { label: "AWS & KMS",            icon: Cloud,    color: "from-amber-500/10 to-red-500/10",    border: "border-amber-500/30" },
-  capx:          { label: "CapX B2B Network",     icon: Plug,     color: "from-emerald-500/10 to-green-500/10", border: "border-emerald-500/30" },
+  ai:             { label: "AI & LLM",            icon: Bot,        color: "from-indigo-500/10 to-indigo-500/10", border: "border-indigo-500/30" },
+  email:          { label: "E-posta",             icon: Mail,       color: "from-blue-500/10 to-cyan-500/10",     border: "border-blue-500/30" },
+  monitoring:     { label: "İzleme & Uyarı",      icon: Activity,   color: "from-amber-500/10 to-amber-500/10",   border: "border-amber-500/30" },
+  infrastructure: { label: "Altyapı",              icon: Database,   color: "from-slate-500/10 to-slate-700/10",   border: "border-slate-500/30" },
+  integrations:   { label: "3. Parti Servisler",   icon: Plug,       color: "from-emerald-500/10 to-teal-500/10",  border: "border-emerald-500/30" },
+  payment:        { label: "Ödeme",                icon: CreditCard, color: "from-rose-500/10 to-pink-500/10",     border: "border-rose-500/30" },
+  aws:            { label: "AWS & KMS",            icon: Cloud,      color: "from-amber-500/10 to-red-500/10",     border: "border-amber-500/30" },
+  capx:           { label: "CapX B2B Network",     icon: Plug,       color: "from-emerald-500/10 to-green-500/10", border: "border-emerald-500/30" },
 };
 
 export default function IntegrationCredentials({ user, tenant, onLogout }) {
@@ -28,12 +30,13 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
   const [inputs, setInputs] = useState({});
   const [revealed, setRevealed] = useState({});
   const [saving, setSaving] = useState({});
+  const [highlightKey, setHighlightKey] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get("/admin/integration-credentials/catalog");
-      setItems(data.items || []);
+      const resp = await axios.get("/admin/integration-credentials/catalog");
+      setItems(resp.data.items || []);
     } catch (e) {
       toast.error("Anahtar listesi yüklenemedi: " + (e?.response?.data?.detail || e.message));
     } finally {
@@ -42,6 +45,32 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Overview ekranından "#OPENAI_API_KEY" hash ile geliniyorsa
+  // ilgili karta scroll + 2sn highlight uygula. items yüklendikten sonra çalışır.
+  useEffect(() => {
+    if (loading || items.length === 0) return;
+    const hash = (typeof window !== "undefined" && window.location.hash) || "";
+    if (!hash) return;
+    const targetKey = decodeURIComponent(hash.replace(/^#/, "")).trim();
+    if (!targetKey) return;
+    const exists = items.some((i) => i.key === targetKey);
+    if (!exists) return;
+
+    let timeoutId = null;
+    const rafId = window.requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-testid="cred-card-${CSS.escape(targetKey)}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightKey(targetKey);
+        timeoutId = window.setTimeout(() => setHighlightKey(null), 2200);
+      }
+    });
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [loading, items]);
 
   const save = async (key) => {
     const value = (inputs[key] || "").trim();
@@ -127,7 +156,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
           </CardContent>
         </Card>
 
-        {/* Stats */}
+        {/* Stats — light-theme okunabilir kontrast (önceki text-emerald-300/red-300 dark theme artığıydı, beyaz arka planda silikleşiyordu) */}
         <div className="grid grid-cols-3 gap-4">
           <Card>
             <CardContent className="pt-6 flex items-center justify-between">
@@ -135,25 +164,25 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
                 <p className="text-xs text-muted-foreground">Toplam</p>
                 <p className="text-2xl font-semibold">{stats.total}</p>
               </div>
-              <KeyRound className="w-8 h-8 text-muted-foreground/40" />
+              <KeyRound className="w-8 h-8 text-muted-foreground/40" aria-hidden="true" />
             </CardContent>
           </Card>
-          <Card className="border-emerald-500/20 bg-emerald-500/5">
+          <Card className="border-emerald-200 bg-emerald-50">
             <CardContent className="pt-6 flex items-center justify-between">
               <div>
-                <p className="text-xs text-emerald-400/80">Tanımlı</p>
-                <p className="text-2xl font-semibold text-emerald-300">{stats.set}</p>
+                <p className="text-xs text-emerald-700">Tanımlı</p>
+                <p className="text-2xl font-semibold text-emerald-700">{stats.set}</p>
               </div>
-              <CheckCircle2 className="w-8 h-8 text-emerald-500/40" />
+              <CheckCircle2 className="w-8 h-8 text-emerald-500" aria-hidden="true" />
             </CardContent>
           </Card>
-          <Card className="border-red-500/20 bg-red-500/5">
+          <Card className="border-rose-200 bg-rose-50">
             <CardContent className="pt-6 flex items-center justify-between">
               <div>
-                <p className="text-xs text-red-400/80">Eksik</p>
-                <p className="text-2xl font-semibold text-red-300">{stats.missing}</p>
+                <p className="text-xs text-rose-700">Eksik</p>
+                <p className="text-2xl font-semibold text-rose-700">{stats.missing}</p>
               </div>
-              <XCircle className="w-8 h-8 text-red-500/40" />
+              <XCircle className="w-8 h-8 text-rose-500" aria-hidden="true" />
             </CardContent>
           </Card>
         </div>
@@ -175,19 +204,28 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
 
               <div className="grid gap-3">
                 {list.map((cred) => (
-                  <Card key={cred.key} data-testid={`cred-card-${cred.key}`}>
+                  <Card
+                    key={cred.key}
+                    id={`cred-${cred.key}`}
+                    data-testid={`cred-card-${cred.key}`}
+                    className={
+                      highlightKey === cred.key
+                        ? "ring-2 ring-amber-400 ring-offset-2 transition-shadow"
+                        : "transition-shadow"
+                    }
+                  >
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <CardTitle className="text-base">{cred.name}</CardTitle>
                             {cred.is_set ? (
-                              <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 border">
-                                <CheckCircle2 className="w-3 h-3 mr-1" /> Tanımlı
+                              <Badge className="bg-emerald-50 text-emerald-700 border-emerald-300 border">
+                                <CheckCircle2 className="w-3 h-3 mr-1" aria-hidden="true" /> Tanımlı
                               </Badge>
                             ) : (
-                              <Badge className="bg-red-500/10 text-red-400 border-red-500/30 border">
-                                <XCircle className="w-3 h-3 mr-1" /> Eksik
+                              <Badge className="bg-rose-50 text-rose-700 border-rose-300 border">
+                                <XCircle className="w-3 h-3 mr-1" aria-hidden="true" /> Eksik
                               </Badge>
                             )}
                             {cred.source === "env" && (
@@ -202,7 +240,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
                             )}
                           </div>
                           <p className="text-xs text-muted-foreground mt-1">{cred.description}</p>
-                          <code className="inline-block mt-2 text-[11px] px-2 py-0.5 rounded bg-slate-800/50 border border-slate-700/50">
+                          <code className="inline-block mt-2 text-[11px] px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 font-mono">
                             {cred.key}
                           </code>
                         </div>
@@ -217,9 +255,9 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
                     </CardHeader>
                     <CardContent className="pt-0 space-y-3">
                       {cred.masked_value && (
-                        <div className="text-xs text-muted-foreground flex items-center gap-2">
+                        <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
                           <span className="opacity-60">Aktif değer:</span>
-                          <code className="px-2 py-0.5 rounded bg-slate-800/60">{cred.masked_value}</code>
+                          <code className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 font-mono">{cred.masked_value}</code>
                           {cred.updated_at && (
                             <span className="ml-auto opacity-60">
                               {new Date(cred.updated_at).toLocaleString("tr-TR")}
