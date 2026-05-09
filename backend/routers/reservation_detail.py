@@ -442,6 +442,13 @@ async def record_payment(
         "amount": data.amount, "method": data.method, "payment_type": data.payment_type,
     })
 
+    # Acente webhook: rezervasyon güncellendi (ödeme alındı → bakiye değişti)
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(
+        tid, booking_id, "payment_added",
+        {"payment_id": payment["id"], "amount": data.amount, "method": data.method, "payment_type": data.payment_type},
+    )
+
     payment.pop("_id", None)
     return {"success": True, "payment": payment}
 
@@ -768,6 +775,13 @@ async def room_change(
         "reason": data.reason,
     })
 
+    # Acente webhook: rezervasyon güncellendi (oda değişti)
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(
+        tid, booking_id, "room_moved",
+        {"new_room_id": data.new_room_id, "new_room_number": new_room.get("room_number"), "reason": data.reason},
+    )
+
     move_record.pop("_id", None)
     return {"success": True, "move_record": move_record}
 
@@ -819,6 +833,13 @@ async def early_checkin(
         "extra_charge": data.extra_charge,
     })
 
+    # Acente webhook: rezervasyon güncellendi (erken check-in yapıldı)
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(
+        tid, booking_id, "checked_in",
+        {"early_checkin": True, "checkin_time": data.checkin_time or result.get("checked_in_at"), "extra_charge": data.extra_charge},
+    )
+
     return {"success": True, "message": "Erken giriş yapıldı"}
 
 
@@ -860,6 +881,13 @@ async def late_checkout(
         "checkout_time": data.checkout_time,
         "extra_charge": data.extra_charge,
     })
+
+    # Acente webhook: rezervasyon güncellendi (geç çıkış kaydedildi)
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(
+        tid, booking_id, "late_checkout_approved",
+        {"checkout_time": data.checkout_time, "extra_charge": data.extra_charge},
+    )
 
     return {"success": True, "message": "Geç çıkış kaydedildi"}
 
@@ -980,6 +1008,13 @@ async def record_deposit(
         "amount": data.amount, "method": data.method,
     })
 
+    # Acente webhook: rezervasyon güncellendi (depozito alındı)
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(
+        tid, booking_id, "payment_added",
+        {"payment_id": payment["id"], "amount": data.amount, "method": data.method, "payment_type": "deposit"},
+    )
+
     deposit.pop("_id", None)
     return {"success": True, "deposit": deposit}
 
@@ -1022,6 +1057,13 @@ async def add_extra_charge_detail(
     await _log_activity(tid, booking_id, "extra_charge_added", current_user.name, {
         "description": data.description, "amount": total, "category": data.category,
     })
+
+    # Acente webhook: rezervasyon güncellendi (ek charge → toplam değişti)
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(
+        tid, booking_id, "charge_added",
+        {"charge_id": charge["id"], "amount": total, "category": data.category, "description": data.description},
+    )
 
     charge.pop("_id", None)
     return {"success": True, "charge": charge}
@@ -1612,6 +1654,8 @@ async def group_check_in_all(
 
     from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
 
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     checked_in = 0
     errors = []
     for bid in group.get("booking_ids", []):
@@ -1623,6 +1667,8 @@ async def group_check_in_all(
                 actor_name=current_user.name,
             )
             checked_in += 1
+            # Acente webhook: grup içinden tek tek emit (her booking ayrı agency olabilir)
+            schedule_emit_reservation_updated(tid, bid, "checked_in", {"group_id": group_id})
         except CheckInError as e:
             errors.append({"booking_id": bid, "error": str(e)})
 
@@ -1647,6 +1693,8 @@ async def group_check_out_all(
 
     from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
 
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+
     checked_out = 0
     errors = []
     for bid in group.get("booking_ids", []):
@@ -1659,6 +1707,8 @@ async def group_check_out_all(
                 force=True,  # Group checkout forces past balance blockers
             )
             checked_out += 1
+            # Acente webhook: grup içinden tek tek emit (her booking ayrı agency olabilir)
+            schedule_emit_reservation_updated(tid, bid, "checked_out", {"group_id": group_id})
         except CheckOutError as e:
             errors.append({"booking_id": bid, "error": str(e)})
 

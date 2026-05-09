@@ -571,6 +571,13 @@ async def post_charge_to_folio(
     if cache:
         cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category")
 
+    # Acente webhook: rezervasyon güncellendi (yeni charge → toplam değişti)
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(
+        current_user.tenant_id, folio['booking_id'], "charge_added",
+        {"charge_id": charge.id, "amount": total, "category": str(charge_data.charge_category)},
+    )
+
     return charge
 
 
@@ -651,6 +658,13 @@ async def post_payment_to_folio(
         # Kasa kayıt arızası (kart/banka) ödemeyi düşürmesin (loglanır)
         import logging as _lg
         _lg.getLogger(__name__).exception("cashier txn record failed")
+
+    # Acente webhook: rezervasyon güncellendi (ödeme alındı → bakiye değişti)
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(
+        current_user.tenant_id, folio['booking_id'], "payment_added",
+        {"payment_id": payment.id, "amount": float(payment.amount), "method": method_str},
+    )
 
     return payment
 
@@ -895,6 +909,14 @@ async def void_charge(
     if cache:
         cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category")
 
+    # Acente webhook: rezervasyon güncellendi (charge iptal → toplam değişti)
+    if charge.get('booking_id'):
+        from routers.webhook_retry_service import schedule_emit_reservation_updated
+        schedule_emit_reservation_updated(
+            current_user.tenant_id, charge['booking_id'], "charge_voided",
+            {"charge_id": charge_id, "amount": charge.get('total'), "reason": void_reason},
+        )
+
     return {"message": "Charge voided successfully"}
 
 
@@ -994,6 +1016,14 @@ async def void_payment(
         _lg.getLogger(__name__).exception("cashier refund record failed")
         await _rollback_void()
         raise HTTPException(status_code=500, detail=f"Kasa iade kaydı başarısız, iade geri alındı: {e}")
+
+    # Acente webhook: rezervasyon güncellendi (ödeme iade → bakiye değişti)
+    if payment.get('booking_id'):
+        from routers.webhook_retry_service import schedule_emit_reservation_updated
+        schedule_emit_reservation_updated(
+            current_user.tenant_id, payment['booking_id'], "payment_voided",
+            {"payment_id": payment_id, "amount": payment.get('amount'), "method": method_str, "reason": reason},
+        )
 
     return {
         "message": "Ödeme iade edildi",

@@ -169,6 +169,9 @@ async def api_check_in(req: CheckInRequest, current_user: User = Depends(get_cur
     result = await front_desk.check_in(current_user.tenant_id, req.booking_id, current_user.id, current_user.name, req.override_reason)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    # Fire reservation.updated to subscribed agency webhooks (non-blocking, GC-safe).
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(current_user.tenant_id, req.booking_id, "checked_in")
     return result
 
 @router.post("/checkout", tags=["front-desk"])
@@ -181,6 +184,9 @@ async def api_checkout(req: CheckoutRequest, current_user: User = Depends(get_cu
     # Folio finalization shifts revenue/payment buckets → drop dashboards.
     from domains.pms.night_audit.router import invalidate_finance_cache
     invalidate_finance_cache(current_user.tenant_id)
+    # Fire reservation.updated to subscribed agency webhooks (non-blocking, GC-safe).
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(current_user.tenant_id, req.booking_id, "checked_out")
     return result
 
 @router.get("/checkout-preview/{booking_id}", tags=["front-desk"])
@@ -195,6 +201,11 @@ async def api_room_move(req: RoomMoveRequest, current_user: User = Depends(get_c
     result = await front_desk.room_move(current_user.tenant_id, req.booking_id, req.new_room_id, req.reason, current_user.id, current_user.name)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(
+        current_user.tenant_id, req.booking_id, "room_moved",
+        {"new_room_id": req.new_room_id, "reason": req.reason},
+    )
     return result
 
 @router.post("/room-upgrade", tags=["front-desk"])
@@ -204,6 +215,11 @@ async def api_room_upgrade(req: RoomUpgradeRequest, current_user: User = Depends
     result = await front_desk.room_upgrade(current_user.tenant_id, req.booking_id, req.new_room_id, req.reason, req.rate_adjustment, current_user.id, current_user.name)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(
+        current_user.tenant_id, req.booking_id, "room_upgraded",
+        {"new_room_id": req.new_room_id, "rate_adjustment": req.rate_adjustment},
+    )
     return result
 
 @router.post("/walk-in", tags=["front-desk"])
@@ -284,6 +300,11 @@ async def api_late_checkout(req: LateCheckoutRequest, current_user: User = Depen
     result = await front_desk.request_late_checkout(current_user.tenant_id, req.booking_id, req.requested_time, req.charge, current_user.id)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(
+        current_user.tenant_id, req.booking_id, "late_checkout_approved",
+        {"requested_time": req.requested_time, "charge": req.charge},
+    )
     return result
 
 @router.post("/early-checkin", tags=["front-desk"])
@@ -294,6 +315,11 @@ async def api_early_checkin(req: EarlyCheckinRequest, current_user: User = Depen
     result = await front_desk.request_early_checkin(current_user.tenant_id, req.booking_id, req.requested_time, current_user.id)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result)
+    from routers.webhook_retry_service import schedule_emit_reservation_updated
+    schedule_emit_reservation_updated(
+        current_user.tenant_id, req.booking_id, "early_checkin_approved",
+        {"requested_time": req.requested_time},
+    )
     return result
 
 @router.get("/reservation-audit/{booking_id}", tags=["reservation"])

@@ -415,6 +415,107 @@ async def fire_webhooks_with_retry(
     return results
 
 
+# Module-level strong-reference set for fire-and-forget tasks.
+# Prevents asyncio garbage-collecting in-flight webhook deliveries
+# (event loop only weak-refs tasks). Tasks self-evict on completion.
+_pending_emit_tasks: set = set()
+
+
+def schedule_emit_reservation_updated(
+    tenant_id: str,
+    booking_id: str,
+    change: str,
+    extra: dict | None = None,
+) -> None:
+    """Sync, GC-safe scheduler for `emit_reservation_updated`.
+
+    Call this from request handlers — it creates the task, holds a strong
+    reference until completion, and never raises (logs internally).
+    """
+    try:
+        import asyncio as _asyncio
+        loop = _asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop (e.g. called from sync context) — skip silently.
+        logger.warning(
+            "schedule_emit_reservation_updated: no running loop (booking=%s change=%s)",
+            booking_id, change,
+        )
+        return
+    try:
+        task = loop.create_task(
+            emit_reservation_updated(tenant_id, booking_id, change, extra)
+        )
+        _pending_emit_tasks.add(task)
+        task.add_done_callback(_pending_emit_tasks.discard)
+    except Exception:
+        logger.exception(
+            "schedule_emit_reservation_updated failed (booking=%s change=%s)",
+            booking_id, change,
+        )
+
+
+async def emit_reservation_updated(
+    tenant_id: str,
+    booking_id: str,
+    change: str,
+    extra: dict | None = None,
+) -> None:
+    """PMS-side `reservation.updated` emitter.
+
+    Looks up the booking; if it has `agency_id`, fires `reservation.updated`
+    webhook to all subscribed agency endpoints with retry/DLQ semantics.
+
+    `change` describes the trigger (e.g. "checked_in", "checked_out",
+    "payment_added", "payment_voided", "charge_added", "charge_voided",
+    "late_checkout_approved", "early_checkin_approved", "room_moved",
+    "room_upgraded"). Failure is non-fatal — PMS flows must not break
+    if webhook delivery has issues (logged via deliver_webhook_with_retry).
+    """
+    try:
+        from core.database import db
+        booking = await db.bookings.find_one(
+            {"id": booking_id, "tenant_id": tenant_id},
+            {
+                "_id": 0, "id": 1, "agency_id": 1, "confirmation_code": 1,
+                "status": 1, "room_type": 1, "room_number": 1,
+                "check_in": 1, "check_out": 1, "guest_name": 1,
+                "total_amount": 1, "balance": 1, "checked_in_at": 1,
+                "checked_out_at": 1,
+            },
+        )
+        if not booking or not booking.get("agency_id"):
+            return  # not an agency booking → nothing to emit
+
+        payload = {
+            "reservation_id": booking.get("id"),
+            "confirmation_code": booking.get("confirmation_code", ""),
+            "status": booking.get("status", ""),
+            "change": change,
+            "room_type": booking.get("room_type", ""),
+            "room_number": booking.get("room_number", ""),
+            "check_in": booking.get("check_in", ""),
+            "check_out": booking.get("check_out", ""),
+            "guest_name": booking.get("guest_name", ""),
+            "total_amount": booking.get("total_amount"),
+            "balance": booking.get("balance"),
+            "checked_in_at": booking.get("checked_in_at"),
+            "checked_out_at": booking.get("checked_out_at"),
+            "updated_at": _now_iso(),
+        }
+        if extra:
+            payload.update(extra)
+
+        await fire_webhooks_with_retry(
+            tenant_id, booking["agency_id"], "reservation.updated", payload
+        )
+    except Exception:
+        logger.exception(
+            "emit_reservation_updated failed (tenant=%s booking=%s change=%s)",
+            tenant_id, booking_id, change,
+        )
+
+
 async def retry_dlq_item(dlq_id: str) -> dict[str, Any]:
     """Manually retry a DLQ item."""
     from core.tenant_db import get_system_db
