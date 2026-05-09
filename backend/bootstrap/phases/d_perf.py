@@ -138,6 +138,17 @@ async def _create_perf_indexes_inner():
         )
         await _raw_db.folios.create_index([("tenant_id", 1), ("booking_id", 1)], name="idx_folios_tenant_booking")
         await _raw_db.folios.create_index([("tenant_id", 1), ("status", 1), ("created_at", -1)], name="idx_folios_tenant_status_created")
+        # Konaklama Vergisi (KVB) idempotency: aynı folyoya iki yerden eşzamanlı
+        # posting çağrısı (manual + checkout auto_post) gelse bile DB seviyesinde
+        # tek satır kazanır. Bkz. routers/finance/konaklama_vergisi_core.py
+        try:
+            from routers.finance.konaklama_vergisi_core import ensure_posting_index
+            await ensure_posting_index()
+        except Exception as _kvb_idx_exc:  # pragma: no cover
+            import logging as _lg
+            _lg.getLogger(__name__).warning(
+                "KVB posting index ensure skipped: %s", _kvb_idx_exc,
+            )
         # KBS v2 atomik tekillik
         try:
             r1 = await _raw_db.kbs_reports.update_many(

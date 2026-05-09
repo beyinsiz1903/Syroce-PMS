@@ -9,8 +9,11 @@ from common.result import ServiceResult
 
 logger = logging.getLogger(__name__)
 
+# NOT: Konaklama vergisi oranı artık tek doğruluk kaynağı olarak
+# `routers.finance.konaklama_vergisi_core.get_accommodation_tax_rate`
+# fonksiyonundan çözülür. Bu modülde tax breakdown zaten `tax_breakdown`
+# alanlarından aggregate edilir; sabit tanım gerekli değildir.
 DEFAULT_VAT_RATE = 0.10
-ACCOMMODATION_TAX_RATE = 0.02
 
 
 class FinancialService:

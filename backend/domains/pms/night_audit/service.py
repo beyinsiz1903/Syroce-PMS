@@ -17,8 +17,12 @@ from domains.pms.night_audit.validations import validate_pre_audit
 logger = logging.getLogger(__name__)
 
 # Tax rates (Turkey)
+# DEFAULT_VAT_RATE: KDV varsayılanı (tenant override henüz desteklenmiyor).
+# Konaklama vergisi oranı artık SABİT DEĞİL — `_resolve_accommodation_tax_rate`
+# tenant'ın `city_tax_rules` config'ini okur. Aşağıdaki sabit yalnızca config
+# eksik veya devre dışı olduğunda fallback olarak kullanılır.
 DEFAULT_VAT_RATE = 0.10
-ACCOMMODATION_TAX_RATE = 0.02
+DEFAULT_ACCOMMODATION_TAX_RATE = 0.02
 
 
 class NightAuditCoreService:
@@ -208,6 +212,33 @@ class NightAuditCoreService:
         finally:
             await self._release_lock(ctx.tenant_id, bd)
 
+    # ── Tenant Tax Rate Resolver ───────────────────────────────────────
+    async def _resolve_accommodation_tax_rate(self, tenant_id: str) -> float:
+        """Tenant'ın `city_tax_rules` ayarından konaklama vergisi oranını
+        çöz; eksik/devre dışı ise fallback olarak yasal varsayılanı (%2) kullan.
+
+        Bu, hardcoded `0.02` değeri yerine tenant'a özel oranı uygulamayı
+        sağlar — KVB konfigürasyonu yapılmış oteller (örn. muafiyet/oran
+        farkı) için night audit doğru tutarı oluşturur.
+        """
+        try:
+            from routers.finance.konaklama_vergisi_core import (
+                get_accommodation_tax_rate,
+            )
+            # `get_accommodation_tax_rate` semantiği:
+            #   - Config yok       → DEFAULT (0.02)
+            #   - Config var/active → rate_percent / 100
+            #   - active=False     → 0.0 (tenant açıkça kapatmış)
+            # Tenant'ın açık kararına saygı duy; muafiyet için
+            # rate_percent=0 yazmalıdır.
+            return float(await get_accommodation_tax_rate(tenant_id))
+        except Exception as exc:
+            logger.warning(
+                "tax rate resolve failed for tenant=%s, falling back to %.4f: %s",
+                tenant_id, DEFAULT_ACCOMMODATION_TAX_RATE, exc,
+            )
+            return DEFAULT_ACCOMMODATION_TAX_RATE
+
     # ── Step: Post Room Charges ────────────────────────────────────────
     async def _post_room_charges(
         self, ctx: OperationContext, bd: str, audit_id: str,
@@ -218,6 +249,15 @@ class NightAuditCoreService:
         charges_posted = 0
         total_revenue = 0.0
         total_tax = 0.0
+
+        # Tek seferde tenant tax oranını çöz — döngü içinde DB hit olmasın.
+        accommodation_tax_rate = await self._resolve_accommodation_tax_rate(
+            ctx.tenant_id
+        )
+        logger.info(
+            "night_audit: tenant=%s accommodation_tax_rate=%.4f",
+            ctx.tenant_id, accommodation_tax_rate,
+        )
 
         cursor = self._db.bookings.find({
             "tenant_id": ctx.tenant_id,
@@ -237,7 +277,7 @@ class NightAuditCoreService:
                 continue
 
             vat = round(room_rate * DEFAULT_VAT_RATE, 2)
-            accommodation_tax = round(room_rate * ACCOMMODATION_TAX_RATE, 2)
+            accommodation_tax = round(room_rate * accommodation_tax_rate, 2)
             total_charge = round(room_rate + vat + accommodation_tax, 2)
 
             if not dry_run:

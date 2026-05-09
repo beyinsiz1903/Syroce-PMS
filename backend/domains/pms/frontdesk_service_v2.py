@@ -258,6 +258,66 @@ class FrontdeskServiceV2:
                 "INVALID_STATUS",
             )
 
+        # ── Auto-post Konaklama Vergisi (Türkiye) ──────────────────────
+        # Tenant config'inde `auto_post=True` ise checkout sırasında, balance
+        # kontrolünden ÖNCE konaklama vergisini folio'ya idempotent olarak
+        # düş. Böylece outstanding-balance kontrolü doğru tutarı görür ve
+        # tahsil edilmemiş vergi unutulmaz. Hata olursa checkout'u
+        # bloklamaz — KVB posting'i bağımsız olarak tekrar denenebilir.
+        try:
+            from routers.finance.konaklama_vergisi_core import (
+                load_tax_config,
+                post_konaklama_vergisi_to_folio,
+            )
+            kvb_cfg = await load_tax_config(ctx.tenant_id)
+            if kvb_cfg.get("active", True) and kvb_cfg.get("auto_post"):
+                open_folios = await self._db.folios.find(
+                    {
+                        "booking_id": booking_id,
+                        "tenant_id": ctx.tenant_id,
+                        "status": "open",
+                    },
+                    {"_id": 0, "id": 1, "folio_type": 1},
+                ).to_list(100)
+                for f in open_folios:
+                    # Sadece misafir folyosuna (varsa) — incidental/extra
+                    # folyolarına konaklama vergisi düşmez.
+                    if f.get("folio_type") and f["folio_type"] not in (
+                        "guest", "primary", "main",
+                    ):
+                        continue
+                    posting = await post_konaklama_vergisi_to_folio(
+                        tenant_id=ctx.tenant_id,
+                        folio_id=f["id"],
+                        posted_by=f"checkout:{ctx.actor_id}",
+                        raise_on_error=False,
+                    )
+                    if posting.get("posted"):
+                        try:
+                            from core.helpers import create_audit_log
+                            await create_audit_log(
+                                tenant_id=ctx.tenant_id,
+                                user=None,
+                                action="POST_KONAKLAMA_VERGISI",
+                                entity_type="folio_charge",
+                                entity_id=posting.get("charge_id"),
+                                changes={
+                                    "folio_id": f["id"],
+                                    "base": posting.get("base_amount"),
+                                    "tax": posting.get("tax_amount"),
+                                    "rate": posting.get("rate_percent"),
+                                    "trigger": "checkout_auto_post",
+                                    "actor_id": ctx.actor_id,
+                                },
+                            )
+                        except Exception:
+                            pass
+        except Exception as exc:
+            logger.warning(
+                "konaklama_vergisi auto_post failed for booking=%s: %s",
+                booking_id, exc,
+            )
+
         # Folio balance check
         folios = await self._db.folios.find(
             {"booking_id": booking_id, "tenant_id": ctx.tenant_id, "status": "open"},

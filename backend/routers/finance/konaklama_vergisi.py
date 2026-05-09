@@ -28,11 +28,13 @@ from core.security import get_current_user
 from models.enums import ChargeCategory
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v98 DW
+from routers.finance.konaklama_vergisi_core import (
+    DEFAULT_RATE_PERCENT,
+    post_konaklama_vergisi_to_folio,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/finance/konaklama-vergisi", tags=["konaklama-vergisi"])
-
-DEFAULT_RATE_PERCENT = 2.0
 
 
 class KonaklamaVergisiConfig(BaseModel):
@@ -537,93 +539,50 @@ async def post_to_folio(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v101 DW
 ) -> dict[str, Any]:
-    """Bir folio için konaklama vergisi satırını idempotent olarak ekle."""
-    folio = await db.folios.find_one(
-        {"id": folio_id, "tenant_id": current_user.tenant_id}
-    )
-    if not folio:
-        raise HTTPException(status_code=404, detail="Folio not found")
+    """Bir folio için konaklama vergisi satırını idempotent olarak ekle.
 
-    existing = await db.accommodation_tax_postings.find_one(
-        {"tenant_id": current_user.tenant_id, "folio_id": folio_id}
-    )
-    if existing:
-        return {"posted": False, "already_posted": True, "posting_id": existing["id"]}
-
-    cfg = await _load_config(current_user.tenant_id)
-    if not cfg.get("active", True):
-        raise HTTPException(status_code=400, detail="Konaklama Vergisi devre dışı")
-    rate = float(cfg.get("rate_percent", DEFAULT_RATE_PERCENT))
-
-    room_charges = await db.folio_charges.find(
-        {
-            "tenant_id": current_user.tenant_id,
-            "folio_id": folio_id,
-            "charge_category": ChargeCategory.ROOM.value,
-            "voided": {"$ne": True},
-        }
-    ).to_list(length=None)
-    base = round(sum(c.get("amount", 0.0) for c in room_charges), 2)
-    if base <= 0:
-        raise HTTPException(status_code=400, detail="Vergilenecek oda satırı yok")
-    tax_amount = round(base * (rate / 100.0), 2)
-
-    charge_id = str(uuid.uuid4())
-    now_iso = datetime.now(UTC).isoformat()
-    charge_doc = {
-        "id": charge_id,
-        "tenant_id": current_user.tenant_id,
-        "folio_id": folio_id,
-        "booking_id": folio.get("booking_id"),
-        "charge_category": ChargeCategory.CITY_TAX.value,
-        "description": f"Konaklama Vergisi (%{rate})",
-        "unit_price": tax_amount,
-        "quantity": 1.0,
-        "amount": tax_amount,
-        "tax_amount": 0.0,
-        "total": tax_amount,
-        "date": now_iso,
-        "posted_by": current_user.id,
-        "voided": False,
-        "konaklama_vergisi": True,
-    }
-    await db.folio_charges.insert_one(charge_doc)
-
-    posting_id = str(uuid.uuid4())
-    await db.accommodation_tax_postings.insert_one(
-        {
-            "id": posting_id,
-            "tenant_id": current_user.tenant_id,
-            "folio_id": folio_id,
-            "charge_id": charge_id,
-            "base_amount": base,
-            "rate_percent": rate,
-            "tax_amount": tax_amount,
-            "posted_at": now_iso,
-            "posted_by": current_user.id,
-        }
-    )
-
-    new_balance = (folio.get("balance") or 0.0) + tax_amount
-    await db.folios.update_one(
-        {"id": folio_id}, {"$set": {"balance": round(new_balance, 2)}}
-    )
-
-    await create_audit_log(
+    Asıl iş `konaklama_vergisi_core.post_konaklama_vergisi_to_folio` içinde;
+    bu endpoint sadece HTTP/RBAC katmanı + audit log üretiyor.
+    """
+    result = await post_konaklama_vergisi_to_folio(
         tenant_id=current_user.tenant_id,
-        user=current_user,
-        action="POST_KONAKLAMA_VERGISI",
-        entity_type="folio_charge",
-        entity_id=charge_id,
-        changes={"folio_id": folio_id, "base": base, "tax": tax_amount, "rate": rate},
+        folio_id=folio_id,
+        posted_by=current_user.id,
+        raise_on_error=False,
     )
+    if not result.get("ok"):
+        reason = result.get("reason")
+        if reason == "folio_not_found":
+            raise HTTPException(status_code=404, detail="Folio not found")
+        if reason == "inactive":
+            raise HTTPException(status_code=400, detail="Konaklama Vergisi devre dışı")
+        if reason == "no_room_charges":
+            raise HTTPException(status_code=400, detail="Vergilenecek oda satırı yok")
+        raise HTTPException(status_code=400, detail=reason or "Posting failed")
+
+    if result.get("posted"):
+        await create_audit_log(
+            tenant_id=current_user.tenant_id,
+            user=current_user,
+            action="POST_KONAKLAMA_VERGISI",
+            entity_type="folio_charge",
+            entity_id=result.get("charge_id"),
+            changes={
+                "folio_id": folio_id,
+                "base": result.get("base_amount"),
+                "tax": result.get("tax_amount"),
+                "rate": result.get("rate_percent"),
+                "trigger": "manual",
+            },
+        )
     return {
-        "posted": True,
-        "posting_id": posting_id,
-        "charge_id": charge_id,
-        "base_amount": base,
-        "tax_amount": tax_amount,
-        "rate_percent": rate,
+        "posted": bool(result.get("posted")),
+        "already_posted": bool(result.get("already_posted")),
+        "posting_id": result.get("posting_id"),
+        "charge_id": result.get("charge_id"),
+        "base_amount": result.get("base_amount"),
+        "tax_amount": result.get("tax_amount"),
+        "rate_percent": result.get("rate_percent"),
     }
 
 
