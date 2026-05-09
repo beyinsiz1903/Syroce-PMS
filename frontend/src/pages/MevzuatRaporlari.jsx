@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 import {
   AlertTriangle, Award, BarChart3, CheckCircle2, ClipboardCheck,
-  Download, FileText, Loader2, RefreshCw, ScrollText, Save, Send, ShieldCheck, Wifi, WifiOff,
+  Download, FileText, Loader2, RefreshCw, ScrollText, Save, Send,
+  Settings, ShieldCheck, Wifi, WifiOff,
 } from "lucide-react";
+
+import { PageHeader } from "@/components/ui/page-header";
+import { KpiCard } from "@/components/ui/kpi-card";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Button } from "@/components/ui/button";
 
 const TABS = [
   { key: "tuik", label: "TÜİK Aylık Anketi", icon: BarChart3 },
@@ -25,13 +32,27 @@ function downloadCSV(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
-export default function MevzuatRaporlari({ user, tenant, onLogout }) {
+function RefreshButton({ onClick, loading, label = "Yenile" }) {
+  return (
+    <Button variant="outline" size="sm" onClick={onClick} disabled={loading}>
+      {loading
+        ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+        : <RefreshCw className="w-4 h-4 mr-1.5" />}
+      {label}
+    </Button>
+  );
+}
+
+export default function MevzuatRaporlari({ user, tenant }) {
+  const navigate = useNavigate();
   const [tab, setTab] = useState("tuik");
+  const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "super_admin";
 
   // ── TÜİK
   const today = useMemo(() => new Date(), []);
-  const [year, setYear] = useState(today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() === 0 ? 12 : today.getMonth());
+  // Cari ay (1-12). Ocak değilse year aynı; Ocak'ta da today.getMonth()=0 → ay 1, yıl aynı.
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth() + 1);
   const [tuik, setTuik] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -40,7 +61,11 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
     try {
       const { data } = await axios.get("/regulatory/tuik/monthly", { params: { year, month } });
       setTuik(data);
-    } catch (e) { toast.error("Rapor yüklenemedi"); } finally { setLoading(false); }
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 403) toast.error("Bu raporu görme yetkiniz yok (yönetici izni gerekir).");
+      else toast.error("Rapor yüklenemedi");
+    } finally { setLoading(false); }
   };
 
   const exportTuikCSV = () => {
@@ -55,6 +80,7 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
       ["Toplam Misafir", tuik.stays.guest_count],
       ["Yerli Kişi-Gece", tuik.stays.person_nights_domestic],
       ["Yabancı Kişi-Gece", tuik.stays.person_nights_foreign],
+      ["Uyruk Belirsiz Kişi-Gece", tuik.stays.person_nights_unspecified],
       ["Ortalama Kalış", tuik.average_length_of_stay],
       [],
       ["Ülke", "Kişi-Gece"],
@@ -66,21 +92,65 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
 
   // ── Inspection readiness
   const [readiness, setReadiness] = useState(null);
-  const loadReadiness = async () => {
+  const [readinessLoading, setReadinessLoading] = useState(false);
+  const loadReadiness = async (nocache = false) => {
+    setReadinessLoading(true);
     try {
-      const { data } = await axios.get("/regulatory/inspection-readiness");
+      const { data } = await axios.get("/regulatory/inspection-readiness",
+        nocache ? { params: { nocache: "true" } } : undefined);
       setReadiness(data);
-    } catch { toast.error("Hazırlık raporu yüklenemedi"); }
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 403) toast.error("Bu raporu görme yetkiniz yok (yönetici izni gerekir).");
+      else toast.error("Hazırlık raporu yüklenemedi");
+    } finally { setReadinessLoading(false); }
+  };
+
+  const exportReadinessCSV = () => {
+    if (!readiness) return;
+    const rows = [
+      ["Bakanlık Denetim Hazırlık Raporu"],
+      ["Tesis", readiness.tenant?.hotel_name || "—"],
+      ["Hazırlık Skoru", `%${readiness.readiness_score}`],
+      ["Toplam Oda", readiness.rooms_total],
+      ["Aktif Personel", readiness.active_users],
+      ["İşletme Belgesi (gün)", readiness.license_days_left ?? "—"],
+      [],
+      ["Kontrol Noktası", "Durum"],
+      ...readiness.checks.map((c) => [c.label, c.ok ? "TAMAM" : "EKSİK"]),
+      [],
+      ["Dönem", "Aktif Rezervasyon", "Kapasite Oda-Gece", "Doluluk %"],
+      ...readiness.booking_trend_12m.map((m) =>
+        [m.period, m.booking_count, m.capacity_room_nights, m.occupancy_pct]),
+    ];
+    downloadCSV(rows, `bakanlik-denetim-hazirlik-${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+
+  const goToTenantSettings = () => {
+    if (isSuperAdmin) {
+      const tid = readiness?.tenant?.hotel_id || tenant?.id || tenant?.hotel_id;
+      navigate(tid ? `/admin/tenants?edit=${encodeURIComponent(tid)}` : "/admin/tenants");
+    } else {
+      toast.info("Bu alanları yalnızca tesis yöneticisi düzenleyebilir. Lütfen yöneticinizle iletişime geçin.");
+    }
+  };
+
+  const goToMissingNationality = () => {
+    navigate("/app/reservations?missing_nationality=1");
   };
 
   // ── Star checklist
   const [checklist, setChecklist] = useState(null);
+  const [checklistLoading, setChecklistLoading] = useState(false);
   const [savingCl, setSavingCl] = useState(false);
-  const loadChecklist = async () => {
+  const loadChecklist = async (nocache = false) => {
+    setChecklistLoading(true);
     try {
-      const { data } = await axios.get("/regulatory/star-classification/checklist");
+      const { data } = await axios.get("/regulatory/star-classification/checklist",
+        nocache ? { params: { nocache: "true" } } : undefined);
       setChecklist(data);
     } catch { toast.error("Kontrol listesi yüklenemedi"); }
+    finally { setChecklistLoading(false); }
   };
   const saveChecklist = async () => {
     if (!checklist) return;
@@ -109,6 +179,7 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
   const [tgaSaving, setTgaSaving] = useState(false);
   const [tgaSending, setTgaSending] = useState(false);
   const [tgaPreviewing, setTgaPreviewing] = useState(false);
+  const [tgaLogLoading, setTgaLogLoading] = useState(false);
 
   const loadTgaCfg = async () => {
     try {
@@ -124,10 +195,11 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
     } catch { toast.error("TGA ayarları yüklenemedi"); }
   };
   const loadTgaLog = async () => {
+    setTgaLogLoading(true);
     try {
       const { data } = await axios.get("/regulatory/tga/log", { params: { days: 30 } });
       setTgaLog(data.items || []);
-    } catch { /* sessiz */ }
+    } catch { /* sessiz */ } finally { setTgaLogLoading(false); }
   };
   const saveTgaCfg = async () => {
     setTgaSaving(true);
@@ -169,19 +241,57 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
     } finally { setTgaSending(false); }
   };
 
+  // TGA dirty flag — form değişti, henüz kaydedilmedi.
+  const tgaDirty = useMemo(() => {
+    if (!tgaCfg) return false;
+    return (
+      (tgaForm.belge_no || "") !== (tgaCfg.belge_no || "")
+      || (tgaForm.vergi_no || "") !== (tgaCfg.vergi_no || "")
+      || (tgaForm.environment || "test") !== (tgaCfg.environment || "test")
+      || !!tgaForm.enabled !== !!tgaCfg.enabled
+      || !!tgaForm.api_key
+    );
+  }, [tgaForm, tgaCfg]);
+
+  const sendDisabledReason = (() => {
+    if (!tgaCfg) return null;
+    if (tgaDirty) return "Önce değişiklikleri kaydedin.";
+    if (!tgaCfg.enabled) return "Önce ayarları aktifleştirin ve kaydedin.";
+    if (!tgaCfg.api_key_set) return "Önce API anahtarı kaydedin.";
+    return null;
+  })();
+
   useEffect(() => {
+    if (tab === "tuik" && !tuik && !loading) loadTuik();
     if (tab === "inspection" && !readiness) loadReadiness();
     if (tab === "stars" && !checklist) loadChecklist();
     if (tab === "tga" && !tgaCfg) { loadTgaCfg(); loadTgaLog(); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
   const monthOpts = Array.from({ length: 12 }, (_, i) => i + 1);
   const yearOpts = Array.from({ length: 5 }, (_, i) => today.getFullYear() - i);
 
+  // 12-ay sparkline maks değeri (occupancy_pct).
+  const trendMax = readiness?.booking_trend_12m
+    ? Math.max(1, ...readiness.booking_trend_12m.map((m) => m.occupancy_pct || 0))
+    : 1;
+
+  const refreshAction =
+    tab === "tuik" ? <RefreshButton onClick={loadTuik} loading={loading} label="Hesapla" /> :
+    tab === "inspection" ? <RefreshButton onClick={() => loadReadiness(true)} loading={readinessLoading} /> :
+    tab === "stars" ? <RefreshButton onClick={() => loadChecklist(true)} loading={checklistLoading} /> :
+    tab === "tga" ? <RefreshButton onClick={loadTgaLog} loading={tgaLogLoading} /> :
+    null;
+
   return (
-    <>
     <div className="p-4 lg:p-6 space-y-4">
+      <PageHeader
+        icon={ScrollText}
+        title="Mevzuat & Resmi Raporlar"
+        subtitle="TÜİK, TGA, Bakanlık denetim hazırlığı ve yıldız sınıflama self-check"
+        actions={refreshAction}
+      />
 
       <div className="border-b">
         <div className="flex flex-wrap gap-1">
@@ -191,8 +301,8 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
             return (
               <button key={t.key} onClick={() => setTab(t.key)}
                 className={`flex items-center gap-2 px-4 py-2 border-b-2 -mb-px text-sm transition ${
-                  active ? "border-emerald-700 text-emerald-800 font-semibold"
-                         : "border-transparent text-gray-500 hover:text-gray-800"}`}>
+                  active ? "border-slate-900 text-slate-900 font-semibold"
+                         : "border-transparent text-slate-500 hover:text-slate-800"}`}>
                 <Icon className="h-4 w-4" /> {t.label}
               </button>
             );
@@ -204,64 +314,103 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
         <div className="bg-white border rounded-lg p-4 space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="text-xs text-gray-600 block">Yıl</label>
+              <label className="text-xs text-slate-600 block">Yıl</label>
               <select className="border rounded px-3 py-2" value={year} onChange={(e) => setYear(Number(e.target.value))}>
                 {yearOpts.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs text-gray-600 block">Ay</label>
+              <label className="text-xs text-slate-600 block">Ay</label>
               <select className="border rounded px-3 py-2" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
                 {monthOpts.map((m) => <option key={m} value={m}>{String(m).padStart(2, "0")}</option>)}
               </select>
             </div>
-            <button onClick={loadTuik} disabled={loading}
-              className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded disabled:opacity-50">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            <Button onClick={loadTuik} disabled={loading}>
+              {loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
               Raporu Hesapla
-            </button>
+            </Button>
             {tuik && (
-              <button onClick={exportTuikCSV}
-                className="flex items-center gap-2 border px-4 py-2 rounded hover:bg-gray-50">
-                <Download className="h-4 w-4" /> CSV İndir (TÜİK)
-              </button>
+              <Button variant="outline" size="sm" onClick={exportTuikCSV}>
+                <Download className="h-4 w-4 mr-1.5" /> CSV İndir
+              </Button>
             )}
             {tuik && (
-              <button onClick={() => window.print()}
-                className="flex items-center gap-2 border px-4 py-2 rounded hover:bg-gray-50">
-                <FileText className="h-4 w-4" /> Yazdır
-              </button>
+              <Button variant="outline" size="sm" onClick={() => window.print()}>
+                <FileText className="h-4 w-4 mr-1.5" /> Yazdır
+              </Button>
             )}
           </div>
+
+          {!tuik && !loading && (
+            <div className="text-sm text-slate-500 italic">
+              Yıl ve ay seçip "Raporu Hesapla" butonuna basın.
+            </div>
+          )}
+          {loading && !tuik && (
+            <div className="text-sm text-slate-500 flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Cari ay raporu hesaplanıyor…
+            </div>
+          )}
 
           {tuik && (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <KPI title="Toplam Oda" value={fmtNum(tuik.capacity.rooms)} />
-                <KPI title="Toplam Yatak" value={fmtNum(tuik.capacity.beds)} />
-                <KPI title="Doluluk" value={`%${tuik.occupancy_pct}`} highlight />
-                <KPI title="Ortalama Kalış" value={tuik.average_length_of_stay} />
-                <KPI title="Satılan Oda-Gece" value={fmtNum(tuik.stays.room_nights_sold)} />
-                <KPI title="Toplam Misafir" value={fmtNum(tuik.stays.guest_count)} />
-                <KPI title="Yerli Kişi-Gece" value={fmtNum(tuik.stays.person_nights_domestic)} />
-                <KPI title="Yabancı Kişi-Gece" value={fmtNum(tuik.stays.person_nights_foreign)} highlight />
+                <KpiCard label="Toplam Oda" value={fmtNum(tuik.capacity.rooms)} intent="neutral" />
+                <KpiCard label="Toplam Yatak" value={fmtNum(tuik.capacity.beds)} intent="neutral" />
+                <KpiCard label="Doluluk" value={`%${tuik.occupancy_pct}`} intent="info" />
+                <KpiCard label="Ortalama Kalış" value={tuik.average_length_of_stay} intent="neutral" />
+                <KpiCard label="Satılan Oda-Gece" value={fmtNum(tuik.stays.room_nights_sold)} intent="neutral" />
+                <KpiCard label="Toplam Misafir" value={fmtNum(tuik.stays.guest_count)} intent="neutral" />
+                <KpiCard label="Yerli Kişi-Gece" value={fmtNum(tuik.stays.person_nights_domestic)} intent="success" />
+                <KpiCard label="Yabancı Kişi-Gece" value={fmtNum(tuik.stays.person_nights_foreign)} intent="info" />
                 {tuik.stays.person_nights_unspecified > 0 && (
-                  <KPI title="Uyruk Belirsiz Kişi-Gece"
-                       value={fmtNum(tuik.stays.person_nights_unspecified)}
-                       warning />
+                  <KpiCard
+                    label="Uyruk Belirsiz Kişi-Gece"
+                    value={fmtNum(tuik.stays.person_nights_unspecified)}
+                    intent="warning"
+                  />
                 )}
               </div>
+
               {tuik.stays.person_nights_unspecified > 0 && (
-                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 flex items-start gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  <span>{fmtNum(tuik.stays.person_nights_unspecified)} kişi-gece için
-                  uyruk girilmemiş. TÜİK gönderiminden önce ilgili rezervasyonlara
-                  uyruk bilgisi eklenmesi önerilir.</span>
+                <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-3 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+                  <div className="flex-1">
+                    <div className="font-semibold mb-1">
+                      {fmtNum(tuik.stays.person_nights_unspecified)} kişi-gece için uyruk girilmemiş.
+                    </div>
+                    <div className="text-xs text-amber-700">
+                      TÜİK formu yerli/yabancı ayrımı zorunludur. Etkilenen rezervasyon sayısı:{" "}
+                      <strong>{fmtNum(tuik.missing_nationality?.booking_count || 0)}</strong>.
+                    </div>
+                    {tuik.missing_nationality?.samples?.length > 0 && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={goToMissingNationality}>
+                          Eksik uyruklu rezervasyonları gör
+                        </Button>
+                        <span className="text-xs text-amber-700">
+                          (ilk örnek: {tuik.missing_nationality.samples[0].confirmation_number || tuik.missing_nationality.samples[0].id} —
+                          {" "}{tuik.missing_nationality.samples[0].guest_name || "—"})
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
+
+              {tuik.data_quality?.adults_defaulted_count > 0 && (
+                <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-2 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-500" />
+                  <span>
+                    {fmtNum(tuik.data_quality.adults_defaulted_count)} rezervasyonda yetişkin sayısı boş —
+                    kişi-gece hesabında 1 yetişkin varsayıldı (kayıt sunucu loglarında uyarı olarak yer alır).
+                  </span>
+                </div>
+              )}
+
               <div className="overflow-auto border rounded">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-slate-50">
                     <tr>
                       <th className="text-left px-3 py-2">Ülke (İlk 20)</th>
                       <th className="text-right px-3 py-2">Kişi-Gece</th>
@@ -280,7 +429,7 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
                       );
                     })}
                     {tuik.nationality_other_total > 0 && (
-                      <tr className="border-t bg-gray-50">
+                      <tr className="border-t bg-slate-50">
                         <td className="px-3 py-1.5 italic">Diğer</td>
                         <td className="px-3 py-1.5 text-right">{fmtNum(tuik.nationality_other_total)}</td>
                         <td className="px-3 py-1.5 text-right">—</td>
@@ -289,7 +438,7 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
                   </tbody>
                 </table>
               </div>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-slate-400">
                 Bu çıktı TÜİK e-Anket sistemine veri girişi içindir. Resmî
                 gönderim TÜİK web portalı üzerinden yapılır.
               </p>
@@ -300,7 +449,6 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
 
       {tab === "tga" && (
         <div className="space-y-4">
-          {/* Bilgi kutusu */}
           <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 text-xs text-sky-900 leading-relaxed">
             <strong>TGA Tesis Entegrasyon API'si:</strong> Türkiye Turizm Tanıtım ve Geliştirme Ajansı,
             konaklama tesislerinden günlük operasyonel veri toplar. Sistem her 6 saatte bir
@@ -312,45 +460,45 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
               target="_blank" rel="noreferrer" className="underline">tesis-entegrasyon.tga.gov.tr/docs</a>
           </div>
 
-          {/* Ayarlar kartı */}
           <div className="bg-white border rounded-lg p-4 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold flex items-center gap-2">
                 <Send className="h-4 w-4" /> Bağlantı Ayarları
               </h3>
               {tgaCfg && (
-                <span className={`text-xs px-2 py-0.5 rounded inline-flex items-center gap-1 ${
-                  tgaCfg.enabled ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
-                  {tgaCfg.enabled ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+                <StatusBadge
+                  intent={tgaCfg.enabled ? "success" : "neutral"}
+                  icon={tgaCfg.enabled ? Wifi : WifiOff}
+                >
                   {tgaCfg.enabled ? "Aktif" : "Pasif"} · {tgaCfg.environment === "live" ? "CANLI" : "TEST"}
-                </span>
+                </StatusBadge>
               )}
             </div>
 
             {!tgaCfg ? (
-              <div className="text-sm text-gray-500 flex items-center gap-2">
+              <div className="text-sm text-slate-500 flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" /> Yükleniyor…
               </div>
             ) : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-gray-600 block mb-1">Tesis Belge No</label>
+                    <label className="text-xs text-slate-600 block mb-1">Tesis Belge No</label>
                     <input type="text" placeholder="örn. TR-07-12345"
                       className="w-full border rounded px-3 py-2 text-sm"
                       value={tgaForm.belge_no}
                       onChange={(e) => setTgaForm({ ...tgaForm, belge_no: e.target.value })} />
                   </div>
                   <div>
-                    <label className="text-xs text-gray-600 block mb-1">Vergi No</label>
+                    <label className="text-xs text-slate-600 block mb-1">Vergi No</label>
                     <input type="text" placeholder="10 hane"
                       className="w-full border rounded px-3 py-2 text-sm"
                       value={tgaForm.vergi_no}
                       onChange={(e) => setTgaForm({ ...tgaForm, vergi_no: e.target.value })} />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="text-xs text-gray-600 block mb-1">
-                      X-API-Key {tgaCfg.api_key_set && <span className="text-emerald-600">(kayıtlı — boş bırak: değişmez)</span>}
+                    <label className="text-xs text-slate-600 block mb-1">
+                      X-API-Key {tgaCfg.api_key_set && <span className="text-emerald-700">(kayıtlı — boş bırak: değişmez)</span>}
                     </label>
                     <input type="password" placeholder="pk_live_…"
                       className="w-full border rounded px-3 py-2 text-sm font-mono"
@@ -358,7 +506,7 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
                       onChange={(e) => setTgaForm({ ...tgaForm, api_key: e.target.value })} />
                   </div>
                   <div>
-                    <label className="text-xs text-gray-600 block mb-1">Ortam</label>
+                    <label className="text-xs text-slate-600 block mb-1">Ortam</label>
                     <select className="w-full border rounded px-3 py-2 text-sm"
                       value={tgaForm.environment}
                       onChange={(e) => setTgaForm({ ...tgaForm, environment: e.target.value })}>
@@ -375,65 +523,70 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
                   </div>
                 </div>
 
+                {tgaDirty && (
+                  <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2 flex items-start gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600" />
+                    <span>Kaydedilmemiş değişiklikler var. "Şimdi Gönder" butonu ancak kaydedilen yapılandırmayı kullanır.</span>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={saveTgaCfg} disabled={tgaSaving}
-                    className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded text-sm disabled:opacity-50">
-                    {tgaSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  <Button onClick={saveTgaCfg} disabled={tgaSaving}>
+                    {tgaSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
                     Kaydet
-                  </button>
-                  <button onClick={previewTga} disabled={tgaPreviewing}
-                    className="flex items-center gap-2 border px-4 py-2 rounded text-sm hover:bg-gray-50 disabled:opacity-50">
-                    {tgaPreviewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={previewTga} disabled={tgaPreviewing}>
+                    {tgaPreviewing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FileText className="h-4 w-4 mr-1.5" />}
                     Dünün Verisini Önizle
-                  </button>
-                  <button onClick={sendTgaNow} disabled={tgaSending || !tgaCfg.enabled || !tgaCfg.api_key_set}
-                    className="flex items-center gap-2 bg-sky-700 hover:bg-sky-800 text-white px-4 py-2 rounded text-sm disabled:opacity-50"
-                    title={!tgaCfg.enabled ? "Önce ayarları aktifleştirin" : !tgaCfg.api_key_set ? "Önce API anahtarı kaydedin" : "Son 7 günü TGA'ya gönder"}>
-                    {tgaSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </Button>
+                  <Button
+                    onClick={sendTgaNow}
+                    disabled={tgaSending || !!sendDisabledReason}
+                    title={sendDisabledReason || "Son 7 günü TGA'ya gönder"}
+                  >
+                    {tgaSending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
                     Şimdi Gönder (Son 7 Gün)
-                  </button>
+                  </Button>
+                  {sendDisabledReason && (
+                    <span className="text-xs text-slate-500 self-center">{sendDisabledReason}</span>
+                  )}
                 </div>
               </>
             )}
           </div>
 
-          {/* Önizleme */}
           {tgaPreview && (
             <div className="bg-white border rounded-lg p-4 space-y-3">
               <h3 className="font-semibold text-sm">Payload Önizleme — {tgaPreview.rapor_tarihi}</h3>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                <KPI title="Toplam Oda" value={fmtNum(tgaPreview.toplam_oda)} />
-                <KPI title="Toplam Kişi" value={fmtNum(tgaPreview.toplam_kisi)} />
-                <KPI title="Giren Oda" value={fmtNum(tgaPreview.giren_oda)} />
-                <KPI title="Giren Kişi" value={fmtNum(tgaPreview.giren_kisi)} />
-                <KPI title="Net Oda Geliri" value={fmtNum(tgaPreview.net_oda_geliri)} highlight />
+                <KpiCard label="Toplam Oda" value={fmtNum(tgaPreview.toplam_oda)} intent="neutral" />
+                <KpiCard label="Toplam Kişi" value={fmtNum(tgaPreview.toplam_kisi)} intent="neutral" />
+                <KpiCard label="Giren Oda" value={fmtNum(tgaPreview.giren_oda)} intent="info" />
+                <KpiCard label="Giren Kişi" value={fmtNum(tgaPreview.giren_kisi)} intent="info" />
+                <KpiCard label="Net Oda Geliri" value={fmtNum(tgaPreview.net_oda_geliri)} intent="success" />
               </div>
               <details className="text-xs">
-                <summary className="cursor-pointer text-gray-600 hover:text-gray-900">Demografik & Kanal dökümünü göster</summary>
-                <pre className="mt-2 bg-gray-50 border rounded p-2 overflow-auto max-h-80 text-[11px]">
+                <summary className="cursor-pointer text-slate-600 hover:text-slate-900">Demografik & Kanal dökümünü göster</summary>
+                <pre className="mt-2 bg-slate-50 border rounded p-2 overflow-auto max-h-80 text-[11px]">
                   {JSON.stringify({ demografik_veriler: tgaPreview.demografik_veriler, kanal_veriler: tgaPreview.kanal_veriler }, null, 2)}
                 </pre>
               </details>
             </div>
           )}
 
-          {/* Log */}
           <div className="bg-white border rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-sm flex items-center gap-2">
                 <ScrollText className="h-4 w-4" /> Son 30 Gün Gönderim Geçmişi
               </h3>
-              <button onClick={loadTgaLog}
-                className="text-xs flex items-center gap-1 text-blue-600 hover:underline">
-                <RefreshCw className="h-3 w-3" /> Yenile
-              </button>
+              <RefreshButton onClick={loadTgaLog} loading={tgaLogLoading} />
             </div>
             {tgaLog.length === 0 ? (
-              <div className="text-sm text-gray-500 italic">Henüz gönderim kaydı yok.</div>
+              <div className="text-sm text-slate-500 italic">Henüz gönderim kaydı yok.</div>
             ) : (
               <div className="overflow-auto border rounded">
                 <table className="min-w-full text-xs">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-slate-50">
                     <tr>
                       <th className="text-left px-3 py-2">Zaman</th>
                       <th className="text-left px-3 py-2">Tarih Aralığı</th>
@@ -455,9 +608,10 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
                           <td className="px-3 py-1.5">son {it.days}g · {it.end_date}</td>
                           <td className="px-3 py-1.5">{it.environment === "live" ? "CANLI" : "TEST"}</td>
                           <td className="px-3 py-1.5">{it.triggered_by}</td>
-                          <td className={`px-3 py-1.5 text-center font-semibold ${
-                            ok ? "text-emerald-700" : skip ? "text-slate-500" : "text-rose-700"}`}>
-                            {ok ? "Gönderildi" : skip ? "Atlandı" : "Hata"}
+                          <td className="px-3 py-1.5 text-center">
+                            <StatusBadge intent={ok ? "success" : skip ? "neutral" : "danger"}>
+                              {ok ? "Gönderildi" : skip ? "Atlandı" : "Hata"}
+                            </StatusBadge>
                           </td>
                           <td className="px-3 py-1.5 text-right font-mono">{it.http_status || "—"}</td>
                           <td className="px-3 py-1.5 text-right">{fmtNum(it.request_summary?.toplam_oda_sum)}</td>
@@ -475,68 +629,145 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
 
       {tab === "inspection" && (
         <div className="bg-white border rounded-lg p-4 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h3 className="font-semibold flex items-center gap-2">
               <ShieldCheck className="h-4 w-4" /> Bakanlık Denetim Hazırlık
             </h3>
-            <button onClick={loadReadiness} className="text-sm flex items-center gap-1 text-blue-600 hover:underline">
-              <RefreshCw className="h-3 w-3" /> Yenile
-            </button>
+            <div className="flex gap-2">
+              {readiness && (
+                <>
+                  <Button variant="outline" size="sm" onClick={exportReadinessCSV}>
+                    <Download className="h-4 w-4 mr-1.5" /> CSV İndir
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => window.print()}>
+                    <FileText className="h-4 w-4 mr-1.5" /> PDF / Yazdır
+                  </Button>
+                </>
+              )}
+              <RefreshButton onClick={() => loadReadiness(true)} loading={readinessLoading} />
+            </div>
           </div>
+
           {!readiness ? (
-            <div className="text-gray-500 text-sm flex items-center gap-2">
+            <div className="text-slate-500 text-sm flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" /> Yükleniyor…
             </div>
           ) : (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <KPI title="Hazırlık Skoru" value={`%${readiness.readiness_score}`} highlight />
-                <KPI title="Toplam Oda" value={fmtNum(readiness.rooms_total)} />
-                <KPI title="Aktif Personel" value={fmtNum(readiness.active_users)} />
-                <KPI title="İşletme Belgesi (gün)"
-                     value={readiness.license_days_left == null ? "—" : fmtNum(readiness.license_days_left)}
-                     warning={readiness.license_days_left != null && readiness.license_days_left < 30} />
+                <KpiCard
+                  label="Hazırlık Skoru"
+                  value={`%${readiness.readiness_score}`}
+                  intent={readiness.readiness_score >= 80 ? "success" : readiness.readiness_score >= 50 ? "warning" : "danger"}
+                />
+                <KpiCard label="Toplam Oda" value={fmtNum(readiness.rooms_total)} intent="neutral" />
+                <KpiCard label="Aktif Personel" value={fmtNum(readiness.active_users)} intent="neutral" />
+                <KpiCard
+                  label="İşletme Belgesi (gün)"
+                  value={readiness.license_days_left == null ? "—" : fmtNum(readiness.license_days_left)}
+                  intent={
+                    readiness.license_days_left == null ? "warning" :
+                    readiness.license_days_left < 30 ? "danger" :
+                    readiness.license_days_left < 90 ? "warning" : "success"
+                  }
+                />
               </div>
 
+              {readiness.tenant_missing_fields?.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-amber-900">
+                        Tesis künyesinde {readiness.tenant_missing_fields.length} alan eksik
+                      </div>
+                      <div className="text-xs text-amber-800 mt-1">
+                        Bakanlık denetiminde sorulacak temel bilgiler. Tesis ayarlarından doldurun:
+                      </div>
+                      <ul className="text-xs text-amber-900 mt-1.5 list-disc pl-4 space-y-0.5">
+                        {readiness.tenant_missing_fields.map((f) => (
+                          <li key={f.field}><strong>{f.label}</strong> <span className="text-amber-700">({f.field})</span></li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                  <div>
+                    <Button variant="outline" size="sm" onClick={goToTenantSettings}>
+                      <Settings className="h-4 w-4 mr-1.5" />
+                      {isSuperAdmin ? "Tesis ayarlarına git" : "Yöneticiye nasıl iletişim kuracağımı gör"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {readiness.rooms_missing_bed_capacity > 0 && (
+                <div className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-500" />
+                  <span>
+                    <strong>{fmtNum(readiness.rooms_missing_bed_capacity)} / {fmtNum(readiness.rooms_total)}</strong>{" "}
+                    odada yatak kapasitesi (<code>bed_capacity</code>) tanımlı değil; TÜİK yatak toplamı bu odalar için 2/oda olarak varsayılır.
+                    Doğru rakam için Oda Yönetimi'nden her oda tipine yatak kapasitesi girin.
+                  </span>
+                </div>
+              )}
+
               <div className="border rounded">
-                <div className="bg-gray-50 px-3 py-2 font-semibold text-sm">Kontrol Noktaları</div>
+                <div className="bg-slate-50 px-3 py-2 font-semibold text-sm">Kontrol Noktaları</div>
                 <ul className="divide-y">
                   {readiness.checks.map((c) => (
                     <li key={c.key} className="px-3 py-2 flex items-center gap-2 text-sm">
-                      {c.ok ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                            : <AlertTriangle className="h-4 w-4 text-amber-600" />}
-                      <span className={c.ok ? "" : "text-amber-800"}>{c.label}</span>
+                      {c.ok
+                        ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        : <AlertTriangle className="h-4 w-4 text-amber-600" />}
+                      <span className={c.ok ? "" : "text-amber-800 flex-1"}>{c.label}</span>
+                      {!c.ok && c.fields?.length > 0 && (
+                        <Button variant="outline" size="sm" onClick={goToTenantSettings}>
+                          Doldurmaya git
+                        </Button>
+                      )}
                     </li>
                   ))}
                 </ul>
               </div>
 
               <div className="border rounded">
-                <div className="bg-gray-50 px-3 py-2 font-semibold text-sm">Son 12 Ay Rezervasyon Hacmi</div>
+                <div className="bg-slate-50 px-3 py-2 font-semibold text-sm">Son 12 Ay Rezervasyon Hacmi</div>
                 <div className="overflow-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-slate-50">
                       <tr>
                         <th className="text-left px-3 py-2">Dönem</th>
                         <th className="text-right px-3 py-2">Aktif Rezervasyon</th>
                         <th className="text-right px-3 py-2">Kapasite Oda-Gece</th>
                         <th className="text-right px-3 py-2">Kaba Doluluk %</th>
+                        <th className="text-left px-3 py-2 w-1/3">Trend</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {readiness.booking_trend_12m.map((m) => (
-                        <tr key={m.period} className="border-t">
-                          <td className="px-3 py-1 font-mono">{m.period}</td>
-                          <td className="px-3 py-1 text-right">{fmtNum(m.booking_count)}</td>
-                          <td className="px-3 py-1 text-right">{fmtNum(m.capacity_room_nights)}</td>
-                          <td className="px-3 py-1 text-right">{m.occupancy_pct}%</td>
-                        </tr>
-                      ))}
+                      {readiness.booking_trend_12m.map((m) => {
+                        const pct = (m.occupancy_pct || 0) / trendMax * 100;
+                        const barColor = m.occupancy_pct >= 70 ? "bg-emerald-500"
+                          : m.occupancy_pct >= 40 ? "bg-sky-500"
+                          : m.occupancy_pct > 0 ? "bg-amber-500" : "bg-slate-200";
+                        return (
+                          <tr key={m.period} className="border-t">
+                            <td className="px-3 py-1 font-mono">{m.period}</td>
+                            <td className="px-3 py-1 text-right">{fmtNum(m.booking_count)}</td>
+                            <td className="px-3 py-1 text-right">{fmtNum(m.capacity_room_nights)}</td>
+                            <td className="px-3 py-1 text-right">{m.occupancy_pct}%</td>
+                            <td className="px-3 py-1">
+                              <div className="w-full bg-slate-100 rounded h-2 overflow-hidden">
+                                <div className={`h-full ${barColor}`} style={{ width: `${Math.max(2, pct)}%` }} />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               </div>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-slate-400">
                 Bu rapor, Bakanlık denetim ziyaretlerine hazırlık amaçlı dahili
                 bir özettir; resmî denetimin yerini almaz.
               </p>
@@ -548,31 +779,33 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
       {tab === "stars" && (
         <div className="bg-white border rounded-lg p-4 space-y-4">
           {!checklist ? (
-            <div className="text-gray-500 text-sm flex items-center gap-2">
+            <div className="text-slate-500 text-sm flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" /> Yükleniyor…
             </div>
           ) : (
             <>
               <div className="flex flex-wrap items-end gap-3">
                 <div>
-                  <label className="text-xs text-gray-600 block">Hedef Yıldız</label>
+                  <label className="text-xs text-slate-600 block">Hedef Yıldız</label>
                   <select className="border rounded px-3 py-2" value={checklist.target_star}
                           onChange={(e) => setChecklist({ ...checklist, target_star: Number(e.target.value) })}>
                     {[1, 2, 3, 4, 5].map((s) => <option key={s} value={s}>{s} Yıldız</option>)}
                   </select>
                 </div>
                 <div className="flex-1 min-w-[160px]">
-                  <KPI title="Uyumluluk Skoru" value={`%${checklist.compliance_score}`} highlight />
+                  <KpiCard label="Uyumluluk Skoru" value={`%${checklist.compliance_score}`} intent="info" />
                 </div>
                 <div>
-                  <KPI title="Eksik Zorunlu Kriter" value={`${checklist.required_missing} / ${checklist.required_total}`}
-                       warning={checklist.required_missing > 0} />
+                  <KpiCard
+                    label="Eksik Zorunlu Kriter"
+                    value={`${checklist.required_missing} / ${checklist.required_total}`}
+                    intent={checklist.required_missing > 0 ? "warning" : "success"}
+                  />
                 </div>
-                <button onClick={saveChecklist} disabled={savingCl}
-                  className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded disabled:opacity-50">
-                  {savingCl ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                <Button onClick={saveChecklist} disabled={savingCl}>
+                  {savingCl ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
                   Kaydet & Hesapla
-                </button>
+                </Button>
               </div>
 
               {Object.entries(checklist.items.reduce((acc, it) => {
@@ -580,7 +813,7 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
                 return acc;
               }, {})).map(([cat, items]) => (
                 <div key={cat} className="border rounded">
-                  <div className="bg-gray-50 px-3 py-2 font-semibold text-sm">{cat}</div>
+                  <div className="bg-slate-50 px-3 py-2 font-semibold text-sm">{cat}</div>
                   <ul className="divide-y">
                     {items.map((it) => (
                       <li key={it.key} className={`px-3 py-2 flex items-center gap-3 text-sm ${
@@ -588,9 +821,9 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
                         <div className="flex-1">
                           <span>{it.label}</span>
                           {it.required && (
-                            <span className="ml-2 text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded">
+                            <StatusBadge intent="danger" className="ml-2">
                               {checklist.target_star} için zorunlu
-                            </span>
+                            </StatusBadge>
                           )}
                         </div>
                         <select value={it.state} className="border rounded px-2 py-1 text-xs"
@@ -609,7 +842,7 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
                 </div>
               ))}
               {checklist.saved_at && (
-                <p className="text-xs text-gray-400 flex items-center gap-1">
+                <p className="text-xs text-slate-400 flex items-center gap-1">
                   <ClipboardCheck className="h-3 w-3" />
                   Son kayıt: {checklist.saved_at.slice(0, 16).replace("T", " ")}
                 </p>
@@ -618,20 +851,6 @@ export default function MevzuatRaporlari({ user, tenant, onLogout }) {
           )}
         </div>
       )}
-    </div>
-    </>
-  );
-}
-
-function KPI({ title, value, highlight, warning }) {
-  const cls = warning ? "bg-amber-50 border-amber-300"
-            : highlight ? "bg-emerald-50 border-emerald-300" : "";
-  const txt = warning ? "text-amber-700"
-            : highlight ? "text-emerald-700" : "";
-  return (
-    <div className={`border rounded-lg p-3 ${cls}`}>
-      <div className="text-xs text-gray-500">{title}</div>
-      <div className={`text-lg font-semibold ${txt}`}>{value}</div>
     </div>
   );
 }

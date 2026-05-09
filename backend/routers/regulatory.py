@@ -85,6 +85,7 @@ def _normalize_country(raw: str | None) -> str:
 async def tuik_monthly(
     year: int, month: int,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_regulatory_reports")),
 ) -> dict[str, Any]:
     start, end = _period_bounds(year, month)
     days = _days_in_month(year, month)
@@ -111,9 +112,10 @@ async def tuik_monthly(
          "status": {"$nin": ["cancelled", "no_show"]},
          "check_in": {"$lt": end.isoformat()},
          "check_out": {"$gt": start.isoformat()}},
-        {"_id": 0, "check_in": 1, "check_out": 1, "adults": 1,
-         "children": 1, "nationality": 1, "guest_country": 1,
-         "country": 1}).to_list(length=20000)
+        {"_id": 0, "id": 1, "booking_id": 1, "confirmation_number": 1,
+         "check_in": 1, "check_out": 1, "adults": 1, "children": 1,
+         "nationality": 1, "guest_country": 1, "country": 1,
+         "guest_name": 1, "primary_guest_name": 1}).to_list(length=20000)
 
     nights_total = 0
     nights_by_country: dict[str, int] = {}
@@ -121,6 +123,8 @@ async def tuik_monthly(
     domestic_nights = 0
     foreign_nights = 0
     unspecified_nights = 0
+    missing_nationality_bookings: list[dict[str, Any]] = []
+    adults_fallback_count = 0
     for bk in bookings:
         try:
             ci = datetime.fromisoformat(str(bk["check_in"]).replace("Z", "+00:00"))
@@ -137,9 +141,11 @@ async def tuik_monthly(
         nights = max(0, (co_eff - ci_eff).days)
         if nights == 0:
             continue
+        if bk.get("adults") in (None, 0):
+            adults_fallback_count += 1
         guests = int(bk.get("adults") or 1) + int(bk.get("children") or 0)
-        country = _normalize_country(
-            bk.get("nationality") or bk.get("guest_country") or bk.get("country"))
+        raw_country = bk.get("nationality") or bk.get("guest_country") or bk.get("country")
+        country = _normalize_country(raw_country)
         person_nights = nights * guests
         nights_total += nights
         guest_total += guests
@@ -148,8 +154,21 @@ async def tuik_monthly(
             domestic_nights += person_nights
         elif country == "Belirtilmemiş":
             unspecified_nights += person_nights
+            if len(missing_nationality_bookings) < 50:
+                missing_nationality_bookings.append({
+                    "id": bk.get("id") or bk.get("booking_id"),
+                    "confirmation_number": bk.get("confirmation_number"),
+                    "guest_name": bk.get("primary_guest_name") or bk.get("guest_name"),
+                    "check_in": str(bk.get("check_in") or "")[:10],
+                    "check_out": str(bk.get("check_out") or "")[:10],
+                })
         else:
             foreign_nights += person_nights
+
+    if adults_fallback_count:
+        logger.warning(
+            "tuik_monthly tenant=%s period=%s-%02d: %d bookings missing 'adults' (defaulted to 1)",
+            current_user.tenant_id, year, month, adults_fallback_count)
 
     capacity_room_nights = total_rooms * days
     occupancy_pct = (round(nights_total / capacity_room_nights * 100, 2)
@@ -185,6 +204,13 @@ async def tuik_monthly(
         "nationality_top20": [{"country": k, "person_nights": v}
                               for k, v in top],
         "nationality_other_total": other,
+        "missing_nationality": {
+            "booking_count": len(missing_nationality_bookings),
+            "samples": missing_nationality_bookings,
+        },
+        "data_quality": {
+            "adults_defaulted_count": adults_fallback_count,
+        },
         "tuik_form_reference": "Aylık Konaklama İstatistikleri Anketi",
     }
 
@@ -197,6 +223,7 @@ async def tuik_monthly(
 @cached(ttl=300, key_prefix="regulatory_inspection_readiness")
 async def inspection_readiness(
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_regulatory_reports")),
     _nocache: bool = Query(False, alias="nocache"),
 ) -> dict[str, Any]:
     tenant = await db.tenants.find_one(
@@ -209,6 +236,9 @@ async def inspection_readiness(
         {"tenant_id": current_user.tenant_id})
     total_users = await db.users.count_documents(
         {"tenant_id": current_user.tenant_id, "active": {"$ne": False}})
+    rooms_missing_bed_capacity = await db.rooms.count_documents(
+        {"tenant_id": current_user.tenant_id,
+         "$or": [{"bed_capacity": {"$exists": False}}, {"bed_capacity": None}]})
 
     # 12 aylık doluluk trend — paralel sorgular (asyncio.gather).
     import asyncio as _asyncio
@@ -245,29 +275,64 @@ async def inspection_readiness(
         except Exception:
             license_days_left = None
 
+    # Tenant künyesi eksik alan listesi (FE'de tek-tek gösterilir + admin
+    # tenant edit deep link aksiyonu ile birlikte).
+    tenant_missing: list[dict[str, str]] = []
+    if not tenant.get("hotel_name"):
+        tenant_missing.append({"field": "hotel_name", "label": "Tesis adı"})
+    if not tenant.get("address"):
+        tenant_missing.append({"field": "address", "label": "Tesis adresi"})
+    if not tenant.get("phone"):
+        tenant_missing.append({"field": "phone", "label": "Tesis telefonu"})
+    if not tenant.get("tax_no"):
+        tenant_missing.append({"field": "tax_no", "label": "Vergi numarası"})
+    if not tenant.get("license_number"):
+        tenant_missing.append({"field": "license_number",
+                               "label": "İşletme belgesi numarası"})
+    if not tenant.get("license_expires_at"):
+        tenant_missing.append({"field": "license_expires_at",
+                               "label": "İşletme belgesi son geçerlilik tarihi"})
+    if not tenant.get("star_rating"):
+        tenant_missing.append({"field": "star_rating",
+                               "label": "Yıldız sınıflaması"})
+
     checks = [
         {"key": "tesis_kunyesi", "label": "Tesis künyesi tam",
          "ok": bool(tenant.get("hotel_name") and tenant.get("address")
-                    and tenant.get("phone"))},
+                    and tenant.get("phone")),
+         "fields": ["hotel_name", "address", "phone"]},
         {"key": "vergi_no", "label": "Vergi numarası kayıtlı",
-         "ok": bool(tenant.get("tax_no"))},
+         "ok": bool(tenant.get("tax_no")),
+         "fields": ["tax_no"]},
         {"key": "isletme_belgesi", "label": "İşletme belgesi numarası kayıtlı",
-         "ok": bool(tenant.get("license_number"))},
+         "ok": bool(tenant.get("license_number")),
+         "fields": ["license_number"]},
         {"key": "isletme_belgesi_gecerli",
          "label": "İşletme belgesi süresi (en az 30 gün)",
-         "ok": (license_days_left is not None and license_days_left > 30)},
+         "ok": (license_days_left is not None and license_days_left > 30),
+         "fields": ["license_expires_at"]},
         {"key": "yildiz_atanmis", "label": "Yıldız sınıflaması atanmış",
-         "ok": bool(tenant.get("star_rating"))},
+         "ok": bool(tenant.get("star_rating")),
+         "fields": ["star_rating"]},
         {"key": "oda_envanteri",
-         "label": "Oda envanteri tanımlı (>0)", "ok": total_rooms > 0},
+         "label": "Oda envanteri tanımlı (>0)", "ok": total_rooms > 0,
+         "fields": []},
         {"key": "personel", "label": "Aktif personel kayıtlı (>0)",
-         "ok": total_users > 0},
+         "ok": total_users > 0, "fields": []},
     ]
     score = round(sum(1 for c in checks if c["ok"]) / len(checks) * 100)
 
+    if rooms_missing_bed_capacity:
+        logger.warning(
+            "inspection_readiness tenant=%s: %d/%d rooms missing 'bed_capacity' "
+            "— TÜİK bed totals fall back to 2/oda",
+            current_user.tenant_id, rooms_missing_bed_capacity, total_rooms)
+
     return {
         "tenant": tenant,
+        "tenant_missing_fields": tenant_missing,
         "rooms_total": total_rooms,
+        "rooms_missing_bed_capacity": rooms_missing_bed_capacity,
         "active_users": total_users,
         "license_days_left": license_days_left,
         "checks": checks,

@@ -62,6 +62,8 @@ OPERATION_PERMISSIONS = {
     "view_it_system": [Permission.SYSTEM_SETTINGS],
     # v87 DR-FOLLOWUP-1: ops/devops diagnostics (production_golive, ops_events) — semantik ayrı key, ADMIN/SUPER_ADMIN only
     "view_system_diagnostics": [Permission.SYSTEM_SETTINGS],
+    # Regulatory: tax/license/inspection — admin-grade tenant-administrative data
+    "view_regulatory_reports": [Permission.SYSTEM_SETTINGS],
     # v88 DR-FOLLOWUP-2 (Bug DW): NO_AUTH write endpoints — semantik ayrı keys, hepsi ADMIN/SUPER_ADMIN only
     "manage_night_audit": [Permission.SYSTEM_SETTINGS],
     "manage_secrets": [Permission.SYSTEM_SETTINGS],
