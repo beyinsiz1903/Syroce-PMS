@@ -50,6 +50,8 @@ async def _process_tenant(cfg: dict) -> dict:
     if not tenant_id:
         return {"tenant_id": None, "skipped": "no_tenant_id"}
 
+    from core.database import db
+    from core.email import _is_valid_email, send_email
     from routers.finance.konaklama_vergisi import (
         _aggregate_period,
         _decl_pdf_bytes,
@@ -57,8 +59,6 @@ async def _process_tenant(cfg: dict) -> dict:
         _tenant_summary,
         _tenant_tz,
     )
-    from core.database import db
-    from core.email import _is_valid_email, send_email
 
     await _ensure_declaration_indexes()
 

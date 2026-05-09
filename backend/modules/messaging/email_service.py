@@ -9,11 +9,11 @@ import os
 import random
 import smtplib
 from datetime import datetime
+from email import encoders
 from email.mime.application import MIMEApplication
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email import encoders
 
 
 class EmailService:

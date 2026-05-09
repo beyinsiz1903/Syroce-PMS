@@ -1653,7 +1653,6 @@ async def group_check_in_all(
         raise HTTPException(status_code=404, detail="Grup bulunamadi")
 
     from core.atomic_checkin_checkout import CheckInError, check_in_booking_atomic
-
     from routers.webhook_retry_service import schedule_emit_reservation_updated
 
     checked_in = 0
@@ -1692,7 +1691,6 @@ async def group_check_out_all(
         raise HTTPException(status_code=404, detail="Grup bulunamadi")
 
     from core.atomic_checkin_checkout import CheckOutError, check_out_booking_atomic
-
     from routers.webhook_retry_service import schedule_emit_reservation_updated
 
     checked_out = 0

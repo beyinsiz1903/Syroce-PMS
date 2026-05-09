@@ -348,7 +348,6 @@ async def _basic_dashboard_impl(current_user: User, has_pii: bool):
     prev_room_nights = sum(_nights(b) for b in prev_bookings)
     prev_adr = round(prev_revenue / prev_room_nights, 2) if prev_room_nights > 0 else 0
     ly_revenue = sum(b.get('total_amount', 0) or 0 for b in ly_bookings)
-    ly_room_nights = sum(_nights(b) for b in ly_bookings)
 
     return {
         'date': today.strftime('%Y-%m-%d'),

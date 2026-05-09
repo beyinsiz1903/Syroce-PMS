@@ -14,7 +14,8 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from cache_manager import cache as cache_manager, cached
+from cache_manager import cache as cache_manager
+from cache_manager import cached
 from core.onboarding import (
     DEFAULT_STEPS,
     get_onboarding_progress,
