@@ -17,9 +17,8 @@ _BACKEND_DIR = os.path.abspath(os.path.dirname(__file__))
 if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
+import bcrypt
 from motor.motor_asyncio import AsyncIOMotorClient
-
-from core._pwd import BcryptContext
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("seed_demo")
@@ -30,7 +29,9 @@ DEMO_USERNAME = "demo"
 DEMO_PASSWORD = "demo123"
 DEMO_HOTEL_NAME = "Syroce Demo Hotel"
 
-pwd_context = BcryptContext()
+
+def _hash(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
 
 
 def _now_iso() -> str:
@@ -98,7 +99,7 @@ async def seed() -> None:
         "is_active": True,
         "email_verified": True,
         "email_verified_at": _now_iso(),
-        "hashed_password": pwd_context.hash(DEMO_PASSWORD),
+        "hashed_password": _hash(DEMO_PASSWORD),
         "created_at": _now_iso(),
     })
     log.info("created demo user email=%s id=%s tenant_id=%s", DEMO_EMAIL, user_id, tenant_id)
