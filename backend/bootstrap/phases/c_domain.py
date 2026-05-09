@@ -105,6 +105,16 @@ async def phase_c_domain_indexes_and_workers(app):
     except Exception as e:
         logger.warning(f"Report scheduler worker start error: {e}")
 
+    # Konaklama Vergisi Auto-Finalize + Email Scheduler (v95.9)
+    # Ay başında önceki ayın beyannamesini otomatik kilitler ve
+    # konfigüre edilmiş alıcılara PDF eki ile e-posta atar.
+    try:
+        from workers.konaklama_vergisi_scheduler import start as _start_kvb_sched
+        if _start_kvb_sched():
+            logger.info("Konaklama Vergisi scheduler started")
+    except Exception as e:
+        logger.warning(f"Konaklama Vergisi scheduler start error: {e}")
+
     # Marketplace indexes + product seed
     try:
         from core.subscriptions import ensure_indexes as _ms_indexes

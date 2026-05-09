@@ -44,6 +44,11 @@ class KonaklamaVergisiConfig(BaseModel):
     effective_from: str | None = None  # ISO date
     notes: str | None = None
     exempt_segments: list[str] = Field(default_factory=list)
+    # v95.9 — Otomatik beyanname + PDF e-posta otomasyonu
+    auto_finalize: bool = False  # ay başında önceki ayı otomatik kilitle
+    auto_finalize_day: int = Field(default=1, ge=1, le=10)
+    auto_email: bool = False  # finalize sonrası PDF e-posta gönder
+    email_recipients: list[str] = Field(default_factory=list)
 
 
 class CalculateRequest(BaseModel):
@@ -67,11 +72,19 @@ async def _load_config(tenant_id: str) -> dict[str, Any]:
             "effective_from": None,
             "notes": None,
             "exempt_segments": [],
+            "auto_finalize": False,
+            "auto_finalize_day": 1,
+            "auto_email": False,
+            "email_recipients": [],
         }
     doc.pop("_id", None)
     doc.setdefault("rate_percent", doc.get("tax_percentage", DEFAULT_RATE_PERCENT))
     doc.setdefault("auto_post", False)
     doc.setdefault("exempt_segments", [])
+    doc.setdefault("auto_finalize", False)
+    doc.setdefault("auto_finalize_day", 1)
+    doc.setdefault("auto_email", False)
+    doc.setdefault("email_recipients", [])
     return doc
 
 
@@ -90,6 +103,25 @@ async def update_config(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ) -> dict[str, Any]:
+    # v95.9 — Alıcı listesini sanitize et (boş + dup + bariz invalid'i at).
+    # Backend e-posta katmanı zaten _is_valid_email guard'ı çalıştırır;
+    # burada erkenden trim/dedup yapıyoruz ki UI'a kaydedilen liste temiz
+    # geri dönsün ve scheduler her tick'te aynı bozuk satırı denemesin.
+    raw_recipients = cfg.email_recipients or []
+    clean_recipients: list[str] = []
+    seen_recipients: set[str] = set()
+    for r in raw_recipients:
+        if not isinstance(r, str):
+            continue
+        rs = r.strip()
+        if not rs or "@" not in rs:
+            continue
+        key = rs.lower()
+        if key in seen_recipients:
+            continue
+        seen_recipients.add(key)
+        clean_recipients.append(rs)
+
     payload = {
         "tenant_id": current_user.tenant_id,
         "rate_percent": cfg.rate_percent,
@@ -99,6 +131,10 @@ async def update_config(
         "effective_from": cfg.effective_from,
         "notes": cfg.notes,
         "exempt_segments": cfg.exempt_segments,
+        "auto_finalize": cfg.auto_finalize,
+        "auto_finalize_day": cfg.auto_finalize_day,
+        "auto_email": cfg.auto_email,
+        "email_recipients": clean_recipients,
         "updated_at": datetime.now(UTC).isoformat(),
         "updated_by": current_user.id,
     }
@@ -589,6 +625,88 @@ async def pay_declaration(
     return await _load_decl(current_user.tenant_id, decl_id)
 
 
+def _decl_html(decl: dict) -> str:
+    """Beyanname için yazdırılabilir/PDF dostu HTML.
+
+    weasyprint render'ı için kullanılır; aynı zamanda e-posta gövdesi
+    olarak da gönderilebilir. CSS print mediasıyla A4 sayfa düzeni
+    verir; harici font/asset gerektirmez (offline-safe).
+    """
+    t = decl.get("tenant") or {}
+    rate = float(decl.get("rate_percent") or 0)
+    base = float(decl.get("total_base") or 0)
+    tax = float(decl.get("total_tax") or 0)
+    nights = float(decl.get("total_nights") or 0)
+    folio_count = int(decl.get("folio_count") or 0)
+
+    def _e(v: Any) -> str:
+        return xml_escape(str(v if v is not None else "").strip())
+
+    def _money(v: float) -> str:
+        return f"{v:,.2f} TL".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    return f"""<!DOCTYPE html>
+<html lang="tr"><head><meta charset="utf-8">
+<title>Konaklama Vergisi Beyannamesi {_e(decl.get('period'))}</title>
+<style>
+  @page {{ size: A4; margin: 18mm; }}
+  body {{ font-family: 'Helvetica', 'Arial', sans-serif; color:#0f172a; font-size: 11pt; }}
+  h1 {{ font-size: 16pt; margin: 0 0 4px; text-align: center; }}
+  .sub {{ text-align:center; color:#64748b; font-size: 9pt; margin-bottom: 18px; }}
+  table {{ width: 100%; border-collapse: collapse; margin-top: 8px; }}
+  th, td {{ padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align:left; }}
+  td.r {{ text-align: right; font-variant-numeric: tabular-nums; }}
+  .total {{ background:#f8fafc; font-weight: 700; font-size: 12pt; }}
+  .meta td {{ border:none; padding: 3px 0; }}
+  .meta td.k {{ color:#64748b; width: 40%; }}
+  .footer {{ margin-top: 28px; font-size: 8pt; color:#94a3b8; line-height: 1.5; }}
+</style></head>
+<body>
+  <h1>KONAKLAMA VERGİSİ BEYANNAMESİ</h1>
+  <div class="sub">{_e(decl.get('law_reference'))}</div>
+
+  <table class="meta">
+    <tr><td class="k">İşletme</td><td>{_e(t.get('hotel_name'))}</td></tr>
+    <tr><td class="k">Vergi No / Otel ID</td><td>{_e(t.get('tax_no') or t.get('hotel_id'))}</td></tr>
+    <tr><td class="k">Dönem</td><td>{_e(decl.get('period'))}</td></tr>
+    <tr><td class="k">Son Beyan/Ödeme Tarihi</td><td>{_e(decl.get('due_date'))}</td></tr>
+    <tr><td class="k">Vergi Oranı</td><td>%{rate:.2f}</td></tr>
+  </table>
+
+  <table>
+    <tr><th>Folio Sayısı</th><td class="r">{folio_count}</td></tr>
+    <tr><th>Toplam Geceleme</th><td class="r">{nights:.2f}</td></tr>
+    <tr><th>Matrah (KDV hariç)</th><td class="r">{_money(base)}</td></tr>
+    <tr class="total"><th>Tahakkuk Eden Vergi</th><td class="r">{_money(tax)}</td></tr>
+  </table>
+
+  <div class="footer">
+    Bu özet, dahili kontrol amaçlıdır. Resmi beyanname için Gelir İdaresi
+    Başkanlığı (GİB) e-Beyanname sistemini kullanınız. XML çıktısı GİB form
+    alanlarıyla 1-1 eşleşir; muhasebe yazılımına aktarmak için
+    kullanabilirsiniz. Otomatik üretildi: {_e(datetime.now(UTC).isoformat()[:19])} UTC.
+  </div>
+</body></html>"""
+
+
+def _decl_pdf_bytes(decl: dict) -> bytes:
+    """Beyanname HTML'ini weasyprint ile PDF byte'larına dönüştürür.
+
+    weasyprint cairo/pango bağımlılığı isteyen ağır bir kütüphane; lazy
+    import ile başlatma gecikmesi önlenir. Hata olursa caller'a açık
+    şekilde fırlatır — sessiz fallback yok (kullanıcı PDF butonuna
+    bastıysa ya PDF gelir ya net hata görür).
+    """
+    try:
+        from weasyprint import HTML  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(
+            500, f"PDF üretimi için weasyprint yüklü değil: {exc}",
+        ) from exc
+    html = _decl_html(decl)
+    return HTML(string=html).write_pdf()
+
+
 @router.get("/declarations/{decl_id}/export")
 async def export_declaration(
     decl_id: str, format: str = "xml",
@@ -610,7 +728,123 @@ async def export_declaration(
             content=body, media_type="application/json",
             headers={"Content-Disposition":
                      f'attachment; filename="kvb-{decl["period"]}.json"'})
-    raise HTTPException(400, "format yalnızca xml|json olabilir")
+    if fmt == "pdf":
+        pdf = _decl_pdf_bytes(decl)
+        return Response(
+            content=pdf, media_type="application/pdf",
+            headers={"Content-Disposition":
+                     f'attachment; filename="kvb-{decl["period"]}.pdf"'})
+    raise HTTPException(400, "format yalnızca xml|json|pdf olabilir")
+
+
+class EmailRequest(BaseModel):
+    recipients: list[str] | None = None
+    note: str | None = None
+
+
+@router.post("/declarations/{decl_id}/email")
+async def email_declaration(
+    decl_id: str,
+    body: EmailRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # v101 DW
+) -> dict[str, Any]:
+    """Beyannameyi PDF ek olarak e-posta gönder.
+
+    `recipients` boşsa config'teki `email_recipients` kullanılır. Resend
+    API üzerinden gönderim yapılır; her alıcıya ayrı bir mesaj gider
+    (Resend tek isteğe çok alıcı destekler ama bireysel iz/teslim
+    raporları için ayırıyoruz).
+    """
+    from core.email import _is_valid_email, send_email
+    decl = await _load_decl(current_user.tenant_id, decl_id)
+
+    cfg = await _load_config(current_user.tenant_id)
+    raw = body.recipients if body.recipients is not None else cfg.get(
+        "email_recipients") or []
+    seen: set[str] = set()
+    targets: list[str] = []
+    for r in raw:
+        if not isinstance(r, str):
+            continue
+        rs = r.strip()
+        if not rs or not _is_valid_email(rs):
+            continue
+        k = rs.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        targets.append(rs)
+    if not targets:
+        raise HTTPException(
+            400, "Alıcı bulunamadı — e-posta adresi ekleyin veya "
+                 "Yapılandırma → Alıcılar listesine en az bir geçerli "
+                 "adres girin.")
+
+    pdf_bytes = _decl_pdf_bytes(decl)
+    period = decl.get("period") or ""
+    subject = f"Konaklama Vergisi Beyannamesi — {period}"
+    note_html = ""
+    if body.note:
+        from core.mailing_safe import safe_html_value
+        note_html = (
+            f"<p style='margin:0 0 12px;color:#0f172a;'>"
+            f"{safe_html_value(body.note)}</p>"
+        )
+    html = (
+        "<div style='font-family:Helvetica,Arial,sans-serif;max-width:600px;"
+        "margin:0 auto;padding:18px;color:#0f172a;'>"
+        f"<h2 style='margin:0 0 8px;'>Konaklama Vergisi Beyannamesi — {period}</h2>"
+        f"<p style='color:#64748b;margin:0 0 16px;'>"
+        f"Son ödeme tarihi: <b>{decl.get('due_date','-')}</b> &middot; "
+        f"Tahakkuk eden vergi: <b>{float(decl.get('total_tax') or 0):.2f} TL</b>"
+        "</p>"
+        f"{note_html}"
+        "<p style='margin:0 0 8px;'>Beyanname özeti PDF olarak ekte yer "
+        "almaktadır. Resmi beyan için GİB e-Beyanname sistemini kullanınız.</p>"
+        "<p style='font-size:11px;color:#94a3b8;margin-top:18px;'>"
+        "Syroce PMS · Otomatik üretilmiş bildirim"
+        "</p></div>"
+    )
+    attachments = [{
+        "filename": f"kvb-{period}.pdf",
+        "content": pdf_bytes,
+        "content_type": "application/pdf",
+    }]
+
+    sent_ok = 0
+    failures: list[dict] = []
+    for to in targets:
+        res = await send_email(
+            to=to, subject=subject, html=html, attachments=attachments,
+        )
+        if res.get("sent"):
+            sent_ok += 1
+        else:
+            failures.append({"to": to, "error": res.get("error") or res.get("provider")})
+
+    # Audit + decl meta — son gönderim izini decl üzerinde tut.
+    await db.tax_declarations.update_one(
+        {"id": decl_id, "tenant_id": current_user.tenant_id},
+        {"$set": {
+            "last_email_at": datetime.now(UTC).isoformat(),
+            "last_email_by": current_user.id,
+            "last_email_recipients": targets,
+            "last_email_ok": sent_ok,
+            "last_email_failures": failures,
+        }})
+    await create_audit_log(
+        tenant_id=current_user.tenant_id, user=current_user,
+        action="EMAIL_KONAKLAMA_BEYANNAME",
+        entity_type="tax_declaration", entity_id=decl_id,
+        changes={"recipients": targets, "ok": sent_ok,
+                 "failures": len(failures)})
+    return {
+        "sent": sent_ok,
+        "total": len(targets),
+        "recipients": targets,
+        "failures": failures,
+    }
 
 
 @router.post("/post-folio/{folio_id}")

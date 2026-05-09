@@ -89,6 +89,7 @@ async def send_email(
     text: str | None = None,
     from_addr: str | None = None,
     reply_to: str | None = None,
+    attachments: list[dict] | None = None,
 ) -> dict:
     """Send a transactional email.
 
@@ -133,6 +134,27 @@ async def send_email(
             params["text"] = text
         if reply_to:
             params["reply_to"] = reply_to
+        if attachments:
+            # Resend SDK accepts {filename, content} where content is a
+            # base64-encoded string OR a list of byte values. We accept both
+            # raw bytes and base64-string from callers and normalize here.
+            import base64 as _b64
+            norm = []
+            for a in attachments:
+                if not isinstance(a, dict):
+                    continue
+                fname = str(a.get("filename") or "attachment.bin")
+                content = a.get("content")
+                if isinstance(content, (bytes, bytearray)):
+                    content = _b64.b64encode(bytes(content)).decode("ascii")
+                if not content:
+                    continue
+                item = {"filename": fname, "content": content}
+                if a.get("content_type"):
+                    item["content_type"] = a["content_type"]
+                norm.append(item)
+            if norm:
+                params["attachments"] = norm
         result = resend.Emails.send(params)
         msg_id = (result or {}).get("id") if isinstance(result, dict) else None
         logger.info("[email] Resend sent to=%s id=%s subject=%r", to, msg_id, subject)

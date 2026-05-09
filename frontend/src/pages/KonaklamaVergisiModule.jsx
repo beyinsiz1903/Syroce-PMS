@@ -14,11 +14,13 @@ import {
   ClipboardList,
   Download,
   FileCode,
+  FileDown,
   FileText,
   History,
   Info,
   Loader2,
   Lock,
+  Mail,
   Percent,
   Plus,
   Printer,
@@ -153,8 +155,10 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
       const res = await axios.get(
         `/finance/konaklama-vergisi/declarations/${decl.id}/export`,
         { params: { format: fmt }, responseType: "blob" });
-      const blob = new Blob([res.data], {
-        type: fmt === "xml" ? "application/xml" : "application/json" });
+      const mime = fmt === "xml" ? "application/xml"
+        : fmt === "pdf" ? "application/pdf"
+        : "application/json";
+      const blob = new Blob([res.data], { type: mime });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -164,6 +168,45 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
     } catch (e) {
       toast.error("İndirme başarısız");
     }
+  };
+
+  // PDF beyannameyi e-posta ile gönder. Boş bırakılırsa config'teki
+  // alıcılara gider; doluysa virgülle ayrılmış geçici alıcı listesini
+  // tek seferlik olarak kullanır (config kalıcı değişmez).
+  const emailDecl = async (decl) => {
+    const defaults = (config?.email_recipients || []).join(", ");
+    const input = await promptDialog({
+      title: `Beyannameyi E-posta Gönder — ${decl.period}`,
+      message: "Alıcı e-posta adres(ler)i (virgülle ayırın). Boş bırakırsanız "
+        + "Yapılandırma'daki kayıtlı alıcılar kullanılır.",
+      defaultValue: defaults,
+      placeholder: "ornek@firma.com, muhasebe@firma.com",
+    });
+    if (input === null || input === undefined) return;
+    const recipients = String(input).split(",").map((s) => s.trim())
+      .filter((s) => s && s.includes("@"));
+    if (input && recipients.length === 0) {
+      toast.error("Geçerli e-posta adresi girilmedi");
+      return;
+    }
+    setWorking(true);
+    try {
+      const { data } = await axios.post(
+        `/finance/konaklama-vergisi/declarations/${decl.id}/email`,
+        { recipients: recipients.length ? recipients : null });
+      const ok = data?.sent || 0;
+      const total = data?.total || 0;
+      if (ok === total && ok > 0) {
+        toast.success(`E-posta gönderildi (${ok}/${total})`);
+      } else if (ok > 0) {
+        toast.warning(`Kısmi gönderim: ${ok}/${total}`);
+      } else {
+        toast.error("E-posta gönderilemedi");
+      }
+      loadHistory();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "E-posta gönderimi başarısız");
+    } finally { setWorking(false); }
   };
 
   const loadConfig = async () => {
@@ -203,6 +246,9 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
   const saveConfig = async () => {
     setSaving(true);
     try {
+      const recipients = Array.isArray(config.email_recipients)
+        ? config.email_recipients
+        : String(config.email_recipients || "").split(",").map((s) => s.trim());
       const payload = {
         rate_percent: Number(config.rate_percent || 2),
         active: !!config.active,
@@ -210,6 +256,11 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
         effective_from: config.effective_from || null,
         notes: config.notes || null,
         exempt_segments: config.exempt_segments || [],
+        auto_finalize: !!config.auto_finalize,
+        auto_finalize_day: Math.max(1, Math.min(10,
+          Number(config.auto_finalize_day || 1))),
+        auto_email: !!config.auto_email,
+        email_recipients: recipients.filter((s) => s && s.includes("@")),
       };
       const { data } = await axios.put("/finance/konaklama-vergisi/config", payload);
       setConfig(data);
@@ -403,6 +454,79 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                 />
               </div>
 
+              {/* v95.9 — Otomatik Beyanname & E-posta Bölümü */}
+              <div className="border-t pt-4 space-y-3">
+                <h4 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                  <Mail className="h-4 w-4" /> Otomatik Beyanname & E-posta
+                </h4>
+                <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-3">
+                  <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div>
+                    Etkinleştirildiğinde, her ayın belirtilen gününde önceki
+                    ayın beyannamesi otomatik olarak hesaplanıp <b>onaylı</b>
+                    {" "}duruma alınır. <b>E-posta gönderimi</b> aktifse PDF
+                    eki ile aşağıdaki alıcılara iletilir. İşlem her dönem için
+                    yalnızca bir kez çalışır (idempotent).
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!!config.auto_finalize}
+                      onChange={(e) => setConfig({ ...config, auto_finalize: e.target.checked })}
+                    />
+                    Otomatik onaylama (önceki ay)
+                  </label>
+                  <div>
+                    <label className="text-xs font-medium text-gray-600">Onaylama Günü (1-10)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      className="border rounded px-3 py-2 w-full mt-1"
+                      disabled={!config.auto_finalize}
+                      value={config.auto_finalize_day ?? 1}
+                      onChange={(e) => setConfig({ ...config, auto_finalize_day: parseInt(e.target.value) || 1 })}
+                    />
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    disabled={!config.auto_finalize}
+                    checked={!!config.auto_email}
+                    onChange={(e) => setConfig({ ...config, auto_email: e.target.checked })}
+                  />
+                  Onay sonrası PDF beyannameyi e-posta gönder
+                </label>
+
+                <div>
+                  <label className="text-xs font-medium text-gray-600">
+                    E-posta Alıcıları (virgülle ayırın)
+                  </label>
+                  <input
+                    type="text"
+                    className="border rounded px-3 py-2 w-full mt-1 font-mono text-xs"
+                    placeholder="muhasebe@firma.com, mali-musavir@firma.com"
+                    disabled={!config.auto_email}
+                    value={Array.isArray(config.email_recipients)
+                      ? config.email_recipients.join(", ")
+                      : (config.email_recipients || "")}
+                    onChange={(e) => setConfig({
+                      ...config,
+                      email_recipients: e.target.value.split(",").map((s) => s.trim()),
+                    })}
+                  />
+                  <div className="text-xs text-slate-500 mt-1">
+                    Bu liste manuel "E-posta Gönder" işleminde de varsayılan
+                    olarak önerilir.
+                  </div>
+                </div>
+              </div>
+
               <div className="flex justify-end pt-2">
                 <Button onClick={saveConfig} disabled={saving}>
                   {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
@@ -536,11 +660,17 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                 )}
                 {finalized && (
                   <>
+                    <Button variant="outline" onClick={() => exportDecl(finalized, "pdf")}>
+                      <FileDown className="h-4 w-4 mr-1.5" /> PDF İndir
+                    </Button>
                     <Button variant="outline" onClick={() => exportDecl(finalized, "xml")}>
                       <FileCode className="h-4 w-4 mr-1.5" /> XML İndir (GİB)
                     </Button>
                     <Button variant="outline" onClick={() => exportDecl(finalized, "json")}>
                       <Download className="h-4 w-4 mr-1.5" /> JSON Arşiv
+                    </Button>
+                    <Button variant="outline" onClick={() => emailDecl(finalized)} disabled={working}>
+                      <Mail className="h-4 w-4 mr-1.5" /> E-posta Gönder
                     </Button>
                   </>
                 )}
@@ -607,14 +737,33 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                     <td className="px-3 py-2 text-xs">{d.submission_ref || "-"}</td>
                     <td className="px-3 py-2 text-xs">{d.payment_ref || "-"}</td>
                     <td className="px-3 py-2 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => exportDecl(d, "xml")}
-                        title="XML indir"
-                      >
-                        <FileCode className="h-4 w-4" />
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => exportDecl(d, "pdf")}
+                          title="PDF indir"
+                        >
+                          <FileDown className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => exportDecl(d, "xml")}
+                          title="XML indir (GİB)"
+                        >
+                          <FileCode className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => emailDecl(d)}
+                          disabled={working}
+                          title="E-posta gönder"
+                        >
+                          <Mail className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
