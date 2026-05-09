@@ -265,7 +265,7 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 # WEBHOOK ENDPOINTS — (API Key Auth)
 # ═════════════════════════════════════════════════════════════════
 
-VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated"}
+VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated", "rates.updated", "availability.updated"}
 
 
 
@@ -573,6 +573,16 @@ async def b2b_register_webhook(
     if existing >= 5:
         raise HTTPException(status_code=400, detail="Maximum 5 active webhooks per agency")
 
+    # Auto-generate HMAC signing secret if client did not supply one. The raw
+    # secret is returned ONCE here and is required for verifying webhook
+    # signatures on the receiver side.
+    import secrets as _secrets
+    auto_generated_secret = False
+    secret_value = (data.secret or "").strip()
+    if not secret_value:
+        secret_value = f"whsec_{_secrets.token_urlsafe(32)}"
+        auto_generated_secret = True
+
     webhook_id = _uuid()
     doc = {
         "id": webhook_id,
@@ -580,13 +590,12 @@ async def b2b_register_webhook(
         "agency_id": agency_id,
         "url": data.url,
         "events": list(set(data.events)),
-        "secret": data.secret or "",
+        "secret": secret_value,
         "is_active": True,
         "created_at": _now_iso(),
     }
     await sysdb.agency_webhooks.insert_one(doc)
     doc.pop("_id", None)
-    doc.pop("secret", None)
 
     return {
         "ok": True,
@@ -597,7 +606,12 @@ async def b2b_register_webhook(
             "is_active": True,
             "created_at": doc["created_at"],
         },
-        "message": "Webhook kaydedildi",
+        "secret": secret_value,
+        "secret_auto_generated": auto_generated_secret,
+        "message": (
+            "Webhook kaydedildi. Bu secret SADECE bir kez gosterilir — "
+            "imza dogrulamak icin guvenli sekilde saklayin."
+        ) if auto_generated_secret else "Webhook kaydedildi",
     }
 # ── GET /webhooks ──
 @router.get("/webhooks")

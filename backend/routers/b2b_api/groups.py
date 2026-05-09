@@ -264,7 +264,7 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 # WEBHOOK ENDPOINTS — (API Key Auth)
 # ═════════════════════════════════════════════════════════════════
 
-VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated"}
+VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated", "rates.updated", "availability.updated"}
 
 
 

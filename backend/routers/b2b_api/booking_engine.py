@@ -264,7 +264,7 @@ async def fire_webhooks(tenant_id: str, agency_id: str, event: str, data: dict):
 # WEBHOOK ENDPOINTS — (API Key Auth)
 # ═════════════════════════════════════════════════════════════════
 
-VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated"}
+VALID_WEBHOOK_EVENTS = {"reservation.created", "reservation.cancelled", "reservation.updated", "rates.updated", "availability.updated"}
 
 
 
@@ -514,6 +514,73 @@ class FolioChargeCreate(BaseModel):
     quantity: int = Field(1, ge=1, le=9999)
 
 router = APIRouter(prefix="/api/b2b", tags=["B2B API - Syroce"])
+
+
+# ── GET /hotel-info ──
+@router.get("/hotel-info")
+async def b2b_get_hotel_info(agency: dict = Depends(get_b2b_agency)):
+    """Discovery endpoint: minimal otel kartı (acente onboarding icin).
+
+    `/content` farkli olarak `published_content` flag'ine BAGIMLI DEGIL — her
+    aktif API key sahibi acente otelin temel bilgilerine ulasabilir, boylece
+    Syroce Agency programi otel listesini olusturup eslesirme yapabilir.
+    """
+    tenant_id = agency["tenant_id"]
+
+    tenant = await db.tenants.find_one(
+        {"id": tenant_id},
+        {"_id": 0, "name": 1, "currency": 1, "country": 1, "city": 1,
+         "address": 1, "phone": 1, "email": 1, "website": 1, "timezone": 1,
+         "property_type": 1, "star_rating": 1},
+    ) or {}
+
+    # Lightweight room type catalog (no rates, no availability)
+    rooms = await db.rooms.find(
+        {"tenant_id": tenant_id},
+        {"_id": 0, "room_type": 1, "capacity": 1, "base_price": 1, "bed_type": 1},
+    ).to_list(2000)
+    rt_summary = {}
+    for r in rooms:
+        rt = r.get("room_type", "Standard")
+        if rt not in rt_summary:
+            rt_summary[rt] = {
+                "room_type": rt,
+                "capacity": r.get("capacity", 2),
+                "base_price": r.get("base_price", 0),
+                "bed_type": r.get("bed_type", ""),
+                "total_rooms": 0,
+            }
+        rt_summary[rt]["total_rooms"] += 1
+
+    return {
+        "tenant_id": tenant_id,
+        "hotel": {
+            "name": tenant.get("name", ""),
+            "currency": tenant.get("currency", "TRY"),
+            "country": tenant.get("country", ""),
+            "city": tenant.get("city", ""),
+            "address": tenant.get("address", ""),
+            "phone": tenant.get("phone", ""),
+            "email": tenant.get("email", ""),
+            "website": tenant.get("website", ""),
+            "timezone": tenant.get("timezone", "Europe/Istanbul"),
+            "property_type": tenant.get("property_type", "hotel"),
+            "star_rating": tenant.get("star_rating"),
+        },
+        "agency": {
+            "id": agency.get("agency_id"),
+            "name": agency.get("agency_name", ""),
+            "commission_rate": agency.get("commission_rate", 0),
+        },
+        "room_types": list(rt_summary.values()),
+        "content_published": bool(
+            await db.agencies.find_one(
+                {"id": agency.get("agency_id"), "tenant_id": tenant_id,
+                 "published_content": True},
+                {"_id": 1},
+            )
+        ),
+    }
 
 
 # ── GET /content ──

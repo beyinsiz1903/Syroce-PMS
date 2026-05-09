@@ -348,7 +348,10 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
 
       toast.success(data.message || `${data.saved} kayıt güncellendi`);
       if (data.agency_push_count > 0) {
-        toast.success(`${data.agency_push_count} acenteye fiyat iletildi`, { duration: 5000 });
+        toast.success(
+          `${data.agency_push_count} acente için kaydedildi (webhook bildirimleri gönderildi)`,
+          { duration: 5000 },
+        );
       }
       fetchGrid();
     } catch (e) {
@@ -383,10 +386,10 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
 
   // Provider badge config
   const modeConfig = {
-    live: { className: 'bg-green-600 text-white', icon: <CheckCircle2 className="w-3 h-3 mr-1" />, label: 'Push Aktif' },
+    live: { className: 'bg-emerald-600 text-white', icon: <CheckCircle2 className="w-3 h-3 mr-1" />, label: 'Push Aktif' },
     shadow: { className: 'bg-amber-500 text-white', icon: <Eye className="w-3 h-3 mr-1" />, label: 'Shadow Mode' },
-    inactive: { className: 'bg-gray-400 text-white', icon: null, label: 'Inaktif' },
-    read_only: { className: 'bg-blue-500 text-white', icon: <Eye className="w-3 h-3 mr-1" />, label: 'Salt Okunur' },
+    inactive: { className: 'bg-slate-400 text-white', icon: null, label: 'Inaktif' },
+    read_only: { className: 'bg-sky-500 text-white', icon: <Eye className="w-3 h-3 mr-1" />, label: 'Salt Okunur' },
   };
 
   if (detecting) {
@@ -442,7 +445,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
               </Badge>
             )}
             {selectedAgencies.size > 0 && (
-              <Badge className="bg-teal-600 text-white" data-testid="unified-agency-badge">
+              <Badge className="bg-slate-600 text-white" data-testid="unified-agency-badge">
                 <Building2 className="w-3 h-3 mr-1" />
                 {selectedAgencies.size} Acente
               </Badge>
@@ -585,7 +588,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
                                   {agency.name}
                                 </span>
                                 {agency.has_custom_rates && (
-                                  <span className="text-[10px] text-teal-600 font-medium">Özel fiyat</span>
+                                  <span className="text-[10px] text-sky-600 font-medium">Özel fiyat</span>
                                 )}
                               </div>
                               <span className="text-[10px] text-zinc-400">%{agency.commission_rate}</span>
@@ -606,7 +609,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
                                 ) : (
                                   <button
                                     onClick={() => setEditingOverride(agency.id)}
-                                    className="text-[10px] text-teal-600 hover:text-teal-800 flex items-center gap-0.5"
+                                    className="text-[10px] text-sky-600 hover:text-sky-800 flex items-center gap-0.5"
                                     data-testid={`agency-override-btn-${agency.id}`}
                                   >
                                     <Settings2 className="w-3 h-3" />
@@ -625,7 +628,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
                           Güncelleme yapıldığında seçili {selectedAgencies.size} acenteye
                           afise fiyat iletilecektir.
                           {agencies.some(a => selectedAgencies.has(a.id) && a.has_custom_rates) && (
-                            <span className="block text-teal-600 mt-0.5">
+                            <span className="block text-sky-600 mt-0.5">
                               Özel fiyat tanımlı acentelerde indirimli fiyat uygulanir.
                             </span>
                           )}
@@ -655,7 +658,7 @@ const AgencyOverrideEditor = ({ agency, roomTypes, onSave, onCancel, onDelete, c
         <button
           onClick={() => setOverrideType('multiplier')}
           className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
-            overrideType === 'multiplier' ? 'bg-teal-100 text-teal-700' : 'bg-zinc-200 text-zinc-500'
+            overrideType === 'multiplier' ? 'bg-sky-100 text-sky-700' : 'bg-zinc-200 text-zinc-500'
           }`}
         >
           <Percent className="w-2.5 h-2.5" /> Carpan
@@ -663,7 +666,7 @@ const AgencyOverrideEditor = ({ agency, roomTypes, onSave, onCancel, onDelete, c
         <button
           onClick={() => setOverrideType('fixed')}
           className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
-            overrideType === 'fixed' ? 'bg-teal-100 text-teal-700' : 'bg-zinc-200 text-zinc-500'
+            overrideType === 'fixed' ? 'bg-sky-100 text-sky-700' : 'bg-zinc-200 text-zinc-500'
           }`}
         >
           <DollarSign className="w-2.5 h-2.5" /> Sabit
@@ -714,7 +717,7 @@ const AgencyOverrideEditor = ({ agency, roomTypes, onSave, onCancel, onDelete, c
         {agency.has_custom_rates && (
           <Button
             size="sm" variant="ghost"
-            className="h-5 text-[10px] px-1.5 text-red-500 hover:text-red-700"
+            className="h-5 text-[10px] px-1.5 text-rose-500 hover:text-rose-700"
             onClick={() => onDelete(agency.id)}
             data-testid={`agency-override-delete-${agency.id}`}
           >

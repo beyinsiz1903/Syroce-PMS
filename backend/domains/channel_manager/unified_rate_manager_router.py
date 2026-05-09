@@ -1085,6 +1085,41 @@ async def _push_to_agencies(tenant_id, agency_ids, pairs, per_room_map,
     if bulk_ops:
         await db.agency_rate_calendar.bulk_write(bulk_ops, ordered=False)
 
+    # Notify subscribed agency webhooks (rates.updated / availability.updated)
+    # so external programs (e.g. Syroce Agency) can invalidate their cache
+    # instead of polling. Best-effort; webhook_retry_service handles DLQ.
+    try:
+        from routers.webhook_retry_service import fire_webhooks_with_retry
+        events_to_fire = []
+        if "rate" in update_fields:
+            events_to_fire.append("rates.updated")
+        if "availability" in update_fields or "stop_sell" in update_fields:
+            events_to_fire.append("availability.updated")
+        if events_to_fire:
+            payload_base = {
+                "tenant_id": tenant_id,
+                "date_range": {"start": request.start_date, "end": request.end_date},
+                "room_type_codes": sorted({rt for rt, _ in pairs}),
+                "rate_plan_codes": sorted({rp for _, rp in pairs}),
+                "fields_changed": sorted(update_fields),
+                "updated_at": now,
+            }
+            for agency_id in valid_agency_ids:
+                payload = dict(payload_base, agency_id=agency_id)
+                for ev in events_to_fire:
+                    asyncio.create_task(
+                        fire_webhooks_with_retry(tenant_id, agency_id, ev, payload)
+                    )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("agency rates webhook dispatch failed: %s", exc)
+
+    # Bust agency list cache so urm UI sees fresh last_rate_push timestamps
+    try:
+        from cache_manager import cache as _cache
+        _cache.invalidate_tenant_cache(tenant_id, "urm_agencies")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("urm_agencies cache invalidate skipped: %s", exc)
+
     return len(valid_agency_ids)
 
 
