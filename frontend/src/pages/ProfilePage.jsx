@@ -12,8 +12,16 @@ import { promptDialog } from '@/lib/dialogs';
 import {
   User as UserIcon, Hotel, Shield, KeyRound, Mail, Phone,
   Smartphone, CheckCircle2, AlertTriangle, Copy, RefreshCw, Pencil,
-  Download, ShieldCheck,
+  Download, ShieldCheck, LogOut,
 } from 'lucide-react';
+
+const getInitials = (name) => {
+  if (!name) return '?';
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
 
 const ROLE_LABELS = {
   super_admin: 'Süper Admin',
@@ -68,7 +76,7 @@ const copyToClipboard = async (text) => {
   }
 };
 
-const ProfilePage = ({ user, tenant }) => {
+const ProfilePage = ({ user, tenant, onLogout }) => {
   const [me, setMe] = useState(user || null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -158,11 +166,15 @@ const ProfilePage = ({ user, tenant }) => {
         current_password: pwd.current_password,
         new_password: pwd.new_password,
       });
-      toast.success('Şifreniz başarıyla güncellendi.');
+      toast.success('Şifreniz başarıyla güncellendi. Güvenlik için diğer cihazlardan tekrar giriş yapın.');
       setPwd({ current_password: '', new_password: '', confirm_password: '' });
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Şifre değiştirilemedi.');
     } finally { setLoading(false); }
+  };
+
+  const handleLogoutClick = () => {
+    if (typeof onLogout === 'function') onLogout();
   };
 
   const Field = ({ icon: Icon, label, value, valueNode }) => (
@@ -188,10 +200,18 @@ const ProfilePage = ({ user, tenant }) => {
         title="Profilim"
         subtitle="Hesap bilgileriniz, iki adımlı doğrulama ve şifre yönetimi"
         actions={
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
-            <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
-            Yenile
-          </Button>
+          <>
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
+              Yenile
+            </Button>
+            {typeof onLogout === 'function' && (
+              <Button variant="outline" size="sm" onClick={handleLogoutClick} className="text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700">
+                <LogOut className="w-4 h-4 mr-1.5" />
+                Çıkış Yap
+              </Button>
+            )}
+          </>
         }
       />
 
@@ -210,6 +230,17 @@ const ProfilePage = ({ user, tenant }) => {
           )}
         </CardHeader>
         <CardContent>
+          {!editing && (
+            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100">
+              <div className="w-14 h-14 rounded-full bg-slate-200 flex items-center justify-center text-lg font-bold text-slate-700 shrink-0" aria-hidden="true">
+                {getInitials(me?.name)}
+              </div>
+              <div className="min-w-0">
+                <div className="text-base font-semibold text-slate-900 truncate">{me?.name || '—'}</div>
+                <div className="text-xs text-slate-500 truncate">{me?.email || ''}</div>
+              </div>
+            </div>
+          )}
           {editing ? (
             <form onSubmit={saveProfile} className="space-y-4 max-w-md">
               <div>
