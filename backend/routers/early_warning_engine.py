@@ -653,14 +653,24 @@ async def check_staleness_warning(
     elif data["staleness_level"] == "warning":
         confidence += ew_config.get("confidence_trend_bonus", provider)
 
-    age_text = f"{data['age_minutes']:.0f} dakika" if data["age_minutes"] else "hiç"
+    age_min = data.get("age_minutes")
+    if age_min is None:
+        reason = f"{provider} connector'ından henüz başarılı bir işlem kaydı yok. Bağlantı kurulamamış olabilir."
+    else:
+        if age_min < 60:
+            age_text = f"{age_min:.0f} dakika"
+        elif age_min < 1440:
+            age_text = f"{age_min / 60:.1f} saat"
+        else:
+            age_text = f"{age_min / 1440:.1f} gün"
+        reason = f"Son başarılı işlem {age_text} önce gerçekleşti. Connector sessiz kalmış olabilir."
 
     return EarlyWarning(
         warning_type="predictive.warning.staleness_risk",
         provider=provider,
         connector_id=connector_id,
         confidence=confidence,
-        reason=f"Son başarılı işlem {age_text} önce. Connector sessiz kalmış olabilir.",
+        reason=reason,
         recommended_action="Connector'ın aktif olup olmadığını kontrol edin. Test push göndererek bağlantıyı doğrulayın.",
         impacted_scope=f"{provider} connector senkronizasyonu",
         trend_data=data,
