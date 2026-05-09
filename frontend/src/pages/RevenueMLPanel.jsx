@@ -6,36 +6,38 @@ import {
 } from 'recharts';
 import {
   TrendingUp, Brain, Target, AlertTriangle,
-  Users, DollarSign, ChevronRight,
-  ArrowUp, ArrowDown, Minus, RefreshCw, Loader2,
+  Users, ChevronRight, ArrowUp, ArrowDown, Minus,
+  RefreshCw, Loader2, DollarSign,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { KpiCard } from '@/components/ui/kpi-card';
 import { toast } from 'sonner';
 
-function StatBox({ label, value, color = 'text-slate-800' }) {
-  return (
-    <div>
-      <div className="text-xs text-slate-500 mb-1">{label}</div>
-      <div className={`text-lg font-bold ${color}`}>{value}</div>
-    </div>
-  );
-}
+// Sprint A palette: indigo / sky / emerald / rose / amber / slate. Gradient yok.
+const COLOR = {
+  indigo: '#6366f1', // önceki #8b5cf6 (purple) yerine — palette migration.
+  sky: '#0ea5e9',
+  emerald: '#10b981',
+  amber: '#f59e0b',
+  rose: '#f43f5e',
+};
 
 function ActionBadge({ action }) {
   const map = {
-    increase: { label: 'Artir', icon: ArrowUp, cls: 'text-green-600' },
-    slight_increase: { label: 'Hafif Artir', icon: ArrowUp, cls: 'text-teal-600' },
-    maintain: { label: 'Koru', icon: Minus, cls: 'text-blue-600' },
-    decrease: { label: 'Dusur', icon: ArrowDown, cls: 'text-red-600' },
-    slight_decrease: { label: 'Hafif Dusur', icon: ArrowDown, cls: 'text-amber-600' },
-    no_data: { label: 'Veri Yok', icon: Minus, cls: 'text-slate-400' },
+    increase:        { label: 'Artır',       icon: ArrowUp,   cls: 'text-emerald-600' },
+    slight_increase: { label: 'Hafif Artır', icon: ArrowUp,   cls: 'text-emerald-500' },
+    maintain:        { label: 'Koru',        icon: Minus,     cls: 'text-sky-600' },
+    decrease:        { label: 'Düşür',       icon: ArrowDown, cls: 'text-rose-600' },
+    slight_decrease: { label: 'Hafif Düşür', icon: ArrowDown, cls: 'text-amber-600' },
+    no_data:         { label: 'Veri Yok',    icon: Minus,     cls: 'text-slate-400' },
   };
   const item = map[action] || map.no_data;
+  const Icon = item.icon;
   return (
     <span className={`flex items-center gap-1 text-xs font-medium ${item.cls}`}>
-      <item.icon className="w-3 h-3" /> {item.label}
+      <Icon className="w-3 h-3" /> {item.label}
     </span>
   );
 }
@@ -49,13 +51,14 @@ export default function RevenueMLPanel() {
     setLoading(true);
     setError(null);
     try {
-      const res = await axios.get(`/platform/ml/dashboard`, { timeout: 45000 });
+      const res = await axios.get('/platform/ml/dashboard', { timeout: 45000 });
       setData(res.data);
     } catch (e) {
       const status = e?.response?.status;
       const detail = e?.response?.data?.detail || e?.message || 'Bilinmeyen hata';
       let msg;
-      if (status === 403) msg = 'Yetki yok: Bu paneli görüntülemek için "Yönetici Raporları" izni gerekli.';
+      if (status === 401) msg = 'Oturum süresi doldu. Lütfen tekrar giriş yapın.';
+      else if (status === 403) msg = 'Yetki yok: Bu paneli görüntülemek için "Yönetici Raporları" izni gerekli.';
       else if (e?.code === 'ECONNABORTED') msg = 'Zaman aşımı: ML servisi 45 saniye içinde yanıt vermedi.';
       else if (status) msg = `ML servisi hatası (${status}): ${detail}`;
       else msg = `Bağlantı hatası: ${detail}`;
@@ -68,62 +71,99 @@ export default function RevenueMLPanel() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /><span className="ml-3 text-sm text-muted-foreground">ML hesaplanıyor...</span></div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+        <span className="ml-3 text-sm text-slate-500">ML hesaplanıyor…</span>
+      </div>
+    );
+  }
 
-  if (error) return (
-    <Card data-testid="revenue-ml-error">
-      <CardContent className="py-12 text-center space-y-3">
-        <AlertTriangle className="h-10 w-10 text-amber-500 mx-auto" />
-        <p className="text-sm text-slate-700">{error}</p>
-        <Button variant="outline" size="sm" onClick={load}><RefreshCw className="h-4 w-4 mr-1.5" />Yenile</Button>
-      </CardContent>
-    </Card>
-  );
+  if (error) {
+    return (
+      <Card data-testid="revenue-ml-error">
+        <CardContent className="py-12 text-center space-y-3">
+          <AlertTriangle className="h-10 w-10 text-amber-500 mx-auto" />
+          <p className="text-sm text-slate-700">{error}</p>
+          <Button variant="outline" size="sm" onClick={load}>
+            <RefreshCw className="h-4 w-4 mr-1.5" /> Yenile
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const forecast = data?.demand_forecast?.forecast || [];
   const priceOpt = data?.price_optimization?.price_points || [];
   const convRates = data?.conversion_rates?.by_source || [];
   const atRisk = data?.cancellation_risk?.bookings || [];
+  const sectionErrors = data?.section_errors || {};
+  const hasSectionErrors = Object.keys(sectionErrors).length > 0;
 
   return (
-    <div className="space-y-6" data-testid="revenue-ml-panel">
+    <div className="space-y-6 p-2" data-testid="revenue-ml-panel">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold flex items-center gap-2">
-          <Brain className="w-5 h-5 text-indigo-600" /> Revenue ML Sonuclari
+        <h3 className="text-lg font-semibold flex items-center gap-2 text-slate-900">
+          <Brain className="w-5 h-5 text-indigo-600" /> Revenue ML Sonuçları
         </h3>
         <Button variant="outline" size="sm" onClick={load} data-testid="refresh-ml-btn">
-          <RefreshCw className="h-4 w-4 mr-1" /> Yenile
+          <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
         </Button>
       </div>
 
-      {/* Summary KPIs */}
+      {hasSectionErrors && (
+        <Card className="border-amber-500/30 bg-amber-50/50">
+          <CardContent className="py-3 text-sm text-amber-800 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-600 flex-shrink-0" />
+            <div>
+              Bazı alt boru hatları başarısız oldu (kısmi sonuç gösteriliyor):{' '}
+              <strong>{Object.keys(sectionErrors).join(', ')}</strong>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Summary KPIs — Sprint A standardı */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card><CardContent className="p-4">
-          <StatBox label="Riskli Rez. Geliri" value={`${(data?.cancellation_risk?.total_at_risk_revenue || 0).toLocaleString()} TL`} color="text-red-600" />
-        </CardContent></Card>
-        <Card><CardContent className="p-4">
-          <StatBox label="Fiyat Opt. Firsati" value={priceOpt.length} color="text-teal-600" />
-        </CardContent></Card>
-        <Card><CardContent className="p-4">
-          <StatBox label="Yüksek Talep Gunu" value={`${data?.summary?.high_demand_days_next_14 || 0}/14`} color="text-indigo-600" />
-        </CardContent></Card>
-        <Card><CardContent className="p-4">
-          <StatBox label="Riskli Rez. Sayısı" value={data?.cancellation_risk?.at_risk_count || 0} color="text-amber-600" />
-        </CardContent></Card>
+        <KpiCard
+          icon={DollarSign}
+          intent="danger"
+          label="Riskli Rez. Geliri"
+          value={`${(data?.cancellation_risk?.total_at_risk_revenue || 0).toLocaleString('tr-TR')} TL`}
+        />
+        <KpiCard
+          icon={Target}
+          intent="success"
+          label="Fiyat Opt. Fırsatı"
+          value={priceOpt.length}
+        />
+        <KpiCard
+          icon={TrendingUp}
+          intent="info"
+          label="Yüksek Talep Günü"
+          value={`${data?.summary?.high_demand_days_next_14 || 0}/14`}
+        />
+        <KpiCard
+          icon={AlertTriangle}
+          intent="warning"
+          label="Riskli Rez. Sayısı"
+          value={data?.cancellation_risk?.at_risk_count || 0}
+        />
       </div>
 
       {/* Demand Forecast Chart */}
       <Card data-testid="demand-forecast-card">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-blue-600" /> Talep Tahmini ({data?.demand_forecast?.model || 'ML'})
+          <CardTitle className="text-sm font-medium flex items-center gap-2 text-slate-800">
+            <TrendingUp className="w-4 h-4 text-sky-600" /> Talep Tahmini ({data?.demand_forecast?.model || 'ML'})
           </CardTitle>
         </CardHeader>
         <CardContent>
           {forecast.length > 0 ? (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={forecast.slice(0, 14).map(f => ({
+                <AreaChart data={forecast.slice(0, 14).map((f) => ({
                   date: f.date?.slice(5),
                   doluluk: f.predicted_occupancy_pct,
                   otb: Math.round((f.on_the_books / (data?.demand_forecast?.total_rooms || 1)) * 100),
@@ -132,12 +172,16 @@ export default function RevenueMLPanel() {
                   <XAxis dataKey="date" tick={{ fontSize: 10 }} />
                   <YAxis domain={[0, 100]} />
                   <Tooltip />
-                  <Area type="monotone" dataKey="doluluk" name="Tahmini Doluluk %" stroke="#0f766e" fill="#0f766e" fillOpacity={0.2} />
-                  <Area type="monotone" dataKey="otb" name="OTB %" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.1} />
+                  <Area type="monotone" dataKey="doluluk" name="Tahmini Doluluk %"
+                    stroke={COLOR.emerald} fill={COLOR.emerald} fillOpacity={0.2} />
+                  <Area type="monotone" dataKey="otb" name="OTB %"
+                    stroke={COLOR.sky} fill={COLOR.sky} fillOpacity={0.1} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          ) : <p className="text-sm text-slate-400 text-center py-8">Tahmin verisi yok</p>}
+          ) : (
+            <p className="text-sm text-slate-400 text-center py-8">Tahmin verisi yok.</p>
+          )}
         </CardContent>
       </Card>
 
@@ -145,8 +189,8 @@ export default function RevenueMLPanel() {
         {/* Price Optimization */}
         <Card data-testid="price-optimization-card">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Target className="w-4 h-4 text-teal-600" /> Fiyat Optimizasyonu
+            <CardTitle className="text-sm font-medium flex items-center gap-2 text-slate-800">
+              <Target className="w-4 h-4 text-emerald-600" /> Fiyat Optimizasyonu
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -154,24 +198,26 @@ export default function RevenueMLPanel() {
               {priceOpt.map((pp, i) => (
                 <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                   <div>
-                    <div className="font-medium text-sm">{pp.room_type}</div>
+                    <div className="font-medium text-sm text-slate-900">{pp.room_type}</div>
                     <div className="text-xs text-slate-500">Esneklik: {pp.elasticity}</div>
                   </div>
                   <div className="flex items-center gap-3 text-right">
                     <div>
                       <div className="text-xs text-slate-500">Mevcut</div>
-                      <div className="text-sm font-medium">{pp.current_avg_price} TL</div>
+                      <div className="text-sm font-medium text-slate-800">{pp.current_avg_price} TL</div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-400" />
                     <div>
                       <div className="text-xs text-slate-500">Önerilen</div>
-                      <div className="text-sm font-bold text-teal-700">{pp.suggested_price} TL</div>
+                      <div className="text-sm font-bold text-emerald-700">{pp.suggested_price} TL</div>
                     </div>
                     <ActionBadge action={pp.action} />
                   </div>
                 </div>
               ))}
-              {priceOpt.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Optimizasyon verisi yok</p>}
+              {priceOpt.length === 0 && (
+                <p className="text-sm text-slate-400 text-center py-4">Optimizasyon verisi yok.</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -179,24 +225,31 @@ export default function RevenueMLPanel() {
         {/* Conversion Rates */}
         <Card data-testid="conversion-rates-card">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Users className="w-4 h-4 text-blue-600" /> Donusum Oranlari (Kaynak)
+            <CardTitle className="text-sm font-medium flex items-center gap-2 text-slate-800">
+              <Users className="w-4 h-4 text-sky-600" /> Dönüşüm Oranları (Kaynak)
             </CardTitle>
           </CardHeader>
           <CardContent>
             {convRates.length > 0 ? (
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={convRates.map(c => ({ name: c.source, rate: Math.round(c.conversion_rate * 100), total: c.total_bookings }))}>
+                  <BarChart data={convRates.map((c) => ({
+                    name: c.source,
+                    rate: Math.round(c.conversion_rate * 100),
+                    total: c.total_bookings,
+                  }))}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                     <YAxis domain={[0, 100]} />
                     <Tooltip />
-                    <Bar dataKey="rate" name="Donusum %" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                    {/* Sprint A: purple #8b5cf6 → indigo #6366f1 */}
+                    <Bar dataKey="rate" name="Dönüşüm %" fill={COLOR.indigo} radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            ) : <p className="text-sm text-slate-400 text-center py-8">Donusum verisi yok</p>}
+            ) : (
+              <p className="text-sm text-slate-400 text-center py-8">Dönüşüm verisi yok.</p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -204,8 +257,8 @@ export default function RevenueMLPanel() {
       {/* At-Risk Bookings */}
       <Card data-testid="at-risk-bookings-card">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-500" /> İptal Riski Yüksek Rezervasyonlar
+          <CardTitle className="text-sm font-medium flex items-center gap-2 text-slate-800">
+            <AlertTriangle className="w-4 h-4 text-rose-500" /> İptal Riski Yüksek Rezervasyonlar
             <Badge variant="destructive" className="ml-2">{atRisk.length}</Badge>
           </CardTitle>
         </CardHeader>
@@ -224,20 +277,24 @@ export default function RevenueMLPanel() {
               <tbody>
                 {atRisk.slice(0, 10).map((b, i) => (
                   <tr key={i} className="border-b last:border-0">
-                    <td className="py-2">{b.guest_name || 'N/A'}</td>
-                    <td className="py-2">{b.check_in?.slice(0, 10)}</td>
-                    <td className="py-2">{b.source || 'direct'}</td>
-                    <td className="py-2 text-right">{(b.total_amount || 0).toLocaleString()} TL</td>
+                    <td className="py-2 text-slate-800">{b.guest_name || 'N/A'}</td>
+                    <td className="py-2 text-slate-700">{b.check_in?.slice(0, 10)}</td>
+                    <td className="py-2 text-slate-700">{b.source || 'direct'}</td>
+                    <td className="py-2 text-right text-slate-800">
+                      {(b.total_amount || 0).toLocaleString('tr-TR')} TL
+                    </td>
                     <td className="py-2 text-right">
                       <Badge variant={b.risk_level === 'high' ? 'destructive' : 'secondary'}>
-                        {Math.round(b.cancellation_probability * 100)}%
+                        {Math.round((b.cancellation_probability || 0) * 100)}%
                       </Badge>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {atRisk.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Riskli rezervasyon yok</p>}
+            {atRisk.length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-4">Riskli rezervasyon yok.</p>
+            )}
           </div>
         </CardContent>
       </Card>
