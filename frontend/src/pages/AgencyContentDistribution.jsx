@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import {
-  Send, Save, Plus, Trash2, Loader2, Image, Bed, Wifi, Coffee,
-  Building2, CheckSquare, Square, MapPin, Phone, Mail, FileText
+  Send, Save, Plus, Trash2, Loader2, Bed,
+  Building2, CheckSquare, Square, RefreshCw, AlertTriangle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,47 +15,79 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
-  AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+  AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
+const AgencyContentDistribution = ({ user }) => {
   const [content, setContent] = useState(null);
   const [agencies, setAgencies] = useState([]);
   const [selectedAgencies, setSelectedAgencies] = useState([]);
+  const [pendingDeletes, setPendingDeletes] = useState({ rooms: new Set(), services: new Set() });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [distributing, setDistributing] = useState(false);
+  const [distributeDialog, setDistributeDialog] = useState(null); // { preview, unpublishOmitted }
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
   const canDelete = isSuperAdmin || ['super_admin', 'admin'].includes(user?.role) || (Array.isArray(user?.roles) && user.roles.some((r) => ['super_admin', 'admin'].includes(r)));
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [contentRes, agenciesRes] = await Promise.all([
-          axios.get('/hotel-content'),
-          axios.get('/agencies'),
-        ]);
-        setContent(contentRes.data);
-        setAgencies(agenciesRes.data);
-        // Pre-select agencies that already have published content
-        const published = agenciesRes.data.filter(a => a.published_content).map(a => a.id);
-        setSelectedAgencies(published);
-      } catch {
-        toast.error('Veriler yüklenemedi');
-      } finally {
-        setLoading(false);
-      }
+  // FIX #10: Initial fetch — 5xx tek retry + AbortController
+  const loadAll = useCallback(async ({ silent = false, signal } = {}) => {
+    if (!silent) setLoading(true);
+    const tryOnce = async () => {
+      const [contentRes, agenciesRes] = await Promise.all([
+        axios.get('/hotel-content', { signal }),
+        axios.get('/agencies', { signal }),
+      ]);
+      return { content: contentRes.data, agencies: agenciesRes.data };
     };
-    load();
+    try {
+      let res;
+      try {
+        res = await tryOnce();
+      } catch (firstErr) {
+        if (axios.isCancel?.(firstErr) || firstErr?.name === 'CanceledError') return;
+        const st = firstErr?.response?.status;
+        if (st && st >= 400 && st < 500) throw firstErr;
+        await new Promise(r => setTimeout(r, 1500));
+        res = await tryOnce();
+      }
+      setContent(res.content);
+      const list = Array.isArray(res.agencies) ? res.agencies : (res.agencies?.items || []);
+      setAgencies(list);
+      const published = list.filter(a => a.published_content).map(a => a.id);
+      setSelectedAgencies(published);
+    } catch (e) {
+      if (axios.isCancel?.(e) || e?.name === 'CanceledError') return;
+      console.error('[AgencyContent] load failed:', e?.response?.status, e?.response?.data);
+      if (!silent) {
+        toast.error('Veriler yüklenemedi: ' + (e.response?.data?.detail || e.message));
+      }
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    loadAll({ signal: ctrl.signal });
+    return () => ctrl.abort();
+  }, [loadAll]);
 
   const handleSaveContent = async () => {
     setSaving(true);
     try {
-      const res = await axios.put('/hotel-content', content);
+      // FIX #3: Local-state delete'leri kaydetme aninda kalicilastir.
+      const cleaned = {
+        ...content,
+        room_types: (content?.room_types || []).filter((_, i) => !pendingDeletes.rooms.has(i)),
+        services: (content?.services || []).filter((_, i) => !pendingDeletes.services.has(i)),
+      };
+      const res = await axios.put('/hotel-content', cleaned);
       setContent(res.data);
-      toast.success('Icerik kaydedildi');
+      setPendingDeletes({ rooms: new Set(), services: new Set() });
+      toast.success('İçerik kaydedildi');
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydetme hatası');
     } finally {
@@ -63,17 +95,48 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
     }
   };
 
-  const handleDistribute = async () => {
-    if (selectedAgencies.length === 0) return toast.error('En az bir acente seçin');
+  // FIX #1 (KRITIK): Dagitim artik 2 adim — once preview cek, kullaniciya
+  // diff'i (X eklenecek, Y kaldirilacak) goster, sonra onayla.
+  const openDistributeDialog = async () => {
+    if (selectedAgencies.length === 0) {
+      toast.error('En az bir acente seçin');
+      return;
+    }
+    setPreviewLoading(true);
+    try {
+      const { data } = await axios.get('/hotel-content/distribute-preview', {
+        params: { agency_ids: selectedAgencies.join(',') },
+      });
+      setDistributeDialog({ preview: data, unpublishOmitted: false });
+    } catch (e) {
+      toast.error('Önizleme alınamadı: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const submitDistribute = async () => {
+    if (!distributeDialog) return;
     setDistributing(true);
     try {
-      const res = await axios.post('/hotel-content/distribute', { agency_ids: selectedAgencies });
+      const res = await axios.post('/hotel-content/distribute', {
+        agency_ids: selectedAgencies,
+        unpublish_omitted: distributeDialog.unpublishOmitted,
+      });
       toast.success(res.data.message);
-      // Refresh agencies
-      const { data } = await axios.get('/agencies');
-      setAgencies(data);
+      setDistributeDialog(null);
+      // Refresh agencies (silent)
+      await loadAll({ silent: true });
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Dagitim hatası');
+      const detail = err.response?.data?.detail;
+      // Backend icerik validasyonu hatasi (#6): yapilandirilmis errors[]
+      if (detail?.code === 'content_incomplete') {
+        toast.error(detail.message || 'İçerik eksik', {
+          description: (detail.errors || []).join('  •  '),
+        });
+      } else {
+        toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Dağıtım hatası'));
+      }
     } finally {
       setDistributing(false);
     }
@@ -108,11 +171,20 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
     });
   };
 
-  const removeRoomType = (idx) => {
-    setContent(prev => ({
-      ...prev,
-      room_types: (prev.room_types || []).filter((_, i) => i !== idx)
-    }));
+  const markRoomDelete = (idx) => {
+    setPendingDeletes(prev => {
+      const next = new Set(prev.rooms);
+      next.add(idx);
+      return { ...prev, rooms: next };
+    });
+  };
+
+  const undoRoomDelete = (idx) => {
+    setPendingDeletes(prev => {
+      const next = new Set(prev.rooms);
+      next.delete(idx);
+      return { ...prev, rooms: next };
+    });
   };
 
   // Service helpers
@@ -131,37 +203,63 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
     });
   };
 
-  const removeService = (idx) => {
-    setContent(prev => ({
-      ...prev,
-      services: (prev.services || []).filter((_, i) => i !== idx)
-    }));
+  const markServiceDelete = (idx) => {
+    setPendingDeletes(prev => {
+      const next = new Set(prev.services);
+      next.add(idx);
+      return { ...prev, services: next };
+    });
   };
 
+  const undoServiceDelete = (idx) => {
+    setPendingDeletes(prev => {
+      const next = new Set(prev.services);
+      next.delete(idx);
+      return { ...prev, services: next };
+    });
+  };
+
+  const hasPendingDeletes = pendingDeletes.rooms.size > 0 || pendingDeletes.services.size > 0;
+
   if (loading) {
-    return <>
+    return (
       <div className="flex justify-center py-20"><Loader2 className="animate-spin text-slate-400" size={32} /></div>
-    </>;
+    );
   }
 
-  const pageContent = (
+  return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto" data-testid="agency-content-distribution">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900" data-testid="content-dist-title">Icerik Dagitimi</h1>
-          <p className="text-slate-500 text-sm mt-1">Otel bilgilerini duzenleyin ve sectiginiz acentelere gönderin</p>
+          {/* FIX #9: Türkçe karakter standartı */}
+          <h1 className="text-2xl font-bold text-slate-900" data-testid="content-dist-title">İçerik Dağıtımı</h1>
+          <p className="text-slate-500 text-sm mt-1">Otel bilgilerini düzenleyin ve seçtiğiniz acentelere yayınlayın.</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => loadAll({ silent: true })}>
+            <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+          </Button>
           <Button variant="outline" onClick={handleSaveContent} disabled={saving} data-testid="save-content-btn">
             {saving ? <Loader2 className="animate-spin mr-1" size={14} /> : <Save size={14} className="mr-1" />}
-            Kaydet
+            Kaydet{hasPendingDeletes ? ` (${pendingDeletes.rooms.size + pendingDeletes.services.size} silme)` : ''}
           </Button>
-          <Button onClick={handleDistribute} disabled={distributing} data-testid="distribute-btn" className="gap-2">
-            {distributing ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
-            Secili Acentelere Gonder
+          {/* FIX #1: Buton adi semantik — "Yayın Listesini Güncelle" */}
+          <Button onClick={openDistributeDialog} disabled={distributing || previewLoading} data-testid="distribute-btn" className="gap-2">
+            {(distributing || previewLoading) ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
+            Yayın Listesini Güncelle
           </Button>
         </div>
       </div>
+
+      {hasPendingDeletes && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>
+            {pendingDeletes.rooms.size + pendingDeletes.services.size} silme işlemi bekliyor —
+            <strong className="mx-1">Kaydet</strong>'e basana kadar uygulanmayacak.
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Content Editor */}
@@ -178,12 +276,12 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
               <Card>
                 <CardContent className="pt-6 space-y-4">
                   <div>
-                    <Label>Otel Adi</Label>
+                    <Label>Otel Adı</Label>
                     <Input value={content?.hotel_name || ''} onChange={e => setContent(p => ({ ...p, hotel_name: e.target.value }))} data-testid="hotel-name-input" />
                   </div>
                   <div>
                     <Label>Açıklama</Label>
-                    <Textarea rows={3} value={content?.description || ''} onChange={e => setContent(p => ({ ...p, description: e.target.value }))} placeholder="Otel hakkinda kisa tanitim..." />
+                    <Textarea rows={3} value={content?.description || ''} onChange={e => setContent(p => ({ ...p, description: e.target.value }))} placeholder="Otel hakkında kısa tanıtım..." />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -200,7 +298,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
                     <Input value={content?.email || ''} onChange={e => setContent(p => ({ ...p, email: e.target.value }))} />
                   </div>
                   <div>
-                    <Label>Olanaklar (virgul ile ayirin)</Label>
+                    <Label>Olanaklar (virgül ile ayırın)</Label>
                     <Input
                       value={(content?.amenities || []).join(', ')}
                       onChange={e => setContent(p => ({ ...p, amenities: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
@@ -213,78 +311,68 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
 
             {/* Room Types Tab */}
             <TabsContent value="rooms" className="space-y-3 mt-4">
-              {(content?.room_types || []).map((rt, idx) => (
-                <Card key={idx}>
-                  <CardContent className="pt-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-medium text-sm text-slate-700 flex items-center gap-2"><Bed size={14} /> Oda Tipi {idx + 1}</h4>
-                      {canDelete && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button size="sm" variant="ghost" className="text-red-500 h-7" data-testid={`delete-room-type-${idx}`}>
+              {(content?.room_types || []).map((rt, idx) => {
+                const marked = pendingDeletes.rooms.has(idx);
+                return (
+                  <Card key={idx} className={marked ? 'opacity-60 ring-1 ring-amber-300' : ''}>
+                    <CardContent className="pt-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-medium text-sm text-slate-700 flex items-center gap-2">
+                          <Bed size={14} /> Oda Tipi {idx + 1}
+                          {marked && <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]">Silinmek üzere</Badge>}
+                        </h4>
+                        {canDelete && (
+                          marked ? (
+                            <Button size="sm" variant="ghost" className="h-7 text-amber-700" onClick={() => undoRoomDelete(idx)} data-testid={`undo-delete-room-type-${idx}`}>
+                              Geri Al
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="ghost" className="text-rose-500 h-7" onClick={() => markRoomDelete(idx)} data-testid={`delete-room-type-${idx}`}>
                               <Trash2 size={13} />
                             </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Oda Tipini Siliyorsunuz</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                <strong>{rt.name || rt.room_type || `Oda Tipi ${idx + 1}`}</strong> oda tipini silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Vazgec</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => removeRoomType(idx)}
-                                className="bg-red-600 hover:bg-red-700"
-                                data-testid={`confirm-delete-room-type-${idx}`}
-                              >
-                                Evet, Sil
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label className="text-xs">Tip Kodu</Label>
-                        <Input value={rt.room_type} onChange={e => updateRoomType(idx, 'room_type', e.target.value)} placeholder="Standard" className="text-sm" />
+                          )
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">Tip Kodu</Label>
+                          <Input value={rt.room_type} onChange={e => updateRoomType(idx, 'room_type', e.target.value)} placeholder="Standard" className="text-sm" />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Görünen Ad</Label>
+                          <Input value={rt.name || rt.room_type} onChange={e => updateRoomType(idx, 'name', e.target.value)} className="text-sm" />
+                        </div>
                       </div>
                       <div>
-                        <Label className="text-xs">Gorunen Ad</Label>
-                        <Input value={rt.name || rt.room_type} onChange={e => updateRoomType(idx, 'name', e.target.value)} className="text-sm" />
+                        <Label className="text-xs">Açıklama</Label>
+                        <Textarea rows={2} value={rt.description} onChange={e => updateRoomType(idx, 'description', e.target.value)} className="text-sm" placeholder="Oda açıklaması..." />
                       </div>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Açıklama</Label>
-                      <Textarea rows={2} value={rt.description} onChange={e => updateRoomType(idx, 'description', e.target.value)} className="text-sm" placeholder="Oda aciklamasi..." />
-                    </div>
-                    <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <Label className="text-xs">Kapasite</Label>
+                          <Input type="number" value={rt.capacity} onChange={e => updateRoomType(idx, 'capacity', parseInt(e.target.value) || 1)} className="text-sm" />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Fiyat</Label>
+                          <Input type="number" value={rt.base_price} onChange={e => updateRoomType(idx, 'base_price', parseFloat(e.target.value) || 0)} className="text-sm" />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Yatak Tipi</Label>
+                          <Input value={rt.bed_type} onChange={e => updateRoomType(idx, 'bed_type', e.target.value)} className="text-sm" placeholder="Double" />
+                        </div>
+                      </div>
                       <div>
-                        <Label className="text-xs">Kapasite</Label>
-                        <Input type="number" value={rt.capacity} onChange={e => updateRoomType(idx, 'capacity', parseInt(e.target.value) || 1)} className="text-sm" />
+                        <Label className="text-xs">Oda Olanakları (virgül ile)</Label>
+                        <Input
+                          value={(rt.amenities || []).join(', ')}
+                          onChange={e => updateRoomType(idx, 'amenities', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                          className="text-sm" placeholder="WiFi, Minibar, Klima..."
+                        />
                       </div>
-                      <div>
-                        <Label className="text-xs">Fiyat</Label>
-                        <Input type="number" value={rt.base_price} onChange={e => updateRoomType(idx, 'base_price', parseFloat(e.target.value) || 0)} className="text-sm" />
-                      </div>
-                      <div>
-                        <Label className="text-xs">Yatak Tipi</Label>
-                        <Input value={rt.bed_type} onChange={e => updateRoomType(idx, 'bed_type', e.target.value)} className="text-sm" placeholder="Double" />
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Oda Olanaklari (virgul ile)</Label>
-                      <Input
-                        value={(rt.amenities || []).join(', ')}
-                        onChange={e => updateRoomType(idx, 'amenities', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
-                        className="text-sm" placeholder="WiFi, Minibar, Klima..."
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
               <Button variant="outline" onClick={addRoomType} className="w-full gap-2" data-testid="add-room-type-btn">
                 <Plus size={14} /> Oda Tipi Ekle
               </Button>
@@ -292,52 +380,42 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
 
             {/* Services Tab */}
             <TabsContent value="services" className="space-y-3 mt-4">
-              {(content?.services || []).map((svc, idx) => (
-                <Card key={idx}>
-                  <CardContent className="pt-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-sm text-slate-700">Hizmet {idx + 1}</h4>
-                      {canDelete && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button size="sm" variant="ghost" className="text-red-500 h-7" data-testid={`delete-service-${idx}`}>
+              {(content?.services || []).map((svc, idx) => {
+                const marked = pendingDeletes.services.has(idx);
+                return (
+                  <Card key={idx} className={marked ? 'opacity-60 ring-1 ring-amber-300' : ''}>
+                    <CardContent className="pt-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-medium text-sm text-slate-700 flex items-center gap-2">
+                          Hizmet {idx + 1}
+                          {marked && <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]">Silinmek üzere</Badge>}
+                        </h4>
+                        {canDelete && (
+                          marked ? (
+                            <Button size="sm" variant="ghost" className="h-7 text-amber-700" onClick={() => undoServiceDelete(idx)} data-testid={`undo-delete-service-${idx}`}>
+                              Geri Al
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="ghost" className="text-rose-500 h-7" onClick={() => markServiceDelete(idx)} data-testid={`delete-service-${idx}`}>
                               <Trash2 size={13} />
                             </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Hizmeti Siliyorsunuz</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                <strong>{svc.name || `Hizmet ${idx + 1}`}</strong> hizmetini silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Vazgec</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => removeService(idx)}
-                                className="bg-red-600 hover:bg-red-700"
-                                data-testid={`confirm-delete-service-${idx}`}
-                              >
-                                Evet, Sil
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label className="text-xs">Hizmet Adi</Label>
-                        <Input value={svc.name} onChange={e => updateService(idx, 'name', e.target.value)} className="text-sm" placeholder="Havuz" />
+                          )
+                        )}
                       </div>
-                      <div>
-                        <Label className="text-xs">Açıklama</Label>
-                        <Input value={svc.description} onChange={e => updateService(idx, 'description', e.target.value)} className="text-sm" placeholder="Açık havuz, 08:00-20:00" />
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">Hizmet Adı</Label>
+                          <Input value={svc.name} onChange={e => updateService(idx, 'name', e.target.value)} className="text-sm" placeholder="Havuz" />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Açıklama</Label>
+                          <Input value={svc.description} onChange={e => updateService(idx, 'description', e.target.value)} className="text-sm" placeholder="Açık havuz, 08:00-20:00" />
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
               <Button variant="outline" onClick={addService} className="w-full gap-2" data-testid="add-service-btn">
                 <Plus size={14} /> Hizmet Ekle
               </Button>
@@ -353,7 +431,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
                 <Building2 size={16} /> Acenteler
               </CardTitle>
               <div className="flex gap-2 mt-2">
-                <Button size="sm" variant="outline" className="text-xs h-7" onClick={selectAllAgencies}>Tumunu Sec</Button>
+                <Button size="sm" variant="outline" className="text-xs h-7" onClick={selectAllAgencies}>Tümünü Seç</Button>
                 <Button size="sm" variant="outline" className="text-xs h-7" onClick={deselectAllAgencies}>Temizle</Button>
               </div>
             </CardHeader>
@@ -380,7 +458,7 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
                       <div className="text-xs text-slate-400">{agency.contact_name || 'Yetkili belirtilmemiş'}</div>
                     </div>
                     {agency.published_content && (
-                      <Badge variant="outline" className="text-[10px] text-blue-500 border-blue-200 ml-auto flex-shrink-0">Yayinda</Badge>
+                      <Badge variant="outline" className="text-[10px] text-sky-600 border-sky-200 ml-auto flex-shrink-0">Yayında</Badge>
                     )}
                   </div>
                 ))
@@ -389,21 +467,71 @@ const AgencyContentDistribution = ({ user, tenant, onLogout }) => {
           </Card>
 
           <div className="mt-4 p-4 bg-slate-50 rounded-lg text-sm text-slate-500">
-            <p className="font-medium text-slate-700 mb-1">Nasil calisir?</p>
+            <p className="font-medium text-slate-700 mb-1">Nasıl çalışır?</p>
             <ul className="space-y-1 text-xs">
-              <li>1. Otel bilgilerini, oda tiplerini ve hizmetleri duzenleyin</li>
-              <li>2. "Kaydet" ile icerigi kaydedin</li>
-              <li>3. Sagdaki listeden acenteleri seçin</li>
-              <li>4. "Secili Acentelere Gonder" ile dagitimi yapin</li>
-              <li>5. Seçilen acenteler portallarinda bu icerigi gorur</li>
+              <li>1. Otel bilgilerini, oda tiplerini ve hizmetleri düzenleyin.</li>
+              <li>2. <strong>Kaydet</strong> ile içeriği kaydedin (silme işlemleri de bu adımda kalıcılaşır).</li>
+              <li>3. Sağdaki listeden acenteleri seçin.</li>
+              <li>4. <strong>Yayın Listesini Güncelle</strong> ile dağıtımı yapın — sistem önce eklenecek/kaldırılacak sayısını gösterir, siz onayladığınızda uygular.</li>
+              <li>5. Seçilen acenteler portallarında bu içeriği görür.</li>
             </ul>
           </div>
         </div>
       </div>
+
+      {/* FIX #1: Distribute onay dialog'u — diff onizlemesi + destruktif unpublish acik onay */}
+      <AlertDialog open={!!distributeDialog} onOpenChange={(o) => !o && setDistributeDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Yayın Listesini Güncelle</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm">
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-1">
+                  <div className="flex justify-between"><span>Şu an yayında:</span><strong>{distributeDialog?.preview?.currently_published ?? 0}</strong></div>
+                  <div className="flex justify-between"><span>Seçili:</span><strong>{distributeDialog?.preview?.selected ?? 0}</strong></div>
+                  <div className="flex justify-between text-emerald-700"><span>Yayına eklenecek:</span><strong>+{distributeDialog?.preview?.to_add ?? 0}</strong></div>
+                  <div className={`flex justify-between ${distributeDialog?.unpublishOmitted ? 'text-rose-700' : 'text-slate-400'}`}>
+                    <span>Yayından kaldırılacak:</span>
+                    <strong>{distributeDialog?.unpublishOmitted ? `-${distributeDialog?.preview?.to_remove ?? 0}` : '0 (kapalı)'}</strong>
+                  </div>
+                </div>
+
+                {(distributeDialog?.preview?.to_remove ?? 0) > 0 && (
+                  <label className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 p-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      data-testid="unpublish-omitted-check"
+                      checked={!!distributeDialog?.unpublishOmitted}
+                      onChange={(e) => setDistributeDialog(d => ({ ...d, unpublishOmitted: e.target.checked }))}
+                      className="mt-0.5"
+                    />
+                    <span className="text-rose-900">
+                      <strong>Listede olmayan {distributeDialog?.preview?.to_remove} acentenin yayınını da kaldır.</strong>
+                      <span className="block text-xs mt-1">Bu seçenek <em>destruktif</em>: işaretlemezseniz mevcut yayınlar korunur, sadece yeni acenteler eklenir.</span>
+                    </span>
+                  </label>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Vazgeç</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={submitDistribute}
+              disabled={distributing}
+              data-testid="confirm-distribute"
+            >
+              {distributing ? <Loader2 className="animate-spin mr-1" size={14} /> : <Send size={14} className="mr-1" />}
+              Onayla ve Uygula
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Per-row delete confirms artik render edilmiyor — silmeler `markRoomDelete` ile pending listeye gidiyor */}
+      {/* (Bilinçli: alert dialog kullanan eski deseni kaldirdik — Kaydet ile kalicilastirma daha guvenli) */}
     </div>
   );
-
-  return <>{pageContent}</>;
 };
 
 export default AgencyContentDistribution;

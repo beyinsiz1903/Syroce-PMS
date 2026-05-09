@@ -4,15 +4,15 @@ Agency Content Distribution Router — Icerik Dagitim Sistemi
 Hotel staff manages content once, selects agencies, and distributes.
 
 Endpoints:
-  GET    /api/hotel-content          - Get hotel content
-  PUT    /api/hotel-content          - Update hotel content
-  POST   /api/hotel-content/distribute - Distribute to selected agencies
+  GET    /api/hotel-content              - Get hotel content
+  PUT    /api/hotel-content              - Update hotel content
+  POST   /api/hotel-content/distribute   - Update publish list (atomic, additive by default)
 """
 import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.database import db
 from core.security import _is_super_admin, get_current_user
@@ -34,7 +34,7 @@ def _require_hotel_staff(user: User):
     if _is_super_admin(user):
         return
     if user.role in (UserRole.AGENCY_ADMIN, UserRole.AGENCY_AGENT):
-        raise HTTPException(status_code=403, detail="Acente kullanicilari bu islemi yapamaz")
+        raise HTTPException(status_code=403, detail="Acente kullanıcıları bu işlemi yapamaz")
 
 
 # ─── Models ──────────────────────────────────────────────────────
@@ -67,13 +67,37 @@ class HotelContentUpdate(BaseModel):
 
 class ContentDistributeRequest(BaseModel):
     agency_ids: list[str]
+    # FIX #1 (KRITIK): Eskiden distribute her zaman "diff senkron" yapiyordu —
+    # listede olmayan acenteler sessizce unpublish ediliyordu. Artik DEFAULT
+    # additive (sadece ekle); cikarmak icin acikca True gonderilmeli.
+    unpublish_omitted: bool = Field(
+        default=False,
+        description="True ise listede olmayan acentelerin yayini kaldirilir (destruktif).",
+    )
+
+
+# ─── Helpers ─────────────────────────────────────────────────────
+
+def _validate_content_for_distribute(content: dict) -> list[str]:
+    """Dagitim oncesi icerigin minimum dolu oldugunu dogrula. Hata listesi doner."""
+    errors: list[str] = []
+    if not (content.get("hotel_name") or "").strip():
+        errors.append("Otel adı boş olamaz.")
+    rts = content.get("room_types") or []
+    if not rts:
+        errors.append("En az bir oda tipi tanımlanmalı.")
+    else:
+        for i, rt in enumerate(rts, 1):
+            if not (rt.get("name") or rt.get("room_type") or "").strip():
+                errors.append(f"Oda Tipi {i}: ad/tip kodu boş.")
+    return errors
 
 
 # ─── Endpoints ───────────────────────────────────────────────────
 
 @router.get("/hotel-content")
 async def get_hotel_content(current_user: User = Depends(get_current_user)):
-    """Otel icerigini getir."""
+    """Otel içeriğini getir."""
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
 
@@ -113,6 +137,7 @@ async def get_hotel_content(current_user: User = Depends(get_current_user)):
             "amenities": tenant.get("amenities", []) if tenant else [],
             "room_types": list(rt_map.values()),
             "services": [],
+            "content_version": 1,
             "updated_at": _now_iso(),
         }
         await db.hotel_content.insert_one(content)
@@ -123,7 +148,7 @@ async def get_hotel_content(current_user: User = Depends(get_current_user)):
 
 @router.put("/hotel-content")
 async def update_hotel_content(data: HotelContentUpdate, current_user: User = Depends(get_current_user)):
-    """Otel icerigini guncelle."""
+    """Otel içeriğini güncelle. content_version'i +1 artirir (acente portal cache invalidation icin)."""
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
 
@@ -141,13 +166,19 @@ async def update_hotel_content(data: HotelContentUpdate, current_user: User = De
         "updated_at": _now_iso(),
     }
 
-    existing = await db.hotel_content.find_one({"tenant_id": tenant_id})
+    existing = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0, "content_version": 1})
     if existing:
         await db.hotel_content.update_one(
-            {"tenant_id": tenant_id}, {"$set": update_data}
+            {"tenant_id": tenant_id},
+            {
+                "$set": update_data,
+                "$inc": {"content_version": 1},  # Acente portal SWR/polling icin tetikleyici
+            },
         )
+        update_data["content_version"] = (existing.get("content_version") or 0) + 1
     else:
         update_data["id"] = _uuid()
+        update_data["content_version"] = 1
         await db.hotel_content.insert_one(update_data)
 
     update_data.pop("_id", None)
@@ -155,43 +186,109 @@ async def update_hotel_content(data: HotelContentUpdate, current_user: User = De
 
 
 @router.post("/hotel-content/distribute")
-async def distribute_content(data: ContentDistributeRequest, current_user: User = Depends(get_current_user)):
-    """Secilen acentelere icerik dagit."""
+async def distribute_content(
+    data: ContentDistributeRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Yayin listesini guncelle.
+
+    DEFAULT (additive): sadece secili acenteleri yayin listesine ekler.
+    `unpublish_omitted=True` ise listede olmayan acentelerin yayinini KALDIRIR
+    (destruktif — frontend bunu acikca onaylatmali).
+
+    Tek update_many cagrisi ile O(1) roundtrip + atomik."""
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
 
     if not data.agency_ids:
-        raise HTTPException(status_code=400, detail="En az bir acente secmelisiniz")
+        raise HTTPException(status_code=400, detail="En az bir acente seçmelisiniz")
 
-    # Verify content exists
+    # Icerik var mi + minimum dolulukta mi?
     content = await db.hotel_content.find_one({"tenant_id": tenant_id}, {"_id": 0})
     if not content:
-        raise HTTPException(status_code=404, detail="Once otel icerigini kaydedin")
-
-    # Update each selected agency's published status
-    updated = 0
-    now = _now_iso()
-    for aid in data.agency_ids:
-        result = await db.agencies.update_one(
-            {"id": aid, "tenant_id": tenant_id},
-            {"$set": {
-                "published_content": True,
-                "published_at": now,
-                "published_by": current_user.id,
-            }}
+        raise HTTPException(status_code=404, detail="Önce otel içeriğini kaydedin")
+    errors = _validate_content_for_distribute(content)
+    if errors:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "content_incomplete", "errors": errors,
+                    "message": "Dağıtımdan önce eksikleri tamamlayın: " + " ".join(errors)},
         )
-        if result.modified_count > 0:
-            updated += 1
 
-    # Unpublish agencies NOT in the list
-    await db.agencies.update_many(
-        {"tenant_id": tenant_id, "id": {"$nin": data.agency_ids}},
-        {"$set": {"published_content": False, "published_at": None}}
+    now = _now_iso()
+    user_id = getattr(current_user, "id", None) or getattr(current_user, "email", "")
+    content_version = content.get("content_version", 1)
+
+    # FIX #2 (N+1): Tek update_many — eskiden 50 acente icin 51 roundtrip vardi.
+    # FIX #4 (atomik): MongoDB update_many tek-cagri atomik bir mutasyondur.
+    add_res = await db.agencies.update_many(
+        {"id": {"$in": data.agency_ids}, "tenant_id": tenant_id, "status": "active"},
+        {"$set": {
+            "published_content": True,
+            "published_at": now,
+            "published_by": user_id,
+            "published_content_version": content_version,
+        }},
+    )
+
+    removed = 0
+    if data.unpublish_omitted:
+        # Sadece daha onceden yayinda olanlardan listede OLMAYANlari unpublish et —
+        # boylece "modified_count" gercek diff'i yansitir.
+        rem_res = await db.agencies.update_many(
+            {
+                "tenant_id": tenant_id,
+                "id": {"$nin": data.agency_ids},
+                "published_content": True,
+            },
+            {"$set": {"published_content": False, "published_at": None}},
+        )
+        removed = rem_res.modified_count or 0
+
+    # Toplam su anki yayinda
+    total_published = await db.agencies.count_documents(
+        {"tenant_id": tenant_id, "published_content": True}
     )
 
     return {
         "ok": True,
-        "distributed_to": updated,
+        "added": add_res.modified_count or 0,
+        "removed": removed,
+        "total_published": total_published,
         "total_selected": len(data.agency_ids),
-        "message": f"{updated} acenteye icerik dagitildi",
+        "content_version": content_version,
+        "message": (
+            f"{add_res.modified_count or 0} acente yayına eklendi"
+            + (f", {removed} acente yayından kaldırıldı" if removed else "")
+        ),
+    }
+
+
+@router.get("/hotel-content/distribute-preview")
+async def distribute_preview(
+    agency_ids: str = "",  # CSV
+    current_user: User = Depends(get_current_user),
+):
+    """Dagitim oncesi onay diyalogu icin diff onizlemesi: kac eklenecek/kaldirilacak."""
+    _require_hotel_staff(current_user)
+    tenant_id = current_user.tenant_id
+    ids = [x for x in (agency_ids or "").split(",") if x]
+    if not ids:
+        return {"to_add": 0, "to_remove": 0, "currently_published": 0, "selected": 0}
+
+    currently_published_ids = [
+        d["id"] async for d in db.agencies.find(
+            {"tenant_id": tenant_id, "published_content": True},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    cur_set = set(currently_published_ids)
+    new_set = set(ids)
+    to_add = len(new_set - cur_set)
+    to_remove = len(cur_set - new_set)
+    return {
+        "to_add": to_add,
+        "to_remove": to_remove,
+        "currently_published": len(cur_set),
+        "selected": len(new_set),
     }
