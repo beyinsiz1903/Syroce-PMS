@@ -502,7 +502,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     // ── Ops & Phases ───────────────────────────────────
     { path: "/audit-timeline", ...p(AuditTimelinePage, {}) , wrapLayout: true, layoutModule: "audit-timeline" },
     { path: "/urgent-message-report", ...p(UrgentMessageReportPage, {}) , wrapLayout: true, layoutModule: "urgent-message-report" },
-    { path: "/recalled-messages-report", ...p(RecalledMessagesReportPage, {}) , wrapLayout: true, layoutModule: "recalled-messages-report" },
+    { path: "/recalled-messages-report", ...p(RecalledMessagesReportPage, {}) , wrapLayout: true, layoutModule: "recalled_messages_report" },
     { path: "/id-photo-view-report", ...p(IdPhotoViewReportPage, {}) , wrapLayout: true, layoutModule: "id-photo-view-report" },
     { path: "/id-photo-admin", ...p(IdPhotoAdminPage, {}) , wrapLayout: true, layoutModule: "id-photo-admin" },
     { path: "/admin/urgent-permissions", ...p(UrgentPermissionAdminPage, {}) , wrapLayout: true, layoutModule: "urgent-permission-admin" },
