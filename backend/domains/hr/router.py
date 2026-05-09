@@ -884,3 +884,585 @@ async def update_ingredient(ingredient_id: str, ing_data: dict, current_user: Us
     )
     updated.pop('_id', None)
     return {'success': True, 'ingredient': updated}
+
+
+# ============= Departments / Positions (HR settings) =============
+
+class DepartmentPayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    code: str | None = Field(None, max_length=40)
+    description: str | None = Field(None, max_length=300)
+
+
+class PositionPayload(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)
+    department: str | None = Field(None, max_length=80)
+    default_hourly_rate: float | None = Field(None, ge=0, le=100000)
+
+
+@router.get("/hr/departments")
+async def list_departments(current_user: User = Depends(get_current_user)):
+    items = await db.hr_departments.find(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0}
+    ).sort('name', 1).to_list(200)
+    return {'items': items, 'total': len(items)}
+
+
+@router.post("/hr/departments")
+async def create_department(
+    payload: DepartmentPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    code = (payload.code or payload.name.lower().replace(' ', '_'))[:40]
+    if await db.hr_departments.find_one(
+        {'tenant_id': current_user.tenant_id, 'code': code}
+    ):
+        raise HTTPException(status_code=409, detail="Bu departman kodu zaten var")
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'name': payload.name,
+        'code': code,
+        'description': payload.description,
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.hr_departments.insert_one(item)
+    item.pop('_id', None)
+    return {'success': True, 'department': item}
+
+
+@router.delete("/hr/departments/{dept_id}")
+async def delete_department(
+    dept_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    res = await db.hr_departments.delete_one(
+        {'tenant_id': current_user.tenant_id, 'id': dept_id}
+    )
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Departman bulunamadı")
+    return {'success': True}
+
+
+@router.get("/hr/positions")
+async def list_positions(current_user: User = Depends(get_current_user)):
+    items = await db.hr_positions.find(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0}
+    ).sort('title', 1).to_list(300)
+    return {'items': items, 'total': len(items)}
+
+
+@router.post("/hr/positions")
+async def create_position(
+    payload: PositionPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'title': payload.title,
+        'department': payload.department,
+        'default_hourly_rate': payload.default_hourly_rate,
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.hr_positions.insert_one(item)
+    item.pop('_id', None)
+    return {'success': True, 'position': item}
+
+
+@router.delete("/hr/positions/{pos_id}")
+async def delete_position(
+    pos_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    res = await db.hr_positions.delete_one(
+        {'tenant_id': current_user.tenant_id, 'id': pos_id}
+    )
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Pozisyon bulunamadı")
+    return {'success': True}
+
+
+# ============= Staff CRUD (PUT/DELETE/profile) =============
+# NOT: POST /hr/staff `domains/pms/misc/hr.py` içinde mevcut.
+
+class StaffUpdatePayload(BaseModel):
+    name: str | None = Field(None, max_length=200)
+    email: str | None = Field(None, max_length=200)
+    phone: str | None = Field(None, max_length=40)
+    department: str | None = Field(None, max_length=80)
+    position: str | None = Field(None, max_length=120)
+    hire_date: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    employment_type: Literal[
+        'full_time', 'part_time', 'seasonal', 'contract', 'intern'
+    ] | None = None
+    hourly_rate: float | None = Field(None, ge=0, le=100000)
+    monthly_hours: float | None = Field(None, ge=0, le=400)
+    annual_leave_entitlement: int | None = Field(None, ge=0, le=365)
+
+
+@router.put("/hr/staff/{staff_id}")
+async def update_staff_member(
+    staff_id: str,
+    payload: StaffUpdatePayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    existing = await db.staff_members.find_one(
+        {'tenant_id': current_user.tenant_id, 'id': staff_id}
+    )
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail="Personel bulunamadı (yalnızca HR-managed personel düzenlenebilir)"
+        )
+    update = {
+        k: v for k, v in payload.model_dump(exclude_unset=True).items()
+        if v is not None
+    }
+    if not update:
+        return {'success': True, 'updated_fields': 0}
+    update['updated_at'] = datetime.now(UTC).isoformat()
+    await db.staff_members.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': staff_id},
+        {'$set': update}
+    )
+    return {'success': True, 'updated_fields': len(update) - 1}
+
+
+@router.delete("/hr/staff/{staff_id}")
+async def delete_staff_member(
+    staff_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    """Soft delete (active=False)."""
+    res = await db.staff_members.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': staff_id},
+        {'$set': {
+            'active': False,
+            'deactivated_at': datetime.now(UTC).isoformat(),
+        }}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    return {'success': True}
+
+
+@router.get("/hr/staff/{staff_id}/profile")
+async def get_staff_profile(
+    staff_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Aggregate profil: kişi + son 30g devam + izinler + performans + bordro + vardiya."""
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    today = _today_local()
+    start_30 = today - timedelta(days=30)
+
+    attendance = await db.attendance_records.find({
+        'tenant_id': current_user.tenant_id,
+        'staff_id': staff_id,
+        'date': {'$gte': start_30.isoformat(), '$lte': today.isoformat()},
+    }, {'_id': 0}).sort('date', -1).to_list(100)
+
+    leaves = await db.leave_requests.find({
+        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
+    }, {'_id': 0}).sort('created_at', -1).to_list(100)
+
+    reviews = await db.performance_reviews.find({
+        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
+    }, {'_id': 0}).sort('reviewed_at', -1).to_list(50)
+
+    payroll = await db.payroll_records.find({
+        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
+    }, {'_id': 0}).sort('period_month', -1).to_list(12)
+
+    shifts = await db.shift_schedules.find({
+        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
+        'shift_date': {'$gte': today.isoformat()},
+    }, {'_id': 0}).sort('shift_date', 1).to_list(20)
+
+    total_hours = round(sum(r.get('total_hours', 0) for r in attendance), 2)
+    days_present = len({r['date'] for r in attendance if r.get('clock_out')})
+    avg_score = (
+        round(sum(r.get('overall_score', 0) for r in reviews) / len(reviews), 2)
+        if reviews else 0
+    )
+
+    balance = await db.leave_balances.find_one({
+        'tenant_id': current_user.tenant_id,
+        'staff_id': staff_id,
+        'year': today.year,
+    }, {'_id': 0})
+
+    return {
+        'staff': staff,
+        'attendance': {
+            'records': attendance,
+            'total_hours_30d': total_hours,
+            'days_present_30d': days_present,
+        },
+        'leaves': {
+            'items': leaves,
+            'total': len(leaves),
+            'pending': sum(1 for leave in leaves if leave.get('status') == 'pending'),
+        },
+        'leave_balance': balance,
+        'performance': {
+            'items': reviews,
+            'avg_score': avg_score,
+            'total': len(reviews),
+        },
+        'payroll': {
+            'recent': payroll,
+            'count': len(payroll),
+        },
+        'upcoming_shifts': shifts,
+    }
+
+
+# ============= Leave Balance (yıllık izin bakiyesi) =============
+
+class LeaveBalancePayload(BaseModel):
+    staff_id: str = Field(..., min_length=1)
+    year: int = Field(..., ge=2020, le=2100)
+    annual_entitlement: int = Field(..., ge=0, le=365)
+    carry_over: int | None = Field(0, ge=0, le=365)
+    sick_entitlement: int | None = Field(None, ge=0, le=365)
+
+
+@router.get("/hr/leave-balance/{staff_id}")
+async def get_leave_balance(
+    staff_id: str,
+    year: int | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    yr = year or _today_local().year
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    balance = await db.leave_balances.find_one({
+        'tenant_id': current_user.tenant_id,
+        'staff_id': staff_id,
+        'year': yr,
+    }, {'_id': 0})
+    # İş Kanunu m.53 default: 14 gün yıllık ücretli izin
+    annual_ent = balance.get('annual_entitlement', 14) if balance else 14
+    carry = balance.get('carry_over', 0) if balance else 0
+    sick_ent = balance.get('sick_entitlement', 5) if balance else 5
+
+    approved = await db.leave_requests.find({
+        'tenant_id': current_user.tenant_id,
+        'staff_id': staff_id,
+        'status': 'approved',
+        'start_date': {'$gte': f'{yr}-01-01', '$lte': f'{yr}-12-31'},
+    }, {'_id': 0}).to_list(500)
+    used_annual = sum(
+        leave.get('total_days', 0) for leave in approved
+        if leave.get('leave_type') == 'annual'
+    )
+    used_sick = sum(
+        leave.get('total_days', 0) for leave in approved
+        if leave.get('leave_type') == 'sick'
+    )
+    total_annual = annual_ent + carry
+    return {
+        'staff_id': staff_id,
+        'staff_name': staff.get('name'),
+        'year': yr,
+        'configured': bool(balance),
+        'annual': {
+            'entitlement': annual_ent,
+            'carry_over': carry,
+            'total': total_annual,
+            'used': used_annual,
+            'remaining': max(0, total_annual - used_annual),
+        },
+        'sick': {
+            'entitlement': sick_ent,
+            'used': used_sick,
+            'remaining': max(0, sick_ent - used_sick),
+        },
+    }
+
+
+@router.post("/hr/leave-balance")
+async def set_leave_balance(
+    payload: LeaveBalancePayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    doc = {
+        'tenant_id': current_user.tenant_id,
+        'staff_id': payload.staff_id,
+        'year': payload.year,
+        'annual_entitlement': payload.annual_entitlement,
+        'carry_over': payload.carry_over or 0,
+        'sick_entitlement': (
+            payload.sick_entitlement if payload.sick_entitlement is not None else 5
+        ),
+        'updated_at': datetime.now(UTC).isoformat(),
+    }
+    await db.leave_balances.update_one(
+        {
+            'tenant_id': current_user.tenant_id,
+            'staff_id': payload.staff_id,
+            'year': payload.year,
+        },
+        {'$set': doc},
+        upsert=True,
+    )
+    return {'success': True}
+
+
+# ============= Shifts (vardiya planlaması) =============
+
+class ShiftPayload(BaseModel):
+    staff_id: str = Field(..., min_length=1)
+    shift_date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
+    shift_type: Literal['morning', 'afternoon', 'evening', 'night', 'split'] = 'morning'
+    start_time: str = Field(..., pattern=r'^\d{2}:\d{2}$')
+    end_time: str = Field(..., pattern=r'^\d{2}:\d{2}$')
+    notes: str | None = Field(None, max_length=300)
+
+
+@router.post("/hr/shifts")
+async def create_shift_v2(
+    payload: ShiftPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'staff_id': payload.staff_id,
+        'staff_name': staff.get('name'),
+        'shift_date': payload.shift_date,
+        'shift_type': payload.shift_type,
+        'start_time': payload.start_time,
+        'end_time': payload.end_time,
+        'notes': payload.notes,
+        'status': 'scheduled',
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.shift_schedules.insert_one(item)
+    item.pop('_id', None)
+    return {'success': True, 'shift': item}
+
+
+@router.get("/hr/shifts")
+async def list_shifts(
+    start: str | None = None,
+    end: str | None = None,
+    staff_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    today = _today_local()
+    start_dt = (
+        datetime.fromisoformat(start).date() if start
+        else today - timedelta(days=7)
+    )
+    end_dt = (
+        datetime.fromisoformat(end).date() if end
+        else today + timedelta(days=14)
+    )
+    query: dict[str, Any] = {
+        'tenant_id': current_user.tenant_id,
+        'shift_date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()},
+    }
+    if staff_id:
+        query['staff_id'] = staff_id
+    items = await db.shift_schedules.find(
+        query, {'_id': 0}
+    ).sort('shift_date', 1).to_list(2000)
+
+    # Personel adıyla zenginleştir (hem staff_members hem türeyen users)
+    staff_map = await _get_staff_map(current_user.tenant_id)
+    user_cursor = db.users.find({
+        'tenant_id': current_user.tenant_id,
+        'is_active': True,
+        'role': {'$in': [
+            'housekeeping', 'front_desk', 'supervisor',
+            'finance', 'sales', 'admin'
+        ]},
+    }, {'_id': 0, 'id': 1, 'name': 1})
+    async for u in user_cursor:
+        if u['id'] not in staff_map:
+            staff_map[u['id']] = {'id': u['id'], 'name': u.get('name') or 'Personel'}
+    for item in items:
+        if not item.get('staff_name'):
+            sm = staff_map.get(item.get('staff_id'), {})
+            item['staff_name'] = sm.get('name', item.get('staff_id'))
+    return {
+        'items': items,
+        'total': len(items),
+        'range': {'start': start_dt.isoformat(), 'end': end_dt.isoformat()},
+    }
+
+
+@router.delete("/hr/shifts/{shift_id}")
+async def delete_shift(
+    shift_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    res = await db.shift_schedules.delete_one(
+        {'tenant_id': current_user.tenant_id, 'id': shift_id}
+    )
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
+    return {'success': True}
+
+
+# ============= Recruitment Applicants =============
+
+class ApplicantPayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    email: str | None = Field(None, max_length=200)
+    phone: str | None = Field(None, max_length=40)
+    notes: str | None = Field(None, max_length=2000)
+    cv_url: str | None = Field(None, max_length=500)
+
+
+class ApplicantStatusPayload(BaseModel):
+    status: Literal['new', 'screening', 'interview', 'offer', 'hired', 'rejected']
+    note: str | None = Field(None, max_length=500)
+
+
+@router.post("/hr/job-postings/{job_id}/applicants")
+async def add_applicant(
+    job_id: str,
+    payload: ApplicantPayload,
+    current_user: User = Depends(get_current_user),
+):
+    job = await db.job_postings.find_one(
+        {'tenant_id': current_user.tenant_id, 'id': job_id}
+    )
+    if not job:
+        raise HTTPException(status_code=404, detail="İş ilanı bulunamadı")
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'job_id': job_id,
+        'job_title': job.get('title'),
+        'name': payload.name,
+        'email': payload.email,
+        'phone': payload.phone,
+        'notes': payload.notes,
+        'cv_url': payload.cv_url,
+        'status': 'new',
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.job_applicants.insert_one(item)
+    await db.job_postings.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': job_id},
+        {'$inc': {'applicants_count': 1}},
+    )
+    item.pop('_id', None)
+    return {'success': True, 'applicant': item}
+
+
+@router.get("/hr/job-postings/{job_id}/applicants")
+async def list_applicants(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    items = await db.job_applicants.find({
+        'tenant_id': current_user.tenant_id,
+        'job_id': job_id,
+    }, {'_id': 0}).sort('created_at', -1).to_list(500)
+    counts: dict[str, int] = {}
+    for it in items:
+        s = it.get('status', 'new')
+        counts[s] = counts.get(s, 0) + 1
+    return {'items': items, 'total': len(items), 'counts': counts}
+
+
+@router.post("/hr/applicants/{applicant_id}/status")
+async def update_applicant_status(
+    applicant_id: str,
+    payload: ApplicantStatusPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    res = await db.job_applicants.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': applicant_id},
+        {'$set': {
+            'status': payload.status,
+            'status_note': payload.note,
+            'status_updated_by': getattr(current_user, 'id', None),
+            'status_updated_at': datetime.now(UTC).isoformat(),
+        }},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Aday bulunamadı")
+    return {'success': True, 'status': payload.status}
+
+
+# ============= Performance Templates =============
+
+class CompetencyItem(BaseModel):
+    name: str = Field(..., max_length=100)
+    weight: float = Field(1.0, ge=0, le=10)
+
+
+class PerformanceTemplatePayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    description: str | None = Field(None, max_length=1000)
+    competencies: list[CompetencyItem] = Field(default_factory=list)
+
+
+@router.get("/hr/performance-templates")
+async def list_performance_templates(
+    current_user: User = Depends(get_current_user),
+):
+    items = await db.performance_templates.find({
+        'tenant_id': current_user.tenant_id,
+    }, {'_id': 0}).sort('name', 1).to_list(100)
+    return {'items': items, 'total': len(items)}
+
+
+@router.post("/hr/performance-templates")
+async def create_performance_template(
+    payload: PerformanceTemplatePayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'name': payload.name,
+        'description': payload.description,
+        'competencies': [c.model_dump() for c in payload.competencies],
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.performance_templates.insert_one(item)
+    item.pop('_id', None)
+    return {'success': True, 'template': item}
+
+
+@router.delete("/hr/performance-templates/{tpl_id}")
+async def delete_performance_template(
+    tpl_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    res = await db.performance_templates.delete_one({
+        'tenant_id': current_user.tenant_id,
+        'id': tpl_id,
+    })
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Şablon bulunamadı")
+    return {'success': True}

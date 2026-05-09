@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from core.database import db
 from core.security import get_current_user
@@ -24,20 +24,31 @@ async def add_staff_member(staff_data: dict, current_user: User = Depends(get_cu
     # personel ekleme HR yönetici işidir, sistem tanılaması değil.
     _perm=Depends(require_op("view_executive_reports")),
 ):
-    """Yeni personel ekle"""
+    """Yeni personel ekle.
+
+    Zorunlu: name. Diğer alanlar opsiyonel; UI form akışı eksik bilgiyle
+    de minimum personel kaydı oluşturabilsin diye gevşetildi.
+    Ek finansal alanlar (hourly_rate, monthly_hours, annual_leave_entitlement)
+    payroll ve izin bakiyesi hesaplarında kullanılır.
+    """
+    if not staff_data.get('name'):
+        raise HTTPException(status_code=400, detail="Personel adı zorunludur")
     staff = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
         'name': staff_data['name'],
-        'email': staff_data['email'],
-        'phone': staff_data['phone'],
-        'department': staff_data['department'],
-        'position': staff_data['position'],
-        'hire_date': staff_data['hire_date'],
+        'email': staff_data.get('email'),
+        'phone': staff_data.get('phone'),
+        'department': staff_data.get('department'),
+        'position': staff_data.get('position'),
+        'hire_date': staff_data.get('hire_date'),
         'employment_type': staff_data.get('employment_type', 'full_time'),
+        'hourly_rate': staff_data.get('hourly_rate'),
+        'monthly_hours': staff_data.get('monthly_hours'),
+        'annual_leave_entitlement': staff_data.get('annual_leave_entitlement', 14),
         'performance_score': 0.0,
         'active': True,
-        'created_at': datetime.now(UTC).isoformat()
+        'created_at': datetime.now(UTC).isoformat(),
     }
     await db.staff_members.insert_one(staff)
     return {'success': True, 'staff_id': staff['id']}
