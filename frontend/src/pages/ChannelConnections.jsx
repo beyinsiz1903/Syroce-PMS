@@ -22,6 +22,7 @@ const API = "";
 export default function ChannelConnections({ user, tenant, onLogout, embedded = false }) {
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [connectDialog, setConnectDialog] = useState(null); // 'hotelrunner' | 'exely' | null
   const [connecting, setConnecting] = useState(false);
   const [testing, setTesting] = useState(null);
@@ -43,35 +44,44 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
   const headers = { Authorization: `Bearer ${user?.token || user?.access_token}` };
 
   const fetchOverview = useCallback(async ({ silent = false } = {}) => {
-    // Geçici ağ hatasında (backend restart, vite proxy ECONNREFUSED) tek
-    // retry — gerçek 4xx ise atlanır, 5xx/network ise 1.5sn sonra tekrar.
-    const tryOnce = () => axios.get(`/channel-manager/connections/overview`, { headers });
-    try {
-      setLoading(true);
-      let resp;
+    // Geçici ağ hatasında (backend cold-start, vite proxy ECONNREFUSED)
+    // 3 deneme + exponential backoff (500ms, 1500ms, 4500ms). Gerçek 4xx
+    // hemen kırılır. Mount sırasında (silent) toast yerine içerik banner'ı
+    // gösterilir; kullanıcı tetiklediği Yenile'de toast da gösterilir.
+    const tryOnce = () =>
+      axios.get(`/channel-manager/connections/overview`, { headers });
+    const delays = [500, 1500, 4500];
+    let lastErr = null;
+    setLoading(true);
+    setFetchError(null);
+    for (let attempt = 0; attempt < delays.length; attempt += 1) {
       try {
-        resp = await tryOnce();
-      } catch (firstErr) {
-        const status = firstErr?.response?.status;
-        if (status && status >= 400 && status < 500) throw firstErr;
-        await new Promise(r => setTimeout(r, 1500));
-        resp = await tryOnce();
+        const resp = await tryOnce();
+        setOverview(resp.data);
+        setFetchError(null);
+        setLoading(false);
+        return;
+      } catch (err) {
+        lastErr = err;
+        const status = err?.response?.status;
+        if (status && status >= 400 && status < 500) break;
+        if (attempt < delays.length - 1) {
+          await new Promise(r => setTimeout(r, delays[attempt]));
+        }
       }
-      setOverview(resp.data);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[CM Connections] fetch failed:',
-        err?.response?.status, err?.response?.data || err?.message);
-      if (!silent) {
-        const detail = err?.response?.data?.detail
-          || (err?.message?.includes('Network') ? 'Sunucuya ulaşılamıyor' : null);
-        toast.error(detail
-          ? `Bağlantı durumu alınamadı: ${detail}`
-          : 'Bağlantı durumu alınamadı');
-      }
-    } finally {
-      setLoading(false);
     }
+    // eslint-disable-next-line no-console
+    console.error('[CM Connections] fetch failed after retries:',
+      lastErr?.response?.status, lastErr?.response?.data || lastErr?.message);
+    const detail = lastErr?.response?.data?.detail
+      || (lastErr?.message?.includes('Network') ? 'Sunucuya ulaşılamıyor' : null);
+    setFetchError(detail || 'Bağlantı durumu alınamadı');
+    if (!silent) {
+      toast.error(detail
+        ? `Bağlantı durumu alınamadı: ${detail}`
+        : 'Bağlantı durumu alınamadı');
+    }
+    setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- headers stable per mount
   }, []);
 
@@ -196,6 +206,22 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
               Yenile
             </Button>
           </div>
+
+          {fetchError && !loading && (
+            <Card className="border-rose-200 bg-rose-50/50" data-testid="fetch-error-banner">
+              <CardContent className="p-4 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-rose-600 mt-0.5 shrink-0" />
+                <div className="flex-1 text-sm">
+                  <p className="font-semibold text-rose-800">Bağlantı durumu alınamadı</p>
+                  <p className="text-rose-700 mt-0.5">{fetchError}</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => fetchOverview()} disabled={loading}>
+                  <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+                  Tekrar Dene
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           {loading ? (
             <div className="flex items-center justify-center py-16">
@@ -326,21 +352,38 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
           </Button>
         </div>
 
-        {/* Onboarding Guide */}
-        <Card className="border-blue-200 bg-blue-50/50">
+        {/* Fetch Error Banner (mount/silent fail için toast yerine) */}
+        {fetchError && !loading && (
+          <Card className="border-rose-200 bg-rose-50/50" data-testid="fetch-error-banner">
+            <CardContent className="p-4 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-rose-600 mt-0.5 shrink-0" />
+              <div className="flex-1 text-sm">
+                <p className="font-semibold text-rose-800">Bağlantı durumu alınamadı</p>
+                <p className="text-rose-700 mt-0.5">{fetchError}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => fetchOverview()} disabled={loading}>
+                <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+                Tekrar Dene
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Onboarding Guide (Sprint A info=sky paleti) */}
+        <Card className="border-sky-200 bg-sky-50/50">
           <CardContent className="p-4">
             <div className="flex gap-3">
-              <Info className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
-              <div className="text-sm text-blue-800 space-y-1">
+              <Info className="w-5 h-5 text-sky-600 mt-0.5 shrink-0" />
+              <div className="text-sm text-sky-800 space-y-1">
                 <p className="font-semibold">Yeni Otel Bağlantı Rehberi</p>
-                <ol className="list-decimal ml-4 space-y-0.5 text-blue-700">
+                <ol className="list-decimal ml-4 space-y-0.5 text-sky-700">
                   <li>Kanal saglayicinizdan (HotelRunner / Exely) API kimlik bilgilerini alin</li>
                   <li>Asagidaki ilgili saglayici kartindan "Baglan" butonuna tiklayin</li>
                   <li>Kimlik bilgilerini girin — sistem otomatik olarak bağlantı testi yapacak</li>
                   <li>Bağlantı kurulduktan sonra oda eslemelerini yapin</li>
                   <li>Acenteler (Booking, Expedia vb.) HotelRunner/Exely panelinden baglanir</li>
                 </ol>
-                <p className="text-xs text-blue-600 mt-2">
+                <p className="text-xs text-sky-600 mt-2">
                   <strong>Not:</strong> Her otel için ayrı token/ID gereklidir. Bu bilgiler otele ozeldir ve saglayici tarafından verilir.
                 </p>
               </div>

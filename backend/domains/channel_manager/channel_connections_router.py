@@ -26,18 +26,26 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
     """Tüm kanal sağlayıcılarının bağlantı durumunu döndürür."""
     tid = current_user.tenant_id
 
-    # HotelRunner status — check legacy collection first, then provider_connections
+    # HotelRunner status — iki koleksiyondan da okuyup tek doğruluk
+    # kaynağı oluştur. Önceki davranış: yalnızca eksik (`not hr_conn`)
+    # durumda provider_connections'a düşüyordu; ancak legacy doküman
+    # var olup `is_active` eksik/false olsa bile scheduler
+    # provider_connections veya secrets manager'daki token'la başarıyla
+    # çekim yapabiliyordu — bu durumda UI yanlış "Bağlı Değil"
+    # gösteriyordu. Çözüm: legacy doc'u yükle, eksik alanları
+    # provider_connections ile zenginleştir, `is_active`'i her iki
+    # kaynaktan birinde aktif ise true kabul et.
     hr_conn = await db.hotelrunner_connections.find_one(
         {"tenant_id": tid},
         {"_id": 0, "token": 0, "credentials_ref": 0},
     )
-    if not hr_conn:
-        prov_hr = await db.provider_connections.find_one(
-            {"tenant_id": tid, "provider": "hotelrunner", "status": "active"},
-            {"_id": 0},
-        )
-        if prov_hr:
-            creds = prov_hr.get("credentials", {})
+    prov_hr = await db.provider_connections.find_one(
+        {"tenant_id": tid, "provider": "hotelrunner", "status": "active"},
+        {"_id": 0},
+    )
+    if prov_hr:
+        creds = prov_hr.get("credentials", {})
+        if not hr_conn:
             hr_conn = {
                 "is_active": True,
                 "property_name": prov_hr.get("display_name", "HotelRunner"),
@@ -46,8 +54,18 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
                 "channels": [],
                 "connected_at": prov_hr.get("created_at"),
                 "last_sync_at": None,
-                "auto_sync_reservations": prov_hr.get("sync_reservations", False),
+                "auto_sync_reservations": prov_hr.get(
+                    "sync_reservations", False),
             }
+        else:
+            # Legacy doc var ama is_active eksik/false → provider_connections
+            # aktifse "bağlı" kabul et; eksik metadata'yı zenginleştir.
+            hr_conn["is_active"] = True
+            if not hr_conn.get("hr_id") and creds.get("hr_id"):
+                hr_conn["hr_id"] = creds["hr_id"]
+            if not hr_conn.get("property_name"):
+                hr_conn["property_name"] = prov_hr.get(
+                    "display_name", "HotelRunner")
     hr_mappings = await db.hotelrunner_room_mappings.count_documents({"tenant_id": tid})
     if hr_mappings == 0:
         hr_mappings = await db.cm_mappings.count_documents(
@@ -69,11 +87,38 @@ async def get_connections_overview(current_user: User = Depends(get_current_user
         "room_mappings_count": hr_mappings,
     }
 
-    # Exely status
+    # Exely status — aynı çift-kaynak okuma + zenginleştirme deseni.
     exely_conn = await db.exely_connections.find_one(
         {"tenant_id": tid},
         {"_id": 0, "password": 0, "username": 0, "credentials_ref": 0},
     )
+    prov_ex = await db.provider_connections.find_one(
+        {"tenant_id": tid, "provider": "exely", "status": "active"},
+        {"_id": 0},
+    )
+    if prov_ex:
+        ex_creds = prov_ex.get("credentials", {})
+        if not exely_conn:
+            exely_conn = {
+                "is_active": True,
+                "property_name": prov_ex.get("display_name", "Exely"),
+                "hotel_code": ex_creds.get("hotel_code", ""),
+                "mode": "soap",
+                "currency": "TRY",
+                "room_types": [],
+                "rate_plans": [],
+                "connected_at": prov_ex.get("created_at"),
+                "last_sync_at": None,
+                "auto_sync_reservations": prov_ex.get(
+                    "sync_reservations", False),
+            }
+        else:
+            exely_conn["is_active"] = True
+            if not exely_conn.get("hotel_code") and ex_creds.get("hotel_code"):
+                exely_conn["hotel_code"] = ex_creds["hotel_code"]
+            if not exely_conn.get("property_name"):
+                exely_conn["property_name"] = prov_ex.get(
+                    "display_name", "Exely")
     exely_mappings = await db.exely_room_mappings.count_documents({"tenant_id": tid})
     if exely_mappings == 0:
         exely_mappings = await db.cm_mappings.count_documents(
