@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import IncidentDrilldownDrawer from '@/components/ops/IncidentDrilldownDrawer';
 import EarlyWarningPanel from '@/components/ops/EarlyWarningPanel';
-import { alertDialog } from '@/lib/dialogs';
+import ConnectorBreakdownDialog from '@/components/ops/ConnectorBreakdownDialog';
+import { alertDialog, confirmDialog } from '@/lib/dialogs';
 import {
   Activity,
   AlertTriangle,
@@ -105,8 +106,9 @@ const StatusBadge = ({ status }) => {
     healthy: { color: 'bg-green-100 text-green-800', icon: CheckCircle2 },
     degraded: { color: 'bg-amber-100 text-amber-800', icon: AlertTriangle },
     critical: { color: 'bg-red-100 text-red-800', icon: XCircle },
+    unknown: { color: 'bg-gray-100 text-gray-600', icon: AlertCircle },
   };
-  const s = map[status] || map.pending;
+  const s = map[status] || map.unknown;
   const Icon = s.icon;
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${s.color}`}>
@@ -171,9 +173,19 @@ const PriorityBadge = ({ priority, label }) => {
 
 const TimeAgo = ({ timestamp }) => {
   if (!timestamp) return <span className="text-xs text-gray-400">—</span>;
-  const now = new Date();
-  const then = new Date(timestamp);
-  const diffMs = now - then;
+  // Backend genelde UTC ISO doner ('+00:00' veya 'Z'). Eger timezone yoksa
+  // (eski naive ISO), UTC varsayalim — aksi halde tarayici yerel TZ olarak
+  // parse eder ve diff hatali cikar.
+  let iso = String(timestamp);
+  const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(iso);
+  if (!hasTz && iso.includes('T')) iso += 'Z';
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) {
+    return <span className="text-xs text-gray-400">—</span>;
+  }
+  // Saat farki / istemci-sunucu clock skew icin negatif diffleri sifirla
+  let diffMs = new Date() - then;
+  if (diffMs < 0) diffMs = 0;
   const diffMin = Math.floor(diffMs / 60000);
   const diffHour = Math.floor(diffMs / 3600000);
   const diffDay = Math.floor(diffMs / 86400000);
@@ -272,15 +284,34 @@ const IncidentCard = ({ incident, onOpenTimeline, onRetry }) => {
 
 // ── Connector Health Card (Unified Contract) ───────────────────────
 
-const ConnectorHealthCard = ({ connector, onOpenTimeline }) => {
+const ConnectorHealthCard = ({ connector, onOpenBreakdown }) => {
   const getStatusBg = () => {
     if (connector.status === 'critical') return 'border-red-300 bg-red-50';
     if (connector.status === 'degraded') return 'border-amber-300 bg-amber-50';
     return 'border-green-300 bg-green-50';
   };
 
+  const handleClick = () => {
+    if (onOpenBreakdown && connector.connector_id) onOpenBreakdown(connector.connector_id);
+  };
+
+  const handleKeyDown = (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && onOpenBreakdown && connector.connector_id) {
+      e.preventDefault();
+      onOpenBreakdown(connector.connector_id);
+    }
+  };
+
   return (
-    <Card className={`${getStatusBg()} hover:shadow-md transition-shadow`} data-testid={`connector-health-${connector.provider}`}>
+    <Card
+      className={`${getStatusBg()} hover:shadow-md transition-shadow ${onOpenBreakdown ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500' : ''}`}
+      data-testid={`connector-health-${connector.provider}`}
+      onClick={onOpenBreakdown ? handleClick : undefined}
+      onKeyDown={onOpenBreakdown ? handleKeyDown : undefined}
+      role={onOpenBreakdown ? 'button' : undefined}
+      tabIndex={onOpenBreakdown ? 0 : undefined}
+      title={onOpenBreakdown ? 'Detaylı dökümü görüntüle' : undefined}
+    >
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -368,6 +399,16 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
   const [incidentFilter, setIncidentFilter] = useState('all');
   const [earlyWarningSummary, setEarlyWarningSummary] = useState(null);
   const [highlightProvider, setHighlightProvider] = useState(null);
+  // Sayfalama (50 → 100 → 150 → 200 max). Backend `limit` Query(le=200).
+  const [deliveriesLimit, setDeliveriesLimit] = useState(50);
+  const [opsEventsLimit, setOpsEventsLimit] = useState(50);
+  const [deliveriesHasMore, setDeliveriesHasMore] = useState(false);
+  const [opsEventsHasMore, setOpsEventsHasMore] = useState(false);
+  // Connector breakdown drawer (early-warnings/connector/{id})
+  const [breakdownConnectorId, setBreakdownConnectorId] = useState(null);
+  // useRef icin: aktif sekmeyi en yeni state ile polling-callback'a tasi
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
 
   // 5xx/network için 1.5s sonra tek sessiz retry; 4xx için retry yok
   const _retryGet = async (url) => {
@@ -410,23 +451,42 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
     } catch (e) { /* silently ignore */ }
   }, []);
 
-  const fetchDeliveries = useCallback(async () => {
+  const fetchDeliveries = useCallback(async (lim) => {
+    const useLimit = lim ?? deliveriesLimit;
     try {
-      const resp = await axios.get(`/ops-events/webhook-deliveries?limit=50`, {
+      const resp = await axios.get(`/ops-events/webhook-deliveries?limit=${useLimit}`, {
         headers: getAuthHeaders(),
       });
-      setDeliveries(resp.data?.deliveries || []);
+      const items = resp.data?.deliveries || [];
+      setDeliveries(items);
+      // Daha fazla var mi? Sayfa dolduysa ve max'a ulasilmadiysa "Daha Fazla" goster.
+      setDeliveriesHasMore(items.length >= useLimit && useLimit < 200);
     } catch (e) { /* silently ignore */ }
-  }, []);
+  }, [deliveriesLimit]);
 
-  const fetchOpsEvents = useCallback(async () => {
+  const fetchOpsEvents = useCallback(async (lim) => {
+    const useLimit = lim ?? opsEventsLimit;
     try {
-      const resp = await axios.get(`/ops-events/list?limit=50`, {
+      const resp = await axios.get(`/ops-events/list?limit=${useLimit}`, {
         headers: getAuthHeaders(),
       });
-      setOpsEvents(resp.data?.events || []);
+      const items = resp.data?.events || [];
+      setOpsEvents(items);
+      setOpsEventsHasMore(items.length >= useLimit && useLimit < 200);
     } catch (e) { /* silently ignore */ }
-  }, []);
+  }, [opsEventsLimit]);
+
+  const loadMoreDeliveries = () => {
+    const next = Math.min(deliveriesLimit + 50, 200);
+    setDeliveriesLimit(next);
+    fetchDeliveries(next);
+  };
+
+  const loadMoreOpsEvents = () => {
+    const next = Math.min(opsEventsLimit + 50, 200);
+    setOpsEventsLimit(next);
+    fetchOpsEvents(next);
+  };
 
   // Sprint 2: Fetch prioritized incidents
   const fetchPrioritizedIncidents = useCallback(async () => {
@@ -486,6 +546,29 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
     }
   }, [activeTab, fetchDeliveries, fetchDlq, fetchOpsEvents, fetchConnectorsHealth]);
 
+  // Sekme bazli polling — Webhook/Events/Channels sekmelerine gecince
+  // 30s'de bir tazele. Sayfa arka plandaysa atla. Genel Bakis polling'i
+  // ayri bir effect'te (ust kisimda) zaten 30s'de calisir.
+  useEffect(() => {
+    if (activeTab !== 'webhooks' && activeTab !== 'events' && activeTab !== 'channels') {
+      return undefined;
+    }
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      // Sekme bu arada degistiyse skip — eski sekmenin tazelemesini calistirma.
+      const cur = activeTabRef.current;
+      if (cur === 'webhooks') {
+        fetchDeliveries();
+        fetchDlq();
+      } else if (cur === 'events') {
+        fetchOpsEvents();
+      } else if (cur === 'channels') {
+        fetchConnectorsHealth();
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [activeTab, fetchDeliveries, fetchDlq, fetchOpsEvents, fetchConnectorsHealth]);
+
   const handleRefresh = () => {
     setRefreshing(true);
     fetchDashboard();
@@ -500,6 +583,13 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
   };
 
   const handleDlqRetry = async (dlqId) => {
+    const ok = await confirmDialog({
+      title: 'DLQ Retry Onayı',
+      message: 'Bu webhook teslimatı yeniden denenecek. Devam edilsin mi?',
+      confirmText: 'Evet, yeniden dene',
+      cancelText: 'Vazgeç',
+    });
+    if (!ok) return;
     setRetryingDlq(dlqId);
     try {
       await axios.post(`/ops-events/webhook-dlq/${dlqId}/retry`, {}, {
@@ -581,7 +671,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100">
               <Gauge className="w-4 h-4" />
               <span className="text-sm font-medium">Genel Sağlık:</span>
-              <StatusBadge status={healthSummary.overall_health || 'healthy'} />
+              <StatusBadge status={healthSummary.overall_health || 'unknown'} />
             </div>
             {data?.generated_at && (
               <span className="text-xs text-gray-400 hidden md:block">
@@ -759,10 +849,26 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
                     </div>
                   )}
                   {earlyWarningSummary.connectors_at_risk?.length > 0 && (
-                    <div className="flex items-center gap-2 mt-3">
+                    <div className="flex items-center gap-2 mt-3 flex-wrap">
                       <span className="text-xs text-gray-500">Risk altında:</span>
                       {earlyWarningSummary.connectors_at_risk.map((prov) => (
-                        <Badge key={prov} variant="outline" className="bg-amber-50 border-amber-300 text-amber-800 capitalize text-[10px]">
+                        <Badge
+                          key={prov}
+                          variant="outline"
+                          className="bg-amber-50 border-amber-300 text-amber-800 capitalize text-[10px] cursor-pointer hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => { setHighlightProvider(prov); setActiveTab('channels'); }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setHighlightProvider(prov);
+                              setActiveTab('channels');
+                            }
+                          }}
+                          title={`${prov} connector'larını filtrele`}
+                          data-testid={`risk-provider-${prov}`}
+                        >
                           {prov}
                         </Badge>
                       ))}
@@ -805,7 +911,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
                       <ConnectorHealthCard
                         key={conn.connector_id}
                         connector={conn}
-                        onOpenTimeline={openTimelineDrawer}
+                        onOpenBreakdown={setBreakdownConnectorId}
                       />
                     ))}
                   </div>
@@ -1087,6 +1193,23 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
                         ))}
                       </tbody>
                     </table>
+                    {deliveriesHasMore && (
+                      <div className="flex justify-center pt-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={loadMoreDeliveries}
+                          data-testid="deliveries-load-more"
+                        >
+                          Daha Fazla Yükle ({deliveriesLimit} / 200)
+                        </Button>
+                      </div>
+                    )}
+                    {!deliveriesHasMore && deliveriesLimit >= 200 && (
+                      <p className="text-[11px] text-gray-400 text-center pt-2">
+                        Maksimum 200 kayıt gösterilir
+                      </p>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -1178,7 +1301,7 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
                       <ConnectorHealthCard
                         key={conn.connector_id}
                         connector={conn}
-                        onOpenTimeline={openTimelineDrawer}
+                        onOpenBreakdown={setBreakdownConnectorId}
                       />
                     ))}
                   </div>
@@ -1255,6 +1378,23 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
                         )}
                       </div>
                     ))}
+                    {opsEventsHasMore && (
+                      <div className="flex justify-center pt-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={loadMoreOpsEvents}
+                          data-testid="ops-events-load-more"
+                        >
+                          Daha Fazla Yükle ({opsEventsLimit} / 200)
+                        </Button>
+                      </div>
+                    )}
+                    {!opsEventsHasMore && opsEventsLimit >= 200 && (
+                      <p className="text-[11px] text-gray-400 text-center pt-2">
+                        Maksimum 200 kayıt gösterilir
+                      </p>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -1274,6 +1414,13 @@ const ChannelOpsPage = ({ user, tenant, onLogout, embedded = false }) => {
           fetchDashboard();
           fetchPrioritizedIncidents();
         }}
+      />
+
+      {/* Connector Breakdown Dialog (early-warnings/connector/{id}) */}
+      <ConnectorBreakdownDialog
+        open={!!breakdownConnectorId}
+        connectorId={breakdownConnectorId}
+        onClose={() => setBreakdownConnectorId(null)}
       />
     </Layout>
   );
