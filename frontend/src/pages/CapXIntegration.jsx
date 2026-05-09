@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { toast } from "sonner";
 import { Network, CheckCircle2, XCircle, Send, Activity, RefreshCw, Link2, Copy } from "lucide-react";
 
@@ -54,10 +55,10 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
   const loadStatus = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get("/capx/status");
-      setStatus(data);
+      const resp = await axios.get("/capx/status");
+      setStatus(resp.data);
     } catch (e) {
-      toast.error("Durum okunamadı");
+      toast.error("Durum okunamadı: " + (e?.response?.data?.detail || e.message));
     } finally {
       setLoading(false);
     }
@@ -66,8 +67,8 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
   const loadCallbackUrl = useCallback(async () => {
     try {
       const params = tenant?.id ? { tenant_id: tenant.id } : {};
-      const { data } = await axios.get("/capx/callback/url", { params });
-      setCallbackUrl(data?.callback_url || "");
+      const resp = await axios.get("/capx/callback/url", { params });
+      setCallbackUrl(resp.data?.callback_url || "");
     } catch (e) {
       // sessiz: tenant_id yoksa endpoint 400 döner
     }
@@ -82,8 +83,8 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
       if (callbackUrl) body.callback_url = callbackUrl;
       if (tenant?.id) body.tenant_id = tenant.id;
       if (callbackJwt) body.jwt_token = callbackJwt;
-      const { data } = await axios.post("/capx/callback/register", body);
-      setCallbackResult(data);
+      const resp = await axios.post("/capx/callback/register", body);
+      setCallbackResult(resp.data);
       toast.success("Callback URL CapX'e bildirildi");
     } catch (e) {
       const detail = e?.response?.data?.detail;
@@ -110,10 +111,10 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
   const ping = async () => {
     setPinging(true); setPingResult(null);
     try {
-      const { data } = await axios.post("/capx/ping");
-      setPingResult(data);
-      if (data.ok) toast.success("CapX bağlantısı başarılı");
-      else toast.error(`Ping başarısız: ${data.error || "?"}`);
+      const resp = await axios.post("/capx/ping");
+      setPingResult(resp.data);
+      if (resp.data?.ok) toast.success("CapX bağlantısı başarılı");
+      else toast.error(`Ping başarısız: ${resp.data?.error || "?"}`);
     } catch (e) {
       const detail = e?.response?.data?.detail || e.message;
       setPingResult({ ok: false, error: typeof detail === "string" ? detail : JSON.stringify(detail) });
@@ -126,8 +127,8 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
   const sendAvailability = async () => {
     setAvailResult(null);
     try {
-      const { data } = await axios.post("/capx/sync/availability", avail);
-      setAvailResult(data);
+      const resp = await axios.post("/capx/sync/availability", avail);
+      setAvailResult(resp.data);
       toast.success("Müsaitlik gönderildi");
     } catch (e) {
       const detail = e?.response?.data?.detail || e.message;
@@ -139,8 +140,8 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
   const sendEvent = async () => {
     setEventResult(null);
     try {
-      const { data } = await axios.post("/capx/test-event", event);
-      setEventResult(data);
+      const resp = await axios.post("/capx/test-event", event);
+      setEventResult(resp.data);
       toast.success("Olay gönderildi (HMAC imzalı)");
     } catch (e) {
       const detail = e?.response?.data?.detail || e.message;
@@ -149,66 +150,109 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
     }
   };
 
-  return (
-    <>
-      <div className="p-6 space-y-6 max-w-5xl">
-        <div className="flex items-center gap-3">
-          <Network className="w-7 h-7 text-emerald-500" />
-          <div>
-            <h1 className="text-2xl font-bold">CapX Entegrasyonu</h1>
-            <p className="text-sm text-slate-500">B2B kapasite paylaşım ağı — push entegrasyonu</p>
-          </div>
-        </div>
+    const missingKeys = useMemo(() => {
+      if (!status) return [];
+      const out = [];
+      if (!status.base_url_set) out.push("CAPX_BASE_URL");
+      if (!status.api_key_set) out.push("CAPX_API_KEY");
+      if (!status.webhook_secret_set) out.push("CAPX_WEBHOOK_SECRET");
+      return out;
+    }, [status]);
 
-        {/* Status */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2"><Activity className="w-5 h-5" /> Bağlantı Durumu</CardTitle>
-            <Button size="sm" variant="outline" onClick={loadStatus} disabled={loading}>
-              <RefreshCw className={`w-4 h-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Yenile
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {!status ? (
-              <p className="text-slate-500">Yükleniyor…</p>
-            ) : (
-              <>
-                <div className="flex items-center gap-2">
-                  {status.configured ? <CheckCircle2 className="text-emerald-500 w-5 h-5" /> : <XCircle className="text-red-500 w-5 h-5" />}
-                  <span className="font-medium">{status.configured ? "Yapılandırılmış" : "Yapılandırma eksik"}</span>
+  return (
+    <div className="p-6 space-y-6 max-w-5xl">
+      <PageHeader
+        icon={Network}
+        title="CapX Entegrasyonu"
+        subtitle="B2B kapasite paylaşım ağı — push entegrasyonu"
+        actions={
+          <Button variant="outline" size="sm" onClick={loadStatus} disabled={loading}>
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+            Yenile
+          </Button>
+        }
+      />
+
+      {/* Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Activity className="w-5 h-5 text-slate-700" aria-hidden="true" />
+            Bağlantı Durumu
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!status ? (
+            <p className="text-slate-500 text-sm">Yükleniyor…</p>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                {status.configured
+                  ? <CheckCircle2 className="text-emerald-600 w-5 h-5" aria-hidden="true" />
+                  : <XCircle className="text-rose-600 w-5 h-5" aria-hidden="true" />}
+                <span className="font-medium">
+                  {status.configured ? "Yapılandırılmış" : "Yapılandırma eksik"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+                <StatusBadge intent={status.base_url_set ? "success" : "danger"} icon={status.base_url_set ? CheckCircle2 : XCircle}>
+                  Base URL {status.base_url_set ? "OK" : "Eksik"}
+                </StatusBadge>
+                <StatusBadge intent={status.api_key_set ? "success" : "danger"} icon={status.api_key_set ? CheckCircle2 : XCircle}>
+                  API Key {status.api_key_set ? "OK" : "Eksik"}
+                </StatusBadge>
+                <StatusBadge intent={status.webhook_secret_set ? "success" : "danger"} icon={status.webhook_secret_set ? CheckCircle2 : XCircle}>
+                  Webhook Secret {status.webhook_secret_set ? "OK" : "Eksik"}
+                </StatusBadge>
+              </div>
+              {status.base_url && (
+                <p className="text-xs text-slate-500 break-all font-mono">{status.base_url}</p>
+              )}
+              {missingKeys.length > 0 && (
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
+                  Eksik anahtar{missingKeys.length > 1 ? "ları" : "ı"}{" "}
+                  {missingKeys.map((k, i) => (
+                    <React.Fragment key={k}>
+                      <a
+                        href={`/admin/integration-credentials#${k}`}
+                        className="underline font-mono font-medium hover:text-amber-900"
+                      >
+                        {k}
+                      </a>
+                      {i < missingKeys.length - 1 ? ", " : ""}
+                    </React.Fragment>
+                  ))}
+                  {" "}
+                  <a href="/admin/integration-credentials" className="underline">
+                    Entegrasyon Anahtarları
+                  </a>{" "}
+                  sayfasından ekleyin.
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-sm">
-                  <Badge variant={status.base_url_set ? "default" : "destructive"}>Base URL {status.base_url_set ? "OK" : "Eksik"}</Badge>
-                  <Badge variant={status.api_key_set ? "default" : "destructive"}>API Key {status.api_key_set ? "OK" : "Eksik"}</Badge>
-                  <Badge variant={status.webhook_secret_set ? "default" : "destructive"}>Webhook Secret {status.webhook_secret_set ? "OK" : "Eksik"}</Badge>
-                </div>
-                {status.base_url && <p className="text-xs text-slate-500 break-all">{status.base_url}</p>}
-                {!status.configured && (
-                  <p className="text-xs text-amber-600">
-                    Eksik anahtarları <a href="/admin/integration-credentials" className="underline">Entegrasyon Anahtarları</a> sayfasından (CAPX_BASE_URL, CAPX_API_KEY, CAPX_WEBHOOK_SECRET) ekleyin.
-                  </p>
-                )}
-              </>
-            )}
-            <Button onClick={ping} disabled={pinging || !status?.configured} className="mt-2">
-              <Send className="w-4 h-4 mr-1" /> {pinging ? "Test ediliyor…" : "Canlı Bağlantı Testi"}
-            </Button>
-            {pingResult && (
-              <pre className="text-xs bg-slate-100 dark:bg-slate-800 rounded p-3 overflow-auto max-h-48">{JSON.stringify(pingResult, null, 2)}</pre>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </>
+          )}
+          <Button onClick={ping} disabled={pinging || !status?.configured}>
+            <Send className="w-4 h-4 mr-1.5" aria-hidden="true" />
+            {pinging ? "Test ediliyor…" : "Canlı Bağlantı Testi"}
+          </Button>
+          {pingResult && (
+            <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-3 overflow-auto max-h-48 font-mono text-slate-700">
+              {JSON.stringify(pingResult, null, 2)}
+            </pre>
+          )}
+        </CardContent>
+      </Card>
 
         {/* Inbound callback (CapX → PMS) */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Link2 className="w-5 h-5" /> Inbound Callback URL (CapX → PMS)
+              <Link2 className="w-5 h-5 text-slate-700" aria-hidden="true" /> Inbound Callback URL (CapX → PMS)
             </CardTitle>
             <p className="text-xs text-slate-500">
               CapX'in eşleşme olaylarını (match.created / match.cancelled) bu otele
               push edeceği herkese açık webhook adresi. "Aktive Et" CapX'e
-              <code className="mx-1 px-1 bg-slate-100 dark:bg-slate-800 rounded">
+              <code className="mx-1 px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-slate-700 font-mono">
                 PUT /api/integrations/v1/pms/callback
               </code>
               ile bildirir.
@@ -228,7 +272,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
                   onClick={copyCallback} disabled={!callbackUrl}
                   aria-label="Kopyala"
                 >
-                  <Copy className="w-4 h-4" />
+                  <Copy className="w-4 h-4" aria-hidden="true" />
                 </Button>
               </div>
               <p className="text-xs text-slate-500">
@@ -254,15 +298,15 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
                 onClick={registerCallback}
                 disabled={callbackBusy || !status?.configured}
               >
-                <Send className="w-4 h-4 mr-1" />
+                <Send className="w-4 h-4 mr-1.5" aria-hidden="true" />
                 {callbackBusy ? "Bildiriliyor…" : "Aktive Et"}
               </Button>
               <Button type="button" variant="outline" size="sm" onClick={loadCallbackUrl}>
-                <RefreshCw className="w-3.5 h-3.5 mr-1" /> Varsayılanı Yenile
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> Varsayılanı Yenile
               </Button>
             </div>
             {callbackResult && (
-              <pre className="text-xs bg-slate-100 dark:bg-slate-800 rounded p-3 overflow-auto max-h-48">
+              <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-3 overflow-auto max-h-48 font-mono text-slate-700">
                 {JSON.stringify(callbackResult, null, 2)}
               </pre>
             )}
@@ -290,11 +334,11 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
             ))}
             <div className="col-span-2">
               <Button onClick={sendAvailability} disabled={!status?.configured}>
-                <Send className="w-4 h-4 mr-1" /> Gönder
+                <Send className="w-4 h-4 mr-1.5" aria-hidden="true" /> Gönder
               </Button>
             </div>
             {availResult && (
-              <pre className="col-span-2 text-xs bg-slate-100 dark:bg-slate-800 rounded p-3 overflow-auto max-h-48">{JSON.stringify(availResult, null, 2)}</pre>
+              <pre className="col-span-2 text-xs bg-slate-50 border border-slate-200 rounded p-3 overflow-auto max-h-48 font-mono text-slate-700">{JSON.stringify(availResult, null, 2)}</pre>
             )}
           </CardContent>
         </Card>
@@ -323,15 +367,14 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
             ))}
             <div className="col-span-2">
               <Button onClick={sendEvent} disabled={!status?.configured || !status?.webhook_secret_set}>
-                <Send className="w-4 h-4 mr-1" /> Gönder
+                <Send className="w-4 h-4 mr-1.5" aria-hidden="true" /> Gönder
               </Button>
             </div>
             {eventResult && (
-              <pre className="col-span-2 text-xs bg-slate-100 dark:bg-slate-800 rounded p-3 overflow-auto max-h-48">{JSON.stringify(eventResult, null, 2)}</pre>
+              <pre className="col-span-2 text-xs bg-slate-50 border border-slate-200 rounded p-3 overflow-auto max-h-48 font-mono text-slate-700">{JSON.stringify(eventResult, null, 2)}</pre>
             )}
           </CardContent>
         </Card>
-      </div>
-    </>
+    </div>
   );
 }
