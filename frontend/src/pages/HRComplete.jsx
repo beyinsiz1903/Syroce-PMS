@@ -362,7 +362,11 @@ const HRComplete = () => {
 
   // Derived
   const attendanceMetrics = attendanceSummary?.metrics || {
-    staff_count: 0, total_hours: 0, avg_hours_per_staff: 0,
+    staff_count: 0,
+    total_active_staff: 0,
+    total_hours: 0,
+    avg_hours_per_staff: 0,
+    avg_hours_per_active_staff: 0,
   };
 
   const topPerformers = useMemo(() => {
@@ -442,14 +446,14 @@ const HRComplete = () => {
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-3">
               <KpiCard intent="info" icon={Users} label={t('cm.pages_HRComplete.toplam_calisan')}
-                value={attendanceMetrics.staff_count}
-                sub="aktif takip edilen personel" />
+                value={attendanceMetrics.total_active_staff ?? attendanceMetrics.staff_count}
+                sub={`aktif personel${attendanceMetrics.staff_count ? ` • ${attendanceMetrics.staff_count} devam kayıtlı` : ''}`} />
               <KpiCard intent="success" icon={Clock} label={t('cm.pages_HRComplete.toplam_saat')}
                 value={(attendanceMetrics.total_hours || 0).toFixed(1)}
                 sub="son 30 gün" />
               <KpiCard intent="warning" icon={TrendingUp} label={t('cm.pages_HRComplete.ortalama_saat')}
-                value={(attendanceMetrics.avg_hours_per_staff || 0).toFixed(1)}
-                sub="personel başı" />
+                value={(attendanceMetrics.avg_hours_per_active_staff || attendanceMetrics.avg_hours_per_staff || 0).toFixed(1)}
+                sub="personel başı (son 30 gün)" />
             </div>
 
             <Card>

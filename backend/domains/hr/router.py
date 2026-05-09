@@ -267,15 +267,38 @@ async def get_attendance_summary(
 
     summary_list = sorted(summary.values(), key=lambda x: x['staff_name'])
     total_hours = round(sum(item['total_hours'] for item in summary_list), 2)
+
+    # Aktif personel sayısı: hem staff_members'da olanlar hem users
+    # tablosundan türeyenler (HRv2 derived staff). `_get_staff_map` yalnızca
+    # staff_members'ı döndürdüğü için users tarafını ayrıca sayıyoruz.
+    explicit_count = await db.staff_members.count_documents(
+        {'tenant_id': current_user.tenant_id, 'active': True}
+    )
+    derived_roles = ['housekeeping', 'front_desk', 'supervisor',
+                     'finance', 'sales', 'admin']
+    derived_count = await db.users.count_documents({
+        'tenant_id': current_user.tenant_id,
+        'is_active': True,
+        'role': {'$in': derived_roles},
+    })
+    total_active_staff = explicit_count + derived_count
+
+    # Devam kayıtlı personel başına ortalamayı koru, bilgi amaçlı
+    # genel ortalamayı (gerçek headcount'a göre) ayrı alanla sunalım.
     avg_hours = round(total_hours / len(summary_list), 2) if summary_list else 0
+    avg_hours_per_active_staff = (
+        round(total_hours / total_active_staff, 2) if total_active_staff else 0
+    )
 
     return {
         'summary': summary_list,
         'range': {'start': start_dt.isoformat(), 'end': end_dt.isoformat()},
         'metrics': {
             'staff_count': len(summary_list),
+            'total_active_staff': total_active_staff,
             'total_hours': total_hours,
-            'avg_hours_per_staff': avg_hours
+            'avg_hours_per_staff': avg_hours,
+            'avg_hours_per_active_staff': avg_hours_per_active_staff,
         }
     }
 
