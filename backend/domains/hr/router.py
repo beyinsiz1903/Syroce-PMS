@@ -14,7 +14,8 @@ import uuid
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import base64
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -119,6 +120,8 @@ class PerformanceReviewPayload(BaseModel):
     goals: str | None = Field(None, max_length=2000)
     strengths: str | None = Field(None, max_length=2000)
     improvement_areas: str | None = Field(None, max_length=2000)
+    template_id: str | None = Field(None, max_length=128)
+    competency_scores: dict[str, float] | None = None  # {"Müşteri ilişkileri": 8.5, ...}
 
 
 class JobPostingPayload(BaseModel):
@@ -735,6 +738,8 @@ async def create_performance_review(
         'goals': payload.goals,
         'strengths': payload.strengths,
         'improvement_areas': payload.improvement_areas,
+        'template_id': payload.template_id,
+        'competency_scores': payload.competency_scores or {},
         'reviewed_at': datetime.now(UTC).isoformat(),
     }
     await db.performance_reviews.insert_one(review)
@@ -1697,4 +1702,715 @@ async def delete_performance_template(
     })
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Şablon bulunamadı")
+    return {'success': True}
+
+
+# ============================================================================
+# HR FAZ 2 — Eklentiler (Mayıs 2026)
+#   1. Mesai (overtime) talep + onay/red + 270h/yıl üst sınırı
+#   2. Vardiya değişim talebi + onay (atomic swap)
+#   3. Maaş geçmişi / zam kaydı
+#   4. İşten ayrılma süreci (Türk İş K. m.14 kıdem tazminatı hesabı)
+#   5. Eğitim/sertifika takibi (expiry alarmı)
+#   6. Personel belgeleri (multipart upload, MongoDB inline base64, max 5MB)
+#   7. Performans hedef-ilerleme check-in
+# ============================================================================
+
+# TR İş Kanunu m.41/3: yıllık fazla mesai üst sınırı 270 saat.
+TR_ANNUAL_OVERTIME_CAP_HOURS = 270
+# m.14 / m.17: kıdem tazminatı = 30 günlük brüt × tam yıl (taban tavanı yok burada).
+SEVERANCE_DAYS_PER_YEAR = 30
+# Belge boyut sınırı (MongoDB document ~16MB üst sınırı; güvenli marj).
+DOC_MAX_BYTES = 5 * 1024 * 1024
+
+
+# ============= 1. Mesai Talebi =============
+
+class OvertimeRequestPayload(BaseModel):
+    staff_id: str = Field(..., min_length=1, max_length=128)
+    work_date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
+    hours: float = Field(..., gt=0, le=12)
+    reason: str = Field(..., min_length=3, max_length=1000)
+
+
+class OvertimeDecisionPayload(BaseModel):
+    action: Literal['approve', 'reject']
+    note: str | None = Field(None, max_length=500)
+
+
+async def _yearly_overtime_hours(tenant_id: str, staff_id: str, year: int) -> float:
+    """Onaylanmış (status=approved) yıllık fazla mesai toplamı."""
+    cursor = db.overtime_requests.find({
+        'tenant_id': tenant_id,
+        'staff_id': staff_id,
+        'status': 'approved',
+        'work_date': {'$gte': f'{year}-01-01', '$lte': f'{year}-12-31'},
+    }, {'_id': 0, 'hours': 1})
+    total = 0.0
+    async for d in cursor:
+        total += float(d.get('hours') or 0)
+    return total
+
+
+@router.post("/hr/overtime-request")
+async def create_overtime_request(
+    payload: OvertimeRequestPayload,
+    current_user: User = Depends(get_current_user),
+):
+    staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'staff_id': payload.staff_id,
+        'staff_name': staff.get('name'),
+        'work_date': payload.work_date,
+        'hours': payload.hours,
+        'reason': payload.reason,
+        'status': 'pending',
+        'requested_by': getattr(current_user, 'id', None),
+        'requested_at': datetime.now(UTC).isoformat(),
+    }
+    await db.overtime_requests.insert_one(item)
+    item.pop('_id', None)
+    await _notify_hr_managers(
+        current_user.tenant_id,
+        kind='overtime_request',
+        title=f"Mesai talebi: {staff.get('name')}",
+        body=f"{payload.work_date} — {payload.hours:g} saat. Sebep: {payload.reason[:120]}",
+        link=f"/hr-complete?tab=overtime",
+        ref_id=item['id'],
+    )
+    return {'success': True, 'overtime_request': item}
+
+
+@router.get("/hr/overtime-requests")
+async def list_overtime_requests(
+    staff_id: str | None = None,
+    status: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    if staff_id:
+        query['staff_id'] = staff_id
+    if status:
+        query['status'] = status
+    items = await db.overtime_requests.find(query, {'_id': 0}).sort('requested_at', -1).to_list(500)
+    counts = {'pending': 0, 'approved': 0, 'rejected': 0}
+    for it in items:
+        counts[it.get('status', 'pending')] = counts.get(it.get('status', 'pending'), 0) + 1
+    return {'items': items, 'total': len(items), 'counts': counts}
+
+
+@router.post("/hr/overtime-request/{req_id}/decision")
+async def decide_overtime_request(
+    req_id: str,
+    payload: OvertimeDecisionPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    req = await db.overtime_requests.find_one({
+        'tenant_id': current_user.tenant_id, 'id': req_id,
+    })
+    if not req:
+        raise HTTPException(status_code=404, detail="Talep bulunamadı")
+    if req.get('status') != 'pending':
+        raise HTTPException(status_code=400, detail="Bu talep zaten karara bağlanmış")
+
+    if payload.action == 'approve':
+        # 270h/yıl kontrolü (İş K. m.41/3)
+        year = int(req['work_date'][:4])
+        already = await _yearly_overtime_hours(
+            current_user.tenant_id, req['staff_id'], year,
+        )
+        proposed = float(req.get('hours') or 0)
+        if already + proposed > TR_ANNUAL_OVERTIME_CAP_HOURS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Yıllık 270 saat fazla mesai üst sınırı aşılır "
+                    f"(mevcut: {already:g}h, talep: {proposed:g}h, sınır: 270h)"
+                ),
+            )
+        new_status = 'approved'
+        notify_kind = 'overtime_approved'
+        notify_title = "Mesai talebiniz onaylandı"
+    else:
+        new_status = 'rejected'
+        notify_kind = 'overtime_rejected'
+        notify_title = "Mesai talebiniz reddedildi"
+
+    await db.overtime_requests.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': req_id},
+        {'$set': {
+            'status': new_status,
+            'decision_note': payload.note,
+            'decided_by': getattr(current_user, 'id', None),
+            'decided_at': datetime.now(UTC).isoformat(),
+        }},
+    )
+    requester = req.get('requested_by')
+    if requester:
+        await _notify_user(
+            current_user.tenant_id, user_id=requester,
+            kind=notify_kind, title=notify_title,
+            body=f"{req['work_date']} — {req['hours']:g}h. " + (payload.note or ''),
+            ref_id=req_id,
+        )
+    return {'success': True, 'status': new_status}
+
+
+# ============= 2. Vardiya Değişim Talebi =============
+
+class ShiftSwapRequestPayload(BaseModel):
+    shift_id: str = Field(..., min_length=1)
+    target_staff_id: str = Field(..., min_length=1)
+    reason: str | None = Field(None, max_length=500)
+
+
+class ShiftSwapDecisionPayload(BaseModel):
+    action: Literal['approve', 'reject']
+    note: str | None = Field(None, max_length=500)
+
+
+@router.post("/hr/shift-swap-request")
+async def create_shift_swap(
+    payload: ShiftSwapRequestPayload,
+    current_user: User = Depends(get_current_user),
+):
+    shift = await db.shift_schedules.find_one({
+        'tenant_id': current_user.tenant_id, 'id': payload.shift_id,
+    })
+    if not shift:
+        raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
+    target = await _verify_staff_in_tenant(payload.target_staff_id, current_user.tenant_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Hedef personel bulunamadı")
+    if shift['staff_id'] == payload.target_staff_id:
+        raise HTTPException(status_code=400, detail="Hedef personel mevcut sahibinin aynısı olamaz")
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'shift_id': payload.shift_id,
+        'shift_date': shift.get('shift_date'),
+        'shift_type': shift.get('shift_type'),
+        'from_staff_id': shift['staff_id'],
+        'from_staff_name': shift.get('staff_name'),
+        'target_staff_id': payload.target_staff_id,
+        'target_staff_name': target.get('name'),
+        'reason': payload.reason,
+        'status': 'pending',
+        'requested_by': getattr(current_user, 'id', None),
+        'requested_at': datetime.now(UTC).isoformat(),
+    }
+    await db.shift_swap_requests.insert_one(item)
+    item.pop('_id', None)
+    await _notify_hr_managers(
+        current_user.tenant_id,
+        kind='shift_swap_request',
+        title="Vardiya değişim talebi",
+        body=f"{shift.get('staff_name')} → {target.get('name')} ({shift.get('shift_date')} {shift.get('shift_type')})",
+        link="/hr/shifts",
+        ref_id=item['id'],
+    )
+    return {'success': True, 'request': item}
+
+
+@router.get("/hr/shift-swap-requests")
+async def list_shift_swap_requests(
+    status: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    if status:
+        query['status'] = status
+    items = await db.shift_swap_requests.find(query, {'_id': 0}).sort('requested_at', -1).to_list(500)
+    return {'items': items, 'total': len(items)}
+
+
+@router.post("/hr/shift-swap-request/{req_id}/decision")
+async def decide_shift_swap(
+    req_id: str,
+    payload: ShiftSwapDecisionPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    req = await db.shift_swap_requests.find_one({
+        'tenant_id': current_user.tenant_id, 'id': req_id,
+    })
+    if not req:
+        raise HTTPException(status_code=404, detail="Talep bulunamadı")
+    if req.get('status') != 'pending':
+        raise HTTPException(status_code=400, detail="Bu talep zaten karara bağlanmış")
+
+    if payload.action == 'approve':
+        # Atomik swap: shift'i target_staff_id'ye devret
+        target = await _verify_staff_in_tenant(req['target_staff_id'], current_user.tenant_id)
+        if not target:
+            raise HTTPException(status_code=400, detail="Hedef personel artık aktif değil")
+        # Atomik filtre: vardiyanın hâlâ orijinal sahibinde olduğunu doğrula.
+        # Aksi halde başka bir swap zaten uygulanmış demektir (race koruması).
+        upd = await db.shift_schedules.update_one(
+            {
+                'tenant_id': current_user.tenant_id,
+                'id': req['shift_id'],
+                'staff_id': req['from_staff_id'],
+            },
+            {'$set': {
+                'staff_id': req['target_staff_id'],
+                'staff_name': target.get('name'),
+                'swapped_from': req['from_staff_id'],
+                'swapped_at': datetime.now(UTC).isoformat(),
+            }},
+        )
+        if upd.matched_count == 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Vardiya bu sürede değişti veya silindi — talebi yeniden değerlendirin",
+            )
+        new_status = 'approved'
+    else:
+        new_status = 'rejected'
+
+    await db.shift_swap_requests.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': req_id},
+        {'$set': {
+            'status': new_status,
+            'decision_note': payload.note,
+            'decided_by': getattr(current_user, 'id', None),
+            'decided_at': datetime.now(UTC).isoformat(),
+        }},
+    )
+    if req.get('requested_by'):
+        await _notify_user(
+            current_user.tenant_id, user_id=req['requested_by'],
+            kind=f'shift_swap_{new_status}',
+            title=f"Vardiya değişimi {('onaylandı' if new_status == 'approved' else 'reddedildi')}",
+            body=f"{req.get('shift_date')} {req.get('shift_type')} — " + (payload.note or ''),
+            ref_id=req_id,
+        )
+    return {'success': True, 'status': new_status}
+
+
+# ============= 3. Maaş Geçmişi / Zam Kaydı =============
+
+class SalaryChangePayload(BaseModel):
+    new_hourly_rate: float = Field(..., gt=0, le=100000)
+    effective_date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
+    change_type: Literal['raise', 'promotion', 'correction', 'demotion'] = 'raise'
+    reason: str | None = Field(None, max_length=500)
+
+
+@router.post("/hr/staff/{staff_id}/salary-change")
+async def create_salary_change(
+    staff_id: str,
+    payload: SalaryChangePayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    old_rate = float(staff.get('hourly_rate') or TR_DEFAULT_HOURLY_RATE)
+    delta_pct = round(((payload.new_hourly_rate - old_rate) / old_rate) * 100, 2) if old_rate else 0
+    record = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'staff_id': staff_id,
+        'staff_name': staff.get('name'),
+        'old_hourly_rate': old_rate,
+        'new_hourly_rate': payload.new_hourly_rate,
+        'delta_pct': delta_pct,
+        'effective_date': payload.effective_date,
+        'change_type': payload.change_type,
+        'reason': payload.reason,
+        'created_by': getattr(current_user, 'id', None),
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.salary_history.insert_one(record)
+    # Aktüel ücreti güncelle (basit yaklaşım: effective_date geçmişse hemen uygula)
+    if payload.effective_date <= _today_local().isoformat():
+        await db.staff_members.update_one(
+            {'tenant_id': current_user.tenant_id, 'id': staff_id},
+            {'$set': {
+                'hourly_rate': payload.new_hourly_rate,
+                'updated_at': datetime.now(UTC).isoformat(),
+            }},
+        )
+    record.pop('_id', None)
+    return {'success': True, 'record': record, 'applied_now': payload.effective_date <= _today_local().isoformat()}
+
+
+@router.get("/hr/staff/{staff_id}/salary-history")
+async def list_salary_history(
+    staff_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    items = await db.salary_history.find({
+        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
+    }, {'_id': 0}).sort('effective_date', -1).to_list(500)
+    return {'items': items, 'total': len(items)}
+
+
+# ============= 4. İşten Ayrılma Süreci =============
+
+class TerminationPayload(BaseModel):
+    reason: Literal['resign', 'dismiss', 'mutual', 'retire', 'end_of_contract', 'death']
+    last_day: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
+    notice_period_days: int = Field(0, ge=0, le=180)
+    exit_interview_notes: str | None = Field(None, max_length=4000)
+    severance_override: float | None = Field(None, ge=0, le=10_000_000)
+    eligible_for_rehire: bool = True
+
+
+def _calc_severance_tr(hire_date_str: str | None, last_day_str: str, monthly_gross: float) -> dict:
+    """Türk İş K. m.14: kıdem tazminatı = 30 günlük brüt × tam yıl + orantılı.
+
+    Bu fonksiyon bilgilendirme amaçlı — yasal tavan (asgari ücret tavanı)
+    ve kıdem dışı bileşenler (ihbar, izin alacağı) ayrı hesaplanır.
+    """
+    if not hire_date_str:
+        return {'years_of_service': 0, 'severance_amount': 0, 'note': 'İşe başlama tarihi yok'}
+    try:
+        hire = date.fromisoformat(hire_date_str)
+        last = date.fromisoformat(last_day_str)
+    except ValueError:
+        return {'years_of_service': 0, 'severance_amount': 0, 'note': 'Geçersiz tarih'}
+    days = (last - hire).days
+    if days < 365:
+        return {
+            'years_of_service': round(days / 365, 2),
+            'severance_amount': 0,
+            'note': '1 yıldan az kıdem — kıdem tazminatına hak kazanılmaz',
+        }
+    years = days / 365.0
+    daily_gross = monthly_gross / 30.0
+    severance = round(years * SEVERANCE_DAYS_PER_YEAR * daily_gross, 2)
+    return {
+        'years_of_service': round(years, 2),
+        'daily_gross': round(daily_gross, 2),
+        'severance_amount': severance,
+        'note': f'{years:.2f} yıl × 30 gün × {daily_gross:.2f} TL/gün',
+    }
+
+
+@router.post("/hr/staff/{staff_id}/terminate")
+async def terminate_staff(
+    staff_id: str,
+    payload: TerminationPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    if staff.get('terminated_at'):
+        raise HTTPException(status_code=400, detail="Personel zaten ayrılmış")
+
+    monthly_hours = float(staff.get('monthly_hours') or TR_DEFAULT_MONTHLY_HOURS)
+    hourly_rate = float(staff.get('hourly_rate') or TR_DEFAULT_HOURLY_RATE)
+    monthly_gross = monthly_hours * hourly_rate
+
+    severance_calc = _calc_severance_tr(staff.get('hire_date'), payload.last_day, monthly_gross)
+    final_severance = (
+        payload.severance_override
+        if payload.severance_override is not None
+        else severance_calc['severance_amount']
+    )
+
+    record = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'staff_id': staff_id,
+        'staff_name': staff.get('name'),
+        'reason': payload.reason,
+        'last_day': payload.last_day,
+        'notice_period_days': payload.notice_period_days,
+        'exit_interview_notes': payload.exit_interview_notes,
+        'monthly_gross_at_exit': round(monthly_gross, 2),
+        'severance_calc': severance_calc,
+        'severance_paid': final_severance,
+        'eligible_for_rehire': payload.eligible_for_rehire,
+        'processed_by': getattr(current_user, 'id', None),
+        'processed_at': datetime.now(UTC).isoformat(),
+    }
+    await db.staff_terminations.insert_one(record)
+
+    await db.staff_members.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': staff_id},
+        {'$set': {
+            'active': False,
+            'terminated_at': datetime.now(UTC).isoformat(),
+            'termination_reason': payload.reason,
+            'last_day': payload.last_day,
+        }},
+    )
+    record.pop('_id', None)
+    return {'success': True, 'termination': record}
+
+
+@router.get("/hr/staff/{staff_id}/termination")
+async def get_termination_record(
+    staff_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    rec = await db.staff_terminations.find_one(
+        {'tenant_id': current_user.tenant_id, 'staff_id': staff_id},
+        {'_id': 0},
+        sort=[('processed_at', -1)],
+    )
+    return {'record': rec}
+
+
+# ============= 5. Eğitim/Sertifika Takibi =============
+
+class CertificationPayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    issuer: str | None = Field(None, max_length=200)
+    issue_date: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
+    expiry_date: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    certificate_no: str | None = Field(None, max_length=100)
+    file_url: str | None = Field(None, max_length=500)
+    notes: str | None = Field(None, max_length=1000)
+
+
+@router.post("/hr/staff/{staff_id}/certifications")
+async def add_certification(
+    staff_id: str,
+    payload: CertificationPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'staff_id': staff_id,
+        'staff_name': staff.get('name'),
+        'name': payload.name,
+        'issuer': payload.issuer,
+        'issue_date': payload.issue_date,
+        'expiry_date': payload.expiry_date,
+        'certificate_no': payload.certificate_no,
+        'file_url': payload.file_url,
+        'notes': payload.notes,
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.staff_certifications.insert_one(item)
+    item.pop('_id', None)
+    return {'success': True, 'certification': item}
+
+
+@router.get("/hr/staff/{staff_id}/certifications")
+async def list_staff_certifications(
+    staff_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    items = await db.staff_certifications.find({
+        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
+    }, {'_id': 0}).sort('issue_date', -1).to_list(500)
+    today = _today_local().isoformat()
+    expiring = sum(1 for it in items if it.get('expiry_date') and it['expiry_date'] >= today)
+    expired = sum(1 for it in items if it.get('expiry_date') and it['expiry_date'] < today)
+    return {'items': items, 'total': len(items), 'active': expiring, 'expired': expired}
+
+
+@router.delete("/hr/certifications/{cert_id}")
+async def delete_certification(
+    cert_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    res = await db.staff_certifications.delete_one({
+        'tenant_id': current_user.tenant_id, 'id': cert_id,
+    })
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Sertifika bulunamadı")
+    return {'success': True}
+
+
+@router.get("/hr/certifications/expiring")
+async def list_expiring_certifications(
+    days_ahead: int = Query(90, ge=1, le=365),
+    current_user: User = Depends(get_current_user),
+):
+    """Önümüzdeki N gün içinde süresi dolan sertifikalar (compliance dashboard)."""
+    today = _today_local()
+    end = (today + timedelta(days=days_ahead)).isoformat()
+    items = await db.staff_certifications.find({
+        'tenant_id': current_user.tenant_id,
+        'expiry_date': {'$gte': today.isoformat(), '$lte': end},
+    }, {'_id': 0}).sort('expiry_date', 1).to_list(500)
+    return {'items': items, 'total': len(items), 'window_days': days_ahead}
+
+
+# ============= 6. Personel Belgeleri (PDF/sözleşme yükleme) =============
+
+ALLOWED_DOC_TYPES = {'contract', 'id', 'diploma', 'health', 'insurance', 'tax', 'other'}
+ALLOWED_DOC_MIME = {
+    'application/pdf', 'image/png', 'image/jpeg', 'image/webp',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+}
+
+
+@router.post("/hr/staff/{staff_id}/documents")
+async def upload_staff_document(
+    staff_id: str,
+    file: UploadFile = File(...),
+    doc_type: str = Query('other', max_length=20),
+    label: str = Query('', max_length=200),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    if doc_type not in ALLOWED_DOC_TYPES:
+        raise HTTPException(status_code=400, detail=f"Geçersiz belge türü. İzinli: {sorted(ALLOWED_DOC_TYPES)}")
+    if file.content_type not in ALLOWED_DOC_MIME:
+        raise HTTPException(status_code=400, detail=f"Geçersiz dosya türü: {file.content_type}")
+
+    content = await file.read()
+    if len(content) > DOC_MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"Dosya çok büyük (>5MB)")
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Boş dosya")
+
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'staff_id': staff_id,
+        'staff_name': staff.get('name'),
+        'doc_type': doc_type,
+        'label': label or file.filename or 'Belge',
+        'filename': file.filename,
+        'content_type': file.content_type,
+        'size_bytes': len(content),
+        'data_b64': base64.b64encode(content).decode('ascii'),
+        'uploaded_by': getattr(current_user, 'id', None),
+        'uploaded_at': datetime.now(UTC).isoformat(),
+    }
+    await db.staff_documents.insert_one(item)
+    # Cevapta data_b64 yer almasın (büyük + frontend ayrı GET ile indirir)
+    response = {k: v for k, v in item.items() if k not in ('data_b64', '_id')}
+    return {'success': True, 'document': response}
+
+
+@router.get("/hr/staff/{staff_id}/documents")
+async def list_staff_documents(
+    staff_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    items = await db.staff_documents.find(
+        {'tenant_id': current_user.tenant_id, 'staff_id': staff_id},
+        {'_id': 0, 'data_b64': 0},  # Liste yanıtında binary yok
+    ).sort('uploaded_at', -1).to_list(500)
+    return {'items': items, 'total': len(items)}
+
+
+@router.get("/hr/documents/{doc_id}/download")
+async def download_staff_document(
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    doc = await db.staff_documents.find_one({
+        'tenant_id': current_user.tenant_id, 'id': doc_id,
+    })
+    if not doc:
+        raise HTTPException(status_code=404, detail="Belge bulunamadı")
+    raw = base64.b64decode(doc['data_b64'])
+    headers = {
+        'Content-Disposition': f'attachment; filename="{doc.get("filename", doc_id)}"',
+        'Content-Length': str(len(raw)),
+    }
+    return StreamingResponse(
+        iter([raw]),
+        media_type=doc.get('content_type', 'application/octet-stream'),
+        headers=headers,
+    )
+
+
+@router.delete("/hr/documents/{doc_id}")
+async def delete_staff_document(
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    res = await db.staff_documents.delete_one({
+        'tenant_id': current_user.tenant_id, 'id': doc_id,
+    })
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Belge bulunamadı")
+    return {'success': True}
+
+
+# ============= 7. Performans Hedef Check-in =============
+
+class GoalCheckinPayload(BaseModel):
+    goal_text: str = Field(..., min_length=1, max_length=1000)
+    progress_pct: int = Field(..., ge=0, le=100)
+    status: Literal['on_track', 'at_risk', 'blocked', 'done'] = 'on_track'
+    note: str | None = Field(None, max_length=2000)
+    checkin_date: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+
+
+@router.post("/hr/performance/{review_id}/checkin")
+async def add_goal_checkin(
+    review_id: str,
+    payload: GoalCheckinPayload,
+    current_user: User = Depends(get_current_user),
+):
+    review = await db.performance_reviews.find_one({
+        'tenant_id': current_user.tenant_id, 'id': review_id,
+    })
+    if not review:
+        raise HTTPException(status_code=404, detail="Performans değerlendirmesi bulunamadı")
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'review_id': review_id,
+        'staff_id': review.get('staff_id'),
+        'goal_text': payload.goal_text,
+        'progress_pct': payload.progress_pct,
+        'status': payload.status,
+        'note': payload.note,
+        'checkin_date': payload.checkin_date or _today_local().isoformat(),
+        'created_by': getattr(current_user, 'id', None),
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.performance_checkins.insert_one(item)
+    item.pop('_id', None)
+    return {'success': True, 'checkin': item}
+
+
+@router.get("/hr/performance/{review_id}/checkins")
+async def list_goal_checkins(
+    review_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    items = await db.performance_checkins.find({
+        'tenant_id': current_user.tenant_id, 'review_id': review_id,
+    }, {'_id': 0}).sort('checkin_date', -1).to_list(500)
+    return {'items': items, 'total': len(items)}
+
+
+@router.delete("/hr/performance/checkins/{checkin_id}")
+async def delete_goal_checkin(
+    checkin_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    res = await db.performance_checkins.delete_one({
+        'tenant_id': current_user.tenant_id, 'id': checkin_id,
+    })
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Check-in bulunamadı")
     return {'success': True}

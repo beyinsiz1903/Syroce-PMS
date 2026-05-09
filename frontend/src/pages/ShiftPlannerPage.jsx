@@ -4,20 +4,21 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import {
   Calendar, ChevronLeft, ChevronRight, Plus, RefreshCw,
-  Trash2, Users, ArrowLeft,
+  Trash2, Users, ArrowLeft, Repeat, Check, X,
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { confirmDialog } from '@/lib/dialogs';
+import { confirmDialog, promptDialog } from '@/lib/dialogs';
 
 const SHIFT_TYPES = {
   morning:   { label: 'Sabah',     intent: 'info',    times: ['07:00', '15:00'] },
@@ -43,6 +44,8 @@ const ShiftPlannerPage = () => {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(false);
   const [dialog, setDialog] = useState({ open: false, form: null });
+  const [swapDialog, setSwapDialog] = useState({ open: false, shift: null, target_staff_id: '', reason: '' });
+  const [swapRequests, setSwapRequests] = useState([]);
   const [saving, setSaving] = useState(false);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
@@ -55,18 +58,59 @@ const ShiftPlannerPage = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [shRes, stRes] = await Promise.all([
+      const [shRes, stRes, swRes] = await Promise.all([
         axios.get('/hr/shifts', { params: { start: startStr, end: endStr } }),
         axios.get('/hr/staff'),
+        axios.get('/hr/shift-swap-requests').catch(() => ({ data: { items: [] } })),
       ]);
       setShifts(shRes.data?.items || []);
       setStaff(stRes.data?.staff || []);
+      setSwapRequests(swRes.data?.items || []);
     } catch (err) {
       toast.error('Vardiyalar yüklenemedi');
     } finally {
       setLoading(false);
     }
   }, [startStr, endStr]);
+
+  const openSwap = (shift) => setSwapDialog({
+    open: true, shift, target_staff_id: '', reason: '',
+  });
+
+  const submitSwap = async (e) => {
+    e.preventDefault();
+    if (!swapDialog.target_staff_id) { toast.error('Hedef personel seçin'); return; }
+    setSaving(true);
+    try {
+      await axios.post('/hr/shift-swap-request', {
+        shift_id: swapDialog.shift.id,
+        target_staff_id: swapDialog.target_staff_id,
+        reason: swapDialog.reason,
+      });
+      toast.success('Değişim talebi gönderildi — İK onayını bekliyor');
+      setSwapDialog({ open: false, shift: null, target_staff_id: '', reason: '' });
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Talep gönderilemedi');
+    } finally { setSaving(false); }
+  };
+
+  const decideSwap = async (req, action) => {
+    let note = '';
+    if (action === 'reject') {
+      note = await promptDialog({ message: 'Red sebebi (opsiyonel):', defaultValue: '' });
+      if (note === null) return;
+    }
+    try {
+      await axios.post(`/hr/shift-swap-request/${req.id}/decision`, { action, note });
+      toast.success(action === 'approve' ? 'Değişim onaylandı' : 'Değişim reddedildi');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'İşlem başarısız');
+    }
+  };
+
+  const pendingSwaps = useMemo(() => swapRequests.filter((r) => r.status === 'pending'), [swapRequests]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -181,6 +225,39 @@ const ShiftPlannerPage = () => {
           value={`${days[0].toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })} – ${days[6].toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}`} />
       </div>
 
+      {pendingSwaps.length > 0 && (
+        <Card className="mb-4 border-amber-200 bg-amber-50/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-amber-900">
+              <Repeat className="w-4 h-4" />Bekleyen Vardiya Değişim Talepleri ({pendingSwaps.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {pendingSwaps.map((r) => (
+                <div key={r.id} className="flex items-center gap-3 text-sm rounded border border-amber-200 bg-white p-2">
+                  <div className="flex-1">
+                    <div className="font-medium">
+                      {r.from_staff_name} → <span className="text-sky-700">{r.target_staff_name}</span>
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {r.shift_date} • {r.shift_type}
+                      {r.reason && ` • Sebep: ${r.reason}`}
+                    </div>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => decideSwap(r, 'approve')}>
+                    <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" />Onayla
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => decideSwap(r, 'reject')}>
+                    <X className="w-3.5 h-3.5 mr-1 text-rose-600" />Reddet
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <CardTitle className="flex items-center gap-2">
@@ -243,14 +320,24 @@ const ShiftPlannerPage = () => {
                                       {sh.start_time}–{sh.end_time}
                                     </span>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => deleteShift(sh)}
-                                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600"
-                                    title="Sil"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
+                                  <div className="opacity-0 group-hover:opacity-100 flex gap-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => openSwap(sh)}
+                                      className="text-slate-400 hover:text-sky-600"
+                                      title="Değişim İste"
+                                    >
+                                      <Repeat className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteShift(sh)}
+                                      className="text-slate-400 hover:text-rose-600"
+                                      title="Sil"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 </div>
                               );
                             })}
@@ -277,6 +364,50 @@ const ShiftPlannerPage = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Vardiya Değişim Talebi Dialog */}
+      <Dialog open={swapDialog.open} onOpenChange={(o) => !o && setSwapDialog({ open: false, shift: null, target_staff_id: '', reason: '' })}>
+        <DialogContent>
+          <DialogHeader><DialogTitle className="flex items-center gap-2">
+            <Repeat className="w-5 h-5 text-sky-600" />Vardiya Değişim Talebi
+          </DialogTitle></DialogHeader>
+          {swapDialog.shift && (
+            <form onSubmit={submitSwap} className="grid gap-3">
+              <div className="rounded bg-slate-50 border border-slate-200 p-3 text-sm">
+                <div className="font-medium">{swapDialog.shift.staff_name}</div>
+                <div className="text-xs text-slate-600">
+                  {swapDialog.shift.shift_date} • {swapDialog.shift.shift_type}
+                  {' • '}{swapDialog.shift.start_time}–{swapDialog.shift.end_time}
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Vardiyayı Devralacak Personel *</Label>
+                <select required value={swapDialog.target_staff_id}
+                  onChange={(e) => setSwapDialog({ ...swapDialog, target_staff_id: e.target.value })}
+                  className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                  <option value="">— Seçin —</option>
+                  {allStaffShown.filter((p) => p.id !== swapDialog.shift.staff_id).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">Sebep / Not</Label>
+                <Textarea rows={3} value={swapDialog.reason}
+                  onChange={(e) => setSwapDialog({ ...swapDialog, reason: e.target.value })}
+                  placeholder="Örn: Doktor randevusu nedeniyle değişiklik istiyorum" />
+              </div>
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                Talep İK onayını bekleyecek. Onaylanırsa vardiya hedef personele otomatik aktarılır.
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setSwapDialog({ open: false, shift: null, target_staff_id: '', reason: '' })}>Vazgeç</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Gönderiliyor...' : 'Talep Gönder'}</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialog.open} onOpenChange={(o) => !o && setDialog({ open: false, form: null })}>
         <DialogContent>

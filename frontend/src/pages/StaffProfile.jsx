@@ -5,15 +5,24 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, RefreshCw, User, Mail, Phone, Building2, Briefcase,
   Calendar, Clock, DollarSign, Award, FileText, AlertCircle,
+  GraduationCap, Folder, TrendingUp, UserMinus, Plus, Trash2,
+  Download, Upload, ChevronDown, ChevronRight, Target,
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency } from '@/lib/currency';
+import { confirmDialog } from '@/lib/dialogs';
 
 const LEAVE_TYPE_LABEL = {
   annual: 'Yıllık', sick: 'Hastalık', maternity: 'Doğum',
@@ -23,10 +32,23 @@ const LEAVE_TYPE_LABEL = {
 const STATUS_INTENT = {
   pending: 'warning', approved: 'success', rejected: 'danger',
   scheduled: 'info', completed: 'success', missed: 'danger',
+  on_track: 'success', at_risk: 'warning', blocked: 'danger', done: 'success',
 };
 const STATUS_LABEL = {
   pending: 'Beklemede', approved: 'Onaylandı', rejected: 'Reddedildi',
   scheduled: 'Planlı', completed: 'Tamamlandı', missed: 'Kaçırıldı',
+  on_track: 'Yolunda', at_risk: 'Risk', blocked: 'Bloke', done: 'Tamam',
+};
+const DOC_TYPE_LABEL = {
+  contract: 'Sözleşme', id: 'Kimlik', diploma: 'Diploma',
+  health: 'Sağlık', insurance: 'Sigorta', tax: 'Vergi', other: 'Diğer',
+};
+const TERM_REASON_LABEL = {
+  resign: 'İstifa', dismiss: 'İşten çıkarma', mutual: 'Karşılıklı anlaşma',
+  retire: 'Emeklilik', end_of_contract: 'Sözleşme bitti', death: 'Vefat',
+};
+const CHANGE_TYPE_LABEL = {
+  raise: 'Zam', promotion: 'Terfi', correction: 'Düzeltme', demotion: 'İndirim',
 };
 
 const StaffProfile = () => {
@@ -34,6 +56,22 @@ const StaffProfile = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
+
+  // Section states
+  const [certs, setCerts] = useState({ items: [], active: 0, expired: 0 });
+  const [docs, setDocs] = useState([]);
+  const [salaryHistory, setSalaryHistory] = useState([]);
+  const [termination, setTermination] = useState(null);
+
+  // Dialogs
+  const [certDialog, setCertDialog] = useState({ open: false, form: null });
+  const [docDialog, setDocDialog] = useState({ open: false, file: null, doc_type: 'contract', label: '' });
+  const [salaryDialog, setSalaryDialog] = useState({ open: false, form: null });
+  const [termDialog, setTermDialog] = useState({ open: false, form: null });
+  const [checkinDialog, setCheckinDialog] = useState({ open: false, reviewId: null, form: null });
+  const [checkinsByReview, setCheckinsByReview] = useState({});
+  const [expandedReview, setExpandedReview] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,7 +86,198 @@ const StaffProfile = () => {
     }
   }, [id]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadCerts = useCallback(async () => {
+    try {
+      const r = await axios.get(`/hr/staff/${id}/certifications`);
+      setCerts({ items: r.data.items || [], active: r.data.active || 0, expired: r.data.expired || 0 });
+    } catch (err) { /* sessizce geç */ }
+  }, [id]);
+
+  const loadDocs = useCallback(async () => {
+    try {
+      const r = await axios.get(`/hr/staff/${id}/documents`);
+      setDocs(r.data.items || []);
+    } catch (err) { /* sessizce geç */ }
+  }, [id]);
+
+  const loadSalary = useCallback(async () => {
+    try {
+      const r = await axios.get(`/hr/staff/${id}/salary-history`);
+      setSalaryHistory(r.data.items || []);
+    } catch (err) { /* sessizce geç */ }
+  }, [id]);
+
+  const loadTermination = useCallback(async () => {
+    try {
+      const r = await axios.get(`/hr/staff/${id}/termination`);
+      setTermination(r.data.record || null);
+    } catch (err) { setTermination(null); }
+  }, [id]);
+
+  useEffect(() => {
+    load();
+    loadCerts();
+    loadDocs();
+    loadSalary();
+    loadTermination();
+  }, [load, loadCerts, loadDocs, loadSalary, loadTermination]);
+
+  // ===== Certifications =====
+  const openCertDialog = () => setCertDialog({
+    open: true,
+    form: { name: '', issuer: '', issue_date: new Date().toISOString().slice(0, 10), expiry_date: '', certificate_no: '', file_url: '', notes: '' },
+  });
+  const submitCert = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await axios.post(`/hr/staff/${id}/certifications`, certDialog.form);
+      toast.success('Sertifika eklendi');
+      setCertDialog({ open: false, form: null });
+      loadCerts();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Eklenemedi');
+    } finally { setSaving(false); }
+  };
+  const deleteCert = async (cert) => {
+    if (!await confirmDialog({ message: `"${cert.name}" sertifikası silinsin mi?` })) return;
+    try {
+      await axios.delete(`/hr/certifications/${cert.id}`);
+      toast.success('Silindi'); loadCerts();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
+  };
+
+  // ===== Documents =====
+  const submitDoc = async (e) => {
+    e.preventDefault();
+    if (!docDialog.file) { toast.error('Dosya seçin'); return; }
+    setSaving(true);
+    const fd = new FormData();
+    fd.append('file', docDialog.file);
+    try {
+      await axios.post(
+        `/hr/staff/${id}/documents`,
+        fd,
+        {
+          params: { doc_type: docDialog.doc_type, label: docDialog.label || '' },
+          headers: { 'Content-Type': 'multipart/form-data' },
+        }
+      );
+      toast.success('Belge yüklendi');
+      setDocDialog({ open: false, file: null, doc_type: 'contract', label: '' });
+      loadDocs();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Yüklenemedi');
+    } finally { setSaving(false); }
+  };
+  const downloadDoc = async (doc) => {
+    try {
+      const r = await axios.get(`/hr/documents/${doc.id}/download`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: doc.content_type }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.filename || 'belge';
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) { toast.error('İndirilemedi'); }
+  };
+  const deleteDoc = async (doc) => {
+    if (!await confirmDialog({ message: `"${doc.label || doc.filename}" silinsin mi?` })) return;
+    try {
+      await axios.delete(`/hr/documents/${doc.id}`);
+      toast.success('Silindi'); loadDocs();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
+  };
+
+  // ===== Salary =====
+  const openSalaryDialog = () => setSalaryDialog({
+    open: true,
+    form: {
+      new_hourly_rate: data?.staff?.hourly_rate || '',
+      effective_date: new Date().toISOString().slice(0, 10),
+      change_type: 'raise', reason: '',
+    },
+  });
+  const submitSalary = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await axios.post(`/hr/staff/${id}/salary-change`, {
+        ...salaryDialog.form,
+        new_hourly_rate: parseFloat(salaryDialog.form.new_hourly_rate),
+      });
+      toast.success('Maaş değişikliği kaydedildi');
+      setSalaryDialog({ open: false, form: null });
+      loadSalary();
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Kaydedilemedi');
+    } finally { setSaving(false); }
+  };
+
+  // ===== Termination =====
+  const openTermDialog = () => setTermDialog({
+    open: true,
+    form: {
+      reason: 'resign',
+      last_day: new Date().toISOString().slice(0, 10),
+      notice_period_days: 0,
+      exit_interview_notes: '',
+      severance_override: '',
+      eligible_for_rehire: true,
+    },
+  });
+  const submitTerm = async (e) => {
+    e.preventDefault();
+    if (!await confirmDialog({
+      message: 'Personeli pasifleştirmek üzeresiniz. Kıdem tazminatı hesabı kaydedilecek. Devam edilsin mi?',
+    })) return;
+    setSaving(true);
+    try {
+      const payload = { ...termDialog.form };
+      payload.severance_override = payload.severance_override === ''
+        ? null : parseFloat(payload.severance_override);
+      const r = await axios.post(`/hr/staff/${id}/terminate`, payload);
+      toast.success(`Ayrılış kaydedildi. Kıdem: ${formatCurrency(r.data.termination?.severance_paid || 0, 'TRY')}`);
+      setTermDialog({ open: false, form: null });
+      loadTermination(); load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'İşlem başarısız');
+    } finally { setSaving(false); }
+  };
+
+  // ===== Performance check-ins =====
+  const toggleReviewExpand = async (reviewId) => {
+    if (expandedReview === reviewId) { setExpandedReview(null); return; }
+    setExpandedReview(reviewId);
+    if (!checkinsByReview[reviewId]) {
+      try {
+        const r = await axios.get(`/hr/performance/${reviewId}/checkins`);
+        setCheckinsByReview((prev) => ({ ...prev, [reviewId]: r.data.items || [] }));
+      } catch { /* ignore */ }
+    }
+  };
+  const openCheckinDialog = (reviewId) => setCheckinDialog({
+    open: true, reviewId,
+    form: { goal_text: '', progress_pct: 0, status: 'on_track', note: '', checkin_date: new Date().toISOString().slice(0, 10) },
+  });
+  const submitCheckin = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await axios.post(`/hr/performance/${checkinDialog.reviewId}/checkin`, {
+        ...checkinDialog.form,
+        progress_pct: parseInt(checkinDialog.form.progress_pct, 10),
+      });
+      toast.success('Check-in eklendi');
+      const rid = checkinDialog.reviewId;
+      const r = await axios.get(`/hr/performance/${rid}/checkins`);
+      setCheckinsByReview((prev) => ({ ...prev, [rid]: r.data.items || [] }));
+      setCheckinDialog({ open: false, reviewId: null, form: null });
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Eklenemedi');
+    } finally { setSaving(false); }
+  };
 
   const headerActions = (
     <>
@@ -58,6 +287,11 @@ const StaffProfile = () => {
       <Button variant="outline" size="sm" onClick={load} disabled={loading}>
         <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />Yenile
       </Button>
+      {data?.staff?.active !== false && !termination && (
+        <Button variant="outline" size="sm" onClick={openTermDialog} className="text-rose-700 border-rose-300 hover:bg-rose-50">
+          <UserMinus className="w-4 h-4 mr-1.5" />Ayrılış İşlemleri
+        </Button>
+      )}
     </>
   );
 
@@ -97,59 +331,63 @@ const StaffProfile = () => {
         actions={headerActions}
       />
 
+      {/* Termination banner */}
+      {termination && (
+        <Card className="mb-4 border-rose-200 bg-rose-50">
+          <CardContent className="py-3 flex items-center gap-3 text-sm">
+            <UserMinus className="w-5 h-5 text-rose-600" />
+            <div className="flex-1">
+              <div className="font-medium text-rose-900">
+                Personel ayrılmış: {TERM_REASON_LABEL[termination.reason] || termination.reason} • Son gün {termination.last_day}
+              </div>
+              <div className="text-xs text-rose-700">
+                Kıdem ödenen: <strong>{formatCurrency(termination.severance_paid || 0, 'TRY')}</strong>
+                {' '}• Kıdem süresi: {termination.severance_calc?.years_of_service || 0} yıl
+                {termination.eligible_for_rehire ? ' • Tekrar işe alınabilir' : ' • Tekrar işe alınamaz'}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Genel bilgi kartı */}
       <Card className="mb-4">
         <CardContent className="grid gap-3 md:grid-cols-4 py-4">
-          <div className="flex items-center gap-2 text-sm text-slate-700">
-            <Mail className="w-4 h-4 text-slate-400" /> {s.email || '—'}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-slate-700">
-            <Phone className="w-4 h-4 text-slate-400" /> {s.phone || '—'}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-slate-700">
-            <Building2 className="w-4 h-4 text-slate-400" /> {s.department || '—'}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-slate-700">
-            <Briefcase className="w-4 h-4 text-slate-400" /> {s.employment_type || '—'}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-slate-700">
-            <Calendar className="w-4 h-4 text-slate-400" /> İşe Giriş: {s.hire_date || '—'}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-slate-700">
-            <DollarSign className="w-4 h-4 text-slate-400" />
-            Saatlik: {s.hourly_rate ? `${s.hourly_rate} TRY` : 'tanımsız (140 TRY default)'}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-slate-700">
-            <Clock className="w-4 h-4 text-slate-400" />
-            Aylık Saat: {s.monthly_hours || '195 (default)'}
-          </div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><Mail className="w-4 h-4 text-slate-400" /> {s.email || '—'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><Phone className="w-4 h-4 text-slate-400" /> {s.phone || '—'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><Building2 className="w-4 h-4 text-slate-400" /> {s.department || '—'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><Briefcase className="w-4 h-4 text-slate-400" /> {s.employment_type || '—'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><Calendar className="w-4 h-4 text-slate-400" /> İşe Giriş: {s.hire_date || '—'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><DollarSign className="w-4 h-4 text-slate-400" /> Saatlik: {s.hourly_rate ? `${s.hourly_rate} TRY` : 'tanımsız (140 TRY default)'}</div>
+          <div className="flex items-center gap-2 text-sm text-slate-700"><Clock className="w-4 h-4 text-slate-400" /> Aylık Saat: {s.monthly_hours || '195 (default)'}</div>
           <div className="flex items-center gap-2 text-sm">
-            {s.derived_from === 'users'
-              ? <StatusBadge intent="neutral">Kullanıcıdan türetildi</StatusBadge>
-              : <StatusBadge intent="info">HR-yönetimli</StatusBadge>}
+            {s.active === false
+              ? <StatusBadge intent="danger">Pasif</StatusBadge>
+              : s.derived_from === 'users'
+                ? <StatusBadge intent="neutral">Kullanıcıdan türetildi</StatusBadge>
+                : <StatusBadge intent="info">HR-yönetimli</StatusBadge>}
           </div>
         </CardContent>
       </Card>
 
       {/* KPI özeti */}
       <div className="grid gap-3 md:grid-cols-4 mb-4">
-        <KpiCard intent="info" icon={Clock} label="Son 30g Saat" value={att.total_hours_30d || 0}
-          sub={`${att.days_present_30d || 0} gün`} />
-        <KpiCard intent="warning" icon={Calendar} label="Bekleyen İzin" value={lv.pending || 0}
-          sub={`Toplam ${lv.total || 0} talep`} />
-        <KpiCard intent="success" icon={Award} label="Performans Ort." value={perf.avg_score || 0}
-          sub={`${perf.total || 0} değerlendirme`} />
-        <KpiCard intent="info" icon={FileText} label="Bordro Kayıtları" value={pay.count || 0}
-          sub="son 12 ay" />
+        <KpiCard intent="info" icon={Clock} label="Son 30g Saat" value={att.total_hours_30d || 0} sub={`${att.days_present_30d || 0} gün`} />
+        <KpiCard intent="warning" icon={Calendar} label="Bekleyen İzin" value={lv.pending || 0} sub={`Toplam ${lv.total || 0} talep`} />
+        <KpiCard intent="success" icon={Award} label="Performans Ort." value={perf.avg_score || 0} sub={`${perf.total || 0} değerlendirme`} />
+        <KpiCard intent={certs.expired > 0 ? 'danger' : 'info'} icon={GraduationCap} label="Aktif Sertifika" value={certs.active} sub={certs.expired > 0 ? `${certs.expired} süresi geçmiş` : `${docs.length} belge`} />
       </div>
 
       <Tabs defaultValue="attendance">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-8 text-xs">
           <TabsTrigger value="attendance">Devam</TabsTrigger>
           <TabsTrigger value="leave">İzin</TabsTrigger>
           <TabsTrigger value="performance">Performans</TabsTrigger>
           <TabsTrigger value="payroll">Bordro</TabsTrigger>
           <TabsTrigger value="shifts">Vardiya</TabsTrigger>
+          <TabsTrigger value="certifications">Sertifika</TabsTrigger>
+          <TabsTrigger value="documents">Belgeler</TabsTrigger>
+          <TabsTrigger value="salary">Maaş</TabsTrigger>
         </TabsList>
 
         <TabsContent value="attendance" className="mt-4">
@@ -158,12 +396,9 @@ const StaffProfile = () => {
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-slate-500 border-b">
-                      <th className="py-2">Tarih</th><th>Giriş</th><th>Çıkış</th>
-                      <th className="text-right">Saat</th>
-                    </tr>
-                  </thead>
+                  <thead><tr className="text-left text-slate-500 border-b">
+                    <th className="py-2">Tarih</th><th>Giriş</th><th>Çıkış</th><th className="text-right">Saat</th>
+                  </tr></thead>
                   <tbody>
                     {(att.records || []).map((r, i) => (
                       <tr key={i} className="border-t border-slate-100">
@@ -189,7 +424,7 @@ const StaffProfile = () => {
               <KpiCard intent="info" label={`Yıllık İzin (${bal.year})`} value={`${bal.annual?.remaining ?? 0} / ${bal.annual?.total ?? 0}`}
                 sub={`Hak: ${bal.annual?.entitlement} + ${bal.annual?.carry_over || 0} devir`} />
               <KpiCard intent="warning" label="Kullanılan Yıllık" value={bal.annual?.used ?? 0} sub="onaylı" />
-              <KpiCard intent="neutral" label={`Hastalık (kalan/hak)`} value={`${bal.sick?.remaining ?? 0} / ${bal.sick?.entitlement ?? 5}`} />
+              <KpiCard intent="neutral" label="Hastalık (kalan/hak)" value={`${bal.sick?.remaining ?? 0} / ${bal.sick?.entitlement ?? 5}`} />
             </div>
           )}
           <Card>
@@ -197,18 +432,15 @@ const StaffProfile = () => {
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-slate-500 border-b">
-                      <th className="py-2">Tür</th><th>Başl.</th><th>Bitiş</th>
-                      <th className="text-right">Gün</th><th>Durum</th><th>Sebep</th>
-                    </tr>
-                  </thead>
+                  <thead><tr className="text-left text-slate-500 border-b">
+                    <th className="py-2">Tür</th><th>Başl.</th><th>Bitiş</th>
+                    <th className="text-right">Gün</th><th>Durum</th><th>Sebep</th>
+                  </tr></thead>
                   <tbody>
                     {(lv.items || []).map((l) => (
                       <tr key={l.id} className="border-t border-slate-100">
                         <td className="py-2">{LEAVE_TYPE_LABEL[l.leave_type] || l.leave_type}</td>
-                        <td>{l.start_date}</td>
-                        <td>{l.end_date}</td>
+                        <td>{l.start_date}</td><td>{l.end_date}</td>
                         <td className="text-right">{l.total_days}</td>
                         <td><StatusBadge intent={STATUS_INTENT[l.status]}>{STATUS_LABEL[l.status]}</StatusBadge></td>
                         <td className="text-slate-600 text-xs max-w-xs truncate">{l.reason || '—'}</td>
@@ -226,28 +458,73 @@ const StaffProfile = () => {
 
         <TabsContent value="performance" className="mt-4">
           <Card>
-            <CardHeader><CardTitle>Performans Değerlendirmeleri</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>Performans Değerlendirmeleri</span>
+                <span className="text-xs text-slate-500 font-normal">Satıra tıklayarak hedef check-in'lerini görün</span>
+              </CardTitle>
+            </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-slate-500 border-b">
-                      <th className="py-2">Tarih</th><th>Dönem</th>
-                      <th className="text-right">Puan</th><th>Güçlü</th><th>Gelişim</th>
-                    </tr>
-                  </thead>
+                  <thead><tr className="text-left text-slate-500 border-b">
+                    <th className="py-2 w-6"></th><th>Tarih</th><th>Dönem</th>
+                    <th className="text-right">Puan</th><th>Güçlü</th><th>Gelişim</th><th></th>
+                  </tr></thead>
                   <tbody>
-                    {(perf.items || []).map((p) => (
-                      <tr key={p.id} className="border-t border-slate-100 align-top">
-                        <td className="py-2">{(p.reviewed_at || '').slice(0, 10)}</td>
-                        <td>{p.period || '—'}</td>
-                        <td className="text-right font-semibold">{p.overall_score}</td>
-                        <td className="text-slate-600 text-xs max-w-xs">{p.strengths || '—'}</td>
-                        <td className="text-slate-600 text-xs max-w-xs">{p.improvement_areas || '—'}</td>
-                      </tr>
-                    ))}
+                    {(perf.items || []).map((p) => {
+                      const expanded = expandedReview === p.id;
+                      const checkins = checkinsByReview[p.id] || [];
+                      return (
+                        <React.Fragment key={p.id}>
+                          <tr className="border-t border-slate-100 align-top hover:bg-slate-50 cursor-pointer" onClick={() => toggleReviewExpand(p.id)}>
+                            <td className="py-2">{expanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}</td>
+                            <td>{(p.reviewed_at || '').slice(0, 10)}</td>
+                            <td>{p.period || '—'}</td>
+                            <td className="text-right font-semibold">{p.overall_score}</td>
+                            <td className="text-slate-600 text-xs max-w-xs">{p.strengths || '—'}</td>
+                            <td className="text-slate-600 text-xs max-w-xs">{p.improvement_areas || '—'}</td>
+                            <td className="text-right">
+                              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openCheckinDialog(p.id); }}>
+                                <Plus className="w-3 h-3 mr-1" />Check-in
+                              </Button>
+                            </td>
+                          </tr>
+                          {expanded && (
+                            <tr className="bg-slate-50/60">
+                              <td></td>
+                              <td colSpan={6} className="py-2 px-3">
+                                <div className="space-y-2">
+                                  <div className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                                    <Target className="w-3 h-3" /> Hedef İlerleme Check-in'leri
+                                  </div>
+                                  {checkins.length === 0 ? (
+                                    <div className="text-xs text-slate-500">Henüz check-in yok</div>
+                                  ) : checkins.map((ci) => (
+                                    <div key={ci.id} className="rounded border border-slate-200 bg-white p-2 text-xs flex items-start gap-3">
+                                      <div className="w-12 text-slate-500">{ci.checkin_date}</div>
+                                      <div className="flex-1">
+                                        <div className="font-medium text-slate-800">{ci.goal_text}</div>
+                                        {ci.note && <div className="text-slate-600 mt-0.5">{ci.note}</div>}
+                                      </div>
+                                      <div className="w-24">
+                                        <div className="h-1.5 bg-slate-200 rounded overflow-hidden mb-0.5">
+                                          <div className="h-full bg-emerald-500" style={{ width: `${ci.progress_pct}%` }} />
+                                        </div>
+                                        <div className="text-[10px] text-slate-500">{ci.progress_pct}%</div>
+                                      </div>
+                                      <StatusBadge intent={STATUS_INTENT[ci.status] || 'info'}>{STATUS_LABEL[ci.status] || ci.status}</StatusBadge>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                     {(perf.items || []).length === 0 && (
-                      <tr><td colSpan={5} className="py-6 text-center text-slate-500">Değerlendirme yok</td></tr>
+                      <tr><td colSpan={7} className="py-6 text-center text-slate-500">Değerlendirme yok</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -262,13 +539,10 @@ const StaffProfile = () => {
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-slate-500 border-b">
-                      <th className="py-2">Ay</th>
-                      <th className="text-right">Saat</th><th className="text-right">Mesai</th>
-                      <th className="text-right">Brüt</th><th className="text-right">Net</th>
-                    </tr>
-                  </thead>
+                  <thead><tr className="text-left text-slate-500 border-b">
+                    <th className="py-2">Ay</th><th className="text-right">Saat</th>
+                    <th className="text-right">Mesai</th><th className="text-right">Brüt</th><th className="text-right">Net</th>
+                  </tr></thead>
                   <tbody>
                     {(pay.recent || []).map((row, i) => (
                       <tr key={i} className="border-t border-slate-100">
@@ -291,30 +565,22 @@ const StaffProfile = () => {
 
         <TabsContent value="shifts" className="mt-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Yaklaşan Vardiyalar</span>
-                <Button size="sm" variant="outline" onClick={() => navigate('/hr/shifts')}>
-                  Vardiya Planlayıcı
-                </Button>
-              </CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="flex items-center justify-between">
+              <span>Yaklaşan Vardiyalar</span>
+              <Button size="sm" variant="outline" onClick={() => navigate('/hr/shifts')}>Vardiya Planlayıcı</Button>
+            </CardTitle></CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-slate-500 border-b">
-                      <th className="py-2">Tarih</th><th>Tip</th>
-                      <th>Başl.</th><th>Bitiş</th><th>Not</th>
-                    </tr>
-                  </thead>
+                  <thead><tr className="text-left text-slate-500 border-b">
+                    <th className="py-2">Tarih</th><th>Tip</th><th>Başl.</th><th>Bitiş</th><th>Not</th>
+                  </tr></thead>
                   <tbody>
                     {shifts.map((sh) => (
                       <tr key={sh.id} className="border-t border-slate-100">
                         <td className="py-2">{sh.shift_date}</td>
                         <td className="capitalize">{sh.shift_type}</td>
-                        <td>{sh.start_time}</td>
-                        <td>{sh.end_time}</td>
+                        <td>{sh.start_time}</td><td>{sh.end_time}</td>
                         <td className="text-slate-600 text-xs">{sh.notes || '—'}</td>
                       </tr>
                     ))}
@@ -327,7 +593,335 @@ const StaffProfile = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* SERTİFİKA */}
+        <TabsContent value="certifications" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2"><GraduationCap className="w-4 h-4" /> Eğitim ve Sertifikalar</span>
+                <Button size="sm" onClick={openCertDialog}><Plus className="w-4 h-4 mr-1.5" />Sertifika Ekle</Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-left text-slate-500 border-b">
+                    <th className="py-2">Sertifika</th><th>Veren</th><th>Veriliş</th>
+                    <th>Bitiş</th><th>Numara</th><th>Durum</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {certs.items.map((c) => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const expired = c.expiry_date && c.expiry_date < today;
+                      const expiringSoon = c.expiry_date && !expired && new Date(c.expiry_date) - new Date() < 90 * 86400000;
+                      return (
+                        <tr key={c.id} className="border-t border-slate-100">
+                          <td className="py-2 font-medium">{c.name}{c.file_url && <a href={c.file_url} target="_blank" rel="noreferrer" className="ml-2 text-sky-600 hover:underline text-xs">dosya</a>}</td>
+                          <td>{c.issuer || '—'}</td>
+                          <td>{c.issue_date}</td>
+                          <td>{c.expiry_date || 'süresiz'}</td>
+                          <td className="text-xs">{c.certificate_no || '—'}</td>
+                          <td>
+                            {expired
+                              ? <StatusBadge intent="danger">Süresi geçmiş</StatusBadge>
+                              : expiringSoon
+                                ? <StatusBadge intent="warning">Yakında bitecek</StatusBadge>
+                                : <StatusBadge intent="success">Geçerli</StatusBadge>}
+                          </td>
+                          <td className="text-right">
+                            <Button size="sm" variant="ghost" onClick={() => deleteCert(c)}>
+                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {certs.items.length === 0 && (
+                      <tr><td colSpan={7} className="py-6 text-center text-slate-500">
+                        Henüz sertifika yok — yangın eğitimi, hijyen sertifikası gibi compliance kayıtlarını ekleyin
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* BELGELER */}
+        <TabsContent value="documents" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2"><Folder className="w-4 h-4" /> Personel Belgeleri</span>
+                <Button size="sm" onClick={() => setDocDialog({ open: true, file: null, doc_type: 'contract', label: '' })}>
+                  <Upload className="w-4 h-4 mr-1.5" />Belge Yükle
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-left text-slate-500 border-b">
+                    <th className="py-2">Etiket</th><th>Tür</th><th>Dosya Adı</th>
+                    <th className="text-right">Boyut</th><th>Yüklenme</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {docs.map((d) => (
+                      <tr key={d.id} className="border-t border-slate-100">
+                        <td className="py-2 font-medium">{d.label}</td>
+                        <td><StatusBadge intent="neutral">{DOC_TYPE_LABEL[d.doc_type] || d.doc_type}</StatusBadge></td>
+                        <td className="text-xs text-slate-600">{d.filename}</td>
+                        <td className="text-right text-xs">{((d.size_bytes || 0) / 1024).toFixed(1)} KB</td>
+                        <td className="text-xs">{(d.uploaded_at || '').slice(0, 10)}</td>
+                        <td className="text-right space-x-1">
+                          <Button size="sm" variant="ghost" onClick={() => downloadDoc(d)}>
+                            <Download className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => deleteDoc(d)}>
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {docs.length === 0 && (
+                      <tr><td colSpan={6} className="py-6 text-center text-slate-500">
+                        Henüz belge yok — sözleşme, kimlik, diploma gibi belgeleri yükleyin (max 5MB, PDF/Word/JPEG)
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* MAAŞ */}
+        <TabsContent value="salary" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2"><TrendingUp className="w-4 h-4" /> Maaş Geçmişi</span>
+                <Button size="sm" onClick={openSalaryDialog}>
+                  <Plus className="w-4 h-4 mr-1.5" />Zam / Değişiklik
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-left text-slate-500 border-b">
+                    <th className="py-2">Yürürlük</th><th>Tür</th>
+                    <th className="text-right">Eski</th><th className="text-right">Yeni</th>
+                    <th className="text-right">Δ%</th><th>Sebep</th>
+                  </tr></thead>
+                  <tbody>
+                    {salaryHistory.map((r) => (
+                      <tr key={r.id} className="border-t border-slate-100">
+                        <td className="py-2">{r.effective_date}</td>
+                        <td><StatusBadge intent={r.change_type === 'demotion' ? 'danger' : r.change_type === 'promotion' ? 'success' : 'info'}>{CHANGE_TYPE_LABEL[r.change_type] || r.change_type}</StatusBadge></td>
+                        <td className="text-right text-slate-500">{formatCurrency(r.old_hourly_rate, 'TRY')}</td>
+                        <td className="text-right font-semibold">{formatCurrency(r.new_hourly_rate, 'TRY')}</td>
+                        <td className={`text-right ${r.delta_pct > 0 ? 'text-emerald-700' : r.delta_pct < 0 ? 'text-rose-700' : ''}`}>
+                          {r.delta_pct > 0 ? '+' : ''}{r.delta_pct}%
+                        </td>
+                        <td className="text-xs text-slate-600 max-w-xs">{r.reason || '—'}</td>
+                      </tr>
+                    ))}
+                    {salaryHistory.length === 0 && (
+                      <tr><td colSpan={6} className="py-6 text-center text-slate-500">
+                        Henüz maaş değişikliği yok — şu anki saatlik: {s.hourly_rate ? formatCurrency(s.hourly_rate, 'TRY') : '140 TRY (default)'}
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* ============ DIALOGS ============ */}
+
+      {/* Sertifika ekle */}
+      <Dialog open={certDialog.open} onOpenChange={(o) => !o && setCertDialog({ open: false, form: null })}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Sertifika Ekle</DialogTitle></DialogHeader>
+          {certDialog.form && (
+            <form onSubmit={submitCert} className="grid gap-3">
+              <div><Label>Sertifika Adı *</Label><Input required value={certDialog.form.name}
+                onChange={(e) => setCertDialog({ ...certDialog, form: { ...certDialog.form, name: e.target.value } })} placeholder="Örn. Yangın Eğitimi" /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>Veren Kurum</Label><Input value={certDialog.form.issuer}
+                  onChange={(e) => setCertDialog({ ...certDialog, form: { ...certDialog.form, issuer: e.target.value } })} /></div>
+                <div><Label>Sertifika No</Label><Input value={certDialog.form.certificate_no}
+                  onChange={(e) => setCertDialog({ ...certDialog, form: { ...certDialog.form, certificate_no: e.target.value } })} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>Veriliş Tarihi *</Label><Input required type="date" value={certDialog.form.issue_date}
+                  onChange={(e) => setCertDialog({ ...certDialog, form: { ...certDialog.form, issue_date: e.target.value } })} /></div>
+                <div><Label>Bitiş Tarihi</Label><Input type="date" value={certDialog.form.expiry_date}
+                  onChange={(e) => setCertDialog({ ...certDialog, form: { ...certDialog.form, expiry_date: e.target.value } })} /></div>
+              </div>
+              <div><Label>Dosya URL (opsiyonel)</Label><Input value={certDialog.form.file_url}
+                onChange={(e) => setCertDialog({ ...certDialog, form: { ...certDialog.form, file_url: e.target.value } })} placeholder="https://..." /></div>
+              <div><Label>Not</Label><Textarea rows={2} value={certDialog.form.notes}
+                onChange={(e) => setCertDialog({ ...certDialog, form: { ...certDialog.form, notes: e.target.value } })} /></div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setCertDialog({ open: false, form: null })}>Vazgeç</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Kaydediliyor...' : 'Ekle'}</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Belge yükle */}
+      <Dialog open={docDialog.open} onOpenChange={(o) => !o && setDocDialog({ open: false, file: null, doc_type: 'contract', label: '' })}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Belge Yükle</DialogTitle></DialogHeader>
+          <form onSubmit={submitDoc} className="grid gap-3">
+            <div><Label>Dosya * (max 5MB, PDF/Word/JPEG/PNG)</Label>
+              <Input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                onChange={(e) => setDocDialog({ ...docDialog, file: e.target.files?.[0] || null })} />
+              {docDialog.file && <div className="text-xs text-slate-500 mt-1">{docDialog.file.name} • {(docDialog.file.size / 1024).toFixed(1)} KB</div>}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>Tür</Label>
+                <select value={docDialog.doc_type} onChange={(e) => setDocDialog({ ...docDialog, doc_type: e.target.value })}
+                  className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                  {Object.entries(DOC_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div><Label>Etiket</Label><Input value={docDialog.label}
+                onChange={(e) => setDocDialog({ ...docDialog, label: e.target.value })} placeholder="Opsiyonel açıklama" /></div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDocDialog({ open: false, file: null, doc_type: 'contract', label: '' })}>Vazgeç</Button>
+              <Button type="submit" disabled={saving || !docDialog.file}>{saving ? 'Yükleniyor...' : 'Yükle'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Maaş değişikliği */}
+      <Dialog open={salaryDialog.open} onOpenChange={(o) => !o && setSalaryDialog({ open: false, form: null })}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Zam / Maaş Değişikliği</DialogTitle></DialogHeader>
+          {salaryDialog.form && (
+            <form onSubmit={submitSalary} className="grid gap-3">
+              <div className="text-xs text-slate-500">Şu anki: <strong>{s.hourly_rate ? formatCurrency(s.hourly_rate, 'TRY') : '140 TRY (default)'}</strong>/saat</div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>Yeni Saatlik *</Label><Input required type="number" step="0.01" value={salaryDialog.form.new_hourly_rate}
+                  onChange={(e) => setSalaryDialog({ ...salaryDialog, form: { ...salaryDialog.form, new_hourly_rate: e.target.value } })} /></div>
+                <div><Label>Yürürlük *</Label><Input required type="date" value={salaryDialog.form.effective_date}
+                  onChange={(e) => setSalaryDialog({ ...salaryDialog, form: { ...salaryDialog.form, effective_date: e.target.value } })} /></div>
+              </div>
+              <div>
+                <Label>Tür</Label>
+                <select value={salaryDialog.form.change_type} onChange={(e) => setSalaryDialog({ ...salaryDialog, form: { ...salaryDialog.form, change_type: e.target.value } })}
+                  className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                  {Object.entries(CHANGE_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div><Label>Sebep / Not</Label><Textarea rows={2} value={salaryDialog.form.reason}
+                onChange={(e) => setSalaryDialog({ ...salaryDialog, form: { ...salaryDialog.form, reason: e.target.value } })} placeholder="Yıllık enflasyon zammı, terfi vb." /></div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setSalaryDialog({ open: false, form: null })}>Vazgeç</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Kaydediliyor...' : 'Kaydet'}</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* İşten ayrılma */}
+      <Dialog open={termDialog.open} onOpenChange={(o) => !o && setTermDialog({ open: false, form: null })}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle className="flex items-center gap-2 text-rose-700">
+            <UserMinus className="w-5 h-5" />İşten Ayrılma İşlemleri
+          </DialogTitle></DialogHeader>
+          {termDialog.form && (
+            <form onSubmit={submitTerm} className="grid gap-3">
+              <div className="rounded bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                Bu işlem personeli pasifleştirir, ayrılış kaydı oluşturur ve İş K. m.14'e göre <strong>kıdem tazminatı</strong> hesabını otomatik yapar
+                (30 gün × tam yıl × günlük brüt). 1 yıldan az kıdemde tazminat sıfırdır.
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>Ayrılış Sebebi *</Label>
+                  <select required value={termDialog.form.reason}
+                    onChange={(e) => setTermDialog({ ...termDialog, form: { ...termDialog.form, reason: e.target.value } })}
+                    className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                    {Object.entries(TERM_REASON_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div><Label>Son Çalışma Günü *</Label><Input required type="date" value={termDialog.form.last_day}
+                  onChange={(e) => setTermDialog({ ...termDialog, form: { ...termDialog.form, last_day: e.target.value } })} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>İhbar Süresi (gün)</Label><Input type="number" min="0" value={termDialog.form.notice_period_days}
+                  onChange={(e) => setTermDialog({ ...termDialog, form: { ...termDialog.form, notice_period_days: parseInt(e.target.value || '0', 10) } })} /></div>
+                <div><Label>Kıdem Override (boş = otomatik)</Label><Input type="number" step="0.01" value={termDialog.form.severance_override}
+                  onChange={(e) => setTermDialog({ ...termDialog, form: { ...termDialog.form, severance_override: e.target.value } })} placeholder="Otomatik hesap kullan" /></div>
+              </div>
+              <div><Label>Çıkış Görüşmesi Notları</Label><Textarea rows={4} value={termDialog.form.exit_interview_notes}
+                onChange={(e) => setTermDialog({ ...termDialog, form: { ...termDialog.form, exit_interview_notes: e.target.value } })}
+                placeholder="Ayrılış sebebi, geri bildirimi, geliştirilebilecek alanlar vb." /></div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={termDialog.form.eligible_for_rehire}
+                  onChange={(e) => setTermDialog({ ...termDialog, form: { ...termDialog.form, eligible_for_rehire: e.target.checked } })} />
+                Tekrar işe alınabilir
+              </label>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setTermDialog({ open: false, form: null })}>Vazgeç</Button>
+                <Button type="submit" disabled={saving} className="bg-rose-600 hover:bg-rose-700 text-white">
+                  {saving ? 'İşleniyor...' : 'Ayrılışı Kaydet'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Hedef check-in */}
+      <Dialog open={checkinDialog.open} onOpenChange={(o) => !o && setCheckinDialog({ open: false, reviewId: null, form: null })}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Hedef Check-in Ekle</DialogTitle></DialogHeader>
+          {checkinDialog.form && (
+            <form onSubmit={submitCheckin} className="grid gap-3">
+              <div><Label>Hedef *</Label><Textarea required rows={2} value={checkinDialog.form.goal_text}
+                onChange={(e) => setCheckinDialog({ ...checkinDialog, form: { ...checkinDialog.form, goal_text: e.target.value } })}
+                placeholder="Örn: Q1'de upsell oranını %15'e çıkar" /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>İlerleme (%)</Label><Input type="number" min="0" max="100" value={checkinDialog.form.progress_pct}
+                  onChange={(e) => setCheckinDialog({ ...checkinDialog, form: { ...checkinDialog.form, progress_pct: e.target.value } })} /></div>
+                <div>
+                  <Label>Durum</Label>
+                  <select value={checkinDialog.form.status}
+                    onChange={(e) => setCheckinDialog({ ...checkinDialog, form: { ...checkinDialog.form, status: e.target.value } })}
+                    className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                    <option value="on_track">Yolunda</option>
+                    <option value="at_risk">Risk altında</option>
+                    <option value="blocked">Bloke</option>
+                    <option value="done">Tamamlandı</option>
+                  </select>
+                </div>
+              </div>
+              <div><Label>Tarih</Label><Input type="date" value={checkinDialog.form.checkin_date}
+                onChange={(e) => setCheckinDialog({ ...checkinDialog, form: { ...checkinDialog.form, checkin_date: e.target.value } })} /></div>
+              <div><Label>Not</Label><Textarea rows={2} value={checkinDialog.form.note}
+                onChange={(e) => setCheckinDialog({ ...checkinDialog, form: { ...checkinDialog.form, note: e.target.value } })} /></div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setCheckinDialog({ open: false, reviewId: null, form: null })}>Vazgeç</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Kaydediliyor...' : 'Ekle'}</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

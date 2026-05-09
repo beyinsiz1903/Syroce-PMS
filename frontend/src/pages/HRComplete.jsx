@@ -7,6 +7,7 @@ import {
   Users, FileSpreadsheet, RefreshCw, Plus, CheckCircle2, XCircle,
   TrendingUp, ExternalLink, FileDown, Award, Info, AlertCircle,
   Bell, FileText, ClipboardList, Send, ThumbsUp, ThumbsDown,
+  Timer, Check, X,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { promptDialog } from '@/lib/dialogs';
@@ -86,10 +87,16 @@ const HRComplete = () => {
   // Performance
   const [performanceItems, setPerformanceItems] = useState([]);
   const [perfAvg, setPerfAvg] = useState(0);
+  const [perfTemplates, setPerfTemplates] = useState([]);
   const [perfForm, setPerfForm] = useState({
     staff_id: '', period: '', overall_score: '', strengths: '', improvement_areas: '', goals: '',
+    template_id: '', competency_scores: {},
   });
   const [creatingPerf, setCreatingPerf] = useState(false);
+
+  // Overtime requests (Mesai Onayı)
+  const [overtimeItems, setOvertimeItems] = useState([]);
+  const [overtimeCounts, setOvertimeCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
 
   // Recruitment / Personel Talebi
   const [jobItems, setJobItems] = useState([]);
@@ -158,6 +165,56 @@ const HRComplete = () => {
       console.error('Performance yüklenemedi', e);
     }
   }, []);
+
+  const loadPerfTemplates = useCallback(async () => {
+    try {
+      const res = await axios.get('/hr/performance-templates');
+      setPerfTemplates(res.data?.items || []);
+    } catch (e) {
+      console.error('Şablonlar yüklenemedi', e);
+    }
+  }, []);
+
+  const loadOvertimeRequests = useCallback(async () => {
+    try {
+      const res = await axios.get('/hr/overtime-requests');
+      setOvertimeItems(res.data?.items || []);
+      setOvertimeCounts(res.data?.counts || { pending: 0, approved: 0, rejected: 0 });
+    } catch (e) {
+      console.error('Mesai talepleri yüklenemedi', e);
+    }
+  }, []);
+
+  const decideOvertime = async (req, action) => {
+    try {
+      let note = '';
+      if (action === 'reject') {
+        note = await promptDialog({ message: 'Red sebebi (opsiyonel):', defaultValue: '' });
+        if (note === null) return;
+      }
+      await axios.post(`/hr/overtime-request/${req.id}/decision`, { action, note });
+      toast.success(action === 'approve' ? 'Mesai onaylandı' : 'Mesai reddedildi');
+      loadOvertimeRequests();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'İşlem başarısız');
+    }
+  };
+
+  const onTemplateChange = (tplId) => {
+    const tpl = perfTemplates.find((t) => t.id === tplId);
+    const competency_scores = {};
+    if (tpl?.competencies) {
+      tpl.competencies.forEach((c) => { competency_scores[c.name] = 0; });
+    }
+    setPerfForm((f) => ({ ...f, template_id: tplId, competency_scores }));
+  };
+
+  const setCompetencyScore = (name, val) => {
+    setPerfForm((f) => ({
+      ...f,
+      competency_scores: { ...f.competency_scores, [name]: parseFloat(val) || 0 },
+    }));
+  };
 
   const loadJobs = useCallback(async () => {
     try {
@@ -258,11 +315,11 @@ const HRComplete = () => {
   const loadAll = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([loadStaff(), loadAttendance(), loadLeaves(), loadPerformance(), loadJobs()]);
+      await Promise.all([loadStaff(), loadAttendance(), loadLeaves(), loadPerformance(), loadJobs(), loadPerfTemplates(), loadOvertimeRequests()]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadStaff, loadAttendance, loadLeaves, loadPerformance, loadJobs]);
+  }, [loadStaff, loadAttendance, loadLeaves, loadPerformance, loadJobs, loadPerfTemplates, loadOvertimeRequests]);
 
   useEffect(() => {
     loadAll();
@@ -423,9 +480,10 @@ const HRComplete = () => {
       await axios.post('/hr/performance', {
         ...perfForm,
         overall_score: parseFloat(perfForm.overall_score),
+        competency_scores: perfForm.competency_scores || {},
       });
       toast.success('Performans değerlendirmesi kaydedildi');
-      setPerfForm({ ...perfForm, period: '', overall_score: '', strengths: '', improvement_areas: '', goals: '' });
+      setPerfForm({ ...perfForm, period: '', overall_score: '', strengths: '', improvement_areas: '', goals: '', competency_scores: {} });
       loadPerformance();
     } catch (error) {
       const msg = error.response?.data?.detail || 'Kaydedilemedi';
@@ -529,7 +587,7 @@ const HRComplete = () => {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="attendance" data-testid="tab-attendance">
             <Clock className="w-4 h-4 mr-2" />Devam
           </TabsTrigger>
@@ -541,6 +599,13 @@ const HRComplete = () => {
           </TabsTrigger>
           <TabsTrigger value="performance" data-testid="tab-performance">
             <Briefcase className="w-4 h-4 mr-2" />Performans
+          </TabsTrigger>
+          <TabsTrigger value="overtime" data-testid="tab-overtime">
+            <Timer className="w-4 h-4 mr-1.5" />
+            Mesai Onayı
+            {overtimeCounts.pending > 0 && (
+              <span className="ml-1.5 px-1.5 rounded-full bg-amber-500 text-white text-[10px]">{overtimeCounts.pending}</span>
+            )}
           </TabsTrigger>
           <TabsTrigger value="recruitment" data-testid="tab-recruitment">
             <ClipboardList className="w-4 h-4 mr-2" />Personel Talebi
@@ -979,6 +1044,33 @@ const HRComplete = () => {
                     </select>
                   </div>
                   <div>
+                    <Label className="text-xs">Şablon (opsiyonel)</Label>
+                    <select
+                      value={perfForm.template_id}
+                      onChange={(e) => onTemplateChange(e.target.value)}
+                      className="w-full rounded-md border border-input px-3 py-2 text-sm"
+                    >
+                      <option value="">— Şablon yok —</option>
+                      {perfTemplates.map((tpl) => (
+                        <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.competencies?.length || 0} yetkinlik)</option>
+                      ))}
+                    </select>
+                  </div>
+                  {perfForm.template_id && Object.keys(perfForm.competency_scores || {}).length > 0 && (
+                    <div className="md:col-span-2 lg:col-span-3 rounded border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs font-semibold text-slate-700 mb-2">Yetkinlik Puanları (0–10)</div>
+                      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                        {Object.entries(perfForm.competency_scores).map(([name, score]) => (
+                          <div key={name}>
+                            <Label className="text-xs">{name}</Label>
+                            <Input type="number" min="0" max="10" step="0.1" value={score}
+                              onChange={(e) => setCompetencyScore(name, e.target.value)} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
                     <Label className="text-xs">{t('cm.pages_HRComplete.donem')}</Label>
                     <Input value={perfForm.period} onChange={(e) => setPerfForm({ ...perfForm, period: e.target.value })} placeholder="2026 Q1" />
                   </div>
@@ -1039,6 +1131,83 @@ const HRComplete = () => {
                       ))}
                       {performanceItems.length === 0 && (
                         <tr><td colSpan={5} className="py-6 text-center text-slate-500">{t('cm.pages_HRComplete.henuz_degerlendirme_yok')}</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* === MESAİ ONAYI === */}
+        <TabsContent value="overtime" className="mt-4">
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              <KpiCard intent="warning" icon={Timer} label="Bekleyen Talep" value={overtimeCounts.pending || 0}
+                sub="onay bekliyor" />
+              <KpiCard intent="success" icon={CheckCircle2} label="Onaylanan" value={overtimeCounts.approved || 0}
+                sub="bu yıl" />
+              <KpiCard intent="danger" icon={XCircle} label="Reddedilen" value={overtimeCounts.rejected || 0} />
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2"><Timer className="w-4 h-4" />Mesai Talepleri</span>
+                  <span className="text-xs text-slate-500 font-normal">İş K. m.41/3 — yıllık 270 saat üst sınırı otomatik kontrol edilir</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-slate-500 border-b">
+                        <th className="py-2">Personel</th>
+                        <th>Tarih</th>
+                        <th className="text-right">Saat</th>
+                        <th>Sebep</th>
+                        <th>Durum</th>
+                        <th>İstek</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {overtimeItems.map((req) => (
+                        <tr key={req.id} className="border-t border-slate-100 align-top">
+                          <td className="py-2 font-medium">{req.staff_name}</td>
+                          <td>{req.work_date}</td>
+                          <td className="text-right">{req.hours}h</td>
+                          <td className="text-slate-600 text-xs max-w-xs">{req.reason}</td>
+                          <td>
+                            <StatusBadge intent={STATUS_INTENT[req.status] || 'neutral'}>
+                              {STATUS_LABEL[req.status] || req.status}
+                            </StatusBadge>
+                            {req.decision_note && (
+                              <div className="text-[10px] text-slate-500 mt-1 max-w-[160px] truncate" title={req.decision_note}>
+                                {req.decision_note}
+                              </div>
+                            )}
+                          </td>
+                          <td className="text-xs text-slate-500">{(req.requested_at || '').slice(0, 10)}</td>
+                          <td className="text-right">
+                            {req.status === 'pending' && (
+                              <div className="flex justify-end gap-1">
+                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'approve')}>
+                                  <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" />Onayla
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'reject')}>
+                                  <X className="w-3.5 h-3.5 mr-1 text-rose-600" />Reddet
+                                </Button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {overtimeItems.length === 0 && (
+                        <tr><td colSpan={7} className="py-6 text-center text-slate-500">
+                          Mesai talebi yok — personel uygulamadan talep gönderdiğinde burada görünür
+                        </td></tr>
                       )}
                     </tbody>
                   </table>
