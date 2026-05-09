@@ -51,6 +51,7 @@ const Diff = ({ before, after, changed }) => {
 };
 
 const EntityHistoryDrawer = ({ entityType, entityId, title, onClose }) => {
+  const { t } = useTranslation();
   const [trail, setTrail] = useState([]);
   const [loading, setLoading] = useState(true);
 

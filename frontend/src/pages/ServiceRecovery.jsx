@@ -113,6 +113,7 @@ const SlaBadge = ({ complaint }) => {
 };
 
 const ServiceRecovery = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [complaints, setComplaints] = useState([]);
   const [stats, setStats] = useState({});

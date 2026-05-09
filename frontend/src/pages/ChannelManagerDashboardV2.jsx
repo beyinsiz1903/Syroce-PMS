@@ -28,6 +28,7 @@ const StatusBadge = ({ status }) => {
 };
 
 const ProviderBadge = ({ provider }) => {
+  const { t } = useTranslation();
   const colors = {
     hotelrunner: 'bg-blue-100 text-blue-700',
     exely: 'bg-indigo-100 text-indigo-700',
@@ -54,6 +55,7 @@ const KpiCard = ({ icon: Icon, label, value, color, sub }) => (
 );
 
 const TimeAgo = ({ ts }) => {
+  const { t } = useTranslation();
   if (!ts) return <span className="text-slate-400">—</span>;
   const diff = Date.now() - new Date(ts).getTime();
   const mins = Math.floor(diff / 60000);
@@ -66,6 +68,7 @@ const TimeAgo = ({ ts }) => {
 };
 
 const ChannelManagerDashboardV2 = ({ user, tenant, onLogout, embedded = false }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
   const [data, setData] = useState(null);
@@ -95,7 +98,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout, embedded = false })
       }
       setData(resp.data);
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.error('[CM Dashboard] fetch failed:',
         err?.response?.status, err?.response?.data || err?.message);
       if (!silent) {

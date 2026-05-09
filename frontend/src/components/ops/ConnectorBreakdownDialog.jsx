@@ -53,6 +53,7 @@ const SeverityIcon = ({ severity }) => {
  * Backend: GET /ops-events/early-warnings/connector/{connector_id}
  */
 const ConnectorBreakdownDialog = ({ open, connectorId, onClose }) => {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);

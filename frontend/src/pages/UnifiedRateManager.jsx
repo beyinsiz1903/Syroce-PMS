@@ -650,6 +650,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
 
 // Agency Override Editor (inline mini form)
 const AgencyOverrideEditor = ({ agency, roomTypes, onSave, onCancel, onDelete, currencySymbol }) => {
+  const { t } = useTranslation();
   const [overrideType, setOverrideType] = useState('multiplier');
   const [value, setValue] = useState(agency.has_custom_rates ? '' : '0.90');
   const [roomType, setRoomType] = useState('*');

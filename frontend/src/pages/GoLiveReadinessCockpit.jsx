@@ -46,6 +46,7 @@ const ChecklistItem = ({ label, status, detail, action, actionLabel, icon: Icon 
 };
 
 const ScoreBar = ({ label, score, weight }) => {
+  const { t } = useTranslation();
   const getColor = (s) => {
     if (s >= 80) return 'bg-emerald-500';
     if (s >= 50) return 'bg-amber-500';
@@ -91,6 +92,7 @@ const CATEGORY_LABELS = {
 };
 
 const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
   const [loading, setLoading] = useState(true);
@@ -131,7 +133,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
       if (scoreRes.status === 'fulfilled') { setGoliveScore(scoreRes.value?.data || scoreRes.value); } else { errors.push('Hazırlık skoru'); setGoliveScore(null); }
       setFetchErrors(errors);
       if (errors.length > 0) {
-        // eslint-disable-next-line no-console
+         
         console.error('[GoLive Cockpit] partial fetch failures:',
           { connections: connRes.reason?.response?.status || connRes.reason?.message,
             dashboard: dashRes.reason?.response?.status || dashRes.reason?.message,
@@ -139,7 +141,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
         if (!silent) toast.error(`Yüklenemedi: ${errors.join(', ')}`);
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.error('[GoLive Cockpit] fetchAll fatal:', err);
       if (!silent) toast.error('Veriler yüklenirken hata oluştu');
     } finally {

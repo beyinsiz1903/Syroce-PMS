@@ -542,7 +542,9 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
 // Booking Details Dialog
 export const BookingDetailsDialog = ({
   open, onOpenChange, selectedBooking, rooms, onEdit, onMoved,
-}) => (
+}) => {
+  const { t } = useTranslation();
+  return (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
       <DialogHeader>
@@ -680,7 +682,8 @@ export const BookingDetailsDialog = ({
       )}
     </DialogContent>
   </Dialog>
-);
+  );
+};
 
 // Room Move Reason Dialog
 export const MoveReasonDialog = ({

@@ -71,6 +71,7 @@ const MiniSparkline = ({ data, color = 'blue', height = 30 }) => {
 
 // ── Confidence Badge ─────────────────────────────────────────────────
 const ConfidenceBadge = ({ confidence }) => {
+  const { t } = useTranslation();
   const getColor = (c) => {
     if (c >= 80) return 'bg-red-100 text-red-800 border-red-200';
     if (c >= 60) return 'bg-amber-100 text-amber-800 border-amber-200';
@@ -86,6 +87,7 @@ const ConfidenceBadge = ({ confidence }) => {
 
 // ── Warning Type Badge ───────────────────────────────────────────────
 const WarningTypeBadge = ({ type }) => {
+  const { t } = useTranslation();
   const typeMap = {
     'predictive.warning.degradation_likely': { label: 'Bozulma Riski', color: 'bg-red-100 text-red-800', icon: TrendingDown },
     'predictive.warning.failure_rate_rising': { label: 'Hata Artışı', color: 'bg-amber-100 text-amber-800', icon: TrendingUp },
@@ -109,6 +111,7 @@ const WarningTypeBadge = ({ type }) => {
 
 // ── Health Indicator ─────────────────────────────────────────────────
 const SystemHealthIndicator = ({ health }) => {
+  const { t } = useTranslation();
   const healthMap = {
     healthy: { color: 'bg-green-500', label: 'Sağlıklı', textColor: 'text-green-700' },
     attention: { color: 'bg-yellow-500', label: 'Dikkat', textColor: 'text-yellow-700' },
@@ -129,6 +132,7 @@ const SystemHealthIndicator = ({ health }) => {
 
 // ── Warning Card ─────────────────────────────────────────────────────
 const WarningCard = ({ warning, onViewDetails, onAction }) => {
+  const { t } = useTranslation();
   const severityBg = {
     critical: 'border-red-300 bg-red-50/80',
     warning: 'border-amber-300 bg-amber-50/80',
@@ -230,6 +234,7 @@ const ActionCTA = ({ warning, onAction }) => {
 
 // ── Main Early Warning Panel ─────────────────────────────────────────
 const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) => {
+  const { t } = useTranslation();
   const [summary, setSummary] = useState(null);
   const [trends, setTrends] = useState(null);
   const [engineStatus, setEngineStatus] = useState(null);

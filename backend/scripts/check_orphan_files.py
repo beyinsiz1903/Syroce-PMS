@@ -26,6 +26,7 @@ ALLOWED_ROOT_FILES = frozenset({
     "celery_app.py",
     "celery_tasks.py",
     "conftest.py",
+    "create_demo_users.py",
     "data_archival.py",
     "demo_data_generator.py",
     "health_check.py",

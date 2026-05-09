@@ -61,7 +61,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
 
     let timeoutId = null;
     const rafId = window.requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-testid="cred-card-${CSS.escape(targetKey)}"]`);
+      const el = document.querySelector(`[data-testid="cred-card-${window.CSS.escape(targetKey)}"]`);
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         setHighlightKey(targetKey);

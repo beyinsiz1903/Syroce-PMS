@@ -37,11 +37,12 @@ const COLUMNS = [
   { key: 'mod_ai_whatsapp',          label: 'AI WhatsApp' },
 ];
 
-const BoolCell = ({ value }) => (
-  value
+const BoolCell = ({ value }) => {
+  const { t } = useTranslation();
+  return value
     ? <CheckCircle2 className="w-4 h-4 text-emerald-600 inline" aria-label="aktif" />
-    : <XCircle className="w-4 h-4 text-rose-500 inline" aria-label={t('cm.pages_ModuleReport.kapali')} />
-);
+    : <XCircle className="w-4 h-4 text-rose-500 inline" aria-label={t('cm.pages_ModuleReport.kapali')} />;
+};
 
 const ModuleReport = () => {
   const { t } = useTranslation();

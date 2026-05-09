@@ -143,7 +143,7 @@ export default function OnboardingWizard({ user, tenant, onLogout }) {
       toast.error("Toplam oda sayısı zorunlu (en az 1)");
       return false;
     }
-    if (hotelForm.contact_phone && !/^\+?[0-9 ()\-]{10,20}$/.test(hotelForm.contact_phone.trim())) {
+    if (hotelForm.contact_phone && !/^\+?[0-9 ()-]{10,20}$/.test(hotelForm.contact_phone.trim())) {
       toast.error("Telefon formatı geçersiz (örn. +905551234567)");
       return false;
     }

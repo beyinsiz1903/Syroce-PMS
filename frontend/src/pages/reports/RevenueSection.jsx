@@ -129,7 +129,9 @@ const CategoryRevenueCard = () => {
   );
 };
 
-const RevenueSection = ({ data, s, pc, roomTypeData }) => (
+const RevenueSection = ({ data, s, pc, roomTypeData }) => {
+  const { t } = useTranslation();
+  return (
   <div className="space-y-6" data-testid="section-revenue">
     <SectionHeader title="Gelir Raporu" description={t('cm.pages_reports_RevenueSection.detayli_gelir_analizi_ve_trendler')} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -173,6 +175,7 @@ const RevenueSection = ({ data, s, pc, roomTypeData }) => (
       </Card>
     )}
   </div>
-);
+  );
+};
 
 export default RevenueSection;

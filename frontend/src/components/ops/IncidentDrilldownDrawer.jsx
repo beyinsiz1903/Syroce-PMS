@@ -54,6 +54,7 @@ const SeverityIcon = ({ severity, className = "w-4 h-4" }) => {
 };
 
 const SeverityBadge = ({ severity }) => {
+  const { t } = useTranslation();
   const map = {
     critical: 'bg-red-100 text-red-800',
     warning: 'bg-amber-100 text-amber-800',
@@ -68,6 +69,7 @@ const SeverityBadge = ({ severity }) => {
 };
 
 const StatusBadge = ({ status }) => {
+  const { t } = useTranslation();
   const map = {
     succeeded: { color: 'bg-green-100 text-green-800', icon: CheckCircle2 },
     failed: { color: 'bg-red-100 text-red-800', icon: XCircle },
@@ -88,6 +90,7 @@ const StatusBadge = ({ status }) => {
 };
 
 const TimeAgo = ({ timestamp }) => {
+  const { t } = useTranslation();
   if (!timestamp) return <span className="text-xs text-gray-400">—</span>;
   const now = new Date();
   const then = new Date(timestamp);
@@ -116,6 +119,7 @@ const InfoRow = ({ icon: Icon, label, value, mono = false }) => (
 // ── Timeline Node Component ────────────────────────────────────────
 
 const TimelineNode = ({ event, isFirst, isLast }) => {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   
   const getEventIcon = (eventType) => {
@@ -192,6 +196,7 @@ const TimelineNode = ({ event, isFirst, isLast }) => {
 // ── Main Drawer Component ──────────────────────────────────────────
 
 const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetryDlq }) => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [timelineData, setTimelineData] = useState(null);
