@@ -122,12 +122,30 @@ class PerformanceReviewPayload(BaseModel):
 
 
 class JobPostingPayload(BaseModel):
+    """Personel ihtiyaç talebi / iş ilanı formu.
+
+    Bu model iki amaca hizmet eder:
+    - `request_type='internal_request'` (varsayılan): Departman müdürü
+      personel ihtiyacı bildirir, HR yöneticisi onaylayınca aday alımına açılır.
+    - `request_type='public_posting'`: Direkt kabul edilmiş açık pozisyon
+      (legacy davranış; ileride dış kanal entegrasyonu eklenirse kullanılır).
+    """
     title: str = Field(..., min_length=1, max_length=200)
     department: str = Field(..., max_length=100)
     description: str | None = Field(None, max_length=5000)
     employment_type: Literal['full_time', 'part_time', 'seasonal', 'intern', 'contract'] = 'full_time'
     location: str | None = Field(None, max_length=200)
     salary_range: str | None = Field(None, max_length=100)
+    # Personel talebi alanları
+    request_type: Literal['internal_request', 'public_posting'] = 'internal_request'
+    headcount_needed: int = Field(1, ge=1, le=50)
+    urgency: Literal['low', 'normal', 'high', 'critical'] = 'normal'
+    justification: str | None = Field(None, max_length=2000)
+    needed_by: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+
+
+class JobDecisionPayload(BaseModel):
+    note: str | None = Field(None, max_length=500)
 
 
 # ============= Attendance =============
@@ -352,6 +370,20 @@ async def create_leave_request(
         'created_at': datetime.now(UTC).isoformat(),
     }
     await db.leave_requests.insert_one(leave)
+
+    # HR yöneticilerine bildirim — onay bekleyen talep
+    await _notify_hr_managers(
+        current_user.tenant_id,
+        kind='leave_request',
+        title='Yeni izin talebi',
+        body=(
+            f"{leave['staff_name']} • {payload.leave_type} • "
+            f"{payload.start_date} → {payload.end_date} ({total_days} gün)"
+        ),
+        link=f'/hr?tab=leave&id={leave["id"]}',
+        ref_id=leave['id'],
+    )
+
     return {'success': True, 'leave_id': leave['id'], 'total_days': total_days, 'status': 'pending'}
 
 
@@ -395,7 +427,94 @@ async def decide_leave_request(
             'decided_at': datetime.now(UTC).isoformat(),
         }}
     )
+    # Talep sahibine bildirim — kararı duyur
+    requester_id = leave.get('requested_by') or leave.get('staff_id')
+    if requester_id:
+        await _notify_user(
+            current_user.tenant_id,
+            user_id=requester_id,
+            kind=f'leave_{new_status}',
+            title=('İzin talebiniz onaylandı' if new_status == 'approved'
+                   else 'İzin talebiniz reddedildi'),
+            body=(
+                f"{leave.get('start_date')} → {leave.get('end_date')} • "
+                f"{leave.get('total_days', 0)} gün"
+                + (f" • Not: {payload.note}" if payload.note else '')
+            ),
+            link=f'/hr?tab=leave&id={leave_id}',
+            ref_id=leave_id,
+        )
     return {'success': True, 'status': new_status}
+
+
+# ============= Notification helpers (HR akışı için) =============
+
+def _build_notification_doc(
+    tenant_id: str, *, user_id: str | None, kind: str, title: str, body: str,
+    link: str | None, ref_id: str | None,
+) -> dict:
+    """notifications koleksiyon şemasıyla uyumlu doc üretir.
+
+    notification_router.list_notifications {type, title, message, action_url}
+    alanlarını okur — bu helper bu adlandırmayı kullanır; ek olarak
+    'kind' ve 'ref_id' metadata içine konur (debugging / future filtering için).
+    """
+    now_iso = datetime.now(UTC).isoformat()
+    return {
+        'id': str(uuid.uuid4()),
+        'tenant_id': tenant_id,
+        'user_id': user_id,
+        'type': kind,                # list endpoint 'type' okuyor
+        'title': title,
+        'message': body,             # list endpoint 'message' okuyor
+        'body': body,                # backward-compat (bazı yerler 'body' kullanıyor)
+        'priority': 'normal',
+        'action_url': link,          # list endpoint 'action_url' okuyor
+        'metadata': {'kind': kind, 'ref_id': ref_id} if ref_id else {'kind': kind},
+        'read': False,
+        'created_at': now_iso,
+        'sent_at': now_iso,
+    }
+
+
+async def _notify_hr_managers(
+    tenant_id: str, *, kind: str, title: str, body: str,
+    link: str | None = None, ref_id: str | None = None,
+):
+    """HR yönetici rollerindeki tüm aktif kullanıcılara in-app bildirim gönder."""
+    cursor = db.users.find({
+        'tenant_id': tenant_id,
+        'is_active': True,
+        'role': {'$in': ['admin', 'supervisor', 'finance']},
+    }, {'_id': 0, 'id': 1})
+    user_ids = [u['id'] async for u in cursor if u.get('id')]
+    if not user_ids:
+        return
+    docs = [
+        _build_notification_doc(
+            tenant_id, user_id=uid, kind=kind, title=title, body=body,
+            link=link, ref_id=ref_id,
+        )
+        for uid in user_ids
+    ]
+    try:
+        await db.notifications.insert_many(docs)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("HR bildirimi yazılamadı: %s", exc)
+
+
+async def _notify_user(
+    tenant_id: str, *, user_id: str, kind: str, title: str, body: str,
+    link: str | None = None, ref_id: str | None = None,
+):
+    """Tek kullanıcıya in-app bildirim gönder."""
+    try:
+        await db.notifications.insert_one(_build_notification_doc(
+            tenant_id, user_id=user_id, kind=kind, title=title, body=body,
+            link=link, ref_id=ref_id,
+        ))
+    except Exception as exc:  # pragma: no cover
+        logger.warning("HR bildirimi yazılamadı: %s", exc)
 
 
 # ============= Payroll =============
@@ -641,8 +760,24 @@ async def list_performance_reviews(
 async def create_job_posting(
     payload: JobPostingPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),  # HR yönetici yetkisi (manage_sales semantik olarak yanlıştı)
 ):
+    """Personel ihtiyaç talebi oluştur (her departman müdürü açabilir).
+
+    - internal_request → status=pending_approval, HR yöneticisine bildirim gider.
+    - public_posting → yalnızca HR yetkisi ile, doğrudan status=active.
+    """
+    # public_posting için ek yetki gerekir; internal_request herkese açık
+    if payload.request_type == 'public_posting':
+        role = (getattr(current_user, 'role', None) or '').lower()
+        if role not in {'admin', 'supervisor', 'finance'}:
+            raise HTTPException(
+                status_code=403,
+                detail="Doğrudan ilan yayınlamak için HR yöneticisi yetkisi gerekir"
+            )
+        initial_status = 'active'
+    else:
+        initial_status = 'pending_approval'
+
     job = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -652,13 +787,103 @@ async def create_job_posting(
         'employment_type': payload.employment_type,
         'location': payload.location,
         'salary_range': payload.salary_range,
-        'status': 'active',
+        'request_type': payload.request_type,
+        'headcount_needed': payload.headcount_needed,
+        'urgency': payload.urgency,
+        'justification': payload.justification,
+        'needed_by': payload.needed_by,
+        'status': initial_status,
         'applicants_count': 0,
         'created_by': getattr(current_user, 'id', None),
+        'created_by_name': getattr(current_user, 'name', None) or getattr(current_user, 'email', None),
         'created_at': datetime.now(UTC).isoformat(),
     }
     await db.job_postings.insert_one(job)
-    return {'success': True, 'job_id': job['id']}
+
+    # Yöneticiye bildirim — onay gerektiren talepler için
+    if initial_status == 'pending_approval':
+        await _notify_hr_managers(
+            current_user.tenant_id,
+            kind='hr_request',
+            title='Yeni personel talebi',
+            body=(
+                f"{job.get('created_by_name') or 'Bir müdür'} • "
+                f"{payload.department} • {payload.title} ({payload.headcount_needed} kişi)"
+                + (f" • aciliyet: {payload.urgency}" if payload.urgency != 'normal' else '')
+            ),
+            link=f'/hr?tab=recruitment&job={job["id"]}',
+            ref_id=job['id'],
+        )
+
+    return {'success': True, 'job_id': job['id'], 'status': initial_status}
+
+
+@router.post("/hr/job-posting/{job_id}/approve")
+async def approve_job_posting(
+    job_id: str,
+    payload: JobDecisionPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    job = await db.job_postings.find_one({'tenant_id': current_user.tenant_id, 'id': job_id})
+    if not job:
+        raise HTTPException(status_code=404, detail="Talep bulunamadı")
+    if job.get('status') not in ('pending_approval', None):
+        raise HTTPException(status_code=400, detail="Bu talep zaten karara bağlanmış")
+    await db.job_postings.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': job_id},
+        {'$set': {
+            'status': 'active',
+            'approved_by': getattr(current_user, 'id', None),
+            'approved_by_name': getattr(current_user, 'name', None),
+            'approved_at': datetime.now(UTC).isoformat(),
+            'decision_note': payload.note,
+        }}
+    )
+    # Talep sahibine bildirim
+    if job.get('created_by'):
+        await _notify_user(
+            current_user.tenant_id,
+            user_id=job['created_by'],
+            kind='hr_request_approved',
+            title='Personel talebiniz onaylandı',
+            body=f"{job.get('title')} • aday eklemeye açıldı",
+            link=f'/hr?tab=recruitment&job={job_id}',
+            ref_id=job_id,
+        )
+    return {'success': True, 'status': 'active'}
+
+
+@router.post("/hr/job-posting/{job_id}/reject")
+async def reject_job_posting(
+    job_id: str,
+    payload: JobDecisionPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    job = await db.job_postings.find_one({'tenant_id': current_user.tenant_id, 'id': job_id})
+    if not job:
+        raise HTTPException(status_code=404, detail="Talep bulunamadı")
+    await db.job_postings.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': job_id},
+        {'$set': {
+            'status': 'rejected',
+            'rejected_by': getattr(current_user, 'id', None),
+            'rejected_at': datetime.now(UTC).isoformat(),
+            'decision_note': payload.note,
+        }}
+    )
+    if job.get('created_by'):
+        await _notify_user(
+            current_user.tenant_id,
+            user_id=job['created_by'],
+            kind='hr_request_rejected',
+            title='Personel talebiniz reddedildi',
+            body=(payload.note or job.get('title') or '—'),
+            link=f'/hr?tab=recruitment&job={job_id}',
+            ref_id=job_id,
+        )
+    return {'success': True, 'status': 'rejected'}
 
 
 @router.get("/hr/job-postings")
@@ -1346,12 +1571,18 @@ async def add_applicant(
     job_id: str,
     payload: ApplicantPayload,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
 ):
     job = await db.job_postings.find_one(
         {'tenant_id': current_user.tenant_id, 'id': job_id}
     )
     if not job:
         raise HTTPException(status_code=404, detail="İş ilanı bulunamadı")
+    if job.get('status') != 'active':
+        raise HTTPException(
+            status_code=400,
+            detail="Sadece aktif (yayında) ilanlara aday eklenebilir",
+        )
     item = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -1378,6 +1609,7 @@ async def add_applicant(
 async def list_applicants(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
 ):
     items = await db.job_applicants.find({
         'tenant_id': current_user.tenant_id,

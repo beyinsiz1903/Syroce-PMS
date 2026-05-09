@@ -5,8 +5,10 @@ import { toast } from 'sonner';
 import {
   Clock, Calendar, DollarSign, Briefcase, UserPlus, Download,
   Users, FileSpreadsheet, RefreshCw, Plus, CheckCircle2, XCircle,
-  TrendingUp, ExternalLink, FileDown, Award,
+  TrendingUp, ExternalLink, FileDown, Award, Info, AlertCircle,
+  Bell, FileText, ClipboardList, Send, ThumbsUp, ThumbsDown,
 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -88,13 +90,22 @@ const HRComplete = () => {
   });
   const [creatingPerf, setCreatingPerf] = useState(false);
 
-  // Recruitment
+  // Recruitment / Personel Talebi
   const [jobItems, setJobItems] = useState([]);
   const [jobForm, setJobForm] = useState({
     title: '', department: '', employment_type: 'full_time',
     location: '', salary_range: '', description: '',
+    headcount_needed: 1, urgency: 'normal', justification: '', needed_by: '',
   });
   const [creatingJob, setCreatingJob] = useState(false);
+  const [applicantsDialog, setApplicantsDialog] = useState({ open: false, job: null, list: [], counts: {} });
+  const [applicantForm, setApplicantForm] = useState({ name: '', email: '', phone: '', notes: '', cv_url: '' });
+  const [savingApplicant, setSavingApplicant] = useState(false);
+  const [decisionNote, setDecisionNote] = useState('');
+
+  // Leave balances cache (per staff_id)
+  const [leaveBalances, setLeaveBalances] = useState({});
+  const [balanceLoading, setBalanceLoading] = useState(false);
 
   // Loaders
   const loadStaff = useCallback(async () => {
@@ -153,9 +164,86 @@ const HRComplete = () => {
       const res = await axios.get('/hr/job-postings');
       setJobItems(res.data?.items || []);
     } catch (e) {
-      console.error('İş ilanları yüklenemedi', e);
+      console.error('Personel talepleri yüklenemedi', e);
     }
   }, []);
+
+  const loadLeaveBalances = useCallback(async (staffIds) => {
+    if (!staffIds?.length) return;
+    setBalanceLoading(true);
+    try {
+      const results = await Promise.all(
+        staffIds.map((sid) =>
+          axios.get(`/hr/leave-balance/${sid}`).then((r) => [sid, r.data]).catch(() => [sid, null])
+        )
+      );
+      const map = {};
+      results.forEach(([sid, data]) => { if (data) map[sid] = data; });
+      setLeaveBalances(map);
+    } finally {
+      setBalanceLoading(false);
+    }
+  }, []);
+
+  const openApplicants = async (job) => {
+    try {
+      const res = await axios.get(`/hr/job-postings/${job.id}/applicants`);
+      setApplicantsDialog({
+        open: true, job,
+        list: res.data?.items || [],
+        counts: res.data?.counts || {},
+      });
+      setApplicantForm({ name: '', email: '', phone: '', notes: '', cv_url: '' });
+    } catch (err) {
+      toast.error('Adaylar yüklenemedi');
+    }
+  };
+
+  const refreshApplicants = async () => {
+    if (!applicantsDialog.job) return;
+    try {
+      const res = await axios.get(`/hr/job-postings/${applicantsDialog.job.id}/applicants`);
+      setApplicantsDialog((d) => ({ ...d, list: res.data?.items || [], counts: res.data?.counts || {} }));
+    } catch { /* ignore */ }
+  };
+
+  const submitApplicant = async (e) => {
+    e.preventDefault();
+    if (!applicantForm.name.trim()) { toast.error('Aday adı zorunlu'); return; }
+    try {
+      setSavingApplicant(true);
+      await axios.post(`/hr/job-postings/${applicantsDialog.job.id}/applicants`, applicantForm);
+      toast.success('Aday eklendi');
+      setApplicantForm({ name: '', email: '', phone: '', notes: '', cv_url: '' });
+      refreshApplicants();
+      loadJobs();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Aday eklenemedi');
+    } finally {
+      setSavingApplicant(false);
+    }
+  };
+
+  const setApplicantStatus = async (applicantId, status) => {
+    try {
+      await axios.post(`/hr/applicants/${applicantId}/status`, { status });
+      toast.success('Durum güncellendi');
+      refreshApplicants();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Güncellenemedi');
+    }
+  };
+
+  const decideJob = async (jobId, action) => {
+    try {
+      await axios.post(`/hr/job-posting/${jobId}/${action}`, { note: decisionNote || undefined });
+      toast.success(action === 'approve' ? 'Talep onaylandı' : 'Talep reddedildi');
+      setDecisionNote('');
+      loadJobs();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'İşlem başarısız');
+    }
+  };
 
   const loadAll = useCallback(async () => {
     setRefreshing(true);
@@ -170,6 +258,14 @@ const HRComplete = () => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // İzin sekmesi açılınca tüm personelin bakiyelerini yükle
+  useEffect(() => {
+    if (activeTab === 'leave' && staffList.length > 0) {
+      loadLeaveBalances(staffList.map((s) => s.id));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, staffList.length]);
 
   // Attendance actions
   const clockIn = async () => {
@@ -437,7 +533,7 @@ const HRComplete = () => {
             <Briefcase className="w-4 h-4 mr-2" />Performans
           </TabsTrigger>
           <TabsTrigger value="recruitment" data-testid="tab-recruitment">
-            <UserPlus className="w-4 h-4 mr-2" />{t('cm.pages_HRComplete.ise_alim')}
+            <ClipboardList className="w-4 h-4 mr-2" />Personel Talebi
           </TabsTrigger>
         </TabsList>
 
@@ -589,6 +685,28 @@ const HRComplete = () => {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Nasıl Çalışır rehberi */}
+                <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm">
+                  <div className="flex items-start gap-2">
+                    <Info className="w-4 h-4 mt-0.5 text-sky-600 shrink-0" />
+                    <div className="space-y-2">
+                      <p className="font-medium text-sky-900">Bordro nasıl doldurulur?</p>
+                      <ol className="list-decimal pl-5 space-y-1 text-slate-700 text-xs">
+                        <li><strong>Devam sekmesinde</strong> personel için clock-in / clock-out kayıtları girilir (hücre saatleri otomatik toplanır).</li>
+                        <li><strong>Personel kartından</strong> saatlik ücret ve aylık standart saat tanımlayın (boş ise: 140 TRY/saat ve 195 saat default kullanılır — düşük çıkar!).</li>
+                        <li>Ay seçip <strong>Önizle</strong> deyin — saatlik × süre + mesai (195 saatin üzeri %50 zamlı) hesabını görürsünüz.</li>
+                        <li>Doğruysa <strong>Bordroyu Kaydet</strong>: kalıcı kayıt (`payroll_records`) oluşur, ay tekrar finalize edilemez.</li>
+                        <li><strong>CSV İndir</strong>: muhasebe / SGK için satır bazlı brüt-net dökümü.</li>
+                      </ol>
+                      <p className="text-xs text-amber-700">
+                        <AlertCircle className="w-3 h-3 inline mr-1" />
+                        Kesintiler: %14 SGK + %1 işsizlik + %15 gelir vergisi (matrah - SGK) + %0.759 damga.
+                        Asgari ücret muafiyeti, AGİ ve özel kesintiler için muhasebenizle doğrulayın.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 {payrollPreview ? (
                   <>
                     <div className="grid gap-3 md:grid-cols-3">
@@ -645,11 +763,74 @@ const HRComplete = () => {
         {/* === LEAVE === */}
         <TabsContent value="leave" className="mt-4">
           <div className="space-y-4">
+            {/* Akış açıklaması */}
+            <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm flex items-start gap-2">
+              <Bell className="w-4 h-4 mt-0.5 text-sky-600 shrink-0" />
+              <div className="text-slate-700 text-xs space-y-1">
+                <p><strong>İzin akışı:</strong> Talep oluşturulduğunda HR yöneticilerine (admin/supervisor/finance rolleri) <strong>in-app bildirim</strong> düşer (bildirim zilinde görünür). Karar verildiğinde talep sahibine geri bildirim gider.</p>
+                <p>Yıllık izin hakkı varsayılan <strong>14 gün</strong> (İş K. m.53). Personel kartında ya da <code>POST /hr/leave-balance</code> ile özelleştirilebilir. Onaylı talepler bakiyeden düşülür.</p>
+              </div>
+            </div>
+
             <div className="grid gap-3 md:grid-cols-3">
               <KpiCard intent="warning" label={t('cm.pages_HRComplete.beklemede')} value={leaveCounts.pending} />
               <KpiCard intent="success" label="Onaylanan" value={leaveCounts.approved} />
               <KpiCard intent="danger" label="Reddedilen" value={leaveCounts.rejected} />
             </div>
+
+            {/* İzin Bakiyeleri */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2"><Calendar className="w-4 h-4" />Personel İzin Bakiyesi ({new Date().getFullYear()})</CardTitle>
+                <Button size="sm" variant="outline" onClick={() => loadLeaveBalances(staffList.map((s) => s.id))} disabled={balanceLoading}>
+                  <RefreshCw className={`w-3.5 h-3.5 mr-1 ${balanceLoading ? 'animate-spin' : ''}`} />Yenile
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-slate-500 border-b">
+                        <th className="py-2">Personel</th>
+                        <th className="text-right">Yıllık Hak</th>
+                        <th className="text-right">Devir</th>
+                        <th className="text-right">Kullanılan</th>
+                        <th className="text-right">Kalan</th>
+                        <th className="text-right">Hastalık (kalan/hak)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {staffList.map((s) => {
+                        const b = leaveBalances[s.id];
+                        if (!b) return (
+                          <tr key={s.id} className="border-t border-slate-100">
+                            <td className="py-2">{s.name}</td>
+                            <td colSpan={5} className="text-slate-400 text-xs text-center">Yükleniyor...</td>
+                          </tr>
+                        );
+                        const remaining = b.annual?.remaining ?? 0;
+                        const intent = remaining <= 2 ? 'danger' : remaining <= 5 ? 'warning' : 'success';
+                        return (
+                          <tr key={s.id} className="border-t border-slate-100">
+                            <td className="py-2 font-medium">{s.name}</td>
+                            <td className="text-right">{b.annual?.entitlement}</td>
+                            <td className="text-right text-slate-500">{b.annual?.carry_over || 0}</td>
+                            <td className="text-right">{b.annual?.used}</td>
+                            <td className="text-right">
+                              <StatusBadge intent={intent}>{remaining} gün</StatusBadge>
+                            </td>
+                            <td className="text-right text-slate-600">{b.sick?.remaining}/{b.sick?.entitlement}</td>
+                          </tr>
+                        );
+                      })}
+                      {staffList.length === 0 && (
+                        <tr><td colSpan={6} className="py-6 text-center text-slate-500">Personel yok</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
 
             <Card>
               <CardHeader><CardTitle className="flex items-center gap-2"><Plus className="w-4 h-4" />{t('cm.pages_HRComplete.yeni_izin_talebi')}</CardTitle></CardHeader>
@@ -857,59 +1038,112 @@ const HRComplete = () => {
           </div>
         </TabsContent>
 
-        {/* === RECRUITMENT === */}
+        {/* === PERSONEL TALEBİ (eski "İşe Alım") === */}
         <TabsContent value="recruitment" className="mt-4">
           <div className="space-y-4">
+            {/* Akış açıklaması */}
+            <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm flex items-start gap-2">
+              <Info className="w-4 h-4 mt-0.5 text-sky-600 shrink-0" />
+              <div className="text-slate-700 text-xs space-y-1">
+                <p><strong>Bu modül dış yayınlama (LinkedIn/Kariyer.net) yapmaz.</strong> Departman müdürü personel ihtiyacını bildirir, HR yöneticisi onaylar, onaylı pozisyonlara aday eklenip süreç (görüşme/teklif/işe alım) takip edilir.</p>
+                <p>Talep oluşturulduğunda HR yöneticilerine bildirim gider. Karar (onay/red) talep sahibine bildirim olarak döner.</p>
+              </div>
+            </div>
+
+            {/* KPI özet */}
+            <div className="grid gap-3 md:grid-cols-4">
+              <KpiCard intent="warning" label="Onay Bekleyen Talep"
+                value={jobItems.filter((j) => j.status === 'pending_approval').length} />
+              <KpiCard intent="success" label="Açık Pozisyon"
+                value={jobItems.filter((j) => j.status === 'active').length} />
+              <KpiCard intent="info" label="Toplam İhtiyaç (kişi)"
+                value={jobItems.filter((j) => ['pending_approval', 'active'].includes(j.status))
+                  .reduce((sum, j) => sum + (j.headcount_needed || 1), 0)} />
+              <KpiCard intent="neutral" label="Toplam Aday"
+                value={jobItems.reduce((sum, j) => sum + (j.applicants_count || 0), 0)} />
+            </div>
+
             <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2"><Plus className="w-4 h-4" />{t('cm.pages_HRComplete.yeni_is_ilani')}</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Plus className="w-4 h-4" />Yeni Personel Talebi</CardTitle>
+                <p className="text-xs text-slate-500 mt-1">
+                  Departman müdürü olarak doldurun. Onay sonrası aday eklemeye açılır.
+                </p>
+              </CardHeader>
               <CardContent>
                 <form onSubmit={submitJob} className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                   <div>
-                    <Label className="text-xs">Pozisyon</Label>
-                    <Input value={jobForm.title}
+                    <Label className="text-xs">Pozisyon *</Label>
+                    <Input required value={jobForm.title}
                       onChange={(e) => setJobForm({ ...jobForm, title: e.target.value })}
                       placeholder="Resepsiyonist" />
                   </div>
                   <div>
-                    <Label className="text-xs">Departman</Label>
-                    <Input value={jobForm.department}
+                    <Label className="text-xs">Departman *</Label>
+                    <Input required value={jobForm.department}
                       onChange={(e) => setJobForm({ ...jobForm, department: e.target.value })}
                       placeholder="front_desk" />
                   </div>
                   <div>
-                    <Label className="text-xs">{t('cm.pages_HRComplete.calisma_sekli')}</Label>
-                    <select
-                      value={jobForm.employment_type}
+                    <Label className="text-xs">İhtiyaç Sayısı (kişi)</Label>
+                    <Input type="number" min="1" max="50" value={jobForm.headcount_needed}
+                      onChange={(e) => setJobForm({ ...jobForm, headcount_needed: parseInt(e.target.value) || 1 })} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Aciliyet</Label>
+                    <select value={jobForm.urgency}
+                      onChange={(e) => setJobForm({ ...jobForm, urgency: e.target.value })}
+                      className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                      <option value="low">Düşük</option>
+                      <option value="normal">Normal</option>
+                      <option value="high">Yüksek</option>
+                      <option value="critical">Kritik</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Çalışma Şekli</Label>
+                    <select value={jobForm.employment_type}
                       onChange={(e) => setJobForm({ ...jobForm, employment_type: e.target.value })}
-                      className="w-full rounded-md border border-input px-3 py-2 text-sm"
-                    >
-                      <option value="full_time">{t('cm.pages_HRComplete.tam_zamanli')}</option>
-                      <option value="part_time">{t('cm.pages_HRComplete.yari_zamanli')}</option>
+                      className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                      <option value="full_time">Tam Zamanlı</option>
+                      <option value="part_time">Yarı Zamanlı</option>
                       <option value="seasonal">Sezonluk</option>
-                      <option value="contract">{t('cm.pages_HRComplete.sozlesmeli')}</option>
+                      <option value="contract">Sözleşmeli</option>
                       <option value="intern">Stajyer</option>
                     </select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">İhtiyaç Tarihi</Label>
+                    <Input type="date" value={jobForm.needed_by}
+                      onChange={(e) => setJobForm({ ...jobForm, needed_by: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Ücret Aralığı (öneri)</Label>
+                    <Input value={jobForm.salary_range}
+                      onChange={(e) => setJobForm({ ...jobForm, salary_range: e.target.value })}
+                      placeholder="22.000 – 30.000 TL" />
                   </div>
                   <div>
                     <Label className="text-xs">Lokasyon</Label>
                     <Input value={jobForm.location}
                       onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })} />
                   </div>
-                  <div>
-                    <Label className="text-xs">{t('cm.pages_HRComplete.ucret_araligi')}</Label>
-                    <Input value={jobForm.salary_range}
-                      onChange={(e) => setJobForm({ ...jobForm, salary_range: e.target.value })}
-                      placeholder="22.000 – 30.000 TL" />
+                  <div className="md:col-span-2 lg:col-span-3">
+                    <Label className="text-xs">Gerekçe (HR'a not)</Label>
+                    <Textarea rows={2} value={jobForm.justification}
+                      onChange={(e) => setJobForm({ ...jobForm, justification: e.target.value })}
+                      placeholder="Örn: yaz sezonu için ek personel; mevcut kadronun yetersizliği vb." />
                   </div>
                   <div className="md:col-span-2 lg:col-span-3">
-                    <Label className="text-xs">{t('cm.pages_HRComplete.aciklama_1babd')}</Label>
+                    <Label className="text-xs">Pozisyon Açıklaması</Label>
                     <Textarea rows={3} value={jobForm.description}
-                      onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })} />
+                      onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })}
+                      placeholder="Sorumluluklar, beklentiler, gerekli niteliklere dair detaylar" />
                   </div>
                   <div className="md:col-span-2 lg:col-span-3 flex justify-end">
                     <Button type="submit" disabled={creatingJob}>
-                      <Plus className="w-4 h-4 mr-1.5" />
-                      {creatingJob ? 'Yayınlanıyor...' : 'İlanı Yayınla'}
+                      <Send className="w-4 h-4 mr-1.5" />
+                      {creatingJob ? 'Gönderiliyor...' : 'Talep Oluştur (HR\'a Gönder)'}
                     </Button>
                   </div>
                 </form>
@@ -917,7 +1151,7 @@ const HRComplete = () => {
             </Card>
 
             <Card>
-              <CardHeader><CardTitle>{t('cm.pages_HRComplete.aktif_ilanlar')}</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Talepler & Açık Pozisyonlar</CardTitle></CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -925,33 +1159,79 @@ const HRComplete = () => {
                       <tr className="text-left text-slate-500 border-b">
                         <th className="py-2">Pozisyon</th>
                         <th>Departman</th>
-                        <th>{t('cm.pages_HRComplete.calisma')}</th>
-                        <th>{t('cm.pages_HRComplete.ucret')}</th>
-                        <th>{t('cm.pages_HRComplete.durum_074f4')}</th>
-                        <th className="text-right">{t('cm.pages_HRComplete.basvuru')}</th>
-                        <th className="text-right">{t('cm.pages_HRComplete.islem_792e7')}</th>
+                        <th className="text-right">İhtiyaç</th>
+                        <th>Aciliyet</th>
+                        <th>İhtiyaç Tarihi</th>
+                        <th>Talep Eden</th>
+                        <th>Durum</th>
+                        <th className="text-right">Aday</th>
+                        <th className="text-right">İşlem</th>
                       </tr>
                     </thead>
                     <tbody>
                       {jobItems.map((job) => (
-                        <tr key={job.id} className="border-t border-slate-100">
-                          <td className="py-2 font-medium">{job.title}</td>
-                          <td className="capitalize text-slate-600">{job.department}</td>
-                          <td className="text-slate-600">{job.employment_type}</td>
-                          <td className="text-slate-600">{job.salary_range || '—'}</td>
-                          <td><StatusBadge intent={STATUS_INTENT[job.status]}>{STATUS_LABEL[job.status] || job.status}</StatusBadge></td>
-                          <td className="text-right">{job.applicants_count || 0}</td>
-                          <td className="text-right">
-                            {job.status === 'active' && (
-                              <Button size="sm" variant="outline" onClick={() => closeJob(job.id)}>
-                                <XCircle className="w-3.5 h-3.5 mr-1" />{t('cm.pages_HRComplete.kapat')}
-                              </Button>
+                        <tr key={job.id} className="border-t border-slate-100 align-top">
+                          <td className="py-2">
+                            <div className="font-medium">{job.title}</div>
+                            {job.justification && (
+                              <div className="text-xs text-slate-400 max-w-xs truncate" title={job.justification}>
+                                {job.justification}
+                              </div>
                             )}
+                          </td>
+                          <td className="capitalize text-slate-600">{job.department}</td>
+                          <td className="text-right">{job.headcount_needed || 1}</td>
+                          <td>
+                            {job.urgency === 'critical' && <StatusBadge intent="danger">Kritik</StatusBadge>}
+                            {job.urgency === 'high' && <StatusBadge intent="warning">Yüksek</StatusBadge>}
+                            {job.urgency === 'normal' && <span className="text-xs text-slate-500">Normal</span>}
+                            {job.urgency === 'low' && <span className="text-xs text-slate-400">Düşük</span>}
+                          </td>
+                          <td className="text-slate-600 text-xs">{job.needed_by || '—'}</td>
+                          <td className="text-slate-600 text-xs">{job.created_by_name || '—'}</td>
+                          <td>
+                            {job.status === 'pending_approval' && <StatusBadge intent="warning">Onay Bekliyor</StatusBadge>}
+                            {job.status === 'active' && <StatusBadge intent="success">Açık</StatusBadge>}
+                            {job.status === 'rejected' && <StatusBadge intent="danger">Reddedildi</StatusBadge>}
+                            {job.status === 'closed' && <StatusBadge intent="neutral">Kapalı</StatusBadge>}
+                          </td>
+                          <td className="text-right">
+                            <button type="button" onClick={() => openApplicants(job)}
+                              className="text-sky-600 hover:underline" disabled={job.status === 'pending_approval'}>
+                              {job.applicants_count || 0}
+                            </button>
+                          </td>
+                          <td className="text-right">
+                            <div className="flex justify-end gap-1">
+                              {job.status === 'pending_approval' && (
+                                <>
+                                  <Button size="sm" variant="outline" onClick={() => decideJob(job.id, 'approve')}
+                                    title="HR yöneticisi olarak onayla">
+                                    <ThumbsUp className="w-3.5 h-3.5 mr-1" />Onayla
+                                  </Button>
+                                  <Button size="sm" variant="outline" onClick={() => decideJob(job.id, 'reject')}>
+                                    <ThumbsDown className="w-3.5 h-3.5 mr-1" />Reddet
+                                  </Button>
+                                </>
+                              )}
+                              {job.status === 'active' && (
+                                <>
+                                  <Button size="sm" variant="outline" onClick={() => openApplicants(job)}>
+                                    <UserPlus className="w-3.5 h-3.5 mr-1" />Aday
+                                  </Button>
+                                  <Button size="sm" variant="outline" onClick={() => closeJob(job.id)}>
+                                    <XCircle className="w-3.5 h-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
                       {jobItems.length === 0 && (
-                        <tr><td colSpan={7} className="py-6 text-center text-slate-500">{t('cm.pages_HRComplete.henuz_is_ilani_yok')}</td></tr>
+                        <tr><td colSpan={9} className="py-10 text-center text-slate-500">
+                          Henüz talep yok. Yukarıdaki formdan ilk personel talebini oluşturun.
+                        </td></tr>
                       )}
                     </tbody>
                   </table>
@@ -959,6 +1239,105 @@ const HRComplete = () => {
               </CardContent>
             </Card>
           </div>
+
+          {/* Adaylar Modal */}
+          <Dialog open={applicantsDialog.open} onOpenChange={(o) => !o && setApplicantsDialog({ open: false, job: null, list: [], counts: {} })}>
+            <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  Adaylar — {applicantsDialog.job?.title}
+                  <span className="text-xs text-slate-500 ml-2 font-normal">
+                    ({applicantsDialog.job?.department})
+                  </span>
+                </DialogTitle>
+              </DialogHeader>
+
+              {/* Aday durum sayaçları */}
+              <div className="flex flex-wrap gap-2 text-xs">
+                {Object.entries(applicantsDialog.counts || {}).map(([k, v]) => (
+                  <span key={k} className="rounded-full bg-slate-100 px-2 py-0.5">
+                    {k}: <strong>{v}</strong>
+                  </span>
+                ))}
+              </div>
+
+              {/* Yeni aday formu */}
+              <form onSubmit={submitApplicant} className="grid gap-2 md:grid-cols-2 border-t pt-3 mt-2">
+                <div className="md:col-span-2 text-sm font-medium flex items-center gap-2">
+                  <UserPlus className="w-4 h-4" />Yeni Aday Ekle
+                </div>
+                <Input placeholder="Ad Soyad *" value={applicantForm.name}
+                  onChange={(e) => setApplicantForm({ ...applicantForm, name: e.target.value })} />
+                <Input placeholder="E-posta" type="email" value={applicantForm.email}
+                  onChange={(e) => setApplicantForm({ ...applicantForm, email: e.target.value })} />
+                <Input placeholder="Telefon" value={applicantForm.phone}
+                  onChange={(e) => setApplicantForm({ ...applicantForm, phone: e.target.value })} />
+                <Input placeholder="CV URL (opsiyonel)" value={applicantForm.cv_url}
+                  onChange={(e) => setApplicantForm({ ...applicantForm, cv_url: e.target.value })} />
+                <div className="md:col-span-2">
+                  <Textarea rows={2} placeholder="Notlar (deneyim, görüşme izlenimi, vb.)"
+                    value={applicantForm.notes}
+                    onChange={(e) => setApplicantForm({ ...applicantForm, notes: e.target.value })} />
+                </div>
+                <div className="md:col-span-2 flex justify-end">
+                  <Button type="submit" size="sm" disabled={savingApplicant}>
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    {savingApplicant ? 'Ekleniyor...' : 'Adayı Kaydet'}
+                  </Button>
+                </div>
+              </form>
+
+              {/* Aday listesi */}
+              <div className="border-t pt-3">
+                <div className="text-sm font-medium mb-2">Aday Listesi ({applicantsDialog.list.length})</div>
+                <div className="space-y-2">
+                  {applicantsDialog.list.map((a) => (
+                    <div key={a.id} className="rounded border border-slate-200 p-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="font-medium">{a.name}</div>
+                          <div className="text-xs text-slate-500">
+                            {a.email || '—'} • {a.phone || '—'}
+                          </div>
+                          {a.notes && <div className="text-xs text-slate-600 mt-1">{a.notes}</div>}
+                          {a.cv_url && (
+                            <a href={a.cv_url} target="_blank" rel="noreferrer"
+                              className="text-xs text-sky-600 hover:underline">
+                              <ExternalLink className="w-3 h-3 inline mr-0.5" />CV
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <select value={a.status || 'new'}
+                            onChange={(e) => setApplicantStatus(a.id, e.target.value)}
+                            className="text-xs rounded border border-input px-2 py-1">
+                            <option value="new">Yeni</option>
+                            <option value="screening">Eleme</option>
+                            <option value="interview">Görüşme</option>
+                            <option value="offer">Teklif</option>
+                            <option value="hired">İşe Alındı</option>
+                            <option value="rejected">Reddedildi</option>
+                          </select>
+                          <span className="text-[10px] text-slate-400">
+                            {(a.created_at || '').slice(0, 10)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {applicantsDialog.list.length === 0 && (
+                    <p className="text-center text-sm text-slate-500 py-6">Henüz aday yok</p>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setApplicantsDialog({ open: false, job: null, list: [], counts: {} })}>
+                  Kapat
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
     </div>

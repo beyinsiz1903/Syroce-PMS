@@ -119,6 +119,8 @@ const AIChatbot = lazy(() => import("@/pages/AIChatbot"));
 const DynamicPricing = lazy(() => import("@/pages/DynamicPricing"));
 const MultiProperty = lazy(() => import("@/pages/MultiProperty"));
 const StaffManagement = lazy(() => import("@/pages/StaffManagement"));
+const StaffProfile = lazy(() => import("@/pages/StaffProfile"));
+const ShiftPlannerPage = lazy(() => import("@/pages/ShiftPlannerPage"));
 const GuestJourney = lazy(() => import("@/pages/GuestJourney"));
 const ArrivalList = lazy(() => import("@/pages/ArrivalList"));
 const DepartureList = lazy(() => import("@/pages/DepartureList"));
@@ -525,7 +527,9 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/service-recovery", ...p(ServiceRecovery) , wrapLayout: true },
     { path: "/spa-wellness", ...pm(SpaWellness, "spa", undefined, { strict: true }) , wrapLayout: true, layoutModule: "spa" },
     { path: "/multi-property", ...p(MultiProperty) },
-    { path: "/staff-management", ...p(StaffManagement) },
+    { path: "/staff-management", ...p(StaffManagement) , wrapLayout: true, layoutModule: "hr" },
+    { path: "/staff/:id", ...p(StaffProfile) , wrapLayout: true, layoutModule: "hr" },
+    { path: "/hr/shifts", ...p(ShiftPlannerPage) , wrapLayout: true, layoutModule: "hr" },
     { path: "/hr-complete", type: "redirect", to: "/hr?tab=suite" },
     { path: "/hr", ...p(HRHub) , wrapLayout: true, layoutModule: "hr" },
     { path: "/app/hr", ...p(HRHub) , wrapLayout: true, layoutModule: "hr" },
