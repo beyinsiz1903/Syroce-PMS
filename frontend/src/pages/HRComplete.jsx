@@ -9,6 +9,7 @@ import {
   Bell, FileText, ClipboardList, Send, ThumbsUp, ThumbsDown,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { promptDialog } from '@/lib/dialogs';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -101,7 +102,6 @@ const HRComplete = () => {
   const [applicantsDialog, setApplicantsDialog] = useState({ open: false, job: null, list: [], counts: {} });
   const [applicantForm, setApplicantForm] = useState({ name: '', email: '', phone: '', notes: '', cv_url: '' });
   const [savingApplicant, setSavingApplicant] = useState(false);
-  const [decisionNote, setDecisionNote] = useState('');
 
   // Leave balances cache (per staff_id)
   const [leaveBalances, setLeaveBalances] = useState({});
@@ -235,10 +235,20 @@ const HRComplete = () => {
   };
 
   const decideJob = async (jobId, action) => {
+    const isApprove = action === 'approve';
+    const note = await promptDialog({
+      title: isApprove ? 'Talebi Onayla' : 'Talebi Reddet',
+      message: isApprove
+        ? 'İsteğe bağlı: onay notu (örn. bütçe kodu, başlama tarihi).'
+        : 'Lütfen ret gerekçesini kısaca yazın (talep sahibine iletilir).',
+      placeholder: isApprove ? 'Onaylandı — pozisyon yayına alınabilir.' : 'Bütçe yetersiz / pozisyon doldu vb.',
+      confirmText: isApprove ? 'Onayla' : 'Reddet',
+      cancelText: 'Vazgeç',
+    });
+    if (note === null) return;
     try {
-      await axios.post(`/hr/job-posting/${jobId}/${action}`, { note: decisionNote || undefined });
-      toast.success(action === 'approve' ? 'Talep onaylandı' : 'Talep reddedildi');
-      setDecisionNote('');
+      await axios.post(`/hr/job-posting/${jobId}/${action}`, { note: note || undefined });
+      toast.success(isApprove ? 'Talep onaylandı' : 'Talep reddedildi');
       loadJobs();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'İşlem başarısız');
