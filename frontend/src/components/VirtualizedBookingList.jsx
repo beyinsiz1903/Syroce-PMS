@@ -11,6 +11,7 @@ import { Calendar, User, DollarSign, Eye } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const BookingRow = memo(({ index, style, data }) => {
+  const { t } = useTranslation();
   const { bookings, onSelectBooking } = data;
   const booking = bookings[index];
 

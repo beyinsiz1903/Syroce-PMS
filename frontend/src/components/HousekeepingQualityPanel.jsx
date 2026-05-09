@@ -16,15 +16,14 @@ import { Image, RefreshCw, ShieldCheck, CheckCircle2, XCircle } from 'lucide-rea
 import PhotoUploadComponent from './PhotoUploadComponent';
 import { useTranslation } from 'react-i18next';
 
-const emptyState = (
-  <div className="flex flex-col items-center justify-center py-8 text-sm text-gray-500">
-    <Image className="w-8 h-8 mb-2 text-gray-400" />
-    {t('cm.components_HousekeepingQualityPanel.fotograf_bulunamadi')}
-  </div>
-);
-
 const HousekeepingQualityPanel = ({ rooms = [] }) => {
   const { t } = useTranslation();
+  const emptyState = (
+    <div className="flex flex-col items-center justify-center py-8 text-sm text-gray-500">
+      <Image className="w-8 h-8 mb-2 text-gray-400" />
+      {t('cm.components_HousekeepingQualityPanel.fotograf_bulunamadi')}
+    </div>
+  );
   const [selectedRoomId, setSelectedRoomId] = useState(rooms[0]?.id || null);
   const [roomPhotos, setRoomPhotos] = useState([]);
   const [recentPhotos, setRecentPhotos] = useState([]);

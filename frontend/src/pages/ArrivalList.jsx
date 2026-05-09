@@ -165,7 +165,7 @@ const ArrivalList = ({ user, tenant, onLogout }) => {
     if (!await confirmDialog({ message: `${booking.guest_name || booking.id.slice(0, 8)} için check-in yapılsın mı?` })) return;
     setBusyId(booking.id);
     try {
-      await axios.post('/api/pms-core/check-in', { booking_id: booking.id });
+      await axios.post('/pms-core/check-in', { booking_id: booking.id });
       toast.success('Check-in tamamlandı');
       loadTodayArrivals();
     } catch (e) {

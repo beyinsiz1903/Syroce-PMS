@@ -51,11 +51,13 @@ const StatusBadge = ({ status }) => {
 };
 
 const AckBadge = ({ status }) => {
+  const { t } = useTranslation();
   const cfg = ACK_STATUS_CONFIG[status] || ACK_STATUS_CONFIG.not_required;
   return <Badge className={`${cfg.color} text-xs`} data-testid={`ack-badge-${status}`}>{cfg.label}</Badge>;
 };
 
 const ReservationLineage = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');

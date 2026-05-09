@@ -30,6 +30,7 @@ const ScoreBar = ({ label, value, color }) => {
 };
 
 const ConfidenceBadge = ({ confidence, status, breakdown, warnings }) => {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   if (status === 'unmatched') {
     return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200" data-testid="confidence-unmatched">Eslestirilmedi</Badge>;
@@ -90,6 +91,7 @@ const STEPS = [
 ];
 
 const RoomMappingWizard = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [step, setStep] = useState(0);
   const [connectors, setConnectors] = useState([]);
   const [selectedConnectorId, setSelectedConnectorId] = useState('');

@@ -321,6 +321,7 @@ export const NewBookingDialog = ({
 // a new room (same or different type), and — when the type changes —
 // asks whether to keep the current price or enter a new one.
 const RoomChangePanel = ({ booking, onMoved, onClose }) => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [available, setAvailable] = useState([]);
@@ -743,6 +744,7 @@ export const FindRoomDialog = ({
   open, onOpenChange, findRoomCriteria, setFindRoomCriteria,
   availableRooms, rooms, onFindRoom, onSelectRoom,
 }) => {
+  const { t } = useTranslation();
   const roomTypes = rooms ? [...new Set(rooms.map(r => r.room_type).filter(Boolean))] : [];
 
   return (

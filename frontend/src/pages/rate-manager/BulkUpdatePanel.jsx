@@ -20,7 +20,9 @@ export const BulkUpdatePanel = ({
   pricingSettings, getPricingLabel, togglePricingType, currencySymbol, currency,
   totalSelectedRoomTypes, totalSelectedPlans,
   saving, handleBulkUpdate, handleReset, loading,
-}) => (
+}) => {
+  const { t } = useTranslation();
+  return (
   <div>
     <div className="flex flex-col lg:flex-row gap-4" data-testid="bulk-update-layout">
       {/* LEFT PANEL: Filters */}
@@ -158,7 +160,8 @@ export const BulkUpdatePanel = ({
       </Card>
     )}
   </div>
-);
+  );
+};
 
 const gridColTemplate = (enabledFields) =>
   `minmax(220px, 1fr)${enabledFields.has('rate') ? ' 150px' : ''}${enabledFields.has('availability') ? ' 130px' : ''}${enabledFields.has('min_stay') ? ' 150px' : ''}${enabledFields.has('max_stay') ? ' 150px' : ''}${enabledFields.has('stop_sell') ? ' 100px' : ''}${enabledFields.has('cta') ? ' 80px' : ''}${enabledFields.has('ctd') ? ' 80px' : ''}`;
@@ -184,7 +187,9 @@ const RoomTypeList = ({
   expandedRoomTypes, toggleExpanded, isRoomTypeSelected, isRoomTypeFullySelected, isRatePlanSelected,
   toggleRoomType, toggleRatePlan, pricingSettings, getPricingLabel, togglePricingType, currencySymbol, currency,
   totalSelectedRoomTypes,
-}) => (
+}) => {
+  const { t } = useTranslation();
+  return (
   <div className="overflow-x-auto" data-testid="room-type-list">
     {/* Table Header */}
     <div className="grid items-center border-b bg-gray-50 px-4 py-2 text-xs font-medium text-gray-500 gap-3"
@@ -319,4 +324,5 @@ const RoomTypeList = ({
       })}
     </div>
   </div>
-);
+  );
+};

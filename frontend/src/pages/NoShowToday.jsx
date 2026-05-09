@@ -140,7 +140,7 @@ const NoShowToday = () => {
     if (!confirmTarget) return;
     setBusyId(confirmTarget.id);
     try {
-      await axios.post('/api/pms-core/no-show', { booking_id: confirmTarget.id });
+      await axios.post('/pms-core/no-show', { booking_id: confirmTarget.id });
       toast.success('No-show işaretlendi');
       setConfirmTarget(null);
       load();
@@ -178,7 +178,7 @@ const NoShowToday = () => {
     const errors = [];
     for (const b of list) {
       try {
-        await axios.post('/api/pms-core/no-show', { booking_id: b.id });
+        await axios.post('/pms-core/no-show', { booking_id: b.id });
         ok_n += 1;
       } catch (e) {
         errors.push({ id: b.id, msg: e.response?.data?.detail?.message || e.response?.data?.detail || e.message });

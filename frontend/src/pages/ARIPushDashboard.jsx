@@ -58,6 +58,7 @@ const ScopeChip = ({ scope }) => (
 );
 
 const ARIPushDashboard = ({ user, tenant }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('queue');
   const [loading, setLoading] = useState(false);
   const [refreshingTab, setRefreshingTab] = useState(false);

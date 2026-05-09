@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Wallet, CreditCard, TrendingUp, AlertTriangle, FileText, DollarSign, ArrowDownCircle, ArrowUpCircle, Receipt, Banknote, Clock, CheckCircle, XCircle, Calendar, Filter, Download, Upload, Eye, Search, Plus, Minus, RefreshCw, ChevronRight, ChevronDown, BarChart3, PieChart, Activity, Users, Building, Briefcase, ShoppingCart, Coffee, Utensils, Bed, Home } from 'lucide-react';
 
 export default function RiskModal(props) {
-  const { creditViolations, formatCurrency, getRiskColor, getRiskIcon, loadFolioExtract, overdueAccounts, riskAlerts, riskModalOpen, setRiskModalOpen, suspiciousReceivables, t } = props;
+  const { creditViolations, formatCurrency, getRiskColor, getRiskIcon, loadFolioExtract, overdueAccounts, riskAlerts, riskModalOpen, setRiskModalOpen, suspiciousReceivables} = props;
+  const { t } = useTranslation();
   return (
     <Dialog open={riskModalOpen} onOpenChange={setRiskModalOpen}>
       <DialogContent className="max-w-full w-[95vw] max-h-[90vh] overflow-y-auto">

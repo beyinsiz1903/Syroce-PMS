@@ -121,7 +121,7 @@ const DepartureList = () => {
     }
     setBusyId(booking.id);
     try {
-      await axios.post('/api/pms-core/checkout', { booking_id: booking.id, force });
+      await axios.post('/pms-core/checkout', { booking_id: booking.id, force });
       toast.success('Çıkış tamamlandı');
       load();
     } catch (e) {
@@ -160,7 +160,7 @@ const DepartureList = () => {
     const errors = [];
     for (const b of list) {
       try {
-        await axios.post('/api/pms-core/checkout', { booking_id: b.id, force: true });
+        await axios.post('/pms-core/checkout', { booking_id: b.id, force: true });
         ok_n += 1;
       } catch (e) {
         errors.push({ id: b.id, msg: e.response?.data?.detail?.message || e.response?.data?.detail || e.message });

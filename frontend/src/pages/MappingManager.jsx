@@ -47,12 +47,14 @@ const ScoreGauge = ({ score, size = 120 }) => {
 };
 
 const ValidationBadge = ({ status }) => {
+  const { t } = useTranslation();
   if (status === 'valid') return <Badge className="bg-green-100 text-green-800 border-green-300" data-testid="validation-valid"><CheckCircle className="w-3 h-3 mr-1" />{t('cm.pages_MappingManager.gecerli')}</Badge>;
   if (status === 'invalid') return <Badge className="bg-red-100 text-red-800 border-red-300" data-testid="validation-invalid"><XCircle className="w-3 h-3 mr-1" />{t('cm.pages_MappingManager.gecersiz')}</Badge>;
   return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300" data-testid="validation-pending"><AlertTriangle className="w-3 h-3 mr-1" />Bekliyor</Badge>;
 };
 
 const MappingManager = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [connectors, setConnectors] = useState([]);
   const [selectedConnector, setSelectedConnector] = useState(null);
   const [report, setReport] = useState(null);

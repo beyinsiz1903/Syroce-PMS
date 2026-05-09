@@ -82,7 +82,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
 
   const loadOperatorStatus = useCallback(async () => {
     try {
-      const { data } = await axios.get(`/api/rates/stop-sale/status`, { headers });
+      const { data } = await axios.get(`/rates/stop-sale/status`, { headers });
       setOperatorStatus(data.operators || {});
     } catch {
       console.error('Operator stop-sale durumu yüklenemedi');
@@ -221,7 +221,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
       const currentStatus = operatorStatus[operatorId];
       const newStatus = !currentStatus;
 
-      await axios.post(`/api/rates/stop-sale/toggle`, {
+      await axios.post(`/rates/stop-sale/toggle`, {
         operator_id: operatorId,
         stop_sale: newStatus,
       }, { headers });

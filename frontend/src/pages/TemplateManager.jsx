@@ -34,7 +34,7 @@ const TemplateManager = ({ user, tenant, onLogout }) => {
   const loadTemplates = async () => {
     try {
       const response = await axios.get('/messages/templates');
-      setTemplates(response.data);
+      setTemplates(Array.isArray(response.data) ? response.data : (response.data?.items || response.data?.templates || []));
     } catch (error) {
       console.error('Failed to load templates:', error);
       toast.error('Şablonlar yüklenemedi');

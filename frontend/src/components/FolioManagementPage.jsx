@@ -47,7 +47,7 @@ const FolioManagementPage = () => {
       const bookingsData = await bookingsResponse.json();
       
       // Filter checked-in and checked-out bookings
-      const activeBookings = bookingsData.bookings.filter(
+      const activeBookings = (bookingsData?.bookings || []).filter(
         b => ['checked_in', 'checked_out'].includes(b.status)
       );
       

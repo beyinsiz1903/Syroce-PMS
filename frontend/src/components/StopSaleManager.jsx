@@ -23,7 +23,7 @@ const StopSaleManager = ({ operators = [] }) => {
 
   const loadStopSaleStatus = async () => {
     try {
-      const response = await axios.get('/api/rates/stop-sale/status');
+      const response = await axios.get('/rates/stop-sale/status');
       setStopSaleStatus(response.data.operators || {});
     } catch (error) {
       console.error('Failed to load stop-sale status:', error);
@@ -36,7 +36,7 @@ const StopSaleManager = ({ operators = [] }) => {
       const currentStatus = stopSaleStatus[operatorId];
       const newStatus = !currentStatus;
 
-      await axios.post('/api/rates/stop-sale/toggle', {
+      await axios.post('/rates/stop-sale/toggle', {
         operator_id: operatorId,
         stop_sale: newStatus
       });

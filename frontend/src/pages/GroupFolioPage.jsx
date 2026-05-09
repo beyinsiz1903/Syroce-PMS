@@ -127,6 +127,7 @@ const BookingFolioDetail = ({ groupId, bookingId }) => {
 
 // ─── Main Page Component ───────────────────────────
 const GroupFolioPage = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState(null);

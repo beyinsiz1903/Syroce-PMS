@@ -38,7 +38,7 @@ const TIER_INTENT = {
 };
 
 const PlanBadge = ({ tier }) => {
-  const { t } = useTranslation();
+  const { t: _t } = useTranslation();
   const plan = PLANS[tier] || PLANS.basic;
   const Icon = plan.icon;
   return (
@@ -50,6 +50,7 @@ const PlanBadge = ({ tier }) => {
 };
 
 const AdminTenants = ({ user, tenant, onLogout }) => {
+  const { t: _t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [tenants, setTenants] = useState([]);
@@ -211,18 +212,18 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
     <div className="p-4 md:p-6 space-y-4 max-w-[1600px] mx-auto">
       <PageHeader
         icon={Shield}
-        title={t('cm.pages_AdminTenants.otel_modul_yonetimi')}
-        subtitle={t('cm.pages_AdminTenants.her_otelin_planini_secin_modullerini_yon')}
+        title={_t('cm.pages_AdminTenants.otel_modul_yonetimi')}
+        subtitle={_t('cm.pages_AdminTenants.her_otelin_planini_secin_modullerini_yon')}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setActiveView('users')} data-testid="view-all-users-btn">
-              <UsersRound className="w-4 h-4 mr-1.5" aria-hidden="true" /> {t('cm.pages_AdminTenants.tum_kullanicilar')}
+              <UsersRound className="w-4 h-4 mr-1.5" aria-hidden="true" /> {_t('cm.pages_AdminTenants.tum_kullanicilar')}
             </Button>
             <Button variant="outline" size="sm" onClick={loadTenants} disabled={loading}>
-              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" /> {t('cm.pages_AdminTenants.yenile')}
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" /> {_t('cm.pages_AdminTenants.yenile')}
             </Button>
             <Button size="sm" onClick={() => setShowCreateModal(true)} data-testid="create-tenant-btn">
-              <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> {t('cm.pages_AdminTenants.yeni_otel_ekle')}
+              <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> {_t('cm.pages_AdminTenants.yeni_otel_ekle')}
             </Button>
           </div>
         }
@@ -232,7 +233,7 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <KpiCard
           icon={Building2}
-          label={t('cm.pages_AdminTenants.toplam_otel')}
+          label={_t('cm.pages_AdminTenants.toplam_otel')}
           value={tenants.length}
           intent="default"
           active={tierFilter === 'all'}
@@ -260,7 +261,7 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
             <Input
               data-testid="tenant-search"
               type="text"
-              placeholder={t('cm.pages_AdminTenants.otel_id_otel_adi_veya_e_posta_ile_ara')}
+              placeholder={_t('cm.pages_AdminTenants.otel_id_otel_adi_veya_e_posta_ile_ara')}
               className="pl-9"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -268,22 +269,22 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
             />
           </div>
           <div className="text-xs text-slate-500">
-            {filteredTenants.length} {t('cm.pages_AdminTenants.sonuc')}
+            {filteredTenants.length} {_t('cm.pages_AdminTenants.sonuc')}
             {tierFilter !== 'all' && (
               <> · <button className="underline hover:text-slate-700" onClick={() => setTierFilter('all')}>filtreyi temizle</button></>
             )}
           </div>
           <Button variant="ghost" size="sm" className="ml-auto text-xs" onClick={() => toggleSort('property_name')} data-testid="sort-btn">
-            <ArrowUpDown className="w-3.5 h-3.5 mr-1" aria-hidden="true" /> {t('cm.pages_AdminTenants.ada_gore')} {sortDir === 'asc' ? 'A-Z' : 'Z-A'}
+            <ArrowUpDown className="w-3.5 h-3.5 mr-1" aria-hidden="true" /> {_t('cm.pages_AdminTenants.ada_gore')} {sortDir === 'asc' ? 'A-Z' : 'Z-A'}
           </Button>
         </CardContent>
       </Card>
 
       {/* Tenant list */}
       {loading ? (
-        <div className="text-sm text-slate-500 text-center py-12">{t('cm.pages_AdminTenants.oteller_yukleniyor')}</div>
+        <div className="text-sm text-slate-500 text-center py-12">{_t('cm.pages_AdminTenants.oteller_yukleniyor')}</div>
       ) : filteredTenants.length === 0 ? (
-        <div className="text-sm text-slate-400 text-center py-12">{t('cm.pages_AdminTenants.hic_otel_bulunamadi')}</div>
+        <div className="text-sm text-slate-400 text-center py-12">{_t('cm.pages_AdminTenants.hic_otel_bulunamadi')}</div>
       ) : (
         <div className="space-y-3">
           {filteredTenants.map((t) => {
@@ -327,7 +328,7 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
                       </div>
                       <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
                         {t.location && <span>{t.location}</span>}
-                        <span>{enabled}/{totalModules} {t('cm.pages_AdminTenants.modul')}</span>
+                        <span>{enabled}/{totalModules} {_t('cm.pages_AdminTenants.modul')}</span>
                         {subActive !== null && (
                           <StatusBadge intent={subActive ? 'success' : 'danger'}>
                             {subActive ? 'Aktif' : 'Süresi dolmuş'}
@@ -340,12 +341,12 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
                     <Button variant="ghost" size="sm" className="text-xs h-8 px-2" onClick={(e) => { e.stopPropagation(); setTeamTenant(t); setShowTeamModal(true); }} data-testid={`team-btn-${id}`}>
                       <Users className="w-3.5 h-3.5 mr-1" aria-hidden="true" /> Ekip
                     </Button>
-                    <Button variant="ghost" size="sm" className="text-xs h-8 px-2" onClick={(e) => { e.stopPropagation(); setEditTenant(t); setShowEditModal(true); }} data-testid={`edit-btn-${id}`} aria-label={t('cm.pages_AdminTenants.duzenle')}>
+                    <Button variant="ghost" size="sm" className="text-xs h-8 px-2" onClick={(e) => { e.stopPropagation(); setEditTenant(t); setShowEditModal(true); }} data-testid={`edit-btn-${id}`} aria-label={_t('cm.pages_AdminTenants.duzenle')}>
                       <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
                     </Button>
                     <Button variant="outline" size="sm" className="text-xs h-8" onClick={(e) => { e.stopPropagation(); openPlanModal(t); }}>Plan</Button>
                     <Button variant="outline" size="sm" className="text-xs h-8" onClick={(e) => { e.stopPropagation(); openSubscriptionModal(t); }}>
-                      <Calendar className="w-3 h-3 mr-1" aria-hidden="true" /> {t('cm.pages_AdminTenants.sure')}
+                      <Calendar className="w-3 h-3 mr-1" aria-hidden="true" /> {_t('cm.pages_AdminTenants.sure')}
                     </Button>
                     {isExp ? <ChevronUp className="w-5 h-5 text-slate-400" aria-hidden="true" /> : <ChevronDown className="w-5 h-5 text-slate-400" aria-hidden="true" />}
                   </div>
@@ -415,7 +416,7 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
       <Dialog open={showPlanModal} onOpenChange={setShowPlanModal}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Shield className="w-5 h-5 text-indigo-600" aria-hidden="true" /> {t('cm.pages_AdminTenants.plan_degistir')}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Shield className="w-5 h-5 text-indigo-600" aria-hidden="true" /> {_t('cm.pages_AdminTenants.plan_degistir')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -451,10 +452,10 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
             </div>
             <label htmlFor="reset_modules" className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer">
               <input type="checkbox" id="reset_modules" checked={resetModulesOnPlanChange} onChange={(e) => setResetModulesOnPlanChange(e.target.checked)} className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500" />
-              <span className="text-sm text-amber-800"><strong>{t('cm.pages_AdminTenants.modulleri_sifirla')}</strong><span className="block text-xs text-amber-700">{t('cm.pages_AdminTenants.yeni_planin_varsayilan_modullerini_uygul')}</span></span>
+              <span className="text-sm text-amber-800"><strong>{_t('cm.pages_AdminTenants.modulleri_sifirla')}</strong><span className="block text-xs text-amber-700">{_t('cm.pages_AdminTenants.yeni_planin_varsayilan_modullerini_uygul')}</span></span>
             </label>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setShowPlanModal(false)} disabled={saving}>{t('cm.pages_AdminTenants.iptal')}</Button>
+              <Button variant="outline" onClick={() => setShowPlanModal(false)} disabled={saving}>{_t('cm.pages_AdminTenants.iptal')}</Button>
               <Button onClick={handlePlanChange} disabled={saving} data-testid="plan-submit">{saving ? 'Güncelleniyor...' : 'Planı Güncelle'}</Button>
             </div>
           </div>
@@ -465,15 +466,15 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
       <Dialog open={showSubscriptionModal} onOpenChange={setShowSubscriptionModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{t('cm.pages_AdminTenants.uyelik_suresini_guncelle')}</DialogTitle>
+            <DialogTitle>{_t('cm.pages_AdminTenants.uyelik_suresini_guncelle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
               <p className="text-sm text-slate-600 mb-1">Otel: <strong>{selectedTenant?.property_name}</strong></p>
-              <p className="text-xs text-slate-500">{t('cm.pages_AdminTenants.mevcut_bitis')} {selectedTenant?.subscription_end_date ? new Date(selectedTenant.subscription_end_date).toLocaleDateString('tr-TR') : 'Sınırsız'}</p>
+              <p className="text-xs text-slate-500">{_t('cm.pages_AdminTenants.mevcut_bitis')} {selectedTenant?.subscription_end_date ? new Date(selectedTenant.subscription_end_date).toLocaleDateString('tr-TR') : 'Sınırsız'}</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="subscription-days-trigger">{t('cm.pages_AdminTenants.uyelik_suresi')}</Label>
+              <Label htmlFor="subscription-days-trigger">{_t('cm.pages_AdminTenants.uyelik_suresi')}</Label>
               <Select
                 value={subscriptionDays ? String(subscriptionDays) : 'unlimited'}
                 onValueChange={(val) => {
@@ -483,25 +484,25 @@ const AdminTenants = ({ user, tenant, onLogout }) => {
                   setSubscriptionEndDate(days ? fmtDate(new Date(Date.now() + days * 86400000)) : '');
                 }}
               >
-                <SelectTrigger id="subscription-days-trigger" data-testid="subscription-days" aria-label={t('cm.pages_AdminTenants.uyelik_suresi_secimi')}>
+                <SelectTrigger id="subscription-days-trigger" data-testid="subscription-days" aria-label={_t('cm.pages_AdminTenants.uyelik_suresi_secimi')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="30">{t('cm.pages_AdminTenants.30_gun')}</SelectItem>
-                  <SelectItem value="60">{t('cm.pages_AdminTenants.60_gun')}</SelectItem>
-                  <SelectItem value="90">{t('cm.pages_AdminTenants.90_gun')}</SelectItem>
-                  <SelectItem value="180">{t('cm.pages_AdminTenants.180_gun')}</SelectItem>
-                  <SelectItem value="365">{t('cm.pages_AdminTenants.1_yil')}</SelectItem>
-                  <SelectItem value="unlimited">{t('cm.pages_AdminTenants.sinirsiz')}</SelectItem>
+                  <SelectItem value="30">{_t('cm.pages_AdminTenants.30_gun')}</SelectItem>
+                  <SelectItem value="60">{_t('cm.pages_AdminTenants.60_gun')}</SelectItem>
+                  <SelectItem value="90">{_t('cm.pages_AdminTenants.90_gun')}</SelectItem>
+                  <SelectItem value="180">{_t('cm.pages_AdminTenants.180_gun')}</SelectItem>
+                  <SelectItem value="365">{_t('cm.pages_AdminTenants.1_yil')}</SelectItem>
+                  <SelectItem value="unlimited">{_t('cm.pages_AdminTenants.sinirsiz')}</SelectItem>
                 </SelectContent>
               </Select>
               <div className="grid grid-cols-2 gap-3 pt-2">
-                <div><Label className="text-xs">{t('cm.pages_AdminTenants.baslangic')}</Label><Input type="date" value={subscriptionStartDate} onChange={(e) => setSubscriptionStartDate(e.target.value)} disabled={saving} /></div>
-                <div><Label className="text-xs">{t('cm.pages_AdminTenants.bitis')}</Label><Input type="date" value={subscriptionEndDate} onChange={(e) => setSubscriptionEndDate(e.target.value)} disabled={saving} /><p className="text-[11px] text-slate-400">{t('cm.pages_AdminTenants.bos_sinirsiz')}</p></div>
+                <div><Label className="text-xs">{_t('cm.pages_AdminTenants.baslangic')}</Label><Input type="date" value={subscriptionStartDate} onChange={(e) => setSubscriptionStartDate(e.target.value)} disabled={saving} /></div>
+                <div><Label className="text-xs">{_t('cm.pages_AdminTenants.bitis')}</Label><Input type="date" value={subscriptionEndDate} onChange={(e) => setSubscriptionEndDate(e.target.value)} disabled={saving} /><p className="text-[11px] text-slate-400">{_t('cm.pages_AdminTenants.bos_sinirsiz')}</p></div>
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setShowSubscriptionModal(false)} disabled={saving}>{t('cm.pages_AdminTenants.iptal_25174')}</Button>
+              <Button variant="outline" onClick={() => setShowSubscriptionModal(false)} disabled={saving}>{_t('cm.pages_AdminTenants.iptal_25174')}</Button>
               <Button onClick={handleUpdateSubscription} disabled={saving} data-testid="subscription-submit">{saving ? 'Güncelleniyor...' : 'Güncelle'}</Button>
             </div>
           </div>

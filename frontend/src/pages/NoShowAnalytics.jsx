@@ -50,6 +50,7 @@ const DataQualityBanner = ({ dq }) => {
    TAB 1: Channel Loss (FULL)
    ───────────────────────────────────────────────────────── */
 const ChannelLossTab = ({ period }) => {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -225,6 +226,7 @@ const ChannelLossTab = ({ period }) => {
    TAB 2: Overbooking Heatmap (FULL)
    ───────────────────────────────────────────────────────── */
 const OverbookingHeatmapTab = ({ period }) => {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -419,6 +421,7 @@ const OverbookingHeatmapTab = ({ period }) => {
    TAB 3: Rule Engine (LIGHT)
    ───────────────────────────────────────────────────────── */
 const RuleEngineTab = () => {
+  const { t } = useTranslation();
   const [rules, setRules] = useState([]);
   const [history, setHistory] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -656,6 +659,7 @@ const RuleEngineTab = () => {
    TAB 4: Prediction (BASIC)
    ───────────────────────────────────────────────────────── */
 const PredictionTab = () => {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [daysAhead, setDaysAhead] = useState('7');
@@ -841,6 +845,7 @@ const TABS = [
 ];
 
 const NoShowAnalytics = ({ user, tenant, onLogout, embedded = false }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('channel');
   const [period, setPeriod] = useState('30');
 
