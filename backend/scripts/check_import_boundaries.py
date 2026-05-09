@@ -40,7 +40,13 @@ BOUNDARY_RULES = [
 # Entry format: (relative_path_from_backend_root, line_number).
 # When you suppress an entry here, please also create a follow-up to migrate the
 # shared module to `common/` or `shared_kernel/` so the exception can be removed.
-KNOWN_EXCEPTIONS = frozenset()  # web_push_metrics shared_kernel/ya tasindi
+KNOWN_EXCEPTIONS = frozenset({
+    # Worker'lar router içindeki helper fonksiyonları paylaşıyor; refactor için
+    # follow-up var (helper'lar `services/` veya `shared_kernel/` altına taşınmalı).
+    ("workers/konaklama_vergisi_scheduler.py", 34),
+    ("workers/konaklama_vergisi_scheduler.py", 55),
+    ("workers/report_scheduler_worker.py", 33),
+})
 
 DOMAIN_SELF_IMPORT = re.compile(r"from domains\.(\w+)")
 
