@@ -29,6 +29,25 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 
 import { confirmDialog } from '@/lib/dialogs';
+
+// Pydantic 422 detail array geldiğinde (`[{loc, msg, type}, ...]`)
+// `toast.error(detail)` "[object Object]" basıyordu — burada güvenli
+// stringe çeviriyoruz. String detail veya {detail: "..."} olduğu gibi
+// döner; tanınmayan şekiller fallback'e düşer.
+const extractErrorMessage = (error, fallback) => {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map(d => d?.msg || d?.message)
+      .filter(Boolean);
+    if (parts.length) return parts.join(' • ');
+  }
+  if (detail && typeof detail === 'object' && typeof detail.msg === 'string') {
+    return detail.msg;
+  }
+  return fallback;
+};
 const AgencyRequests = () => {
   const { t } = useTranslation();
   const [requests, setRequests] = useState([]);
@@ -76,8 +95,7 @@ const AgencyRequests = () => {
       setSelectedRequest(null);
     } catch (error) {
       console.error('Approve failed:', error);
-      const message = error.response?.data?.detail || 'Talep onaylanamadı';
-      toast.error(message);
+      toast.error(extractErrorMessage(error, 'Talep onaylanamadı'));
     } finally {
       setActionLoading(false);
     }
@@ -106,8 +124,7 @@ const AgencyRequests = () => {
       setRejectReason('');
     } catch (error) {
       console.error('Reject failed:', error);
-      const message = error.response?.data?.detail || 'Talep reddedilemedi';
-      toast.error(message);
+      toast.error(extractErrorMessage(error, 'Talep reddedilemedi'));
     } finally {
       setActionLoading(false);
     }

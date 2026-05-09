@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from core.database import db
 from core.security import get_current_user
@@ -236,7 +236,18 @@ async def hotel_booking_request_approve(
 
 
 class BookingRequestRejectBody(BaseModel):
-    reason: str
+    # Pydantic seviyesinde min_length=5 — boş/eksik gövde için 422
+    # döner; ayrıca aşağıdaki validator whitespace-only stringi de eler.
+    # max_length=1000 DB write amplification'a karşı koruma.
+    reason: str = Field(..., min_length=5, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def _strip_and_check(cls, v: str) -> str:
+        stripped = (v or "").strip()
+        if len(stripped) < 5:
+            raise ValueError("Red nedeni en az 5 karakter olmalıdır")
+        return stripped
 
 
 @router.post("/hotel/booking-requests/{request_id}/reject")
@@ -246,8 +257,6 @@ async def hotel_booking_request_reject(
     current_user= Depends(get_current_user),
     _perm=Depends(require_op("manage_approvals")),
 ):
-    if not body.reason or len(body.reason.strip()) < 5:
-        raise HTTPException(status_code=422, detail="Red nedeni en az 5 karakter")
     req = await db.agency_booking_requests.find_one(
         {"request_id": request_id, "tenant_id": current_user.tenant_id}
     )
@@ -260,7 +269,7 @@ async def hotel_booking_request_reject(
             "status": "rejected",
             "rejected_at": now,
             "rejected_by": current_user.id,
-            "resolution_notes": body.reason.strip(),
+            "resolution_notes": body.reason,
             "updated_at": now,
         }}
     )
