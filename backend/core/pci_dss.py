@@ -127,122 +127,122 @@ def evaluate_controls(tenant_signals: dict[str, Any] | None = None) -> list[dict
     controls: list[dict[str, Any]] = [
         {
             "req_id": "1",
-            "title": "Install and maintain network security controls",
+            "title": "Ağ güvenlik kontrollerini kurun ve sürdürün",
             "status": "shared",
             "evidence": [
-                "TLS termination + WAF handled by Replit deployment edge",
-                "Application uses HTTPS-only cookies and HSTS headers",
-                *( ["Managed runtime (REPLIT_DEPLOYMENT detected)"] if is_managed_runtime else [] ),
+                "TLS sonlandırma + WAF Replit dağıtım katmanında yapılır",
+                "Uygulama yalnızca HTTPS çerezleri ve HSTS başlıkları kullanır",
+                *( ["Yönetilen çalışma ortamı (REPLIT_DEPLOYMENT algılandı)"] if is_managed_runtime else [] ),
             ],
             "recommendations": [
-                "Document Replit-managed firewall and ingress rules in your PCI evidence packet",
+                "Replit tarafından yönetilen güvenlik duvarı ve giriş kurallarını PCI kanıt paketinizde belgeleyin",
             ],
         },
         {
             "req_id": "2",
-            "title": "Apply secure configurations to all system components",
+            "title": "Tüm sistem bileşenlerine güvenli yapılandırmalar uygulayın",
             # Sprint A fix: log_sanitizer + credential_guard + JWT_SECRET hepsi met için gerekir.
             "status": "met" if (has_log_sanitizer and has_credential_guard and has_jwt_secret) else "partial",
             "evidence": [
-                "No vendor defaults: bcrypt password hashing, JWT_SECRET required",
-                *( ["JWT_SECRET configured in environment"] if has_jwt_secret else [] ),
-                *( ["Log sanitizer strips secrets/PII from runtime logs"] if has_log_sanitizer else [] ),
-                *( ["Credential guard blocks weak/leaked secrets"] if has_credential_guard else [] ),
-                "Secure dependency lock files (requirements.txt, yarn.lock)",
+                "Üretici varsayılanı yok: bcrypt parola özetleme, JWT_SECRET zorunlu",
+                *( ["JWT_SECRET ortam değişkeninde tanımlı"] if has_jwt_secret else [] ),
+                *( ["Log temizleyici çalışma zamanı loglarından sırları/PII'yi ayıklar"] if has_log_sanitizer else [] ),
+                *( ["Kimlik bilgisi koruyucu zayıf/sızdırılmış sırları engeller"] if has_credential_guard else [] ),
+                "Güvenli bağımlılık kilit dosyaları (requirements.txt, yarn.lock)",
             ],
             "recommendations": [
-                *( [] if has_jwt_secret else ["Set JWT_SECRET in production environment"] ),
-                *( [] if has_log_sanitizer else ["Enable log_sanitizer middleware"] ),
-                *( [] if has_credential_guard else ["Enable credential_guard module"] ),
+                *( [] if has_jwt_secret else ["Üretim ortamında JWT_SECRET değerini ayarlayın"] ),
+                *( [] if has_log_sanitizer else ["log_sanitizer middleware'ini etkinleştirin"] ),
+                *( [] if has_credential_guard else ["credential_guard modülünü etkinleştirin"] ),
             ],
         },
         {
             "req_id": "3",
-            "title": "Protect stored account data",
+            "title": "Saklanan hesap verilerini koruyun",
             # PII masking middleware da bu kontrole katkıda bulunur.
             "status": "met" if (has_field_encryption and has_encryption_key) else "partial",
             "evidence": [
-                "AES-256-GCM field-level encryption (security/field_encryption.py)",
-                "PII fields (PAN, CVV, ID numbers) never stored in plaintext",
-                "Backup codes for 2FA stored as bcrypt hashes",
-                "TOTP secrets stored Fernet-encrypted with domain-separated key",
-                *( ["PII masking middleware aktif (uygulama katmanı)"] if has_pii_masking else [] ),
-                *( ["Encryption key (FIELD_ENCRYPTION_KEY) set"] if has_encryption_key else [] ),
+                "AES-256-GCM alan düzeyi şifreleme (security/field_encryption.py)",
+                "PII alanları (PAN, CVV, kimlik numaraları) hiçbir zaman düz metin saklanmaz",
+                "2FA yedek kodları bcrypt özetleri olarak saklanır",
+                "TOTP sırları alan-ayrımlı anahtar ile Fernet şifreli saklanır",
+                *( ["PII maskeleme middleware'i aktif (uygulama katmanı)"] if has_pii_masking else [] ),
+                *( ["Şifreleme anahtarı (FIELD_ENCRYPTION_KEY) tanımlı"] if has_encryption_key else [] ),
             ],
             "recommendations": (
                 [] if has_encryption_key
-                else ["Set FIELD_ENCRYPTION_KEY in environment for production deployments"]
+                else ["Üretim dağıtımları için ortamda FIELD_ENCRYPTION_KEY ayarlayın"]
             ),
         },
         {
             "req_id": "4",
-            "title": "Protect cardholder data with strong cryptography during transmission over open networks",
+            "title": "Açık ağlar üzerinden iletim sırasında kart sahibi verisini güçlü kriptografi ile koruyun",
             # Replit edge TLS + HSTS modülü varsa met. FORCE_HTTPS opsiyonel pekiştirme.
             "status": "met" if (has_hsts or is_managed_runtime or force_https) else "partial",
             "evidence": [
-                "Webhook signatures use HMAC-SHA256 (e.g., Af-sadakat integration)",
-                "Inter-service tokens use HS256 JWTs with short TTLs",
-                *( ["HSTS / security headers middleware active"] if has_hsts else [] ),
-                *( ["Managed edge TLS (Replit) — HTTPS enforced at platform"] if is_managed_runtime else [] ),
-                *( ["FORCE_HTTPS=true (app-level HTTP→HTTPS redirect)"] if force_https else [] ),
+                "Webhook imzaları HMAC-SHA256 kullanır (örn. Af-sadakat entegrasyonu)",
+                "Servisler arası belirteçler kısa TTL'li HS256 JWT'leridir",
+                *( ["HSTS / güvenlik başlıkları middleware'i aktif"] if has_hsts else [] ),
+                *( ["Yönetilen uç TLS (Replit) — HTTPS platform katmanında zorlanır"] if is_managed_runtime else [] ),
+                *( ["FORCE_HTTPS=true (uygulama katmanında HTTP→HTTPS yönlendirme)"] if force_https else [] ),
             ],
             "recommendations": (
                 [] if (has_hsts or is_managed_runtime or force_https)
                 else [
-                    "Enable HSTS via security_headers middleware",
-                    "Set FORCE_HTTPS=true to enforce HTTPS at the application layer",
+                    "security_headers middleware ile HSTS'i etkinleştirin",
+                    "HTTPS'i uygulama katmanında zorlamak için FORCE_HTTPS=true ayarlayın",
                 ]
             ),
         },
         {
             "req_id": "5",
-            "title": "Protect all systems and networks from malicious software",
+            "title": "Tüm sistemleri ve ağları kötü amaçlı yazılımlardan koruyun",
             "status": "shared",
             "evidence": [
-                "Managed runtime (Replit) handles host-level AV/EDR",
-                "Application has no untrusted file execution paths",
+                "Yönetilen çalışma ortamı (Replit) ana sistem düzeyinde AV/EDR sağlar",
+                "Uygulamada güvenilmeyen dosya yürütme yolu yoktur",
             ],
             "recommendations": [
-                "If integrating with on-prem POS terminals, add file-upload AV scanning",
+                "Yerel POS terminalleriyle entegre olunuyorsa dosya yükleme AV taraması ekleyin",
             ],
         },
         {
             "req_id": "6",
-            "title": "Develop and maintain secure systems and software",
+            "title": "Güvenli sistemler ve yazılımlar geliştirin ve sürdürün",
             # In-app SAST/dep audit varsa met; CI attestation yokluğunda da yeterli.
             "status": "met" if (has_ci_security_scan or has_inapp_security_scan) else "partial",
             "evidence": [
-                "On-demand dependency audit, SAST and credential-leak scans available",
-                "All routes execute through bootstrap/router_registry with explicit auth deps",
-                *( ["CI_SECURITY_SCAN_ENABLED=true (scans run on every release candidate)"]
+                "İstek üzerine bağımlılık denetimi, SAST ve kimlik bilgisi sızıntı taraması",
+                "Tüm rotalar bootstrap/router_registry üzerinden açık auth bağımlılıklarıyla yürütülür",
+                *( ["CI_SECURITY_SCAN_ENABLED=true (taramalar her aday sürümde çalışır)"]
                    if has_ci_security_scan else [] ),
-                *( ["In-app SAST + dependency audit modülleri yüklü"] if has_inapp_security_scan else [] ),
-                *( ["Rate limiter aktif (DoS/brute-force koruması)"] if has_rate_limiter else [] ),
-                *( ["Secret/key rotation engine yüklü"] if has_rotation else [] ),
+                *( ["Uygulama içi SAST + bağımlılık denetimi modülleri yüklü"] if has_inapp_security_scan else [] ),
+                *( ["Hız sınırlayıcı aktif (DoS/kaba kuvvet koruması)"] if has_rate_limiter else [] ),
+                *( ["Sır/anahtar rotasyon motoru yüklü"] if has_rotation else [] ),
             ],
             "recommendations": (
                 [] if (has_ci_security_scan or has_inapp_security_scan)
                 else [
-                    "Schedule dependency audit + SAST in CI for every release candidate",
-                    "Set CI_SECURITY_SCAN_ENABLED=true to attest CI integration",
+                    "Her aday sürüm için CI'da bağımlılık denetimi + SAST planlayın",
+                    "CI entegrasyonunu doğrulamak için CI_SECURITY_SCAN_ENABLED=true ayarlayın",
                 ]
             ),
         },
         {
             "req_id": "7",
-            "title": "Restrict access to system components and cardholder data by business need-to-know",
+            "title": "Sistem bileşenlerine ve kart sahibi verisine erişimi iş ihtiyacına göre kısıtlayın",
             "status": "met" if has_tenant_isolation else "partial",
             "evidence": [
-                "Multi-tenant isolation enforced at database query layer (tenant_isolation_service)",
-                "Role-based access (super_admin / admin / owner / receptionist / housekeeping)",
-                "Cross-tenant queries blocked by tenant_guard middleware",
-                *( [f"Tenant kullanıcı sayısı: {users_total}"] if users_total else [] ),
+                "Çoklu kiracı izolasyonu veritabanı sorgu katmanında uygulanır (tenant_isolation_service)",
+                "Rol tabanlı erişim (super_admin / admin / owner / receptionist / housekeeping)",
+                "Çapraz kiracı sorguları tenant_guard middleware tarafından engellenir",
+                *( [f"Kiracı kullanıcı sayısı: {users_total}"] if users_total else [] ),
             ],
             "recommendations": [],
         },
         {
             "req_id": "8",
-            "title": "Identify users and authenticate access to system components",
+            "title": "Kullanıcıları tanımlayın ve sistem bileşenlerine erişimi kimlik doğrulayın",
             # Tenant sinyalleri varsa MFA oranı + parolasız hesap kontrolü uygulanır.
             "status": (
                 "partial" if (users_no_password > 0)
@@ -250,17 +250,17 @@ def evaluate_controls(tenant_signals: dict[str, Any] | None = None) -> list[dict
                 else "partial"
             ),
             "evidence": [
-                "Bcrypt password hashing (cost factor 12)",
-                "TOTP-based 2FA with backup codes (RFC 6238)",
-                "JWT access tokens (HS256, 7d TTL) with optional 2FA challenge gate",
-                "Audit logs for login_success / login_failed / 2fa_* events",
-                "Password change requires current password verification",
+                "Bcrypt parola özetleme (maliyet faktörü 12)",
+                "TOTP tabanlı 2FA + yedek kodlar (RFC 6238)",
+                "JWT erişim belirteçleri (HS256, 7g TTL) opsiyonel 2FA doğrulama kapısıyla",
+                "login_success / login_failed / 2fa_* olayları için denetim logları",
+                "Parola değişimi mevcut parola doğrulamasını gerektirir",
                 *( [f"MFA kullanım oranı: %{round(mfa_ratio*100)} ({users_2fa}/{users_total})"]
                    if users_total else [] ),
             ],
             "recommendations": [
-                *( [] if has_2fa else ["Enable 2FA module for all administrative accounts"] ),
-                *( [f"⚠️ {users_no_password} kullanıcının parolası ayarlı değil — denetleyin"]
+                *( [] if has_2fa else ["Tüm yönetici hesapları için 2FA modülünü etkinleştirin"] ),
+                *( [f"{users_no_password} kullanıcının parolası ayarlı değil — denetleyin"]
                    if users_no_password > 0 else [] ),
                 *( [f"MFA oranı düşük (%{round(mfa_ratio*100)}); admin hesaplarında zorunlu kılın"]
                    if users_total and mfa_ratio < 0.5 else [] ),
@@ -268,60 +268,60 @@ def evaluate_controls(tenant_signals: dict[str, Any] | None = None) -> list[dict
         },
         {
             "req_id": "9",
-            "title": "Restrict physical access to cardholder data",
+            "title": "Kart sahibi verisine fiziksel erişimi kısıtlayın",
             "status": "shared",
             "evidence": [
-                "Data center physical security covered by cloud provider (SOC 2 / ISO 27001 attestations)",
+                "Veri merkezi fiziksel güvenliği bulut sağlayıcı tarafından karşılanır (SOC 2 / ISO 27001 belgeleri)",
             ],
             "recommendations": [
-                "Document customer-side: workstation lock policies, badge access for hotel back-office",
+                "Müşteri tarafını belgeleyin: iş istasyonu kilit politikaları, otel arka ofisi için kart erişimi",
             ],
         },
         {
             "req_id": "10",
-            "title": "Log and monitor all access to system components and cardholder data",
+            "title": "Sistem bileşenlerine ve kart sahibi verisine tüm erişimleri loglayın ve izleyin",
             # Audit modülü + retention ≥ 90 gün (PCI minimum) gerekir.
             "status": "met" if (has_audit_pii and audit_retention >= 90) else "partial",
             "evidence": [
-                "audit_logs collection captures auth, admin, and PII access events",
-                *( ["PII access audit (security/pii_audit.py) records read events on sensitive fields"]
+                "audit_logs koleksiyonu auth, admin ve PII erişim olaylarını yakalar",
+                *( ["PII erişim denetimi (security/pii_audit.py) hassas alanlarda okuma olaylarını kaydeder"]
                    if has_audit_pii else [] ),
-                "Append-only audit collection (per-tenant indexed)",
-                f"Log retention (tenant ayarı): {audit_retention} gün",
+                "Yalnızca ekleme yapılabilen denetim koleksiyonu (kiracı bazlı indeksli)",
+                f"Log saklama süresi (kiracı ayarı): {audit_retention} gün",
             ],
             "recommendations": (
                 [] if (has_audit_pii and audit_retention >= 90)
                 else [
-                    *( [] if has_audit_pii else ["Enable PII audit module"] ),
+                    *( [] if has_audit_pii else ["PII denetim modülünü etkinleştirin"] ),
                     *( [] if audit_retention >= 90
-                       else [f"Log retention {audit_retention} gün — PCI minimum 90 gün; tenant ayarını yükseltin"] ),
+                       else [f"Log saklama {audit_retention} gün — PCI minimum 90 gün; kiracı ayarını yükseltin"] ),
                 ]
             ),
         },
         {
             "req_id": "11",
-            "title": "Test security of systems and networks regularly",
+            "title": "Sistem ve ağ güvenliğini düzenli olarak test edin",
             "status": "partial",
             "evidence": [
-                "Internal vulnerability scans via security skill (SAST + dep audit)",
-                *( ["Periyodik secret rotation aktif"] if has_rotation else [] ),
+                "Güvenlik becerisi üzerinden iç güvenlik açığı taramaları (SAST + bağımlılık denetimi)",
+                *( ["Periyodik sır rotasyonu aktif"] if has_rotation else [] ),
             ],
             "recommendations": [
-                "Engage a third-party for annual penetration test (PCI Req 11.4.3)",
-                "Schedule quarterly external ASV scans if storing cardholder data",
+                "Yıllık sızma testi için üçüncü taraf bir firma ile çalışın (PCI Req 11.4.3)",
+                "Kart sahibi verisi saklanıyorsa üç ayda bir dış ASV taraması planlayın",
             ],
         },
         {
             "req_id": "12",
-            "title": "Support information security with organizational policies and programs",
+            "title": "Bilgi güvenliğini kurumsal politika ve programlarla destekleyin",
             "status": "partial",
             "evidence": [
-                "Crypto/security review documented in backend/docs/CRYPTO_SECURITY_REVIEW.md",
-                "This compliance dashboard provides ongoing visibility",
+                "Kripto/güvenlik incelemesi backend/docs/CRYPTO_SECURITY_REVIEW.md içinde belgelenmiştir",
+                "Bu uyum paneli sürekli görünürlük sağlar",
             ],
             "recommendations": [
-                "Maintain hotel-specific incident response and acceptable-use policies",
-                "Annual security awareness training for hotel staff with PMS access",
+                "Otele özel olay müdahale ve kabul edilebilir kullanım politikalarını sürdürün",
+                "PMS erişimi olan otel personeli için yıllık güvenlik farkındalık eğitimi düzenleyin",
             ],
         },
     ]
