@@ -1,72 +1,146 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PageHeader } from '@/components/ui/page-header';
+import { KpiCard } from '@/components/ui/kpi-card';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { confirmDialog } from '@/lib/dialogs';
 import {
   Network, CheckCircle2, XCircle, AlertTriangle, Settings2, RefreshCw,
-  Server, Globe, Building2, Send, Inbox, Power, Eye,
+  Server, Globe, Building2, Send, Inbox, Power, Eye, Trash2,
+  ChevronLeft, ChevronRight, Filter, PlayCircle,
 } from 'lucide-react';
 
 const CATEGORY_META = {
-  gds: { label: 'GDS / CRS', icon: Globe, color: 'text-indigo-600' },
-  erp: { label: 'ERP / Finance', icon: Building2, color: 'text-emerald-600' },
-  generic: { label: 'Generic', icon: Server, color: 'text-slate-600' },
+  gds:     { label: 'GDS / CRS',      icon: Globe,    color: 'text-indigo-600' },
+  erp:     { label: 'ERP / Finance',  icon: Building2, color: 'text-emerald-600' },
+  generic: { label: 'Generic',        icon: Server,    color: 'text-slate-600' },
 };
 
 const CERT_META = {
-  in_development: { label: 'Geliştirmede', cls: 'bg-gray-100 text-gray-700' },
-  uat: { label: 'UAT', cls: 'bg-amber-100 text-amber-800' },
-  certified: { label: 'Sertifikalı', cls: 'bg-emerald-100 text-emerald-800' },
+  in_development: { label: 'Geliştirmede',     intent: 'neutral', tooltip: 'Adapter geliştirme aşamasında — üretim için hazır değil' },
+  uat:            { label: 'UAT (Test)',        intent: 'warning', tooltip: 'User Acceptance Testing — partner sertifikasyon süreci sürüyor; test/UAT ortamında kullanılabilir, üretime alınmadan önce sertifika tamamlanmalı' },
+  certified:      { label: 'Sertifikalı',       intent: 'success', tooltip: 'Partner tarafından üretim için onaylanmış adapter' },
+};
+// Generic kategorisinde "certified" labelı yanıltıcı olabilir → "Hazır" olarak göster
+const certLabelFor = (partner) => {
+  const meta = CERT_META[partner.cert_status] || CERT_META.in_development;
+  if (partner.category === 'generic' && partner.cert_status === 'certified') {
+    return { ...meta, label: 'Hazır', tooltip: 'Hazır adapter — endpoint konfigürasyonu kullanıcıya bağlıdır' };
+  }
+  return meta;
 };
 
 const STATUS_META = {
-  delivered: { cls: 'bg-emerald-100 text-emerald-800', icon: CheckCircle2 },
-  pending: { cls: 'bg-slate-100 text-slate-700', icon: RefreshCw },
-  in_flight: { cls: 'bg-sky-100 text-sky-800', icon: Send },
-  failed: { cls: 'bg-amber-100 text-amber-800', icon: AlertTriangle },
-  dead_letter: { cls: 'bg-red-100 text-red-800', icon: XCircle },
-  skipped: { cls: 'bg-gray-100 text-gray-600', icon: Power },
+  delivered:   { label: 'Teslim edildi', intent: 'success', icon: CheckCircle2 },
+  pending:     { label: 'Bekliyor',      intent: 'neutral', icon: RefreshCw },
+  in_flight:   { label: 'Gönderiliyor',  intent: 'info',    icon: Send },
+  failed:      { label: 'Başarısız',     intent: 'warning', icon: AlertTriangle },
+  dead_letter: { label: 'Dead-Letter',   intent: 'danger',  icon: XCircle },
+  skipped:     { label: 'Atlandı',       intent: 'neutral', icon: Power },
 };
 
-const XchangePage = ({ user, tenant, onLogout }) => {
+const TR_TZ = 'Europe/Istanbul';
+const fmtTimestamp = (iso) => {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('tr-TR', {
+      timeZone: TR_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+  } catch { return iso; }
+};
+
+// P1 #2: message type kısaltması ama tam adı her zaman tooltip + ellipsis ile korunur
+const shortMsg = (mt) => (mt || '').replace('OTA_Hotel', '').replace('Syroce.', '');
+
+// SSRF / private-IP guard (UI hint — backend de doğrular)
+const PRIVATE_HOST_PATTERN = /(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|169\.254\.|::1|fc00:|fe80:)/i;
+const looksPrivate = (url) => {
+  if (!url) return false;
+  try { return PRIVATE_HOST_PATTERN.test(new URL(url).hostname); }
+  catch { return false; }
+};
+
+export default function XchangePage() {
   const [partners, setPartners] = useState([]);
   const [configs, setConfigs] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(null); // partner code
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
   const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState(null);
+  const [activeTab, setActiveTab] = useState('partners');
 
-  const load = async () => {
+  // Pagination + filters (P1 #8 / #9)
+  const [filterPartner, setFilterPartner] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [pageCursor, setPageCursor] = useState(null);
+  const [cursorStack, setCursorStack] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+
+  // Auto-refresh (#28)
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const refreshTimer = useRef(null);
+
+  const loadCatalog = useCallback(async () => {
+    const [pRes, cRes] = await Promise.all([
+      axios.get('/xchange/partners'),
+      axios.get('/xchange/configs'),
+    ]);
+    setPartners(pRes.data.partners || []);
+    setConfigs(cRes.data.configs || []);
+  }, []);
+
+  const loadDeliveries = useCallback(async () => {
+    const params = { limit: 50 };
+    if (filterPartner !== 'all') params.partner = filterPartner;
+    if (filterStatus !== 'all') params.status = filterStatus;
+    if (pageCursor) params.cursor = pageCursor;
+    const r = await axios.get('/xchange/deliveries', { params });
+    setDeliveries(r.data.deliveries || []);
+    setCounts(r.data.counts || {});
+    setNextCursor(r.data.next_cursor || null);
+  }, [filterPartner, filterStatus, pageCursor]);
+
+  const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [pRes, cRes, dRes] = await Promise.all([
-        axios.get('/xchange/partners'),
-        axios.get('/xchange/configs'),
-        axios.get('/xchange/deliveries?limit=100'),
-      ]);
-      setPartners(pRes.data.partners);
-      setConfigs(cRes.data.configs);
-      setDeliveries(dRes.data.deliveries);
-      setCounts(dRes.data.counts || {});
+      await Promise.all([loadCatalog(), loadDeliveries()]);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Yüklenemedi');
     } finally {
       setLoading(false);
     }
-  };
-  useEffect(() => { load(); }, []);
+  }, [loadCatalog, loadDeliveries]);
+
+  useEffect(() => { loadAll(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadDeliveries().catch(() => {}); }, [filterPartner, filterStatus, pageCursor, loadDeliveries]);
+
+  // Auto-refresh interval
+  useEffect(() => {
+    if (refreshTimer.current) { clearInterval(refreshTimer.current); refreshTimer.current = null; }
+    if (autoRefresh) {
+      refreshTimer.current = setInterval(() => { loadDeliveries().catch(() => {}); }, 30000);
+    }
+    return () => { if (refreshTimer.current) clearInterval(refreshTimer.current); };
+  }, [autoRefresh, loadDeliveries]);
 
   const cfgByCode = useMemo(() => {
     const m = {};
@@ -91,7 +165,7 @@ const XchangePage = ({ user, tenant, onLogout }) => {
       await axios.put(`/xchange/configs/${editing}`, { enabled, config: form });
       toast.success('Partner ayarı kaydedildi');
       setEditing(null);
-      await load();
+      await loadCatalog();
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Kaydedilemedi');
     } finally {
@@ -104,7 +178,7 @@ const XchangePage = ({ user, tenant, onLogout }) => {
     try {
       await axios.delete(`/xchange/configs/${code}`);
       toast.success('Bağlantı kaldırıldı');
-      await load();
+      await loadCatalog();
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Silinemedi');
     }
@@ -113,10 +187,27 @@ const XchangePage = ({ user, tenant, onLogout }) => {
   const replay = async (id) => {
     try {
       const r = await axios.post(`/xchange/deliveries/${id}/replay`);
-      toast.success(`Replay: ${r.data.status} (deneme #${r.data.attempts})`);
-      await load();
+      toast.success(`Replay: ${STATUS_META[r.data.status]?.label || r.data.status} (deneme #${r.data.attempts})`);
+      await loadDeliveries();
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Replay başarısız');
+    }
+  };
+
+  const replayBulk = async () => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    if (!await confirmDialog({
+      message: `${ids.length} mesaj yeniden gönderilsin mi? (yalnız failed/dead_letter olanlar işlenir)`,
+      variant: 'warning',
+    })) return;
+    try {
+      const r = await axios.post('/xchange/deliveries/replay-bulk', { delivery_ids: ids });
+      toast.success(`Toplu replay: ${r.data.replayed} başarılı, ${r.data.skipped} atlandı`);
+      setSelected(new Set());
+      await loadDeliveries();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Toplu replay başarısız');
     }
   };
 
@@ -129,94 +220,183 @@ const XchangePage = ({ user, tenant, onLogout }) => {
     }
   };
 
-  if (loading) {
+  const toggleSelect = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const goNextPage = () => {
+    if (!nextCursor) return;
+    setCursorStack((s) => [...s, pageCursor]);
+    setPageCursor(nextCursor);
+    setSelected(new Set());
+  };
+  const goPrevPage = () => {
+    if (!cursorStack.length) return;
+    const stack = [...cursorStack];
+    const prev = stack.pop();
+    setCursorStack(stack);
+    setPageCursor(prev || null);
+    setSelected(new Set());
+  };
+  const resetPagination = () => {
+    setPageCursor(null);
+    setCursorStack([]);
+    setSelected(new Set());
+  };
+
+  const partnerOpts = useMemo(() => [{ code: 'all', name: 'Tüm partnerlar' }, ...partners.map(p => ({ code: p.code, name: p.name }))], [partners]);
+
+  const editingPartner = useMemo(
+    () => partners.find((p) => p.code === editing) || null,
+    [editing, partners],
+  );
+
+  // ── Render ─────────────────────────────────────────────────────
+  if (loading && !partners.length) {
     return (
-      <div className="p-8 text-center text-gray-500">
-        <RefreshCw className="w-6 h-6 animate-spin inline mr-2" /> Yükleniyor…
+      <div className="max-w-7xl mx-auto p-4 space-y-4">
+        <Skeleton className="h-12 w-full max-w-lg" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {[0, 1, 2, 3, 4].map(i => <Skeleton key={i} className="h-24" />)}
+        </div>
+        {[0, 1, 2].map(i => <Skeleton key={i} className="h-32" />)}
       </div>
     );
   }
 
   return (
-    <>
     <div className="max-w-7xl mx-auto p-4 space-y-4">
-      <div className="flex items-start justify-end flex-wrap gap-3">
-        <div className="hidden"></div>
-        <Button variant="outline" onClick={load}>
-          <RefreshCw className="w-4 h-4 mr-2" /> Yenile
-        </Button>
+      <PageHeader
+        icon={Network}
+        title="Syroce Xchange"
+        subtitle={`${partners.length} tanımlı partner — HTNG/OData/HMAC üzerinden çift yönlü mesaj akışı`}
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="flex items-center gap-2 text-xs text-slate-600 select-none cursor-pointer">
+              <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} aria-label="Otomatik yenile" />
+              Otomatik (30s)
+            </label>
+            <Button variant="outline" size="sm" onClick={loadAll} disabled={loading}>
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Yenile
+            </Button>
+          </div>
+        }
+      />
+
+      {/* KPI grid — interactive (P2 #17) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <KpiCard
+          icon={Server}
+          label="Tanımlı Partner"
+          value={partners.length}
+          intent="info"
+          onClick={() => setActiveTab('partners')}
+        />
+        <KpiCard
+          icon={CheckCircle2}
+          label="Aktif Bağlantı"
+          value={configs.filter((c) => c.enabled).length}
+          intent="success"
+          onClick={() => setActiveTab('partners')}
+        />
+        <KpiCard
+          icon={Send}
+          label="Teslim Edildi"
+          value={counts.delivered || 0}
+          intent="success"
+          onClick={() => { setActiveTab('messages'); setFilterStatus('delivered'); resetPagination(); }}
+        />
+        <KpiCard
+          icon={AlertTriangle}
+          label="Hatalı"
+          value={counts.failed || 0}
+          intent="warning"
+          onClick={() => { setActiveTab('messages'); setFilterStatus('failed'); resetPagination(); }}
+        />
+        <KpiCard
+          icon={XCircle}
+          label="Dead-Letter"
+          value={counts.dead_letter || 0}
+          intent="danger"
+          onClick={() => { setActiveTab('messages'); setFilterStatus('dead_letter'); resetPagination(); }}
+        />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <SummaryCard label="Tanımlı Partner" value={partners.length} />
-        <SummaryCard label="Aktif Bağlantı" value={configs.filter((c) => c.enabled).length} />
-        <SummaryCard label="Teslim Edildi" value={counts.delivered || 0} cls="text-emerald-600" />
-        <SummaryCard label="Hatalı" value={counts.failed || 0} cls="text-amber-600" />
-        <SummaryCard label="Dead-Letter" value={counts.dead_letter || 0} cls="text-red-600" />
-      </div>
-
-      <Tabs defaultValue="partners">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="partners">Partner'lar</TabsTrigger>
           <TabsTrigger value="messages">Mesaj Akışı</TabsTrigger>
         </TabsList>
 
+        {/* ───── Partners ───── */}
         <TabsContent value="partners" className="space-y-3">
           {partners.map((p) => {
             const cfg = cfgByCode[p.code];
             const cat = CATEGORY_META[p.category] || CATEGORY_META.generic;
-            const cert = CERT_META[p.cert_status] || CERT_META.in_development;
+            const cert = certLabelFor(p);
             const Icon = cat.icon;
             return (
               <Card key={p.code}>
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between flex-wrap gap-2">
-                    <div className="flex items-start gap-3">
-                      <div className={`w-10 h-10 rounded-lg bg-slate-50 ${cat.color} flex items-center justify-center`}>
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className={`w-10 h-10 rounded-lg bg-slate-50 ${cat.color} flex items-center justify-center shrink-0`}>
                         <Icon className="w-5 h-5" />
                       </div>
-                      <div>
-                        <CardTitle className="text-base flex items-center gap-2">
-                          {p.name}
-                          <Badge variant="outline" className="text-xs">{cat.label}</Badge>
-                          <Badge className={`${cert.cls} text-xs border-0`}>{cert.label}</Badge>
+                      <div className="min-w-0">
+                        <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                          <span className="truncate">{p.name}</span>
+                          <StatusBadge intent="neutral">{cat.label}</StatusBadge>
+                          <span title={cert.tooltip}>
+                            <StatusBadge intent={cert.intent}>{cert.label}</StatusBadge>
+                          </span>
                           {cfg?.enabled && (
-                            <Badge className="bg-emerald-100 text-emerald-800 border-0 text-xs">
-                              <CheckCircle2 className="w-3 h-3 mr-1" /> Aktif
-                            </Badge>
+                            <StatusBadge intent="success" icon={CheckCircle2}>Aktif</StatusBadge>
                           )}
                         </CardTitle>
                         <CardDescription className="mt-1">{p.description}</CardDescription>
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 shrink-0">
                       <Button size="sm" variant="outline" onClick={() => openEditor(p)}>
-                        <Settings2 className="w-4 h-4 mr-1" /> Yapılandır
+                        <Settings2 className="w-4 h-4 mr-1.5" /> Yapılandır
                       </Button>
                       {cfg && (
-                        <Button size="sm" variant="ghost" onClick={() => removeConfig(p.code)}>
-                          Sil
+                        <Button size="sm" variant="outline" onClick={() => removeConfig(p.code)}>
+                          <Trash2 className="w-4 h-4 mr-1.5" /> Sil
                         </Button>
                       )}
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
                     Yetenek Matrisi
                   </div>
-                  <div className="flex flex-wrap gap-1">
-                    {p.capabilities.map((c, i) => (
-                      <Badge
-                        key={i}
-                        variant="outline"
-                        className="text-[10px] font-mono bg-slate-50"
-                        title={`${c.message_type} (${c.direction})`}
-                      >
-                        {c.direction === 'outbound' ? <Send className="w-2.5 h-2.5 mr-0.5 inline" /> : <Inbox className="w-2.5 h-2.5 mr-0.5 inline" />}
-                        {c.message_type.replace('OTA_Hotel', '').replace('Syroce.', '').slice(0, 24)}
-                      </Badge>
-                    ))}
+                  <div className="flex flex-wrap gap-1.5">
+                    {p.capabilities.map((c, i) => {
+                      const isOut = c.direction === 'outbound';
+                      const intent = isOut ? 'info' : 'success';
+                      const ArrowIcon = isOut ? Send : Inbox;
+                      const prefix = isOut ? 'OUT' : 'IN';
+                      const text = shortMsg(c.message_type);
+                      return (
+                        <span
+                          key={i}
+                          title={`${c.message_type} — ${isOut ? 'Outbound' : 'Inbound'}`}
+                          className="inline-flex max-w-[260px]"
+                        >
+                          <StatusBadge intent={intent} icon={ArrowIcon} className="truncate">
+                            <span className="font-mono opacity-60 mr-1">{prefix}</span>
+                            <span className="truncate">{text}</span>
+                          </StatusBadge>
+                        </span>
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>
@@ -224,13 +404,54 @@ const XchangePage = ({ user, tenant, onLogout }) => {
           })}
         </TabsContent>
 
-        <TabsContent value="messages">
+        {/* ───── Messages ───── */}
+        <TabsContent value="messages" className="space-y-3">
+          {/* Filters */}
+          <Card>
+            <CardContent className="p-3 flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 text-sm text-slate-600">
+                <Filter className="w-4 h-4" /> Filtre:
+              </div>
+              <Select value={filterPartner} onValueChange={(v) => { setFilterPartner(v); resetPagination(); }}>
+                <SelectTrigger className="w-[200px] h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {partnerOpts.map((p) => (
+                    <SelectItem key={p.code} value={p.code}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); resetPagination(); }}>
+                <SelectTrigger className="w-[180px] h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tüm durumlar</SelectItem>
+                  {Object.entries(STATUS_META).map(([k, m]) => (
+                    <SelectItem key={k} value={k}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selected.size > 0 && (
+                <Button size="sm" variant="outline" onClick={replayBulk}>
+                  <PlayCircle className="w-4 h-4 mr-1.5" /> Toplu Replay ({selected.size})
+                </Button>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={goPrevPage} disabled={!cursorStack.length}>
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <Button size="sm" variant="outline" onClick={goNextPage} disabled={!nextCursor}>
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 border-b">
                     <tr className="text-left">
+                      <th className="p-2 w-8"></th>
                       <th className="p-2">Zaman</th>
                       <th className="p-2">Partner</th>
                       <th className="p-2">Mesaj</th>
@@ -242,38 +463,50 @@ const XchangePage = ({ user, tenant, onLogout }) => {
                   </thead>
                   <tbody>
                     {deliveries.length === 0 && (
-                      <tr><td colSpan={7} className="p-6 text-center text-gray-500">
-                        Henüz mesaj akışı yok.
+                      <tr><td colSpan={8} className="p-6 text-center text-slate-500">
+                        Filtreye uyan mesaj yok.
                       </td></tr>
                     )}
                     {deliveries.map((d) => {
                       const sm = STATUS_META[d.status] || STATUS_META.pending;
                       const SIcon = sm.icon;
+                      const replayable = d.status === 'failed' || d.status === 'dead_letter';
                       return (
                         <tr key={d.id} className="border-b hover:bg-slate-50">
-                          <td className="p-2 font-mono text-xs">
-                            {d.created_at?.slice(5, 19).replace('T', ' ')}
+                          <td className="p-2">
+                            {replayable ? (
+                              <input
+                                type="checkbox"
+                                aria-label={`${d.id} seç`}
+                                checked={selected.has(d.id)}
+                                onChange={() => toggleSelect(d.id)}
+                                className="w-4 h-4"
+                              />
+                            ) : null}
+                          </td>
+                          <td className="p-2 text-xs whitespace-nowrap" title={d.created_at}>
+                            {fmtTimestamp(d.created_at)}
                           </td>
                           <td className="p-2">{d.partner_code}</td>
-                          <td className="p-2 font-mono text-xs">{d.message_type}</td>
+                          <td className="p-2 text-xs max-w-[260px] truncate" title={d.message_type}>
+                            {shortMsg(d.message_type)}
+                          </td>
                           <td className="p-2 text-xs">
                             {d.direction === 'outbound' ? '↗ out' : '↙ in'}
                           </td>
                           <td className="p-2">
-                            <Badge className={`${sm.cls} border-0`}>
-                              <SIcon className="w-3 h-3 mr-1" />
-                              {d.status}
-                              {d.dry_run && ' • dry'}
-                            </Badge>
+                            <StatusBadge intent={sm.intent} icon={SIcon}>
+                              {sm.label}{d.dry_run ? ' • dry' : ''}
+                            </StatusBadge>
                           </td>
                           <td className="p-2 text-xs">{d.attempts}</td>
-                          <td className="p-2 text-right space-x-1">
-                            <Button size="sm" variant="ghost" onClick={() => viewDetail(d.id)}>
+                          <td className="p-2 text-right space-x-1 whitespace-nowrap">
+                            <Button size="sm" variant="ghost" onClick={() => viewDetail(d.id)} aria-label="Detay">
                               <Eye className="w-3 h-3" />
                             </Button>
-                            {(d.status === 'failed' || d.status === 'dead_letter') && (
+                            {replayable && (
                               <Button size="sm" variant="outline" onClick={() => replay(d.id)}>
-                                Replay
+                                <PlayCircle className="w-3 h-3 mr-1" /> Replay
                               </Button>
                             )}
                           </td>
@@ -288,98 +521,114 @@ const XchangePage = ({ user, tenant, onLogout }) => {
         </TabsContent>
       </Tabs>
 
-      {/* Editor modal */}
-      {editing && (() => {
-        const partner = partners.find((p) => p.code === editing);
-        if (!partner) return null;
-        return (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <Card className="w-full max-w-lg">
-              <CardHeader>
-                <CardTitle>{partner.name}</CardTitle>
-                <CardDescription>Bu partner için bağlantı bilgileri</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between rounded border p-2">
-                  <Label className="cursor-pointer">Aktif</Label>
-                  <Switch checked={enabled} onCheckedChange={setEnabled} />
-                </div>
-                {Object.entries(partner.config_schema || {}).map(([k, meta]) => (
+      {/* ───── Editor Dialog (P1 #5) ───── */}
+      <Dialog open={!!editing} onOpenChange={(o) => { if (!o) setEditing(null); }}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingPartner?.name || ''}</DialogTitle>
+            <DialogDescription>
+              Bu partner için bağlantı bilgileri. Secret alanlar maskelenmiş gelirse boş bırakırsanız mevcut değer korunur.
+            </DialogDescription>
+          </DialogHeader>
+          {editingPartner && (
+            <form onSubmit={(e) => { e.preventDefault(); save(); }} autoComplete="off" className="space-y-3">
+              <div className="flex items-center justify-between rounded border p-2">
+                <Label className="cursor-pointer">Aktif</Label>
+                <Switch checked={enabled} onCheckedChange={setEnabled} />
+              </div>
+              {Object.entries(editingPartner.config_schema || {}).map(([k, meta]) => {
+                const isSecret = meta.type === 'secret';
+                const isUrl = meta.type === 'url';
+                const val = form[k] || '';
+                const sshWarn = isUrl && looksPrivate(val);
+                return (
                   <div key={k}>
-                    <Label>{meta.label || k}</Label>
+                    <Label htmlFor={`xch-${k}`}>{meta.label || k}</Label>
                     <Input
-                      type={meta.type === 'secret' ? 'password' : 'text'}
-                      value={form[k] || ''}
+                      id={`xch-${k}`}
+                      type={isSecret ? 'password' : 'text'}
+                      value={val}
                       onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
                       placeholder={meta.default || ''}
+                      autoComplete={isSecret ? 'new-password' : 'off'}
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      data-1p-ignore
+                      data-lpignore="true"
                     />
+                    {sshWarn && (
+                      <p className="text-xs text-rose-700 mt-1">
+                        ⚠ Bu URL özel/loopback bir adres gibi görünüyor (SSRF riski). Backend büyük olasılıkla reddedecektir.
+                      </p>
+                    )}
                   </div>
-                ))}
-                <p className="text-xs text-gray-500">
-                  Boş bırakılan bağlantı alanları için adapter dry-run modunda çalışır
-                  (mesajlar üretilir ve log'a yazılır, dış servise gönderilmez).
-                </p>
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button variant="ghost" onClick={() => setEditing(null)}>İptal</Button>
-                  <Button onClick={save} disabled={saving}>
-                    {saving ? 'Kaydediliyor…' : 'Kaydet'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        );
-      })()}
+                );
+              })}
+              <p className="text-xs text-slate-500">
+                Secret alanlar maskelenmiş (***masked***) görünüyorsa <strong>mevcut değer korunur</strong>.
+                Yeni bir kurulumda tüm zorunlu alanlar boş bırakılırsa adapter <strong>dry-run</strong> moduna düşer
+                (mesajlar log'a yazılır, dış servise gönderilmez).
+              </p>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditing(null)}>İptal</Button>
+                <Button type="submit" disabled={saving}>
+                  {saving ? 'Kaydediliyor…' : 'Kaydet'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
-      {/* Detail modal */}
-      {detail && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-             onClick={() => setDetail(null)}>
-          <Card className="w-full max-w-3xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <CardHeader>
-              <CardTitle className="text-base font-mono">{detail.message_type}</CardTitle>
-              <CardDescription>
-                {detail.partner_code} • {detail.status} • deneme: {detail.attempts}
-                {detail.last_error && ` • hata: ${detail.last_error}`}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
+      {/* ───── Detail Dialog ───── */}
+      <Dialog open={!!detail} onOpenChange={(o) => { if (!o) setDetail(null); }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base font-mono break-all">{detail?.message_type}</DialogTitle>
+            <DialogDescription>
+              {detail?.partner_code} • {STATUS_META[detail?.status]?.label || detail?.status} • deneme: {detail?.attempts}
+              {detail?.idempotency_key && (
+                <span className="block mt-1 text-xs font-mono text-slate-500">
+                  idempotency-key: {detail.idempotency_key}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {detail && (
+            <div className="space-y-3 text-sm">
+              {detail.last_error && (
+                <div>
+                  <div className="text-xs font-semibold text-rose-700 uppercase mb-1">Son Hata</div>
+                  <pre className="text-xs bg-rose-50 text-rose-900 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-48">
+                    {detail.last_error}
+                  </pre>
+                </div>
+              )}
               <Section label="Request Excerpt" body={detail.request_excerpt} />
               <Section label="Response Excerpt" body={detail.response_excerpt} />
               <details>
-                <summary className="cursor-pointer text-gray-600">Tam Envelope</summary>
-                <pre className="text-xs bg-slate-50 rounded p-2 overflow-x-auto mt-1">
+                <summary className="cursor-pointer text-slate-600 text-sm">Tam Envelope (secret alanlar maskelenmiştir)</summary>
+                <pre className="text-xs bg-slate-50 rounded p-2 overflow-x-auto mt-1 max-h-72">
                   {JSON.stringify(detail.envelope, null, 2)}
                 </pre>
               </details>
-              <div className="text-right">
-                <Button variant="ghost" onClick={() => setDetail(null)}>Kapat</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDetail(null)}>Kapat</Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
-    </>
   );
-};
-
-const SummaryCard = ({ label, value, cls = 'text-gray-900' }) => (
-  <Card>
-    <CardContent className="p-4">
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className={`text-2xl font-bold ${cls}`}>{value}</div>
-    </CardContent>
-  </Card>
-);
+}
 
 const Section = ({ label, body }) => (
   <div>
-    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">{label}</div>
-    <pre className="text-xs bg-slate-50 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all">
+    <div className="text-xs font-semibold text-slate-500 uppercase mb-1">{label}</div>
+    <pre className="text-xs bg-slate-50 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-48">
       {body || '—'}
     </pre>
   </div>
 );
-
-export default XchangePage;

@@ -53,9 +53,10 @@ async def list_configs(current_user: User = Depends(get_current_user)) -> dict:
     _require_admin(current_user)
     tenant_id = _require_tenant(current_user)
     db = get_system_db()
+    # P1 #7: deterministik sıra (en son güncellenen önce, sonra partner_code).
     cur = db.xchange_partner_configs.find(
         {"tenant_id": tenant_id}, {"_id": 0}
-    )
+    ).sort([("updated_at", -1), ("partner_code", 1)])
     docs = [doc async for doc in cur]
     # Mask secret fields in response
     for d in docs:
@@ -116,6 +117,10 @@ async def list_deliveries(
     partner: str | None = Query(None),
     status: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
+    cursor: str | None = Query(
+        None,
+        description="P1 #8: pagination cursor — bir önceki sayfadaki son kaydın created_at ISO timestamp'i",
+    ),
 ) -> dict:
     _require_admin(current_user)
     tenant_id = _require_tenant(current_user)
@@ -125,17 +130,60 @@ async def list_deliveries(
         q["partner_code"] = partner
     if status:
         q["status"] = status
-    cur = db.xchange_deliveries.find(q, {"_id": 0, "envelope": 0}).sort("created_at", -1).limit(limit)
+    if cursor:
+        # cursor = en son görülen created_at (ISO) — keyset pagination
+        q["created_at"] = {"$lt": cursor}
+    cur = (
+        db.xchange_deliveries
+        .find(q, {"_id": 0, "envelope": 0})
+        .sort("created_at", -1)
+        .limit(limit + 1)  # extra row → next_cursor varsa belirle
+    )
     items = [doc async for doc in cur]
-    # Aggregate counts
+    next_cursor = None
+    if len(items) > limit:
+        next_cursor = items[limit - 1].get("created_at")
+        items = items[:limit]
+    # Aggregate counts (filtre uygulanmış scope üzerinde)
+    counts_match: dict[str, Any] = {"tenant_id": tenant_id}
+    if partner:
+        counts_match["partner_code"] = partner
     pipeline = [
-        {"$match": {"tenant_id": tenant_id}},
+        {"$match": counts_match},
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
     ]
     counts: dict[str, int] = {}
     async for row in db.xchange_deliveries.aggregate(pipeline):
         counts[row["_id"]] = row["count"]
-    return {"deliveries": items, "counts": counts}
+    return {"deliveries": items, "counts": counts, "next_cursor": next_cursor}
+
+
+# P1 #13: envelope içindeki Authorization header / API key / partner secret
+# alanları detail response'unda maskelenir (operatör görüntülerken plaintext sızmasın).
+_SECRET_KEY_HINTS = (
+    "authorization", "auth_token", "token", "secret", "api_key", "apikey",
+    "password", "pass", "x-api-key", "bearer", "session", "cookie", "private_key",
+)
+
+
+def _sanitize_envelope(env: Any) -> Any:
+    """Recursively mask values whose key looks like a secret/credential."""
+    if isinstance(env, dict):
+        masked: dict[str, Any] = {}
+        for k, v in env.items():
+            kl = str(k).lower()
+            if any(h in kl for h in _SECRET_KEY_HINTS):
+                masked[k] = "***masked***"
+            else:
+                masked[k] = _sanitize_envelope(v)
+        return masked
+    if isinstance(env, list):
+        return [_sanitize_envelope(x) for x in env]
+    return env
+
+
+# P0 #3: replay yalnız bu durumlardan yapılabilir → çift posting riski engellenir.
+_REPLAYABLE_STATUSES = {"failed", "dead_letter"}
 
 
 @router.get("/deliveries/{delivery_id}")
@@ -151,6 +199,8 @@ async def get_delivery(
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Delivery bulunamadı")
+    if "envelope" in doc:
+        doc["envelope"] = _sanitize_envelope(doc["envelope"])
     return doc
 
 
@@ -159,18 +209,73 @@ async def replay(
     delivery_id: str,
     current_user: User = Depends(get_current_user),
 ) -> dict:
+    """P0 #3: yalnız failed / dead_letter durumdaki mesajlar replay edilebilir.
+
+    delivered/in_flight/pending/skipped → 409 Conflict (çift posting riski)."""
     _require_admin(current_user)
     tenant_id = _require_tenant(current_user)
     db = get_system_db()
     doc = await db.xchange_deliveries.find_one(
-        {"id": delivery_id, "tenant_id": tenant_id}, {"_id": 0, "tenant_id": 1}
+        {"id": delivery_id, "tenant_id": tenant_id},
+        {"_id": 0, "tenant_id": 1, "status": 1},
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Delivery bulunamadı")
+    cur_status = (doc.get("status") or "").lower()
+    if cur_status not in _REPLAYABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Replay yalnız failed/dead_letter durumdaki mesajlar için yapılabilir "
+                f"(mevcut durum: {cur_status or 'bilinmiyor'}). Çift gönderim riski engellendi."
+            ),
+        )
     try:
         return await bus.replay_delivery(delivery_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── Bulk replay ──────────────────────────────────────────────────
+class BulkReplayIn(BaseModel):
+    delivery_ids: list[str]
+
+
+@router.post("/deliveries/replay-bulk")
+async def replay_bulk(
+    body: BulkReplayIn,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """P1 #9: toplu replay (max 50 kayıt) — failed/dead_letter olmayan atlanır."""
+    _require_admin(current_user)
+    tenant_id = _require_tenant(current_user)
+    if not body.delivery_ids:
+        raise HTTPException(status_code=400, detail="delivery_ids boş")
+    if len(body.delivery_ids) > 50:
+        raise HTTPException(status_code=400, detail="Tek seferde en çok 50 mesaj replay edilebilir")
+    db = get_system_db()
+    results: list[dict[str, Any]] = []
+    ok_count = 0
+    skipped_count = 0
+    for did in body.delivery_ids:
+        d = await db.xchange_deliveries.find_one(
+            {"id": did, "tenant_id": tenant_id}, {"_id": 0, "status": 1}
+        )
+        if not d:
+            results.append({"id": did, "ok": False, "skipped": True, "reason": "not_found"})
+            skipped_count += 1
+            continue
+        if (d.get("status") or "").lower() not in _REPLAYABLE_STATUSES:
+            results.append({"id": did, "ok": False, "skipped": True, "reason": f"status={d.get('status')}"})
+            skipped_count += 1
+            continue
+        try:
+            r = await bus.replay_delivery(did)
+            results.append({"id": did, "ok": True, "status": r.get("status"), "attempts": r.get("attempts")})
+            ok_count += 1
+        except Exception as e:
+            results.append({"id": did, "ok": False, "error": str(e)})
+    return {"ok": True, "replayed": ok_count, "skipped": skipped_count, "results": results}
 
 
 # ── Test publish (admin-only sandbox) ────────────────────────────
