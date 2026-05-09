@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 
 import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
@@ -49,21 +49,49 @@ router = APIRouter(prefix="/api", tags=["agency-portal"])
 # ─── Request / Response Models ────────────────────────────────────
 
 class AgencyCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=2, max_length=120)
     contact_name: str = ""
     contact_email: str = ""
     contact_phone: str = ""
-    commission_rate: float = 10.0
+    commission_rate: float = Field(10.0, ge=0, le=100)
     notes: str = ""
 
+    @field_validator("name")
+    @classmethod
+    def _name_not_placeholder(cls, v: str) -> str:
+        s = (v or "").strip()
+        if len(s) < 2:
+            raise ValueError("Acente adi en az 2 karakter olmalidir")
+        return s
+
+
 class AgencyUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(None, min_length=2, max_length=120)
     contact_name: str | None = None
     contact_email: str | None = None
     contact_phone: str | None = None
-    commission_rate: float | None = None
+    commission_rate: float | None = Field(None, ge=0, le=100)
     notes: str | None = None
     status: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_placeholder(cls, v):
+        if v is None:
+            return v
+        s = v.strip()
+        if len(s) < 2:
+            raise ValueError("Acente adi en az 2 karakter olmalidir")
+        return s
+
+    @field_validator("status")
+    @classmethod
+    def _status_valid(cls, v):
+        if v is None:
+            return v
+        if v not in ("active", "inactive"):
+            raise ValueError("status sadece 'active' veya 'inactive' olabilir")
+        return v
 
 class AgencyUserCreate(BaseModel):
     name: str
@@ -188,13 +216,72 @@ async def create_agency(data: AgencyCreate, current_user: User = Depends(get_cur
 
 
 @router.get("/agencies")
-async def list_agencies(current_user: User = Depends(get_current_user)):
-    """Otel acentelerini listele."""
+async def list_agencies(
+    status: str | None = Query(None, description="active|inactive (bos = hepsi)"),
+    q: str | None = Query(None, description="ad/email/telefon icinde ara"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    include_placeholders: bool = Query(False, description="Test/seed cop kayitlari (name<2) dahil et"),
+    current_user: User = Depends(get_current_user),
+):
+    """Otel acentelerini listele — filtre + arama + sayfalama destekli.
+
+    Eski sozlesme korunur: parametre verilmezse JSON dizi doner (geriye donuk uyumlu).
+    Filtre/arama/sayfalama kullanildiginda zarflanmis (`{items,total,page,...}`) doner."""
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
-    docs = await db.agencies.find(
-        {"tenant_id": tenant_id}, {"_id": 0}
-    ).sort("created_at", -1).to_list(500)
+
+    query: dict = {"tenant_id": tenant_id}
+    if status in ("active", "inactive"):
+        query["status"] = status
+    if not include_placeholders:
+        # Test/seed coplerini (ornegin name='x', name='C4') gizle.
+        query["name"] = {"$regex": r"^.{2,}$", "$options": "s"}
+    if q:
+        needle = q.strip()
+        if needle:
+            import re as _re
+            rx = {"$regex": _re.escape(needle), "$options": "i"}
+            and_clause = [
+                {"$or": [
+                    {"name": rx},
+                    {"contact_name": rx},
+                    {"contact_email": rx},
+                    {"contact_phone": rx},
+                ]}
+            ]
+            # name regex'i query[name] ile cakismasin diye $and'e tasi.
+            existing_name = query.pop("name", None)
+            if existing_name is not None:
+                and_clause.append({"name": existing_name})
+            query["$and"] = and_clause
+
+    wrapped = (
+        status is not None
+        or q is not None
+        or page != 1
+        or page_size != 50
+        or include_placeholders
+    )
+
+    total = await db.agencies.count_documents(query)
+    cursor = (
+        db.agencies.find(query, {"_id": 0})
+        .sort("created_at", -1)
+        .skip((page - 1) * page_size)
+        .limit(page_size)
+    )
+    docs = await cursor.to_list(page_size)
+
+    if wrapped:
+        return {
+            "items": docs,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": page * page_size < total,
+        }
+    # Geriye donuk uyumluluk: parametresiz cagrida duz dizi don.
     return docs
 
 
@@ -235,17 +322,84 @@ async def update_agency(agency_id: str, data: AgencyUpdate, current_user: User =
     return existing
 
 
+@router.get("/agencies/{agency_id}/usage")
+async def agency_usage(agency_id: str, current_user: User = Depends(get_current_user)):
+    """Acente silmeden once: bagli rezervasyon/kullanici sayilari."""
+    _require_hotel_staff(current_user)
+    tenant_id = current_user.tenant_id
+    agency = await db.agencies.find_one({"id": agency_id, "tenant_id": tenant_id}, {"_id": 0, "name": 1})
+    if not agency:
+        raise HTTPException(status_code=404, detail="Acente bulunamadi")
+
+    today_iso = datetime.now(UTC).strftime("%Y-%m-%d")
+    total_bookings = await db.bookings.count_documents(
+        {"tenant_id": tenant_id, "agency_id": agency_id}
+    )
+    future_active_bookings = await db.bookings.count_documents({
+        "tenant_id": tenant_id,
+        "agency_id": agency_id,
+        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+        "check_out": {"$gte": today_iso},
+    })
+    user_count = await db.users.count_documents(
+        {"tenant_id": tenant_id, "agency_id": agency_id}
+    )
+    return {
+        "agency_id": agency_id,
+        "agency_name": agency.get("name", ""),
+        "total_bookings": total_bookings,
+        "future_active_bookings": future_active_bookings,
+        "user_count": user_count,
+    }
+
+
 @router.delete("/agencies/{agency_id}")
-async def delete_agency(agency_id: str, current_user: User = Depends(get_current_user),
+async def delete_agency(
+    agency_id: str,
+    force: bool = Query(False, description="Aktif rezervasyon olsa bile devre disi birak"),
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
-    """Acenteyi devre disi birak."""
+    """Acenteyi devre disi birak (soft delete).
+
+    Aktif/gelecek rezervasyonu varsa `force=false` (varsayilan) ile 409 doner;
+    cagiran taraf onay aldiktan sonra `?force=true` ile yeniden cagirir.
+    Soft delete oldugu icin mevcut rezervasyonlar (`agency_id`) korunur,
+    sadece acente `status='inactive'` isaretlenir."""
     _require_hotel_staff(current_user)
+    tenant_id = current_user.tenant_id
+
+    agency = await db.agencies.find_one({"id": agency_id, "tenant_id": tenant_id}, {"_id": 0, "name": 1})
+    if not agency:
+        raise HTTPException(status_code=404, detail="Acente bulunamadi")
+
+    today_iso = datetime.now(UTC).strftime("%Y-%m-%d")
+    future_active = await db.bookings.count_documents({
+        "tenant_id": tenant_id,
+        "agency_id": agency_id,
+        "status": {"$in": ["confirmed", "guaranteed", "checked_in", "pending"]},
+        "check_out": {"$gte": today_iso},
+    })
+    if future_active > 0 and not force:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "agency_has_active_bookings",
+                "message": f"Bu acentenin {future_active} aktif/gelecek rezervasyonu var. "
+                           "Yine de devre disi birakmak icin onay verin.",
+                "future_active_bookings": future_active,
+            },
+        )
+
     await db.agencies.update_one(
-        {"id": agency_id, "tenant_id": current_user.tenant_id},
+        {"id": agency_id, "tenant_id": tenant_id},
         {"$set": {"status": "inactive", "updated_at": _now_iso()}}
     )
-    return {"ok": True, "message": "Acente devre disi birakildi"}
+    return {
+        "ok": True,
+        "message": "Acente devre disi birakildi",
+        "future_active_bookings_at_delete": future_active,
+    }
 
 
 # ─── Agency User Management ──────────────────────────────────────

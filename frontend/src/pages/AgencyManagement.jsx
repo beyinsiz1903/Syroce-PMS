@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   Building2, Plus, Edit2, Trash2, Users, UserPlus, ChevronDown, ChevronRight,
   Phone, Mail, Percent, FileText, Loader2, Eye, EyeOff, ToggleLeft, ToggleRight,
-  Key, Copy, RefreshCw, ShieldCheck, XCircle, ExternalLink
+  Key, Copy, RefreshCw, ShieldCheck, XCircle, ExternalLink, Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,11 +17,27 @@ import {
 
 import { confirmDialog } from '@/lib/dialogs';
 
+const PAGE_SIZE = 20;
+
 const AgencyManagement = ({ user, tenant, onLogout }) => {
   const [agencies, setAgencies] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [expandedAgency, setExpandedAgency] = useState(null);
   const [agencyUsers, setAgencyUsers] = useState({});
+
+  // Filtre / arama / sayfalama
+  const [statusFilter, setStatusFilter] = useState('active'); // 'active' | 'inactive' | 'all'
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState(''); // debounced
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => { setPage(1); }, [statusFilter, searchQuery]);
 
   // Agency form
   const [showAgencyForm, setShowAgencyForm] = useState(false);
@@ -42,22 +58,37 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
   const [generatedKey, setGeneratedKey] = useState(null);
   const [apiKeyLoading, setApiKeyLoading] = useState({});
 
-  const fetchAgencies = async ({ silent = false } = {}) => {
+  const fetchAgencies = async ({ silent = false, signal } = {}) => {
     // 4xx hariç (auth/yetki) tek retry: backend restart / geçici 5xx / network için.
-    const tryOnce = () => axios.get('/agencies').then(r => r.data);
+    const params = { page, page_size: PAGE_SIZE };
+    if (statusFilter !== 'all') params.status = statusFilter;
+    if (searchQuery) params.q = searchQuery;
+    const tryOnce = () => axios.get('/agencies', { params, signal }).then(r => r.data);
     try {
       let data;
       try {
         data = await tryOnce();
       } catch (firstErr) {
+        if (axios.isCancel?.(firstErr) || firstErr?.name === 'CanceledError') return;
         const status = firstErr?.response?.status;
         if (status && status >= 400 && status < 500) throw firstErr;
         await new Promise(r => setTimeout(r, 1500));
         data = await tryOnce();
       }
-      setAgencies(Array.isArray(data) ? data : []);
+      // Backend her zaman zarflanmis cevap doner (parametreli cagri).
+      if (data && Array.isArray(data.items)) {
+        setAgencies(data.items);
+        setTotal(typeof data.total === 'number' ? data.total : data.items.length);
+      } else if (Array.isArray(data)) {
+        // Beklenmedik geriye-donuk cevap.
+        setAgencies(data);
+        setTotal(data.length);
+      } else {
+        setAgencies([]);
+        setTotal(0);
+      }
     } catch (err) {
-      // eslint-disable-next-line no-console
+      if (axios.isCancel?.(err) || err?.name === 'CanceledError') return;
       console.error('[AgencyManagement] fetch failed:', err?.response?.status, err?.response?.data);
       if (!silent) {
         const detail = err?.response?.data?.detail;
@@ -78,7 +109,12 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
     }
   };
 
-  useEffect(() => { fetchAgencies({ silent: true }); }, []);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchAgencies({ silent: true, signal: ctrl.signal });
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, searchQuery, page]);
 
   const handleToggleExpand = (agencyId) => {
     if (expandedAgency === agencyId) {
@@ -164,7 +200,12 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
   };
 
   const handleSaveAgency = async () => {
-    if (!agencyForm.name.trim()) return toast.error('Acente adi gerekli');
+    const trimmedName = agencyForm.name.trim();
+    if (trimmedName.length < 2) return toast.error('Acente adi en az 2 karakter olmalidir');
+    const cr = Number(agencyForm.commission_rate);
+    if (!Number.isFinite(cr) || cr < 0 || cr > 100) {
+      return toast.error('Komisyon orani 0 ile 100 arasinda olmalidir');
+    }
     setSaving(true);
     try {
       if (editingAgency) {
@@ -195,13 +236,66 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
   };
 
   const handleDeleteAgency = async (agency) => {
-    if (!await confirmDialog({ message: `"${agency.name}" acentesini silmek istediğinize emin misiniz?` })) return;
+    // Once kullanim bilgisini cek (kac aktif rezervasyon, kac kullanici).
+    let usage = null;
+    try {
+      const { data } = await axios.get(`/agencies/${agency.id}/usage`);
+      usage = data;
+    } catch {
+      // usage endpoint duserse silmeyi yine de denemeye devam et.
+    }
+
+    const futureCount = usage?.future_active_bookings || 0;
+    const totalCount = usage?.total_bookings || 0;
+    const userCount = usage?.user_count || 0;
+
+    let message = `"${agency.name}" acentesini devre disi birakmak istediginize emin misiniz?`;
+    if (usage) {
+      const lines = [
+        `"${agency.name}" acentesi devre disi birakilacak.`,
+        '',
+        `Toplam rezervasyon: ${totalCount}`,
+        `Aktif/gelecek rezervasyon: ${futureCount}`,
+        `Bagli kullanici: ${userCount}`,
+        '',
+      ];
+      if (futureCount > 0) {
+        lines.push(`UYARI: ${futureCount} aktif/gelecek rezervasyon bu acenteye bagli kalacak. ` +
+          'Acente pasiflestikten sonra portala giris yapamaz, ancak mevcut rezervasyonlar etkilenmez (soft delete).');
+      } else {
+        lines.push('Aktif rezervasyon yok, guvenle pasiflestirilebilir.');
+      }
+      message = lines.join('\n');
+    }
+
+    if (!await confirmDialog({ message, variant: 'danger' })) return;
+
     try {
       await axios.delete(`/agencies/${agency.id}`);
-      toast.success('Acente silindi');
+      toast.success('Acente devre disi birakildi');
       fetchAgencies();
-    } catch {
-      toast.error('Acente silinemedi');
+    } catch (err) {
+      // Backend 409 dondurduyse: "force" onayi al ve tekrar dene.
+      if (err?.response?.status === 409) {
+        const detail = err.response.data?.detail || {};
+        const future = detail.future_active_bookings ?? futureCount;
+        const ok = await confirmDialog({
+          message: `Bu acentenin ${future} aktif/gelecek rezervasyonu var.\n\n` +
+            'Yine de devre disi birakmak istiyor musunuz? Mevcut rezervasyonlar korunur, ' +
+            'ancak acente portala giris yapamaz.',
+          variant: 'danger',
+        });
+        if (!ok) return;
+        try {
+          await axios.delete(`/agencies/${agency.id}`, { params: { force: true } });
+          toast.success('Acente devre disi birakildi (zorla)');
+          fetchAgencies();
+        } catch (e2) {
+          toast.error(e2?.response?.data?.detail?.message || e2?.response?.data?.detail || 'Acente devre disi birakilamadi');
+        }
+        return;
+      }
+      toast.error(err?.response?.data?.detail || 'Acente devre disi birakilamadi');
     }
   };
 
@@ -247,9 +341,51 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
           <h1 className="text-2xl font-bold text-slate-900" data-testid="agency-management-title">Acente Yönetimi</h1>
           <p className="text-slate-500 text-sm mt-1">Bolgesel acentelerinizi yönetin, kullanici ekleyin</p>
         </div>
-        <Button onClick={() => openAgencyForm()} data-testid="add-agency-btn" className="gap-2">
-          <Plus size={16} /> Yeni Acente
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => fetchAgencies()} data-testid="refresh-agencies-btn">
+            <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+          </Button>
+          <Button onClick={() => openAgencyForm()} data-testid="add-agency-btn" className="gap-2">
+            <Plus size={16} /> Yeni Acente
+          </Button>
+        </div>
+      </div>
+
+      {/* Filters + Search */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="inline-flex rounded-lg border bg-white p-1 text-sm" role="tablist" aria-label="Durum filtresi">
+          {[
+            { key: 'active', label: 'Aktif' },
+            { key: 'inactive', label: 'Pasif' },
+            { key: 'all', label: 'Hepsi' },
+          ].map(opt => (
+            <button
+              key={opt.key}
+              type="button"
+              role="tab"
+              aria-selected={statusFilter === opt.key}
+              onClick={() => setStatusFilter(opt.key)}
+              data-testid={`status-filter-${opt.key}`}
+              className={`px-3 py-1.5 rounded-md transition ${
+                statusFilter === opt.key
+                  ? 'bg-slate-900 text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <div className="relative w-full md:w-72">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            placeholder="Acente, yetkili, e-posta veya telefon ara..."
+            className="pl-9"
+            data-testid="agency-search-input"
+          />
+        </div>
       </div>
 
       {/* Agency List */}
@@ -434,6 +570,30 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
               )}
             </Card>
           ))}
+
+          {/* Pagination */}
+          {total > PAGE_SIZE && (
+            <div className="flex items-center justify-between pt-2 text-sm" data-testid="agency-pagination">
+              <div className="text-slate-500">
+                Toplam <span className="font-medium text-slate-700">{total}</span> acente
+                {' · '}Sayfa <span className="font-medium text-slate-700">{page}</span> / {Math.max(1, Math.ceil(total / PAGE_SIZE))}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline" size="sm"
+                  disabled={page === 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  data-testid="agency-prev-page"
+                >Onceki</Button>
+                <Button
+                  variant="outline" size="sm"
+                  disabled={page * PAGE_SIZE >= total}
+                  onClick={() => setPage(p => p + 1)}
+                  data-testid="agency-next-page"
+                >Sonraki</Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -454,8 +614,20 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                 <Input value={agencyForm.contact_name} onChange={e => setAgencyForm(p => ({ ...p, contact_name: e.target.value }))} placeholder="Ad Soyad" />
               </div>
               <div>
-                <Label>Komisyon (%)</Label>
-                <Input type="number" value={agencyForm.commission_rate} onChange={e => setAgencyForm(p => ({ ...p, commission_rate: parseFloat(e.target.value) || 0 }))} data-testid="commission-rate-input" />
+                <Label>Komisyon (%) — 0 ile 100 arasi</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={agencyForm.commission_rate}
+                  onChange={e => {
+                    const raw = parseFloat(e.target.value);
+                    const v = Number.isFinite(raw) ? Math.min(100, Math.max(0, raw)) : 0;
+                    setAgencyForm(p => ({ ...p, commission_rate: v }));
+                  }}
+                  data-testid="commission-rate-input"
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
