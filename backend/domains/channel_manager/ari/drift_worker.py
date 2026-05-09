@@ -16,6 +16,28 @@ logger = logging.getLogger(__name__)
 CONSECUTIVE_DRIFT_ALERT = 3
 WIDE_PARITY_LOSS_THRESHOLD = 5  # rooms with drift
 
+# Field-level diff scopes we surface to the UI
+_DIFF_FIELDS = ("availability", "rate", "min_stay", "max_stay", "closed", "stop_sell", "restrictions")
+
+
+def _diff_fields(pms_item: dict | None, provider_item: dict | None) -> list[str]:
+    """Return list of field names that differ between PMS and provider snapshot."""
+    if not pms_item or not provider_item:
+        return ["__missing__"]
+    out: list[str] = []
+    for f in _DIFF_FIELDS:
+        a = pms_item.get(f)
+        b = provider_item.get(f)
+        if a != b:
+            out.append(f)
+    # Catch any nested restriction sub-fields the caller flattened
+    if isinstance(pms_item.get("restrictions"), dict) and isinstance(provider_item.get("restrictions"), dict):
+        ra, rb = pms_item["restrictions"], provider_item["restrictions"]
+        for k in set(ra.keys()) | set(rb.keys()):
+            if ra.get(k) != rb.get(k) and f"restrictions.{k}" not in out:
+                out.append(f"restrictions.{k}")
+    return out or ["__unknown__"]
+
 
 async def check_drift(
     tenant_id: str,
@@ -58,6 +80,7 @@ async def check_drift(
                 "rate_plan_code": parts[1] if len(parts) > 1 else "",
                 "date": parts[2] if len(parts) > 2 else "",
                 "drift_type": "missing_in_provider" if not provider_item else "missing_in_pms",
+                "drift_fields": _diff_fields(pms_item, provider_item),
                 "pms_value": pms_item,
                 "provider_value": provider_item,
             })
@@ -90,6 +113,7 @@ async def check_drift(
                 "rate_plan_code": parts[1] if len(parts) > 1 else "",
                 "date": parts[2] if len(parts) > 2 else "",
                 "drift_type": "value_mismatch",
+                "drift_fields": _diff_fields(pms_item, provider_item),
                 "pms_hash": pms_hash,
                 "provider_hash": provider_hash,
                 "pms_value": pms_item,
@@ -112,6 +136,7 @@ async def check_drift(
             "provider_hash": drift.get("provider_hash", ""),
             "drift_detected": True,
             "drift_type": drift["drift_type"],
+            "drift_fields": drift.get("drift_fields", []),
         })
 
     # Mark non-drifting items as reconciled

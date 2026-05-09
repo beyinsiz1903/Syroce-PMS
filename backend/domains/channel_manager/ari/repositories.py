@@ -269,6 +269,57 @@ async def get_drift_states(
     return await cursor.to_list(length=limit)
 
 
+# ── Per-Tenant Drift Mode ────────────────────────────────────────────
+
+COLL_ARI_DRIFT_MODES = "ari_drift_modes"
+
+DRIFT_MODE_NORMAL = "normal"
+DRIFT_MODE_RECOVERY = "recovery"
+
+DRIFT_CONFIG = {
+    DRIFT_MODE_NORMAL: {"interval": 120, "scope": "changed"},
+    DRIFT_MODE_RECOVERY: {"interval": 30, "scope": "full"},
+}
+
+
+async def get_tenant_drift_mode(tenant_id: str) -> dict:
+    """Return tenant-scoped drift mode config. Defaults to normal."""
+    doc = await db[COLL_ARI_DRIFT_MODES].find_one(
+        {"tenant_id": tenant_id}, {"_id": 0},
+    )
+    mode = (doc or {}).get("mode") or DRIFT_MODE_NORMAL
+    if mode not in DRIFT_CONFIG:
+        mode = DRIFT_MODE_NORMAL
+    cfg = DRIFT_CONFIG[mode]
+    return {"mode": mode, "interval": cfg["interval"], "scope": cfg["scope"]}
+
+
+async def set_tenant_drift_mode(tenant_id: str, mode: str, actor_id: str | None = None) -> dict:
+    """Persist tenant-scoped drift mode. Returns the new config."""
+    if mode not in DRIFT_CONFIG:
+        return {"error": f"Invalid mode: {mode}. Valid: {list(DRIFT_CONFIG.keys())}"}
+    now = _now_iso()
+    prev = await db[COLL_ARI_DRIFT_MODES].find_one({"tenant_id": tenant_id}, {"_id": 0, "mode": 1})
+    await db[COLL_ARI_DRIFT_MODES].update_one(
+        {"tenant_id": tenant_id},
+        {"$set": {
+            "tenant_id": tenant_id,
+            "mode": mode,
+            "actor_id": actor_id,
+            "updated_at": now,
+        }},
+        upsert=True,
+    )
+    cfg = DRIFT_CONFIG[mode]
+    return {
+        "previous_mode": (prev or {}).get("mode") or DRIFT_MODE_NORMAL,
+        "current_mode": mode,
+        "mode": mode,
+        "interval": cfg["interval"],
+        "scope": cfg["scope"],
+    }
+
+
 async def get_ari_stats(tenant_id: str, property_id: str) -> dict:
     """Get aggregate ARI push stats."""
     pipeline_pending = [
