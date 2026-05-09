@@ -183,36 +183,38 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
   const [terminateReason, setTerminateReason] = useState('');
   const [acting, setActing] = useState(false);
 
+  const [historyFilter, setHistoryFilter] = useState('all'); // all|rejected|terminated|expired|withdrawn
+
   const tabToStatus = {
     pending: 'pending',
     active: 'approved',
-    history: null,
+    history: 'history', // backend $in alias
   };
 
-  const fetchContracts = useCallback(async ({ silent = false } = {}) => {
+  const fetchContracts = useCallback(async ({ silent = false, signal } = {}) => {
     setLoading(true);
-    const status = tabToStatus[tab];
+    // History sekmesinde alt-filtre secilirse o spesifik status'u sor; aksi halde 'history' alias.
+    let status = tabToStatus[tab];
+    if (tab === 'history' && historyFilter !== 'all') status = historyFilter;
     const params = status ? { status } : {};
     // 4xx hariç (auth/yetki) tek retry: backend restart / 502/503 / network için.
-    const tryOnce = () => axios.get('/marketplace/incoming-requests', { params }).then(r => r.data);
+    const tryOnce = () => axios.get('/marketplace/incoming-requests', { params, signal }).then(r => r.data);
     try {
       let data;
       try {
         data = await tryOnce();
       } catch (firstErr) {
+        if (axios.isCancel?.(firstErr) || firstErr?.name === 'CanceledError') return;
         const st = firstErr?.response?.status;
         if (st && st >= 400 && st < 500) throw firstErr;
         await new Promise(r => setTimeout(r, 1500));
         data = await tryOnce();
       }
-      let list = data.contracts || [];
-      if (tab === 'history') {
-        list = list.filter(c => ['rejected', 'terminated', 'expired', 'withdrawn'].includes(c.status));
-      }
-      setContracts(list);
+      // Backend artik dogru filtrelenmis listeyi donuyor — client-side filter YOK.
+      setContracts(data.contracts || []);
       setCounts(data.counts || {});
     } catch (e) {
-      // eslint-disable-next-line no-console
+      if (axios.isCancel?.(e) || e?.name === 'CanceledError') return;
       console.error('[IncomingAgencyContracts] fetch failed:', e?.response?.status, e?.response?.data);
       if (!silent) {
         toast.error('Sözleşmeler yüklenemedi: ' + (e.response?.data?.detail || e.message));
@@ -220,10 +222,14 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- tab değişiminde refetch
-  }, [tab]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- tab/historyFilter degisiminde refetch
+  }, [tab, historyFilter]);
 
-  useEffect(() => { fetchContracts({ silent: true }); }, [fetchContracts]);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchContracts({ silent: true, signal: ctrl.signal });
+    return () => ctrl.abort();
+  }, [fetchContracts]);
 
   const openApprove = (c) => {
     setApproveDlg(c);
@@ -306,13 +312,13 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
               Sadece onayladığınız acenteler otelinize rezervasyon yapabilir.
             </p>
           </div>
-          <Button variant="outline" onClick={fetchContracts} disabled={loading}>
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          <Button variant="outline" size="sm" onClick={() => fetchContracts()} disabled={loading}>
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Yenile
           </Button>
         </div>
 
-        <Tabs value={tab} onValueChange={setTab}>
+        <Tabs value={tab} onValueChange={(v) => { setTab(v); if (v !== 'history') setHistoryFilter('all'); }}>
           <TabsList className="grid grid-cols-3 w-full max-w-md">
             <TabsTrigger value="pending" data-testid="tab-pending">
               Bekleyen
@@ -326,11 +332,49 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
                 <Badge className="ml-2 bg-emerald-500/20 text-emerald-300">{counts.approved}</Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="history" data-testid="tab-history">Geçmiş</TabsTrigger>
+            <TabsTrigger value="history" data-testid="tab-history">
+              Geçmiş
+              {counts.history > 0 && (
+                <Badge className="ml-2 bg-slate-500/20 text-slate-300">{counts.history}</Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
 
           {['pending', 'active', 'history'].map(v => (
-            <TabsContent key={v} value={v} className="mt-6">
+            <TabsContent key={v} value={v} className="mt-6 space-y-4">
+              {v === 'history' && (
+                <div className="flex flex-wrap gap-2" data-testid="history-filters">
+                  {[
+                    { key: 'all',        label: 'Tümü',         count: counts.history ?? 0 },
+                    { key: 'rejected',   label: 'Reddedildi',   count: counts.rejected ?? 0 },
+                    { key: 'terminated', label: 'Feshedildi',   count: counts.terminated ?? 0 },
+                    { key: 'expired',    label: 'Süresi Doldu', count: counts.expired ?? 0 },
+                    { key: 'withdrawn',  label: 'Geri Çekildi', count: counts.withdrawn ?? 0 },
+                  ].map(f => {
+                    const active = historyFilter === f.key;
+                    return (
+                      <button
+                        key={f.key}
+                        type="button"
+                        data-testid={`history-filter-${f.key}`}
+                        onClick={() => setHistoryFilter(f.key)}
+                        className={[
+                          'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition',
+                          active
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50',
+                        ].join(' ')}
+                      >
+                        {f.label}
+                        <span className={[
+                          'inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-[10px] font-medium',
+                          active ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-600',
+                        ].join(' ')}>{f.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               {loading ? (
                 <div className="text-center py-12">
                   <Loader2 className="w-8 h-8 animate-spin mx-auto text-slate-500" />
@@ -342,7 +386,11 @@ const IncomingAgencyContracts = ({ user, tenant, onLogout }) => {
                     <p className="text-slate-400">
                       {v === 'pending' && 'Şu an bekleyen acente talebi yok.'}
                       {v === 'active' && 'Aktif sözleşmeniz olan acente yok.'}
-                      {v === 'history' && 'Henüz geçmiş kayıt yok.'}
+                      {v === 'history' && historyFilter === 'all' && 'Henüz geçmiş kayıt yok.'}
+                      {v === 'history' && historyFilter === 'rejected' && 'Reddedilen sözleşme yok.'}
+                      {v === 'history' && historyFilter === 'terminated' && 'Feshedilen sözleşme yok.'}
+                      {v === 'history' && historyFilter === 'expired' && 'Süresi dolmuş sözleşme yok.'}
+                      {v === 'history' && historyFilter === 'withdrawn' && 'Geri çekilmiş sözleşme yok.'}
                     </p>
                   </CardContent>
                 </Card>

@@ -16,6 +16,7 @@ kullanarak arama/rezervasyon akışlarını gate eder.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -46,11 +47,41 @@ def _uuid() -> str:
 _indexes_ready = False
 
 
+_expire_worker_started = False
+
+
+async def _periodic_expire_worker(interval_seconds: int = 3600) -> None:
+    """Saatte bir tum tenant'larda valid_to gecmis approved sozlesmeleri
+    'expired' isaretle. Idempotent + tek instance (bayrakla korunur)."""
+    while True:
+        try:
+            n = await _auto_expire_overdue(None)
+            if n:
+                logger.info("[contracts] auto-expired %d overdue contracts", n)
+        except Exception:  # noqa: BLE001
+            logger.exception("[contracts] periodic expire worker error")
+        await asyncio.sleep(interval_seconds)
+
+
+def _start_expire_worker_once() -> None:
+    """Lazy: ilk istekte event loop icinde tek bir background task baslat."""
+    global _expire_worker_started
+    if _expire_worker_started:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    loop.create_task(_periodic_expire_worker())
+    _expire_worker_started = True
+
+
 async def _ensure_indexes() -> None:
     """İlk istekte (lazy) gerekli indeksleri yarat. Idempotent."""
     global _indexes_ready
     if _indexes_ready:
         return
+    _start_expire_worker_once()
     sysdb = get_system_db()
     coll = sysdb.agency_contracts
 
@@ -340,27 +371,65 @@ class TerminateRequest(BaseModel):
     effective_date: str | None = None  # YYYY-MM-DD; None ise hemen
 
 
+HISTORY_STATUSES = ("rejected", "terminated", "expired", "withdrawn")
+
+
+async def _auto_expire_overdue(tenant_id: str | None = None) -> int:
+    """`status='approved'` ve `valid_to < bugün` olan sozlesmeleri 'expired'
+    isaretle. Read-time check — listeleme/lookup oncesi cagirilir.
+
+    Idempotent: tum filtre `status='approved'` zorunlu kildigi icin tekrar
+    cagrilarak ayni dokumani iki kez expire etmez."""
+    sysdb = get_system_db()
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    q: dict = {"status": "approved", "valid_to": {"$lt": today}}
+    if tenant_id:
+        q["tenant_id"] = tenant_id
+    now = _now_iso()
+    res = await sysdb.agency_contracts.update_many(
+        q,
+        {"$set": {"status": "expired", "expired_at": now, "updated_at": now}},
+    )
+    return res.modified_count or 0
+
+
 @hotel_router.get("")
 async def hotel_list_requests(
-    status: str | None = Query(None, pattern="^(pending|approved|rejected|terminated|expired|withdrawn)$"),
+    status: str | None = Query(
+        None,
+        pattern="^(pending|approved|rejected|terminated|expired|withdrawn|history)$",
+        description="'history' = rejected|terminated|expired|withdrawn (cogul $in)",
+    ),
     limit: int = Query(100, le=500),
     current_user: User = Depends(get_current_user),
 ):
     tenant_id = _require_hotel_user(current_user)
     sysdb = get_system_db()
+    # Worker'i lazy baslat (idempotent) — saatte bir global expire surer.
+    await _ensure_indexes()
+    # Read-time fallback (idempotent): worker henuz calismadiysa veya
+    # son cycle'dan sonra valid_to gectiyse bu cagri tenant scope'unda kapatir.
+    await _auto_expire_overdue(tenant_id)
+
     q: dict = {"tenant_id": tenant_id}
-    if status:
+    if status == "history":
+        q["status"] = {"$in": list(HISTORY_STATUSES)}
+    elif status:
         q["status"] = status
     docs = await sysdb.agency_contracts.find(q, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
 
-    # Sayaçlar (UI rozeti için)
+    # Sayaclar tek aggregate roundtrip — 10K+ kayitta da sabit O(1) bellek.
     counts = {"pending": 0, "approved": 0, "rejected": 0,
               "terminated": 0, "expired": 0, "withdrawn": 0}
-    async for doc in sysdb.agency_contracts.find(
-        {"tenant_id": tenant_id}, {"_id": 0, "status": 1}
-    ):
-        s = doc.get("status", "pending")
-        counts[s] = counts.get(s, 0) + 1
+    cursor = sysdb.agency_contracts.aggregate([
+        {"$match": {"tenant_id": tenant_id}},
+        {"$group": {"_id": "$status", "n": {"$sum": 1}}},
+    ])
+    async for row in cursor:
+        s = row.get("_id") or "pending"
+        if s in counts:
+            counts[s] = int(row.get("n", 0) or 0)
+    counts["history"] = sum(counts[s] for s in HISTORY_STATUSES)
 
     return {"contracts": docs, "total": len(docs), "counts": counts}
 
@@ -372,6 +441,8 @@ async def hotel_get_request(
 ):
     tenant_id = _require_hotel_user(current_user)
     sysdb = get_system_db()
+    # Detail call'da da read-time auto-expire — list/detail tutarliligi.
+    await _auto_expire_overdue(tenant_id)
     doc = await sysdb.agency_contracts.find_one(
         {"id": contract_id, "tenant_id": tenant_id}, {"_id": 0}
     )
@@ -486,6 +557,7 @@ async def hotel_terminate_contract(
     contract_id: str,
     data: TerminateRequest,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_approvals")),  # FIX: terminate de en az approve kadar kritik
 ):
     """Onaylı bir sözleşmeyi feshet (yeni rezervasyonlar engellenir,
     var olan rezervasyonlar etkilenmez)."""
