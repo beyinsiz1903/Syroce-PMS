@@ -19,7 +19,11 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
   const calculate = async () => {
     setBusy(true);
     try {
-      const { data } = await api.post('/pms/early-late/calculate', { booking_id: bookingId, direction, actual_hour: hour });
+      // hour float (dakika hassasiyeti) — backend ge=0, le=24 kabul ediyor.
+      const h = typeof hour === 'number' ? hour : parseFloat(hour) || 0;
+      const { data } = await api.post('/pms/early-late/calculate', {
+        booking_id: bookingId, direction, actual_hour: h,
+      });
       setCalc(data);
     } catch (e) { toast.error('Hesaplama hatası: ' + (e.response?.data?.detail || e.message)); }
     finally { setBusy(false); }
@@ -56,7 +60,7 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
           <div>
             <Label className="text-xs">Gerçekleşen Saat (0-23)</Label>
             <div className="flex gap-2">
-              <Input type="number" min={0} max={23} value={hour} onChange={e => setHour(parseInt(e.target.value) || 0)} className="h-9" />
+              <Input type="number" step="0.25" min={0} max={24} value={hour} onChange={e => setHour(parseFloat(e.target.value) || 0)} className="h-9" placeholder="örn. 13.75 = 13:45" />
               <Button onClick={calculate} disabled={busy} variant="outline">
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calculator className="w-4 h-4" />}
               </Button>
@@ -87,7 +91,7 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>İptal</Button>
-          <Button onClick={apply} disabled={busy || (!calc?.applicable && !overrideAmount)} className="bg-amber-600 hover:bg-amber-700">
+          <Button onClick={apply} disabled={busy || (!calc?.applicable && !overrideAmount)}>
             Folyoya Ekle
           </Button>
         </DialogFooter>

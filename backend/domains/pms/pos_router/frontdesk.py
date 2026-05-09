@@ -1173,29 +1173,76 @@ async def calculate_early_late_fees(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     _perm=Depends(require_module("frontdesk")),  # v89 DW
 ):
-    """Calculate early check-in and late checkout fees"""
+    """Erken giriş / geç çıkış ek ücret hesaplaması.
+
+    Kaynak: tenant_settings.early_late_pricing (Settings → Erken Giriş/Geç Çıkış
+    Ücretleri sayfasından düzenlenir). Hardcoded $50/$75 USD kaldırıldı (P0 fix).
+    """
+    from routers.early_late_pricing import _default_config, _match_rule
+
     current_user = await get_current_user(credentials)
 
-    # Get booking
     booking = await db.bookings.find_one({
         'id': booking_id,
-        'tenant_id': current_user.tenant_id
+        'tenant_id': current_user.tenant_id,
     })
-
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    # Calculate fees (simplified implementation)
-    early_checkin_fee = 50.0 if early_checkin_time else 0.0
-    late_checkout_fee = 75.0 if late_checkout_time else 0.0
-    total_fees = early_checkin_fee + late_checkout_fee
+    settings = await db.tenant_settings.find_one(
+        {"tenant_id": current_user.tenant_id}, {"_id": 0}
+    ) or {}
+    cfg = settings.get("early_late_pricing") or _default_config()
+
+    nights = max(int(booking.get("nights") or 1), 1)
+    subtotal = booking.get("subtotal") or booking.get("base_amount")
+    total = float(subtotal if subtotal is not None else (booking.get("total_amount") or booking.get("total_price") or 0))
+    nightly = total / nights if nights else total
+    currency = booking.get("currency", "TRY")
+
+    def _hour_from_str(s: str | None) -> float | None:
+        # "HH:MM" veya "HH" kabul; ISO datetime ise saat kısmını alır.
+        if not s:
+            return None
+        try:
+            if "T" in s or " " in s:
+                return float(datetime.fromisoformat(s.replace("Z", "+00:00")).hour) + (
+                    datetime.fromisoformat(s.replace("Z", "+00:00")).minute / 60.0
+                )
+            if ":" in s:
+                hh, mm = s.split(":", 1)
+                return float(int(hh)) + (float(int(mm)) / 60.0)
+            return float(int(s))
+        except Exception:
+            return None
+
+    def _calc(direction: str, hour: float | None) -> float:
+        if hour is None:
+            return 0.0
+        rule = _match_rule(cfg.get(direction, []), hour)
+        if not rule:
+            return 0.0
+        ct = rule["charge_type"]
+        val = float(rule["charge_value"])
+        if ct == "free":
+            return 0.0
+        if ct == "flat":
+            return round(val, 2)
+        if ct == "percent_of_nightly":
+            return round(nightly * val / 100, 2)
+        if ct == "percent_of_total":
+            return round(total * val / 100, 2)
+        return 0.0
+
+    early_fee = _calc("early_checkin", _hour_from_str(early_checkin_time))
+    late_fee = _calc("late_checkout", _hour_from_str(late_checkout_time))
 
     return {
         'booking_id': booking_id,
-        'early_checkin_fee': early_checkin_fee,
-        'late_checkout_fee': late_checkout_fee,
-        'total_fees': total_fees,
-        'currency': 'USD'
+        'early_checkin_fee': early_fee,
+        'late_checkout_fee': late_fee,
+        'total_fees': round(early_fee + late_fee, 2),
+        'currency': currency,
     }
 # ── GET /frontdesk/guest-alerts ──
 @router.get("/frontdesk/guest-alerts")

@@ -315,7 +315,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     // Bu route'lar `wrapLayout: true` flag'i ile işaretli; sayfa dosyaları
     // Layout import/sarımını kendi return'lerinden kaldırmıştır.
     { path: "/shift-handover", ...p(ShiftHandoverPage), wrapLayout: true, layoutModule: "shift_handover" },
-    { path: "/settings/early-late-pricing", ...p(EarlyLatePricingSettings) },
+    { path: "/settings/early-late-pricing", ...p(EarlyLatePricingSettings), wrapLayout: true, layoutModule: "early_late_pricing" },
     { path: "/eod-report", ...p(EodReportPage), wrapLayout: true, layoutModule: "eod_report" },
     { path: "/walkin", ...p(WalkinPage), wrapLayout: true, layoutModule: "walkin" },
     { path: "/room-map", ...p(RoomMapPage), wrapLayout: true, layoutModule: "room_map" },
