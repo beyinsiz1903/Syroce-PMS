@@ -74,10 +74,7 @@ jobs:
                   pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
                   bash scripts/post_install.sh
             - name: Seed demo user
-              run: |
-                  cd backend
-                  set -e
-                  python create_demo_users.py
+              run: cd backend && python create_demo_users.py || python scripts/create_test_user.py
             - name: Start backend
               run: |
                   cd backend
