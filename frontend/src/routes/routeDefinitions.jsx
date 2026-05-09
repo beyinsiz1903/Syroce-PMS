@@ -487,7 +487,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     // ── Infrastructure ─────────────────────────────────
     { path: "/data-pipeline", ...p(DataPipelineDashboard) },
     { path: "/event-bus", ...p(EventBusDashboard) },
-    { path: "/system-health", ...p(SystemHealthDashboard) , wrapLayout: true, layoutModule: "system-health" },
+    { path: "/system-health", ...p(SystemHealthDashboard) , wrapLayout: true, layoutModule: "system_health" },
     { path: "/observability", ...p(ObservabilityDashboard) },
     { path: "/security-hardening", type: "redirect", to: "/security?tab=hardening" },
     { path: "/security", ...p(SecurityHub) , wrapLayout: true, layoutModule: "security" },
