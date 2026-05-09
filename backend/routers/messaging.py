@@ -13,9 +13,64 @@ from pydantic import BaseModel
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v90 DW
+from security.field_encryption import get_field_encryption_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/messaging-center", tags=["messaging-center"])
+
+# Sensitive credential keys that MUST be encrypted at rest (PCI/PII).
+_SMTP_SECRET_KEYS = {"smtp_password"}
+_WHATSAPP_SECRET_KEYS = {"access_token", "webhook_verify_token", "app_secret"}
+
+
+def _encrypt_secrets(creds: dict, secret_keys: set[str]) -> dict:
+    """Encrypt sensitive credential values in-place (envelope format).
+
+    Empty / already-encrypted values are passed through. Returns a new dict.
+    """
+    try:
+        svc = get_field_encryption_service()
+    except Exception:
+        logger.exception("field_encryption_unavailable; storing creds plaintext (insecure)")
+        return dict(creds)
+    out = dict(creds)
+    for k in secret_keys:
+        v = out.get(k)
+        if v and isinstance(v, str):
+            out[k] = svc.encrypt_value(v)
+    return out
+
+
+def _decrypt_secrets(creds: dict, secret_keys: set[str]) -> dict:
+    """Decrypt envelope-encoded credential values for runtime use."""
+    try:
+        svc = get_field_encryption_service()
+    except Exception:
+        return dict(creds)
+    out = dict(creds)
+    for k in secret_keys:
+        v = out.get(k)
+        if v and isinstance(v, str):
+            out[k] = svc.decrypt_value(v)
+    return out
+
+
+def _merge_partial_creds(existing: dict, incoming: dict, secret_keys: set[str]) -> dict:
+    """Partial-update credentials: empty incoming secret = preserve existing.
+
+    Backend masks secrets on GET (********), so the frontend cannot send the
+    real value back. Treating an empty incoming secret as "no change"
+    prevents silent credential wipe (Bug #2).
+    """
+    merged = dict(existing or {})
+    for k, v in (incoming or {}).items():
+        if k in secret_keys:
+            # only overwrite if user actually typed something
+            if v not in (None, "", "********"):
+                merged[k] = v
+        else:
+            merged[k] = v
+    return merged
 
 _db = None
 _service = None
@@ -45,21 +100,23 @@ class SMTPSettingsReq(BaseModel):
     smtp_host: str
     smtp_port: int = 587
     smtp_username: str
-    smtp_password: str
+    smtp_password: str = ""  # empty = preserve existing (mask round-trip safe)
     from_email: str
     from_name: str = "Otel"
     use_tls: bool = True
-    is_sandbox: bool = False
+    # Bug #6 fix: default fail-safe → sandbox (no real outbound until user opts in)
+    is_sandbox: bool = True
     enabled: bool = True
 
 
 class WhatsAppSettingsReq(BaseModel):
-    access_token: str
+    access_token: str = ""  # empty = preserve existing
     phone_number_id: str
     business_name: str = ""
     webhook_verify_token: str = ""  # Meta verification handshake (GET /api/whatsapp/webhook)
     app_secret: str = ""  # HMAC-SHA256 secret for X-Hub-Signature-256 verification
-    is_sandbox: bool = False
+    # Bug #6 fix: default fail-safe → sandbox
+    is_sandbox: bool = True
     enabled: bool = True
 
 
@@ -74,7 +131,16 @@ async def get_messaging_settings(current_user: User = Depends(get_current_user))
     result = {"email": None, "whatsapp": None}
     for cfg in configs:
         pt = cfg.get("provider_type")
-        creds = cfg.get("credentials_encrypted", {})
+        # Bug #15 follow-up: creds are envelope-encrypted at-rest.
+        # Decrypt before masking so the UI sees real plaintext bits (host/email
+        # plaintext, secrets shown as ********), not ciphertext gibberish.
+        raw_creds = cfg.get("credentials_encrypted", {}) or {}
+        if pt == "smtp_email":
+            creds = _decrypt_secrets(raw_creds, _SMTP_SECRET_KEYS)
+        elif pt == "whatsapp":
+            creds = _decrypt_secrets(raw_creds, _WHATSAPP_SECRET_KEYS)
+        else:
+            creds = raw_creds
         masked = {}
 
         if pt == "smtp_email":
@@ -125,9 +191,14 @@ def _mask(value: str, show: int = 4) -> str:
 async def save_email_settings(req: SMTPSettingsReq, current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v95 DW
 ):
-    """Save or update SMTP email configuration."""
+    """Save or update SMTP email configuration.
+
+    Bug #2 fix: Empty/masked smtp_password preserves the existing one rather
+    than wiping it (frontend never sees the real value due to _mask).
+    Bug #15 fix: smtp_password is encrypted at-rest via field_encryption.
+    """
     db = _get_db()
-    creds = {
+    incoming = {
         "smtp_host": req.smtp_host,
         "smtp_port": req.smtp_port,
         "smtp_username": req.smtp_username,
@@ -141,10 +212,15 @@ async def save_email_settings(req: SMTPSettingsReq, current_user: User = Depends
     )
     now = datetime.now(UTC).isoformat()
     if existing:
+        existing_creds_dec = _decrypt_secrets(
+            existing.get("credentials_encrypted", {}) or {}, _SMTP_SECRET_KEYS
+        )
+        merged = _merge_partial_creds(existing_creds_dec, incoming, _SMTP_SECRET_KEYS)
+        creds_encrypted = _encrypt_secrets(merged, _SMTP_SECRET_KEYS)
         await db.messaging_provider_configs.update_one(
             {"id": existing["id"]},
             {"$set": {
-                "credentials_encrypted": creds,
+                "credentials_encrypted": creds_encrypted,
                 "is_sandbox": req.is_sandbox,
                 "enabled": req.enabled,
                 "updated_at": now,
@@ -153,7 +229,8 @@ async def save_email_settings(req: SMTPSettingsReq, current_user: User = Depends
         return {"success": True, "action": "updated", "id": existing["id"]}
     else:
         from modules.messaging.models import new_provider_config
-        doc = new_provider_config(current_user.tenant_id, "smtp_email", creds, req.is_sandbox, req.enabled)
+        creds_encrypted = _encrypt_secrets(incoming, _SMTP_SECRET_KEYS)
+        doc = new_provider_config(current_user.tenant_id, "smtp_email", creds_encrypted, req.is_sandbox, req.enabled)
         await db.messaging_provider_configs.insert_one(doc)
         doc.pop("_id", None)
         return {"success": True, "action": "created", "id": doc["id"]}
@@ -163,9 +240,14 @@ async def save_email_settings(req: SMTPSettingsReq, current_user: User = Depends
 async def save_whatsapp_settings(req: WhatsAppSettingsReq, current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v95 DW
 ):
-    """Save or update WhatsApp Business API configuration."""
+    """Save or update WhatsApp Business API configuration.
+
+    Bug #2 fix: Empty access_token / webhook_verify_token / app_secret preserves
+    existing values (mask round-trip safe).
+    Bug #15 fix: All sensitive values encrypted at-rest.
+    """
     db = _get_db()
-    creds = {
+    incoming = {
         "access_token": req.access_token,
         "phone_number_id": req.phone_number_id,
         "business_name": req.business_name,
@@ -177,10 +259,15 @@ async def save_whatsapp_settings(req: WhatsAppSettingsReq, current_user: User = 
     )
     now = datetime.now(UTC).isoformat()
     if existing:
+        existing_creds_dec = _decrypt_secrets(
+            existing.get("credentials_encrypted", {}) or {}, _WHATSAPP_SECRET_KEYS
+        )
+        merged = _merge_partial_creds(existing_creds_dec, incoming, _WHATSAPP_SECRET_KEYS)
+        creds_encrypted = _encrypt_secrets(merged, _WHATSAPP_SECRET_KEYS)
         await db.messaging_provider_configs.update_one(
             {"id": existing["id"]},
             {"$set": {
-                "credentials_encrypted": creds,
+                "credentials_encrypted": creds_encrypted,
                 "is_sandbox": req.is_sandbox,
                 "enabled": req.enabled,
                 "updated_at": now,
@@ -189,7 +276,8 @@ async def save_whatsapp_settings(req: WhatsAppSettingsReq, current_user: User = 
         return {"success": True, "action": "updated", "id": existing["id"]}
     else:
         from modules.messaging.models import new_provider_config
-        doc = new_provider_config(current_user.tenant_id, "whatsapp", creds, req.is_sandbox, req.enabled)
+        creds_encrypted = _encrypt_secrets(incoming, _WHATSAPP_SECRET_KEYS)
+        doc = new_provider_config(current_user.tenant_id, "whatsapp", creds_encrypted, req.is_sandbox, req.enabled)
         await db.messaging_provider_configs.insert_one(doc)
         doc.pop("_id", None)
         return {"success": True, "action": "created", "id": doc["id"]}
@@ -436,6 +524,10 @@ async def get_delivery_logs(
     channel: str | None = None,
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
+    # Bug #3 KVKK fix: delivery logs contain misafir e-postaları/telefonları + mesaj
+    # body'leri (PII). VIEW_REPORTS-grade roller (FRONT_DESK/SUPERVISOR/ADMIN)
+    # erişebilsin; diğerleri (HOUSEKEEPING/F&B vb.) değil.
+    _perm=Depends(require_op("view_guest_list")),
 ):
     db = _get_db()
     q = {"tenant_id": current_user.tenant_id}
@@ -545,19 +637,48 @@ async def test_automation_rule(rule_id: str, current_user: User = Depends(get_cu
     if not rule:
         raise HTTPException(status_code=404, detail="Kural bulunamadi")
 
-    fake_booking = {
-        "id": "test-" + str(uuid.uuid4())[:8],
-        "guest_name": "Test Misafir",
-        "guest_id": None,
-        "room_id": None,
-        "room_number": "101",
-        "check_in": datetime.now(UTC).isoformat(),
-        "check_out": datetime.now(UTC).isoformat(),
-        "total_amount": 1500,
-    }
+    # Bug #11 fix: Try to use a real recent booking with a guest_id so that
+    # automation flow's recipient resolution actually exercises end-to-end.
+    # Fallback to a labeled fake only if no real bookings exist.
+    real = await db.bookings.find_one(
+        {"tenant_id": current_user.tenant_id, "guest_id": {"$ne": None}},
+        {"_id": 0},
+        sort=[("created_at", -1)],
+    )
+    if real:
+        booking_for_test = {
+            **real,
+            "id": "test-" + str(real.get("id", uuid.uuid4().hex[:8])),
+            "_test_mode": True,
+        }
+    else:
+        booking_for_test = {
+            "id": "test-" + str(uuid.uuid4())[:8],
+            "guest_name": "Test Misafir",
+            "guest_id": None,
+            "room_id": None,
+            "room_number": "101",
+            "check_in": datetime.now(UTC).isoformat(),
+            "check_out": datetime.now(UTC).isoformat(),
+            "total_amount": 1500,
+            "_test_mode": True,
+        }
     from modules.messaging.automation import process_booking_event
-    await process_booking_event(current_user.tenant_id, rule["trigger_event"], fake_booking)
-    return {"success": True, "message": f"Test tetiklendi: {rule['name']}"}
+    try:
+        await process_booking_event(current_user.tenant_id, rule["trigger_event"], booking_for_test)
+    except Exception as e:
+        logger.exception("automation test failed")
+        return {
+            "success": False,
+            "message": f"Test calistirildi ama hata: {e}",
+            "used_real_booking": bool(real),
+        }
+    return {
+        "success": True,
+        "message": f"Test tetiklendi: {rule['name']}"
+                   + (" (gercek rezervasyon kullanildi)" if real else " (gercek rezervasyon yok, sahte booking ile)"),
+        "used_real_booking": bool(real),
+    }
 
 
 # ════════════════════════════════════════════════════════

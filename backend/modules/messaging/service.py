@@ -15,6 +15,35 @@ from .providers import CHANNEL_PROVIDER_MAP, FALLBACK_CHAIN, PROVIDER_MAP, Provi
 
 logger = logging.getLogger(__name__)
 
+# Bug #15 fix: provider-type → secret credential keys (encrypted at-rest).
+# Mirrored in routers/messaging.py (kept narrow per provider).
+_PROVIDER_SECRET_KEYS = {
+    "smtp_email": {"smtp_password"},
+    "whatsapp": {"access_token", "webhook_verify_token", "app_secret"},
+}
+
+
+def _decrypt_provider_creds(creds: dict, provider_type: str) -> dict:
+    """Return a plaintext copy of creds for runtime use.
+
+    Falls back to the original dict if encryption service is unavailable
+    (dual-read compat: legacy unencrypted creds pass through unchanged).
+    """
+    secret_keys = _PROVIDER_SECRET_KEYS.get(provider_type, set())
+    if not secret_keys:
+        return dict(creds or {})
+    try:
+        from security.field_encryption import get_field_encryption_service
+        svc = get_field_encryption_service()
+    except Exception:
+        return dict(creds or {})
+    out = dict(creds or {})
+    for k in secret_keys:
+        v = out.get(k)
+        if v and isinstance(v, str):
+            out[k] = svc.decrypt_value(v)
+    return out
+
 
 class MessagingService:
     """Central orchestrator for all outbound messaging."""
@@ -44,7 +73,12 @@ class MessagingService:
         return ProviderMode.LIVE
 
     async def _load_credentials(self, tenant_id: str, config: dict) -> dict:
-        """Load credentials, trying credential vault first then config."""
+        """Load credentials, trying credential vault first then config.
+
+        Bug #15 fix: credentials_encrypted'ta saklanan SMTP password / WhatsApp
+        access_token / webhook_verify_token / app_secret artık envelope-encrypted
+        (field_encryption). Provider'lara plaintext döndürmek için decrypt et.
+        """
         try:
             from modules.security_hardening.credential_vault import credential_vault
             vault_key = f"messaging_{config.get('provider_type')}_{tenant_id}"
@@ -53,7 +87,10 @@ class MessagingService:
                 return creds
         except Exception:
             logger.warning("messaging: credential vault lookup failed; falling back to config", exc_info=True)
-        return config.get("credentials_encrypted", {})
+        return _decrypt_provider_creds(
+            config.get("credentials_encrypted", {}) or {},
+            config.get("provider_type", ""),
+        )
 
     async def _check_consent(self, tenant_id: str, recipient: str, channel: str) -> bool:
         doc = await self.db.messaging_consents.find_one(
@@ -344,7 +381,10 @@ class MessagingService:
                 results.append({"provider_type": pt, "status": "not_implemented"})
                 continue
             mode = self._resolve_mode(cfg)
-            health = await provider.check_health(cfg.get("credentials_encrypted", {}), mode)
+            decrypted_creds = _decrypt_provider_creds(
+                cfg.get("credentials_encrypted", {}) or {}, pt or "",
+            )
+            health = await provider.check_health(decrypted_creds, mode)
             await self.db.messaging_provider_configs.update_one(
                 {"id": cfg["id"]},
                 {"$set": {"health_status": health.get("status"), "last_health_check": health.get("checked_at")}},
