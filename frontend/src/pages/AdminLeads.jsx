@@ -1,101 +1,90 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { toast } from "sonner";
+import {
+  Users, AlertTriangle, CheckCircle2, XCircle, FileSpreadsheet,
+  RefreshCw, Phone, MessageCircle, Copy, Hash, Search,
+} from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
-import { useTranslation } from 'react-i18next';
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { PageHeader } from "@/components/ui/page-header";
+import { KpiCard } from "@/components/ui/kpi-card";
+import { StatusBadge } from "@/components/ui/status-badge";
 
-const STATUS_OPTIONS = [
-  "new",
-  "contacted",
-  "qualified",
-  "lost",
-  "won",
-];
+const STATUS_OPTIONS = ["new", "contacted", "qualified", "lost", "won"];
 
-const statusLabel = {
-  new: "Yeni",
-  contacted: "Arandı",
-  qualified: "Nitelikli",
-  lost: "Kaybedildi",
-  won: "Kazanıldı",
-};
-
-const STATUS_COLOR = {
-  new: "bg-blue-500/10 text-blue-400 border-blue-500/30",
-  contacted: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
-  qualified: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30",
-  won: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
-  lost: "bg-slate-500/10 text-slate-400 border-slate-500/30",
+const STATUS_META = {
+  new:        { label: "Yeni",       intent: "info"    },
+  contacted:  { label: "Arandı",     intent: "warning" },
+  qualified:  { label: "Nitelikli",  intent: "info"    },
+  won:        { label: "Kazanıldı",  intent: "success" },
+  lost:       { label: "Kaybedildi", intent: "neutral" },
 };
 
 const fmtDate = (iso) => {
-  // NOT: useTranslation() çağrısı buradan kaldırıldı —
-  // (a) `t` zaten kullanılmıyordu, (b) helper fonksiyon component değil,
-  // bu yüzden hook'a izin yok (react-hooks/rules-of-hooks).
-  if (!iso) return "-";
+  if (!iso) return "—";
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString("tr-TR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
   });
 };
 
 const sanitizePhone = (phone) => {
-  if (!phone) return '';
-  return phone.replace(/\s+/g, '').replace(/[^\d+]/g, '');
+  if (!phone) return "";
+  return phone.replace(/\s+/g, "").replace(/[^\d+]/g, "");
 };
 
 const openLeadWhatsApp = (lead) => {
   if (!lead.phone) {
-    toast.error('Telefon numarası yok');
+    toast.error("Telefon numarası yok");
     return;
   }
-  
   const phone = sanitizePhone(lead.phone);
-  const message = `Merhaba ${lead.full_name}, PMS Lite demo talebiniz hakkında bilgi vermek istiyorum...`;
-  const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-  window.open(url, '_blank');
+  const message = `Merhaba ${lead.full_name || ""}, PMS Lite demo talebiniz hakkında bilgi vermek istiyorum...`;
+  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, "_blank");
 };
 
 const copyLeadSummary = async (lead) => {
   try {
-    const text = `
-Otel: ${lead.property_name || '-'}
-İsim: ${lead.full_name || '-'}
-Telefon: ${lead.phone || '-'}
-Oda: ${lead.rooms_count || '-'}
-Bölge: ${lead.location || '-'}
-Durum: ${statusLabel[lead.status] || lead.status}
-Not: ${lead.note || '-'}
-    `.trim();
-    
+    const meta = STATUS_META[lead.status] || { label: lead.status };
+    const text = [
+      `Otel: ${lead.property_name || "-"}`,
+      `İsim: ${lead.full_name || "-"}`,
+      `Telefon: ${lead.phone || "-"}`,
+      `E-posta: ${lead.email || "-"}`,
+      `Oda: ${lead.rooms_count || "-"}`,
+      `Bölge: ${lead.location || "-"}`,
+      `Durum: ${meta.label}`,
+      `Not: ${lead.note || "-"}`,
+    ].join("\n");
     await navigator.clipboard.writeText(text);
-    toast.success('Lead bilgileri kopyalandı');
+    toast.success("Lead bilgileri kopyalandı");
   } catch {
-    toast.error('Kopyalanamadı');
+    toast.error("Kopyalanamadı");
   }
 };
 
 const copyLeadId = async (id) => {
   try {
     await navigator.clipboard.writeText(id);
-    toast.success('Lead ID kopyalandı');
+    toast.success("Lead ID kopyalandı");
   } catch {
-    toast.error('Kopyalanamadı');
+    toast.error("Kopyalanamadı");
   }
 };
 
-const AdminLeads = ({ user, tenant, onLogout }) => {
-  const { t } = useTranslation();
+const AdminLeads = () => {
   const [leads, setLeads] = useState([]);
+  const [statusCounts, setStatusCounts] = useState({});
+  const [followUpCount, setFollowUpCount] = useState(0);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -103,15 +92,22 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
   const [updatingId, setUpdatingId] = useState(null);
   const [notes, setNotes] = useState({});
 
+  const buildQs = () => {
+    const params = new URLSearchParams();
+    if (statusFilter) params.append("status", statusFilter);
+    if (search) params.append("q", search);
+    if (followUpOnly) params.append("follow_up", "1");
+    return params;
+  };
+
   const loadLeads = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (statusFilter) params.append("status", statusFilter);
-      if (search) params.append("q", search);
-      if (followUpOnly) params.append("follow_up", "1");
-      const res = await axios.get(`/admin/leads?${params.toString()}`);
+      const res = await axios.get(`/admin/leads?${buildQs().toString()}`);
       setLeads(res.data?.leads || []);
+      setStatusCounts(res.data?.status_counts || {});
+      setFollowUpCount(res.data?.follow_up_count || 0);
+      setTotal(res.data?.total ?? (res.data?.leads || []).length);
     } catch (e) {
       console.error(e);
       toast.error("Lead listesi yüklenemedi");
@@ -121,8 +117,9 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
   };
 
   useEffect(() => {
-    loadLeads();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
+    const timer = setTimeout(loadLeads, search ? 350 : 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, search, followUpOnly]);
 
   const handleUpdate = async (leadId, newStatus) => {
@@ -130,7 +127,7 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
     try {
       const payload = {};
       if (newStatus) payload.status = newStatus;
-      if (notes[leadId]) payload.note = notes[leadId];
+      if (notes[leadId] !== undefined) payload.note = notes[leadId];
       const res = await axios.patch(`/admin/leads/${leadId}`, payload);
       if (res.data?.ok) {
         toast.success("Lead güncellendi");
@@ -146,228 +143,264 @@ const AdminLeads = ({ user, tenant, onLogout }) => {
     }
   };
 
+  const handleCsvExport = async () => {
+    try {
+      const qs = buildQs().toString();
+      const res = await fetch(`/api/admin/leads/export.csv${qs ? `?${qs}` : ""}`);
+      if (!res.ok) {
+        toast.error("CSV indirilemedi");
+        return;
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `pms-lite-leads_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("CSV dışa aktarıldı");
+    } catch (e) {
+      console.error(e);
+      toast.error("CSV indirilemedi");
+    }
+  };
+
+  const kpis = useMemo(() => ({
+    total,
+    new: statusCounts.new || 0,
+    won: statusCounts.won || 0,
+    followUp: followUpCount,
+  }), [total, statusCounts, followUpCount]);
+
+  const hasActiveFilters = statusFilter || search || followUpOnly;
+
   return (
-    <>
-      <div className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">PMS Lite Lead Listesi</h1>
-        </div>
+    <div className="p-4 md:p-6 space-y-4 max-w-[1600px] mx-auto">
+      <PageHeader
+        icon={Users}
+        title="PMS Lite Lead Listesi"
+        subtitle="PMS Lite tanıtım sayfasından gelen demo talepleri. Otel sahipleriyle iletişime geçin, durumlarını takip edin ve nitelikli olanları kazanca dönüştürün."
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleCsvExport} disabled={loading}>
+              <FileSpreadsheet className="w-4 h-4 mr-1.5" aria-hidden="true" /> CSV İndir
+            </Button>
+            <Button variant="outline" size="sm" onClick={loadLeads} disabled={loading}>
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
+              Yenile
+            </Button>
+          </div>
+        }
+      />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center justify-between">
-              <span>Filtreler</span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={async () => {
-                  try {
-                    const params = new URLSearchParams();
-                    if (statusFilter) params.append("status", statusFilter);
-                    if (search) params.append("q", search);
-                    if (followUpOnly) params.append("follow_up", "1");
-                    const qs = params.toString();
-                    const res = await fetch(`/api/admin/leads/export.csv${qs ? `?${qs}` : ""}`);
-                    if (!res.ok) {
-                      toast.error("CSV indirilemedi");
-                      return;
-                    }
-                    const blob = await res.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = "pms-lite-leads.csv";
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    window.URL.revokeObjectURL(url);
-                  } catch (e) {
-                    console.error(e);
-                    toast.error("CSV indirilemedi");
-                  }
-                }}
-              >
-                CSV indir
-              </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid md:grid-cols-3 gap-3">
-              <div>
-                <Label>Status</Label>
-                <Select
-                  value={statusFilter}
-                  onValueChange={(val) => setStatusFilter(val === "all" ? "" : val)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={t("common.all")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t("common.all")}</SelectItem>
-                    {STATUS_OPTIONS.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {statusLabel[s]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Arama</Label>
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="İsim, otel, telefon..."
-                />
-              </div>
-              <div>
-                <Label>&nbsp;</Label>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="follow-up"
-                      type="checkbox"
-                      checked={followUpOnly}
-                      onChange={(e) => setFollowUpOnly(e.target.checked)}
-                      className="rounded border-slate-600"
-                    />
-                    <label htmlFor="follow-up" className="text-xs text-slate-300">
-                      Takip gerekli
-                    </label>
-                  </div>
-                  <Button onClick={loadLeads} disabled={loading} className="ml-auto">
-                    {loading ? t("common.loading") : "Listeyi Yenile"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Leadler</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b text-xs text-gray-500">
-                  <th className="px-2 py-1 text-left">Tarih</th>
-                  <th className="px-2 py-1 text-left">Otel</th>
-                  <th className="px-2 py-1 text-left">Bölge</th>
-                  <th className="px-2 py-1 text-left">Oda</th>
-                  <th className="px-2 py-1 text-left">İsim</th>
-                  <th className="px-2 py-1 text-left">Telefon</th>
-                  <th className="px-2 py-1 text-left">Status</th>
-                  <th className="px-2 py-1 text-left">Son işlem</th>
-                  <th className="px-2 py-1 text-left">Not</th>
-                  <th className="px-2 py-1 text-left">Aksiyon</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leads.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="px-2 py-4 text-center text-xs text-gray-500">
-                      Henüz PMS Lite lead kaydı yok.
-                    </td>
-                  </tr>
-                )}
-                {leads.map((lead) => {
-                  const created = fmtDate(lead.created_at);
-                  const lastOp = fmtDate(lead.last_contact_at || lead.status_changed_at);
-                  return (
-                    <tr key={lead.lead_id} className="border-b last:border-0">
-                      <td className="px-2 py-1 align-top whitespace-nowrap">{created}</td>
-                      <td className="px-2 py-1 align-top">{lead.property_name}</td>
-                      <td className="px-2 py-1 align-top">{lead.location}</td>
-                      <td className="px-2 py-1 align-top">{lead.rooms_count}</td>
-                      <td className="px-2 py-1 align-top">{lead.full_name}</td>
-                      <td className="px-2 py-1 align-top">{lead.phone}</td>
-                      <td className="px-2 py-1 align-top">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] border ${
-                            STATUS_COLOR[lead.status] ||
-                            "bg-slate-500/10 text-slate-300 border-slate-500/30"
-                          }`}
-                        >
-                          {statusLabel[lead.status] || lead.status}
-                        </span>
-                      </td>
-                      <td className="px-2 py-1 align-top text-xs text-slate-300">{lastOp}</td>
-                      <td className="px-2 py-1 align-top w-48">
-                        <Input
-                          value={notes[lead.lead_id] ?? lead.note ?? ""}
-                          onChange={(e) =>
-                            setNotes((prev) => ({ ...prev, [lead.lead_id]: e.target.value }))
-                          }
-                          className="text-xs"
-                        />
-                      </td>
-                      <td className="px-2 py-1 align-top w-48">
-                        <div className="flex flex-col gap-1">
-                          <Select
-                            onValueChange={(val) => handleUpdate(lead.lead_id, val)}
-                            disabled={updatingId === lead.lead_id}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="Durum değiştir" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {STATUS_OPTIONS.map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {statusLabel[s]}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 text-xs"
-                            disabled={updatingId === lead.lead_id}
-                            onClick={() => handleUpdate(lead.lead_id, null)}
-                          >
-                            Notu Kaydet
-                          </Button>
-                          <div className="flex gap-1 mt-1">
-                            <Button variant="outline" size="xs" asChild>
-                              <a href={`tel:${sanitizePhone(lead.phone)}`}>{t("common.search")}</a>
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              onClick={() => openLeadWhatsApp(lead)}
-                            >
-                              WhatsApp
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="xs"
-                              onClick={() => copyLeadSummary(lead)}
-                            >
-                              Kopyala
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="xs"
-                              onClick={() => copyLeadId(lead.lead_id || lead.id)}
-                              title="Lead ID kopyala"
-                            >
-                              ID
-                            </Button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KpiCard icon={Users}          label="Toplam Lead"     value={kpis.total}    intent="default" />
+        <KpiCard icon={AlertTriangle}  label="Takip Gerekli"   value={kpis.followUp} intent="warning"
+          active={followUpOnly} onClick={() => setFollowUpOnly((v) => !v)} />
+        <KpiCard icon={Users}          label="Yeni"            value={kpis.new}      intent="info"
+          active={statusFilter === "new"}
+          onClick={() => setStatusFilter((v) => (v === "new" ? "" : "new"))} />
+        <KpiCard icon={CheckCircle2}   label="Kazanıldı"       value={kpis.won}      intent="success"
+          active={statusFilter === "won"}
+          onClick={() => setStatusFilter((v) => (v === "won" ? "" : "won"))} />
       </div>
-    </>
+
+      <Card>
+        <CardContent className="p-3 flex flex-col md:flex-row gap-3 md:items-center">
+          <Select
+            value={statusFilter || "all"}
+            onValueChange={(val) => setStatusFilter(val === "all" ? "" : val)}
+          >
+            <SelectTrigger className="md:w-48">
+              <SelectValue placeholder="Tüm durumlar" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tüm durumlar</SelectItem>
+              {STATUS_OPTIONS.map((s) => (
+                <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="relative flex-1 max-w-md w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" aria-hidden="true" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="İsim, otel, telefon, e-posta..."
+              className="pl-9"
+              aria-label="Lead arama"
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none">
+            <Checkbox
+              checked={followUpOnly}
+              onCheckedChange={(v) => setFollowUpOnly(!!v)}
+              aria-label="Yalnızca takip gerekenler"
+            />
+            <span>Takip gerekli</span>
+          </label>
+
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-slate-500"
+              onClick={() => { setStatusFilter(""); setSearch(""); setFollowUpOnly(false); }}
+            >
+              Filtreleri temizle
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="overflow-hidden">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center justify-between">
+            <span>Leadler</span>
+            <span className="text-xs text-slate-500">
+              {leads.length} kayıt {total !== leads.length ? `(toplam ${total})` : ""}
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="text-sm text-slate-500 text-center py-12">Lead listesi yükleniyor...</div>
+          ) : leads.length === 0 ? (
+            <div className="p-10 text-center text-slate-500 text-sm">
+              <Users className="w-10 h-10 mx-auto text-slate-300 mb-2" aria-hidden="true" />
+              <p className="font-medium text-slate-600">
+                {hasActiveFilters ? "Eşleşen lead yok" : "Henüz PMS Lite lead kaydı yok"}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                {hasActiveFilters
+                  ? "Filtreleri değiştirerek tekrar deneyin."
+                  : "Tanıtım sayfasından demo talebi gelince burada görünür."}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs border-t">
+                <thead className="bg-slate-50 border-b sticky top-0 z-10">
+                  <tr className="text-left whitespace-nowrap">
+                    <th className="px-3 py-2 font-semibold text-slate-700">Tarih</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">Otel</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">Bölge</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">Oda</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">İsim</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">Telefon</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">Durum</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">Son işlem</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">Not</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">Aksiyon</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leads.map((lead) => {
+                    const meta = STATUS_META[lead.status] || { label: lead.status, intent: "neutral" };
+                    const lastOp = fmtDate(lead.last_contact_at || lead.status_changed_at);
+                    return (
+                      <tr key={lead.lead_id} className="border-b last:border-0 hover:bg-slate-50/60">
+                        <td className="px-3 py-2 align-top whitespace-nowrap text-slate-600">{fmtDate(lead.created_at)}</td>
+                        <td className="px-3 py-2 align-top font-medium text-slate-800">{lead.property_name || "—"}</td>
+                        <td className="px-3 py-2 align-top text-slate-600">{lead.location || "—"}</td>
+                        <td className="px-3 py-2 align-top text-slate-600">{lead.rooms_count ?? "—"}</td>
+                        <td className="px-3 py-2 align-top text-slate-800">{lead.full_name || "—"}</td>
+                        <td className="px-3 py-2 align-top text-slate-600 font-mono">{lead.phone || "—"}</td>
+                        <td className="px-3 py-2 align-top">
+                          <div className="flex items-center gap-1.5">
+                            <StatusBadge intent={meta.intent}>{meta.label}</StatusBadge>
+                            {lead.needs_follow_up && (
+                              <span title="Takip gerekli">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" aria-label="takip gerekli" />
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 align-top text-slate-500 whitespace-nowrap">{lastOp}</td>
+                        <td className="px-3 py-2 align-top w-56">
+                          <div className="flex flex-col gap-1">
+                            <Input
+                              value={notes[lead.lead_id] ?? lead.note ?? ""}
+                              onChange={(e) =>
+                                setNotes((prev) => ({ ...prev, [lead.lead_id]: e.target.value }))
+                              }
+                              placeholder="Not ekle..."
+                              className="h-8 text-xs"
+                            />
+                            {(notes[lead.lead_id] !== undefined && notes[lead.lead_id] !== (lead.note ?? "")) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                disabled={updatingId === lead.lead_id}
+                                onClick={() => handleUpdate(lead.lead_id, null)}
+                              >
+                                Notu Kaydet
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 align-top w-56">
+                          <div className="flex flex-col gap-1.5">
+                            <Select
+                              value={lead.status}
+                              onValueChange={(val) => handleUpdate(lead.lead_id, val)}
+                              disabled={updatingId === lead.lead_id}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {STATUS_OPTIONS.map((s) => (
+                                  <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <div className="flex flex-wrap gap-1">
+                              <Button variant="outline" size="sm" className="h-7 text-xs px-2" asChild
+                                disabled={!lead.phone}
+                              >
+                                <a href={lead.phone ? `tel:${sanitizePhone(lead.phone)}` : undefined}
+                                   aria-label="Ara">
+                                  <Phone className="w-3 h-3" aria-hidden="true" /> Ara
+                                </a>
+                              </Button>
+                              <Button variant="outline" size="sm" className="h-7 text-xs px-2"
+                                onClick={() => openLeadWhatsApp(lead)}
+                                disabled={!lead.phone}
+                              >
+                                <MessageCircle className="w-3 h-3" aria-hidden="true" /> WhatsApp
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-7 text-xs px-2"
+                                onClick={() => copyLeadSummary(lead)}
+                                aria-label="Lead özeti kopyala"
+                              >
+                                <Copy className="w-3 h-3" aria-hidden="true" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-7 text-xs px-2"
+                                onClick={() => copyLeadId(lead.lead_id)}
+                                aria-label="Lead ID kopyala"
+                                title="Lead ID kopyala"
+                              >
+                                <Hash className="w-3 h-3" aria-hidden="true" />
+                              </Button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

@@ -375,6 +375,7 @@ router = APIRouter(prefix="/api", tags=["Admin / Operations"])
 async def admin_list_pms_lite_leads(
     status: PmsLiteLeadStatus | None = None,
     q: str | None = None,
+    follow_up: bool | None = False,
     limit: int = 50,
     offset: int = 0,
     current_user: User = Depends(get_current_user),
@@ -400,17 +401,56 @@ async def admin_list_pms_lite_leads(
                 {"hotel.location": regex},
             ]
 
-    await db.leads.count_documents(query)
+    def _parse_iso_dt(v):
+        if not v:
+            return None
+        if isinstance(v, datetime):
+            return v if v.tzinfo else v.replace(tzinfo=UTC)
+        try:
+            dt = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+            return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+        except Exception:
+            return None
 
-    cursor = (
-        db.leads.find(query)
-        .sort("created_at", -1)
-        .skip(max(offset, 0))
-        .limit(max(limit, 1))
-    )
+    now = datetime.now(UTC)
+
+    def _needs_follow_up(lead: dict[str, Any]) -> bool:
+        s = lead.get("status", "new")
+        if s not in {"new", "contacted", "qualified"}:
+            return False
+        created = _parse_iso_dt(lead.get("created_at"))
+        last_contact = _parse_iso_dt(lead.get("last_contact_at"))
+        if s == "new":
+            return bool(created and (now - created).total_seconds() >= 3600)
+        base = last_contact or created
+        return bool(base and (now - base).total_seconds() > 24 * 3600)
+
+    # Marketing leads dataset is small; fetch all matching to compute
+    # accurate aggregates + correct follow_up filtering BEFORE pagination.
+    # Hard cap (5000) prevents pathological loads while keeping aggregates honest.
+    AGGREGATE_CAP = 5000
+    all_docs: list[dict[str, Any]] = []
+    async for lead in db.leads.find(query).sort("created_at", -1).limit(AGGREGATE_CAP):
+        all_docs.append(lead)
+
+    status_counts: dict[str, int] = {}
+    follow_up_count = 0
+    eligible: list[dict[str, Any]] = []
+    for lead in all_docs:
+        s_val = lead.get("status", PmsLiteLeadStatus.NEW.value)
+        status_counts[s_val] = status_counts.get(s_val, 0) + 1
+        is_followup = _needs_follow_up(lead)
+        if is_followup:
+            follow_up_count += 1
+        if follow_up and not is_followup:
+            continue
+        eligible.append(lead)
+
+    total = len(eligible)
+    page = eligible[max(offset, 0): max(offset, 0) + max(limit, 1)]
 
     leads: list[dict[str, Any]] = []
-    async for lead in cursor:
+    for lead in page:
         leads.append(
             {
                 "lead_id": lead.get("lead_id") or lead.get("id"),
@@ -423,8 +463,19 @@ async def admin_list_pms_lite_leads(
                 "property_name": lead.get("hotel", {}).get("property_name"),
                 "location": lead.get("hotel", {}).get("location"),
                 "rooms_count": lead.get("hotel", {}).get("rooms_count"),
+                "last_contact_at": lead.get("last_contact_at"),
+                "status_changed_at": lead.get("status_changed_at"),
+                "needs_follow_up": _needs_follow_up(lead),
             }
         )
+
+    return {
+        "leads": leads,
+        "total": total,
+        "count": len(leads),
+        "status_counts": status_counts,
+        "follow_up_count": follow_up_count,
+    }
 # ── GET /admin/leads/export.csv ──
 @router.get("/admin/leads/export.csv")
 async def admin_export_pms_lite_leads_csv(
