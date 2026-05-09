@@ -28,14 +28,89 @@ def _safe_float(val, default=0.0):
         raise HTTPException(status_code=400, detail=f"Invalid numeric value: {val}")
 
 
+_VALID_CONCIERGE_TYPES = {
+    "restaurant", "transfer", "tour", "ticket", "spa",
+    "valet", "parcel", "deposit_box", "wakeup", "other",
+}
+_VALID_CONCIERGE_STATUSES = {"pending", "in_progress", "completed", "cancelled", "confirmed"}
+_VALID_PRIORITIES = {"normal", "high", "vip"}
+
+
+async def _lookup_active_booking_for_room(tenant_id: str, room_number: str) -> dict | None:
+    """Return the active (checked_in/in_house) booking for a room, with folio_id if any."""
+    if not room_number:
+        return None
+    try:
+        booking = await db.bookings.find_one({
+            "tenant_id": tenant_id,
+            "room_number": str(room_number),
+            "status": {"$in": ["checked_in", "in_house"]},
+        }, {"_id": 0})
+    except Exception:
+        return None
+    if not booking:
+        return None
+    booking_id = booking.get("id") or booking.get("booking_id") or ""
+    folio_id = ""
+    if booking_id:
+        try:
+            folio = await db.folios.find_one(
+                {"tenant_id": tenant_id, "booking_id": booking_id, "status": "open"},
+                {"_id": 0, "id": 1, "folio_number": 1},
+            )
+            if folio:
+                folio_id = folio.get("id") or ""
+        except Exception:
+            folio_id = ""
+    return {
+        "booking_id": booking_id,
+        "guest_name": booking.get("guest_name") or booking.get("primary_guest_name") or "",
+        "room_number": booking.get("room_number") or room_number,
+        "folio_id": folio_id,
+        "check_in": booking.get("check_in"),
+        "check_out": booking.get("check_out"),
+    }
+
+
+@router.get("/concierge/active-room/{room_number}")
+async def concierge_active_room_lookup(room_number: str, current_user: User = Depends(get_current_user)):
+    """Look up the active in-house booking for a room number to autofill guest/folio."""
+    info = await _lookup_active_booking_for_room(current_user.tenant_id, room_number.strip())
+    if not info:
+        return {"found": False}
+    return {"found": True, **info}
+
+
 @router.get("/concierge/requests")
-async def get_concierge_requests(skip: int = 0, limit: int = 100, current_user: User = Depends(get_current_user)):
-    query = {"tenant_id": current_user.tenant_id}
-    docs = await db.concierge_requests.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+async def get_concierge_requests(
+    skip: int = 0, limit: int = 50,
+    status: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    query: dict = {"tenant_id": current_user.tenant_id}
+    if status and status in _VALID_CONCIERGE_STATUSES:
+        query["status"] = status
+    safe_limit = max(1, min(int(limit or 50), 500))
+    safe_skip = max(0, int(skip or 0))
+    docs = await db.concierge_requests.find(query).sort("created_at", -1).skip(safe_skip).limit(safe_limit).to_list(safe_limit)
     for d in docs:
         d["id"] = str(d.pop("_id"))
     total = await db.concierge_requests.count_documents(query)
-    return {"requests": docs, "total": total}
+    # Tenant-wide status counts (for KPI sayaçları paginatedde de doğru kalsın)
+    counts = {"total": total, "pending": 0, "in_progress": 0, "completed": 0, "cancelled": 0}
+    pipeline = [
+        {"$match": {"tenant_id": current_user.tenant_id}},
+        {"$group": {"_id": "$status", "n": {"$sum": 1}}},
+    ]
+    try:
+        async for row in db.concierge_requests.aggregate(pipeline):
+            key = row.get("_id") or "pending"
+            if key in counts:
+                counts[key] = row.get("n", 0)
+        counts["total"] = sum(v for k, v in counts.items() if k != "total")
+    except Exception:
+        pass
+    return {"requests": docs, "total": total, "skip": safe_skip, "limit": safe_limit, "counts": counts}
 
 
 @router.post("/concierge/requests")
@@ -43,39 +118,168 @@ async def create_concierge_request(body: dict = Body(...), current_user: User = 
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
     now = datetime.utcnow()
+    req_type = (body.get("type") or "").strip()
+    if req_type not in _VALID_CONCIERGE_TYPES:
+        raise HTTPException(status_code=400, detail="Geçerli bir talep tipi seçin")
+    room_number = (body.get("room_number") or "").strip()
+    if not room_number:
+        raise HTTPException(status_code=400, detail="Oda numarası zorunludur")
+    priority = body.get("priority") or "normal"
+    if priority not in _VALID_PRIORITIES:
+        priority = "normal"
+    pax = _safe_int(body.get("pax", 1), 1)
+    if pax < 1:
+        pax = 1
+    amount = _safe_float(body.get("amount", 0), 0.0)
+    if amount < 0:
+        raise HTTPException(status_code=400, detail="Tutar negatif olamaz")
+    currency = (body.get("currency") or "TRY").upper()[:8] or "TRY"
+    charge_to_folio = bool(body.get("charge_to_folio") or False)
+
+    # Cross-check active booking for the room (auto-fill missing guest/booking/folio)
+    lookup = await _lookup_active_booking_for_room(current_user.tenant_id, room_number)
+    booking_id = (body.get("booking_id") or (lookup or {}).get("booking_id") or "").strip()
+    folio_id = (body.get("folio_id") or (lookup or {}).get("folio_id") or "").strip()
+    guest_name = (body.get("guest_name") or "").strip() or ((lookup or {}).get("guest_name") or "")
+
     doc = {
         "_id": str(uuid.uuid4()),
         "tenant_id": current_user.tenant_id,
-        "type": body.get("type", "other"),
-        "room_number": body.get("room_number", ""),
-        "guest_name": body.get("guest_name", ""),
-        "details": body.get("details", ""),
-        "date": body.get("date", now.strftime("%Y-%m-%d")),
-        "time": body.get("time", ""),
-        "pax": _safe_int(body.get("pax", 1), 1),
-        "notes": body.get("notes", ""),
-        "priority": body.get("priority", "normal"),
+        "type": req_type,
+        "room_number": room_number,
+        "guest_name": guest_name,
+        "details": (body.get("details") or "").strip(),
+        "date": body.get("date") or now.strftime("%Y-%m-%d"),
+        "time": body.get("time") or "",
+        "pax": pax,
+        "notes": (body.get("notes") or "").strip(),
+        "priority": priority,
+        "amount": amount,
+        "currency": currency,
+        "charge_to_folio": charge_to_folio,
+        "booking_id": booking_id,
+        "folio_id": folio_id,
+        "folio_charge_id": "",
         "status": "pending",
         "created_at": now.isoformat(),
         "created_by": current_user.email,
+        "room_match_found": bool(lookup),
     }
     await db.concierge_requests.insert_one(doc)
     doc["id"] = doc.pop("_id")
     return doc
 
 
+_EDITABLE_CONCIERGE_FIELDS = {
+    "type", "room_number", "guest_name", "details", "date", "time",
+    "notes", "priority", "amount", "currency", "charge_to_folio",
+    "booking_id", "folio_id",
+}
+
+
+async def _post_charge_to_folio(tenant_id: str, request_doc: dict, user_email: str) -> str | None:
+    """Post a charge to the linked folio when completing a paid concierge request.
+    Returns the new charge id, or None if no charge was posted."""
+    amount = float(request_doc.get("amount") or 0)
+    folio_id = request_doc.get("folio_id") or ""
+    if amount <= 0 or not folio_id or not request_doc.get("charge_to_folio"):
+        return None
+    if request_doc.get("folio_charge_id"):
+        # already charged; do not double-post
+        return request_doc.get("folio_charge_id")
+    try:
+        from domains.pms.folio.services.folio_service import FolioService
+        type_label = (request_doc.get("type") or "other").replace("_", " ").title()
+        details = request_doc.get("details") or ""
+        description = f"Concierge — {type_label}"
+        if details:
+            description = f"{description}: {details[:80]}"
+        charge = await FolioService.post_charge(tenant_id, folio_id, {
+            "amount": amount,
+            "currency": request_doc.get("currency") or "TRY",
+            "description": description,
+            "category": "concierge",
+            "source": "concierge_request",
+            "concierge_request_id": request_doc.get("_id") or request_doc.get("id"),
+            "posted_by": user_email,
+        })
+        return charge.get("id") if charge else None
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Folyoya işlenemedi: {exc}") from exc
+
+
 @router.patch("/concierge/requests/{request_id}")
 async def update_concierge_request(request_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v101("frontdesk")),  # v101 DW
 ):
-    new_status = body.get("status", "updated")
-    result = await db.concierge_requests.update_one(
-        {"_id": request_id, "tenant_id": current_user.tenant_id},
-        {"$set": {"status": new_status, "updated_at": datetime.utcnow().isoformat(), "updated_by": current_user.email}}
+    existing = await db.concierge_requests.find_one(
+        {"_id": request_id, "tenant_id": current_user.tenant_id}
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Request not found")
-    return {"id": request_id, "status": new_status}
+    if not existing:
+        raise HTTPException(status_code=404, detail="Talep bulunamadı")
+
+    update_set: dict = {
+        "updated_at": datetime.utcnow().isoformat(),
+        "updated_by": current_user.email,
+    }
+
+    # Editable fields
+    for field in _EDITABLE_CONCIERGE_FIELDS:
+        if field not in body:
+            continue
+        value = body[field]
+        if field == "type":
+            if value not in _VALID_CONCIERGE_TYPES:
+                raise HTTPException(status_code=400, detail="Geçerli bir talep tipi seçin")
+        elif field == "room_number":
+            value = (value or "").strip()
+            if not value:
+                raise HTTPException(status_code=400, detail="Oda numarası zorunludur")
+        elif field == "priority":
+            if value not in _VALID_PRIORITIES:
+                value = "normal"
+        elif field == "amount":
+            value = _safe_float(value, 0.0)
+            if value < 0:
+                raise HTTPException(status_code=400, detail="Tutar negatif olamaz")
+        elif field == "currency":
+            value = (value or "TRY").upper()[:8] or "TRY"
+        elif field == "charge_to_folio":
+            value = bool(value)
+        update_set[field] = value
+
+    if "pax" in body:
+        pax_val = _safe_int(body.get("pax", 1), 1)
+        if pax_val < 1:
+            pax_val = 1
+        update_set["pax"] = pax_val
+
+    # Status transition
+    new_status = body.get("status")
+    if new_status is not None:
+        if new_status not in _VALID_CONCIERGE_STATUSES:
+            raise HTTPException(status_code=400, detail="Geçersiz durum")
+        update_set["status"] = new_status
+
+    # Build merged doc to evaluate folio posting
+    merged = {**existing, **update_set}
+
+    if new_status == "completed":
+        charge_id = await _post_charge_to_folio(current_user.tenant_id, merged, current_user.email)
+        if charge_id:
+            update_set["folio_charge_id"] = charge_id
+            update_set["charged_at"] = datetime.utcnow().isoformat()
+
+    await db.concierge_requests.update_one(
+        {"_id": request_id, "tenant_id": current_user.tenant_id},
+        {"$set": update_set},
+    )
+    fresh = await db.concierge_requests.find_one(
+        {"_id": request_id, "tenant_id": current_user.tenant_id}
+    )
+    if fresh:
+        fresh["id"] = str(fresh.pop("_id"))
+    return fresh or {"id": request_id, **update_set}
 
 
 @router.get("/banquet/events")
