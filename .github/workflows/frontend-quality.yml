@@ -91,14 +91,6 @@ jobs:
               env:
                   VITE_BACKEND_URL: http://localhost:8000
               run: |
-                cd frontend
-                yarn build
-                npx --yes serve -s build -l 3000 &
-                for i in $(seq 1 20); do
-                    if curl -s http://localhost:3000 >/dev/null 2>&1; then break; fi
-                    sleep 2
-                done
-               run: |
                   cd frontend
                   yarn build
                   npx --yes serve -s build -l 3000 &
