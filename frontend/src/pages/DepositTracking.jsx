@@ -18,10 +18,12 @@ import {
   Loader2, Shield, Banknote, RefreshCw, Plus, RotateCcw, FileText,
   Search, X, ArrowDownCircle, ArrowUpCircle, Receipt
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
 export default function DepositTracking({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [deposits, setDeposits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -197,19 +199,19 @@ export default function DepositTracking({ user, tenant, onLogout }) {
         <PageHeader
           icon={Shield}
           iconClassName="text-emerald-600"
-          title="Depozito & Folio Yönetimi"
-          subtitle="Depozito kaydı, iade işlemi ve fatura oluşturma"
+          title={t('cm.pages_DepositTracking.depozito_folio_yonetimi')}
+          subtitle={t('cm.pages_DepositTracking.depozito_kaydi_iade_islemi_ve_fatura_olu')}
           actions={
             <>
               <Button variant="outline" size="sm" onClick={loadDeposits} data-testid="refresh-deposits-btn">
-                <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+                <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_DepositTracking.yenile')}
               </Button>
               <Button
                 size="sm"
                 onClick={() => setShowNewDeposit(true)}
                 data-testid="new-deposit-btn"
               >
-                <Plus className="w-4 h-4 mr-1.5" /> Yeni Depozito
+                <Plus className="w-4 h-4 mr-1.5" /> {t('cm.pages_DepositTracking.yeni_depozito')}
               </Button>
             </>
           }
@@ -218,21 +220,21 @@ export default function DepositTracking({ user, tenant, onLogout }) {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <KpiCard
             icon={ArrowDownCircle}
-            label="Aktif Depozitolar"
+            label={t('cm.pages_DepositTracking.aktif_depozitolar')}
             value={`${totalAll.toLocaleString('tr-TR')} TL`}
             sub={`${deposits.filter(d => d.status === 'received').length} kayıt`}
             intent="success"
           />
           <KpiCard
             icon={ArrowUpCircle}
-            label="İade Edilen"
+            label={t('cm.pages_DepositTracking.iade_edilen')}
             value={`${totalRefunded.toLocaleString('tr-TR')} TL`}
             sub={`${deposits.filter(d => d.status === 'refunded').length} iade`}
             intent="warning"
           />
           <KpiCard
             icon={Receipt}
-            label="Toplam İşlem"
+            label={t('cm.pages_DepositTracking.toplam_islem')}
             value={deposits.length}
             sub="depozito kaydı"
             intent="info"
@@ -244,7 +246,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
           <div className="relative flex-1 max-w-sm">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <Input
-              placeholder="Misafir, oda no veya rezervasyon ara..."
+              placeholder={t('cm.pages_DepositTracking.misafir_oda_no_veya_rezervasyon_ara')}
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               className="pl-9 h-9"
@@ -253,13 +255,13 @@ export default function DepositTracking({ user, tenant, onLogout }) {
           </div>
           <Select value={filterStatus} onValueChange={setFilterStatus}>
             <SelectTrigger className="w-[160px] h-9" data-testid="deposit-status-filter">
-              <SelectValue placeholder="Durum" />
+              <SelectValue placeholder={t('cm.pages_DepositTracking.durum')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tüm Durumlar</SelectItem>
-              <SelectItem value="received">Aktif</SelectItem>
-              <SelectItem value="partially_refunded">Kısmi İade</SelectItem>
-              <SelectItem value="refunded">İade Edildi</SelectItem>
+              <SelectItem value="all">{t('cm.pages_DepositTracking.tum_durumlar')}</SelectItem>
+              <SelectItem value="received">{t('cm.pages_DepositTracking.aktif')}</SelectItem>
+              <SelectItem value="partially_refunded">{t('cm.pages_DepositTracking.kismi_iade')}</SelectItem>
+              <SelectItem value="refunded">{t('cm.pages_DepositTracking.iade_edildi')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -279,14 +281,14 @@ export default function DepositTracking({ user, tenant, onLogout }) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  <th className="text-left py-3 px-4 font-semibold text-xs text-gray-500 uppercase">Misafir</th>
-                  <th className="text-left py-3 px-4 font-semibold text-xs text-gray-500 uppercase">Oda</th>
-                  <th className="text-left py-3 px-4 font-semibold text-xs text-gray-500 uppercase">Yöntem</th>
-                  <th className="text-right py-3 px-4 font-semibold text-xs text-gray-500 uppercase">Tutar</th>
-                  <th className="text-left py-3 px-4 font-semibold text-xs text-gray-500 uppercase">Durum</th>
-                  <th className="text-left py-3 px-4 font-semibold text-xs text-gray-500 uppercase">Tarih</th>
+                  <th className="text-left py-3 px-4 font-semibold text-xs text-gray-500 uppercase">{t('cm.pages_DepositTracking.misafir')}</th>
+                  <th className="text-left py-3 px-4 font-semibold text-xs text-gray-500 uppercase">{t('cm.pages_DepositTracking.oda')}</th>
+                  <th className="text-left py-3 px-4 font-semibold text-xs text-gray-500 uppercase">{t('cm.pages_DepositTracking.yontem')}</th>
+                  <th className="text-right py-3 px-4 font-semibold text-xs text-gray-500 uppercase">{t('cm.pages_DepositTracking.tutar')}</th>
+                  <th className="text-left py-3 px-4 font-semibold text-xs text-gray-500 uppercase">{t('cm.pages_DepositTracking.durum_074f4')}</th>
+                  <th className="text-left py-3 px-4 font-semibold text-xs text-gray-500 uppercase">{t('cm.pages_DepositTracking.tarih')}</th>
                   <th className="text-left py-3 px-4 font-semibold text-xs text-gray-500 uppercase">Kaydeden</th>
-                  <th className="text-center py-3 px-4 font-semibold text-xs text-gray-500 uppercase">İşlemler</th>
+                  <th className="text-center py-3 px-4 font-semibold text-xs text-gray-500 uppercase">{t('cm.pages_DepositTracking.islemler')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -326,7 +328,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
                             }}
                             data-testid={`refund-btn-${d.id}`}
                           >
-                            <RotateCcw className="w-3 h-3 mr-1" /> İade
+                            <RotateCcw className="w-3 h-3 mr-1" /> {t('cm.pages_DepositTracking.iade')}
                           </Button>
                         )}
                         {d.booking_id && (
@@ -354,19 +356,19 @@ export default function DepositTracking({ user, tenant, onLogout }) {
       <Dialog open={showNewDeposit} onOpenChange={setShowNewDeposit}>
         <DialogContent className="sm:max-w-md" data-testid="new-deposit-dialog">
           <DialogHeader>
-            <DialogTitle>Yeni Depozito Kaydı</DialogTitle>
-            <DialogDescription>Bir rezervasyon seçin ve depozito tutarını girin</DialogDescription>
+            <DialogTitle>{t('cm.pages_DepositTracking.yeni_depozito_kaydi')}</DialogTitle>
+            <DialogDescription>{t('cm.pages_DepositTracking.bir_rezervasyon_secin_ve_depozito_tutari')}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             {/* Booking Search */}
             {!selectedBooking ? (
               <div>
-                <Label className="text-sm">Rezervasyon Ara</Label>
+                <Label className="text-sm">{t('cm.pages_DepositTracking.rezervasyon_ara')}</Label>
                 <div className="relative mt-1">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <Input
-                    placeholder="Misafir adı, oda no veya rezervasyon ID..."
+                    placeholder={t('cm.pages_DepositTracking.misafir_adi_oda_no_veya_rezervasyon_id')}
                     value={bookingSearch}
                     onChange={e => setBookingSearch(e.target.value)}
                     className="pl-9"
@@ -389,7 +391,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
                       >
                         <div className="font-medium text-gray-800">{b.guest_name || 'Misafir'}</div>
                         <div className="text-xs text-gray-500">
-                          Oda: {b.room_number || '-'} | {(b.check_in || '').toString().slice(0, 10)} - {(b.check_out || '').toString().slice(0, 10)}
+                          {t('cm.pages_DepositTracking.oda_99a58')} {b.room_number || '-'} | {(b.check_in || '').toString().slice(0, 10)} - {(b.check_out || '').toString().slice(0, 10)}
                         </div>
                       </button>
                     ))}
@@ -401,7 +403,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
                 <div>
                   <div className="font-medium text-blue-800">{selectedBooking.guest_name || 'Misafir'}</div>
                   <div className="text-xs text-blue-600">
-                    Oda: {selectedBooking.room_number || '-'} | Tutar: {(selectedBooking.total_amount || 0).toLocaleString('tr-TR')} TL
+                    {t('cm.pages_DepositTracking.oda_99a58')} {selectedBooking.room_number || '-'} {t('cm.pages_DepositTracking.tutar_48fcf')} {(selectedBooking.total_amount || 0).toLocaleString('tr-TR')} TL
                   </div>
                 </div>
                 <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setSelectedBooking(null)}>
@@ -411,7 +413,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
             )}
 
             <div>
-              <Label className="text-sm">Depozito Tutarı (TL)</Label>
+              <Label className="text-sm">{t('cm.pages_DepositTracking.depozito_tutari_tl')}</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -425,14 +427,14 @@ export default function DepositTracking({ user, tenant, onLogout }) {
             </div>
 
             <div>
-              <Label className="text-sm">Ödeme Yöntemi</Label>
+              <Label className="text-sm">{t('cm.pages_DepositTracking.odeme_yontemi')}</Label>
               <Select value={newDepositData.method} onValueChange={v => setNewDepositData(prev => ({ ...prev, method: v }))}>
                 <SelectTrigger className="mt-1" data-testid="deposit-method-select">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="cash">Nakit</SelectItem>
-                  <SelectItem value="card">Kredi Kartı</SelectItem>
+                  <SelectItem value="card">{t('cm.pages_DepositTracking.kredi_karti')}</SelectItem>
                   <SelectItem value="bank_transfer">Banka Havalesi</SelectItem>
                 </SelectContent>
               </Select>
@@ -441,7 +443,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
             <div>
               <Label className="text-sm">Referans (Opsiyonel)</Label>
               <Input
-                placeholder="Dekont no, işlem referansı..."
+                placeholder={t('cm.pages_DepositTracking.dekont_no_islem_referansi')}
                 value={newDepositData.reference}
                 onChange={e => setNewDepositData(prev => ({ ...prev, reference: e.target.value }))}
                 className="mt-1"
@@ -451,14 +453,14 @@ export default function DepositTracking({ user, tenant, onLogout }) {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewDeposit(false)}>İptal</Button>
+            <Button variant="outline" onClick={() => setShowNewDeposit(false)}>{t('cm.pages_DepositTracking.iptal')}</Button>
             <Button
               onClick={handleNewDeposit}
               disabled={savingDeposit || !selectedBooking}
               data-testid="save-deposit-btn"
             >
               {savingDeposit ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Plus className="w-4 h-4 mr-1.5" />}
-              Depozito Kaydet
+              {t('cm.pages_DepositTracking.depozito_kaydet')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -468,7 +470,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
       <Dialog open={showRefund} onOpenChange={setShowRefund}>
         <DialogContent className="sm:max-w-md" data-testid="refund-dialog">
           <DialogHeader>
-            <DialogTitle>Depozito İadesi</DialogTitle>
+            <DialogTitle>{t('cm.pages_DepositTracking.depozito_iadesi')}</DialogTitle>
             <DialogDescription>
               {refundTarget && `${refundTarget.guest_name || 'Misafir'} - ${(refundTarget.amount || 0).toLocaleString('tr-TR')} TL depozito`}
             </DialogDescription>
@@ -476,7 +478,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
 
           <div className="space-y-4">
             <div>
-              <Label className="text-sm">İade Tutarı (TL)</Label>
+              <Label className="text-sm">{t('cm.pages_DepositTracking.iade_tutari_tl')}</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -495,23 +497,23 @@ export default function DepositTracking({ user, tenant, onLogout }) {
             </div>
 
             <div>
-              <Label className="text-sm">İade Yöntemi</Label>
+              <Label className="text-sm">{t('cm.pages_DepositTracking.iade_yontemi')}</Label>
               <Select value={refundData.method} onValueChange={v => setRefundData(prev => ({ ...prev, method: v }))}>
                 <SelectTrigger className="mt-1" data-testid="refund-method-select">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="cash">Nakit</SelectItem>
-                  <SelectItem value="card">Kredi Kartı</SelectItem>
+                  <SelectItem value="card">{t('cm.pages_DepositTracking.kredi_karti_839d5')}</SelectItem>
                   <SelectItem value="bank_transfer">Banka Havalesi</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div>
-              <Label className="text-sm">İade Nedeni (Opsiyonel)</Label>
+              <Label className="text-sm">{t('cm.pages_DepositTracking.iade_nedeni_opsiyonel')}</Label>
               <Input
-                placeholder="İade nedeni..."
+                placeholder={t('cm.pages_DepositTracking.iade_nedeni')}
                 value={refundData.reason}
                 onChange={e => setRefundData(prev => ({ ...prev, reason: e.target.value }))}
                 className="mt-1"
@@ -521,7 +523,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRefund(false)}>İptal</Button>
+            <Button variant="outline" onClick={() => setShowRefund(false)}>{t('cm.pages_DepositTracking.iptal_25174')}</Button>
             <Button
               className="bg-amber-600 hover:bg-amber-700 text-white"
               onClick={handleRefund}
@@ -529,7 +531,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
               data-testid="confirm-refund-btn"
             >
               {savingRefund ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <RotateCcw className="w-4 h-4 mr-1.5" />}
-              İade Onayla
+              {t('cm.pages_DepositTracking.iade_onayla')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -539,7 +541,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
       <Dialog open={showInvoice} onOpenChange={setShowInvoice}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto" data-testid="invoice-dialog">
           <DialogHeader>
-            <DialogTitle>Fatura Önizleme</DialogTitle>
+            <DialogTitle>{t('cm.pages_DepositTracking.fatura_onizleme')}</DialogTitle>
             <DialogDescription>
               {invoiceTarget && `${invoiceTarget.guest_name || 'Misafir'} - Rezervasyon Faturası`}
             </DialogDescription>
@@ -548,7 +550,7 @@ export default function DepositTracking({ user, tenant, onLogout }) {
           {generatingInvoice ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
-              <span className="ml-3 text-gray-500">Fatura oluşturuluyor...</span>
+              <span className="ml-3 text-gray-500">{t('cm.pages_DepositTracking.fatura_olusturuluyor')}</span>
             </div>
           ) : invoiceHtml ? (
             <div
@@ -558,19 +560,19 @@ export default function DepositTracking({ user, tenant, onLogout }) {
             />
           ) : (
             <div className="text-center py-8 text-gray-400">
-              Fatura oluşturulamadı
+              {t('cm.pages_DepositTracking.fatura_olusturulamadi')}
             </div>
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInvoice(false)}>Kapat</Button>
+            <Button variant="outline" onClick={() => setShowInvoice(false)}>{t('cm.pages_DepositTracking.kapat')}</Button>
             {invoiceHtml && (
               <Button
                 className="bg-blue-600 hover:bg-blue-700 text-white"
                 onClick={printInvoice}
                 data-testid="print-invoice-btn"
               >
-                <FileText className="w-4 h-4 mr-1.5" /> Yazdır
+                <FileText className="w-4 h-4 mr-1.5" /> {t('cm.pages_DepositTracking.yazdir')}
               </Button>
             )}
           </DialogFooter>

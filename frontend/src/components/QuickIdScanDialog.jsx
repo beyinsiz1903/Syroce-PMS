@@ -7,6 +7,7 @@ import {
   Loader2, Camera, Upload, X, CheckCircle2, AlertTriangle,
   ScanLine, FileImage, Video, RefreshCcw, Image as ImageIcon
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -46,6 +47,7 @@ const DOC_LABELS = {
 export default function QuickIdScanDialog({
   open, onClose, onExtracted, onImageCaptured, guestId = null, defaultSavePhoto = true,
 }) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState('upload'); // 'upload' | 'camera' | 'live'
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -220,7 +222,7 @@ export default function QuickIdScanDialog({
             <ScanLine className="w-5 h-5" />
             <h3 className="font-semibold">Kimlik Tara (Quick-ID)</h3>
             {serviceStatus?.available === false && (
-              <Badge className="bg-amber-400/30 border-amber-300/50 text-amber-50 ml-2 text-[10px]">Servis kapalı</Badge>
+              <Badge className="bg-amber-400/30 border-amber-300/50 text-amber-50 ml-2 text-[10px]">{t('cm.components_QuickIdScanDialog.servis_kapali')}</Badge>
             )}
             {serviceStatus?.available && !serviceStatus?.service_key_configured && (
               <Badge className="bg-yellow-400/30 border-yellow-300/50 text-yellow-50 ml-2 text-[10px]">Demo mod</Badge>
@@ -239,7 +241,7 @@ export default function QuickIdScanDialog({
                 data-testid="quickid-upload-btn"
               >
                 <Upload className="w-8 h-8 text-gray-400" />
-                <div className="text-sm font-medium text-gray-700">Dosyadan Yükle</div>
+                <div className="text-sm font-medium text-gray-700">{t('cm.components_QuickIdScanDialog.dosyadan_yukle')}</div>
                 <div className="text-[11px] text-gray-500 text-center">JPEG, PNG (en fazla 8MB)</div>
               </button>
               <button
@@ -248,8 +250,8 @@ export default function QuickIdScanDialog({
                 data-testid="quickid-camera-btn"
               >
                 <Camera className="w-8 h-8 text-gray-400" />
-                <div className="text-sm font-medium text-gray-700">Mobilden Çek</div>
-                <div className="text-[11px] text-gray-500 text-center">Telefonun arka kamerası</div>
+                <div className="text-sm font-medium text-gray-700">{t('cm.components_QuickIdScanDialog.mobilden_cek')}</div>
+                <div className="text-[11px] text-gray-500 text-center">{t('cm.components_QuickIdScanDialog.telefonun_arka_kamerasi')}</div>
               </button>
               <button
                 onClick={() => { setMode('live'); clearStartTimer(); startTimerRef.current = setTimeout(startStream, 50); }}
@@ -257,8 +259,8 @@ export default function QuickIdScanDialog({
                 data-testid="quickid-live-btn"
               >
                 <Video className="w-8 h-8 text-gray-400" />
-                <div className="text-sm font-medium text-gray-700">Canlı Webcam</div>
-                <div className="text-[11px] text-gray-500 text-center">Resepsiyon kamerası</div>
+                <div className="text-sm font-medium text-gray-700">{t('cm.components_QuickIdScanDialog.canli_webcam')}</div>
+                <div className="text-[11px] text-gray-500 text-center">{t('cm.components_QuickIdScanDialog.resepsiyon_kamerasi')}</div>
               </button>
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => handleFile(e.target.files?.[0])} />
               <input ref={camInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => handleFile(e.target.files?.[0])} />
@@ -277,7 +279,7 @@ export default function QuickIdScanDialog({
                 {!streamReady && !streamErr && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-white/80 gap-2">
                     <Loader2 className="w-8 h-8 animate-spin" />
-                    <span className="text-xs">Kamera açılıyor…</span>
+                    <span className="text-xs">{t('cm.components_QuickIdScanDialog.kamera_aciliyor')}</span>
                   </div>
                 )}
                 {streamErr && (
@@ -313,11 +315,11 @@ export default function QuickIdScanDialog({
               <div className="border rounded-lg overflow-hidden bg-gray-50 flex flex-col">
                 <div className="flex items-center justify-between px-3 py-2 border-b bg-white">
                   <span className="text-xs font-medium text-gray-600 flex items-center gap-1">
-                    <FileImage className="w-3.5 h-3.5" /> Belge Önizleme
+                    <FileImage className="w-3.5 h-3.5" /> {t('cm.components_QuickIdScanDialog.belge_onizleme')}
                   </span>
                   <Button size="sm" variant="ghost" className="h-6 px-2 text-xs"
                     onClick={() => { setFile(null); setPreview(null); setResult(null); }}>
-                    Değiştir
+                    {t('cm.components_QuickIdScanDialog.degistir')}
                   </Button>
                 </div>
                 <div className="flex-1 flex items-center justify-center p-3 min-h-[200px]">
@@ -327,7 +329,7 @@ export default function QuickIdScanDialog({
 
               <div className="border rounded-lg bg-white flex flex-col">
                 <div className="px-3 py-2 border-b text-xs font-medium text-gray-600 flex items-center justify-between">
-                  <span>Çıkarılan Bilgiler</span>
+                  <span>{t('cm.components_QuickIdScanDialog.cikarilan_bilgiler')}</span>
                   {docTypeLabel && (
                     <Badge variant="secondary" className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200">
                       {docTypeLabel}
@@ -338,13 +340,13 @@ export default function QuickIdScanDialog({
                   {!result && !scanning && (
                     <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-400 py-8">
                       <ScanLine className="w-10 h-10" />
-                      <span className="text-xs">Taramak için aşağıdaki düğmeye basın</span>
+                      <span className="text-xs">{t('cm.components_QuickIdScanDialog.taramak_icin_asagidaki_dugmeye_basin')}</span>
                     </div>
                   )}
                   {scanning && (
                     <div className="h-full flex flex-col items-center justify-center gap-3 py-8">
                       <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                      <span className="text-xs text-gray-600">Kimlik taranıyor…</span>
+                      <span className="text-xs text-gray-600">{t('cm.components_QuickIdScanDialog.kimlik_taraniyor')}</span>
                     </div>
                   )}
                   {doc && (
@@ -353,21 +355,21 @@ export default function QuickIdScanDialog({
                       <Row label="Soyad" value={doc.last_name} />
                       <Row label="Belge Tipi" value={docTypeLabel || doc.document_type} />
                       <Row label="Kimlik/Pasaport No" value={doc.id_number || doc.document_number} />
-                      <Row label="Doğum Tarihi" value={doc.birth_date} />
+                      <Row label={t('cm.components_QuickIdScanDialog.dogum_tarihi')} value={doc.birth_date} />
                       <Row label="Cinsiyet" value={doc.gender} />
                       <Row label="Uyruk" value={doc.nationality} />
-                      <Row label="Doğum Yeri" value={doc.birth_place} />
-                      <Row label="Anne Adı" value={doc.mother_name} />
-                      <Row label="Baba Adı" value={doc.father_name} />
-                      <Row label="Veriliş" value={doc.issue_date} />
-                      <Row label="Son Geçerlilik" value={doc.expiry_date} />
+                      <Row label={t('cm.components_QuickIdScanDialog.dogum_yeri')} value={doc.birth_place} />
+                      <Row label={t('cm.components_QuickIdScanDialog.anne_adi')} value={doc.mother_name} />
+                      <Row label={t('cm.components_QuickIdScanDialog.baba_adi')} value={doc.father_name} />
+                      <Row label={t('cm.components_QuickIdScanDialog.verilis')} value={doc.issue_date} />
+                      <Row label={t('cm.components_QuickIdScanDialog.son_gecerlilik')} value={doc.expiry_date} />
 
                       {/* Confidence + MRZ */}
                       <div className="pt-2 mt-2 border-t flex flex-wrap items-center gap-2 text-[11px]">
                         {!!confidence && (
                           <span className="inline-flex items-center gap-1">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            <span className="text-gray-700">Güven <b>%{confidence}</b>{confLevel ? ` (${confLevel})` : ''}</span>
+                            <span className="text-gray-700">{t('cm.components_QuickIdScanDialog.guven')} <b>%{confidence}</b>{confLevel ? ` (${confLevel})` : ''}</span>
                           </span>
                         )}
                         {mrz && (
@@ -380,7 +382,7 @@ export default function QuickIdScanDialog({
                       {result?.demo_mode && (
                         <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800 flex gap-1.5">
                           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                          <span><b>Demo mod:</b> Gerçek OCR için OPENAI_API_KEY veya GEMINI_API_KEY yapılandırılmalıdır.</span>
+                          <span><b>Demo mod:</b> {t('cm.components_QuickIdScanDialog.gercek_ocr_icin_openai_api_key_veya_gemi')}</span>
                         </div>
                       )}
                       {doc?.warnings?.length > 0 && (
@@ -405,7 +407,7 @@ export default function QuickIdScanDialog({
                 className="rounded"
               />
               <ImageIcon className="w-4 h-4 text-blue-600" />
-              <span>Çekilen kareyi misafirin profil fotoğrafı olarak kaydet</span>
+              <span>{t('cm.components_QuickIdScanDialog.cekilen_kareyi_misafirin_profil_fotograf')}</span>
             </label>
           )}
         </div>
@@ -416,10 +418,10 @@ export default function QuickIdScanDialog({
             {serviceStatus?.available ? 'Servis çevrimiçi' : 'Servis çevrimdışı — lütfen Quick-ID API\'yi başlatın'}
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose} size="sm">Kapat</Button>
+            <Button variant="outline" onClick={onClose} size="sm">{t('cm.components_QuickIdScanDialog.kapat')}</Button>
             {preview && !result && (
               <Button onClick={handleScan} disabled={scanning || !file} size="sm" className="bg-indigo-600 hover:bg-indigo-700">
-                {scanning ? <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Taranıyor</> : <><ScanLine className="w-3.5 h-3.5 mr-1" /> Tara</>}
+                {scanning ? <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> {t('cm.components_QuickIdScanDialog.taraniyor')}</> : <><ScanLine className="w-3.5 h-3.5 mr-1" /> Tara</>}
               </Button>
             )}
             {result && doc && (

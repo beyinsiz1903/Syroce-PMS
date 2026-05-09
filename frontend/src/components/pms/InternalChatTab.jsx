@@ -39,9 +39,11 @@ import {
   sendThreadReply,
   sendNewMessage,
 } from './internalChat/messageActions';
+import { useTranslation } from 'react-i18next';
 
 
 const InternalChatTab = ({ currentUser }) => {
+  const { t } = useTranslation();
   const { toast } = useToast();
   // Keep the global bell counter in sync when this tab mutates read state.
   const { decrementInternalUnread, markAllInternalRead } = useNotifications();
@@ -650,7 +652,7 @@ const InternalChatTab = ({ currentUser }) => {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <MessagesSquare className="h-5 w-5" /> Personel Mesajlaşması
+            <MessagesSquare className="h-5 w-5" /> {t('cm.components_pms_InternalChatTab.personel_mesajlasmasi')}
             {totalUnread > 0 && (
               <Badge variant="destructive" data-testid="badge-total-unread">
                 {totalUnread}
@@ -660,11 +662,11 @@ const InternalChatTab = ({ currentUser }) => {
           <p className="text-xs text-muted-foreground">
             {myDepartment && (
               <>
-                Departmanım: <span className="font-medium">{myDepartment}</span>
+                {t('cm.components_pms_InternalChatTab.departmanim')} <span className="font-medium">{myDepartment}</span>
                 {' · '}
               </>
             )}
-            Canlı bildirim açık · Yedek yenileme: 60 sn
+            {t('cm.components_pms_InternalChatTab.canli_bildirim_acik_yedek_yenileme_60_sn')}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -675,7 +677,7 @@ const InternalChatTab = ({ currentUser }) => {
             onClick={handleMarkAllRead}
             disabled={markingAllRead || unreadCount === 0}
             data-testid="button-mark-all-read"
-            title="Gelen kutusundaki tüm okunmamış mesajları işaretle"
+            title={t('cm.components_pms_InternalChatTab.gelen_kutusundaki_tum_okunmamis_mesajlar')}
           >
             <CheckCheck className={`h-4 w-4 mr-1 ${markingAllRead ? 'animate-pulse' : ''}`} />
             {markingAllRead ? 'İşaretleniyor…' : 'Tümünü okundu'}
@@ -698,7 +700,7 @@ const InternalChatTab = ({ currentUser }) => {
             data-testid="button-refresh-inbox"
           >
             <RefreshCw className={`h-4 w-4 mr-1 ${loadingInbox ? 'animate-spin' : ''}`} />
-            Yenile
+            {t('cm.components_pms_InternalChatTab.yenile')}
           </Button>
           <Button
             type="button"
@@ -706,7 +708,7 @@ const InternalChatTab = ({ currentUser }) => {
             onClick={() => setComposeOpen(true)}
             data-testid="button-open-compose"
           >
-            <Send className="h-4 w-4 mr-1" /> Yeni Mesaj
+            <Send className="h-4 w-4 mr-1" /> {t('cm.components_pms_InternalChatTab.yeni_mesaj')}
           </Button>
         </div>
       </div>
@@ -805,10 +807,10 @@ const InternalChatTab = ({ currentUser }) => {
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="dialog-compose">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Send className="h-5 w-5" /> Yeni Mesaj
+              <Send className="h-5 w-5" /> {t('cm.components_pms_InternalChatTab.yeni_mesaj_b9b18')}
             </DialogTitle>
             <DialogDescription>
-              Bir departmana, belirli bir personele veya tüm otele mesaj gönderin.
+              {t('cm.components_pms_InternalChatTab.bir_departmana_belirli_bir_personele_vey')}
             </DialogDescription>
           </DialogHeader>
           <ComposeForm

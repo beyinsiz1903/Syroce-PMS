@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw, Building2, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
 import { API, ScoreRing, StatusDot, MetricCard } from '../shared';
+import { useTranslation } from 'react-i18next';
 
 const MultiPropertyTab = () => {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
@@ -29,15 +31,15 @@ const MultiPropertyTab = () => {
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-slate-300">Multi-Property Integration Dashboard</h3>
         <div className="flex gap-2">
-          <Button size="sm" variant={view === 'dashboard' ? 'default' : 'outline'} className={view === 'dashboard' ? 'bg-blue-600' : 'border-slate-700 text-slate-300'} onClick={() => setView('dashboard')}>Genel Bakış</Button>
-          <Button size="sm" variant={view === 'comparison' ? 'default' : 'outline'} className={view === 'comparison' ? 'bg-blue-600' : 'border-slate-700 text-slate-300'} onClick={() => setView('comparison')}>Karşılaştırma</Button>
-          <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchDashboard}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile</Button>
+          <Button size="sm" variant={view === 'dashboard' ? 'default' : 'outline'} className={view === 'dashboard' ? 'bg-blue-600' : 'border-slate-700 text-slate-300'} onClick={() => setView('dashboard')}>{t('cm.pages_admin_tabs_MultiPropertyTab.genel_bakis')}</Button>
+          <Button size="sm" variant={view === 'comparison' ? 'default' : 'outline'} className={view === 'comparison' ? 'bg-blue-600' : 'border-slate-700 text-slate-300'} onClick={() => setView('comparison')}>{t('cm.pages_admin_tabs_MultiPropertyTab.karsilastirma')}</Button>
+          <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchDashboard}><RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_MultiPropertyTab.yenile')}</Button>
         </div>
       </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <MetricCard title="Toplam Property" value={data.total_properties} icon={Building2} color="text-blue-400" />
+        <MetricCard title={t('cm.pages_admin_tabs_MultiPropertyTab.toplam_property')} value={data.total_properties} icon={Building2} color="text-blue-400" />
         <MetricCard title="Saglikli" value={data.healthy_properties} icon={TrendingUp} color="text-emerald-400" />
         <MetricCard title="Bozulmus" value={data.degraded_properties} icon={TrendingDown} color="text-amber-400" />
         <MetricCard title="Kritik" value={data.critical_properties} icon={AlertTriangle} color="text-red-400" />
@@ -74,7 +76,7 @@ const MultiPropertyTab = () => {
           {/* Top Failing */}
           {data.top_failing?.length > 0 && data.top_failing.some(f => f.failed_syncs > 0) && (
             <Card className="bg-slate-800/50 border-slate-700">
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-red-400">En Cok Hata Veren Property'ler</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-red-400">{t('cm.pages_admin_tabs_MultiPropertyTab.en_cok_hata_veren_property_ler')}</CardTitle></CardHeader>
               <CardContent>
                 <div className="space-y-1">
                   {data.top_failing.filter(f => f.failed_syncs > 0).map((f, i) => (

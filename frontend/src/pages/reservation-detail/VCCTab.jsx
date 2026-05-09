@@ -29,6 +29,7 @@ import {
   Copy,
   CheckCircle2,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MAX_VIEWS = 3;
 
@@ -38,6 +39,7 @@ function formatCardNumber(num) {
 }
 
 export function VCCTab({ booking, onRefresh }) {
+  const { t } = useTranslation();
   const bookingId = booking?.id;
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -137,7 +139,7 @@ export function VCCTab({ booking, onRefresh }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12 text-gray-500">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Yükleniyor...
+        <Loader2 className="w-5 h-5 animate-spin mr-2" /> {t('cm.pages_reservationdetail_VCCTab.yukleniyor')}
       </div>
     );
   }
@@ -155,10 +157,10 @@ export function VCCTab({ booking, onRefresh }) {
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2 text-sm text-amber-800">
         <ShieldAlert className="w-4 h-4 mt-0.5 flex-shrink-0" />
         <div>
-          <div className="font-medium">Hassas veri — PCI kontrollü alan</div>
+          <div className="font-medium">{t('cm.pages_reservationdetail_VCCTab.hassas_veri_pci_kontrollu_alan')}</div>
           <div className="text-xs mt-0.5">
-            Kart numarası AES-256-GCM ile şifreli saklanır. Her görüntüleme denetim kaydına işlenir ve{' '}
-            <strong>maksimum 3 kez</strong> görüntülenebilir. Sonrasında kart kalıcı olarak kilitlenir.
+            {t('cm.pages_reservationdetail_VCCTab.kart_numarasi_aes_256_gcm_ile_sifreli_sa')}{' '}
+            <strong>maksimum 3 kez</strong> {t('cm.pages_reservationdetail_VCCTab.goruntulenebilir_sonrasinda_kart_kalici_')}
           </div>
         </div>
       </div>
@@ -168,11 +170,11 @@ export function VCCTab({ booking, onRefresh }) {
           <CardContent className="p-6 text-center">
             <CreditCard className="w-10 h-10 text-gray-300 mx-auto mb-2" />
             <div className="text-sm text-gray-600 mb-4">
-              Bu rezervasyon için kayıtlı sanal kart yok.
+              {t('cm.pages_reservationdetail_VCCTab.bu_rezervasyon_icin_kayitli_sanal_kart_y')}
             </div>
             {!showForm ? (
               <Button onClick={() => setShowForm(true)} variant="outline">
-                <Plus className="w-4 h-4 mr-2" /> Manuel Kart Ekle
+                <Plus className="w-4 h-4 mr-2" /> {t('cm.pages_reservationdetail_VCCTab.manuel_kart_ekle')}
               </Button>
             ) : (
               <div className="text-left space-y-3 max-w-md mx-auto">
@@ -185,7 +187,7 @@ export function VCCTab({ booking, onRefresh }) {
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">Kart Numarası *</Label>
+                  <Label className="text-xs">{t('cm.pages_reservationdetail_VCCTab.kart_numarasi')}</Label>
                   <Input
                     value={form.card_number}
                     onChange={(e) => setForm({ ...form, card_number: e.target.value })}
@@ -215,7 +217,7 @@ export function VCCTab({ booking, onRefresh }) {
                   </div>
                 </div>
                 <div>
-                  <Label className="text-xs">Kart Türü</Label>
+                  <Label className="text-xs">{t('cm.pages_reservationdetail_VCCTab.kart_turu')}</Label>
                   <select
                     className="w-full border rounded px-3 py-2 text-sm"
                     value={form.card_type}
@@ -228,11 +230,11 @@ export function VCCTab({ booking, onRefresh }) {
                 </div>
                 <div className="flex gap-2 justify-end pt-2">
                   <Button variant="outline" onClick={() => setShowForm(false)} disabled={busy}>
-                    İptal
+                    {t('cm.pages_reservationdetail_VCCTab.iptal')}
                   </Button>
                   <Button onClick={handleStore} disabled={busy}>
                     {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    Güvenli Kaydet
+                    {t('cm.pages_reservationdetail_VCCTab.guvenli_kaydet')}
                   </Button>
                 </div>
               </div>
@@ -244,7 +246,7 @@ export function VCCTab({ booking, onRefresh }) {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
-                <CreditCard className="w-5 h-5" /> Kayıtlı Kart
+                <CreditCard className="w-5 h-5" /> {t('cm.pages_reservationdetail_VCCTab.kayitli_kart')}
               </CardTitle>
               <div className="flex items-center gap-2">
                 {locked && (
@@ -253,7 +255,7 @@ export function VCCTab({ booking, onRefresh }) {
                   </Badge>
                 )}
                 <Badge variant="outline" className="font-mono text-xs">
-                  {viewCount}/{maxViews} görüntüleme
+                  {viewCount}/{maxViews} {t('cm.pages_reservationdetail_VCCTab.goruntuleme')}
                 </Badge>
               </div>
             </div>
@@ -272,7 +274,7 @@ export function VCCTab({ booking, onRefresh }) {
               </div>
               <div className="flex justify-between text-xs opacity-80">
                 <span>
-                  Kayıt: {vcc.created_at ? new Date(vcc.created_at).toLocaleDateString('tr-TR') : '—'}
+                  {t('cm.pages_reservationdetail_VCCTab.kayit')} {vcc.created_at ? new Date(vcc.created_at).toLocaleDateString('tr-TR') : '—'}
                 </span>
                 <span>Kalan: {remaining}</span>
               </div>
@@ -281,7 +283,7 @@ export function VCCTab({ booking, onRefresh }) {
             {/* View counter progress */}
             <div>
               <div className="flex justify-between text-xs text-gray-600 mb-1">
-                <span>Kalan görüntüleme</span>
+                <span>{t('cm.pages_reservationdetail_VCCTab.kalan_goruntuleme')}</span>
                 <span>
                   {remaining} / {maxViews}
                 </span>
@@ -306,7 +308,7 @@ export function VCCTab({ booking, onRefresh }) {
                 onClick={() => setShowDelete(true)}
                 disabled={busy}
               >
-                <Trash2 className="w-4 h-4 mr-2" /> Sil
+                <Trash2 className="w-4 h-4 mr-2" /> {t('cm.pages_reservationdetail_VCCTab.sil')}
               </Button>
               <Button
                 onClick={() => setShowConfirm(true)}
@@ -315,11 +317,11 @@ export function VCCTab({ booking, onRefresh }) {
               >
                 {locked || remaining === 0 ? (
                   <>
-                    <EyeOff className="w-4 h-4 mr-2" /> Görüntülenemez
+                    <EyeOff className="w-4 h-4 mr-2" /> {t('cm.pages_reservationdetail_VCCTab.goruntulenemez')}
                   </>
                 ) : (
                   <>
-                    <Eye className="w-4 h-4 mr-2" /> Kartı Görüntüle ({remaining} kaldı)
+                    <Eye className="w-4 h-4 mr-2" /> {t('cm.pages_reservationdetail_VCCTab.karti_goruntule')}{remaining} {t('cm.pages_reservationdetail_VCCTab.kaldi')}
                   </>
                 )}
               </Button>
@@ -334,17 +336,16 @@ export function VCCTab({ booking, onRefresh }) {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <ShieldAlert className="w-5 h-5 text-amber-600" />
-              Kart bilgilerini görüntülemek istiyor musunuz?
+              {t('cm.pages_reservationdetail_VCCTab.kart_bilgilerini_goruntulemek_istiyor_mu')}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Bu işlem görüntüleme hakkınızdan <strong>1 adet</strong> tüketecek. İşlem denetim
-              kaydına adınız ve zamanınızla birlikte yazılacak. Kalan hak: <strong>{remaining}</strong>
-              . Sıfıra ulaşınca kart kalıcı olarak kilitlenir.
+              {t('cm.pages_reservationdetail_VCCTab.bu_islem_goruntuleme_hakkinizdan')} <strong>1 adet</strong> {t('cm.pages_reservationdetail_VCCTab.tuketecek_islem_denetim_kaydina_adiniz_v')} <strong>{remaining}</strong>
+              {t('cm.pages_reservationdetail_VCCTab.sifira_ulasinca_kart_kalici_olarak_kilit')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Vazgeç</AlertDialogCancel>
-            <AlertDialogAction onClick={handleReveal}>Evet, göster</AlertDialogAction>
+            <AlertDialogCancel>{t('cm.pages_reservationdetail_VCCTab.vazgec')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleReveal}>{t('cm.pages_reservationdetail_VCCTab.evet_goster')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -353,15 +354,15 @@ export function VCCTab({ booking, onRefresh }) {
       <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Kartı kalıcı olarak silmek istiyor musunuz?</AlertDialogTitle>
+            <AlertDialogTitle>{t('cm.pages_reservationdetail_VCCTab.karti_kalici_olarak_silmek_istiyor_musun')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Bu işlem geri alınamaz. Şifrelenmiş kart verisi veri tabanından silinecek.
+              {t('cm.pages_reservationdetail_VCCTab.bu_islem_geri_alinamaz_sifrelenmis_kart_')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Vazgeç</AlertDialogCancel>
+            <AlertDialogCancel>{t('cm.pages_reservationdetail_VCCTab.vazgec_bf814')}</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
-              Sil
+              {t('cm.pages_reservationdetail_VCCTab.sil_491de')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -389,7 +390,7 @@ export function VCCTab({ booking, onRefresh }) {
               <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-xl p-5">
                 <div className="text-xs opacity-80 mb-1">Kart Sahibi</div>
                 <div className="font-semibold uppercase mb-4">{revealed.card_holder}</div>
-                <div className="text-xs opacity-80 mb-1">Kart Numarası</div>
+                <div className="text-xs opacity-80 mb-1">{t('cm.pages_reservationdetail_VCCTab.kart_numarasi_8d703')}</div>
                 <div className="font-mono text-lg tracking-wider flex items-center justify-between">
                   <span>{formatCardNumber(revealed.card_number)}</span>
                   <button
@@ -424,11 +425,10 @@ export function VCCTab({ booking, onRefresh }) {
                 </div>
               </div>
               <div className="bg-amber-50 border border-amber-200 rounded p-2 text-xs text-amber-800">
-                <strong>Uyarı:</strong> Bu bilgi tarayıcıda saklanmaz. Pencereyi kapattığınızda
-                silinecektir. Kalan görüntüleme hakkı: <strong>{revealInfo?.remaining_views ?? 0}</strong>.
+                <strong>{t('cm.pages_reservationdetail_VCCTab.uyari')}</strong> {t('cm.pages_reservationdetail_VCCTab.bu_bilgi_tarayicida_saklanmaz_pencereyi_')} <strong>{revealInfo?.remaining_views ?? 0}</strong>.
                 {revealInfo?.locked && (
                   <div className="mt-1 text-red-700 font-medium">
-                    Kart artık kilitlendi, bir daha görüntülenemez.
+                    {t('cm.pages_reservationdetail_VCCTab.kart_artik_kilitlendi_bir_daha_goruntule')}
                   </div>
                 )}
               </div>
@@ -441,7 +441,7 @@ export function VCCTab({ booking, onRefresh }) {
                 setRevealInfo(null);
               }}
             >
-              Kapat
+              {t('cm.pages_reservationdetail_VCCTab.kapat')}
             </Button>
           </DialogFooter>
         </DialogContent>

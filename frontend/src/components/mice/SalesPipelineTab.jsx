@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { alertDialog, confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 const STAGES = [
   { key: 'lead',       label: 'Lead',      cls: 'bg-slate-100 text-slate-700' },
@@ -28,6 +29,7 @@ const blank = {
 };
 
 export default function SalesPipelineTab({ accounts = [] }) {
+  const { t } = useTranslation();
   const [pipeline, setPipeline] = useState(null);
   const [opps, setOpps] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -119,19 +121,19 @@ export default function SalesPipelineTab({ accounts = [] }) {
       {pipeline && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card><CardContent className="p-3">
-            <div className="text-xs text-gray-500">Açık Pipeline</div>
+            <div className="text-xs text-gray-500">{t('cm.components_mice_SalesPipelineTab.acik_pipeline')}</div>
             <div className="text-xl font-bold text-emerald-600">{fmtCurrency(pipeline.open_value)}</div>
           </CardContent></Card>
           <Card><CardContent className="p-3">
-            <div className="text-xs text-gray-500">Olasılık-Ağırlıklı</div>
+            <div className="text-xs text-gray-500">{t('cm.components_mice_SalesPipelineTab.olasilik_agirlikli')}</div>
             <div className="text-xl font-bold text-blue-600">{fmtCurrency(pipeline.weighted_open_value)}</div>
           </CardContent></Card>
           <Card><CardContent className="p-3">
-            <div className="text-xs text-gray-500">Kazanılan</div>
+            <div className="text-xs text-gray-500">{t('cm.components_mice_SalesPipelineTab.kazanilan')}</div>
             <div className="text-xl font-bold text-violet-600">{fmtCurrency(pipeline.won_value)}</div>
           </CardContent></Card>
           <Card><CardContent className="p-3">
-            <div className="text-xs text-gray-500">Kazanma Oranı</div>
+            <div className="text-xs text-gray-500">{t('cm.components_mice_SalesPipelineTab.kazanma_orani')}</div>
             <div className="text-xl font-bold">{pipeline.win_rate_pct}%</div>
           </CardContent></Card>
         </div>
@@ -141,33 +143,33 @@ export default function SalesPipelineTab({ accounts = [] }) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">
-            Fırsatlar {stageFilter !== 'all' && <Badge className="ml-2">{STAGE_BY_KEY[stageFilter]?.label}</Badge>}
+            {t('cm.components_mice_SalesPipelineTab.firsatlar')} {stageFilter !== 'all' && <Badge className="ml-2">{STAGE_BY_KEY[stageFilter]?.label}</Badge>}
           </CardTitle>
           <div className="flex gap-2">
             {stageFilter !== 'all' && (
               <Button variant="outline" size="sm" onClick={() => setStageFilter('all')}>Filtreyi Temizle</Button>
             )}
-            <Button size="sm" onClick={() => { setForm(blank); setShowForm(true); }}>+ Yeni Fırsat</Button>
+            <Button size="sm" onClick={() => { setForm(blank); setShowForm(true); }}>{t('cm.components_mice_SalesPipelineTab.yeni_firsat')}</Button>
           </div>
         </CardHeader>
         <CardContent className="p-0 overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b text-left">
               <tr>
-                <th className="p-2">Başlık</th>
-                <th className="p-2">Tür</th>
-                <th className="p-2">Tarih</th>
+                <th className="p-2">{t('cm.components_mice_SalesPipelineTab.baslik')}</th>
+                <th className="p-2">{t('cm.components_mice_SalesPipelineTab.tur')}</th>
+                <th className="p-2">{t('cm.components_mice_SalesPipelineTab.tarih')}</th>
                 <th className="p-2 text-right">Pax</th>
-                <th className="p-2 text-right">Tutar</th>
+                <th className="p-2 text-right">{t('cm.components_mice_SalesPipelineTab.tutar')}</th>
                 <th className="p-2 text-center">%</th>
-                <th className="p-2">Aşama</th>
-                <th className="p-2 text-right">İşlem</th>
+                <th className="p-2">{t('cm.components_mice_SalesPipelineTab.asama')}</th>
+                <th className="p-2 text-right">{t('cm.components_mice_SalesPipelineTab.islem')}</th>
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={8} className="p-6 text-center text-gray-500">Yükleniyor...</td></tr>}
+              {loading && <tr><td colSpan={8} className="p-6 text-center text-gray-500">{t('cm.components_mice_SalesPipelineTab.yukleniyor')}</td></tr>}
               {!loading && opps.length === 0 && (
-                <tr><td colSpan={8} className="p-6 text-center text-gray-500">Fırsat yok.</td></tr>
+                <tr><td colSpan={8} className="p-6 text-center text-gray-500">{t('cm.components_mice_SalesPipelineTab.firsat_yok')}</td></tr>
               )}
               {opps.map((o) => {
                 const meta = STAGE_BY_KEY[o.stage] || { label: o.stage, cls: 'bg-gray-100' };
@@ -183,14 +185,14 @@ export default function SalesPipelineTab({ accounts = [] }) {
                     <td className="p-2 text-right whitespace-nowrap">
                       <Button size="sm" variant="outline"
                               onClick={() => { setTransitionFor(o); setToStage(o.stage); }}>
-                        Aşama
+                        {t('cm.components_mice_SalesPipelineTab.asama_7eeec')}
                       </Button>{' '}
                       <Button size="sm" variant="outline"
                               onClick={() => setActivityFor(o)}>
                         Aktivite
                       </Button>{' '}
                       <Button size="sm" variant="ghost" className="text-rose-600"
-                              onClick={() => remove(o.id)}>Sil</Button>
+                              onClick={() => remove(o.id)}>{t('cm.components_mice_SalesPipelineTab.sil')}</Button>
                     </td>
                   </tr>
                 );
@@ -203,17 +205,17 @@ export default function SalesPipelineTab({ accounts = [] }) {
       {/* Create form */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>Yeni Satış Fırsatı</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('cm.components_mice_SalesPipelineTab.yeni_satis_firsati')}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <Label>Başlık</Label>
+              <Label>{t('cm.components_mice_SalesPipelineTab.baslik_0266c')}</Label>
               <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </div>
             <div>
-              <Label>Müşteri Hesabı</Label>
+              <Label>{t('cm.components_mice_SalesPipelineTab.musteri_hesabi')}</Label>
               <Select value={form.account_id || 'none'}
                       onValueChange={(v) => setForm({ ...form, account_id: v === 'none' ? '' : v })}>
-                <SelectTrigger><SelectValue placeholder="Seçin..." /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t('cm.components_mice_SalesPipelineTab.secin')} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">— Yok —</SelectItem>
                   {accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
@@ -221,11 +223,11 @@ export default function SalesPipelineTab({ accounts = [] }) {
               </Select>
             </div>
             <div>
-              <Label>Etkinlik Türü</Label>
+              <Label>{t('cm.components_mice_SalesPipelineTab.etkinlik_turu')}</Label>
               <Select value={form.event_type} onValueChange={(v) => setForm({ ...form, event_type: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="wedding">Düğün</SelectItem>
+                  <SelectItem value="wedding">{t('cm.components_mice_SalesPipelineTab.dugun')}</SelectItem>
                   <SelectItem value="conference">Konferans</SelectItem>
                   <SelectItem value="corporate">Kurumsal</SelectItem>
                   <SelectItem value="social">Sosyal</SelectItem>
@@ -234,12 +236,12 @@ export default function SalesPipelineTab({ accounts = [] }) {
               </Select>
             </div>
             <div>
-              <Label>Başlangıç</Label>
+              <Label>{t('cm.components_mice_SalesPipelineTab.baslangic')}</Label>
               <Input type="date" value={form.expected_start}
                      onChange={(e) => setForm({ ...form, expected_start: e.target.value })} />
             </div>
             <div>
-              <Label>Bitiş</Label>
+              <Label>{t('cm.components_mice_SalesPipelineTab.bitis')}</Label>
               <Input type="date" value={form.expected_end}
                      onChange={(e) => setForm({ ...form, expected_end: e.target.value })} />
             </div>
@@ -249,12 +251,12 @@ export default function SalesPipelineTab({ accounts = [] }) {
                      onChange={(e) => setForm({ ...form, pax: e.target.value })} />
             </div>
             <div>
-              <Label>Tahmini Tutar (₺)</Label>
+              <Label>{t('cm.components_mice_SalesPipelineTab.tahmini_tutar')}</Label>
               <Input type="number" value={form.estimated_value}
                      onChange={(e) => setForm({ ...form, estimated_value: e.target.value })} />
             </div>
             <div>
-              <Label>Olasılık (%)</Label>
+              <Label>{t('cm.components_mice_SalesPipelineTab.olasilik')}</Label>
               <Input type="number" min={0} max={100} value={form.probability}
                      onChange={(e) => setForm({ ...form, probability: e.target.value })} />
             </div>
@@ -270,8 +272,8 @@ export default function SalesPipelineTab({ accounts = [] }) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowForm(false)}>İptal</Button>
-            <Button onClick={submit} disabled={!form.title}>Kaydet</Button>
+            <Button variant="outline" onClick={() => setShowForm(false)}>{t('cm.components_mice_SalesPipelineTab.iptal')}</Button>
+            <Button onClick={submit} disabled={!form.title}>{t('cm.components_mice_SalesPipelineTab.kaydet')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -279,10 +281,10 @@ export default function SalesPipelineTab({ accounts = [] }) {
       {/* Stage transition */}
       <Dialog open={!!transitionFor} onOpenChange={(o) => !o && setTransitionFor(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Aşama Değiştir: {transitionFor?.title}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('cm.components_mice_SalesPipelineTab.asama_degistir')} {transitionFor?.title}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>Yeni Aşama</Label>
+              <Label>{t('cm.components_mice_SalesPipelineTab.yeni_asama')}</Label>
               <Select value={toStage} onValueChange={setToStage}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -296,7 +298,7 @@ export default function SalesPipelineTab({ accounts = [] }) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTransitionFor(null)}>İptal</Button>
+            <Button variant="outline" onClick={() => setTransitionFor(null)}>{t('cm.components_mice_SalesPipelineTab.iptal_25174')}</Button>
             <Button onClick={doTransition}>Uygula</Button>
           </DialogFooter>
         </DialogContent>
@@ -305,29 +307,29 @@ export default function SalesPipelineTab({ accounts = [] }) {
       {/* Activity */}
       <Dialog open={!!activityFor} onOpenChange={(o) => !o && setActivityFor(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Aktivite Ekle: {activityFor?.title}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('cm.components_mice_SalesPipelineTab.aktivite_ekle')} {activityFor?.title}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Tür</Label>
+              <Label>{t('cm.components_mice_SalesPipelineTab.tur_2f9ca')}</Label>
               <Select value={activity.type} onValueChange={(v) => setActivity({ ...activity, type: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="call">Telefon</SelectItem>
                   <SelectItem value="email">E-posta</SelectItem>
-                  <SelectItem value="meeting">Toplantı</SelectItem>
+                  <SelectItem value="meeting">{t('cm.components_mice_SalesPipelineTab.toplanti')}</SelectItem>
                   <SelectItem value="site_visit">Saha Ziyareti</SelectItem>
                   <SelectItem value="note">Not</SelectItem>
-                  <SelectItem value="task">Görev</SelectItem>
+                  <SelectItem value="task">{t('cm.components_mice_SalesPipelineTab.gorev')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Sonuç</Label>
+              <Label>{t('cm.components_mice_SalesPipelineTab.sonuc')}</Label>
               <Select value={activity.outcome} onValueChange={(v) => setActivity({ ...activity, outcome: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="positive">Olumlu</SelectItem>
-                  <SelectItem value="neutral">Nötr</SelectItem>
+                  <SelectItem value="neutral">{t('cm.components_mice_SalesPipelineTab.notr')}</SelectItem>
                   <SelectItem value="negative">Olumsuz</SelectItem>
                 </SelectContent>
               </Select>
@@ -344,8 +346,8 @@ export default function SalesPipelineTab({ accounts = [] }) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setActivityFor(null)}>İptal</Button>
-            <Button onClick={submitActivity}>Kaydet</Button>
+            <Button variant="outline" onClick={() => setActivityFor(null)}>{t('cm.components_mice_SalesPipelineTab.iptal_25174')}</Button>
+            <Button onClick={submitActivity}>{t('cm.components_mice_SalesPipelineTab.kaydet_a9270')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

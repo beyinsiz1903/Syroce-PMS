@@ -11,8 +11,10 @@ import {
   X,
   Activity
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const AnomalyAlerts = () => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [anomalies, setAnomalies] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -84,22 +86,22 @@ const AnomalyAlerts = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-red-500" />
-              Anomali Uyarıları
+              {t('cm.components_AnomalyAlerts.anomali_uyarilari')}
             </DialogTitle>
           </DialogHeader>
 
           {loading ? (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto"></div>
-              <p className="text-gray-500 mt-2">Uyarılar yükleniyor...</p>
+              <p className="text-gray-500 mt-2">{t('cm.components_AnomalyAlerts.uyarilar_yukleniyor')}</p>
             </div>
           ) : (
             <div className="space-y-3">
               {anomalies.length === 0 ? (
                 <div className="text-center py-8">
                   <AlertTriangle className="h-12 w-12 text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-500">Aktif anomali bulunmuyor</p>
-                  <p className="text-xs text-gray-400 mt-1">Sistem normal çalışıyor</p>
+                  <p className="text-gray-500">{t('cm.components_AnomalyAlerts.aktif_anomali_bulunmuyor')}</p>
+                  <p className="text-xs text-gray-400 mt-1">{t('cm.components_AnomalyAlerts.sistem_normal_calisiyor')}</p>
                 </div>
               ) : (
                 anomalies.map((anomaly) => (
@@ -133,7 +135,7 @@ const AnomalyAlerts = () => {
                           <div className="font-bold">{anomaly.current_value}</div>
                         </div>
                         <div className="bg-white p-2 rounded">
-                          <div className="text-gray-500">Önceki</div>
+                          <div className="text-gray-500">{t('cm.components_AnomalyAlerts.onceki')}</div>
                           <div className="font-bold">{anomaly.previous_value}</div>
                         </div>
                       </div>
@@ -150,7 +152,7 @@ const AnomalyAlerts = () => {
 
           {anomalies.length > 0 && (
             <div className="text-xs text-gray-500 text-center mt-4">
-              Otomatik olarak her 2 dakikada bir güncellenir
+              {t('cm.components_AnomalyAlerts.otomatik_olarak_her_2_dakikada_bir_gunce')}
             </div>
           )}
         </DialogContent>

@@ -17,6 +17,7 @@ import {
   Clock, FileText, X,
 } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 const localISODate = (d) => {
   const y = d.getFullYear();
@@ -64,6 +65,7 @@ const PRIMARY_LABEL = (b) =>
   b.confirmation_number || (b.id || '').substring(0, 8).toUpperCase();
 
 const NoShowToday = () => {
+  const { t } = useTranslation();
   const [date, setDate] = useState(() => localISODate(new Date()));
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -197,20 +199,20 @@ const NoShowToday = () => {
     <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto">
       <PageHeader
         icon={UserX}
-        title="Bekleyen / No-Show Adayları"
-        subtitle="Bugün gelmesi gereken ama henüz check-in yapmamış misafirler — ETA aşımı + telefon + ceza önizleme. Gece denetimi 04:00'da otomatik tarar."
+        title={t('cm.pages_NoShowToday.bekleyen_no_show_adaylari')}
+        subtitle={t('cm.pages_NoShowToday.bugun_gelmesi_gereken_ama_henuz_check_in')}
         actions={
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Yenile
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> {t('cm.pages_NoShowToday.yenile')}
           </Button>
         }
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-        <KpiCard icon={Calendar} label="Bekleyen Varış" value={items.length} intent="info" />
+        <KpiCard icon={Calendar} label={t('cm.pages_NoShowToday.bekleyen_varis')} value={items.length} intent="info" />
         <KpiCard icon={AlertTriangle} label="Garantili Bekleyen" value={guaranteedCount} intent="warning" highlight={guaranteedCount > 0} />
-        <KpiCard icon={Clock} label="ETA +60dk Geçen" value={overdueCount} intent="danger" highlight={overdueCount > 0} />
-        <KpiCard icon={UserX} label="Potansiyel Kayıp" value={fmtTRY(totalLoss)} intent="danger" />
+        <KpiCard icon={Clock} label={t('cm.pages_NoShowToday.eta_60dk_gecen')} value={overdueCount} intent="danger" highlight={overdueCount > 0} />
+        <KpiCard icon={UserX} label={t('cm.pages_NoShowToday.potansiyel_kayip')} value={fmtTRY(totalLoss)} intent="danger" />
       </div>
 
       {/* Filtre çubuğu */}
@@ -218,25 +220,25 @@ const NoShowToday = () => {
         <CardContent className="pt-4">
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <Label className="text-xs text-slate-500">Tarih</Label>
+              <Label className="text-xs text-slate-500">{t('cm.pages_NoShowToday.tarih')}</Label>
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 w-40" />
             </div>
             <div className="flex-1 min-w-[200px]">
-              <Label className="text-xs text-slate-500">Ara</Label>
+              <Label className="text-xs text-slate-500">{t('cm.pages_NoShowToday.ara')}</Label>
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 w-4 h-4 text-slate-400" />
                 <Input value={search} onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Misafir / oda / kod" className="pl-8 h-9" />
+                  placeholder={t('cm.pages_NoShowToday.misafir_oda_kod')} className="pl-8 h-9" />
               </div>
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Statü</Label>
+              <Label className="text-xs text-slate-500">{t('cm.pages_NoShowToday.statu')}</Label>
               <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
                 className="h-9 border rounded-md px-2 text-sm bg-white w-40">
-                <option value="all">Tümü</option>
+                <option value="all">{t('cm.pages_NoShowToday.tumu')}</option>
                 <option value="guaranteed">Garantili</option>
-                <option value="confirmed">Onaylı</option>
-                <option value="pending">Beklemede</option>
+                <option value="confirmed">{t('cm.pages_NoShowToday.onayli')}</option>
+                <option value="pending">{t('cm.pages_NoShowToday.beklemede')}</option>
               </select>
             </div>
             <label className="inline-flex items-center gap-2 text-sm text-slate-700 h-9 cursor-pointer">
@@ -245,7 +247,7 @@ const NoShowToday = () => {
             </label>
             {selected.size > 0 && (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">{selected.size} seçili</span>
+                <span className="text-xs text-slate-500">{selected.size} {t('cm.pages_NoShowToday.secili')}</span>
                 <Button size="sm" variant="outline" onClick={() => setSelected(new Set())}>
                   <X className="w-3.5 h-3.5 mr-1" /> Temizle
                 </Button>
@@ -280,7 +282,7 @@ const NoShowToday = () => {
               <input type="checkbox" className="w-4 h-4"
                 checked={selected.size === visible.length && visible.length > 0}
                 onChange={toggleSelectAll} />
-              <span>Tümünü seç ({visible.length}) — ETA'ya göre sıralı</span>
+              <span>{t('cm.pages_NoShowToday.tumunu_sec')}{visible.length}{t('cm.pages_NoShowToday.eta_ya_gore_sirali')}</span>
             </div>
             {visible.map((b) => {
               const status = (b.status || '').toLowerCase();
@@ -315,7 +317,7 @@ const NoShowToday = () => {
                           </StatusBadge>
                           {isCritical && (
                             <StatusBadge intent="danger" icon={Clock}>
-                              ETA +{Math.floor(overdueMin / 60)}sa{overdueMin % 60}dk geçti
+                              ETA +{Math.floor(overdueMin / 60)}sa{overdueMin % 60}{t('cm.pages_NoShowToday.dk_gecti')}
                             </StatusBadge>
                           )}
                           {isOverdue && !isCritical && (
@@ -335,7 +337,7 @@ const NoShowToday = () => {
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
                           <div>
-                            <p className="text-slate-500 text-xs">Oda</p>
+                            <p className="text-slate-500 text-xs">{t('cm.pages_NoShowToday.oda')}</p>
                             <p className="font-semibold">{b.room_number || '—'}</p>
                           </div>
                           <div>
@@ -345,11 +347,11 @@ const NoShowToday = () => {
                             </p>
                           </div>
                           <div>
-                            <p className="text-slate-500 text-xs">Konuk</p>
+                            <p className="text-slate-500 text-xs">{t('cm.pages_NoShowToday.konuk')}</p>
                             <p className="font-semibold">{b.adults || 1}/{b.children || 0}</p>
                           </div>
                           <div>
-                            <p className="text-slate-500 text-xs">Tutar</p>
+                            <p className="text-slate-500 text-xs">{t('cm.pages_NoShowToday.tutar')}</p>
                             <p className="font-semibold">{fmtTRY(b.total_amount)}</p>
                           </div>
                           <div>
@@ -391,41 +393,40 @@ const NoShowToday = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-rose-700">
-              <UserX className="w-5 h-5" /> No-Show İşaretle
+              <UserX className="w-5 h-5" /> {t('cm.pages_NoShowToday.no_show_isaretle')}
             </DialogTitle>
             <DialogDescription>
-              Bu işlem geri alınamaz. Oda boşaltılır, status <strong>no_show</strong>'a çevrilir, audit log'a yazılır.
+              {t('cm.pages_NoShowToday.bu_islem_geri_alinamaz_oda_bosaltilir_st')} <strong>no_show</strong>{t('cm.pages_NoShowToday.a_cevrilir_audit_log_a_yazilir')}
             </DialogDescription>
           </DialogHeader>
           {confirmTarget && (
             <div className="space-y-3 py-2">
               <div className="bg-slate-50 p-3 rounded-md text-sm">
-                <div className="flex justify-between"><span className="text-slate-500">Misafir</span><strong>{confirmTarget.guest_name || '—'}</strong></div>
-                <div className="flex justify-between"><span className="text-slate-500">Oda</span><strong>{confirmTarget.room_number || '—'}</strong></div>
-                <div className="flex justify-between"><span className="text-slate-500">Statü</span><strong>{STATUS_TR[(confirmTarget.status || '').toLowerCase()] || confirmTarget.status}</strong></div>
+                <div className="flex justify-between"><span className="text-slate-500">{t('cm.pages_NoShowToday.misafir')}</span><strong>{confirmTarget.guest_name || '—'}</strong></div>
+                <div className="flex justify-between"><span className="text-slate-500">{t('cm.pages_NoShowToday.oda_e4b47')}</span><strong>{confirmTarget.room_number || '—'}</strong></div>
+                <div className="flex justify-between"><span className="text-slate-500">{t('cm.pages_NoShowToday.statu_ee6e2')}</span><strong>{STATUS_TR[(confirmTarget.status || '').toLowerCase()] || confirmTarget.status}</strong></div>
                 <div className="flex justify-between"><span className="text-slate-500">ETA</span><strong>{confirmTarget.estimated_arrival_time || '14:00'}</strong></div>
-                <div className="flex justify-between"><span className="text-slate-500">Toplam tutar</span><strong>{fmtTRY(confirmTarget.total_amount)}</strong></div>
+                <div className="flex justify-between"><span className="text-slate-500">{t('cm.pages_NoShowToday.toplam_tutar')}</span><strong>{fmtTRY(confirmTarget.total_amount)}</strong></div>
               </div>
               {estimatedPenalty(confirmTarget) > 0 ? (
                 <div className="bg-rose-50 border border-rose-200 p-3 rounded-md text-sm">
-                  <strong className="text-rose-700">Ceza önizlemesi:</strong>{' '}
-                  {fmtTRY(estimatedPenalty(confirmTarget))} folio'ya "No-Show Cezası" olarak post edilecek.
+                  <strong className="text-rose-700">{t('cm.pages_NoShowToday.ceza_onizlemesi')}</strong>{' '}
+                  {fmtTRY(estimatedPenalty(confirmTarget))} {t('cm.pages_NoShowToday.folio_ya_no_show_cezasi_olarak_post_edil')}
                   <p className="text-xs text-slate-600 mt-1">
-                    Hesaplama: {confirmTarget.first_night_amount ? 'ilk gece tutarı' : confirmTarget.deposit_amount ? 'depozit tutarı' : 'toplam rezervasyon tutarı'}.
-                    Otelinizin politikasına göre değişebilir.
+                    Hesaplama: {confirmTarget.first_night_amount ? 'ilk gece tutarı' : confirmTarget.deposit_amount ? 'depozit tutarı' : 'toplam rezervasyon tutarı'}{t('cm.pages_NoShowToday.otelinizin_politikasina_gore_degisebilir')}
                   </p>
                 </div>
               ) : (
                 <div className="bg-slate-50 border border-slate-200 p-3 rounded-md text-xs text-slate-600">
-                  Ceza yok (rezervasyon garantili değil veya depozit tanımlı değil).
+                  {t('cm.pages_NoShowToday.ceza_yok_rezervasyon_garantili_degil_vey')}
                 </div>
               )}
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmTarget(null)} disabled={!!busyId}>Vazgeç</Button>
+            <Button variant="outline" onClick={() => setConfirmTarget(null)} disabled={!!busyId}>{t('cm.pages_NoShowToday.vazgec')}</Button>
             <Button variant="destructive" onClick={submitNoShow} disabled={!!busyId}>
-              {busyId && <Loader2 className="w-4 h-4 mr-1 animate-spin" />} No-Show İşaretle
+              {busyId && <Loader2 className="w-4 h-4 mr-1 animate-spin" />} {t('cm.pages_NoShowToday.no_show_isaretle_57813')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -443,12 +444,12 @@ const NoShowToday = () => {
           {detail && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><span className="text-slate-500">Statü:</span> <strong>{STATUS_TR[(detail.status || '').toLowerCase()] || detail.status}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_NoShowToday.statu_8db46')}</span> <strong>{STATUS_TR[(detail.status || '').toLowerCase()] || detail.status}</strong></div>
                 <div><span className="text-slate-500">ETA:</span> <strong>{detail.estimated_arrival_time || '14:00'}</strong></div>
-                <div><span className="text-slate-500">Giriş:</span> <strong>{(detail.check_in || '').slice(0, 10)}</strong></div>
-                <div><span className="text-slate-500">Çıkış:</span> <strong>{(detail.check_out || '').slice(0, 10)}</strong></div>
-                <div><span className="text-slate-500">Konuk:</span> <strong>{detail.adults || 1}/{detail.children || 0}</strong></div>
-                <div><span className="text-slate-500">Tutar:</span> <strong>{fmtTRY(detail.total_amount)}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_NoShowToday.giris')}</span> <strong>{(detail.check_in || '').slice(0, 10)}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_NoShowToday.cikis')}</span> <strong>{(detail.check_out || '').slice(0, 10)}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_NoShowToday.konuk_e5c88')}</span> <strong>{detail.adults || 1}/{detail.children || 0}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_NoShowToday.tutar_64d2c')}</span> <strong>{fmtTRY(detail.total_amount)}</strong></div>
                 {detail.source && <div><span className="text-slate-500">Kanal:</span> <strong>{detail.source}</strong></div>}
                 {detail.deposit_amount > 0 && (
                   <div><span className="text-slate-500">Depozit:</span> <strong>{fmtTRY(detail.deposit_amount)}</strong></div>
@@ -475,7 +476,7 @@ const NoShowToday = () => {
               <div className="flex gap-2 pt-2 border-t">
                 <Button size="sm" variant="destructive"
                   onClick={() => { setConfirmTarget(detail); setDetail(null); }}>
-                  <UserX className="w-4 h-4 mr-1" /> No-Show İşaretle
+                  <UserX className="w-4 h-4 mr-1" /> {t('cm.pages_NoShowToday.no_show_isaretle_57813')}
                 </Button>
               </div>
             </div>

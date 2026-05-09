@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { ChefHat, Plus, RefreshCw, Trash2, Save, Loader2, Leaf, Wheat, AlertTriangle } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 /**
  * Opera #7 — Catering Menu.
@@ -37,6 +38,7 @@ const CATS = [
 const catLabel = (v) => CATS.find((c) => c.v === v)?.l || v;
 
 export default function CateringMenuPage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [tab, setTab] = useState("items");
   const [items, setItems] = useState([]);
@@ -176,29 +178,29 @@ export default function CateringMenuPage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-2xl font-semibold flex items-center gap-2">
-            <ChefHat className="h-6 w-6" /> Catering Menü
+            <ChefHat className="h-6 w-6" /> {t('cm.pages_CateringMenuPage.catering_menu')}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Menü kataloğu ve function space booking'lerine menü atama (kişi başı × headcount).
+            {t('cm.pages_CateringMenuPage.menu_katalogu_ve_function_space_booking_')}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={loadItems} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Yenile
+          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> {t('cm.pages_CateringMenuPage.yenile')}
         </Button>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="items" data-testid="tab-catering-items">Menü Kalemleri</TabsTrigger>
-          <TabsTrigger value="bookings" data-testid="tab-catering-bookings">Booking Menüleri</TabsTrigger>
+          <TabsTrigger value="items" data-testid="tab-catering-items">{t('cm.pages_CateringMenuPage.menu_kalemleri')}</TabsTrigger>
+          <TabsTrigger value="bookings" data-testid="tab-catering-bookings">{t('cm.pages_CateringMenuPage.booking_menuleri')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="items">
           <Card>
             <CardHeader>
-              <CardTitle>Menü Kataloğu</CardTitle>
+              <CardTitle>{t('cm.pages_CateringMenuPage.menu_katalogu')}</CardTitle>
               <CardDescription>
-                Function space etkinliklerinde sunulacak menü kalemleri. Kod tenant içinde benzersiz olmalı.
+                {t('cm.pages_CateringMenuPage.function_space_etkinliklerinde_sunulacak')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -231,7 +233,7 @@ export default function CateringMenuPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Kişi Başı (₺)</Label>
+                  <Label>{t('cm.pages_CateringMenuPage.kisi_basi')}</Label>
                   <Input
                     type="number" step="0.01" min="0"
                     value={form.price_per_person}
@@ -240,7 +242,7 @@ export default function CateringMenuPage() {
                   />
                 </div>
                 <div>
-                  <Label>Min Kişi</Label>
+                  <Label>{t('cm.pages_CateringMenuPage.min_kisi')}</Label>
                   <Input
                     type="number" min="1"
                     value={form.min_headcount}
@@ -248,18 +250,18 @@ export default function CateringMenuPage() {
                   />
                 </div>
                 <div className="md:col-span-3">
-                  <Label>Açıklama</Label>
+                  <Label>{t('cm.pages_CateringMenuPage.aciklama')}</Label>
                   <Input
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
                   />
                 </div>
                 <div className="md:col-span-3">
-                  <Label>Alerjenler (virgüllü)</Label>
+                  <Label>{t('cm.pages_CateringMenuPage.alerjenler_virgullu')}</Label>
                   <Input
                     value={form.allergens}
                     onChange={(e) => setForm({ ...form, allergens: e.target.value })}
-                    placeholder="gluten, süt, fındık"
+                    placeholder={t('cm.pages_CateringMenuPage.gluten_sut_findik')}
                   />
                 </div>
                 <div className="flex items-center gap-2 h-10">
@@ -276,16 +278,16 @@ export default function CateringMenuPage() {
                 </div>
                 <Button type="submit" disabled={submitting} data-testid="button-catering-add">
                   {submitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
-                  Ekle
+                  {t('cm.pages_CateringMenuPage.ekle')}
                 </Button>
               </form>
 
               <div className="flex items-center gap-2">
-                <Label>Filtre:</Label>
+                <Label>{t('cm.pages_CateringMenuPage.filtre')}</Label>
                 <Select value={filterCat} onValueChange={setFilterCat}>
                   <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tümü</SelectItem>
+                    <SelectItem value="all">{t('cm.pages_CateringMenuPage.tumu')}</SelectItem>
                     {CATS.map((c) => <SelectItem key={c.v} value={c.v}>{c.l}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -297,7 +299,7 @@ export default function CateringMenuPage() {
                     <TableHead>Kod</TableHead>
                     <TableHead>Ad</TableHead>
                     <TableHead>Kategori</TableHead>
-                    <TableHead className="text-right">Kişi Başı</TableHead>
+                    <TableHead className="text-right">{t('cm.pages_CateringMenuPage.kisi_basi_93731')}</TableHead>
                     <TableHead>Diyet/Alerjen</TableHead>
                     <TableHead className="w-[60px]" />
                   </TableRow>
@@ -306,7 +308,7 @@ export default function CateringMenuPage() {
                   {items.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
-                        Menü kalemi yok.
+                        {t('cm.pages_CateringMenuPage.menu_kalemi_yok')}
                       </TableCell>
                     </TableRow>
                   ) : items.map((it) => (
@@ -343,9 +345,9 @@ export default function CateringMenuPage() {
         <TabsContent value="bookings">
           <Card>
             <CardHeader>
-              <CardTitle>Booking Menü Atama</CardTitle>
+              <CardTitle>{t('cm.pages_CateringMenuPage.booking_menu_atama')}</CardTitle>
               <CardDescription>
-                Function booking seç, menü kalemlerini ekle, kişi sayısı gir. Toplam otomatik hesaplanır.
+                {t('cm.pages_CateringMenuPage.function_booking_sec_menu_kalemlerini_ek')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -354,7 +356,7 @@ export default function CateringMenuPage() {
                   <Label>Function Booking</Label>
                   <Select value={selectedBookingId} onValueChange={(v) => { setSelectedBookingId(v); loadBookingMenus(v); }}>
                     <SelectTrigger data-testid="select-catering-booking">
-                      <SelectValue placeholder="Booking seç" />
+                      <SelectValue placeholder={t('cm.pages_CateringMenuPage.booking_sec')} />
                     </SelectTrigger>
                     <SelectContent>
                       {bookings.length === 0 ? (
@@ -375,9 +377,9 @@ export default function CateringMenuPage() {
                     {editLines.map((ln, i) => (
                       <div key={i} className="grid grid-cols-12 gap-2 items-end border rounded p-2">
                         <div className="col-span-5">
-                          <Label>Menü</Label>
+                          <Label>{t('cm.pages_CateringMenuPage.menu')}</Label>
                           <Select value={ln.menu_item_id} onValueChange={(v) => updateLine(i, "menu_item_id", v)}>
-                            <SelectTrigger><SelectValue placeholder="Menü seç" /></SelectTrigger>
+                            <SelectTrigger><SelectValue placeholder={t('cm.pages_CateringMenuPage.menu_sec')} /></SelectTrigger>
                             <SelectContent>
                               {items.map((it) => (
                                 <SelectItem key={it.id} value={it.id}>
@@ -388,7 +390,7 @@ export default function CateringMenuPage() {
                           </Select>
                         </div>
                         <div className="col-span-2">
-                          <Label>Kişi</Label>
+                          <Label>{t('cm.pages_CateringMenuPage.kisi')}</Label>
                           <Input
                             type="number" min="1"
                             value={ln.headcount}
@@ -411,7 +413,7 @@ export default function CateringMenuPage() {
                       </div>
                     ))}
                     <Button variant="outline" size="sm" onClick={addLine} data-testid="button-catering-add-line">
-                      <Plus className="h-4 w-4 mr-1" /> Kalem Ekle
+                      <Plus className="h-4 w-4 mr-1" /> {t('cm.pages_CateringMenuPage.kalem_ekle')}
                     </Button>
                   </div>
 
@@ -428,13 +430,13 @@ export default function CateringMenuPage() {
                     })()}
                     <Button onClick={saveBookingMenus} disabled={savingBooking || calcTotal().mixed} data-testid="button-catering-save-booking">
                       {savingBooking ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
-                      Kaydet
+                      {t('cm.pages_CateringMenuPage.kaydet')}
                     </Button>
                   </div>
 
                   {bookingMenus.lines?.length > 0 && (
                     <div className="text-xs text-muted-foreground">
-                      Kayıtlı toplam: {bookingMenus.total} {bookingMenus.currency} ({bookingMenus.lines.length} kalem)
+                      {t('cm.pages_CateringMenuPage.kayitli_toplam')} {bookingMenus.total} {bookingMenus.currency} ({bookingMenus.lines.length} kalem)
                     </div>
                   )}
                 </>
@@ -447,14 +449,14 @@ export default function CateringMenuPage() {
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Menü kalemini sil?</DialogTitle>
+            <DialogTitle>{t('cm.pages_CateringMenuPage.menu_kalemini_sil')}</DialogTitle>
             <DialogDescription>
-              "{deleteTarget?.name}" pasife alınacak. Mevcut booking atamalarındaki referanslar korunur.
+              "{deleteTarget?.name}{t('cm.pages_CateringMenuPage.pasife_alinacak_mevcut_booking_atamalari')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Vazgeç</Button>
-            <Button variant="destructive" onClick={confirmDelete} data-testid="button-catering-confirm-delete">Sil</Button>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>{t('cm.pages_CateringMenuPage.vazgec')}</Button>
+            <Button variant="destructive" onClick={confirmDelete} data-testid="button-catering-confirm-delete">{t('cm.pages_CateringMenuPage.sil')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

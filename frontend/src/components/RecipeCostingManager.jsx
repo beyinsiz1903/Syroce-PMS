@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Plus, CookingPot, Flame, Timer, UtensilsCrossed } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const categoryOptions = [
   'appetizer',
@@ -26,6 +27,7 @@ const categoryOptions = [
 ];
 
 const RecipeCostingManager = () => {
+  const { t } = useTranslation();
   const [recipes, setRecipes] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
@@ -185,7 +187,7 @@ const RecipeCostingManager = () => {
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="bg-gradient-to-r from-amber-50 to-amber-100 border-amber-200">
           <CardContent className="p-4">
-            <p className="text-xs text-amber-600 font-semibold">Toplam Recipe</p>
+            <p className="text-xs text-amber-600 font-semibold">{t('cm.components_RecipeCostingManager.toplam_recipe')}</p>
             <p className="text-3xl font-bold">{stats.total}</p>
           </CardContent>
         </Card>
@@ -203,7 +205,7 @@ const RecipeCostingManager = () => {
         </Card>
         <Card className="bg-gradient-to-r from-indigo-50 to-indigo-100 border-indigo-200">
           <CardContent className="p-4">
-            <p className="text-xs text-indigo-600 font-semibold">En Yüksek GP</p>
+            <p className="text-xs text-indigo-600 font-semibold">{t('cm.components_RecipeCostingManager.en_yuksek_gp')}</p>
             <p className="text-sm font-bold">
               {stats.best_gp ? `${stats.best_gp.dish_name} (${stats.best_gp.gp_percentage}%)` : '—'}
             </p>
@@ -224,16 +226,16 @@ const RecipeCostingManager = () => {
             }}>
               <Button size="sm" onClick={() => setDialogOpen(true)}>
                 <Plus className="w-4 h-4 mr-1" />
-                Yeni Recipe
+                {t('cm.components_RecipeCostingManager.yeni_recipe')}
               </Button>
               <DialogContent className="max-w-3xl">
                 <DialogHeader>
-                  <DialogTitle>Yeni Recipe Oluştur</DialogTitle>
+                  <DialogTitle>{t('cm.components_RecipeCostingManager.yeni_recipe_olustur')}</DialogTitle>
                 </DialogHeader>
                 <form className="space-y-4" onSubmit={handleSubmit}>
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
-                      <Label>Yemek Adı</Label>
+                      <Label>{t('cm.components_RecipeCostingManager.yemek_adi')}</Label>
                       <Input
                         value={form.dish_name}
                         onChange={(e) => setForm({ ...form, dish_name: e.target.value })}
@@ -262,7 +264,7 @@ const RecipeCostingManager = () => {
                       />
                     </div>
                     <div>
-                      <Label>Hazırlık Süresi (dk)</Label>
+                      <Label>{t('cm.components_RecipeCostingManager.hazirlik_suresi_dk')}</Label>
                       <Input
                         type="number"
                         value={form.preparation_time}
@@ -271,7 +273,7 @@ const RecipeCostingManager = () => {
                       />
                     </div>
                     <div>
-                      <Label>Satış Fiyatı (€)</Label>
+                      <Label>{t('cm.components_RecipeCostingManager.satis_fiyati')}</Label>
                       <Input
                         type="number"
                         value={form.selling_price}
@@ -288,7 +290,7 @@ const RecipeCostingManager = () => {
                       value={form.notes}
                       onChange={(e) => setForm({ ...form, notes: e.target.value })}
                       rows={3}
-                      placeholder="Servis önerisi, plating notu..."
+                      placeholder={t('cm.components_RecipeCostingManager.servis_onerisi_plating_notu')}
                     />
                   </div>
 
@@ -319,7 +321,7 @@ const RecipeCostingManager = () => {
                                     }
                                     className="w-full rounded-md border border-input px-3 py-2 text-sm"
                                   >
-                                    <option value="">Seçiniz</option>
+                                    <option value="">{t('cm.components_RecipeCostingManager.seciniz')}</option>
                                     {ingredients.map((ing) => (
                                       <option key={ing.id} value={ing.id}>
                                         {ing.name} ({ing.unit_cost.toFixed(2)} € / {ing.unit})
@@ -355,7 +357,7 @@ const RecipeCostingManager = () => {
                                 </div>
                                 <div className="flex items-end justify-between">
                                   <div>
-                                    <Label>Satır Maliyeti</Label>
+                                    <Label>{t('cm.components_RecipeCostingManager.satir_maliyeti')}</Label>
                                     <p className="text-sm font-semibold text-gray-800">
                                       €{lineCost.toFixed(2)}
                                     </p>
@@ -367,7 +369,7 @@ const RecipeCostingManager = () => {
                                       className="text-red-500"
                                       onClick={() => removeIngredientRow(row.tempId)}
                                     >
-                                      Sil
+                                      {t('cm.components_RecipeCostingManager.sil')}
                                     </Button>
                                   )}
                                 </div>
@@ -389,9 +391,9 @@ const RecipeCostingManager = () => {
             </Dialog>
           </CardHeader>
           <CardContent className="space-y-2 max-h-[540px] overflow-y-auto pr-1">
-            {loading && <p className="text-sm text-gray-500">Yükleniyor...</p>}
+            {loading && <p className="text-sm text-gray-500">{t('cm.components_RecipeCostingManager.yukleniyor')}</p>}
             {!loading && recipes.length === 0 && (
-              <p className="text-sm text-gray-500">Henüz recipe yok. Yeni recipe ekleyin.</p>
+              <p className="text-sm text-gray-500">{t('cm.components_RecipeCostingManager.henuz_recipe_yok_yeni_recipe_ekleyin')}</p>
             )}
             {recipes.map((recipe) => (
               <div
@@ -427,7 +429,7 @@ const RecipeCostingManager = () => {
           </CardHeader>
           <CardContent>
             {!selectedRecipe && (
-              <p className="text-sm text-gray-500">Recipe seçmek için listeden bir öğe seçin.</p>
+              <p className="text-sm text-gray-500">{t('cm.components_RecipeCostingManager.recipe_secmek_icin_listeden_bir_oge_seci')}</p>
             )}
             {selectedRecipe && (
               <div className="space-y-4">
@@ -450,7 +452,7 @@ const RecipeCostingManager = () => {
                   </Card>
                   <Card className="bg-amber-50 border-amber-200">
                     <CardContent className="p-3">
-                      <p className="text-xs text-amber-600">Satış Fiyatı</p>
+                      <p className="text-xs text-amber-600">{t('cm.components_RecipeCostingManager.satis_fiyati_71f88')}</p>
                       <p className="text-2xl font-bold text-amber-700">
                         €{selectedRecipe.selling_price?.toFixed(2)}
                       </p>
@@ -485,13 +487,13 @@ const RecipeCostingManager = () => {
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="text-xs text-gray-400">Satır Maliyeti</p>
+                          <p className="text-xs text-gray-400">{t('cm.components_RecipeCostingManager.satir_maliyeti_e7c13')}</p>
                           <p className="font-semibold text-gray-800">€{line.line_cost}</p>
                         </div>
                       </div>
                     ))}
                     {!selectedRecipe.cost_breakdown?.length && (
-                      <p className="text-xs text-gray-500">Malzeme bulunamadı</p>
+                      <p className="text-xs text-gray-500">{t('cm.components_RecipeCostingManager.malzeme_bulunamadi')}</p>
                     )}
                   </div>
                 </div>

@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Calendar, Plus, Users, Clock, Printer, CheckCircle, AlertCircle
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const SETUP_TYPES = [
   { value: 'theater', label: 'Tiyatro', capacity_factor: 1.0 },
@@ -50,6 +51,7 @@ const EMPTY_EVENT = {
 };
 
 const BanquetEventOrder = () => {
+  const { t } = useTranslation();
   const [events, setEvents] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -130,13 +132,13 @@ const BanquetEventOrder = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold flex items-center gap-2">
-          <Calendar className="h-5 w-5" /> Banket & Etkinlik Yönetimi
+          <Calendar className="h-5 w-5" /> {t('cm.components_pms_BanquetEventOrder.banket_etkinlik_yonetimi')}
         </h2>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}>
             {viewMode === 'list' ? 'Takvim' : 'Liste'}
           </Button>
-          <Button onClick={() => setShowNew(true)}><Plus className="h-4 w-4 mr-1" /> Yeni Etkinlik</Button>
+          <Button onClick={() => setShowNew(true)}><Plus className="h-4 w-4 mr-1" /> {t('cm.components_pms_BanquetEventOrder.yeni_etkinlik')}</Button>
         </div>
       </div>
 
@@ -156,14 +158,14 @@ const BanquetEventOrder = () => {
         <Card className="border-green-200">
           <CardContent className="p-3 text-center">
             <div className="text-2xl font-bold text-green-600">{events.reduce((s, e) => s + (e.total_price || 0), 0).toLocaleString()} TL</div>
-            <div className="text-xs text-muted-foreground">Toplam Gelir</div>
+            <div className="text-xs text-muted-foreground">{t('cm.components_pms_BanquetEventOrder.toplam_gelir')}</div>
           </CardContent>
         </Card>
       </div>
 
       <div className="space-y-2">
-        {loading && <p className="text-center text-muted-foreground py-4">Yükleniyor...</p>}
-        {!loading && events.length === 0 && <p className="text-center text-muted-foreground py-8">Henüz etkinlik yok</p>}
+        {loading && <p className="text-center text-muted-foreground py-4">{t('cm.components_pms_BanquetEventOrder.yukleniyor')}</p>}
+        {!loading && events.length === 0 && <p className="text-center text-muted-foreground py-8">{t('cm.components_pms_BanquetEventOrder.henuz_etkinlik_yok')}</p>}
         {events.map(event => (
           <Card key={event.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedEvent(event)}>
             <CardContent className="p-4">
@@ -203,22 +205,22 @@ const BanquetEventOrder = () => {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div><Label className="text-xs text-muted-foreground">Firma</Label><p className="font-medium">{selectedEvent.company || '-'}</p></div>
-                  <div><Label className="text-xs text-muted-foreground">İletişim</Label><p className="font-medium">{selectedEvent.contact_name} - {selectedEvent.contact_phone}</p></div>
+                  <div><Label className="text-xs text-muted-foreground">{t('cm.components_pms_BanquetEventOrder.iletisim')}</Label><p className="font-medium">{selectedEvent.contact_name} - {selectedEvent.contact_phone}</p></div>
                   <div><Label className="text-xs text-muted-foreground">Salon</Label><p className="font-medium">{selectedEvent.room_name}</p></div>
                   <div><Label className="text-xs text-muted-foreground">Duzen</Label><p className="font-medium">{SETUP_TYPES.find(s=>s.value===selectedEvent.setup_type)?.label || selectedEvent.setup_type}</p></div>
-                  <div><Label className="text-xs text-muted-foreground">Tarih/Saat</Label><p className="font-medium">{selectedEvent.date} / {selectedEvent.start_time} - {selectedEvent.end_time}</p></div>
+                  <div><Label className="text-xs text-muted-foreground">{t('cm.components_pms_BanquetEventOrder.tarih_saat')}</Label><p className="font-medium">{selectedEvent.date} / {selectedEvent.start_time} - {selectedEvent.end_time}</p></div>
                   <div><Label className="text-xs text-muted-foreground">Katilimci/Garanti</Label><p className="font-medium">{selectedEvent.attendees} / {selectedEvent.guaranteed_pax}</p></div>
                 </div>
                 {selectedEvent.menu_details && <div><Label className="text-xs text-muted-foreground">Menu</Label><p className="text-sm">{selectedEvent.menu_details}</p></div>}
                 {selectedEvent.av_equipment?.length > 0 && <div><Label className="text-xs text-muted-foreground">AV Ekipman</Label><div className="flex flex-wrap gap-1 mt-1">{selectedEvent.av_equipment.map(eq => <Badge key={eq} variant="outline">{eq}</Badge>)}</div></div>}
                 {selectedEvent.decorations && <div><Label className="text-xs text-muted-foreground">Dekorasyon</Label><p className="text-sm">{selectedEvent.decorations}</p></div>}
-                {selectedEvent.special_requests && <div><Label className="text-xs text-muted-foreground">Özel Istekler</Label><p className="text-sm">{selectedEvent.special_requests}</p></div>}
+                {selectedEvent.special_requests && <div><Label className="text-xs text-muted-foreground">{t('cm.components_pms_BanquetEventOrder.ozel_istekler')}</Label><p className="text-sm">{selectedEvent.special_requests}</p></div>}
                 <div className="grid grid-cols-3 gap-4 bg-muted p-3 rounded-lg">
-                  <div className="text-center"><div className="text-xs text-muted-foreground">Kisi Basi</div><div className="font-bold">{selectedEvent.price_per_person} TL</div></div>
-                  <div className="text-center"><div className="text-xs text-muted-foreground">Toplam</div><div className="font-bold text-green-600">{selectedEvent.total_price?.toLocaleString()} TL</div></div>
+                  <div className="text-center"><div className="text-xs text-muted-foreground">{t('cm.components_pms_BanquetEventOrder.kisi_basi')}</div><div className="font-bold">{selectedEvent.price_per_person} TL</div></div>
+                  <div className="text-center"><div className="text-xs text-muted-foreground">{t('cm.components_pms_BanquetEventOrder.toplam')}</div><div className="font-bold text-green-600">{selectedEvent.total_price?.toLocaleString()} TL</div></div>
                   <div className="text-center"><div className="text-xs text-muted-foreground">Kapora</div><div className="font-bold text-blue-600">{selectedEvent.deposit_amount?.toLocaleString()} TL</div></div>
                 </div>
-                <Button className="w-full" onClick={() => { printBEO(selectedEvent); }}><Printer className="h-4 w-4 mr-1" /> BEO Yazdir</Button>
+                <Button className="w-full" onClick={() => { printBEO(selectedEvent); }}><Printer className="h-4 w-4 mr-1" /> {t('cm.components_pms_BanquetEventOrder.beo_yazdir')}</Button>
               </div>
             </>
           )}
@@ -227,7 +229,7 @@ const BanquetEventOrder = () => {
 
       <Dialog open={showNew} onOpenChange={setShowNew}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Yeni Etkinlik / BEO</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('cm.components_pms_BanquetEventOrder.yeni_etkinlik_beo')}</DialogTitle></DialogHeader>
           <Tabs defaultValue="general">
             <TabsList className="grid grid-cols-4 w-full">
               <TabsTrigger value="general">Genel</TabsTrigger>
@@ -236,32 +238,32 @@ const BanquetEventOrder = () => {
               <TabsTrigger value="financial">Finansal</TabsTrigger>
             </TabsList>
             <TabsContent value="general" className="space-y-3">
-              <div><Label>Etkinlik Adi</Label><Input value={newEvent.event_name} onChange={e => setNewEvent(p => ({ ...p, event_name: e.target.value }))} placeholder="Yıllık Toplanti, Dugun..." /></div>
+              <div><Label>{t('cm.components_pms_BanquetEventOrder.etkinlik_adi')}</Label><Input value={newEvent.event_name} onChange={e => setNewEvent(p => ({ ...p, event_name: e.target.value }))} placeholder={t('cm.components_pms_BanquetEventOrder.yillik_toplanti_dugun')} /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>Firma/Kurum</Label><Input value={newEvent.company} onChange={e => setNewEvent(p => ({ ...p, company: e.target.value }))} /></div>
-                <div><Label>Salon</Label><Select value={newEvent.room_name} onValueChange={v => setNewEvent(p => ({ ...p, room_name: v }))}><SelectTrigger><SelectValue placeholder="Salon seçin..." /></SelectTrigger><SelectContent><SelectItem value="Balo Salonu">Balo Salonu</SelectItem><SelectItem value="Toplanti Salonu A">Toplanti Salonu A</SelectItem><SelectItem value="Toplanti Salonu B">Toplanti Salonu B</SelectItem><SelectItem value="VIP Toplanti Odasi">VIP Toplanti Odasi</SelectItem></SelectContent></Select></div>
+                <div><Label>Salon</Label><Select value={newEvent.room_name} onValueChange={v => setNewEvent(p => ({ ...p, room_name: v }))}><SelectTrigger><SelectValue placeholder={t('cm.components_pms_BanquetEventOrder.salon_secin')} /></SelectTrigger><SelectContent><SelectItem value="Balo Salonu">Balo Salonu</SelectItem><SelectItem value="Toplanti Salonu A">Toplanti Salonu A</SelectItem><SelectItem value="Toplanti Salonu B">Toplanti Salonu B</SelectItem><SelectItem value="VIP Toplanti Odasi">VIP Toplanti Odasi</SelectItem></SelectContent></Select></div>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <div><Label>Tarih</Label><Input type="date" value={newEvent.date} onChange={e => setNewEvent(p => ({ ...p, date: e.target.value }))} /></div>
+                <div><Label>{t('cm.components_pms_BanquetEventOrder.tarih')}</Label><Input type="date" value={newEvent.date} onChange={e => setNewEvent(p => ({ ...p, date: e.target.value }))} /></div>
                 <div><Label>Baslangic</Label><Input type="time" value={newEvent.start_time} onChange={e => setNewEvent(p => ({ ...p, start_time: e.target.value }))} /></div>
                 <div><Label>Bitis</Label><Input type="time" value={newEvent.end_time} onChange={e => setNewEvent(p => ({ ...p, end_time: e.target.value }))} /></div>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <div><Label>İletişim Adi</Label><Input value={newEvent.contact_name} onChange={e => setNewEvent(p => ({ ...p, contact_name: e.target.value }))} /></div>
+                <div><Label>{t('cm.components_pms_BanquetEventOrder.iletisim_adi')}</Label><Input value={newEvent.contact_name} onChange={e => setNewEvent(p => ({ ...p, contact_name: e.target.value }))} /></div>
                 <div><Label>Telefon</Label><Input value={newEvent.contact_phone} onChange={e => setNewEvent(p => ({ ...p, contact_phone: e.target.value }))} /></div>
                 <div><Label>E-posta</Label><Input value={newEvent.contact_email} onChange={e => setNewEvent(p => ({ ...p, contact_email: e.target.value }))} /></div>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div><Label>Duzen</Label><Select value={newEvent.setup_type} onValueChange={v => setNewEvent(p => ({ ...p, setup_type: v }))}><SelectTrigger><SelectValue placeholder="Duzen..." /></SelectTrigger><SelectContent>{SETUP_TYPES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent></Select></div>
                 <div><Label>Katilimci</Label><Input type="number" value={newEvent.attendees} onChange={e => setNewEvent(p => ({ ...p, attendees: e.target.value }))} /></div>
-                <div><Label>Garanti Kisi</Label><Input type="number" value={newEvent.guaranteed_pax} onChange={e => setNewEvent(p => ({ ...p, guaranteed_pax: e.target.value }))} /></div>
+                <div><Label>{t('cm.components_pms_BanquetEventOrder.garanti_kisi')}</Label><Input type="number" value={newEvent.guaranteed_pax} onChange={e => setNewEvent(p => ({ ...p, guaranteed_pax: e.target.value }))} /></div>
               </div>
             </TabsContent>
             <TabsContent value="menu" className="space-y-3">
               <div><Label>Menu Tipi</Label><Select value={newEvent.menu_type} onValueChange={v => setNewEvent(p => ({ ...p, menu_type: v }))}><SelectTrigger><SelectValue placeholder="Menu tipi..." /></SelectTrigger><SelectContent>{MENU_TYPES.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent></Select></div>
               <div><Label>Menu Detaylari</Label><Textarea value={newEvent.menu_details} onChange={e => setNewEvent(p => ({ ...p, menu_details: e.target.value }))} placeholder="Meze cesitleri, ana yemek, tatli..." rows={3} /></div>
               <div><Label>Dekorasyon</Label><Textarea value={newEvent.decorations} onChange={e => setNewEvent(p => ({ ...p, decorations: e.target.value }))} placeholder="Tema, cicek, masa duzeni..." rows={2} /></div>
-              <div><Label>Özel Istekler</Label><Textarea value={newEvent.special_requests} onChange={e => setNewEvent(p => ({ ...p, special_requests: e.target.value }))} placeholder="Ek istekler..." rows={2} /></div>
+              <div><Label>{t('cm.components_pms_BanquetEventOrder.ozel_istekler_582cd')}</Label><Textarea value={newEvent.special_requests} onChange={e => setNewEvent(p => ({ ...p, special_requests: e.target.value }))} placeholder="Ek istekler..." rows={2} /></div>
             </TabsContent>
             <TabsContent value="technical" className="space-y-3">
               <Label>AV Ekipman (secili: {newEvent.av_equipment.length})</Label>
@@ -275,12 +277,12 @@ const BanquetEventOrder = () => {
             </TabsContent>
             <TabsContent value="financial" className="space-y-3">
               <div className="grid grid-cols-3 gap-3">
-                <div><Label>Kisi Basi (TL)</Label><Input type="number" value={newEvent.price_per_person} onChange={e => setNewEvent(p => ({ ...p, price_per_person: e.target.value }))} /></div>
-                <div><Label>Toplam (TL)</Label><Input type="number" value={newEvent.total_price} onChange={e => setNewEvent(p => ({ ...p, total_price: e.target.value }))} /></div>
+                <div><Label>{t('cm.components_pms_BanquetEventOrder.kisi_basi_tl')}</Label><Input type="number" value={newEvent.price_per_person} onChange={e => setNewEvent(p => ({ ...p, price_per_person: e.target.value }))} /></div>
+                <div><Label>{t('cm.components_pms_BanquetEventOrder.toplam_tl')}</Label><Input type="number" value={newEvent.total_price} onChange={e => setNewEvent(p => ({ ...p, total_price: e.target.value }))} /></div>
                 <div><Label>Kapora (TL)</Label><Input type="number" value={newEvent.deposit_amount} onChange={e => setNewEvent(p => ({ ...p, deposit_amount: e.target.value }))} /></div>
               </div>
-              <div><Label>Durum</Label><Select value={newEvent.status} onValueChange={v => setNewEvent(p => ({ ...p, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tentative">Opsiyonel</SelectItem><SelectItem value="confirmed">Kesin</SelectItem></SelectContent></Select></div>
-              <div><Label>Faturalama Talimatlari</Label><Textarea value={newEvent.billing_instructions} onChange={e => setNewEvent(p => ({ ...p, billing_instructions: e.target.value }))} placeholder="Fatura kime kesilecek, özel notlar..." /></div>
+              <div><Label>{t('cm.components_pms_BanquetEventOrder.durum')}</Label><Select value={newEvent.status} onValueChange={v => setNewEvent(p => ({ ...p, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tentative">Opsiyonel</SelectItem><SelectItem value="confirmed">Kesin</SelectItem></SelectContent></Select></div>
+              <div><Label>Faturalama Talimatlari</Label><Textarea value={newEvent.billing_instructions} onChange={e => setNewEvent(p => ({ ...p, billing_instructions: e.target.value }))} placeholder={t('cm.components_pms_BanquetEventOrder.fatura_kime_kesilecek_ozel_notlar')} /></div>
               <div><Label>Notlar</Label><Input value={newEvent.notes} onChange={e => setNewEvent(p => ({ ...p, notes: e.target.value }))} /></div>
             </TabsContent>
           </Tabs>

@@ -8,8 +8,10 @@ import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, Briefcase, Check } from 'lucide-react';
 import { Field, Modal } from './_shared';
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 const AccountsView = ({ accounts, reload }) => {
+  const { t } = useTranslation();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', tax_no: '', city: '', industry: 'corporate',
                                      credit_limit: 0, payment_terms_days: 30 });
@@ -57,12 +59,12 @@ const AccountsView = ({ accounts, reload }) => {
   return (
     <Card><CardContent className="p-3">
       <div className="flex justify-between items-center mb-3">
-        <h3 className="font-semibold">Kurumsal Müşteriler ({accounts.length})</h3>
+        <h3 className="font-semibold">{t('cm.components_mice_AccountsView.kurumsal_musteriler')}{accounts.length})</h3>
         <Button size="sm" onClick={() => setShowForm(true)}>
-          <Plus className="w-3 h-3 mr-1" /> Yeni Hesap
+          <Plus className="w-3 h-3 mr-1" /> {t('cm.components_mice_AccountsView.yeni_hesap')}
         </Button>
       </div>
-      {accounts.length === 0 && <p className="text-center text-gray-500 p-4">Henüz hesap yok.</p>}
+      {accounts.length === 0 && <p className="text-center text-gray-500 p-4">{t('cm.components_mice_AccountsView.henuz_hesap_yok')}</p>}
       <div className="space-y-1">
         {accounts.map((a) => (
           <div key={a.id} className="border rounded">
@@ -77,13 +79,13 @@ const AccountsView = ({ accounts, reload }) => {
                 </div>
               </div>
               <Badge variant="outline" className="text-xs">
-                {a.payment_terms_days}gün vade
+                {a.payment_terms_days}{t('cm.components_mice_AccountsView.gun_vade')}
               </Badge>
               <Button size="sm" variant="ghost" onClick={(e) => {
                 e.stopPropagation();
                 setContactForm({ account_id: a.id, name: '', title: '', email: '', phone: '', is_primary: false });
               }}>
-                <Plus className="w-3 h-3" /> Kişi
+                <Plus className="w-3 h-3" /> {t('cm.components_mice_AccountsView.kisi')}
               </Button>
               <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); remove(a.id); }}>
                 <Trash2 className="w-3 h-3" />
@@ -92,7 +94,7 @@ const AccountsView = ({ accounts, reload }) => {
             {expandedId === a.id && (
               <div className="bg-slate-50 p-2 border-t">
                 {(contactsCache[a.id] || []).length === 0 ? (
-                  <p className="text-xs text-gray-500">Henüz kişi yok.</p>
+                  <p className="text-xs text-gray-500">{t('cm.components_mice_AccountsView.henuz_kisi_yok')}</p>
                 ) : (
                   <table className="w-full text-xs">
                     <thead><tr className="text-gray-500">
@@ -122,35 +124,35 @@ const AccountsView = ({ accounts, reload }) => {
       </div>
 
       {showForm && (
-        <Modal title="Yeni Kurumsal Hesap" onClose={() => setShowForm(false)}>
+        <Modal title={t('cm.components_mice_AccountsView.yeni_kurumsal_hesap')} onClose={() => setShowForm(false)}>
           <form onSubmit={create} className="space-y-2">
-            <Field label="Şirket Adı"><Input required value={form.name}
+            <Field label={t('cm.components_mice_AccountsView.sirket_adi')}><Input required value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Vergi No"><Input value={form.tax_no}
                 onChange={(e) => setForm({ ...form, tax_no: e.target.value })} /></Field>
-              <Field label="Şehir"><Input value={form.city}
+              <Field label={t('cm.components_mice_AccountsView.sehir')}><Input value={form.city}
                 onChange={(e) => setForm({ ...form, city: e.target.value })} /></Field>
-              <Field label="Sektör">
+              <Field label={t('cm.components_mice_AccountsView.sektor')}>
                 <select className="w-full border rounded px-2 py-1.5" value={form.industry}
                         onChange={(e) => setForm({ ...form, industry: e.target.value })}>
                   {['corporate', 'travel_agency', 'government', 'ngo', 'other'].map((x) => <option key={x}>{x}</option>)}
                 </select>
               </Field>
-              <Field label="Vade (gün)"><Input type="number" value={form.payment_terms_days}
+              <Field label={t('cm.components_mice_AccountsView.vade_gun')}><Input type="number" value={form.payment_terms_days}
                 onChange={(e) => setForm({ ...form, payment_terms_days: +e.target.value })} /></Field>
               <Field label="Kredi Limiti ₺"><Input type="number" value={form.credit_limit}
                 onChange={(e) => setForm({ ...form, credit_limit: +e.target.value })} /></Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>İptal</Button>
-              <Button type="submit">Oluştur</Button>
+              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>{t('cm.components_mice_AccountsView.iptal')}</Button>
+              <Button type="submit">{t('cm.components_mice_AccountsView.olustur')}</Button>
             </div>
           </form>
         </Modal>
       )}
       {contactForm && (
-        <Modal title="Yeni Kişi" onClose={() => setContactForm(null)}>
+        <Modal title={t('cm.components_mice_AccountsView.yeni_kisi')} onClose={() => setContactForm(null)}>
           <form onSubmit={addContact} className="space-y-2">
             <Field label="Ad Soyad"><Input required value={contactForm.name}
               onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })} /></Field>
@@ -165,11 +167,11 @@ const AccountsView = ({ accounts, reload }) => {
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={contactForm.is_primary}
                      onChange={(e) => setContactForm({ ...contactForm, is_primary: e.target.checked })} />
-              Birincil kişi
+              {t('cm.components_mice_AccountsView.birincil_kisi')}
             </label>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setContactForm(null)}>İptal</Button>
-              <Button type="submit">Ekle</Button>
+              <Button type="button" variant="ghost" onClick={() => setContactForm(null)}>{t('cm.components_mice_AccountsView.iptal_25174')}</Button>
+              <Button type="submit">{t('cm.components_mice_AccountsView.ekle')}</Button>
             </div>
           </form>
         </Modal>

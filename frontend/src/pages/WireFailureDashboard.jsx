@@ -9,8 +9,10 @@ import {
   AlertTriangle, CheckCircle, RefreshCw, Loader2,
   Activity, Zap, XCircle, Shield,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const WireFailureDashboard = ({ user }) => {
+  const { t } = useTranslation();
   const [summary, setSummary] = useState(null);
   const [failures, setFailures] = useState([]);
   const [trend, setTrend] = useState([]);
@@ -116,11 +118,11 @@ const WireFailureDashboard = ({ user }) => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="wire-failure-title">Wire Failure Takibi</h1>
-          <p className="text-sm text-slate-500 mt-1">Kanal yöneticisi hata ve başarısız işlem takibi</p>
+          <p className="text-sm text-slate-500 mt-1">{t('cm.pages_WireFailureDashboard.kanal_yoneticisi_hata_ve_basarisiz_islem')}</p>
         </div>
         <Button variant="outline" size="sm" onClick={refreshAll} disabled={loading} data-testid="wire-refresh-btn">
           {loading ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1.5" />}
-          Yenile
+          {t('cm.pages_WireFailureDashboard.yenile')}
         </Button>
       </div>
 
@@ -135,11 +137,11 @@ const WireFailureDashboard = ({ user }) => {
               <div className="flex items-center gap-3">
                 <div className={statusColor}>{statusIcon}</div>
                 <div>
-                  <p className="text-xs text-slate-500 uppercase">Genel Durum</p>
+                  <p className="text-xs text-slate-500 uppercase">{t('cm.pages_WireFailureDashboard.genel_durum')}</p>
                   <p className={`text-lg font-bold ${statusColor}`}>{statusLabel}</p>
                   {typeof summary.unresolved_critical === 'number' && (
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      {summary.unresolved_critical} açık · {summary.total_failures} toplam
+                      {summary.unresolved_critical} {t('cm.pages_WireFailureDashboard.acik')} {summary.total_failures} toplam
                     </p>
                   )}
                 </div>
@@ -152,9 +154,9 @@ const WireFailureDashboard = ({ user }) => {
               <div className="flex items-center gap-3">
                 <Zap className="w-5 h-5 text-rose-500" />
                 <div>
-                  <p className="text-xs text-slate-500 uppercase">Toplam Hata</p>
+                  <p className="text-xs text-slate-500 uppercase">{t('cm.pages_WireFailureDashboard.toplam_hata')}</p>
                   <p className="text-lg font-bold">{summary.total_failures}</p>
-                  <p className="text-xs text-slate-400">Son {summary.period_days} gün</p>
+                  <p className="text-xs text-slate-400">Son {summary.period_days} {t('cm.pages_WireFailureDashboard.gun')}</p>
                 </div>
               </div>
             </CardContent>
@@ -169,7 +171,7 @@ const WireFailureDashboard = ({ user }) => {
                   <p className="text-lg font-bold">{summary.breakdown.ari_hard_fails}</p>
                   {summary.unresolved_breakdown && (
                     <p className="text-[11px] text-slate-500">
-                      {summary.unresolved_breakdown.ari_hard_fails} açık
+                      {summary.unresolved_breakdown.ari_hard_fails} {t('cm.pages_WireFailureDashboard.acik_e0324')}
                     </p>
                   )}
                 </div>
@@ -182,7 +184,7 @@ const WireFailureDashboard = ({ user }) => {
               <div className="flex items-center gap-3">
                 <Shield className="w-5 h-5 text-indigo-500" />
                 <div>
-                  <p className="text-xs text-slate-500 uppercase">Açık Recon Sorunu</p>
+                  <p className="text-xs text-slate-500 uppercase">{t('cm.pages_WireFailureDashboard.acik_recon_sorunu')}</p>
                   <p className="text-lg font-bold">{summary.breakdown.reconciliation_issues}</p>
                 </div>
               </div>
@@ -216,7 +218,7 @@ const WireFailureDashboard = ({ user }) => {
         <TabsContent value="overview" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Günlük Hata Trendi (Son 30 Gün)</CardTitle>
+              <CardTitle className="text-base">{t('cm.pages_WireFailureDashboard.gunluk_hata_trendi_son_30_gun')}</CardTitle>
             </CardHeader>
             <CardContent>
               {trend.length > 0 ? (
@@ -248,7 +250,7 @@ const WireFailureDashboard = ({ user }) => {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500 text-center py-8">Trend verisi yükleniyor...</p>
+                <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_WireFailureDashboard.trend_verisi_yukleniyor')}</p>
               )}
             </CardContent>
           </Card>
@@ -279,7 +281,7 @@ const WireFailureDashboard = ({ user }) => {
               {failures.length === 0 ? (
                 <div className="text-center py-8">
                   <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                  <p className="text-sm text-slate-500">Bu filtrede hata bulunamadı</p>
+                  <p className="text-sm text-slate-500">{t('cm.pages_WireFailureDashboard.bu_filtrede_hata_bulunamadi')}</p>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-[500px] overflow-y-auto" data-testid="wire-failures-list">
@@ -302,7 +304,7 @@ const WireFailureDashboard = ({ user }) => {
                           </div>
                           <p className="text-sm mt-1 font-medium">{f.message || 'Bilinmeyen hata'}</p>
                           {f.room_type && (
-                            <p className="text-xs text-slate-500 mt-0.5">Oda tipi: {f.room_type}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{t('cm.pages_WireFailureDashboard.oda_tipi')} {f.room_type}</p>
                           )}
                         </div>
                       </div>
@@ -311,7 +313,7 @@ const WireFailureDashboard = ({ user }) => {
                           {f.timestamp ? new Date(f.timestamp).toLocaleString('tr-TR') : '-'}
                         </p>
                         {f.resolved && (
-                          <Badge className="bg-emerald-100 text-emerald-700 text-[10px] mt-1">Çözüldü</Badge>
+                          <Badge className="bg-emerald-100 text-emerald-700 text-[10px] mt-1">{t('cm.pages_WireFailureDashboard.cozuldu')}</Badge>
                         )}
                       </div>
                     </div>

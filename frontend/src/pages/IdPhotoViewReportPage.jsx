@@ -26,6 +26,7 @@ import {
   ChevronRight, Clock, User as UserIcon, FileText, Download,
   CalendarDays,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const HOURS_24 = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 
@@ -43,6 +44,7 @@ function formatTs(ts) {
 }
 
 function HourBar({ hour, count, max }) {
+  const { t } = useTranslation();
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
   return (
     <div
@@ -240,7 +242,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                 ) : (
                   <RefreshCw className="w-3 h-3 mr-1" />
                 )}
-                Yenile
+                {t('cm.pages_IdPhotoViewReportPage.yenile')}
               </Button>
             </div>
           </div>
@@ -252,11 +254,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
           >
             <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" />
             <p>
-              Bu rapor 6698 sayılı Kişisel Verilerin Korunması Kanunu kapsamında
-              tutulan kimlik fotoğrafı görüntüleme erişim kayıtlarını içerir.
-              Kayıtlar yalnızca yöneticiler tarafından denetim amacıyla
-              kullanılabilir; üçüncü şahıslarla paylaşılması KVKK ihlali
-              oluşturur.
+              {t('cm.pages_IdPhotoViewReportPage.bu_rapor_6698_sayili_kisisel_verilerin_k')}
             </p>
           </div>
 
@@ -266,7 +264,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Başlangıç
+                    {t('cm.pages_IdPhotoViewReportPage.baslangic')}
                   </label>
                   <Input
                     data-testid="filter-start-date"
@@ -280,7 +278,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Bitiş
+                    {t('cm.pages_IdPhotoViewReportPage.bitis')}
                   </label>
                   <Input
                     data-testid="filter-end-date"
@@ -294,7 +292,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Personel kimliği
+                    {t('cm.pages_IdPhotoViewReportPage.personel_kimligi')}
                   </label>
                   <Input
                     data-testid="filter-actor-id"
@@ -308,7 +306,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Booking kimliği
+                    {t('cm.pages_IdPhotoViewReportPage.booking_kimligi')}
                   </label>
                   <Input
                     data-testid="filter-booking-id"
@@ -322,7 +320,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Check-in kimliği
+                    {t('cm.pages_IdPhotoViewReportPage.check_in_kimligi')}
                   </label>
                   <Input
                     data-testid="filter-checkin-id"
@@ -372,7 +370,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
           >
             <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-gray-500">Toplam görüntüleme</p>
+                <p className="text-xs text-gray-500">{t('cm.pages_IdPhotoViewReportPage.toplam_goruntuleme')}</p>
                 <p
                   data-testid="card-total"
                   className="text-2xl font-bold text-gray-900"
@@ -385,7 +383,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
               <CardContent className="p-3">
                 <p className="text-xs text-gray-500 flex items-center gap-1">
                   <CalendarDays className="w-3 h-3" />
-                  En yoğun saat (UTC)
+                  {t('cm.pages_IdPhotoViewReportPage.en_yogun_saat_utc')}
                 </p>
                 <p
                   data-testid="card-peak-hour"
@@ -395,14 +393,14 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                 </p>
                 {peakHour && (
                   <p className="text-[11px] text-gray-500">
-                    {peakHour.count} görüntüleme
+                    {peakHour.count} {t('cm.pages_IdPhotoViewReportPage.goruntuleme')}
                   </p>
                 )}
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-gray-500">En çok açan personel</p>
+                <p className="text-xs text-gray-500">{t('cm.pages_IdPhotoViewReportPage.en_cok_acan_personel')}</p>
                 <p
                   data-testid="card-top-actor"
                   className="text-sm font-bold text-gray-900 truncate"
@@ -411,14 +409,14 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                 </p>
                 {topActor && (
                   <p className="text-[11px] text-gray-500">
-                    {topActor.count} görüntüleme
+                    {topActor.count} {t('cm.pages_IdPhotoViewReportPage.goruntuleme_78fe8')}
                   </p>
                 )}
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-gray-500">En çok açılan booking</p>
+                <p className="text-xs text-gray-500">{t('cm.pages_IdPhotoViewReportPage.en_cok_acilan_booking')}</p>
                 <p
                   data-testid="card-top-booking"
                   className="text-sm font-bold text-gray-900 truncate"
@@ -427,7 +425,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                 </p>
                 {topBooking && (
                   <p className="text-[11px] text-gray-500">
-                    {topBooking.count} görüntüleme
+                    {topBooking.count} {t('cm.pages_IdPhotoViewReportPage.goruntuleme_78fe8')}
                   </p>
                 )}
               </CardContent>
@@ -441,7 +439,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                    Görüntüleme Kayıtları
+                    {t('cm.pages_IdPhotoViewReportPage.goruntuleme_kayitlari')}
                     <span
                       data-testid="page-range-label"
                       className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 rounded px-1.5 py-0.5"
@@ -460,8 +458,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                       data-testid="empty-state"
                       className="text-center py-8 text-gray-500 text-sm"
                     >
-                      Seçili filtrelerle eşleşen kimlik fotoğrafı görüntüleme
-                      kaydı yok.
+                      {t('cm.pages_IdPhotoViewReportPage.secili_filtrelerle_eslesen_kimlik_fotogr')}
                     </div>
                   ) : (
                     <ul data-testid="event-list" className="divide-y divide-gray-100">
@@ -551,7 +548,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                       className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100 text-xs text-gray-600"
                     >
                       <span>
-                        {pageStart}–{pageEnd} arası, toplam {total} kayıt
+                        {pageStart}–{pageEnd} {t('cm.pages_IdPhotoViewReportPage.arasi_toplam')} {total} {t('cm.pages_IdPhotoViewReportPage.kayit')}
                       </span>
                       <div className="flex gap-2">
                         <Button
@@ -564,7 +561,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
                           disabled={!hasPrev || loading}
                           className="h-7 text-xs"
                         >
-                          Önceki
+                          {t('cm.pages_IdPhotoViewReportPage.onceki')}
                         </Button>
                         <Button
                           data-testid="pagination-next"
@@ -588,7 +585,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
               <Card data-testid="card-by-actor">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
-                    <UserIcon className="w-4 h-4" /> Personel sıralaması
+                    <UserIcon className="w-4 h-4" /> {t('cm.pages_IdPhotoViewReportPage.personel_siralamasi')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -616,7 +613,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
               <Card data-testid="card-by-booking">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
-                    <FileText className="w-4 h-4" /> Booking sıralaması
+                    <FileText className="w-4 h-4" /> {t('cm.pages_IdPhotoViewReportPage.booking_siralamasi')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -642,7 +639,7 @@ export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
               <Card data-testid="card-by-hour">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
-                    <Clock className="w-4 h-4" /> Saat dağılımı (UTC)
+                    <Clock className="w-4 h-4" /> {t('cm.pages_IdPhotoViewReportPage.saat_dagilimi_utc')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-1">

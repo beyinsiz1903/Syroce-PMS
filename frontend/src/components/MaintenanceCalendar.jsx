@@ -4,8 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MaintenanceCalendar = () => {
+  const { t } = useTranslation();
   const [calendarItems, setCalendarItems] = useState([]);
   const [currentMonth, setCurrentMonth] = useState(new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
@@ -52,7 +54,7 @@ const MaintenanceCalendar = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-4">Yükleniyor...</div>;
+    return <div className="text-center py-4">{t('cm.components_MaintenanceCalendar.yukleniyor')}</div>;
   }
 
   return (
@@ -61,7 +63,7 @@ const MaintenanceCalendar = () => {
         <CardTitle className="flex items-center justify-between text-lg">
           <span className="flex items-center">
             <Calendar className="w-5 h-5 mr-2" />
-            Rutin Bakım Takvimi
+            {t('cm.components_MaintenanceCalendar.rutin_bakim_takvimi')}
           </span>
           <div className="flex items-center space-x-2">
             <Button
@@ -85,7 +87,7 @@ const MaintenanceCalendar = () => {
       <CardContent>
         <div className="space-y-3">
           {calendarItems.length === 0 ? (
-            <p className="text-center text-gray-500 py-8">Bu ay için planlanmış bakım yok</p>
+            <p className="text-center text-gray-500 py-8">{t('cm.components_MaintenanceCalendar.bu_ay_icin_planlanmis_bakim_yok')}</p>
           ) : (
             calendarItems.map((item) => (
               <div
@@ -121,9 +123,9 @@ const MaintenanceCalendar = () => {
         </div>
 
         <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs">
-          <div className="font-medium text-blue-900 mb-1">Bu Ay Toplam:</div>
+          <div className="font-medium text-blue-900 mb-1">{t('cm.components_MaintenanceCalendar.bu_ay_toplam')}</div>
           <div className="text-blue-700">
-            {calendarItems.length} rutin bakım görevi planlanmış
+            {calendarItems.length} {t('cm.components_MaintenanceCalendar.rutin_bakim_gorevi_planlanmis')}
           </div>
         </div>
       </CardContent>

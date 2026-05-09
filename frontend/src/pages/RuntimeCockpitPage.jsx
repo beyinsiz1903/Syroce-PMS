@@ -18,6 +18,7 @@ import {
   VolumeX, RotateCw, ClipboardCheck,
   ArrowRight, CircleDot, Radio
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
@@ -80,6 +81,7 @@ const AgeBucket = ({ label, count, color }) => (
 );
 
 const EventRow = ({ event }) => {
+  const { t } = useTranslation();
   const style = SEVERITY_STYLE[event.severity] || SEVERITY_STYLE.info;
   const time = event.timestamp ? new Date(event.timestamp).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '';
   return (
@@ -322,7 +324,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
               <h1 data-testid="cockpit-title" className="text-xl font-bold text-slate-900">
                 Runtime Cockpit
               </h1>
-              <p className="text-xs text-slate-500">Operasyonel Uçuş Paneli</p>
+              <p className="text-xs text-slate-500">{t('cm.pages_RuntimeCockpitPage.operasyonel_ucus_paneli')}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -347,7 +349,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
             )}
             <Button data-testid="cockpit-refresh-btn" variant="outline" size="sm"
               onClick={handleRefresh} disabled={refreshing} className="border-slate-300 text-slate-600 hover:text-slate-900">
-              <RefreshCw className={`w-3.5 h-3.5 mr-1 ${refreshing ? 'animate-spin' : ''}`} /> Yenile
+              <RefreshCw className={`w-3.5 h-3.5 mr-1 ${refreshing ? 'animate-spin' : ''}`} /> {t('cm.pages_RuntimeCockpitPage.yenile')}
             </Button>
           </div>
         </div>
@@ -583,7 +585,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                 {rsIssues.length === 0 ? (
                   <div className="flex items-center justify-center gap-2 py-6 text-emerald-500/60">
                     <CheckCircle className="w-5 h-5" />
-                    <span className="text-sm">Tüm kontroller gecti — sistem hazir!</span>
+                    <span className="text-sm">{t('cm.pages_RuntimeCockpitPage.tum_kontroller_gecti_sistem_hazir')}</span>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -626,7 +628,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
               {/* Fix Order */}
               {fixOrder.length > 0 && (
-                <Section title="Önerilen Duzeltme Sirasi" icon={ClipboardCheck} iconColor="text-blue-400" testId="readiness-fix-order">
+                <Section title={t('cm.pages_RuntimeCockpitPage.onerilen_duzeltme_sirasi')} icon={ClipboardCheck} iconColor="text-blue-400" testId="readiness-fix-order">
                   <div className="space-y-1.5">
                     {fixOrder.map((fix, i) => (
                       <div key={i} data-testid={`fix-order-${i}`}
@@ -677,8 +679,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
             {/* Retry Safe */}
             <Section title="Retry Safe" icon={RotateCw} iconColor="text-blue-400" testId="action-retry-section">
               <p className="text-xs text-slate-600 mb-3">
-                Başarısız (retryable) push change set'lerini yeniden deneme için kuyruğa al.
-                Idempotent: tekrar çalıştırmak zarar vermez.
+                {t('cm.pages_RuntimeCockpitPage.basarisiz_retryable_push_change_set_leri')}
               </p>
               <Button data-testid="action-retry-btn" onClick={() => handleSafeAction('retry-safe')}
                 disabled={actionLoading['retry-safe']}
@@ -691,8 +692,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
             {/* Revalidate Mapping */}
             <Section title="Mapping Dogrulama" icon={ClipboardCheck} iconColor="text-emerald-400" testId="action-revalidate-section">
               <p className="text-xs text-slate-600 mb-3">
-                Tüm provider mapping'lerini bastan dogrula. Hatalilari ve nedenlerini detaylı goster.
-                Salt okunur işlem — hicbir seyi değiştirmez.
+                {t('cm.pages_RuntimeCockpitPage.tum_provider_mapping_lerini_bastan_dogru')}
               </p>
               <Button data-testid="action-revalidate-btn" onClick={() => handleSafeAction('revalidate-mapping', {})}
                 disabled={actionLoading['revalidate-mapping']}
@@ -705,22 +705,20 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
             {/* Suppress Noise */}
             <Section title="Bildirim Susturma" icon={VolumeX} iconColor="text-amber-400" testId="action-suppress-section">
               <p className="text-xs text-slate-600 mb-3">
-                Operasyonel bildirim akisini gecici olarak sustur. Max 120 dakika.
-                Idempotent: tekrar çalıştırmak süreyi uzatır.
+                {t('cm.pages_RuntimeCockpitPage.operasyonel_bildirim_akisini_gecici_olar')}
               </p>
               <Button data-testid="action-suppress-btn" onClick={() => handleSafeAction('suppress-noise', { duration_minutes: 30 })}
                 disabled={actionLoading['suppress-noise']}
                 className="w-full bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25">
                 {actionLoading['suppress-noise'] ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <VolumeX className="w-4 h-4 mr-2" />}
-                30 Dakika Sustur
+                {t('cm.pages_RuntimeCockpitPage.30_dakika_sustur')}
               </Button>
             </Section>
 
             {/* Auto-Heal */}
             <Section title="Auto-Heal Calistir" icon={HeartPulse} iconColor="text-violet-400" testId="action-heal-section">
               <p className="text-xs text-slate-600 mb-3">
-                Güvenli auto-heal döngüsü çalıştır. Sadece whitelist'teki drift tipleri heal edilir.
-                Her heal evidence kaydi uretir.
+                {t('cm.pages_RuntimeCockpitPage.guvenli_auto_heal_dongusu_calistir_sadec')}
               </p>
               <Button data-testid="action-heal-btn" onClick={async () => {
                 setActionLoading(prev => ({ ...prev, heal: true }));
@@ -754,7 +752,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                     {!ro.is_active && (
                       <Button data-testid="rollout-init-btn" size="sm" onClick={handleRolloutInit}
                         className="bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25">
-                        <Play className="w-3 h-3 mr-1" /> Rollout Başlat
+                        <Play className="w-3 h-3 mr-1" /> {t('cm.pages_RuntimeCockpitPage.rollout_baslat')}
                       </Button>
                     )}
                   </div>
@@ -787,7 +785,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                       {ro.is_active && !ro.gate_evaluation.gate_passed && (
                         <div className="mt-3 p-2 rounded bg-red-500/5 border border-red-500/20">
                           <p className="text-[10px] text-red-400">
-                            Gate kontrolleri gecmedi — gecis engellidir. Manuel override mevcut değil.
+                            {t('cm.pages_RuntimeCockpitPage.gate_kontrolleri_gecmedi_gecis_engellidi')}
                           </p>
                         </div>
                       )}
@@ -801,7 +799,7 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
 
                 {/* Phase History */}
                 {ro.phase_history?.length > 0 && (
-                  <Section title="Faz Geçmişi" icon={Clock} iconColor="text-slate-600" testId="rollout-history-section">
+                  <Section title={t('cm.pages_RuntimeCockpitPage.faz_gecmisi')} icon={Clock} iconColor="text-slate-600" testId="rollout-history-section">
                     <div className="space-y-1.5">
                       {ro.phase_history.map((ph, i) => (
                         <div key={i} className="flex items-center gap-2 py-1.5 border-b border-slate-200/30 last:border-0">
@@ -823,11 +821,11 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
               <div className="space-y-4">
                 <Section title="Rollout Durumu" icon={Activity} iconColor="text-blue-400" testId="rollout-status-section">
                   <div className="space-y-2">
-                    <MetricPill label="Aktif Faz" value={ro.phase_label || 'Baslatilmadi'} testId="rollout-current-phase" />
+                    <MetricPill label={t('cm.pages_RuntimeCockpitPage.aktif_faz')} value={ro.phase_label || 'Baslatilmadi'} testId="rollout-current-phase" />
                     <MetricPill label="Faz Suresi" value={`${ro.phase_duration_hours || 0}h`} testId="rollout-phase-duration" />
                     <MetricPill label="Min Gerekli" value={`${ro.min_duration_hours || 0}h`} testId="rollout-min-duration" />
-                    <MetricPill label="Toplam Rollout" value={`${ro.total_rollout_hours || 0}h`} testId="rollout-total-hours" />
-                    <MetricPill label="Durum" value={ro.is_active ? 'AKTIF' : 'BASLATILMADI'}
+                    <MetricPill label={t('cm.pages_RuntimeCockpitPage.toplam_rollout')} value={`${ro.total_rollout_hours || 0}h`} testId="rollout-total-hours" />
+                    <MetricPill label={t('cm.pages_RuntimeCockpitPage.durum')} value={ro.is_active ? 'AKTIF' : 'BASLATILMADI'}
                       good={ro.is_active} testId="rollout-active-status" />
                   </div>
                 </Section>
@@ -844,11 +842,11 @@ export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                      Tüm drift aciklanabilir
+                      {t('cm.pages_RuntimeCockpitPage.tum_drift_aciklanabilir')}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                      Tüm incident'lar actionable
+                      {t('cm.pages_RuntimeCockpitPage.tum_incident_lar_actionable')}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />

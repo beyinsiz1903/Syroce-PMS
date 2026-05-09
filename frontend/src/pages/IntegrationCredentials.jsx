@@ -12,6 +12,7 @@ import {
   CheckCircle2, XCircle, Save, Lock, Cloud, Bot, Mail, Activity, Database, Plug,
   CreditCard,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const CATEGORY_META = {
   ai:             { label: "AI & LLM",            icon: Bot,        color: "from-indigo-500/10 to-indigo-500/10", border: "border-indigo-500/30" },
@@ -25,6 +26,7 @@ const CATEGORY_META = {
 };
 
 export default function IntegrationCredentials({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [inputs, setInputs] = useState({});
@@ -127,14 +129,14 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
               <KeyRound className="w-6 h-6 text-indigo-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-semibold">Entegrasyon Anahtarları</h1>
+              <h1 className="text-2xl font-semibold">{t('cm.pages_IntegrationCredentials.entegrasyon_anahtarlari')}</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                3. parti servis anahtarları — girdiğinde anında çalışmaya başlar, restart gerekmez.
+                {t('cm.pages_IntegrationCredentials.3_parti_servis_anahtarlari_girdiginde_an')}
               </p>
             </div>
           </div>
           <Button variant="outline" onClick={load} disabled={loading} data-testid="btn-reload">
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} /> Yenile
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} /> {t('cm.pages_IntegrationCredentials.yenile')}
           </Button>
         </div>
 
@@ -144,12 +146,9 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
             <div className="flex items-start gap-3">
               <Shield className="w-5 h-5 text-amber-700 mt-0.5" />
               <div className="text-sm text-amber-900">
-                <p className="font-semibold text-amber-900">Güvenlik</p>
+                <p className="font-semibold text-amber-900">{t('cm.pages_IntegrationCredentials.guvenlik')}</p>
                 <p className="mt-1">
-                  Tüm değerler şifreli saklanır ve sadece super admin tarafından düzenlenebilir.
-                  Kaydedilen değerler hemen <code className="px-1 py-0.5 rounded bg-amber-100 text-amber-900 font-mono">os.environ</code>&apos;a yansır —
-                  backend'in tüm <code className="px-1 py-0.5 rounded bg-amber-100 text-amber-900 font-mono">os.getenv(...)</code> çağırdığı yerler otomatik bu değeri kullanır.
-                  Restart, yeniden deploy ya da kod değişikliği gerekmez.
+                  {t('cm.pages_IntegrationCredentials.tum_degerler_sifreli_saklanir_ve_sadece_')} <code className="px-1 py-0.5 rounded bg-amber-100 text-amber-900 font-mono">os.environ</code>{t('cm.pages_IntegrationCredentials.a_yansir_backend_in_tum')} <code className="px-1 py-0.5 rounded bg-amber-100 text-amber-900 font-mono">os.getenv(...)</code> {t('cm.pages_IntegrationCredentials.cagirdigi_yerler_otomatik_bu_degeri_kull')}
                 </p>
               </div>
             </div>
@@ -161,7 +160,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
           <Card>
             <CardContent className="pt-6 flex items-center justify-between">
               <div>
-                <p className="text-xs text-muted-foreground">Toplam</p>
+                <p className="text-xs text-muted-foreground">{t('cm.pages_IntegrationCredentials.toplam')}</p>
                 <p className="text-2xl font-semibold">{stats.total}</p>
               </div>
               <KeyRound className="w-8 h-8 text-muted-foreground/40" aria-hidden="true" />
@@ -170,7 +169,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
           <Card className="border-emerald-200 bg-emerald-50">
             <CardContent className="pt-6 flex items-center justify-between">
               <div>
-                <p className="text-xs text-emerald-700">Tanımlı</p>
+                <p className="text-xs text-emerald-700">{t('cm.pages_IntegrationCredentials.tanimli')}</p>
                 <p className="text-2xl font-semibold text-emerald-700">{stats.set}</p>
               </div>
               <CheckCircle2 className="w-8 h-8 text-emerald-500" aria-hidden="true" />
@@ -221,7 +220,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
                             <CardTitle className="text-base">{cred.name}</CardTitle>
                             {cred.is_set ? (
                               <Badge className="bg-emerald-50 text-emerald-700 border-emerald-300 border">
-                                <CheckCircle2 className="w-3 h-3 mr-1" aria-hidden="true" /> Tanımlı
+                                <CheckCircle2 className="w-3 h-3 mr-1" aria-hidden="true" /> {t('cm.pages_IntegrationCredentials.tanimli_94180')}
                               </Badge>
                             ) : (
                               <Badge className="bg-rose-50 text-rose-700 border-rose-300 border">
@@ -235,7 +234,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
                             )}
                             {cred.source === "db" && (
                               <Badge variant="outline" className="text-xs">
-                                <Database className="w-3 h-3 mr-1" /> kayıtlı
+                                <Database className="w-3 h-3 mr-1" /> {t('cm.pages_IntegrationCredentials.kayitli')}
                               </Badge>
                             )}
                           </div>
@@ -247,7 +246,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
                         {cred.doc_url && (
                           <a href={cred.doc_url} target="_blank" rel="noreferrer" className="shrink-0">
                             <Button variant="ghost" size="sm">
-                              <ExternalLink className="w-3.5 h-3.5 mr-1" /> Dokümantasyon
+                              <ExternalLink className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_IntegrationCredentials.dokumantasyon')}
                             </Button>
                           </a>
                         )}
@@ -256,7 +255,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
                     <CardContent className="pt-0 space-y-3">
                       {cred.masked_value && (
                         <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
-                          <span className="opacity-60">Aktif değer:</span>
+                          <span className="opacity-60">{t('cm.pages_IntegrationCredentials.aktif_deger')}</span>
                           <code className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 font-mono">{cred.masked_value}</code>
                           {cred.updated_at && (
                             <span className="ml-auto opacity-60">
@@ -295,7 +294,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
                           ) : (
                             <Save className="w-4 h-4 mr-1" />
                           )}
-                          Kaydet
+                          {t('cm.pages_IntegrationCredentials.kaydet')}
                         </Button>
                         {cred.is_set && cred.source === "db" && (
                           <Button variant="outline" onClick={() => remove(cred.key)} data-testid={`btn-delete-${cred.key}`}>
@@ -314,7 +313,7 @@ export default function IntegrationCredentials({ user, tenant, onLogout }) {
         {items.length === 0 && !loading && (
           <Card>
             <CardContent className="py-12 text-center text-sm text-muted-foreground">
-              Kayıt bulunamadı. Super admin olarak oturum açtığınızdan emin olun.
+              {t('cm.pages_IntegrationCredentials.kayit_bulunamadi_super_admin_olarak_otur')}
             </CardContent>
           </Card>
         )}

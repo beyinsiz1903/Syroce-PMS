@@ -9,8 +9,10 @@ import {
   Clock, CreditCard, Home, History
 } from 'lucide-react';
 import { API, fmtTs, EmptyState, FormField, SelectField } from './helpers';
+import { useTranslation } from 'react-i18next';
 
 export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
+  const { t } = useTranslation();
   const [logs, setLogs] = useState(communicationLogs || []);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ channel: 'email', direction: 'outbound', subject: '', content: '', recipient: '' });
@@ -35,8 +37,8 @@ export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
   return (
     <div data-testid="communication-tab" className="space-y-4">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-gray-700">İletişim Geçmişi</span>
-        <Button size="sm" onClick={() => setShowForm(!showForm)} className="h-7 text-xs bg-sky-600 hover:bg-sky-700 text-white"><Plus className="w-3 h-3 mr-1" /> Kayıt Ekle</Button>
+        <span className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_GuestServiceTabs.iletisim_gecmisi')}</span>
+        <Button size="sm" onClick={() => setShowForm(!showForm)} className="h-7 text-xs bg-sky-600 hover:bg-sky-700 text-white"><Plus className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_GuestServiceTabs.kayit_ekle')}</Button>
       </div>
 
       {showForm && (
@@ -55,9 +57,9 @@ export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
           </div>
           <div className="flex gap-2">
             <Button size="sm" onClick={handleAdd} disabled={loading} className="bg-sky-600 hover:bg-sky-700 text-white h-8 text-xs">
-              {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3 mr-1" />} Kaydet
+              {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3 mr-1" />} {t('cm.pages_reservationdetail_GuestServiceTabs.kaydet')}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowForm(false)} className="h-8 text-xs">İptal</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowForm(false)} className="h-8 text-xs">{t('cm.pages_reservationdetail_GuestServiceTabs.iptal')}</Button>
           </div>
         </div>
       )}
@@ -117,7 +119,7 @@ export function NotesTab({ notes, booking, onRefresh }) {
           <select value={noteType} onChange={e => setNoteType(e.target.value)} className="h-8 text-xs border rounded-md px-2 bg-white">
             {Object.entries(typeLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
-          <Button size="sm" onClick={handleAdd} disabled={loading || !content.trim()} className="h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3 mr-1" />} Ekle</Button>
+          <Button size="sm" onClick={handleAdd} disabled={loading || !content.trim()} className="h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3 mr-1" />} {t('cm.pages_reservationdetail_GuestServiceTabs.ekle')}</Button>
         </div>
       </div>
       <div className="space-y-2">
@@ -162,7 +164,7 @@ export function HistoryTab({ history, roomMoves }) {
 
   return (
     <div data-testid="history-tab" className="space-y-3">
-      <div className="text-sm font-semibold text-gray-700">İşlem Geçmişi</div>
+      <div className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_GuestServiceTabs.islem_gecmisi')}</div>
       {allEvents.length === 0 ? <EmptyState icon={History} text="Henüz işlem geçmişi yok" /> : (
         <div className="relative">
           <div className="absolute left-4 top-0 bottom-0 w-px bg-gray-200" />
@@ -182,9 +184,9 @@ export function HistoryTab({ history, roomMoves }) {
                 {ev.actor && <div className="text-xs text-gray-500">Yapan: {ev.actor}</div>}
                 {ev.details && Object.keys(ev.details).length > 0 && (
                   <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-2">
-                    {ev.details.from_room && <span>Eski: {ev.details.from_room}</span>}
-                    {ev.details.to_room && <span>Yeni: {ev.details.to_room}</span>}
-                    {ev.details.amount && <span>Tutar: {ev.details.amount} TL</span>}
+                    {ev.details.from_room && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.eski')} {ev.details.from_room}</span>}
+                    {ev.details.to_room && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.yeni')} {ev.details.to_room}</span>}
+                    {ev.details.amount && <span>{t('cm.pages_reservationdetail_GuestServiceTabs.tutar')} {ev.details.amount} TL</span>}
                     {ev.details.method && <span>Yontem: {ev.details.method}</span>}
                     {ev.details.reason && <span>Sebep: {ev.details.reason}</span>}
                     {ev.details.cari_account && <span>Cari: {ev.details.cari_account}</span>}

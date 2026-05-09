@@ -20,6 +20,7 @@ import {
 } from "recharts";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { useTranslation } from 'react-i18next';
 
 /**
  * Opera #4 — Block Management.
@@ -53,6 +54,7 @@ const emptyCreate = () => ({
 });
 
 export default function BlockManagementPage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [blocks, setBlocks] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -226,7 +228,7 @@ export default function BlockManagementPage() {
       {/* C7: PageHeader (Sprint A) + Yenile + Yeni Blok */}
       <PageHeader
         icon={BarChart3}
-        title="Grup Blok Kontenjanı"
+        title={t('cm.pages_BlockManagementPage.grup_blok_kontenjani')}
         subtitle={
           'Grup için ayrılan oda kontenjanları — cutoff uyarıları, wash ve pickup eğrisi. ' +
           'Bireysel rezervasyonlar için "Grup Rezervasyonları" sayfasını kullanın.'
@@ -234,10 +236,10 @@ export default function BlockManagementPage() {
         actions={
           <>
             <Button variant="outline" size="sm" onClick={load} disabled={loading} data-testid="button-refresh-blocks">
-              <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} /> Yenile
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} /> {t('cm.pages_BlockManagementPage.yenile')}
             </Button>
             <Button size="sm" onClick={() => { setCreateForm(emptyCreate()); setCreateOpen(true); }} data-testid="button-new-block">
-              <Plus className="h-4 w-4 mr-1.5" /> Yeni Blok
+              <Plus className="h-4 w-4 mr-1.5" /> {t('cm.pages_BlockManagementPage.yeni_blok')}
             </Button>
           </>
         }
@@ -245,14 +247,13 @@ export default function BlockManagementPage() {
 
       {/* C1: AYRI sistem uyarısı net görünür */}
       <p className="text-xs text-slate-500 -mt-2">
-        Not: Bu sayfa <strong>group_blocks</strong> koleksiyonundadır;
-        “Grup Rezervasyonları” sayfasındaki bireysel grup kayıtlarıyla otomatik bağlantısı yoktur.
+        Not: Bu sayfa <strong>group_blocks</strong> {t('cm.pages_BlockManagementPage.koleksiyonundadir_grup_rezervasyonlari_s')}
       </p>
 
       {alerts.length > 0 && (
         <Alert variant="destructive" data-testid="alert-cutoff">
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Cutoff Uyarıları (önümüzdeki 14 gün)</AlertTitle>
+          <AlertTitle>{t('cm.pages_BlockManagementPage.cutoff_uyarilari_onumuzdeki_14_gun')}</AlertTitle>
           <AlertDescription>
             <ul className="list-disc pl-5 space-y-1 mt-1">
               {alerts.map((a) => {
@@ -264,7 +265,7 @@ export default function BlockManagementPage() {
                     <StatusBadge intent={m.intent} className="mr-1">
                       {a.days_left != null ? `${m.label} · ${a.days_left} gün` : m.label}
                     </StatusBadge>
-                    {a.remaining}/{a.total_rooms} oda hâlâ alınmamış
+                    {a.remaining}/{a.total_rooms} {t('cm.pages_BlockManagementPage.oda_hala_alinmamis')}
                   </li>
                 );
               })}
@@ -275,24 +276,24 @@ export default function BlockManagementPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Aktif Bloklar</CardTitle>
+          <CardTitle>{t('cm.pages_BlockManagementPage.aktif_bloklar')}</CardTitle>
           <CardDescription>
-            Beklemede + kesinleşmiş statüsündeki tüm gruplar.
+            {t('cm.pages_BlockManagementPage.beklemede_kesinlesmis_statusundeki_tum_g')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {loading && blocks.length === 0 ? (
             <div className="flex items-center justify-center py-8 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin mr-2" /> Yükleniyor…
+              <Loader2 className="h-5 w-5 animate-spin mr-2" /> {t('cm.pages_BlockManagementPage.yukleniyor')}
             </div>
           ) : blocks.length === 0 ? (
             // C6: boş durum CTA — Yeni Blok Oluştur butonu
             <div className="text-center py-12 text-muted-foreground">
               <BarChart3 className="h-10 w-10 mx-auto mb-3 text-slate-300" />
-              <div className="text-base font-medium text-slate-700">Aktif grup bloğu yok</div>
-              <div className="text-sm mt-1">İlk grup bloğunuzu oluşturarak cutoff/pickup/wash takibine başlayın.</div>
+              <div className="text-base font-medium text-slate-700">{t('cm.pages_BlockManagementPage.aktif_grup_blogu_yok')}</div>
+              <div className="text-sm mt-1">{t('cm.pages_BlockManagementPage.ilk_grup_blogunuzu_olusturarak_cutoff_pi')}</div>
               <Button className="mt-4" onClick={() => { setCreateForm(emptyCreate()); setCreateOpen(true); }}>
-                <Plus className="h-4 w-4 mr-1.5" /> Yeni Blok Oluştur
+                <Plus className="h-4 w-4 mr-1.5" /> {t('cm.pages_BlockManagementPage.yeni_blok_olustur')}
               </Button>
             </div>
           ) : (
@@ -300,9 +301,9 @@ export default function BlockManagementPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Grup</TableHead>
-                  <TableHead className="text-center">Giriş</TableHead>
+                  <TableHead className="text-center">{t('cm.pages_BlockManagementPage.giris')}</TableHead>
                   <TableHead className="text-center">Cutoff</TableHead>
-                  <TableHead className="text-right">Toplam</TableHead>
+                  <TableHead className="text-right">{t('cm.pages_BlockManagementPage.toplam')}</TableHead>
                   <TableHead className="text-right">Pickup</TableHead>
                   <TableHead className="text-right">Wash</TableHead>
                   <TableHead className="text-right">%</TableHead>
@@ -348,26 +349,24 @@ export default function BlockManagementPage() {
       <Dialog open={pickupOpen} onOpenChange={setPickupOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Pickup Eğrisi · {pickup?.group_name || "—"}</DialogTitle>
+            <DialogTitle>{t('cm.pages_BlockManagementPage.pickup_egrisi')} {pickup?.group_name || "—"}</DialogTitle>
             <DialogDescription>
-              Günlük pickup ve kümülatif toplama. Pickup tanımı: bloktan check-in olmuş rezervasyon
-              (yoksa rooming-list'e eklenme, yoksa rezervasyon yaratma tarihi).
-              Cutoff'a yaklaşırken eğrinin düz hat verdiği bloklar wash adayıdır.
+              {t('cm.pages_BlockManagementPage.gunluk_pickup_ve_kumulatif_toplama_picku')}
             </DialogDescription>
           </DialogHeader>
           {pickupLoading || pickup?._stub ? (
             <div className="flex items-center justify-center py-12 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin mr-2" /> Yükleniyor…
+              <Loader2 className="h-5 w-5 animate-spin mr-2" /> {t('cm.pages_BlockManagementPage.yukleniyor_b597b')}
             </div>
           ) : pickup ? (
             <>
               <div className="grid grid-cols-3 gap-4 py-2">
                 <div>
-                  <div className="text-xs text-muted-foreground">Toplam</div>
+                  <div className="text-xs text-muted-foreground">{t('cm.pages_BlockManagementPage.toplam_29757')}</div>
                   <div className="text-lg font-semibold">{pickup.total_rooms}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">Alınan</div>
+                  <div className="text-xs text-muted-foreground">{t('cm.pages_BlockManagementPage.alinan')}</div>
                   <div className="text-lg font-semibold">{pickup.picked_up}</div>
                 </div>
                 <div>
@@ -378,7 +377,7 @@ export default function BlockManagementPage() {
               <div className="h-64 w-full">
                 {(pickup.pickup_curve || []).length === 0 ? (
                   <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                    Henüz pickup verisi yok.
+                    {t('cm.pages_BlockManagementPage.henuz_pickup_verisi_yok')}
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
@@ -403,15 +402,15 @@ export default function BlockManagementPage() {
       <Dialog open={!!washTarget} onOpenChange={(o) => !o && setWashTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Oda Bırak · {washTarget?.name}</DialogTitle>
+            <DialogTitle>{t('cm.pages_BlockManagementPage.oda_birak')} {washTarget?.name}</DialogTitle>
             <DialogDescription>
-              Kullanılmayacağı anlaşılan odaları envantere geri verir. En fazla{" "}
-              <span className="font-medium">{washTarget?.available}</span> oda bırakılabilir.
+              {t('cm.pages_BlockManagementPage.kullanilmayacagi_anlasilan_odalari_envan')}{" "}
+              <span className="font-medium">{washTarget?.available}</span> {t('cm.pages_BlockManagementPage.oda_birakilabilir')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label htmlFor="wash-count">Oda sayısı</Label>
+              <Label htmlFor="wash-count">{t('cm.pages_BlockManagementPage.oda_sayisi')}</Label>
               <Input id="wash-count" type="number" min={1} max={washTarget?.available}
                 value={washCount} onChange={(e) => setWashCount(e.target.value)}
                 data-testid="input-wash-count" />
@@ -419,13 +418,13 @@ export default function BlockManagementPage() {
             <div>
               <Label htmlFor="wash-note">Not (opsiyonel)</Label>
               <Input id="wash-note" value={washNote} onChange={(e) => setWashNote(e.target.value)}
-                placeholder="Örn: Grup yanıt vermedi" data-testid="input-wash-note" />
+                placeholder={t('cm.pages_BlockManagementPage.orn_grup_yanit_vermedi')} data-testid="input-wash-note" />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setWashTarget(null)} disabled={washSubmitting}>Vazgeç</Button>
+            <Button variant="outline" onClick={() => setWashTarget(null)} disabled={washSubmitting}>{t('cm.pages_BlockManagementPage.vazgec')}</Button>
             <Button onClick={submitWash} disabled={washSubmitting} data-testid="button-confirm-wash">
-              {washSubmitting && <Loader2 className="h-4 w-4 mr-1 animate-spin" />} Bırak
+              {washSubmitting && <Loader2 className="h-4 w-4 mr-1 animate-spin" />} {t('cm.pages_BlockManagementPage.birak')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -435,25 +434,25 @@ export default function BlockManagementPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Yeni Grup Bloğu</DialogTitle>
+            <DialogTitle>{t('cm.pages_BlockManagementPage.yeni_grup_blogu')}</DialogTitle>
             <DialogDescription>
-              Önceden ayrılmış oda kontenjanı oluştur. Daha sonra cutoff/pickup/wash bu sayfadan yönetilir.
+              {t('cm.pages_BlockManagementPage.onceden_ayrilmis_oda_kontenjani_olustur_')}
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
             <div className="col-span-2">
-              <Label>Grup Adı *</Label>
+              <Label>{t('cm.pages_BlockManagementPage.grup_adi')}</Label>
               <Input value={createForm.group_name}
                 onChange={(e) => setCreateForm({ ...createForm, group_name: e.target.value })}
-                placeholder="Örn: ABC Turizm — 30 Oda Mart" />
+                placeholder={t('cm.pages_BlockManagementPage.orn_abc_turizm_30_oda_mart')} />
             </div>
             <div>
-              <Label>Kuruluş</Label>
+              <Label>{t('cm.pages_BlockManagementPage.kurulus')}</Label>
               <Input value={createForm.organization}
                 onChange={(e) => setCreateForm({ ...createForm, organization: e.target.value })} />
             </div>
             <div>
-              <Label>İletişim Adı</Label>
+              <Label>{t('cm.pages_BlockManagementPage.iletisim_adi')}</Label>
               <Input value={createForm.contact_name}
                 onChange={(e) => setCreateForm({ ...createForm, contact_name: e.target.value })} />
             </div>
@@ -468,12 +467,12 @@ export default function BlockManagementPage() {
                 onChange={(e) => setCreateForm({ ...createForm, contact_phone: e.target.value })} />
             </div>
             <div>
-              <Label>Giriş *</Label>
+              <Label>{t('cm.pages_BlockManagementPage.giris_87621')}</Label>
               <Input type="date" value={createForm.check_in}
                 onChange={(e) => setCreateForm({ ...createForm, check_in: e.target.value })} />
             </div>
             <div>
-              <Label>Çıkış *</Label>
+              <Label>{t('cm.pages_BlockManagementPage.cikis')}</Label>
               <Input type="date" value={createForm.check_out}
                 onChange={(e) => setCreateForm({ ...createForm, check_out: e.target.value })} />
             </div>
@@ -483,12 +482,12 @@ export default function BlockManagementPage() {
                 onChange={(e) => setCreateForm({ ...createForm, cutoff_date: e.target.value })} />
             </div>
             <div>
-              <Label>Toplam Oda *</Label>
+              <Label>{t('cm.pages_BlockManagementPage.toplam_oda')}</Label>
               <Input type="number" min={1} value={createForm.total_rooms}
                 onChange={(e) => setCreateForm({ ...createForm, total_rooms: e.target.value })} />
             </div>
             <div>
-              <Label>Oda Tipi</Label>
+              <Label>{t('cm.pages_BlockManagementPage.oda_tipi')}</Label>
               <Input value={createForm.room_type}
                 onChange={(e) => setCreateForm({ ...createForm, room_type: e.target.value })} />
             </div>
@@ -498,25 +497,25 @@ export default function BlockManagementPage() {
                 onChange={(e) => setCreateForm({ ...createForm, group_rate: e.target.value })} />
             </div>
             <div>
-              <Label>Statü</Label>
+              <Label>{t('cm.pages_BlockManagementPage.statu')}</Label>
               <select className="h-10 w-full border rounded-md px-3 text-sm bg-white"
                 value={createForm.status}
                 onChange={(e) => setCreateForm({ ...createForm, status: e.target.value })}>
-                <option value="tentative">Beklemede (tentative)</option>
+                <option value="tentative">{t('cm.pages_BlockManagementPage.beklemede_tentative')}</option>
                 <option value="definite">Kesin (definite)</option>
               </select>
             </div>
             <div className="col-span-2">
-              <Label>Özel İstekler</Label>
+              <Label>{t('cm.pages_BlockManagementPage.ozel_istekler')}</Label>
               <Input value={createForm.special_requirements}
                 onChange={(e) => setCreateForm({ ...createForm, special_requirements: e.target.value })}
-                placeholder="Örn: 5 connecting oda, kahvaltı dahil" />
+                placeholder={t('cm.pages_BlockManagementPage.orn_5_connecting_oda_kahvalti_dahil')} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>Vazgeç</Button>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>{t('cm.pages_BlockManagementPage.vazgec_bf814')}</Button>
             <Button onClick={submitCreate} disabled={creating} data-testid="button-confirm-create">
-              {creating && <Loader2 className="h-4 w-4 mr-1 animate-spin" />} Oluştur
+              {creating && <Loader2 className="h-4 w-4 mr-1 animate-spin" />} {t('cm.pages_BlockManagementPage.olustur')}
             </Button>
           </DialogFooter>
         </DialogContent>

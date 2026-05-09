@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
 import { API, StatusDot, ScoreRing, MetricCard } from '../shared';
+import { useTranslation } from 'react-i18next';
 
 const ReliabilityTab = () => {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -27,7 +29,7 @@ const ReliabilityTab = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-slate-300">Connector Reliability Monitoring</h3>
-        <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchData}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile</Button>
+        <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchData}><RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_ReliabilityTab.yenile')}</Button>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -77,7 +79,7 @@ const ReliabilityTab = () => {
 
               {c.failure_patterns?.length > 0 && (
                 <div className="mt-3 space-y-1">
-                  <p className="text-[10px] text-slate-500 font-medium">Hata Patternleri:</p>
+                  <p className="text-[10px] text-slate-500 font-medium">{t('cm.pages_admin_tabs_ReliabilityTab.hata_patternleri')}</p>
                   {c.failure_patterns.map((p, i) => (
                     <div key={i} className="flex items-center gap-2 bg-slate-900/30 rounded p-1.5">
                       <Badge className={`border text-[9px] ${p.severity === 'critical' ? 'bg-red-500/15 text-red-400 border-red-500/30' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'}`}>{p.pattern?.replace(/_/g,' ')}</Badge>

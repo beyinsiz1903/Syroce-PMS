@@ -2,8 +2,10 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Home, Zap } from 'lucide-react';
 import FlashReportContent from '@/components/pms/FlashReportContent';
+import { useTranslation } from 'react-i18next';
 
 const FlashReport = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   return (
@@ -23,7 +25,7 @@ const FlashReport = () => {
             <Zap className="w-7 h-7 text-amber-500" />
             Flash Report
           </h1>
-          <p className="text-gray-600 text-sm">Günlük performans özeti — Yönetici raporu</p>
+          <p className="text-gray-600 text-sm">{t('cm.pages_FlashReport.gunluk_performans_ozeti_yonetici_raporu')}</p>
         </div>
       </div>
 

@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw, RotateCcw, CheckCircle, Eye, XCircle, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { API, SeverityBadge } from '../shared';
+import { useTranslation } from 'react-i18next';
 
 const ReconciliationTab = () => {
+  const { t } = useTranslation();
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ severity: 'all', issue_type: 'all', status: 'open', connector: 'all' });
@@ -56,7 +58,7 @@ const ReconciliationTab = () => {
         <Select value={filters.status} onValueChange={v => setFilters(f => ({...f, status: v}))}>
           <SelectTrigger data-testid="filter-status" className="w-36 bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tüm Durum</SelectItem>
+            <SelectItem value="all">{t('cm.pages_admin_tabs_ReconciliationTab.tum_durum')}</SelectItem>
             <SelectItem value="open">Open</SelectItem>
             <SelectItem value="investigating">Investigating</SelectItem>
             <SelectItem value="retrying">Retrying</SelectItem>
@@ -67,7 +69,7 @@ const ReconciliationTab = () => {
         <Select value={filters.severity} onValueChange={v => setFilters(f => ({...f, severity: v}))}>
           <SelectTrigger data-testid="filter-severity" className="w-32 bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tüm Seviye</SelectItem>
+            <SelectItem value="all">{t('cm.pages_admin_tabs_ReconciliationTab.tum_seviye')}</SelectItem>
             <SelectItem value="critical">Critical</SelectItem>
             <SelectItem value="high">High</SelectItem>
             <SelectItem value="medium">Medium</SelectItem>
@@ -75,11 +77,11 @@ const ReconciliationTab = () => {
           </SelectContent>
         </Select>
         <Button data-testid="refresh-issues" variant="outline" size="sm" onClick={fetchIssues} className="border-slate-700 text-slate-300">
-          <RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile
+          <RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_ReconciliationTab.yenile')}
         </Button>
         {issues.length > 0 && (
           <Button data-testid="bulk-dismiss-btn" variant="outline" size="sm" onClick={handleBulkDismiss} className="border-red-700 text-red-400 ml-auto">
-            <Trash2 className="w-3.5 h-3.5 mr-1" /> Toplu Kapat ({issues.length})
+            <Trash2 className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_ReconciliationTab.toplu_kapat')}{issues.length})
           </Button>
         )}
       </div>
@@ -87,7 +89,7 @@ const ReconciliationTab = () => {
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
       ) : issues.length === 0 ? (
-        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Sorun bulunamadı</CardContent></Card>
+        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">{t('cm.pages_admin_tabs_ReconciliationTab.sorun_bulunamadi')}</CardContent></Card>
       ) : (
         <div className="space-y-2">
           {issues.map(issue => (

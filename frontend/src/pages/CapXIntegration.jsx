@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { toast } from "sonner";
 import { Network, CheckCircle2, XCircle, Send, Activity, RefreshCw, Link2, Copy } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const isoDate = (offset = 0) => {
   const d = new Date();
@@ -17,6 +18,7 @@ const isoDate = (offset = 0) => {
 };
 
 export default function CapXIntegration({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [pinging, setPinging] = useState(false);
@@ -164,11 +166,11 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
       <PageHeader
         icon={Network}
         title="CapX Entegrasyonu"
-        subtitle="B2B kapasite paylaşım ağı — push entegrasyonu"
+        subtitle={t('cm.pages_CapXIntegration.b2b_kapasite_paylasim_agi_push_entegrasy')}
         actions={
           <Button variant="outline" size="sm" onClick={loadStatus} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
-            Yenile
+            {t('cm.pages_CapXIntegration.yenile')}
           </Button>
         }
       />
@@ -178,12 +180,12 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Activity className="w-5 h-5 text-slate-700" aria-hidden="true" />
-            Bağlantı Durumu
+            {t('cm.pages_CapXIntegration.baglanti_durumu')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {!status ? (
-            <p className="text-slate-500 text-sm">Yükleniyor…</p>
+            <p className="text-slate-500 text-sm">{t('cm.pages_CapXIntegration.yukleniyor')}</p>
           ) : (
             <>
               <div className="flex items-center gap-2">
@@ -224,9 +226,9 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
                   ))}
                   {" "}
                   <a href="/admin/integration-credentials" className="underline">
-                    Entegrasyon Anahtarları
+                    {t('cm.pages_CapXIntegration.entegrasyon_anahtarlari')}
                   </a>{" "}
-                  sayfasından ekleyin.
+                  {t('cm.pages_CapXIntegration.sayfasindan_ekleyin')}
                 </div>
               )}
             </>
@@ -250,8 +252,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
               <Link2 className="w-5 h-5 text-slate-700" aria-hidden="true" /> Inbound Callback URL (CapX → PMS)
             </CardTitle>
             <p className="text-xs text-slate-500">
-              CapX'in eşleşme olaylarını (match.created / match.cancelled) bu otele
-              push edeceği herkese açık webhook adresi. "Aktive Et" CapX'e
+              {t('cm.pages_CapXIntegration.capx_in_eslesme_olaylarini_match_created')}
               <code className="mx-1 px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-slate-700 font-mono">
                 PUT /api/integrations/v1/pms/callback
               </code>
@@ -276,8 +277,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
                 </Button>
               </div>
               <p className="text-xs text-slate-500">
-                Boş bırakırsanız ortam değişkenlerinden
-                (PUBLIC_BASE_URL/REPLIT_DEV_DOMAIN) tenant-aware varsayılan üretilir.
+                {t('cm.pages_CapXIntegration.bos_birakirsaniz_ortam_degiskenlerinden_')}
               </p>
             </div>
             <div className="space-y-1">
@@ -286,11 +286,10 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
                 type="password"
                 value={callbackJwt}
                 onChange={(e) => setCallbackJwt(e.target.value)}
-                placeholder="otel hesabınızın CapX paneli login token'ı"
+                placeholder={t('cm.pages_CapXIntegration.otel_hesabinizin_capx_paneli_login_token')}
               />
               <p className="text-xs text-slate-500">
-                Spec §1 JWT bekliyor. Boş bırakırsanız Bearer API key fallback
-                denenir; CapX kabul etmezse 401/403 döner.
+                {t('cm.pages_CapXIntegration.spec_1_jwt_bekliyor_bos_birakirsaniz_bea')}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -302,7 +301,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
                 {callbackBusy ? "Bildiriliyor…" : "Aktive Et"}
               </Button>
               <Button type="button" variant="outline" size="sm" onClick={loadCallbackUrl}>
-                <RefreshCw className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> Varsayılanı Yenile
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> {t('cm.pages_CapXIntegration.varsayilani_yenile')}
               </Button>
             </div>
             {callbackResult && (
@@ -315,7 +314,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
 
         {/* Availability sync */}
         <Card>
-          <CardHeader><CardTitle>Müsaitlik Snapshot Push</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('cm.pages_CapXIntegration.musaitlik_snapshot_push')}</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-2 gap-3">
             {[
               ["room_type", "Oda Tipi"],
@@ -334,7 +333,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
             ))}
             <div className="col-span-2">
               <Button onClick={sendAvailability} disabled={!status?.configured}>
-                <Send className="w-4 h-4 mr-1.5" aria-hidden="true" /> Gönder
+                <Send className="w-4 h-4 mr-1.5" aria-hidden="true" /> {t('cm.pages_CapXIntegration.gonder')}
               </Button>
             </div>
             {availResult && (
@@ -346,7 +345,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
         {/* Reservation event */}
         <Card>
           <CardHeader>
-            <CardTitle>Rezervasyon Olayı (HMAC imzalı)</CardTitle>
+            <CardTitle>{t('cm.pages_CapXIntegration.rezervasyon_olayi_hmac_imzali')}</CardTitle>
             <p className="text-xs text-slate-500">X-CapX-Signature: sha256=… + X-CapX-Event-Id (UUID4 idempotent)</p>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-3">
@@ -367,7 +366,7 @@ export default function CapXIntegration({ user, tenant, onLogout }) {
             ))}
             <div className="col-span-2">
               <Button onClick={sendEvent} disabled={!status?.configured || !status?.webhook_secret_set}>
-                <Send className="w-4 h-4 mr-1.5" aria-hidden="true" /> Gönder
+                <Send className="w-4 h-4 mr-1.5" aria-hidden="true" /> {t('cm.pages_CapXIntegration.gonder_73fb0')}
               </Button>
             </div>
             {eventResult && (

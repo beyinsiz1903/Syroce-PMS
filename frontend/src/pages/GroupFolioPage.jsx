@@ -27,6 +27,7 @@ import {
   RefreshCw, ArrowRight, Lock, Search, ChevronDown, ChevronRight,
   CreditCard, Banknote, TrendingUp, Layers, Clock
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 const fmtTL = (v) => (v || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 });
@@ -49,6 +50,7 @@ const StatCard = ({ icon: Icon, label, value, sub, color }) => (
 
 // ─── Booking Folio Detail (expandable) ─────────────
 const BookingFolioDetail = ({ groupId, bookingId }) => {
+  const { t } = useTranslation();
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -66,8 +68,8 @@ const BookingFolioDetail = ({ groupId, bookingId }) => {
     load();
   }, [groupId, bookingId]);
 
-  if (loading) return <div className="py-3 text-center text-sm text-gray-400">Yükleniyor...</div>;
-  if (!detail) return <div className="py-3 text-center text-sm text-gray-400">Veri bulunamadı</div>;
+  if (loading) return <div className="py-3 text-center text-sm text-gray-400">{t('cm.pages_GroupFolioPage.yukleniyor')}</div>;
+  if (!detail) return <div className="py-3 text-center text-sm text-gray-400">{t('cm.pages_GroupFolioPage.veri_bulunamadi')}</div>;
 
   const allItems = [
     ...(detail.charges || []).map(c => ({
@@ -87,7 +89,7 @@ const BookingFolioDetail = ({ groupId, bookingId }) => {
   if (allItems.length === 0) {
     return (
       <div className="py-4 px-3 text-center text-sm text-gray-400 bg-gray-50/50 rounded-lg">
-        Henüz folio girisi yok
+        {t('cm.pages_GroupFolioPage.henuz_folio_girisi_yok')}
       </div>
     );
   }
@@ -95,9 +97,9 @@ const BookingFolioDetail = ({ groupId, bookingId }) => {
   return (
     <div className="bg-gray-50/80 rounded-lg border border-gray-100 overflow-hidden" data-testid={`folio-detail-${bookingId}`}>
       <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 text-[11px] font-semibold text-gray-500 uppercase border-b bg-gray-100/50">
-        <span>Açıklama</span>
-        <span>Tarih</span>
-        <span className="text-right">Tutar</span>
+        <span>{t('cm.pages_GroupFolioPage.aciklama')}</span>
+        <span>{t('cm.pages_GroupFolioPage.tarih')}</span>
+        <span className="text-right">{t('cm.pages_GroupFolioPage.tutar')}</span>
       </div>
       {allItems.map((item, i) => (
         <div key={i} className={`grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 text-sm border-b border-gray-100 last:border-0 ${item.voided ? 'opacity-40 line-through' : ''}`}>
@@ -315,21 +317,21 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Layers className="w-6 h-6 text-violet-600" />
-              Grup Folio Yönetimi
+              {t('cm.pages_GroupFolioPage.grup_folio_yonetimi')}
             </h1>
-            <p className="text-sm text-gray-500 mt-1">Grup rezervasyonlarının folio işlemlerini yönetin ve birleştirin</p>
+            <p className="text-sm text-gray-500 mt-1">{t('cm.pages_GroupFolioPage.grup_rezervasyonlarinin_folio_islemlerin')}</p>
           </div>
           <Button variant="outline" size="sm" onClick={handleRefresh} data-testid="refresh-btn">
-            <RefreshCw className="w-4 h-4 mr-1" /> Yenile
+            <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_GroupFolioPage.yenile')}
           </Button>
         </div>
 
         {/* Summary Stats */}
         {summary && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="summary-stats">
-            <StatCard icon={Users} label="Toplam Grup" value={summary.total_groups} sub={`${summary.active_groups} aktif`} color="bg-violet-100 text-violet-600" />
-            <StatCard icon={FileText} label="Toplam Rez." value={summary.total_bookings} color="bg-blue-100 text-blue-600" />
-            <StatCard icon={DollarSign} label="Toplam Bakiye" value={`${fmtTL(summary.total_balance)} TL`} color={summary.total_balance > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'} />
+            <StatCard icon={Users} label={t('cm.pages_GroupFolioPage.toplam_grup')} value={summary.total_groups} sub={`${summary.active_groups} aktif`} color="bg-violet-100 text-violet-600" />
+            <StatCard icon={FileText} label={t('cm.pages_GroupFolioPage.toplam_rez')} value={summary.total_bookings} color="bg-blue-100 text-blue-600" />
+            <StatCard icon={DollarSign} label={t('cm.pages_GroupFolioPage.toplam_bakiye')} value={`${fmtTL(summary.total_balance)} TL`} color={summary.total_balance > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'} />
             <StatCard icon={Merge} label="Birlestirmeler" value={summary.merge_operations} sub={`${summary.merged_folios} folio`} color="bg-amber-100 text-amber-600" />
           </div>
         )}
@@ -355,7 +357,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
             </div>
 
             {loading ? (
-              <div className="text-center py-8 text-gray-400">Yükleniyor...</div>
+              <div className="text-center py-8 text-gray-400">{t('cm.pages_GroupFolioPage.yukleniyor_4deb0')}</div>
             ) : filteredGroups.length === 0 ? (
               <Card className="p-8 text-center">
                 <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
@@ -416,11 +418,11 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
             {!selectedGroup ? (
               <Card className="p-12 text-center">
                 <Layers className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">Soldaki listeden bir grup seçin</p>
-                <p className="text-xs text-gray-400 mt-1">Folio detaylarını ve birleştirme işlemlerini görüntüleyebilirsiniz</p>
+                <p className="text-gray-500">{t('cm.pages_GroupFolioPage.soldaki_listeden_bir_grup_secin')}</p>
+                <p className="text-xs text-gray-400 mt-1">{t('cm.pages_GroupFolioPage.folio_detaylarini_ve_birlestirme_islemle')}</p>
               </Card>
             ) : detailLoading ? (
-              <Card className="p-12 text-center text-gray-400">Yükleniyor...</Card>
+              <Card className="p-12 text-center text-gray-400">{t('cm.pages_GroupFolioPage.yukleniyor_4deb0')}</Card>
             ) : groupDetail ? (
               <>
                 {/* Group header with actions */}
@@ -440,7 +442,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                       className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
                       data-testid="bulk-payment-btn"
                     >
-                      <Users className="w-4 h-4 mr-1" /> Toplu Ödeme
+                      <Users className="w-4 h-4 mr-1" /> {t('cm.pages_GroupFolioPage.toplu_odeme')}
                     </Button>
                     <Button
                       size="sm"
@@ -455,7 +457,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                       disabled={!groupDetail.bookings || groupDetail.bookings.length === 0}
                       data-testid="add-payment-btn"
                     >
-                      <Banknote className="w-4 h-4 mr-1" /> Ödeme Ekle
+                      <Banknote className="w-4 h-4 mr-1" /> {t('cm.pages_GroupFolioPage.odeme_ekle')}
                     </Button>
                     <Button
                       size="sm"
@@ -467,7 +469,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                       className="bg-violet-600 hover:bg-violet-700"
                       data-testid="merge-btn"
                     >
-                      <Merge className="w-4 h-4 mr-1" /> Folioları Birleştir
+                      <Merge className="w-4 h-4 mr-1" /> {t('cm.pages_GroupFolioPage.foliolari_birlestir')}
                     </Button>
                   </div>
                 </div>
@@ -497,7 +499,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                                 </div>
                                 <div>
                                   <div className="font-semibold text-sm">{b.guest_name}</div>
-                                  <div className="text-xs text-gray-500">Oda: {b.room_number}</div>
+                                  <div className="text-xs text-gray-500">{t('cm.pages_GroupFolioPage.oda')} {b.room_number}</div>
                                 </div>
                               </div>
                               <div className="flex items-center gap-4">
@@ -507,11 +509,11 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                                     <div className="text-sm font-semibold">{fmtTL(b.accommodation_total)} TL</div>
                                   </div>
                                   <div>
-                                    <div className="text-[11px] text-gray-500">Ödeme</div>
+                                    <div className="text-[11px] text-gray-500">{t('cm.pages_GroupFolioPage.odeme')}</div>
                                     <div className="text-sm font-semibold text-emerald-600">{fmtTL(b.payments)} TL</div>
                                   </div>
                                   <div>
-                                    <div className="text-[11px] text-gray-500">Bakiye</div>
+                                    <div className="text-[11px] text-gray-500">{t('cm.pages_GroupFolioPage.bakiye')}</div>
                                     <div className={`text-sm font-bold ${b.balance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                                       {fmtTL(b.balance)} TL
                                     </div>
@@ -523,7 +525,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                                       <Lock className="w-3 h-3 mr-1" /> Birlestirildi
                                     </Badge>
                                   ) : (
-                                    <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-[10px]">Aktif</Badge>
+                                    <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-[10px]">{t('cm.pages_GroupFolioPage.aktif')}</Badge>
                                   )}
                                 </div>
                               </div>
@@ -532,7 +534,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                             {isExpanded && (
                               <div className="px-4 pb-4 border-t border-gray-100">
                                 <div className="flex items-center justify-between pt-3 pb-2">
-                                  <span className="text-xs font-semibold text-gray-500 uppercase">Folio Detayları</span>
+                                  <span className="text-xs font-semibold text-gray-500 uppercase">{t('cm.pages_GroupFolioPage.folio_detaylari')}</span>
                                   {!isMerged && (
                                     <Button
                                       size="sm"
@@ -545,7 +547,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                                       }}
                                       data-testid={`pay-btn-${b.booking_id}`}
                                     >
-                                      <CreditCard className="w-3 h-3 mr-1" /> Ödeme Yap
+                                      <CreditCard className="w-3 h-3 mr-1" /> {t('cm.pages_GroupFolioPage.odeme_yap')}
                                     </Button>
                                   )}
                                 </div>
@@ -563,7 +565,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                 <Card className="bg-gradient-to-r from-violet-50 to-indigo-50 border-violet-200" data-testid="group-total-card">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-violet-700">Grup Toplam Bakiye</span>
+                      <span className="font-semibold text-violet-700">{t('cm.pages_GroupFolioPage.grup_toplam_bakiye')}</span>
                       <span className={`text-xl font-bold ${groupBalance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                         {fmtTL(groupBalance)} TL
                       </span>
@@ -574,13 +576,13 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                 {/* Merge Logs */}
                 {groupDetail.merge_logs?.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-600 mb-2">Birleştirme Geçmişi</h3>
+                    <h3 className="text-sm font-semibold text-gray-600 mb-2">{t('cm.pages_GroupFolioPage.birlestirme_gecmisi')}</h3>
                     {groupDetail.merge_logs.map(log => (
                       <Card key={log.id} className="mb-2">
                         <CardContent className="p-3 text-xs text-gray-600">
                           <div className="flex items-center gap-2">
                             <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-                            <span>{log.merged_by} - {log.total_entries_merged} giriş, {log.total_payments_merged} ödeme birleştirildi</span>
+                            <span>{log.merged_by} - {log.total_entries_merged} {t('cm.pages_GroupFolioPage.giris')} {log.total_payments_merged} {t('cm.pages_GroupFolioPage.odeme_birlestirildi')}</span>
                             <span className="ml-auto text-gray-400 whitespace-nowrap">{(log.created_at || '').slice(0, 16).replace('T', ' ')}</span>
                           </div>
                         </CardContent>
@@ -598,20 +600,20 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Merge className="w-5 h-5 text-violet-600" /> Folioları Birleştir
+                <Merge className="w-5 h-5 text-violet-600" /> {t('cm.pages_GroupFolioPage.foliolari_birlestir_9da2a')}
               </DialogTitle>
               <DialogDescription>
-                Grup içerisindeki folio girişlerini tek bir ana folioda toplayın.
+                {t('cm.pages_GroupFolioPage.grup_icerisindeki_folio_girislerini_tek_')}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>Bu işlem diğer odaların folio girişlerini seçilen ana folioya taşıyacaktır. Bu işlem geri alınamaz.</span>
+                <span>{t('cm.pages_GroupFolioPage.bu_islem_diger_odalarin_folio_girislerin')}</span>
               </div>
 
               <div>
-                <Label>Ana Rezervasyon (Master Folio)</Label>
+                <Label>{t('cm.pages_GroupFolioPage.ana_rezervasyon_master_folio')}</Label>
                 <select
                   value={masterBookingId}
                   onChange={e => setMasterBookingId(e.target.value)}
@@ -620,29 +622,29 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                 >
                   {(groupDetail?.bookings || []).filter(b => !b.folio_merged_to).map(b => (
                     <option key={b.booking_id} value={b.booking_id}>
-                      Oda {b.room_number} - {b.guest_name} (Bakiye: {fmtTL(b.balance)} TL)
+                      {t('cm.pages_GroupFolioPage.oda_e4b47')} {b.room_number} - {b.guest_name} {t('cm.pages_GroupFolioPage.bakiye_e34be')} {fmtTL(b.balance)} TL)
                     </option>
                   ))}
                 </select>
               </div>
 
               <div className="text-sm text-gray-600">
-                <div className="font-medium mb-2">Birleştirilecek Foliolar:</div>
+                <div className="font-medium mb-2">{t('cm.pages_GroupFolioPage.birlestirilecek_foliolar')}</div>
                 {(groupDetail?.bookings || []).filter(b => b.booking_id !== masterBookingId && !b.folio_merged_to).map(b => (
                   <div key={b.booking_id} className="flex items-center gap-2 py-1">
                     <ArrowRight className="w-3 h-3 text-violet-500" />
-                    Oda {b.room_number} - {b.guest_name} ({fmtTL(b.balance)} TL)
+                    {t('cm.pages_GroupFolioPage.oda_e4b47')} {b.room_number} - {b.guest_name} ({fmtTL(b.balance)} TL)
                   </div>
                 ))}
               </div>
 
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={mergePayments} onChange={e => setMergePayments(e.target.checked)} className="w-4 h-4 rounded" id="merge-payments" />
-                <Label htmlFor="merge-payments" className="cursor-pointer text-sm">Ödemeleri de birleştir</Label>
+                <Label htmlFor="merge-payments" className="cursor-pointer text-sm">{t('cm.pages_GroupFolioPage.odemeleri_de_birlestir')}</Label>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setShowMerge(false)}>İptal</Button>
+                <Button variant="outline" onClick={() => setShowMerge(false)}>{t('cm.pages_GroupFolioPage.iptal')}</Button>
                 <Button onClick={handleMerge} disabled={merging} className="bg-violet-600 hover:bg-violet-700" data-testid="confirm-merge-btn">
                   {merging ? 'Birleştiriliyor...' : 'Birleştir'}
                 </Button>
@@ -656,15 +658,15 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-emerald-600" /> Ödeme Kaydet
+                <CreditCard className="w-5 h-5 text-emerald-600" /> {t('cm.pages_GroupFolioPage.odeme_kaydet')}
               </DialogTitle>
               <DialogDescription>
-                Seçilen rezervasyon için ödeme girişi yapın.
+                {t('cm.pages_GroupFolioPage.secilen_rezervasyon_icin_odeme_girisi_ya')}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>Rezervasyon</Label>
+                <Label>{t('cm.pages_GroupFolioPage.rezervasyon')}</Label>
                 <select
                   value={paymentBookingId}
                   onChange={e => setPaymentBookingId(e.target.value)}
@@ -673,14 +675,14 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                 >
                   {(groupDetail?.bookings || []).filter(b => !b.folio_merged_to).map(b => (
                     <option key={b.booking_id} value={b.booking_id}>
-                      Oda {b.room_number} - {b.guest_name} (Bakiye: {fmtTL(b.balance)} TL)
+                      {t('cm.pages_GroupFolioPage.oda_e4b47')} {b.room_number} - {b.guest_name} {t('cm.pages_GroupFolioPage.bakiye_e34be')} {fmtTL(b.balance)} TL)
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <Label>Tutar (TL)</Label>
+                <Label>{t('cm.pages_GroupFolioPage.tutar_tl')}</Label>
                 <Input
                   type="number"
                   min="0"
@@ -694,14 +696,14 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               </div>
 
               <div>
-                <Label>Ödeme Yöntemi</Label>
+                <Label>{t('cm.pages_GroupFolioPage.odeme_yontemi')}</Label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                   <SelectTrigger className="mt-1" data-testid="payment-method-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cash">Nakit</SelectItem>
-                    <SelectItem value="credit_card">Kredi Kartı</SelectItem>
+                    <SelectItem value="credit_card">{t('cm.pages_GroupFolioPage.kredi_karti')}</SelectItem>
                     <SelectItem value="bank_transfer">Banka Havale</SelectItem>
                     <SelectItem value="agency">Acenta</SelectItem>
                   </SelectContent>
@@ -709,7 +711,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               </div>
 
               <div>
-                <Label>Referans / Açıklama</Label>
+                <Label>{t('cm.pages_GroupFolioPage.referans_aciklama')}</Label>
                 <Input
                   value={paymentRef}
                   onChange={e => setPaymentRef(e.target.value)}
@@ -720,7 +722,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setShowPayment(false)}>İptal</Button>
+                <Button variant="outline" onClick={() => setShowPayment(false)}>{t('cm.pages_GroupFolioPage.iptal_25174')}</Button>
                 <Button onClick={handlePayment} disabled={paying} className="bg-emerald-600 hover:bg-emerald-700" data-testid="confirm-payment-btn">
                   {paying ? 'Kaydediliyor...' : 'Ödemeyi Kaydet'}
                 </Button>
@@ -734,10 +736,10 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-emerald-600" /> Tüm Grup İçin Toplu Ödeme
+                <Users className="w-5 h-5 text-emerald-600" /> {t('cm.pages_GroupFolioPage.tum_grup_icin_toplu_odeme')}
               </DialogTitle>
               <DialogDescription>
-                Girdiğiniz tutar gruptaki aktif rezervasyonlara otomatik dağıtılır.
+                {t('cm.pages_GroupFolioPage.girdiginiz_tutar_gruptaki_aktif_rezervas')}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -746,12 +748,12 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                 <div className="font-medium mb-1">Grup: {selectedGroup?.group_name}</div>
                 <div className="flex gap-4 text-xs">
                   <span>{unmergedCount} aktif rezervasyon</span>
-                  <span>Toplam bakiye: <strong>{fmtTL(groupBalance)} TL</strong></span>
+                  <span>{t('cm.pages_GroupFolioPage.toplam_bakiye_69741')} <strong>{fmtTL(groupBalance)} TL</strong></span>
                 </div>
               </div>
 
               <div>
-                <Label>Toplam Tutar (TL)</Label>
+                <Label>{t('cm.pages_GroupFolioPage.toplam_tutar_tl')}</Label>
                 <Input
                   type="number"
                   min="0"
@@ -770,34 +772,34 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                     onClick={() => setBulkAmount(String(groupBalance > 0 ? groupBalance : 0))}
                     data-testid="fill-balance-btn"
                   >
-                    Bakiye tutarını doldur ({fmtTL(groupBalance)} TL)
+                    {t('cm.pages_GroupFolioPage.bakiye_tutarini_doldur')}{fmtTL(groupBalance)} TL)
                   </Button>
                 )}
               </div>
 
               <div>
-                <Label>Dağıtım Yöntemi</Label>
+                <Label>{t('cm.pages_GroupFolioPage.dagitim_yontemi')}</Label>
                 <Select value={bulkDistribution} onValueChange={setBulkDistribution}>
                   <SelectTrigger className="mt-1" data-testid="bulk-distribution-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="proportional">Oransal (bakiyeye göre)</SelectItem>
-                    <SelectItem value="equal">Eşit (her rezervasyona eşit)</SelectItem>
+                    <SelectItem value="proportional">{t('cm.pages_GroupFolioPage.oransal_bakiyeye_gore')}</SelectItem>
+                    <SelectItem value="equal">{t('cm.pages_GroupFolioPage.esit_her_rezervasyona_esit')}</SelectItem>
                     <SelectItem value="balance_only">Sadece bakiyesi olan</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
-                <Label>Ödeme Yöntemi</Label>
+                <Label>{t('cm.pages_GroupFolioPage.odeme_yontemi_ea114')}</Label>
                 <Select value={bulkMethod} onValueChange={setBulkMethod}>
                   <SelectTrigger className="mt-1" data-testid="bulk-method-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cash">Nakit</SelectItem>
-                    <SelectItem value="credit_card">Kredi Kartı</SelectItem>
+                    <SelectItem value="credit_card">{t('cm.pages_GroupFolioPage.kredi_karti_839d5')}</SelectItem>
                     <SelectItem value="bank_transfer">Banka Havale</SelectItem>
                     <SelectItem value="agency">Acenta</SelectItem>
                   </SelectContent>
@@ -805,7 +807,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               </div>
 
               <div>
-                <Label>Referans / Açıklama</Label>
+                <Label>{t('cm.pages_GroupFolioPage.referans_aciklama_b2973')}</Label>
                 <Input
                   value={bulkRef}
                   onChange={e => setBulkRef(e.target.value)}
@@ -818,7 +820,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               {/* Preview distribution */}
               {bulkAmount && parseFloat(bulkAmount) > 0 && (
                 <div className="border rounded-lg p-3 bg-gray-50">
-                  <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Dağıtım Önizleme</div>
+                  <div className="text-xs font-semibold text-gray-500 uppercase mb-2">{t('cm.pages_GroupFolioPage.dagitim_onizleme')}</div>
                   {(groupDetail?.bookings || []).filter(b => !b.folio_merged_to).map(b => {
                     const amt = parseFloat(bulkAmount) || 0;
                     const totalPos = (groupDetail?.bookings || []).filter(x => !x.folio_merged_to && x.balance > 0).reduce((s, x) => s + x.balance, 0);
@@ -832,7 +834,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
                     }
                     return (
                       <div key={b.booking_id} className="flex items-center justify-between text-sm py-1 border-b border-gray-100 last:border-0">
-                        <span className="text-gray-600">Oda {b.room_number} - {b.guest_name}</span>
+                        <span className="text-gray-600">{t('cm.pages_GroupFolioPage.oda_e4b47')} {b.room_number} - {b.guest_name}</span>
                         <span className="font-medium text-emerald-600">{fmtTL(share)} TL</span>
                       </div>
                     );
@@ -841,7 +843,7 @@ const GroupFolioPage = ({ user, tenant, onLogout }) => {
               )}
 
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setShowBulkPayment(false)}>İptal</Button>
+                <Button variant="outline" onClick={() => setShowBulkPayment(false)}>{t('cm.pages_GroupFolioPage.iptal_25174')}</Button>
                 <Button
                   onClick={handleBulkPayment}
                   disabled={bulkPaying || !bulkAmount || parseFloat(bulkAmount) <= 0}

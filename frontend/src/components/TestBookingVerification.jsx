@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import {
   FlaskConical, Loader2, CheckCircle, XCircle, AlertTriangle, Search, ArrowRight
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
@@ -19,6 +20,7 @@ const STEPS = [
 ];
 
 const TestBookingVerification = () => {
+  const { t } = useTranslation();
   const [step, setStep] = useState(1);
   const [reservationId, setReservationId] = useState('');
   const [guestName, setGuestName] = useState('');
@@ -58,10 +60,10 @@ const TestBookingVerification = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <FlaskConical className="w-5 h-5 text-indigo-600" />
-          Test Booking Doğrulama
+          {t('cm.components_TestBookingVerification.test_booking_dogrulama')}
         </CardTitle>
         <CardDescription>
-          OTA platformundan oluşturulan test rezervasyonlarını Exely OTA_ReadRQ ile doğrulayın
+          {t('cm.components_TestBookingVerification.ota_platformundan_olusturulan_test_rezer')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -91,7 +93,7 @@ const TestBookingVerification = () => {
         {step >= 1 && (
           <div className="space-y-3">
             <div>
-              <Label>Rezervasyon ID (opsiyonel)</Label>
+              <Label>{t('cm.components_TestBookingVerification.rezervasyon_id_opsiyonel')}</Label>
               <Input
                 placeholder="Exely reservation ID girin..."
                 value={reservationId}
@@ -101,9 +103,9 @@ const TestBookingVerification = () => {
               />
             </div>
             <div>
-              <Label>Misafir Adı (opsiyonel)</Label>
+              <Label>{t('cm.components_TestBookingVerification.misafir_adi_opsiyonel')}</Label>
               <Input
-                placeholder="Misafir adını girin..."
+                placeholder={t('cm.components_TestBookingVerification.misafir_adini_girin')}
                 value={guestName}
                 onChange={e => setGuestName(e.target.value)}
                 className="mt-1"
@@ -118,14 +120,14 @@ const TestBookingVerification = () => {
                 data-testid="test-booking-verify-btn"
               >
                 {loading ? (
-                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Doğrulanıyor...</>
+                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> {t('cm.components_TestBookingVerification.dogrulaniyor')}</>
                 ) : (
-                  <><Search className="w-4 h-4 mr-1" /> OTA_ReadRQ ile Doğrula</>
+                  <><Search className="w-4 h-4 mr-1" /> {t('cm.components_TestBookingVerification.ota_readrq_ile_dogrula')}</>
                 )}
               </Button>
               {result && (
                 <Button variant="outline" onClick={() => { setResult(null); setStep(1); }} data-testid="test-booking-reset-btn">
-                  Sıfırla
+                  {t('cm.components_TestBookingVerification.sifirla')}
                 </Button>
               )}
             </div>
@@ -155,7 +157,7 @@ const TestBookingVerification = () => {
                    'Rezervasyon Bulunamadı'}
                 </p>
                 <p className="text-xs text-gray-600 mt-1">
-                  Önceki: {result.before_count} | Sonraki: {result.after_count} | Yeni: {result.new_count}
+                  {t('cm.components_TestBookingVerification.onceki')} {result.before_count} | Sonraki: {result.after_count} {t('cm.components_TestBookingVerification.yeni')} {result.new_count}
                 </p>
               </div>
             </div>
@@ -193,8 +195,7 @@ const TestBookingVerification = () => {
             {/* Pull result details */}
             {result.pull_result && (
               <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
-                Pull: {result.pull_result.success ? 'Başarılı' : 'Başarısız'} |
-                İşlenen: {result.pull_result.processed || 0}
+                Pull: {result.pull_result.success ? 'Başarılı' : 'Başarısız'} {t('cm.components_TestBookingVerification.islenen')} {result.pull_result.processed || 0}
                 {result.pull_result.error && ` | Hata: ${result.pull_result.error}`}
               </div>
             )}

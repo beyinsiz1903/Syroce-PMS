@@ -21,6 +21,7 @@ import {
   Clock,
   Wallet,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const PAYMENT_LABELS = {
   cash_on_delivery: "Kapıda Ödeme",
@@ -40,6 +41,7 @@ const fmt = (n) =>
   new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(Number(n || 0));
 
 export default function SuppliesMarket({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState("catalog");
   const [categories, setCategories] = useState([]);
   const [activeCategory, setActiveCategory] = useState("");
@@ -247,10 +249,10 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Store className="w-7 h-7 text-blue-600" /> Tedarik Pazarı
+            <Store className="w-7 h-7 text-blue-600" /> {t('cm.pages_SuppliesMarket.tedarik_pazari')}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Toptancılardan otel sarf malzemelerini doğrudan sipariş edin.
+            {t('cm.pages_SuppliesMarket.toptancilardan_otel_sarf_malzemelerini_d')}
           </p>
         </div>
         <div className="flex gap-2">
@@ -268,7 +270,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
               tab === "compare" ? "bg-blue-600 text-white" : "bg-gray-100 hover:bg-gray-200"
             }`}
           >
-            <BarChart3 className="w-4 h-4 inline mr-1" /> Karşılaştır
+            <BarChart3 className="w-4 h-4 inline mr-1" /> {t('cm.pages_SuppliesMarket.karsilastir')}
           </button>
           <button
             onClick={() => setTab("orders")}
@@ -276,7 +278,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
               tab === "orders" ? "bg-blue-600 text-white" : "bg-gray-100 hover:bg-gray-200"
             }`}
           >
-            <Truck className="w-4 h-4 inline mr-1" /> Siparişlerim
+            <Truck className="w-4 h-4 inline mr-1" /> {t('cm.pages_SuppliesMarket.siparislerim')}
           </button>
         </div>
       </div>
@@ -293,7 +295,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                   activeCategory === "" ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"
                 }`}
               >
-                Tümü
+                {t('cm.pages_SuppliesMarket.tumu')}
               </button>
               {categories.map((c) => (
                 <button
@@ -317,7 +319,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
               </div>
             ) : products.length === 0 ? (
               <div className="text-center py-12 text-gray-500 bg-white rounded-lg border">
-                Bu kategoride ürün bulunamadı.
+                {t('cm.pages_SuppliesMarket.bu_kategoride_urun_bulunamadi')}
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -337,14 +339,14 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                       </span>
                     </div>
                     <div className="text-xs text-gray-500 mb-3">
-                      Min sipariş: {p.moq} {p.unit} · Paket: {p.pack_size}
+                      {t('cm.pages_SuppliesMarket.min_siparis')} {p.moq} {p.unit} · Paket: {p.pack_size}
                     </div>
                     <button
                       onClick={() => addToCart(p)}
                       disabled={p.stock <= 0}
                       className="w-full py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md disabled:bg-gray-300"
                     >
-                      <ShoppingCart className="w-4 h-4 inline mr-1" /> Sepete Ekle
+                      <ShoppingCart className="w-4 h-4 inline mr-1" /> {t('cm.pages_SuppliesMarket.sepete_ekle')}
                     </button>
                   </div>
                 ))}
@@ -359,13 +361,13 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                 <ShoppingCart className="w-5 h-5" /> Sepet ({cartItems.length})
               </h3>
               {cartItems.length === 0 ? (
-                <p className="text-sm text-gray-500 py-6 text-center">Sepet boş</p>
+                <p className="text-sm text-gray-500 py-6 text-center">{t('cm.pages_SuppliesMarket.sepet_bos')}</p>
               ) : (
                 <>
                   {cartVendorIds.length > 1 && (
                     <div className="mb-3 p-2 text-xs bg-red-50 text-red-700 rounded flex items-start gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                      <span>Tek siparişte yalnızca bir toptancıdan ürün eklenebilir.</span>
+                      <span>{t('cm.pages_SuppliesMarket.tek_sipariste_yalnizca_bir_toptancidan_u')}</span>
                     </div>
                   )}
                   <div className="space-y-3 max-h-80 overflow-y-auto">
@@ -407,7 +409,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                   </div>
                   <div className="mt-4 pt-3 border-t">
                     <div className="flex justify-between mb-3">
-                      <span className="text-sm">Toplam</span>
+                      <span className="text-sm">{t('cm.pages_SuppliesMarket.toplam')}</span>
                       <span className="font-bold text-lg">{fmt(cartTotal)}</span>
                     </div>
                     <button
@@ -415,7 +417,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                       disabled={cartVendorIds.length > 1}
                       className="w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded-md disabled:bg-gray-300"
                     >
-                      Sipariş Ver
+                      {t('cm.pages_SuppliesMarket.siparis_ver')}
                     </button>
                   </div>
                 </>
@@ -430,11 +432,10 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
           <div className="bg-white rounded-lg border p-4">
             <h3 className="font-semibold mb-3 flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-blue-600" />
-              Tedarikçi Fiyat Karşılaştırma
+              {t('cm.pages_SuppliesMarket.tedarikci_fiyat_karsilastirma')}
             </h3>
             <p className="text-xs text-gray-500 mb-3">
-              Aynı ürün/kategoride birden fazla tedarikçinin fiyatını, teslim süresini ve
-              vadesini yan yana görün. Sistem en avantajlı seçeneği önerir.
+              {t('cm.pages_SuppliesMarket.ayni_urun_kategoride_birden_fazla_tedari')}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
               <select
@@ -442,13 +443,13 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                 onChange={(e) => setCompareCategory(e.target.value)}
                 className="border rounded p-2 text-sm"
               >
-                <option value="">Tüm Kategoriler</option>
+                <option value="">{t('cm.pages_SuppliesMarket.tum_kategoriler')}</option>
                 {categories.map((c) => (
                   <option key={c.key} value={c.key}>{c.label}</option>
                 ))}
               </select>
               <input
-                placeholder="Ürün adı (ops.)"
+                placeholder={t('cm.pages_SuppliesMarket.urun_adi_ops')}
                 value={compareQ}
                 onChange={(e) => setCompareQ(e.target.value)}
                 className="border rounded p-2 text-sm"
@@ -474,10 +475,10 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
           {compareData && compareData.options?.length > 0 && (
             <div className="bg-white rounded-lg border overflow-hidden">
               <div className="p-3 bg-gray-50 border-b text-xs text-gray-600">
-                {compareData.options.length} tedarikçi seçeneği · Adet: <b>{compareData.qty}</b>
+                {compareData.options.length} {t('cm.pages_SuppliesMarket.tedarikci_secenegi_adet')} <b>{compareData.qty}</b>
                 {compareData.best_pick_id && (
                   <span className="ml-3 inline-flex items-center gap-1 text-emerald-700 font-medium">
-                    <Sparkles className="w-3.5 h-3.5" /> Akıllı seçim işaretlendi
+                    <Sparkles className="w-3.5 h-3.5" /> {t('cm.pages_SuppliesMarket.akilli_secim_isaretlendi')}
                   </span>
                 )}
               </div>
@@ -485,9 +486,9 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                     <tr>
-                      <th className="text-left p-3">Ürün / Tedarikçi</th>
+                      <th className="text-left p-3">{t('cm.pages_SuppliesMarket.urun_tedarikci')}</th>
                       <th className="text-right p-3">Birim Fiyat</th>
-                      <th className="text-right p-3">Toplam ({compareData.qty})</th>
+                      <th className="text-right p-3">{t('cm.pages_SuppliesMarket.toplam_64eb7')}{compareData.qty})</th>
                       <th className="text-center p-3">Teslim</th>
                       <th className="text-center p-3">Vade</th>
                       <th className="text-left p-3">Avantaj</th>
@@ -508,7 +509,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                             <div className="text-xs text-gray-500">{o.vendor_name}</div>
                             {isBest && (
                               <span className="inline-flex items-center gap-1 mt-1 text-[10px] px-1.5 py-0.5 bg-emerald-600 text-white rounded">
-                                <Sparkles className="w-3 h-3" /> AKILLI SEÇİM
+                                <Sparkles className="w-3 h-3" /> {t('cm.pages_SuppliesMarket.akilli_secim')}
                               </span>
                             )}
                             {isCheapest && !isBest && (
@@ -574,7 +575,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                               }}
                               className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded"
                             >
-                              Sepete Ekle
+                              {t('cm.pages_SuppliesMarket.sepete_ekle_1529a')}
                             </button>
                           </td>
                         </tr>
@@ -588,8 +589,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
 
           {compareData && (compareData.options?.length || 0) === 0 && !compareLoading && (
             <div className="bg-white rounded-lg border text-center py-10 text-gray-500 text-sm">
-              Bu kriterlerde uygun tedarikçi bulunamadı. Adedi azaltmayı veya kategoriyi
-              değiştirmeyi deneyin.
+              {t('cm.pages_SuppliesMarket.bu_kriterlerde_uygun_tedarikci_bulunamad')}
             </div>
           )}
         </div>
@@ -603,8 +603,8 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
             </div>
           ) : orders.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
-              <p className="mb-1">Henüz sipariş yok</p>
-              <p className="text-xs text-gray-400">Tedarikçilerden ürün siparişi verdiğinizde burada listelenecek.</p>
+              <p className="mb-1">{t('cm.pages_SuppliesMarket.henuz_siparis_yok')}</p>
+              <p className="text-xs text-gray-400">{t('cm.pages_SuppliesMarket.tedarikcilerden_urun_siparisi_verdiginiz')}</p>
             </div>
           ) : (
             <div className="divide-y">
@@ -627,7 +627,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                       </div>
                     </div>
                     <div className="text-xs text-gray-600 mb-2">
-                      Ödeme: {PAYMENT_LABELS[o.payment_method] || o.payment_method}
+                      {t('cm.pages_SuppliesMarket.odeme')} {PAYMENT_LABELS[o.payment_method] || o.payment_method}
                     </div>
                     <div className="text-xs text-gray-700 space-y-1 bg-gray-50 p-2 rounded">
                       {o.lines.map((l) => (
@@ -651,7 +651,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                         onClick={() => confirmDelivery(o.id)}
                         className="mt-3 px-3 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded"
                       >
-                        <CheckCircle2 className="w-3 h-3 inline mr-1" /> Teslim Aldım
+                        <CheckCircle2 className="w-3 h-3 inline mr-1" /> {t('cm.pages_SuppliesMarket.teslim_aldim')}
                       </button>
                     )}
                   </div>
@@ -666,7 +666,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
       {showCheckout && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold mb-4">Sipariş Bilgileri</h3>
+            <h3 className="text-lg font-bold mb-4">{t('cm.pages_SuppliesMarket.siparis_bilgileri')}</h3>
 
             <div className="space-y-3">
               <div>
@@ -682,7 +682,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium">İletişim Adı *</label>
+                  <label className="text-xs font-medium">{t('cm.pages_SuppliesMarket.iletisim_adi')}</label>
                   <input
                     value={checkout.contact_name}
                     onChange={(e) =>
@@ -713,7 +713,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
               </div>
 
               <div>
-                <label className="text-xs font-medium block mb-2">Ödeme Yöntemi *</label>
+                <label className="text-xs font-medium block mb-2">{t('cm.pages_SuppliesMarket.odeme_yontemi')}</label>
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-gray-50">
                     <input
@@ -725,7 +725,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                       }
                     />
                     <Banknote className="w-4 h-4 text-green-600" />
-                    <span className="text-sm">Kapıda Ödeme</span>
+                    <span className="text-sm">{t('cm.pages_SuppliesMarket.kapida_odeme')}</span>
                   </label>
                   <label className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-gray-50">
                     <input
@@ -749,14 +749,14 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                       }
                     />
                     <CreditCard className="w-4 h-4 text-indigo-600" />
-                    <span className="text-sm">Kredi Kartı</span>
+                    <span className="text-sm">{t('cm.pages_SuppliesMarket.kredi_karti')}</span>
                     <span className="text-xs text-gray-400 ml-auto">3D Secure</span>
                   </label>
                 </div>
               </div>
 
               <div className="bg-gray-50 p-3 rounded flex justify-between font-semibold">
-                <span>Toplam</span>
+                <span>{t('cm.pages_SuppliesMarket.toplam_29757')}</span>
                 <span>{fmt(cartTotal)}</span>
               </div>
             </div>
@@ -766,7 +766,7 @@ export default function SuppliesMarket({ user, tenant, onLogout }) {
                 onClick={() => setShowCheckout(false)}
                 className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded"
               >
-                İptal
+                {t('cm.pages_SuppliesMarket.iptal')}
               </button>
               <button
                 onClick={placeOrder}

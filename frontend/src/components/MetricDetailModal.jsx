@@ -1,8 +1,10 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TrendingUp, TrendingDown } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MetricDetailModal = ({ isOpen, onClose, metric }) => {
+  const { t } = useTranslation();
   if (!metric) return null;
 
   const getTrendIcon = (value) => {
@@ -89,7 +91,7 @@ const MetricDetailModal = ({ isOpen, onClose, metric }) => {
           {metric.actions && metric.actions.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">Hızlı İşlemler</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-600">{t('cm.components_MetricDetailModal.hizli_islemler')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">

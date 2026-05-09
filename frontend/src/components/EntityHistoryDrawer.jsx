@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { History, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ACTION_COLORS = {
   create: 'bg-emerald-100 text-emerald-800',
@@ -22,6 +23,7 @@ const fmt = (ts) => {
 };
 
 const Diff = ({ before, after, changed }) => {
+  const { t } = useTranslation();
   if (changed && Object.keys(changed).length) {
     return (
       <div className="mt-2 space-y-1">
@@ -40,10 +42,10 @@ const Diff = ({ before, after, changed }) => {
     );
   }
   if (after && !before) {
-    return <div className="text-xs text-emerald-700 mt-1">Yeni kayıt oluşturuldu</div>;
+    return <div className="text-xs text-emerald-700 mt-1">{t('cm.components_EntityHistoryDrawer.yeni_kayit_olusturuldu')}</div>;
   }
   if (!after && before) {
-    return <div className="text-xs text-red-700 mt-1">Kayıt silindi</div>;
+    return <div className="text-xs text-red-700 mt-1">{t('cm.components_EntityHistoryDrawer.kayit_silindi')}</div>;
   }
   return null;
 };
@@ -71,7 +73,7 @@ const EntityHistoryDrawer = ({ entityType, entityId, title, onClose }) => {
           <div className="flex items-center gap-2">
             <History className="w-5 h-5 text-slate-700" />
             <div>
-              <div className="font-semibold">Değişiklik Geçmişi</div>
+              <div className="font-semibold">{t('cm.components_EntityHistoryDrawer.degisiklik_gecmisi')}</div>
               {title && <div className="text-xs text-slate-500">{title}</div>}
             </div>
           </div>
@@ -81,9 +83,9 @@ const EntityHistoryDrawer = ({ entityType, entityId, title, onClose }) => {
         </div>
 
         <div className="p-4">
-          {loading && <div className="text-sm text-slate-500">Yükleniyor…</div>}
+          {loading && <div className="text-sm text-slate-500">{t('cm.components_EntityHistoryDrawer.yukleniyor')}</div>}
           {!loading && trail.length === 0 && (
-            <div className="text-sm text-slate-500">Bu kayıt için geçmiş bulunmuyor.</div>
+            <div className="text-sm text-slate-500">{t('cm.components_EntityHistoryDrawer.bu_kayit_icin_gecmis_bulunmuyor')}</div>
           )}
           <ol className="relative border-l-2 border-slate-200 ml-2">
             {trail.map((entry) => (

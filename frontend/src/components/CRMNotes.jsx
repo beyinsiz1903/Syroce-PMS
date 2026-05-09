@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MessageSquare, Plus, User } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const CRMNotes = ({ guestId }) => {
+  const { t } = useTranslation();
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
   const [loading, setLoading] = useState(true);
@@ -73,7 +75,7 @@ const CRMNotes = ({ guestId }) => {
   };
 
   if (loading) {
-    return <div className="text-center py-4">Yükleniyor...</div>;
+    return <div className="text-center py-4">{t('cm.components_CRMNotes.yukleniyor')}</div>;
   }
 
   return (
@@ -81,7 +83,7 @@ const CRMNotes = ({ guestId }) => {
       <CardHeader>
         <CardTitle className="flex items-center text-lg">
           <MessageSquare className="w-5 h-5 mr-2" />
-          CRM Notları
+          {t('cm.components_CRMNotes.crm_notlari')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -90,7 +92,7 @@ const CRMNotes = ({ guestId }) => {
           <textarea
             className="w-full p-2 border rounded-lg text-sm"
             rows="3"
-            placeholder="Misafir hakkında not ekleyin..."
+            placeholder={t('cm.components_CRMNotes.misafir_hakkinda_not_ekleyin')}
             value={newNote}
             onChange={(e) => setNewNote(e.target.value)}
           />
@@ -100,14 +102,14 @@ const CRMNotes = ({ guestId }) => {
             onClick={handleAddNote}
           >
             <Plus className="w-4 h-4 mr-1" />
-            Not Ekle
+            {t('cm.components_CRMNotes.not_ekle')}
           </Button>
         </div>
 
         {/* Notes List */}
         <div className="space-y-3 max-h-96 overflow-y-auto">
           {notes.length === 0 ? (
-            <p className="text-center text-gray-500 text-sm py-4">Henüz not yok</p>
+            <p className="text-center text-gray-500 text-sm py-4">{t('cm.components_CRMNotes.henuz_not_yok')}</p>
           ) : (
             notes.map((note) => (
               <div key={note.id} className="p-3 bg-gray-50 rounded-lg">

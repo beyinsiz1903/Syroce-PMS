@@ -24,10 +24,12 @@ import {
   Users,
   Route,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
 function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [config, setConfig] = useState(null);
   const [summary, setSummary] = useState(null);
@@ -116,7 +118,7 @@ function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
                   </p>
                   {config?.updated_at && (
                     <p className="text-xs text-slate-500 mt-1">
-                      Son güncelleme: {new Date(config.updated_at).toLocaleString("tr-TR")} — {config.updated_by}
+                      {t('cm.pages_PIIStrictModeDashboard.son_guncelleme')} {new Date(config.updated_at).toLocaleString("tr-TR")} — {config.updated_by}
                     </p>
                   )}
                 </div>
@@ -217,7 +219,7 @@ function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
               {policy ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-400">Toplam PII Alan</span>
+                    <span className="text-slate-400">{t('cm.pages_PIIStrictModeDashboard.toplam_pii_alan')}</span>
                     <Badge variant="outline" className="text-slate-200">{policy.total_pii_fields}</Badge>
                   </div>
                   {Object.entries(policy.categories || {}).map(([cat, fields]) => (
@@ -255,7 +257,7 @@ function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
                 </Badge>
               ))}
               {(!config?.whitelisted_paths || config.whitelisted_paths.length === 0) && (
-                <p className="text-sm text-slate-500">Whitelist boş</p>
+                <p className="text-sm text-slate-500">{t('cm.pages_PIIStrictModeDashboard.whitelist_bos')}</p>
               )}
             </div>
           </CardContent>
@@ -345,7 +347,7 @@ function PIIStrictModeDashboard({ user, tenant, onLogout, embedded = false }) {
           </div>
           <div className="flex items-center gap-4">
             <Button variant="outline" size="sm" onClick={fetchAll} data-testid="refresh-btn">
-              <RefreshCw className="w-4 h-4 mr-1" /> Yenile
+              <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_PIIStrictModeDashboard.yenile')}
             </Button>
             <span className="text-sm text-slate-400">{user?.email}</span>
           </div>

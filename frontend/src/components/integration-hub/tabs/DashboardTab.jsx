@@ -159,9 +159,9 @@ export default function DashboardTab(props) {
                 <Card className="bg-slate-900/50 border-slate-800 col-span-2">
                   <CardContent className="p-12 text-center">
                     <Network className="w-12 h-12 mx-auto text-slate-600 mb-3" />
-                    <p className="text-slate-400 text-sm">Henüz connector tanımlanmamış</p>
+                    <p className="text-slate-400 text-sm">{t('cm.components_integrationhub_tabs_DashboardTab.henuz_connector_tanimlanmamis')}</p>
                     <Button size="sm" onClick={() => setShowNewConnector(true)} className="mt-3 bg-blue-600">
-                      <Plus className="w-4 h-4 mr-1" /> İlk Connector'ı Ekle
+                      <Plus className="w-4 h-4 mr-1" /> {t('cm.components_integrationhub_tabs_DashboardTab.ilk_connector_i_ekle')}
                     </Button>
                   </CardContent>
                 </Card>

@@ -17,6 +17,7 @@ import {
   AlertDialogTrigger,
 } from './ui/alert-dialog';
 import { Plus, Pencil, Trash2, RefreshCw, Store, MapPin, Users, Clock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const OUTLET_TYPES = [
   { value: 'restaurant', label: 'Restoran' },
@@ -45,6 +46,7 @@ const blankForm = {
 };
 
 const POSOutletManagement = ({ onChange }) => {
+  const { t } = useTranslation();
   const [outlets, setOutlets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -137,18 +139,18 @@ const POSOutletManagement = ({ onChange }) => {
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="flex items-center gap-2">
             <Store className="w-5 h-5 text-amber-600" />
-            Satış Noktalari ({outlets.length})
+            {t('cm.components_POSOutletManagement.satis_noktalari')}{outlets.length})
           </CardTitle>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Yenile
+              {t('cm.components_POSOutletManagement.yenile')}
             </Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm" onClick={openNew} data-testid="button-new-outlet">
                   <Plus className="w-4 h-4 mr-2" />
-                  Yeni Satış Noktası
+                  {t('cm.components_POSOutletManagement.yeni_satis_noktasi')}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-md">
@@ -157,7 +159,7 @@ const POSOutletManagement = ({ onChange }) => {
                     {editing ? 'Satış Noktasını Düzenle' : 'Yeni Satış Noktası'}
                   </DialogTitle>
                   <DialogDescription>
-                    Restoran, bar, spa gibi ayrı kasalar için tanım oluştur.
+                    {t('cm.components_POSOutletManagement.restoran_bar_spa_gibi_ayri_kasalar_icin_')}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
@@ -206,7 +208,7 @@ const POSOutletManagement = ({ onChange }) => {
                       />
                     </div>
                     <div>
-                      <Label>Çalışma Saatleri</Label>
+                      <Label>{t('cm.components_POSOutletManagement.calisma_saatleri')}</Label>
                       <Input
                         value={form.opening_hours}
                         onChange={(e) => setForm({ ...form, opening_hours: e.target.value })}
@@ -217,7 +219,7 @@ const POSOutletManagement = ({ onChange }) => {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
-                    İptal
+                    {t('cm.components_POSOutletManagement.iptal')}
                   </Button>
                   <Button onClick={submit} disabled={saving} data-testid="button-save-outlet">
                     {saving ? 'Kaydediliyor...' : (editing ? 'Guncelle' : 'Olustur')}
@@ -236,8 +238,8 @@ const POSOutletManagement = ({ onChange }) => {
         ) : outlets.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
             <Store className="w-16 h-16 mx-auto mb-3 text-gray-300" />
-            <p>Henüz satış noktasi yok</p>
-            <p className="text-sm mt-2">"Yeni Satış Noktası" ile ilk kasanizi oluşturun</p>
+            <p>{t('cm.components_POSOutletManagement.henuz_satis_noktasi_yok')}</p>
+            <p className="text-sm mt-2">{t('cm.components_POSOutletManagement.yeni_satis_noktasi_ile_ilk_kasanizi_olus')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -259,7 +261,7 @@ const POSOutletManagement = ({ onChange }) => {
                           {typeLabel}
                         </Badge>
                         {isInactive && (
-                          <Badge variant="destructive" className="ml-1 mt-1">Pasif</Badge>
+                          <Badge variant="destructive" className="ml-1 mt-1">{t('cm.components_POSOutletManagement.pasif')}</Badge>
                         )}
                       </div>
                       <div className="flex gap-1">
@@ -278,10 +280,9 @@ const POSOutletManagement = ({ onChange }) => {
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Satış noktasi pasiflestirilsin mi?</AlertDialogTitle>
+                              <AlertDialogTitle>{t('cm.components_POSOutletManagement.satis_noktasi_pasiflestirilsin_mi')}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                "{outlet.outlet_name || outlet.name}" pasif duruma alinacak.
-                                Gecmis satış kayitlari silinmez.
+                                "{outlet.outlet_name || outlet.name}{t('cm.components_POSOutletManagement.pasif_duruma_alinacak_gecmis_satis_kayit')}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -316,7 +317,7 @@ const POSOutletManagement = ({ onChange }) => {
                       )}
                       {outlet.today_transactions != null && (
                         <div className="text-xs pt-2 border-t">
-                          Bugün: <strong>{outlet.today_transactions}</strong> işlem
+                          {t('cm.components_POSOutletManagement.bugun')} <strong>{outlet.today_transactions}</strong> {t('cm.components_POSOutletManagement.islem')}
                         </div>
                       )}
                     </div>

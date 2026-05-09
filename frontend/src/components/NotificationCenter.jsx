@@ -4,6 +4,7 @@ import { useNotifications } from '@/context/NotificationContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from 'react-i18next';
 
 // Task #38: when the internal-message backlog crosses this threshold the
 // bell starts pulsing and a tooltip nudges the operator to clear the
@@ -18,6 +19,7 @@ const INTERNAL_UNREAD_PULSE_THRESHOLD = 10;
 const MARK_ALL_SHORTCUT = { key: 'R', shiftKey: true };
 
 const NotificationCenter = () => {
+  const { t } = useTranslation();
   const {
     notifications,
     internalMessages,
@@ -172,7 +174,7 @@ const NotificationCenter = () => {
                 className="h-8 w-8"
                 onClick={clearAll}
                 disabled={!notifications.length}
-                title="Tümünü temizle"
+                title={t('cm.components_NotificationCenter.tumunu_temizle')}
               >
                 <Trash2 className="w-4 h-4 text-gray-500" />
               </Button>
@@ -188,7 +190,7 @@ const NotificationCenter = () => {
                 onClick={requestPermission}
                 className="w-full text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 py-2 border-b"
               >
-                Masaüstü bildirimlerini etkinleştir
+                {t('cm.components_NotificationCenter.masaustu_bildirimlerini_etkinlestir')}
               </button>
             )}
             <div className="max-h-[60vh] overflow-y-auto">
@@ -196,7 +198,7 @@ const NotificationCenter = () => {
                 <div className="border-b bg-amber-50/40">
                   <div className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-amber-700 flex items-center gap-2">
                     <MessageSquare className="w-3 h-3" />
-                    Personel mesajları
+                    {t('cm.components_NotificationCenter.personel_mesajlari')}
                     {internalUnreadCount > 0 && (
                       <span className="ml-auto bg-amber-200 text-amber-900 rounded-full px-2 py-0.5">
                         {internalUnreadCount}
@@ -236,7 +238,7 @@ const NotificationCenter = () => {
                 </div>
               )}
               {loading ? (
-                <div className="py-8 text-center text-gray-500 text-sm">Yükleniyor...</div>
+                <div className="py-8 text-center text-gray-500 text-sm">{t('cm.components_NotificationCenter.yukleniyor')}</div>
               ) : notifications.length === 0 && internalMessages.length === 0 ? (
                 <div className="py-8 text-center text-gray-500 text-sm">Bildirim yok</div>
               ) : (

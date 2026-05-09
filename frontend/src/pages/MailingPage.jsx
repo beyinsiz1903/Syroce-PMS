@@ -15,9 +15,11 @@ import { Mail, Users, FileText, Send, Trash2, Plus, Sparkles, AlertCircle, Zap, 
 import { useNavigate } from 'react-router-dom';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 const API = '/mailing';
 
 export default function MailingPage({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [credits, setCredits] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [recipients, setRecipients] = useState([]);
@@ -62,11 +64,11 @@ export default function MailingPage({ user, tenant, onLogout }) {
       <PageHeader
         icon={Mail}
         title="E-posta Pazarlama"
-        subtitle="Misafirlerinize toplu e-posta gönderin, şablonları yönetin"
+        subtitle={t('cm.pages_MailingPage.misafirlerinize_toplu_e_posta_gonderin_s')}
         actions={
           <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-            Yenile
+            {t('cm.pages_MailingPage.yenile')}
           </Button>
         }
       />
@@ -82,14 +84,14 @@ export default function MailingPage({ user, tenant, onLogout }) {
           />
           <KpiCard
             icon={Send}
-            label="Bugün Gönderilen"
+            label={t('cm.pages_MailingPage.bugun_gonderilen')}
             value={(credits.sent_today ?? 0).toLocaleString('tr-TR')}
             sub="Son 24 saat"
             intent="default"
           />
           <KpiCard
             icon={BarChart3}
-            label="Toplam Gönderim"
+            label={t('cm.pages_MailingPage.toplam_gonderim')}
             value={(credits.lifetime_used ?? 0).toLocaleString('tr-TR')}
             sub="Hesabın açıldığı günden bu yana"
             intent="success"
@@ -101,8 +103,8 @@ export default function MailingPage({ user, tenant, onLogout }) {
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="campaign"><Send className="w-4 h-4 mr-1.5" />Kampanya</TabsTrigger>
           <TabsTrigger value="automations"><Zap className="w-4 h-4 mr-1.5" />Otomasyon</TabsTrigger>
-          <TabsTrigger value="templates"><FileText className="w-4 h-4 mr-1.5" />Şablonlar</TabsTrigger>
-          <TabsTrigger value="history"><Sparkles className="w-4 h-4 mr-1.5" />Geçmiş</TabsTrigger>
+          <TabsTrigger value="templates"><FileText className="w-4 h-4 mr-1.5" />{t('cm.pages_MailingPage.sablonlar')}</TabsTrigger>
+          <TabsTrigger value="history"><Sparkles className="w-4 h-4 mr-1.5" />{t('cm.pages_MailingPage.gecmis')}</TabsTrigger>
           <TabsTrigger value="credits"><AlertCircle className="w-4 h-4 mr-1.5" />Krediler</TabsTrigger>
         </TabsList>
 
@@ -205,19 +207,19 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
     <div className="grid lg:grid-cols-2 gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>1. İçerik</CardTitle>
-          <CardDescription>Şablon seçin veya yeni içerik yazın</CardDescription>
+          <CardTitle>{t('cm.pages_MailingPage.1_icerik')}</CardTitle>
+          <CardDescription>{t('cm.pages_MailingPage.sablon_secin_veya_yeni_icerik_yazin')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label>Kampanya adı</Label>
-            <Input value={name} onChange={e => setName(e.target.value)} placeholder="Örn: Mart kampanyası" />
+            <Label>{t('cm.pages_MailingPage.kampanya_adi')}</Label>
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder={t('cm.pages_MailingPage.orn_mart_kampanyasi')} />
           </div>
           <div>
-            <Label>Şablon (opsiyonel)</Label>
+            <Label>{t('cm.pages_MailingPage.sablon_opsiyonel')}</Label>
             <select className="w-full border rounded px-3 py-2 text-sm"
               value={templateId} onChange={e => setTemplateId(e.target.value)}>
-              <option value="">— Şablonsuz —</option>
+              <option value="">{t('cm.pages_MailingPage.sablonsuz')}</option>
               {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
@@ -226,16 +228,16 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
             <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="E-posta konusu" />
           </div>
           <div>
-            <Label>İçerik (HTML)</Label>
+            <Label>{t('cm.pages_MailingPage.icerik_html')}</Label>
             <Textarea rows={10} value={html} onChange={e => setHtml(e.target.value)}
               placeholder="<h2>Merhaba {{name}},</h2><p>...</p>"
               className="font-mono text-xs" />
             <p className="text-xs text-muted-foreground mt-1">
-              Değişkenler: <code>{'{{name}}'}</code> = misafir adı, <code>{'{{hotel}}'}</code> = otel adı
+              {t('cm.pages_MailingPage.degiskenler')} <code>{'{{name}}'}</code> {t('cm.pages_MailingPage.misafir_adi')} <code>{'{{hotel}}'}</code> {t('cm.pages_MailingPage.otel_adi')}
             </p>
           </div>
           <div className="border-t pt-3">
-            <Label className="text-xs">Test gönderimi (1 kredi)</Label>
+            <Label className="text-xs">{t('cm.pages_MailingPage.test_gonderimi_1_kredi')}</Label>
             <div className="flex gap-2 mt-1">
               <Input type="email" value={testEmail} onChange={e => setTestEmail(e.target.value)}
                 placeholder="test@adresiniz.com" />
@@ -245,11 +247,11 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
                 disabled={sending || insufficientForTest}
                 title={insufficientForTest ? 'Test göndermek için en az 1 kredi gerekli' : undefined}
               >
-                Test Gönder
+                {t('cm.pages_MailingPage.test_gonder')}
               </Button>
             </div>
             {insufficientForTest && (
-              <p className="text-xs text-amber-700 mt-1">Test gönderimi için en az 1 kredi gerekli.</p>
+              <p className="text-xs text-amber-700 mt-1">{t('cm.pages_MailingPage.test_gonderimi_icin_en_az_1_kredi_gerekl')}</p>
             )}
           </div>
         </CardContent>
@@ -257,8 +259,8 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>2. Alıcılar</CardTitle>
-          <CardDescription>{recipients.length} misafir e-postası mevcut, {selected.size} seçili</CardDescription>
+          <CardTitle>{t('cm.pages_MailingPage.2_alicilar')}</CardTitle>
+          <CardDescription>{recipients.length} {t('cm.pages_MailingPage.misafir_e_postasi_mevcut')} {selected.size} {t('cm.pages_MailingPage.secili')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2 mb-2">
@@ -270,7 +272,7 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
                   setSelected(new Set(ids));
                   toast.success(`Bugün girişli ${ids.length} misafir seçildi`);
                 } catch { toast.error('Filtre uygulanamadı'); }
-              }}>Bugün Girişliler</Button>
+              }}>{t('cm.pages_MailingPage.bugun_girisliler')}</Button>
             <Button size="sm" variant="secondary" type="button"
               onClick={async () => {
                 try {
@@ -279,7 +281,7 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
                   setSelected(new Set(ids));
                   toast.success(`Bugün çıkışlı ${ids.length} misafir seçildi`);
                 } catch { toast.error('Filtre uygulanamadı'); }
-              }}>Bugün Çıkışlılar</Button>
+              }}>{t('cm.pages_MailingPage.bugun_cikislilar')}</Button>
             <Button size="sm" variant="secondary" type="button"
               onClick={async () => {
                 try {
@@ -288,10 +290,10 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
                   setSelected(new Set(ids));
                   toast.success(`Otelde konaklayan ${ids.length} misafir seçildi`);
                 } catch { toast.error('Filtre uygulanamadı'); }
-              }}>İçeride Konaklayanlar</Button>
+              }}>{t('cm.pages_MailingPage.iceride_konaklayanlar')}</Button>
           </div>
           <div className="flex gap-2 mb-3">
-            <Input placeholder="İsim veya e-posta ara…" value={search} onChange={e => setSearch(e.target.value)} />
+            <Input placeholder={t('cm.pages_MailingPage.isim_veya_e_posta_ara')} value={search} onChange={e => setSearch(e.target.value)} />
             <Button variant="outline" onClick={toggleAll}>
               {selected.size === filtered.length && filtered.length > 0 ? 'Tümünü Kaldır' : 'Tümünü Seç'}
             </Button>
@@ -300,7 +302,7 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
             {filtered.length === 0 && (
               <div className="p-8 text-center text-sm text-muted-foreground">
                 <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                E-postalı misafir bulunamadı
+                {t('cm.pages_MailingPage.e_postali_misafir_bulunamadi')}
               </div>
             )}
             {filtered.map(r => (
@@ -367,10 +369,7 @@ function AutomationsTab({ automations, templates, onChanged }) {
       <Card className="bg-slate-50 border-slate-200">
         <CardContent className="pt-4">
           <p className="text-sm text-slate-700">
-            <strong>Nasıl çalışır?</strong> Aşağıdan bir tetikleyici seçip şablon atayın.
-            Sistem her 10 dakikada bir tarar ve uygun rezervasyonlara otomatik olarak e-posta gönderir.
-            Aynı misafire aynı tetikleyici için sadece <strong>bir kez</strong> mail gönderilir.
-            Kredi yetersizse otomasyon duraklar.
+            <strong>{t('cm.pages_MailingPage.nasil_calisir')}</strong> {t('cm.pages_MailingPage.asagidan_bir_tetikleyici_secip_sablon_at')} <strong>bir kez</strong> {t('cm.pages_MailingPage.mail_gonderilir_kredi_yetersizse_otomasy')}
           </p>
         </CardContent>
       </Card>
@@ -380,9 +379,9 @@ function AutomationsTab({ automations, templates, onChanged }) {
             <div className="flex items-start gap-3">
               <FileText className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
               <div>
-                <div className="font-semibold text-amber-900">Önce şablon oluşturun</div>
+                <div className="font-semibold text-amber-900">{t('cm.pages_MailingPage.once_sablon_olusturun')}</div>
                 <p className="text-sm text-amber-800 mt-1">
-                  Otomasyonları aktif edebilmek için en az bir e-posta şablonu gerekli.
+                  {t('cm.pages_MailingPage.otomasyonlari_aktif_edebilmek_icin_en_az')}
                 </p>
               </div>
             </div>
@@ -391,13 +390,13 @@ function AutomationsTab({ automations, templates, onChanged }) {
               trigger?.click();
             }}>
               <Plus className="w-4 h-4 mr-1.5" />
-              Şablon Oluştur
+              {t('cm.pages_MailingPage.sablon_olustur')}
             </Button>
           </CardContent>
         </Card>
       )}
       {automations.length === 0 && !noTemplates && (
-        <div className="text-center py-12 text-muted-foreground">Yükleniyor…</div>
+        <div className="text-center py-12 text-muted-foreground">{t('cm.pages_MailingPage.yukleniyor')}</div>
       )}
       {automations.map(a => (
         <Card key={a.trigger_type}>
@@ -408,25 +407,25 @@ function AutomationsTab({ automations, templates, onChanged }) {
                   <Zap className={`w-5 h-5 ${a.enabled ? 'text-emerald-600' : 'text-slate-400'}`} />
                   <h3 className="font-semibold text-lg">{a.label}</h3>
                   {a.enabled && (
-                    <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Aktif</Badge>
+                    <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">{t('cm.pages_MailingPage.aktif')}</Badge>
                   )}
                 </div>
                 <p className="text-sm text-muted-foreground mb-3">{a.description}</p>
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-xs">Şablon</Label>
+                    <Label className="text-xs">{t('cm.pages_MailingPage.sablon')}</Label>
                     <select
                       className="w-full border rounded px-3 py-2 text-sm mt-1 disabled:opacity-50"
                       value={a.template_id || ''}
                       disabled={noTemplates}
                       onChange={e => save(a, { template_id: e.target.value || null })}>
-                      <option value="">— Şablon seçin —</option>
+                      <option value="">{t('cm.pages_MailingPage.sablon_secin')}</option>
                       {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
                   </div>
                   <div>
                     <Label className="text-xs">
-                      Gün farkı {a.trigger_type === 'checkin_reminder' ? '(check-in öncesi)' :
+                      {t('cm.pages_MailingPage.gun_farki')} {a.trigger_type === 'checkin_reminder' ? '(check-in öncesi)' :
                                 a.trigger_type === 'checkout_thanks' ? '(check-out sonrası)' : '(0 = anında)'}
                     </Label>
                     <Input type="number" className="mt-1" value={a.offset_days ?? 0}
@@ -435,7 +434,7 @@ function AutomationsTab({ automations, templates, onChanged }) {
                 </div>
                 {a.last_run_at && (
                   <p className="text-xs text-muted-foreground mt-2">
-                    Son çalışma: {new Date(a.last_run_at).toLocaleString('tr-TR')} • {a.last_sent_count} gönderim
+                    {t('cm.pages_MailingPage.son_calisma')} {new Date(a.last_run_at).toLocaleString('tr-TR')} • {a.last_sent_count} {t('cm.pages_MailingPage.gonderim')}
                   </p>
                 )}
               </div>
@@ -487,16 +486,16 @@ function TemplatesTab({ templates, onChanged }) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
-          <CardTitle>Şablonlar</CardTitle>
-          <CardDescription>Tekrar tekrar kullanacağınız e-posta şablonları</CardDescription>
+          <CardTitle>{t('cm.pages_MailingPage.sablonlar_cdaec')}</CardTitle>
+          <CardDescription>{t('cm.pages_MailingPage.tekrar_tekrar_kullanacaginiz_e_posta_sab')}</CardDescription>
         </div>
-        <Button onClick={() => setEditing(empty)}><Plus className="w-4 h-4 mr-1" />Yeni Şablon</Button>
+        <Button onClick={() => setEditing(empty)}><Plus className="w-4 h-4 mr-1" />{t('cm.pages_MailingPage.yeni_sablon')}</Button>
       </CardHeader>
       <CardContent>
         {templates.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             <FileText className="w-12 h-12 mx-auto mb-3 opacity-40" />
-            <p>Henüz şablon yok. İlk şablonunuzu oluşturun.</p>
+            <p>{t('cm.pages_MailingPage.henuz_sablon_yok_ilk_sablonunuzu_olustur')}</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -507,7 +506,7 @@ function TemplatesTab({ templates, onChanged }) {
                   <div className="text-sm text-muted-foreground truncate">{t.subject}</div>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setEditing(t)}>Düzenle</Button>
+                  <Button variant="outline" size="sm" onClick={() => setEditing(t)}>{t('cm.pages_MailingPage.duzenle')}</Button>
                   <Button variant="outline" size="sm" onClick={() => remove(t.id)}>
                     <Trash2 className="w-4 h-4 text-rose-600" />
                   </Button>
@@ -530,23 +529,23 @@ function TemplateEditor({ initial, onSave, onCancel }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
-          <Label>Şablon adı</Label>
-          <Input value={d.name} onChange={e => setD({ ...d, name: e.target.value })} placeholder="Örn: Hoşgeldin e-postası" />
+          <Label>{t('cm.pages_MailingPage.sablon_adi')}</Label>
+          <Input value={d.name} onChange={e => setD({ ...d, name: e.target.value })} placeholder={t('cm.pages_MailingPage.orn_hosgeldin_e_postasi')} />
         </div>
         <div>
           <Label>Konu</Label>
           <Input value={d.subject} onChange={e => setD({ ...d, subject: e.target.value })}
-            placeholder="Örn: {{hotel}} - Rezervasyonunuz onaylandı" />
+            placeholder={t('cm.pages_MailingPage.orn_hotel_rezervasyonunuz_onaylandi')} />
         </div>
         <div>
-          <Label>İçerik (HTML)</Label>
+          <Label>{t('cm.pages_MailingPage.icerik_html_d3ce0')}</Label>
           <Textarea rows={14} value={d.html} onChange={e => setD({ ...d, html: e.target.value })}
             className="font-mono text-xs"
             placeholder="<h2>Merhaba {{name}},</h2><p>...</p>" />
         </div>
         <div className="flex gap-2 justify-end">
-          <Button variant="outline" onClick={onCancel}>Vazgeç</Button>
-          <Button onClick={() => onSave(d)} disabled={!d.name || !d.subject || !d.html}>Kaydet</Button>
+          <Button variant="outline" onClick={onCancel}>{t('cm.pages_MailingPage.vazgec')}</Button>
+          <Button onClick={() => onSave(d)} disabled={!d.name || !d.subject || !d.html}>{t('cm.pages_MailingPage.kaydet')}</Button>
         </div>
       </CardContent>
     </Card>
@@ -559,25 +558,25 @@ function HistoryTab({ campaigns, loading }) {
   useEffect(() => {
     axios.get(`${API}/stats`).then(r => setStats(r.data)).catch(() => {});
   }, []);
-  if (loading) return <div className="text-center py-8 text-muted-foreground">Yükleniyor…</div>;
+  if (loading) return <div className="text-center py-8 text-muted-foreground">{t('cm.pages_MailingPage.yukleniyor_b597b')}</div>;
   return (
     <div className="space-y-4">
       {stats && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Performans (Son 90 gün)</CardTitle>
+            <CardTitle className="text-base">{t('cm.pages_MailingPage.performans_son_90_gun')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <StatBox label="Gönderildi"  value={stats.sent}      sub="" />
-              <StatBox label="Ulaştı"      value={stats.delivered} sub={`%${stats.delivery_rate}`} color="text-sky-600" />
-              <StatBox label="Açıldı"      value={stats.opened}    sub={`%${stats.open_rate}`}    color="text-emerald-600" />
-              <StatBox label="Tıklandı"    value={stats.clicked}   sub={`%${stats.click_rate}`}   color="text-indigo-600" />
-              <StatBox label="Geri döndü"  value={stats.bounced}   sub={`%${stats.bounce_rate}`}  color="text-rose-600" />
+              <StatBox label={t('cm.pages_MailingPage.gonderildi')}  value={stats.sent}      sub="" />
+              <StatBox label={t('cm.pages_MailingPage.ulasti')}      value={stats.delivered} sub={`%${stats.delivery_rate}`} color="text-sky-600" />
+              <StatBox label={t('cm.pages_MailingPage.acildi')}      value={stats.opened}    sub={`%${stats.open_rate}`}    color="text-emerald-600" />
+              <StatBox label={t('cm.pages_MailingPage.tiklandi')}    value={stats.clicked}   sub={`%${stats.click_rate}`}   color="text-indigo-600" />
+              <StatBox label={t('cm.pages_MailingPage.geri_dondu')}  value={stats.bounced}   sub={`%${stats.bounce_rate}`}  color="text-rose-600" />
             </div>
             {stats.sent === 0 && (
               <p className="text-xs text-muted-foreground mt-3">
-                Henüz takip verisi yok. Açılma/tıklanma izleme için Resend panelinde webhook tanımlayın:
+                {t('cm.pages_MailingPage.henuz_takip_verisi_yok_acilma_tiklanma_i')}
                 <code className="ml-1 px-1 bg-muted rounded text-[11px]">/api/mailing/webhook/resend</code>
               </p>
             )}
@@ -586,11 +585,11 @@ function HistoryTab({ campaigns, loading }) {
       )}
     <Card>
       <CardHeader>
-        <CardTitle>Gönderim Geçmişi</CardTitle>
+        <CardTitle>{t('cm.pages_MailingPage.gonderim_gecmisi')}</CardTitle>
       </CardHeader>
       <CardContent>
         {campaigns.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">Henüz kampanya gönderimi yok</div>
+          <div className="text-center py-12 text-muted-foreground">{t('cm.pages_MailingPage.henuz_kampanya_gonderimi_yok')}</div>
         ) : (
           <div className="space-y-2">
             {campaigns.map(c => (
@@ -602,8 +601,8 @@ function HistoryTab({ campaigns, loading }) {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm font-medium text-emerald-700">{c.sent_count} gönderildi</div>
-                  {c.failed_count > 0 && <div className="text-xs text-rose-600">{c.failed_count} hatalı</div>}
+                  <div className="text-sm font-medium text-emerald-700">{c.sent_count} {t('cm.pages_MailingPage.gonderildi_e2364')}</div>
+                  {c.failed_count > 0 && <div className="text-xs text-rose-600">{c.failed_count} {t('cm.pages_MailingPage.hatali')}</div>}
                 </div>
               </div>
             ))}
@@ -642,7 +641,7 @@ function CreditsTab({ credits }) {
         />
         <KpiCard
           icon={Send}
-          label="Toplam Gönderilen"
+          label={t('cm.pages_MailingPage.toplam_gonderilen')}
           value={(credits.lifetime_used ?? 0).toLocaleString('tr-TR')}
           sub="Hesabın açıldığı günden bu yana"
           intent="default"
@@ -663,14 +662,12 @@ function CreditsTab({ credits }) {
               <Wallet className="w-5 h-5 text-indigo-600" />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold mb-1">Kredi yüklemek ister misiniz?</h3>
+              <h3 className="text-lg font-semibold mb-1">{t('cm.pages_MailingPage.kredi_yuklemek_ister_misiniz')}</h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Mailing kredi paketleri artık <strong>Modül Pazarı</strong> üzerinden satılıyor.
-                Tek vitrinden tüm modül, entegrasyon ve kredi paketlerinize ulaşabilirsiniz.
-                Mevcut krediniz ve geçmişiniz aynen korunuyor.
+                {t('cm.pages_MailingPage.mailing_kredi_paketleri_artik')} <strong>{t('cm.pages_MailingPage.modul_pazari')}</strong> {t('cm.pages_MailingPage.uzerinden_satiliyor_tek_vitrinden_tum_mo')}
               </p>
               <Button onClick={() => navigate('/app/module-store')}>
-                Modül Pazarı'na Git →
+                {t('cm.pages_MailingPage.modul_pazari_na_git')}
               </Button>
             </div>
           </div>

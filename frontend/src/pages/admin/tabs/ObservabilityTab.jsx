@@ -6,8 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw, FileText } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { API } from '../shared';
+import { useTranslation } from 'react-i18next';
 
 const ObservabilityTab = () => {
+  const { t } = useTranslation();
   const [metrics, setMetrics] = useState([]);
   const [audit, setAudit] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +46,7 @@ const ObservabilityTab = () => {
           <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="w-24 bg-slate-800 border-slate-700 text-white text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="24h">24 Saat</SelectItem>
+              <SelectItem value="24h">{t('cm.pages_admin_tabs_ObservabilityTab.24_saat')}</SelectItem>
               <SelectItem value="7d">7 Gun</SelectItem>
               <SelectItem value="30d">30 Gun</SelectItem>
               <SelectItem value="90d">90 Gun</SelectItem>
@@ -54,7 +56,7 @@ const ObservabilityTab = () => {
             className={showAudit ? 'bg-blue-600' : 'border-slate-700 text-slate-300'} onClick={() => setShowAudit(!showAudit)}>
             <FileText className="w-3.5 h-3.5 mr-1" /> Audit Trail
           </Button>
-          <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchMetrics}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile</Button>
+          <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchMetrics}><RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_ObservabilityTab.yenile')}</Button>
         </div>
       </div>
 
@@ -115,7 +117,7 @@ const ObservabilityTab = () => {
               </CardContent>
             </Card>
           ))}
-          {metrics.length === 0 && <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Metrik bulunamadı</CardContent></Card>}
+          {metrics.length === 0 && <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">{t('cm.pages_admin_tabs_ObservabilityTab.metrik_bulunamadi')}</CardContent></Card>}
         </div>
       ) : (
         <div className="space-y-1">

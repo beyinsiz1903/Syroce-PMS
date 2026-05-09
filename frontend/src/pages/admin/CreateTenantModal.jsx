@@ -10,6 +10,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { MODULE_GROUPS, isModuleIncludedInPlan } from './tenantConstants';
+import { useTranslation } from 'react-i18next';
 
 const ICON_MAP = {
   Home, TreePalm, Bed, Car, Building, Gem, Tent, Building2,
@@ -79,6 +80,7 @@ const buildDefaultModules = (profile, tier) => {
 };
 
 const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
+  const { t } = useTranslation();
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -222,7 +224,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Building2 className="w-5 h-5 text-indigo-600" />
-              Yeni Tesis Ekle
+              {t('cm.pages_admin_CreateTenantModal.yeni_tesis_ekle')}
               {step >= 2 && selectedType && (
                 <span className="ml-2 text-sm font-normal text-slate-500">
                   — {selectedType.name_tr}
@@ -257,7 +259,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
           {step === 1 && (
             <div className="space-y-5">
               <p className="text-sm text-slate-500">
-                Tesisinizin tipini seçin. Seçtiğiniz tipe göre PMS otomatik olarak sizin için en uygun modülleri, dashboard düzenini ve ayarları yapılandıracak. Bir sonraki adımda tek tek modül ekleyip çıkarabilirsiniz.
+                {t('cm.pages_admin_CreateTenantModal.tesisinizin_tipini_secin_sectiginiz_tipe')}
               </p>
 
               {PROPERTY_CATEGORIES.map((cat, ci) => (
@@ -339,19 +341,19 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
-                  <Label>Tesis Adı *</Label>
+                  <Label>{t('cm.pages_admin_CreateTenantModal.tesis_adi')}</Label>
                   <input data-testid="create-tenant-property-name" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.property_name} onChange={(e) => handleChange('property_name', e.target.value)} placeholder={selectedType?.name_tr === 'Pansiyon' ? 'Deniz Pansiyonu' : 'Grand Hotel'} />
                 </div>
                 <div>
-                  <Label>Yönetici Adı *</Label>
-                  <input data-testid="create-tenant-admin-name" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.name} onChange={(e) => handleChange('name', e.target.value)} placeholder="Ahmet Yılmaz" />
+                  <Label>{t('cm.pages_admin_CreateTenantModal.yonetici_adi')}</Label>
+                  <input data-testid="create-tenant-admin-name" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.name} onChange={(e) => handleChange('name', e.target.value)} placeholder={t('cm.pages_admin_CreateTenantModal.ahmet_yilmaz')} />
                 </div>
                 <div>
                   <Label>E-posta *</Label>
                   <input data-testid="create-tenant-email" type="email" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.email} onChange={(e) => handleChange('email', e.target.value)} placeholder="admin@hotel.com" />
                 </div>
                 <div>
-                  <Label>Şifre *</Label>
+                  <Label>{t('cm.pages_admin_CreateTenantModal.sifre')}</Label>
                   <input data-testid="create-tenant-password" type="password" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.password} onChange={(e) => handleChange('password', e.target.value)} placeholder="En az 6 karakter" />
                 </div>
                 <div>
@@ -360,18 +362,18 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                 </div>
                 <div className="col-span-2">
                   <Label>Adres *</Label>
-                  <input data-testid="create-tenant-address" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.address} onChange={(e) => handleChange('address', e.target.value)} placeholder="Caddesi No:1, İlçe" />
+                  <input data-testid="create-tenant-address" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.address} onChange={(e) => handleChange('address', e.target.value)} placeholder={t('cm.pages_admin_CreateTenantModal.caddesi_no_1_ilce')} />
                 </div>
                 <div>
                   <Label>Konum</Label>
-                  <input className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.location} onChange={(e) => handleChange('location', e.target.value)} placeholder="İstanbul" />
+                  <input className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.location} onChange={(e) => handleChange('location', e.target.value)} placeholder={t('cm.pages_admin_CreateTenantModal.istanbul')} />
                 </div>
                 <div>
-                  <Label>Oda Sayısı</Label>
+                  <Label>{t('cm.pages_admin_CreateTenantModal.oda_sayisi')}</Label>
                   <input type="number" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.total_rooms} onChange={(e) => handleChange('total_rooms', e.target.value)} placeholder={selectedType ? `${selectedType.room_range.min}` : '50'} min="1" max="2000" />
                 </div>
                 <div>
-                  <Label>Açıklama</Label>
+                  <Label>{t('cm.pages_admin_CreateTenantModal.aciklama')}</Label>
                   <input className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.description} onChange={(e) => handleChange('description', e.target.value)} placeholder={selectedType?.name_tr || 'Tesis açıklaması'} />
                 </div>
                 <div>
@@ -384,17 +386,17 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                   </select>
                   {selectedType && form.subscription_tier !== selectedType.recommended_tier && (
                     <p className="text-[11px] text-amber-600 mt-1">
-                      Bu tesis tipi için önerilen plan: <span className="font-semibold">{TIER_LABELS[selectedType.recommended_tier]?.label}</span>
+                      {t('cm.pages_admin_CreateTenantModal.bu_tesis_tipi_icin_onerilen_plan')} <span className="font-semibold">{TIER_LABELS[selectedType.recommended_tier]?.label}</span>
                     </p>
                   )}
                 </div>
                 <div>
-                  <Label>Üyelik Süresi</Label>
+                  <Label>{t('cm.pages_admin_CreateTenantModal.uyelik_suresi')}</Label>
                   <select className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.subscription_days || ''} onChange={(e) => handleChange('subscription_days', e.target.value ? parseInt(e.target.value) : null)}>
-                    <option value="30">30 Gün</option>
-                    <option value="90">90 Gün</option>
-                    <option value="365">1 Yıl</option>
-                    <option value="">Sınırsız</option>
+                    <option value="30">{t('cm.pages_admin_CreateTenantModal.30_gun')}</option>
+                    <option value="90">{t('cm.pages_admin_CreateTenantModal.90_gun')}</option>
+                    <option value="365">{t('cm.pages_admin_CreateTenantModal.1_yil')}</option>
+                    <option value="">{t('cm.pages_admin_CreateTenantModal.sinirsiz')}</option>
                   </select>
                 </div>
               </div>
@@ -406,7 +408,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                   <ChevronLeft size={15} /> Geri
                 </Button>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>İptal</Button>
+                  <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>{t('cm.pages_admin_CreateTenantModal.iptal')}</Button>
                   <Button data-testid="create-tenant-next-modules" onClick={goToStep3} className="gap-1.5">
                     Devam <ArrowRight size={15} />
                   </Button>
@@ -421,12 +423,12 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                 <div className="flex items-start gap-2 min-w-0">
                   <Sparkles size={16} className="text-sky-600 mt-0.5 shrink-0" />
                   <div className="text-xs text-sky-800">
-                    <div className="font-semibold">{selectedType?.name_tr} için önerilen modüller işaretli</div>
-                    <div className="text-sky-600 mt-0.5">İstediğiniz modülleri tek tek aç/kapat. {enabledCount} modül seçili.</div>
+                    <div className="font-semibold">{selectedType?.name_tr} {t('cm.pages_admin_CreateTenantModal.icin_onerilen_moduller_isaretli')}</div>
+                    <div className="text-sky-600 mt-0.5">{t('cm.pages_admin_CreateTenantModal.istediginiz_modulleri_tek_tek_ac_kapat')} {enabledCount} {t('cm.pages_admin_CreateTenantModal.modul_secili')}</div>
                   </div>
                 </div>
                 <Button variant="outline" size="sm" onClick={resetModulesToDefaults} className="shrink-0 gap-1">
-                  <RotateCcw size={12} /> Varsayılan
+                  <RotateCcw size={12} /> {t('cm.pages_admin_CreateTenantModal.varsayilan')}
                 </Button>
               </div>
 
@@ -456,7 +458,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                             disabled={allOff}
                             className="text-[11px] px-2 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            Hiçbiri
+                            {t('cm.pages_admin_CreateTenantModal.hicbiri')}
                           </button>
                         </div>
                       </div>
@@ -498,7 +500,7 @@ const CreateTenantModal = ({ open, onOpenChange, onSuccess }) => {
                   <ChevronLeft size={15} /> Geri
                 </Button>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>İptal</Button>
+                  <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>{t('cm.pages_admin_CreateTenantModal.iptal_25174')}</Button>
                   <Button data-testid="create-tenant-submit" onClick={handleSubmit} disabled={saving}>
                     {saving ? 'Oluşturuluyor...' : 'Tesis Oluştur'}
                   </Button>

@@ -10,8 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Wallet, CreditCard, TrendingUp, AlertTriangle, FileText, DollarSign, ArrowDownCircle, ArrowUpCircle, Receipt, Banknote, Clock, CheckCircle, XCircle, Calendar, Filter, Download, Upload, Eye, Search, Plus, Minus, RefreshCw, ChevronRight, ChevronDown, BarChart3, PieChart, Activity, Users, Building, Briefcase, ShoppingCart, Coffee, Utensils, Bed, Home } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export default function ReportsModal(props) {
+  const { t } = useTranslation();
   const { dailyCollections, formatCurrency, formatPercent, monthlyCollections, monthlyCosts, reportsModalOpen, setReportsModalOpen } = props;
   return (
     <Dialog open={reportsModalOpen} onOpenChange={setReportsModalOpen}>
@@ -22,19 +24,19 @@ export default function ReportsModal(props) {
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Günlük Özet</CardTitle>
+              <CardTitle className="text-base">{t('cm.components_mobilefinance_dialogs_ReportsModal.gunluk_ozet')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex justify-between">
-                <span className="text-gray-600">Bugün Tahsilat:</span>
+                <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.bugun_tahsilat')}</span>
                 <span className="font-bold text-green-700">{formatCurrency(dailyCollections?.total_collected || 0)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">İşlem Sayısı:</span>
+                <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.islem_sayisi')}</span>
                 <span className="font-bold">{dailyCollections?.payment_count || 0}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Ortalama İşlem:</span>
+                <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.ortalama_islem')}</span>
                 <span className="font-bold">{formatCurrency(dailyCollections?.average_transaction || 0)}</span>
               </div>
             </CardContent>
@@ -42,19 +44,19 @@ export default function ReportsModal(props) {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Aylık Özet</CardTitle>
+              <CardTitle className="text-base">{t('cm.components_mobilefinance_dialogs_ReportsModal.aylik_ozet')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex justify-between">
-                <span className="text-gray-600">Toplam Tahsilat:</span>
+                <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.toplam_tahsilat')}</span>
                 <span className="font-bold text-green-700">{formatCurrency(monthlyCollections?.total_collected || 0)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Beklenen Tutar:</span>
+                <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.beklenen_tutar')}</span>
                 <span className="font-bold">{formatCurrency(monthlyCollections?.total_expected || 0)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">Tahsilat Oranı:</span>
+                <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.tahsilat_orani')}</span>
                 <span className="font-bold text-blue-700">{formatPercent(monthlyCollections?.collection_rate || 0)}</span>
               </div>
               <div className="flex justify-between">
@@ -66,11 +68,11 @@ export default function ReportsModal(props) {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Maliyet Özeti</CardTitle>
+              <CardTitle className="text-base">{t('cm.components_mobilefinance_dialogs_ReportsModal.maliyet_ozeti')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex justify-between">
-                <span className="text-gray-600">Aylık Maliyet:</span>
+                <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_ReportsModal.aylik_maliyet')}</span>
                 <span className="font-bold text-red-700">{formatCurrency(monthlyCosts?.total_costs || 0)}</span>
               </div>
               {monthlyCosts?.costs_by_category && Object.entries(monthlyCosts.costs_by_category).map(([category, amount]) => (

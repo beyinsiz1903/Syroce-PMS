@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw, Key, Zap, RotateCcw, XCircle } from 'lucide-react';
 import { API } from '../shared';
+import { useTranslation } from 'react-i18next';
 
 const CredentialsTab = () => {
+  const { t } = useTranslation();
   const [creds, setCreds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
@@ -37,8 +39,8 @@ const CredentialsTab = () => {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-slate-300">Credential Yönetimi (RBAC Korumali)</h3>
-        <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchCreds}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile</Button>
+        <h3 className="text-sm font-medium text-slate-300">{t('cm.pages_admin_tabs_CredentialsTab.credential_yonetimi_rbac_korumali')}</h3>
+        <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchCreds}><RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_CredentialsTab.yenile')}</Button>
       </div>
       {creds.map(c => (
         <Card key={c.connector_id} data-testid={`cred-${c.connector_id}`} className="bg-slate-800/50 border-slate-700">
@@ -73,7 +75,7 @@ const CredentialsTab = () => {
                   size="sm"
                   variant="ghost"
                   className="text-blue-400 h-7 px-2"
-                  title="Rotation için credential'ı silip yeni değerlerle tekrar ekleyin"
+                  title={t('cm.pages_admin_tabs_CredentialsTab.rotation_icin_credential_i_silip_yeni_de')}
                   onClick={() => toast.info(
                     "Rotation: Önce bu credential'ı 'Devre dışı bırak' ile silin, ardından yeni değerlerle tekrar ekleyin.",
                     { duration: 6000 }
@@ -89,7 +91,7 @@ const CredentialsTab = () => {
           </CardContent>
         </Card>
       ))}
-      {creds.length === 0 && <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Credential bulunamadı</CardContent></Card>}
+      {creds.length === 0 && <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">{t('cm.pages_admin_tabs_CredentialsTab.credential_bulunamadi')}</CardContent></Card>}
     </div>
   );
 };

@@ -19,6 +19,7 @@ import {
   ArrowLeft, AlertTriangle, RefreshCw, Loader2, ChevronDown,
   ChevronRight, Clock, User as UserIcon, Building2,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const HOURS_24 = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 
@@ -36,6 +37,7 @@ function formatTs(ts) {
 }
 
 function HourBar({ hour, count, max }) {
+  const { t } = useTranslation();
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
   return (
     <div
@@ -161,7 +163,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
               ) : (
                 <RefreshCw className="w-3 h-3 mr-1" />
               )}
-              Yenile
+              {t('cm.pages_UrgentMessageReportPage.yenile')}
             </Button>
           </div>
 
@@ -171,7 +173,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 items-end">
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Başlangıç
+                    {t('cm.pages_UrgentMessageReportPage.baslangic')}
                   </label>
                   <Input
                     data-testid="filter-start-date"
@@ -185,7 +187,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Bitiş
+                    {t('cm.pages_UrgentMessageReportPage.bitis')}
                   </label>
                   <Input
                     data-testid="filter-end-date"
@@ -199,7 +201,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Gönderen kullanıcı kimliği
+                    {t('cm.pages_UrgentMessageReportPage.gonderen_kullanici_kimligi')}
                   </label>
                   <Input
                     data-testid="filter-sender-id"
@@ -213,7 +215,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Alıcı departman
+                    {t('cm.pages_UrgentMessageReportPage.alici_departman')}
                   </label>
                   <select
                     data-testid="filter-recipient-department"
@@ -226,7 +228,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                     }
                     className="bg-white border border-gray-300 rounded text-xs px-2 h-8 text-gray-700 w-full"
                   >
-                    <option value="">Tümü</option>
+                    <option value="">{t('cm.pages_UrgentMessageReportPage.tumu')}</option>
                     <option value="Reception">Reception</option>
                     <option value="Housekeeping">Housekeeping</option>
                     <option value="Maintenance">Maintenance</option>
@@ -264,7 +266,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
           >
             <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-gray-500">Toplam acil mesaj</p>
+                <p className="text-xs text-gray-500">{t('cm.pages_UrgentMessageReportPage.toplam_acil_mesaj')}</p>
                 <p
                   data-testid="card-total"
                   className="text-2xl font-bold text-gray-900"
@@ -275,7 +277,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
             </Card>
             <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-gray-500">En yoğun saat</p>
+                <p className="text-xs text-gray-500">{t('cm.pages_UrgentMessageReportPage.en_yogun_saat')}</p>
                 <p
                   data-testid="card-peak-hour"
                   className="text-2xl font-bold text-amber-600"
@@ -291,7 +293,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
             </Card>
             <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-gray-500">En çok gönderen</p>
+                <p className="text-xs text-gray-500">{t('cm.pages_UrgentMessageReportPage.en_cok_gonderen')}</p>
                 <p
                   data-testid="card-top-sender"
                   className="text-sm font-bold text-gray-900 truncate"
@@ -308,7 +310,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
             </Card>
             <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-gray-500">En çok alan departman</p>
+                <p className="text-xs text-gray-500">{t('cm.pages_UrgentMessageReportPage.en_cok_alan_departman')}</p>
                 <p
                   data-testid="card-top-dept"
                   className="text-sm font-bold text-gray-900 truncate"
@@ -333,7 +335,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                     <AlertTriangle className="w-4 h-4 text-amber-600" />
                     Acil Mesajlar
                     <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5">
-                      {events.length} kayıt
+                      {events.length} {t('cm.pages_UrgentMessageReportPage.kayit')}
                     </span>
                   </CardTitle>
                 </CardHeader>
@@ -347,7 +349,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
                       data-testid="empty-state"
                       className="text-center py-8 text-gray-500 text-sm"
                     >
-                      Seçili filtrelerle eşleşen acil mesaj kaydı yok.
+                      {t('cm.pages_UrgentMessageReportPage.secili_filtrelerle_eslesen_acil_mesaj_ka')}
                     </div>
                   ) : (
                     <ul data-testid="event-list" className="divide-y divide-gray-100">
@@ -425,7 +427,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
               <Card data-testid="card-by-sender">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
-                    <UserIcon className="w-4 h-4" /> Gönderen sıralaması
+                    <UserIcon className="w-4 h-4" /> {t('cm.pages_UrgentMessageReportPage.gonderen_siralamasi')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -460,7 +462,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
               <Card data-testid="card-by-department">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
-                    <Building2 className="w-4 h-4" /> Alıcı departmanlar
+                    <Building2 className="w-4 h-4" /> {t('cm.pages_UrgentMessageReportPage.alici_departmanlar')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -486,7 +488,7 @@ export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
               <Card data-testid="card-by-hour">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
-                    <Clock className="w-4 h-4" /> Saat dağılımı (UTC)
+                    <Clock className="w-4 h-4" /> {t('cm.pages_UrgentMessageReportPage.saat_dagilimi_utc')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-1">

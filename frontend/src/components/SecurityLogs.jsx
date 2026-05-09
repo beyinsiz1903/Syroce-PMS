@@ -3,8 +3,10 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Shield, CheckCircle, XCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const SecurityLogs = () => {
+  const { t } = useTranslation();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -24,7 +26,7 @@ const SecurityLogs = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-4">Yükleniyor...</div>;
+    return <div className="text-center py-4">{t('cm.components_SecurityLogs.yukleniyor')}</div>;
   }
 
   return (
@@ -32,7 +34,7 @@ const SecurityLogs = () => {
       <CardHeader>
         <CardTitle className="flex items-center text-lg">
           <Shield className="w-5 h-5 mr-2" />
-          Güvenlik Logları
+          {t('cm.components_SecurityLogs.guvenlik_loglari')}
         </CardTitle>
       </CardHeader>
       <CardContent>

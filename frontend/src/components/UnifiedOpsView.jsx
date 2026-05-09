@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { SandboxDashboard } from "./SandboxDashboard";
 import { SecurityOpsDashboard } from "./SecurityOpsDashboard";
 import { CICDPipelineDashboard } from "./CICDPipelineDashboard";
+import { useTranslation } from 'react-i18next';
 
 // ─── Style Maps ─────────────────────────────────────────────────
 const RATING_STYLES = {
@@ -56,6 +57,7 @@ const CORRELATION_INFERENCE = {
 };
 
 function ChartTooltip({ active, payload, label }) {
+  const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 shadow-xl">
@@ -238,7 +240,7 @@ function DriftAlertPanel({ summary, alerts, onEvaluate, onAcknowledge, evaluatin
               data-testid="drift-evaluate-btn"
             >
               {evaluating ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}
-              Değerlendir
+              {t('cm.components_UnifiedOpsView.degerlendir')}
             </Button>
           </div>
         </div>
@@ -256,7 +258,7 @@ function DriftAlertPanel({ summary, alerts, onEvaluate, onAcknowledge, evaluatin
               {bySeverity.warning > 0 && <span className="text-yellow-400 font-mono font-bold">{bySeverity.warning} warning</span>}
             </div>
           ) : (
-            <span className="text-xs text-zinc-500">Aktif drift alarmi yok</span>
+            <span className="text-xs text-zinc-500">{t('cm.components_UnifiedOpsView.aktif_drift_alarmi_yok')}</span>
           )}
         </div>
 
@@ -279,7 +281,7 @@ function DriftAlertPanel({ summary, alerts, onEvaluate, onAcknowledge, evaluatin
                     </div>
                     {!alert.acknowledged && (
                       <button onClick={() => onAcknowledge?.(alert.alert_id)} className="text-[10px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded px-2 py-0.5 transition-colors" data-testid={`ack-alert-${alert.alert_id}`}>
-                        Onayla
+                        {t('cm.components_UnifiedOpsView.onayla')}
                       </button>
                     )}
                   </div>
@@ -461,8 +463,8 @@ function KpiDashboard({ kpiData, dora, correlation, onDrillDown }) {
 
         {/* Active alerts summary */}
         <div className="flex items-center justify-between text-[10px] text-zinc-600">
-          <span>Aktif alarm: <span className="text-zinc-400 font-mono">{driftAlerts.active_count || 0}</span></span>
-          <span>En yüksek: <span className={`font-mono ${driftAlerts.highest_severity === "severe" ? "text-red-400" : driftAlerts.highest_severity === "critical" ? "text-amber-400" : driftAlerts.highest_severity === "warning" ? "text-yellow-400" : "text-emerald-400"}`}>{driftAlerts.highest_severity || "none"}</span></span>
+          <span>{t('cm.components_UnifiedOpsView.aktif_alarm')} <span className="text-zinc-400 font-mono">{driftAlerts.active_count || 0}</span></span>
+          <span>{t('cm.components_UnifiedOpsView.en_yuksek')} <span className={`font-mono ${driftAlerts.highest_severity === "severe" ? "text-red-400" : driftAlerts.highest_severity === "critical" ? "text-amber-400" : driftAlerts.highest_severity === "warning" ? "text-yellow-400" : "text-emerald-400"}`}>{driftAlerts.highest_severity || "none"}</span></span>
           <span>Auto-heal basari: <span className="text-zinc-400 font-mono">{autoActions.success_rate ?? 100}%</span></span>
         </div>
       </CardContent>
@@ -565,10 +567,10 @@ export function UnifiedOpsView() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-zinc-200">Unified Ops View</h2>
-          <p className="text-[10px] text-zinc-600 mt-0.5">Tek ekran: kanal sağlığı + deploy + drift alert + KPI</p>
+          <p className="text-[10px] text-zinc-600 mt-0.5">{t('cm.components_UnifiedOpsView.tek_ekran_kanal_sagligi_deploy_drift_ale')}</p>
         </div>
         <Button variant="ghost" size="sm" className="h-7 text-xs text-zinc-500" onClick={fetchAll} disabled={loading} data-testid="ops-refresh">
-          <RefreshCw className={`h-3 w-3 mr-1 ${loading ? "animate-spin" : ""}`} /> Yenile
+          <RefreshCw className={`h-3 w-3 mr-1 ${loading ? "animate-spin" : ""}`} /> {t('cm.components_UnifiedOpsView.yenile')}
         </Button>
       </div>
 

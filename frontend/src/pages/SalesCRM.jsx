@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog';
 import { Mail, Phone, Trash2, Activity, RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const STAGES = [
   { key: 'new',           label: 'Yeni',       color: 'bg-gray-500' },
@@ -42,6 +43,7 @@ const fmtTL = (v) =>
   });
 
 const SalesCRM = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [leads, setLeads] = useState([]);
   const [funnel, setFunnel] = useState(null);
   const [loadingList, setLoadingList] = useState(true);
@@ -223,10 +225,10 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
-              Satış CRM &amp; Pipeline
+              {t('cm.pages_SalesCRM.satis_crm_pipeline')}
             </h1>
             <p className="text-sm text-gray-600 mt-1">
-              Lead'leri yönet, aşama değiştir, aktivite kaydet
+              {t('cm.pages_SalesCRM.lead_leri_yonet_asama_degistir_aktivite_')}
             </p>
           </div>
 
@@ -238,20 +240,20 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
               disabled={loadingList}
             >
               <RefreshCw className={`w-4 h-4 mr-2 ${loadingList ? 'animate-spin' : ''}`} />
-              Yenile
+              {t('cm.pages_SalesCRM.yenile')}
             </Button>
 
             <Dialog open={showCreate} onOpenChange={setShowCreate}>
               <DialogTrigger asChild>
-                <Button className="bg-blue-600 hover:bg-blue-700">+ Yeni Lead</Button>
+                <Button className="bg-blue-600 hover:bg-blue-700">{t('cm.pages_SalesCRM.yeni_lead')}</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Yeni Lead Oluştur</DialogTitle>
+                  <DialogTitle>{t('cm.pages_SalesCRM.yeni_lead_olustur')}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleCreate} className="space-y-3 mt-2">
                   <div>
-                    <Label>İlgili Kişi *</Label>
+                    <Label>{t('cm.pages_SalesCRM.ilgili_kisi')}</Label>
                     <Input
                       value={newLead.contact_name}
                       onChange={(e) => setNewLead({ ...newLead, contact_name: e.target.value })}
@@ -277,7 +279,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                     </div>
                   </div>
                   <div>
-                    <Label>Şirket</Label>
+                    <Label>{t('cm.pages_SalesCRM.sirket')}</Label>
                     <Input
                       value={newLead.company_name}
                       onChange={(e) => setNewLead({ ...newLead, company_name: e.target.value })}
@@ -285,7 +287,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <Label>Tahmini Oda</Label>
+                      <Label>{t('cm.pages_SalesCRM.tahmini_oda')}</Label>
                       <Input
                         type="number" min={0}
                         value={newLead.estimated_rooms}
@@ -295,7 +297,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                       />
                     </div>
                     <div>
-                      <Label>Tahmini Değer (₺)</Label>
+                      <Label>{t('cm.pages_SalesCRM.tahmini_deger')}</Label>
                       <Input
                         type="number" min={0}
                         value={newLead.estimated_value}
@@ -305,16 +307,16 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                       />
                     </div>
                     <div>
-                      <Label>Öncelik</Label>
+                      <Label>{t('cm.pages_SalesCRM.oncelik')}</Label>
                       <Select
                         value={newLead.priority}
                         onValueChange={(v) => setNewLead({ ...newLead, priority: v })}
                       >
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="low">Düşük</SelectItem>
+                          <SelectItem value="low">{t('cm.pages_SalesCRM.dusuk')}</SelectItem>
                           <SelectItem value="medium">Orta</SelectItem>
-                          <SelectItem value="high">Yüksek</SelectItem>
+                          <SelectItem value="high">{t('cm.pages_SalesCRM.yuksek')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -340,7 +342,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
         {funnel && (
           <Card className="mb-6">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Satış Hunisi</CardTitle>
+              <CardTitle className="text-base">{t('cm.pages_SalesCRM.satis_hunisi')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
@@ -365,7 +367,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
               </div>
               <div className="mt-4 pt-4 border-t flex items-center justify-between text-sm">
                 <span className="text-gray-600">
-                  Toplam: <span className="font-semibold text-gray-900">{funnel.total_leads}</span> lead
+                  {t('cm.pages_SalesCRM.toplam')} <span className="font-semibold text-gray-900">{funnel.total_leads}</span> lead
                 </span>
                 <span className="text-gray-600">
                   Win Rate: <span className="font-bold text-green-600">{funnel.win_rate}%</span>
@@ -379,16 +381,16 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
         <div className="flex flex-wrap gap-3 mb-4">
           <div className="flex-1 min-w-[200px]">
             <Input
-              placeholder="Ara: kişi, şirket veya e-posta…"
+              placeholder={t('cm.pages_SalesCRM.ara_kisi_sirket_veya_e_posta')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="w-44">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger><SelectValue placeholder="Aşama" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t('cm.pages_SalesCRM.asama')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tüm aşamalar</SelectItem>
+                <SelectItem value="all">{t('cm.pages_SalesCRM.tum_asamalar')}</SelectItem>
                 {STAGES.map((s) => (
                   <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
                 ))}
@@ -399,11 +401,11 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
 
         {/* Liste */}
         {loadingList ? (
-          <div className="text-center text-gray-500 py-12">Yükleniyor…</div>
+          <div className="text-center text-gray-500 py-12">{t('cm.pages_SalesCRM.yukleniyor')}</div>
         ) : leads.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-gray-500">
-              Filtreyle eşleşen lead yok. "+ Yeni Lead" ile başla.
+              {t('cm.pages_SalesCRM.filtreyle_eslesen_lead_yok_yeni_lead_ile')}
             </CardContent>
           </Card>
         ) : (
@@ -435,7 +437,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                           </span>
                         )}
                         {lead.estimated_rooms ? (
-                          <span>Oda: {lead.estimated_rooms}</span>
+                          <span>{t('cm.pages_SalesCRM.oda')} {lead.estimated_rooms}</span>
                         ) : null}
                       </div>
                     </div>
@@ -460,10 +462,10 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
         <Dialog open={detailOpen} onOpenChange={(v) => { if (!v) { setDetailOpen(false); setDetail(null); } }}>
           <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Lead Detayı</DialogTitle>
+              <DialogTitle>{t('cm.pages_SalesCRM.lead_detayi')}</DialogTitle>
             </DialogHeader>
             {detailLoading || !detail ? (
-              <div className="py-10 text-center text-gray-500">Yükleniyor…</div>
+              <div className="py-10 text-center text-gray-500">{t('cm.pages_SalesCRM.yukleniyor_b597b')}</div>
             ) : (
               <div className="space-y-4">
                 <div>
@@ -485,15 +487,15 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                   </div>
                   <div className="grid grid-cols-3 gap-3 mt-3 text-sm">
                     <div>
-                      <p className="text-gray-500">Tahmini Değer</p>
+                      <p className="text-gray-500">{t('cm.pages_SalesCRM.tahmini_deger_af493')}</p>
                       <p className="font-semibold">{fmtTL(detail.lead.estimated_value)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Tahmini Oda</p>
+                      <p className="text-gray-500">{t('cm.pages_SalesCRM.tahmini_oda_c7255')}</p>
                       <p className="font-semibold">{detail.lead.estimated_rooms || 0}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Öncelik</p>
+                      <p className="text-gray-500">{t('cm.pages_SalesCRM.oncelik_5bd24')}</p>
                       <p className="font-semibold capitalize">{detail.lead.priority || '—'}</p>
                     </div>
                   </div>
@@ -507,7 +509,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
 
                 {/* Aşama */}
                 <div className="border-t pt-3">
-                  <Label className="block mb-1">Aşama</Label>
+                  <Label className="block mb-1">{t('cm.pages_SalesCRM.asama_7eeec')}</Label>
                   <div className="flex items-center gap-2">
                     <Select
                       value={detail.lead.status}
@@ -527,7 +529,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
 
                 {/* Aktivite ekle */}
                 <form onSubmit={logActivity} className="border-t pt-3 space-y-2">
-                  <Label className="block">Aktivite Ekle</Label>
+                  <Label className="block">{t('cm.pages_SalesCRM.aktivite_ekle')}</Label>
                   <div className="grid grid-cols-3 gap-2">
                     <Select
                       value={actDraft.activity_type}
@@ -550,7 +552,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                   </div>
                   <Textarea
                     rows={2}
-                    placeholder="Açıklama (opsiyonel)"
+                    placeholder={t('cm.pages_SalesCRM.aciklama_opsiyonel')}
                     value={actDraft.description}
                     onChange={(e) => setActDraft({ ...actDraft, description: e.target.value })}
                   />
@@ -563,10 +565,10 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                 <div className="border-t pt-3">
                   <div className="flex items-center gap-2 mb-2">
                     <Activity className="w-4 h-4 text-gray-500" />
-                    <h4 className="text-sm font-semibold">Aktivite Geçmişi ({detail.activities.length})</h4>
+                    <h4 className="text-sm font-semibold">{t('cm.pages_SalesCRM.aktivite_gecmisi')}{detail.activities.length})</h4>
                   </div>
                   {detail.activities.length === 0 ? (
-                    <p className="text-xs text-gray-500">Henüz aktivite yok.</p>
+                    <p className="text-xs text-gray-500">{t('cm.pages_SalesCRM.henuz_aktivite_yok')}</p>
                   ) : (
                     <ul className="space-y-2 max-h-48 overflow-y-auto">
                       {detail.activities.map((a) => (
@@ -594,7 +596,7 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
                     size="sm"
                     onClick={() => setConfirmDelete(true)}
                   >
-                    <Trash2 className="w-4 h-4 mr-1" /> Lead Sil
+                    <Trash2 className="w-4 h-4 mr-1" /> {t('cm.pages_SalesCRM.lead_sil')}
                   </Button>
                 </DialogFooter>
               </div>
@@ -609,11 +611,11 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
               <DialogTitle>Lead silinsin mi?</DialogTitle>
             </DialogHeader>
             <p className="text-sm text-gray-600">
-              Bu işlem geri alınamaz. Bağlı tüm aktiviteler de silinir.
+              {t('cm.pages_SalesCRM.bu_islem_geri_alinamaz_bagli_tum_aktivit')}
             </p>
             <DialogFooter className="mt-3 gap-2">
-              <Button variant="outline" onClick={() => setConfirmDelete(false)}>Vazgeç</Button>
-              <Button variant="destructive" onClick={deleteLead}>Sil</Button>
+              <Button variant="outline" onClick={() => setConfirmDelete(false)}>{t('cm.pages_SalesCRM.vazgec')}</Button>
+              <Button variant="destructive" onClick={deleteLead}>{t('cm.pages_SalesCRM.sil')}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

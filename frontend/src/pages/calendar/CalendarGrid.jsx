@@ -8,6 +8,7 @@ import {
   getUnassignedBookingsForType, computeUnassignedLanes,
   getUnassignedUrgency, getUrgencyBarColors,
 } from "./calendarHelpers";
+import { useTranslation } from 'react-i18next';
 
 // Compact grid constants
 const CELL_W = 72;  // px per day column (was 96)
@@ -39,6 +40,7 @@ const CalendarGrid = ({
   onDragEnd,
   onBookingDoubleClick,
 }) => {
+  const { t } = useTranslation();
   const [collapsedTypes, setCollapsedTypes] = useState(() => new Set());
 
   const toggleType = (type) => {
@@ -121,11 +123,11 @@ const CalendarGrid = ({
                 }}
                 className="flex items-center gap-0.5 cursor-pointer hover:text-gray-800 select-none"
                 data-testid="calendar-collapse-all-btn"
-                title="Tüm oda tiplerini aç/kapat"
+                title={t('cm.pages_calendar_CalendarGrid.tum_oda_tiplerini_ac_kapat')}
               >
                 {sortedTypes.length > 0 && sortedTypes.every((t) => collapsedTypes.has(t)) ? (
                   <>
-                    <ChevronRight className="w-3 h-3" /> Genişlet
+                    <ChevronRight className="w-3 h-3" /> {t('cm.pages_calendar_CalendarGrid.genislet')}
                   </>
                 ) : (
                   <>
@@ -166,7 +168,7 @@ const CalendarGrid = ({
           {rooms.length === 0 ? (
             <div className="p-12 text-center text-gray-500">
               <CalendarIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>Oda bulunamadı</p>
+              <p>{t('cm.pages_calendar_CalendarGrid.oda_bulunamadi')}</p>
             </div>
           ) : (
             sortedTypes.map((roomType) => {
@@ -262,7 +264,7 @@ const CalendarGrid = ({
                         <div className={`w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 ${sidebarBg}`} style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
                             <div className={`w-2 h-2 ${dotColor} rounded-full ${hasOverdue || hasToday ? 'animate-pulse' : ''}`}></div>
-                            <div className={`font-bold text-[9px] ${labelColor}`}>Atanmamış</div>
+                            <div className={`font-bold text-[9px] ${labelColor}`}>{t('cm.pages_calendar_CalendarGrid.atanmamis')}</div>
                           </div>
                           <div className={`text-[8px] ml-3 ${hasOverdue ? 'text-red-500 font-semibold' : hasToday ? 'text-amber-500 font-semibold' : 'text-blue-500'}`}>
                             {unassignedForType.length} rez.

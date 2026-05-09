@@ -5,8 +5,10 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { TabsContent } from '@/components/ui/tabs';
 import { Moon, Play, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Calendar, FileText, ChevronDown, ChevronUp, DollarSign, Users, Building2, BarChart3, Eye, Loader2, Shield, Info, Timer, Settings2, Zap, RotateCcw, TrendingUp, CreditCard, ShieldCheck, Scale, Receipt, PieChart, ArrowUpDown, Banknote, AlertOctagon, Search } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export default function FinancialTab(props) {
+  const { t } = useTranslation();
   const { StatCard, categoryLabels, financialSummary, paymentMethodLabels } = props;
   return (
     <TabsContent value="financial" className="space-y-4 mt-4">
@@ -16,21 +18,21 @@ export default function FinancialTab(props) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard
               icon={TrendingUp}
-              label="Toplam Gelir"
+              label={t('cm.components_nightaudit_tabs_FinancialTab.toplam_gelir')}
               value={`${financialSummary.revenue?.total?.toFixed(2) || "0.00"} TL`}
               subValue={`${financialSummary.revenue?.charges_count || 0} masraf`}
               color="text-emerald-600"
             />
             <StatCard
               icon={Receipt}
-              label="Vergi Toplamı"
+              label={t('cm.components_nightaudit_tabs_FinancialTab.vergi_toplami')}
               value={`${financialSummary.tax?.total?.toFixed(2) || "0.00"} TL`}
               subValue={`KDV: ${financialSummary.tax?.breakdown?.vat?.toFixed(2) || "0"} TL`}
               color="text-blue-600"
             />
             <StatCard
               icon={CreditCard}
-              label="Toplam Ödeme"
+              label={t('cm.components_nightaudit_tabs_FinancialTab.toplam_odeme')}
               value={`${financialSummary.payments?.total?.toFixed(2) || "0.00"} TL`}
               subValue={`${financialSummary.payments?.payments_count || 0} ödeme`}
               color="text-indigo-600"
@@ -50,12 +52,12 @@ export default function FinancialTab(props) {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <PieChart className="w-4 h-4 text-emerald-500" />
-                  Gelir Dağılımı (Kategori)
+                  {t('cm.components_nightaudit_tabs_FinancialTab.gelir_dagilimi_kategori')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {Object.keys(financialSummary.revenue?.by_category || {}).length === 0 ? (
-                  <p className="text-xs text-gray-400 py-6 text-center">Bugün için masraf kaydedilmemiş</p>
+                  <p className="text-xs text-gray-400 py-6 text-center">{t('cm.components_nightaudit_tabs_FinancialTab.bugun_icin_masraf_kaydedilmemis')}</p>
                 ) : (
                   <div className="space-y-2">
                     {Object.entries(financialSummary.revenue.by_category).map(([cat, data]) => {
@@ -85,12 +87,12 @@ export default function FinancialTab(props) {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Banknote className="w-4 h-4 text-indigo-500" />
-                  Ödeme Yöntemleri
+                  {t('cm.components_nightaudit_tabs_FinancialTab.odeme_yontemleri')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {Object.keys(financialSummary.payments?.by_method || {}).length === 0 ? (
-                  <p className="text-xs text-gray-400 py-6 text-center">Bugün için ödeme kaydedilmemiş</p>
+                  <p className="text-xs text-gray-400 py-6 text-center">{t('cm.components_nightaudit_tabs_FinancialTab.bugun_icin_odeme_kaydedilmemis')}</p>
                 ) : (
                   <div className="space-y-2">
                     {Object.entries(financialSummary.payments.by_method).map(([method, data]) => (
@@ -114,18 +116,18 @@ export default function FinancialTab(props) {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <FileText className="w-4 h-4 text-amber-500" />
-                Açık Folyolar
+                {t('cm.components_nightaudit_tabs_FinancialTab.acik_folyolar')}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-2xl font-bold text-gray-900">{financialSummary.open_folios?.count || 0}</p>
-                  <p className="text-xs text-gray-500">Toplam Açık Folyo</p>
+                  <p className="text-xs text-gray-500">{t('cm.components_nightaudit_tabs_FinancialTab.toplam_acik_folyo')}</p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-2xl font-bold text-gray-900">{financialSummary.open_folios?.balance?.total?.toFixed(2) || "0.00"} TL</p>
-                  <p className="text-xs text-gray-500">Toplam Bakiye</p>
+                  <p className="text-xs text-gray-500">{t('cm.components_nightaudit_tabs_FinancialTab.toplam_bakiye')}</p>
                 </div>
                 <div className="p-3 bg-amber-50 rounded-lg">
                   <p className="text-2xl font-bold text-amber-700">{financialSummary.open_folios?.balance?.receivable?.toFixed(2) || "0.00"} TL</p>
@@ -133,7 +135,7 @@ export default function FinancialTab(props) {
                 </div>
                 <div className="p-3 bg-blue-50 rounded-lg">
                   <p className="text-2xl font-bold text-blue-700">{financialSummary.open_folios?.balance?.overpayment?.toFixed(2) || "0.00"} TL</p>
-                  <p className="text-xs text-blue-600">Fazla Ödeme</p>
+                  <p className="text-xs text-blue-600">{t('cm.components_nightaudit_tabs_FinancialTab.fazla_odeme')}</p>
                 </div>
               </div>
             </CardContent>
@@ -141,7 +143,7 @@ export default function FinancialTab(props) {
         </>
       ) : (
         <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
-          <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Finansal özet yükleniyor...
+          <Loader2 className="w-5 h-5 mr-2 animate-spin" /> {t('cm.components_nightaudit_tabs_FinancialTab.finansal_ozet_yukleniyor')}
         </div>
       )}
     </TabsContent>

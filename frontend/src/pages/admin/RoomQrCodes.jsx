@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Loader2, Printer, Download, QrCode, Search, Copy } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 export default function RoomQrCodes({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -73,14 +75,14 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-2">
-              <QrCode className="w-7 h-7" /> Oda QR Kodları
+              <QrCode className="w-7 h-7" /> {t('cm.pages_admin_RoomQrCodes.oda_qr_kodlari')}
             </h1>
             <p className="text-gray-500 text-sm mt-1">
-              Her oda için benzersiz QR — misafir okutup direkt talep gönderebilir.
+              {t('cm.pages_admin_RoomQrCodes.her_oda_icin_benzersiz_qr_misafir_okutup')}
             </p>
           </div>
           <Button onClick={printAll} variant="outline">
-            <Printer className="w-4 h-4 mr-2" /> Tümünü Yazdır
+            <Printer className="w-4 h-4 mr-2" /> {t('cm.pages_admin_RoomQrCodes.tumunu_yazdir')}
           </Button>
         </div>
 
@@ -88,7 +90,7 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <Input
             value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Oda no veya tip ara..." className="pl-9"
+            placeholder={t('cm.pages_admin_RoomQrCodes.oda_no_veya_tip_ara')} className="pl-9"
           />
         </div>
 
@@ -102,14 +104,14 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
                   <div className="w-12 h-12 mx-auto rounded-lg bg-slate-100 flex items-center justify-center mb-2">
                     <QrCode className="w-6 h-6 text-slate-600" />
                   </div>
-                  <div className="font-bold">Oda {r.room_number}</div>
+                  <div className="font-bold">{t('cm.pages_admin_RoomQrCodes.oda')} {r.room_number}</div>
                   <div className="text-xs text-gray-500">{r.room_type}</div>
                   {r.floor != null && <div className="text-xs text-gray-400">Kat {r.floor}</div>}
                 </CardContent>
               </Card>
             ))}
             {filtered.length === 0 && (
-              <div className="col-span-full text-center text-gray-500 py-12">Oda bulunamadı</div>
+              <div className="col-span-full text-center text-gray-500 py-12">{t('cm.pages_admin_RoomQrCodes.oda_bulunamadi')}</div>
             )}
           </div>
         )}
@@ -119,7 +121,7 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
       <Dialog open={!!selected} onOpenChange={(v) => !v && setSelected(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Oda {selected?.room_number} QR Kodu</DialogTitle>
+            <DialogTitle>{t('cm.pages_admin_RoomQrCodes.oda_e4b47')} {selected?.room_number} QR Kodu</DialogTitle>
           </DialogHeader>
           {qrLoading ? (
             <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
@@ -129,12 +131,12 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
                 <img src={qrData.qr_png_base64} alt={`Oda ${qrData.room_number}`} className="w-64 h-64" />
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold">Oda {qrData.room_number}</div>
+                <div className="text-3xl font-bold">{t('cm.pages_admin_RoomQrCodes.oda_e4b47')} {qrData.room_number}</div>
                 <div className="text-xs text-gray-500 mt-2 break-all">{qrData.url}</div>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <Button onClick={downloadPng} variant="outline">
-                  <Download className="w-4 h-4 mr-2" /> PNG İndir
+                  <Download className="w-4 h-4 mr-2" /> {t('cm.pages_admin_RoomQrCodes.png_indir')}
                 </Button>
                 <Button onClick={copyUrl} variant="outline">
                   <Copy className="w-4 h-4 mr-2" /> URL Kopyala
@@ -179,7 +181,7 @@ function PrintAllQrCodes({ rooms }) {
           ) : (
             <div className="w-48 h-48 mx-auto bg-slate-100 flex items-center justify-center">...</div>
           )}
-          <div className="text-2xl font-bold mt-2">Oda {r.room_number}</div>
+          <div className="text-2xl font-bold mt-2">{t('cm.pages_admin_RoomQrCodes.oda_e4b47')} {r.room_number}</div>
           <div className="text-sm text-gray-600">{r.room_type}</div>
         </div>
       ))}

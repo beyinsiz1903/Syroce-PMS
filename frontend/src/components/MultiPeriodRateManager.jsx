@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Calendar, Plus, Trash2, Save, DollarSign } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Multi-Period Rate Manager
@@ -13,6 +14,7 @@ import { Calendar, Plus, Trash2, Save, DollarSign } from 'lucide-react';
  * Example: 01.05-31.05, 01.06-15.06, 16.06-30.06
  */
 const MultiPeriodRateManager = ({ operatorId, operatorName, roomTypeId }) => {
+  const { t } = useTranslation();
   const [ratePeriods, setRatePeriods] = useState([
     // Example structure
     // { id: '1', start_date: '2025-05-01', end_date: '2025-05-31', rate: 150, currency: 'USD' }
@@ -80,29 +82,29 @@ const MultiPeriodRateManager = ({ operatorId, operatorName, roomTypeId }) => {
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Calendar className="w-5 h-5 text-blue-600" />
-            <span>Dönem Bazlı Tarifeler</span>
+            <span>{t('cm.components_MultiPeriodRateManager.donem_bazli_tarifeler')}</span>
           </div>
           <Button onClick={addPeriod} size="sm" variant="outline">
             <Plus className="w-4 h-4 mr-2" />
-            Dönem Ekle
+            {t('cm.components_MultiPeriodRateManager.donem_ekle')}
           </Button>
         </CardTitle>
         <CardDescription>
-          {operatorName} - Dönem dönem farklı fiyatlandırma
+          {operatorName} {t('cm.components_MultiPeriodRateManager.donem_donem_farkli_fiyatlandirma')}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
           {ratePeriods.length === 0 ? (
             <div className="text-center py-8 text-gray-400">
-              Henüz dönem tanımlanmamış. "Dönem Ekle" ile başlayın.
+              {t('cm.components_MultiPeriodRateManager.henuz_donem_tanimlanmamis_donem_ekle_ile')}
             </div>
           ) : (
             ratePeriods.map((period, index) => (
               <div key={period.id} className="p-4 bg-gray-50 rounded-lg border space-y-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-semibold text-gray-700">
-                    Dönem {index + 1}
+                    {t('cm.components_MultiPeriodRateManager.donem')} {index + 1}
                   </span>
                   <Button
                     size="sm"
@@ -117,7 +119,7 @@ const MultiPeriodRateManager = ({ operatorId, operatorName, roomTypeId }) => {
                 <div className="grid grid-cols-2 gap-3">
                   {/* Start Date */}
                   <div>
-                    <Label className="text-xs">Başlangıç Tarihi</Label>
+                    <Label className="text-xs">{t('cm.components_MultiPeriodRateManager.baslangic_tarihi')}</Label>
                     <Input
                       type="date"
                       value={period.start_date}
@@ -128,7 +130,7 @@ const MultiPeriodRateManager = ({ operatorId, operatorName, roomTypeId }) => {
 
                   {/* End Date */}
                   <div>
-                    <Label className="text-xs">Bitiş Tarihi</Label>
+                    <Label className="text-xs">{t('cm.components_MultiPeriodRateManager.bitis_tarihi')}</Label>
                     <Input
                       type="date"
                       value={period.end_date}
@@ -140,7 +142,7 @@ const MultiPeriodRateManager = ({ operatorId, operatorName, roomTypeId }) => {
 
                 {/* Rate */}
                 <div>
-                  <Label className="text-xs">Fiyat (Günlük)</Label>
+                  <Label className="text-xs">{t('cm.components_MultiPeriodRateManager.fiyat_gunluk')}</Label>
                   <div className="flex gap-2 mt-1">
                     <div className="relative flex-1">
                       <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -195,11 +197,11 @@ const MultiPeriodRateManager = ({ operatorId, operatorName, roomTypeId }) => {
 
         {/* Examples */}
         <div className="mt-4 p-3 bg-blue-50 border-l-4 border-blue-500 rounded text-xs">
-          <strong>Örnek Dönemler:</strong>
+          <strong>{t('cm.components_MultiPeriodRateManager.ornek_donemler')}</strong>
           <ul className="list-disc list-inside mt-1 space-y-0.5 text-gray-700">
-            <li>01.05 - 31.05 → Düşük Sezon (€120/gece)</li>
+            <li>{t('cm.components_MultiPeriodRateManager.01_05_31_05_dusuk_sezon_120_gece')}</li>
             <li>01.06 - 15.06 → Orta Sezon (€150/gece)</li>
-            <li>16.06 - 30.06 → Yüksek Sezon (€200/gece)</li>
+            <li>{t('cm.components_MultiPeriodRateManager.16_06_30_06_yuksek_sezon_200_gece')}</li>
           </ul>
         </div>
       </CardContent>

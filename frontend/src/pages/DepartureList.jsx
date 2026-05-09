@@ -17,6 +17,7 @@ import {
   CreditCard, Phone, FileText, X,
 } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 const localISODate = (d) => {
   const y = d.getFullYear();
@@ -35,6 +36,7 @@ const PRIMARY_LABEL = (b) =>
   b.room_number ? `Oda ${b.room_number}` : (b.confirmation_number || (b.id || '').substring(0, 8).toUpperCase());
 
 const DepartureList = () => {
+  const { t } = useTranslation();
   const [date, setDate] = useState(() => localISODate(new Date()));
   const [departures, setDepartures] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -262,19 +264,19 @@ const DepartureList = () => {
     <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto">
       <PageHeader
         icon={LogOut}
-        title="Bugünün Çıkışları"
-        subtitle="Bugün check-out yapacak misafirler — folio bakiyesi, tahsilat, geç çıkış ve hızlı çıkış."
+        title={t('cm.pages_DepartureList.bugunun_cikislari')}
+        subtitle={t('cm.pages_DepartureList.bugun_check_out_yapacak_misafirler_folio')}
         actions={
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Yenile
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> {t('cm.pages_DepartureList.yenile')}
           </Button>
         }
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <KpiCard icon={LogOut} label="Toplam Çıkış" value={departures.length} intent="info" />
-        <KpiCard icon={AlertCircle} label="Bakiyeli Çıkış" value={withDebt} intent="warning" highlight={withDebt > 0} />
-        <KpiCard icon={Wallet} label="Toplam Açık Bakiye" value={fmtTRY(totalBalance)} intent="success" />
+        <KpiCard icon={LogOut} label={t('cm.pages_DepartureList.toplam_cikis')} value={departures.length} intent="info" />
+        <KpiCard icon={AlertCircle} label={t('cm.pages_DepartureList.bakiyeli_cikis')} value={withDebt} intent="warning" highlight={withDebt > 0} />
+        <KpiCard icon={Wallet} label={t('cm.pages_DepartureList.toplam_acik_bakiye')} value={fmtTRY(totalBalance)} intent="success" />
       </div>
 
       {/* Filtre çubuğu */}
@@ -282,24 +284,24 @@ const DepartureList = () => {
         <CardContent className="pt-4">
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <Label className="text-xs text-slate-500">Tarih</Label>
+              <Label className="text-xs text-slate-500">{t('cm.pages_DepartureList.tarih')}</Label>
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 w-40" />
             </div>
             <div className="flex-1 min-w-[200px]">
-              <Label className="text-xs text-slate-500">Ara</Label>
+              <Label className="text-xs text-slate-500">{t('cm.pages_DepartureList.ara')}</Label>
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 w-4 h-4 text-slate-400" />
                 <Input value={search} onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Misafir / oda no / rezervasyon kodu" className="pl-8 h-9" />
+                  placeholder={t('cm.pages_DepartureList.misafir_oda_no_rezervasyon_kodu')} className="pl-8 h-9" />
               </div>
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Sırala</Label>
+              <Label className="text-xs text-slate-500">{t('cm.pages_DepartureList.sirala')}</Label>
               <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
                 className="h-9 border rounded-md px-2 text-sm bg-white w-44">
-                <option value="balance_desc">Bakiye (yüksek→düşük)</option>
-                <option value="room_asc">Oda no (artan)</option>
-                <option value="guest_asc">Misafir (A→Z)</option>
+                <option value="balance_desc">{t('cm.pages_DepartureList.bakiye_yuksek_dusuk')}</option>
+                <option value="room_asc">{t('cm.pages_DepartureList.oda_no_artan')}</option>
+                <option value="guest_asc">{t('cm.pages_DepartureList.misafir_a_z')}</option>
               </select>
             </div>
             <label className="inline-flex items-center gap-2 text-sm text-slate-700 h-9 cursor-pointer">
@@ -308,13 +310,13 @@ const DepartureList = () => {
             </label>
             {selected.size > 0 && (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">{selected.size} seçili</span>
+                <span className="text-xs text-slate-500">{selected.size} {t('cm.pages_DepartureList.secili')}</span>
                 <Button size="sm" variant="outline" onClick={() => setSelected(new Set())}>
                   <X className="w-3.5 h-3.5 mr-1" /> Temizle
                 </Button>
                 <Button size="sm" onClick={bulkCheckout} disabled={bulkBusy}>
                   {bulkBusy && <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />}
-                  Toplu Çıkış ({selected.size})
+                  {t('cm.pages_DepartureList.toplu_cikis')}{selected.size})
                 </Button>
               </div>
             )}
@@ -342,7 +344,7 @@ const DepartureList = () => {
                 checked={selected.size === visible.length && visible.length > 0}
                 onChange={toggleSelectAll}
               />
-              <span>Tümünü seç ({visible.length})</span>
+              <span>{t('cm.pages_DepartureList.tumunu_sec')}{visible.length})</span>
               <ArrowUpDown className="w-3 h-3 ml-2" />
               <span>{sortBy === 'balance_desc' ? 'Bakiyeye göre' : sortBy === 'room_asc' ? 'Oda no' : 'Misafir'}</span>
             </div>
@@ -362,7 +364,7 @@ const DepartureList = () => {
                           {b.guest_name && <span className="text-slate-700">— {b.guest_name}</span>}
                           {debt && <StatusBadge intent="warning">Bakiyeli</StatusBadge>}
                           {b.late_checkout && (
-                            <StatusBadge intent="warning" icon={Clock}>Geç Çıkış</StatusBadge>
+                            <StatusBadge intent="warning" icon={Clock}>{t('cm.pages_DepartureList.gec_cikis')}</StatusBadge>
                           )}
                           {b.guest_phone && (
                             <a href={`tel:${sanitizePhone(b.guest_phone)}`} onClick={(e) => e.stopPropagation()}
@@ -373,15 +375,15 @@ const DepartureList = () => {
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
                           <div>
-                            <p className="text-slate-500 text-xs">Oda</p>
+                            <p className="text-slate-500 text-xs">{t('cm.pages_DepartureList.oda')}</p>
                             <p className="font-semibold">{b.room_number || '—'}</p>
                           </div>
                           <div>
-                            <p className="text-slate-500 text-xs">Çıkış Saati</p>
+                            <p className="text-slate-500 text-xs">{t('cm.pages_DepartureList.cikis_saati')}</p>
                             <p className="font-semibold">{b.check_out_time || '12:00'}</p>
                           </div>
                           <div>
-                            <p className="text-slate-500 text-xs">Toplam</p>
+                            <p className="text-slate-500 text-xs">{t('cm.pages_DepartureList.toplam')}</p>
                             <p className="font-semibold">{fmtTRY(b.total_amount)}</p>
                           </div>
                           <div>
@@ -404,12 +406,12 @@ const DepartureList = () => {
                           {busyId === b.id ? 'İşleniyor…' : 'Çıkış Yap'}
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => openLate(b)} disabled={busyId === b.id}>
-                          <Clock className="w-4 h-4 mr-1" /> Geç Çıkış
+                          <Clock className="w-4 h-4 mr-1" /> {t('cm.pages_DepartureList.gec_cikis_9e19e')}
                         </Button>
                         {debt && (
                           <button className="text-xs text-rose-600 hover:underline"
                             onClick={() => checkout(b, true)} disabled={busyId === b.id}>
-                            Zorla Çıkış
+                            {t('cm.pages_DepartureList.zorla_cikis')}
                           </button>
                         )}
                       </div>
@@ -428,17 +430,17 @@ const DepartureList = () => {
           <DialogHeader>
             <DialogTitle>Tahsilat — {payTarget && PRIMARY_LABEL(payTarget)}</DialogTitle>
             <DialogDescription>
-              Açık bakiye: <strong>{fmtTRY(payTarget?.balance || 0)}</strong>
+              {t('cm.pages_DepartureList.acik_bakiye')} <strong>{fmtTRY(payTarget?.balance || 0)}</strong>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label>Tutar (TL)</Label>
+              <Label>{t('cm.pages_DepartureList.tutar_tl')}</Label>
               <Input type="number" min="0" step="0.01" value={payAmount}
                 onChange={(e) => setPayAmount(e.target.value)} />
             </div>
             <div>
-              <Label>Yöntem</Label>
+              <Label>{t('cm.pages_DepartureList.yontem')}</Label>
               <div className="grid grid-cols-3 gap-2 mt-1">
                 {[
                   { v: 'cash', l: 'Nakit', i: 'success' },
@@ -455,11 +457,11 @@ const DepartureList = () => {
             <div>
               <Label>Referans (opsiyonel)</Label>
               <Input value={payRef} onChange={(e) => setPayRef(e.target.value)}
-                placeholder="Fiş no / banka referansı" />
+                placeholder={t('cm.pages_DepartureList.fis_no_banka_referansi')} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPayTarget(null)} disabled={paySubmitting}>Vazgeç</Button>
+            <Button variant="outline" onClick={() => setPayTarget(null)} disabled={paySubmitting}>{t('cm.pages_DepartureList.vazgec')}</Button>
             <Button onClick={submitPay} disabled={paySubmitting}>
               {paySubmitting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />} Tahsil Et
             </Button>
@@ -471,14 +473,14 @@ const DepartureList = () => {
       <Dialog open={!!lateTarget} onOpenChange={(o) => !o && setLateTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Geç Çıkış — {lateTarget && PRIMARY_LABEL(lateTarget)}</DialogTitle>
+            <DialogTitle>{t('cm.pages_DepartureList.gec_cikis_505a3')} {lateTarget && PRIMARY_LABEL(lateTarget)}</DialogTitle>
             <DialogDescription>
-              Misafire ek çıkış saati ve opsiyonel ek ücret tanımlar. Mevcut çıkış saati: {lateTarget?.check_out_time || '12:00'}.
+              {t('cm.pages_DepartureList.misafire_ek_cikis_saati_ve_opsiyonel_ek_')} {lateTarget?.check_out_time || '12:00'}.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label>Yeni Çıkış Saati</Label>
+              <Label>{t('cm.pages_DepartureList.yeni_cikis_saati')}</Label>
               <Input type="time" value={lateTime} onChange={(e) => setLateTime(e.target.value)} />
               <div className="flex gap-1 mt-2">
                 {['13:00', '14:00', '16:00', '18:00'].map((h) => (
@@ -488,18 +490,18 @@ const DepartureList = () => {
               </div>
             </div>
             <div>
-              <Label>Ek Ücret (TL)</Label>
+              <Label>{t('cm.pages_DepartureList.ek_ucret_tl')}</Label>
               <Input type="number" min="0" step="0.01" value={lateCharge}
-                onChange={(e) => setLateCharge(e.target.value)} placeholder="0 = ücretsiz" />
+                onChange={(e) => setLateCharge(e.target.value)} placeholder={t('cm.pages_DepartureList.0_ucretsiz')} />
               <p className="text-xs text-slate-500 mt-1">
-                Girilen tutar folio'ya "Geç Çıkış Ücreti" olarak post edilir.
+                {t('cm.pages_DepartureList.girilen_tutar_folio_ya_gec_cikis_ucreti_')}
               </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setLateTarget(null)} disabled={lateSubmitting}>Vazgeç</Button>
+            <Button variant="outline" onClick={() => setLateTarget(null)} disabled={lateSubmitting}>{t('cm.pages_DepartureList.vazgec_bf814')}</Button>
             <Button onClick={submitLate} disabled={lateSubmitting}>
-              {lateSubmitting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />} Kaydet
+              {lateSubmitting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />} {t('cm.pages_DepartureList.kaydet')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -517,13 +519,13 @@ const DepartureList = () => {
           {detail && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><span className="text-slate-500">Giriş:</span> <strong>{(detail.check_in || '').slice(0, 10)}</strong></div>
-                <div><span className="text-slate-500">Çıkış:</span> <strong>{(detail.check_out || '').slice(0, 10)} {detail.check_out_time || '12:00'}</strong></div>
-                <div><span className="text-slate-500">Yetişkin/Çocuk:</span> <strong>{detail.adults || 1}/{detail.children || 0}</strong></div>
-                <div><span className="text-slate-500">Toplam:</span> <strong>{fmtTRY(detail.total_amount)}</strong></div>
-                <div><span className="text-slate-500">Ödenen:</span> <strong>{fmtTRY(detail.paid_amount)}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_DepartureList.giris')}</span> <strong>{(detail.check_in || '').slice(0, 10)}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_DepartureList.cikis')}</span> <strong>{(detail.check_out || '').slice(0, 10)} {detail.check_out_time || '12:00'}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_DepartureList.yetiskin_cocuk')}</span> <strong>{detail.adults || 1}/{detail.children || 0}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_DepartureList.toplam_68af4')}</span> <strong>{fmtTRY(detail.total_amount)}</strong></div>
+                <div><span className="text-slate-500">{t('cm.pages_DepartureList.odenen')}</span> <strong>{fmtTRY(detail.paid_amount)}</strong></div>
                 <div>
-                  <span className="text-slate-500">Bakiye:</span>{' '}
+                  <span className="text-slate-500">{t('cm.pages_DepartureList.bakiye')}</span>{' '}
                   <strong className={(detail.balance || 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}>
                     {fmtTRY(detail.balance || 0)}
                   </strong>
@@ -544,24 +546,24 @@ const DepartureList = () => {
               </div>
 
               <div className="border-t pt-3">
-                <div className="text-xs text-slate-500 mb-2">Folio Özeti</div>
+                <div className="text-xs text-slate-500 mb-2">{t('cm.pages_DepartureList.folio_ozeti')}</div>
                 {detailLoading ? (
                   <div className="flex items-center gap-2 text-sm text-slate-500">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Folio yükleniyor…
+                    <Loader2 className="w-4 h-4 animate-spin" /> {t('cm.pages_DepartureList.folio_yukleniyor')}
                   </div>
                 ) : detailFolio ? (
                   <div className="text-sm space-y-1">
-                    <div className="flex justify-between"><span>Toplam Charges</span><strong>{fmtTRY(detailFolio.charges_total ?? detailFolio.total_charges)}</strong></div>
-                    <div className="flex justify-between"><span>Toplam Ödeme</span><strong>{fmtTRY(detailFolio.payments_total ?? detailFolio.total_payments)}</strong></div>
+                    <div className="flex justify-between"><span>{t('cm.pages_DepartureList.toplam_charges')}</span><strong>{fmtTRY(detailFolio.charges_total ?? detailFolio.total_charges)}</strong></div>
+                    <div className="flex justify-between"><span>{t('cm.pages_DepartureList.toplam_odeme')}</span><strong>{fmtTRY(detailFolio.payments_total ?? detailFolio.total_payments)}</strong></div>
                     <div className="flex justify-between border-t pt-1 mt-1">
-                      <span>Bakiye</span>
+                      <span>{t('cm.pages_DepartureList.bakiye_33769')}</span>
                       <strong className={(detailFolio.balance || 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}>
                         {fmtTRY(detailFolio.balance || 0)}
                       </strong>
                     </div>
                   </div>
                 ) : (
-                  <div className="text-xs text-slate-400">Folio bilgisi alınamadı.</div>
+                  <div className="text-xs text-slate-400">{t('cm.pages_DepartureList.folio_bilgisi_alinamadi')}</div>
                 )}
               </div>
 
@@ -572,10 +574,10 @@ const DepartureList = () => {
                   </Button>
                 )}
                 <Button size="sm" variant="outline" onClick={() => { openLate(detail); setDetail(null); }}>
-                  <Clock className="w-4 h-4 mr-1" /> Geç Çıkış
+                  <Clock className="w-4 h-4 mr-1" /> {t('cm.pages_DepartureList.gec_cikis_9e19e')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => { checkout(detail, false); setDetail(null); }}>
-                  <LogOut className="w-4 h-4 mr-1" /> Çıkış Yap
+                  <LogOut className="w-4 h-4 mr-1" /> {t('cm.pages_DepartureList.cikis_yap')}
                 </Button>
               </div>
             </div>

@@ -7,6 +7,7 @@ import { Input } from './ui/input';
 import { Moon, PlayCircle, CheckCircle, AlertTriangle, Clock, TrendingUp, Calendar } from 'lucide-react';
 
 import { alertDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 // Helper to get yesterday in YYYY-MM-DD format
 const getDefaultAuditDate = () => {
   const d = new Date();
@@ -15,6 +16,7 @@ const getDefaultAuditDate = () => {
 };
 
 const NightAuditModule = () => {
+  const { t } = useTranslation();
   const [auditDate, setAuditDate] = useState(getDefaultAuditDate);
   const [status, setStatus] = useState(null);
   const [report, setReport] = useState(null);
@@ -153,7 +155,7 @@ const NightAuditModule = () => {
             Night Audit
           </h1>
           <p className="text-gray-600 text-sm">
-            Belirli bir iş günü için no-show, oda gelirleri ve gün sonu kapanışını yönetin.
+            {t('cm.components_NightAuditModule.belirli_bir_is_gunu_icin_no_show_oda_gel')}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -176,7 +178,7 @@ const NightAuditModule = () => {
         <Card>
           <CardContent className="p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-gray-500 mb-1">Durum</div>
+              <div className="text-xs text-gray-500 mb-1">{t('cm.components_NightAuditModule.durum')}</div>
               <div className="flex items-center gap-2">
                 <Badge
                   className={
@@ -202,7 +204,7 @@ const NightAuditModule = () => {
         <Card>
           <CardContent className="p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-gray-500 mb-1">Toplam Odalar</div>
+              <div className="text-xs text-gray-500 mb-1">{t('cm.components_NightAuditModule.toplam_odalar')}</div>
               <div className="text-xl font-semibold">
                 {currentAudit?.total_rooms ?? '-'}
               </div>
@@ -230,7 +232,7 @@ const NightAuditModule = () => {
         <Card>
           <CardContent className="p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-gray-500 mb-1">Toplam Gelir</div>
+              <div className="text-xs text-gray-500 mb-1">{t('cm.components_NightAuditModule.toplam_gelir')}</div>
               <div className="text-xl font-semibold">
                 {currentAudit?.total_revenue != null
                   ? `€${currentAudit.total_revenue.toFixed(2)}`
@@ -245,23 +247,22 @@ const NightAuditModule = () => {
       {/* Steps */}
       <Card>
         <CardHeader>
-          <CardTitle>Night Audit Adımları</CardTitle>
+          <CardTitle>{t('cm.components_NightAuditModule.night_audit_adimlari')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Step 1 */}
           <div className="flex flex-col md:flex-row md:items-center gap-4 p-3 rounded-lg border border-gray-100 bg-white">
             <div className="flex-1">
-              <div className="font-semibold">1. Audit Başlat</div>
+              <div className="font-semibold">{t('cm.components_NightAuditModule.1_audit_baslat')}</div>
               <div className="text-xs text-gray-600">
-                Bu tarih için night audit kaydı oluşturur, oda ve gelir istatistiklerini toplar.
+                {t('cm.components_NightAuditModule.bu_tarih_icin_night_audit_kaydi_olusturu')}
               </div>
               {startResult && (
                 <div className="mt-2 text-xs text-gray-600">
                   <span className="font-medium">Statistikler:</span>{' '}
                   {startResult.statistics && (
                     <>
-                      Odalar: {startResult.statistics.total_rooms} | Doluluk: {startResult.statistics.occupancy_pct}% | Toplam
-                      Gelir: €{startResult.statistics.total_revenue}
+                      Odalar: {startResult.statistics.total_rooms} | Doluluk: {startResult.statistics.occupancy_pct}{t('cm.components_NightAuditModule.toplam_gelir_bd4d6')}{startResult.statistics.total_revenue}
                     </>
                   )}
                 </div>
@@ -280,14 +281,13 @@ const NightAuditModule = () => {
           {/* Step 2 */}
           <div className="flex flex-col md:flex-row md:items-center gap-4 p-3 rounded-lg border border-gray-100 bg-white">
             <div className="flex-1">
-              <div className="font-semibold">2. Oda Gelirlerini Post Et</div>
+              <div className="font-semibold">{t('cm.components_NightAuditModule.2_oda_gelirlerini_post_et')}</div>
               <div className="text-xs text-gray-600">
-                Check-in durumundaki tüm odalar için günlük oda ücreti ve vergi
-                kayıtlarını folio&apos;lara ekler.
+                {t('cm.components_NightAuditModule.check_in_durumundaki_tum_odalar_icin_gun')}
               </div>
               {autoPostingResult && (
                 <div className="mt-2 text-xs text-gray-600">
-                  <span className="font-medium">Sonuç:</span>{' '}
+                  <span className="font-medium">{t('cm.components_NightAuditModule.sonuc')}</span>{' '}
                   {autoPostingResult.posted_count} rezervasyon, toplam €
                   {autoPostingResult.total_amount_posted}
                 </div>
@@ -306,10 +306,9 @@ const NightAuditModule = () => {
           {/* Step 3 */}
           <div className="flex flex-col md:flex-row md:items-center gap-4 p-3 rounded-lg border border-gray-100 bg-white">
             <div className="flex-1">
-              <div className="font-semibold">3. No-Show İşleme</div>
+              <div className="font-semibold">{t('cm.components_NightAuditModule.3_no_show_isleme')}</div>
               <div className="text-xs text-gray-600">
-                Check-in yapmamış confirmed/guaranteed rezervasyonları no-show
-                durumuna çevirir. İsteğe bağlı olarak no-show ücreti uygular.
+                {t('cm.components_NightAuditModule.check_in_yapmamis_confirmed_guaranteed_r')}
               </div>
               <label className="mt-2 inline-flex items-center gap-2 text-xs text-gray-700">
                 <input
@@ -318,11 +317,11 @@ const NightAuditModule = () => {
                   onChange={(e) => setChargeNoShowFee(e.target.checked)}
                   disabled={disabledAll}
                 />
-                No-show ücreti uygula
+                {t('cm.components_NightAuditModule.no_show_ucreti_uygula')}
               </label>
               {noShowResult && (
                 <div className="mt-2 text-xs text-gray-600">
-                  <span className="font-medium">Sonuç:</span>{' '}
+                  <span className="font-medium">{t('cm.components_NightAuditModule.sonuc_5e347')}</span>{' '}
                   {noShowResult.no_shows_processed} rezervasyon, toplam €
                   {noShowResult.total_no_show_charges}
                 </div>
@@ -341,18 +340,17 @@ const NightAuditModule = () => {
           {/* Step 4 */}
           <div className="flex flex-col md:flex-row md:items-center gap-4 p-3 rounded-lg border border-gray-100 bg-white">
             <div className="flex-1">
-              <div className="font-semibold">4. Gün Sonu Kapanışı</div>
+              <div className="font-semibold">{t('cm.components_NightAuditModule.4_gun_sonu_kapanisi')}</div>
               <div className="text-xs text-gray-600">
-                Night audit sürecini tamamlar, özet istatistikleri kaydeder ve
-                günü kapatır.
+                {t('cm.components_NightAuditModule.night_audit_surecini_tamamlar_ozet_istat')}
               </div>
               {endOfDayResult && (
                 <div className="mt-2 text-xs text-gray-600">
-                  <span className="font-medium">Özet:</span>{' '}
+                  <span className="font-medium">{t('cm.components_NightAuditModule.ozet')}</span>{' '}
                   {endOfDayResult.summary && (
                     <>
-                      Toplam Gelir: €{endOfDayResult.summary.total_revenue} | No
-                      Show: {endOfDayResult.summary.no_shows} | Dolu Odalar:{' '}
+                      {t('cm.components_NightAuditModule.toplam_gelir_e49f2')}{endOfDayResult.summary.total_revenue} | No
+                      Show: {endOfDayResult.summary.no_shows} {t('cm.components_NightAuditModule.dolu_odalar')}{' '}
                       {endOfDayResult.summary.occupied_rooms}
                     </>
                   )}
@@ -375,16 +373,16 @@ const NightAuditModule = () => {
       {bookingsByStatus && bookingsByStatus.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Duruma Göre Rezervasyon Özeti</CardTitle>
+            <CardTitle>{t('cm.components_NightAuditModule.duruma_gore_rezervasyon_ozeti')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-gray-600">
-                    <th className="py-2 pr-4">Durum</th>
+                    <th className="py-2 pr-4">{t('cm.components_NightAuditModule.durum_074f4')}</th>
                     <th className="py-2 pr-4 text-right">Adet</th>
-                    <th className="py-2 pr-4 text-right">Toplam Gelir</th>
+                    <th className="py-2 pr-4 text-right">{t('cm.components_NightAuditModule.toplam_gelir_81fef')}</th>
                   </tr>
                 </thead>
                 <tbody>

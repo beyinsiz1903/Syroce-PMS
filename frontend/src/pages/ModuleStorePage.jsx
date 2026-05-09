@@ -11,6 +11,7 @@ import {
   ShoppingBag, QrCode, ScanLine, Mail, Package, Sparkles,
   CheckCircle2, Clock, Loader2, RefreshCw, Gift, ExternalLink,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const ICONS = { QrCode, ScanLine, Mail, Package, Sparkles };
 const CATEGORY_LABEL = {
@@ -25,6 +26,7 @@ const CATEGORY_COLOR = {
 };
 
 function ProductCard({ product, owned, onPurchase, onStartTrial, onLaunch, buying }) {
+  const { t } = useTranslation();
   const Icon = ICONS[product.icon] || Package;
   const ownedSub = owned.find((s) => s.product_key === product.key);
   const hasTrial = !!product.trial_days;
@@ -76,7 +78,7 @@ function ProductCard({ product, owned, onPurchase, onStartTrial, onLaunch, buyin
               </Badge>
               {isExternal && (
                 <Button size="sm" variant="outline" onClick={() => onLaunch(product)}>
-                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> Aç
+                  <ExternalLink className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_ModuleStorePage.ac')}
                 </Button>
               )}
             </div>
@@ -91,7 +93,7 @@ function ProductCard({ product, owned, onPurchase, onStartTrial, onLaunch, buyin
                   className="border-indigo-300 text-indigo-700 hover:bg-indigo-50"
                 >
                   <Gift className="w-3.5 h-3.5 mr-1" />
-                  {product.trial_days} Gün Ücretsiz Dene
+                  {product.trial_days} {t('cm.pages_ModuleStorePage.gun_ucretsiz_dene')}
                 </Button>
               )}
               <Button
@@ -103,7 +105,7 @@ function ProductCard({ product, owned, onPurchase, onStartTrial, onLaunch, buyin
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <>
-                    <ShoppingBag className="w-4 h-4 mr-1" /> Satın Al
+                    <ShoppingBag className="w-4 h-4 mr-1" /> {t('cm.pages_ModuleStorePage.satin_al')}
                   </>
                 )}
               </Button>
@@ -224,29 +226,28 @@ export default function ModuleStorePage({ user, tenant, onLogout }) {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              <ShoppingBag className="w-6 h-6" /> Modül Pazarı
+              <ShoppingBag className="w-6 h-6" /> {t('cm.pages_ModuleStorePage.modul_pazari')}
             </h1>
             <p className="text-sm text-slate-600">
-              İhtiyacınız olan modül, entegrasyon ve kredi paketlerini buradan satın alın.
+              {t('cm.pages_ModuleStorePage.ihtiyaciniz_olan_modul_entegrasyon_ve_kr')}
             </p>
           </div>
           <Button variant="outline" onClick={load}>
-            <RefreshCw className="w-4 h-4 mr-1" /> Yenile
+            <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_ModuleStorePage.yenile')}
           </Button>
         </div>
 
         {!paymentReady && (
           <Card className="border-amber-200 bg-amber-50">
             <CardContent className="pt-4 text-sm text-amber-900">
-              Ödeme sistemi (iyzico) henüz aktif edilmemiş. Bilgiler tanımlandığında
-              satın alma butonları çalışacak.
+              {t('cm.pages_ModuleStorePage.odeme_sistemi_iyzico_henuz_aktif_edilmem')}
             </CardContent>
           </Card>
         )}
 
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
-            <TabsTrigger value="store">Mağaza</TabsTrigger>
+            <TabsTrigger value="store">{t('cm.pages_ModuleStorePage.magaza')}</TabsTrigger>
             <TabsTrigger value="subs">
               Aboneliklerim {subs.length > 0 && (
                 <Badge className="ml-2 bg-slate-200 text-slate-800">{subs.length}</Badge>
@@ -265,7 +266,7 @@ export default function ModuleStorePage({ user, tenant, onLogout }) {
             ) : products.length === 0 ? (
               <Card>
                 <CardContent className="pt-6 text-center text-slate-500">
-                  Şu anda gösterilecek ürün yok.
+                  {t('cm.pages_ModuleStorePage.su_anda_gosterilecek_urun_yok')}
                 </CardContent>
               </Card>
             ) : (
@@ -304,7 +305,7 @@ export default function ModuleStorePage({ user, tenant, onLogout }) {
             ) : subs.length === 0 ? (
               <Card>
                 <CardContent className="pt-6 text-center text-slate-500">
-                  Henüz aktif aboneliğiniz yok.
+                  {t('cm.pages_ModuleStorePage.henuz_aktif_aboneliginiz_yok')}
                 </CardContent>
               </Card>
             ) : (
@@ -327,12 +328,12 @@ export default function ModuleStorePage({ user, tenant, onLogout }) {
                               {product?.name || s.product_key}
                             </div>
                             <div className="text-xs text-slate-500 flex items-center gap-1.5">
-                              <Clock className="w-3 h-3" /> Bitiş: {endDate}
+                              <Clock className="w-3 h-3" /> {t('cm.pages_ModuleStorePage.bitis')} {endDate}
                             </div>
                           </div>
                         </div>
                         <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
-                          Aktif
+                          {t('cm.pages_ModuleStorePage.aktif')}
                         </Badge>
                       </CardContent>
                     </Card>

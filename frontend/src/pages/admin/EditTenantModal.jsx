@@ -6,8 +6,10 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Pencil, Settings2, Info } from 'lucide-react';
 import { MODULE_GROUPS } from './tenantConstants';
+import { useTranslation } from 'react-i18next';
 
 const EditTenantModal = ({ open, onOpenChange, tenant, onSuccess }) => {
+  const { t } = useTranslation();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('info');
@@ -105,7 +107,7 @@ const EditTenantModal = ({ open, onOpenChange, tenant, onSuccess }) => {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Pencil className="w-4 h-4 text-indigo-600" />
-            Otel Bilgilerini Düzenle
+            {t('cm.pages_admin_EditTenantModal.otel_bilgilerini_duzenle')}
             {tenant?.property_name && (
               <span className="ml-1 text-sm font-normal text-slate-500">— {tenant.property_name}</span>
             )}
@@ -115,13 +117,13 @@ const EditTenantModal = ({ open, onOpenChange, tenant, onSuccess }) => {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2">
           <TabsList className="grid grid-cols-2 w-full">
             <TabsTrigger value="info" className="gap-1.5"><Info className="w-4 h-4" /> Bilgiler</TabsTrigger>
-            <TabsTrigger value="modules" className="gap-1.5"><Settings2 className="w-4 h-4" /> Modüller</TabsTrigger>
+            <TabsTrigger value="modules" className="gap-1.5"><Settings2 className="w-4 h-4" /> {t('cm.pages_admin_EditTenantModal.moduller')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="info" className="space-y-3 mt-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
-                <Label>Otel Adı</Label>
+                <Label>{t('cm.pages_admin_EditTenantModal.otel_adi')}</Label>
                 <input data-testid="edit-tenant-property-name" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.property_name} onChange={(e) => handleChange('property_name', e.target.value)} />
               </div>
               <div>
@@ -141,24 +143,24 @@ const EditTenantModal = ({ open, onOpenChange, tenant, onSuccess }) => {
                 <input data-testid="edit-tenant-location" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.location} onChange={(e) => handleChange('location', e.target.value)} />
               </div>
               <div>
-                <Label>Toplam Oda</Label>
+                <Label>{t('cm.pages_admin_EditTenantModal.toplam_oda')}</Label>
                 <input data-testid="edit-tenant-rooms" type="number" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.total_rooms} onChange={(e) => handleChange('total_rooms', e.target.value)} />
               </div>
               <div className="col-span-2">
-                <Label>Açıklama</Label>
+                <Label>{t('cm.pages_admin_EditTenantModal.aciklama')}</Label>
                 <input data-testid="edit-tenant-description" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.description} onChange={(e) => handleChange('description', e.target.value)} />
               </div>
             </div>
             {error && <div className="p-2 rounded bg-red-50 text-red-700 text-sm">{error}</div>}
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>İptal</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>{t('cm.pages_admin_EditTenantModal.iptal')}</Button>
               <Button data-testid="edit-tenant-submit" onClick={handleSubmitInfo} disabled={saving}>{saving ? 'Kaydediliyor...' : 'Kaydet'}</Button>
             </div>
           </TabsContent>
 
           <TabsContent value="modules" className="space-y-4 mt-4">
             <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 text-xs text-sky-800">
-              <span className="font-semibold">{enabledCount}</span> modül açık. Kapattığınız modüller / sekmeler bu otelin operatörlerine hiç gözükmez.
+              <span className="font-semibold">{enabledCount}</span> {t('cm.pages_admin_EditTenantModal.modul_acik_kapattiginiz_moduller_sekmele')}
             </div>
 
             <div className="space-y-4">
@@ -187,7 +189,7 @@ const EditTenantModal = ({ open, onOpenChange, tenant, onSuccess }) => {
                           disabled={allOff}
                           className="text-[11px] px-2 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                          Hiçbiri
+                          {t('cm.pages_admin_EditTenantModal.hicbiri')}
                         </button>
                       </div>
                     </div>
@@ -225,7 +227,7 @@ const EditTenantModal = ({ open, onOpenChange, tenant, onSuccess }) => {
             {error && <div className="p-2 rounded bg-red-50 text-red-700 text-sm">{error}</div>}
 
             <div className="flex justify-end gap-2 pt-2 sticky bottom-0 bg-white border-t -mx-6 px-6 py-3">
-              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>İptal</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>{t('cm.pages_admin_EditTenantModal.iptal_25174')}</Button>
               <Button data-testid="edit-tenant-modules-submit" onClick={handleSubmitModules} disabled={saving}>
                 {saving ? 'Kaydediliyor...' : 'Modülleri Kaydet'}
               </Button>

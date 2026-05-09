@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Floating Action Button (FAB) - Quick Actions Menu
  * Positioned at bottom-right, expands on click
  */
 const FloatingActionButton = ({ actions = [] }) => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
 
   if (!actions || actions.length === 0) return null;
@@ -52,7 +54,7 @@ const FloatingActionButton = ({ actions = [] }) => {
             ? 'bg-red-600 hover:bg-red-700 rotate-45' 
             : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 scale-100 hover:scale-110'
         }`}
-        title="Hızlı İşlemler"
+        title={t('cm.components_FloatingActionButton.hizli_islemler')}
       >
         {isOpen ? (
           <X className="w-8 h-8" />

@@ -26,6 +26,7 @@ import {
   ArrowLeft, ShieldAlert, RefreshCw, Loader2, Trash2, Eye,
   CalendarClock, FileLock2, AlertTriangle, X, Pencil, Save, RotateCcw,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const PAGE_SIZE = 50;
 
@@ -50,6 +51,7 @@ function fmtBytes(n) {
 }
 
 function ExpiryBadge({ expiresAt }) {
+  const { t } = useTranslation();
   if (!expiresAt) return <span className="text-gray-400">—</span>;
   let cls = "bg-emerald-50 text-emerald-700 border-emerald-200";
   let label = "süre içinde";
@@ -390,7 +392,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
               ) : (
                 <RefreshCw className="w-3 h-3 mr-1" />
               )}
-              Yenile
+              {t('cm.pages_IdPhotoAdminPage.yenile')}
             </Button>
           </div>
 
@@ -401,13 +403,9 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
           >
             <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
             <p>
-              Burada listelenen kayıtlar misafirlerin kimlik fotoğraflarına ait
-              meta bilgileridir. KVKK kapsamında <strong>her görüntüleme</strong>{" "}
-              ve <strong>her silme işlemi</strong> denetim kaydına yazılır;
-              gereksiz açma / silme yapmayın. Otomatik temizlik kayıtları{" "}
-              <strong>{retentionDays} gün</strong> sonra siler — manuel silmeyi
-              yalnızca yanlış yükleme veya KVKK silme talebi gibi gerekçelerle
-              kullanın.
+              {t('cm.pages_IdPhotoAdminPage.burada_listelenen_kayitlar_misafirlerin_')} <strong>{t('cm.pages_IdPhotoAdminPage.her_goruntuleme')}</strong>{" "}
+              ve <strong>{t('cm.pages_IdPhotoAdminPage.her_silme_islemi')}</strong> {t('cm.pages_IdPhotoAdminPage.denetim_kaydina_yazilir_gereksiz_acma_si')}{" "}
+              <strong>{retentionDays} {t('cm.pages_IdPhotoAdminPage.gun')}</strong> {t('cm.pages_IdPhotoAdminPage.sonra_siler_manuel_silmeyi_yalnizca_yanl')}
             </p>
           </div>
 
@@ -415,7 +413,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
             <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-gray-500">Toplam (filtreli)</p>
+                <p className="text-xs text-gray-500">{t('cm.pages_IdPhotoAdminPage.toplam_filtreli')}</p>
                 <p data-testid="card-total" className="text-2xl font-bold text-gray-900">
                   {total}
                 </p>
@@ -423,7 +421,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
             </Card>
             <Card>
               <CardContent className="p-3">
-                <p className="text-xs text-gray-500">Bu sayfada – bağlı</p>
+                <p className="text-xs text-gray-500">{t('cm.pages_IdPhotoAdminPage.bu_sayfada_bagli')}</p>
                 <p data-testid="card-claimed" className="text-2xl font-bold text-emerald-700">
                   {counters.claimed}
                 </p>
@@ -441,7 +439,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
               <CardContent className="p-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-xs text-gray-500 flex items-center gap-1">
-                    <CalendarClock className="w-3 h-3" /> Saklama süresi
+                    <CalendarClock className="w-3 h-3" /> {t('cm.pages_IdPhotoAdminPage.saklama_suresi')}
                   </p>
                   {!retentionEditing && (
                     <button
@@ -449,8 +447,8 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                       data-testid="retention-edit-btn"
                       onClick={beginEditRetention}
                       className="text-gray-400 hover:text-indigo-600 transition"
-                      title="Saklama süresini düzenle"
-                      aria-label="Saklama süresini düzenle"
+                      title={t('cm.pages_IdPhotoAdminPage.saklama_suresini_duzenle')}
+                      aria-label={t('cm.pages_IdPhotoAdminPage.saklama_suresini_duzenle_37a04')}
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
@@ -463,7 +461,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                       data-testid="card-retention"
                       className="text-2xl font-bold text-indigo-700"
                     >
-                      {retentionDays} gün
+                      {retentionDays} {t('cm.pages_IdPhotoAdminPage.gun_54e78')}
                     </p>
                     <p
                       data-testid="retention-source"
@@ -487,7 +485,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                         disabled={retentionSaving}
                         className="h-7 text-sm w-20 px-1.5"
                       />
-                      <span className="text-xs text-gray-500">gün</span>
+                      <span className="text-xs text-gray-500">{t('cm.pages_IdPhotoAdminPage.gun_54e78')}</span>
                       <Button
                         data-testid="retention-save-btn"
                         size="sm"
@@ -522,11 +520,11 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                         className="text-[10px] text-indigo-600 hover:underline flex items-center gap-1 disabled:opacity-50"
                       >
                         <RotateCcw className="w-3 h-3" />
-                        Sistem varsayılanına dön ({retentionMeta.env_default} gün)
+                        {t('cm.pages_IdPhotoAdminPage.sistem_varsayilanina_don')}{retentionMeta.env_default} {t('cm.pages_IdPhotoAdminPage.gun_4835d')}
                       </button>
                     )}
                     <p className="text-[10px] text-gray-500">
-                      İzin verilen: {retentionMeta.min_days}–{retentionMeta.max_days} gün
+                      {t('cm.pages_IdPhotoAdminPage.izin_verilen')} {retentionMeta.min_days}–{retentionMeta.max_days} {t('cm.pages_IdPhotoAdminPage.gun_54e78')}
                     </p>
                     {retentionError && (
                       <p
@@ -548,7 +546,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Booking kimliği
+                    {t('cm.pages_IdPhotoAdminPage.booking_kimligi')}
                   </label>
                   <Input
                     data-testid="filter-booking-id"
@@ -562,7 +560,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Misafir kimliği
+                    {t('cm.pages_IdPhotoAdminPage.misafir_kimligi')}
                   </label>
                   <Input
                     data-testid="filter-guest-id"
@@ -575,7 +573,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] text-gray-500 block mb-1">Durum</label>
+                  <label className="text-[11px] text-gray-500 block mb-1">{t('cm.pages_IdPhotoAdminPage.durum')}</label>
                   <select
                     data-testid="filter-claimed"
                     value={filters.claimed}
@@ -585,13 +583,13 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                     className="h-8 text-xs rounded border border-input bg-background px-2 w-full"
                   >
                     <option value="all">Hepsi</option>
-                    <option value="true">Bağlı (claim'li)</option>
+                    <option value="true">{t('cm.pages_IdPhotoAdminPage.bagli_claim_li')}</option>
                     <option value="false">Yetim (claim'siz)</option>
                   </select>
                 </div>
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Yüklendi (sonra)
+                    {t('cm.pages_IdPhotoAdminPage.yuklendi_sonra')}
                   </label>
                   <Input
                     data-testid="filter-uploaded-after"
@@ -605,7 +603,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                 </div>
                 <div>
                   <label className="text-[11px] text-gray-500 block mb-1">
-                    Yüklendi (önce)
+                    {t('cm.pages_IdPhotoAdminPage.yuklendi_once')}
                   </label>
                   <Input
                     data-testid="filter-uploaded-before"
@@ -633,7 +631,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                     onClick={handleReset}
                     className="h-8 text-xs"
                   >
-                    Sıfırla
+                    {t('cm.pages_IdPhotoAdminPage.sifirla')}
                   </Button>
                 </div>
               </div>
@@ -664,7 +662,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-gray-700 flex items-center gap-2">
                 <FileLock2 className="w-4 h-4 text-indigo-600" />
-                Bekleyen Kayıtlar
+                {t('cm.pages_IdPhotoAdminPage.bekleyen_kayitlar')}
                 <span
                   data-testid="page-range-label"
                   className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 rounded px-1.5 py-0.5"
@@ -683,7 +681,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                   data-testid="empty-state"
                   className="text-center py-8 text-gray-500 text-sm"
                 >
-                  Filtrelerle eşleşen bekleyen kimlik fotoğrafı yok.
+                  {t('cm.pages_IdPhotoAdminPage.filtrelerle_eslesen_bekleyen_kimlik_foto')}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -693,14 +691,14 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                   >
                     <thead>
                       <tr className="text-left text-gray-500 border-b">
-                        <th className="py-2 pr-2">Yüklendi</th>
+                        <th className="py-2 pr-2">{t('cm.pages_IdPhotoAdminPage.yuklendi')}</th>
                         <th className="py-2 pr-2">Booking</th>
-                        <th className="py-2 pr-2">Misafir</th>
+                        <th className="py-2 pr-2">{t('cm.pages_IdPhotoAdminPage.misafir')}</th>
                         <th className="py-2 pr-2">Check-in</th>
-                        <th className="py-2 pr-2">Durum</th>
+                        <th className="py-2 pr-2">{t('cm.pages_IdPhotoAdminPage.durum_074f4')}</th>
                         <th className="py-2 pr-2">Boyut</th>
                         <th className="py-2 pr-2">Sona erme</th>
-                        <th className="py-2 pr-2 text-right">İşlemler</th>
+                        <th className="py-2 pr-2 text-right">{t('cm.pages_IdPhotoAdminPage.islemler')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -727,7 +725,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                           <td className="py-2 pr-2">
                             {it.claimed ? (
                               <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-1.5 py-0.5">
-                                bağlı
+                                {t('cm.pages_IdPhotoAdminPage.bagli')}
                               </span>
                             ) : (
                               <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5">
@@ -793,7 +791,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                   className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100 text-xs text-gray-600"
                 >
                   <span>
-                    {pageStart}–{pageEnd} arası, toplam {total} kayıt
+                    {pageStart}–{pageEnd} {t('cm.pages_IdPhotoAdminPage.arasi_toplam')} {total} {t('cm.pages_IdPhotoAdminPage.kayit')}
                   </span>
                   <div className="flex gap-2">
                     <Button
@@ -804,7 +802,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                       disabled={!hasPrev || loading}
                       className="h-7 text-xs"
                     >
-                      Önceki
+                      {t('cm.pages_IdPhotoAdminPage.onceki')}
                     </Button>
                     <Button
                       data-testid="pagination-next"
@@ -832,10 +830,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
             </CardHeader>
             <CardContent>
               <p className="text-[11px] text-gray-600 mb-2">
-                Bir misafir KVKK kapsamında verilerinin silinmesini talep
-                ettiğinde, ilgili booking_id <em>ya da</em> guest_id altındaki
-                tüm kimlik fotoğrafları tek seferde silinir. Her silme ayrı bir
-                audit kaydı bırakır.
+                {t('cm.pages_IdPhotoAdminPage.bir_misafir_kvkk_kapsaminda_verilerinin_')} <em>ya da</em> {t('cm.pages_IdPhotoAdminPage.guest_id_altindaki_tum_kimlik_fotografla')}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <Input
@@ -854,7 +849,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                 />
                 <Input
                   data-testid="bulk-reason"
-                  placeholder="Gerekçe (KVKK silme talebi #...)"
+                  placeholder={t('cm.pages_IdPhotoAdminPage.gerekce_kvkk_silme_talebi')}
                   value={bulkReason}
                   onChange={(e) => setBulkReason(e.target.value)}
                   className="h-8 text-xs"
@@ -881,7 +876,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                     data-testid="bulk-result"
                     className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-0.5"
                   >
-                    {bulkResult.deleted}/{bulkResult.matched} kayıt silindi
+                    {bulkResult.deleted}/{bulkResult.matched} {t('cm.pages_IdPhotoAdminPage.kayit_silindi')}
                     {Array.isArray(bulkResult.failed_photo_ids) &&
                     bulkResult.failed_photo_ids.length > 0
                       ? ` · ${bulkResult.failed_photo_ids.length} başarısız`
@@ -918,7 +913,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
             <div className="flex items-start justify-between mb-2">
               <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                 <Trash2 className="w-4 h-4 text-rose-600" />
-                Kimlik fotoğrafını sil
+                {t('cm.pages_IdPhotoAdminPage.kimlik_fotografini_sil')}
               </h3>
               <button
                 type="button"
@@ -942,19 +937,17 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
               ) : null}
             </p>
             <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded p-2 mb-2">
-              Bu işlem geri alınamaz. Şifrelenmiş dosya ve metadata kaydı
-              silinir; KVKK denetimi için audit kaydı bırakılır
-              (<code>action=manual_delete</code>).
+              {t('cm.pages_IdPhotoAdminPage.bu_islem_geri_alinamaz_sifrelenmis_dosya')}<code>action=manual_delete</code>).
             </p>
             <label className="text-[11px] text-gray-600 block mb-1">
-              Silme gerekçesi (zorunlu)
+              {t('cm.pages_IdPhotoAdminPage.silme_gerekcesi_zorunlu')}
             </label>
             <Input
               data-testid="delete-reason-input"
               autoFocus
               value={confirmReason}
               onChange={(e) => setConfirmReason(e.target.value)}
-              placeholder="örn. yanlış yükleme, KVKK silme talebi #2026-..."
+              placeholder={t('cm.pages_IdPhotoAdminPage.orn_yanlis_yukleme_kvkk_silme_talebi_202')}
               className="h-8 text-xs mb-2"
               maxLength={500}
             />
@@ -977,7 +970,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                 disabled={!!deletingId}
                 className="h-8 text-xs"
               >
-                Vazgeç
+                {t('cm.pages_IdPhotoAdminPage.vazgec')}
               </Button>
               <Button
                 data-testid="confirm-delete-btn"
@@ -991,7 +984,7 @@ export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
                 ) : (
                   <Trash2 className="w-3 h-3 mr-1" />
                 )}
-                Sil
+                {t('cm.pages_IdPhotoAdminPage.sil')}
               </Button>
             </div>
           </div>

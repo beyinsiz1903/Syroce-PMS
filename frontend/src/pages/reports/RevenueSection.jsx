@@ -10,6 +10,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { COLORS, formatCurrency, KPICard, CustomTooltip, SectionHeader } from './ReportHelpers';
+import { useTranslation } from 'react-i18next';
 
 const CATEGORY_LABELS = {
   room: 'Konaklama', food: 'Yiyecek', beverage: 'İçecek', minibar: 'Minibar',
@@ -27,6 +28,7 @@ const isoDaysAgo = (n) => {
 const isoToday = () => new Date().toISOString().slice(0, 10);
 
 const CategoryRevenueCard = () => {
+  const { t } = useTranslation();
   const [from, setFrom] = useState(isoDaysAgo(30));
   const [to, setTo] = useState(isoToday());
   const [loading, setLoading] = useState(false);
@@ -57,19 +59,19 @@ const CategoryRevenueCard = () => {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm flex items-center justify-between">
-          <span>Kategori Bazlı Gelir</span>
+          <span>{t('cm.pages_reports_RevenueSection.kategori_bazli_gelir')}</span>
           <div className="flex items-end gap-2">
             <div>
-              <Label className="text-[10px] text-gray-500">Başlangıç</Label>
+              <Label className="text-[10px] text-gray-500">{t('cm.pages_reports_RevenueSection.baslangic')}</Label>
               <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 text-xs w-36" />
             </div>
             <div>
-              <Label className="text-[10px] text-gray-500">Bitiş</Label>
+              <Label className="text-[10px] text-gray-500">{t('cm.pages_reports_RevenueSection.bitis')}</Label>
               <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 text-xs w-36" />
             </div>
             <Button size="sm" variant="outline" onClick={load} disabled={loading} className="h-8">
               <RefreshCw className={`w-3 h-3 mr-1 ${loading ? 'animate-spin' : ''}`} />
-              Yenile
+              {t('cm.pages_reports_RevenueSection.yenile')}
             </Button>
           </div>
         </CardTitle>
@@ -82,17 +84,17 @@ const CategoryRevenueCard = () => {
               <tr>
                 <th className="text-left p-2">Kategori</th>
                 <th className="text-right p-2">Adet</th>
-                <th className="text-right p-2">Ara Toplam</th>
-                <th className="text-right p-2">İndirim</th>
+                <th className="text-right p-2">{t('cm.pages_reports_RevenueSection.ara_toplam')}</th>
+                <th className="text-right p-2">{t('cm.pages_reports_RevenueSection.indirim')}</th>
                 <th className="text-right p-2">Net</th>
                 <th className="text-right p-2">KDV</th>
-                <th className="text-right p-2">Şehir Vergisi</th>
-                <th className="text-right p-2">Toplam</th>
+                <th className="text-right p-2">{t('cm.pages_reports_RevenueSection.sehir_vergisi')}</th>
+                <th className="text-right p-2">{t('cm.pages_reports_RevenueSection.toplam')}</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={8} className="text-center p-6 text-gray-400">Bu tarih aralığında işlem yok</td></tr>
+                <tr><td colSpan={8} className="text-center p-6 text-gray-400">{t('cm.pages_reports_RevenueSection.bu_tarih_araliginda_islem_yok')}</td></tr>
               ) : rows.map((r) => (
                 <tr key={r.category} className="border-t">
                   <td className="p-2 font-medium">{CATEGORY_LABELS[r.category] || r.category}</td>
@@ -129,15 +131,15 @@ const CategoryRevenueCard = () => {
 
 const RevenueSection = ({ data, s, pc, roomTypeData }) => (
   <div className="space-y-6" data-testid="section-revenue">
-    <SectionHeader title="Gelir Raporu" description="Detaylı gelir analizi ve trendler" />
+    <SectionHeader title="Gelir Raporu" description={t('cm.pages_reports_RevenueSection.detayli_gelir_analizi_ve_trendler')} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KPICard title="Bugünkü Gelir" value={s.today_revenue} icon={DollarSign} color="green" />
-      <KPICard title="Haftalık Gelir" value={pc.week_revenue} icon={Calendar} color="blue" />
-      <KPICard title="Aylık Gelir" value={pc.month_revenue} prevValue={pc.prev_month_revenue} icon={TrendingUp} color="purple" />
+      <KPICard title={t('cm.pages_reports_RevenueSection.bugunku_gelir')} value={s.today_revenue} icon={DollarSign} color="green" />
+      <KPICard title={t('cm.pages_reports_RevenueSection.haftalik_gelir')} value={pc.week_revenue} icon={Calendar} color="blue" />
+      <KPICard title={t('cm.pages_reports_RevenueSection.aylik_gelir')} value={pc.month_revenue} prevValue={pc.prev_month_revenue} icon={TrendingUp} color="purple" />
       <KPICard title="F&B Geliri" value={s.fnb_revenue} icon={Utensils} color="amber" />
     </div>
     <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-sm">30 Günlük Gelir Trendi</CardTitle></CardHeader>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">{t('cm.pages_reports_RevenueSection.30_gunluk_gelir_trendi')}</CardTitle></CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={320}>
           <ComposedChart data={data?.revenue_trend || []}>
@@ -156,7 +158,7 @@ const RevenueSection = ({ data, s, pc, roomTypeData }) => (
     <CategoryRevenueCard />
     {roomTypeData.length > 0 && (
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Oda Tipi Bazlı Gelir</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">{t('cm.pages_reports_RevenueSection.oda_tipi_bazli_gelir')}</CardTitle></CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={roomTypeData}>

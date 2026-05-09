@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { QrCode, PlayCircle, StopCircle, Clock, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const QRRoomAccess = () => {
+  const { t } = useTranslation();
   const [activeSessions, setActiveSessions] = useState([]);
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -88,7 +90,7 @@ const QRRoomAccess = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-4">Yükleniyor...</div>;
+    return <div className="text-center py-4">{t('cm.components_QRRoomAccess.yukleniyor')}</div>;
   }
 
   return (
@@ -98,7 +100,7 @@ const QRRoomAccess = () => {
         <CardHeader>
           <CardTitle className="flex items-center text-lg">
             <QrCode className="w-5 h-5 mr-2" />
-            QR ile Oda Girişi
+            {t('cm.components_QRRoomAccess.qr_ile_oda_girisi')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -106,12 +108,12 @@ const QRRoomAccess = () => {
             {scanning ? (
               <div className="animate-pulse">
                 <QrCode className="w-20 h-20 mx-auto text-blue-500 mb-4" />
-                <p className="text-sm text-gray-600">QR kod taranıyor...</p>
+                <p className="text-sm text-gray-600">{t('cm.components_QRRoomAccess.qr_kod_taraniyor')}</p>
               </div>
             ) : (
               <>
                 <QrCode className="w-20 h-20 mx-auto text-gray-400 mb-4" />
-                <p className="text-sm text-gray-600 mb-4">Oda kapısındaki QR kodu tarayın</p>
+                <p className="text-sm text-gray-600 mb-4">{t('cm.components_QRRoomAccess.oda_kapisindaki_qr_kodu_tarayin')}</p>
                 <Button
                   className="bg-blue-600 hover:bg-blue-700"
                   onClick={handleScanQR}
@@ -133,7 +135,7 @@ const QRRoomAccess = () => {
             <CardTitle className="flex items-center justify-between text-lg">
               <span className="flex items-center">
                 <Clock className="w-5 h-5 mr-2" />
-                Aktif Temizlikler
+                {t('cm.components_QRRoomAccess.aktif_temizlikler')}
               </span>
               <Badge className="bg-amber-500">{activeSessions.length}</Badge>
             </CardTitle>
@@ -144,9 +146,9 @@ const QRRoomAccess = () => {
                 <div key={session.id} className="p-4 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-lg">
                   <div className="flex items-start justify-between mb-3">
                     <div>
-                      <div className="font-bold text-lg">Oda {session.room_number}</div>
+                      <div className="font-bold text-lg">{t('cm.components_QRRoomAccess.oda')} {session.room_number}</div>
                       <div className="text-sm text-gray-600">
-                        Başlama: {new Date(session.start_time).toLocaleTimeString('tr-TR', {
+                        {t('cm.components_QRRoomAccess.baslama')} {new Date(session.start_time).toLocaleTimeString('tr-TR', {
                           hour: '2-digit',
                           minute: '2-digit'
                         })}
@@ -167,7 +169,7 @@ const QRRoomAccess = () => {
                       />
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
-                      Standart süre: 30 dakika
+                      {t('cm.components_QRRoomAccess.standart_sure_30_dakika')}
                     </div>
                   </div>
 
@@ -176,7 +178,7 @@ const QRRoomAccess = () => {
                     onClick={() => handleEndCleaning(session)}
                   >
                     <CheckCircle className="w-4 h-4 mr-2" />
-                    Temizliği Bitir
+                    {t('cm.components_QRRoomAccess.temizligi_bitir')}
                   </Button>
                 </div>
               ))}
@@ -192,7 +194,7 @@ const QRRoomAccess = () => {
             <div className="text-3xl font-bold text-blue-600 mb-1">
               {activeSessions.length}
             </div>
-            <div className="text-sm text-gray-600">Bugün tamamlanan oda</div>
+            <div className="text-sm text-gray-600">{t('cm.components_QRRoomAccess.bugun_tamamlanan_oda')}</div>
           </div>
         </CardContent>
       </Card>

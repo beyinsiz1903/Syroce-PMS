@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from 'react-i18next';
 
 export default function PmsLiteOnboarding({ tenant }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const tenantId =
@@ -95,14 +97,14 @@ export default function PmsLiteOnboarding({ tenant }) {
     <div className="mb-6">
       <Card className="rounded-2xl">
         <CardHeader>
-          <CardTitle>Hızlı Kurulum</CardTitle>
+          <CardTitle>{t('cm.components_PmsLiteOnboarding.hizli_kurulum')}</CardTitle>
           <CardDescription>
-            PMS Lite’ı 2 dakikada kurun — sadece temel adımlar.
+            {t('cm.components_PmsLiteOnboarding.pms_lite_i_2_dakikada_kurun_sadece_temel')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span className="font-medium text-gray-900">Adım {current.n}/3</span>
+            <span className="font-medium text-gray-900">{t('cm.components_PmsLiteOnboarding.adim')} {current.n}/3</span>
             <span>•</span>
             <span>{current.title}</span>
           </div>
@@ -144,7 +146,7 @@ export default function PmsLiteOnboarding({ tenant }) {
                 window.location.reload();
               }}
             >
-              Şimdilik Atla
+              {t('cm.components_PmsLiteOnboarding.simdilik_atla')}
             </Button>
           </div>
         </CardContent>

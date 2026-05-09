@@ -17,10 +17,12 @@ import {
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
 import { CalendarGridView } from './rate-manager/CalendarGridView';
 import { StopSalePanel } from './rate-manager/StopSalePanel';
+import { useTranslation } from 'react-i18next';
 
 const UNIFIED_PREFIX = '/channel-manager/unified-rate-manager';
 
 const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeView, setActiveView] = useState('bulk');
@@ -408,9 +410,9 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
       <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="unified_rate_manager">
         <div className="flex flex-col items-center justify-center min-h-[400px] gap-4" data-testid="unified-rate-no-provider">
           <Building2 className="w-16 h-16 text-zinc-300" />
-          <h2 className="text-xl font-semibold text-zinc-600">Aktif Kanal Saglayici Bulunamadi</h2>
+          <h2 className="text-xl font-semibold text-zinc-600">{t('cm.pages_UnifiedRateManager.aktif_kanal_saglayici_bulunamadi')}</h2>
           <p className="text-sm text-zinc-500 text-center max-w-md">
-            Fiyat ve musaitlik yönetimi için once bir kanal saglayici (HotelRunner veya Exely) baglantisi kurulmalidir.
+            {t('cm.pages_UnifiedRateManager.fiyat_ve_musaitlik_yonetimi_icin_once_bi')}
           </p>
         </div>
       </MaybeLayout>
@@ -424,10 +426,10 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold" style={{ fontFamily: 'Space Grotesk' }}>
-              Fiyat & Musaitlik Yönetimi
+              {t('cm.pages_UnifiedRateManager.fiyat_musaitlik_yonetimi')}
             </h1>
             <p className="text-sm text-zinc-500 mt-1">
-              Tüm kanallara ve acentelere tek noktadan fiyat, musaitlik ve kontenjan gönderin
+              {t('cm.pages_UnifiedRateManager.tum_kanallara_ve_acentelere_tek_noktadan')}
             </p>
           </div>
           <div className="flex items-center gap-2" data-testid="unified-push-provider-badges">
@@ -560,7 +562,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
                 <CardContent className="px-4 pb-4 space-y-3">
                   {agencies.length === 0 ? (
                     <p className="text-xs text-zinc-400 text-center py-3">
-                      Henüz aktif acente tanimlanmamis.
+                      {t('cm.pages_UnifiedRateManager.henuz_aktif_acente_tanimlanmamis')}
                     </p>
                   ) : (
                     <>
@@ -588,7 +590,7 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
                                   {agency.name}
                                 </span>
                                 {agency.has_custom_rates && (
-                                  <span className="text-[10px] text-sky-600 font-medium">Özel fiyat</span>
+                                  <span className="text-[10px] text-sky-600 font-medium">{t('cm.pages_UnifiedRateManager.ozel_fiyat')}</span>
                                 )}
                               </div>
                               <span className="text-[10px] text-zinc-400">%{agency.commission_rate}</span>
@@ -625,11 +627,11 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
                       {/* Summary */}
                       {selectedAgencies.size > 0 && (
                         <div className="text-[10px] text-zinc-500 pt-2 border-t border-zinc-100">
-                          Güncelleme yapıldığında seçili {selectedAgencies.size} acenteye
+                          {t('cm.pages_UnifiedRateManager.guncelleme_yapildiginda_secili')} {selectedAgencies.size} acenteye
                           afise fiyat iletilecektir.
                           {agencies.some(a => selectedAgencies.has(a.id) && a.has_custom_rates) && (
                             <span className="block text-sky-600 mt-0.5">
-                              Özel fiyat tanımlı acentelerde indirimli fiyat uygulanir.
+                              {t('cm.pages_UnifiedRateManager.ozel_fiyat_tanimli_acentelerde_indirimli')}
                             </span>
                           )}
                         </div>
@@ -678,7 +680,7 @@ const AgencyOverrideEditor = ({ agency, roomTypes, onSave, onCancel, onDelete, c
         onChange={e => setRoomType(e.target.value)}
         className="w-full text-[10px] h-6 rounded border border-zinc-200 px-1"
       >
-        <option value="*">Tüm oda tipleri</option>
+        <option value="*">{t('cm.pages_UnifiedRateManager.tum_oda_tipleri')}</option>
         {roomTypes.map(rt => (
           <option key={rt.code} value={rt.code}>{rt.name}</option>
         ))}
@@ -704,14 +706,14 @@ const AgencyOverrideEditor = ({ agency, roomTypes, onSave, onCancel, onDelete, c
             onClick={() => onSave(agency.id, roomType, overrideType, value)}
             data-testid={`agency-override-save-${agency.id}`}
           >
-            Kaydet
+            {t('cm.pages_UnifiedRateManager.kaydet')}
           </Button>
           <Button
             size="sm" variant="ghost"
             className="h-5 text-[10px] px-2"
             onClick={onCancel}
           >
-            İptal
+            {t('cm.pages_UnifiedRateManager.iptal')}
           </Button>
         </div>
         {agency.has_custom_rates && (

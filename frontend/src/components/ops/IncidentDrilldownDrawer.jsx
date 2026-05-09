@@ -31,6 +31,7 @@ import {
   Calendar,
   AlertCircle,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
@@ -42,6 +43,7 @@ const getAuthHeaders = () => {
 // ── Helper Components ──────────────────────────────────────────────
 
 const SeverityIcon = ({ severity, className = "w-4 h-4" }) => {
+  const { t } = useTranslation();
   const map = {
     critical: <XCircle className={`${className} text-red-600`} />,
     warning: <AlertTriangle className={`${className} text-amber-600`} />,
@@ -284,7 +286,7 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
             {loading && (
               <div className="flex items-center justify-center py-12">
                 <RefreshCw className="w-6 h-6 animate-spin text-blue-500" />
-                <span className="ml-2 text-gray-600">Yükleniyor...</span>
+                <span className="ml-2 text-gray-600">{t('cm.components_ops_IncidentDrilldownDrawer.yukleniyor')}</span>
               </div>
             )}
 
@@ -300,11 +302,11 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
                 <Card data-testid="timeline-summary-card">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center justify-between">
-                      <span>Özet</span>
+                      <span>{t('cm.components_ops_IncidentDrilldownDrawer.ozet')}</span>
                       <div className="flex items-center gap-2">
                         {summary.is_recovered && (
                           <Badge className="bg-green-100 text-green-800">
-                            <CheckCircle2 className="w-3 h-3 mr-1" /> Çözüldü
+                            <CheckCircle2 className="w-3 h-3 mr-1" /> {t('cm.components_ops_IncidentDrilldownDrawer.cozuldu')}
                           </Badge>
                         )}
                         {summary.is_terminal_failure && (
@@ -322,24 +324,24 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <InfoRow icon={Hash} label="Correlation ID" value={summary.correlation_id} mono />
-                    <InfoRow icon={Calendar} label="Başlangıç" value={new Date(summary.started_at).toLocaleString('tr-TR')} />
-                    <InfoRow icon={Calendar} label="Bitiş" value={new Date(summary.ended_at).toLocaleString('tr-TR')} />
-                    <InfoRow icon={Timer} label="Süre" value={`${summary.duration_seconds} saniye`} />
-                    <InfoRow icon={RotateCcw} label="Retry Sayısı" value={summary.retry_count} />
-                    <InfoRow icon={Activity} label="Event Sayısı" value={summary.event_count} />
+                    <InfoRow icon={Calendar} label={t('cm.components_ops_IncidentDrilldownDrawer.baslangic')} value={new Date(summary.started_at).toLocaleString('tr-TR')} />
+                    <InfoRow icon={Calendar} label={t('cm.components_ops_IncidentDrilldownDrawer.bitis')} value={new Date(summary.ended_at).toLocaleString('tr-TR')} />
+                    <InfoRow icon={Timer} label={t('cm.components_ops_IncidentDrilldownDrawer.sure')} value={`${summary.duration_seconds} saniye`} />
+                    <InfoRow icon={RotateCcw} label={t('cm.components_ops_IncidentDrilldownDrawer.retry_sayisi')} value={summary.retry_count} />
+                    <InfoRow icon={Activity} label={t('cm.components_ops_IncidentDrilldownDrawer.event_sayisi')} value={summary.event_count} />
                     <InfoRow icon={Link2} label="Kanal" value={summary.affected_channel} />
                     <InfoRow icon={User} label="Tenant" value={summary.affected_tenant} />
                     
                     {summary.last_error && (
                       <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                        <p className="text-xs font-medium text-red-700 mb-1">Son Hata:</p>
+                        <p className="text-xs font-medium text-red-700 mb-1">{t('cm.components_ops_IncidentDrilldownDrawer.son_hata')}</p>
                         <p className="text-xs text-red-600 font-mono break-all">{summary.last_error}</p>
                       </div>
                     )}
 
                     <div className="pt-3 flex items-center gap-2">
                       <SeverityBadge severity={summary.max_severity} />
-                      <span className="text-xs text-gray-500">En Yüksek Severity</span>
+                      <span className="text-xs text-gray-500">{t('cm.components_ops_IncidentDrilldownDrawer.en_yuksek_severity')}</span>
                     </div>
                   </CardContent>
                 </Card>
@@ -370,12 +372,12 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
                         {retrying ? (
                           <>
                             <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
-                            Retry Yapılıyor...
+                            {t('cm.components_ops_IncidentDrilldownDrawer.retry_yapiliyor')}
                           </>
                         ) : (
                           <>
                             <RotateCcw className="w-3 h-3 mr-1" />
-                            Şimdi Retry Yap
+                            {t('cm.components_ops_IncidentDrilldownDrawer.simdi_retry_yap')}
                           </>
                         )}
                       </Button>
@@ -389,12 +391,12 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base flex items-center gap-2">
                         <Send className="w-4 h-4" />
-                        Webhook Teslimat Detayı
+                        {t('cm.components_ops_IncidentDrilldownDrawer.webhook_teslimat_detayi')}
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-xs">
                       <div className="flex items-center justify-between">
-                        <span className="text-gray-500">Durum:</span>
+                        <span className="text-gray-500">{t('cm.components_ops_IncidentDrilldownDrawer.durum')}</span>
                         <StatusBadge status={delivery.status} />
                       </div>
                       <InfoRow icon={Link2} label="URL" value={delivery.url} mono />
@@ -404,7 +406,7 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
                       
                       {delivery.attempts && delivery.attempts.length > 0 && (
                         <div className="mt-3 pt-3 border-t">
-                          <p className="text-xs font-medium text-gray-700 mb-2">Deneme Geçmişi:</p>
+                          <p className="text-xs font-medium text-gray-700 mb-2">{t('cm.components_ops_IncidentDrilldownDrawer.deneme_gecmisi')}</p>
                           <div className="space-y-1">
                             {delivery.attempts.map((att, i) => (
                               <div key={i} className="flex items-center justify-between text-[10px] p-1.5 bg-gray-50 rounded">
@@ -438,7 +440,7 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
                       <InfoRow icon={Link2} label="Etkilenen Kanal" value={incidentData.impact.affected_channel} />
                       <div className="flex items-center gap-2">
                         <Bell className="w-3.5 h-3.5 text-gray-400" />
-                        <span className="text-gray-500">Bildirim Gönderildi:</span>
+                        <span className="text-gray-500">{t('cm.components_ops_IncidentDrilldownDrawer.bildirim_gonderildi')}</span>
                         {incidentData.impact.notification_sent ? (
                           <CheckCircle2 className="w-4 h-4 text-green-600" />
                         ) : (
@@ -455,7 +457,7 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base flex items-center gap-2">
                         <ArrowRight className="w-4 h-4" />
-                        Event Timeline ({timeline.length} adım)
+                        Event Timeline ({timeline.length} {t('cm.components_ops_IncidentDrilldownDrawer.adim')}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -479,7 +481,7 @@ const IncidentDrilldownDrawer = ({ open, onClose, correlationId, eventId, onRetr
             {!loading && !error && !summary && incidentData?.event && (
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Tek Event Detayı</CardTitle>
+                  <CardTitle className="text-base">{t('cm.components_ops_IncidentDrilldownDrawer.tek_event_detayi')}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center gap-2">

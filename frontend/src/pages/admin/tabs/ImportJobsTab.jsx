@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PlayCircle, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle, RotateCcw, Server, Settings } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
@@ -13,6 +14,7 @@ const STATUS_STYLES = {
 };
 
 const Badge = ({ status }) => {
+  const { t } = useTranslation();
   const s = STATUS_STYLES[status] || STATUS_STYLES.pending;
   const Icon = s.icon;
   return (
@@ -84,7 +86,7 @@ export default function ImportJobsTab() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-white">Scheduled Import Jobs</h2>
-          <p className="text-sm text-slate-400 mt-0.5">Periyodik rezervasyon cekim işlemleri</p>
+          <p className="text-sm text-slate-400 mt-0.5">{t('cm.pages_admin_tabs_ImportJobsTab.periyodik_rezervasyon_cekim_islemleri')}</p>
         </div>
         <div className="flex gap-2">
           <button data-testid="run-safety-net-btn" onClick={runSafetyNet} disabled={runningSafety}
@@ -150,7 +152,7 @@ export default function ImportJobsTab() {
           <h3 className="text-sm font-semibold text-white">Import Job History ({jobs.length})</h3>
         </div>
         {jobs.length === 0 ? (
-          <div className="px-4 py-8 text-center text-slate-500 text-sm">Henüz import job calismadi</div>
+          <div className="px-4 py-8 text-center text-slate-500 text-sm">{t('cm.pages_admin_tabs_ImportJobsTab.henuz_import_job_calismadi')}</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

@@ -12,7 +12,9 @@ import {
 import { API } from './helpers';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 export function OnlinePaymentTab({ booking, onRefresh }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [revealing, setRevealing] = useState(false);
@@ -119,7 +121,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <CreditCard className="w-5 h-5 text-indigo-600" />
-          <h3 className="text-sm font-semibold text-gray-800">Online Ödeme / Sanal Kart</h3>
+          <h3 className="text-sm font-semibold text-gray-800">{t('cm.pages_reservationdetail_OnlinePaymentTab.online_odeme_sanal_kart')}</h3>
         </div>
         {!hasCard && !showAddForm && (
           <Button
@@ -128,7 +130,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
             className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs"
             data-testid="btn-add-vcc"
           >
-            <Plus className="w-3 h-3 mr-1" /> Kart Ekle
+            <Plus className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_OnlinePaymentTab.kart_ekle')}
           </Button>
         )}
       </div>
@@ -137,15 +139,14 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
       <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
         <Info className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
         <p className="text-xs text-blue-700">
-          OTA ve acente sanal kart bilgileri sifrelenerek saklanir.
-          Güvenlik nedeniyle kart detayları <strong>en fazla 3 kez</strong> goruntulenebilir.
+          {t('cm.pages_reservationdetail_OnlinePaymentTab.ota_ve_acente_sanal_kart_bilgileri_sifre')} <strong>en fazla 3 kez</strong> goruntulenebilir.
         </p>
       </div>
 
       {/* Add Card Form */}
       {showAddForm && !hasCard && (
         <div className="border-2 border-dashed border-indigo-200 rounded-lg p-4 bg-indigo-50/30 space-y-3" data-testid="vcc-add-form">
-          <div className="text-sm font-semibold text-indigo-800">Yeni Kart Bilgisi Ekle</div>
+          <div className="text-sm font-semibold text-indigo-800">{t('cm.pages_reservationdetail_OnlinePaymentTab.yeni_kart_bilgisi_ekle')}</div>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <Label className="text-xs">Kart Sahibi *</Label>
@@ -158,7 +159,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
               />
             </div>
             <div className="col-span-2">
-              <Label className="text-xs">Kart Numarasi *</Label>
+              <Label className="text-xs">{t('cm.pages_reservationdetail_OnlinePaymentTab.kart_numarasi')}</Label>
               <Input
                 value={form.card_number}
                 onChange={e => setForm(p => ({ ...p, card_number: e.target.value }))}
@@ -197,8 +198,8 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
                 data-testid="select-card-type"
               >
                 <option value="virtual">Sanal Kart</option>
-                <option value="credit">Kredi Kartı</option>
-                <option value="debit">Banka Kartı</option>
+                <option value="credit">{t('cm.pages_reservationdetail_OnlinePaymentTab.kredi_karti')}</option>
+                <option value="debit">{t('cm.pages_reservationdetail_OnlinePaymentTab.banka_karti')}</option>
               </select>
             </div>
           </div>
@@ -211,7 +212,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
               data-testid="btn-save-vcc"
             >
               {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Check className="w-3 h-3 mr-1" />}
-              Sifrele ve Kaydet
+              {t('cm.pages_reservationdetail_OnlinePaymentTab.sifrele_ve_kaydet')}
             </Button>
             <Button
               size="sm"
@@ -219,7 +220,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
               onClick={() => setShowAddForm(false)}
               className="h-8 text-xs"
             >
-              İptal
+              {t('cm.pages_reservationdetail_OnlinePaymentTab.iptal')}
             </Button>
           </div>
         </div>
@@ -320,7 +321,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
                   ) : (
                     <Eye className="w-3.5 h-3.5 mr-1.5" />
                   )}
-                  Kart Bilgilerini Görüntüle ({remaining} hak)
+                  {t('cm.pages_reservationdetail_OnlinePaymentTab.kart_bilgilerini_goruntule')}{remaining} hak)
                 </Button>
               )}
               <Button
@@ -353,7 +354,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
               className="h-7 text-xs text-gray-500"
               data-testid="btn-hide-vcc"
             >
-              <EyeOff className="w-3 h-3 mr-1" /> Gizle
+              <EyeOff className="w-3 h-3 mr-1" /> {t('cm.pages_reservationdetail_OnlinePaymentTab.gizle')}
             </Button>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -364,7 +365,7 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
               </div>
             </div>
             <div className="col-span-2">
-              <Label className="text-xs text-gray-500">Kart Numarasi</Label>
+              <Label className="text-xs text-gray-500">{t('cm.pages_reservationdetail_OnlinePaymentTab.kart_numarasi_1f603')}</Label>
               <div className="bg-white border rounded-lg px-3 py-2 text-sm font-mono tracking-wider" data-testid="revealed-card-number">
                 {revealedCard.card?.card_number}
               </div>
@@ -399,8 +400,8 @@ export function OnlinePaymentTab({ booking, onRefresh }) {
       {!hasCard && !showAddForm && (
         <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl" data-testid="vcc-empty-state">
           <CreditCard className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-sm text-gray-500 mb-1">Kayıtlı kart bilgisi bulunamadı</p>
-          <p className="text-xs text-gray-400">OTA veya acente tarafından gonderilen sanal kart bilgilerini ekleyebilirsiniz</p>
+          <p className="text-sm text-gray-500 mb-1">{t('cm.pages_reservationdetail_OnlinePaymentTab.kayitli_kart_bilgisi_bulunamadi')}</p>
+          <p className="text-xs text-gray-400">{t('cm.pages_reservationdetail_OnlinePaymentTab.ota_veya_acente_tarafindan_gonderilen_sa')}</p>
         </div>
       )}
     </div>

@@ -34,23 +34,23 @@ export default function FolioExtractModal(props) {
                     <p className="font-bold">{selectedFolioExtract.folio?.folio_number}</p>
                   </div>
                   <div>
-                    <p className="text-gray-600">Durum:</p>
+                    <p className="text-gray-600">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.durum')}</p>
                     <Badge>{selectedFolioExtract.folio?.status}</Badge>
                   </div>
                   <div>
-                    <p className="text-gray-600">Misafir:</p>
+                    <p className="text-gray-600">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.misafir')}</p>
                     <p className="font-bold">{selectedFolioExtract.guest?.name}</p>
                   </div>
                   <div>
-                    <p className="text-gray-600">Oda:</p>
+                    <p className="text-gray-600">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.oda')}</p>
                     <p className="font-bold">{selectedFolioExtract.booking?.room_number}</p>
                   </div>
                   <div>
-                    <p className="text-gray-600">Giriş:</p>
+                    <p className="text-gray-600">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.giris')}</p>
                     <p>{selectedFolioExtract.booking?.check_in && new Date(selectedFolioExtract.booking.check_in).toLocaleDateString('tr-TR')}</p>
                   </div>
                   <div>
-                    <p className="text-gray-600">Çıkış:</p>
+                    <p className="text-gray-600">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.cikis')}</p>
                     <p>{selectedFolioExtract.booking?.check_out && new Date(selectedFolioExtract.booking.check_out).toLocaleDateString('tr-TR')}</p>
                   </div>
                 </div>
@@ -94,7 +94,7 @@ export default function FolioExtractModal(props) {
             {/* Payments */}
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Ödemeler ({selectedFolioExtract.payments?.length || 0})</CardTitle>
+                <CardTitle className="text-base">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.odemeler')}{selectedFolioExtract.payments?.length || 0})</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {selectedFolioExtract.payments && selectedFolioExtract.payments.length > 0 ? (
@@ -102,7 +102,7 @@ export default function FolioExtractModal(props) {
                     <div key={payment.id} className="p-2 bg-green-50 rounded border border-green-200 text-sm">
                       <div className="flex justify-between items-start">
                         <div>
-                          <p className="font-semibold text-green-700">Ödeme</p>
+                          <p className="font-semibold text-green-700">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.odeme')}</p>
                           <p className="text-xs text-gray-600">
                             {payment.date && new Date(payment.date).toLocaleDateString('tr-TR')} - {payment.payment_method}
                           </p>
@@ -115,7 +115,7 @@ export default function FolioExtractModal(props) {
                     </div>
                   ))
                 ) : (
-                  <p className="text-center text-gray-500 py-4">Ödeme yok</p>
+                  <p className="text-center text-gray-500 py-4">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.odeme_yok')}</p>
                 )}
               </CardContent>
             </Card>
@@ -128,15 +128,15 @@ export default function FolioExtractModal(props) {
               <CardContent>
                 <div className="space-y-2">
                   <div className="flex justify-between">
-                    <span className="text-gray-700">Toplam Harcama:</span>
+                    <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.toplam_harcama')}</span>
                     <span className="font-bold">{formatCurrency(selectedFolioExtract.summary?.total_charges || 0)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-700">Toplam Ödeme:</span>
+                    <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.toplam_odeme')}</span>
                     <span className="font-bold text-green-700">{formatCurrency(selectedFolioExtract.summary?.total_payments || 0)}</span>
                   </div>
                   <div className="flex justify-between pt-2 border-t-2 border-gray-300">
-                    <span className="font-bold text-lg text-gray-900">Kalan Bakiye:</span>
+                    <span className="font-bold text-lg text-gray-900">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.kalan_bakiye')}</span>
                     <span className={`font-bold text-xl ${
                       (selectedFolioExtract.summary?.current_balance || 0) > 0 ? 'text-red-700' : 'text-green-700'
                     }`}>
@@ -150,7 +150,7 @@ export default function FolioExtractModal(props) {
         ) : (
           <div className="text-center py-8">
             <FileText className="w-12 h-12 mx-auto text-gray-300 mb-2" />
-            <p className="text-gray-500">Ekstre yükleniyor...</p>
+            <p className="text-gray-500">{t('cm.components_mobilefinance_dialogs_FolioExtractModal.ekstre_yukleniyor')}</p>
           </div>
         )}
       </DialogContent>

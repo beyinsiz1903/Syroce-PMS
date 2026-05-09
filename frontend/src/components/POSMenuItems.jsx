@@ -23,6 +23,7 @@ import {
 import {
   UtensilsCrossed, RefreshCw, Search, Plus, Pencil, Trash2,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const DEFAULT_CATEGORIES = ['Ana Yemek', 'Baslangic', 'Tatli', 'Icecek', 'Alkollu', 'Atistirmalik'];
 
@@ -38,6 +39,7 @@ const blankForm = {
 };
 
 const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
+  const { t } = useTranslation();
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -155,14 +157,14 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={load}>
               <RefreshCw className="w-4 h-4 mr-2" />
-              Yenile
+              {t('cm.components_POSMenuItems.yenile')}
             </Button>
             {allowEdit && (
               <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" onClick={openNew} data-testid="button-new-menu-item">
                     <Plus className="w-4 h-4 mr-2" />
-                    Yeni Urun
+                    {t('cm.components_POSMenuItems.yeni_urun')}
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-lg">
@@ -177,7 +179,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="col-span-2">
-                        <Label>Urun Adi *</Label>
+                        <Label>{t('cm.components_POSMenuItems.urun_adi')}</Label>
                         <Input
                           value={form.name}
                           onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -210,7 +212,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                         </Select>
                       </div>
                       <div>
-                        <Label>Satış Fiyati (TL) *</Label>
+                        <Label>{t('cm.components_POSMenuItems.satis_fiyati_tl')}</Label>
                         <Input
                           type="number" step="0.01"
                           value={form.price}
@@ -227,7 +229,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                         />
                       </div>
                       <div className="col-span-2">
-                        <Label>Açıklama</Label>
+                        <Label>{t('cm.components_POSMenuItems.aciklama')}</Label>
                         <Textarea
                           rows={2}
                           value={form.description}
@@ -254,7 +256,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
-                      İptal
+                      {t('cm.components_POSMenuItems.iptal')}
                     </Button>
                     <Button onClick={submit} disabled={saving} data-testid="button-save-menu-item">
                       {saving ? 'Kaydediliyor...' : (editing ? 'Guncelle' : 'Ekle')}
@@ -303,7 +305,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
             <UtensilsCrossed className="w-16 h-16 mx-auto mb-3 text-gray-300" />
             <p>Urun yok</p>
             {allowEdit && (
-              <p className="text-sm mt-2">"Yeni Urun" ile menunuze ekleme yapin</p>
+              <p className="text-sm mt-2">{t('cm.components_POSMenuItems.yeni_urun_ile_menunuze_ekleme_yapin')}</p>
             )}
           </div>
         ) : (
@@ -357,7 +359,7 @@ const POSMenuItems = ({ outletId, onItemSelect, allowEdit = true }) => {
                                 <AlertDialogCancel>Vazgec</AlertDialogCancel>
                                 <AlertDialogAction onClick={() => remove(item)}
                                   className="bg-red-600 hover:bg-red-700">
-                                  Sil
+                                  {t('cm.components_POSMenuItems.sil')}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>

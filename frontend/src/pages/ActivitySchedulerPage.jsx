@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { CalendarDays, Plus, RefreshCw, X, Loader2 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const TYPES = ["golf", "tennis", "yoga", "fitness", "bike", "diving", "kids", "other"];
 const HOURS = Array.from({ length: 13 }, (_, i) => 8 + i); // 08:00 → 20:00
@@ -31,6 +32,7 @@ const HOURS = Array.from({ length: 13 }, (_, i) => 8 + i); // 08:00 → 20:00
  * - shadcn/ui ile tutarlı görünüm, toast + dialog
  */
 export default function ActivitySchedulerPage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [tab, setTab] = useState("schedule");
   const [activities, setActivities] = useState([]);
@@ -214,18 +216,18 @@ export default function ActivitySchedulerPage() {
             <CalendarDays className="h-6 w-6" /> Aktivite Takvimi
           </h2>
           <p className="text-sm text-muted-foreground">
-            Golf, tenis, yoga, dalış, çocuk kulübü… Eğitmen / mekan / ekipman atayarak çakışmasız rezervasyon.
+            {t('cm.pages_ActivitySchedulerPage.golf_tenis_yoga_dalis_cocuk_kulubu_egitm')}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={load} disabled={loading} data-testid="button-refresh-activities">
-          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Yenile
+          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> {t('cm.pages_ActivitySchedulerPage.yenile')}
         </Button>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="schedule" data-testid="tab-schedule">Günlük Takvim</TabsTrigger>
-          <TabsTrigger value="activities" data-testid="tab-activities">Aktivite Tanımları</TabsTrigger>
+          <TabsTrigger value="schedule" data-testid="tab-schedule">{t('cm.pages_ActivitySchedulerPage.gunluk_takvim')}</TabsTrigger>
+          <TabsTrigger value="activities" data-testid="tab-activities">{t('cm.pages_ActivitySchedulerPage.aktivite_tanimlari')}</TabsTrigger>
           <TabsTrigger value="resources" data-testid="tab-resources">Kaynaklar</TabsTrigger>
         </TabsList>
 
@@ -234,13 +236,13 @@ export default function ActivitySchedulerPage() {
             <CardHeader>
               <CardTitle>Saatlik Kaynak Takvimi</CardTitle>
               <CardDescription>
-                Boş hücreye tıklayarak yeni rezervasyon ekleyebilirsiniz. Mevcut rezervasyona tıklamak iptal eder.
+                {t('cm.pages_ActivitySchedulerPage.bos_hucreye_tiklayarak_yeni_rezervasyon_')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-end gap-3 flex-wrap">
                 <div>
-                  <Label>Tarih</Label>
+                  <Label>{t('cm.pages_ActivitySchedulerPage.tarih')}</Label>
                   <Input
                     type="date"
                     value={date}
@@ -250,13 +252,13 @@ export default function ActivitySchedulerPage() {
                   />
                 </div>
                 <Button onClick={() => { setBkForm({ activity_id: "", resource_id: "", guest_id: "", starts_at: "", note: "" }); setBookingOpen(true); }}>
-                  <Plus className="h-4 w-4 mr-1" /> Yeni Rezervasyon
+                  <Plus className="h-4 w-4 mr-1" /> {t('cm.pages_ActivitySchedulerPage.yeni_rezervasyon')}
                 </Button>
               </div>
 
               {resources.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  Henüz kaynak tanımlı değil. "Kaynaklar" sekmesinden eğitmen / kort / ekipman ekleyin.
+                  {t('cm.pages_ActivitySchedulerPage.henuz_kaynak_tanimli_degil_kaynaklar_sek')}
                 </div>
               ) : (
                 <div className="overflow-x-auto border rounded">
@@ -291,7 +293,7 @@ export default function ActivitySchedulerPage() {
                                     type="button"
                                     onClick={() => openSlot(r.id, h)}
                                     className="w-full h-full hover:bg-blue-50 transition rounded text-blue-600 opacity-30 hover:opacity-100"
-                                    title="Yeni rezervasyon"
+                                    title={t('cm.pages_ActivitySchedulerPage.yeni_rezervasyon_a7e8c')}
                                   >
                                     +
                                   </button>
@@ -341,15 +343,15 @@ export default function ActivitySchedulerPage() {
               {outOfGrid.length > 0 && (
                 <div className="border rounded p-3 bg-amber-50">
                   <div className="text-xs font-medium mb-2 text-amber-900">
-                    Grid Dışı Rezervasyonlar (08:00 öncesi / 20:00 sonrası)
+                    {t('cm.pages_ActivitySchedulerPage.grid_disi_rezervasyonlar_08_00_oncesi_20')}
                   </div>
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Saat</TableHead>
+                        <TableHead>{t('cm.pages_ActivitySchedulerPage.saat')}</TableHead>
                         <TableHead>Aktivite</TableHead>
                         <TableHead>Kaynak</TableHead>
-                        <TableHead>Misafir</TableHead>
+                        <TableHead>{t('cm.pages_ActivitySchedulerPage.misafir')}</TableHead>
                         <TableHead className="w-[80px]" />
                       </TableRow>
                     </TableHeader>
@@ -387,9 +389,9 @@ export default function ActivitySchedulerPage() {
         <TabsContent value="activities">
           <Card>
             <CardHeader>
-              <CardTitle>Aktivite Tanımları</CardTitle>
+              <CardTitle>{t('cm.pages_ActivitySchedulerPage.aktivite_tanimlari_2c0fd')}</CardTitle>
               <CardDescription>
-                Sunulan aktivite çeşitleri (saat süresi, fiyat, kapasite).
+                {t('cm.pages_ActivitySchedulerPage.sunulan_aktivite_cesitleri_saat_suresi_f')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -413,7 +415,7 @@ export default function ActivitySchedulerPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Süre (dk)</Label>
+                  <Label>{t('cm.pages_ActivitySchedulerPage.sure_dk')}</Label>
                   <Input
                     type="number" min={5}
                     value={actForm.duration_min}
@@ -429,7 +431,7 @@ export default function ActivitySchedulerPage() {
                   />
                 </div>
                 <Button type="submit" data-testid="button-add-activity">
-                  <Plus className="h-4 w-4 mr-1" /> Ekle
+                  <Plus className="h-4 w-4 mr-1" /> {t('cm.pages_ActivitySchedulerPage.ekle')}
                 </Button>
               </form>
 
@@ -438,7 +440,7 @@ export default function ActivitySchedulerPage() {
                   <TableRow>
                     <TableHead>Ad</TableHead>
                     <TableHead className="text-center">Tip</TableHead>
-                    <TableHead className="text-center">Süre</TableHead>
+                    <TableHead className="text-center">{t('cm.pages_ActivitySchedulerPage.sure')}</TableHead>
                     <TableHead className="text-right">Fiyat</TableHead>
                     <TableHead className="text-right">Kapasite</TableHead>
                   </TableRow>
@@ -447,7 +449,7 @@ export default function ActivitySchedulerPage() {
                   {activities.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
-                        Aktivite tanımlı değil.
+                        {t('cm.pages_ActivitySchedulerPage.aktivite_tanimli_degil')}
                       </TableCell>
                     </TableRow>
                   ) : activities.map((a) => (
@@ -472,7 +474,7 @@ export default function ActivitySchedulerPage() {
             <CardHeader>
               <CardTitle>Kaynaklar</CardTitle>
               <CardDescription>
-                Eğitmen, mekan (kort/havuz/sahil), ekipman.
+                {t('cm.pages_ActivitySchedulerPage.egitmen_mekan_kort_havuz_sahil_ekipman')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -488,18 +490,18 @@ export default function ActivitySchedulerPage() {
                   />
                 </div>
                 <div>
-                  <Label>Tür</Label>
+                  <Label>{t('cm.pages_ActivitySchedulerPage.tur')}</Label>
                   <Select value={resForm.kind} onValueChange={(v) => setResForm({ ...resForm, kind: v })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="instructor">Eğitmen</SelectItem>
+                      <SelectItem value="instructor">{t('cm.pages_ActivitySchedulerPage.egitmen')}</SelectItem>
                       <SelectItem value="venue">Mekan</SelectItem>
                       <SelectItem value="equipment">Ekipman</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="md:col-span-2">
-                  <Label>Aktivite tipleri (virgüllü)</Label>
+                  <Label>{t('cm.pages_ActivitySchedulerPage.aktivite_tipleri_virgullu')}</Label>
                   <Input
                     value={resForm.activity_types}
                     onChange={(e) => setResForm({ ...resForm, activity_types: e.target.value })}
@@ -515,7 +517,7 @@ export default function ActivitySchedulerPage() {
                   />
                 </div>
                 <Button type="submit" className="md:col-start-5" data-testid="button-add-resource">
-                  <Plus className="h-4 w-4 mr-1" /> Ekle
+                  <Plus className="h-4 w-4 mr-1" /> {t('cm.pages_ActivitySchedulerPage.ekle_b9fc4')}
                 </Button>
               </form>
 
@@ -523,7 +525,7 @@ export default function ActivitySchedulerPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Ad</TableHead>
-                    <TableHead className="text-center">Tür</TableHead>
+                    <TableHead className="text-center">{t('cm.pages_ActivitySchedulerPage.tur_2f9ca')}</TableHead>
                     <TableHead>Aktiviteler</TableHead>
                     <TableHead className="text-right">Kapasite</TableHead>
                   </TableRow>
@@ -532,7 +534,7 @@ export default function ActivitySchedulerPage() {
                   {resources.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
-                        Kaynak tanımlı değil.
+                        {t('cm.pages_ActivitySchedulerPage.kaynak_tanimli_degil')}
                       </TableCell>
                     </TableRow>
                   ) : resources.map((r) => (
@@ -563,11 +565,11 @@ export default function ActivitySchedulerPage() {
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCancelTarget(null)} disabled={cancelling}>
-              Vazgeç
+              {t('cm.pages_ActivitySchedulerPage.vazgec')}
             </Button>
             <Button variant="destructive" onClick={confirmCancel} disabled={cancelling} data-testid="button-confirm-cancel">
               {cancelling && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              İptal Et
+              {t('cm.pages_ActivitySchedulerPage.iptal_et')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -577,9 +579,9 @@ export default function ActivitySchedulerPage() {
       <Dialog open={bookingOpen} onOpenChange={setBookingOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Yeni Rezervasyon</DialogTitle>
+            <DialogTitle>{t('cm.pages_ActivitySchedulerPage.yeni_rezervasyon_92459')}</DialogTitle>
             <DialogDescription>
-              Aynı kaynak için çakışan saatler backend tarafından reddedilir.
+              {t('cm.pages_ActivitySchedulerPage.ayni_kaynak_icin_cakisan_saatler_backend')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -587,7 +589,7 @@ export default function ActivitySchedulerPage() {
               <Label>Aktivite</Label>
               <Select value={bkForm.activity_id} onValueChange={(v) => setBkForm({ ...bkForm, activity_id: v })}>
                 <SelectTrigger data-testid="select-booking-activity">
-                  <SelectValue placeholder="Aktivite seç" />
+                  <SelectValue placeholder={t('cm.pages_ActivitySchedulerPage.aktivite_sec')} />
                 </SelectTrigger>
                 <SelectContent>
                   {activities.map((a) => (
@@ -600,7 +602,7 @@ export default function ActivitySchedulerPage() {
               <Label>Kaynak</Label>
               <Select value={bkForm.resource_id} onValueChange={(v) => setBkForm({ ...bkForm, resource_id: v })}>
                 <SelectTrigger data-testid="select-booking-resource">
-                  <SelectValue placeholder="Kaynak seç" />
+                  <SelectValue placeholder={t('cm.pages_ActivitySchedulerPage.kaynak_sec')} />
                 </SelectTrigger>
                 <SelectContent>
                   {resources.map((r) => (
@@ -610,7 +612,7 @@ export default function ActivitySchedulerPage() {
               </Select>
             </div>
             <div>
-              <Label>Misafir ID</Label>
+              <Label>{t('cm.pages_ActivitySchedulerPage.misafir_id')}</Label>
               <Input
                 value={bkForm.guest_id}
                 onChange={(e) => setBkForm({ ...bkForm, guest_id: e.target.value })}
@@ -618,7 +620,7 @@ export default function ActivitySchedulerPage() {
               />
             </div>
             <div>
-              <Label>Başlangıç</Label>
+              <Label>{t('cm.pages_ActivitySchedulerPage.baslangic')}</Label>
               <Input
                 type="datetime-local"
                 value={bkForm.starts_at}
@@ -636,7 +638,7 @@ export default function ActivitySchedulerPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBookingOpen(false)} disabled={submittingBk}>
-              <X className="h-4 w-4 mr-1" /> Vazgeç
+              <X className="h-4 w-4 mr-1" /> {t('cm.pages_ActivitySchedulerPage.vazgec_bf814')}
             </Button>
             <Button onClick={submitBooking} disabled={submittingBk} data-testid="button-confirm-booking">
               {submittingBk && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}

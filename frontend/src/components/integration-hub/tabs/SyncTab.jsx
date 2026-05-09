@@ -122,7 +122,7 @@ export default function SyncTab(props) {
                       <AlertOctagon className="w-4 h-4" /> Manual Review Queue ({manualReviewQueue.length})
                     </CardTitle>
                     <CardDescription className="text-rose-400/70 text-xs">
-                      Bu job'lar maksimum retry sayısını aştı ve manuel inceleme gerektiriyor
+                      {t('cm.components_integrationhub_tabs_SyncTab.bu_job_lar_maksimum_retry_sayisini_asti_')}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-2">
@@ -224,7 +224,7 @@ export default function SyncTab(props) {
                       ))}
                     </div>
                   ) : (
-                    <div className="text-center py-8 text-slate-500 text-sm">Henüz sync job yok</div>
+                    <div className="text-center py-8 text-slate-500 text-sm">{t('cm.components_integrationhub_tabs_SyncTab.henuz_sync_job_yok')}</div>
                   )}
                 </CardContent>
               </Card>

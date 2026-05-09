@@ -4,8 +4,10 @@ import { Button } from '@/components/ui/button';
 import { QrCode, Camera, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 
 const QRMaintenanceScanner = () => {
+  const { t } = useTranslation();
   const [scanning, setScanning] = useState(false);
   const [scannedAsset, setScannedAsset] = useState(null);
 
@@ -53,7 +55,7 @@ const QRMaintenanceScanner = () => {
       <CardHeader>
         <CardTitle className="flex items-center text-lg">
           <QrCode className="w-5 h-5 mr-2" />
-          QR ile Bakım Aç
+          {t('cm.components_QRMaintenanceScanner.qr_ile_bakim_ac')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -63,12 +65,12 @@ const QRMaintenanceScanner = () => {
               {scanning ? (
                 <div className="animate-pulse">
                   <Camera className="w-16 h-16 mx-auto text-blue-500" />
-                  <p className="text-sm text-gray-600 mt-4">QR kod taranıyor...</p>
+                  <p className="text-sm text-gray-600 mt-4">{t('cm.components_QRMaintenanceScanner.qr_kod_taraniyor')}</p>
                 </div>
               ) : (
                 <>
                   <QrCode className="w-16 h-16 mx-auto text-gray-400" />
-                  <p className="text-sm text-gray-600 mt-4">Ekipman QR kodunu tarayın</p>
+                  <p className="text-sm text-gray-600 mt-4">{t('cm.components_QRMaintenanceScanner.ekipman_qr_kodunu_tarayin')}</p>
                 </>
               )}
             </div>
@@ -95,7 +97,7 @@ const QRMaintenanceScanner = () => {
                     Tip: {scannedAsset.type}
                   </p>
                   <p className="text-xs text-gray-500">
-                    Son Bakım: {scannedAsset.last_maintenance}
+                    {t('cm.components_QRMaintenanceScanner.son_bakim')} {scannedAsset.last_maintenance}
                   </p>
                 </div>
               </div>
@@ -106,13 +108,13 @@ const QRMaintenanceScanner = () => {
                 variant="outline"
                 onClick={() => setScannedAsset(null)}
               >
-                İptal
+                {t('cm.components_QRMaintenanceScanner.iptal')}
               </Button>
               <Button
                 className="bg-green-600 hover:bg-green-700"
                 onClick={handleCreateTask}
               >
-                Görev Oluştur
+                {t('cm.components_QRMaintenanceScanner.gorev_olustur')}
               </Button>
             </div>
           </div>

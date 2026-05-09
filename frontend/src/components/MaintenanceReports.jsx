@@ -15,8 +15,10 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MaintenanceReports = () => {
+  const { t } = useTranslation();
   const [reportType, setReportType] = useState('weekly'); // weekly or monthly
   const [weeklyReport, setWeeklyReport] = useState(null);
   const [monthlyReport, setMonthlyReport] = useState(null);
@@ -72,7 +74,7 @@ const MaintenanceReports = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-4">Yükleniyor...</div>;
+    return <div className="text-center py-4">{t('cm.components_MaintenanceReports.yukleniyor')}</div>;
   }
 
   const report = reportType === 'weekly' ? weeklyReport : monthlyReport;
@@ -85,7 +87,7 @@ const MaintenanceReports = () => {
           <CardTitle className="flex items-center justify-between text-lg">
             <span className="flex items-center">
               <FileText className="w-5 h-5 mr-2" />
-              Teknik Servis Raporları
+              {t('cm.components_MaintenanceReports.teknik_servis_raporlari')}
             </span>
           </CardTitle>
         </CardHeader>
@@ -96,14 +98,14 @@ const MaintenanceReports = () => {
               onClick={() => setReportType('weekly')}
               className="w-full"
             >
-              Haftalık
+              {t('cm.components_MaintenanceReports.haftalik')}
             </Button>
             <Button
               variant={reportType === 'monthly' ? 'default' : 'outline'}
               onClick={() => setReportType('monthly')}
               className="w-full"
             >
-              Aylık
+              {t('cm.components_MaintenanceReports.aylik')}
             </Button>
           </div>
 
@@ -142,7 +144,7 @@ const MaintenanceReports = () => {
               <div className="text-3xl font-bold text-blue-600">
                 {report.summary.total_tasks}
               </div>
-              <div className="text-xs text-gray-600">Toplam Görev</div>
+              <div className="text-xs text-gray-600">{t('cm.components_MaintenanceReports.toplam_gorev')}</div>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-green-600">
@@ -176,7 +178,7 @@ const MaintenanceReports = () => {
             <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
               <div className="flex items-center space-x-2">
                 <Clock className="w-5 h-5 text-blue-600" />
-                <span className="text-sm font-medium">Ort. Yanıt Süresi</span>
+                <span className="text-sm font-medium">{t('cm.components_MaintenanceReports.ort_yanit_suresi')}</span>
               </div>
               <span className="font-bold text-blue-600">
                 {report.summary.avg_response_time} dk
@@ -187,7 +189,7 @@ const MaintenanceReports = () => {
               <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                 <div className="flex items-center space-x-2">
                   <CheckCircle className="w-5 h-5 text-green-600" />
-                  <span className="text-sm font-medium">Ort. Çözüm Süresi</span>
+                  <span className="text-sm font-medium">{t('cm.components_MaintenanceReports.ort_cozum_suresi')}</span>
                 </div>
                 <span className="font-bold text-green-600">
                   {report.summary.avg_resolution_time} dk
@@ -199,7 +201,7 @@ const MaintenanceReports = () => {
               <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
                 <div className="flex items-center space-x-2">
                   <AlertTriangle className="w-5 h-5 text-red-600" />
-                  <span className="text-sm font-medium">Acil Görevler</span>
+                  <span className="text-sm font-medium">{t('cm.components_MaintenanceReports.acil_gorevler')}</span>
                 </div>
                 <Badge className="bg-red-500">{report.summary.emergency}</Badge>
               </div>
@@ -220,15 +222,15 @@ const MaintenanceReports = () => {
           <CardContent>
             <div className="space-y-2">
               <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                <span className="text-sm">Toplam Maliyet</span>
+                <span className="text-sm">{t('cm.components_MaintenanceReports.toplam_maliyet')}</span>
                 <span className="font-bold text-lg">₺{monthlyReport.costs.total.toLocaleString()}</span>
               </div>
               <div className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
-                <span>Parça Maliyeti</span>
+                <span>{t('cm.components_MaintenanceReports.parca_maliyeti')}</span>
                 <span className="font-medium">₺{monthlyReport.costs.parts.toLocaleString()}</span>
               </div>
               <div className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
-                <span>İşçilik</span>
+                <span>{t('cm.components_MaintenanceReports.iscilik')}</span>
                 <span className="font-medium">₺{monthlyReport.costs.labor.toLocaleString()}</span>
               </div>
             </div>
@@ -239,7 +241,7 @@ const MaintenanceReports = () => {
       {/* By Category */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Kategori Bazlı</CardTitle>
+          <CardTitle className="text-base">{t('cm.components_MaintenanceReports.kategori_bazli')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
@@ -247,7 +249,7 @@ const MaintenanceReports = () => {
               <div key={category} className="p-2 bg-gray-50 rounded-lg">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm font-medium capitalize">{category}</span>
-                  <span className="text-sm font-bold">{data.count} görev</span>
+                  <span className="text-sm font-bold">{data.count} {t('cm.components_MaintenanceReports.gorev')}</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
@@ -256,7 +258,7 @@ const MaintenanceReports = () => {
                   />
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {data.completed} tamamlandı
+                  {data.completed} {t('cm.components_MaintenanceReports.tamamlandi')}
                   {reportType === 'monthly' && data.cost > 0 && ` • ₺${data.cost.toFixed(0)}`}
                 </div>
               </div>
@@ -269,7 +271,7 @@ const MaintenanceReports = () => {
       {reportType === 'weekly' && weeklyReport.top_issues && weeklyReport.top_issues.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">En Sık Sorunlar</CardTitle>
+            <CardTitle className="text-base">{t('cm.components_MaintenanceReports.en_sik_sorunlar')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -288,14 +290,14 @@ const MaintenanceReports = () => {
       {reportType === 'monthly' && monthlyReport.most_active_rooms && monthlyReport.most_active_rooms.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">En Aktif Odalar</CardTitle>
+            <CardTitle className="text-base">{t('cm.components_MaintenanceReports.en_aktif_odalar')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {monthlyReport.most_active_rooms.slice(0, 5).map((room, index) => (
                 <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                   <span className="text-sm font-medium">{room.room}</span>
-                  <Badge className="bg-amber-500">{room.tasks} görev</Badge>
+                  <Badge className="bg-amber-500">{room.tasks} {t('cm.components_MaintenanceReports.gorev_7e401')}</Badge>
                 </div>
               ))}
             </div>

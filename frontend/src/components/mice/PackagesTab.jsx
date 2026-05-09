@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { alertDialog, confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 const PKG_TYPES = [
   { key: 'wedding',    label: 'Düğün' },
@@ -25,6 +26,7 @@ const blank = {
 };
 
 export default function PackagesTab() {
+  const { t } = useTranslation();
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -102,9 +104,9 @@ export default function PackagesTab() {
     <div className="space-y-4">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Düğün, Konferans & Kurumsal Paketler</CardTitle>
+          <CardTitle className="text-base">{t('cm.components_mice_PackagesTab.dugun_konferans_kurumsal_paketler')}</CardTitle>
           <Button size="sm" onClick={() => { setForm(blank); setEditId(null); setShowForm(true); }}>
-            + Yeni Paket
+            {t('cm.components_mice_PackagesTab.yeni_paket')}
           </Button>
         </CardHeader>
         <CardContent className="p-0 overflow-x-auto">
@@ -112,17 +114,17 @@ export default function PackagesTab() {
             <thead className="bg-slate-50 border-b text-left">
               <tr>
                 <th className="p-2">Paket</th>
-                <th className="p-2">Tür</th>
+                <th className="p-2">{t('cm.components_mice_PackagesTab.tur')}</th>
                 <th className="p-2 text-center">Pax</th>
                 <th className="p-2 text-right">Baz</th>
-                <th className="p-2 text-right">Pax Başı</th>
+                <th className="p-2 text-right">{t('cm.components_mice_PackagesTab.pax_basi')}</th>
                 <th className="p-2 text-center">Kalem</th>
-                <th className="p-2">Durum</th>
-                <th className="p-2 text-right">İşlem</th>
+                <th className="p-2">{t('cm.components_mice_PackagesTab.durum')}</th>
+                <th className="p-2 text-right">{t('cm.components_mice_PackagesTab.islem')}</th>
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={8} className="p-6 text-center text-gray-500">Yükleniyor...</td></tr>}
+              {loading && <tr><td colSpan={8} className="p-6 text-center text-gray-500">{t('cm.components_mice_PackagesTab.yukleniyor')}</td></tr>}
               {!loading && packages.length === 0 && (
                 <tr><td colSpan={8} className="p-6 text-center text-gray-500">Paket yok.</td></tr>
               )}
@@ -138,16 +140,16 @@ export default function PackagesTab() {
                   <td className="p-2 text-right">{fmt(p.per_pax_price)}</td>
                   <td className="p-2 text-center">{(p.items || []).length}</td>
                   <td className="p-2">{p.active
-                    ? <Badge className="bg-emerald-100 text-emerald-700">Aktif</Badge>
-                    : <Badge className="bg-gray-100 text-gray-600">Pasif</Badge>}</td>
+                    ? <Badge className="bg-emerald-100 text-emerald-700">{t('cm.components_mice_PackagesTab.aktif')}</Badge>
+                    : <Badge className="bg-gray-100 text-gray-600">{t('cm.components_mice_PackagesTab.pasif')}</Badge>}</td>
                   <td className="p-2 text-right whitespace-nowrap">
                     <Button size="sm" variant="outline"
                             onClick={() => { setQuotePkg(p); setQuote(null); setQuotePax(p.min_pax || 50); }}>
                       Teklif
                     </Button>{' '}
-                    <Button size="sm" variant="outline" onClick={() => edit(p)}>Düzenle</Button>{' '}
+                    <Button size="sm" variant="outline" onClick={() => edit(p)}>{t('cm.components_mice_PackagesTab.duzenle')}</Button>{' '}
                     <Button size="sm" variant="ghost" className="text-rose-600"
-                            onClick={() => remove(p.id)}>Sil</Button>
+                            onClick={() => remove(p.id)}>{t('cm.components_mice_PackagesTab.sil')}</Button>
                   </td>
                 </tr>
               ))}
@@ -166,7 +168,7 @@ export default function PackagesTab() {
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div>
-              <Label>Tür</Label>
+              <Label>{t('cm.components_mice_PackagesTab.tur_2f9ca')}</Label>
               <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -175,7 +177,7 @@ export default function PackagesTab() {
               </Select>
             </div>
             <div className="col-span-2">
-              <Label>Açıklama</Label>
+              <Label>{t('cm.components_mice_PackagesTab.aciklama')}</Label>
               <Textarea value={form.description}
                         onChange={(e) => setForm({ ...form, description: e.target.value })} />
             </div>
@@ -195,27 +197,27 @@ export default function PackagesTab() {
                      onChange={(e) => setForm({ ...form, base_price: e.target.value })} />
             </div>
             <div>
-              <Label>Pax Başı Fiyat (₺)</Label>
+              <Label>{t('cm.components_mice_PackagesTab.pax_basi_fiyat')}</Label>
               <Input type="number" value={form.per_pax_price}
                      onChange={(e) => setForm({ ...form, per_pax_price: e.target.value })} />
             </div>
 
             <div className="col-span-2">
               <div className="flex justify-between items-center mb-2">
-                <Label>Paket Kalemleri (Mekan / Menü / Oda / Ekstra)</Label>
-                <Button size="sm" variant="outline" onClick={addItem}>+ Kalem Ekle</Button>
+                <Label>{t('cm.components_mice_PackagesTab.paket_kalemleri_mekan_menu_oda_ekstra')}</Label>
+                <Button size="sm" variant="outline" onClick={addItem}>{t('cm.components_mice_PackagesTab.kalem_ekle')}</Button>
               </div>
               <div className="space-y-2">
                 {(form.items || []).map((it, i) => (
                   <div key={i} className="grid grid-cols-12 gap-2 items-end p-2 bg-slate-50 rounded">
                     <div className="col-span-2">
-                      <Label className="text-xs">Tür</Label>
+                      <Label className="text-xs">{t('cm.components_mice_PackagesTab.tur_2f9ca')}</Label>
                       <Select value={it.kind} onValueChange={(v) => updItem(i, 'kind', v)}>
                         <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="space">Mekan</SelectItem>
-                          <SelectItem value="menu">Menü</SelectItem>
-                          <SelectItem value="room">Oda</SelectItem>
+                          <SelectItem value="menu">{t('cm.components_mice_PackagesTab.menu')}</SelectItem>
+                          <SelectItem value="room">{t('cm.components_mice_PackagesTab.oda')}</SelectItem>
                           <SelectItem value="resource">Kaynak</SelectItem>
                           <SelectItem value="addon">Ekstra</SelectItem>
                         </SelectContent>
@@ -248,12 +250,12 @@ export default function PackagesTab() {
             <div className="col-span-2 flex items-center gap-2">
               <input type="checkbox" id="active" checked={form.active}
                      onChange={(e) => setForm({ ...form, active: e.target.checked })} />
-              <Label htmlFor="active">Aktif</Label>
+              <Label htmlFor="active">{t('cm.components_mice_PackagesTab.aktif_81c33')}</Label>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowForm(false)}>İptal</Button>
-            <Button onClick={submit} disabled={!form.name}>Kaydet</Button>
+            <Button variant="outline" onClick={() => setShowForm(false)}>{t('cm.components_mice_PackagesTab.iptal')}</Button>
+            <Button onClick={submit} disabled={!form.name}>{t('cm.components_mice_PackagesTab.kaydet')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -277,7 +279,7 @@ export default function PackagesTab() {
                 <div className="flex justify-between"><span>Pax × birim ({quote.pax}):</span> <span>{fmt(quote.breakdown.per_pax_total)}</span></div>
                 <div className="flex justify-between"><span>Kalemler:</span> <span>{fmt(quote.breakdown.items_total)}</span></div>
                 <div className="flex justify-between border-t pt-1 font-bold">
-                  <span>Ara Toplam:</span>
+                  <span>{t('cm.components_mice_PackagesTab.ara_toplam')}</span>
                   <span className="text-emerald-600">{fmt(quote.subtotal)}</span>
                 </div>
               </CardContent></Card>

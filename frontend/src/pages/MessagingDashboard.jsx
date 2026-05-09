@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 // ── HTTP wrapper (axios — silent refresh + uniform error toasts) ────────
 const api = axios.create();
@@ -112,13 +113,14 @@ const CATEGORY_LABELS = {
 
 // ── Health → 3-state badge (Bug #7) ─────────────────────────────────────
 function ConnectionBadge({ provider }) {
+  const { t } = useTranslation();
   if (!provider) {
-    return <StatusBadge intent="neutral" icon={AlertTriangle}>Yapılandırılmamış</StatusBadge>;
+    return <StatusBadge intent="neutral" icon={AlertTriangle}>{t('cm.pages_MessagingDashboard.yapilandirilmamis')}</StatusBadge>;
   }
   const h = provider.health_status;
-  if (h === 'healthy') return <StatusBadge intent="success" icon={CheckCircle2}>Bağlı</StatusBadge>;
+  if (h === 'healthy') return <StatusBadge intent="success" icon={CheckCircle2}>{t('cm.pages_MessagingDashboard.bagli')}</StatusBadge>;
   if (h === 'unknown' || h == null) return <StatusBadge intent="warning" icon={Clock}>Test Edilmedi</StatusBadge>;
-  return <StatusBadge intent="danger" icon={XCircle}>Bağlantı Yok</StatusBadge>;
+  return <StatusBadge intent="danger" icon={XCircle}>{t('cm.pages_MessagingDashboard.baglanti_yok')}</StatusBadge>;
 }
 
 // ════════════════════════════════════════════════
@@ -228,7 +230,7 @@ function SettingsTab({ onChanged }) {
               <div className="w-9 h-9 rounded-lg bg-sky-50 flex items-center justify-center">
                 <Mail className="h-4 w-4 text-sky-600" />
               </div>
-              <h3 className="text-lg font-semibold text-slate-900">E-posta (SMTP) Ayarları</h3>
+              <h3 className="text-lg font-semibold text-slate-900">{t('cm.pages_MessagingDashboard.e_posta_smtp_ayarlari')}</h3>
             </div>
             <div className="flex items-center gap-2">
               <ConnectionBadge provider={settings?.email} />
@@ -247,23 +249,23 @@ function SettingsTab({ onChanged }) {
                 onChange={(e) => setEmailForm((p) => ({ ...p, smtp_port: parseInt(e.target.value, 10) || 587 }))} />
             </div>
             <div>
-              <Label>Kullanıcı Adı</Label>
+              <Label>{t('cm.pages_MessagingDashboard.kullanici_adi')}</Label>
               <Input data-testid="smtp-username" placeholder="email@domain.com" value={emailForm.smtp_username}
                 onChange={(e) => setEmailForm((p) => ({ ...p, smtp_username: e.target.value }))} />
             </div>
             <div>
-              <Label>Şifre {settings?.email && <span className="text-xs text-slate-400 font-normal">(Boş bırakırsanız mevcut şifre korunur)</span>}</Label>
+              <Label>{t('cm.pages_MessagingDashboard.sifre')} {settings?.email && <span className="text-xs text-slate-400 font-normal">{t('cm.pages_MessagingDashboard.bos_birakirsaniz_mevcut_sifre_korunur')}</span>}</Label>
               <Input data-testid="smtp-password" type="password" placeholder="••••••••" value={emailForm.smtp_password}
                 onChange={(e) => setEmailForm((p) => ({ ...p, smtp_password: e.target.value }))} />
             </div>
             <div>
-              <Label>Gönderen E-posta</Label>
+              <Label>{t('cm.pages_MessagingDashboard.gonderen_e_posta')}</Label>
               <Input data-testid="smtp-from-email" placeholder="info@oteliniz.com" value={emailForm.from_email}
                 onChange={(e) => setEmailForm((p) => ({ ...p, from_email: e.target.value }))} />
             </div>
             <div>
-              <Label>Gönderen Adı</Label>
-              <Input data-testid="smtp-from-name" placeholder="Otel Adınız" value={emailForm.from_name}
+              <Label>{t('cm.pages_MessagingDashboard.gonderen_adi')}</Label>
+              <Input data-testid="smtp-from-name" placeholder={t('cm.pages_MessagingDashboard.otel_adiniz')} value={emailForm.from_name}
                 onChange={(e) => setEmailForm((p) => ({ ...p, from_name: e.target.value }))} />
             </div>
           </div>
@@ -278,17 +280,17 @@ function SettingsTab({ onChanged }) {
             </div>
             <div className="flex items-center gap-2">
               <Switch checked={emailForm.enabled} onCheckedChange={(v) => setEmailForm((p) => ({ ...p, enabled: v }))} />
-              <Label>Aktif</Label>
+              <Label>{t('cm.pages_MessagingDashboard.aktif')}</Label>
             </div>
           </div>
           <div className="flex gap-2 mt-4">
             <Button data-testid="save-email-btn" onClick={saveEmail} disabled={saving}>
               {saving && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
-              Kaydet
+              {t('cm.pages_MessagingDashboard.kaydet')}
             </Button>
           </div>
           <p className="text-xs text-slate-500 mt-2">
-            Sandbox modunda gerçek e-posta gönderilmez, simüle edilir. Canlı kullanım için kapatın.
+            {t('cm.pages_MessagingDashboard.sandbox_modunda_gercek_e_posta_gonderilm')}
           </p>
         </CardContent>
       </Card>
@@ -301,7 +303,7 @@ function SettingsTab({ onChanged }) {
               <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center">
                 <MessageSquare className="h-4 w-4 text-emerald-600" />
               </div>
-              <h3 className="text-lg font-semibold text-slate-900">WhatsApp Business API Ayarları</h3>
+              <h3 className="text-lg font-semibold text-slate-900">{t('cm.pages_MessagingDashboard.whatsapp_business_api_ayarlari')}</h3>
             </div>
             <div className="flex items-center gap-2">
               <ConnectionBadge provider={settings?.whatsapp} />
@@ -310,7 +312,7 @@ function SettingsTab({ onChanged }) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label>Access Token {settings?.whatsapp && <span className="text-xs text-slate-400 font-normal">(Boş = korunur)</span>}</Label>
+              <Label>Access Token {settings?.whatsapp && <span className="text-xs text-slate-400 font-normal">{t('cm.pages_MessagingDashboard.bos_korunur')}</span>}</Label>
               <Input data-testid="wa-access-token" type="password" placeholder="Meta Business API Token" value={waForm.access_token}
                 onChange={(e) => setWaForm((p) => ({ ...p, access_token: e.target.value }))} />
             </div>
@@ -320,23 +322,22 @@ function SettingsTab({ onChanged }) {
                 onChange={(e) => setWaForm((p) => ({ ...p, phone_number_id: e.target.value }))} />
             </div>
             <div>
-              <Label>İşletme Adı</Label>
+              <Label>{t('cm.pages_MessagingDashboard.isletme_adi')}</Label>
               <Input data-testid="wa-business-name" placeholder="Otel WhatsApp" value={waForm.business_name}
                 onChange={(e) => setWaForm((p) => ({ ...p, business_name: e.target.value }))} />
             </div>
             <div>
-              <Label>Webhook Verify Token {settings?.whatsapp && <span className="text-xs text-slate-400 font-normal">(Boş = korunur)</span>}</Label>
-              <Input data-testid="wa-webhook-verify" type="password" placeholder="Meta panelinde belirlediğiniz değer" value={waForm.webhook_verify_token}
+              <Label>Webhook Verify Token {settings?.whatsapp && <span className="text-xs text-slate-400 font-normal">{t('cm.pages_MessagingDashboard.bos_korunur_fa8ab')}</span>}</Label>
+              <Input data-testid="wa-webhook-verify" type="password" placeholder={t('cm.pages_MessagingDashboard.meta_panelinde_belirlediginiz_deger')} value={waForm.webhook_verify_token}
                 onChange={(e) => setWaForm((p) => ({ ...p, webhook_verify_token: e.target.value }))} />
             </div>
             <div className="md:col-span-2">
-              <Label>App Secret (HMAC) {settings?.whatsapp && <span className="text-xs text-slate-400 font-normal">(Boş = korunur)</span>}</Label>
+              <Label>App Secret (HMAC) {settings?.whatsapp && <span className="text-xs text-slate-400 font-normal">{t('cm.pages_MessagingDashboard.bos_korunur_fa8ab')}</span>}</Label>
               <Input data-testid="wa-app-secret" type="password" placeholder="Meta App Settings → App Secret" value={waForm.app_secret}
                 onChange={(e) => setWaForm((p) => ({ ...p, app_secret: e.target.value }))} />
               <p className="text-xs text-slate-500 mt-1 flex items-start gap-1">
                 <Shield className="h-3 w-3 mt-0.5 text-amber-600 flex-shrink-0" />
-                Webhook Verify Token + App Secret olmadan Meta delivery / read / opened
-                event'leri gelmez. İkisini de Meta App panelinden alın.
+                {t('cm.pages_MessagingDashboard.webhook_verify_token_app_secret_olmadan_')}
               </p>
             </div>
           </div>
@@ -347,24 +348,24 @@ function SettingsTab({ onChanged }) {
             </div>
             <div className="flex items-center gap-2">
               <Switch checked={waForm.enabled} onCheckedChange={(v) => setWaForm((p) => ({ ...p, enabled: v }))} />
-              <Label>Aktif</Label>
+              <Label>{t('cm.pages_MessagingDashboard.aktif_81c33')}</Label>
             </div>
           </div>
           <div className="flex gap-2 mt-4">
             <Button data-testid="save-whatsapp-btn" onClick={saveWhatsApp} disabled={saving}>
               {saving && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
-              Kaydet
+              {t('cm.pages_MessagingDashboard.kaydet_a9270')}
             </Button>
           </div>
           <p className="text-xs text-slate-500 mt-2">
-            Meta Business panelinden Token, Phone Number ID, Webhook Verify Token ve App Secret bilgilerinizi alın.
+            {t('cm.pages_MessagingDashboard.meta_business_panelinden_token_phone_num')}
           </p>
         </CardContent>
       </Card>
 
       <div className="flex gap-2">
         <Button data-testid="test-connection-btn" variant="outline" onClick={testConnection}>
-          <TestTube className="h-4 w-4 mr-1.5" /> Bağlantı Testi
+          <TestTube className="h-4 w-4 mr-1.5" /> {t('cm.pages_MessagingDashboard.baglanti_testi')}
         </Button>
       </div>
     </div>
@@ -457,17 +458,17 @@ function TemplatesTab() {
           ))}
         </div>
         <Button data-testid="create-template-btn" size="sm" onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-1.5" /> Yeni Şablon
+          <Plus className="h-4 w-4 mr-1.5" /> {t('cm.pages_MessagingDashboard.yeni_sablon')}
         </Button>
       </div>
 
       {templates.length === 0 ? (
         <Card><CardContent className="py-10 text-center text-slate-500">
           <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
-          <p className="font-medium">Henüz şablon yok</p>
-          <p className="text-xs mt-1">Otomasyon ve hızlı gönderim için ilk şablonunuzu oluşturun.</p>
+          <p className="font-medium">{t('cm.pages_MessagingDashboard.henuz_sablon_yok')}</p>
+          <p className="text-xs mt-1">{t('cm.pages_MessagingDashboard.otomasyon_ve_hizli_gonderim_icin_ilk_sab')}</p>
           <Button size="sm" className="mt-3" onClick={openCreate}>
-            <Plus className="h-4 w-4 mr-1.5" /> İlk şablonu oluştur
+            <Plus className="h-4 w-4 mr-1.5" /> {t('cm.pages_MessagingDashboard.ilk_sablonu_olustur')}
           </Button>
         </CardContent></Card>
       ) : (
@@ -520,8 +521,8 @@ function TemplatesTab() {
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>Şablon Adı</Label>
-              <Input data-testid="template-name" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="Hoş Geldiniz Mesajı" />
+              <Label>{t('cm.pages_MessagingDashboard.sablon_adi')}</Label>
+              <Input data-testid="template-name" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder={t('cm.pages_MessagingDashboard.hos_geldiniz_mesaji')} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -549,19 +550,19 @@ function TemplatesTab() {
             {form.channel === 'email' && (
               <div>
                 <Label>Konu</Label>
-                <Input data-testid="template-subject" value={form.subject} onChange={(e) => setForm((p) => ({ ...p, subject: e.target.value }))} placeholder="Rezervasyon Onayınız" />
+                <Input data-testid="template-subject" value={form.subject} onChange={(e) => setForm((p) => ({ ...p, subject: e.target.value }))} placeholder={t('cm.pages_MessagingDashboard.rezervasyon_onayiniz')} />
               </div>
             )}
             <div>
-              <Label>Mesaj İçeriği</Label>
+              <Label>{t('cm.pages_MessagingDashboard.mesaj_icerigi')}</Label>
               <Textarea data-testid="template-body" className="min-h-[120px]" value={form.body_template}
                 onChange={(e) => setForm((p) => ({ ...p, body_template: e.target.value }))}
-                placeholder="Merhaba {{misafir_adı}}, otelimize hoş geldiniz!" />
-              <p className="text-xs text-slate-500 mt-1">Değişken kullanımı: {'{{degisken_adi}}'} — Türkçe karakterler desteklenir.</p>
+                placeholder={t('cm.pages_MessagingDashboard.merhaba_misafir_adi_otelimize_hos_geldin')} />
+              <p className="text-xs text-slate-500 mt-1">{t('cm.pages_MessagingDashboard.degisken_kullanimi')} {'{{degisken_adi}}'} {t('cm.pages_MessagingDashboard.turkce_karakterler_desteklenir')}</p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowCreate(false); setEditTemplate(null); }}>İptal</Button>
+            <Button variant="outline" onClick={() => { setShowCreate(false); setEditTemplate(null); }}>{t('cm.pages_MessagingDashboard.iptal')}</Button>
             <Button data-testid="template-save-btn" onClick={editTemplate ? handleUpdate : handleCreate}>
               {editTemplate ? 'Güncelle' : 'Oluştur'}
             </Button>
@@ -682,11 +683,11 @@ function SendTab() {
           </div>
 
           <div>
-            <Label>Şablon (Opsiyonel)</Label>
+            <Label>{t('cm.pages_MessagingDashboard.sablon_opsiyonel')}</Label>
             <Select value={form.template_id || 'none'} onValueChange={selectTemplate}>
-              <SelectTrigger data-testid="send-template"><SelectValue placeholder="Şablon seçin veya serbest yazın" /></SelectTrigger>
+              <SelectTrigger data-testid="send-template"><SelectValue placeholder={t('cm.pages_MessagingDashboard.sablon_secin_veya_serbest_yazin')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Şablon kullanma</SelectItem>
+                <SelectItem value="none">{t('cm.pages_MessagingDashboard.sablon_kullanma')}</SelectItem>
                 {filteredTemplates.map((t) => (
                   <SelectItem key={t.id} value={t.id}>{t.name} ({CATEGORY_LABELS[t.category] || t.category})</SelectItem>
                 ))}
@@ -696,7 +697,7 @@ function SendTab() {
 
           {selectedTemplate && selectedTemplate.variables?.length > 0 && (
             <div className="bg-slate-50 p-3 rounded-lg space-y-2">
-              <Label className="text-sm font-medium">Değişkenler</Label>
+              <Label className="text-sm font-medium">{t('cm.pages_MessagingDashboard.degiskenler')}</Label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {selectedTemplate.variables.map((v) => (
                   <div key={v}>
@@ -718,7 +719,7 @@ function SendTab() {
           )}
 
           <div>
-            <Label>Mesaj İçeriği</Label>
+            <Label>{t('cm.pages_MessagingDashboard.mesaj_icerigi_e9429')}</Label>
             <Textarea data-testid="send-body" className="min-h-[100px]" value={form.body}
               onChange={(e) => setForm((p) => ({ ...p, body: e.target.value }))}
               placeholder={form.channel === 'email' ? 'HTML veya düz metin...' : 'Mesajınızı yazın...'} />
@@ -731,13 +732,12 @@ function SendTab() {
             disabled={sending || !recipientCheck.ok || (!form.body && !form.template_id)}
           >
             {sending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
-            Mesaj Gönder
+            {t('cm.pages_MessagingDashboard.mesaj_gonder')}
           </Button>
           {form.channel === 'whatsapp' && (
             <p className="text-xs text-slate-500 flex items-start gap-1">
               <Shield className="h-3 w-3 mt-0.5 text-amber-600 flex-shrink-0" />
-              İlk temas / 24 saatlik konuşma penceresi dışında Meta yalnızca onaylı template (HSM) kabul eder.
-              Serbest mesaj reddedilebilir; bu durumda Şablonlar sekmesinden Meta-onaylı bir template kullanın.
+              {t('cm.pages_MessagingDashboard.ilk_temas_24_saatlik_konusma_penceresi_d')}
             </p>
           )}
         </CardContent>
@@ -792,7 +792,7 @@ function DeliveryLogsTab() {
             </Button>
           ))}
           <Button size="sm" variant="outline" onClick={load}>
-            <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+            <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_MessagingDashboard.yenile')}
           </Button>
         </div>
       </div>
@@ -801,7 +801,7 @@ function DeliveryLogsTab() {
       ) : logs.length === 0 ? (
         <Card><CardContent className="py-10 text-center text-slate-500">
           <Clock className="h-8 w-8 mx-auto mb-2 opacity-40" />
-          <p>Bu filtre için kayıt yok.</p>
+          <p>{t('cm.pages_MessagingDashboard.bu_filtre_icin_kayit_yok')}</p>
         </CardContent></Card>
       ) : (
         <div className="space-y-2">
@@ -827,7 +827,7 @@ function DeliveryLogsTab() {
                     {STATUS_LABELS[l.status] || l.status}
                   </StatusBadge>
                   {l.status === 'failed' && l.retry_count < (l.max_retries || 3) && (
-                    <Button size="sm" variant="ghost" onClick={() => retry(l.id)} title="Yeniden gönder">
+                    <Button size="sm" variant="ghost" onClick={() => retry(l.id)} title={t('cm.pages_MessagingDashboard.yeniden_gonder')}>
                       <RefreshCw className="h-3 w-3" />
                     </Button>
                   )}
@@ -867,17 +867,17 @@ function MetricsTab() {
   return (
     <div className="space-y-4" data-testid="metrics-tab">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard icon={BarChart3} label="Toplam Mesaj" value={metrics.total_messages} intent="default" />
-        <KpiCard icon={CheckCircle2} label="Başarılı" value={totalSent} intent="success" />
-        <KpiCard icon={XCircle} label="Başarısız" value={totalFailed} intent="danger" />
-        <KpiCard icon={Sparkles} label="Başarı Oranı" value={`%${successRate}`} intent={successRate >= 90 ? 'success' : successRate >= 60 ? 'warning' : 'danger'} />
+        <KpiCard icon={BarChart3} label={t('cm.pages_MessagingDashboard.toplam_mesaj')} value={metrics.total_messages} intent="default" />
+        <KpiCard icon={CheckCircle2} label={t('cm.pages_MessagingDashboard.basarili')} value={totalSent} intent="success" />
+        <KpiCard icon={XCircle} label={t('cm.pages_MessagingDashboard.basarisiz')} value={totalFailed} intent="danger" />
+        <KpiCard icon={Sparkles} label={t('cm.pages_MessagingDashboard.basari_orani')} value={`%${successRate}`} intent={successRate >= 90 ? 'success' : successRate >= 60 ? 'warning' : 'danger'} />
       </div>
 
-      <h3 className="text-base font-semibold mt-4 text-slate-900">Kanal Bazlı Dağılım</h3>
+      <h3 className="text-base font-semibold mt-4 text-slate-900">{t('cm.pages_MessagingDashboard.kanal_bazli_dagilim')}</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {channels.length === 0 && (
           <Card className="md:col-span-2"><CardContent className="py-8 text-center text-slate-500">
-            <p>Bu dönem için kanal verisi yok.</p>
+            <p>{t('cm.pages_MessagingDashboard.bu_donem_icin_kanal_verisi_yok')}</p>
           </CardContent></Card>
         )}
         {channels.map(([ch, stats]) => {
@@ -895,11 +895,11 @@ function MetricsTab() {
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="bg-emerald-50 rounded p-2">
                     <p className="text-sm font-bold text-emerald-700">{(stats.sent || 0) + (stats.delivered || 0)}</p>
-                    <p className="text-[10px] text-emerald-600">Gönderildi</p>
+                    <p className="text-[10px] text-emerald-600">{t('cm.pages_MessagingDashboard.gonderildi')}</p>
                   </div>
                   <div className="bg-rose-50 rounded p-2">
                     <p className="text-sm font-bold text-rose-700">{stats.failed || 0}</p>
-                    <p className="text-[10px] text-rose-600">Başarısız</p>
+                    <p className="text-[10px] text-rose-600">{t('cm.pages_MessagingDashboard.basarisiz_3260d')}</p>
                   </div>
                   <div className="bg-amber-50 rounded p-2">
                     <p className="text-sm font-bold text-amber-700">{stats.queued || 0}</p>
@@ -911,7 +911,7 @@ function MetricsTab() {
           );
         })}
       </div>
-      <p className="text-xs text-slate-500">Son {metrics.period_days} günlük veriler · Kuyrukta toplam: {totalQueued}</p>
+      <p className="text-xs text-slate-500">Son {metrics.period_days} {t('cm.pages_MessagingDashboard.gunluk_veriler_kuyrukta_toplam')} {totalQueued}</p>
     </div>
   );
 }
@@ -1012,10 +1012,10 @@ function AutomationTab() {
   return (
     <div className="space-y-4" data-testid="automation-tab">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard icon={Zap} label="Toplam Kural" value={rules.length} intent="default" />
-        <KpiCard icon={CheckCircle2} label="Aktif" value={rules.filter((r) => r.enabled).length} intent="success" />
-        <KpiCard icon={Send} label="Toplam Gönderim" value={rules.reduce((a, r) => a + (r.total_sent || 0), 0)} intent="info" />
-        <KpiCard icon={XCircle} label="Başarısız" value={rules.reduce((a, r) => a + (r.total_failed || 0), 0)} intent="danger" />
+        <KpiCard icon={Zap} label={t('cm.pages_MessagingDashboard.toplam_kural')} value={rules.length} intent="default" />
+        <KpiCard icon={CheckCircle2} label={t('cm.pages_MessagingDashboard.aktif_81c33')} value={rules.filter((r) => r.enabled).length} intent="success" />
+        <KpiCard icon={Send} label={t('cm.pages_MessagingDashboard.toplam_gonderim')} value={rules.reduce((a, r) => a + (r.total_sent || 0), 0)} intent="info" />
+        <KpiCard icon={XCircle} label={t('cm.pages_MessagingDashboard.basarisiz_3260d')} value={rules.reduce((a, r) => a + (r.total_failed || 0), 0)} intent="danger" />
       </div>
 
       {noTemplates && (
@@ -1023,25 +1023,25 @@ function AutomationTab() {
           <CardContent className="py-3 flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-amber-900">Henüz şablon yok</p>
-              <p className="text-xs text-amber-700">Otomasyon kuralı oluşturmak için önce Şablonlar sekmesinden bir şablon ekleyin.</p>
+              <p className="text-sm font-medium text-amber-900">{t('cm.pages_MessagingDashboard.henuz_sablon_yok_78b56')}</p>
+              <p className="text-xs text-amber-700">{t('cm.pages_MessagingDashboard.otomasyon_kurali_olusturmak_icin_once_sa')}</p>
             </div>
           </CardContent>
         </Card>
       )}
 
       <div className="flex justify-between items-center">
-        <h3 className="font-semibold text-slate-900">Otomasyon Kuralları</h3>
+        <h3 className="font-semibold text-slate-900">{t('cm.pages_MessagingDashboard.otomasyon_kurallari')}</h3>
         <Button data-testid="create-automation-btn" size="sm" onClick={openCreate} disabled={noTemplates}>
-          <Plus className="h-4 w-4 mr-1.5" /> Yeni Kural
+          <Plus className="h-4 w-4 mr-1.5" /> {t('cm.pages_MessagingDashboard.yeni_kural')}
         </Button>
       </div>
 
       {rules.length === 0 ? (
         <Card><CardContent className="py-10 text-center text-slate-500">
           <Zap className="h-8 w-8 mx-auto mb-2 opacity-40" />
-          <p className="font-medium">Henüz otomasyon kuralı yok</p>
-          <p className="text-xs mt-1">Check-in/check-out olaylarında otomatik mesaj göndermek için ilk kuralınızı oluşturun.</p>
+          <p className="font-medium">{t('cm.pages_MessagingDashboard.henuz_otomasyon_kurali_yok')}</p>
+          <p className="text-xs mt-1">{t('cm.pages_MessagingDashboard.check_in_check_out_olaylarinda_otomatik_')}</p>
         </CardContent></Card>
       ) : (
         <div className="space-y-2">
@@ -1063,13 +1063,13 @@ function AutomationTab() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm text-slate-900">{r.name}</p>
                       <p className="text-xs text-slate-500 truncate">
-                        Şablon: {tmpl?.name || 'Bilinmiyor'}
+                        {t('cm.pages_MessagingDashboard.sablon')} {tmpl?.name || 'Bilinmiyor'}
                         {r.delay_minutes > 0 && ` · ${r.delay_minutes} dk gecikme`}
                       </p>
                     </div>
                     <div className="text-right text-xs text-slate-500 hidden md:block">
-                      <span className="text-emerald-600 font-medium">{r.total_sent || 0}</span> gönderim
-                      {(r.total_failed || 0) > 0 && <span className="text-rose-500 ml-2">{r.total_failed} başarısız</span>}
+                      <span className="text-emerald-600 font-medium">{r.total_sent || 0}</span> {t('cm.pages_MessagingDashboard.gonderim')}
+                      {(r.total_failed || 0) > 0 && <span className="text-rose-500 ml-2">{r.total_failed} {t('cm.pages_MessagingDashboard.basarisiz_f592b')}</span>}
                     </div>
                     <div className="flex items-center gap-1">
                       <Button size="sm" variant="ghost" onClick={() => toggleEnabled(r)} title={r.enabled ? 'Devre dışı bırak' : 'Aktif et'}>
@@ -1100,12 +1100,12 @@ function AutomationTab() {
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>Kural Adı</Label>
-              <Input data-testid="automation-name" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="Hoş Geldiniz Mesajı" />
+              <Label>{t('cm.pages_MessagingDashboard.kural_adi')}</Label>
+              <Input data-testid="automation-name" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder={t('cm.pages_MessagingDashboard.hos_geldiniz_mesaji_959cf')} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Tetikleme Olayı</Label>
+                <Label>{t('cm.pages_MessagingDashboard.tetikleme_olayi')}</Label>
                 <Select value={form.trigger_event} onValueChange={(v) => setForm((p) => ({ ...p, trigger_event: v }))}>
                   <SelectTrigger data-testid="automation-trigger"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -1127,12 +1127,12 @@ function AutomationTab() {
               </div>
             </div>
             <div>
-              <Label>Şablon</Label>
+              <Label>{t('cm.pages_MessagingDashboard.sablon_68cce')}</Label>
               <Select value={form.template_id} onValueChange={(v) => setForm((p) => ({ ...p, template_id: v }))}>
-                <SelectTrigger data-testid="automation-template"><SelectValue placeholder="Şablon seçin" /></SelectTrigger>
+                <SelectTrigger data-testid="automation-template"><SelectValue placeholder={t('cm.pages_MessagingDashboard.sablon_secin')} /></SelectTrigger>
                 <SelectContent>
                   {filteredTemplates.length === 0 ? (
-                    <SelectItem value="__none" disabled>Bu kanal için şablon yok</SelectItem>
+                    <SelectItem value="__none" disabled>{t('cm.pages_MessagingDashboard.bu_kanal_icin_sablon_yok')}</SelectItem>
                   ) : filteredTemplates.map((t) => (
                     <SelectItem key={t.id} value={t.id}>{t.name} ({CATEGORY_LABELS[t.category] || t.category})</SelectItem>
                   ))}
@@ -1141,11 +1141,11 @@ function AutomationTab() {
             </div>
             <div className="flex items-center gap-2">
               <Switch checked={form.enabled} onCheckedChange={(v) => setForm((p) => ({ ...p, enabled: v }))} />
-              <Label>Aktif</Label>
+              <Label>{t('cm.pages_MessagingDashboard.aktif_81c33')}</Label>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowCreate(false); setEditRule(null); }}>İptal</Button>
+            <Button variant="outline" onClick={() => { setShowCreate(false); setEditRule(null); }}>{t('cm.pages_MessagingDashboard.iptal_25174')}</Button>
             <Button data-testid="automation-save-btn" onClick={editRule ? handleUpdate : handleCreate}>
               {editRule ? 'Güncelle' : 'Oluştur'}
             </Button>
@@ -1212,20 +1212,20 @@ function SchedulerCard() {
             </div>
             <div>
               <h4 className="text-sm font-semibold flex items-center gap-2 text-slate-900">
-                Pre-Arrival Zamanlayıcı
+                {t('cm.pages_MessagingDashboard.pre_arrival_zamanlayici')}
                 <StatusBadge intent={isRunning ? 'success' : 'neutral'}>
                   {isRunning ? 'Aktif' : 'Durduruldu'}
                 </StatusBadge>
               </h4>
               <p className="text-xs text-slate-500">
-                Yarınki check-in'leri tarayıp otomatik yol tarifi/tesis mesajı gönderir
+                {t('cm.pages_MessagingDashboard.yarinki_check_in_leri_tarayip_otomatik_y')}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Button data-testid="scheduler-run-now-btn" size="sm" variant="outline" onClick={runNow} disabled={actionLoading}>
               {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-              <span className="ml-1">Şimdi Tara</span>
+              <span className="ml-1">{t('cm.pages_MessagingDashboard.simdi_tara')}</span>
             </Button>
             <Button
               data-testid="scheduler-toggle-btn"
@@ -1243,19 +1243,19 @@ function SchedulerCard() {
           <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
             <div className="bg-slate-50 rounded p-2">
               <p className="font-bold text-slate-700">{status.total_runs || 0}</p>
-              <p className="text-slate-500">Toplam Tarama</p>
+              <p className="text-slate-500">{t('cm.pages_MessagingDashboard.toplam_tarama')}</p>
             </div>
             <div className="bg-emerald-50 rounded p-2">
               <p className="font-bold text-emerald-700">{status.total_sent || 0}</p>
-              <p className="text-emerald-600">Gönderilen</p>
+              <p className="text-emerald-600">{t('cm.pages_MessagingDashboard.gonderilen')}</p>
             </div>
             <div className="bg-amber-50 rounded p-2">
               <p className="font-bold text-amber-700">{status.total_skipped || 0}</p>
-              <p className="text-amber-600">Zaten Gönderilmiş</p>
+              <p className="text-amber-600">{t('cm.pages_MessagingDashboard.zaten_gonderilmis')}</p>
             </div>
             <div className="bg-rose-50 rounded p-2">
               <p className="font-bold text-rose-700">{status.total_errors || 0}</p>
-              <p className="text-rose-600">Hata</p>
+              <p className="text-rose-600">{t('cm.pages_MessagingDashboard.hata')}</p>
             </div>
           </div>
         )}
@@ -1311,10 +1311,9 @@ function WhatsAppTemplateTab() {
         <CardContent className="py-3 flex items-start gap-3">
           <Shield className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm font-medium text-amber-900">WhatsApp HSM (Onaylı Template) Gönderimi</p>
+            <p className="text-sm font-medium text-amber-900">{t('cm.pages_MessagingDashboard.whatsapp_hsm_onayli_template_gonderimi')}</p>
             <p className="text-xs text-amber-700">
-              İlk temas / 24 saatlik konuşma penceresi dışında Meta yalnızca onaylı template kabul eder.
-              Şablon adı Meta Business panelinde önceden tanımlı ve <strong>APPROVED</strong> durumda olmalıdır.
+              {t('cm.pages_MessagingDashboard.ilk_temas_24_saatlik_konusma_penceresi_d_13772')} <strong>APPROVED</strong> {t('cm.pages_MessagingDashboard.durumda_olmalidir')}
             </p>
           </div>
         </CardContent>
@@ -1323,7 +1322,7 @@ function WhatsAppTemplateTab() {
         <CardContent className="pt-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label>Telefon Numarası (E.164)</Label>
+              <Label>{t('cm.pages_MessagingDashboard.telefon_numarasi_e_164')}</Label>
               <Input value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="+905551234567"
                 className={recipient && !recipientCheck.ok ? 'border-rose-400' : ''} />
               {recipient && !recipientCheck.ok && (
@@ -1335,7 +1334,7 @@ function WhatsAppTemplateTab() {
               <Select value={languageCode} onValueChange={setLanguageCode}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="tr">Türkçe (tr)</SelectItem>
+                  <SelectItem value="tr">{t('cm.pages_MessagingDashboard.turkce_tr')}</SelectItem>
                   <SelectItem value="en">English (en)</SelectItem>
                   <SelectItem value="en_US">English US (en_US)</SelectItem>
                 </SelectContent>
@@ -1343,11 +1342,11 @@ function WhatsAppTemplateTab() {
             </div>
           </div>
           <div>
-            <Label>Template Adı (Meta'da onaylı)</Label>
+            <Label>{t('cm.pages_MessagingDashboard.template_adi_meta_da_onayli')}</Label>
             <Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder="hello_world" />
           </div>
           <div>
-            <Label>Body Parametreleri (her satır bir parametre)</Label>
+            <Label>{t('cm.pages_MessagingDashboard.body_parametreleri_her_satir_bir_paramet')}</Label>
             <Textarea
               className="min-h-[100px] font-mono text-xs"
               value={paramsText}
@@ -1355,12 +1354,12 @@ function WhatsAppTemplateTab() {
               placeholder={'Ahmet\n16:00\nDeluxe Oda'}
             />
             <p className="text-xs text-slate-500 mt-1">
-              Template body'sindeki {'{{1}}'}, {'{{2}}'} … placeholder sırasıyla bu parametrelerle doldurulur.
+              Template body'sindeki {'{{1}}'}, {'{{2}}'} {t('cm.pages_MessagingDashboard.placeholder_sirasiyla_bu_parametrelerle_')}
             </p>
           </div>
           <Button onClick={handleSend} disabled={sending || !recipientCheck.ok || !templateName.trim()} className="w-full">
             {sending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
-            Template Gönder
+            {t('cm.pages_MessagingDashboard.template_gonder')}
           </Button>
         </CardContent>
       </Card>
@@ -1414,17 +1413,17 @@ function ActivityTab() {
   return (
     <div className="space-y-3" data-testid="activity-tab">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-sm text-slate-900">Canlı Aktivite</h3>
+        <h3 className="font-semibold text-sm text-slate-900">{t('cm.pages_MessagingDashboard.canli_aktivite')}</h3>
         <Button variant="outline" size="sm" onClick={load} data-testid="activity-refresh-btn">
-          <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+          <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_MessagingDashboard.yenile_aedf3')}
         </Button>
       </div>
 
       {activities.length === 0 ? (
         <Card><CardContent className="py-10 text-center text-slate-500">
           <Bell className="h-8 w-8 mx-auto mb-2 opacity-40" />
-          <p className="font-medium">Henüz aktivite yok</p>
-          <p className="text-xs mt-1">Otomasyon tetiklendikçe ve mesajlar gönderildikçe burada görünecek.</p>
+          <p className="font-medium">{t('cm.pages_MessagingDashboard.henuz_aktivite_yok')}</p>
+          <p className="text-xs mt-1">{t('cm.pages_MessagingDashboard.otomasyon_tetiklendikce_ve_mesajlar_gond')}</p>
         </CardContent></Card>
       ) : (
         <div className="space-y-1.5">
@@ -1482,11 +1481,11 @@ export default function MessagingDashboard() {
     <div data-testid="messaging-dashboard" className="p-4 lg:p-6 max-w-7xl mx-auto" key={refreshKey}>
       <PageHeader
         icon={MessageSquare}
-        title="Mesajlaşma Merkezi"
-        subtitle="E-posta (SMTP) ve WhatsApp Business ile misafir iletişimi"
+        title={t('cm.pages_MessagingDashboard.mesajlasma_merkezi')}
+        subtitle={t('cm.pages_MessagingDashboard.e_posta_smtp_ve_whatsapp_business_ile_mi')}
         actions={
           <Button variant="outline" size="sm" onClick={refresh}>
-            <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+            <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_MessagingDashboard.yenile_aedf3')}
           </Button>
         }
       />
@@ -1495,9 +1494,7 @@ export default function MessagingDashboard() {
         <CardContent className="py-3 flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 text-sky-600 flex-shrink-0 mt-0.5" />
           <div className="flex-1 text-xs text-sky-900">
-            <strong>Not:</strong> Bu modül operasyonel/transactional mesajlar (SMTP + WhatsApp, kredisiz)
-            içindir. Pazarlama kampanyaları ve toplu e-posta için <strong>Mailing</strong> modülünü
-            (Resend tabanlı, kredi sistemli) kullanın. Şablonlar ve loglar iki sistemde ayrı tutulur.
+            <strong>Not:</strong> {t('cm.pages_MessagingDashboard.bu_modul_operasyonel_transactional_mesaj')} <strong>Mailing</strong> {t('cm.pages_MessagingDashboard.modulunu_resend_tabanli_kredi_sistemli_k')}
           </div>
         </CardContent>
       </Card>
@@ -1505,10 +1502,10 @@ export default function MessagingDashboard() {
       <Tabs defaultValue="send">
         <TabsList className="grid w-full grid-cols-4 md:grid-cols-8 max-w-5xl" data-testid="messaging-tabs">
           <TabsTrigger data-testid="tab-send" value="send" className="flex items-center gap-1.5">
-            <Send className="h-3.5 w-3.5" /> Gönder
+            <Send className="h-3.5 w-3.5" /> {t('cm.pages_MessagingDashboard.gonder')}
           </TabsTrigger>
           <TabsTrigger data-testid="tab-templates" value="templates" className="flex items-center gap-1.5">
-            <FileText className="h-3.5 w-3.5" /> Şablonlar
+            <FileText className="h-3.5 w-3.5" /> {t('cm.pages_MessagingDashboard.sablonlar')}
           </TabsTrigger>
           <TabsTrigger data-testid="tab-automation" value="automation" className="flex items-center gap-1.5">
             <Zap className="h-3.5 w-3.5" /> Otomasyon

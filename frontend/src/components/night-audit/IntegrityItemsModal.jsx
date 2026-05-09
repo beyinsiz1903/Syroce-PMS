@@ -2,6 +2,7 @@ import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const fmtMoney = (v) => {
   if (v == null) return '';
@@ -39,6 +40,7 @@ function itemTitle(it) {
 }
 
 export default function IntegrityItemsModal({ open, onOpenChange, check, onPick }) {
+  const { t } = useTranslation();
   if (!check) return null;
   const items = check.items || [];
   return (
@@ -52,14 +54,14 @@ export default function IntegrityItemsModal({ open, onOpenChange, check, onPick 
           <p className="text-xs text-gray-600 mt-1">{check.detail}</p>
           {check.count > items.length && (
             <p className="text-[11px] text-gray-400 mt-0.5">
-              İlk {items.length} kayıt gösteriliyor (toplam {check.count})
+              {t('cm.components_nightaudit_IntegrityItemsModal.ilk')} {items.length} {t('cm.components_nightaudit_IntegrityItemsModal.kayit_gosteriliyor_toplam')} {check.count})
             </p>
           )}
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto space-y-1.5 mt-2">
           {items.length === 0 ? (
             <p className="text-xs text-gray-500 text-center py-6">
-              Detay bilgisi bulunamadı.
+              {t('cm.components_nightaudit_IntegrityItemsModal.detay_bilgisi_bulunamadi')}
             </p>
           ) : items.map((it, idx) => {
             const sub = itemSubtitle(it, check.check);
@@ -78,7 +80,7 @@ export default function IntegrityItemsModal({ open, onOpenChange, check, onPick 
                     </span>
                     {it.room_no && (
                       <span className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">
-                        Oda {it.room_no}
+                        {t('cm.components_nightaudit_IntegrityItemsModal.oda')} {it.room_no}
                       </span>
                     )}
                   </div>

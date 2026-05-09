@@ -15,6 +15,7 @@ import {
   Calendar, RefreshCw, BedDouble, Globe, Clock, Trash2,
   CalendarRange, Palmtree, Star, Snowflake, Sun
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
@@ -26,6 +27,7 @@ const CATEGORY_STYLE = {
 };
 
 export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parentLoading, apiPrefix = '/api/channel-manager/rate-manager' }) => {
+  const { t } = useTranslation();
   const isHotelRunner = apiPrefix.includes('hr-rate-manager');
   const token = localStorage.getItem('token');
   const headers = { Authorization: `Bearer ${token}` };
@@ -314,10 +316,10 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold flex items-center gap-2" data-testid="holiday-selector-title">
             <Palmtree className="w-4 h-4 text-indigo-600" />
-            Tatil Donemi Hızlı Seçim
+            {t('cm.pages_ratemanager_StopSalePanel.tatil_donemi_hizli_secim')}
           </CardTitle>
           <CardDescription className="text-xs">
-            Tatil donemi seçin, tarihler otomatik dolsun. Isterseniz tarihleri manuel duzenleyebilirsiniz.
+            {t('cm.pages_ratemanager_StopSalePanel.tatil_donemi_secin_tarihler_otomatik_dol')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -379,7 +381,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
                 data-testid="holiday-btn-manual"
               >
                 <CalendarRange className="w-3 h-3" />
-                Manuel Tarih Gir
+                {t('cm.pages_ratemanager_StopSalePanel.manuel_tarih_gir')}
               </button>
             </div>
           )}
@@ -412,8 +414,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-700">
               <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
               <span>
-                <strong>{holidays.find(h => h.key === selectedHoliday)?.name}</strong> tarihleri secildi. 
-                Tarihleri manuel olarak değiştirebilirsiniz.
+                <strong>{holidays.find(h => h.key === selectedHoliday)?.name}</strong> {t('cm.pages_ratemanager_StopSalePanel.tarihleri_secildi_tarihleri_manuel_olara')}
               </span>
             </div>
           )}
@@ -427,10 +428,10 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <BedDouble className="w-4 h-4" />
-              Oda Tipi Sec
+              {t('cm.pages_ratemanager_StopSalePanel.oda_tipi_sec')}
             </CardTitle>
             <CardDescription className="text-xs">
-              Stop sale uygulanacak oda tiplerini seçin
+              {t('cm.pages_ratemanager_StopSalePanel.stop_sale_uygulanacak_oda_tiplerini_seci')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -458,7 +459,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
                 </label>
               ))}
               {roomTypes.length === 0 && (
-                <p className="text-xs text-gray-400 py-4 text-center">Oda tipi bulunamadı</p>
+                <p className="text-xs text-gray-400 py-4 text-center">{t('cm.pages_ratemanager_StopSalePanel.oda_tipi_bulunamadi')}</p>
               )}
             </div>
           </CardContent>
@@ -469,7 +470,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Calendar className="w-4 h-4" />
-              İşlem & Zamanlayici
+              {t('cm.pages_ratemanager_StopSalePanel.islem_zamanlayici')}
             </CardTitle>
             <CardDescription className="text-xs">
               Satisi durdur/ac veya zamanlayici olarak kaydet
@@ -504,7 +505,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
                 data-testid="remove-stop-sale-btn"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Unlock className="w-4 h-4 mr-1.5" />}
-                Satisi Ac
+                {t('cm.pages_ratemanager_StopSalePanel.satisi_ac')}
               </Button>
             </div>
 
@@ -512,7 +513,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             <div className="border-t border-gray-100 pt-3 space-y-2">
               <div className="flex items-center gap-2">
                 <Clock className="w-3.5 h-3.5 text-indigo-500" />
-                <span className="text-xs font-semibold text-gray-700">Zamanlayici Olarak Kaydet</span>
+                <span className="text-xs font-semibold text-gray-700">{t('cm.pages_ratemanager_StopSalePanel.zamanlayici_olarak_kaydet')}</span>
               </div>
               <Input
                 placeholder="Zamanlayici adi (opsiyonel)"
@@ -552,7 +553,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
               Kanal Bazli Stop Sale
             </CardTitle>
             <CardDescription className="text-xs">
-              Belirli kanallar için satışı tek tıkla durdurun
+              {t('cm.pages_ratemanager_StopSalePanel.belirli_kanallar_icin_satisi_tek_tikla_d')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -601,7 +602,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             <div>
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Clock className="w-4 h-4 text-indigo-500" />
-                Kayıtlı Zamanlayicilar
+                {t('cm.pages_ratemanager_StopSalePanel.kayitli_zamanlayicilar')}
               </CardTitle>
               <CardDescription className="text-xs">
                 Olusturulmus stop sale zamanlayicilari
@@ -615,7 +616,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
               data-testid="refresh-schedules"
             >
               <RefreshCw className={`w-4 h-4 mr-1.5 ${loadingSchedules ? 'animate-spin' : ''}`} />
-              Yenile
+              {t('cm.pages_ratemanager_StopSalePanel.yenile')}
             </Button>
           </div>
         </CardHeader>
@@ -627,8 +628,8 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
           ) : schedules.length === 0 ? (
             <div className="text-center py-6 text-gray-400">
               <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-              <p className="text-sm">Henüz zamanlayici yok</p>
-              <p className="text-xs mt-1">Tatil donemi secip zamanlayici oluşturun</p>
+              <p className="text-sm">{t('cm.pages_ratemanager_StopSalePanel.henuz_zamanlayici_yok')}</p>
+              <p className="text-xs mt-1">{t('cm.pages_ratemanager_StopSalePanel.tatil_donemi_secip_zamanlayici_olusturun')}</p>
             </div>
           ) : (
             <div className="space-y-2" data-testid="schedules-list">
@@ -649,7 +650,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
                           <Badge className="bg-green-100 text-green-700 border-0 text-[10px]">Uygulandi</Badge>
                         )}
                         {isPast && (
-                          <Badge variant="outline" className="text-[10px]">Geçmiş</Badge>
+                          <Badge variant="outline" className="text-[10px]">{t('cm.pages_ratemanager_StopSalePanel.gecmis')}</Badge>
                         )}
                       </div>
                       <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
@@ -669,7 +670,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
                         size="sm"
                         className="h-7 px-2 text-red-500 hover:text-red-700 hover:bg-red-50"
                         onClick={() => deleteSchedule(s.id, true)}
-                        title="Sil ve stop sale'i kaldir"
+                        title={t('cm.pages_ratemanager_StopSalePanel.sil_ve_stop_sale_i_kaldir')}
                         data-testid={`schedule-delete-restore-${s.id}`}
                       >
                         <Unlock className="w-3.5 h-3.5 mr-1" />
@@ -701,10 +702,10 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
             <div>
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Ban className="w-4 h-4 text-red-500" />
-                Aktif Stop Sale Durumu
+                {t('cm.pages_ratemanager_StopSalePanel.aktif_stop_sale_durumu')}
               </CardTitle>
               <CardDescription className="text-xs">
-                Oda bazinda aktif stop sale kayitlari
+                {t('cm.pages_ratemanager_StopSalePanel.oda_bazinda_aktif_stop_sale_kayitlari')}
               </CardDescription>
             </div>
             <Button
@@ -715,7 +716,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
               data-testid="refresh-stop-sales"
             >
               <RefreshCw className={`w-4 h-4 mr-1.5 ${loadingActive ? 'animate-spin' : ''}`} />
-              Yenile
+              {t('cm.pages_ratemanager_StopSalePanel.yenile_aedf3')}
             </Button>
           </div>
         </CardHeader>
@@ -727,8 +728,8 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
           ) : Object.keys(groupedStops).length === 0 ? (
             <div className="text-center py-8 text-gray-400">
               <CheckCircle className="w-10 h-10 mx-auto mb-2 text-emerald-300" />
-              <p className="text-sm font-medium">Aktif stop sale yok</p>
-              <p className="text-xs mt-1">Tüm odalar satış için açık</p>
+              <p className="text-sm font-medium">{t('cm.pages_ratemanager_StopSalePanel.aktif_stop_sale_yok')}</p>
+              <p className="text-xs mt-1">{t('cm.pages_ratemanager_StopSalePanel.tum_odalar_satis_icin_acik')}</p>
             </div>
           ) : (
             <div className="space-y-3" data-testid="active-stop-sales-list">

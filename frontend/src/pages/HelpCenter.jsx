@@ -6,6 +6,7 @@ import {
   BookOpen, ChevronRight, FileText, Hotel, LifeBuoy, Loader2,
   Package, Rocket, ScrollText, Search, Tag,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const ICON_MAP = {
   Rocket, Hotel, DollarSign: BookOpen, Package, ScrollText,
@@ -108,6 +109,7 @@ function renderMarkdown(src) {
 }
 
 export default function HelpCenter({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [index, setIndex] = useState(null);
   const [activeSlug, setActiveSlug] = useState(null);
   const [article, setArticle] = useState(null);
@@ -163,10 +165,10 @@ export default function HelpCenter({ user, tenant, onLogout }) {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && search()}
               className="w-full border rounded pl-9 pr-3 py-2 text-sm"
-              placeholder="Yardım ara (en az 2 harf)…"
+              placeholder={t('cm.pages_HelpCenter.yardim_ara_en_az_2_harf')}
             />
           </div>
-          <button onClick={search} className="px-3 py-2 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700">Ara</button>
+          <button onClick={search} className="px-3 py-2 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700">{t('cm.pages_HelpCenter.ara')}</button>
         </div>
       </div>
 
@@ -174,7 +176,7 @@ export default function HelpCenter({ user, tenant, onLogout }) {
         <aside className="col-span-12 md:col-span-3 bg-white border rounded-lg p-3 max-h-[80vh] overflow-auto">
           {!index ? (
             <div className="text-gray-500 text-sm flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Yükleniyor…
+              <Loader2 className="h-4 w-4 animate-spin" /> {t('cm.pages_HelpCenter.yukleniyor')}
             </div>
           ) : (
             index.categories.map((cat) => {
@@ -207,11 +209,11 @@ export default function HelpCenter({ user, tenant, onLogout }) {
           {results ? (
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="font-semibold">"{results.query}" için {results.count} sonuç</h2>
-                <button onClick={() => setResults(null)} className="text-sm text-blue-600 hover:underline">Aramayı kapat</button>
+                <h2 className="font-semibold">"{results.query}{t('cm.pages_HelpCenter.icin')} {results.count} {t('cm.pages_HelpCenter.sonuc')}</h2>
+                <button onClick={() => setResults(null)} className="text-sm text-blue-600 hover:underline">{t('cm.pages_HelpCenter.aramayi_kapat')}</button>
               </div>
               {results.items.length === 0 ? (
-                <p className="text-gray-500 text-sm">Sonuç bulunamadı.</p>
+                <p className="text-gray-500 text-sm">{t('cm.pages_HelpCenter.sonuc_bulunamadi')}</p>
               ) : (
                 <ul className="space-y-3">
                   {results.items.map((r) => (
@@ -228,7 +230,7 @@ export default function HelpCenter({ user, tenant, onLogout }) {
               )}
             </div>
           ) : loading ? (
-            <div className="flex items-center gap-2 text-gray-500"><Loader2 className="h-5 w-5 animate-spin" /> Yükleniyor…</div>
+            <div className="flex items-center gap-2 text-gray-500"><Loader2 className="h-5 w-5 animate-spin" /> {t('cm.pages_HelpCenter.yukleniyor_b597b')}</div>
           ) : article ? (
             <article onClick={handleBodyClick} className="prose-sm max-w-none">
               <div className="text-xs text-gray-500 mb-2 flex items-center gap-2">
@@ -242,7 +244,7 @@ export default function HelpCenter({ user, tenant, onLogout }) {
               <div dangerouslySetInnerHTML={html} />
             </article>
           ) : (
-            <p className="text-gray-500 text-sm">Soldan bir makale seçin.</p>
+            <p className="text-gray-500 text-sm">{t('cm.pages_HelpCenter.soldan_bir_makale_secin')}</p>
           )}
         </main>
       </div>

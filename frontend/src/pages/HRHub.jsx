@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Loader2, Users, Activity } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useTranslation } from 'react-i18next';
 
 const HRComplete = lazy(() => import('@/pages/HRComplete'));
 const HRv2OpsDashboard = lazy(() => import('@/pages/HRv2OpsDashboard'));
@@ -9,6 +10,7 @@ const HRv2OpsDashboard = lazy(() => import('@/pages/HRv2OpsDashboard'));
 const VALID_TABS = ['suite', 'ops'];
 
 export default function HRHub({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get('tab');
   const activeTab = VALID_TABS.includes(requested) ? requested : 'suite';
@@ -22,7 +24,7 @@ export default function HRHub({ user, tenant, onLogout }) {
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="grid w-full grid-cols-2 max-w-md mb-4">
           <TabsTrigger value="suite" data-testid="tab-hr-suite">
-            <Users className="w-4 h-4 mr-2" />İK Suite
+            <Users className="w-4 h-4 mr-2" />{t('cm.pages_HRHub.ik_suite')}
           </TabsTrigger>
           <TabsTrigger value="ops" data-testid="tab-hr-ops">
             <Activity className="w-4 h-4 mr-2" />Operasyon

@@ -15,6 +15,7 @@ import {
   FileText, ChevronRight, Layers, FlaskConical, Link2, Ban,
   CircleSlash, ShieldCheck,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 // Round-7: Hardcoded "syroce_default" cross-tenant sızıntı riskiydi. Tenant
 // JWT'den geliyor; backend tenant_id parametresi opsiyonel ve verilmezse
@@ -23,6 +24,7 @@ const PROPERTY_ID = "default";
 
 // Health status indicator component
 function StatusDot({ status }) {
+  const { t } = useTranslation();
   const colors = {
     healthy: "bg-emerald-500 shadow-emerald-400/50",
     degraded: "bg-amber-500 shadow-amber-400/50",
@@ -474,7 +476,7 @@ export default function HRv2OpsDashboard({ tenant }) {
       <div className="flex items-center justify-center h-[80vh]" data-testid="ops-dashboard-loading">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="w-8 h-8 animate-spin text-[#C09D63]" />
-          <p className="text-sm text-slate-500 font-medium">Ops Dashboard yükleniyor...</p>
+          <p className="text-sm text-slate-500 font-medium">{t('cm.pages_HRv2OpsDashboard.ops_dashboard_yukleniyor')}</p>
         </div>
       </div>
     );
@@ -513,7 +515,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                   HotelRunner v2 Ops Dashboard
                 </h1>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Canli connector izleme &bull; Son güncelleme: {formatDateTime(data?.generated_at)}
+                  {t('cm.pages_HRv2OpsDashboard.canli_connector_izleme_son_guncelleme')} {formatDateTime(data?.generated_at)}
                 </p>
               </div>
             </div>
@@ -539,7 +541,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                 className="text-xs"
               >
                 <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
-                Yenile
+                {t('cm.pages_HRv2OpsDashboard.yenile')}
               </Button>
             </div>
           </div>
@@ -623,7 +625,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                   <MetricCard icon={Clock} label="Son Pull" value={formatTime(sync.last_pull_timestamp)} subtext={formatDateTime(sync.last_pull_timestamp)} />
                   <MetricCard icon={Gauge} label="Ort. Latency" value={data?.avg_latency_ms ? `${data.avg_latency_ms}ms` : "—"} subtext="Son 24 saat" />
                   <MetricCard icon={Inbox} label="DLQ" value={dlq.count ?? 0} color={dlq.count > 0 ? "text-red-600" : "text-emerald-600"} subtext={dlq.count > 0 ? "Dikkat gerekiyor" : "Temiz"} />
-                  <MetricCard icon={AlertTriangle} label="Retry Sayısı" value={data?.total_retry_count ?? 0} color={data?.total_retry_count > 0 ? "text-amber-600" : "text-emerald-600"} subtext="Son 24 saat" />
+                  <MetricCard icon={AlertTriangle} label={t('cm.pages_HRv2OpsDashboard.retry_sayisi')} value={data?.total_retry_count ?? 0} color={data?.total_retry_count > 0 ? "text-amber-600" : "text-emerald-600"} subtext="Son 24 saat" />
                 </div>
               </CardContent>
             </Card>
@@ -646,7 +648,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                   className="w-full justify-start bg-slate-900 hover:bg-slate-800 text-white text-sm h-10"
                 >
                   {testingConnection ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <PlugZap className="w-4 h-4 mr-2" />}
-                  Bağlantı Testi
+                  {t('cm.pages_HRv2OpsDashboard.baglanti_testi')}
                 </Button>
                 <Button
                   data-testid="trigger-reconciliation-btn"
@@ -666,7 +668,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                   className="w-full justify-start text-sm h-10 border-slate-200 hover:bg-slate-50"
                 >
                   <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
-                  Provider Durumu Yenile
+                  {t('cm.pages_HRv2OpsDashboard.provider_durumu_yenile')}
                 </Button>
                 <Button
                   data-testid="collect-snapshot-btn"
@@ -676,7 +678,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                   className="w-full justify-start text-sm h-10 border-[#C09D63]/30 text-[#C09D63] hover:bg-[#C09D63]/5"
                 >
                   {collectingSnapshot ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calendar className="w-4 h-4 mr-2" />}
-                  Günlük Snapshot Topla
+                  {t('cm.pages_HRv2OpsDashboard.gunluk_snapshot_topla')}
                 </Button>
                 <Separator />
                 {/* Feature Flags Summary */}
@@ -708,7 +710,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                   </div>
                   {dryRun.total_runs > 0 && (
                     <Badge variant="outline" className="text-[10px] bg-indigo-50 text-indigo-600 border-indigo-200">
-                      {dryRun.total_runs} çalışma
+                      {dryRun.total_runs} {t('cm.pages_HRv2OpsDashboard.calisma')}
                     </Badge>
                   )}
                 </div>
@@ -734,7 +736,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                   Zincir Testi (Create/Modify/Cancel)
                 </Button>
                 <Separator />
-                <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Hata Simulasyonu</p>
+                <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">{t('cm.pages_HRv2OpsDashboard.hata_simulasyonu')}</p>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { key: "timeout", label: "Timeout", icon: Clock },
@@ -765,7 +767,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-600">Basarili / Basarisiz</span>
+                    <span className="text-slate-600">{t('cm.pages_HRv2OpsDashboard.basarili_basarisiz')}</span>
                     <span className="text-slate-700 font-medium">
                       <span className="text-emerald-600">{dryRun.total_success || 0}</span>
                       <span className="text-slate-400 mx-1">/</span>
@@ -783,7 +785,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                   {dryRun.last_result && (
                     <div className="mt-2 p-2 rounded-lg bg-slate-50 border border-slate-100">
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-slate-500">Son işlem</span>
+                        <span className="text-slate-500">{t('cm.pages_HRv2OpsDashboard.son_islem')}</span>
                         <span className={`font-medium ${dryRun.last_result.success ? "text-emerald-600" : "text-red-600"}`}>
                           {dryRun.last_result.operation} — {dryRun.last_result.success ? "OK" : "FAIL"}
                         </span>
@@ -804,7 +806,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                 <div className="flex items-center gap-2">
                   <ShieldAlert className="w-4 h-4 text-red-500" />
                   <CardTitle className="text-base font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
-                    Dry-Run Hata Dagilimi
+                    {t('cm.pages_HRv2OpsDashboard.dry_run_hata_dagilimi')}
                   </CardTitle>
                 </div>
               </CardHeader>
@@ -812,7 +814,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                 {Object.keys(dryRun.failure_breakdown || {}).length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <Shield className="w-8 h-8 text-emerald-400 mb-2" />
-                    <p className="text-sm font-medium text-emerald-700">Hata yok</p>
+                    <p className="text-sm font-medium text-emerald-700">{t('cm.pages_HRv2OpsDashboard.hata_yok')}</p>
                     <p className="text-xs text-slate-400 mt-1">Dry-run'da hata kaydedilmedi</p>
                   </div>
                 ) : (
@@ -830,7 +832,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                     {Object.keys(dryRun.operations || {}).length > 0 && (
                       <>
                         <Separator />
-                        <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">İşlem Bazli</p>
+                        <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">{t('cm.pages_HRv2OpsDashboard.islem_bazli')}</p>
                         {Object.entries(dryRun.operations).map(([op, opData]) => (
                           <div key={op} className="flex items-center justify-between text-xs py-1">
                             <span className="text-slate-600 font-medium">{op}</span>
@@ -896,7 +898,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                       <div className="mt-2 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-center">
                         <p className="text-xs font-medium text-emerald-700">
                           <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />
-                          Tüm kriterler karsilandi — Write acilabilir
+                          {t('cm.pages_HRv2OpsDashboard.tum_kriterler_karsilandi_write_acilabili')}
                         </p>
                       </div>
                     )}
@@ -919,14 +921,14 @@ export default function HRv2OpsDashboard({ tenant }) {
                 <div className="grid grid-cols-2 gap-3">
                   <MetricCard
                     icon={Database}
-                    label="Drift Sayısı"
+                    label={t('cm.pages_HRv2OpsDashboard.drift_sayisi')}
                     value={sync.drift_count ?? 0}
                     color={sync.drift_count > 0 ? "text-amber-600" : "text-emerald-600"}
                     subtext="Toplam drift"
                   />
                   <MetricCard
                     icon={TrendingUp}
-                    label="İşlem Basari"
+                    label={t('cm.pages_HRv2OpsDashboard.islem_basari')}
                     value={m24.overall_success_rate ? `%${m24.overall_success_rate}` : "—"}
                     color={m24.overall_success_rate >= 90 ? "text-emerald-600" : "text-amber-600"}
                     subtext={`${m24.total_operations ?? 0} işlem (24s)`}
@@ -939,7 +941,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                   />
                   <MetricCard
                     icon={BarChart3}
-                    label="Toplam İşlem"
+                    label={t('cm.pages_HRv2OpsDashboard.toplam_islem')}
                     value={m24.total_operations ?? 0}
                     subtext="Son 24 saat"
                   />
@@ -953,7 +955,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                 <div className="flex items-center gap-2">
                   <ShieldAlert className="w-4 h-4 text-red-500" />
                   <CardTitle className="text-base font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
-                    Hata Gorunurlugu
+                    {t('cm.pages_HRv2OpsDashboard.hata_gorunurlugu')}
                   </CardTitle>
                 </div>
               </CardHeader>
@@ -961,12 +963,12 @@ export default function HRv2OpsDashboard({ tenant }) {
                 {Object.keys(errTax).length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <Shield className="w-8 h-8 text-emerald-400 mb-2" />
-                    <p className="text-sm font-medium text-emerald-700">Hata yok</p>
+                    <p className="text-sm font-medium text-emerald-700">{t('cm.pages_HRv2OpsDashboard.hata_yok_c4128')}</p>
                     <p className="text-xs text-slate-400 mt-1">Son 24 saatte hata kaydedilmedi</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Hata Taksonomisi (24s)</p>
+                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">{t('cm.pages_HRv2OpsDashboard.hata_taksonomisi_24s')}</p>
                     <div className="space-y-2">
                       {Object.entries(errTax).map(([category, count]) => (
                         <div key={category} className="flex items-center justify-between p-2.5 rounded-lg bg-red-50/50 border border-red-100">
@@ -1005,14 +1007,14 @@ export default function HRv2OpsDashboard({ tenant }) {
                       Son Olaylar
                     </CardTitle>
                   </div>
-                  <Badge variant="outline" className="text-xs bg-slate-50">{events.length} kayıt</Badge>
+                  <Badge variant="outline" className="text-xs bg-slate-50">{events.length} {t('cm.pages_HRv2OpsDashboard.kayit')}</Badge>
                 </div>
               </CardHeader>
               <CardContent>
                 {events.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <Activity className="w-8 h-8 text-slate-300 mb-2" />
-                    <p className="text-sm text-slate-500">Henüz olay kaydedilmedi</p>
+                    <p className="text-sm text-slate-500">{t('cm.pages_HRv2OpsDashboard.henuz_olay_kaydedilmedi')}</p>
                   </div>
                 ) : (
                   <div className="divide-y divide-slate-100">
@@ -1076,7 +1078,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                 <div className="flex items-center gap-2">
                   <BarChart3 className="w-4 h-4 text-slate-500" />
                   <CardTitle className="text-base font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
-                    İşlem Detaylari (24 Saat)
+                    {t('cm.pages_HRv2OpsDashboard.islem_detaylari_24_saat')}
                   </CardTitle>
                 </div>
               </CardHeader>
@@ -1084,16 +1086,16 @@ export default function HRv2OpsDashboard({ tenant }) {
                 {Object.keys(m24.operations || {}).length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <BarChart3 className="w-8 h-8 text-slate-300 mb-2" />
-                    <p className="text-sm text-slate-500">Henüz işlem verisi yok</p>
+                    <p className="text-sm text-slate-500">{t('cm.pages_HRv2OpsDashboard.henuz_islem_verisi_yok')}</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm" data-testid="operations-table">
                       <thead>
                         <tr className="border-b border-slate-100">
-                          <th className="text-left py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wide">İşlem</th>
-                          <th className="text-right py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Toplam</th>
-                          <th className="text-right py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Basarili</th>
+                          <th className="text-left py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wide">{t('cm.pages_HRv2OpsDashboard.islem')}</th>
+                          <th className="text-right py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wide">{t('cm.pages_HRv2OpsDashboard.toplam')}</th>
+                          <th className="text-right py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wide">{t('cm.pages_HRv2OpsDashboard.basarili')}</th>
                           <th className="text-right py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Basarisiz</th>
                           <th className="text-right py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Basari %</th>
                           <th className="text-right py-2.5 px-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Ort. Latency</th>
@@ -1147,7 +1149,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                       )}
                       {obsReport.latest_snapshot.alert_summary.critical_count === 0 && obsReport.latest_snapshot.alert_summary.warn_count === 0 && (
                         <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50">
-                          Temiz
+                          {t('cm.pages_HRv2OpsDashboard.temiz')}
                         </Badge>
                       )}
                     </div>
@@ -1158,8 +1160,8 @@ export default function HRv2OpsDashboard({ tenant }) {
                 {Object.keys(obsAlerts).length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <Calendar className="w-8 h-8 text-slate-300 mb-2" />
-                    <p className="text-sm text-slate-500">Henüz snapshot verisi yok</p>
-                    <p className="text-xs text-slate-400 mt-1">Ilk snapshot'i toplamak için "Günlük Snapshot Topla" butonunu kullanin</p>
+                    <p className="text-sm text-slate-500">{t('cm.pages_HRv2OpsDashboard.henuz_snapshot_verisi_yok')}</p>
+                    <p className="text-xs text-slate-400 mt-1">{t('cm.pages_HRv2OpsDashboard.ilk_snapshot_i_toplamak_icin_gunluk_snap')}</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -1178,7 +1180,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                   <div className="flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-slate-500" />
                     <CardTitle className="text-base font-semibold text-slate-800" style={{ fontFamily: "Manrope, sans-serif" }}>
-                      Gozlem Geçmişi
+                      {t('cm.pages_HRv2OpsDashboard.gozlem_gecmisi')}
                     </CardTitle>
                   </div>
                   {obsReport?.observation_day > 0 && (
@@ -1192,8 +1194,8 @@ export default function HRv2OpsDashboard({ tenant }) {
                 {(!obsReport?.history_summary || obsReport.history_summary.length === 0) ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <BarChart3 className="w-8 h-8 text-slate-300 mb-2" />
-                    <p className="text-sm text-slate-500">Henüz gözlem verisi yok</p>
-                    <p className="text-xs text-slate-400 mt-1">7 günlük gözlem süreci başlatılmadı</p>
+                    <p className="text-sm text-slate-500">{t('cm.pages_HRv2OpsDashboard.henuz_gozlem_verisi_yok')}</p>
+                    <p className="text-xs text-slate-400 mt-1">{t('cm.pages_HRv2OpsDashboard.7_gunluk_gozlem_sureci_baslatilmadi')}</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -1201,8 +1203,8 @@ export default function HRv2OpsDashboard({ tenant }) {
                       <thead>
                         <tr className="border-b border-slate-100">
                           <th className="text-left py-2 px-2 font-medium text-slate-500">Gun</th>
-                          <th className="text-right py-2 px-2 font-medium text-slate-500">İşlem</th>
-                          <th className="text-right py-2 px-2 font-medium text-slate-500">Hata %</th>
+                          <th className="text-right py-2 px-2 font-medium text-slate-500">{t('cm.pages_HRv2OpsDashboard.islem_792e7')}</th>
+                          <th className="text-right py-2 px-2 font-medium text-slate-500">{t('cm.pages_HRv2OpsDashboard.hata')}</th>
                           <th className="text-right py-2 px-2 font-medium text-slate-500">Drift</th>
                           <th className="text-right py-2 px-2 font-medium text-slate-500">Latency</th>
                           <th className="text-right py-2 px-2 font-medium text-slate-500">Alert</th>
@@ -1241,7 +1243,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                       <div className="mt-3 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-center">
                         <p className="text-xs font-medium text-emerald-700">
                           <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />
-                          7 günlük gözlem tamamlandı
+                          {t('cm.pages_HRv2OpsDashboard.7_gunluk_gozlem_tamamlandi')}
                         </p>
                       </div>
                     )}
@@ -1261,7 +1263,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                     </CardTitle>
                   </div>
                   <Badge variant="outline" className="text-[10px] text-teal-600 border-teal-200 bg-teal-50">
-                    Aktif
+                    {t('cm.pages_HRv2OpsDashboard.aktif')}
                   </Badge>
                 </div>
               </CardHeader>
@@ -1281,7 +1283,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                     <span className="text-slate-700 font-medium">6 saat</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Günlük Özet</span>
+                    <span className="text-slate-500">{t('cm.pages_HRv2OpsDashboard.gunluk_ozet')}</span>
                     <span className="text-slate-700 font-medium">00:00 UTC</span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -1289,7 +1291,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                     <span className="text-slate-700 font-semibold">{autoStatus.snapshots_24h ?? 0}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Aktif Alert</span>
+                    <span className="text-slate-500">{t('cm.pages_HRv2OpsDashboard.aktif_alert')}</span>
                     <span className={`font-semibold ${(autoStatus.active_alerts || 0) > 0 ? "text-red-600" : "text-emerald-600"}`}>
                       {autoStatus.active_alerts ?? 0}
                     </span>
@@ -1313,14 +1315,14 @@ export default function HRv2OpsDashboard({ tenant }) {
                   </div>
                 ) : (
                   <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-center">
-                    <p className="text-xs text-slate-400">Henüz snapshot yok</p>
+                    <p className="text-xs text-slate-400">{t('cm.pages_HRv2OpsDashboard.henuz_snapshot_yok')}</p>
                   </div>
                 )}
                 {autoStatus.last_daily_summary && (
                   <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                    <p className="text-[11px] text-slate-600 font-medium">Son Günlük Özet</p>
+                    <p className="text-[11px] text-slate-600 font-medium">{t('cm.pages_HRv2OpsDashboard.son_gunluk_ozet')}</p>
                     <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1">
-                      <span>Tarih: {autoStatus.last_daily_summary.date}</span>
+                      <span>{t('cm.pages_HRv2OpsDashboard.tarih')} {autoStatus.last_daily_summary.date}</span>
                       <span>
                         Score: {autoStatus.last_daily_summary.readiness_score ?? "—"}
                         {autoStatus.last_daily_summary.score_change != null && (
@@ -1339,7 +1341,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                     <span className="text-slate-600">30 gun</span>
                   </div>
                   <div className="flex items-center justify-between text-[10px]">
-                    <span className="text-slate-500">Günlük özetler</span>
+                    <span className="text-slate-500">{t('cm.pages_HRv2OpsDashboard.gunluk_ozetler')}</span>
                     <span className="text-slate-600">90 gun</span>
                   </div>
                 </div>
@@ -1525,7 +1527,7 @@ export default function HRv2OpsDashboard({ tenant }) {
                             </TooltipTrigger>
                             <TooltipContent side="top" className="text-xs">
                               <p className="font-medium">{p.time}</p>
-                              <p>Hata: %{p.error_rate} ({p.fail_count} adet)</p>
+                              <p>{t('cm.pages_HRv2OpsDashboard.hata_c0a10')}{p.error_rate} ({p.fail_count} adet)</p>
                             </TooltipContent>
                           </Tooltip>
                         );

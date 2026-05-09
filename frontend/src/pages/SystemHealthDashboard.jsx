@@ -14,6 +14,7 @@ import {
   XCircle, Clock, Wifi, WifiOff, Lock, Eye, Loader2,
   Database, Radio, Zap, TrendingUp, TrendingDown, Minus, Users, Building2, Layers, Network,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 /* ── Status mapping (TR + Sprint A intent palette) ─────────────────── */
 const STATUS_META = {
@@ -27,6 +28,7 @@ const STATUS_META = {
   unknown:  { label: "Bilinmiyor", intent: "neutral" },
 };
 function HealthBadge({ status }) {
+  const { t } = useTranslation();
   const m = STATUS_META[(status || "").toLowerCase()] || STATUS_META.unknown;
   return <StatusBadge intent={m.intent}>{m.label}</StatusBadge>;
 }
@@ -74,7 +76,7 @@ function PanelCard({ title, icon: Icon, children, status, onAction, actionLabel,
             </Button>
           )}
           {permissionGated && (
-            <span className="text-[10px] text-slate-600 flex items-center gap-1"><Lock className="w-3 h-3" /> Salt görünüm</span>
+            <span className="text-[10px] text-slate-600 flex items-center gap-1"><Lock className="w-3 h-3" /> {t('cm.pages_SystemHealthDashboard.salt_gorunum')}</span>
           )}
         </div>
       </CardHeader>
@@ -124,7 +126,7 @@ function ErrorSparkline({ points, testId }) {
   if (series.length < 2) {
     return (
       <div data-testid={`${testId}-empty`} className="text-[11px] text-slate-400 italic">
-        Trend için yeterli veri yok (≥2 örnek gerekli)
+        {t('cm.pages_SystemHealthDashboard.trend_icin_yeterli_veri_yok_2_ornek_gere')}
       </div>
     );
   }
@@ -171,14 +173,14 @@ function WSBridgePanel({ wsBridge, testIdPrefix = "ws-bridge" }) {
   const trendLabel = trend === "up" ? "Hata oranı yükseliyor" : trend === "down" ? "Hata oranı düşüyor" : "Hata oranı sabit";
 
   return (
-    <PanelCard testId={`${testIdPrefix}-panel`} title="Çoklu sunucu sohbet köprüsü" icon={Network} status={status}>
+    <PanelCard testId={`${testIdPrefix}-panel`} title={t('cm.pages_SystemHealthDashboard.coklu_sunucu_sohbet_koprusu')} icon={Network} status={status}>
       <div className="space-y-2 text-xs">
         <DataRow label="Mod" value={mode} />
         {detail.instance_id && <DataRow label="Sunucu" value={detail.instance_id} />}
-        <DataRow label="Aktif kanal" value={detail.channels_active ?? 0} />
-        <DataRow label="Yayınlanan mesaj" value={detail.messages_published ?? 0} />
-        <DataRow label="Alınan mesaj" value={detail.messages_received ?? 0} />
-        <DataRow label="İletilen mesaj" value={detail.messages_forwarded ?? 0} />
+        <DataRow label={t('cm.pages_SystemHealthDashboard.aktif_kanal')} value={detail.channels_active ?? 0} />
+        <DataRow label={t('cm.pages_SystemHealthDashboard.yayinlanan_mesaj')} value={detail.messages_published ?? 0} />
+        <DataRow label={t('cm.pages_SystemHealthDashboard.alinan_mesaj')} value={detail.messages_received ?? 0} />
+        <DataRow label={t('cm.pages_SystemHealthDashboard.iletilen_mesaj')} value={detail.messages_forwarded ?? 0} />
         <DataRow label={`Yayın hatası (≥${threshold} alarm)`} value={errors} valueClass={errorsClass} />
 
         <div data-testid={`${testIdPrefix}-trend`} className="mt-2 p-2 rounded border border-slate-200 bg-slate-50/60">
@@ -193,14 +195,14 @@ function WSBridgePanel({ wsBridge, testIdPrefix = "ws-bridge" }) {
           </div>
           <ErrorSparkline points={points} testId={`${testIdPrefix}-sparkline`} />
           <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500">
-            <span>{points.length} örnek</span>
+            <span>{points.length} {t('cm.pages_SystemHealthDashboard.ornek')}</span>
             <span>Pencerede {errorsInWindow} hata</span>
           </div>
         </div>
 
         {detail.last_publish_error && (
           <div data-testid={`${testIdPrefix}-last-error`} className="mt-2 p-2 rounded bg-rose-50 border border-rose-200">
-            <p className="text-[11px] font-semibold text-rose-700">Son yayın hatası</p>
+            <p className="text-[11px] font-semibold text-rose-700">{t('cm.pages_SystemHealthDashboard.son_yayin_hatasi')}</p>
             <p className="text-[11px] text-rose-700 break-all">{detail.last_publish_error}</p>
             {lastErrAt && <p className="text-[10px] text-rose-500/80 mt-0.5">{lastErrAt}</p>}
           </div>
@@ -231,22 +233,22 @@ function RoomServiceLivePanel({ roomService, testIdPrefix = "room-service" }) {
   const bridgeChannels = detail.bridge_room_service_channels ?? 0;
 
   return (
-    <PanelCard testId={`${testIdPrefix}-panel`} title="Oda servisi canlı bağlantıları" icon={Radio} status={status}>
+    <PanelCard testId={`${testIdPrefix}-panel`} title={t('cm.pages_SystemHealthDashboard.oda_servisi_canli_baglantilari')} icon={Radio} status={status}>
       <div className="space-y-2 text-xs">
-        <DataRow label="Aktif rezervasyonlar (bu sunucu)" value={bookings} />
-        <DataRow label="Misafir soketleri" value={guestSockets} />
-        <DataRow label="Personel panelleri (kiracı)" value={`${staffTenants} kiracı / ${staffSockets} soket`} />
+        <DataRow label={t('cm.pages_SystemHealthDashboard.aktif_rezervasyonlar_bu_sunucu')} value={bookings} />
+        <DataRow label={t('cm.pages_SystemHealthDashboard.misafir_soketleri')} value={guestSockets} />
+        <DataRow label={t('cm.pages_SystemHealthDashboard.personel_panelleri_kiraci')} value={`${staffTenants} kiracı / ${staffSockets} soket`} />
         <DataRow label={`Son ${windowMin} dk teslim edilen güncelleme`}
           value={eventsLastHour}
           valueClass={eventsLastHour > 0 ? "text-emerald-700" : "text-slate-900"} />
         <p className="text-[10px] text-slate-500 -mt-1">
-          (her ekrana teslim her güncelleme bir kez sayılır)
+          {t('cm.pages_SystemHealthDashboard.her_ekrana_teslim_her_guncelleme_bir_kez')}
         </p>
         <div className="flex justify-between text-slate-600">
-          <span>Çoklu sunucu köprüsü</span>
+          <span>{t('cm.pages_SystemHealthDashboard.coklu_sunucu_koprusu')}</span>
           <HealthBadge status={bridgeActive ? "active" : "unknown"} />
         </div>
-        <DataRow label="Köprüde room_service kanalı" value={bridgeChannels} />
+        <DataRow label={t('cm.pages_SystemHealthDashboard.koprude_room_service_kanali')} value={bridgeChannels} />
         {roomService.evidence_summary && (
           <p className="text-[11px] text-slate-500 mt-1">{roomService.evidence_summary}</p>
         )}
@@ -265,22 +267,22 @@ function GMPropertyView({ cmStatus, alerts }) {
     <div data-testid="gm-property-view" className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         <MetricCard testId="gm-metric-cm" icon={Wifi} title="Kanal senkronu" value={cmStatus?.health || "—"} sub={`${cmStatus?.active_connections || 0} aktif`} />
-        <MetricCard testId="gm-metric-drift" icon={AlertTriangle} title="Sapma sorunları" value={driftActive} sub={driftActive > 0 ? "İnceleme gerekli" : "Senkron"} />
+        <MetricCard testId="gm-metric-drift" icon={AlertTriangle} title={t('cm.pages_SystemHealthDashboard.sapma_sorunlari')} value={driftActive} sub={driftActive > 0 ? "İnceleme gerekli" : "Senkron"} />
         <MetricCard testId="gm-metric-alerts" icon={AlertTriangle} title="Alarmlar" value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} kritik` : "Temiz"} />
         <MetricCard testId="gm-metric-recon" icon={CheckCircle2} title="Mutabakat" value={cmStatus?.reconciliation?.status || "OK"}
           sub={cmStatus?.reconciliation?.unresolved_issues > 0 ? `${cmStatus.reconciliation.unresolved_issues} sorun` : "Çözüldü"} />
       </div>
 
-      <PanelCard testId="gm-panel-cm" title="Kanal yöneticisi (Tesis)" icon={Wifi} status={cmStatus?.health} permissionGated>
+      <PanelCard testId="gm-panel-cm" title={t('cm.pages_SystemHealthDashboard.kanal_yoneticisi_tesis')} icon={Wifi} status={cmStatus?.health} permissionGated>
         <div className="space-y-2 text-xs">
           <DataRow label="Senkron durumu" value={cmStatus?.sync_stats?.last_sync ? "Aktif" : "Boşta"} />
-          <DataRow label="Senkron başarı oranı" value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
-          <DataRow label="Sapma sorunları" value={driftActive} valueClass={driftActive > 0 ? "text-amber-700" : "text-slate-900"} />
-          <DataRow label="Sağlayıcılar" value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
+          <DataRow label={t('cm.pages_SystemHealthDashboard.senkron_basari_orani')} value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
+          <DataRow label={t('cm.pages_SystemHealthDashboard.sapma_sorunlari_d7fbf')} value={driftActive} valueClass={driftActive > 0 ? "text-amber-700" : "text-slate-900"} />
+          <DataRow label={t('cm.pages_SystemHealthDashboard.saglayicilar')} value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
         </div>
       </PanelCard>
 
-      <PanelCard testId="gm-panel-alerts" title="Tesis alarmları" icon={AlertTriangle}
+      <PanelCard testId="gm-panel-alerts" title={t('cm.pages_SystemHealthDashboard.tesis_alarmlari')} icon={AlertTriangle}
         status={criticalAlerts > 0 ? "critical" : alertCount > 0 ? "degraded" : "healthy"}>
         {alerts?.alerts?.length > 0 ? (
           <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -311,65 +313,65 @@ function AdminTenantView(props) {
   return (
     <div data-testid="admin-tenant-view" className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        <MetricCard testId="admin-metric-cm" icon={Wifi} title="Kanal yöneticisi" value={cmStatus?.health || "—"} sub={`${cmStatus?.active_connections || 0} bağlantı`} />
-        <MetricCard testId="admin-metric-queue" icon={Database} title="Kuyruk sağlığı" value={queueHealth?.health || "—"} sub={`${queueHealth?.pending || 0} bekleyen`} />
-        <MetricCard testId="admin-metric-alerts" icon={AlertTriangle} title="Aktif alarmlar" value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} kritik` : "Temiz"} />
-        <MetricCard testId="admin-metric-stuck" icon={Clock} title="Takılı görevler" value={stuckTasks?.count || 0} sub={stuckTasks?.count > 0 ? "Aksiyon gerekli" : "Yok"} />
+        <MetricCard testId="admin-metric-cm" icon={Wifi} title={t('cm.pages_SystemHealthDashboard.kanal_yoneticisi')} value={cmStatus?.health || "—"} sub={`${cmStatus?.active_connections || 0} bağlantı`} />
+        <MetricCard testId="admin-metric-queue" icon={Database} title={t('cm.pages_SystemHealthDashboard.kuyruk_sagligi')} value={queueHealth?.health || "—"} sub={`${queueHealth?.pending || 0} bekleyen`} />
+        <MetricCard testId="admin-metric-alerts" icon={AlertTriangle} title={t('cm.pages_SystemHealthDashboard.aktif_alarmlar')} value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} kritik` : "Temiz"} />
+        <MetricCard testId="admin-metric-stuck" icon={Clock} title={t('cm.pages_SystemHealthDashboard.takili_gorevler')} value={stuckTasks?.count || 0} sub={stuckTasks?.count > 0 ? "Aksiyon gerekli" : "Yok"} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <PanelCard testId="admin-panel-cm" title="Kanal yöneticisi" icon={Wifi} status={cmStatus?.health}
+        <PanelCard testId="admin-panel-cm" title={t('cm.pages_SystemHealthDashboard.kanal_yoneticisi_53252')} icon={Wifi} status={cmStatus?.health}
           onAction={canTrigger ? triggerDriftScan : undefined} actionLabel="Sapma taraması" actionLoading={driftScanLoading}>
           <div className="space-y-2 text-xs">
             <DataRow label="Senkron durumu" value={cmStatus?.sync_stats?.last_sync ? "Aktif" : "Boşta"} />
-            <DataRow label="Sapma sorunları" value={cmStatus?.drift?.active_drifts || 0} />
-            <DataRow label="Senkron başarı oranı" value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.sapma_sorunlari_d7fbf')} value={cmStatus?.drift?.active_drifts || 0} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.senkron_basari_orani_c9fa3')} value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
             <div className="flex justify-between text-slate-600">
               <span>Mutabakat</span>
               <HealthBadge status={cmStatus?.reconciliation?.status || "ok"} />
             </div>
-            <DataRow label="Sağlayıcılar" value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.saglayicilar_b696f')} value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
             {cmStatus?.sync_stats?.sync_lag_seconds != null && (
               <DataRow label="Senkron gecikmesi" value={`${Math.round(cmStatus.sync_stats.sync_lag_seconds / 60)}dk`} />
             )}
             {canTrigger && (
               <Button data-testid="admin-run-recon-btn" variant="outline" size="sm" onClick={triggerRecon} disabled={reconLoading} className="w-full mt-2">
                 {reconLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <RefreshCw className="w-4 h-4 mr-1.5" />}
-                Mutabakatı çalıştır
+                {t('cm.pages_SystemHealthDashboard.mutabakati_calistir')}
               </Button>
             )}
           </div>
         </PanelCard>
 
-        <PanelCard testId="admin-panel-queue" title="Kuyruk & İşçiler" icon={Server} status={queueHealth?.health}>
+        <PanelCard testId="admin-panel-queue" title={t('cm.pages_SystemHealthDashboard.kuyruk_isciler')} icon={Server} status={queueHealth?.health}>
           <div className="space-y-2 text-xs">
-            <DataRow label="Bekleyen görevler" value={queueHealth?.pending || 0} />
-            <DataRow label="İşleniyor" value={queueHealth?.processing || 0} />
-            <DataRow label="Başarısız" value={queueHealth?.failed || 0} valueClass={(queueHealth?.failed || 0) > 0 ? "text-rose-700" : "text-slate-900"} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.bekleyen_gorevler')} value={queueHealth?.pending || 0} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.isleniyor')} value={queueHealth?.processing || 0} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.basarisiz')} value={queueHealth?.failed || 0} valueClass={(queueHealth?.failed || 0) > 0 ? "text-rose-700" : "text-slate-900"} />
             <DataRow label="Doluluk" value={`${queueHealth?.saturation_pct ?? 0}%`} />
-            <DataRow label="Takılı görevler" value={stuckTasks?.count || 0} valueClass={(stuckTasks?.count || 0) > 0 ? "text-amber-700" : "text-slate-900"} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.takili_gorevler_9fac9')} value={stuckTasks?.count || 0} valueClass={(stuckTasks?.count || 0) > 0 ? "text-amber-700" : "text-slate-900"} />
             <DataRow label="Dead-letter" value={queueHealth?.dead_letter?.total || 0} />
             <div className="flex justify-between text-slate-600">
-              <span>İşçiler</span>
+              <span>{t('cm.pages_SystemHealthDashboard.isciler')}</span>
               <HealthBadge status={queueHealth?.worker_heartbeat?.responding ? "active" : "critical"} />
             </div>
           </div>
         </PanelCard>
 
-        <PanelCard testId="admin-panel-security" title="Güvenlik runtime" icon={Shield}
+        <PanelCard testId="admin-panel-security" title={t('cm.pages_SystemHealthDashboard.guvenlik_runtime')} icon={Shield}
           status={secAudit?.severity === "critical" ? "critical" : (secAudit?.severity === "warning" ? "degraded" : "active")}>
           <div className="space-y-2 text-xs">
             <DataRow label="Denetim skoru" value={`${secAudit?.completeness_score ?? "—"}%`} />
-            <DataRow label="Denetim açıkları" value={secAudit?.gaps_found || 0} valueClass={(secAudit?.gaps_found || 0) > 0 ? "text-amber-700" : "text-slate-900"} />
-            <div className="flex justify-between text-slate-600"><span>Hız sınırlama</span><HealthBadge status={rateLimit?.enforcement || "active"} /></div>
+            <DataRow label={t('cm.pages_SystemHealthDashboard.denetim_aciklari')} value={secAudit?.gaps_found || 0} valueClass={(secAudit?.gaps_found || 0) > 0 ? "text-amber-700" : "text-slate-900"} />
+            <div className="flex justify-between text-slate-600"><span>{t('cm.pages_SystemHealthDashboard.hiz_sinirlama')}</span><HealthBadge status={rateLimit?.enforcement || "active"} /></div>
             {rateLimit?.burst_detected && <DataRow label="Patlama tespit" value="Evet" valueClass="text-rose-700" />}
-            <div className="flex justify-between text-slate-600"><span>Kiracı izolasyonu</span><HealthBadge status={tenantGuard?.enforcement || "active"} /></div>
-            <DataRow label="İhlaller" value={tenantGuard?.total_violations || 0} valueClass={(tenantGuard?.total_violations || 0) > 0 ? "text-rose-700" : "text-slate-900"} />
+            <div className="flex justify-between text-slate-600"><span>{t('cm.pages_SystemHealthDashboard.kiraci_izolasyonu')}</span><HealthBadge status={tenantGuard?.enforcement || "active"} /></div>
+            <DataRow label={t('cm.pages_SystemHealthDashboard.ihlaller')} value={tenantGuard?.total_violations || 0} valueClass={(tenantGuard?.total_violations || 0) > 0 ? "text-rose-700" : "text-slate-900"} />
             <DataRow label="Log sanitizasyonu" value={logSanit?.all_patterns_working ? "Tamam" : "Sorun"} />
           </div>
         </PanelCard>
 
-        <PanelCard testId="admin-panel-alerts" title="Runtime alarmları" icon={AlertTriangle}
+        <PanelCard testId="admin-panel-alerts" title={t('cm.pages_SystemHealthDashboard.runtime_alarmlari')} icon={AlertTriangle}
           status={criticalAlerts > 0 ? "critical" : alertCount > 0 ? "degraded" : "healthy"}>
           {alerts?.alerts?.length > 0 ? (
             <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -395,15 +397,15 @@ function AdminTenantView(props) {
       {auditMetrics && (
         <div>
           <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-            <TrendingUp className="w-4 h-4" /> Denetim & Gözlemlenebilirlik
+            <TrendingUp className="w-4 h-4" /> {t('cm.pages_SystemHealthDashboard.denetim_gozlemlenebilirlik')}
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <MetricCard testId="admin-audit-drift" icon={Eye} title="Sapma taraması" value={auditMetrics.drift?.scans_count ?? 0} sub={`${auditMetrics.drift?.total_drifts ?? 0} sapma`} />
-            <MetricCard testId="admin-audit-recon" icon={CheckCircle2} title="Mutabakat başarısı" value={`${auditMetrics.reconciliation?.success_rate ?? 100}%`} sub={`${auditMetrics.reconciliation?.total_runs ?? 0} koşu`} />
+            <MetricCard testId="admin-audit-drift" icon={Eye} title={t('cm.pages_SystemHealthDashboard.sapma_taramasi')} value={auditMetrics.drift?.scans_count ?? 0} sub={`${auditMetrics.drift?.total_drifts ?? 0} sapma`} />
+            <MetricCard testId="admin-audit-recon" icon={CheckCircle2} title={t('cm.pages_SystemHealthDashboard.mutabakat_basarisi')} value={`${auditMetrics.reconciliation?.success_rate ?? 100}%`} sub={`${auditMetrics.reconciliation?.total_runs ?? 0} koşu`} />
             <MetricCard testId="admin-audit-backlog" icon={Database} title="Kuyruk birikimi" value={auditMetrics.queue?.current_pending ?? 0} sub={`${auditMetrics.queue?.current_stuck ?? 0} takılı`} />
-            <MetricCard testId="admin-audit-violations" icon={Shield} title="İhlaller" value={auditMetrics.security?.violations_period ?? 0} sub="Son 24 saat" />
+            <MetricCard testId="admin-audit-violations" icon={Shield} title={t('cm.pages_SystemHealthDashboard.ihlaller_92982')} value={auditMetrics.security?.violations_period ?? 0} sub="Son 24 saat" />
             <MetricCard testId="admin-audit-dl" icon={XCircle} title="Dead-letter" value={auditMetrics.dead_letter?.total ?? 0} sub={`+${auditMetrics.dead_letter?.new_in_period ?? 0} yeni`} />
-            <MetricCard testId="admin-audit-total" icon={AlertTriangle} title="Toplam alarm" value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} kritik` : "Temiz"} />
+            <MetricCard testId="admin-audit-total" icon={AlertTriangle} title={t('cm.pages_SystemHealthDashboard.toplam_alarm')} value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} kritik` : "Temiz"} />
           </div>
         </div>
       )}
@@ -424,54 +426,54 @@ function SuperadminGlobalView(props) {
           <AlertTriangle className="w-5 h-5 text-rose-700 flex-shrink-0" />
           <div>
             <p className="text-sm font-semibold text-rose-800">{criticalAlerts} kritik alarm — global kapsam</p>
-            <p className="text-xs text-rose-700 mt-0.5">Acil çapraz-kiracı müdahale gerekli</p>
+            <p className="text-xs text-rose-700 mt-0.5">{t('cm.pages_SystemHealthDashboard.acil_capraz_kiraci_mudahale_gerekli')}</p>
           </div>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <PanelCard testId="sa-panel-cm" title="Kanal yöneticisi (Global)" icon={Wifi} status={cmStatus?.health}
+        <PanelCard testId="sa-panel-cm" title={t('cm.pages_SystemHealthDashboard.kanal_yoneticisi_global')} icon={Wifi} status={cmStatus?.health}
           onAction={canTrigger ? triggerDriftScan : undefined} actionLabel="Sapma taraması" actionLoading={driftScanLoading}>
           <div className="space-y-2 text-xs">
             <DataRow label="Senkron durumu" value={cmStatus?.sync_stats?.last_sync ? "Aktif" : "Boşta"} />
-            <DataRow label="Sapma sorunları" value={cmStatus?.drift?.active_drifts || 0} />
-            <DataRow label="Senkron başarı oranı" value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.sapma_sorunlari_d7fbf')} value={cmStatus?.drift?.active_drifts || 0} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.senkron_basari_orani_c9fa3')} value={`${cmStatus?.sync_stats?.success_rate ?? 100}%`} />
             <div className="flex justify-between text-slate-600"><span>Mutabakat</span><HealthBadge status={cmStatus?.reconciliation?.status || "ok"} /></div>
-            <DataRow label="Sağlayıcılar" value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.saglayicilar_b696f')} value={`${cmStatus?.providers?.healthy || 0} / ${cmStatus?.providers?.total || 0}`} />
             {cmStatus?.sync_stats?.sync_lag_seconds != null && <DataRow label="Senkron gecikmesi" value={`${Math.round(cmStatus.sync_stats.sync_lag_seconds / 60)}dk`} />}
             {canTrigger && (
               <Button data-testid="sa-run-recon-btn" variant="outline" size="sm" onClick={triggerRecon} disabled={reconLoading} className="w-full mt-2">
                 {reconLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <RefreshCw className="w-4 h-4 mr-1.5" />}
-                Mutabakatı çalıştır
+                {t('cm.pages_SystemHealthDashboard.mutabakati_calistir_b0906')}
               </Button>
             )}
           </div>
         </PanelCard>
 
-        <PanelCard testId="sa-panel-queue" title="Kuyruk & İşçiler (Global)" icon={Server} status={queueHealth?.health}>
+        <PanelCard testId="sa-panel-queue" title={t('cm.pages_SystemHealthDashboard.kuyruk_isciler_global')} icon={Server} status={queueHealth?.health}>
           <div className="space-y-2 text-xs">
-            <DataRow label="Bekleyen görevler" value={queueHealth?.pending || 0} />
-            <DataRow label="İşleniyor" value={queueHealth?.processing || 0} />
-            <DataRow label="Başarısız" value={queueHealth?.failed || 0} valueClass={(queueHealth?.failed || 0) > 0 ? "text-rose-700" : "text-slate-900"} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.bekleyen_gorevler_4cb10')} value={queueHealth?.pending || 0} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.isleniyor_41e28')} value={queueHealth?.processing || 0} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.basarisiz_3260d')} value={queueHealth?.failed || 0} valueClass={(queueHealth?.failed || 0) > 0 ? "text-rose-700" : "text-slate-900"} />
             <DataRow label="Doluluk" value={`${queueHealth?.saturation_pct ?? 0}%`} />
-            <DataRow label="Takılı görevler" value={stuckTasks?.count || 0} valueClass={(stuckTasks?.count || 0) > 0 ? "text-amber-700" : "text-slate-900"} />
+            <DataRow label={t('cm.pages_SystemHealthDashboard.takili_gorevler_9fac9')} value={stuckTasks?.count || 0} valueClass={(stuckTasks?.count || 0) > 0 ? "text-amber-700" : "text-slate-900"} />
             <DataRow label="Dead-letter" value={queueHealth?.dead_letter?.total || 0} />
             <div className="flex justify-between text-slate-600">
-              <span>İşçiler</span>
+              <span>{t('cm.pages_SystemHealthDashboard.isciler_19594')}</span>
               <HealthBadge status={queueHealth?.worker_heartbeat?.responding ? "active" : "critical"} />
             </div>
           </div>
         </PanelCard>
 
-        <PanelCard testId="sa-panel-security" title="Güvenlik duruşu (Global)" icon={Shield}
+        <PanelCard testId="sa-panel-security" title={t('cm.pages_SystemHealthDashboard.guvenlik_durusu_global')} icon={Shield}
           status={secAudit?.severity === "critical" ? "critical" : (secAudit?.severity === "warning" ? "degraded" : "active")}>
           <div className="space-y-2 text-xs">
             <DataRow label="Denetim skoru" value={`${secAudit?.completeness_score ?? "—"}%`} />
-            <DataRow label="Denetim açıkları" value={secAudit?.gaps_found || 0} valueClass={(secAudit?.gaps_found || 0) > 0 ? "text-amber-700" : "text-slate-900"} />
-            <div className="flex justify-between text-slate-600"><span>Hız sınırlama</span><HealthBadge status={rateLimit?.enforcement || "active"} /></div>
+            <DataRow label={t('cm.pages_SystemHealthDashboard.denetim_aciklari_6bd7a')} value={secAudit?.gaps_found || 0} valueClass={(secAudit?.gaps_found || 0) > 0 ? "text-amber-700" : "text-slate-900"} />
+            <div className="flex justify-between text-slate-600"><span>{t('cm.pages_SystemHealthDashboard.hiz_sinirlama_50ab4')}</span><HealthBadge status={rateLimit?.enforcement || "active"} /></div>
             {rateLimit?.burst_detected && <DataRow label="Patlama tespit" value="Evet" valueClass="text-rose-700" />}
-            <div className="flex justify-between text-slate-600"><span>Kiracı izolasyonu</span><HealthBadge status={tenantGuard?.enforcement || "active"} /></div>
-            <DataRow label="Çapraz-kiracı ihlaller" value={tenantGuard?.total_violations || 0} valueClass={(tenantGuard?.total_violations || 0) > 0 ? "text-rose-700" : "text-slate-900"} />
+            <div className="flex justify-between text-slate-600"><span>{t('cm.pages_SystemHealthDashboard.kiraci_izolasyonu_740eb')}</span><HealthBadge status={tenantGuard?.enforcement || "active"} /></div>
+            <DataRow label={t('cm.pages_SystemHealthDashboard.capraz_kiraci_ihlaller')} value={tenantGuard?.total_violations || 0} valueClass={(tenantGuard?.total_violations || 0) > 0 ? "text-rose-700" : "text-slate-900"} />
             <DataRow label="Log sanitizasyonu" value={logSanit?.all_patterns_working ? "Tamam" : "Sorun"} />
           </div>
         </PanelCard>
@@ -502,15 +504,15 @@ function SuperadminGlobalView(props) {
       {auditMetrics && (
         <div>
           <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-            <TrendingUp className="w-4 h-4" /> Denetim & Gözlemlenebilirlik (Global)
+            <TrendingUp className="w-4 h-4" /> {t('cm.pages_SystemHealthDashboard.denetim_gozlemlenebilirlik_global')}
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <MetricCard testId="sa-audit-drift" icon={Eye} title="Sapma taraması" value={auditMetrics.drift?.scans_count ?? 0} sub={`${auditMetrics.drift?.total_drifts ?? 0} sapma`} />
-            <MetricCard testId="sa-audit-recon" icon={CheckCircle2} title="Mutabakat başarısı" value={`${auditMetrics.reconciliation?.success_rate ?? 100}%`} sub={`${auditMetrics.reconciliation?.total_runs ?? 0} koşu`} />
+            <MetricCard testId="sa-audit-drift" icon={Eye} title={t('cm.pages_SystemHealthDashboard.sapma_taramasi_d7f10')} value={auditMetrics.drift?.scans_count ?? 0} sub={`${auditMetrics.drift?.total_drifts ?? 0} sapma`} />
+            <MetricCard testId="sa-audit-recon" icon={CheckCircle2} title={t('cm.pages_SystemHealthDashboard.mutabakat_basarisi_5f3f5')} value={`${auditMetrics.reconciliation?.success_rate ?? 100}%`} sub={`${auditMetrics.reconciliation?.total_runs ?? 0} koşu`} />
             <MetricCard testId="sa-audit-backlog" icon={Database} title="Kuyruk birikimi" value={auditMetrics.queue?.current_pending ?? 0} sub={`${auditMetrics.queue?.current_stuck ?? 0} takılı`} />
-            <MetricCard testId="sa-audit-violations" icon={Shield} title="İhlaller" value={auditMetrics.security?.violations_period ?? 0} sub="Son 24 saat" />
+            <MetricCard testId="sa-audit-violations" icon={Shield} title={t('cm.pages_SystemHealthDashboard.ihlaller_92982')} value={auditMetrics.security?.violations_period ?? 0} sub="Son 24 saat" />
             <MetricCard testId="sa-audit-dl" icon={XCircle} title="Dead-letter" value={auditMetrics.dead_letter?.total ?? 0} sub={`+${auditMetrics.dead_letter?.new_in_period ?? 0} yeni`} />
-            <MetricCard testId="sa-audit-total" icon={AlertTriangle} title="Toplam alarm" value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} kritik` : "Temiz"} />
+            <MetricCard testId="sa-audit-total" icon={AlertTriangle} title={t('cm.pages_SystemHealthDashboard.toplam_alarm_c2c15')} value={alertCount} sub={criticalAlerts > 0 ? `${criticalAlerts} kritik` : "Temiz"} />
           </div>
         </div>
       )}
@@ -520,17 +522,17 @@ function SuperadminGlobalView(props) {
           <h2 className="text-sm font-semibold text-slate-700 mb-3">Runtime metrikleri (Global)</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {metrics.sync && <MetricCard testId="sa-rt-sync" icon={Clock} title="Senkron gecikmesi" value={`${metrics.sync.lag_seconds ?? 0}sn`} />}
-            {metrics.drift && <MetricCard testId="sa-rt-drift" icon={AlertTriangle} title="Aktif sapmalar" value={metrics.drift.active_count ?? 0} />}
-            {metrics.reconciliation && <MetricCard testId="sa-rt-recon" icon={CheckCircle2} title="Mutabakat oranı" value={`${metrics.reconciliation.success_rate ?? 100}%`} />}
+            {metrics.drift && <MetricCard testId="sa-rt-drift" icon={AlertTriangle} title={t('cm.pages_SystemHealthDashboard.aktif_sapmalar')} value={metrics.drift.active_count ?? 0} />}
+            {metrics.reconciliation && <MetricCard testId="sa-rt-recon" icon={CheckCircle2} title={t('cm.pages_SystemHealthDashboard.mutabakat_orani')} value={`${metrics.reconciliation.success_rate ?? 100}%`} />}
             {metrics.queue && <MetricCard testId="sa-rt-queue" icon={Database} title="Kuyruk" value={metrics.queue.backlog ?? 0} />}
-            {metrics.security && <MetricCard testId="sa-rt-sec" icon={Shield} title="İhlaller" value={metrics.security.violations ?? 0} />}
+            {metrics.security && <MetricCard testId="sa-rt-sec" icon={Shield} title={t('cm.pages_SystemHealthDashboard.ihlaller_92982')} value={metrics.security.violations ?? 0} />}
           </div>
         </div>
       )}
 
       {normalizedOverview?.subsystems && (
         <div>
-          <h2 className="text-sm font-semibold text-slate-700 mb-3">Alt sistem sağlığı (Global)</h2>
+          <h2 className="text-sm font-semibold text-slate-700 mb-3">{t('cm.pages_SystemHealthDashboard.alt_sistem_sagligi_global')}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
             {Object.entries(normalizedOverview.subsystems).map(([key, sub]) => (
               <div key={key} data-testid={`normalized-${key}`} className="p-3 rounded-lg bg-white border border-slate-200">
@@ -544,7 +546,7 @@ function SuperadminGlobalView(props) {
                   {sub.degraded_reason && <p className="text-amber-700">{sub.degraded_reason}</p>}
                   {sub.suggested_action && <p className="text-sky-700">{sub.suggested_action}</p>}
                   <p className="text-slate-500">
-                    Güncellendi: {sub.last_updated_at ? new Date(sub.last_updated_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                    {t('cm.pages_SystemHealthDashboard.guncellendi')} {sub.last_updated_at ? new Date(sub.last_updated_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }) : "—"}
                   </p>
                 </div>
               </div>
@@ -795,8 +797,8 @@ export default function SystemHealthDashboard({ user }) {
     <div data-testid="system-health-dashboard" className="max-w-7xl mx-auto p-4 space-y-4">
       <PageHeader
         icon={Activity}
-        title="Sistem Sağlığı"
-        subtitle="Runtime sertleştirme & operasyon konsolu"
+        title={t('cm.pages_SystemHealthDashboard.sistem_sagligi')}
+        subtitle={t('cm.pages_SystemHealthDashboard.runtime_sertlestirme_operasyon_konsolu')}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <ScopeBanner role={userRole} scope={userScope} />
@@ -807,12 +809,12 @@ export default function SystemHealthDashboard({ user }) {
               </StatusBadge>
             </span>
             {updatedLabel && (
-              <span className="text-[11px] text-slate-600">Güncelleme {updatedLabel}</span>
+              <span className="text-[11px] text-slate-600">{t('cm.pages_SystemHealthDashboard.guncelleme')} {updatedLabel}</span>
             )}
             <Button data-testid="refresh-all-btn" variant="outline" size="sm"
               onClick={handleRefresh} disabled={loading || refreshing}>
               <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
-              Yenile
+              {t('cm.pages_SystemHealthDashboard.yenile')}
             </Button>
           </div>
         }
@@ -836,21 +838,21 @@ export default function SystemHealthDashboard({ user }) {
       {/* KPI satırı — Sprint A KpiCard intent palette */}
       {!loading && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <KpiCard icon={Wifi} label="Kanal yöneticisi"
+          <KpiCard icon={Wifi} label={t('cm.pages_SystemHealthDashboard.kanal_yoneticisi_53252')}
             value={overallMeta.label === "Bilinmiyor" ? "—" : (STATUS_META[cmHealth]?.label || cmHealth)}
             sub={`${cmStatus?.active_connections || 0} bağlantı`}
             intent={kpiIntent(cmHealth)} />
-          <KpiCard icon={Database} label="Kuyruk sağlığı"
+          <KpiCard icon={Database} label={t('cm.pages_SystemHealthDashboard.kuyruk_sagligi_2d447')}
             value={STATUS_META[qHealth]?.label || qHealth}
             sub={`${queueHealth?.pending || 0} bekleyen`}
             intent={kpiIntent(qHealth)} />
           <KpiCard icon={AlertTriangle} label="Alarmlar" value={alertCount}
             sub={criticalAlerts > 0 ? `${criticalAlerts} kritik` : "Temiz"}
             intent={criticalAlerts > 0 ? "danger" : alertCount > 0 ? "warning" : "success"} />
-          <KpiCard icon={Shield} label="İzolasyon ihlalleri" value={violations}
+          <KpiCard icon={Shield} label={t('cm.pages_SystemHealthDashboard.izolasyon_ihlalleri')} value={violations}
             sub="Çapraz-kiracı"
             intent={violations > 0 ? "danger" : "success"} />
-          <KpiCard icon={Clock} label="Takılı / Dead-letter"
+          <KpiCard icon={Clock} label={t('cm.pages_SystemHealthDashboard.takili_dead_letter')}
             value={`${stuckCount} / ${dlCount}`}
             sub="Takılı / Dead-letter"
             intent={(stuckCount + dlCount) > 0 ? "warning" : "neutral"} />

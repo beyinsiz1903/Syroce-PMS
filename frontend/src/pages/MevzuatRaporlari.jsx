@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
+import { useTranslation } from 'react-i18next';
 
 const TABS = [
   { key: "tuik", label: "TÜİK Aylık Anketi", icon: BarChart3 },
@@ -33,6 +34,7 @@ function downloadCSV(rows, filename) {
 }
 
 function RefreshButton({ onClick, loading, label = "Yenile" }) {
+  const { t } = useTranslation();
   return (
     <Button variant="outline" size="sm" onClick={onClick} disabled={loading}>
       {loading
@@ -289,7 +291,7 @@ export default function MevzuatRaporlari({ user, tenant }) {
       <PageHeader
         icon={ScrollText}
         title="Mevzuat & Resmi Raporlar"
-        subtitle="TÜİK, TGA, Bakanlık denetim hazırlığı ve yıldız sınıflama self-check"
+        subtitle={t('cm.pages_MevzuatRaporlari.tuik_tga_bakanlik_denetim_hazirligi_ve_y')}
         actions={refreshAction}
       />
 
@@ -314,13 +316,13 @@ export default function MevzuatRaporlari({ user, tenant }) {
         <div className="bg-white border rounded-lg p-4 space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="text-xs text-slate-600 block">Yıl</label>
+              <label className="text-xs text-slate-600 block">{t('cm.pages_MevzuatRaporlari.yil')}</label>
               <select className="border rounded px-3 py-2" value={year} onChange={(e) => setYear(Number(e.target.value))}>
                 {yearOpts.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs text-slate-600 block">Ay</label>
+              <label className="text-xs text-slate-600 block">{t('cm.pages_MevzuatRaporlari.ay')}</label>
               <select className="border rounded px-3 py-2" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
                 {monthOpts.map((m) => <option key={m} value={m}>{String(m).padStart(2, "0")}</option>)}
               </select>
@@ -331,41 +333,41 @@ export default function MevzuatRaporlari({ user, tenant }) {
             </Button>
             {tuik && (
               <Button variant="outline" size="sm" onClick={exportTuikCSV}>
-                <Download className="h-4 w-4 mr-1.5" /> CSV İndir
+                <Download className="h-4 w-4 mr-1.5" /> {t('cm.pages_MevzuatRaporlari.csv_indir')}
               </Button>
             )}
             {tuik && (
               <Button variant="outline" size="sm" onClick={() => window.print()}>
-                <FileText className="h-4 w-4 mr-1.5" /> Yazdır
+                <FileText className="h-4 w-4 mr-1.5" /> {t('cm.pages_MevzuatRaporlari.yazdir')}
               </Button>
             )}
           </div>
 
           {!tuik && !loading && (
             <div className="text-sm text-slate-500 italic">
-              Yıl ve ay seçip "Raporu Hesapla" butonuna basın.
+              {t('cm.pages_MevzuatRaporlari.yil_ve_ay_secip_raporu_hesapla_butonuna_')}
             </div>
           )}
           {loading && !tuik && (
             <div className="text-sm text-slate-500 flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Cari ay raporu hesaplanıyor…
+              <Loader2 className="h-4 w-4 animate-spin" /> {t('cm.pages_MevzuatRaporlari.cari_ay_raporu_hesaplaniyor')}
             </div>
           )}
 
           {tuik && (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <KpiCard label="Toplam Oda" value={fmtNum(tuik.capacity.rooms)} intent="neutral" />
-                <KpiCard label="Toplam Yatak" value={fmtNum(tuik.capacity.beds)} intent="neutral" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.toplam_oda')} value={fmtNum(tuik.capacity.rooms)} intent="neutral" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.toplam_yatak')} value={fmtNum(tuik.capacity.beds)} intent="neutral" />
                 <KpiCard label="Doluluk" value={`%${tuik.occupancy_pct}`} intent="info" />
-                <KpiCard label="Ortalama Kalış" value={tuik.average_length_of_stay} intent="neutral" />
-                <KpiCard label="Satılan Oda-Gece" value={fmtNum(tuik.stays.room_nights_sold)} intent="neutral" />
-                <KpiCard label="Toplam Misafir" value={fmtNum(tuik.stays.guest_count)} intent="neutral" />
-                <KpiCard label="Yerli Kişi-Gece" value={fmtNum(tuik.stays.person_nights_domestic)} intent="success" />
-                <KpiCard label="Yabancı Kişi-Gece" value={fmtNum(tuik.stays.person_nights_foreign)} intent="info" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.ortalama_kalis')} value={tuik.average_length_of_stay} intent="neutral" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.satilan_oda_gece')} value={fmtNum(tuik.stays.room_nights_sold)} intent="neutral" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.toplam_misafir')} value={fmtNum(tuik.stays.guest_count)} intent="neutral" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.yerli_kisi_gece')} value={fmtNum(tuik.stays.person_nights_domestic)} intent="success" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.yabanci_kisi_gece')} value={fmtNum(tuik.stays.person_nights_foreign)} intent="info" />
                 {tuik.stays.person_nights_unspecified > 0 && (
                   <KpiCard
-                    label="Uyruk Belirsiz Kişi-Gece"
+                    label={t('cm.pages_MevzuatRaporlari.uyruk_belirsiz_kisi_gece')}
                     value={fmtNum(tuik.stays.person_nights_unspecified)}
                     intent="warning"
                   />
@@ -377,19 +379,19 @@ export default function MevzuatRaporlari({ user, tenant }) {
                   <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
                   <div className="flex-1">
                     <div className="font-semibold mb-1">
-                      {fmtNum(tuik.stays.person_nights_unspecified)} kişi-gece için uyruk girilmemiş.
+                      {fmtNum(tuik.stays.person_nights_unspecified)} {t('cm.pages_MevzuatRaporlari.kisi_gece_icin_uyruk_girilmemis')}
                     </div>
                     <div className="text-xs text-amber-700">
-                      TÜİK formu yerli/yabancı ayrımı zorunludur. Etkilenen rezervasyon sayısı:{" "}
+                      {t('cm.pages_MevzuatRaporlari.tuik_formu_yerli_yabanci_ayrimi_zorunlud')}{" "}
                       <strong>{fmtNum(tuik.missing_nationality?.booking_count || 0)}</strong>.
                     </div>
                     {tuik.missing_nationality?.samples?.length > 0 && (
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <Button variant="outline" size="sm" onClick={goToMissingNationality}>
-                          Eksik uyruklu rezervasyonları gör
+                          {t('cm.pages_MevzuatRaporlari.eksik_uyruklu_rezervasyonlari_gor')}
                         </Button>
                         <span className="text-xs text-amber-700">
-                          (ilk örnek: {tuik.missing_nationality.samples[0].confirmation_number || tuik.missing_nationality.samples[0].id} —
+                          {t('cm.pages_MevzuatRaporlari.ilk_ornek')} {tuik.missing_nationality.samples[0].confirmation_number || tuik.missing_nationality.samples[0].id} —
                           {" "}{tuik.missing_nationality.samples[0].guest_name || "—"})
                         </span>
                       </div>
@@ -402,8 +404,7 @@ export default function MevzuatRaporlari({ user, tenant }) {
                 <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-2 flex items-start gap-1.5">
                   <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-500" />
                   <span>
-                    {fmtNum(tuik.data_quality.adults_defaulted_count)} rezervasyonda yetişkin sayısı boş —
-                    kişi-gece hesabında 1 yetişkin varsayıldı (kayıt sunucu loglarında uyarı olarak yer alır).
+                    {fmtNum(tuik.data_quality.adults_defaulted_count)} {t('cm.pages_MevzuatRaporlari.rezervasyonda_yetiskin_sayisi_bos_kisi_g')}
                   </span>
                 </div>
               )}
@@ -412,8 +413,8 @@ export default function MevzuatRaporlari({ user, tenant }) {
                 <table className="min-w-full text-sm">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="text-left px-3 py-2">Ülke (İlk 20)</th>
-                      <th className="text-right px-3 py-2">Kişi-Gece</th>
+                      <th className="text-left px-3 py-2">{t('cm.pages_MevzuatRaporlari.ulke_ilk_20')}</th>
+                      <th className="text-right px-3 py-2">{t('cm.pages_MevzuatRaporlari.kisi_gece')}</th>
                       <th className="text-right px-3 py-2">Pay %</th>
                     </tr>
                   </thead>
@@ -430,7 +431,7 @@ export default function MevzuatRaporlari({ user, tenant }) {
                     })}
                     {tuik.nationality_other_total > 0 && (
                       <tr className="border-t bg-slate-50">
-                        <td className="px-3 py-1.5 italic">Diğer</td>
+                        <td className="px-3 py-1.5 italic">{t('cm.pages_MevzuatRaporlari.diger')}</td>
                         <td className="px-3 py-1.5 text-right">{fmtNum(tuik.nationality_other_total)}</td>
                         <td className="px-3 py-1.5 text-right">—</td>
                       </tr>
@@ -439,8 +440,7 @@ export default function MevzuatRaporlari({ user, tenant }) {
                 </table>
               </div>
               <p className="text-xs text-slate-400">
-                Bu çıktı TÜİK e-Anket sistemine veri girişi içindir. Resmî
-                gönderim TÜİK web portalı üzerinden yapılır.
+                {t('cm.pages_MevzuatRaporlari.bu_cikti_tuik_e_anket_sistemine_veri_gir')}
               </p>
             </>
           )}
@@ -450,20 +450,17 @@ export default function MevzuatRaporlari({ user, tenant }) {
       {tab === "tga" && (
         <div className="space-y-4">
           <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 text-xs text-sky-900 leading-relaxed">
-            <strong>TGA Tesis Entegrasyon API'si:</strong> Türkiye Turizm Tanıtım ve Geliştirme Ajansı,
-            konaklama tesislerinden günlük operasyonel veri toplar. Sistem her 6 saatte bir
-            son 7 günü otomatik gönderir; manuel tetikleme de mümkündür.
+            <strong>TGA Tesis Entegrasyon API'si:</strong> {t('cm.pages_MevzuatRaporlari.turkiye_turizm_tanitim_ve_gelistirme_aja')}
             <br />
-            <strong>Ön gereklilik:</strong> TGA'dan tesisinize özel <em>X-API-Key</em> ile
-            <em> Tesis Belge No</em> alınmış olmalı.
-            Dokümantasyon: <a href="https://tesis-entegrasyon.tga.gov.tr/docs"
+            <strong>{t('cm.pages_MevzuatRaporlari.on_gereklilik')}</strong> {t('cm.pages_MevzuatRaporlari.tga_dan_tesisinize_ozel')} <em>X-API-Key</em> ile
+            <em> Tesis Belge No</em> {t('cm.pages_MevzuatRaporlari.alinmis_olmali_dokumantasyon')} <a href="https://tesis-entegrasyon.tga.gov.tr/docs"
               target="_blank" rel="noreferrer" className="underline">tesis-entegrasyon.tga.gov.tr/docs</a>
           </div>
 
           <div className="bg-white border rounded-lg p-4 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold flex items-center gap-2">
-                <Send className="h-4 w-4" /> Bağlantı Ayarları
+                <Send className="h-4 w-4" /> {t('cm.pages_MevzuatRaporlari.baglanti_ayarlari')}
               </h3>
               {tgaCfg && (
                 <StatusBadge
@@ -477,14 +474,14 @@ export default function MevzuatRaporlari({ user, tenant }) {
 
             {!tgaCfg ? (
               <div className="text-sm text-slate-500 flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" /> Yükleniyor…
+                <Loader2 className="h-4 w-4 animate-spin" /> {t('cm.pages_MevzuatRaporlari.yukleniyor')}
               </div>
             ) : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-slate-600 block mb-1">Tesis Belge No</label>
-                    <input type="text" placeholder="örn. TR-07-12345"
+                    <input type="text" placeholder={t('cm.pages_MevzuatRaporlari.orn_tr_07_12345')}
                       className="w-full border rounded px-3 py-2 text-sm"
                       value={tgaForm.belge_no}
                       onChange={(e) => setTgaForm({ ...tgaForm, belge_no: e.target.value })} />
@@ -498,7 +495,7 @@ export default function MevzuatRaporlari({ user, tenant }) {
                   </div>
                   <div className="md:col-span-2">
                     <label className="text-xs text-slate-600 block mb-1">
-                      X-API-Key {tgaCfg.api_key_set && <span className="text-emerald-700">(kayıtlı — boş bırak: değişmez)</span>}
+                      X-API-Key {tgaCfg.api_key_set && <span className="text-emerald-700">{t('cm.pages_MevzuatRaporlari.kayitli_bos_birak_degismez')}</span>}
                     </label>
                     <input type="password" placeholder="pk_live_…"
                       className="w-full border rounded px-3 py-2 text-sm font-mono"
@@ -511,14 +508,14 @@ export default function MevzuatRaporlari({ user, tenant }) {
                       value={tgaForm.environment}
                       onChange={(e) => setTgaForm({ ...tgaForm, environment: e.target.value })}>
                       <option value="test">Test</option>
-                      <option value="live">Canlı</option>
+                      <option value="live">{t('cm.pages_MevzuatRaporlari.canli')}</option>
                     </select>
                   </div>
                   <div className="flex items-end">
                     <label className="inline-flex items-center gap-2 text-sm">
                       <input type="checkbox" checked={tgaForm.enabled}
                         onChange={(e) => setTgaForm({ ...tgaForm, enabled: e.target.checked })} />
-                      Otomatik gönderimi aktifleştir
+                      {t('cm.pages_MevzuatRaporlari.otomatik_gonderimi_aktiflestir')}
                     </label>
                   </div>
                 </div>
@@ -526,18 +523,18 @@ export default function MevzuatRaporlari({ user, tenant }) {
                 {tgaDirty && (
                   <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2 flex items-start gap-1.5">
                     <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600" />
-                    <span>Kaydedilmemiş değişiklikler var. "Şimdi Gönder" butonu ancak kaydedilen yapılandırmayı kullanır.</span>
+                    <span>{t('cm.pages_MevzuatRaporlari.kaydedilmemis_degisiklikler_var_simdi_go')}</span>
                   </div>
                 )}
 
                 <div className="flex flex-wrap gap-2">
                   <Button onClick={saveTgaCfg} disabled={tgaSaving}>
                     {tgaSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
-                    Kaydet
+                    {t('cm.pages_MevzuatRaporlari.kaydet')}
                   </Button>
                   <Button variant="outline" size="sm" onClick={previewTga} disabled={tgaPreviewing}>
                     {tgaPreviewing ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FileText className="h-4 w-4 mr-1.5" />}
-                    Dünün Verisini Önizle
+                    {t('cm.pages_MevzuatRaporlari.dunun_verisini_onizle')}
                   </Button>
                   <Button
                     onClick={sendTgaNow}
@@ -545,7 +542,7 @@ export default function MevzuatRaporlari({ user, tenant }) {
                     title={sendDisabledReason || "Son 7 günü TGA'ya gönder"}
                   >
                     {tgaSending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
-                    Şimdi Gönder (Son 7 Gün)
+                    {t('cm.pages_MevzuatRaporlari.simdi_gonder_son_7_gun')}
                   </Button>
                   {sendDisabledReason && (
                     <span className="text-xs text-slate-500 self-center">{sendDisabledReason}</span>
@@ -557,16 +554,16 @@ export default function MevzuatRaporlari({ user, tenant }) {
 
           {tgaPreview && (
             <div className="bg-white border rounded-lg p-4 space-y-3">
-              <h3 className="font-semibold text-sm">Payload Önizleme — {tgaPreview.rapor_tarihi}</h3>
+              <h3 className="font-semibold text-sm">{t('cm.pages_MevzuatRaporlari.payload_onizleme')} {tgaPreview.rapor_tarihi}</h3>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                <KpiCard label="Toplam Oda" value={fmtNum(tgaPreview.toplam_oda)} intent="neutral" />
-                <KpiCard label="Toplam Kişi" value={fmtNum(tgaPreview.toplam_kisi)} intent="neutral" />
-                <KpiCard label="Giren Oda" value={fmtNum(tgaPreview.giren_oda)} intent="info" />
-                <KpiCard label="Giren Kişi" value={fmtNum(tgaPreview.giren_kisi)} intent="info" />
-                <KpiCard label="Net Oda Geliri" value={fmtNum(tgaPreview.net_oda_geliri)} intent="success" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.toplam_oda_3026f')} value={fmtNum(tgaPreview.toplam_oda)} intent="neutral" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.toplam_kisi')} value={fmtNum(tgaPreview.toplam_kisi)} intent="neutral" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.giren_oda')} value={fmtNum(tgaPreview.giren_oda)} intent="info" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.giren_kisi')} value={fmtNum(tgaPreview.giren_kisi)} intent="info" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.net_oda_geliri')} value={fmtNum(tgaPreview.net_oda_geliri)} intent="success" />
               </div>
               <details className="text-xs">
-                <summary className="cursor-pointer text-slate-600 hover:text-slate-900">Demografik & Kanal dökümünü göster</summary>
+                <summary className="cursor-pointer text-slate-600 hover:text-slate-900">{t('cm.pages_MevzuatRaporlari.demografik_kanal_dokumunu_goster')}</summary>
                 <pre className="mt-2 bg-slate-50 border rounded p-2 overflow-auto max-h-80 text-[11px]">
                   {JSON.stringify({ demografik_veriler: tgaPreview.demografik_veriler, kanal_veriler: tgaPreview.kanal_veriler }, null, 2)}
                 </pre>
@@ -577,24 +574,24 @@ export default function MevzuatRaporlari({ user, tenant }) {
           <div className="bg-white border rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-sm flex items-center gap-2">
-                <ScrollText className="h-4 w-4" /> Son 30 Gün Gönderim Geçmişi
+                <ScrollText className="h-4 w-4" /> {t('cm.pages_MevzuatRaporlari.son_30_gun_gonderim_gecmisi')}
               </h3>
               <RefreshButton onClick={loadTgaLog} loading={tgaLogLoading} />
             </div>
             {tgaLog.length === 0 ? (
-              <div className="text-sm text-slate-500 italic">Henüz gönderim kaydı yok.</div>
+              <div className="text-sm text-slate-500 italic">{t('cm.pages_MevzuatRaporlari.henuz_gonderim_kaydi_yok')}</div>
             ) : (
               <div className="overflow-auto border rounded">
                 <table className="min-w-full text-xs">
                   <thead className="bg-slate-50">
                     <tr>
                       <th className="text-left px-3 py-2">Zaman</th>
-                      <th className="text-left px-3 py-2">Tarih Aralığı</th>
+                      <th className="text-left px-3 py-2">{t('cm.pages_MevzuatRaporlari.tarih_araligi')}</th>
                       <th className="text-left px-3 py-2">Ortam</th>
                       <th className="text-left px-3 py-2">Tetikleyici</th>
-                      <th className="text-center px-3 py-2">Durum</th>
+                      <th className="text-center px-3 py-2">{t('cm.pages_MevzuatRaporlari.durum')}</th>
                       <th className="text-right px-3 py-2">HTTP</th>
-                      <th className="text-right px-3 py-2">Toplam Oda</th>
+                      <th className="text-right px-3 py-2">{t('cm.pages_MevzuatRaporlari.toplam_oda_3026f')}</th>
                       <th className="text-right px-3 py-2">Net Gelir</th>
                     </tr>
                   </thead>
@@ -631,16 +628,16 @@ export default function MevzuatRaporlari({ user, tenant }) {
         <div className="bg-white border rounded-lg p-4 space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h3 className="font-semibold flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4" /> Bakanlık Denetim Hazırlık
+              <ShieldCheck className="h-4 w-4" /> {t('cm.pages_MevzuatRaporlari.bakanlik_denetim_hazirlik')}
             </h3>
             <div className="flex gap-2">
               {readiness && (
                 <>
                   <Button variant="outline" size="sm" onClick={exportReadinessCSV}>
-                    <Download className="h-4 w-4 mr-1.5" /> CSV İndir
+                    <Download className="h-4 w-4 mr-1.5" /> {t('cm.pages_MevzuatRaporlari.csv_indir_45c8e')}
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => window.print()}>
-                    <FileText className="h-4 w-4 mr-1.5" /> PDF / Yazdır
+                    <FileText className="h-4 w-4 mr-1.5" /> {t('cm.pages_MevzuatRaporlari.pdf_yazdir')}
                   </Button>
                 </>
               )}
@@ -650,20 +647,20 @@ export default function MevzuatRaporlari({ user, tenant }) {
 
           {!readiness ? (
             <div className="text-slate-500 text-sm flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Yükleniyor…
+              <Loader2 className="h-4 w-4 animate-spin" /> {t('cm.pages_MevzuatRaporlari.yukleniyor_b597b')}
             </div>
           ) : (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <KpiCard
-                  label="Hazırlık Skoru"
+                  label={t('cm.pages_MevzuatRaporlari.hazirlik_skoru')}
                   value={`%${readiness.readiness_score}`}
                   intent={readiness.readiness_score >= 80 ? "success" : readiness.readiness_score >= 50 ? "warning" : "danger"}
                 />
-                <KpiCard label="Toplam Oda" value={fmtNum(readiness.rooms_total)} intent="neutral" />
-                <KpiCard label="Aktif Personel" value={fmtNum(readiness.active_users)} intent="neutral" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.toplam_oda_3026f')} value={fmtNum(readiness.rooms_total)} intent="neutral" />
+                <KpiCard label={t('cm.pages_MevzuatRaporlari.aktif_personel')} value={fmtNum(readiness.active_users)} intent="neutral" />
                 <KpiCard
-                  label="İşletme Belgesi (gün)"
+                  label={t('cm.pages_MevzuatRaporlari.isletme_belgesi_gun')}
                   value={readiness.license_days_left == null ? "—" : fmtNum(readiness.license_days_left)}
                   intent={
                     readiness.license_days_left == null ? "warning" :
@@ -679,10 +676,10 @@ export default function MevzuatRaporlari({ user, tenant }) {
                     <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
                     <div className="flex-1">
                       <div className="text-sm font-semibold text-amber-900">
-                        Tesis künyesinde {readiness.tenant_missing_fields.length} alan eksik
+                        {t('cm.pages_MevzuatRaporlari.tesis_kunyesinde')} {readiness.tenant_missing_fields.length} alan eksik
                       </div>
                       <div className="text-xs text-amber-800 mt-1">
-                        Bakanlık denetiminde sorulacak temel bilgiler. Tesis ayarlarından doldurun:
+                        {t('cm.pages_MevzuatRaporlari.bakanlik_denetiminde_sorulacak_temel_bil')}
                       </div>
                       <ul className="text-xs text-amber-900 mt-1.5 list-disc pl-4 space-y-0.5">
                         {readiness.tenant_missing_fields.map((f) => (
@@ -705,14 +702,13 @@ export default function MevzuatRaporlari({ user, tenant }) {
                   <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-500" />
                   <span>
                     <strong>{fmtNum(readiness.rooms_missing_bed_capacity)} / {fmtNum(readiness.rooms_total)}</strong>{" "}
-                    odada yatak kapasitesi (<code>bed_capacity</code>) tanımlı değil; TÜİK yatak toplamı bu odalar için 2/oda olarak varsayılır.
-                    Doğru rakam için Oda Yönetimi'nden her oda tipine yatak kapasitesi girin.
+                    odada yatak kapasitesi (<code>bed_capacity</code>{t('cm.pages_MevzuatRaporlari.tanimli_degil_tuik_yatak_toplami_bu_odal')}
                   </span>
                 </div>
               )}
 
               <div className="border rounded">
-                <div className="bg-slate-50 px-3 py-2 font-semibold text-sm">Kontrol Noktaları</div>
+                <div className="bg-slate-50 px-3 py-2 font-semibold text-sm">{t('cm.pages_MevzuatRaporlari.kontrol_noktalari')}</div>
                 <ul className="divide-y">
                   {readiness.checks.map((c) => (
                     <li key={c.key} className="px-3 py-2 flex items-center gap-2 text-sm">
@@ -731,14 +727,14 @@ export default function MevzuatRaporlari({ user, tenant }) {
               </div>
 
               <div className="border rounded">
-                <div className="bg-slate-50 px-3 py-2 font-semibold text-sm">Son 12 Ay Rezervasyon Hacmi</div>
+                <div className="bg-slate-50 px-3 py-2 font-semibold text-sm">{t('cm.pages_MevzuatRaporlari.son_12_ay_rezervasyon_hacmi')}</div>
                 <div className="overflow-auto">
                   <table className="min-w-full text-sm">
                     <thead className="bg-slate-50">
                       <tr>
-                        <th className="text-left px-3 py-2">Dönem</th>
-                        <th className="text-right px-3 py-2">Aktif Rezervasyon</th>
-                        <th className="text-right px-3 py-2">Kapasite Oda-Gece</th>
+                        <th className="text-left px-3 py-2">{t('cm.pages_MevzuatRaporlari.donem')}</th>
+                        <th className="text-right px-3 py-2">{t('cm.pages_MevzuatRaporlari.aktif_rezervasyon')}</th>
+                        <th className="text-right px-3 py-2">{t('cm.pages_MevzuatRaporlari.kapasite_oda_gece')}</th>
                         <th className="text-right px-3 py-2">Kaba Doluluk %</th>
                         <th className="text-left px-3 py-2 w-1/3">Trend</th>
                       </tr>
@@ -768,8 +764,7 @@ export default function MevzuatRaporlari({ user, tenant }) {
                 </div>
               </div>
               <p className="text-xs text-slate-400">
-                Bu rapor, Bakanlık denetim ziyaretlerine hazırlık amaçlı dahili
-                bir özettir; resmî denetimin yerini almaz.
+                {t('cm.pages_MevzuatRaporlari.bu_rapor_bakanlik_denetim_ziyaretlerine_')}
               </p>
             </>
           )}
@@ -780,16 +775,16 @@ export default function MevzuatRaporlari({ user, tenant }) {
         <div className="bg-white border rounded-lg p-4 space-y-4">
           {!checklist ? (
             <div className="text-slate-500 text-sm flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Yükleniyor…
+              <Loader2 className="h-4 w-4 animate-spin" /> {t('cm.pages_MevzuatRaporlari.yukleniyor_b597b')}
             </div>
           ) : (
             <>
               <div className="flex flex-wrap items-end gap-3">
                 <div>
-                  <label className="text-xs text-slate-600 block">Hedef Yıldız</label>
+                  <label className="text-xs text-slate-600 block">{t('cm.pages_MevzuatRaporlari.hedef_yildiz')}</label>
                   <select className="border rounded px-3 py-2" value={checklist.target_star}
                           onChange={(e) => setChecklist({ ...checklist, target_star: Number(e.target.value) })}>
-                    {[1, 2, 3, 4, 5].map((s) => <option key={s} value={s}>{s} Yıldız</option>)}
+                    {[1, 2, 3, 4, 5].map((s) => <option key={s} value={s}>{s} {t('cm.pages_MevzuatRaporlari.yildiz')}</option>)}
                   </select>
                 </div>
                 <div className="flex-1 min-w-[160px]">
@@ -804,7 +799,7 @@ export default function MevzuatRaporlari({ user, tenant }) {
                 </div>
                 <Button onClick={saveChecklist} disabled={savingCl}>
                   {savingCl ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
-                  Kaydet & Hesapla
+                  {t('cm.pages_MevzuatRaporlari.kaydet_hesapla')}
                 </Button>
               </div>
 
@@ -822,7 +817,7 @@ export default function MevzuatRaporlari({ user, tenant }) {
                           <span>{it.label}</span>
                           {it.required && (
                             <StatusBadge intent="danger" className="ml-2">
-                              {checklist.target_star} için zorunlu
+                              {checklist.target_star} {t('cm.pages_MevzuatRaporlari.icin_zorunlu')}
                             </StatusBadge>
                           )}
                         </div>
@@ -833,7 +828,7 @@ export default function MevzuatRaporlari({ user, tenant }) {
                             setChecklist({ ...checklist, items: items2 });
                           }}>
                           <option value="yes">Var</option>
-                          <option value="partial">~ Kısmen</option>
+                          <option value="partial">{t('cm.pages_MevzuatRaporlari.kismen')}</option>
                           <option value="no">Yok</option>
                         </select>
                       </li>
@@ -844,7 +839,7 @@ export default function MevzuatRaporlari({ user, tenant }) {
               {checklist.saved_at && (
                 <p className="text-xs text-slate-400 flex items-center gap-1">
                   <ClipboardCheck className="h-3 w-3" />
-                  Son kayıt: {checklist.saved_at.slice(0, 16).replace("T", " ")}
+                  {t('cm.pages_MevzuatRaporlari.son_kayit')} {checklist.saved_at.slice(0, 16).replace("T", " ")}
                 </p>
               )}
             </>

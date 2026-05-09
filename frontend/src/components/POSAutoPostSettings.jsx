@@ -5,12 +5,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Clock, Zap, LogOut, Save, RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * POS Auto-Post Settings Component
  * Manages automatic posting schedule for POS charges to folios
  */
 const POSAutoPostSettings = () => {
+  const { t } = useTranslation();
   const [autoPostMode, setAutoPostMode] = useState('realtime'); // realtime, batch, checkout
   const [batchInterval, setBatchInterval] = useState(15); // minutes
   const [loading, setLoading] = useState(false);
@@ -64,16 +66,16 @@ const POSAutoPostSettings = () => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Clock className="w-5 h-5 text-blue-600" />
-          POS Auto-Post Zamanlaması
+          {t('cm.components_POSAutoPostSettings.pos_auto_post_zamanlamasi')}
         </CardTitle>
         <CardDescription>
-          POS fişlerinin folio'ya otomatik aktarım ayarları
+          {t('cm.components_POSAutoPostSettings.pos_fislerinin_folio_ya_otomatik_aktarim')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Mode Selection */}
         <div className="space-y-3">
-          <label className="text-sm font-semibold">Aktarım Modu:</label>
+          <label className="text-sm font-semibold">{t('cm.components_POSAutoPostSettings.aktarim_modu')}</label>
           
           {/* Real-time */}
           <div 
@@ -87,14 +89,14 @@ const POSAutoPostSettings = () => {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Zap className={`w-5 h-5 ${autoPostMode === 'realtime' ? 'text-green-600' : 'text-gray-400'}`} />
-                <span className="font-semibold">Gerçek Zamanlı</span>
+                <span className="font-semibold">{t('cm.components_POSAutoPostSettings.gercek_zamanli')}</span>
               </div>
               {autoPostMode === 'realtime' && (
-                <Badge className="bg-green-500">Aktif</Badge>
+                <Badge className="bg-green-500">{t('cm.components_POSAutoPostSettings.aktif')}</Badge>
               )}
             </div>
             <p className="text-xs text-gray-600">
-              POS fişi kapatıldığında anında folio'ya aktarılır. En hızlı yöntem.
+              {t('cm.components_POSAutoPostSettings.pos_fisi_kapatildiginda_aninda_folio_ya_')}
             </p>
           </div>
 
@@ -110,18 +112,18 @@ const POSAutoPostSettings = () => {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Clock className={`w-5 h-5 ${autoPostMode === 'batch' ? 'text-blue-600' : 'text-gray-400'}`} />
-                <span className="font-semibold">Toplu Aktarım (Batch)</span>
+                <span className="font-semibold">{t('cm.components_POSAutoPostSettings.toplu_aktarim_batch')}</span>
               </div>
               {autoPostMode === 'batch' && (
-                <Badge className="bg-blue-500">Aktif</Badge>
+                <Badge className="bg-blue-500">{t('cm.components_POSAutoPostSettings.aktif_81c33')}</Badge>
               )}
             </div>
             <p className="text-xs text-gray-600 mb-2">
-              Belirli aralıklarla toplu aktarım. Sistem yükünü azaltır.
+              {t('cm.components_POSAutoPostSettings.belirli_araliklarla_toplu_aktarim_sistem')}
             </p>
             {autoPostMode === 'batch' && (
               <div className="flex items-center gap-2 mt-2">
-                <label className="text-xs">Aralık:</label>
+                <label className="text-xs">{t('cm.components_POSAutoPostSettings.aralik')}</label>
                 <select 
                   value={batchInterval}
                   onChange={(e) => setBatchInterval(Number(e.target.value))}
@@ -153,11 +155,11 @@ const POSAutoPostSettings = () => {
                 <span className="font-semibold">Check-out'ta Toplu</span>
               </div>
               {autoPostMode === 'checkout' && (
-                <Badge className="bg-indigo-500">Aktif</Badge>
+                <Badge className="bg-indigo-500">{t('cm.components_POSAutoPostSettings.aktif_81c33')}</Badge>
               )}
             </div>
             <p className="text-xs text-gray-600">
-              Tüm POS fişleri check-out sırasında tek seferde aktarılır. Misafir kontrol eder.
+              {t('cm.components_POSAutoPostSettings.tum_pos_fisleri_check_out_sirasinda_tek_')}
             </p>
           </div>
         </div>
@@ -170,7 +172,7 @@ const POSAutoPostSettings = () => {
             className="flex-1 bg-blue-600 hover:bg-blue-700"
           >
             <Save className="w-4 h-4 mr-2" />
-            Ayarları Kaydet
+            {t('cm.components_POSAutoPostSettings.ayarlari_kaydet')}
           </Button>
           <Button 
             onClick={manualSync}

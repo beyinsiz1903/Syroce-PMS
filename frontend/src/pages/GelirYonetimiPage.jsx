@@ -2,6 +2,7 @@ import React, { useState, lazy, Suspense } from 'react';
 import MaybeLayout from '@/components/MaybeLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BarChart3, Shield, CalendarRange, Rocket, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const RMSModule = lazy(() => import('@/pages/RMSModule'));
 const YieldRulesPanel = lazy(() => import('@/pages/YieldRulesPanel'));
@@ -9,10 +10,11 @@ const SeasonCalendarPanel = lazy(() => import('@/pages/SeasonCalendarPanel'));
 const RevenueAutopilotDashboard = lazy(() => import('@/pages/RevenueAutopilotDashboard'));
 
 function TabLoading() {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center justify-center h-64">
       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      <span className="ml-3 text-muted-foreground">Yükleniyor...</span>
+      <span className="ml-3 text-muted-foreground">{t('cm.pages_GelirYonetimiPage.yukleniyor')}</span>
     </div>
   );
 }
@@ -24,8 +26,8 @@ export default function GelirYonetimiPage({ user, tenant, onLogout, embedded = f
     <MaybeLayout embedded={embedded} user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">
       <div className="p-4 lg:p-6 space-y-4" data-testid="gelir-yonetimi-page">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Gelir Yönetimi</h1>
-          <p className="text-sm text-muted-foreground">Dinamik fiyatlama, yield kuralları ve sezon yönetimi</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t('cm.pages_GelirYonetimiPage.gelir_yonetimi')}</h1>
+          <p className="text-sm text-muted-foreground">{t('cm.pages_GelirYonetimiPage.dinamik_fiyatlama_yield_kurallari_ve_sez')}</p>
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>

@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, Pencil, Shield, X, Loader2 } from 'lucide-react';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 const CONDITION_TYPES = [
   { value: 'occupancy_above', label: 'Doluluk ustu (%)' },
   { value: 'occupancy_below', label: 'Doluluk alti (%)' },
@@ -30,6 +31,7 @@ const emptyRule = {
 };
 
 export default function YieldRulesPanel() {
+  const { t } = useTranslation();
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -99,10 +101,10 @@ export default function YieldRulesPanel() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-slate-800">Yield Kurallari</h2>
-          <p className="text-sm text-slate-500">Otomatik fiyat ayarlama kuralları tanimlayın</p>
+          <p className="text-sm text-slate-500">{t('cm.pages_YieldRulesPanel.otomatik_fiyat_ayarlama_kurallari_taniml')}</p>
         </div>
         <Button size="sm" onClick={openAdd} data-testid="add-rule-btn">
-          <Plus className="w-4 h-4 mr-1" /> Yeni Kural
+          <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_YieldRulesPanel.yeni_kural')}
         </Button>
       </div>
 
@@ -116,16 +118,16 @@ export default function YieldRulesPanel() {
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">Kural Adi</Label>
-                <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Ornek: Yüksek Doluluk Artisi" data-testid="rule-name-input" />
+                <Label className="text-xs">{t('cm.pages_YieldRulesPanel.kural_adi')}</Label>
+                <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder={t('cm.pages_YieldRulesPanel.ornek_yuksek_doluluk_artisi')} data-testid="rule-name-input" />
               </div>
               <div>
-                <Label className="text-xs">Oncelik (1=en yüksek)</Label>
+                <Label className="text-xs">{t('cm.pages_YieldRulesPanel.oncelik_1_en_yuksek')}</Label>
                 <Input type="number" value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value }))} />
               </div>
             </div>
             <div>
-              <Label className="text-xs">Açıklama</Label>
+              <Label className="text-xs">{t('cm.pages_YieldRulesPanel.aciklama')}</Label>
               <Input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Kural aciklamasi" />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -159,10 +161,10 @@ export default function YieldRulesPanel() {
             </div>
             <div className="flex items-center gap-2">
               <Switch checked={form.is_active} onCheckedChange={v => setForm(p => ({ ...p, is_active: v }))} />
-              <Label className="text-xs">Aktif</Label>
+              <Label className="text-xs">{t('cm.pages_YieldRulesPanel.aktif')}</Label>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>İptal</Button>
+              <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>{t('cm.pages_YieldRulesPanel.iptal')}</Button>
               <Button size="sm" onClick={handleSave} data-testid="save-rule-btn">{editId ? 'Guncelle' : 'Kaydet'}</Button>
             </div>
           </CardContent>
@@ -172,7 +174,7 @@ export default function YieldRulesPanel() {
       {/* Rules List */}
       <div className="space-y-2">
         {rules.length === 0 ? (
-          <Card><CardContent className="py-8 text-center text-sm text-slate-400">Henüz kural tanimlanmamis.</CardContent></Card>
+          <Card><CardContent className="py-8 text-center text-sm text-slate-400">{t('cm.pages_YieldRulesPanel.henuz_kural_tanimlanmamis')}</CardContent></Card>
         ) : (
           rules.map(r => (
             <Card key={r.id} className={`transition-opacity ${r.is_active ? '' : 'opacity-50'}`} data-testid={`yield-rule-${r.id}`}>
@@ -183,7 +185,7 @@ export default function YieldRulesPanel() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">{r.name}</span>
                       <Badge variant="outline" className="text-xs">P{r.priority}</Badge>
-                      {!r.is_active && <Badge variant="secondary" className="text-xs">Pasif</Badge>}
+                      {!r.is_active && <Badge variant="secondary" className="text-xs">{t('cm.pages_YieldRulesPanel.pasif')}</Badge>}
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">{r.description}</p>
                     <p className="text-xs text-slate-400 mt-0.5">

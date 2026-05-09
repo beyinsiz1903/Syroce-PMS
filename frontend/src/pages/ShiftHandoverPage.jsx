@@ -12,6 +12,7 @@ import { Loader2, ClipboardCheck, AlertTriangle, Check, Trash2, Plus, Inbox } fr
 import { toast } from 'sonner';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 const SHIFTS = [
   { v: 'morning',   l: 'Sabah (07:00–15:00)' },
@@ -27,6 +28,7 @@ const PRIORITIES = [
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default function ShiftHandoverPage({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('open');
@@ -96,19 +98,19 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2 text-slate-900">
-            <ClipboardCheck className="w-6 h-6 text-amber-600" /> Vardiya Devir Notları
+            <ClipboardCheck className="w-6 h-6 text-amber-600" /> {t('cm.pages_ShiftHandoverPage.vardiya_devir_notlari')}
           </h1>
-          <p className="text-sm text-slate-500 mt-1">Resepsiyon vardiyaları arasında kritik not aktarımı</p>
+          <p className="text-sm text-slate-500 mt-1">{t('cm.pages_ShiftHandoverPage.resepsiyon_vardiyalari_arasinda_kritik_n')}</p>
         </div>
 
         {/* Yeni devir notu formu */}
         <Card className="p-4 border-amber-200 bg-amber-50/30">
           <h2 className="text-sm font-semibold mb-3 flex items-center gap-2 text-slate-900">
-            <Plus className="w-4 h-4 text-amber-600" /> Yeni Devir Notu
+            <Plus className="w-4 h-4 text-amber-600" /> {t('cm.pages_ShiftHandoverPage.yeni_devir_notu')}
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <Label className="text-xs">İş Günü</Label>
+              <Label className="text-xs">{t('cm.pages_ShiftHandoverPage.is_gunu')}</Label>
               <Input type="date" value={form.business_date} onChange={e => setForm(p => ({ ...p, business_date: e.target.value }))} className="h-9" />
             </div>
             <div>
@@ -126,7 +128,7 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
               </Select>
             </div>
             <div>
-              <Label className="text-xs">Öncelik</Label>
+              <Label className="text-xs">{t('cm.pages_ShiftHandoverPage.oncelik')}</Label>
               <Select value={form.priority} onValueChange={v => setForm(p => ({ ...p, priority: v }))}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>{PRIORITIES.map(p => <SelectItem key={p.v} value={p.v}>{p.l}</SelectItem>)}</SelectContent>
@@ -135,11 +137,11 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
             <div>
-              <Label className="text-xs text-slate-600">İlgili Oda <span className="opacity-60">(opsiyonel)</span></Label>
-              <Input value={form.related_room} onChange={e => setForm(p => ({ ...p, related_room: e.target.value }))} placeholder="Örn. 204" className="h-9" />
+              <Label className="text-xs text-slate-600">{t('cm.pages_ShiftHandoverPage.ilgili_oda')} <span className="opacity-60">(opsiyonel)</span></Label>
+              <Input value={form.related_room} onChange={e => setForm(p => ({ ...p, related_room: e.target.value }))} placeholder={t('cm.pages_ShiftHandoverPage.orn_204')} className="h-9" />
             </div>
             <div>
-              <Label className="text-xs text-slate-600">İlgili Rezervasyon ID <span className="opacity-60">(opsiyonel)</span></Label>
+              <Label className="text-xs text-slate-600">{t('cm.pages_ShiftHandoverPage.ilgili_rezervasyon_id')} <span className="opacity-60">(opsiyonel)</span></Label>
               <Input value={form.related_booking_id} onChange={e => setForm(p => ({ ...p, related_booking_id: e.target.value }))} className="h-9" />
             </div>
           </div>
@@ -150,13 +152,13 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
               onChange={e => setForm(p => ({ ...p, note: e.target.value }))}
               rows={4}
               className="min-h-[110px] resize-y"
-              placeholder="Örn: 312 nolu odada klima arızası, teknik servis 09:00 gelecek. VIP misafire yanlış oda atanmış, transfer yapılacak..."
+              placeholder={t('cm.pages_ShiftHandoverPage.orn_312_nolu_odada_klima_arizasi_teknik_')}
             />
           </div>
           <div className="mt-3 flex justify-end">
             <Button onClick={create} disabled={creating} className="bg-amber-600 hover:bg-amber-700 text-white">
               {creating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-              Devir Notu Ekle
+              {t('cm.pages_ShiftHandoverPage.devir_notu_ekle')}
             </Button>
           </div>
         </Card>
@@ -166,13 +168,13 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
           <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
             <Tabs value={statusFilter} onValueChange={setStatusFilter}>
               <TabsList>
-                <TabsTrigger value="open">Açık</TabsTrigger>
+                <TabsTrigger value="open">{t('cm.pages_ShiftHandoverPage.acik')}</TabsTrigger>
                 <TabsTrigger value="acknowledged">Onaylanan</TabsTrigger>
-                <TabsTrigger value="all">Tümü</TabsTrigger>
+                <TabsTrigger value="all">{t('cm.pages_ShiftHandoverPage.tumu')}</TabsTrigger>
               </TabsList>
             </Tabs>
             <div className="flex items-center gap-2">
-              <Label className="text-xs whitespace-nowrap text-slate-600">Tarih</Label>
+              <Label className="text-xs whitespace-nowrap text-slate-600">{t('cm.pages_ShiftHandoverPage.tarih')}</Label>
               <Input type="date" value={businessDate} onChange={e => setBusinessDate(e.target.value)} className="h-8 w-40" />
               <Button size="sm" variant="outline" onClick={() => setBusinessDate('')} className="border-slate-300 text-slate-600">
                 Filtreyi Temizle
@@ -182,15 +184,15 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
 
           {loading && (
             <div className="text-center py-8 text-slate-500">
-              <Loader2 className="inline w-5 h-5 animate-spin" /> Yükleniyor…
+              <Loader2 className="inline w-5 h-5 animate-spin" /> {t('cm.pages_ShiftHandoverPage.yukleniyor')}
             </div>
           )}
 
           {!loading && items.length === 0 && (
             <div className="text-center py-12 px-4 border-2 border-dashed border-slate-200 rounded-lg">
               <Inbox className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-              <div className="text-sm font-medium text-slate-700">Bu vardiyada henüz devir notu yok</div>
-              <div className="text-xs text-slate-500 mt-1">Üstteki formdan ilk notu siz ekleyin.</div>
+              <div className="text-sm font-medium text-slate-700">{t('cm.pages_ShiftHandoverPage.bu_vardiyada_henuz_devir_notu_yok')}</div>
+              <div className="text-xs text-slate-500 mt-1">{t('cm.pages_ShiftHandoverPage.ustteki_formdan_ilk_notu_siz_ekleyin')}</div>
             </div>
           )}
 
@@ -210,10 +212,10 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
                         <Badge variant="outline" className="text-xs border-slate-200">
                           {shiftLabel(it.shift)}{it.to_shift ? ` → ${shiftLabel(it.to_shift)}` : ''}
                         </Badge>
-                        {it.related_room && <Badge variant="outline" className="text-xs border-slate-200">Oda {it.related_room}</Badge>}
+                        {it.related_room && <Badge variant="outline" className="text-xs border-slate-200">{t('cm.pages_ShiftHandoverPage.oda')} {it.related_room}</Badge>}
                         {it.acknowledged && (
                           <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
-                            <Check className="w-3 h-3 mr-1" />Onaylandı
+                            <Check className="w-3 h-3 mr-1" />{t('cm.pages_ShiftHandoverPage.onaylandi')}
                           </Badge>
                         )}
                       </div>
@@ -228,7 +230,7 @@ export default function ShiftHandoverPage({ user, tenant, onLogout }) {
                     <div className="flex flex-col gap-1.5 shrink-0">
                       {!it.acknowledged && (
                         <Button size="sm" onClick={() => ack(it.id)} className="bg-emerald-600 hover:bg-emerald-700 h-8">
-                          <Check className="w-3.5 h-3.5 mr-1" /> Onayla
+                          <Check className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_ShiftHandoverPage.onayla')}
                         </Button>
                       )}
                       <Button size="sm" variant="ghost" onClick={() => remove(it.id)} className="h-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50">

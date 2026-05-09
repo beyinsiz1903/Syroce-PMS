@@ -16,7 +16,7 @@ export default function ReconciliationTab(props) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard
               icon={Receipt}
-              label="Masraf Toplamı"
+              label={t('cm.components_nightaudit_tabs_ReconciliationTab.masraf_toplami')}
               value={`${reconciliation.charges_total?.toFixed(2) || "0.00"} TL`}
               subValue={`${reconciliation.charges_count || 0} masraf`}
               color="text-blue-600"
@@ -37,7 +37,7 @@ export default function ReconciliationTab(props) {
             />
             <StatCard
               icon={AlertOctagon}
-              label="Tutarsızlık"
+              label={t('cm.components_nightaudit_tabs_ReconciliationTab.tutarsizlik')}
               value={reconciliation.discrepancy_count || 0}
               subValue={`${reconciliation.high_balance_count || 0} yüksek bakiye`}
               color={reconciliation.discrepancy_count > 0 ? "text-red-600" : "text-emerald-600"}
@@ -49,14 +49,14 @@ export default function ReconciliationTab(props) {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-500" />
-                Tutarsızlıklar ({reconciliation.discrepancy_count || 0})
+                {t('cm.components_nightaudit_tabs_ReconciliationTab.tutarsizliklar')}{reconciliation.discrepancy_count || 0})
               </CardTitle>
             </CardHeader>
             <CardContent>
               {(reconciliation.discrepancies || []).length === 0 ? (
                 <div className="py-8 text-center">
                   <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-400 mb-2" />
-                  <p className="text-sm text-gray-500">Tutarsızlık bulunamadı - mutabakat temiz</p>
+                  <p className="text-sm text-gray-500">{t('cm.components_nightaudit_tabs_ReconciliationTab.tutarsizlik_bulunamadi_mutabakat_temiz')}</p>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-80 overflow-y-auto">
@@ -102,7 +102,7 @@ export default function ReconciliationTab(props) {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <AlertOctagon className="w-4 h-4 text-red-500" />
-                  Yüksek Bakiyeli Folyolar ({reconciliation.high_balance_count})
+                  {t('cm.components_nightaudit_tabs_ReconciliationTab.yuksek_bakiyeli_folyolar')}{reconciliation.high_balance_count})
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -125,7 +125,7 @@ export default function ReconciliationTab(props) {
         </>
       ) : (
         <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
-          <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Mutabakat yükleniyor...
+          <Loader2 className="w-5 h-5 mr-2 animate-spin" /> {t('cm.components_nightaudit_tabs_ReconciliationTab.mutabakat_yukleniyor')}
         </div>
       )}
     </TabsContent>

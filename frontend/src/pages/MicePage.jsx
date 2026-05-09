@@ -32,7 +32,9 @@ import {
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 const MicePage = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState({});
   // tab badge counts come from /mice/events response; survives lazy-loaded
@@ -427,7 +429,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
 
   if (loading) {
     return <div className="p-8 text-center text-gray-500">
-      <RefreshCw className="w-6 h-6 animate-spin inline" /> Yükleniyor…
+      <RefreshCw className="w-6 h-6 animate-spin inline" /> {t('cm.pages_MicePage.yukleniyor')}
     </div>;
   }
 
@@ -444,30 +446,30 @@ const MicePage = ({ user, tenant, onLogout }) => {
             MICE & Banquet
           </h1>
           <p className="text-sm text-gray-500">
-            Toplantı, konferans, gala ve düğün etkinliklerinin tam satış döngüsü.
+            {t('cm.pages_MicePage.toplanti_konferans_gala_ve_dugun_etkinli')}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Input type="date" value={opsDate} onChange={(e) => setOpsDate(e.target.value)}
                  className="max-w-[160px]" />
           <Button variant="outline" onClick={showOpsSheet}>
-            <ClipboardList className="w-4 h-4 mr-1" /> Günün Ops Sheet'i
+            <ClipboardList className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.gunun_ops_sheet_i')}
           </Button>
           <Button variant="outline" onClick={load}>
-            <RefreshCw className="w-4 h-4 mr-1" /> Yenile
+            <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.yenile')}
           </Button>
-          <Button onClick={openNew}><Plus className="w-4 h-4 mr-1" /> Yeni Etkinlik</Button>
+          <Button onClick={openNew}><Plus className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.yeni_etkinlik')}</Button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Stat label="Toplam Etkinlik" value={events.length} />
+        <Stat label={t('cm.pages_MicePage.toplam_etkinlik')} value={events.length} />
         {['tentative', 'definite', 'confirmed'].map((k) => (
           <Stat key={k} label={STATUS[k].label}
                 value={`${summary[k]?.count || 0} • ₺${(summary[k]?.total_value || 0).toLocaleString('tr-TR')}`}
                 cls={STATUS[k].cls.split(' ')[1].replace('text-', 'text-')} />
         ))}
-        <Stat label="Toplam Pipeline"
+        <Stat label={t('cm.pages_MicePage.toplam_pipeline')}
               value={`₺${totalPipeline.toLocaleString('tr-TR')}`} cls="text-emerald-600" />
       </div>
 
@@ -475,11 +477,11 @@ const MicePage = ({ user, tenant, onLogout }) => {
         <TabsList>
           <TabsTrigger value="events">Etkinlikler</TabsTrigger>
           <TabsTrigger value="diary">Function Diary</TabsTrigger>
-          <TabsTrigger value="accounts">Müşteriler ({loadedTabs.has('accounts') ? accounts.length : (counts.accounts ?? '…')})</TabsTrigger>
+          <TabsTrigger value="accounts">{t('cm.pages_MicePage.musteriler')}{loadedTabs.has('accounts') ? accounts.length : (counts.accounts ?? '…')})</TabsTrigger>
           <TabsTrigger value="spaces">Mekanlar ({loadedTabs.has('spaces') ? spaces.length : (counts.spaces ?? '…')})</TabsTrigger>
-          <TabsTrigger value="menus">Menüler & Paketler ({loadedTabs.has('menus') ? menus.length : (counts.menus ?? '…')})</TabsTrigger>
+          <TabsTrigger value="menus">{t('cm.pages_MicePage.menuler_paketler')}{loadedTabs.has('menus') ? menus.length : (counts.menus ?? '…')})</TabsTrigger>
           <TabsTrigger value="resources">Envanter ({loadedTabs.has('resources') ? resources.length : (counts.resources ?? '…')})</TabsTrigger>
-          <TabsTrigger value="pipeline">Satış Pipeline</TabsTrigger>
+          <TabsTrigger value="pipeline">{t('cm.pages_MicePage.satis_pipeline')}</TabsTrigger>
           <TabsTrigger value="packages">Paketler</TabsTrigger>
           <TabsTrigger value="competitors">Rakip Analizi</TabsTrigger>
         </TabsList>
@@ -489,10 +491,10 @@ const MicePage = ({ user, tenant, onLogout }) => {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b text-left">
                 <tr>
-                  <th className="p-2">Etkinlik</th><th className="p-2">Müşteri</th>
-                  <th className="p-2">Tarih</th><th className="p-2">Pax</th>
-                  <th className="p-2">Mekanlar</th><th className="p-2">Tutar</th>
-                  <th className="p-2">Durum</th><th className="p-2 text-right">İşlem</th>
+                  <th className="p-2">Etkinlik</th><th className="p-2">{t('cm.pages_MicePage.musteri')}</th>
+                  <th className="p-2">{t('cm.pages_MicePage.tarih')}</th><th className="p-2">Pax</th>
+                  <th className="p-2">Mekanlar</th><th className="p-2">{t('cm.pages_MicePage.tutar')}</th>
+                  <th className="p-2">{t('cm.pages_MicePage.durum')}</th><th className="p-2 text-right">{t('cm.pages_MicePage.islem')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -533,15 +535,15 @@ const MicePage = ({ user, tenant, onLogout }) => {
                                 onClick={() => showBeo(ev.id)}>
                           <FileText className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="ghost" title="Mutfak Fişi"
+                        <Button size="sm" variant="ghost" title={t('cm.pages_MicePage.mutfak_fisi')}
                                 onClick={() => showKitchen(ev.id)}>
                           <ChefHat className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="ghost" title="Değişiklik Geçmişi"
+                        <Button size="sm" variant="ghost" title={t('cm.pages_MicePage.degisiklik_gecmisi')}
                                 onClick={() => setHistoryEvent(ev)}>
                           <HistoryIcon className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(ev)}>Düzenle</Button>
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(ev)}>{t('cm.pages_MicePage.duzenle')}</Button>
                         {ev.status !== 'completed' && ev.status !== 'cancelled' && (
                           <select className="text-xs border rounded px-1"
                                   value={ev.status}
@@ -595,7 +597,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
                   </div>
                   <div className="text-sm">
                     <span className="text-gray-500">Saatlik:</span> ₺{s.hourly_rate.toLocaleString('tr-TR')} •{' '}
-                    <span className="text-gray-500">Günlük:</span> ₺{s.daily_rate.toLocaleString('tr-TR')}
+                    <span className="text-gray-500">{t('cm.pages_MicePage.gunluk')}</span> ₺{s.daily_rate.toLocaleString('tr-TR')}
                   </div>
                 </CardContent>
               </Card>
@@ -606,15 +608,15 @@ const MicePage = ({ user, tenant, onLogout }) => {
         <TabsContent value="menus">
           <div className="flex justify-between items-center mb-3">
             <p className="text-sm text-gray-500">
-              F&B menüleri, AV ve dekorasyon paketleri. Etkinlik kaynaklarına eklenir.
+              {t('cm.pages_MicePage.f_b_menuleri_av_ve_dekorasyon_paketleri_')}
             </p>
             <Button size="sm" onClick={openNewMenu}>
-              <Plus className="w-4 h-4 mr-1" /> Yeni Menü / Paket
+              <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_MicePage.yeni_menu_paket')}
             </Button>
           </div>
           {menus.length === 0 && (
             <div className="text-center py-12 text-gray-500 text-sm">
-              Henüz menü eklenmemiş. "Yeni Menü / Paket" butonuyla ekleyin.
+              {t('cm.pages_MicePage.henuz_menu_eklenmemis_yeni_menu_paket_bu')}
             </div>
           )}
           <div className="grid md:grid-cols-3 gap-3">
@@ -630,11 +632,11 @@ const MicePage = ({ user, tenant, onLogout }) => {
                     </CardTitle>
                     <div className="flex gap-1 shrink-0">
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
-                              onClick={() => openEditMenu(m)} title="Düzenle">
+                              onClick={() => openEditMenu(m)} title={t('cm.pages_MicePage.duzenle_cc6f2')}>
                         <Pencil className="w-3.5 h-3.5" />
                       </Button>
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600"
-                              onClick={() => removeMenu(m.id, m.name)} title="Sil">
+                              onClick={() => removeMenu(m.id, m.name)} title={t('cm.pages_MicePage.sil')}>
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
@@ -652,7 +654,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
                 <CardContent>
                   {m.price_per_person > 0 ? (
                     <div className="text-xl font-bold">₺{m.price_per_person.toLocaleString('tr-TR')}
-                      <span className="text-xs text-gray-500"> /kişi</span></div>
+                      <span className="text-xs text-gray-500"> {t('cm.pages_MicePage.kisi')}</span></div>
                   ) : (
                     <div className="text-xl font-bold">₺{m.flat_price.toLocaleString('tr-TR')}
                       <span className="text-xs text-gray-500"> sabit</span></div>
@@ -672,9 +674,9 @@ const MicePage = ({ user, tenant, onLogout }) => {
                   )}
                   {(m.min_guests > 0 || m.prep_lead_minutes > 0) && (
                     <div className="text-xs text-gray-500 mt-1">
-                      {m.min_guests > 0 && <>Min. {m.min_guests} kişi</>}
+                      {m.min_guests > 0 && <>Min. {m.min_guests} {t('cm.pages_MicePage.kisi_94aaa')}</>}
                       {m.min_guests > 0 && m.prep_lead_minutes > 0 && ' • '}
-                      {m.prep_lead_minutes > 0 && <>{m.prep_lead_minutes} dk hazırlık</>}
+                      {m.prep_lead_minutes > 0 && <>{m.prep_lead_minutes} {t('cm.pages_MicePage.dk_hazirlik')}</>}
                     </div>
                   )}
                 </CardContent>
@@ -689,7 +691,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
 
         <TabsContent value="pipeline">
           {visitedMiceTabs.has('pipeline') && (
-            <Suspense fallback={<div className="p-6 text-sm text-slate-500">Yükleniyor…</div>}>
+            <Suspense fallback={<div className="p-6 text-sm text-slate-500">{t('cm.pages_MicePage.yukleniyor_b597b')}</div>}>
               <SalesPipelineTab accounts={accounts} />
             </Suspense>
           )}
@@ -697,14 +699,14 @@ const MicePage = ({ user, tenant, onLogout }) => {
 
         <TabsContent value="packages">
           {visitedMiceTabs.has('packages') && (
-            <Suspense fallback={<div className="p-6 text-sm text-slate-500">Yükleniyor…</div>}>
+            <Suspense fallback={<div className="p-6 text-sm text-slate-500">{t('cm.pages_MicePage.yukleniyor_b597b')}</div>}>
               <PackagesTab />
             </Suspense>
           )}
         </TabsContent>
 
         <TabsContent value="competitors">
-          <Suspense fallback={<div className="p-6 text-sm text-slate-500">Yükleniyor…</div>}>
+          <Suspense fallback={<div className="p-6 text-sm text-slate-500">{t('cm.pages_MicePage.yukleniyor_b597b')}</div>}>
             <BanquetCompetitorTab />
           </Suspense>
         </TabsContent>

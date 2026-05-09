@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Gauge, Plus, RefreshCw, Trash2, Loader2, CheckCircle2, XCircle, Search } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 /**
  * Opera #10 — Hurdle Rates.
@@ -22,6 +23,7 @@ import { Gauge, Plus, RefreshCw, Trash2, Loader2, CheckCircle2, XCircle, Search 
  */
 
 export default function HurdleRatesPage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [tab, setTab] = useState("list");
   const [list, setList] = useState([]);
@@ -117,27 +119,26 @@ export default function HurdleRatesPage() {
             <Gauge className="h-6 w-6" /> Hurdle Rates
           </h2>
           <p className="text-sm text-muted-foreground">
-            Tarih/oda/kanal bazlı minimum kabul edilebilir oranlar (revenue management eşikleri).
+            {t('cm.pages_HurdleRatesPage.tarih_oda_kanal_bazli_minimum_kabul_edil')}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={loadList} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Yenile
+          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> {t('cm.pages_HurdleRatesPage.yenile')}
         </Button>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="list" data-testid="tab-hurdles-list">Tanımlar</TabsTrigger>
-          <TabsTrigger value="check" data-testid="tab-hurdles-check">Oran Kontrolü</TabsTrigger>
+          <TabsTrigger value="list" data-testid="tab-hurdles-list">{t('cm.pages_HurdleRatesPage.tanimlar')}</TabsTrigger>
+          <TabsTrigger value="check" data-testid="tab-hurdles-check">{t('cm.pages_HurdleRatesPage.oran_kontrolu')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="list">
           <Card>
             <CardHeader>
-              <CardTitle>Hurdle Tanımları</CardTitle>
+              <CardTitle>{t('cm.pages_HurdleRatesPage.hurdle_tanimlari')}</CardTitle>
               <CardDescription>
-                Boş room_type/channel = "tüm" anlamına gelir. En spesifik kural uygulanır
-                (room_type+channel &gt; room_type &gt; channel &gt; all).
+                {t('cm.pages_HurdleRatesPage.bos_room_type_channel_tum_anlamina_gelir')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -147,18 +148,18 @@ export default function HurdleRatesPage() {
                   <Input
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="Hafta sonu min" required
+                    placeholder={t('cm.pages_HurdleRatesPage.hafta_sonu_min')} required
                     data-testid="input-hurdle-name"
                   />
                 </div>
                 <div>
-                  <Label>Başlangıç</Label>
+                  <Label>{t('cm.pages_HurdleRatesPage.baslangic')}</Label>
                   <Input type="date" value={form.date_from}
                     onChange={(e) => setForm({ ...form, date_from: e.target.value })}
                     required data-testid="input-hurdle-from" />
                 </div>
                 <div>
-                  <Label>Bitiş</Label>
+                  <Label>{t('cm.pages_HurdleRatesPage.bitis')}</Label>
                   <Input type="date" value={form.date_to}
                     onChange={(e) => setForm({ ...form, date_to: e.target.value })}
                     required data-testid="input-hurdle-to" />
@@ -176,13 +177,13 @@ export default function HurdleRatesPage() {
                     onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} />
                 </div>
                 <div>
-                  <Label>Oda Tipi (boş=tüm)</Label>
+                  <Label>{t('cm.pages_HurdleRatesPage.oda_tipi_bos_tum')}</Label>
                   <Input value={form.room_type}
                     onChange={(e) => setForm({ ...form, room_type: e.target.value })}
                     placeholder="standard" />
                 </div>
                 <div>
-                  <Label>Kanal (boş=tüm)</Label>
+                  <Label>{t('cm.pages_HurdleRatesPage.kanal_bos_tum')}</Label>
                   <Input value={form.channel}
                     onChange={(e) => setForm({ ...form, channel: e.target.value })}
                     placeholder="booking.com" />
@@ -194,7 +195,7 @@ export default function HurdleRatesPage() {
                 </div>
                 <Button type="submit" disabled={submitting} data-testid="button-hurdle-add">
                   {submitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
-                  Ekle
+                  {t('cm.pages_HurdleRatesPage.ekle')}
                 </Button>
               </form>
 
@@ -202,8 +203,8 @@ export default function HurdleRatesPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Ad</TableHead>
-                    <TableHead>Tarih Aralığı</TableHead>
-                    <TableHead>Oda Tipi</TableHead>
+                    <TableHead>{t('cm.pages_HurdleRatesPage.tarih_araligi')}</TableHead>
+                    <TableHead>{t('cm.pages_HurdleRatesPage.oda_tipi')}</TableHead>
                     <TableHead>Kanal</TableHead>
                     <TableHead className="text-right">Min Oran</TableHead>
                     <TableHead className="w-[60px]" />
@@ -213,15 +214,15 @@ export default function HurdleRatesPage() {
                   {list.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
-                        Henüz hurdle tanımı yok.
+                        {t('cm.pages_HurdleRatesPage.henuz_hurdle_tanimi_yok')}
                       </TableCell>
                     </TableRow>
                   ) : list.map((h) => (
                     <TableRow key={h.id}>
                       <TableCell className="font-medium">{h.name}</TableCell>
                       <TableCell className="text-xs">{h.date_from} → {h.date_to}</TableCell>
-                      <TableCell>{h.room_type ? <Badge variant="secondary">{h.room_type}</Badge> : <span className="text-muted-foreground text-xs">tüm</span>}</TableCell>
-                      <TableCell>{h.channel ? <Badge variant="secondary">{h.channel}</Badge> : <span className="text-muted-foreground text-xs">tüm</span>}</TableCell>
+                      <TableCell>{h.room_type ? <Badge variant="secondary">{h.room_type}</Badge> : <span className="text-muted-foreground text-xs">{t('cm.pages_HurdleRatesPage.tum')}</span>}</TableCell>
+                      <TableCell>{h.channel ? <Badge variant="secondary">{h.channel}</Badge> : <span className="text-muted-foreground text-xs">{t('cm.pages_HurdleRatesPage.tum_37971')}</span>}</TableCell>
                       <TableCell className="text-right font-mono">{Number(h.min_rate).toFixed(2)} {h.currency}</TableCell>
                       <TableCell>
                         <Button size="sm" variant="ghost" onClick={() => setDeleteTarget({ id: h.id, name: h.name })}>
@@ -239,15 +240,15 @@ export default function HurdleRatesPage() {
         <TabsContent value="check">
           <Card>
             <CardHeader>
-              <CardTitle>Oran Kontrolü</CardTitle>
+              <CardTitle>{t('cm.pages_HurdleRatesPage.oran_kontrolu_1ac6f')}</CardTitle>
               <CardDescription>
-                Bir teklif fiyatın hurdle'a uyup uymadığını kontrol et.
+                {t('cm.pages_HurdleRatesPage.bir_teklif_fiyatin_hurdle_a_uyup_uymadig')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <form onSubmit={runCheck} className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
                 <div>
-                  <Label>Tarih</Label>
+                  <Label>{t('cm.pages_HurdleRatesPage.tarih')}</Label>
                   <Input type="date" value={check.date}
                     onChange={(e) => setCheck({ ...check, date: e.target.value })}
                     required data-testid="input-check-date" />
@@ -260,7 +261,7 @@ export default function HurdleRatesPage() {
                     required data-testid="input-check-rate" />
                 </div>
                 <div>
-                  <Label>Oda Tipi</Label>
+                  <Label>{t('cm.pages_HurdleRatesPage.oda_tipi_adb74')}</Label>
                   <Input value={check.room_type}
                     onChange={(e) => setCheck({ ...check, room_type: e.target.value })}
                     placeholder="opsiyonel" />
@@ -307,11 +308,11 @@ export default function HurdleRatesPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Hurdle sil?</DialogTitle>
-            <DialogDescription>"{deleteTarget?.name}" pasife alınacak.</DialogDescription>
+            <DialogDescription>"{deleteTarget?.name}{t('cm.pages_HurdleRatesPage.pasife_alinacak')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Vazgeç</Button>
-            <Button variant="destructive" onClick={confirmDelete} data-testid="button-hurdle-confirm-delete">Sil</Button>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>{t('cm.pages_HurdleRatesPage.vazgec')}</Button>
+            <Button variant="destructive" onClick={confirmDelete} data-testid="button-hurdle-confirm-delete">{t('cm.pages_HurdleRatesPage.sil')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

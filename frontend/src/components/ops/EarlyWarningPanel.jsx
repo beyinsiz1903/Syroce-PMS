@@ -23,6 +23,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
@@ -33,6 +34,7 @@ const getAuthHeaders = () => {
 
 // ── Mini Sparkline Component ─────────────────────────────────────────
 const MiniSparkline = ({ data, color = 'blue', height = 30 }) => {
+  const { t } = useTranslation();
   if (!data || data.length === 0) return null;
   
   const values = data.map(d => d.value || 0);
@@ -316,7 +318,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
       <Card data-testid="early-warning-panel-loading">
         <CardContent className="flex items-center justify-center py-8">
           <RefreshCw className="w-5 h-5 animate-spin text-blue-500 mr-2" />
-          <span className="text-gray-500">Erken uyarılar yükleniyor...</span>
+          <span className="text-gray-500">{t('cm.components_ops_EarlyWarningPanel.erken_uyarilar_yukleniyor')}</span>
         </CardContent>
       </Card>
     );
@@ -358,7 +360,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
           <div className="flex items-center justify-between">
             <CardTitle className="text-base flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-indigo-600" />
-              Erken Uyarı Sistemi (v1)
+              {t('cm.components_ops_EarlyWarningPanel.erken_uyari_sistemi_v1')}
             </CardTitle>
             <div className="flex items-center gap-2">
               <SystemHealthIndicator health={summary?.system_health_indicator || 'unknown'} />
@@ -380,7 +382,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <div className="bg-white rounded-lg p-3 border shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500 uppercase">Toplam Uyarı</span>
+                <span className="text-xs text-gray-500 uppercase">{t('cm.components_ops_EarlyWarningPanel.toplam_uyari')}</span>
                 <Target className="w-4 h-4 text-indigo-500" />
               </div>
               <p className="text-2xl font-bold text-gray-900">{summary?.warning_count || 0}</p>
@@ -396,7 +398,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
             
             <div className="bg-white rounded-lg p-3 border shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500 uppercase">Uyarı</span>
+                <span className="text-xs text-gray-500 uppercase">{t('cm.components_ops_EarlyWarningPanel.uyari')}</span>
                 <AlertTriangle className="w-4 h-4 text-amber-500" />
               </div>
               <p className="text-2xl font-bold text-amber-600">{summary?.warning_count_warning || 0}</p>
@@ -404,7 +406,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
             
             <div className="bg-white rounded-lg p-3 border shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500 uppercase">Risk Altında</span>
+                <span className="text-xs text-gray-500 uppercase">{t('cm.components_ops_EarlyWarningPanel.risk_altinda')}</span>
                 <Gauge className="w-4 h-4 text-blue-500" />
               </div>
               <p className="text-2xl font-bold text-blue-600">{summary?.connectors_at_risk_count || 0}</p>
@@ -416,9 +418,9 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
           {failureRateSeries.length > 0 && (
             <div className="bg-white rounded-lg p-3 border shadow-sm mb-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-gray-500 uppercase">Hata Oranı Trendi (Son 6 Saat)</span>
+                <span className="text-xs text-gray-500 uppercase">{t('cm.components_ops_EarlyWarningPanel.hata_orani_trendi_son_6_saat')}</span>
                 <div className="flex items-center gap-1 text-xs text-gray-500">
-                  <span>Şu an:</span>
+                  <span>{t('cm.components_ops_EarlyWarningPanel.su_an')}</span>
                   <span className={`font-bold ${failureRateSeries[failureRateSeries.length - 1]?.value > 10 ? 'text-red-600' : 'text-green-600'}`}>
                     %{failureRateSeries[failureRateSeries.length - 1]?.value || 0}
                   </span>
@@ -435,7 +437,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
           {/* Connectors at Risk */}
           {summary?.connectors_at_risk && summary.connectors_at_risk.length > 0 && (
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs text-gray-500">Risk altındaki connector'lar:</span>
+              <span className="text-xs text-gray-500">{t('cm.components_ops_EarlyWarningPanel.risk_altindaki_connector_lar')}</span>
               {summary.connectors_at_risk.map((prov) => (
                 <Badge 
                   key={prov} 
@@ -470,7 +472,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
               {engineStatus?.running ? (
                 <><Square className="w-3 h-3 mr-1" /> Durdur</>
               ) : (
-                <><Play className="w-3 h-3 mr-1" /> Başlat</>
+                <><Play className="w-3 h-3 mr-1" /> {t('cm.components_ops_EarlyWarningPanel.baslat')}</>
               )}
             </Button>
           </div>
@@ -483,17 +485,17 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
           <CardTitle className="text-base flex items-center justify-between">
             <span className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
-              Aktif Erken Uyarılar
+              {t('cm.components_ops_EarlyWarningPanel.aktif_erken_uyarilar')}
             </span>
-            <Badge variant="outline">{topWarnings.length} uyarı</Badge>
+            <Badge variant="outline">{topWarnings.length} {t('cm.components_ops_EarlyWarningPanel.uyari_fa6d4')}</Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
           {topWarnings.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <CheckCircle2 className="w-10 h-10 mx-auto mb-2 text-green-500 opacity-50" />
-              <p className="text-sm">Aktif erken uyarı yok</p>
-              <p className="text-xs text-gray-400 mt-1">Sistem sağlıklı görünüyor</p>
+              <p className="text-sm">{t('cm.components_ops_EarlyWarningPanel.aktif_erken_uyari_yok')}</p>
+              <p className="text-xs text-gray-400 mt-1">{t('cm.components_ops_EarlyWarningPanel.sistem_saglikli_gorunuyor')}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -517,7 +519,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Info className="w-4 h-4 text-blue-500" />
-                Uyarı Detayı
+                {t('cm.components_ops_EarlyWarningPanel.uyari_detayi')}
               </CardTitle>
               <Button variant="ghost" size="sm" onClick={() => setSelectedWarning(null)}>
                 <X className="w-4 h-4" />
@@ -531,7 +533,7 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
                 <WarningTypeBadge type={selectedWarning.warning_type} />
               </div>
               <div>
-                <span className="text-gray-500">Güven:</span>
+                <span className="text-gray-500">{t('cm.components_ops_EarlyWarningPanel.guven')}</span>
                 <ConfidenceBadge confidence={selectedWarning.confidence} />
               </div>
               <div>
@@ -550,11 +552,11 @@ const EarlyWarningPanel = ({ onViewConnector, onOpenTimeline, onOpenBacklog }) =
               <p className="bg-white p-2 rounded border text-gray-800">{selectedWarning.reason}</p>
             </div>
             <div>
-              <span className="text-gray-500 block mb-1">Önerilen Aksiyon:</span>
+              <span className="text-gray-500 block mb-1">{t('cm.components_ops_EarlyWarningPanel.onerilen_aksiyon')}</span>
               <p className="bg-white p-2 rounded border text-gray-800">{selectedWarning.recommended_action}</p>
             </div>
             <div>
-              <span className="text-gray-500 block mb-1">Etki Alanı:</span>
+              <span className="text-gray-500 block mb-1">{t('cm.components_ops_EarlyWarningPanel.etki_alani')}</span>
               <p className="bg-white p-2 rounded border text-gray-800">{selectedWarning.impacted_scope}</p>
             </div>
             {selectedWarning.trend_data && Object.keys(selectedWarning.trend_data).length > 0 && (

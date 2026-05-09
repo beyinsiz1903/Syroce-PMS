@@ -8,12 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Search, CheckCircle, AlertCircle, Clock, UserCheck, UserPlus } from "lucide-react";
 import { getSegmentColor, getStatusColor, getStatusLabel } from "./calendarHelpers";
 import { alertDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 // New Booking Dialog
 export const NewBookingDialog = ({
   open, onOpenChange, newBooking, setNewBooking,
   selectedRoom, guests, rooms, onSubmit, minDate,
 }) => {
+  const { t } = useTranslation();
   const roomTypes = rooms ? [...new Set(rooms.map(r => r.room_type).filter(Boolean))] : [];
   const effectiveMinDate = minDate || new Date().toISOString().split('T')[0];
 
@@ -86,14 +88,14 @@ export const NewBookingDialog = ({
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-w-2xl">
       <DialogHeader>
-        <DialogTitle>Hızlı Rezervasyon</DialogTitle>
+        <DialogTitle>{t('cm.pages_calendar_CalendarDialogs.hizli_rezervasyon')}</DialogTitle>
       </DialogHeader>
       <form onSubmit={onSubmit} className="space-y-4">
         {selectedRoom ? (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3" data-testid="selected-room-info">
-            <div className="text-xs text-blue-600 font-medium mb-1">Seçilen Oda</div>
+            <div className="text-xs text-blue-600 font-medium mb-1">{t('cm.pages_calendar_CalendarDialogs.secilen_oda')}</div>
             <div className="font-bold text-lg text-gray-900">
-              Oda {selectedRoom.room_number}
+              {t('cm.pages_calendar_CalendarDialogs.oda')} {selectedRoom.room_number}
               <span className="text-sm font-normal text-gray-500 ml-2">
                 {selectedRoom.room_type} - Kat {selectedRoom.floor}
               </span>
@@ -102,7 +104,7 @@ export const NewBookingDialog = ({
         ) : (
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Oda Tipi</Label>
+              <Label>{t('cm.pages_calendar_CalendarDialogs.oda_tipi')}</Label>
               <select
                 className="w-full border rounded-md p-2"
                 value={newBooking.room_type || ''}
@@ -111,19 +113,19 @@ export const NewBookingDialog = ({
                 }}
                 data-testid="new-booking-room-type"
               >
-                <option value="">Oda tipi seçin...</option>
+                <option value="">{t('cm.pages_calendar_CalendarDialogs.oda_tipi_secin')}</option>
                 {roomTypes.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>
-              <Label>Oda</Label>
+              <Label>{t('cm.pages_calendar_CalendarDialogs.oda_e4b47')}</Label>
               <select
                 className="w-full border rounded-md p-2"
                 value={newBooking.room_id || ''}
                 onChange={(e) => setNewBooking({...newBooking, room_id: e.target.value})}
                 data-testid="new-booking-room-select"
               >
-                <option value="">Oda seçin...</option>
+                <option value="">{t('cm.pages_calendar_CalendarDialogs.oda_secin')}</option>
                 {(rooms || [])
                   .filter(r => !newBooking.room_type || r.room_type === newBooking.room_type)
                   .map(r => (
@@ -137,7 +139,7 @@ export const NewBookingDialog = ({
 
         {/* Guest search field */}
         <div>
-          <Label>Misafir *</Label>
+          <Label>{t('cm.pages_calendar_CalendarDialogs.misafir')}</Label>
           {selectedGuest ? (
             <div className="mt-1 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md p-2.5" data-testid="new-booking-selected-guest">
               <UserCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
@@ -168,7 +170,7 @@ export const NewBookingDialog = ({
                   value={guestSearchQuery}
                   onChange={(e) => handleGuestSearch(e.target.value)}
                   onFocus={() => { if (guestSearchResults.length > 0) setShowGuestDropdown(true); }}
-                  placeholder="Misafir ara veya yeni isim gir..."
+                  placeholder={t('cm.pages_calendar_CalendarDialogs.misafir_ara_veya_yeni_isim_gir')}
                   className="pl-9"
                   data-testid="new-booking-guest-search"
                 />
@@ -283,7 +285,7 @@ export const NewBookingDialog = ({
             />
           </div>
           <div>
-            <Label>Toplam Tutar</Label>
+            <Label>{t('cm.pages_calendar_CalendarDialogs.toplam_tutar')}</Label>
             <Input
               type="number"
               step="0.01"
@@ -293,20 +295,20 @@ export const NewBookingDialog = ({
           </div>
         </div>
         <div>
-          <Label>Durum</Label>
+          <Label>{t('cm.pages_calendar_CalendarDialogs.durum')}</Label>
           <select
             className="w-full border rounded-md p-2"
             value={newBooking.status}
             onChange={(e) => setNewBooking({...newBooking, status: e.target.value})}
           >
-            <option value="confirmed">Onaylandi</option>
+            <option value="confirmed">{t('cm.pages_calendar_CalendarDialogs.onaylandi')}</option>
             <option value="guaranteed">Garantili</option>
-            <option value="checked_in">Giriş Yapildi</option>
+            <option value="checked_in">{t('cm.pages_calendar_CalendarDialogs.giris_yapildi')}</option>
           </select>
         </div>
         <div className="flex space-x-2 pt-4">
-          <Button type="submit" className="flex-1" data-testid="new-booking-submit">Rezervasyon Olustur</Button>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>İptal</Button>
+          <Button type="submit" className="flex-1" data-testid="new-booking-submit">{t('cm.pages_calendar_CalendarDialogs.rezervasyon_olustur')}</Button>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('cm.pages_calendar_CalendarDialogs.iptal')}</Button>
         </div>
       </form>
     </DialogContent>
@@ -418,18 +420,18 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
         className="w-full text-left px-3 py-2 text-sm font-semibold text-amber-900 flex items-center justify-between"
         data-testid="toggle-room-change"
       >
-        <span>Oda Değiştir / Move Room</span>
+        <span>{t('cm.pages_calendar_CalendarDialogs.oda_degistir_move_room')}</span>
         <span className="text-xs">{open ? '▲' : '▼'}</span>
       </button>
       {open && (
         <div className="px-3 pb-3 space-y-3">
-          {loading && <div className="text-sm text-gray-600">Müsait odalar yükleniyor...</div>}
+          {loading && <div className="text-sm text-gray-600">{t('cm.pages_calendar_CalendarDialogs.musait_odalar_yukleniyor')}</div>}
           {!loading && available.length === 0 && (
-            <div className="text-sm text-gray-600">Bu tarih aralığı için müsait oda bulunamadı.</div>
+            <div className="text-sm text-gray-600">{t('cm.pages_calendar_CalendarDialogs.bu_tarih_araligi_icin_musait_oda_bulunam')}</div>
           )}
           {!loading && sameType.length > 0 && (
             <div>
-              <div className="text-xs font-semibold text-gray-700 mb-1">Aynı oda tipi</div>
+              <div className="text-xs font-semibold text-gray-700 mb-1">{t('cm.pages_calendar_CalendarDialogs.ayni_oda_tipi')}</div>
               <div className="space-y-1 max-h-40 overflow-y-auto">
                 {sameType.map((r) => (
                   <button
@@ -441,7 +443,7 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
                     }`}
                     data-testid={`pick-room-${r.room_number}`}
                   >
-                    <span className="font-semibold">Oda {r.room_number}</span>
+                    <span className="font-semibold">{t('cm.pages_calendar_CalendarDialogs.oda_e4b47')} {r.room_number}</span>
                     <span className="text-gray-500 ml-2">{r.room_type} · Kat {r.floor}</span>
                     <span className="text-gray-500 ml-2">${r.price_per_night}/gece</span>
                   </button>
@@ -451,7 +453,7 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
           )}
           {!loading && otherType.length > 0 && (
             <div>
-              <div className="text-xs font-semibold text-gray-700 mb-1">Farklı oda tipi</div>
+              <div className="text-xs font-semibold text-gray-700 mb-1">{t('cm.pages_calendar_CalendarDialogs.farkli_oda_tipi')}</div>
               <div className="space-y-1 max-h-40 overflow-y-auto">
                 {otherType.map((r) => (
                   <button
@@ -463,7 +465,7 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
                     }`}
                     data-testid={`pick-room-${r.room_number}`}
                   >
-                    <span className="font-semibold">Oda {r.room_number}</span>
+                    <span className="font-semibold">{t('cm.pages_calendar_CalendarDialogs.oda_e4b47')} {r.room_number}</span>
                     <span className="text-gray-500 ml-2">{r.room_type} · Kat {r.floor}</span>
                     <span className="text-gray-500 ml-2">${r.price_per_night}/gece</span>
                     {r.is_upgrade && <Badge className="ml-2 bg-indigo-100 text-indigo-800">Upgrade</Badge>}
@@ -475,14 +477,14 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
 
           {selectedRoom && !selectedRoom.is_same_type && (
             <div className="bg-white border rounded p-2 space-y-2">
-              <div className="text-xs font-semibold text-gray-700">Fiyat değişikliği</div>
+              <div className="text-xs font-semibold text-gray-700">{t('cm.pages_calendar_CalendarDialogs.fiyat_degisikligi')}</div>
               <label className="flex items-center text-sm gap-2">
                 <input type="radio" checked={keepPrice} onChange={() => setKeepPrice(true)} />
-                Mevcut fiyatı koru (${currentRate.toFixed(2)}/gece · ${booking.total_amount})
+                {t('cm.pages_calendar_CalendarDialogs.mevcut_fiyati_koru')}{currentRate.toFixed(2)}/gece · ${booking.total_amount})
               </label>
               <label className="flex items-center text-sm gap-2">
                 <input type="radio" checked={!keepPrice} onChange={() => setKeepPrice(false)} />
-                Yeni toplam fiyat gir
+                {t('cm.pages_calendar_CalendarDialogs.yeni_toplam_fiyat_gir')}
               </label>
               {!keepPrice && (
                 <Input
@@ -491,7 +493,7 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
                   step="0.01"
                   value={newPrice}
                   onChange={(e) => setNewPrice(e.target.value)}
-                  placeholder="Toplam tutar"
+                  placeholder={t('cm.pages_calendar_CalendarDialogs.toplam_tutar_e5b33')}
                   data-testid="room-change-price"
                 />
               )}
@@ -500,21 +502,21 @@ const RoomChangePanel = ({ booking, onMoved, onClose }) => {
 
           {selectedRoom && (
             <div>
-              <Label className="text-xs">Değişim Nedeni *</Label>
+              <Label className="text-xs">{t('cm.pages_calendar_CalendarDialogs.degisim_nedeni')}</Label>
               <select
                 className="w-full border rounded-md p-1.5 text-sm"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 data-testid="room-change-reason"
               >
-                <option value="">Seçin...</option>
-                <option value="Guest Request">Misafir Talebi</option>
-                <option value="Room Maintenance">Oda Bakımı</option>
+                <option value="">{t('cm.pages_calendar_CalendarDialogs.secin')}</option>
+                <option value="Guest Request">{t('cm.pages_calendar_CalendarDialogs.misafir_talebi')}</option>
+                <option value="Room Maintenance">{t('cm.pages_calendar_CalendarDialogs.oda_bakimi')}</option>
                 <option value="Upgrade">Upgrade</option>
                 <option value="Downgrade">Downgrade</option>
-                <option value="Overbooking">Overbooking Çözümü</option>
-                <option value="VIP Guest">VIP Misafir</option>
-                <option value="Room Issue">Oda Sorunu</option>
+                <option value="Overbooking">{t('cm.pages_calendar_CalendarDialogs.overbooking_cozumu')}</option>
+                <option value="VIP Guest">{t('cm.pages_calendar_CalendarDialogs.vip_misafir')}</option>
+                <option value="Room Issue">{t('cm.pages_calendar_CalendarDialogs.oda_sorunu')}</option>
                 <option value="Operational">Operasyonel</option>
               </select>
             </div>
@@ -670,7 +672,7 @@ export const BookingDetailsDialog = ({
                 if (onEdit) onEdit(selectedBooking);
               }}
             >
-              Düzenle
+              {t('cm.pages_calendar_CalendarDialogs.duzenle')}
             </Button>
           </div>
         </div>
@@ -747,7 +749,7 @@ export const FindRoomDialog = ({
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-w-3xl">
       <DialogHeader>
-        <DialogTitle>Müsaitlik Kontrolu</DialogTitle>
+        <DialogTitle>{t('cm.pages_calendar_CalendarDialogs.musaitlik_kontrolu')}</DialogTitle>
       </DialogHeader>
       <div className="space-y-4">
         <div className="grid grid-cols-4 gap-4">
@@ -781,19 +783,19 @@ export const FindRoomDialog = ({
             />
           </div>
           <div>
-            <Label>Oda Tipi</Label>
+            <Label>{t('cm.pages_calendar_CalendarDialogs.oda_tipi_adb74')}</Label>
             <select
               className="w-full border rounded-md p-2"
               value={findRoomCriteria.room_type}
               onChange={(e) => setFindRoomCriteria({...findRoomCriteria, room_type: e.target.value})}
               data-testid="find-room-type"
             >
-              <option value="all">Tüm Tipler</option>
+              <option value="all">{t('cm.pages_calendar_CalendarDialogs.tum_tipler')}</option>
               {roomTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
-            <Label>Misafir Sayısı</Label>
+            <Label>{t('cm.pages_calendar_CalendarDialogs.misafir_sayisi')}</Label>
             <Input
               type="number"
               min="1"
@@ -804,19 +806,19 @@ export const FindRoomDialog = ({
         </div>
         <Button onClick={onFindRoom} className="w-full" data-testid="find-room-search-btn">
           <Search className="w-4 h-4 mr-2" />
-          Müsait Odalari Ara
+          {t('cm.pages_calendar_CalendarDialogs.musait_odalari_ara')}
         </Button>
         {availableRooms.length > 0 && (
           <div className="border rounded-lg p-4 max-h-96 overflow-y-auto">
             <h3 className="font-semibold mb-3 flex items-center">
               <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-              {availableRooms.length} Müsait Oda
+              {availableRooms.length} {t('cm.pages_calendar_CalendarDialogs.musait_oda')}
             </h3>
             <div className="space-y-2">
               {availableRooms.map(room => (
                 <div key={room.id} className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded">
                   <div>
-                    <div className="font-semibold">Oda {room.room_number}</div>
+                    <div className="font-semibold">{t('cm.pages_calendar_CalendarDialogs.oda_e4b47')} {room.room_number}</div>
                     <div className="text-sm text-gray-600 capitalize">
                       {room.room_type} - Kat {room.floor} - Kapasite: {room.capacity}
                     </div>
@@ -831,7 +833,7 @@ export const FindRoomDialog = ({
         {findRoomCriteria.check_in && findRoomCriteria.check_out && availableRooms.length === 0 && (
           <div className="text-center py-8 text-red-600">
             <AlertCircle className="w-12 h-12 mx-auto mb-3" />
-            <p className="font-semibold">Seçilen tarihler için müsait oda bulunamadı</p>
+            <p className="font-semibold">{t('cm.pages_calendar_CalendarDialogs.secilen_tarihler_icin_musait_oda_bulunam')}</p>
             <p className="text-sm">Farkli tarih veya oda tipi deneyin</p>
           </div>
         )}

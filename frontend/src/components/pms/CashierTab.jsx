@@ -16,6 +16,7 @@ import {
   FileText, FileDown, Search, Printer, AlertTriangle,
   Landmark, CalendarRange
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const DIFF_THRESHOLD = 50;
 const CURRENCIES = [
@@ -29,6 +30,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 const monthAgoIso = () => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); };
 
 const CashierTab = () => {
+  const { t } = useTranslation();
   const [shift, setShift] = useState(null);
   const [shiftHistory, setShiftHistory] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -370,9 +372,9 @@ const CashierTab = () => {
   );
 
   const statusLabel = (s) => {
-    if (s === 'open') return <Badge className="bg-emerald-100 text-emerald-700">Açık</Badge>;
+    if (s === 'open') return <Badge className="bg-emerald-100 text-emerald-700">{t('cm.components_pms_CashierTab.acik')}</Badge>;
     if (s === 'handed_over') return <Badge className="bg-blue-100 text-blue-700">Devredildi</Badge>;
-    return <Badge className="bg-gray-100 text-gray-600">Kapalı</Badge>;
+    return <Badge className="bg-gray-100 text-gray-600">{t('cm.components_pms_CashierTab.kapali')}</Badge>;
   };
 
   const closingDisabled =
@@ -383,20 +385,20 @@ const CashierTab = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center flex-wrap gap-2">
         <h2 className="text-2xl font-semibold flex items-center gap-2">
-          <Wallet className="w-6 h-6" /> Kasa Yönetimi
+          <Wallet className="w-6 h-6" /> {t('cm.components_pms_CashierTab.kasa_yonetimi')}
         </h2>
         <div className="flex gap-2 flex-wrap">
           {!shift ? (
             <Button onClick={() => setShowOpenDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
-              <LogIn className="w-4 h-4 mr-2" /> Vardiya Aç
+              <LogIn className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.vardiya_ac')}
             </Button>
           ) : (
             <>
               <Button onClick={() => setShowCashInDialog(true)} variant="outline" className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
-                <Plus className="w-4 h-4 mr-2" /> Nakit Giriş
+                <Plus className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.nakit_giris')}
               </Button>
               <Button onClick={() => setShowPaidOutDialog(true)} variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50">
-                <Minus className="w-4 h-4 mr-2" /> Kasa Çıkışı
+                <Minus className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.kasa_cikisi')}
               </Button>
               <Button onClick={() => setShowBankDepositDialog(true)} variant="outline" className="border-indigo-300 text-indigo-700 hover:bg-indigo-50">
                 <Landmark className="w-4 h-4 mr-2" /> Banka Yat
@@ -408,15 +410,15 @@ const CashierTab = () => {
                 <Users className="w-4 h-4 mr-2" /> Devret
               </Button>
               <Button onClick={() => setShowCloseDialog(true)} variant="destructive">
-                <LogOut className="w-4 h-4 mr-2" /> Vardiya Kapat
+                <LogOut className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.vardiya_kapat')}
               </Button>
             </>
           )}
           <Button onClick={() => setShowPeriodReportDialog(true)} variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50">
-            <CalendarRange className="w-4 h-4 mr-2" /> Dönem Raporu
+            <CalendarRange className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.donem_raporu')}
           </Button>
           <Button variant="outline" onClick={() => { loadShift(); loadHistory(); }}>
-            <RefreshCw className="w-4 h-4 mr-2" /> Yenile
+            <RefreshCw className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.yenile')}
           </Button>
         </div>
       </div>
@@ -428,11 +430,11 @@ const CashierTab = () => {
               <div className="flex items-center gap-3 text-sm">
                 <UserCheck className="w-5 h-5 text-emerald-600" />
                 <div>
-                  <span className="font-medium text-emerald-800">Aktif Vardiya</span>
+                  <span className="font-medium text-emerald-800">{t('cm.components_pms_CashierTab.aktif_vardiya')}</span>
                   <span className="text-emerald-600 mx-2">|</span>
-                  <span className="text-emerald-700">Açan: <strong>{shift.opened_by_name || shift.cashier_name || shift.cashier_email}</strong></span>
+                  <span className="text-emerald-700">{t('cm.components_pms_CashierTab.acan')} <strong>{shift.opened_by_name || shift.cashier_name || shift.cashier_email}</strong></span>
                   <span className="text-emerald-600 mx-2">|</span>
-                  <span className="text-emerald-700">Başlangıç: {shift.opened_at?.slice(0, 16).replace('T', ' ')}</span>
+                  <span className="text-emerald-700">{t('cm.components_pms_CashierTab.baslangic')} {shift.opened_at?.slice(0, 16).replace('T', ' ')}</span>
                   {shift.handover_from_name && (
                     <>
                       <span className="text-emerald-600 mx-2">|</span>
@@ -447,27 +449,27 @@ const CashierTab = () => {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <Card className="bg-emerald-50 border-emerald-200">
               <CardContent className="p-3">
-                <p className="text-xs text-emerald-600">Açılış Tutarı</p>
+                <p className="text-xs text-emerald-600">{t('cm.components_pms_CashierTab.acilis_tutari')}</p>
                 <p className="text-lg font-bold text-emerald-700">{(shift.opening_amount || 0).toFixed(2)} TL</p>
               </CardContent>
             </Card>
             <Card className="bg-blue-50 border-blue-200">
               <CardContent className="p-3">
-                <p className="text-xs text-blue-600">Nakit Giriş</p>
+                <p className="text-xs text-blue-600">{t('cm.components_pms_CashierTab.nakit_giris_f1615')}</p>
                 <p className="text-lg font-bold text-blue-700">{cashInTotal.toFixed(2)} TL</p>
               </CardContent>
             </Card>
             <Card className="bg-amber-50 border-amber-200">
               <CardContent className="p-3">
-                <p className="text-xs text-amber-600">Nakit Çıkış</p>
+                <p className="text-xs text-amber-600">{t('cm.components_pms_CashierTab.nakit_cikis')}</p>
                 <p className="text-lg font-bold text-amber-700">{cashOutTotal.toFixed(2)} TL</p>
               </CardContent>
             </Card>
             <Card className="bg-indigo-50 border-indigo-200">
               <CardContent className="p-3">
-                <p className="text-xs text-indigo-600">Kredi Kartı</p>
+                <p className="text-xs text-indigo-600">{t('cm.components_pms_CashierTab.kredi_karti')}</p>
                 <p className="text-lg font-bold text-indigo-700">{cardTotal.toFixed(2)} TL</p>
-                <p className="text-[10px] text-indigo-500">{cardCount} işlem</p>
+                <p className="text-[10px] text-indigo-500">{cardCount} {t('cm.components_pms_CashierTab.islem')}</p>
               </CardContent>
             </Card>
             <Card className="bg-gray-50 border-gray-200">
@@ -482,7 +484,7 @@ const CashierTab = () => {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <Receipt className="w-4 h-4" /> Vardiya İşlemleri ({filteredTransactions.length}/{transactions.length})
+                  <Receipt className="w-4 h-4" /> {t('cm.components_pms_CashierTab.vardiya_islemleri')}{filteredTransactions.length}/{transactions.length})
                 </CardTitle>
                 <div className="flex gap-2 items-center flex-wrap">
                   <div className="relative">
@@ -490,14 +492,14 @@ const CashierTab = () => {
                     <Input
                       value={txnSearch}
                       onChange={(e) => setTxnSearch(e.target.value)}
-                      placeholder="Ara..."
+                      placeholder={t('cm.components_pms_CashierTab.ara')}
                       className="h-8 text-xs pl-7 w-44"
                     />
                   </div>
                   <Select value={txnMethodFilter} onValueChange={setTxnMethodFilter}>
                     <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Tüm Yöntemler</SelectItem>
+                      <SelectItem value="all">{t('cm.components_pms_CashierTab.tum_yontemler')}</SelectItem>
                       <SelectItem value="cash">Nakit</SelectItem>
                       <SelectItem value="card">Kart</SelectItem>
                       <SelectItem value="bank_transfer">Havale</SelectItem>
@@ -544,10 +546,10 @@ const CashierTab = () => {
         <Card className="border-dashed border-2 border-gray-300">
           <CardContent className="py-12 text-center">
             <Wallet className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-gray-500 text-lg mb-2">Aktif vardiya yok</p>
-            <p className="text-gray-400 text-sm mb-4">İşlem yapabilmek için vardiya açmanız gerekiyor</p>
+            <p className="text-gray-500 text-lg mb-2">{t('cm.components_pms_CashierTab.aktif_vardiya_yok')}</p>
+            <p className="text-gray-400 text-sm mb-4">{t('cm.components_pms_CashierTab.islem_yapabilmek_icin_vardiya_acmaniz_ge')}</p>
             <Button onClick={() => setShowOpenDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
-              <LogIn className="w-4 h-4 mr-2" /> Vardiya Aç
+              <LogIn className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.vardiya_ac_4889c')}
             </Button>
           </CardContent>
         </Card>
@@ -556,12 +558,12 @@ const CashierTab = () => {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <Clock className="w-4 h-4" /> Geçmiş Vardiyalar
+            <Clock className="w-4 h-4" /> {t('cm.components_pms_CashierTab.gecmis_vardiyalar')}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {shiftHistory.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">Geçmiş vardiya bulunamadı</p>
+            <p className="text-sm text-gray-400 py-4 text-center">{t('cm.components_pms_CashierTab.gecmis_vardiya_bulunamadi')}</p>
           ) : (
             <div className="space-y-2">
               {shiftHistory.map((s, i) => (
@@ -579,8 +581,8 @@ const CashierTab = () => {
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="text-right">
-                        <p className="text-gray-500">Açılış: {(s.opening_amount || 0).toFixed(2)}</p>
-                        <p className="text-gray-500">Kapanış: {(s.closing_amount || 0).toFixed(2)}</p>
+                        <p className="text-gray-500">{t('cm.components_pms_CashierTab.acilis')} {(s.opening_amount || 0).toFixed(2)}</p>
+                        <p className="text-gray-500">{t('cm.components_pms_CashierTab.kapanis')} {(s.closing_amount || 0).toFixed(2)}</p>
                       </div>
                       {s.difference != null && (
                         <Badge className={Math.abs(s.difference) < 0.01 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}>
@@ -601,7 +603,7 @@ const CashierTab = () => {
                     </div>
                   </div>
                   <div className="mt-2 pt-2 border-t border-gray-100 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500">
-                    {s.opened_by_name && <span>Açan: <strong className="text-gray-700">{s.opened_by_name}</strong></span>}
+                    {s.opened_by_name && <span>{t('cm.components_pms_CashierTab.acan_4b8cd')} <strong className="text-gray-700">{s.opened_by_name}</strong></span>}
                     {s.closed_by_name && <span>Kapatan: <strong className="text-gray-700">{s.closed_by_name}</strong></span>}
                     {s.handover_to_name && (
                       <span className="text-blue-600">Devredilen: <strong>{s.handover_to_name}</strong></span>
@@ -620,17 +622,17 @@ const CashierTab = () => {
       <Dialog open={showOpenDialog} onOpenChange={setShowOpenDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><LogIn className="w-5 h-5" /> Vardiya Aç</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><LogIn className="w-5 h-5" /> {t('cm.components_pms_CashierTab.vardiya_ac_4889c')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <Label>Açılış Tutarı (TL)</Label>
+              <Label>{t('cm.components_pms_CashierTab.acilis_tutari_tl')}</Label>
               <Input type="number" value={openingAmount} onChange={e => setOpeningAmount(e.target.value)} placeholder="0.00" />
-              <p className="text-xs text-gray-400 mt-1">Kasadaki mevcut nakit miktarını girin</p>
+              <p className="text-xs text-gray-400 mt-1">{t('cm.components_pms_CashierTab.kasadaki_mevcut_nakit_miktarini_girin')}</p>
             </div>
             <Button onClick={openShift} disabled={loading} className="w-full bg-emerald-600 hover:bg-emerald-700">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <LogIn className="w-4 h-4 mr-2" />}
-              Vardiyayı Aç
+              {t('cm.components_pms_CashierTab.vardiyayi_ac')}
             </Button>
           </div>
         </DialogContent>
@@ -639,17 +641,17 @@ const CashierTab = () => {
       <Dialog open={showCloseDialog} onOpenChange={setShowCloseDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Calculator className="w-5 h-5" /> Vardiya Kapat - Kasa Sayımı</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Calculator className="w-5 h-5" /> {t('cm.components_pms_CashierTab.vardiya_kapat_kasa_sayimi')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <DenominationGrid counts={closingCounts} setCounts={setClosingCounts} />
             <div className="bg-gray-50 rounded-lg p-3 space-y-1">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Sayılan Tutar:</span>
+                <span className="text-gray-600">{t('cm.components_pms_CashierTab.sayilan_tutar')}</span>
                 <span className="font-bold">{countedTotal.toFixed(2)} TL</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Beklenen Tutar:</span>
+                <span className="text-gray-600">{t('cm.components_pms_CashierTab.beklenen_tutar')}</span>
                 <span className="font-bold">{expectedCash.toFixed(2)} TL</span>
               </div>
               <div className={`flex justify-between text-sm pt-1 border-t ${Math.abs(difference) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -661,7 +663,7 @@ const CashierTab = () => {
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-red-700">
-                  Fark {DIFF_THRESHOLD} TL'yi aştı. Kapatabilmek için aşağıya açıklama girmeniz zorunlu.
+                  Fark {DIFF_THRESHOLD} {t('cm.components_pms_CashierTab.tl_yi_asti_kapatabilmek_icin_asagiya_aci')}
                 </p>
               </div>
             )}
@@ -678,7 +680,7 @@ const CashierTab = () => {
             </div>
             <Button onClick={closeShift} disabled={closingDisabled} className="w-full" variant="destructive">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <LogOut className="w-4 h-4 mr-2" />}
-              Vardiyayı Kapat
+              {t('cm.components_pms_CashierTab.vardiyayi_kapat')}
             </Button>
           </div>
         </DialogContent>
@@ -691,7 +693,7 @@ const CashierTab = () => {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
-              Vardiyayı devralacak kişi kendi e-posta ve şifresini girerek onaylamalıdır.
+              {t('cm.components_pms_CashierTab.vardiyayi_devralacak_kisi_kendi_e_posta_')}
             </div>
             <div className="bg-gray-50 rounded-lg p-3">
               <div className="flex justify-between text-sm">
@@ -700,14 +702,14 @@ const CashierTab = () => {
               </div>
             </div>
             <div className="border rounded-lg p-4 space-y-3">
-              <p className="text-xs font-semibold text-gray-500 uppercase">Devralacak Kişi Girişi</p>
+              <p className="text-xs font-semibold text-gray-500 uppercase">{t('cm.components_pms_CashierTab.devralacak_kisi_girisi')}</p>
               <div>
                 <Label>E-posta *</Label>
                 <Input type="email" value={handoverTarget.email} onChange={e => setHandoverTarget(p => ({ ...p, email: e.target.value }))} placeholder="kullanici@hotel.com" />
               </div>
               <div>
-                <Label>Şifre *</Label>
-                <Input type="password" value={handoverTarget.password} onChange={e => setHandoverTarget(p => ({ ...p, password: e.target.value }))} placeholder="Şifrenizi girin" />
+                <Label>{t('cm.components_pms_CashierTab.sifre')}</Label>
+                <Input type="password" value={handoverTarget.password} onChange={e => setHandoverTarget(p => ({ ...p, password: e.target.value }))} placeholder={t('cm.components_pms_CashierTab.sifrenizi_girin')} />
               </div>
             </div>
             <div>
@@ -716,7 +718,7 @@ const CashierTab = () => {
             </div>
             <Button onClick={handoverShift} disabled={loading || !handoverTarget.email.trim() || !handoverTarget.password.trim()} className="w-full bg-blue-600 hover:bg-blue-700">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Users className="w-4 h-4 mr-2" />}
-              Onayla ve Devret
+              {t('cm.components_pms_CashierTab.onayla_ve_devret')}
             </Button>
           </div>
         </DialogContent>
@@ -725,13 +727,13 @@ const CashierTab = () => {
       <Dialog open={showCashInDialog} onOpenChange={(o) => { setShowCashInDialog(o); if (!o) setManualTxn({ amount: '', method: 'cash', description: '', currency: 'TRY', fx_rate: '1' }); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Plus className="w-5 h-5 text-emerald-600" /> Nakit Giriş Ekle</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Plus className="w-5 h-5 text-emerald-600" /> {t('cm.components_pms_CashierTab.nakit_giris_ekle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <p className="text-xs text-gray-500">Folio dışı nakit girişleri (avans, depozito iadesi vb.) için kullanın.</p>
+            <p className="text-xs text-gray-500">{t('cm.components_pms_CashierTab.folio_disi_nakit_girisleri_avans_depozit')}</p>
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2">
-                <Label>Tutar *</Label>
+                <Label>{t('cm.components_pms_CashierTab.tutar')}</Label>
                 <Input type="number" step="0.01" value={manualTxn.amount} onChange={e => setManualTxn(p => ({ ...p, amount: e.target.value }))} placeholder="0.00" />
               </div>
               <div>
@@ -747,14 +749,14 @@ const CashierTab = () => {
             {manualTxn.currency !== 'TRY' && (
               <div>
                 <Label>Kur (1 {manualTxn.currency} = ? TL) *</Label>
-                <Input type="number" step="0.0001" value={manualTxn.fx_rate} onChange={e => setManualTxn(p => ({ ...p, fx_rate: e.target.value }))} placeholder="örn 32.50" />
+                <Input type="number" step="0.0001" value={manualTxn.fx_rate} onChange={e => setManualTxn(p => ({ ...p, fx_rate: e.target.value }))} placeholder={t('cm.components_pms_CashierTab.orn_32_50')} />
                 {parseFloat(manualTxn.amount) > 0 && parseFloat(manualTxn.fx_rate) > 0 && (
-                  <p className="text-[11px] text-gray-500 mt-1">TL karşılığı: <strong>{(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate)).toFixed(2)} TL</strong></p>
+                  <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_CashierTab.tl_karsiligi')} <strong>{(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate)).toFixed(2)} TL</strong></p>
                 )}
               </div>
             )}
             <div>
-              <Label>Yöntem</Label>
+              <Label>{t('cm.components_pms_CashierTab.yontem')}</Label>
               <Select value={manualTxn.method} onValueChange={v => setManualTxn(p => ({ ...p, method: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -766,12 +768,12 @@ const CashierTab = () => {
               </Select>
             </div>
             <div>
-              <Label>Açıklama *</Label>
-              <Textarea value={manualTxn.description} onChange={e => setManualTxn(p => ({ ...p, description: e.target.value }))} placeholder="Örn: depozito iadesi, kasa avansı" rows={2} />
+              <Label>{t('cm.components_pms_CashierTab.aciklama')}</Label>
+              <Textarea value={manualTxn.description} onChange={e => setManualTxn(p => ({ ...p, description: e.target.value }))} placeholder={t('cm.components_pms_CashierTab.orn_depozito_iadesi_kasa_avansi')} rows={2} />
             </div>
             <Button onClick={() => submitManual('in')} disabled={loading} className="w-full bg-emerald-600 hover:bg-emerald-700">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-              Girişi Kaydet
+              {t('cm.components_pms_CashierTab.girisi_kaydet')}
             </Button>
           </div>
         </DialogContent>
@@ -780,13 +782,13 @@ const CashierTab = () => {
       <Dialog open={showPaidOutDialog} onOpenChange={(o) => { setShowPaidOutDialog(o); if (!o) setManualTxn({ amount: '', method: 'cash', description: '', currency: 'TRY', fx_rate: '1' }); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Minus className="w-5 h-5 text-amber-600" /> Kasa Çıkışı Ekle</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Minus className="w-5 h-5 text-amber-600" /> {t('cm.components_pms_CashierTab.kasa_cikisi_ekle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <p className="text-xs text-gray-500">Kasadan çıkan nakit (tedarikçi, küçük gider vb.). Bankaya yatırma için "Banka Yat" butonunu kullanın.</p>
+            <p className="text-xs text-gray-500">{t('cm.components_pms_CashierTab.kasadan_cikan_nakit_tedarikci_kucuk_gide')}</p>
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2">
-                <Label>Tutar *</Label>
+                <Label>{t('cm.components_pms_CashierTab.tutar_2e782')}</Label>
                 <Input type="number" step="0.01" value={manualTxn.amount} onChange={e => setManualTxn(p => ({ ...p, amount: e.target.value }))} placeholder="0.00" />
               </div>
               <div>
@@ -802,14 +804,14 @@ const CashierTab = () => {
             {manualTxn.currency !== 'TRY' && (
               <div>
                 <Label>Kur (1 {manualTxn.currency} = ? TL) *</Label>
-                <Input type="number" step="0.0001" value={manualTxn.fx_rate} onChange={e => setManualTxn(p => ({ ...p, fx_rate: e.target.value }))} placeholder="örn 32.50" />
+                <Input type="number" step="0.0001" value={manualTxn.fx_rate} onChange={e => setManualTxn(p => ({ ...p, fx_rate: e.target.value }))} placeholder={t('cm.components_pms_CashierTab.orn_32_50_1bd02')} />
                 {parseFloat(manualTxn.amount) > 0 && parseFloat(manualTxn.fx_rate) > 0 && (
-                  <p className="text-[11px] text-gray-500 mt-1">TL karşılığı: <strong>{(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate)).toFixed(2)} TL</strong></p>
+                  <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_CashierTab.tl_karsiligi_a59f8')} <strong>{(parseFloat(manualTxn.amount) * parseFloat(manualTxn.fx_rate)).toFixed(2)} TL</strong></p>
                 )}
               </div>
             )}
             <div>
-              <Label>Yöntem</Label>
+              <Label>{t('cm.components_pms_CashierTab.yontem_139df')}</Label>
               <Select value={manualTxn.method} onValueChange={v => setManualTxn(p => ({ ...p, method: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -819,12 +821,12 @@ const CashierTab = () => {
               </Select>
             </div>
             <div>
-              <Label>Açıklama *</Label>
-              <Textarea value={manualTxn.description} onChange={e => setManualTxn(p => ({ ...p, description: e.target.value }))} placeholder="Örn: tedarikçi ödemesi, küçük gider" rows={2} />
+              <Label>{t('cm.components_pms_CashierTab.aciklama_bdb34')}</Label>
+              <Textarea value={manualTxn.description} onChange={e => setManualTxn(p => ({ ...p, description: e.target.value }))} placeholder={t('cm.components_pms_CashierTab.orn_tedarikci_odemesi_kucuk_gider')} rows={2} />
             </div>
             <Button onClick={() => submitManual('out')} disabled={loading} className="w-full bg-amber-600 hover:bg-amber-700">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Minus className="w-4 h-4 mr-2" />}
-              Çıkışı Kaydet
+              {t('cm.components_pms_CashierTab.cikisi_kaydet')}
             </Button>
           </div>
         </DialogContent>
@@ -842,24 +844,24 @@ const CashierTab = () => {
             <div className="space-y-4 text-sm" id="cashier-report">
               <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-lg text-xs">
                 <div><span className="text-gray-500">Kasiyer:</span> <strong>{reportData.cashier_name || reportData.cashier_email || '-'}</strong></div>
-                <div><span className="text-gray-500">Durum:</span> <strong>{reportData.status === 'open' ? 'Açık' : reportData.status === 'handed_over' ? 'Devredildi' : 'Kapalı'}</strong></div>
-                <div><span className="text-gray-500">Açılış:</span> {reportData.opened_at?.slice(0, 16).replace('T', ' ') || '-'}</div>
-                <div><span className="text-gray-500">Kapanış:</span> {reportData.closed_at?.slice(0, 16).replace('T', ' ') || 'Açık'}</div>
-                <div><span className="text-gray-500">Rapor Zamanı:</span> {reportData.generated_at?.slice(0, 16).replace('T', ' ') || '-'}</div>
+                <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.durum')}</span> <strong>{reportData.status === 'open' ? 'Açık' : reportData.status === 'handed_over' ? 'Devredildi' : 'Kapalı'}</strong></div>
+                <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.acilis_a2719')}</span> {reportData.opened_at?.slice(0, 16).replace('T', ' ') || '-'}</div>
+                <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.kapanis_d60bf')}</span> {reportData.closed_at?.slice(0, 16).replace('T', ' ') || 'Açık'}</div>
+                <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.rapor_zamani')}</span> {reportData.generated_at?.slice(0, 16).replace('T', ' ') || '-'}</div>
                 <div><span className="text-gray-500">Raporu Alan:</span> {reportData.generated_by || '-'}</div>
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <div className="p-3 rounded bg-emerald-50 border border-emerald-200">
-                  <p className="text-[10px] text-emerald-600 uppercase">Açılış</p>
+                  <p className="text-[10px] text-emerald-600 uppercase">{t('cm.components_pms_CashierTab.acilis_3245e')}</p>
                   <p className="text-base font-bold text-emerald-700">{(reportData.opening_amount || 0).toFixed(2)} TL</p>
                 </div>
                 <div className="p-3 rounded bg-blue-50 border border-blue-200">
-                  <p className="text-[10px] text-blue-600 uppercase">Nakit Giriş</p>
+                  <p className="text-[10px] text-blue-600 uppercase">{t('cm.components_pms_CashierTab.nakit_giris_f1615')}</p>
                   <p className="text-base font-bold text-blue-700">{(reportData.cash_in || 0).toFixed(2)} TL</p>
                 </div>
                 <div className="p-3 rounded bg-amber-50 border border-amber-200">
-                  <p className="text-[10px] text-amber-600 uppercase">Nakit Çıkış</p>
+                  <p className="text-[10px] text-amber-600 uppercase">{t('cm.components_pms_CashierTab.nakit_cikis_a878e')}</p>
                   <p className="text-base font-bold text-amber-700">{(reportData.cash_out || 0).toFixed(2)} TL</p>
                 </div>
                 <div className="p-3 rounded bg-gray-100 border border-gray-300">
@@ -871,7 +873,7 @@ const CashierTab = () => {
               {reportData.report_type === 'Z' && reportData.closing_amount != null && (
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-3 rounded bg-indigo-50 border border-indigo-200">
-                    <p className="text-[10px] text-indigo-600 uppercase">Sayılan Kapanış</p>
+                    <p className="text-[10px] text-indigo-600 uppercase">{t('cm.components_pms_CashierTab.sayilan_kapanis')}</p>
                     <p className="text-base font-bold text-indigo-700">{(reportData.closing_amount || 0).toFixed(2)} TL</p>
                   </div>
                   <div className={`p-3 rounded border ${Math.abs(reportData.difference || 0) < 0.01 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
@@ -884,21 +886,21 @@ const CashierTab = () => {
               )}
 
               <div>
-                <p className="text-xs font-semibold text-gray-600 mb-2">Yöntem Bazında Özet</p>
+                <p className="text-xs font-semibold text-gray-600 mb-2">{t('cm.components_pms_CashierTab.yontem_bazinda_ozet')}</p>
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full text-xs">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="text-left px-3 py-2">Yöntem</th>
-                        <th className="text-right px-3 py-2">Giriş</th>
-                        <th className="text-right px-3 py-2">Çıkış</th>
+                        <th className="text-left px-3 py-2">{t('cm.components_pms_CashierTab.yontem_139df')}</th>
+                        <th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.giris')}</th>
+                        <th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.cikis')}</th>
                         <th className="text-right px-3 py-2">Net</th>
                         <th className="text-right px-3 py-2">Adet</th>
                       </tr>
                     </thead>
                     <tbody>
                       {Object.entries(reportData.by_method || {}).length === 0 ? (
-                        <tr><td colSpan={5} className="px-3 py-3 text-center text-gray-400">Kayıt yok</td></tr>
+                        <tr><td colSpan={5} className="px-3 py-3 text-center text-gray-400">{t('cm.components_pms_CashierTab.kayit_yok')}</td></tr>
                       ) : Object.entries(reportData.by_method).map(([m, v]) => (
                         <tr key={m} className="border-t">
                           <td className="px-3 py-2">{methodLabel(m)}</td>
@@ -914,20 +916,20 @@ const CashierTab = () => {
               </div>
 
               <div>
-                <p className="text-xs font-semibold text-gray-600 mb-2">İşlem Tipi Bazında</p>
+                <p className="text-xs font-semibold text-gray-600 mb-2">{t('cm.components_pms_CashierTab.islem_tipi_bazinda')}</p>
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full text-xs">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="text-left px-3 py-2">Tip</th>
-                        <th className="text-right px-3 py-2">Giriş</th>
-                        <th className="text-right px-3 py-2">Çıkış</th>
+                        <th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.giris_1ffbd')}</th>
+                        <th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.cikis_b9015')}</th>
                         <th className="text-right px-3 py-2">Adet</th>
                       </tr>
                     </thead>
                     <tbody>
                       {Object.entries(reportData.by_type || {}).length === 0 ? (
-                        <tr><td colSpan={4} className="px-3 py-3 text-center text-gray-400">Kayıt yok</td></tr>
+                        <tr><td colSpan={4} className="px-3 py-3 text-center text-gray-400">{t('cm.components_pms_CashierTab.kayit_yok_546b8')}</td></tr>
                       ) : Object.entries(reportData.by_type).map(([ty, v]) => (
                         <tr key={ty} className="border-t">
                           <td className="px-3 py-2">{txnTypeLabel(ty)}</td>
@@ -942,15 +944,15 @@ const CashierTab = () => {
               </div>
 
               <div className="text-[11px] text-gray-500 text-center pt-3 border-t">
-                Toplam {reportData.transaction_count || 0} işlem
+                {t('cm.components_pms_CashierTab.toplam')} {reportData.transaction_count || 0} {t('cm.components_pms_CashierTab.islem_9d951')}
               </div>
 
               <div className="flex justify-end gap-2 print:hidden">
                 <Button variant="outline" onClick={() => { setShowReportDialog(false); setReportData(null); }}>
-                  Kapat
+                  {t('cm.components_pms_CashierTab.kapat')}
                 </Button>
                 <Button onClick={printReport} className="bg-indigo-600 hover:bg-indigo-700">
-                  <Printer className="w-4 h-4 mr-2" /> Yazdır
+                  <Printer className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.yazdir')}
                 </Button>
               </div>
             </div>
@@ -961,17 +963,17 @@ const CashierTab = () => {
       <Dialog open={showBankDepositDialog} onOpenChange={(o) => { setShowBankDepositDialog(o); if (!o) setBankDeposit({ amount: '', bank_name: '', account_no: '', reference: '', note: '' }); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Landmark className="w-5 h-5 text-indigo-600" /> Bankaya Yatırma</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Landmark className="w-5 h-5 text-indigo-600" /> {t('cm.components_pms_CashierTab.bankaya_yatirma')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <p className="text-xs text-gray-500">Kasadan bankaya nakit yatırma. Aktif vardiyanın nakit çıkışına işlenir.</p>
+            <p className="text-xs text-gray-500">{t('cm.components_pms_CashierTab.kasadan_bankaya_nakit_yatirma_aktif_vard')}</p>
             <div>
-              <Label>Tutar (TL) *</Label>
+              <Label>{t('cm.components_pms_CashierTab.tutar_tl')}</Label>
               <Input type="number" step="0.01" value={bankDeposit.amount} onChange={e => setBankDeposit(p => ({ ...p, amount: e.target.value }))} placeholder="0.00" />
             </div>
             <div>
-              <Label>Banka Adı *</Label>
-              <Input value={bankDeposit.bank_name} onChange={e => setBankDeposit(p => ({ ...p, bank_name: e.target.value }))} placeholder="Örn: Garanti BBVA" />
+              <Label>{t('cm.components_pms_CashierTab.banka_adi')}</Label>
+              <Input value={bankDeposit.bank_name} onChange={e => setBankDeposit(p => ({ ...p, bank_name: e.target.value }))} placeholder={t('cm.components_pms_CashierTab.orn_garanti_bbva')} />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -989,7 +991,7 @@ const CashierTab = () => {
             </div>
             <Button onClick={submitBankDeposit} disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Landmark className="w-4 h-4 mr-2" />}
-              Yatırmayı Kaydet
+              {t('cm.components_pms_CashierTab.yatirmayi_kaydet')}
             </Button>
           </div>
         </DialogContent>
@@ -998,16 +1000,16 @@ const CashierTab = () => {
       <Dialog open={showPeriodReportDialog} onOpenChange={(o) => { setShowPeriodReportDialog(o); if (!o) setPeriodData(null); }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto print:max-w-full print:overflow-visible">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><CalendarRange className="w-5 h-5" /> Dönem Raporu</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><CalendarRange className="w-5 h-5" /> {t('cm.components_pms_CashierTab.donem_raporu_d2bb7')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 text-sm" id="period-report">
             <div className="flex items-end gap-2 flex-wrap print:hidden">
               <div>
-                <Label>Başlangıç</Label>
+                <Label>{t('cm.components_pms_CashierTab.baslangic_677c8')}</Label>
                 <Input type="date" value={periodRange.start} onChange={e => setPeriodRange(p => ({ ...p, start: e.target.value }))} />
               </div>
               <div>
-                <Label>Bitiş</Label>
+                <Label>{t('cm.components_pms_CashierTab.bitis')}</Label>
                 <Input type="date" value={periodRange.end} onChange={e => setPeriodRange(p => ({ ...p, end: e.target.value }))} />
               </div>
               <Button onClick={loadPeriodReport} disabled={periodLoading} className="bg-slate-700 hover:bg-slate-800">
@@ -1020,7 +1022,7 @@ const CashierTab = () => {
                     <FileDown className="w-4 h-4 mr-2" /> CSV
                   </Button>
                   <Button variant="outline" onClick={printReport}>
-                    <Printer className="w-4 h-4 mr-2" /> Yazdır
+                    <Printer className="w-4 h-4 mr-2" /> {t('cm.components_pms_CashierTab.yazdir_67197')}
                   </Button>
                 </>
               )}
@@ -1029,23 +1031,23 @@ const CashierTab = () => {
             {periodData && (
               <>
                 <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded text-xs">
-                  <div><span className="text-gray-500">Aralık:</span> <strong>{periodData.start_date} → {periodData.end_date}</strong></div>
-                  <div><span className="text-gray-500">Vardiya:</span> <strong>{periodData.totals?.shift_count || 0}</strong> ({periodData.totals?.open_shift_count || 0} açık)</div>
-                  <div><span className="text-gray-500">Oluşturuldu:</span> {periodData.generated_at?.slice(0, 16).replace('T', ' ')}</div>
+                  <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.aralik')}</span> <strong>{periodData.start_date} → {periodData.end_date}</strong></div>
+                  <div><span className="text-gray-500">Vardiya:</span> <strong>{periodData.totals?.shift_count || 0}</strong> ({periodData.totals?.open_shift_count || 0} {t('cm.components_pms_CashierTab.acik_e1734')}</div>
+                  <div><span className="text-gray-500">{t('cm.components_pms_CashierTab.olusturuldu')}</span> {periodData.generated_at?.slice(0, 16).replace('T', ' ')}</div>
                   <div><span className="text-gray-500">Raporu Alan:</span> {periodData.generated_by || '-'}</div>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   <div className="p-3 rounded bg-emerald-50 border border-emerald-200">
-                    <p className="text-[10px] text-emerald-600 uppercase">Açılış Toplam</p>
+                    <p className="text-[10px] text-emerald-600 uppercase">{t('cm.components_pms_CashierTab.acilis_toplam')}</p>
                     <p className="text-base font-bold text-emerald-700">{(periodData.totals?.opening_total || 0).toFixed(2)} TL</p>
                   </div>
                   <div className="p-3 rounded bg-blue-50 border border-blue-200">
-                    <p className="text-[10px] text-blue-600 uppercase">Nakit Giriş</p>
+                    <p className="text-[10px] text-blue-600 uppercase">{t('cm.components_pms_CashierTab.nakit_giris_f1615')}</p>
                     <p className="text-base font-bold text-blue-700">{(periodData.totals?.cash_in_total || 0).toFixed(2)} TL</p>
                   </div>
                   <div className="p-3 rounded bg-amber-50 border border-amber-200">
-                    <p className="text-[10px] text-amber-600 uppercase">Nakit Çıkış</p>
+                    <p className="text-[10px] text-amber-600 uppercase">{t('cm.components_pms_CashierTab.nakit_cikis_a878e')}</p>
                     <p className="text-base font-bold text-amber-700">{(periodData.totals?.cash_out_total || 0).toFixed(2)} TL</p>
                   </div>
                   <div className="p-3 rounded bg-gray-100 border border-gray-300">
@@ -1053,33 +1055,33 @@ const CashierTab = () => {
                     <p className="text-base font-bold text-gray-800">{(periodData.totals?.expected_total || 0).toFixed(2)} TL</p>
                   </div>
                   <div className="p-3 rounded bg-indigo-50 border border-indigo-200">
-                    <p className="text-[10px] text-indigo-600 uppercase">Sayılan</p>
+                    <p className="text-[10px] text-indigo-600 uppercase">{t('cm.components_pms_CashierTab.sayilan')}</p>
                     <p className="text-base font-bold text-indigo-700">{(periodData.totals?.closing_total || 0).toFixed(2)} TL</p>
                   </div>
                   <div className={`p-3 rounded border ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-                    <p className={`text-[10px] uppercase ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>Fark Toplam</p>
+                    <p className={`text-[10px] uppercase ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-600' : 'text-red-600'}`}>{t('cm.components_pms_CashierTab.fark_toplam')}</p>
                     <p className={`text-base font-bold ${Math.abs(periodData.totals?.difference_total || 0) < 0.01 ? 'text-emerald-700' : 'text-red-700'}`}>{(periodData.totals?.difference_total || 0).toFixed(2)} TL</p>
                   </div>
                   <div className="p-3 rounded bg-slate-50 border border-slate-200">
-                    <p className="text-[10px] text-slate-600 uppercase">İşlem</p>
+                    <p className="text-[10px] text-slate-600 uppercase">{t('cm.components_pms_CashierTab.islem_792e7')}</p>
                     <p className="text-base font-bold text-slate-700">{periodData.totals?.transaction_count || 0}</p>
                   </div>
                   <div className="p-3 rounded bg-slate-50 border border-slate-200">
-                    <p className="text-[10px] text-slate-600 uppercase">Kapalı Vardiya</p>
+                    <p className="text-[10px] text-slate-600 uppercase">{t('cm.components_pms_CashierTab.kapali_vardiya')}</p>
                     <p className="text-base font-bold text-slate-700">{periodData.totals?.closed_shift_count || 0}</p>
                   </div>
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-gray-600 mb-2">Yöntem Bazında</p>
+                  <p className="text-xs font-semibold text-gray-600 mb-2">{t('cm.components_pms_CashierTab.yontem_bazinda')}</p>
                   <div className="border rounded-lg overflow-hidden">
                     <table className="w-full text-xs">
                       <thead className="bg-gray-50">
-                        <tr><th className="text-left px-3 py-2">Yöntem</th><th className="text-right px-3 py-2">Giriş</th><th className="text-right px-3 py-2">Çıkış</th><th className="text-right px-3 py-2">Net</th><th className="text-right px-3 py-2">Adet</th></tr>
+                        <tr><th className="text-left px-3 py-2">{t('cm.components_pms_CashierTab.yontem_139df')}</th><th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.giris_1ffbd')}</th><th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.cikis_b9015')}</th><th className="text-right px-3 py-2">Net</th><th className="text-right px-3 py-2">Adet</th></tr>
                       </thead>
                       <tbody>
                         {Object.entries(periodData.by_method || {}).length === 0 ? (
-                          <tr><td colSpan={5} className="px-3 py-3 text-center text-gray-400">Kayıt yok</td></tr>
+                          <tr><td colSpan={5} className="px-3 py-3 text-center text-gray-400">{t('cm.components_pms_CashierTab.kayit_yok_546b8')}</td></tr>
                         ) : Object.entries(periodData.by_method).map(([m, v]) => (
                           <tr key={m} className="border-t">
                             <td className="px-3 py-2">{methodLabel(m)}</td>
@@ -1095,15 +1097,15 @@ const CashierTab = () => {
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-gray-600 mb-2">İşlem Tipi Bazında</p>
+                  <p className="text-xs font-semibold text-gray-600 mb-2">{t('cm.components_pms_CashierTab.islem_tipi_bazinda_7bf40')}</p>
                   <div className="border rounded-lg overflow-hidden">
                     <table className="w-full text-xs">
                       <thead className="bg-gray-50">
-                        <tr><th className="text-left px-3 py-2">Tip</th><th className="text-right px-3 py-2">Giriş</th><th className="text-right px-3 py-2">Çıkış</th><th className="text-right px-3 py-2">Adet</th></tr>
+                        <tr><th className="text-left px-3 py-2">Tip</th><th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.giris_1ffbd')}</th><th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.cikis_b9015')}</th><th className="text-right px-3 py-2">Adet</th></tr>
                       </thead>
                       <tbody>
                         {Object.entries(periodData.by_type || {}).length === 0 ? (
-                          <tr><td colSpan={4} className="px-3 py-3 text-center text-gray-400">Kayıt yok</td></tr>
+                          <tr><td colSpan={4} className="px-3 py-3 text-center text-gray-400">{t('cm.components_pms_CashierTab.kayit_yok_546b8')}</td></tr>
                         ) : Object.entries(periodData.by_type).map(([ty, v]) => (
                           <tr key={ty} className="border-t">
                             <td className="px-3 py-2">{txnTypeLabel(ty)}</td>
@@ -1118,15 +1120,15 @@ const CashierTab = () => {
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-gray-600 mb-2">Kasiyer Bazında</p>
+                  <p className="text-xs font-semibold text-gray-600 mb-2">{t('cm.components_pms_CashierTab.kasiyer_bazinda')}</p>
                   <div className="border rounded-lg overflow-hidden">
                     <table className="w-full text-xs">
                       <thead className="bg-gray-50">
-                        <tr><th className="text-left px-3 py-2">Kasiyer</th><th className="text-right px-3 py-2">Vardiya</th><th className="text-right px-3 py-2">Nakit Giriş</th><th className="text-right px-3 py-2">Nakit Çıkış</th><th className="text-right px-3 py-2">İşlem</th></tr>
+                        <tr><th className="text-left px-3 py-2">Kasiyer</th><th className="text-right px-3 py-2">Vardiya</th><th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.nakit_giris_f1615')}</th><th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.nakit_cikis_a878e')}</th><th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.islem_792e7')}</th></tr>
                       </thead>
                       <tbody>
                         {Object.entries(periodData.by_cashier || {}).length === 0 ? (
-                          <tr><td colSpan={5} className="px-3 py-3 text-center text-gray-400">Kayıt yok</td></tr>
+                          <tr><td colSpan={5} className="px-3 py-3 text-center text-gray-400">{t('cm.components_pms_CashierTab.kayit_yok_546b8')}</td></tr>
                         ) : Object.entries(periodData.by_cashier).map(([k, v]) => (
                           <tr key={k} className="border-t">
                             <td className="px-3 py-2">{v.name || k}</td>
@@ -1142,15 +1144,15 @@ const CashierTab = () => {
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-gray-600 mb-2">Para Birimi Bazında</p>
+                  <p className="text-xs font-semibold text-gray-600 mb-2">{t('cm.components_pms_CashierTab.para_birimi_bazinda')}</p>
                   <div className="border rounded-lg overflow-hidden">
                     <table className="w-full text-xs">
                       <thead className="bg-gray-50">
-                        <tr><th className="text-left px-3 py-2">Birim</th><th className="text-right px-3 py-2">Giriş (TL)</th><th className="text-right px-3 py-2">Çıkış (TL)</th><th className="text-right px-3 py-2">Giriş (orj)</th><th className="text-right px-3 py-2">Çıkış (orj)</th><th className="text-right px-3 py-2">Adet</th></tr>
+                        <tr><th className="text-left px-3 py-2">Birim</th><th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.giris_tl')}</th><th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.cikis_tl')}</th><th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.giris_orj')}</th><th className="text-right px-3 py-2">{t('cm.components_pms_CashierTab.cikis_orj')}</th><th className="text-right px-3 py-2">Adet</th></tr>
                       </thead>
                       <tbody>
                         {Object.entries(periodData.by_currency || {}).length === 0 ? (
-                          <tr><td colSpan={6} className="px-3 py-3 text-center text-gray-400">Kayıt yok</td></tr>
+                          <tr><td colSpan={6} className="px-3 py-3 text-center text-gray-400">{t('cm.components_pms_CashierTab.kayit_yok_546b8')}</td></tr>
                         ) : Object.entries(periodData.by_currency).map(([cur, v]) => (
                           <tr key={cur} className="border-t">
                             <td className="px-3 py-2 font-medium">{cur}</td>

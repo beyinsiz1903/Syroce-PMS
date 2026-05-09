@@ -14,6 +14,7 @@ import {
   Smartphone, CheckCircle2, AlertTriangle, Copy, RefreshCw, Pencil,
   Download, ShieldCheck, LogOut,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const getInitials = (name) => {
   if (!name) return '?';
@@ -77,6 +78,7 @@ const copyToClipboard = async (text) => {
 };
 
 const ProfilePage = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [me, setMe] = useState(user || null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -198,17 +200,17 @@ const ProfilePage = ({ user, tenant, onLogout }) => {
       <PageHeader
         icon={UserIcon}
         title="Profilim"
-        subtitle="Hesap bilgileriniz, iki adımlı doğrulama ve şifre yönetimi"
+        subtitle={t('cm.pages_ProfilePage.hesap_bilgileriniz_iki_adimli_dogrulama_')}
         actions={
           <>
             <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
               <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
-              Yenile
+              {t('cm.pages_ProfilePage.yenile')}
             </Button>
             {typeof onLogout === 'function' && (
               <Button variant="outline" size="sm" onClick={handleLogoutClick} className="text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700">
                 <LogOut className="w-4 h-4 mr-1.5" />
-                Çıkış Yap
+                {t('cm.pages_ProfilePage.cikis_yap')}
               </Button>
             )}
           </>
@@ -219,13 +221,13 @@ const ProfilePage = ({ user, tenant, onLogout }) => {
         <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
           <div>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <UserIcon className="w-5 h-5" /> Kullanıcı Bilgileri
+              <UserIcon className="w-5 h-5" /> {t('cm.pages_ProfilePage.kullanici_bilgileri')}
             </CardTitle>
-            <CardDescription>Sistemdeki kayıtlı bilgileriniz</CardDescription>
+            <CardDescription>{t('cm.pages_ProfilePage.sistemdeki_kayitli_bilgileriniz')}</CardDescription>
           </div>
           {!editing && (
             <Button size="sm" variant="outline" onClick={startEdit}>
-              <Pencil className="w-3.5 h-3.5 mr-1" /> Düzenle
+              <Pencil className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_ProfilePage.duzenle')}
             </Button>
           )}
         </CardHeader>
@@ -256,25 +258,25 @@ const ProfilePage = ({ user, tenant, onLogout }) => {
                   placeholder="+90 555 123 45 67"
                   inputMode="tel"
                   pattern="[+0-9 ()-]{6,20}"
-                  title="Geçerli bir telefon numarası girin (örn. +90 555 123 45 67)" />
+                  title={t('cm.pages_ProfilePage.gecerli_bir_telefon_numarasi_girin_orn_9')} />
               </div>
               <div className="flex gap-2">
                 <Button type="submit" disabled={savingProfile}>
                   {savingProfile ? 'Kaydediliyor…' : 'Kaydet'}
                 </Button>
                 <Button type="button" variant="ghost" onClick={() => setEditing(false)} disabled={savingProfile}>
-                  İptal
+                  {t('cm.pages_ProfilePage.iptal')}
                 </Button>
               </div>
               <p className="text-xs text-slate-500">
-                E-posta, kullanıcı adı ve rol değiştirilemez. Bu bilgilerin değişmesi gerekiyorsa sistem yöneticinizle iletişime geçin.
+                {t('cm.pages_ProfilePage.e_posta_kullanici_adi_ve_rol_degistirile')}
               </p>
             </form>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
               <Field icon={UserIcon} label="Ad Soyad" value={me?.name} />
               {me?.username ? (
-                <Field icon={KeyRound} label="Kullanıcı Adı" value={me.username} />
+                <Field icon={KeyRound} label={t('cm.pages_ProfilePage.kullanici_adi')} value={me.username} />
               ) : null}
               <Field icon={Mail} label="E-posta" value={me?.email} />
               <Field icon={Phone} label="Telefon" value={me?.phone} />
@@ -294,29 +296,29 @@ const ProfilePage = ({ user, tenant, onLogout }) => {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <KeyRound className="w-5 h-5" /> Şifre Değiştir
+            <KeyRound className="w-5 h-5" /> {t('cm.pages_ProfilePage.sifre_degistir')}
           </CardTitle>
-          <CardDescription>Hesabınızın güvenliği için düzenli olarak şifrenizi yenileyin.</CardDescription>
+          <CardDescription>{t('cm.pages_ProfilePage.hesabinizin_guvenligi_icin_duzenli_olara')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
             <div>
-              <Label>Mevcut Şifre</Label>
+              <Label>{t('cm.pages_ProfilePage.mevcut_sifre')}</Label>
               <Input type="password" value={pwd.current_password}
                 onChange={(e) => setPwd({ ...pwd, current_password: e.target.value })}
                 required autoComplete="current-password" />
             </div>
             <div>
-              <Label>Yeni Şifre</Label>
+              <Label>{t('cm.pages_ProfilePage.yeni_sifre')}</Label>
               <Input type="password" value={pwd.new_password}
                 onChange={(e) => setPwd({ ...pwd, new_password: e.target.value })}
                 required minLength={8} autoComplete="new-password" />
               <p className="text-xs text-slate-500 mt-1">
-                En az 8 karakter, en az bir harf ve bir rakam içermeli.
+                {t('cm.pages_ProfilePage.en_az_8_karakter_en_az_bir_harf_ve_bir_r')}
               </p>
             </div>
             <div>
-              <Label>Yeni Şifre (Tekrar)</Label>
+              <Label>{t('cm.pages_ProfilePage.yeni_sifre_tekrar')}</Label>
               <Input type="password" value={pwd.confirm_password}
                 onChange={(e) => setPwd({ ...pwd, confirm_password: e.target.value })}
                 required minLength={8} autoComplete="new-password" />
@@ -455,16 +457,16 @@ function TwoFactorSection() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <Smartphone className="w-5 h-5" /> İki Adımlı Doğrulama (2FA)
+          <Smartphone className="w-5 h-5" /> {t('cm.pages_ProfilePage.iki_adimli_dogrulama_2fa')}
           {status?.enabled && (
             <StatusBadge intent="success" icon={CheckCircle2}>Etkin</StatusBadge>
           )}
           {statusError && (
-            <StatusBadge intent="danger" icon={AlertTriangle}>Durum alınamadı</StatusBadge>
+            <StatusBadge intent="danger" icon={AlertTriangle}>{t('cm.pages_ProfilePage.durum_alinamadi')}</StatusBadge>
           )}
         </CardTitle>
         <CardDescription>
-          Google/Microsoft Authenticator gibi bir uygulama ile hesabınıza ek bir güvenlik katmanı ekleyin.
+          {t('cm.pages_ProfilePage.google_microsoft_authenticator_gibi_bir_')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -472,18 +474,18 @@ function TwoFactorSection() {
         {backupCodes && (
           <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-4 space-y-2">
             <div className="flex items-center gap-2 text-amber-900 font-semibold">
-              <AlertTriangle className="w-4 h-4" /> Yedek Kodlarınız
+              <AlertTriangle className="w-4 h-4" /> {t('cm.pages_ProfilePage.yedek_kodlariniz')}
             </div>
             <p className="text-xs text-amber-800">
-              Telefonunuzu kaybederseniz bu kodlardan birini kullanarak giriş yapabilirsiniz.
-              <strong> Bu kodlar bir daha gösterilmeyecek</strong> — güvenli bir yere kaydedin veya indirin.
+              {t('cm.pages_ProfilePage.telefonunuzu_kaybederseniz_bu_kodlardan_')}
+              <strong> {t('cm.pages_ProfilePage.bu_kodlar_bir_daha_gosterilmeyecek')}</strong> {t('cm.pages_ProfilePage.guvenli_bir_yere_kaydedin_veya_indirin')}
             </p>
             <div className="grid grid-cols-2 gap-2 font-mono text-sm bg-white rounded p-2">
               {backupCodes.map((c) => <div key={c}>{c}</div>)}
             </div>
             <div className="flex flex-wrap gap-2">
               <Button size="sm" variant="outline" onClick={downloadCodes}>
-                <Download className="w-3 h-3 mr-1" /> İndir (.txt)
+                <Download className="w-3 h-3 mr-1" /> {t('cm.pages_ProfilePage.indir_txt')}
               </Button>
               <Button size="sm" variant="outline" onClick={copyCodes}>
                 <Copy className="w-3 h-3 mr-1" /> Kopyala
@@ -498,12 +500,12 @@ function TwoFactorSection() {
         {/* Setup flow */}
         {setup && (
           <div className="rounded-lg border bg-slate-50 p-4 space-y-3">
-            <p className="text-sm">1) Authenticator uygulamanızla bu QR kodu tarayın:</p>
+            <p className="text-sm">{t('cm.pages_ProfilePage.1_authenticator_uygulamanizla_bu_qr_kodu')}</p>
             <div className="flex justify-center">
               <img src={setup.qr_code} alt="2FA QR" className="w-48 h-48 bg-white p-2 rounded border border-slate-200" />
             </div>
             <details className="text-xs text-slate-600">
-              <summary className="cursor-pointer">Manuel kod (QR taranamıyorsa)</summary>
+              <summary className="cursor-pointer">{t('cm.pages_ProfilePage.manuel_kod_qr_taranamiyorsa')}</summary>
               <div className="mt-1 flex items-center gap-2">
                 <div className="flex-1 font-mono break-all bg-white p-2 rounded border border-slate-200">
                   {setup.secret}
@@ -531,7 +533,7 @@ function TwoFactorSection() {
                   {busy ? 'Doğrulanıyor…' : 'Etkinleştir'}
                 </Button>
                 <Button type="button" variant="ghost" onClick={() => { setSetup(null); setCode(''); }}>
-                  İptal
+                  {t('cm.pages_ProfilePage.iptal_25174')}
                 </Button>
               </div>
             </form>
@@ -541,7 +543,7 @@ function TwoFactorSection() {
         {/* Default state controls */}
         {!setup && !status?.enabled && !statusError && (
           <div className="space-y-3">
-            <p className="text-sm text-slate-600">2FA şu anda kapalı.</p>
+            <p className="text-sm text-slate-600">{t('cm.pages_ProfilePage.2fa_su_anda_kapali')}</p>
             <Button onClick={startSetup} disabled={busy}>
               <Smartphone className="w-4 h-4 mr-2" />
               {busy ? 'Hazırlanıyor…' : '2FA Etkinleştir'}
@@ -554,36 +556,36 @@ function TwoFactorSection() {
             <div className="text-sm text-slate-700 space-y-1">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Etkinleştirilme: <strong>{formatDateTime(status.enabled_at)}</strong></span>
+                <span>{t('cm.pages_ProfilePage.etkinlestirilme')} <strong>{formatDateTime(status.enabled_at)}</strong></span>
               </div>
-              <div>Son kullanım: <strong>{status.last_used_at ? formatDateTime(status.last_used_at) : 'Henüz yok'}</strong></div>
+              <div>{t('cm.pages_ProfilePage.son_kullanim')} <strong>{status.last_used_at ? formatDateTime(status.last_used_at) : 'Henüz yok'}</strong></div>
               <div>
                 Kalan yedek kod:{' '}
                 <strong>{status.backup_codes_remaining}</strong> / {totalBackup}
                 {status.backup_codes_remaining <= 2 && (
                   <span className="ml-2">
-                    <StatusBadge intent="warning" icon={AlertTriangle}>Az kaldı</StatusBadge>
+                    <StatusBadge intent="warning" icon={AlertTriangle}>{t('cm.pages_ProfilePage.az_kaldi')}</StatusBadge>
                   </span>
                 )}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={regen} disabled={busy}>
-                <RefreshCw className="w-4 h-4 mr-2" /> Yedek Kodları Yenile
+                <RefreshCw className="w-4 h-4 mr-2" /> {t('cm.pages_ProfilePage.yedek_kodlari_yenile')}
               </Button>
               <Button
                 variant="outline"
                 className="text-rose-600 border-rose-200 hover:bg-rose-50"
                 onClick={() => setDisableForm({ open: true, password: '', code: '' })}
               >
-                2FA'yı Kapat
+                {t('cm.pages_ProfilePage.2fa_yi_kapat')}
               </Button>
             </div>
 
             {disableForm.open && (
               <form onSubmit={disable} className="space-y-2 border-t pt-3">
                 <p className="text-xs text-slate-500">
-                  Devre dışı bırakmak için parolanızı ve mevcut bir 2FA kodunu girin.
+                  {t('cm.pages_ProfilePage.devre_disi_birakmak_icin_parolanizi_ve_m')}
                 </p>
                 <div>
                   <Label>Parola</Label>
@@ -604,7 +606,7 @@ function TwoFactorSection() {
                   </Button>
                   <Button type="button" variant="ghost"
                     onClick={() => setDisableForm({ open: false, password: '', code: '' })}>
-                    İptal
+                    {t('cm.pages_ProfilePage.iptal_25174')}
                   </Button>
                 </div>
               </form>
@@ -616,8 +618,8 @@ function TwoFactorSection() {
           <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
             <div className="flex-1">
-              <div className="font-semibold">2FA durumu yüklenemedi.</div>
-              <div className="text-xs mt-0.5">Lütfen daha sonra tekrar deneyin veya sayfayı yenileyin.</div>
+              <div className="font-semibold">{t('cm.pages_ProfilePage.2fa_durumu_yuklenemedi')}</div>
+              <div className="text-xs mt-0.5">{t('cm.pages_ProfilePage.lutfen_daha_sonra_tekrar_deneyin_veya_sa')}</div>
             </div>
             <Button size="sm" variant="outline" onClick={loadStatus}>
               <RefreshCw className="w-3.5 h-3.5 mr-1" /> Tekrar dene

@@ -11,6 +11,7 @@ import {
   ArrowLeft, Search, RefreshCw, Loader2, GitBranch, CheckCircle, XCircle,
   AlertTriangle, Clock, Copy, Eye, ArrowRight, Filter
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
@@ -39,6 +40,7 @@ const ACK_STATUS_CONFIG = {
 };
 
 const StatusBadge = ({ status }) => {
+  const { t } = useTranslation();
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
   const Icon = cfg.icon;
   return (
@@ -141,12 +143,12 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
               <ArrowLeft className="w-4 h-4" />
             </Button>
             <div>
-              <h1 className="text-3xl font-bold" data-testid="lineage-title">Rezervasyon Lineage</h1>
-              <p className="text-sm text-gray-500 mt-1">Import edilen rezervasyonların geçmişi ve durumunu takip edin</p>
+              <h1 className="text-3xl font-bold" data-testid="lineage-title">{t('cm.pages_ReservationLineage.rezervasyon_lineage')}</h1>
+              <p className="text-sm text-gray-500 mt-1">{t('cm.pages_ReservationLineage.import_edilen_rezervasyonlarin_gecmisi_v')}</p>
             </div>
           </div>
           <Button variant="outline" size="sm" onClick={() => { loadReservations(); loadStats(); }} data-testid="lineage-refresh-btn">
-            <RefreshCw className="w-4 h-4 mr-1" /> Yenile
+            <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_ReservationLineage.yenile')}
           </Button>
         </div>
 
@@ -154,23 +156,23 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3" data-testid="lineage-stats">
             <Card className="p-3">
-              <div className="text-xs text-gray-500">Toplam</div>
+              <div className="text-xs text-gray-500">{t('cm.pages_ReservationLineage.toplam')}</div>
               <div className="text-xl font-bold">{stats.total_reservations}</div>
             </Card>
             <Card className="p-3">
-              <div className="text-xs text-green-600">Başarı Oranı</div>
+              <div className="text-xs text-green-600">{t('cm.pages_ReservationLineage.basari_orani')}</div>
               <div className="text-xl font-bold text-green-700">{stats.success_rate}%</div>
             </Card>
             <Card className="p-3">
-              <div className="text-xs text-yellow-600">İnceleme Kuyruğu</div>
+              <div className="text-xs text-yellow-600">{t('cm.pages_ReservationLineage.inceleme_kuyrugu')}</div>
               <div className="text-xl font-bold text-yellow-700">{stats.review_queue_count}</div>
             </Card>
             <Card className="p-3">
-              <div className="text-xs text-red-600">ACK Başarısız</div>
+              <div className="text-xs text-red-600">{t('cm.pages_ReservationLineage.ack_basarisiz')}</div>
               <div className="text-xl font-bold text-red-700">{stats.ack_failed_count}</div>
             </Card>
             <Card className="p-3">
-              <div className="text-xs text-gray-500">Durum Dağılımı</div>
+              <div className="text-xs text-gray-500">{t('cm.pages_ReservationLineage.durum_dagilimi')}</div>
               <div className="flex flex-wrap gap-1 mt-1">
                 {stats.by_status && Object.entries(stats.by_status).map(([s, c]) => (
                   <span key={s} className="text-[10px] bg-gray-100 rounded px-1">{s}: {c}</span>
@@ -185,7 +187,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
           <div className="relative flex-1 min-w-[200px] max-w-md">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <Input
-              className="pl-9" placeholder="Misafir adı, external ID, PMS ID ara..."
+              className="pl-9" placeholder={t('cm.pages_ReservationLineage.misafir_adi_external_id_pms_id_ara')}
               value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
               data-testid="lineage-search"
             />
@@ -195,7 +197,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
             value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
             data-testid="lineage-status-filter"
           >
-            <option value="">Tüm Durumlar</option>
+            <option value="">{t('cm.pages_ReservationLineage.tum_durumlar')}</option>
             {Object.entries(STATUS_CONFIG).map(([k, v]) => (
               <option key={k} value={k}>{v.label}</option>
             ))}
@@ -206,7 +208,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
               value={selectedConnector} onChange={e => setSelectedConnector(e.target.value)}
               data-testid="lineage-connector-filter"
             >
-              <option value="">Tüm Connectorlar</option>
+              <option value="">{t('cm.pages_ReservationLineage.tum_connectorlar')}</option>
               {connectors.map(c => <option key={c.id} value={c.id}>{c.display_name}</option>)}
             </select>
           )}
@@ -220,22 +222,22 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
             ) : filteredReservations.length === 0 ? (
               <div className="text-center py-16 text-gray-400">
                 <GitBranch className="w-12 h-12 mx-auto mb-3 opacity-40" />
-                <p className="font-medium">Henüz import edilmiş rezervasyon yok</p>
-                <p className="text-sm mt-1">Provider'dan rezervasyon çekildiğinde burada görünecek</p>
+                <p className="font-medium">{t('cm.pages_ReservationLineage.henuz_import_edilmis_rezervasyon_yok')}</p>
+                <p className="text-sm mt-1">{t('cm.pages_ReservationLineage.provider_dan_rezervasyon_cekildiginde_bu')}</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50/80 text-left">
-                      <th className="p-3 font-medium">Misafir</th>
+                      <th className="p-3 font-medium">{t('cm.pages_ReservationLineage.misafir')}</th>
                       <th className="p-3 font-medium">External ID</th>
                       <th className="p-3 font-medium">Tarihler</th>
                       <th className="p-3 font-medium">Kanal</th>
-                      <th className="p-3 font-medium">Durum</th>
+                      <th className="p-3 font-medium">{t('cm.pages_ReservationLineage.durum')}</th>
                       <th className="p-3 font-medium">ACK</th>
                       <th className="p-3 font-medium">PMS ID</th>
-                      <th className="p-3 font-medium text-right">İşlem</th>
+                      <th className="p-3 font-medium text-right">{t('cm.pages_ReservationLineage.islem')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -281,7 +283,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <GitBranch className="w-5 h-5" />
-                Rezervasyon Detay & Lineage
+                {t('cm.pages_ReservationLineage.rezervasyon_detay_lineage')}
               </DialogTitle>
             </DialogHeader>
             {selectedReservation && (
@@ -289,7 +291,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
                 {/* Reservation Detail */}
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-gray-500">Misafir:</span>
+                    <span className="text-gray-500">{t('cm.pages_ReservationLineage.misafir_7377d')}</span>
                     <span className="ml-2 font-medium">{selectedReservation.guest_name}</span>
                   </div>
                   <div>
@@ -305,23 +307,23 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
                     <span className="ml-2">{selectedReservation.external_confirmation_number || '-'}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Giriş:</span>
+                    <span className="text-gray-500">{t('cm.pages_ReservationLineage.giris')}</span>
                     <span className="ml-2">{selectedReservation.arrival_date?.slice(0, 10)}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Çıkış:</span>
+                    <span className="text-gray-500">{t('cm.pages_ReservationLineage.cikis')}</span>
                     <span className="ml-2">{selectedReservation.departure_date?.slice(0, 10)}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Oda Tipi (Ext):</span>
+                    <span className="text-gray-500">{t('cm.pages_ReservationLineage.oda_tipi_ext')}</span>
                     <span className="ml-2">{selectedReservation.room_type_external_id || '-'}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Oda Tipi (PMS):</span>
+                    <span className="text-gray-500">{t('cm.pages_ReservationLineage.oda_tipi_pms')}</span>
                     <span className="ml-2">{selectedReservation.room_type_mapped_id || '-'}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Tutar:</span>
+                    <span className="text-gray-500">{t('cm.pages_ReservationLineage.tutar')}</span>
                     <span className="ml-2 font-medium">{selectedReservation.total_amount} {selectedReservation.currency}</span>
                   </div>
                   <div>
@@ -329,7 +331,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
                     <span className="ml-2">{selectedReservation.channel_name || '-'}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500">Durum:</span>
+                    <span className="text-gray-500">{t('cm.pages_ReservationLineage.durum_6d192')}</span>
                     <span className="ml-2"><StatusBadge status={selectedReservation.import_status} /></span>
                   </div>
                   <div>
@@ -349,10 +351,10 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
                 {/* Review info */}
                 {selectedReservation.review_reason && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
-                    <p className="text-sm font-medium text-yellow-800">İnceleme Nedeni</p>
+                    <p className="text-sm font-medium text-yellow-800">{t('cm.pages_ReservationLineage.inceleme_nedeni')}</p>
                     <p className="text-sm text-yellow-700 mt-1">{selectedReservation.review_reason}</p>
                     {selectedReservation.suggested_action && (
-                      <p className="text-xs text-yellow-600 mt-1">Önerilen İşlem: {selectedReservation.suggested_action}</p>
+                      <p className="text-xs text-yellow-600 mt-1">{t('cm.pages_ReservationLineage.onerilen_islem')} {selectedReservation.suggested_action}</p>
                     )}
                   </div>
                 )}
@@ -362,7 +364,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
                   <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
                 ) : lineageData?.lineage?.length > 0 ? (
                   <div>
-                    <p className="text-sm font-medium mb-3">Lineage Geçmişi</p>
+                    <p className="text-sm font-medium mb-3">{t('cm.pages_ReservationLineage.lineage_gecmisi')}</p>
                     <div className="relative border-l-2 border-gray-200 ml-3 space-y-4">
                       {lineageData.lineage.map((entry, idx) => {
                         const cfg = STATUS_CONFIG[entry.import_status] || STATUS_CONFIG.pending;
@@ -375,7 +377,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
                                 <div className="flex items-center gap-2">
                                   <StatusBadge status={entry.import_status} />
                                   {entry.is_modification && <Badge className="text-[10px] bg-blue-50 text-blue-600">Modifikasyon</Badge>}
-                                  {entry.is_cancellation && <Badge className="text-[10px] bg-red-50 text-red-600">İptal</Badge>}
+                                  {entry.is_cancellation && <Badge className="text-[10px] bg-red-50 text-red-600">{t('cm.pages_ReservationLineage.iptal')}</Badge>}
                                 </div>
                                 <span className="text-xs text-gray-400">{entry.created_at ? new Date(entry.created_at).toLocaleString('tr-TR') : '-'}</span>
                               </div>
@@ -383,7 +385,7 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
                                 <div>Fingerprint: <code className="bg-gray-200 px-1 rounded">{entry.payload_fingerprint?.slice(0, 8) || '-'}</code></div>
                                 <div>Batch: <code className="bg-gray-200 px-1 rounded">{entry.batch_id?.slice(0, 8) || '-'}</code></div>
                                 {entry.pms_booking_id && <div>PMS: <code className="bg-green-100 px-1 rounded">{entry.pms_booking_id.slice(0, 8)}</code></div>}
-                                {entry.error_message && <div className="col-span-2 text-red-600">Hata: {entry.error_message}</div>}
+                                {entry.error_message && <div className="col-span-2 text-red-600">{t('cm.pages_ReservationLineage.hata')} {entry.error_message}</div>}
                               </div>
                             </div>
                           </div>
@@ -393,15 +395,15 @@ const ReservationLineage = ({ user, tenant, onLogout }) => {
                   </div>
                 ) : (
                   <div className="text-center text-sm text-gray-400 py-4">
-                    Bu rezervasyon için ek lineage verisi bulunamadı.
+                    {t('cm.pages_ReservationLineage.bu_rezervasyon_icin_ek_lineage_verisi_bu')}
                   </div>
                 )}
 
                 {/* Timestamps */}
                 <div className="text-xs text-gray-400 pt-2 border-t space-y-1">
-                  <div>Oluşturulma: {selectedReservation.created_at ? new Date(selectedReservation.created_at).toLocaleString('tr-TR') : '-'}</div>
-                  {selectedReservation.reviewed_at && <div>İncelenme: {new Date(selectedReservation.reviewed_at).toLocaleString('tr-TR')}</div>}
-                  {selectedReservation.reprocessed_at && <div>Yeniden İşlenme: {new Date(selectedReservation.reprocessed_at).toLocaleString('tr-TR')}</div>}
+                  <div>{t('cm.pages_ReservationLineage.olusturulma')} {selectedReservation.created_at ? new Date(selectedReservation.created_at).toLocaleString('tr-TR') : '-'}</div>
+                  {selectedReservation.reviewed_at && <div>{t('cm.pages_ReservationLineage.incelenme')} {new Date(selectedReservation.reviewed_at).toLocaleString('tr-TR')}</div>}
+                  {selectedReservation.reprocessed_at && <div>{t('cm.pages_ReservationLineage.yeniden_islenme')} {new Date(selectedReservation.reprocessed_at).toLocaleString('tr-TR')}</div>}
                 </div>
               </div>
             )}

@@ -21,6 +21,7 @@ import {
   Rocket, Play, Server, ShieldAlert, Loader2,
   CircleDot, Timer, Database, TestTube2, Ban, ShieldCheck,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const TIER_INTENT = {
   enterprise: 'default',
@@ -38,6 +39,7 @@ const handleApiError = (e, fallback) => {
    TAB 1 — Entitlements Overview
    ================================================================ */
 const EntitlementsTab = ({ refreshKey }) => {
+  const { t } = useTranslation();
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedTenant, setSelectedTenant] = useState(null);
@@ -91,7 +93,7 @@ const EntitlementsTab = ({ refreshKey }) => {
     <div className="space-y-4" data-testid="entitlements-tab">
       {overview && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KpiCard icon={Building2} label="Toplam Tenant" value={overview.total_tenants ?? 0} intent="default" />
+          <KpiCard icon={Building2} label={t('cm.pages_GovernancePanel.toplam_tenant')} value={overview.total_tenants ?? 0} intent="default" />
           {tierEntries.map(([tier, count]) => (
             <KpiCard
               key={tier}
@@ -102,7 +104,7 @@ const EntitlementsTab = ({ refreshKey }) => {
             />
           ))}
           {overview.expired_count > 0 && (
-            <KpiCard icon={AlertTriangle} label="Süresi Dolan" value={overview.expired_count} intent="danger" />
+            <KpiCard icon={AlertTriangle} label={t('cm.pages_GovernancePanel.suresi_dolan')} value={overview.expired_count} intent="danger" />
           )}
         </div>
       )}
@@ -122,13 +124,13 @@ const EntitlementsTab = ({ refreshKey }) => {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Otel adı veya ID ile ara..."
+              placeholder={t('cm.pages_GovernancePanel.otel_adi_veya_id_ile_ara')}
               className="pl-9 h-9 text-sm"
               aria-label="Tenant arama"
             />
           </div>
           {filteredTenants.length === 0 ? (
-            <div className="text-center py-6 text-sm text-slate-400">Eşleşen tenant yok.</div>
+            <div className="text-center py-6 text-sm text-slate-400">{t('cm.pages_GovernancePanel.eslesen_tenant_yok')}</div>
           ) : (
             <div className="divide-y">
               {filteredTenants.map((t) => {
@@ -152,7 +154,7 @@ const EntitlementsTab = ({ refreshKey }) => {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <StatusBadge intent="neutral">{moduleCount} modül</StatusBadge>
+                      <StatusBadge intent="neutral">{moduleCount} {t('cm.pages_GovernancePanel.modul')}</StatusBadge>
                       <ChevronRight className="w-4 h-4 text-slate-300" />
                     </div>
                   </div>
@@ -183,13 +185,13 @@ const EntitlementsTab = ({ refreshKey }) => {
                   <div key={key} className="border rounded-lg p-3">
                     <p className="text-xs text-slate-500 capitalize">{key}</p>
                     <p className="text-lg font-bold">{q.current} <span className="text-sm font-normal text-slate-400">/ {q.limit || '∞'}</span></p>
-                    {!q.allowed && <p className="text-xs text-rose-600 mt-1 font-medium">Limit aşıldı!</p>}
+                    {!q.allowed && <p className="text-xs text-rose-600 mt-1 font-medium">{t('cm.pages_GovernancePanel.limit_asildi')}</p>}
                   </div>
                 ))}
               </div>
 
               <div>
-                <p className="text-sm font-medium mb-2">Aktif Modüller</p>
+                <p className="text-sm font-medium mb-2">{t('cm.pages_GovernancePanel.aktif_moduller')}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {Object.entries(tenantDetail.modules || {}).filter(([, v]) => v).map(([k]) => (
                     <Badge key={k} variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">{k}</Badge>
@@ -197,7 +199,7 @@ const EntitlementsTab = ({ refreshKey }) => {
                 </div>
               </div>
               <div>
-                <p className="text-sm font-medium mb-2">Kapalı Modüller</p>
+                <p className="text-sm font-medium mb-2">{t('cm.pages_GovernancePanel.kapali_moduller')}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {Object.entries(tenantDetail.modules || {}).filter(([, v]) => !v).map(([k]) => (
                     <Badge key={k} variant="outline" className="text-xs bg-slate-50 text-slate-400">{k}</Badge>
@@ -205,7 +207,7 @@ const EntitlementsTab = ({ refreshKey }) => {
                 </div>
               </div>
             </div>
-          ) : <p className="text-sm text-slate-400">Yükleniyor...</p>}
+          ) : <p className="text-sm text-slate-400">{t('cm.pages_GovernancePanel.yukleniyor')}</p>}
         </DialogContent>
       </Dialog>
     </div>
@@ -268,18 +270,18 @@ const MeteringTab = ({ refreshKey }) => {
       {overview && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <KpiCard icon={Activity} label="Aktif Tenant (7g)" value={overview.active_tenants_7d ?? 0} intent="success" />
-            <KpiCard icon={Gauge} label="Bugün Toplam Olay" value={todayTotal.toLocaleString()} intent="info" />
-            <KpiCard icon={BarChart3} label="Bu Ay Toplam Olay" value={monthTotal.toLocaleString()} intent="default" />
-            <KpiCard icon={Building2} label="En Aktif Tenant" value={overview.top_tenants?.[0]?.total_events?.toLocaleString() || '—'} sub={overview.top_tenants?.[0]?.property_name || ''} intent="neutral" />
+            <KpiCard icon={Activity} label={t('cm.pages_GovernancePanel.aktif_tenant_7g')} value={overview.active_tenants_7d ?? 0} intent="success" />
+            <KpiCard icon={Gauge} label={t('cm.pages_GovernancePanel.bugun_toplam_olay')} value={todayTotal.toLocaleString()} intent="info" />
+            <KpiCard icon={BarChart3} label={t('cm.pages_GovernancePanel.bu_ay_toplam_olay')} value={monthTotal.toLocaleString()} intent="default" />
+            <KpiCard icon={Building2} label={t('cm.pages_GovernancePanel.en_aktif_tenant')} value={overview.top_tenants?.[0]?.total_events?.toLocaleString() || '—'} sub={overview.top_tenants?.[0]?.property_name || ''} intent="neutral" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-600">Bugün</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-600">{t('cm.pages_GovernancePanel.bugun')}</CardTitle></CardHeader>
               <CardContent>
                 {Object.keys(overview.today || {}).length === 0 ? (
-                  <p className="text-sm text-slate-400">Henüz veri yok</p>
+                  <p className="text-sm text-slate-400">{t('cm.pages_GovernancePanel.henuz_veri_yok')}</p>
                 ) : (
                   <div className="space-y-2">
                     {Object.entries(overview.today).map(([event, count]) => (
@@ -293,10 +295,10 @@ const MeteringTab = ({ refreshKey }) => {
               </CardContent>
             </Card>
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-600">Bu Ay</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm text-slate-600">{t('cm.pages_GovernancePanel.bu_ay')}</CardTitle></CardHeader>
               <CardContent>
                 {Object.keys(overview.this_month || {}).length === 0 ? (
-                  <p className="text-sm text-slate-400">Henüz veri yok</p>
+                  <p className="text-sm text-slate-400">{t('cm.pages_GovernancePanel.henuz_veri_yok_1ec4d')}</p>
                 ) : (
                   <div className="space-y-2">
                     {Object.entries(overview.this_month).map(([event, count]) => (
@@ -314,7 +316,7 @@ const MeteringTab = ({ refreshKey }) => {
           {overview.top_tenants?.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2"><BarChart3 className="w-4 h-4" /> En Aktif Tenantlar (Bu Ay)</CardTitle>
+                <CardTitle className="text-sm flex items-center gap-2"><BarChart3 className="w-4 h-4" /> {t('cm.pages_GovernancePanel.en_aktif_tenantlar_bu_ay')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="divide-y">
@@ -347,7 +349,7 @@ const MeteringTab = ({ refreshKey }) => {
 
       <Dialog open={!!selectedTenant} onOpenChange={() => setSelectedTenant(null)}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Tenant Kullanımı (30 gün)</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('cm.pages_GovernancePanel.tenant_kullanimi_30_gun')}</DialogTitle></DialogHeader>
           {tenantUsage ? (
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
@@ -359,7 +361,7 @@ const MeteringTab = ({ refreshKey }) => {
                 ))}
               </div>
               <div>
-                <p className="text-sm font-medium mb-2">Olaylar (Son 30 Gün)</p>
+                <p className="text-sm font-medium mb-2">{t('cm.pages_GovernancePanel.olaylar_son_30_gun')}</p>
                 {Object.keys(tenantUsage.events || {}).length === 0 ? (
                   <p className="text-sm text-slate-400">Veri yok</p>
                 ) : (
@@ -374,7 +376,7 @@ const MeteringTab = ({ refreshKey }) => {
                 )}
               </div>
             </div>
-          ) : <p className="text-sm text-slate-400">Yükleniyor...</p>}
+          ) : <p className="text-sm text-slate-400">{t('cm.pages_GovernancePanel.yukleniyor_4deb0')}</p>}
         </DialogContent>
       </Dialog>
     </div>
@@ -499,7 +501,7 @@ const FeatureFlagsTab = ({ refreshKey }) => {
         <div className="flex items-center gap-2">
           <span className="text-sm text-slate-500">{filteredFlags.length} / {flags.length} flag</span>
           <Button size="sm" onClick={() => setShowCreate(true)} data-testid="create-flag-btn">
-            <Plus className="w-4 h-4 mr-1" /> Yeni Flag
+            <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_GovernancePanel.yeni_flag')}
           </Button>
         </div>
       </div>
@@ -513,7 +515,7 @@ const FeatureFlagsTab = ({ refreshKey }) => {
             </p>
             {!search && (
               <Button size="sm" variant="outline" className="mt-3" onClick={() => setShowCreate(true)}>
-                <Plus className="w-4 h-4 mr-1" /> İlk Flag'ini Oluştur
+                <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_GovernancePanel.ilk_flag_ini_olustur')}
               </Button>
             )}
           </CardContent>
@@ -534,14 +536,14 @@ const FeatureFlagsTab = ({ refreshKey }) => {
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-mono text-sm font-semibold text-slate-800">{flag.flag_key}</p>
                         {flag.kill_switch && <StatusBadge intent="danger" icon={Ban}>KILL SWITCH</StatusBadge>}
-                        {flag.enabled && !flag.kill_switch && <StatusBadge intent="success">Aktif</StatusBadge>}
-                        {!flag.enabled && !flag.kill_switch && <StatusBadge intent="neutral">Kapalı</StatusBadge>}
+                        {flag.enabled && !flag.kill_switch && <StatusBadge intent="success">{t('cm.pages_GovernancePanel.aktif')}</StatusBadge>}
+                        {!flag.enabled && !flag.kill_switch && <StatusBadge intent="neutral">{t('cm.pages_GovernancePanel.kapali')}</StatusBadge>}
                         {overrideCount > 0 && <StatusBadge intent="info">{overrideCount} override</StatusBadge>}
                       </div>
                       {flag.description && <p className="text-xs text-slate-500 mt-1">{flag.description}</p>}
                       <div className="flex items-center gap-4 mt-2 text-xs text-slate-400 flex-wrap">
                         {flag.rollout_percentage != null && <span>Rollout: %{flag.rollout_percentage}</span>}
-                        {flag.expires_at && <span>Bitiş: {new Date(flag.expires_at).toLocaleDateString('tr-TR')}</span>}
+                        {flag.expires_at && <span>{t('cm.pages_GovernancePanel.bitis')} {new Date(flag.expires_at).toLocaleDateString('tr-TR')}</span>}
                         {flag.updated_by && <span>Son: {flag.updated_by}</span>}
                       </div>
                     </div>
@@ -568,7 +570,7 @@ const FeatureFlagsTab = ({ refreshKey }) => {
                         size="icon"
                         className="h-8 w-8 text-slate-400 hover:text-rose-600"
                         onClick={() => handleDelete(flag.flag_key)}
-                        title="Sil"
+                        title={t('cm.pages_GovernancePanel.sil')}
                         aria-label="Flag sil"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -584,7 +586,7 @@ const FeatureFlagsTab = ({ refreshKey }) => {
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Yeni Feature Flag</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('cm.pages_GovernancePanel.yeni_feature_flag')}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div>
               <Label>Flag Key *</Label>
@@ -596,7 +598,7 @@ const FeatureFlagsTab = ({ refreshKey }) => {
               />
             </div>
             <div>
-              <Label>Açıklama</Label>
+              <Label>{t('cm.pages_GovernancePanel.aciklama')}</Label>
               <Input
                 placeholder="Bu flag ne yapar?"
                 value={form.description}
@@ -604,11 +606,11 @@ const FeatureFlagsTab = ({ refreshKey }) => {
               />
             </div>
             <div className="flex items-center justify-between">
-              <Label>Aktif</Label>
+              <Label>{t('cm.pages_GovernancePanel.aktif_81c33')}</Label>
               <Switch checked={form.enabled} onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))} />
             </div>
             <div>
-              <Label>Rollout Yüzdesi (0-100, boş = tüm tenantlar)</Label>
+              <Label>{t('cm.pages_GovernancePanel.rollout_yuzdesi_0_100_bos_tum_tenantlar')}</Label>
               <Input
                 type="number" min="0" max="100" placeholder="100"
                 value={form.rollout_percentage}
@@ -616,7 +618,7 @@ const FeatureFlagsTab = ({ refreshKey }) => {
               />
             </div>
             <div>
-              <Label>Bitiş Tarihi (opsiyonel)</Label>
+              <Label>{t('cm.pages_GovernancePanel.bitis_tarihi_opsiyonel')}</Label>
               <Input
                 type="datetime-local"
                 value={form.expires_at}
@@ -704,10 +706,10 @@ const OnboardingTab = ({ refreshKey }) => {
   return (
     <div className="space-y-4" data-testid="onboarding-tab">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard icon={Building2} label="Toplam Tenant" value={overview.length} intent="default" />
-        <KpiCard icon={Gauge} label="Ortalama İlerleme" value={`%${avgProgress}`} intent={avgProgress >= 80 ? 'success' : avgProgress >= 40 ? 'warning' : 'danger'} />
+        <KpiCard icon={Building2} label={t('cm.pages_GovernancePanel.toplam_tenant_7da00')} value={overview.length} intent="default" />
+        <KpiCard icon={Gauge} label={t('cm.pages_GovernancePanel.ortalama_ilerleme')} value={`%${avgProgress}`} intent={avgProgress >= 80 ? 'success' : avgProgress >= 40 ? 'warning' : 'danger'} />
         <KpiCard icon={CheckCircle2} label="Tamamlanan" value={completedTenants} intent="success" />
-        <KpiCard icon={AlertTriangle} label="Takılan (<40%)" value={stuckTenants} intent="danger" />
+        <KpiCard icon={AlertTriangle} label={t('cm.pages_GovernancePanel.takilan_40')} value={stuckTenants} intent="danger" />
       </div>
 
       <Card>
@@ -723,13 +725,13 @@ const OnboardingTab = ({ refreshKey }) => {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Otel adı ile ara..."
+              placeholder={t('cm.pages_GovernancePanel.otel_adi_ile_ara')}
               className="pl-9 h-9 text-sm"
               aria-label="Onboarding tenant arama"
             />
           </div>
           {filteredOverview.length === 0 ? (
-            <div className="text-center py-6 text-sm text-slate-400">Eşleşen tenant yok.</div>
+            <div className="text-center py-6 text-sm text-slate-400">{t('cm.pages_GovernancePanel.eslesen_tenant_yok_261a8')}</div>
           ) : (
             <div className="divide-y">
               {filteredOverview.map((t) => {
@@ -775,8 +777,8 @@ const OnboardingTab = ({ refreshKey }) => {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-500">İlerleme: <span className="font-bold text-slate-900">%{tenantProgress.progress_pct}</span></p>
-                  <p className="text-xs text-slate-400">{tenantProgress.completed} / {tenantProgress.total} adım tamamlandı</p>
+                  <p className="text-sm text-slate-500">{t('cm.pages_GovernancePanel.ilerleme')} <span className="font-bold text-slate-900">%{tenantProgress.progress_pct}</span></p>
+                  <p className="text-xs text-slate-400">{tenantProgress.completed} / {tenantProgress.total} {t('cm.pages_GovernancePanel.adim_tamamlandi')}</p>
                 </div>
                 <div className="w-16 h-16 relative">
                   <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90" aria-hidden="true">
@@ -803,7 +805,7 @@ const OnboardingTab = ({ refreshKey }) => {
                           onClick={() => markComplete(step.step_id)}
                           className="w-5 h-5 rounded-full border-2 border-slate-300 hover:border-emerald-500 transition-colors"
                           aria-label={`${step.label} adımını tamamla`}
-                          title="Adımı tamamlandı işaretle"
+                          title={t('cm.pages_GovernancePanel.adimi_tamamlandi_isaretle')}
                         />
                       )}
                     </div>
@@ -820,7 +822,7 @@ const OnboardingTab = ({ refreshKey }) => {
                 ))}
               </div>
             </div>
-          ) : <p className="text-sm text-slate-400">Yükleniyor...</p>}
+          ) : <p className="text-sm text-slate-400">{t('cm.pages_GovernancePanel.yukleniyor_4deb0')}</p>}
         </DialogContent>
       </Dialog>
     </div>
@@ -901,7 +903,7 @@ const DeployTab = ({ refreshKey }) => {
   return (
     <div className="space-y-4" data-testid="deploy-tab">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <p className="text-sm text-slate-500">{pipelines.length} pipeline kaydı</p>
+        <p className="text-sm text-slate-500">{pipelines.length} {t('cm.pages_GovernancePanel.pipeline_kaydi')}</p>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={runSmoke} disabled={runningSmoke} data-testid="run-smoke-btn">
             {runningSmoke ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <TestTube2 className="w-4 h-4 mr-1" />}
@@ -909,7 +911,7 @@ const DeployTab = ({ refreshKey }) => {
           </Button>
           <Button size="sm" onClick={runPipeline} disabled={running} data-testid="run-pipeline-btn">
             {running ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Play className="w-4 h-4 mr-1" />}
-            Pipeline Çalıştır
+            {t('cm.pages_GovernancePanel.pipeline_calistir')}
           </Button>
         </div>
       </div>
@@ -964,7 +966,7 @@ const DeployTab = ({ refreshKey }) => {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <CardTitle className="text-sm flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4" /> Auto-Rollback Trigger'ları
+                <ShieldAlert className="w-4 h-4" /> {t('cm.pages_GovernancePanel.auto_rollback_trigger_lari')}
               </CardTitle>
               <StatusBadge intent={recIntent}>{recLabel}</StatusBadge>
             </div>
@@ -984,7 +986,7 @@ const DeployTab = ({ refreshKey }) => {
                   <div className="flex items-center gap-3 text-right">
                     <div>
                       <p className={`text-sm font-mono font-bold ${t.triggered ? 'text-rose-600' : 'text-emerald-600'}`}>{t.current_value}</p>
-                      <p className="text-[10px] text-slate-400">eşik: {t.threshold} {t.unit}</p>
+                      <p className="text-[10px] text-slate-400">{t('cm.pages_GovernancePanel.esik')} {t.threshold} {t.unit}</p>
                     </div>
                     {t.triggered ? <XCircle className="w-4 h-4 text-rose-500" /> : <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
                   </div>
@@ -1021,10 +1023,10 @@ const DeployTab = ({ refreshKey }) => {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <CardTitle className="text-sm flex items-center gap-2">
-                <TestTube2 className="w-4 h-4" /> Smoke Test Sonuçları
+                <TestTube2 className="w-4 h-4" /> {t('cm.pages_GovernancePanel.smoke_test_sonuclari')}
               </CardTitle>
               <StatusBadge intent={smokeResult.verdict === 'PASS' ? 'success' : 'danger'}>
-                {smokeResult.passed}/{smokeResult.total} GEÇTİ
+                {smokeResult.passed}/{smokeResult.total} {t('cm.pages_GovernancePanel.gecti')}
               </StatusBadge>
             </div>
           </CardHeader>
@@ -1089,11 +1091,11 @@ const GovernancePanel = () => {
       <PageHeader
         icon={Settings2}
         title="Governance & Metering"
-        subtitle="Entitlement, kullanım ölçümü, feature flag ve deploy pipeline yönetimi tek panelde."
+        subtitle={t('cm.pages_GovernancePanel.entitlement_kullanim_olcumu_feature_flag')}
         actions={
           <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
             <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
-            Yenile
+            {t('cm.pages_GovernancePanel.yenile')}
           </Button>
         }
       />

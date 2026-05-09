@@ -1,0 +1,1869 @@
+{
+  "mode": "apply",
+  "total": 394,
+  "processed": [
+    {
+      "file": "src/components/ADRTrackingBand.jsx",
+      "replacements": 5,
+      "ns": "cm.components_ADRTrackingBand"
+    },
+    {
+      "file": "src/components/AdvancedMonitoring.jsx",
+      "replacements": 11,
+      "ns": "cm.components_AdvancedMonitoring"
+    },
+    {
+      "file": "src/components/AllotmentConsumptionChart.jsx",
+      "replacements": 10,
+      "ns": "cm.components_AllotmentConsumptionChart"
+    },
+    {
+      "file": "src/components/AnomalyAlerts.jsx",
+      "replacements": 6,
+      "ns": "cm.components_AnomalyAlerts"
+    },
+    {
+      "file": "src/components/ApprovalWidget.jsx",
+      "replacements": 6,
+      "ns": "cm.components_ApprovalWidget"
+    },
+    {
+      "file": "src/components/BiometricVerifyDialog.jsx",
+      "replacements": 12,
+      "ns": "cm.components_BiometricVerifyDialog"
+    },
+    {
+      "file": "src/components/BookingSearch.jsx",
+      "replacements": 3,
+      "ns": "cm.components_BookingSearch"
+    },
+    {
+      "file": "src/components/calendar/CalendarDialogs.jsx",
+      "replacements": 31,
+      "ns": "cm.components_calendar_CalendarDialogs"
+    },
+    {
+      "file": "src/components/calendar/CalendarWidgets.jsx",
+      "replacements": 5,
+      "ns": "cm.components_calendar_CalendarWidgets"
+    },
+    {
+      "file": "src/components/ChannelHealthDashboard.jsx",
+      "replacements": 11,
+      "ns": "cm.components_ChannelHealthDashboard"
+    },
+    {
+      "file": "src/components/ChannelManagerDashboard.jsx",
+      "replacements": 6,
+      "ns": "cm.components_ChannelManagerDashboard"
+    },
+    {
+      "file": "src/components/CICDPipelineDashboard.jsx",
+      "replacements": 5,
+      "ns": "cm.components_CICDPipelineDashboard"
+    },
+    {
+      "file": "src/components/ComplaintManager.jsx",
+      "replacements": 18,
+      "ns": "cm.components_ComplaintManager"
+    },
+    {
+      "file": "src/components/CRMNotes.jsx",
+      "replacements": 5,
+      "ns": "cm.components_CRMNotes"
+    },
+    {
+      "file": "src/components/DeployDashboard.jsx",
+      "replacements": 8,
+      "ns": "cm.components_DeployDashboard"
+    },
+    {
+      "file": "src/components/EarlyLateChargeModal.jsx",
+      "replacements": 5,
+      "ns": "cm.components_EarlyLateChargeModal"
+    },
+    {
+      "file": "src/components/EmptyState.jsx",
+      "replacements": 1,
+      "ns": "cm.components_EmptyState"
+    },
+    {
+      "file": "src/components/EnhancedFolioManager.jsx",
+      "replacements": 8,
+      "ns": "cm.components_EnhancedFolioManager"
+    },
+    {
+      "file": "src/components/EntityHistoryDrawer.jsx",
+      "replacements": 5,
+      "ns": "cm.components_EntityHistoryDrawer"
+    },
+    {
+      "file": "src/components/ExpenseSummaryCard.jsx",
+      "replacements": 2,
+      "ns": "cm.components_ExpenseSummaryCard"
+    },
+    {
+      "file": "src/components/FeedbackSystem.jsx",
+      "replacements": 31,
+      "ns": "cm.components_FeedbackSystem"
+    },
+    {
+      "file": "src/components/FieldEncryptionPanel.jsx",
+      "replacements": 2,
+      "ns": "cm.components_FieldEncryptionPanel"
+    },
+    {
+      "file": "src/components/FloatingActionButton.jsx",
+      "replacements": 1,
+      "ns": "cm.components_FloatingActionButton"
+    },
+    {
+      "file": "src/components/folio/FolioWindowsPanel.jsx",
+      "replacements": 6,
+      "ns": "cm.components_folio_FolioWindowsPanel"
+    },
+    {
+      "file": "src/components/GuestAlertModal.jsx",
+      "replacements": 5,
+      "ns": "cm.components_GuestAlertModal"
+    },
+    {
+      "file": "src/components/HousekeepingQualityPanel.jsx",
+      "replacements": 13,
+      "ns": "cm.components_HousekeepingQualityPanel"
+    },
+    {
+      "file": "src/components/IdPhotoViewerButton.jsx",
+      "replacements": 11,
+      "ns": "cm.components_IdPhotoViewerButton"
+    },
+    {
+      "file": "src/components/IngredientInventoryPanel.jsx",
+      "replacements": 6,
+      "ns": "cm.components_IngredientInventoryPanel"
+    },
+    {
+      "file": "src/components/integration-hub/tabs/AuditTab.jsx",
+      "replacements": 1,
+      "ns": "cm.components_integrationhub_tabs_AuditTab"
+    },
+    {
+      "file": "src/components/integration-hub/tabs/DashboardTab.jsx",
+      "replacements": 2,
+      "ns": "cm.components_integrationhub_tabs_DashboardTab"
+    },
+    {
+      "file": "src/components/integration-hub/tabs/MappingsTab.jsx",
+      "replacements": 6,
+      "ns": "cm.components_integrationhub_tabs_MappingsTab"
+    },
+    {
+      "file": "src/components/integration-hub/tabs/ReconciliationTab.jsx",
+      "replacements": 1,
+      "ns": "cm.components_integrationhub_tabs_ReconciliationTab"
+    },
+    {
+      "file": "src/components/integration-hub/tabs/ReservationsTab.jsx",
+      "replacements": 10,
+      "ns": "cm.components_integrationhub_tabs_ReservationsTab"
+    },
+    {
+      "file": "src/components/integration-hub/tabs/SyncTab.jsx",
+      "replacements": 2,
+      "ns": "cm.components_integrationhub_tabs_SyncTab"
+    },
+    {
+      "file": "src/components/InventoryMovements.jsx",
+      "replacements": 1,
+      "ns": "cm.components_InventoryMovements"
+    },
+    {
+      "file": "src/components/LazyImage.jsx",
+      "replacements": 1,
+      "ns": "cm.components_LazyImage"
+    },
+    {
+      "file": "src/components/LostFoundWorkflow.jsx",
+      "replacements": 7,
+      "ns": "cm.components_LostFoundWorkflow"
+    },
+    {
+      "file": "src/components/MaintenanceCalendar.jsx",
+      "replacements": 5,
+      "ns": "cm.components_MaintenanceCalendar"
+    },
+    {
+      "file": "src/components/MaintenanceReports.jsx",
+      "replacements": 17,
+      "ns": "cm.components_MaintenanceReports"
+    },
+    {
+      "file": "src/components/MarketSegmentChart.jsx",
+      "replacements": 3,
+      "ns": "cm.components_MarketSegmentChart"
+    },
+    {
+      "file": "src/components/MetricDetailModal.jsx",
+      "replacements": 1,
+      "ns": "cm.components_MetricDetailModal"
+    },
+    {
+      "file": "src/components/mice/AccountsView.jsx",
+      "replacements": 17,
+      "ns": "cm.components_mice_AccountsView"
+    },
+    {
+      "file": "src/components/mice/BanquetCompetitorTab.jsx",
+      "replacements": 22,
+      "ns": "cm.components_mice_BanquetCompetitorTab"
+    },
+    {
+      "file": "src/components/mice/DiaryView.jsx",
+      "replacements": 8,
+      "ns": "cm.components_mice_DiaryView"
+    },
+    {
+      "file": "src/components/mice/OperationsPanel.jsx",
+      "replacements": 15,
+      "ns": "cm.components_mice_OperationsPanel"
+    },
+    {
+      "file": "src/components/mice/PackagesTab.jsx",
+      "replacements": 23,
+      "ns": "cm.components_mice_PackagesTab"
+    },
+    {
+      "file": "src/components/mice/ResourcesView.jsx",
+      "replacements": 5,
+      "ns": "cm.components_mice_ResourcesView"
+    },
+    {
+      "file": "src/components/mice/SalesPipelineTab.jsx",
+      "replacements": 39,
+      "ns": "cm.components_mice_SalesPipelineTab"
+    },
+    {
+      "file": "src/components/mobile-finance/dialogs/CashFlowModal.jsx",
+      "replacements": 12,
+      "ns": "cm.components_mobilefinance_dialogs_CashFlowModal"
+    },
+    {
+      "file": "src/components/mobile-finance/dialogs/CashierShiftModal.jsx",
+      "replacements": 14,
+      "ns": "cm.components_mobilefinance_dialogs_CashierShiftModal"
+    },
+    {
+      "file": "src/components/mobile-finance/dialogs/FolioExtractModal.jsx",
+      "replacements": 12,
+      "ns": "cm.components_mobilefinance_dialogs_FolioExtractModal"
+    },
+    {
+      "file": "src/components/mobile-finance/dialogs/InvoicesModal.jsx",
+      "replacements": 3,
+      "ns": "cm.components_mobilefinance_dialogs_InvoicesModal"
+    },
+    {
+      "file": "src/components/mobile-finance/dialogs/PaymentModal.jsx",
+      "replacements": 8,
+      "ns": "cm.components_mobilefinance_dialogs_PaymentModal"
+    },
+    {
+      "file": "src/components/mobile-finance/dialogs/PlDetailModal.jsx",
+      "replacements": 16,
+      "ns": "cm.components_mobilefinance_dialogs_PlDetailModal"
+    },
+    {
+      "file": "src/components/mobile-finance/dialogs/ReportsModal.jsx",
+      "replacements": 10,
+      "ns": "cm.components_mobilefinance_dialogs_ReportsModal"
+    },
+    {
+      "file": "src/components/mobile-finance/dialogs/RiskModal.jsx",
+      "replacements": 27,
+      "ns": "cm.components_mobilefinance_dialogs_RiskModal"
+    },
+    {
+      "file": "src/components/MultiPeriodRateManager.jsx",
+      "replacements": 11,
+      "ns": "cm.components_MultiPeriodRateManager"
+    },
+    {
+      "file": "src/components/night-audit/IntegrityItemsModal.jsx",
+      "replacements": 4,
+      "ns": "cm.components_nightaudit_IntegrityItemsModal"
+    },
+    {
+      "file": "src/components/NightAuditModule.jsx",
+      "replacements": 23,
+      "ns": "cm.components_NightAuditModule"
+    },
+    {
+      "file": "src/components/night-audit/tabs/FinancialTab.jsx",
+      "replacements": 12,
+      "ns": "cm.components_nightaudit_tabs_FinancialTab"
+    },
+    {
+      "file": "src/components/night-audit/tabs/IntegrityTab.jsx",
+      "replacements": 4,
+      "ns": "cm.components_nightaudit_tabs_IntegrityTab"
+    },
+    {
+      "file": "src/components/night-audit/tabs/OverviewTab.jsx",
+      "replacements": 18,
+      "ns": "cm.components_nightaudit_tabs_OverviewTab"
+    },
+    {
+      "file": "src/components/night-audit/tabs/PreparationTab.jsx",
+      "replacements": 14,
+      "ns": "cm.components_nightaudit_tabs_PreparationTab"
+    },
+    {
+      "file": "src/components/night-audit/tabs/ReconciliationTab.jsx",
+      "replacements": 6,
+      "ns": "cm.components_nightaudit_tabs_ReconciliationTab"
+    },
+    {
+      "file": "src/components/night-audit/tabs/ReportTab.jsx",
+      "replacements": 20,
+      "ns": "cm.components_nightaudit_tabs_ReportTab"
+    },
+    {
+      "file": "src/components/NotificationCenter.jsx",
+      "replacements": 4,
+      "ns": "cm.components_NotificationCenter"
+    },
+    {
+      "file": "src/components/ops/ConnectorBreakdownDialog.jsx",
+      "replacements": 12,
+      "ns": "cm.components_ops_ConnectorBreakdownDialog"
+    },
+    {
+      "file": "src/components/ops/EarlyWarningPanel.jsx",
+      "replacements": 17,
+      "ns": "cm.components_ops_EarlyWarningPanel"
+    },
+    {
+      "file": "src/components/ops/IncidentDrilldownDrawer.jsx",
+      "replacements": 18,
+      "ns": "cm.components_ops_IncidentDrilldownDrawer"
+    },
+    {
+      "file": "src/components/OutletSalesChart.jsx",
+      "replacements": 4,
+      "ns": "cm.components_OutletSalesChart"
+    },
+    {
+      "file": "src/components/PhotoUploadComponent.jsx",
+      "replacements": 4,
+      "ns": "cm.components_PhotoUploadComponent"
+    },
+    {
+      "file": "src/components/PickupPaceReport.jsx",
+      "replacements": 1,
+      "ns": "cm.components_PickupPaceReport"
+    },
+    {
+      "file": "src/components/pms/BanquetEventOrder.jsx",
+      "replacements": 23,
+      "ns": "cm.components_pms_BanquetEventOrder"
+    },
+    {
+      "file": "src/components/pms/BookingDialog.jsx",
+      "replacements": 6,
+      "ns": "cm.components_pms_BookingDialog"
+    },
+    {
+      "file": "src/components/pms/CashierTab.jsx",
+      "replacements": 121,
+      "ns": "cm.components_pms_CashierTab"
+    },
+    {
+      "file": "src/components/PMSDateBadge.jsx",
+      "replacements": 1,
+      "ns": "cm.components_PMSDateBadge"
+    },
+    {
+      "file": "src/components/pms/FlashReportContent.jsx",
+      "replacements": 18,
+      "ns": "cm.components_pms_FlashReportContent"
+    },
+    {
+      "file": "src/components/pms/GuestPreferences.jsx",
+      "replacements": 5,
+      "ns": "cm.components_pms_GuestPreferences"
+    },
+    {
+      "file": "src/components/pms/InternalChatTab.jsx",
+      "replacements": 8,
+      "ns": "cm.components_pms_InternalChatTab"
+    },
+    {
+      "file": "src/components/pms/internalChat/ThreadView.jsx",
+      "replacements": 31,
+      "ns": "cm.components_pms_internalChat_ThreadView"
+    },
+    {
+      "file": "src/components/pms/LaundryTab.jsx",
+      "replacements": 21,
+      "ns": "cm.components_pms_LaundryTab"
+    },
+    {
+      "file": "src/components/PmsLiteOnboarding.jsx",
+      "replacements": 4,
+      "ns": "cm.components_PmsLiteOnboarding"
+    },
+    {
+      "file": "src/components/pms/ReportsTab.jsx",
+      "replacements": 37,
+      "ns": "cm.components_pms_ReportsTab"
+    },
+    {
+      "file": "src/components/pms/RoomFeaturesPanel.jsx",
+      "replacements": 7,
+      "ns": "cm.components_pms_RoomFeaturesPanel"
+    },
+    {
+      "file": "src/components/pms/RoomTimelineView.jsx",
+      "replacements": 5,
+      "ns": "cm.components_pms_RoomTimelineView"
+    },
+    {
+      "file": "src/components/pms/RoutingInstructions.jsx",
+      "replacements": 8,
+      "ns": "cm.components_pms_RoutingInstructions"
+    },
+    {
+      "file": "src/components/pms/UpsellTab.jsx",
+      "replacements": 19,
+      "ns": "cm.components_pms_UpsellTab"
+    },
+    {
+      "file": "src/components/POSAutoPostSettings.jsx",
+      "replacements": 13,
+      "ns": "cm.components_POSAutoPostSettings"
+    },
+    {
+      "file": "src/components/POSManualQRPost.jsx",
+      "replacements": 14,
+      "ns": "cm.components_POSManualQRPost"
+    },
+    {
+      "file": "src/components/POSMenuItems.jsx",
+      "replacements": 8,
+      "ns": "cm.components_POSMenuItems"
+    },
+    {
+      "file": "src/components/POSOutletManagement.jsx",
+      "replacements": 13,
+      "ns": "cm.components_POSOutletManagement"
+    },
+    {
+      "file": "src/components/POSReports.jsx",
+      "replacements": 13,
+      "ns": "cm.components_POSReports"
+    },
+    {
+      "file": "src/components/PropertySwitcher.jsx",
+      "replacements": 7,
+      "ns": "cm.components_PropertySwitcher"
+    },
+    {
+      "file": "src/components/QRMaintenanceScanner.jsx",
+      "replacements": 6,
+      "ns": "cm.components_QRMaintenanceScanner"
+    },
+    {
+      "file": "src/components/QRRoomAccess.jsx",
+      "replacements": 10,
+      "ns": "cm.components_QRRoomAccess"
+    },
+    {
+      "file": "src/components/QuickIdScanDialog.jsx",
+      "replacements": 23,
+      "ns": "cm.components_QuickIdScanDialog"
+    },
+    {
+      "file": "src/components/RecipeCostingManager.jsx",
+      "replacements": 17,
+      "ns": "cm.components_RecipeCostingManager"
+    },
+    {
+      "file": "src/components/ReservationSidebar.jsx",
+      "replacements": 2,
+      "ns": "cm.components_ReservationSidebar"
+    },
+    {
+      "file": "src/components/RoomAssignment.jsx",
+      "replacements": 6,
+      "ns": "cm.components_RoomAssignment"
+    },
+    {
+      "file": "src/components/SandboxDashboard.jsx",
+      "replacements": 5,
+      "ns": "cm.components_SandboxDashboard"
+    },
+    {
+      "file": "src/components/SecurityLogs.jsx",
+      "replacements": 2,
+      "ns": "cm.components_SecurityLogs"
+    },
+    {
+      "file": "src/components/SecurityOpsDashboard.jsx",
+      "replacements": 6,
+      "ns": "cm.components_SecurityOpsDashboard"
+    },
+    {
+      "file": "src/components/ShiftMetrics.jsx",
+      "replacements": 2,
+      "ns": "cm.components_ShiftMetrics"
+    },
+    {
+      "file": "src/components/SLAConfigCard.jsx",
+      "replacements": 8,
+      "ns": "cm.components_SLAConfigCard"
+    },
+    {
+      "file": "src/components/SplitFolioDialog.jsx",
+      "replacements": 31,
+      "ns": "cm.components_SplitFolioDialog"
+    },
+    {
+      "file": "src/components/StopSaleManager.jsx",
+      "replacements": 8,
+      "ns": "cm.components_StopSaleManager"
+    },
+    {
+      "file": "src/components/TeamPerformance.jsx",
+      "replacements": 3,
+      "ns": "cm.components_TeamPerformance"
+    },
+    {
+      "file": "src/components/TechDebtDashboard.jsx",
+      "replacements": 7,
+      "ns": "cm.components_TechDebtDashboard"
+    },
+    {
+      "file": "src/components/TestBookingVerification.jsx",
+      "replacements": 11,
+      "ns": "cm.components_TestBookingVerification"
+    },
+    {
+      "file": "src/components/UnifiedOpsView.jsx",
+      "replacements": 7,
+      "ns": "cm.components_UnifiedOpsView"
+    },
+    {
+      "file": "src/components/UpgradeBanner.jsx",
+      "replacements": 8,
+      "ns": "cm.components_UpgradeBanner"
+    },
+    {
+      "file": "src/components/VirtualizedBookingList.jsx",
+      "replacements": 6,
+      "ns": "cm.components_VirtualizedBookingList"
+    },
+    {
+      "file": "src/components/WalkInBookingQuick.jsx",
+      "replacements": 5,
+      "ns": "cm.components_WalkInBookingQuick"
+    },
+    {
+      "file": "src/components/WeeklyProofDashboard.jsx",
+      "replacements": 5,
+      "ns": "cm.components_WeeklyProofDashboard"
+    },
+    {
+      "file": "src/pages/ActivitySchedulerPage.jsx",
+      "replacements": 34,
+      "ns": "cm.pages_ActivitySchedulerPage"
+    },
+    {
+      "file": "src/pages/admin/AllUsersView.jsx",
+      "replacements": 6,
+      "ns": "cm.pages_admin_AllUsersView"
+    },
+    {
+      "file": "src/pages/admin/CreateTenantModal.jsx",
+      "replacements": 23,
+      "ns": "cm.pages_admin_CreateTenantModal"
+    },
+    {
+      "file": "src/pages/admin/EditTenantModal.jsx",
+      "replacements": 9,
+      "ns": "cm.pages_admin_EditTenantModal"
+    },
+    {
+      "file": "src/pages/admin/IntegrationsOverview.jsx",
+      "replacements": 25,
+      "ns": "cm.pages_admin_IntegrationsOverview"
+    },
+    {
+      "file": "src/pages/AdminLeads.jsx",
+      "replacements": 22,
+      "ns": "cm.pages_AdminLeads"
+    },
+    {
+      "file": "src/pages/admin/QuickIdSettings.jsx",
+      "replacements": 32,
+      "ns": "cm.pages_admin_QuickIdSettings"
+    },
+    {
+      "file": "src/pages/admin/RoomQrCodes.jsx",
+      "replacements": 10,
+      "ns": "cm.pages_admin_RoomQrCodes"
+    },
+    {
+      "file": "src/pages/admin/tabs/AlertsTab.jsx",
+      "replacements": 6,
+      "ns": "cm.pages_admin_tabs_AlertsTab"
+    },
+    {
+      "file": "src/pages/admin/tabs/CredentialsTab.jsx",
+      "replacements": 4,
+      "ns": "cm.pages_admin_tabs_CredentialsTab"
+    },
+    {
+      "file": "src/pages/admin/tabs/ErrorQueueTab.jsx",
+      "replacements": 11,
+      "ns": "cm.pages_admin_tabs_ErrorQueueTab"
+    },
+    {
+      "file": "src/pages/admin/tabs/ImportJobsTab.jsx",
+      "replacements": 2,
+      "ns": "cm.pages_admin_tabs_ImportJobsTab"
+    },
+    {
+      "file": "src/pages/admin/tabs/MultiPropertyTab.jsx",
+      "replacements": 5,
+      "ns": "cm.pages_admin_tabs_MultiPropertyTab"
+    },
+    {
+      "file": "src/pages/admin/tabs/ObservabilityTab.jsx",
+      "replacements": 3,
+      "ns": "cm.pages_admin_tabs_ObservabilityTab"
+    },
+    {
+      "file": "src/pages/admin/tabs/ReadinessTab.jsx",
+      "replacements": 2,
+      "ns": "cm.pages_admin_tabs_ReadinessTab"
+    },
+    {
+      "file": "src/pages/admin/tabs/ReconciliationTab.jsx",
+      "replacements": 5,
+      "ns": "cm.pages_admin_tabs_ReconciliationTab"
+    },
+    {
+      "file": "src/pages/admin/tabs/ReliabilityTab.jsx",
+      "replacements": 2,
+      "ns": "cm.pages_admin_tabs_ReliabilityTab"
+    },
+    {
+      "file": "src/pages/admin/tabs/SandboxValidationTab.jsx",
+      "replacements": 2,
+      "ns": "cm.pages_admin_tabs_SandboxValidationTab"
+    },
+    {
+      "file": "src/pages/admin/tabs/SchedulerTab.jsx",
+      "replacements": 2,
+      "ns": "cm.pages_admin_tabs_SchedulerTab"
+    },
+    {
+      "file": "src/pages/admin/tabs/SyncHealthTab.jsx",
+      "replacements": 3,
+      "ns": "cm.pages_admin_tabs_SyncHealthTab"
+    },
+    {
+      "file": "src/pages/admin/TeamManagementModal.jsx",
+      "replacements": 6,
+      "ns": "cm.pages_admin_TeamManagementModal"
+    },
+    {
+      "file": "src/pages/AdminTenants.jsx",
+      "replacements": 32,
+      "ns": "cm.pages_AdminTenants"
+    },
+    {
+      "file": "src/pages/admin/TenantStatsPanel.jsx",
+      "replacements": 1,
+      "ns": "cm.pages_admin_TenantStatsPanel"
+    },
+    {
+      "file": "src/pages/AdminVendors.jsx",
+      "replacements": 28,
+      "ns": "cm.pages_AdminVendors"
+    },
+    {
+      "file": "src/pages/AfsadakatLauncher.jsx",
+      "replacements": 11,
+      "ns": "cm.pages_AfsadakatLauncher"
+    },
+    {
+      "file": "src/pages/AgencyContentDistribution.jsx",
+      "replacements": 45,
+      "ns": "cm.pages_AgencyContentDistribution"
+    },
+    {
+      "file": "src/pages/AgencyManagement.jsx",
+      "replacements": 22,
+      "ns": "cm.pages_AgencyManagement"
+    },
+    {
+      "file": "src/pages/AgencyPortalDashboard.jsx",
+      "replacements": 21,
+      "ns": "cm.pages_AgencyPortalDashboard"
+    },
+    {
+      "file": "src/pages/AIZekaPage.jsx",
+      "replacements": 3,
+      "ns": "cm.pages_AIZekaPage"
+    },
+    {
+      "file": "src/pages/AnalitikRaporlarPage.jsx",
+      "replacements": 4,
+      "ns": "cm.pages_AnalitikRaporlarPage"
+    },
+    {
+      "file": "src/pages/ARIPushDashboard.jsx",
+      "replacements": 58,
+      "ns": "cm.pages_ARIPushDashboard"
+    },
+    {
+      "file": "src/pages/B2BAnalyticsDashboard.jsx",
+      "replacements": 30,
+      "ns": "cm.pages_B2BAnalyticsDashboard"
+    },
+    {
+      "file": "src/pages/BlockManagementPage.jsx",
+      "replacements": 43,
+      "ns": "cm.pages_BlockManagementPage"
+    },
+    {
+      "file": "src/pages/calendar/CalendarDialogs.jsx",
+      "replacements": 42,
+      "ns": "cm.pages_calendar_CalendarDialogs"
+    },
+    {
+      "file": "src/pages/calendar/CalendarGrid.jsx",
+      "replacements": 4,
+      "ns": "cm.pages_calendar_CalendarGrid"
+    },
+    {
+      "file": "src/pages/calendar/CalendarHeader.jsx",
+      "replacements": 9,
+      "ns": "cm.pages_calendar_CalendarHeader"
+    },
+    {
+      "file": "src/pages/CapXIntegration.jsx",
+      "replacements": 15,
+      "ns": "cm.pages_CapXIntegration"
+    },
+    {
+      "file": "src/pages/CateringMenuPage.jsx",
+      "replacements": 30,
+      "ns": "cm.pages_CateringMenuPage"
+    },
+    {
+      "file": "src/pages/ChannelConnections.jsx",
+      "replacements": 42,
+      "ns": "cm.pages_ChannelConnections"
+    },
+    {
+      "file": "src/pages/ChannelManagerDashboardV2.jsx",
+      "replacements": 15,
+      "ns": "cm.pages_ChannelManagerDashboardV2"
+    },
+    {
+      "file": "src/pages/ControlPlane.jsx",
+      "replacements": 8,
+      "ns": "cm.pages_ControlPlane"
+    },
+    {
+      "file": "src/pages/DepartureList.jsx",
+      "replacements": 49,
+      "ns": "cm.pages_DepartureList"
+    },
+    {
+      "file": "src/pages/DepositTracking.jsx",
+      "replacements": 47,
+      "ns": "cm.pages_DepositTracking"
+    },
+    {
+      "file": "src/pages/EarlyLatePricingSettings.jsx",
+      "replacements": 20,
+      "ns": "cm.pages_EarlyLatePricingSettings"
+    },
+    {
+      "file": "src/pages/EarlyWarningDashboard.jsx",
+      "replacements": 18,
+      "ns": "cm.pages_EarlyWarningDashboard"
+    },
+    {
+      "file": "src/pages/EodReportPage.jsx",
+      "replacements": 36,
+      "ns": "cm.pages_EodReportPage"
+    },
+    {
+      "file": "src/pages/ExelyIntegration.jsx",
+      "replacements": 40,
+      "ns": "cm.pages_ExelyIntegration"
+    },
+    {
+      "file": "src/pages/FlashReport.jsx",
+      "replacements": 1,
+      "ns": "cm.pages_FlashReport"
+    },
+    {
+      "file": "src/pages/FolioRoutingPage.jsx",
+      "replacements": 10,
+      "ns": "cm.pages_FolioRoutingPage"
+    },
+    {
+      "file": "src/pages/ForecastReportsPage.jsx",
+      "replacements": 16,
+      "ns": "cm.pages_ForecastReportsPage"
+    },
+    {
+      "file": "src/pages/FunctionSpacePage.jsx",
+      "replacements": 35,
+      "ns": "cm.pages_FunctionSpacePage"
+    },
+    {
+      "file": "src/pages/GelirYonetimiPage.jsx",
+      "replacements": 3,
+      "ns": "cm.pages_GelirYonetimiPage"
+    },
+    {
+      "file": "src/pages/GoLiveReadinessCockpit.jsx",
+      "replacements": 8,
+      "ns": "cm.pages_GoLiveReadinessCockpit"
+    },
+    {
+      "file": "src/pages/GovernancePanel.jsx",
+      "replacements": 49,
+      "ns": "cm.pages_GovernancePanel"
+    },
+    {
+      "file": "src/pages/GroupBookings.jsx",
+      "replacements": 45,
+      "ns": "cm.pages_GroupBookings"
+    },
+    {
+      "file": "src/pages/GroupFolioPage.jsx",
+      "replacements": 63,
+      "ns": "cm.pages_GroupFolioPage"
+    },
+    {
+      "file": "src/pages/guest/RoomRequestPage.jsx",
+      "replacements": 1,
+      "ns": "cm.pages_guest_RoomRequestPage"
+    },
+    {
+      "file": "src/pages/HelpCenter.jsx",
+      "replacements": 9,
+      "ns": "cm.pages_HelpCenter"
+    },
+    {
+      "file": "src/pages/HotelRunnerIntegration.jsx",
+      "replacements": 39,
+      "ns": "cm.pages_HotelRunnerIntegration"
+    },
+    {
+      "file": "src/pages/HRComplete.jsx",
+      "replacements": 84,
+      "ns": "cm.pages_HRComplete"
+    },
+    {
+      "file": "src/pages/HRHub.jsx",
+      "replacements": 1,
+      "ns": "cm.pages_HRHub"
+    },
+    {
+      "file": "src/pages/HRv2OpsDashboard.jsx",
+      "replacements": 45,
+      "ns": "cm.pages_HRv2OpsDashboard"
+    },
+    {
+      "file": "src/pages/HurdleRatesPage.jsx",
+      "replacements": 24,
+      "ns": "cm.pages_HurdleRatesPage"
+    },
+    {
+      "file": "src/pages/IdPhotoAdminPage.jsx",
+      "replacements": 45,
+      "ns": "cm.pages_IdPhotoAdminPage"
+    },
+    {
+      "file": "src/pages/IdPhotoViewReportPage.jsx",
+      "replacements": 22,
+      "ns": "cm.pages_IdPhotoViewReportPage"
+    },
+    {
+      "file": "src/pages/IntegrationCredentials.jsx",
+      "replacements": 15,
+      "ns": "cm.pages_IntegrationCredentials"
+    },
+    {
+      "file": "src/pages/KonaklamaVergisiModule.jsx",
+      "replacements": 69,
+      "ns": "cm.pages_KonaklamaVergisiModule"
+    },
+    {
+      "file": "src/pages/LockdownDashboard.jsx",
+      "replacements": 44,
+      "ns": "cm.pages_LockdownDashboard"
+    },
+    {
+      "file": "src/pages/LoyaltyAdminPage.jsx",
+      "replacements": 15,
+      "ns": "cm.pages_LoyaltyAdminPage"
+    },
+    {
+      "file": "src/pages/MailingPage.jsx",
+      "replacements": 69,
+      "ns": "cm.pages_MailingPage"
+    },
+    {
+      "file": "src/pages/MappingManager.jsx",
+      "replacements": 32,
+      "ns": "cm.pages_MappingManager"
+    },
+    {
+      "file": "src/pages/MessagingDashboard.jsx",
+      "replacements": 103,
+      "ns": "cm.pages_MessagingDashboard"
+    },
+    {
+      "file": "src/pages/MevzuatRaporlari.jsx",
+      "replacements": 74,
+      "ns": "cm.pages_MevzuatRaporlari"
+    },
+    {
+      "file": "src/pages/MicePage.jsx",
+      "replacements": 30,
+      "ns": "cm.pages_MicePage"
+    },
+    {
+      "file": "src/pages/ModuleDiscovery.jsx",
+      "replacements": 11,
+      "ns": "cm.pages_ModuleDiscovery"
+    },
+    {
+      "file": "src/pages/ModuleReport.jsx",
+      "replacements": 18,
+      "ns": "cm.pages_ModuleReport"
+    },
+    {
+      "file": "src/pages/ModuleStorePage.jsx",
+      "replacements": 12,
+      "ns": "cm.pages_ModuleStorePage"
+    },
+    {
+      "file": "src/pages/NoShowAnalytics.jsx",
+      "replacements": 62,
+      "ns": "cm.pages_NoShowAnalytics"
+    },
+    {
+      "file": "src/pages/NoShowToday.jsx",
+      "replacements": 39,
+      "ns": "cm.pages_NoShowToday"
+    },
+    {
+      "file": "src/pages/PCIComplianceDashboard.jsx",
+      "replacements": 10,
+      "ns": "cm.pages_PCIComplianceDashboard"
+    },
+    {
+      "file": "src/pages/PIIStrictModeDashboard.jsx",
+      "replacements": 4,
+      "ns": "cm.pages_PIIStrictModeDashboard"
+    },
+    {
+      "file": "src/pages/PreCheckinPage.jsx",
+      "replacements": 14,
+      "ns": "cm.pages_PreCheckinPage"
+    },
+    {
+      "file": "src/pages/ProfilePage.jsx",
+      "replacements": 37,
+      "ns": "cm.pages_ProfilePage"
+    },
+    {
+      "file": "src/pages/ProfileUdfPage.jsx",
+      "replacements": 28,
+      "ns": "cm.pages_ProfileUdfPage"
+    },
+    {
+      "file": "src/pages/PublicReviewPage.jsx",
+      "replacements": 17,
+      "ns": "cm.pages_PublicReviewPage"
+    },
+    {
+      "file": "src/pages/rate-manager/BulkUpdatePanel.jsx",
+      "replacements": 10,
+      "ns": "cm.pages_ratemanager_BulkUpdatePanel"
+    },
+    {
+      "file": "src/pages/rate-manager/StopSalePanel.jsx",
+      "replacements": 22,
+      "ns": "cm.pages_ratemanager_StopSalePanel"
+    },
+    {
+      "file": "src/pages/RecalledMessagesReportPage.jsx",
+      "replacements": 25,
+      "ns": "cm.pages_RecalledMessagesReportPage"
+    },
+    {
+      "file": "src/pages/ReportScheduler.jsx",
+      "replacements": 56,
+      "ns": "cm.pages_ReportScheduler"
+    },
+    {
+      "file": "src/pages/reports/NationalitySection.jsx",
+      "replacements": 5,
+      "ns": "cm.pages_reports_NationalitySection"
+    },
+    {
+      "file": "src/pages/reports/PeriodSection.jsx",
+      "replacements": 9,
+      "ns": "cm.pages_reports_PeriodSection"
+    },
+    {
+      "file": "src/pages/reports/RevenueSection.jsx",
+      "replacements": 15,
+      "ns": "cm.pages_reports_RevenueSection"
+    },
+    {
+      "file": "src/pages/ReservationCalendar.jsx",
+      "replacements": 30,
+      "ns": "cm.pages_ReservationCalendar"
+    },
+    {
+      "file": "src/pages/reservation-detail/DocumentTabs.jsx",
+      "replacements": 11,
+      "ns": "cm.pages_reservationdetail_DocumentTabs"
+    },
+    {
+      "file": "src/pages/reservation-detail/GuestServiceTabs.jsx",
+      "replacements": 9,
+      "ns": "cm.pages_reservationdetail_GuestServiceTabs"
+    },
+    {
+      "file": "src/pages/reservation-detail/helpers.jsx",
+      "replacements": 2,
+      "ns": "cm.pages_reservationdetail_helpers"
+    },
+    {
+      "file": "src/pages/ReservationDetailModal.jsx",
+      "replacements": 21,
+      "ns": "cm.pages_ReservationDetailModal"
+    },
+    {
+      "file": "src/pages/reservation-detail/OnlinePaymentTab.jsx",
+      "replacements": 14,
+      "ns": "cm.pages_reservationdetail_OnlinePaymentTab"
+    },
+    {
+      "file": "src/pages/reservation-detail/OperationTabs.jsx",
+      "replacements": 29,
+      "ns": "cm.pages_reservationdetail_OperationTabs"
+    },
+    {
+      "file": "src/pages/reservation-detail/PricingTabs.jsx",
+      "replacements": 16,
+      "ns": "cm.pages_reservationdetail_PricingTabs"
+    },
+    {
+      "file": "src/pages/reservation-detail/VCCTab.jsx",
+      "replacements": 33,
+      "ns": "cm.pages_reservationdetail_VCCTab"
+    },
+    {
+      "file": "src/pages/ReservationLineage.jsx",
+      "replacements": 33,
+      "ns": "cm.pages_ReservationLineage"
+    },
+    {
+      "file": "src/pages/ResetPasswordPage.jsx",
+      "replacements": 7,
+      "ns": "cm.pages_ResetPasswordPage"
+    },
+    {
+      "file": "src/pages/RevenueMLPanel.jsx",
+      "replacements": 15,
+      "ns": "cm.pages_RevenueMLPanel"
+    },
+    {
+      "file": "src/pages/RoomMapPage.jsx",
+      "replacements": 8,
+      "ns": "cm.pages_RoomMapPage"
+    },
+    {
+      "file": "src/pages/RoomMappingWizard.jsx",
+      "replacements": 31,
+      "ns": "cm.pages_RoomMappingWizard"
+    },
+    {
+      "file": "src/pages/RuntimeCockpitPage.jsx",
+      "replacements": 17,
+      "ns": "cm.pages_RuntimeCockpitPage"
+    },
+    {
+      "file": "src/pages/SalesCRM.jsx",
+      "replacements": 34,
+      "ns": "cm.pages_SalesCRM"
+    },
+    {
+      "file": "src/pages/SeasonCalendarPanel.jsx",
+      "replacements": 5,
+      "ns": "cm.pages_SeasonCalendarPanel"
+    },
+    {
+      "file": "src/pages/ServiceRecovery.jsx",
+      "replacements": 58,
+      "ns": "cm.pages_ServiceRecovery"
+    },
+    {
+      "file": "src/pages/ShiftHandoverPage.jsx",
+      "replacements": 19,
+      "ns": "cm.pages_ShiftHandoverPage"
+    },
+    {
+      "file": "src/pages/SoakTestDashboard.jsx",
+      "replacements": 9,
+      "ns": "cm.pages_SoakTestDashboard"
+    },
+    {
+      "file": "src/pages/SpaWellness.jsx",
+      "replacements": 39,
+      "ns": "cm.pages_SpaWellness"
+    },
+    {
+      "file": "src/pages/SuiteConnectingPage.jsx",
+      "replacements": 32,
+      "ns": "cm.pages_SuiteConnectingPage"
+    },
+    {
+      "file": "src/pages/SuppliesMarket.jsx",
+      "replacements": 34,
+      "ns": "cm.pages_SuppliesMarket"
+    },
+    {
+      "file": "src/pages/SystemHealthDashboard.jsx",
+      "replacements": 83,
+      "ns": "cm.pages_SystemHealthDashboard"
+    },
+    {
+      "file": "src/pages/TrialBalancePage.jsx",
+      "replacements": 25,
+      "ns": "cm.pages_TrialBalancePage"
+    },
+    {
+      "file": "src/pages/UnifiedRateManager.jsx",
+      "replacements": 11,
+      "ns": "cm.pages_UnifiedRateManager"
+    },
+    {
+      "file": "src/pages/UrgentMessageReportPage.jsx",
+      "replacements": 15,
+      "ns": "cm.pages_UrgentMessageReportPage"
+    },
+    {
+      "file": "src/pages/UrgentPermissionAdminPage.jsx",
+      "replacements": 24,
+      "ns": "cm.pages_UrgentPermissionAdminPage"
+    },
+    {
+      "file": "src/pages/VendorPortal.jsx",
+      "replacements": 63,
+      "ns": "cm.pages_VendorPortal"
+    },
+    {
+      "file": "src/pages/WakeUpCallsPage.jsx",
+      "replacements": 33,
+      "ns": "cm.pages_WakeUpCallsPage"
+    },
+    {
+      "file": "src/pages/WalkinPage.jsx",
+      "replacements": 21,
+      "ns": "cm.pages_WalkinPage"
+    },
+    {
+      "file": "src/pages/WebhookOutboxAdmin.jsx",
+      "replacements": 15,
+      "ns": "cm.pages_WebhookOutboxAdmin"
+    },
+    {
+      "file": "src/pages/WireFailureDashboard.jsx",
+      "replacements": 13,
+      "ns": "cm.pages_WireFailureDashboard"
+    },
+    {
+      "file": "src/pages/XchangePage.jsx",
+      "replacements": 24,
+      "ns": "cm.pages_XchangePage"
+    },
+    {
+      "file": "src/pages/YieldRulesPanel.jsx",
+      "replacements": 10,
+      "ns": "cm.pages_YieldRulesPanel"
+    }
+  ],
+  "skipped": [
+    {
+      "file": "src/components/AIActivityLog.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/AIHousekeepingBoard.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/AIRMSDashboard.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/CancellationPolicyDisplay.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ColorLegend.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ComprehensiveReportsModule.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/CorporateRatesModule.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/DialogHost.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/EmployeePerformanceDashboard.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/EnhancedReservationCalendar.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ErrorBoundary.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/FnBOutletDashboard.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/FolioManagementPage.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ForecastGraph.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/GroupRevenueByCompany.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/GuestAlerts.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/GuestPreferences.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/GuestProfileComplete.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/GuestSatisfactionTrends.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/HousekeepingMobileEnhancements.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/HousekeepingTaskTiming.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/integration-hub/badges.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/integration-hub/tabs/ConnectorsTab.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/LeadTimeCurve.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/LiteSetupBanner.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/LoyaltyAutoTierManager.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/LoyaltyTierBenefitsManager.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/MaybeLayout.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/MessagingModuleAdvanced.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/MessagingTemplates.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/mice/modals/BeoModal.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/components/mice/modals/EventFormModal.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/components/mice/modals/KitchenModal.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/components/mice/modals/MenuFormModal.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/components/mice/modals/OpsModal.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/components/mice/_shared.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ModuleCard.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/night-audit/badges.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/NotificationBell.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/OTACancellationRate.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/OTAReservationDetails.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/PassportScanOCR.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/PickupPaceChart.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/PlanRouteGuard.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/pms/internalChat/ComposeForm.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/components/pms/internalChat/ConversationsList.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/components/pms/internalChat/InboxList.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/components/pms/PrintTemplates.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/POSEnhancements.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/POSTableManagement.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/PredictiveMaintenanceDashboard.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/PrintableFolio.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/RateTooltip.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/RegistrationCard.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/RejectBookingModal.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/RevenueBreakdownChart.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/RevenueDashboard.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/RevenueManagementAdvanced.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ReviewSentimentAnalysis.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/RoomNotesManager.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/RoomQRPrintAction.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/SecurityGDPRModule.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/shared/AuditTimelineSummaryCard.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/shared/ModuleErrorBoundary.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/shared/OperationalWidgets.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/StaffAssignment.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/TaskKanbanBoard.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/TrendCharts.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/accordion.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/alert-dialog.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/alert.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/aspect-ratio.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/avatar.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/badge.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/breadcrumb.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/button.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/calendar.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/card.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/carousel.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/checkbox.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/collapsible.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/command.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/context-menu.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/dialog.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/drawer.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/dropdown-menu.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/form.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/hover-card.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/input.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/input-otp.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/kpi-card.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/label.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/menubar.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/navigation-menu.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/page-header.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/pagination.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/popover.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/progress.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/radio-group.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/resizable.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/scroll-area.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/select.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/separator.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/sheet.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/skeleton.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/slider.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/sonner.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/status-badge.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/switch.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/table.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/tabs.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/textarea.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/toaster.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/toast.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/toggle-group.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/toggle.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/components/ui/tooltip.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/admin/shared.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/admin/tabs/AlertDeliveryTab.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/admin/tabs/BackgroundWorkerTab.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/admin/tabs/ConnectorHealthTab.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/admin/tabs/HealthTrendTab.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/admin/tabs/MappingCompletenessTab.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/admin/tabs/RatePushMetricsTab.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/admin/tabs/ReservationsTab.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/admin/tenantConstants.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/AuditTimelinePage.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/B2BApiDocs.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/calendar/calendarHelpers.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/calendar/CalendarOccupancy.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/calendar/index.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/DataModelDashboard.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/displacement/shared.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/GoLiveDashboardPage.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/HousekeepingStatusPage.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/IncidentDashboardPage.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/PilotReadinessPage.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/ProductionRolloutPage.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/rate-manager/CalendarGridView.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/pages/rate-manager/ChannelList.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/rate-manager/constants.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/rate-manager/ProviderToggle.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/rate-manager/__tests__/constants.test.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/reports/AdrRevparSection.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/pages/reports/ChannelsSection.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/pages/reports/FrontOfficeSection.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/pages/reports/GuestSection.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/pages/reports/OccupancySection.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/pages/reports/OfficialSection.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/pages/reports/ReportHelpers.jsx",
+      "reason": "no_candidates"
+    },
+    {
+      "file": "src/pages/reports/RoomTypesSection.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/pages/reservation-detail/__tests__/components.test.jsx",
+      "reason": "no_component_function"
+    },
+    {
+      "file": "src/pages/reservation-detail/__tests__/helpers.test.jsx",
+      "reason": "no_candidates"
+    }
+  ],
+  "failed": [],
+  "localeStats": {
+    "tr": {
+      "added": 4245,
+      "kept": 0
+    },
+    "en": {
+      "added": 4245,
+      "kept": 0
+    },
+    "de": {
+      "added": 4245,
+      "kept": 0
+    },
+    "fr": {
+      "added": 4245,
+      "kept": 0
+    },
+    "es": {
+      "added": 4245,
+      "kept": 0
+    },
+    "it": {
+      "added": 4245,
+      "kept": 0
+    },
+    "pt": {
+      "added": 4245,
+      "kept": 0
+    },
+    "ru": {
+      "added": 4245,
+      "kept": 0
+    },
+    "zh": {
+      "added": 4245,
+      "kept": 0
+    },
+    "ar": {
+      "added": 4245,
+      "kept": 0
+    }
+  },
+  "totalNewKeys": 4245
+}

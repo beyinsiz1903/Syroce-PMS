@@ -7,6 +7,7 @@ import {
   X, Camera, Loader2, ShieldCheck, ShieldAlert, RefreshCcw,
   AlertTriangle, CheckCircle2, ScanFace,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 function dataUrlToBase64(url) {
   if (!url) return '';
@@ -25,6 +26,7 @@ function dataUrlToBase64(url) {
 export default function BiometricVerifyDialog({
   open, onClose, documentImageBase64, onResult,
 }) {
+  const { t } = useTranslation();
   const [step, setStep] = useState('selfie'); // 'selfie' | 'compare' | 'done'
   const [streamReady, setStreamReady] = useState(false);
   const [streamErr, setStreamErr] = useState(null);
@@ -157,7 +159,7 @@ export default function BiometricVerifyDialog({
         <div className="flex items-center justify-between px-5 py-3 border-b bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
           <div className="flex items-center gap-2">
             <ScanFace className="w-5 h-5" />
-            <h3 className="font-semibold">Biyometrik Doğrulama</h3>
+            <h3 className="font-semibold">{t('cm.components_BiometricVerifyDialog.biyometrik_dogrulama')}</h3>
           </div>
           <button onClick={onClose} className="text-white/70 hover:text-white p-1 rounded"><X className="w-5 h-5" /></button>
         </div>
@@ -166,7 +168,7 @@ export default function BiometricVerifyDialog({
           {/* Challenge */}
           {challenge?.instruction && step === 'selfie' && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded text-sm text-emerald-900">
-              <b>Canlılık testi:</b> {challenge.instruction}
+              <b>{t('cm.components_BiometricVerifyDialog.canlilik_testi')}</b> {challenge.instruction}
             </div>
           )}
 
@@ -180,7 +182,7 @@ export default function BiometricVerifyDialog({
                     {!streamReady && !streamErr && (
                       <div className="absolute inset-0 flex flex-col items-center justify-center text-white/80 gap-2">
                         <Loader2 className="w-8 h-8 animate-spin" />
-                        <span className="text-xs">Kamera açılıyor…</span>
+                        <span className="text-xs">{t('cm.components_BiometricVerifyDialog.kamera_aciliyor')}</span>
                       </div>
                     )}
                     {streamErr && (
@@ -196,7 +198,7 @@ export default function BiometricVerifyDialog({
                   </div>
                   <div className="flex justify-end">
                     <Button onClick={captureSelfie} disabled={!streamReady} className="bg-emerald-600 hover:bg-emerald-700">
-                      <Camera className="w-4 h-4 mr-1" /> Selfie Çek
+                      <Camera className="w-4 h-4 mr-1" /> {t('cm.components_BiometricVerifyDialog.selfie_cek')}
                     </Button>
                   </div>
                 </div>
@@ -214,10 +216,10 @@ export default function BiometricVerifyDialog({
                     </div>
                   </div>
                   <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={retake}><RefreshCcw className="w-4 h-4 mr-1" /> Tekrar Çek</Button>
+                    <Button variant="outline" onClick={retake}><RefreshCcw className="w-4 h-4 mr-1" /> {t('cm.components_BiometricVerifyDialog.tekrar_cek')}</Button>
                     <Button onClick={runVerification} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
                       {busy ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-1" />}
-                      Doğrula
+                      {t('cm.components_BiometricVerifyDialog.dogrula')}
                     </Button>
                   </div>
                 </div>
@@ -229,7 +231,7 @@ export default function BiometricVerifyDialog({
           {step === 'compare' && (
             <div className="py-12 flex flex-col items-center gap-3">
               <Loader2 className="w-10 h-10 animate-spin text-emerald-600" />
-              <span className="text-sm text-gray-600">Yüz karşılaştırılıyor ve canlılık testi yapılıyor…</span>
+              <span className="text-sm text-gray-600">{t('cm.components_BiometricVerifyDialog.yuz_karsilastiriliyor_ve_canlilik_testi_')}</span>
             </div>
           )}
 
@@ -253,8 +255,8 @@ export default function BiometricVerifyDialog({
                       : 'Doğrulama gözden geçirilmeli'}
                   </div>
                   <div className="text-xs text-gray-600 mt-0.5">
-                    Eşleşme: {matchRes?.match ? 'EVET' : 'HAYIR'} · Güven: %{matchRes?.confidence_score ?? 0}
-                    {' · '}Canlı: {livenessRes?.is_live ? 'EVET' : 'HAYIR'}
+                    {t('cm.components_BiometricVerifyDialog.eslesme')} {matchRes?.match ? 'EVET' : 'HAYIR'} {t('cm.components_BiometricVerifyDialog.guven')}{matchRes?.confidence_score ?? 0}
+                    {' · '}{t('cm.components_BiometricVerifyDialog.canli')} {livenessRes?.is_live ? 'EVET' : 'HAYIR'}
                   </div>
                 </div>
               </div>
@@ -266,7 +268,7 @@ export default function BiometricVerifyDialog({
               )}
               {livenessRes?.spoof_indicators?.length > 0 && (
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
-                  <b>Sahtekarlık göstergeleri:</b>
+                  <b>{t('cm.components_BiometricVerifyDialog.sahtekarlik_gostergeleri')}</b>
                   {livenessRes.spoof_indicators.slice(0, 3).map((s, i) => <div key={i}>• {s}</div>)}
                 </div>
               )}
@@ -274,7 +276,7 @@ export default function BiometricVerifyDialog({
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={retake}><RefreshCcw className="w-4 h-4 mr-1" /> Yeniden Dene</Button>
                 <Button onClick={onClose} className="bg-emerald-600 hover:bg-emerald-700">
-                  <CheckCircle2 className="w-4 h-4 mr-1" /> Tamam
+                  <CheckCircle2 className="w-4 h-4 mr-1" /> {t('cm.components_BiometricVerifyDialog.tamam')}
                 </Button>
               </div>
             </div>

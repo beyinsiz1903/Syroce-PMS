@@ -13,6 +13,7 @@ import {
   Users, Plus, LogIn, LogOut, Search, Loader2, ChevronRight,
   Trash2, RefreshCw, BedDouble, Wallet, CreditCard,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const tomorrowISO = () => {
@@ -64,6 +65,7 @@ function showBulkErrors(title, errors) {
 }
 
 export default function GroupBookings({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -241,16 +243,16 @@ export default function GroupBookings({ user, tenant, onLogout }) {
       {/* B7: PageHeader + B8: Yenile butonu (Sprint A) */}
       <PageHeader
         icon={Users}
-        title="Grup Rezervasyonları"
-        subtitle="Grup adı altında bireysel rezervasyonların toplu yönetimi (giriş/çıkış, oluşturma)."
+        title={t('cm.pages_GroupBookings.grup_rezervasyonlari')}
+        subtitle={t('cm.pages_GroupBookings.grup_adi_altinda_bireysel_rezervasyonlar')}
         actions={
           <>
             <Button variant="outline" size="sm" onClick={loadGroups} disabled={refreshing}>
-              <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} /> Yenile
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} /> {t('cm.pages_GroupBookings.yenile')}
             </Button>
             {/* B6: primary CTA siyah (default) — amber/blue YOK */}
             <Button onClick={openCreateDialog} data-testid="create-group-btn">
-              <Plus className="w-4 h-4 mr-2" /> Yeni Grup
+              <Plus className="w-4 h-4 mr-2" /> {t('cm.pages_GroupBookings.yeni_grup')}
             </Button>
           </>
         }
@@ -258,8 +260,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
 
       {/* B9: cross-link metni — iki sayfanın AYRI sistemler olduğunu net söyler */}
       <p className="text-xs text-slate-500 -mt-2">
-        Not: <strong>Grup Blok Kontenjanı</strong> ayrı bir sayfada yönetilir; bu sayfa
-        bireysel rezervasyon gruplarıdır. İki sistem otomatik bağlı değildir.
+        Not: <strong>{t('cm.pages_GroupBookings.grup_blok_kontenjani')}</strong> {t('cm.pages_GroupBookings.ayri_bir_sayfada_yonetilir_bu_sayfa_bire')}
       </p>
 
       {loading ? (
@@ -270,10 +271,10 @@ export default function GroupBookings({ user, tenant, onLogout }) {
         // B10: boş durum CTA butonu
         <div className="text-center py-16 border border-dashed rounded-xl bg-white">
           <Users className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-          <p className="text-lg font-medium text-slate-700">Henüz grup rezervasyon yok</p>
-          <p className="text-sm mt-1 text-slate-500">İlk grubunuzu oluşturun</p>
+          <p className="text-lg font-medium text-slate-700">{t('cm.pages_GroupBookings.henuz_grup_rezervasyon_yok')}</p>
+          <p className="text-sm mt-1 text-slate-500">{t('cm.pages_GroupBookings.ilk_grubunuzu_olusturun')}</p>
           <Button onClick={openCreateDialog} className="mt-4">
-            <Plus className="w-4 h-4 mr-2" /> Yeni Grup Oluştur
+            <Plus className="w-4 h-4 mr-2" /> {t('cm.pages_GroupBookings.yeni_grup_olustur')}
           </Button>
         </div>
       ) : (
@@ -295,18 +296,18 @@ export default function GroupBookings({ user, tenant, onLogout }) {
                     <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
                       <span>{g.total_rooms || g.booking_ids?.length || 0} oda</span>
                       <span>{(g.total_amount || 0).toLocaleString('tr-TR')} TL</span>
-                      <span>Ödenen: {(g.total_paid || 0).toLocaleString('tr-TR')} TL</span>
+                      <span>{t('cm.pages_GroupBookings.odenen')} {(g.total_paid || 0).toLocaleString('tr-TR')} TL</span>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleGroupCheckin(g.id); }}
                     className="h-8 text-xs" data-testid={`group-checkin-${g.id}`}>
-                    <LogIn className="w-3 h-3 mr-1" /> Toplu Giriş
+                    <LogIn className="w-3 h-3 mr-1" /> {t('cm.pages_GroupBookings.toplu_giris')}
                   </Button>
                   <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleGroupCheckout(g.id); }}
                     className="h-8 text-xs" data-testid={`group-checkout-${g.id}`}>
-                    <LogOut className="w-3 h-3 mr-1" /> Toplu Çıkış
+                    <LogOut className="w-3 h-3 mr-1" /> {t('cm.pages_GroupBookings.toplu_cikis')}
                   </Button>
                   <ChevronRight className="w-4 h-4 text-slate-400" />
                 </div>
@@ -330,38 +331,38 @@ export default function GroupBookings({ user, tenant, onLogout }) {
       {/* Create Group Dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Yeni Grup Oluştur</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('cm.pages_GroupBookings.yeni_grup_olustur_654f9')}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Grup Adı *</Label>
-              <Input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="Örnek: ABC Turizm — 15 Mart" />
+              <Label>{t('cm.pages_GroupBookings.grup_adi')}</Label>
+              <Input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder={t('cm.pages_GroupBookings.ornek_abc_turizm_15_mart')} />
             </div>
 
             <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
               <button type="button" onClick={() => setCreateMode('existing')}
                 className={`flex-1 text-sm font-medium py-2 rounded-md transition ${createMode === 'existing' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
                 data-testid="tab-existing">
-                Mevcut Rezervasyonları Grupla
+                {t('cm.pages_GroupBookings.mevcut_rezervasyonlari_grupla')}
               </button>
               <button type="button" onClick={() => setCreateMode('new')}
                 className={`flex-1 text-sm font-medium py-2 rounded-md transition ${createMode === 'new' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
                 data-testid="tab-new">
-                Yeni Rezervasyonlar Oluştur
+                {t('cm.pages_GroupBookings.yeni_rezervasyonlar_olustur')}
               </button>
             </div>
 
             {createMode === 'existing' ? (
               <>
                 <div>
-                  <Label>Rezervasyonları Seç ({selectedBookingIds.length} seçili)</Label>
+                  <Label>{t('cm.pages_GroupBookings.rezervasyonlari_sec')}{selectedBookingIds.length} {t('cm.pages_GroupBookings.secili')}</Label>
                   <div className="relative mt-1">
                     <Search className="absolute left-2 top-2 w-4 h-4 text-slate-400" />
-                    <Input value={searchBooking} onChange={(e) => setSearchBooking(e.target.value)} placeholder="Misafir adı veya oda no..." className="pl-8" />
+                    <Input value={searchBooking} onChange={(e) => setSearchBooking(e.target.value)} placeholder={t('cm.pages_GroupBookings.misafir_adi_veya_oda_no')} className="pl-8" />
                   </div>
                 </div>
                 <div className="max-h-60 overflow-y-auto border rounded-lg">
                   {filteredBookings.length === 0 ? (
-                    <div className="p-4 text-center text-slate-400 text-sm">Uygun rezervasyon bulunamadı</div>
+                    <div className="p-4 text-center text-slate-400 text-sm">{t('cm.pages_GroupBookings.uygun_rezervasyon_bulunamadi')}</div>
                   ) : (
                     filteredBookings.map((b) => (
                       <div key={b.id}
@@ -371,7 +372,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
                         <div className="flex-1">
                           <div className="text-sm font-medium">{b.guest_name || '—'}</div>
                           <div className="text-xs text-slate-500">
-                            Oda: {b.room_number || '?'} · {b.check_in?.toString().slice(0, 10)} → {b.check_out?.toString().slice(0, 10)}
+                            {t('cm.pages_GroupBookings.oda')} {b.room_number || '?'} · {b.check_in?.toString().slice(0, 10)} → {b.check_out?.toString().slice(0, 10)}
                           </div>
                         </div>
                         <span className="text-sm font-medium text-slate-600">{(b.total_amount || 0).toLocaleString('tr-TR')} TL</span>
@@ -383,7 +384,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
             ) : (
               <>
                 <div className="flex items-center justify-between">
-                  <Label>Rezervasyonlar ({newRows.length} satır)</Label>
+                  <Label>Rezervasyonlar ({newRows.length} {t('cm.pages_GroupBookings.satir')}</Label>
                   <div className="flex items-center gap-2">
                     <Button type="button" size="sm" variant="outline"
                       onClick={() => {
@@ -393,11 +394,11 @@ export default function GroupBookings({ user, tenant, onLogout }) {
                         toast.success('Tarihler tüm satırlara uygulandı');
                       }}
                       className="h-8 text-xs">
-                      Tarihleri Eşitle
+                      {t('cm.pages_GroupBookings.tarihleri_esitle')}
                     </Button>
                     {/* B6: Satır Ekle artık default Button (siyah) */}
                     <Button type="button" size="sm" onClick={addRow} className="h-8 text-xs">
-                      <Plus className="w-3 h-3 mr-1" /> Satır Ekle
+                      <Plus className="w-3 h-3 mr-1" /> {t('cm.pages_GroupBookings.satir_ekle')}
                     </Button>
                   </div>
                 </div>
@@ -406,11 +407,11 @@ export default function GroupBookings({ user, tenant, onLogout }) {
                     <table className="w-full text-sm">
                       <thead className="bg-slate-50 sticky top-0 z-10">
                         <tr>
-                          <th className="text-left py-2 px-2 font-medium text-xs text-slate-500">Misafir *</th>
-                          <th className="text-left py-2 px-2 font-medium text-xs text-slate-500">Oda *</th>
-                          <th className="text-left py-2 px-2 font-medium text-xs text-slate-500">Giriş</th>
-                          <th className="text-left py-2 px-2 font-medium text-xs text-slate-500">Çıkış</th>
-                          <th className="text-right py-2 px-2 font-medium text-xs text-slate-500">Tutar (TL) *</th>
+                          <th className="text-left py-2 px-2 font-medium text-xs text-slate-500">{t('cm.pages_GroupBookings.misafir')}</th>
+                          <th className="text-left py-2 px-2 font-medium text-xs text-slate-500">{t('cm.pages_GroupBookings.oda_4f450')}</th>
+                          <th className="text-left py-2 px-2 font-medium text-xs text-slate-500">{t('cm.pages_GroupBookings.giris')}</th>
+                          <th className="text-left py-2 px-2 font-medium text-xs text-slate-500">{t('cm.pages_GroupBookings.cikis')}</th>
+                          <th className="text-right py-2 px-2 font-medium text-xs text-slate-500">{t('cm.pages_GroupBookings.tutar_tl')}</th>
                           <th className="py-2 px-2"></th>
                         </tr>
                       </thead>
@@ -424,7 +425,7 @@ export default function GroupBookings({ user, tenant, onLogout }) {
                             <td className="py-1 px-2">
                               <select value={r.room_id} onChange={(e) => updateRow(idx, { room_id: e.target.value })}
                                 className="h-8 text-sm border rounded px-2 w-full bg-white">
-                                <option value="">Seç...</option>
+                                <option value="">{t('cm.pages_GroupBookings.sec')}</option>
                                 {allRooms.map((room) => (
                                   <option key={room.id} value={room.id}>
                                     {room.room_number || room.number} {room.room_type ? `(${room.room_type})` : ''}
@@ -457,16 +458,16 @@ export default function GroupBookings({ user, tenant, onLogout }) {
                   </div>
                 </div>
                 <p className="text-xs text-slate-500">
-                  Toplam tutar: <strong>{newRows.reduce((s, r) => s + (parseFloat(r.total_amount) || 0), 0).toLocaleString('tr-TR')} TL</strong>
-                  {' · '}Misafir adları placeholder olarak kaydedilir; sonra her rezervasyondan misafir bilgilerini güncelleyebilirsiniz.
+                  {t('cm.pages_GroupBookings.toplam_tutar')} <strong>{newRows.reduce((s, r) => s + (parseFloat(r.total_amount) || 0), 0).toLocaleString('tr-TR')} TL</strong>
+                  {' · '}{t('cm.pages_GroupBookings.misafir_adlari_placeholder_olarak_kayded')}
                 </p>
               </>
             )}
 
             <div className="flex justify-end gap-2 pt-2 border-t">
-              <Button variant="outline" onClick={() => setShowCreate(false)}>İptal</Button>
+              <Button variant="outline" onClick={() => setShowCreate(false)}>{t('cm.pages_GroupBookings.iptal')}</Button>
               <Button onClick={handleCreate} disabled={creating}>
-                {creating && <Loader2 className="w-4 h-4 animate-spin mr-1" />} Grup Oluştur
+                {creating && <Loader2 className="w-4 h-4 animate-spin mr-1" />} {t('cm.pages_GroupBookings.grup_olustur')}
               </Button>
             </div>
           </div>
@@ -481,27 +482,27 @@ export default function GroupBookings({ user, tenant, onLogout }) {
             <div className="space-y-4">
               {/* B5: KpiCard Sprint A intent paleti (sky/emerald/amber) */}
               <div className="grid grid-cols-3 gap-3">
-                <KpiCard icon={BedDouble} label="Toplam Oda" value={detailRoomCount} intent="info" />
-                <KpiCard icon={Wallet} label="Toplam Tutar" value={`${(showDetail.total_amount || 0).toLocaleString('tr-TR')} TL`} intent="success" />
-                <KpiCard icon={CreditCard} label="Ödenen" value={`${(showDetail.total_paid || 0).toLocaleString('tr-TR')} TL`} intent="warning" />
+                <KpiCard icon={BedDouble} label={t('cm.pages_GroupBookings.toplam_oda')} value={detailRoomCount} intent="info" />
+                <KpiCard icon={Wallet} label={t('cm.pages_GroupBookings.toplam_tutar_d7437')} value={`${(showDetail.total_amount || 0).toLocaleString('tr-TR')} TL`} intent="success" />
+                <KpiCard icon={CreditCard} label={t('cm.pages_GroupBookings.odenen_2beb0')} value={`${(showDetail.total_paid || 0).toLocaleString('tr-TR')} TL`} intent="warning" />
               </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => handleGroupCheckin(showDetail.id)} className="h-8 text-xs">
-                  <LogIn className="w-3 h-3 mr-1" /> Toplu Giriş
+                  <LogIn className="w-3 h-3 mr-1" /> {t('cm.pages_GroupBookings.toplu_giris_dfd45')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => handleGroupCheckout(showDetail.id)} className="h-8 text-xs">
-                  <LogOut className="w-3 h-3 mr-1" /> Toplu Çıkış
+                  <LogOut className="w-3 h-3 mr-1" /> {t('cm.pages_GroupBookings.toplu_cikis_27723')}
                 </Button>
               </div>
               <div className="border rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="text-left py-2 px-3 font-medium text-xs text-slate-500">Misafir</th>
-                      <th className="text-left py-2 px-3 font-medium text-xs text-slate-500">Oda</th>
-                      <th className="text-left py-2 px-3 font-medium text-xs text-slate-500">Tarih</th>
-                      <th className="text-left py-2 px-3 font-medium text-xs text-slate-500">Durum</th>
-                      <th className="text-right py-2 px-3 font-medium text-xs text-slate-500">Tutar</th>
+                      <th className="text-left py-2 px-3 font-medium text-xs text-slate-500">{t('cm.pages_GroupBookings.misafir_633b8')}</th>
+                      <th className="text-left py-2 px-3 font-medium text-xs text-slate-500">{t('cm.pages_GroupBookings.oda_e4b47')}</th>
+                      <th className="text-left py-2 px-3 font-medium text-xs text-slate-500">{t('cm.pages_GroupBookings.tarih')}</th>
+                      <th className="text-left py-2 px-3 font-medium text-xs text-slate-500">{t('cm.pages_GroupBookings.durum')}</th>
+                      <th className="text-right py-2 px-3 font-medium text-xs text-slate-500">{t('cm.pages_GroupBookings.tutar')}</th>
                     </tr>
                   </thead>
                   <tbody>

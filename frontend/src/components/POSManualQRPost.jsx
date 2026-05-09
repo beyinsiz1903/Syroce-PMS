@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { QrCode, Scan, AlertTriangle, CheckCircle, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * POS Manual QR/Barcode Post Component
@@ -14,6 +15,7 @@ import { QrCode, Scan, AlertTriangle, CheckCircle, X } from 'lucide-react';
 const SCANNER_DIV_ID = 'pos-qr-scanner-region';
 
 const POSManualQRPost = () => {
+  const { t } = useTranslation();
   const [scanMode, setScanMode] = useState(false);
   const [qrCode, setQrCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -134,7 +136,7 @@ const POSManualQRPost = () => {
           Manuel QR/Barkod Post
         </CardTitle>
         <CardDescription>
-          Entegrasyon düştüğünde kullanılır - POS fişini manuel olarak aktarın
+          {t('cm.components_POSManualQRPost.entegrasyon_dustugunde_kullanilir_pos_fi')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -143,8 +145,7 @@ const POSManualQRPost = () => {
           <div className="flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5" />
             <div className="text-xs text-amber-800">
-              <strong>Fallback Modu:</strong> Bu yöntemi sadece POS entegrasyonu çalışmadığında kullanın.
-              Normal durumda otomatik aktarım kullanılmalıdır.
+              <strong>Fallback Modu:</strong> {t('cm.components_POSManualQRPost.bu_yontemi_sadece_pos_entegrasyonu_calis')}
             </div>
           </div>
         </div>
@@ -165,7 +166,7 @@ const POSManualQRPost = () => {
             className="flex-1"
           >
             <QrCode className="w-4 h-4 mr-2" />
-            Manuel Giriş
+            {t('cm.components_POSManualQRPost.manuel_giris')}
           </Button>
         </div>
 
@@ -185,16 +186,16 @@ const POSManualQRPost = () => {
                   className="w-full"
                 >
                   <X className="w-4 h-4 mr-2" />
-                  Tarayıcıyı Durdur
+                  {t('cm.components_POSManualQRPost.tarayiciyi_durdur')}
                 </Button>
               </>
             ) : (
               <>
                 <div className="p-8 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 text-center">
                   <Scan className="w-16 h-16 mx-auto text-gray-400 mb-3" />
-                  <p className="text-sm text-gray-600 mb-2">Kamerayı QR koda yönlendirin</p>
+                  <p className="text-sm text-gray-600 mb-2">{t('cm.components_POSManualQRPost.kamerayi_qr_koda_yonlendirin')}</p>
                   <p className="text-xs text-gray-500">
-                    Barkod tarayıcı bağlıysa, fişi taratın
+                    {t('cm.components_POSManualQRPost.barkod_tarayici_bagliysa_fisi_taratin')}
                   </p>
                 </div>
                 <Button
@@ -203,7 +204,7 @@ const POSManualQRPost = () => {
                   disabled={loading}
                 >
                   <Scan className="w-4 h-4 mr-2" />
-                  QR Scanner'ı Başlat
+                  {t('cm.components_POSManualQRPost.qr_scanner_i_baslat')}
                 </Button>
               </>
             )}
@@ -212,7 +213,7 @@ const POSManualQRPost = () => {
           <div className="space-y-3">
             <div>
               <label className="text-sm font-medium mb-2 block">
-                QR Kod / Barkod Numarası:
+                {t('cm.components_POSManualQRPost.qr_kod_barkod_numarasi')}
               </label>
               <Input
                 placeholder="POS_CHARGE:12345:67890"
@@ -245,7 +246,7 @@ const POSManualQRPost = () => {
             <div className="flex items-start gap-2">
               <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
               <div className="text-xs text-green-800">
-                <strong>Son Aktarılan:</strong> ${lastPosted.total} - {lastPosted.description}
+                <strong>{t('cm.components_POSManualQRPost.son_aktarilan')}</strong> ${lastPosted.total} - {lastPosted.description}
                 <br />
                 <span className="text-green-600">
                   Folio: {lastPosted.folio_id} | Zaman: {new Date(lastPosted.posted_at).toLocaleString()}
@@ -257,12 +258,12 @@ const POSManualQRPost = () => {
 
         {/* Instructions */}
         <div className="text-xs text-gray-500 space-y-1 pt-3 border-t">
-          <p><strong>Nasıl Kullanılır:</strong></p>
+          <p><strong>{t('cm.components_POSManualQRPost.nasil_kullanilir')}</strong></p>
           <ul className="list-disc list-inside space-y-0.5 ml-2">
-            <li>POS sisteminden QR kod yazdırın</li>
-            <li>Kamera ile QR'ı taratın veya numarayı girin</li>
-            <li>Sistem otomatik olarak folio'ya aktarır</li>
-            <li>Misafir faturasında görüntülenir</li>
+            <li>{t('cm.components_POSManualQRPost.pos_sisteminden_qr_kod_yazdirin')}</li>
+            <li>{t('cm.components_POSManualQRPost.kamera_ile_qr_i_taratin_veya_numarayi_gi')}</li>
+            <li>{t('cm.components_POSManualQRPost.sistem_otomatik_olarak_folio_ya_aktarir')}</li>
+            <li>{t('cm.components_POSManualQRPost.misafir_faturasinda_goruntulenir')}</li>
           </ul>
         </div>
       </CardContent>

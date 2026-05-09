@@ -17,8 +17,10 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { useTranslation } from 'react-i18next';
 
 const AgencyContentDistribution = ({ user }) => {
+  const { t } = useTranslation();
   const [content, setContent] = useState(null);
   const [agencies, setAgencies] = useState([]);
   const [selectedAgencies, setSelectedAgencies] = useState([]);
@@ -232,21 +234,21 @@ const AgencyContentDistribution = ({ user }) => {
       <div className="flex items-center justify-between">
         <div>
           {/* FIX #9: Türkçe karakter standartı */}
-          <h1 className="text-2xl font-bold text-slate-900" data-testid="content-dist-title">İçerik Dağıtımı</h1>
-          <p className="text-slate-500 text-sm mt-1">Otel bilgilerini düzenleyin ve seçtiğiniz acentelere yayınlayın.</p>
+          <h1 className="text-2xl font-bold text-slate-900" data-testid="content-dist-title">{t('cm.pages_AgencyContentDistribution.icerik_dagitimi')}</h1>
+          <p className="text-slate-500 text-sm mt-1">{t('cm.pages_AgencyContentDistribution.otel_bilgilerini_duzenleyin_ve_sectigini')}</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => loadAll({ silent: true })}>
-            <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+            <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_AgencyContentDistribution.yenile')}
           </Button>
           <Button variant="outline" onClick={handleSaveContent} disabled={saving} data-testid="save-content-btn">
             {saving ? <Loader2 className="animate-spin mr-1" size={14} /> : <Save size={14} className="mr-1" />}
-            Kaydet{hasPendingDeletes ? ` (${pendingDeletes.rooms.size + pendingDeletes.services.size} silme)` : ''}
+            {t('cm.pages_AgencyContentDistribution.kaydet')}{hasPendingDeletes ? ` (${pendingDeletes.rooms.size + pendingDeletes.services.size} silme)` : ''}
           </Button>
           {/* FIX #1: Buton adi semantik — "Yayın Listesini Güncelle" */}
           <Button onClick={openDistributeDialog} disabled={distributing || previewLoading} data-testid="distribute-btn" className="gap-2">
             {(distributing || previewLoading) ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
-            Yayın Listesini Güncelle
+            {t('cm.pages_AgencyContentDistribution.yayin_listesini_guncelle')}
           </Button>
         </div>
       </div>
@@ -255,8 +257,8 @@ const AgencyContentDistribution = ({ user }) => {
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>
-            {pendingDeletes.rooms.size + pendingDeletes.services.size} silme işlemi bekliyor —
-            <strong className="mx-1">Kaydet</strong>'e basana kadar uygulanmayacak.
+            {pendingDeletes.rooms.size + pendingDeletes.services.size} {t('cm.pages_AgencyContentDistribution.silme_islemi_bekliyor')}
+            <strong className="mx-1">{t('cm.pages_AgencyContentDistribution.kaydet_a9270')}</strong>'e basana kadar uygulanmayacak.
           </span>
         </div>
       )}
@@ -267,7 +269,7 @@ const AgencyContentDistribution = ({ user }) => {
           <Tabs defaultValue="hotel" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="hotel" data-testid="tab-hotel">Otel Bilgileri</TabsTrigger>
-              <TabsTrigger value="rooms" data-testid="tab-rooms">Oda Tipleri</TabsTrigger>
+              <TabsTrigger value="rooms" data-testid="tab-rooms">{t('cm.pages_AgencyContentDistribution.oda_tipleri')}</TabsTrigger>
               <TabsTrigger value="services" data-testid="tab-services">Hizmetler</TabsTrigger>
             </TabsList>
 
@@ -276,12 +278,12 @@ const AgencyContentDistribution = ({ user }) => {
               <Card>
                 <CardContent className="pt-6 space-y-4">
                   <div>
-                    <Label>Otel Adı</Label>
+                    <Label>{t('cm.pages_AgencyContentDistribution.otel_adi')}</Label>
                     <Input value={content?.hotel_name || ''} onChange={e => setContent(p => ({ ...p, hotel_name: e.target.value }))} data-testid="hotel-name-input" />
                   </div>
                   <div>
-                    <Label>Açıklama</Label>
-                    <Textarea rows={3} value={content?.description || ''} onChange={e => setContent(p => ({ ...p, description: e.target.value }))} placeholder="Otel hakkında kısa tanıtım..." />
+                    <Label>{t('cm.pages_AgencyContentDistribution.aciklama')}</Label>
+                    <Textarea rows={3} value={content?.description || ''} onChange={e => setContent(p => ({ ...p, description: e.target.value }))} placeholder={t('cm.pages_AgencyContentDistribution.otel_hakkinda_kisa_tanitim')} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -298,7 +300,7 @@ const AgencyContentDistribution = ({ user }) => {
                     <Input value={content?.email || ''} onChange={e => setContent(p => ({ ...p, email: e.target.value }))} />
                   </div>
                   <div>
-                    <Label>Olanaklar (virgül ile ayırın)</Label>
+                    <Label>{t('cm.pages_AgencyContentDistribution.olanaklar_virgul_ile_ayirin')}</Label>
                     <Input
                       value={(content?.amenities || []).join(', ')}
                       onChange={e => setContent(p => ({ ...p, amenities: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
@@ -318,8 +320,8 @@ const AgencyContentDistribution = ({ user }) => {
                     <CardContent className="pt-4 space-y-3">
                       <div className="flex items-center justify-between">
                         <h4 className="font-medium text-sm text-slate-700 flex items-center gap-2">
-                          <Bed size={14} /> Oda Tipi {idx + 1}
-                          {marked && <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]">Silinmek üzere</Badge>}
+                          <Bed size={14} /> {t('cm.pages_AgencyContentDistribution.oda_tipi')} {idx + 1}
+                          {marked && <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]">{t('cm.pages_AgencyContentDistribution.silinmek_uzere')}</Badge>}
                         </h4>
                         {canDelete && (
                           marked ? (
@@ -339,13 +341,13 @@ const AgencyContentDistribution = ({ user }) => {
                           <Input value={rt.room_type} onChange={e => updateRoomType(idx, 'room_type', e.target.value)} placeholder="Standard" className="text-sm" />
                         </div>
                         <div>
-                          <Label className="text-xs">Görünen Ad</Label>
+                          <Label className="text-xs">{t('cm.pages_AgencyContentDistribution.gorunen_ad')}</Label>
                           <Input value={rt.name || rt.room_type} onChange={e => updateRoomType(idx, 'name', e.target.value)} className="text-sm" />
                         </div>
                       </div>
                       <div>
-                        <Label className="text-xs">Açıklama</Label>
-                        <Textarea rows={2} value={rt.description} onChange={e => updateRoomType(idx, 'description', e.target.value)} className="text-sm" placeholder="Oda açıklaması..." />
+                        <Label className="text-xs">{t('cm.pages_AgencyContentDistribution.aciklama_1babd')}</Label>
+                        <Textarea rows={2} value={rt.description} onChange={e => updateRoomType(idx, 'description', e.target.value)} className="text-sm" placeholder={t('cm.pages_AgencyContentDistribution.oda_aciklamasi')} />
                       </div>
                       <div className="grid grid-cols-3 gap-3">
                         <div>
@@ -362,7 +364,7 @@ const AgencyContentDistribution = ({ user }) => {
                         </div>
                       </div>
                       <div>
-                        <Label className="text-xs">Oda Olanakları (virgül ile)</Label>
+                        <Label className="text-xs">{t('cm.pages_AgencyContentDistribution.oda_olanaklari_virgul_ile')}</Label>
                         <Input
                           value={(rt.amenities || []).join(', ')}
                           onChange={e => updateRoomType(idx, 'amenities', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
@@ -374,7 +376,7 @@ const AgencyContentDistribution = ({ user }) => {
                 );
               })}
               <Button variant="outline" onClick={addRoomType} className="w-full gap-2" data-testid="add-room-type-btn">
-                <Plus size={14} /> Oda Tipi Ekle
+                <Plus size={14} /> {t('cm.pages_AgencyContentDistribution.oda_tipi_ekle')}
               </Button>
             </TabsContent>
 
@@ -388,7 +390,7 @@ const AgencyContentDistribution = ({ user }) => {
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="font-medium text-sm text-slate-700 flex items-center gap-2">
                           Hizmet {idx + 1}
-                          {marked && <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]">Silinmek üzere</Badge>}
+                          {marked && <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]">{t('cm.pages_AgencyContentDistribution.silinmek_uzere_fd08f')}</Badge>}
                         </h4>
                         {canDelete && (
                           marked ? (
@@ -404,12 +406,12 @@ const AgencyContentDistribution = ({ user }) => {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <Label className="text-xs">Hizmet Adı</Label>
+                          <Label className="text-xs">{t('cm.pages_AgencyContentDistribution.hizmet_adi')}</Label>
                           <Input value={svc.name} onChange={e => updateService(idx, 'name', e.target.value)} className="text-sm" placeholder="Havuz" />
                         </div>
                         <div>
-                          <Label className="text-xs">Açıklama</Label>
-                          <Input value={svc.description} onChange={e => updateService(idx, 'description', e.target.value)} className="text-sm" placeholder="Açık havuz, 08:00-20:00" />
+                          <Label className="text-xs">{t('cm.pages_AgencyContentDistribution.aciklama_1babd')}</Label>
+                          <Input value={svc.description} onChange={e => updateService(idx, 'description', e.target.value)} className="text-sm" placeholder={t('cm.pages_AgencyContentDistribution.acik_havuz_08_00_20_00')} />
                         </div>
                       </div>
                     </CardContent>
@@ -417,7 +419,7 @@ const AgencyContentDistribution = ({ user }) => {
                 );
               })}
               <Button variant="outline" onClick={addService} className="w-full gap-2" data-testid="add-service-btn">
-                <Plus size={14} /> Hizmet Ekle
+                <Plus size={14} /> {t('cm.pages_AgencyContentDistribution.hizmet_ekle')}
               </Button>
             </TabsContent>
           </Tabs>
@@ -431,13 +433,13 @@ const AgencyContentDistribution = ({ user }) => {
                 <Building2 size={16} /> Acenteler
               </CardTitle>
               <div className="flex gap-2 mt-2">
-                <Button size="sm" variant="outline" className="text-xs h-7" onClick={selectAllAgencies}>Tümünü Seç</Button>
+                <Button size="sm" variant="outline" className="text-xs h-7" onClick={selectAllAgencies}>{t('cm.pages_AgencyContentDistribution.tumunu_sec')}</Button>
                 <Button size="sm" variant="outline" className="text-xs h-7" onClick={deselectAllAgencies}>Temizle</Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-2 max-h-[500px] overflow-y-auto">
               {agencies.filter(a => a.status === 'active').length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-4">Aktif acente yok</p>
+                <p className="text-xs text-slate-400 text-center py-4">{t('cm.pages_AgencyContentDistribution.aktif_acente_yok')}</p>
               ) : (
                 agencies.filter(a => a.status === 'active').map(agency => (
                   <div
@@ -458,7 +460,7 @@ const AgencyContentDistribution = ({ user }) => {
                       <div className="text-xs text-slate-400">{agency.contact_name || 'Yetkili belirtilmemiş'}</div>
                     </div>
                     {agency.published_content && (
-                      <Badge variant="outline" className="text-[10px] text-sky-600 border-sky-200 ml-auto flex-shrink-0">Yayında</Badge>
+                      <Badge variant="outline" className="text-[10px] text-sky-600 border-sky-200 ml-auto flex-shrink-0">{t('cm.pages_AgencyContentDistribution.yayinda')}</Badge>
                     )}
                   </div>
                 ))
@@ -467,13 +469,13 @@ const AgencyContentDistribution = ({ user }) => {
           </Card>
 
           <div className="mt-4 p-4 bg-slate-50 rounded-lg text-sm text-slate-500">
-            <p className="font-medium text-slate-700 mb-1">Nasıl çalışır?</p>
+            <p className="font-medium text-slate-700 mb-1">{t('cm.pages_AgencyContentDistribution.nasil_calisir')}</p>
             <ul className="space-y-1 text-xs">
-              <li>1. Otel bilgilerini, oda tiplerini ve hizmetleri düzenleyin.</li>
-              <li>2. <strong>Kaydet</strong> ile içeriği kaydedin (silme işlemleri de bu adımda kalıcılaşır).</li>
-              <li>3. Sağdaki listeden acenteleri seçin.</li>
-              <li>4. <strong>Yayın Listesini Güncelle</strong> ile dağıtımı yapın — sistem önce eklenecek/kaldırılacak sayısını gösterir, siz onayladığınızda uygular.</li>
-              <li>5. Seçilen acenteler portallarında bu içeriği görür.</li>
+              <li>{t('cm.pages_AgencyContentDistribution.1_otel_bilgilerini_oda_tiplerini_ve_hizm')}</li>
+              <li>2. <strong>{t('cm.pages_AgencyContentDistribution.kaydet_a9270')}</strong> {t('cm.pages_AgencyContentDistribution.ile_icerigi_kaydedin_silme_islemleri_de_')}</li>
+              <li>{t('cm.pages_AgencyContentDistribution.3_sagdaki_listeden_acenteleri_secin')}</li>
+              <li>4. <strong>{t('cm.pages_AgencyContentDistribution.yayin_listesini_guncelle_c8c37')}</strong> {t('cm.pages_AgencyContentDistribution.ile_dagitimi_yapin_sistem_once_eklenecek')}</li>
+              <li>{t('cm.pages_AgencyContentDistribution.5_secilen_acenteler_portallarinda_bu_ice')}</li>
             </ul>
           </div>
         </div>
@@ -483,15 +485,15 @@ const AgencyContentDistribution = ({ user }) => {
       <AlertDialog open={!!distributeDialog} onOpenChange={(o) => !o && setDistributeDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Yayın Listesini Güncelle</AlertDialogTitle>
+            <AlertDialogTitle>{t('cm.pages_AgencyContentDistribution.yayin_listesini_guncelle_c8c37')}</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-1">
-                  <div className="flex justify-between"><span>Şu an yayında:</span><strong>{distributeDialog?.preview?.currently_published ?? 0}</strong></div>
-                  <div className="flex justify-between"><span>Seçili:</span><strong>{distributeDialog?.preview?.selected ?? 0}</strong></div>
-                  <div className="flex justify-between text-emerald-700"><span>Yayına eklenecek:</span><strong>+{distributeDialog?.preview?.to_add ?? 0}</strong></div>
+                  <div className="flex justify-between"><span>{t('cm.pages_AgencyContentDistribution.su_an_yayinda')}</span><strong>{distributeDialog?.preview?.currently_published ?? 0}</strong></div>
+                  <div className="flex justify-between"><span>{t('cm.pages_AgencyContentDistribution.secili')}</span><strong>{distributeDialog?.preview?.selected ?? 0}</strong></div>
+                  <div className="flex justify-between text-emerald-700"><span>{t('cm.pages_AgencyContentDistribution.yayina_eklenecek')}</span><strong>+{distributeDialog?.preview?.to_add ?? 0}</strong></div>
                   <div className={`flex justify-between ${distributeDialog?.unpublishOmitted ? 'text-rose-700' : 'text-slate-400'}`}>
-                    <span>Yayından kaldırılacak:</span>
+                    <span>{t('cm.pages_AgencyContentDistribution.yayindan_kaldirilacak')}</span>
                     <strong>{distributeDialog?.unpublishOmitted ? `-${distributeDialog?.preview?.to_remove ?? 0}` : '0 (kapalı)'}</strong>
                   </div>
                 </div>
@@ -506,8 +508,8 @@ const AgencyContentDistribution = ({ user }) => {
                       className="mt-0.5"
                     />
                     <span className="text-rose-900">
-                      <strong>Listede olmayan {distributeDialog?.preview?.to_remove} acentenin yayınını da kaldır.</strong>
-                      <span className="block text-xs mt-1">Bu seçenek <em>destruktif</em>: işaretlemezseniz mevcut yayınlar korunur, sadece yeni acenteler eklenir.</span>
+                      <strong>Listede olmayan {distributeDialog?.preview?.to_remove} {t('cm.pages_AgencyContentDistribution.acentenin_yayinini_da_kaldir')}</strong>
+                      <span className="block text-xs mt-1">{t('cm.pages_AgencyContentDistribution.bu_secenek')} <em>destruktif</em>{t('cm.pages_AgencyContentDistribution.isaretlemezseniz_mevcut_yayinlar_korunur')}</span>
                     </span>
                   </label>
                 )}
@@ -515,14 +517,14 @@ const AgencyContentDistribution = ({ user }) => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Vazgeç</AlertDialogCancel>
+            <AlertDialogCancel>{t('cm.pages_AgencyContentDistribution.vazgec')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={submitDistribute}
               disabled={distributing}
               data-testid="confirm-distribute"
             >
               {distributing ? <Loader2 className="animate-spin mr-1" size={14} /> : <Send size={14} className="mr-1" />}
-              Onayla ve Uygula
+              {t('cm.pages_AgencyContentDistribution.onayla_ve_uygula')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, UserPlus, Bed, CheckCircle2, ChevronRight, ChevronLeft, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const STEPS = [
   { n: 1, label: 'Misafir' },
@@ -15,6 +16,7 @@ const STEPS = [
 ];
 
 function Stepper({ step }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center gap-2 md:gap-4">
       {STEPS.map((s, i) => {
@@ -72,7 +74,7 @@ function RoomGroup({ type, rooms, selectedId, onSelect, nights, defaultOpen }) {
                 data-testid={`walkin-room-${r.room_number}`}
               >
                 <div className="flex items-center justify-between">
-                  <div className="font-semibold text-slate-900">Oda {r.room_number}</div>
+                  <div className="font-semibold text-slate-900">{t('cm.pages_WalkinPage.oda')} {r.room_number}</div>
                   {sel && <CheckCircle2 className="w-4 h-4 text-amber-600" />}
                 </div>
                 <div className="text-[11px] text-slate-500">{r.room_type || '-'}</div>
@@ -82,10 +84,10 @@ function RoomGroup({ type, rooms, selectedId, onSelect, nights, defaultOpen }) {
                     <span className="text-xs text-slate-500"> / gece</span>
                   </div>
                 ) : (
-                  <div className="text-[11px] text-amber-700 mt-1.5">Fiyat sonraki adımda girilecek</div>
+                  <div className="text-[11px] text-amber-700 mt-1.5">{t('cm.pages_WalkinPage.fiyat_sonraki_adimda_girilecek')}</div>
                 )}
                 {sel && nights > 1 && rate > 0 && (
-                  <div className="text-[11px] text-slate-500 mt-0.5">Toplam: {(rate * nights).toLocaleString('tr-TR')} ₺</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">{t('cm.pages_WalkinPage.toplam')} {(rate * nights).toLocaleString('tr-TR')} ₺</div>
                 )}
               </button>
             );
@@ -182,29 +184,29 @@ export default function WalkinPage({ user, tenant, onLogout }) {
             <h1 className="text-2xl font-bold flex items-center gap-2 text-slate-900">
               <UserPlus className="w-6 h-6 text-amber-600" /> Walk-in Check-in
             </h1>
-            <p className="text-sm text-slate-500 mt-1">Yeni misafir kaydı + oda atama + check-in</p>
+            <p className="text-sm text-slate-500 mt-1">{t('cm.pages_WalkinPage.yeni_misafir_kaydi_oda_atama_check_in')}</p>
           </div>
           <Stepper step={done ? 4 : step} />
         </div>
 
         {/* Sticky özet */}
         <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border border-slate-200 rounded-lg px-3 py-2 mb-4 text-sm flex items-center gap-2 flex-wrap">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Özet:</span>
+          <span className="text-xs uppercase tracking-wide text-slate-500">{t('cm.pages_WalkinPage.ozet')}</span>
           <span className="text-slate-800">{summaryText}</span>
         </div>
 
         {done ? (
           <Card className="p-8 text-center border-emerald-200 bg-emerald-50/40">
             <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
-            <div className="mt-3 text-lg font-semibold text-slate-900">Check-in tamamlandı</div>
-            <div className="text-sm text-slate-600 mt-1">Rezervasyon detayına yönlendiriliyorsunuz…</div>
+            <div className="mt-3 text-lg font-semibold text-slate-900">{t('cm.pages_WalkinPage.check_in_tamamlandi')}</div>
+            <div className="text-sm text-slate-600 mt-1">{t('cm.pages_WalkinPage.rezervasyon_detayina_yonlendiriliyorsunu')}</div>
           </Card>
         ) : (
           <div className="space-y-4">
             {/* ADIM 1 — Misafir */}
             {step === 1 && (
               <Card className="p-5 space-y-3 border-slate-200">
-                <h2 className="font-semibold text-slate-900">1. Misafir Bilgileri</h2>
+                <h2 className="font-semibold text-slate-900">{t('cm.pages_WalkinPage.1_misafir_bilgileri')}</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs">Ad Soyad <span className="text-rose-500">*</span></Label>
@@ -223,11 +225,11 @@ export default function WalkinPage({ user, tenant, onLogout }) {
                     <Input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="h-9" />
                   </div>
                   <div>
-                    <Label className="text-xs">Yetişkin</Label>
+                    <Label className="text-xs">{t('cm.pages_WalkinPage.yetiskin')}</Label>
                     <Input type="number" min={1} value={form.adults} onChange={e => setForm({ ...form, adults: parseInt(e.target.value || '1') })} className="h-9" />
                   </div>
                   <div>
-                    <Label className="text-xs">Çocuk</Label>
+                    <Label className="text-xs">{t('cm.pages_WalkinPage.cocuk')}</Label>
                     <Input type="number" min={0} value={form.children} onChange={e => setForm({ ...form, children: parseInt(e.target.value || '0') })} className="h-9" />
                   </div>
                 </div>
@@ -239,10 +241,10 @@ export default function WalkinPage({ user, tenant, onLogout }) {
               <Card className="p-5 space-y-3 border-slate-200">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <h2 className="font-semibold flex items-center gap-2 text-slate-900">
-                    <Bed className="w-4 h-4 text-amber-600" /> 2. Oda & Süre
+                    <Bed className="w-4 h-4 text-amber-600" /> {t('cm.pages_WalkinPage.2_oda_sure')}
                   </h2>
                   <div className="flex items-center gap-2">
-                    <Label className="text-xs">Gece sayısı</Label>
+                    <Label className="text-xs">{t('cm.pages_WalkinPage.gece_sayisi')}</Label>
                     <Input type="number" min={1} max={14} value={nights}
                       onChange={e => setNights(Math.max(1, parseInt(e.target.value || '1')))}
                       className="h-8 w-20" />
@@ -255,7 +257,7 @@ export default function WalkinPage({ user, tenant, onLogout }) {
                   <div className="text-center py-6"><Loader2 className="inline w-5 h-5 animate-spin text-slate-400" /></div>
                 ) : rooms.length === 0 ? (
                   <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-lg text-slate-500 text-sm">
-                    Müsait oda bulunamadı
+                    {t('cm.pages_WalkinPage.musait_oda_bulunamadi')}
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-[480px] overflow-auto">
@@ -278,22 +280,22 @@ export default function WalkinPage({ user, tenant, onLogout }) {
             {/* ADIM 3 — Tutar & Onay */}
             {step === 3 && (
               <Card className="p-5 space-y-3 border-slate-200">
-                <h2 className="font-semibold text-slate-900">3. Tutar & Ödeme</h2>
+                <h2 className="font-semibold text-slate-900">{t('cm.pages_WalkinPage.3_tutar_odeme')}</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
-                    <Label className="text-xs">Toplam Tutar (₺) <span className="text-rose-500">*</span></Label>
+                    <Label className="text-xs">{t('cm.pages_WalkinPage.toplam_tutar')} <span className="text-rose-500">*</span></Label>
                     <Input type="number" value={form.total_amount} onChange={e => setForm({ ...form, total_amount: parseFloat(e.target.value || '0') })} className="h-9" />
                   </div>
                   <div>
-                    <Label className="text-xs">Şimdi Ödenen (₺)</Label>
+                    <Label className="text-xs">{t('cm.pages_WalkinPage.simdi_odenen')}</Label>
                     <Input type="number" value={form.payment_amount} onChange={e => setForm({ ...form, payment_amount: parseFloat(e.target.value || '0') })} className="h-9" />
                   </div>
                   <div className="md:col-span-2">
-                    <Label className="text-xs">Ödeme Türü</Label>
+                    <Label className="text-xs">{t('cm.pages_WalkinPage.odeme_turu')}</Label>
                     <select value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}
                       className="h-9 w-full border border-slate-200 rounded-md px-2 text-sm bg-white">
                       <option value="cash">Nakit</option>
-                      <option value="credit_card">Kredi Kartı</option>
+                      <option value="credit_card">{t('cm.pages_WalkinPage.kredi_karti')}</option>
                       <option value="bank_transfer">Havale</option>
                       <option value="none">Sonra</option>
                     </select>
@@ -307,9 +309,9 @@ export default function WalkinPage({ user, tenant, onLogout }) {
                   <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
                     <div className="font-semibold">Onay</div>
                     <div className="mt-1 text-amber-800">
-                      {form.guest_name} · Oda {selectedRoom.room_number} ({selectedRoom.room_type || '-'}) · {nights} gece · {form.adults}+{form.children} kişi
+                      {form.guest_name} {t('cm.pages_WalkinPage.oda_062cb')} {selectedRoom.room_number} ({selectedRoom.room_type || '-'}) · {nights} gece · {form.adults}+{form.children} {t('cm.pages_WalkinPage.kisi')}
                     </div>
-                    <div className="mt-1 font-semibold text-amber-900">Toplam: {form.total_amount.toLocaleString('tr-TR')} ₺</div>
+                    <div className="mt-1 font-semibold text-amber-900">{t('cm.pages_WalkinPage.toplam_68af4')} {form.total_amount.toLocaleString('tr-TR')} ₺</div>
                   </div>
                 )}
               </Card>

@@ -15,9 +15,11 @@ import { TechDebtDashboard } from "../components/TechDebtDashboard";
 import { WeeklyProof } from "../components/WeeklyProofDashboard";
 import { DeployDashboard } from "../components/DeployDashboard";
 import { UnifiedOpsView } from "../components/UnifiedOpsView";
+import { useTranslation } from 'react-i18next';
 
 // ─── Reservation Lookup ──────────────────────────────────────────
 function ReservationLookup() {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [traceResult, setTraceResult] = useState(null);
   const [rawPayload, setRawPayload] = useState(null);
@@ -145,8 +147,8 @@ function ReservationLookup() {
       {!traceResult && !loading && (
         <div className="text-center py-16 text-gray-600" data-testid="lookup-empty-state">
           <Search className="h-12 w-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">OTA Reservation ID veya Correlation ID girerek trace başlatın</p>
-          <p className="text-xs mt-1 text-gray-600">Örnek: HR-12345, EX-67890, veya UUID</p>
+          <p className="text-sm">{t('cm.pages_ControlPlane.ota_reservation_id_veya_correlation_id_g')}</p>
+          <p className="text-xs mt-1 text-gray-600">{t('cm.pages_ControlPlane.ornek_hr_12345_ex_67890_veya_uuid')}</p>
         </div>
       )}
     </div>
@@ -331,7 +333,7 @@ function GapWarnings({ warnings }) {
     <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3" data-testid="gap-warnings">
       <div className="flex items-center gap-2 mb-2">
         <AlertTriangle className="h-4 w-4 text-yellow-500" />
-        <span className="text-xs font-medium text-yellow-400">Gap Uyarıları</span>
+        <span className="text-xs font-medium text-yellow-400">{t('cm.pages_ControlPlane.gap_uyarilari')}</span>
       </div>
       <ul className="space-y-1">
         {warnings.map((w, i) => (
@@ -424,21 +426,21 @@ function SystemHealth() {
         </div>
         <div>
           <div className="text-3xl font-bold text-gray-900 font-mono">{score}</div>
-          <div className="text-xs text-gray-600 mt-1">Health Score · Son güncelleme: {formatTime(dashboard.timestamp)}</div>
+          <div className="text-xs text-gray-600 mt-1">{t('cm.pages_ControlPlane.health_score_son_guncelleme')} {formatTime(dashboard.timestamp)}</div>
         </div>
       </div>
 
       {/* Metric Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <MetricCard
-          label="Import Başarı"
+          label={t('cm.pages_ControlPlane.import_basari')}
           value={`${m.import_success_rate_24h ?? 100}%`}
           sub="24 saat"
           ok={m.import_success_rate_24h >= 95}
           testId="metric-import-success"
         />
         <MetricCard
-          label="Sync Başarı"
+          label={t('cm.pages_ControlPlane.sync_basari')}
           value={`${m.sync_success_rate_24h ?? 100}%`}
           sub="24 saat"
           ok={m.sync_success_rate_24h >= 95}
@@ -578,7 +580,7 @@ function LiveFeed() {
           <span>Stage</span>
           <span>External ID</span>
           <span>Provider</span>
-          <span>Durum</span>
+          <span>{t('cm.pages_ControlPlane.durum')}</span>
         </div>
         <ScrollArea className="max-h-[500px]">
           {events.map((evt, idx) => {
@@ -632,7 +634,7 @@ export default function ControlPlane({ user, tenant, onLogout }) {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-lg font-semibold text-gray-900 tracking-tight">Control Plane</h1>
-              <p className="text-xs text-gray-600 mt-0.5">Ops merkezi · Kanal sağlığı · Deploy · DORA · Envanter hizalama</p>
+              <p className="text-xs text-gray-600 mt-0.5">{t('cm.pages_ControlPlane.ops_merkezi_kanal_sagligi_deploy_dora_en')}</p>
             </div>
           </div>
 

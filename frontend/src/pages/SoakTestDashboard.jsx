@@ -6,10 +6,12 @@ import {
   CheckCircle2, XCircle, Clock, Server, Database,
   Gauge, TrendingUp, Zap, Shield
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
 function MetricCard({ label, value, unit, icon: Icon, status }) {
+  const { t } = useTranslation();
   const statusColors = {
     good: "border-emerald-500/30 bg-emerald-950/20",
     warn: "border-amber-500/30 bg-amber-950/20",
@@ -215,11 +217,11 @@ export default function SoakTestDashboard() {
           </h2>
           <div className="flex flex-wrap items-end gap-4">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">Süre</label>
+              <label className="text-xs text-slate-500 block mb-1">{t('cm.pages_SoakTestDashboard.sure')}</label>
               <select data-testid="duration-select" value={duration} onChange={e => setDuration(e.target.value)}
                 className="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white"
                 disabled={isRunning}>
-                <option value="5m">5 dakika (hızlı)</option>
+                <option value="5m">{t('cm.pages_SoakTestDashboard.5_dakika_hizli')}</option>
                 <option value="15m">15 dakika</option>
                 <option value="30m">30 dakika</option>
                 <option value="1h">1 saat</option>
@@ -262,11 +264,11 @@ export default function SoakTestDashboard() {
               }`}>{fr.verdict}</span>
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              <MetricCard label="Süre" value={fr.duration_minutes?.toFixed(1)} unit="dk" icon={Clock}
+              <MetricCard label={t('cm.pages_SoakTestDashboard.sure_09363')} value={fr.duration_minutes?.toFixed(1)} unit="dk" icon={Clock}
                 status="neutral" />
-              <MetricCard label="Toplam İstek" value={fr.total_requests?.toLocaleString()} unit="" icon={Activity}
+              <MetricCard label={t('cm.pages_SoakTestDashboard.toplam_istek')} value={fr.total_requests?.toLocaleString()} unit="" icon={Activity}
                 status="neutral" />
-              <MetricCard label="Hata Orani" value={fr.error_rate_pct?.toFixed(2)} unit="%"
+              <MetricCard label={t('cm.pages_SoakTestDashboard.hata_orani')} value={fr.error_rate_pct?.toFixed(2)} unit="%"
                 icon={AlertTriangle}
                 status={fr.error_rate_pct <= 2 ? "good" : fr.error_rate_pct <= 5 ? "warn" : "bad"} />
               <MetricCard label="p50 Gecikme" value={fr.latency_p50?.toFixed(0)} unit="ms" icon={Gauge}
@@ -311,7 +313,7 @@ export default function SoakTestDashboard() {
                 <thead>
                   <tr className="border-b border-slate-700">
                     <th className="py-2 px-3 text-xs font-medium text-slate-500">Endpoint</th>
-                    <th className="py-2 px-3 text-xs font-medium text-slate-500 text-center">Durum</th>
+                    <th className="py-2 px-3 text-xs font-medium text-slate-500 text-center">{t('cm.pages_SoakTestDashboard.durum')}</th>
                     <th className="py-2 px-3 text-xs font-medium text-slate-500 text-right">Gecikme</th>
                     <th className="py-2 px-3 text-xs font-medium text-slate-500 text-center">Kod</th>
                   </tr>
@@ -364,8 +366,8 @@ export default function SoakTestDashboard() {
                 <thead>
                   <tr className="border-b border-slate-700">
                     <th className="py-2 px-3 text-xs text-slate-500">Endpoint</th>
-                    <th className="py-2 px-3 text-xs text-slate-500 text-right">İstek</th>
-                    <th className="py-2 px-3 text-xs text-slate-500 text-right">Hata</th>
+                    <th className="py-2 px-3 text-xs text-slate-500 text-right">{t('cm.pages_SoakTestDashboard.istek')}</th>
+                    <th className="py-2 px-3 text-xs text-slate-500 text-right">{t('cm.pages_SoakTestDashboard.hata')}</th>
                     <th className="py-2 px-3 text-xs text-slate-500 text-right">Ort(ms)</th>
                     <th className="py-2 px-3 text-xs text-slate-500 text-right">p95(ms)</th>
                   </tr>
@@ -404,7 +406,7 @@ export default function SoakTestDashboard() {
         {!loading && !fr && !sm && !isRunning && (
           <div data-testid="no-data-state" className="text-center py-16 text-slate-500">
             <Activity size={48} className="mx-auto mb-4 opacity-30" />
-            <p className="text-lg">Henüz soak test sonucu yok</p>
+            <p className="text-lg">{t('cm.pages_SoakTestDashboard.henuz_soak_test_sonucu_yok')}</p>
             <p className="text-sm mt-1">Yukaridaki kontrollerden bir test baslatin</p>
           </div>
         )}

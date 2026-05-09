@@ -9,6 +9,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
+import { useTranslation } from 'react-i18next';
 
 const PRIORITY_COLORS = {
   1: "border-red-500/30 bg-red-500/5",
@@ -26,6 +27,7 @@ const GRADE_STYLES = {
 };
 
 function CategoryCard({ cat }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const pct = cat.count > 0 ? Math.round((cat.weekly_target / cat.count) * 100) : 100;
 
@@ -60,7 +62,7 @@ function CategoryCard({ cat }) {
       {/* Progress bar */}
       <div className="px-5 pb-3">
         <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
-          <span>Haftalık hedef: {cat.weekly_target} test/hafta</span>
+          <span>{t('cm.components_TechDebtDashboard.haftalik_hedef')} {cat.weekly_target} test/hafta</span>
           <span>{cat.weeks_to_clear} hafta kaldi</span>
         </div>
         <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
@@ -125,7 +127,7 @@ export function TechDebtDashboard() {
     return (
       <div className="text-center py-16 text-zinc-500" data-testid="tech-debt-empty">
         <Bug className="h-12 w-12 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">Teknik borc verisi bulunamadı</p>
+        <p className="text-sm">{t('cm.components_TechDebtDashboard.teknik_borc_verisi_bulunamadi')}</p>
       </div>
     );
   }
@@ -147,7 +149,7 @@ export function TechDebtDashboard() {
           onClick={() => { setLoading(true); fetchData(true); }}
           data-testid="tech-debt-refresh"
         >
-          <RefreshCw className="h-3 w-3 mr-1" />Yenile
+          <RefreshCw className="h-3 w-3 mr-1" />{t('cm.components_TechDebtDashboard.yenile')}
         </Button>
       </div>
 
@@ -157,7 +159,7 @@ export function TechDebtDashboard() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle className="h-4 w-4 text-amber-400" />
-              <span className="text-xs text-zinc-500">Toplam Karantina</span>
+              <span className="text-xs text-zinc-500">{t('cm.components_TechDebtDashboard.toplam_karantina')}</span>
             </div>
             <div className="text-2xl font-bold font-mono text-zinc-100" data-testid="debt-total-count">
               {data.total_quarantined}
@@ -170,7 +172,7 @@ export function TechDebtDashboard() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2 mb-2">
               <Target className="h-4 w-4 text-blue-400" />
-              <span className="text-xs text-zinc-500">Haftalık Hedef</span>
+              <span className="text-xs text-zinc-500">{t('cm.components_TechDebtDashboard.haftalik_hedef_0de0c')}</span>
             </div>
             <div className="text-2xl font-bold font-mono text-zinc-100" data-testid="debt-weekly-target">
               {data.total_weekly_target}
@@ -228,7 +230,7 @@ export function TechDebtDashboard() {
             />
           </div>
           <div className="text-[10px] text-zinc-600 mt-2 font-mono">
-            Hedef: Haftalık {data.total_weekly_target} test cozumu ile {data.estimated_weeks_to_zero} hafta icinde sifir
+            {t('cm.components_TechDebtDashboard.hedef_haftalik')} {data.total_weekly_target} test cozumu ile {data.estimated_weeks_to_zero} hafta icinde sifir
           </div>
         </CardContent>
       </Card>
@@ -236,7 +238,7 @@ export function TechDebtDashboard() {
       {/* Category breakdown */}
       <div>
         <h2 className="text-xs text-zinc-500 uppercase tracking-widest font-medium mb-3 flex items-center gap-2">
-          <Bug className="h-3.5 w-3.5" /> Kategori Bazli Dağılım
+          <Bug className="h-3.5 w-3.5" /> {t('cm.components_TechDebtDashboard.kategori_bazli_dagilim')}
         </h2>
         <div className="space-y-3" data-testid="debt-categories">
           {data.categories.map((cat) => (

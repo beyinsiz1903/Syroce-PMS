@@ -3,8 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Clock, AlertCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const SLAConfigCard = ({ slaConfigs, delayedTasks }) => {
+  const { t } = useTranslation();
   const getCategoryName = (category) => {
     const names = {
       'maintenance': 'Bakım',
@@ -32,7 +34,7 @@ const SLAConfigCard = ({ slaConfigs, delayedTasks }) => {
             <span>SLA Hedefleri</span>
             {delayedTasks && delayedTasks.length > 0 && (
               <Badge className="bg-red-500">
-                {delayedTasks.length} Gecikmiş
+                {delayedTasks.length} {t('cm.components_SLAConfigCard.gecikmis')}
               </Badge>
             )}
           </CardTitle>
@@ -51,14 +53,14 @@ const SLAConfigCard = ({ slaConfigs, delayedTasks }) => {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-medium">{config.response_time_minutes} dk → {config.resolution_time_minutes} dk</p>
-                    <p className="text-xs text-gray-500">Yanıt → Çözüm</p>
+                    <p className="text-xs text-gray-500">{t('cm.components_SLAConfigCard.yanit_cozum')}</p>
                   </div>
                 </div>
               ))
             ) : (
               <div className="text-center py-4 text-gray-500 text-sm">
                 <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                Varsayılan SLA kullanılıyor
+                {t('cm.components_SLAConfigCard.varsayilan_sla_kullaniliyor')}
               </div>
             )}
           </div>
@@ -71,7 +73,7 @@ const SLAConfigCard = ({ slaConfigs, delayedTasks }) => {
             <CardTitle className="flex items-center justify-between text-red-800">
               <div className="flex items-center gap-2">
                 <AlertCircle className="w-5 h-5" />
-                <span>Top {Math.min(10, delayedTasks.length)} Kritik Görevler</span>
+                <span>Top {Math.min(10, delayedTasks.length)} {t('cm.components_SLAConfigCard.kritik_gorevler')}</span>
               </div>
               {delayedTasks.length > 10 && (
                 <Badge variant="outline" className="bg-white text-red-600">
@@ -104,7 +106,7 @@ const SLAConfigCard = ({ slaConfigs, delayedTasks }) => {
                       `}>
                         {index + 1}
                       </span>
-                      <span className="font-medium text-sm">Oda {task.room_number}</span>
+                      <span className="font-medium text-sm">{t('cm.components_SLAConfigCard.oda')} {task.room_number}</span>
                     </div>
                     <Badge className={`text-xs ${
                       task.delay_minutes > 60 ? 'bg-red-600' : 
@@ -119,7 +121,7 @@ const SLAConfigCard = ({ slaConfigs, delayedTasks }) => {
                   )}
                   <div className="flex items-center justify-between text-xs text-gray-500 mt-1 ml-8">
                     <span>SLA: {task.sla_minutes} dk</span>
-                    <span>Geçen: {task.elapsed_minutes} dk</span>
+                    <span>{t('cm.components_SLAConfigCard.gecen')} {task.elapsed_minutes} dk</span>
                     <span className="text-red-600 font-medium capitalize">{task.priority || 'normal'}</span>
                   </div>
                 </div>
@@ -128,7 +130,7 @@ const SLAConfigCard = ({ slaConfigs, delayedTasks }) => {
             {delayedTasks.length > 10 && (
               <div className="mt-3 text-center">
                 <Button variant="outline" size="sm" className="text-xs">
-                  Tümünü Gör ({delayedTasks.length} görev)
+                  {t('cm.components_SLAConfigCard.tumunu_gor')}{delayedTasks.length} {t('cm.components_SLAConfigCard.gorev')}
                 </Button>
               </div>
             )}

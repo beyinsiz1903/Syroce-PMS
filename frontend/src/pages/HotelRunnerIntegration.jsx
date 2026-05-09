@@ -15,10 +15,12 @@ import {
   Building2, ArrowDownUp, CalendarCheck, Clock, Activity,
   AlertTriangle, Loader2, Save, Trash2, Plus, Check, Wand2
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
 const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('connection');
   const [loading, setLoading] = useState(false);
   const [connection, setConnection] = useState(null);
@@ -282,7 +284,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">HotelRunner Entegrasyonu</h1>
-            <p className="text-sm text-slate-500 mt-1">Channel Manager &middot; ARI Push &middot; Rezervasyon Sync</p>
+            <p className="text-sm text-slate-500 mt-1">{t('cm.pages_HotelRunnerIntegration.channel_manager_ari_push_rezervasyon_syn')}</p>
           </div>
           <Badge
             data-testid="hr-connection-badge"
@@ -295,7 +297,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid grid-cols-5 w-full max-w-2xl">
-            <TabsTrigger value="connection" data-testid="tab-connection"><Link2 className="w-4 h-4 mr-1" /> Bağlantı</TabsTrigger>
+            <TabsTrigger value="connection" data-testid="tab-connection"><Link2 className="w-4 h-4 mr-1" /> {t('cm.pages_HotelRunnerIntegration.baglanti')}</TabsTrigger>
             <TabsTrigger value="rooms" data-testid="tab-rooms" disabled={!isConnected}><Building2 className="w-4 h-4 mr-1" /> Odalar</TabsTrigger>
             <TabsTrigger value="reservations" data-testid="tab-reservations" disabled={!isConnected}><CalendarCheck className="w-4 h-4 mr-1" /> Rezervasyonlar</TabsTrigger>
             <TabsTrigger value="mappings" data-testid="tab-mappings" disabled={!isConnected}><ArrowDownUp className="w-4 h-4 mr-1" /> Eslemeler</TabsTrigger>
@@ -323,7 +325,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                         value={connectForm.hr_id} onChange={e => setConnectForm(p => ({ ...p, hr_id: e.target.value }))} />
                     </div>
                     <div>
-                      <Label htmlFor="hr-name">Tesis Adi (opsiyonel)</Label>
+                      <Label htmlFor="hr-name">{t('cm.pages_HotelRunnerIntegration.tesis_adi_opsiyonel')}</Label>
                       <Input id="hr-name" data-testid="hr-name-input" placeholder="Ornek: Syroce Test Hotel"
                         value={connectForm.property_name} onChange={e => setConnectForm(p => ({ ...p, property_name: e.target.value }))} />
                     </div>
@@ -337,7 +339,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                     <div className="flex items-center gap-2">
                       <Switch checked={connectForm.auto_sync_reservations}
                         onCheckedChange={v => setConnectForm(p => ({ ...p, auto_sync_reservations: v }))} />
-                      <Label>Otomatik Rezervasyon Sync</Label>
+                      <Label>{t('cm.pages_HotelRunnerIntegration.otomatik_rezervasyon_sync')}</Label>
                     </div>
                     <div className="flex items-center gap-2">
                       <Switch checked={connectForm.auto_confirm_delivery}
@@ -355,17 +357,16 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
               <div className="space-y-4">
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><CheckCircle className="w-5 h-5 text-emerald-600" /> Bağlantı Aktif</CardTitle>
+                    <CardTitle className="flex items-center gap-2"><CheckCircle className="w-5 h-5 text-emerald-600" /> {t('cm.pages_HotelRunnerIntegration.baglanti_aktif')}</CardTitle>
                     <CardDescription>
-                      {connection.connection?.property_name || 'HotelRunner'} &middot;
-                      Bağlantı: {connection.connection?.connected_at ? new Date(connection.connection.connected_at).toLocaleString('tr-TR') : '-'}
+                      {connection.connection?.property_name || 'HotelRunner'} {t('cm.pages_HotelRunnerIntegration.baglanti_c9964')} {connection.connection?.connected_at ? new Date(connection.connection.connected_at).toLocaleString('tr-TR') : '-'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="flex gap-3">
                       <Button data-testid="hr-test-btn" variant="outline" onClick={handleTestConnection} disabled={loading}>
                         {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                        Bağlantı Test
+                        {t('cm.pages_HotelRunnerIntegration.baglanti_test')}
                       </Button>
                       <Button data-testid="hr-disconnect-btn" variant="destructive" onClick={handleDisconnect}>
                         <Unlink className="w-4 h-4 mr-2" /> Baglantivi Kes
@@ -402,19 +403,19 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent>
                 {rooms.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Henüz oda verisi yok. "Odalari Cek" ile HotelRunner'dan yukleyin.</p>
+                  <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_HotelRunnerIntegration.henuz_oda_verisi_yok_odalari_cek_ile_hot')}</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm" data-testid="hr-rooms-table">
                       <thead>
                         <tr className="border-b text-left text-slate-500">
-                          <th className="pb-2 pr-4">Oda Adi</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_HotelRunnerIntegration.oda_adi')}</th>
                           <th className="pb-2 pr-4">Rate Code</th>
                           <th className="pb-2 pr-4">Inv Code</th>
                           <th className="pb-2 pr-4">Kapasite</th>
                           <th className="pb-2 pr-4">Fiyat Tipi</th>
                           <th className="pb-2 pr-4">Kanallar</th>
-                          <th className="pb-2">Durum</th>
+                          <th className="pb-2">{t('cm.pages_HotelRunnerIntegration.durum')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -434,7 +435,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                               </div>
                             </td>
                             <td className="py-2">
-                              {room.sell_online ? <Badge className="bg-emerald-600">Aktif</Badge> : <Badge variant="destructive">Pasif</Badge>}
+                              {room.sell_online ? <Badge className="bg-emerald-600">{t('cm.pages_HotelRunnerIntegration.aktif')}</Badge> : <Badge variant="destructive">{t('cm.pages_HotelRunnerIntegration.pasif')}</Badge>}
                             </td>
                           </tr>
                         ))}
@@ -461,19 +462,19 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent>
                 {reservations.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Henüz rezervasyon yok. "Senkronize Et" ile HotelRunner'dan cekin.</p>
+                  <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_HotelRunnerIntegration.henuz_rezervasyon_yok_senkronize_et_ile_')}</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm" data-testid="hr-reservations-table">
                       <thead>
                         <tr className="border-b text-left text-slate-500">
                           <th className="pb-2 pr-4">HR No</th>
-                          <th className="pb-2 pr-4">Misafir</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_HotelRunnerIntegration.misafir')}</th>
                           <th className="pb-2 pr-4">Kanal</th>
-                          <th className="pb-2 pr-4">Giriş</th>
-                          <th className="pb-2 pr-4">Çıkış</th>
-                          <th className="pb-2 pr-4">Tutar</th>
-                          <th className="pb-2 pr-4">Durum</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_HotelRunnerIntegration.giris')}</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_HotelRunnerIntegration.cikis')}</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_HotelRunnerIntegration.tutar')}</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_HotelRunnerIntegration.durum_074f4')}</th>
                           <th className="pb-2">PMS</th>
                         </tr>
                       </thead>
@@ -542,7 +543,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle>Oda Eslemeleri</CardTitle>
+                  <CardTitle>{t('cm.pages_HotelRunnerIntegration.oda_eslemeleri')}</CardTitle>
                   <CardDescription>HotelRunner oda tiplerini PMS oda tiplerinizle eslestirin</CardDescription>
                 </div>
                 <div className="flex gap-2">
@@ -553,7 +554,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                       disabled={loading}
                     >
                       {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                      Tüm Eslemeleri Kaydet
+                      {t('cm.pages_HotelRunnerIntegration.tum_eslemeleri_kaydet')}
                     </Button>
                   )}
                 </div>
@@ -562,7 +563,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                 {rooms.length === 0 ? (
                   <div className="text-center py-8">
                     <ArrowDownUp className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                    <p className="text-sm text-slate-500">Henüz HotelRunner odasi cekilmedi</p>
+                    <p className="text-sm text-slate-500">{t('cm.pages_HotelRunnerIntegration.henuz_hotelrunner_odasi_cekilmedi')}</p>
                     <p className="text-xs text-slate-400 mt-1">Oncelikle "Odalar" sekmesinden odalari cekin</p>
                     <Button
                       variant="outline"
@@ -578,10 +579,10 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                     {/* New PMS type input */}
                     <div className="flex items-end gap-2 p-3 bg-slate-50 rounded-lg border border-dashed">
                       <div className="flex-1">
-                        <Label className="text-xs text-slate-500">Yeni PMS Oda Tipi Ekle</Label>
+                        <Label className="text-xs text-slate-500">{t('cm.pages_HotelRunnerIntegration.yeni_pms_oda_tipi_ekle')}</Label>
                         <Input
                           data-testid="new-pms-type-input"
-                          placeholder="Ornek: Deluxe Oda, Suite, Standart..."
+                          placeholder={t('cm.pages_HotelRunnerIntegration.ornek_deluxe_oda_suite_standart')}
                           value={newPmsType}
                           onChange={e => setNewPmsType(e.target.value)}
                           className="mt-1"
@@ -601,7 +602,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                           setNewPmsType('');
                         }}
                       >
-                        <Plus className="w-4 h-4 mr-1" /> Ekle
+                        <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_HotelRunnerIntegration.ekle')}
                       </Button>
                     </div>
 
@@ -610,13 +611,13 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                       <table className="w-full text-sm" data-testid="hr-mapping-table">
                         <thead>
                           <tr className="border-b text-left text-slate-500">
-                            <th className="pb-2 pr-3">HR Oda Adi</th>
+                            <th className="pb-2 pr-3">{t('cm.pages_HotelRunnerIntegration.hr_oda_adi')}</th>
                             <th className="pb-2 pr-3">Inv / Rate Code</th>
-                            <th className="pb-2 pr-3 min-w-[200px]">PMS Oda Tipi</th>
+                            <th className="pb-2 pr-3 min-w-[200px]">{t('cm.pages_HotelRunnerIntegration.pms_oda_tipi')}</th>
                             <th className="pb-2 pr-2 text-center">Musaitlik</th>
                             <th className="pb-2 pr-2 text-center">Fiyat</th>
                             <th className="pb-2 pr-2 text-center">Kisitlama</th>
-                            <th className="pb-2 text-center">İşlem</th>
+                            <th className="pb-2 text-center">{t('cm.pages_HotelRunnerIntegration.islem')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -701,7 +702,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                                         {savingMapping === room.inv_code
                                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                           : <Save className="w-3.5 h-3.5 mr-1" />}
-                                        Kaydet
+                                        {t('cm.pages_HotelRunnerIntegration.kaydet')}
                                       </Button>
                                     )}
                                   </div>
@@ -715,16 +716,16 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
 
                     {/* Summary */}
                     <div className="flex items-center justify-between pt-2 border-t text-sm text-slate-500">
-                      <span>{rooms.length} HR oda, {mappings.length} eşleme yapıldı</span>
+                      <span>{rooms.length} HR oda, {mappings.length} {t('cm.pages_HotelRunnerIntegration.esleme_yapildi')}</span>
                       {mappings.length > 0 && rooms.length > mappings.length && (
                         <Badge variant="outline" className="text-amber-600 border-amber-300">
                           <AlertTriangle className="w-3 h-3 mr-1" />
-                          {rooms.length - mappings.length} oda henüz eslenmedi
+                          {rooms.length - mappings.length} {t('cm.pages_HotelRunnerIntegration.oda_henuz_eslenmedi')}
                         </Badge>
                       )}
                       {mappings.length > 0 && mappings.length >= rooms.length && (
                         <Badge className="bg-emerald-600">
-                          <CheckCircle className="w-3 h-3 mr-1" /> Tüm odalar eslendi
+                          <CheckCircle className="w-3 h-3 mr-1" /> {t('cm.pages_HotelRunnerIntegration.tum_odalar_eslendi')}
                         </Badge>
                       )}
                     </div>
@@ -743,7 +744,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                   <div className="space-y-4 mt-2">
                     {autoMapSuggestions.suggestions.length > 0 ? (
                       <>
-                        <p className="text-sm text-slate-600">Isim benzerligine göre eslesme onerileri:</p>
+                        <p className="text-sm text-slate-600">{t('cm.pages_HotelRunnerIntegration.isim_benzerligine_gore_eslesme_onerileri')}</p>
                         <div className="space-y-2">
                           {autoMapSuggestions.suggestions.map((s, i) => (
                             <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border rounded-lg" data-testid={`hr-auto-map-suggestion-${i}`}>
@@ -766,19 +767,19 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                         </div>
                         <Button className="w-full" onClick={() => handleAutoMapApply(autoMapSuggestions.suggestions)} disabled={autoMapLoading} data-testid="hr-auto-map-apply-btn">
                           {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
-                          Tüm Onerileri Uygula ({autoMapSuggestions.suggestions.length})
+                          {t('cm.pages_HotelRunnerIntegration.tum_onerileri_uygula')}{autoMapSuggestions.suggestions.length})
                         </Button>
                       </>
                     ) : (
                       <div className="text-center py-4">
                         <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                        <p className="text-sm text-slate-600">Otomatik eşleştirilecek yeni oda tipi bulunamadı.</p>
+                        <p className="text-sm text-slate-600">{t('cm.pages_HotelRunnerIntegration.otomatik_eslestirilecek_yeni_oda_tipi_bu')}</p>
                       </div>
                     )}
 
                     {autoMapSuggestions.unmapped_pms_types?.length > 0 && (
                       <div className="border-t pt-4">
-                        <p className="text-sm font-medium text-amber-700 mb-2">Eslenmemis PMS Oda Tipleri (Provider'da karsiligi yok):</p>
+                        <p className="text-sm font-medium text-amber-700 mb-2">{t('cm.pages_HotelRunnerIntegration.eslenmemis_pms_oda_tipleri_provider_da_k')}</p>
                         <div className="flex flex-wrap gap-2">
                           {autoMapSuggestions.unmapped_pms_types.map((t, i) => (
                             <Badge key={i} variant="outline" className="bg-amber-50 border-amber-300 text-amber-700" data-testid={`hr-unmapped-pms-${i}`}>
@@ -813,15 +814,15 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>Senkronizasyon Loglari</CardTitle>
-                  <CardDescription>HotelRunner API işlem geçmişi</CardDescription>
+                  <CardDescription>{t('cm.pages_HotelRunnerIntegration.hotelrunner_api_islem_gecmisi')}</CardDescription>
                 </div>
                 <Button variant="outline" size="sm" onClick={fetchAll}>
-                  <RefreshCw className="w-4 h-4 mr-1" /> Yenile
+                  <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_HotelRunnerIntegration.yenile')}
                 </Button>
               </CardHeader>
               <CardContent>
                 {syncLogs.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Henüz log kaydı yok</p>
+                  <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_HotelRunnerIntegration.henuz_log_kaydi_yok')}</p>
                 ) : (
                   <div className="space-y-2" data-testid="hr-sync-logs">
                     {syncLogs.map((log, i) => (
@@ -834,7 +835,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                           )}
                           <div>
                             <p className="text-sm font-medium">{log.sync_type}</p>
-                            <p className="text-xs text-slate-500">{log.initiator} &middot; {log.records_synced} kayıt</p>
+                            <p className="text-xs text-slate-500">{log.initiator} &middot; {log.records_synced} {t('cm.pages_HotelRunnerIntegration.kayit')}</p>
                           </div>
                         </div>
                         <div className="text-right">

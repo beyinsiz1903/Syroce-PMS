@@ -8,8 +8,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const ComplaintManager = () => {
+  const { t } = useTranslation();
   const [complaints, setComplaints] = useState([]);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -89,7 +91,7 @@ const ComplaintManager = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-4">Yükleniyor...</div>;
+    return <div className="text-center py-4">{t('cm.components_ComplaintManager.yukleniyor')}</div>;
   }
 
   return (
@@ -99,17 +101,17 @@ const ComplaintManager = () => {
           <CardTitle className="flex items-center justify-between text-lg">
             <span className="flex items-center">
               <AlertCircle className="w-5 h-5 mr-2" />
-              Şikayetler
+              {t('cm.components_ComplaintManager.sikayetler')}
             </span>
             <Badge className="bg-red-500">
-              {complaints.filter(c => c.status === 'open').length} açık
+              {complaints.filter(c => c.status === 'open').length} {t('cm.components_ComplaintManager.acik')}
             </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
             {complaints.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">Şikayet yok</p>
+              <p className="text-center text-gray-500 py-8">{t('cm.components_ComplaintManager.sikayet_yok')}</p>
             ) : (
               complaints.map((complaint) => (
                 <div
@@ -126,7 +128,7 @@ const ComplaintManager = () => {
                       <div className="flex-1">
                         <div className="font-medium text-sm">{complaint.subject}</div>
                         <div className="text-xs text-gray-500 mt-1">
-                          {complaint.guest_name} • Oda {complaint.room_number}
+                          {complaint.guest_name} {t('cm.components_ComplaintManager.oda')} {complaint.room_number}
                         </div>
                         <div className="flex items-center space-x-2 mt-2">
                           <Badge className={getPriorityColor(complaint.priority)}>
@@ -149,7 +151,7 @@ const ComplaintManager = () => {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Şikayet Detayı</DialogTitle>
+            <DialogTitle>{t('cm.components_ComplaintManager.sikayet_detayi')}</DialogTitle>
           </DialogHeader>
           {selectedComplaint && (
             <div className="space-y-4">
@@ -159,7 +161,7 @@ const ComplaintManager = () => {
               </div>
 
               <div>
-                <div className="text-xs text-gray-500">Açıklama</div>
+                <div className="text-xs text-gray-500">{t('cm.components_ComplaintManager.aciklama')}</div>
                 <div className="p-2 bg-gray-50 rounded text-sm">
                   {selectedComplaint.description}
                 </div>
@@ -167,11 +169,11 @@ const ComplaintManager = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="text-xs text-gray-500">Misafir</div>
+                  <div className="text-xs text-gray-500">{t('cm.components_ComplaintManager.misafir')}</div>
                   <div className="font-medium">{selectedComplaint.guest_name}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-500">Oda</div>
+                  <div className="text-xs text-gray-500">{t('cm.components_ComplaintManager.oda_e4b47')}</div>
                   <div className="font-medium">{selectedComplaint.room_number}</div>
                 </div>
               </div>
@@ -187,13 +189,13 @@ const ComplaintManager = () => {
                   onClick={() => { setResolution(''); setResolveOpen(true); }}
                 >
                   <CheckCircle className="w-4 h-4 mr-1" />
-                  Çöz
+                  {t('cm.components_ComplaintManager.coz')}
                 </Button>
               )}
 
               {selectedComplaint.resolution && (
                 <div>
-                  <div className="text-xs text-gray-500">Çözüm</div>
+                  <div className="text-xs text-gray-500">{t('cm.components_ComplaintManager.cozum')}</div>
                   <div className="p-2 bg-green-50 border border-green-200 rounded text-sm">
                     {selectedComplaint.resolution}
                   </div>
@@ -207,29 +209,29 @@ const ComplaintManager = () => {
       <Dialog open={resolveOpen} onOpenChange={setResolveOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Şikayeti Çöz</DialogTitle>
+            <DialogTitle>{t('cm.components_ComplaintManager.sikayeti_coz')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {selectedComplaint && (
               <div className="text-sm bg-gray-50 rounded-lg p-3">
                 <span className="text-gray-500">Konu:</span> <strong>{selectedComplaint.subject}</strong>
                 <br />
-                <span className="text-gray-500">Misafir:</span> {selectedComplaint.guest_name} — Oda {selectedComplaint.room_number}
+                <span className="text-gray-500">{t('cm.components_ComplaintManager.misafir_7377d')}</span> {selectedComplaint.guest_name} {t('cm.components_ComplaintManager.oda_bec22')} {selectedComplaint.room_number}
               </div>
             )}
             <div>
-              <Label>Çözüm Açıklaması</Label>
+              <Label>{t('cm.components_ComplaintManager.cozum_aciklamasi')}</Label>
               <Textarea
                 value={resolution}
                 onChange={e => setResolution(e.target.value)}
-                placeholder="Şikayetin nasıl çözüldüğünü açıklayın..."
+                placeholder={t('cm.components_ComplaintManager.sikayetin_nasil_cozuldugunu_aciklayin')}
                 rows={4}
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setResolveOpen(false)}>İptal</Button>
+              <Button variant="outline" onClick={() => setResolveOpen(false)}>{t('cm.components_ComplaintManager.iptal')}</Button>
               <Button className="bg-green-600 hover:bg-green-700" onClick={handleResolve}>
-                <CheckCircle className="w-4 h-4 mr-1" /> Çözüldü Olarak İşaretle
+                <CheckCircle className="w-4 h-4 mr-1" /> {t('cm.components_ComplaintManager.cozuldu_olarak_isaretle')}
               </Button>
             </div>
           </div>

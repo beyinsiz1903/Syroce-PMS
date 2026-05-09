@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2 } from 'lucide-react';
 import { Field, Modal } from './_shared';
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 const COMP_EVENT_TYPES = [
   ['meeting', 'Toplantı'], ['conference', 'Konferans'],
@@ -20,6 +21,7 @@ const SEASONS = [['all', 'Hepsi'], ['high', 'Yüksek'],
                   ['shoulder', 'Orta'], ['low', 'Düşük']];
 
 const BanquetCompetitorTab = () => {
+  const { t } = useTranslation();
   const [comps, setComps] = useState([]);
   const [pos, setPos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -136,34 +138,34 @@ const BanquetCompetitorTab = () => {
           <div>
             <CardTitle>Rakip Oteller</CardTitle>
             <CardDescription>
-              Banket pazarındaki rakip mekanlar ve fiyat snapshot'ları
+              {t('cm.components_mice_BanquetCompetitorTab.banket_pazarindaki_rakip_mekanlar_ve_fiy')}
             </CardDescription>
           </div>
           <Button size="sm" onClick={openNew}>
-            <Plus className="w-3 h-3 mr-1" /> Rakip Ekle
+            <Plus className="w-3 h-3 mr-1" /> {t('cm.components_mice_BanquetCompetitorTab.rakip_ekle')}
           </Button>
         </CardHeader>
         <CardContent className="p-0 overflow-x-auto">
           {loading ? (
-            <p className="text-sm text-gray-500 p-4">Yükleniyor…</p>
+            <p className="text-sm text-gray-500 p-4">{t('cm.components_mice_BanquetCompetitorTab.yukleniyor')}</p>
           ) : comps.length === 0 ? (
             <p className="text-sm text-gray-500 p-4 text-center">
-              Henüz rakip eklenmedi.
+              {t('cm.components_mice_BanquetCompetitorTab.henuz_rakip_eklenmedi')}
             </p>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b text-left">
                 <tr>
-                  <th className="p-2">Otel</th><th className="p-2">Yıldız</th>
+                  <th className="p-2">Otel</th><th className="p-2">{t('cm.components_mice_BanquetCompetitorTab.yildiz')}</th>
                   <th className="p-2">Maks Kapasite</th><th className="p-2">Salonlar</th>
-                  <th className="p-2 text-right">İşlem</th>
+                  <th className="p-2 text-right">{t('cm.components_mice_BanquetCompetitorTab.islem')}</th>
                 </tr>
               </thead>
               <tbody>
                 {comps.map((c) => (
                   <tr key={c.id} className="border-b hover:bg-slate-50">
                     <td className="p-2 font-medium">{c.name}
-                      {!c.active && <Badge className="ml-1" variant="outline">Pasif</Badge>}
+                      {!c.active && <Badge className="ml-1" variant="outline">{t('cm.components_mice_BanquetCompetitorTab.pasif')}</Badge>}
                     </td>
                     <td className="p-2">{c.hotel_class || '—'} </td>
                     <td className="p-2">{(c.capacity_max || 0).toLocaleString('tr-TR')}</td>
@@ -172,7 +174,7 @@ const BanquetCompetitorTab = () => {
                       <Button size="sm" variant="outline" onClick={() => openRates(c)}>
                         Fiyatlar ({(c.competitor_rates || []).length})
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => openEdit(c)}>Düzenle</Button>
+                      <Button size="sm" variant="ghost" onClick={() => openEdit(c)}>{t('cm.components_mice_BanquetCompetitorTab.duzenle')}</Button>
                       <Button size="sm" variant="ghost" onClick={() => remove(c)}>
                         <Trash2 className="w-3 h-3" />
                       </Button>
@@ -189,7 +191,7 @@ const BanquetCompetitorTab = () => {
         <CardHeader>
           <CardTitle>Pozisyonlama</CardTitle>
           <CardDescription>
-            Etkinlik tipi bazında sizin kişi başı ortalama gelir vs rakip aralığı
+            {t('cm.components_mice_BanquetCompetitorTab.etkinlik_tipi_bazinda_sizin_kisi_basi_or')}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0 overflow-x-auto">
@@ -206,7 +208,7 @@ const BanquetCompetitorTab = () => {
                   <th className="p-2">Rakip Min</th>
                   <th className="p-2">Rakip Ort.</th>
                   <th className="p-2">Rakip Maks</th>
-                  <th className="p-2">Kayıt</th>
+                  <th className="p-2">{t('cm.components_mice_BanquetCompetitorTab.kayit')}</th>
                   <th className="p-2">Konum</th>
                 </tr>
               </thead>
@@ -237,12 +239,12 @@ const BanquetCompetitorTab = () => {
       {showForm && (
         <Modal title={editing ? 'Rakip Düzenle' : 'Yeni Rakip'} onClose={() => setShowForm(false)}>
           <form onSubmit={submit} className="space-y-2">
-            <Field label="Otel Adı">
+            <Field label={t('cm.components_mice_BanquetCompetitorTab.otel_adi')}>
               <Input required value={form.name}
                      onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </Field>
             <div className="grid grid-cols-2 gap-2">
-              <Field label="Yıldız (0-7)">
+              <Field label={t('cm.components_mice_BanquetCompetitorTab.yildiz_0_7')}>
                 <Input type="number" min="0" max="7" value={form.hotel_class}
                        onChange={(e) => setForm({ ...form, hotel_class: e.target.value })} />
               </Field>
@@ -251,10 +253,10 @@ const BanquetCompetitorTab = () => {
                        onChange={(e) => setForm({ ...form, capacity_max: e.target.value })} />
               </Field>
             </div>
-            <Field label="Salonlar (virgülle ayrılmış)">
+            <Field label={t('cm.components_mice_BanquetCompetitorTab.salonlar_virgulle_ayrilmis')}>
               <Input value={form.venues}
                      onChange={(e) => setForm({ ...form, venues: e.target.value })}
-                     placeholder="Grand Salon, Bahçe, Teras" />
+                     placeholder={t('cm.components_mice_BanquetCompetitorTab.grand_salon_bahce_teras')} />
             </Field>
             <Field label="Notlar">
               <Input value={form.notes}
@@ -263,10 +265,10 @@ const BanquetCompetitorTab = () => {
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={form.active}
                      onChange={(e) => setForm({ ...form, active: e.target.checked })} />
-              Aktif
+              {t('cm.components_mice_BanquetCompetitorTab.aktif')}
             </label>
             <div className="flex justify-end gap-2 pt-2 border-t">
-              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>İptal</Button>
+              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>{t('cm.components_mice_BanquetCompetitorTab.iptal')}</Button>
               <Button type="submit">{editing ? 'Güncelle' : 'Ekle'}</Button>
             </div>
           </form>
@@ -312,12 +314,12 @@ const BanquetCompetitorTab = () => {
                         onChange={(e) => setRateForm({ ...rateForm, source: e.target.value })}>
                   <option value="web">Web</option>
                   <option value="phone">Telefon</option>
-                  <option value="lost-deal">Kayıp Teklif</option>
-                  <option value="other">Diğer</option>
+                  <option value="lost-deal">{t('cm.components_mice_BanquetCompetitorTab.kayip_teklif')}</option>
+                  <option value="other">{t('cm.components_mice_BanquetCompetitorTab.diger')}</option>
                 </select>
               </Field>
               <Button type="submit" size="sm">
-                <Plus className="w-3 h-3 mr-1" /> Ekle
+                <Plus className="w-3 h-3 mr-1" /> {t('cm.components_mice_BanquetCompetitorTab.ekle')}
               </Button>
             </form>
 
@@ -325,16 +327,16 @@ const BanquetCompetitorTab = () => {
               <table className="w-full text-xs">
                 <thead className="bg-slate-50 border-b text-left">
                   <tr>
-                    <th className="p-2">Tarih</th><th className="p-2">Etkinlik</th>
+                    <th className="p-2">{t('cm.components_mice_BanquetCompetitorTab.tarih')}</th><th className="p-2">Etkinlik</th>
                     <th className="p-2">Sezon</th><th className="p-2">₺/pax</th>
                     <th className="p-2">Min/Maks Pax</th><th className="p-2">Kaynak</th>
-                    <th className="p-2 text-right">İşlem</th>
+                    <th className="p-2 text-right">{t('cm.components_mice_BanquetCompetitorTab.islem_792e7')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rates.length === 0 ? (
                     <tr><td colSpan={7} className="p-3 text-center text-gray-500">
-                      Henüz fiyat kaydı yok.
+                      {t('cm.components_mice_BanquetCompetitorTab.henuz_fiyat_kaydi_yok')}
                     </td></tr>
                   ) : rates.map((r) => (
                     <tr key={r.id} className="border-b">

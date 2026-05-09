@@ -14,10 +14,12 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useTranslation } from 'react-i18next';
 
 const API_BASE = '';
 
 const AgencyPortalDashboard = () => {
+  const { t } = useTranslation();
   const [agencyUser, setAgencyUser] = useState(null);
   const [agencyInfo, setAgencyInfo] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('agency_token'));
@@ -193,7 +195,7 @@ const AgencyPortalDashboard = () => {
               <Building2 size={28} className="text-emerald-700" />
             </div>
             <CardTitle className="text-xl">Acente Portali</CardTitle>
-            <p className="text-sm text-slate-500 mt-1">Acente hesabinizla giriş yapin</p>
+            <p className="text-sm text-slate-500 mt-1">{t('cm.pages_AgencyPortalDashboard.acente_hesabinizla_giris_yapin')}</p>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
@@ -215,7 +217,7 @@ const AgencyPortalDashboard = () => {
               </div>
               <Button type="submit" className="w-full" disabled={loginLoading} data-testid="agency-login-submit">
                 {loginLoading ? <Loader2 className="animate-spin mr-2" size={14} /> : null}
-                Giriş Yap
+                {t('cm.pages_AgencyPortalDashboard.giris_yap')}
               </Button>
             </form>
           </CardContent>
@@ -240,7 +242,7 @@ const AgencyPortalDashboard = () => {
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={handleLogout} data-testid="agency-logout-btn">
-            <LogOut size={14} className="mr-1" /> Çıkış
+            <LogOut size={14} className="mr-1" /> {t('cm.pages_AgencyPortalDashboard.cikis')}
           </Button>
         </div>
       </header>
@@ -249,7 +251,7 @@ const AgencyPortalDashboard = () => {
       <div className="max-w-6xl mx-auto p-4 space-y-6">
         <Tabs defaultValue="search" className="w-full">
           <TabsList className="grid w-full grid-cols-3 max-w-md">
-            <TabsTrigger value="search" data-testid="tab-search">Müsaitlik Ara</TabsTrigger>
+            <TabsTrigger value="search" data-testid="tab-search">{t('cm.pages_AgencyPortalDashboard.musaitlik_ara')}</TabsTrigger>
             <TabsTrigger value="reservations" onClick={loadReservations} data-testid="tab-reservations">Rezervasyonlarim</TabsTrigger>
             <TabsTrigger value="content" onClick={loadContent} data-testid="tab-content">Otel Bilgileri</TabsTrigger>
           </TabsList>
@@ -260,20 +262,20 @@ const AgencyPortalDashboard = () => {
               <CardContent className="pt-5">
                 <div className="flex flex-wrap gap-3 items-end">
                   <div>
-                    <Label className="text-xs">Giriş Tarihi</Label>
+                    <Label className="text-xs">{t('cm.pages_AgencyPortalDashboard.giris_tarihi')}</Label>
                     <Input type="date" value={searchForm.check_in} onChange={e => setSearchForm(p => ({ ...p, check_in: e.target.value }))} data-testid="search-checkin" className="w-44" />
                   </div>
                   <div>
-                    <Label className="text-xs">Çıkış Tarihi</Label>
+                    <Label className="text-xs">{t('cm.pages_AgencyPortalDashboard.cikis_tarihi')}</Label>
                     <Input type="date" value={searchForm.check_out} onChange={e => setSearchForm(p => ({ ...p, check_out: e.target.value }))} data-testid="search-checkout" className="w-44" />
                   </div>
                   <div>
-                    <Label className="text-xs">Kisi</Label>
+                    <Label className="text-xs">{t('cm.pages_AgencyPortalDashboard.kisi')}</Label>
                     <Input type="number" min={1} max={10} value={searchForm.adults} onChange={e => setSearchForm(p => ({ ...p, adults: parseInt(e.target.value) || 1 }))} className="w-20" />
                   </div>
                   <Button onClick={handleSearch} disabled={searchLoading} data-testid="search-availability-btn" className="gap-2">
                     {searchLoading ? <Loader2 className="animate-spin" size={14} /> : <Search size={14} />}
-                    Ara
+                    {t('cm.pages_AgencyPortalDashboard.ara')}
                   </Button>
                 </div>
               </CardContent>
@@ -283,10 +285,10 @@ const AgencyPortalDashboard = () => {
             {availability && (
               <div className="space-y-3">
                 <h3 className="text-sm font-medium text-slate-600">
-                  {availability.check_in} - {availability.check_out} için müsait odalar
+                  {availability.check_in} - {availability.check_out} {t('cm.pages_AgencyPortalDashboard.icin_musait_odalar')}
                 </h3>
                 {availability.room_types.length === 0 ? (
-                  <Card><CardContent className="py-8 text-center text-slate-400">Bu tarihler için müsait oda bulunamadı</CardContent></Card>
+                  <Card><CardContent className="py-8 text-center text-slate-400">{t('cm.pages_AgencyPortalDashboard.bu_tarihler_icin_musait_oda_bulunamadi')}</CardContent></Card>
                 ) : (
                   availability.room_types.map(rt => (
                     <Card key={rt.room_type} className="hover:shadow-sm transition" data-testid={`result-${rt.room_type}`}>
@@ -300,7 +302,7 @@ const AgencyPortalDashboard = () => {
                               <div className="font-semibold text-slate-800">{rt.room_type}</div>
                               <div className="text-xs text-slate-500 flex items-center gap-3 mt-0.5">
                                 <span><Users size={10} className="inline mr-1" />{rt.capacity} kisi</span>
-                                <span>{rt.available_rooms} müsait / {rt.total_rooms} toplam</span>
+                                <span>{rt.available_rooms} {t('cm.pages_AgencyPortalDashboard.musait')} {rt.total_rooms} toplam</span>
                               </div>
                             </div>
                           </div>
@@ -334,7 +336,7 @@ const AgencyPortalDashboard = () => {
             ) : reservations.length === 0 ? (
               <Card><CardContent className="py-12 text-center text-slate-400">
                 <ClipboardList size={40} className="mx-auto mb-3 opacity-40" />
-                <p>Henüz rezervasyonunuz yok</p>
+                <p>{t('cm.pages_AgencyPortalDashboard.henuz_rezervasyonunuz_yok')}</p>
               </CardContent></Card>
             ) : (
               reservations.map(r => (
@@ -344,7 +346,7 @@ const AgencyPortalDashboard = () => {
                       <div>
                         <div className="font-semibold text-slate-800">{r.guest_name || 'Misafir'}</div>
                         <div className="text-xs text-slate-500 mt-0.5">
-                          {r.confirmation_code} | {r.room_type} | Oda {r.room_number}
+                          {r.confirmation_code} | {r.room_type} {t('cm.pages_AgencyPortalDashboard.oda')} {r.room_number}
                         </div>
                         <div className="text-xs text-slate-400 mt-0.5">
                           {r.check_in?.split('T')[0]} - {r.check_out?.split('T')[0]}
@@ -370,7 +372,7 @@ const AgencyPortalDashboard = () => {
             ) : !content?.published ? (
               <Card><CardContent className="py-12 text-center text-slate-400">
                 <Eye size={40} className="mx-auto mb-3 opacity-40" />
-                <p>Otel henüz size icerik yayinlamamis</p>
+                <p>{t('cm.pages_AgencyPortalDashboard.otel_henuz_size_icerik_yayinlamamis')}</p>
               </CardContent></Card>
             ) : (
               <div className="space-y-4">
@@ -397,7 +399,7 @@ const AgencyPortalDashboard = () => {
 
                 {content.hotel_content?.room_types?.length > 0 && (
                   <div>
-                    <h3 className="font-medium text-slate-700 mb-2">Oda Tipleri</h3>
+                    <h3 className="font-medium text-slate-700 mb-2">{t('cm.pages_AgencyPortalDashboard.oda_tipleri')}</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {content.hotel_content.room_types.map(rt => (
                         <Card key={rt.room_type}>
@@ -444,12 +446,12 @@ const AgencyPortalDashboard = () => {
       <Dialog open={showBookingForm} onOpenChange={setShowBookingForm}>
         <DialogContent className="max-w-md" data-testid="booking-form-dialog">
           <DialogHeader>
-            <DialogTitle>Rezervasyon Olustur</DialogTitle>
+            <DialogTitle>{t('cm.pages_AgencyPortalDashboard.rezervasyon_olustur')}</DialogTitle>
             <p className="text-sm text-slate-500">{selectedRoomType?.room_type} | {searchForm.check_in} - {searchForm.check_out}</p>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label>Misafir Adi *</Label>
+              <Label>{t('cm.pages_AgencyPortalDashboard.misafir_adi')}</Label>
               <Input value={bookingForm.guest_name} onChange={e => setBookingForm(p => ({ ...p, guest_name: e.target.value }))} data-testid="booking-guest-name" />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -473,16 +475,16 @@ const AgencyPortalDashboard = () => {
               </div>
             </div>
             <div>
-              <Label>Toplam Tutar (TL)</Label>
+              <Label>{t('cm.pages_AgencyPortalDashboard.toplam_tutar_tl')}</Label>
               <Input type="number" value={bookingForm.total_amount} onChange={e => setBookingForm(p => ({ ...p, total_amount: parseFloat(e.target.value) || 0 }))} data-testid="booking-amount" />
             </div>
             <div>
-              <Label>Özel İstek</Label>
-              <Input value={bookingForm.special_requests} onChange={e => setBookingForm(p => ({ ...p, special_requests: e.target.value }))} placeholder="Erken giriş, deniz manzarasi..." />
+              <Label>{t('cm.pages_AgencyPortalDashboard.ozel_istek')}</Label>
+              <Input value={bookingForm.special_requests} onChange={e => setBookingForm(p => ({ ...p, special_requests: e.target.value }))} placeholder={t('cm.pages_AgencyPortalDashboard.erken_giris_deniz_manzarasi')} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowBookingForm(false)}>İptal</Button>
+            <Button variant="outline" onClick={() => setShowBookingForm(false)}>{t('cm.pages_AgencyPortalDashboard.iptal')}</Button>
             <Button onClick={handleBooking} disabled={bookingLoading} data-testid="confirm-booking-btn">
               {bookingLoading ? <Loader2 className="animate-spin mr-2" size={14} /> : null}
               Rezervasyonu Olustur

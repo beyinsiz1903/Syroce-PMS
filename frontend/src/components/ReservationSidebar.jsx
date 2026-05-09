@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 const ReservationSidebar = ({ 
   booking, 
@@ -20,6 +21,7 @@ const ReservationSidebar = ({
   onSendConfirmation,
   onDataRefresh
 }) => {
+  const { t } = useTranslation();
   const [cancelling, setCancelling] = useState(false);
   if (!booking) return null;
 
@@ -440,7 +442,7 @@ const ReservationSidebar = ({
               }
             }}
           >
-            Folyo'yu Görüntüle
+            {t('cm.components_ReservationSidebar.folyo_yu_goruntule')}
           </Button>
           <Button 
             variant="outline" 
@@ -489,7 +491,7 @@ const ReservationSidebar = ({
               }}
             >
               {cancelling ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <XCircle className="w-4 h-4 mr-2" />}
-              Rezervasyonu İptal Et
+              {t('cm.components_ReservationSidebar.rezervasyonu_iptal_et')}
             </Button>
           )}
         </div>

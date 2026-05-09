@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Building2, Plus, RefreshCw, X, Loader2 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 /**
  * Opera #6 — Function Space.
@@ -43,6 +44,7 @@ const SETUPS = [
 const HOURS = Array.from({ length: 16 }, (_, i) => 7 + i); // 07:00 → 22:00
 
 export default function FunctionSpacePage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [tab, setTab] = useState("schedule");
   const [rooms, setRooms] = useState([]);
@@ -227,20 +229,20 @@ export default function FunctionSpacePage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-2xl font-semibold flex items-center gap-2">
-            <Building2 className="h-6 w-6" /> Toplantı Salonları (Function Space)
+            <Building2 className="h-6 w-6" /> {t('cm.pages_FunctionSpacePage.toplanti_salonlari_function_space')}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Banket, toplantı ve etkinlik salonu rezervasyonu, kurulum tipi ve kapasite kontrolü.
+            {t('cm.pages_FunctionSpacePage.banket_toplanti_ve_etkinlik_salonu_rezer')}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={load} disabled={loading} data-testid="button-refresh-fs">
-          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Yenile
+          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> {t('cm.pages_FunctionSpacePage.yenile')}
         </Button>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="schedule" data-testid="tab-fs-schedule">Günlük Takvim</TabsTrigger>
+          <TabsTrigger value="schedule" data-testid="tab-fs-schedule">{t('cm.pages_FunctionSpacePage.gunluk_takvim')}</TabsTrigger>
           <TabsTrigger value="rooms" data-testid="tab-fs-rooms">Salonlar</TabsTrigger>
         </TabsList>
 
@@ -249,13 +251,13 @@ export default function FunctionSpacePage() {
             <CardHeader>
               <CardTitle>Saatlik Salon Takvimi (07:00–22:00)</CardTitle>
               <CardDescription>
-                Boş hücreye tıklayarak yeni etkinlik ekleyebilirsiniz. Mevcut etkinliğe tıklamak iptal akışını başlatır.
+                {t('cm.pages_FunctionSpacePage.bos_hucreye_tiklayarak_yeni_etkinlik_ekl')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-end gap-3 flex-wrap">
                 <div>
-                  <Label>Tarih</Label>
+                  <Label>{t('cm.pages_FunctionSpacePage.tarih')}</Label>
                   <Input
                     type="date"
                     value={date}
@@ -276,13 +278,13 @@ export default function FunctionSpacePage() {
                   }}
                   data-testid="button-new-event"
                 >
-                  <Plus className="h-4 w-4 mr-1" /> Yeni Etkinlik
+                  <Plus className="h-4 w-4 mr-1" /> {t('cm.pages_FunctionSpacePage.yeni_etkinlik')}
                 </Button>
               </div>
 
               {rooms.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  Henüz salon tanımlı değil. "Salonlar" sekmesinden ekleyin.
+                  {t('cm.pages_FunctionSpacePage.henuz_salon_tanimli_degil_salonlar_sekme')}
                 </div>
               ) : (
                 <div className="overflow-x-auto border rounded">
@@ -315,7 +317,7 @@ export default function FunctionSpacePage() {
                                     type="button"
                                     onClick={() => openSlot(r.id, h)}
                                     className="w-full h-full hover:bg-emerald-50 transition rounded text-emerald-600 opacity-30 hover:opacity-100"
-                                    title="Yeni etkinlik"
+                                    title={t('cm.pages_FunctionSpacePage.yeni_etkinlik_53b72')}
                                   >
                                     +
                                   </button>
@@ -369,16 +371,16 @@ export default function FunctionSpacePage() {
               {outOfGrid.length > 0 && (
                 <div className="border rounded p-3 bg-amber-50">
                   <div className="text-xs font-medium mb-2 text-amber-900">
-                    Grid Dışı Etkinlikler (07:00 öncesi / 22:00 sonrası)
+                    {t('cm.pages_FunctionSpacePage.grid_disi_etkinlikler_07_00_oncesi_22_00')}
                   </div>
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Saat</TableHead>
+                        <TableHead>{t('cm.pages_FunctionSpacePage.saat')}</TableHead>
                         <TableHead>Etkinlik</TableHead>
                         <TableHead>Salon</TableHead>
                         <TableHead className="text-center">Kurulum</TableHead>
-                        <TableHead className="text-right">Kişi</TableHead>
+                        <TableHead className="text-right">{t('cm.pages_FunctionSpacePage.kisi')}</TableHead>
                         <TableHead className="w-[60px]" />
                       </TableRow>
                     </TableHeader>
@@ -417,15 +419,15 @@ export default function FunctionSpacePage() {
         <TabsContent value="rooms">
           <Card>
             <CardHeader>
-              <CardTitle>Salon Tanımları</CardTitle>
+              <CardTitle>{t('cm.pages_FunctionSpacePage.salon_tanimlari')}</CardTitle>
               <CardDescription>
-                Kapasite, alan, desteklenen kurulum tipleri ve ücret.
+                {t('cm.pages_FunctionSpacePage.kapasite_alan_desteklenen_kurulum_tipler')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <form onSubmit={addRoom} className="grid grid-cols-1 md:grid-cols-7 gap-2 items-end">
                 <div className="md:col-span-2">
-                  <Label>Salon adı</Label>
+                  <Label>{t('cm.pages_FunctionSpacePage.salon_adi')}</Label>
                   <Input
                     value={roomForm.name}
                     onChange={(e) => setRoomForm({ ...roomForm, name: e.target.value })}
@@ -458,7 +460,7 @@ export default function FunctionSpacePage() {
                   />
                 </div>
                 <div>
-                  <Label>Günlük</Label>
+                  <Label>{t('cm.pages_FunctionSpacePage.gunluk')}</Label>
                   <Input
                     type="number" min={0}
                     value={roomForm.daily_rate}
@@ -466,10 +468,10 @@ export default function FunctionSpacePage() {
                   />
                 </div>
                 <Button type="submit" data-testid="button-add-room">
-                  <Plus className="h-4 w-4 mr-1" /> Ekle
+                  <Plus className="h-4 w-4 mr-1" /> {t('cm.pages_FunctionSpacePage.ekle')}
                 </Button>
                 <div className="md:col-span-7">
-                  <Label className="text-xs">Desteklenen kurulumlar (virgüllü, boş bırak → tümü)</Label>
+                  <Label className="text-xs">{t('cm.pages_FunctionSpacePage.desteklenen_kurulumlar_virgullu_bos_bira')}</Label>
                   <Input
                     value={roomForm.supported_setups}
                     onChange={(e) => setRoomForm({ ...roomForm, supported_setups: e.target.value })}
@@ -486,14 +488,14 @@ export default function FunctionSpacePage() {
                     <TableHead className="text-right">Alan</TableHead>
                     <TableHead>Kurulumlar</TableHead>
                     <TableHead className="text-right">Saatlik</TableHead>
-                    <TableHead className="text-right">Günlük</TableHead>
+                    <TableHead className="text-right">{t('cm.pages_FunctionSpacePage.gunluk_18de9')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rooms.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
-                        Salon tanımlı değil.
+                        {t('cm.pages_FunctionSpacePage.salon_tanimli_degil')}
                       </TableCell>
                     </TableRow>
                   ) : rooms.map((r) => (
@@ -503,7 +505,7 @@ export default function FunctionSpacePage() {
                       <TableCell className="text-right">{r.area_m2 ? `${r.area_m2} m²` : "-"}</TableCell>
                       <TableCell className="text-xs">
                         {(r.supported_setups || []).length === 0
-                          ? <span className="text-muted-foreground">tümü</span>
+                          ? <span className="text-muted-foreground">{t('cm.pages_FunctionSpacePage.tumu')}</span>
                           : r.supported_setups.map((s) => (
                             <Badge key={s} variant="secondary" className="mr-1">{setupLabel(s)}</Badge>
                           ))}
@@ -523,16 +525,16 @@ export default function FunctionSpacePage() {
       <Dialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Etkinliği iptal et?</DialogTitle>
+            <DialogTitle>{t('cm.pages_FunctionSpacePage.etkinligi_iptal_et')}</DialogTitle>
             <DialogDescription>{cancelTarget?.label}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCancelTarget(null)} disabled={cancelling}>
-              Vazgeç
+              {t('cm.pages_FunctionSpacePage.vazgec')}
             </Button>
             <Button variant="destructive" onClick={confirmCancel} disabled={cancelling} data-testid="button-fs-confirm-cancel">
               {cancelling && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              İptal Et
+              {t('cm.pages_FunctionSpacePage.iptal_et')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -542,9 +544,9 @@ export default function FunctionSpacePage() {
       <Dialog open={bookingOpen} onOpenChange={setBookingOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Yeni Etkinlik</DialogTitle>
+            <DialogTitle>{t('cm.pages_FunctionSpacePage.yeni_etkinlik_8945d')}</DialogTitle>
             <DialogDescription>
-              Salon kapasitesini aşan veya çakışan rezervasyonlar backend tarafından reddedilir.
+              {t('cm.pages_FunctionSpacePage.salon_kapasitesini_asan_veya_cakisan_rez')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -553,7 +555,7 @@ export default function FunctionSpacePage() {
                 <Label>Salon</Label>
                 <Select value={bkForm.room_id} onValueChange={(v) => setBkForm({ ...bkForm, room_id: v })}>
                   <SelectTrigger data-testid="select-fs-room">
-                    <SelectValue placeholder="Salon seç" />
+                    <SelectValue placeholder={t('cm.pages_FunctionSpacePage.salon_sec')} />
                   </SelectTrigger>
                   <SelectContent>
                     {rooms.map((r) => (
@@ -577,25 +579,25 @@ export default function FunctionSpacePage() {
               </div>
             </div>
             <div>
-              <Label>Etkinlik adı</Label>
+              <Label>{t('cm.pages_FunctionSpacePage.etkinlik_adi')}</Label>
               <Input
                 value={bkForm.event_name}
                 onChange={(e) => setBkForm({ ...bkForm, event_name: e.target.value })}
-                placeholder="Örn: Acme Corp Yıllık Toplantı"
+                placeholder={t('cm.pages_FunctionSpacePage.orn_acme_corp_yillik_toplanti')}
                 data-testid="input-fs-event"
               />
             </div>
             <div>
-              <Label>Düzenleyen (opsiyonel)</Label>
+              <Label>{t('cm.pages_FunctionSpacePage.duzenleyen_opsiyonel')}</Label>
               <Input
                 value={bkForm.organizer}
                 onChange={(e) => setBkForm({ ...bkForm, organizer: e.target.value })}
-                placeholder="Şirket / grup"
+                placeholder={t('cm.pages_FunctionSpacePage.sirket_grup')}
               />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>Başlangıç</Label>
+                <Label>{t('cm.pages_FunctionSpacePage.baslangic')}</Label>
                 <Input
                   type="datetime-local"
                   value={bkForm.starts_at}
@@ -604,7 +606,7 @@ export default function FunctionSpacePage() {
                 />
               </div>
               <div>
-                <Label>Bitiş</Label>
+                <Label>{t('cm.pages_FunctionSpacePage.bitis')}</Label>
                 <Input
                   type="datetime-local"
                   value={bkForm.ends_at}
@@ -614,7 +616,7 @@ export default function FunctionSpacePage() {
               </div>
             </div>
             <div>
-              <Label>Katılımcı</Label>
+              <Label>{t('cm.pages_FunctionSpacePage.katilimci')}</Label>
               <Input
                 type="number" min={1}
                 value={bkForm.attendees}
@@ -632,7 +634,7 @@ export default function FunctionSpacePage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBookingOpen(false)} disabled={submittingBk}>
-              Vazgeç
+              {t('cm.pages_FunctionSpacePage.vazgec_bf814')}
             </Button>
             <Button onClick={submitBooking} disabled={submittingBk} data-testid="button-fs-confirm-booking">
               {submittingBk && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}

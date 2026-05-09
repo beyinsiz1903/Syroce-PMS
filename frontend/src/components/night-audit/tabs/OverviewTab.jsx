@@ -73,7 +73,7 @@ export default function OverviewTab(props) {
                     ? new Date(scheduleStatus.last_auto_run).toLocaleString("tr-TR")
                     : "Henüz çalıştırılmadı"}
                 </p>
-                <p className="text-xs text-gray-500">Son otomatik çalıştırma</p>
+                <p className="text-xs text-gray-500">{t('cm.components_nightaudit_tabs_OverviewTab.son_otomatik_calistirma')}</p>
               </div>
             </div>
             <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
@@ -89,7 +89,7 @@ export default function OverviewTab(props) {
                   )}
                   {schedule.skip_validations && (
                     <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px]">
-                      Doğrulama Atla
+                      {t('cm.components_nightaudit_tabs_OverviewTab.dogrulama_atla')}
                     </Badge>
                   )}
                   {!schedule.auto_retry && !schedule.skip_validations && (
@@ -98,13 +98,13 @@ export default function OverviewTab(props) {
                     </Badge>
                   )}
                 </div>
-                <p className="text-xs text-gray-500 mt-0.5">Özellikler</p>
+                <p className="text-xs text-gray-500 mt-0.5">{t('cm.components_nightaudit_tabs_OverviewTab.ozellikler')}</p>
               </div>
             </div>
           </div>
           {scheduleStatus?.recent_logs?.length > 0 && (
             <div className="mt-3 border-t pt-3">
-              <p className="text-xs font-semibold text-gray-600 mb-2">Son Otomatik Çalıştırma Loglari</p>
+              <p className="text-xs font-semibold text-gray-600 mb-2">{t('cm.components_nightaudit_tabs_OverviewTab.son_otomatik_calistirma_loglari')}</p>
               <div className="space-y-1.5 max-h-32 overflow-y-auto">
                 {scheduleStatus.recent_logs.map((log) => (
                   <div key={log.id} className="flex items-center justify-between text-xs p-1.5 bg-gray-50 rounded">
@@ -135,11 +135,11 @@ export default function OverviewTab(props) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <FileText className="w-4 h-4 text-gray-500" />
-              Son Denetim Özeti
+              {t('cm.components_nightaudit_tabs_OverviewTab.son_denetim_ozeti')}
               <StatusBadge status={lastRun.status} />
               {lastRun.is_dry_run && (
                 <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 border text-[11px]">
-                  Simülasyon
+                  {t('cm.components_nightaudit_tabs_OverviewTab.simulasyon')}
                 </Badge>
               )}
             </CardTitle>
@@ -159,7 +159,7 @@ export default function OverviewTab(props) {
                 <p className="font-semibold">{lastRun.charges_posted}</p>
               </div>
               <div>
-                <span className="text-gray-500 text-xs">Oda Geliri</span>
+                <span className="text-gray-500 text-xs">{t('cm.components_nightaudit_tabs_OverviewTab.oda_geliri')}</span>
                 <p className="font-semibold">{lastRun.total_room_revenue?.toFixed(2)} TL</p>
               </div>
               <div>
@@ -167,7 +167,7 @@ export default function OverviewTab(props) {
                 <p className="font-semibold">{lastRun.total_tax_amount?.toFixed(2)} TL</p>
               </div>
               <div>
-                <span className="text-gray-500 text-xs">Süre</span>
+                <span className="text-gray-500 text-xs">{t('cm.components_nightaudit_tabs_OverviewTab.sure')}</span>
                 <p className="font-semibold">{lastRun.duration_ms ? `${lastRun.duration_ms}ms` : "-"}</p>
               </div>
             </div>
@@ -175,12 +175,12 @@ export default function OverviewTab(props) {
               <div className="mt-3 flex flex-wrap gap-2">
                 {lastRun.arrivals_pending > 0 && (
                   <Badge className="bg-blue-50 text-blue-700 border border-blue-200 text-xs">
-                    {lastRun.arrivals_pending} bekleyen giriş
+                    {lastRun.arrivals_pending} {t('cm.components_nightaudit_tabs_OverviewTab.bekleyen_giris')}
                   </Badge>
                 )}
                 {lastRun.departures_pending > 0 && (
                   <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-xs">
-                    {lastRun.departures_pending} bekleyen çıkış
+                    {lastRun.departures_pending} {t('cm.components_nightaudit_tabs_OverviewTab.bekleyen_cikis')}
                   </Badge>
                 )}
                 {lastRun.folios_unbalanced > 0 && (
@@ -199,19 +199,19 @@ export default function OverviewTab(props) {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <Clock className="w-4 h-4 text-gray-500" />
-            Denetim Geçmişi ({historyTotal})
+            {t('cm.components_nightaudit_tabs_OverviewTab.denetim_gecmisi')}{historyTotal})
           </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="flex items-center justify-center py-12 text-gray-500 text-sm">
               <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-              Yükleniyor...
+              {t('cm.components_nightaudit_tabs_OverviewTab.yukleniyor')}
             </div>
           ) : history.length === 0 ? (
             <div data-testid="no-history" className="py-10 text-center text-gray-500 text-sm">
               <Moon className="w-10 h-10 mx-auto text-gray-300 mb-2" />
-              Henüz gece denetimi yapılmamış
+              {t('cm.components_nightaudit_tabs_OverviewTab.henuz_gece_denetimi_yapilmamis')}
             </div>
           ) : (
             <div className="space-y-2">
@@ -234,7 +234,7 @@ export default function OverviewTab(props) {
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-gray-900">
                             {run.business_date}
-                            {run.is_dry_run && <span className="ml-1.5 text-indigo-600 text-xs font-normal">(Simülasyon)</span>}
+                            {run.is_dry_run && <span className="ml-1.5 text-indigo-600 text-xs font-normal">{t('cm.components_nightaudit_tabs_OverviewTab.simulasyon_11963')}</span>}
                             {run.is_rerun && <span className="ml-1.5 text-amber-600 text-xs font-normal">(Tekrar)</span>}
                           </p>
                           <p className="text-xs text-gray-500">
@@ -261,7 +261,7 @@ export default function OverviewTab(props) {
                       <div className="border-t bg-gray-50/50 px-4 py-3 space-y-3">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                           <div>
-                            <span className="text-gray-500 text-xs">Oda Geliri</span>
+                            <span className="text-gray-500 text-xs">{t('cm.components_nightaudit_tabs_OverviewTab.oda_geliri_e569c')}</span>
                             <p className="font-semibold">{run.total_room_revenue?.toFixed(2)} TL</p>
                           </div>
                           <div>
@@ -284,7 +284,7 @@ export default function OverviewTab(props) {
                         {runExceptions.length > 0 ? (
                           <div>
                             <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
-                              <AlertTriangle className="w-3.5 h-3.5" /> İstisnalar ({runExceptions.length})
+                              <AlertTriangle className="w-3.5 h-3.5" /> {t('cm.components_nightaudit_tabs_OverviewTab.istisnalar')}{runExceptions.length})
                             </p>
                             <div className="space-y-1.5 max-h-60 overflow-y-auto">
                               {runExceptions.map((exc) => (
@@ -304,10 +304,10 @@ export default function OverviewTab(props) {
                         ) : run.exceptions_count === 0 ? (
                           <p className="text-xs text-gray-400 flex items-center gap-1">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                            İstisna yok - denetim temiz tamamlandı
+                            {t('cm.components_nightaudit_tabs_OverviewTab.istisna_yok_denetim_temiz_tamamlandi')}
                           </p>
                         ) : (
-                          <p className="text-xs text-gray-400">Istisnalar yükleniyor...</p>
+                          <p className="text-xs text-gray-400">{t('cm.components_nightaudit_tabs_OverviewTab.istisnalar_yukleniyor')}</p>
                         )}
                       </div>
                     )}

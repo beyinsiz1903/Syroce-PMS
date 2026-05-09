@@ -18,6 +18,7 @@ import { Input } from "../components/ui/input";
 import { PageHeader } from "../components/ui/page-header";
 import { useToast } from "../hooks/use-toast";
 import { AlertTriangle, BellRing, Check, RefreshCw, Search, ShieldCheck, Loader2 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const ROLE_LABELS = {
   super_admin: "Süper Admin",
@@ -58,6 +59,7 @@ function safePii(value) {
 }
 
 function MetricNumber({ label, value, tone = "default" }) {
+  const { t } = useTranslation();
   const toneCls = {
     default: "text-slate-900",
     good: "text-emerald-700",
@@ -205,8 +207,8 @@ export default function UrgentPermissionAdminPage() {
           <PageHeader
             icon={ShieldCheck}
             iconClassName="text-indigo-600"
-            title="Acil Mesaj İzni Yönetimi"
-            subtitle="Bu izni alan kullanıcılar diğer personelin ekranında alarm tetikleyen acil mesaj gönderebilir."
+            title={t('cm.pages_UrgentPermissionAdminPage.acil_mesaj_izni_yonetimi')}
+            subtitle={t('cm.pages_UrgentPermissionAdminPage.bu_izni_alan_kullanicilar_diger_personel')}
             actions={
               <Button
                 variant="outline"
@@ -216,7 +218,7 @@ export default function UrgentPermissionAdminPage() {
               >
                 {loading ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                          : <RefreshCw className="w-4 h-4 mr-1.5" />}
-                Yenile
+                {t('cm.pages_UrgentPermissionAdminPage.yenile')}
               </Button>
             }
           />
@@ -226,14 +228,14 @@ export default function UrgentPermissionAdminPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <BellRing className="w-4 h-4 text-indigo-600" />
-                Acil Mesaj — Push Gönderim İstatistikleri
+                {t('cm.pages_UrgentPermissionAdminPage.acil_mesaj_push_gonderim_istatistikleri')}
               </CardTitle>
             </CardHeader>
             <CardContent>
               {metricsLoading ? (
                 <div className="py-3 text-sm text-slate-500">
                   <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
-                  Yükleniyor...
+                  {t('cm.pages_UrgentPermissionAdminPage.yukleniyor')}
                 </div>
               ) : !metrics ? (
                 <div className="py-3 text-sm flex items-center justify-between gap-3">
@@ -251,42 +253,39 @@ export default function UrgentPermissionAdminPage() {
                 </div>
               ) : (metrics.totals?.attempted || 0) === 0 ? (
                 <div className="py-3 text-sm text-slate-500">
-                  Son {metrics.range_days} günde acil push bildirimi
-                  gönderilmemiş.
+                  Son {metrics.range_days} {t('cm.pages_UrgentPermissionAdminPage.gunde_acil_push_bildirimi_gonderilmemis')}
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div>
                     <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">
-                      Bugün
+                      {t('cm.pages_UrgentPermissionAdminPage.bugun')}
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                       <MetricNumber label="Denenen" value={metrics.today?.attempted || 0} tone="info" />
-                      <MetricNumber label="Gönderilen" value={metrics.today?.sent || 0} tone="good" />
-                      <MetricNumber label="Başarısız" value={metrics.today?.failed || 0} tone="bad" />
-                      <MetricNumber label="Anlık temizlenen" value={metrics.today?.pruned || 0} tone="muted" />
+                      <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.gonderilen')} value={metrics.today?.sent || 0} tone="good" />
+                      <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.basarisiz')} value={metrics.today?.failed || 0} tone="bad" />
+                      <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.anlik_temizlenen')} value={metrics.today?.pruned || 0} tone="muted" />
                     </div>
                   </div>
                   <div>
                     <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">
-                      Son {metrics.range_days} gün
+                      Son {metrics.range_days} {t('cm.pages_UrgentPermissionAdminPage.gun')}
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                       <MetricNumber label="Denenen" value={metrics.totals?.attempted || 0} tone="info" />
-                      <MetricNumber label="Gönderilen" value={metrics.totals?.sent || 0} tone="good" />
-                      <MetricNumber label="Başarısız" value={metrics.totals?.failed || 0} tone="bad" />
-                      <MetricNumber label="Anlık temizlenen" value={metrics.totals?.pruned || 0} tone="muted" />
+                      <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.gonderilen_8963f')} value={metrics.totals?.sent || 0} tone="good" />
+                      <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.basarisiz_3260d')} value={metrics.totals?.failed || 0} tone="bad" />
+                      <MetricNumber label={t('cm.pages_UrgentPermissionAdminPage.anlik_temizlenen_cbf39')} value={metrics.totals?.pruned || 0} tone="muted" />
                     </div>
                   </div>
                   <div className="text-[11px] text-slate-500 space-y-1">
                     <div>
-                      "Anlık temizlenen": gönderim sırasında geçersiz bulunup
-                      silinen abonelik sayısıdır.
+                      {t('cm.pages_UrgentPermissionAdminPage.anlik_temizlenen_gonderim_sirasinda_gece')}
                     </div>
                     <div>
-                      Sistem geneli otomatik temizlik (tüm tenant'lar) —
-                      bugün: <span className="font-medium tabular-nums">{metrics.system_scheduled_pruned_today || 0}</span>,
-                      son {metrics.range_days} gün: <span className="font-medium tabular-nums">{metrics.system_scheduled_pruned || 0}</span>
+                      {t('cm.pages_UrgentPermissionAdminPage.sistem_geneli_otomatik_temizlik_tum_tena')} <span className="font-medium tabular-nums">{metrics.system_scheduled_pruned_today || 0}</span>,
+                      son {metrics.range_days} {t('cm.pages_UrgentPermissionAdminPage.gun_dc9ae')} <span className="font-medium tabular-nums">{metrics.system_scheduled_pruned || 0}</span>
                     </div>
                   </div>
                 </div>
@@ -298,21 +297,19 @@ export default function UrgentPermissionAdminPage() {
             <CardContent className="py-3 text-sm text-amber-900 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
               <div>
-                Acil mesaj kanalı alıcıların ekranında alarm tetikler. Bu izni
-                yalnızca güvendiğiniz operasyon kullanıcılarına verin. Yöneticiler
-                ve süpervizörler bu izne zaten roller gereği sahiptir.
+                {t('cm.pages_UrgentPermissionAdminPage.acil_mesaj_kanali_alicilarin_ekraninda_a')}
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Kullanıcılar ({filtered.length})</CardTitle>
+              <CardTitle className="text-base">{t('cm.pages_UrgentPermissionAdminPage.kullanicilar')}{filtered.length})</CardTitle>
               <div className="relative mt-2">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <Input
                   data-testid="urgent-permission-filter"
-                  placeholder="İsim, e-posta veya kullanıcı adı..."
+                  placeholder={t('cm.pages_UrgentPermissionAdminPage.isim_e_posta_veya_kullanici_adi')}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   className="pl-9"
@@ -323,11 +320,11 @@ export default function UrgentPermissionAdminPage() {
               {loading ? (
                 <div className="py-10 text-center text-sm text-slate-500">
                   <Loader2 className="w-5 h-5 animate-spin inline mr-2" />
-                  Yükleniyor...
+                  {t('cm.pages_UrgentPermissionAdminPage.yukleniyor_4deb0')}
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="py-10 text-center text-sm text-slate-500">
-                  Kayıt bulunamadı.
+                  {t('cm.pages_UrgentPermissionAdminPage.kayit_bulunamadi')}
                 </div>
               ) : (
                 <div className="divide-y">
@@ -371,9 +368,9 @@ export default function UrgentPermissionAdminPage() {
                           {saving ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : has ? (
-                            <><Check className="w-3.5 h-3.5 mr-1.5" />İzinli</>
+                            <><Check className="w-3.5 h-3.5 mr-1.5" />{t('cm.pages_UrgentPermissionAdminPage.izinli')}</>
                           ) : (
-                            <>İzin Ver</>
+                            <>{t('cm.pages_UrgentPermissionAdminPage.izin_ver')}</>
                           )}
                         </Button>
                       </div>

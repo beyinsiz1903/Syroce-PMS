@@ -21,6 +21,7 @@ import {
   Clock,
   Radar,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const BASE = "/ops-events/early-warnings";
 
@@ -56,6 +57,7 @@ const confidenceClass = (c) => {
 };
 
 function Sparkline({ data = [], color = "#6366f1", height = 40 }) {
+  const { t } = useTranslation();
   if (!data || data.length < 2) {
     return <div className="text-xs text-slate-400 italic">Veri yok</div>;
   }
@@ -186,13 +188,13 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
     <div className="space-y-4 p-4 md:p-6 max-w-7xl mx-auto">
       <PageHeader
         icon={Radar}
-        title="Erken Uyarı Motoru"
-        subtitle="Tahmini uyarılar, trend analizi ve motor kontrolü"
+        title={t('cm.pages_EarlyWarningDashboard.erken_uyari_motoru')}
+        subtitle={t('cm.pages_EarlyWarningDashboard.tahmini_uyarilar_trend_analizi_ve_motor_')}
         actions={
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={fetchAll} disabled={loading}>
               <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
-              Yenile
+              {t('cm.pages_EarlyWarningDashboard.yenile')}
             </Button>
             {running ? (
               <Button size="sm" variant="outline" onClick={() => controlEngine("stop")} disabled={busy}>
@@ -200,11 +202,11 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
               </Button>
             ) : (
               <Button size="sm" onClick={() => controlEngine("start")} disabled={busy}>
-                <Play className="w-4 h-4 mr-1.5" aria-hidden="true" /> Başlat
+                <Play className="w-4 h-4 mr-1.5" aria-hidden="true" /> {t('cm.pages_EarlyWarningDashboard.baslat')}
               </Button>
             )}
             <Button size="sm" variant="outline" onClick={forceCheck} disabled={busy}>
-              <Zap className="w-4 h-4 mr-1.5" aria-hidden="true" /> Şimdi Tara
+              <Zap className="w-4 h-4 mr-1.5" aria-hidden="true" /> {t('cm.pages_EarlyWarningDashboard.simdi_tara')}
             </Button>
           </div>
         }
@@ -233,7 +235,7 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
             </StatusBadge>
             {engineStatus?.check_interval_seconds && (
               <span className="text-xs text-slate-500">
-                ({engineStatus.check_interval_seconds}s aralık)
+                ({engineStatus.check_interval_seconds}{t('cm.pages_EarlyWarningDashboard.s_aralik')}
               </span>
             )}
           </div>
@@ -249,7 +251,7 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard
           icon={AlertTriangle}
-          label="Toplam Uyarı"
+          label={t('cm.pages_EarlyWarningDashboard.toplam_uyari')}
           value={summary?.warning_count ?? 0}
           intent="info"
         />
@@ -262,13 +264,13 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
         />
         <KpiCard
           icon={Gauge}
-          label="Uyarı (warning)"
+          label={t('cm.pages_EarlyWarningDashboard.uyari_warning')}
           value={summary?.warning_count_warning ?? 0}
           intent="warning"
         />
         <KpiCard
           icon={Activity}
-          label="Risk Altında Konektör"
+          label={t('cm.pages_EarlyWarningDashboard.risk_altinda_konektor')}
           value={summary?.connectors_at_risk_count ?? 0}
           sub={(summary?.connectors_at_risk || []).slice(0, 3).join(", ") || "—"}
           intent="neutral"
@@ -280,7 +282,7 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-rose-600" aria-hidden="true" /> Hata Oranı (son 6 saat)
+              <TrendingUp className="w-4 h-4 text-rose-600" aria-hidden="true" /> {t('cm.pages_EarlyWarningDashboard.hata_orani_son_6_saat')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -320,7 +322,7 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
             {trends?.backlog_current != null ? (
               <div className="space-y-1">
                 <div className="text-2xl font-bold text-slate-800">{trends.backlog_current}</div>
-                <div className="text-xs text-slate-500">retry kuyruğunda</div>
+                <div className="text-xs text-slate-500">{t('cm.pages_EarlyWarningDashboard.retry_kuyrugunda')}</div>
               </div>
             ) : (
               <div className="text-xs text-slate-400 italic">Veri yok</div>
@@ -332,15 +334,15 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
       {/* Active warnings */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-          <CardTitle className="text-base">Aktif Uyarılar</CardTitle>
+          <CardTitle className="text-base">{t('cm.pages_EarlyWarningDashboard.aktif_uyarilar')}</CardTitle>
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-600">Min güven:</span>
+            <span className="text-slate-600">{t('cm.pages_EarlyWarningDashboard.min_guven')}</span>
             <Select value={minConfidence} onValueChange={setMinConfidence}>
-              <SelectTrigger className="h-8 w-28 text-xs" aria-label="Min güven filtresi">
+              <SelectTrigger className="h-8 w-28 text-xs" aria-label={t('cm.pages_EarlyWarningDashboard.min_guven_filtresi')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="0">Tümü</SelectItem>
+                <SelectItem value="0">{t('cm.pages_EarlyWarningDashboard.tumu')}</SelectItem>
                 <SelectItem value="40">≥ 40</SelectItem>
                 <SelectItem value="60">≥ 60</SelectItem>
                 <SelectItem value="80">≥ 80</SelectItem>
@@ -352,7 +354,7 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
           {warnings.length === 0 ? (
             <div className="text-sm text-slate-500 italic py-6 text-center">
               <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" aria-hidden="true" />
-              Bu eşikte aktif uyarı yok.
+              {t('cm.pages_EarlyWarningDashboard.bu_esikte_aktif_uyari_yok')}
             </div>
           ) : (
             <div className="space-y-3">
@@ -382,7 +384,7 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
                     <div className="text-sm text-slate-700">{w.reason}</div>
                     {w.recommended_action && (
                       <div className="text-xs text-slate-600 mt-1">
-                        <strong>Öneri:</strong> {w.recommended_action}
+                        <strong>{t('cm.pages_EarlyWarningDashboard.oneri')}</strong> {w.recommended_action}
                       </div>
                     )}
                     {w.impacted_scope && (
@@ -400,7 +402,7 @@ export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="w-4 h-4 text-slate-600" aria-hidden="true" /> Son 24 Saat Olaylar ({events?.total ?? 0})
+            <Clock className="w-4 h-4 text-slate-600" aria-hidden="true" /> {t('cm.pages_EarlyWarningDashboard.son_24_saat_olaylar')}{events?.total ?? 0})
           </CardTitle>
         </CardHeader>
         <CardContent>

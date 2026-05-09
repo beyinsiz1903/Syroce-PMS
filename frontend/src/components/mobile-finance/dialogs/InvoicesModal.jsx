@@ -10,8 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Wallet, CreditCard, TrendingUp, AlertTriangle, FileText, DollarSign, ArrowDownCircle, ArrowUpCircle, Receipt, Banknote, Clock, CheckCircle, XCircle, Calendar, Filter, Download, Upload, Eye, Search, Plus, Minus, RefreshCw, ChevronRight, ChevronDown, BarChart3, PieChart, Activity, Users, Building, Briefcase, ShoppingCart, Coffee, Utensils, Bed, Home } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export default function InvoicesModal(props) {
+  const { t } = useTranslation();
   const { allInvoices, formatCurrency, invoicesModalOpen, setInvoicesModalOpen } = props;
   return (
     <Dialog open={invoicesModalOpen} onOpenChange={setInvoicesModalOpen}>
@@ -21,7 +23,7 @@ export default function InvoicesModal(props) {
         </DialogHeader>
         <div className="space-y-2">
           {allInvoices.length === 0 ? (
-            <p className="text-center text-gray-500 py-8">Henüz fatura yok</p>
+            <p className="text-center text-gray-500 py-8">{t('cm.components_mobilefinance_dialogs_InvoicesModal.henuz_fatura_yok')}</p>
           ) : (
             allInvoices.map((invoice) => (
               <div key={invoice.id} className="p-3 bg-gray-50 rounded-lg border">
@@ -40,8 +42,8 @@ export default function InvoicesModal(props) {
                   </Badge>
                 </div>
                 <div className="text-sm text-gray-600">
-                  <p>Tutar: {formatCurrency(invoice.total_amount)}</p>
-                  <p>Tarih: {invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString('tr-TR') : 'N/A'}</p>
+                  <p>{t('cm.components_mobilefinance_dialogs_InvoicesModal.tutar')} {formatCurrency(invoice.total_amount)}</p>
+                  <p>{t('cm.components_mobilefinance_dialogs_InvoicesModal.tarih')} {invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString('tr-TR') : 'N/A'}</p>
                   {invoice.due_date && (
                     <p>Vade: {new Date(invoice.due_date).toLocaleDateString('tr-TR')}</p>
                   )}

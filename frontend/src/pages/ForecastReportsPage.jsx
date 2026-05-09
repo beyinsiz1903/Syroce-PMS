@@ -17,6 +17,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Legend,
 } from "recharts";
+import { useTranslation } from 'react-i18next';
 
 /**
  * Opera #5 — Forecast / Pace / Pickup raporları.
@@ -24,6 +25,7 @@ import {
  * Bu sürüm tablo + recharts grafikleri ile zenginleştirilmiş.
  */
 export default function ForecastReportsPage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [tab, setTab] = useState("forecast");
 
@@ -111,7 +113,7 @@ export default function ForecastReportsPage() {
           <TrendingUp className="h-6 w-6" /> Forecast / Pace / Pickup
         </h2>
         <p className="text-sm text-muted-foreground">
-          10/30/90 gün doluluk tahmini · Booking pace karşılaştırma · Son N gün pickup.
+          {t('cm.pages_ForecastReportsPage.10_30_90_gun_doluluk_tahmini_booking_pac')}
         </p>
       </div>
 
@@ -140,7 +142,7 @@ export default function ForecastReportsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {[10, 30, 90, 180].map((n) => (
-                        <SelectItem key={n} value={String(n)}>{n} gün</SelectItem>
+                        <SelectItem key={n} value={String(n)}>{n} {t('cm.pages_ForecastReportsPage.gun')}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -157,7 +159,7 @@ export default function ForecastReportsPage() {
                 </div>
                 <Button onClick={loadForecast} disabled={loading} data-testid="button-load-forecast">
                   {loading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
-                  Yenile
+                  {t('cm.pages_ForecastReportsPage.yenile')}
                 </Button>
               </div>
 
@@ -181,7 +183,7 @@ export default function ForecastReportsPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Tarih</TableHead>
+                          <TableHead>{t('cm.pages_ForecastReportsPage.tarih')}</TableHead>
                           <TableHead className="text-right">OTB</TableHead>
                           <TableHead className="text-right">Forecast</TableHead>
                           <TableHead className="text-right">Doluluk</TableHead>
@@ -218,7 +220,7 @@ export default function ForecastReportsPage() {
             <CardHeader>
               <CardTitle>Booking Pace</CardTitle>
               <CardDescription>
-                Hedef tarih için "X gün önce kaç oda elimizde vardı" karşılaştırması.
+                {t('cm.pages_ForecastReportsPage.hedef_tarih_icin_x_gun_once_kac_oda_elim')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -234,7 +236,7 @@ export default function ForecastReportsPage() {
                   />
                 </div>
                 <div>
-                  <Label>Karşılaştırma yılı</Label>
+                  <Label>{t('cm.pages_ForecastReportsPage.karsilastirma_yili')}</Label>
                   <Input
                     type="number"
                     value={paceCompare}
@@ -245,7 +247,7 @@ export default function ForecastReportsPage() {
                 </div>
                 <Button onClick={loadPace} disabled={loading} data-testid="button-load-pace">
                   {loading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
-                  Yenile
+                  {t('cm.pages_ForecastReportsPage.yenile_aedf3')}
                 </Button>
               </div>
 
@@ -269,9 +271,9 @@ export default function ForecastReportsPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="text-center">Gün Önce</TableHead>
-                        <TableHead className="text-right">Bu Yıl</TableHead>
-                        <TableHead className="text-right">Karşılaştırma</TableHead>
+                        <TableHead className="text-center">{t('cm.pages_ForecastReportsPage.gun_once')}</TableHead>
+                        <TableHead className="text-right">{t('cm.pages_ForecastReportsPage.bu_yil')}</TableHead>
+                        <TableHead className="text-right">{t('cm.pages_ForecastReportsPage.karsilastirma')}</TableHead>
                         <TableHead className="text-right">Fark</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -302,8 +304,7 @@ export default function ForecastReportsPage() {
             <CardHeader>
               <CardTitle>Pickup Raporu</CardTitle>
               <CardDescription>
-                Son N günde alınan rezervasyonların check-in tarihine göre
-                dağılımı.
+                {t('cm.pages_ForecastReportsPage.son_n_gunde_alinan_rezervasyonlarin_chec')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -316,14 +317,14 @@ export default function ForecastReportsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {[1, 7, 14, 30].map((n) => (
-                        <SelectItem key={n} value={String(n)}>Son {n} gün</SelectItem>
+                        <SelectItem key={n} value={String(n)}>Son {n} {t('cm.pages_ForecastReportsPage.gun_54e78')}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <Button onClick={loadPickup} disabled={loading} data-testid="button-load-pickup">
                   {loading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
-                  Yenile
+                  {t('cm.pages_ForecastReportsPage.yenile_aedf3')}
                 </Button>
               </div>
 
@@ -332,7 +333,7 @@ export default function ForecastReportsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <Card>
                       <CardContent className="pt-4">
-                        <div className="text-xs text-muted-foreground">Toplam oda</div>
+                        <div className="text-xs text-muted-foreground">{t('cm.pages_ForecastReportsPage.toplam_oda')}</div>
                         <div className="text-2xl font-semibold flex items-center gap-2">
                           <BarChart3 className="h-5 w-5 text-blue-600" />
                           {pickup.total_rooms_picked || 0}
@@ -341,7 +342,7 @@ export default function ForecastReportsPage() {
                     </Card>
                     <Card>
                       <CardContent className="pt-4">
-                        <div className="text-xs text-muted-foreground">Toplam gelir</div>
+                        <div className="text-xs text-muted-foreground">{t('cm.pages_ForecastReportsPage.toplam_gelir')}</div>
                         <div className="text-2xl font-semibold">
                           {(pickup.total_revenue_picked || 0).toLocaleString("tr-TR")} ₺
                         </div>
@@ -367,7 +368,7 @@ export default function ForecastReportsPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Check-in</TableHead>
-                            <TableHead className="text-right">Oda</TableHead>
+                            <TableHead className="text-right">{t('cm.pages_ForecastReportsPage.oda')}</TableHead>
                             <TableHead className="text-right">Gelir</TableHead>
                           </TableRow>
                         </TableHeader>

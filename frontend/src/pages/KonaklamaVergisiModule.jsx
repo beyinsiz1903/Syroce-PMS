@@ -32,6 +32,7 @@ import {
   ShieldOff,
   Wallet,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const TABS = [
   { key: "config", label: "Yapılandırma", icon: Settings },
@@ -49,6 +50,7 @@ const STATUS_INTENT = {
 };
 
 function DeclStatusBadge({ status }) {
+  const { t } = useTranslation();
   const s = STATUS_INTENT[status] || { intent: 'default', label: status || '-' };
   return <StatusBadge intent={s.intent}>{s.label}</StatusBadge>;
 }
@@ -345,7 +347,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
       <PageHeader
         icon={Receipt}
         title="Konaklama Vergisi"
-        subtitle="7194 sayılı Kanun — aylık matrah, beyanname ve GİB tahakkuk takibi"
+        subtitle={t('cm.pages_KonaklamaVergisiModule.7194_sayili_kanun_aylik_matrah_beyanname')}
         actions={
           <Button
             variant="outline"
@@ -354,7 +356,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
             disabled={loading}
           >
             <RefreshCw className="w-4 h-4 mr-1.5" />
-            Yenile
+            {t('cm.pages_KonaklamaVergisiModule.yenile')}
           </Button>
         }
       />
@@ -384,22 +386,19 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
       {tab === "config" && (
         <div className="bg-white rounded-lg border p-4 max-w-2xl space-y-4">
           {loading || !config ? (
-            <div className="flex items-center gap-2 text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Yükleniyor…</div>
+            <div className="flex items-center gap-2 text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> {t('cm.pages_KonaklamaVergisiModule.yukleniyor')}</div>
           ) : (
             <>
               <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-3">
                 <Info className="h-4 w-4 mt-0.5 shrink-0" />
                 <div>
-                  <b>Matrah = oda satırı (KDV hariç).</b> Konaklama vergisi
-                  7194 SK uyarınca KDV matrahına dâhil edilmez. Folio'daki
-                  "Oda" satırlarının net (KDV öncesi) tutarı toplanır;
-                  KDV ve diğer hizmet kalemleri matrah dışındadır.
+                  <b>{t('cm.pages_KonaklamaVergisiModule.matrah_oda_satiri_kdv_haric')}</b> {t('cm.pages_KonaklamaVergisiModule.konaklama_vergisi_7194_sk_uyarinca_kdv_m')}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-medium text-gray-600">Vergi Oranı (%)</label>
+                  <label className="text-xs font-medium text-gray-600">{t('cm.pages_KonaklamaVergisiModule.vergi_orani')}</label>
                   <div className="flex items-center gap-2 mt-1">
                     <Percent className="h-4 w-4 text-gray-400" />
                     <input
@@ -414,7 +413,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600">Yürürlük Tarihi</label>
+                  <label className="text-xs font-medium text-gray-600">{t('cm.pages_KonaklamaVergisiModule.yururluk_tarihi')}</label>
                   <input
                     type="date"
                     className="border rounded px-3 py-2 w-full mt-1"
@@ -431,7 +430,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                     checked={!!config.active}
                     onChange={(e) => setConfig({ ...config, active: e.target.checked })}
                   />
-                  Aktif
+                  {t('cm.pages_KonaklamaVergisiModule.aktif')}
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -439,16 +438,16 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                     checked={!!config.auto_post}
                     onChange={(e) => setConfig({ ...config, auto_post: e.target.checked })}
                   />
-                  Folio'ya otomatik vergi satırı ekle (checkout)
+                  {t('cm.pages_KonaklamaVergisiModule.folio_ya_otomatik_vergi_satiri_ekle_chec')}
                 </label>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-gray-600">Notlar / Muafiyet Açıklaması</label>
+                <label className="text-xs font-medium text-gray-600">{t('cm.pages_KonaklamaVergisiModule.notlar_muafiyet_aciklamasi')}</label>
                 <textarea
                   className="border rounded px-3 py-2 w-full mt-1"
                   rows={3}
-                  placeholder="Diplomatik muafiyet, öğrenci yurdu vb."
+                  placeholder={t('cm.pages_KonaklamaVergisiModule.diplomatik_muafiyet_ogrenci_yurdu_vb')}
                   value={config.notes || ""}
                   onChange={(e) => setConfig({ ...config, notes: e.target.value })}
                 />
@@ -462,11 +461,8 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                 <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-3">
                   <Info className="h-4 w-4 mt-0.5 shrink-0" />
                   <div>
-                    Etkinleştirildiğinde, her ayın belirtilen gününde önceki
-                    ayın beyannamesi otomatik olarak hesaplanıp <b>onaylı</b>
-                    {" "}duruma alınır. <b>E-posta gönderimi</b> aktifse PDF
-                    eki ile aşağıdaki alıcılara iletilir. İşlem her dönem için
-                    yalnızca bir kez çalışır (idempotent).
+                    {t('cm.pages_KonaklamaVergisiModule.etkinlestirildiginde_her_ayin_belirtilen')} <b>{t('cm.pages_KonaklamaVergisiModule.onayli')}</b>
+                    {" "}{t('cm.pages_KonaklamaVergisiModule.duruma_alinir')} <b>{t('cm.pages_KonaklamaVergisiModule.e_posta_gonderimi')}</b> {t('cm.pages_KonaklamaVergisiModule.aktifse_pdf_eki_ile_asagidaki_alicilara_')}
                   </div>
                 </div>
 
@@ -477,10 +473,10 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                       checked={!!config.auto_finalize}
                       onChange={(e) => setConfig({ ...config, auto_finalize: e.target.checked })}
                     />
-                    Otomatik onaylama (önceki ay)
+                    {t('cm.pages_KonaklamaVergisiModule.otomatik_onaylama_onceki_ay')}
                   </label>
                   <div>
-                    <label className="text-xs font-medium text-gray-600">Onaylama Günü (1-10)</label>
+                    <label className="text-xs font-medium text-gray-600">{t('cm.pages_KonaklamaVergisiModule.onaylama_gunu_1_10')}</label>
                     <input
                       type="number"
                       min="1"
@@ -500,12 +496,12 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                     checked={!!config.auto_email}
                     onChange={(e) => setConfig({ ...config, auto_email: e.target.checked })}
                   />
-                  Onay sonrası PDF beyannameyi e-posta gönder
+                  {t('cm.pages_KonaklamaVergisiModule.onay_sonrasi_pdf_beyannameyi_e_posta_gon')}
                 </label>
 
                 <div>
                   <label className="text-xs font-medium text-gray-600">
-                    E-posta Alıcıları (virgülle ayırın)
+                    {t('cm.pages_KonaklamaVergisiModule.e_posta_alicilari_virgulle_ayirin')}
                   </label>
                   <input
                     type="text"
@@ -521,8 +517,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                     })}
                   />
                   <div className="text-xs text-slate-500 mt-1">
-                    Bu liste manuel "E-posta Gönder" işleminde de varsayılan
-                    olarak önerilir.
+                    {t('cm.pages_KonaklamaVergisiModule.bu_liste_manuel_e_posta_gonder_isleminde')}
                   </div>
                 </div>
               </div>
@@ -530,7 +525,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
               <div className="flex justify-end pt-2">
                 <Button onClick={saveConfig} disabled={saving}>
                   {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
-                  Kaydet
+                  {t('cm.pages_KonaklamaVergisiModule.kaydet')}
                 </Button>
               </div>
             </>
@@ -542,13 +537,13 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
         <div className="bg-white rounded-lg border p-4 space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="text-xs font-medium text-gray-600 block">Yıl</label>
+              <label className="text-xs font-medium text-gray-600 block">{t('cm.pages_KonaklamaVergisiModule.yil')}</label>
               <select className="border rounded px-3 py-2" value={year} onChange={(e) => setYear(Number(e.target.value))}>
                 {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600 block">Ay</label>
+              <label className="text-xs font-medium text-gray-600 block">{t('cm.pages_KonaklamaVergisiModule.ay')}</label>
               <select className="border rounded px-3 py-2" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
                 {monthOptions.map((m) => <option key={m} value={m}>{String(m).padStart(2, "0")}</option>)}
               </select>
@@ -562,12 +557,12 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
             </Button>
             {tab === "report" && report && (
               <Button variant="outline" onClick={exportReportCSV}>
-                <Download className="h-4 w-4 mr-1.5" /> CSV İndir
+                <Download className="h-4 w-4 mr-1.5" /> {t('cm.pages_KonaklamaVergisiModule.csv_indir')}
               </Button>
             )}
             {tab === "declaration" && declaration && (
               <Button variant="outline" onClick={() => window.print()}>
-                <Printer className="h-4 w-4 mr-1.5" /> Yazdır
+                <Printer className="h-4 w-4 mr-1.5" /> {t('cm.pages_KonaklamaVergisiModule.yazdir')}
               </Button>
             )}
           </div>
@@ -575,19 +570,19 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
           {tab === "report" && report && (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <KpiCard icon={FileText} label="Folio Sayısı" value={report.folio_count} />
-                <KpiCard icon={ClipboardList} label="Toplam Geceleme" value={report.total_nights} />
-                <KpiCard icon={Calculator} label="Matrah (KDV hariç)" value={fmtTRY(report.total_base)} />
+                <KpiCard icon={FileText} label={t('cm.pages_KonaklamaVergisiModule.folio_sayisi')} value={report.folio_count} />
+                <KpiCard icon={ClipboardList} label={t('cm.pages_KonaklamaVergisiModule.toplam_geceleme')} value={report.total_nights} />
+                <KpiCard icon={Calculator} label={t('cm.pages_KonaklamaVergisiModule.matrah_kdv_haric')} value={fmtTRY(report.total_base)} />
                 <KpiCard icon={Receipt} label={`Vergi (%${report.rate_percent})`} value={fmtTRY(report.total_tax)} intent="warning" highlight />
               </div>
               {!!report.exempt_count && (
                 <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-3">
                   <ShieldOff className="h-4 w-4 mt-0.5 shrink-0" />
                   <div>
-                    Bu dönemde <b>{report.exempt_count}</b> folio muaf segment
+                    {t('cm.pages_KonaklamaVergisiModule.bu_donemde')} <b>{report.exempt_count}</b> folio muaf segment
                     nedeniyle matraha dâhil edilmedi
                     {report.exempt_base ? ` (toplam ${fmtTRY(report.exempt_base)} matrah dışı).` : "."}
-                    {' '}Muafiyet kaynağı: <b>Yapılandırma → exempt_segments</b>.
+                    {' '}{t('cm.pages_KonaklamaVergisiModule.muafiyet_kaynagi')} <b>{t('cm.pages_KonaklamaVergisiModule.yapilandirma_exempt_segments')}</b>.
                   </div>
                 </div>
               )}
@@ -598,7 +593,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                       <th className="text-left px-3 py-2">Folio ID</th>
                       <th className="text-left px-3 py-2">Booking</th>
                       <th className="text-right px-3 py-2">Geceleme</th>
-                      <th className="text-right px-3 py-2">Matrah (KDV hariç)</th>
+                      <th className="text-right px-3 py-2">{t('cm.pages_KonaklamaVergisiModule.matrah_kdv_haric_270bc')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -611,7 +606,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                       </tr>
                     ))}
                     {report.rows.length === 0 && (
-                      <tr><td colSpan={4} className="text-center text-gray-400 py-6">Bu dönemde oda satırı bulunamadı.</td></tr>
+                      <tr><td colSpan={4} className="text-center text-gray-400 py-6">{t('cm.pages_KonaklamaVergisiModule.bu_donemde_oda_satiri_bulunamadi')}</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -624,7 +619,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
               {finalized && (
                 <div className="flex flex-wrap items-center gap-2 text-sm bg-amber-50 border border-amber-200 rounded p-3">
                   <Lock className="h-4 w-4 text-amber-700" />
-                  <span className="font-medium">Bu dönem kilitli:</span>
+                  <span className="font-medium">{t('cm.pages_KonaklamaVergisiModule.bu_donem_kilitli')}</span>
                   <DeclStatusBadge status={finalized.status} />
                   <span className="text-gray-600">
                     Onay: {(finalized.finalized_at || "").slice(0, 16).replace("T", " ")}
@@ -636,7 +631,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                   )}
                   {finalized.payment_ref && (
                     <span className="text-gray-600">
-                      Ödeme: <b>{finalized.payment_ref}</b>
+                      {t('cm.pages_KonaklamaVergisiModule.odeme')} <b>{finalized.payment_ref}</b>
                     </span>
                   )}
                 </div>
@@ -645,32 +640,32 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
               <div className="flex flex-wrap gap-2">
                 {!finalized && (
                   <Button onClick={finalizeDeclaration} disabled={working}>
-                    <Lock className="h-4 w-4 mr-1.5" /> Beyannameyi Onayla & Kilitle
+                    <Lock className="h-4 w-4 mr-1.5" /> {t('cm.pages_KonaklamaVergisiModule.beyannameyi_onayla_kilitle')}
                   </Button>
                 )}
                 {finalized && finalized.status === "finalized" && (
                   <Button variant="outline" onClick={() => submitDeclaration(finalized)} disabled={working}>
-                    <Send className="h-4 w-4 mr-1.5" /> GİB Tahakkuk Numarası Kaydet
+                    <Send className="h-4 w-4 mr-1.5" /> {t('cm.pages_KonaklamaVergisiModule.gib_tahakkuk_numarasi_kaydet')}
                   </Button>
                 )}
                 {finalized && (finalized.status === "submitted" || finalized.status === "finalized") && (
                   <Button variant="outline" onClick={() => payDeclaration(finalized)} disabled={working}>
-                    <Wallet className="h-4 w-4 mr-1.5" /> Ödeme Kaydet
+                    <Wallet className="h-4 w-4 mr-1.5" /> {t('cm.pages_KonaklamaVergisiModule.odeme_kaydet')}
                   </Button>
                 )}
                 {finalized && (
                   <>
                     <Button variant="outline" onClick={() => exportDecl(finalized, "pdf")}>
-                      <FileDown className="h-4 w-4 mr-1.5" /> PDF İndir
+                      <FileDown className="h-4 w-4 mr-1.5" /> {t('cm.pages_KonaklamaVergisiModule.pdf_indir')}
                     </Button>
                     <Button variant="outline" onClick={() => exportDecl(finalized, "xml")}>
-                      <FileCode className="h-4 w-4 mr-1.5" /> XML İndir (GİB)
+                      <FileCode className="h-4 w-4 mr-1.5" /> {t('cm.pages_KonaklamaVergisiModule.xml_indir_gib')}
                     </Button>
                     <Button variant="outline" onClick={() => exportDecl(finalized, "json")}>
-                      <Download className="h-4 w-4 mr-1.5" /> JSON Arşiv
+                      <Download className="h-4 w-4 mr-1.5" /> {t('cm.pages_KonaklamaVergisiModule.json_arsiv')}
                     </Button>
                     <Button variant="outline" onClick={() => emailDecl(finalized)} disabled={working}>
-                      <Mail className="h-4 w-4 mr-1.5" /> E-posta Gönder
+                      <Mail className="h-4 w-4 mr-1.5" /> {t('cm.pages_KonaklamaVergisiModule.e_posta_gonder')}
                     </Button>
                   </>
                 )}
@@ -678,23 +673,20 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
 
               <div className="border rounded-lg p-6 print:p-0 print:border-0 max-w-3xl">
                 <div className="text-center mb-4">
-                  <h2 className="text-xl font-bold">KONAKLAMA VERGİSİ BEYANNAMESİ</h2>
+                  <h2 className="text-xl font-bold">{t('cm.pages_KonaklamaVergisiModule.konaklama_vergisi_beyannamesi')}</h2>
                   <p className="text-sm text-gray-500">{declaration.law_reference}</p>
                 </div>
-                <DeclRow label="İşletme">{declaration.tenant?.hotel_name || "-"}</DeclRow>
+                <DeclRow label={t('cm.pages_KonaklamaVergisiModule.isletme')}>{declaration.tenant?.hotel_name || "-"}</DeclRow>
                 <DeclRow label="Vergi No / Otel ID">{declaration.tenant?.tax_no || declaration.tenant?.hotel_id || "-"}</DeclRow>
-                <DeclRow label="Dönem">{declaration.period}</DeclRow>
-                <DeclRow label="Son Beyan/Ödeme Tarihi">{declaration.due_date}</DeclRow>
-                <DeclRow label="Vergi Oranı">{`%${declaration.rate_percent}`}</DeclRow>
-                <DeclRow label="Folio Sayısı">{declaration.folio_count}</DeclRow>
-                <DeclRow label="Toplam Geceleme">{declaration.total_nights}</DeclRow>
-                <DeclRow label="Matrah (KDV hariç)">{fmtTRY(declaration.total_base)}</DeclRow>
+                <DeclRow label={t('cm.pages_KonaklamaVergisiModule.donem')}>{declaration.period}</DeclRow>
+                <DeclRow label={t('cm.pages_KonaklamaVergisiModule.son_beyan_odeme_tarihi')}>{declaration.due_date}</DeclRow>
+                <DeclRow label={t('cm.pages_KonaklamaVergisiModule.vergi_orani_e8441')}>{`%${declaration.rate_percent}`}</DeclRow>
+                <DeclRow label={t('cm.pages_KonaklamaVergisiModule.folio_sayisi_c53f2')}>{declaration.folio_count}</DeclRow>
+                <DeclRow label={t('cm.pages_KonaklamaVergisiModule.toplam_geceleme_d27a1')}>{declaration.total_nights}</DeclRow>
+                <DeclRow label={t('cm.pages_KonaklamaVergisiModule.matrah_kdv_haric_270bc')}>{fmtTRY(declaration.total_base)}</DeclRow>
                 <DeclRow label="Tahakkuk Eden Vergi" highlight>{fmtTRY(declaration.total_tax)}</DeclRow>
                 <p className="text-xs text-gray-400 mt-6">
-                  Bu özet, dahili kontrol amaçlıdır. Resmi beyanname için Gelir
-                  İdaresi Başkanlığı (GİB) e-Beyanname sistemini kullanınız.
-                  Onayladıktan sonra XML çıktısı GİB form alanlarıyla 1-1
-                  eşleşir; muhasebe yazılımına aktarmak için kullanabilirsiniz.
+                  {t('cm.pages_KonaklamaVergisiModule.bu_ozet_dahili_kontrol_amaclidir_resmi_b')}
                 </p>
               </div>
             </div>
@@ -706,23 +698,23 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
         <div className="bg-white rounded-lg border p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold flex items-center gap-2">
-              <History className="h-4 w-4" /> Beyanname Geçmişi
+              <History className="h-4 w-4" /> {t('cm.pages_KonaklamaVergisiModule.beyanname_gecmisi')}
             </h3>
             <Button variant="outline" size="sm" onClick={loadHistory}>
-              <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+              <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_KonaklamaVergisiModule.yenile_aedf3')}
             </Button>
           </div>
           <div className="overflow-auto border rounded">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="text-left px-3 py-2">Dönem</th>
-                  <th className="text-left px-3 py-2">Durum</th>
+                  <th className="text-left px-3 py-2">{t('cm.pages_KonaklamaVergisiModule.donem_625f5')}</th>
+                  <th className="text-left px-3 py-2">{t('cm.pages_KonaklamaVergisiModule.durum')}</th>
                   <th className="text-right px-3 py-2">Matrah</th>
                   <th className="text-right px-3 py-2">Vergi</th>
-                  <th className="text-left px-3 py-2">Son Tarih</th>
+                  <th className="text-left px-3 py-2">{t('cm.pages_KonaklamaVergisiModule.son_tarih')}</th>
                   <th className="text-left px-3 py-2">Tahakkuk</th>
-                  <th className="text-left px-3 py-2">Ödeme</th>
+                  <th className="text-left px-3 py-2">{t('cm.pages_KonaklamaVergisiModule.odeme_97fa2')}</th>
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
@@ -750,7 +742,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                           variant="outline"
                           size="sm"
                           onClick={() => exportDecl(d, "xml")}
-                          title="XML indir (GİB)"
+                          title={t('cm.pages_KonaklamaVergisiModule.xml_indir_gib_eb160')}
                         >
                           <FileCode className="h-4 w-4" />
                         </Button>
@@ -759,7 +751,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                           size="sm"
                           onClick={() => emailDecl(d)}
                           disabled={working}
-                          title="E-posta gönder"
+                          title={t('cm.pages_KonaklamaVergisiModule.e_posta_gonder_6618f')}
                         >
                           <Mail className="h-4 w-4" />
                         </Button>
@@ -772,9 +764,9 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                     <td colSpan={8} className="text-center text-gray-500 py-10">
                       <div className="flex flex-col items-center gap-3">
                         <FileText className="h-8 w-8 text-gray-300" />
-                        <div>Henüz onaylanmış beyanname yok.</div>
+                        <div>{t('cm.pages_KonaklamaVergisiModule.henuz_onaylanmis_beyanname_yok')}</div>
                         <Button onClick={() => setTab("declaration")}>
-                          <Plus className="h-4 w-4 mr-1.5" /> İlk Beyannameyi Oluştur
+                          <Plus className="h-4 w-4 mr-1.5" /> {t('cm.pages_KonaklamaVergisiModule.ilk_beyannameyi_olustur')}
                         </Button>
                       </div>
                     </td>
@@ -791,14 +783,12 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
           <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-3">
             <Info className="h-4 w-4 mt-0.5 shrink-0" />
             <div>
-              Girdiğiniz <b>Tutar</b> KDV <b>hariç</b> oda satırı tutarı
-              olmalıdır. Konaklama vergisi 7194 SK uyarınca KDV matrahına
-              dâhil değildir.
+              {t('cm.pages_KonaklamaVergisiModule.girdiginiz')} <b>{t('cm.pages_KonaklamaVergisiModule.tutar')}</b> KDV <b>{t('cm.pages_KonaklamaVergisiModule.haric')}</b> {t('cm.pages_KonaklamaVergisiModule.oda_satiri_tutari_olmalidir_konaklama_ve')}
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-xs font-medium text-gray-600">Tutar (TRY, KDV hariç)</label>
+              <label className="text-xs font-medium text-gray-600">{t('cm.pages_KonaklamaVergisiModule.tutar_try_kdv_haric')}</label>
               <input type="number" className="border rounded px-3 py-2 w-full mt-1" value={calc.amount}
                 onChange={(e) => setCalc({ ...calc, amount: parseFloat(e.target.value) || 0 })} />
             </div>
@@ -819,9 +809,9 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
           </Button>
           {calcResult && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-              <KpiCard label="Matrah (KDV hariç)" value={fmtTRY(calcResult.base_amount)} />
+              <KpiCard label={t('cm.pages_KonaklamaVergisiModule.matrah_kdv_haric_270bc')} value={fmtTRY(calcResult.base_amount)} />
               <KpiCard label={`Vergi %${calcResult.rate_percent}`} value={fmtTRY(calcResult.tax_amount)} intent="warning" highlight />
-              <KpiCard label="Toplam (vergi dâhil)" value={fmtTRY(calcResult.total_with_tax)} />
+              <KpiCard label={t('cm.pages_KonaklamaVergisiModule.toplam_vergi_dahil')} value={fmtTRY(calcResult.total_with_tax)} />
               <KpiCard label="Geceleme" value={calcResult.nights} />
             </div>
           )}

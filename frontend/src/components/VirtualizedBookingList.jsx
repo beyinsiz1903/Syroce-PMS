@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar, User, DollarSign, Eye } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const BookingRow = memo(({ index, style, data }) => {
   const { bookings, onSelectBooking } = data;
@@ -31,7 +32,7 @@ const BookingRow = memo(({ index, style, data }) => {
         <div className="flex items-center justify-between">
           <div className="flex-1 grid grid-cols-4 gap-4">
             <div>
-              <div className="text-xs text-gray-500">Misafir</div>
+              <div className="text-xs text-gray-500">{t('cm.components_VirtualizedBookingList.misafir')}</div>
               <div className="font-medium flex items-center gap-1">
                 <User className="w-3 h-3" />
                 {booking.guest_name || (booking.guest_id ? `Walk-in Misafir #${booking.guest_id.replace(/-/g,'').slice(-4).toUpperCase()}` : 'Bilinmiyor')}
@@ -39,14 +40,14 @@ const BookingRow = memo(({ index, style, data }) => {
             </div>
             
             <div>
-              <div className="text-xs text-gray-500">Oda</div>
+              <div className="text-xs text-gray-500">{t('cm.components_VirtualizedBookingList.oda')}</div>
               <div className="font-medium">
                 {booking.room_number || `Oda ${booking.room_id}`}
               </div>
             </div>
             
             <div>
-              <div className="text-xs text-gray-500">Giriş / Çıkış</div>
+              <div className="text-xs text-gray-500">{t('cm.components_VirtualizedBookingList.giris_cikis')}</div>
               <div className="text-sm flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
                 {new Date(booking.check_in).toLocaleDateString('tr-TR')} - 
@@ -55,7 +56,7 @@ const BookingRow = memo(({ index, style, data }) => {
             </div>
             
             <div>
-              <div className="text-xs text-gray-500">Tutar</div>
+              <div className="text-xs text-gray-500">{t('cm.components_VirtualizedBookingList.tutar')}</div>
               <div className="font-medium flex items-center gap-1">
                 <DollarSign className="w-3 h-3" />
                 ${booking.total_amount?.toFixed(2) || '0.00'}
@@ -84,10 +85,11 @@ const BookingRow = memo(({ index, style, data }) => {
 BookingRow.displayName = 'BookingRow';
 
 const VirtualizedBookingList = ({ bookings, onSelectBooking, height = 600 }) => {
+  const { t } = useTranslation();
   if (!bookings || bookings.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-500">
-        Rezervasyon bulunamadı
+        {t('cm.components_VirtualizedBookingList.rezervasyon_bulunamadi')}
       </div>
     );
   }
@@ -108,7 +110,7 @@ const VirtualizedBookingList = ({ bookings, onSelectBooking, height = 600 }) => 
       </List>
       
       <div className="p-2 bg-gray-50 border-t text-sm text-gray-600 text-center">
-        {bookings.length} rezervasyon gösteriliyor (performans için sanallaştırıldı)
+        {bookings.length} {t('cm.components_VirtualizedBookingList.rezervasyon_gosteriliyor_performans_icin')}
       </div>
     </div>
   );

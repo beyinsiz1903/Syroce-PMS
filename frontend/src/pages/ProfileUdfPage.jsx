@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Settings2, Plus, RefreshCw, Trash2, Save, Search, Loader2 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 /**
  * Opera #12 — Profile UDF (User-Defined Fields).
@@ -36,6 +37,7 @@ const TYPES = [
 ];
 
 export default function ProfileUdfPage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [tab, setTab] = useState("definitions");
   const [defs, setDefs] = useState([]);
@@ -163,7 +165,7 @@ export default function ProfileUdfPage() {
         return (
           <Select value={v ?? ""} onValueChange={set}>
             <SelectTrigger data-testid={`udf-input-${def.key}`}>
-              <SelectValue placeholder="Seçiniz" />
+              <SelectValue placeholder={t('cm.pages_ProfileUdfPage.seciniz')} />
             </SelectTrigger>
             <SelectContent>
               {def.options.map((o) => (
@@ -208,29 +210,29 @@ export default function ProfileUdfPage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-2xl font-semibold flex items-center gap-2">
-            <Settings2 className="h-6 w-6" /> Profil Özel Alanları (UDF)
+            <Settings2 className="h-6 w-6" /> {t('cm.pages_ProfileUdfPage.profil_ozel_alanlari_udf')}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Misafir profillerine tenant'a özel ek alanlar (anahtar, etiket, tip, zorunluluk, seçenekler).
+            {t('cm.pages_ProfileUdfPage.misafir_profillerine_tenant_a_ozel_ek_al')}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={loadDefs} disabled={loading} data-testid="button-udf-refresh">
-          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Yenile
+          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> {t('cm.pages_ProfileUdfPage.yenile')}
         </Button>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="definitions" data-testid="tab-udf-defs">Tanımlar</TabsTrigger>
-          <TabsTrigger value="values" data-testid="tab-udf-values">Misafir Değerleri</TabsTrigger>
+          <TabsTrigger value="definitions" data-testid="tab-udf-defs">{t('cm.pages_ProfileUdfPage.tanimlar')}</TabsTrigger>
+          <TabsTrigger value="values" data-testid="tab-udf-values">{t('cm.pages_ProfileUdfPage.misafir_degerleri')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="definitions">
           <Card>
             <CardHeader>
-              <CardTitle>UDF Tanımları</CardTitle>
+              <CardTitle>{t('cm.pages_ProfileUdfPage.udf_tanimlari')}</CardTitle>
               <CardDescription>
-                Misafir profilinde görünecek ek alanları tanımlayın. Anahtar küçük harf+altçizgi olmalı (ör: <code>ozel_diyet</code>).
+                {t('cm.pages_ProfileUdfPage.misafir_profilinde_gorunecek_ek_alanlari')} <code>ozel_diyet</code>).
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -268,7 +270,7 @@ export default function ProfileUdfPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Bölüm</Label>
+                  <Label>{t('cm.pages_ProfileUdfPage.bolum')}</Label>
                   <Input
                     value={defForm.section}
                     onChange={(e) => setDefForm({ ...defForm, section: e.target.value })}
@@ -276,7 +278,7 @@ export default function ProfileUdfPage() {
                   />
                 </div>
                 <div>
-                  <Label>Sıra</Label>
+                  <Label>{t('cm.pages_ProfileUdfPage.sira')}</Label>
                   <Input
                     type="number"
                     value={defForm.order}
@@ -292,7 +294,7 @@ export default function ProfileUdfPage() {
                 </div>
                 {(defForm.type === "select" || defForm.type === "multiselect") && (
                   <div className="md:col-span-5">
-                    <Label>Seçenekler (virgüllü)</Label>
+                    <Label>{t('cm.pages_ProfileUdfPage.secenekler_virgullu')}</Label>
                     <Input
                       value={defForm.options}
                       onChange={(e) => setDefForm({ ...defForm, options: e.target.value })}
@@ -301,7 +303,7 @@ export default function ProfileUdfPage() {
                   </div>
                 )}
                 <div className="md:col-span-5">
-                  <Label>Yardım metni</Label>
+                  <Label>{t('cm.pages_ProfileUdfPage.yardim_metni')}</Label>
                   <Input
                     value={defForm.help_text}
                     onChange={(e) => setDefForm({ ...defForm, help_text: e.target.value })}
@@ -309,19 +311,19 @@ export default function ProfileUdfPage() {
                 </div>
                 <Button type="submit" disabled={submittingDef} data-testid="button-udf-add">
                   {submittingDef ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
-                  Ekle
+                  {t('cm.pages_ProfileUdfPage.ekle')}
                 </Button>
               </form>
 
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Bölüm</TableHead>
+                    <TableHead>{t('cm.pages_ProfileUdfPage.bolum_50198')}</TableHead>
                     <TableHead>Anahtar</TableHead>
                     <TableHead>Etiket</TableHead>
                     <TableHead>Tip</TableHead>
                     <TableHead className="text-center">Zorunlu</TableHead>
-                    <TableHead>Seçenekler</TableHead>
+                    <TableHead>{t('cm.pages_ProfileUdfPage.secenekler')}</TableHead>
                     <TableHead className="w-[60px]" />
                   </TableRow>
                 </TableHeader>
@@ -329,7 +331,7 @@ export default function ProfileUdfPage() {
                   {defs.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
-                        Henüz UDF tanımı yok.
+                        {t('cm.pages_ProfileUdfPage.henuz_udf_tanimi_yok')}
                       </TableCell>
                     </TableRow>
                   ) : defs.map((d) => (
@@ -359,15 +361,15 @@ export default function ProfileUdfPage() {
         <TabsContent value="values">
           <Card>
             <CardHeader>
-              <CardTitle>Misafir UDF Değerleri</CardTitle>
+              <CardTitle>{t('cm.pages_ProfileUdfPage.misafir_udf_degerleri')}</CardTitle>
               <CardDescription>
-                Misafir ara, profile'ına özel alan değerlerini gir/güncelle.
+                {t('cm.pages_ProfileUdfPage.misafir_ara_profile_ina_ozel_alan_degerl')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex gap-2 items-end">
                 <div className="flex-1">
-                  <Label>Misafir ara (ad/email/telefon)</Label>
+                  <Label>{t('cm.pages_ProfileUdfPage.misafir_ara_ad_email_telefon')}</Label>
                   <Input
                     value={searchQ}
                     onChange={(e) => setSearchQ(e.target.value)}
@@ -378,7 +380,7 @@ export default function ProfileUdfPage() {
                 </div>
                 <Button onClick={searchGuests} disabled={searching} data-testid="button-udf-search">
                   {searching ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Search className="h-4 w-4 mr-1" />}
-                  Ara
+                  {t('cm.pages_ProfileUdfPage.ara')}
                 </Button>
               </div>
 
@@ -401,7 +403,7 @@ export default function ProfileUdfPage() {
                           <TableCell className="text-xs">{g.phone || "—"}</TableCell>
                           <TableCell>
                             <Button size="sm" variant="outline" onClick={() => loadGuestUdf(g)}>
-                              Seç
+                              {t('cm.pages_ProfileUdfPage.sec')}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -415,12 +417,12 @@ export default function ProfileUdfPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">{selectedGuest.name}</CardTitle>
-                    <CardDescription>{defs.length} tanımlı UDF alanı</CardDescription>
+                    <CardDescription>{defs.length} {t('cm.pages_ProfileUdfPage.tanimli_udf_alani')}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {defs.length === 0 ? (
                       <div className="text-center text-muted-foreground py-4">
-                        Önce "Tanımlar" sekmesinden alan ekleyin.
+                        {t('cm.pages_ProfileUdfPage.once_tanimlar_sekmesinden_alan_ekleyin')}
                       </div>
                     ) : (
                       sections.map((sec) => (
@@ -446,7 +448,7 @@ export default function ProfileUdfPage() {
                     {defs.length > 0 && (
                       <Button onClick={saveValues} disabled={savingValues} data-testid="button-udf-save">
                         {savingValues ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
-                        Kaydet
+                        {t('cm.pages_ProfileUdfPage.kaydet')}
                       </Button>
                     )}
                   </CardContent>
@@ -460,15 +462,15 @@ export default function ProfileUdfPage() {
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Tanımı sil?</DialogTitle>
+            <DialogTitle>{t('cm.pages_ProfileUdfPage.tanimi_sil')}</DialogTitle>
             <DialogDescription>
-              "{deleteTarget?.label}" tanımı pasife alınacak. Misafirlerdeki mevcut değerler korunur ama UI'da görünmez.
+              "{deleteTarget?.label}{t('cm.pages_ProfileUdfPage.tanimi_pasife_alinacak_misafirlerdeki_me')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Vazgeç</Button>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>{t('cm.pages_ProfileUdfPage.vazgec')}</Button>
             <Button variant="destructive" onClick={confirmDelete} data-testid="button-udf-confirm-delete">
-              Sil
+              {t('cm.pages_ProfileUdfPage.sil')}
             </Button>
           </DialogFooter>
         </DialogContent>

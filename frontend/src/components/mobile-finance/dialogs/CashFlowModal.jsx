@@ -19,7 +19,7 @@ export default function CashFlowModal(props) {
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <Wallet className="w-5 h-5 text-cyan-600" />
-            <span>Nakit Akışı Detayı</span>
+            <span>{t('cm.components_mobilefinance_dialogs_CashFlowModal.nakit_akisi_detayi')}</span>
           </DialogTitle>
         </DialogHeader>
     
@@ -28,27 +28,27 @@ export default function CashFlowModal(props) {
             {/* Today's Summary */}
             <Card className="bg-gradient-to-r from-cyan-50 to-blue-50">
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">Bugün ({cashFlowData.today?.date})</CardTitle>
+                <CardTitle className="text-base">{t('cm.components_mobilefinance_dialogs_CashFlowModal.bugun')}{cashFlowData.today?.date})</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-3 bg-green-50 rounded-lg">
-                    <p className="text-xs text-green-600">Nakit Girişi</p>
+                    <p className="text-xs text-green-600">{t('cm.components_mobilefinance_dialogs_CashFlowModal.nakit_girisi')}</p>
                     <p className="text-lg font-bold text-green-700">
                       {formatCurrency(cashFlowData.today?.cash_inflow || 0)}
                     </p>
-                    <p className="text-xs text-gray-500">{cashFlowData.today?.inflow_count} işlem</p>
+                    <p className="text-xs text-gray-500">{cashFlowData.today?.inflow_count} {t('cm.components_mobilefinance_dialogs_CashFlowModal.islem')}</p>
                   </div>
                   <div className="p-3 bg-red-50 rounded-lg">
-                    <p className="text-xs text-red-600">Nakit Çıkışı</p>
+                    <p className="text-xs text-red-600">{t('cm.components_mobilefinance_dialogs_CashFlowModal.nakit_cikisi')}</p>
                     <p className="text-lg font-bold text-red-700">
                       {formatCurrency(cashFlowData.today?.cash_outflow || 0)}
                     </p>
-                    <p className="text-xs text-gray-500">{cashFlowData.today?.outflow_count} işlem</p>
+                    <p className="text-xs text-gray-500">{cashFlowData.today?.outflow_count} {t('cm.components_mobilefinance_dialogs_CashFlowModal.islem_9d951')}</p>
                   </div>
                 </div>
                 <div className="p-3 bg-cyan-100 rounded-lg border-2 border-cyan-300">
-                  <p className="text-sm text-cyan-700 font-medium">Net Nakit Akışı</p>
+                  <p className="text-sm text-cyan-700 font-medium">{t('cm.components_mobilefinance_dialogs_CashFlowModal.net_nakit_akisi')}</p>
                   <p className={`text-2xl font-bold ${
                     (cashFlowData.today?.net_flow || 0) >= 0 ? 'text-green-700' : 'text-red-700'
                   }`}>
@@ -64,7 +64,7 @@ export default function CashFlowModal(props) {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center">
                     <Calendar className="w-4 h-4 mr-2" />
-                    7 Günlük Tahsilat/Ödeme Planı
+                    {t('cm.components_mobilefinance_dialogs_CashFlowModal.7_gunluk_tahsilat_odeme_plani')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
@@ -82,13 +82,13 @@ export default function CashFlowModal(props) {
                           {formatCurrency(day.expected_collections)}
                         </div>
                         <div className="text-amber-700">
-                          <span className="font-medium">Ödeme: </span>
+                          <span className="font-medium">{t('cm.components_mobilefinance_dialogs_CashFlowModal.odeme')} </span>
                           {formatCurrency(day.expected_payments)}
                         </div>
                       </div>
                       {day.checkout_count > 0 && (
                         <p className="text-xs text-gray-500 mt-1">
-                          {day.checkout_count} çıkış bekleniyor
+                          {day.checkout_count} {t('cm.components_mobilefinance_dialogs_CashFlowModal.cikis_bekleniyor')}
                         </p>
                       )}
                     </div>
@@ -121,7 +121,7 @@ export default function CashFlowModal(props) {
                   ))}
                   <div className="mt-2 pt-2 border-t">
                     <div className="flex justify-between">
-                      <span className="font-semibold">Toplam (TRY):</span>
+                      <span className="font-semibold">{t('cm.components_mobilefinance_dialogs_CashFlowModal.toplam_try')}</span>
                       <span className="font-bold text-lg text-indigo-700">
                         {formatCurrency(cashFlowData.total_bank_balance_try || 0)}
                       </span>
@@ -134,7 +134,7 @@ export default function CashFlowModal(props) {
         ) : (
           <div className="text-center py-8">
             <Wallet className="w-12 h-12 mx-auto text-gray-300 mb-2" />
-            <p className="text-gray-500">Nakit akışı verisi yükleniyor...</p>
+            <p className="text-gray-500">{t('cm.components_mobilefinance_dialogs_CashFlowModal.nakit_akisi_verisi_yukleniyor')}</p>
           </div>
         )}
       </DialogContent>

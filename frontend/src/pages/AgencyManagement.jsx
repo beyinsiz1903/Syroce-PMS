@@ -16,10 +16,12 @@ import {
 } from '@/components/ui/dialog';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 const PAGE_SIZE = 20;
 
 const AgencyManagement = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [agencies, setAgencies] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -338,22 +340,22 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900" data-testid="agency-management-title">Acente Yönetimi</h1>
-          <p className="text-slate-500 text-sm mt-1">Bolgesel acentelerinizi yönetin, kullanici ekleyin</p>
+          <h1 className="text-2xl font-bold text-slate-900" data-testid="agency-management-title">{t('cm.pages_AgencyManagement.acente_yonetimi')}</h1>
+          <p className="text-slate-500 text-sm mt-1">{t('cm.pages_AgencyManagement.bolgesel_acentelerinizi_yonetin_kullanic')}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => fetchAgencies()} data-testid="refresh-agencies-btn">
-            <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+            <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_AgencyManagement.yenile')}
           </Button>
           <Button onClick={() => openAgencyForm()} data-testid="add-agency-btn" className="gap-2">
-            <Plus size={16} /> Yeni Acente
+            <Plus size={16} /> {t('cm.pages_AgencyManagement.yeni_acente')}
           </Button>
         </div>
       </div>
 
       {/* Filters + Search */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div className="inline-flex rounded-lg border bg-white p-1 text-sm" role="tablist" aria-label="Durum filtresi">
+        <div className="inline-flex rounded-lg border bg-white p-1 text-sm" role="tablist" aria-label={t('cm.pages_AgencyManagement.durum_filtresi')}>
           {[
             { key: 'active', label: 'Aktif' },
             { key: 'inactive', label: 'Pasif' },
@@ -395,8 +397,8 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
         <Card>
           <CardContent className="py-16 text-center text-slate-400">
             <Building2 size={48} className="mx-auto mb-4 opacity-40" />
-            <p className="text-lg font-medium">Henüz acente eklenmemis</p>
-            <p className="text-sm mt-1">Yeni bir bolgesel acente eklemek için butona tiklayin</p>
+            <p className="text-lg font-medium">{t('cm.pages_AgencyManagement.henuz_acente_eklenmemis')}</p>
+            <p className="text-sm mt-1">{t('cm.pages_AgencyManagement.yeni_bir_bolgesel_acente_eklemek_icin_bu')}</p>
           </CardContent>
         </Card>
       ) : (
@@ -446,16 +448,16 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                   {/* Actions */}
                   <div className="flex gap-2 flex-wrap">
                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openAgencyForm(agency); }} data-testid={`edit-agency-${agency.id}`}>
-                      <Edit2 size={14} className="mr-1" /> Düzenle
+                      <Edit2 size={14} className="mr-1" /> {t('cm.pages_AgencyManagement.duzenle')}
                     </Button>
                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleToggleStatus(agency); }}>
-                      {agency.status === 'active' ? <><ToggleRight size={14} className="mr-1" /> Devre Disi Birak</> : <><ToggleLeft size={14} className="mr-1" /> Aktif Et</>}
+                      {agency.status === 'active' ? <><ToggleRight size={14} className="mr-1" /> Devre Disi Birak</> : <><ToggleLeft size={14} className="mr-1" /> {t('cm.pages_AgencyManagement.aktif_et')}</>}
                     </Button>
                     <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openUserForm(agency.id); }} data-testid={`add-user-${agency.id}`}>
-                      <UserPlus size={14} className="mr-1" /> Kullanici Ekle
+                      <UserPlus size={14} className="mr-1" /> {t('cm.pages_AgencyManagement.kullanici_ekle')}
                     </Button>
                     <Button size="sm" variant="destructive" onClick={(e) => { e.stopPropagation(); handleDeleteAgency(agency); }}>
-                      <Trash2 size={14} className="mr-1" /> Sil
+                      <Trash2 size={14} className="mr-1" /> {t('cm.pages_AgencyManagement.sil')}
                     </Button>
                   </div>
 
@@ -485,7 +487,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                       const isLoading = apiKeyLoading[agency.id];
                       const showKey = generatedKey?.agencyId === agency.id;
 
-                      if (!info) return <p className="text-xs text-slate-400">Yükleniyor...</p>;
+                      if (!info) return <p className="text-xs text-slate-400">{t('cm.pages_AgencyManagement.yukleniyor')}</p>;
 
                       return (
                         <div className="bg-white rounded-lg border p-3 space-y-2">
@@ -516,16 +518,16 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                               </div>
                               <div className="flex gap-1">
                                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={(e) => { e.stopPropagation(); handleRegenerateApiKey(agency.id); }} disabled={isLoading} data-testid={`regenerate-key-${agency.id}`}>
-                                  <RefreshCw size={12} className="mr-1" /> Yenile
+                                  <RefreshCw size={12} className="mr-1" /> {t('cm.pages_AgencyManagement.yenile_aedf3')}
                                 </Button>
                                 <Button size="sm" variant="outline" className="h-7 text-xs text-red-500 hover:text-red-700" onClick={(e) => { e.stopPropagation(); handleRevokeApiKey(agency.id); }} disabled={isLoading} data-testid={`revoke-key-${agency.id}`}>
-                                  <XCircle size={12} className="mr-1" /> İptal
+                                  <XCircle size={12} className="mr-1" /> {t('cm.pages_AgencyManagement.iptal')}
                                 </Button>
                               </div>
                             </div>
                           ) : (
                             <div className="flex items-center justify-between">
-                              <p className="text-xs text-slate-400">Henüz API key olusturulmamis</p>
+                              <p className="text-xs text-slate-400">{t('cm.pages_AgencyManagement.henuz_api_key_olusturulmamis')}</p>
                               <Button size="sm" variant="outline" className="h-7 text-xs" onClick={(e) => { e.stopPropagation(); handleCreateApiKey(agency.id); }} disabled={isLoading} data-testid={`create-key-${agency.id}`}>
                                 {isLoading ? <Loader2 size={12} className="animate-spin mr-1" /> : <Key size={12} className="mr-1" />}
                                 API Key Olustur
@@ -543,7 +545,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
                       <Users size={14} /> Kullanicilar
                     </h4>
                     {(agencyUsers[agency.id] || []).length === 0 ? (
-                      <p className="text-xs text-slate-400">Henüz kullanici eklenmemis</p>
+                      <p className="text-xs text-slate-400">{t('cm.pages_AgencyManagement.henuz_kullanici_eklenmemis')}</p>
                     ) : (
                       <div className="space-y-2">
                         {(agencyUsers[agency.id] || []).map(u => (
@@ -575,7 +577,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
           {total > PAGE_SIZE && (
             <div className="flex items-center justify-between pt-2 text-sm" data-testid="agency-pagination">
               <div className="text-slate-500">
-                Toplam <span className="font-medium text-slate-700">{total}</span> acente
+                {t('cm.pages_AgencyManagement.toplam')} <span className="font-medium text-slate-700">{total}</span> acente
                 {' · '}Sayfa <span className="font-medium text-slate-700">{page}</span> / {Math.max(1, Math.ceil(total / PAGE_SIZE))}
               </div>
               <div className="flex gap-2">
@@ -605,12 +607,12 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <Label>Acente Adi *</Label>
+              <Label>{t('cm.pages_AgencyManagement.acente_adi')}</Label>
               <Input value={agencyForm.name} onChange={e => setAgencyForm(p => ({ ...p, name: e.target.value }))} data-testid="agency-name-input" placeholder="Orn: Antalya Turizm" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Yetkili Kisi</Label>
+                <Label>{t('cm.pages_AgencyManagement.yetkili_kisi')}</Label>
                 <Input value={agencyForm.contact_name} onChange={e => setAgencyForm(p => ({ ...p, contact_name: e.target.value }))} placeholder="Ad Soyad" />
               </div>
               <div>
@@ -646,7 +648,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAgencyForm(false)}>İptal</Button>
+            <Button variant="outline" onClick={() => setShowAgencyForm(false)}>{t('cm.pages_AgencyManagement.iptal_25174')}</Button>
             <Button onClick={handleSaveAgency} disabled={saving} data-testid="save-agency-btn">
               {saving ? <Loader2 className="animate-spin mr-2" size={14} /> : null}
               {editingAgency ? 'Guncelle' : 'Olustur'}
@@ -659,7 +661,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
       <Dialog open={showUserForm} onOpenChange={setShowUserForm}>
         <DialogContent className="max-w-md" data-testid="user-form-dialog">
           <DialogHeader>
-            <DialogTitle>Acente Kullanicisi Ekle</DialogTitle>
+            <DialogTitle>{t('cm.pages_AgencyManagement.acente_kullanicisi_ekle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
@@ -687,7 +689,7 @@ const AgencyManagement = ({ user, tenant, onLogout }) => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowUserForm(false)}>İptal</Button>
+            <Button variant="outline" onClick={() => setShowUserForm(false)}>{t('cm.pages_AgencyManagement.iptal_25174')}</Button>
             <Button onClick={handleSaveUser} disabled={saving} data-testid="save-user-btn">
               {saving ? <Loader2 className="animate-spin mr-2" size={14} /> : null}
               Olustur

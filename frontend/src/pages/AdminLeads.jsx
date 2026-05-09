@@ -16,6 +16,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { useTranslation } from 'react-i18next';
 
 const STATUS_OPTIONS = ["new", "contacted", "qualified", "lost", "won"];
 
@@ -81,6 +82,7 @@ const copyLeadId = async (id) => {
 };
 
 const AdminLeads = () => {
+  const { t } = useTranslation();
   const [leads, setLeads] = useState([]);
   const [statusCounts, setStatusCounts] = useState({});
   const [followUpCount, setFollowUpCount] = useState(0);
@@ -181,28 +183,28 @@ const AdminLeads = () => {
       <PageHeader
         icon={Users}
         title="PMS Lite Lead Listesi"
-        subtitle="PMS Lite tanıtım sayfasından gelen demo talepleri. Otel sahipleriyle iletişime geçin, durumlarını takip edin ve nitelikli olanları kazanca dönüştürün."
+        subtitle={t('cm.pages_AdminLeads.pms_lite_tanitim_sayfasindan_gelen_demo_')}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleCsvExport} disabled={loading}>
-              <FileSpreadsheet className="w-4 h-4 mr-1.5" aria-hidden="true" /> CSV İndir
+              <FileSpreadsheet className="w-4 h-4 mr-1.5" aria-hidden="true" /> {t('cm.pages_AdminLeads.csv_indir')}
             </Button>
             <Button variant="outline" size="sm" onClick={loadLeads} disabled={loading}>
               <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
-              Yenile
+              {t('cm.pages_AdminLeads.yenile')}
             </Button>
           </div>
         }
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard icon={Users}          label="Toplam Lead"     value={kpis.total}    intent="default" />
+        <KpiCard icon={Users}          label={t('cm.pages_AdminLeads.toplam_lead')}     value={kpis.total}    intent="default" />
         <KpiCard icon={AlertTriangle}  label="Takip Gerekli"   value={kpis.followUp} intent="warning"
           active={followUpOnly} onClick={() => setFollowUpOnly((v) => !v)} />
-        <KpiCard icon={Users}          label="Yeni"            value={kpis.new}      intent="info"
+        <KpiCard icon={Users}          label={t('cm.pages_AdminLeads.yeni')}            value={kpis.new}      intent="info"
           active={statusFilter === "new"}
           onClick={() => setStatusFilter((v) => (v === "new" ? "" : "new"))} />
-        <KpiCard icon={CheckCircle2}   label="Kazanıldı"       value={kpis.won}      intent="success"
+        <KpiCard icon={CheckCircle2}   label={t('cm.pages_AdminLeads.kazanildi')}       value={kpis.won}      intent="success"
           active={statusFilter === "won"}
           onClick={() => setStatusFilter((v) => (v === "won" ? "" : "won"))} />
       </div>
@@ -214,10 +216,10 @@ const AdminLeads = () => {
             onValueChange={(val) => setStatusFilter(val === "all" ? "" : val)}
           >
             <SelectTrigger className="md:w-48">
-              <SelectValue placeholder="Tüm durumlar" />
+              <SelectValue placeholder={t('cm.pages_AdminLeads.tum_durumlar')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tüm durumlar</SelectItem>
+              <SelectItem value="all">{t('cm.pages_AdminLeads.tum_durumlar_7dd45')}</SelectItem>
               {STATUS_OPTIONS.map((s) => (
                 <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>
               ))}
@@ -229,7 +231,7 @@ const AdminLeads = () => {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="İsim, otel, telefon, e-posta..."
+              placeholder={t('cm.pages_AdminLeads.isim_otel_telefon_e_posta')}
               className="pl-9"
               aria-label="Lead arama"
             />
@@ -239,7 +241,7 @@ const AdminLeads = () => {
             <Checkbox
               checked={followUpOnly}
               onCheckedChange={(v) => setFollowUpOnly(!!v)}
-              aria-label="Yalnızca takip gerekenler"
+              aria-label={t('cm.pages_AdminLeads.yalnizca_takip_gerekenler')}
             />
             <span>Takip gerekli</span>
           </label>
@@ -262,13 +264,13 @@ const AdminLeads = () => {
           <CardTitle className="text-sm flex items-center justify-between">
             <span>Leadler</span>
             <span className="text-xs text-slate-500">
-              {leads.length} kayıt {total !== leads.length ? `(toplam ${total})` : ""}
+              {leads.length} {t('cm.pages_AdminLeads.kayit')} {total !== leads.length ? `(toplam ${total})` : ""}
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
-            <div className="text-sm text-slate-500 text-center py-12">Lead listesi yükleniyor...</div>
+            <div className="text-sm text-slate-500 text-center py-12">{t('cm.pages_AdminLeads.lead_listesi_yukleniyor')}</div>
           ) : leads.length === 0 ? (
             <div className="p-10 text-center text-slate-500 text-sm">
               <Users className="w-10 h-10 mx-auto text-slate-300 mb-2" aria-hidden="true" />
@@ -286,14 +288,14 @@ const AdminLeads = () => {
               <table className="min-w-full text-xs border-t">
                 <thead className="bg-slate-50 border-b sticky top-0 z-10">
                   <tr className="text-left whitespace-nowrap">
-                    <th className="px-3 py-2 font-semibold text-slate-700">Tarih</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">{t('cm.pages_AdminLeads.tarih')}</th>
                     <th className="px-3 py-2 font-semibold text-slate-700">Otel</th>
-                    <th className="px-3 py-2 font-semibold text-slate-700">Bölge</th>
-                    <th className="px-3 py-2 font-semibold text-slate-700">Oda</th>
-                    <th className="px-3 py-2 font-semibold text-slate-700">İsim</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">{t('cm.pages_AdminLeads.bolge')}</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">{t('cm.pages_AdminLeads.oda')}</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">{t('cm.pages_AdminLeads.isim')}</th>
                     <th className="px-3 py-2 font-semibold text-slate-700">Telefon</th>
-                    <th className="px-3 py-2 font-semibold text-slate-700">Durum</th>
-                    <th className="px-3 py-2 font-semibold text-slate-700">Son işlem</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">{t('cm.pages_AdminLeads.durum')}</th>
+                    <th className="px-3 py-2 font-semibold text-slate-700">{t('cm.pages_AdminLeads.son_islem')}</th>
                     <th className="px-3 py-2 font-semibold text-slate-700">Not</th>
                     <th className="px-3 py-2 font-semibold text-slate-700">Aksiyon</th>
                   </tr>
@@ -339,7 +341,7 @@ const AdminLeads = () => {
                                 disabled={updatingId === lead.lead_id}
                                 onClick={() => handleUpdate(lead.lead_id, null)}
                               >
-                                Notu Kaydet
+                                {t('cm.pages_AdminLeads.notu_kaydet')}
                               </Button>
                             )}
                           </div>
@@ -365,8 +367,8 @@ const AdminLeads = () => {
                                 disabled={!lead.phone}
                               >
                                 <a href={lead.phone ? `tel:${sanitizePhone(lead.phone)}` : undefined}
-                                   aria-label="Ara">
-                                  <Phone className="w-3 h-3" aria-hidden="true" /> Ara
+                                   aria-label={t('cm.pages_AdminLeads.ara')}>
+                                  <Phone className="w-3 h-3" aria-hidden="true" /> {t('cm.pages_AdminLeads.ara_43d45')}
                                 </a>
                               </Button>
                               <Button variant="outline" size="sm" className="h-7 text-xs px-2"
@@ -377,7 +379,7 @@ const AdminLeads = () => {
                               </Button>
                               <Button variant="ghost" size="sm" className="h-7 text-xs px-2"
                                 onClick={() => copyLeadSummary(lead)}
-                                aria-label="Lead özeti kopyala"
+                                aria-label={t('cm.pages_AdminLeads.lead_ozeti_kopyala')}
                               >
                                 <Copy className="w-3 h-3" aria-hidden="true" />
                               </Button>

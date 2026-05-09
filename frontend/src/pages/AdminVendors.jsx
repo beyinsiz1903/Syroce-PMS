@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { useTranslation } from 'react-i18next';
 
 const VENDOR_STATUS = {
   pending:   { label: "Onay Bekliyor", intent: "warning" },
@@ -33,6 +34,7 @@ const fmt = (n) =>
   new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(Number(n || 0));
 
 export default function AdminVendors() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState("vendors");
   const [vendors, setVendors] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -124,12 +126,12 @@ export default function AdminVendors() {
     <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-4">
       <PageHeader
         icon={Store}
-        title="Tedarikçi Pazarı Yönetimi"
-        subtitle="Tedarikçi başvurularını onaylayın, siparişleri ve komisyon gelirini izleyin."
+        title={t('cm.pages_AdminVendors.tedarikci_pazari_yonetimi')}
+        subtitle={t('cm.pages_AdminVendors.tedarikci_basvurularini_onaylayin_sipari')}
         actions={
           <Button variant="outline" size="sm" onClick={reload} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
-            Yenile
+            {t('cm.pages_AdminVendors.yenile')}
           </Button>
         }
       />
@@ -137,10 +139,10 @@ export default function AdminVendors() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="vendors" className="flex items-center gap-2">
-            <Store className="w-4 h-4" aria-hidden="true" /> Tedarikçiler
+            <Store className="w-4 h-4" aria-hidden="true" /> {t('cm.pages_AdminVendors.tedarikciler')}
           </TabsTrigger>
           <TabsTrigger value="orders" className="flex items-center gap-2">
-            <ShoppingBag className="w-4 h-4" aria-hidden="true" /> Siparişler
+            <ShoppingBag className="w-4 h-4" aria-hidden="true" /> {t('cm.pages_AdminVendors.siparisler')}
           </TabsTrigger>
         </TabsList>
 
@@ -149,7 +151,7 @@ export default function AdminVendors() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <KpiCard
               icon={Store}
-              label="Tüm Tedarikçiler"
+              label={t('cm.pages_AdminVendors.tum_tedarikciler')}
               value={counts.all}
               intent="default"
               active={statusFilter === "all"}
@@ -165,7 +167,7 @@ export default function AdminVendors() {
             />
             <KpiCard
               icon={ShieldCheck}
-              label="Onaylı"
+              label={t('cm.pages_AdminVendors.onayli')}
               value={counts.approved}
               intent="success"
               active={statusFilter === "approved"}
@@ -173,7 +175,7 @@ export default function AdminVendors() {
             />
             <KpiCard
               icon={ShieldAlert}
-              label="Askıda"
+              label={t('cm.pages_AdminVendors.askida')}
               value={counts.suspended}
               intent="danger"
               active={statusFilter === "suspended"}
@@ -185,12 +187,12 @@ export default function AdminVendors() {
             <CardContent className="p-0">
               {loading ? (
                 <div className="flex items-center justify-center p-10 text-slate-500">
-                  <Loader2 className="w-5 h-5 animate-spin mr-2" aria-hidden="true" /> Yükleniyor…
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" aria-hidden="true" /> {t('cm.pages_AdminVendors.yukleniyor')}
                 </div>
               ) : filteredVendors.length === 0 ? (
                 <div className="p-10 text-center text-slate-500 text-sm">
                   <Store className="w-10 h-10 mx-auto text-slate-300 mb-2" aria-hidden="true" />
-                  <p className="font-medium text-slate-600">Bu durumda tedarikçi yok</p>
+                  <p className="font-medium text-slate-600">{t('cm.pages_AdminVendors.bu_durumda_tedarikci_yok')}</p>
                   <p className="text-xs text-slate-400 mt-1">
                     {statusFilter === "pending"
                       ? "Yeni başvurular geldiğinde burada görünür."
@@ -207,7 +209,7 @@ export default function AdminVendors() {
                       className="mt-3"
                       onClick={() => setStatusFilter("all")}
                     >
-                      Tüm tedarikçileri göster
+                      {t('cm.pages_AdminVendors.tum_tedarikcileri_goster')}
                     </Button>
                   )}
                 </div>
@@ -216,13 +218,13 @@ export default function AdminVendors() {
                   <table className="w-full text-sm">
                     <thead className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider">
                       <tr>
-                        <th className="text-left px-4 py-2 font-semibold">Firma / İletişim</th>
+                        <th className="text-left px-4 py-2 font-semibold">{t('cm.pages_AdminVendors.firma_iletisim')}</th>
                         <th className="text-left px-4 py-2 font-semibold">Vergi</th>
-                        <th className="text-left px-4 py-2 font-semibold">Şehir</th>
+                        <th className="text-left px-4 py-2 font-semibold">{t('cm.pages_AdminVendors.sehir')}</th>
                         <th className="text-left px-4 py-2 font-semibold">Komisyon</th>
-                        <th className="text-left px-4 py-2 font-semibold">Durum</th>
-                        <th className="text-left px-4 py-2 font-semibold">Kayıt</th>
-                        <th className="text-right px-4 py-2 font-semibold">İşlem</th>
+                        <th className="text-left px-4 py-2 font-semibold">{t('cm.pages_AdminVendors.durum')}</th>
+                        <th className="text-left px-4 py-2 font-semibold">{t('cm.pages_AdminVendors.kayit')}</th>
+                        <th className="text-right px-4 py-2 font-semibold">{t('cm.pages_AdminVendors.islem')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -260,7 +262,7 @@ export default function AdminVendors() {
                                     disabled={busyId === v.id}
                                   >
                                     <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" aria-hidden="true" />
-                                    Onayla
+                                    {t('cm.pages_AdminVendors.onayla')}
                                   </Button>
                                 )}
                                 {v.status !== "suspended" && (
@@ -272,7 +274,7 @@ export default function AdminVendors() {
                                     disabled={busyId === v.id}
                                   >
                                     <Ban className="w-3.5 h-3.5 mr-1 text-rose-600" aria-hidden="true" />
-                                    Askıya Al
+                                    {t('cm.pages_AdminVendors.askiya_al')}
                                   </Button>
                                 )}
                               </div>
@@ -293,13 +295,13 @@ export default function AdminVendors() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <KpiCard
               icon={Wallet}
-              label="Toplam Komisyon Geliri"
+              label={t('cm.pages_AdminVendors.toplam_komisyon_geliri')}
               value={fmt(totalCommission)}
               intent="success"
             />
             <KpiCard
               icon={Package}
-              label="Toplam Sipariş"
+              label={t('cm.pages_AdminVendors.toplam_siparis')}
               value={orders.length}
               intent="info"
             />
@@ -309,14 +311,14 @@ export default function AdminVendors() {
             <CardContent className="p-0">
               {loading ? (
                 <div className="flex items-center justify-center p-10 text-slate-500">
-                  <Loader2 className="w-5 h-5 animate-spin mr-2" aria-hidden="true" /> Yükleniyor…
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" aria-hidden="true" /> {t('cm.pages_AdminVendors.yukleniyor_b597b')}
                 </div>
               ) : orders.length === 0 ? (
                 <div className="p-10 text-center text-slate-500 text-sm">
                   <ShoppingBag className="w-10 h-10 mx-auto text-slate-300 mb-2" aria-hidden="true" />
-                  <p className="font-medium text-slate-600">Henüz sipariş yok</p>
+                  <p className="font-medium text-slate-600">{t('cm.pages_AdminVendors.henuz_siparis_yok')}</p>
                   <p className="text-xs text-slate-400 mt-1">
-                    Oteller tedarikçilerden ürün satın aldığında siparişler burada görünür.
+                    {t('cm.pages_AdminVendors.oteller_tedarikcilerden_urun_satin_aldig')}
                   </p>
                 </div>
               ) : (
@@ -324,13 +326,13 @@ export default function AdminVendors() {
                   <table className="w-full text-sm">
                     <thead className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider">
                       <tr>
-                        <th className="text-left px-4 py-2 font-semibold">Sipariş</th>
-                        <th className="text-left px-4 py-2 font-semibold">Tedarikçi</th>
+                        <th className="text-left px-4 py-2 font-semibold">{t('cm.pages_AdminVendors.siparis')}</th>
+                        <th className="text-left px-4 py-2 font-semibold">{t('cm.pages_AdminVendors.tedarikci')}</th>
                         <th className="text-left px-4 py-2 font-semibold">Otel</th>
-                        <th className="text-right px-4 py-2 font-semibold">Tutar</th>
+                        <th className="text-right px-4 py-2 font-semibold">{t('cm.pages_AdminVendors.tutar')}</th>
                         <th className="text-right px-4 py-2 font-semibold">Komisyon</th>
-                        <th className="text-left px-4 py-2 font-semibold">Durum</th>
-                        <th className="text-left px-4 py-2 font-semibold">Tarih</th>
+                        <th className="text-left px-4 py-2 font-semibold">{t('cm.pages_AdminVendors.durum_074f4')}</th>
+                        <th className="text-left px-4 py-2 font-semibold">{t('cm.pages_AdminVendors.tarih')}</th>
                       </tr>
                     </thead>
                     <tbody>

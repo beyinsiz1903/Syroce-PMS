@@ -16,10 +16,12 @@ import {
   Wifi, WifiOff, MapPin, Layers, ExternalLink, Settings2,
   ShieldCheck, Clock, AlertTriangle
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
 export default function ChannelConnections({ user, tenant, onLogout, embedded = false }) {
+  const { t } = useTranslation();
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
@@ -192,7 +194,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
             <div>
               <h1 className="text-2xl font-bold text-slate-900" data-testid="page-title">Bagli Kanallar</h1>
               <p className="text-sm text-slate-500 mt-1">
-                Otelinizin bağlı oldugu satış kanalları ve acenteler
+                {t('cm.pages_ChannelConnections.otelinizin_bagli_oldugu_satis_kanallari_')}
               </p>
             </div>
             <Button
@@ -203,7 +205,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
               data-testid="refresh-btn"
             >
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Yenile
+              {t('cm.pages_ChannelConnections.yenile')}
             </Button>
           </div>
 
@@ -212,7 +214,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
               <CardContent className="p-4 flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-rose-600 mt-0.5 shrink-0" />
                 <div className="flex-1 text-sm">
-                  <p className="font-semibold text-rose-800">Bağlantı durumu alınamadı</p>
+                  <p className="font-semibold text-rose-800">{t('cm.pages_ChannelConnections.baglanti_durumu_alinamadi')}</p>
                   <p className="text-rose-700 mt-0.5">{fetchError}</p>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => fetchOverview()} disabled={loading}>
@@ -237,9 +239,9 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
                       <CheckCircle className="w-5 h-5 text-green-600" />
                     </div>
                     <div>
-                      <p className="font-semibold text-green-800">Kanal Baglantisi Aktif</p>
+                      <p className="font-semibold text-green-800">{t('cm.pages_ChannelConnections.kanal_baglantisi_aktif')}</p>
                       <p className="text-sm text-green-600">
-                        {allConnectedChannels.length} satış kanalı üzerinden rezervasyon alinabiliyor
+                        {allConnectedChannels.length} {t('cm.pages_ChannelConnections.satis_kanali_uzerinden_rezervasyon_alina')}
                       </p>
                     </div>
                   </div>
@@ -249,7 +251,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
               {/* Connected Channels Grid */}
               <div>
                 <h2 className="text-base font-semibold text-slate-700 mb-3" data-testid="connected-channels-title">
-                  Bagli Satış Kanallari ({allConnectedChannels.length})
+                  {t('cm.pages_ChannelConnections.bagli_satis_kanallari')}{allConnectedChannels.length})
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                   {allConnectedChannels.map((channel, i) => (
@@ -277,9 +279,9 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
                       <div className="flex items-center justify-between p-2 rounded bg-slate-50">
                         <span className="text-slate-600">Otomatik Senk.</span>
                         {hr.auto_sync_reservations ? (
-                          <span className="text-green-600 flex items-center gap-1 text-xs font-medium"><CheckCircle className="w-3 h-3" /> Aktif</span>
+                          <span className="text-green-600 flex items-center gap-1 text-xs font-medium"><CheckCircle className="w-3 h-3" /> {t('cm.pages_ChannelConnections.aktif')}</span>
                         ) : (
-                          <span className="text-slate-400 text-xs">Pasif</span>
+                          <span className="text-slate-400 text-xs">{t('cm.pages_ChannelConnections.pasif')}</span>
                         )}
                       </div>
                     )}
@@ -293,9 +295,9 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
                       <div className="flex items-center justify-between p-2 rounded bg-slate-50">
                         <span className="text-slate-600">Otomatik Senk.</span>
                         {exely.auto_sync_reservations ? (
-                          <span className="text-green-600 flex items-center gap-1 text-xs font-medium"><CheckCircle className="w-3 h-3" /> Aktif</span>
+                          <span className="text-green-600 flex items-center gap-1 text-xs font-medium"><CheckCircle className="w-3 h-3" /> {t('cm.pages_ChannelConnections.aktif_81c33')}</span>
                         ) : (
-                          <span className="text-slate-400 text-xs">Pasif</span>
+                          <span className="text-slate-400 text-xs">{t('cm.pages_ChannelConnections.pasif_877f8')}</span>
                         )}
                       </div>
                     )}
@@ -314,10 +316,9 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
             <Card className="border-slate-200">
               <CardContent className="p-8 text-center">
                 <WifiOff className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <h3 className="text-lg font-semibold text-slate-700 mb-1">Henüz bağlı kanal yok</h3>
+                <h3 className="text-lg font-semibold text-slate-700 mb-1">{t('cm.pages_ChannelConnections.henuz_bagli_kanal_yok')}</h3>
                 <p className="text-sm text-slate-500 max-w-md mx-auto">
-                  Satış kanalları (Booking.com, Expedia vb.) üzerinden rezervasyon alabilmek için
-                  lütfen otel yöneticinize başvurun.
+                  {t('cm.pages_ChannelConnections.satis_kanallari_booking_com_expedia_vb_u')}
                 </p>
               </CardContent>
             </Card>
@@ -335,9 +336,9 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900" data-testid="page-title">Kanal Yönetimi</h1>
+            <h1 className="text-2xl font-bold text-slate-900" data-testid="page-title">{t('cm.pages_ChannelConnections.kanal_yonetimi')}</h1>
             <p className="text-sm text-slate-500 mt-1">
-              Kanal saglayicilarinizin bağlantı durumunu yönetin ve yeni bağlantı kurun
+              {t('cm.pages_ChannelConnections.kanal_saglayicilarinizin_baglanti_durumu')}
             </p>
           </div>
           <Button
@@ -348,7 +349,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
             data-testid="refresh-btn"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Yenile
+            {t('cm.pages_ChannelConnections.yenile_aedf3')}
           </Button>
         </div>
 
@@ -358,7 +359,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
             <CardContent className="p-4 flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-rose-600 mt-0.5 shrink-0" />
               <div className="flex-1 text-sm">
-                <p className="font-semibold text-rose-800">Bağlantı durumu alınamadı</p>
+                <p className="font-semibold text-rose-800">{t('cm.pages_ChannelConnections.baglanti_durumu_alinamadi_d9121')}</p>
                 <p className="text-rose-700 mt-0.5">{fetchError}</p>
               </div>
               <Button variant="outline" size="sm" onClick={() => fetchOverview()} disabled={loading}>
@@ -375,16 +376,16 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
             <div className="flex gap-3">
               <Info className="w-5 h-5 text-sky-600 mt-0.5 shrink-0" />
               <div className="text-sm text-sky-800 space-y-1">
-                <p className="font-semibold">Yeni Otel Bağlantı Rehberi</p>
+                <p className="font-semibold">{t('cm.pages_ChannelConnections.yeni_otel_baglanti_rehberi')}</p>
                 <ol className="list-decimal ml-4 space-y-0.5 text-sky-700">
                   <li>Kanal saglayicinizdan (HotelRunner / Exely) API kimlik bilgilerini alin</li>
                   <li>Asagidaki ilgili saglayici kartindan "Baglan" butonuna tiklayin</li>
-                  <li>Kimlik bilgilerini girin — sistem otomatik olarak bağlantı testi yapacak</li>
-                  <li>Bağlantı kurulduktan sonra oda eslemelerini yapin</li>
+                  <li>{t('cm.pages_ChannelConnections.kimlik_bilgilerini_girin_sistem_otomatik')}</li>
+                  <li>{t('cm.pages_ChannelConnections.baglanti_kurulduktan_sonra_oda_eslemeler')}</li>
                   <li>Acenteler (Booking, Expedia vb.) HotelRunner/Exely panelinden baglanir</li>
                 </ol>
                 <p className="text-xs text-sky-600 mt-2">
-                  <strong>Not:</strong> Her otel için ayrı token/ID gereklidir. Bu bilgiler otele ozeldir ve saglayici tarafından verilir.
+                  <strong>Not:</strong> {t('cm.pages_ChannelConnections.her_otel_icin_ayri_token_id_gereklidir_b')}
                 </p>
               </div>
             </div>
@@ -397,7 +398,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Layers className="w-4 h-4 text-slate-500" />
-                <span className="text-sm font-medium text-slate-700">PMS Oda Tipleri</span>
+                <span className="text-sm font-medium text-slate-700">{t('cm.pages_ChannelConnections.pms_oda_tipleri')}</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {overview.pms_room_types.map(rt => (
@@ -446,7 +447,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
           <ProviderCard
             provider="exely"
             displayName="Exely"
-            description="SOAP API ile acente baglantilari ve musaitlik yönetimi"
+            description={t('cm.pages_ChannelConnections.soap_api_ile_acente_baglantilari_ve_musa')}
             data={exely}
             loading={loading}
             testing={testing === 'exely'}
@@ -461,7 +462,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
             ]}
             extraInfo={exely?.room_types?.length > 0 ? (
               <div className="mt-3">
-                <span className="text-xs font-medium text-slate-500">Oda Tipleri ({exely.room_types.length}):</span>
+                <span className="text-xs font-medium text-slate-500">{t('cm.pages_ChannelConnections.oda_tipleri')}{exely.room_types.length}):</span>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {exely.room_types.slice(0, 5).map((rt, i) => (
                     <Badge key={i} variant="outline" className="text-xs">
@@ -520,10 +521,10 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
                   placeholder="ornek: 12345"
                   data-testid="hr-id-input"
                 />
-                <p className="text-xs text-slate-400 mt-1">HotelRunner panelindeki otel kimlik numarası</p>
+                <p className="text-xs text-slate-400 mt-1">{t('cm.pages_ChannelConnections.hotelrunner_panelindeki_otel_kimlik_numa')}</p>
               </div>
               <div>
-                <Label htmlFor="hr-name">Otel Adi</Label>
+                <Label htmlFor="hr-name">{t('cm.pages_ChannelConnections.otel_adi')}</Label>
                 <Input
                   id="hr-name"
                   value={hrForm.property_name}
@@ -533,7 +534,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
                 />
               </div>
               <div className="flex items-center justify-between">
-                <Label htmlFor="hr-autosync" className="text-sm">Otomatik Rezervasyon Senkronizasyonu</Label>
+                <Label htmlFor="hr-autosync" className="text-sm">{t('cm.pages_ChannelConnections.otomatik_rezervasyon_senkronizasyonu')}</Label>
                 <Switch
                   id="hr-autosync"
                   checked={hrForm.auto_sync_reservations}
@@ -542,7 +543,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setConnectDialog(null)} disabled={connecting}>İptal</Button>
+              <Button variant="outline" onClick={() => setConnectDialog(null)} disabled={connecting}>{t('cm.pages_ChannelConnections.iptal')}</Button>
               <Button onClick={connectHR} disabled={connecting} data-testid="hr-connect-submit">
                 {connecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />}
                 Baglan ve Test Et
@@ -565,7 +566,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div>
-                <Label htmlFor="exely-user">Kullanici Adi *</Label>
+                <Label htmlFor="exely-user">{t('cm.pages_ChannelConnections.kullanici_adi')}</Label>
                 <Input
                   id="exely-user"
                   value={exelyForm.username}
@@ -603,10 +604,10 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
                   placeholder="501694"
                   data-testid="exely-hotelcode-input"
                 />
-                <p className="text-xs text-slate-400 mt-1">Exely tarafından verilen otel kodu</p>
+                <p className="text-xs text-slate-400 mt-1">{t('cm.pages_ChannelConnections.exely_tarafindan_verilen_otel_kodu')}</p>
               </div>
               <div>
-                <Label htmlFor="exely-name">Otel Adi</Label>
+                <Label htmlFor="exely-name">{t('cm.pages_ChannelConnections.otel_adi_b021a')}</Label>
                 <Input
                   id="exely-name"
                   value={exelyForm.property_name}
@@ -626,7 +627,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
                 />
               </div>
               <div className="flex items-center justify-between">
-                <Label htmlFor="exely-autosync" className="text-sm">Otomatik Rezervasyon Senkronizasyonu</Label>
+                <Label htmlFor="exely-autosync" className="text-sm">{t('cm.pages_ChannelConnections.otomatik_rezervasyon_senkronizasyonu_791b1')}</Label>
                 <Switch
                   id="exely-autosync"
                   checked={exelyForm.auto_sync_reservations}
@@ -635,7 +636,7 @@ export default function ChannelConnections({ user, tenant, onLogout, embedded = 
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setConnectDialog(null)} disabled={connecting}>İptal</Button>
+              <Button variant="outline" onClick={() => setConnectDialog(null)} disabled={connecting}>{t('cm.pages_ChannelConnections.iptal_25174')}</Button>
               <Button onClick={connectExely} disabled={connecting} data-testid="exely-connect-submit">
                 {connecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />}
                 Baglan ve Test Et
@@ -712,12 +713,12 @@ function ProviderCard({
                 ) : null
               ))}
               <div>
-                <span className="text-slate-500 text-xs">Oda Eslemesi</span>
+                <span className="text-slate-500 text-xs">{t('cm.pages_ChannelConnections.oda_eslemesi')}</span>
                 <p className="font-medium text-slate-800">
                   {mappings > 0 ? (
                     <span className="text-green-600">{mappings} esleme</span>
                   ) : (
-                    <span className="text-amber-600">Henüz yok</span>
+                    <span className="text-amber-600">{t('cm.pages_ChannelConnections.henuz_yok')}</span>
                   )}
                 </p>
               </div>
@@ -725,9 +726,9 @@ function ProviderCard({
                 <span className="text-slate-500 text-xs">Oto. Senk.</span>
                 <p className="font-medium text-slate-800">
                   {data.auto_sync_reservations ? (
-                    <span className="text-green-600 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Aktif</span>
+                    <span className="text-green-600 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> {t('cm.pages_ChannelConnections.aktif_81c33')}</span>
                   ) : (
-                    <span className="text-slate-400">Pasif</span>
+                    <span className="text-slate-400">{t('cm.pages_ChannelConnections.pasif_877f8')}</span>
                   )}
                 </p>
               </div>
@@ -738,7 +739,7 @@ function ProviderCard({
               {data.connected_at && (
                 <div className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  Bağlantı: {new Date(data.connected_at).toLocaleDateString('tr-TR')}
+                  {t('cm.pages_ChannelConnections.baglanti')} {new Date(data.connected_at).toLocaleDateString('tr-TR')}
                 </div>
               )}
               {data.last_sync_at && (
@@ -757,8 +758,8 @@ function ProviderCard({
               <div className="flex items-start gap-2 p-2 rounded bg-amber-50 border border-amber-200 text-xs text-amber-700">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-medium">Oda eslemesi gerekli</p>
-                  <p>Musaitlik senkronizasyonu için PMS oda tiplerini kanal oda tipleriyle eslestirin.</p>
+                  <p className="font-medium">{t('cm.pages_ChannelConnections.oda_eslemesi_gerekli')}</p>
+                  <p>{t('cm.pages_ChannelConnections.musaitlik_senkronizasyonu_icin_pms_oda_t')}</p>
                 </div>
               </div>
             )}
@@ -782,7 +783,7 @@ function ProviderCard({
               >
                 <a href={detailsPath} data-testid={`${provider}-details-link`}>
                   <Settings2 className="w-3 h-3 mr-1.5" />
-                  Detaylı Yönetim
+                  {t('cm.pages_ChannelConnections.detayli_yonetim')}
                 </a>
               </Button>
               <Button
@@ -794,7 +795,7 @@ function ProviderCard({
                 data-testid={`${provider}-disconnect-btn`}
               >
                 {disconnecting ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : <Unlink className="w-3 h-3 mr-1.5" />}
-                Baglantıyı Kes
+                {t('cm.pages_ChannelConnections.baglantiyi_kes')}
               </Button>
             </div>
           </>
@@ -806,7 +807,7 @@ function ProviderCard({
                 {displayName} baglantisi kurulmamis
               </p>
               <p className="text-xs text-slate-400 mb-4">
-                Baglanmak için {displayName} API kimlik bilgilerinizi girin
+                {t('cm.pages_ChannelConnections.baglanmak_icin')} {displayName} API kimlik bilgilerinizi girin
               </p>
               <Button onClick={onConnect} data-testid={`${provider}-connect-btn`}>
                 <Link2 className="w-4 h-4 mr-2" />

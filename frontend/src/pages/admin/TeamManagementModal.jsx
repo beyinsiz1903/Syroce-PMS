@@ -7,7 +7,9 @@ import { Users, Trash2, UserPlus, ShieldCheck } from 'lucide-react';
 import { ROLE_LABELS } from './tenantConstants';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 const TeamManagementModal = ({ open, onOpenChange, tenant }) => {
+  const { t } = useTranslation();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -87,15 +89,15 @@ const TeamManagementModal = ({ open, onOpenChange, tenant }) => {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="w-5 h-5 text-indigo-600" />
-            Ekip Yönetimi — {tenant?.property_name}
+            {t('cm.pages_admin_TeamManagementModal.ekip_yonetimi')} {tenant?.property_name}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-slate-500">{users.length} kullanıcı</span>
+            <span className="text-sm text-slate-500">{users.length} {t('cm.pages_admin_TeamManagementModal.kullanici')}</span>
             <Button data-testid="team-add-btn" size="sm" variant="outline" onClick={() => setShowAdd(!showAdd)}>
-              <UserPlus className="w-4 h-4 mr-1" /> Üye Ekle
+              <UserPlus className="w-4 h-4 mr-1" /> {t('cm.pages_admin_TeamManagementModal.uye_ekle')}
             </Button>
           </div>
 
@@ -111,7 +113,7 @@ const TeamManagementModal = ({ open, onOpenChange, tenant }) => {
                   <input data-testid="team-add-email" type="email" className="w-full border rounded px-2 py-1.5 text-sm" value={addForm.email} onChange={(e) => setAddForm((p) => ({ ...p, email: e.target.value }))} />
                 </div>
                 <div>
-                  <Label className="text-xs">Şifre *</Label>
+                  <Label className="text-xs">{t('cm.pages_admin_TeamManagementModal.sifre')}</Label>
                   <input data-testid="team-add-password" type="password" className="w-full border rounded px-2 py-1.5 text-sm" value={addForm.password} onChange={(e) => setAddForm((p) => ({ ...p, password: e.target.value }))} />
                 </div>
                 <div>
@@ -128,7 +130,7 @@ const TeamManagementModal = ({ open, onOpenChange, tenant }) => {
                 </div>
               </div>
               <div className="flex justify-end gap-2">
-                <Button size="sm" variant="outline" onClick={() => setShowAdd(false)}>İptal</Button>
+                <Button size="sm" variant="outline" onClick={() => setShowAdd(false)}>{t('cm.pages_admin_TeamManagementModal.iptal')}</Button>
                 <Button data-testid="team-add-submit" size="sm" onClick={handleAddMember} disabled={saving}>{saving ? 'Ekleniyor...' : 'Ekle'}</Button>
               </div>
             </div>
@@ -137,7 +139,7 @@ const TeamManagementModal = ({ open, onOpenChange, tenant }) => {
           {error && <div className="p-2 rounded bg-rose-50 text-rose-700 text-sm">{error}</div>}
 
           {loading ? (
-            <div className="text-center py-6 text-slate-400 text-sm">Yükleniyor...</div>
+            <div className="text-center py-6 text-slate-400 text-sm">{t('cm.pages_admin_TeamManagementModal.yukleniyor')}</div>
           ) : (
             <div className="divide-y">
               {users.map((u) => (

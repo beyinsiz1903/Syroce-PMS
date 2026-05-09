@@ -6,6 +6,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { Split, CheckCircle, XCircle, AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * SplitFolioDialog
@@ -14,6 +15,7 @@ import { Split, CheckCircle, XCircle, AlertTriangle, Plus, Trash2 } from 'lucide
  *  - custom   → POST /pms-core/folio/split-by-amount (per-target amounts)
  */
 const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
+  const { t } = useTranslation();
   const [mode, setMode] = useState('by_item'); // by_item | even | custom
   const [targetFolioType, setTargetFolioType] = useState('guest');
   const [reason, setReason] = useState('');
@@ -186,7 +188,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
       <CardHeader>
         <CardTitle className="flex items-center">
           <Split className="w-5 h-5 mr-2 text-blue-600" />
-          Folio Böl - {folio.folio_number}
+          {t('cm.components_SplitFolioDialog.folio_bol')} {folio.folio_number}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -197,15 +199,15 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
             <p className="font-bold">{folio.folio_number}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-600">Misafir</p>
+            <p className="text-sm text-gray-600">{t('cm.components_SplitFolioDialog.misafir')}</p>
             <p className="font-bold">{folio.guest_name || 'N/A'}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-600">Oda</p>
+            <p className="text-sm text-gray-600">{t('cm.components_SplitFolioDialog.oda')}</p>
             <p className="font-bold">{folio.room_number || 'N/A'}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-600">Toplam Bakiye</p>
+            <p className="text-sm text-gray-600">{t('cm.components_SplitFolioDialog.toplam_bakiye')}</p>
             <p className="font-bold text-green-600">${folioBalance.toFixed(2)}</p>
           </div>
         </div>
@@ -236,19 +238,18 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
               <div className="p-4 bg-yellow-50 border border-yellow-200 rounded flex items-start gap-2">
                 <AlertTriangle className="w-5 h-5 text-yellow-700 mt-0.5" />
                 <div className="text-sm text-yellow-800">
-                  Bu folioda görüntülenebilen masraf kalemi yok. Kalem bazlı bölme için folio
-                  detayını açıp kalemleri yükleyin veya "Eşit Böl" / "Özel Tutar" modunu kullanın.
+                  {t('cm.components_SplitFolioDialog.bu_folioda_goruntulenebilen_masraf_kalem')}
                 </div>
               </div>
             ) : (
               <>
                 <div>
-                  <label className="text-sm font-medium mb-2 block">Hedef Folio Türü</label>
+                  <label className="text-sm font-medium mb-2 block">{t('cm.components_SplitFolioDialog.hedef_folio_turu')}</label>
                   {folioTypeButtons(targetFolioType, setTargetFolioType)}
                 </div>
                 <div>
                   <label className="text-sm font-medium mb-2 block">
-                    Yeni folioya taşınacak kalemleri seçin
+                    {t('cm.components_SplitFolioDialog.yeni_folioya_tasinacak_kalemleri_secin')}
                   </label>
                   <div className="space-y-1 max-h-64 overflow-y-auto border rounded p-2">
                     {folioCharges.map((c) => {
@@ -282,7 +283,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
                     })}
                   </div>
                   <p className="text-xs text-gray-600 mt-2">
-                    Seçilen: <strong>{selectedCharges.length}</strong> kalem · Toplam{' '}
+                    {t('cm.components_SplitFolioDialog.secilen')} <strong>{selectedCharges.length}</strong> {t('cm.components_SplitFolioDialog.kalem_toplam')}{' '}
                     <strong>${selectedTotal.toFixed(2)}</strong>
                   </p>
                 </div>
@@ -295,11 +296,11 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
         {mode === 'even' && (
           <>
             <div>
-              <label className="text-sm font-medium mb-2 block">Hedef Folio Türü</label>
+              <label className="text-sm font-medium mb-2 block">{t('cm.components_SplitFolioDialog.hedef_folio_turu_e4829')}</label>
               {folioTypeButtons(targetFolioType, setTargetFolioType)}
             </div>
             <div>
-              <label className="text-sm font-medium mb-2 block">Kaç parçaya bölünsün?</label>
+              <label className="text-sm font-medium mb-2 block">{t('cm.components_SplitFolioDialog.kac_parcaya_bolunsun')}</label>
               <Input
                 type="number"
                 min={2}
@@ -308,8 +309,8 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
                 onChange={(e) => setEvenSplits(Math.max(2, Math.min(20, Number(e.target.value) || 2)))}
               />
               <p className="text-xs text-gray-600 mt-2">
-                Her parçaya: <strong>${evenPerSplit.toFixed(2)}</strong> · Yeni folio sayısı:{' '}
-                <strong>{evenSplits - 1}</strong> (orijinal de bir parça olarak kalır)
+                {t('cm.components_SplitFolioDialog.her_parcaya')} <strong>${evenPerSplit.toFixed(2)}</strong> {t('cm.components_SplitFolioDialog.yeni_folio_sayisi')}{' '}
+                <strong>{evenSplits - 1}</strong> {t('cm.components_SplitFolioDialog.orijinal_de_bir_parca_olarak_kalir')}
               </p>
             </div>
           </>
@@ -318,13 +319,13 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
         {/* CUSTOM */}
         {mode === 'custom' && (
           <div className="space-y-2">
-            <label className="text-sm font-medium">Hedef folio başına tutar</label>
+            <label className="text-sm font-medium">{t('cm.components_SplitFolioDialog.hedef_folio_basina_tutar')}</label>
             {customSplits.map((row, idx) => (
               <div key={idx} className="flex gap-2 items-center">
                 <Input
                   type="number"
                   step="0.01"
-                  placeholder="Tutar"
+                  placeholder={t('cm.components_SplitFolioDialog.tutar')}
                   value={row.amount}
                   onChange={(e) => updateCustomRow(idx, { amount: e.target.value })}
                   className="flex-1"
@@ -334,8 +335,8 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
                   value={row.target_folio_type}
                   onChange={(e) => updateCustomRow(idx, { target_folio_type: e.target.value })}
                 >
-                  <option value="guest">Misafir</option>
-                  <option value="company">Şirket</option>
+                  <option value="guest">{t('cm.components_SplitFolioDialog.misafir_633b8')}</option>
+                  <option value="company">{t('cm.components_SplitFolioDialog.sirket')}</option>
                   <option value="master">Master</option>
                 </select>
                 <Button
@@ -350,14 +351,14 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
               </div>
             ))}
             <Button type="button" variant="outline" size="sm" onClick={addCustomRow}>
-              <Plus className="w-4 h-4 mr-1" /> Hedef Ekle
+              <Plus className="w-4 h-4 mr-1" /> {t('cm.components_SplitFolioDialog.hedef_ekle')}
             </Button>
             <p className="text-xs text-gray-600">
-              Toplam aktarılacak: <strong>${customTotal.toFixed(2)}</strong> / Bakiye{' '}
+              {t('cm.components_SplitFolioDialog.toplam_aktarilacak')} <strong>${customTotal.toFixed(2)}</strong> {t('cm.components_SplitFolioDialog.bakiye')}{' '}
               <strong>${folioBalance.toFixed(2)}</strong>
               {customTotal >= folioBalance && folioBalance > 0 && (
                 <span className="text-red-600 ml-2">
-                  Bakiyeden küçük olmalı (orijinalde bir miktar kalmalı)
+                  {t('cm.components_SplitFolioDialog.bakiyeden_kucuk_olmali_orijinalde_bir_mi')}
                 </span>
               )}
             </p>
@@ -366,9 +367,9 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
 
         {/* Reason */}
         <div>
-          <label className="text-sm font-medium mb-2 block">Bölme Sebebi</label>
+          <label className="text-sm font-medium mb-2 block">{t('cm.components_SplitFolioDialog.bolme_sebebi')}</label>
           <Input
-            placeholder="Örn: Şirket faturası ayrıştırma, misafir talebi…"
+            placeholder={t('cm.components_SplitFolioDialog.orn_sirket_faturasi_ayristirma_misafir_t')}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
           />
@@ -376,7 +377,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
 
         {/* Preview */}
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h4 className="font-semibold text-blue-900 mb-2">Önizleme</h4>
+          <h4 className="font-semibold text-blue-900 mb-2">{t('cm.components_SplitFolioDialog.onizleme')}</h4>
           <div className="space-y-1 text-sm">
             <div className="flex items-center justify-between">
               <span>Mod:</span>
@@ -386,19 +387,19 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
             </div>
             {mode === 'by_item' && (
               <div className="flex items-center justify-between font-semibold text-blue-700">
-                <span>Aktarılacak Tutar:</span>
+                <span>{t('cm.components_SplitFolioDialog.aktarilacak_tutar')}</span>
                 <span>${selectedTotal.toFixed(2)}</span>
               </div>
             )}
             {mode === 'even' && (
               <div className="flex items-center justify-between font-semibold text-blue-700">
-                <span>Aktarılacak Toplam:</span>
+                <span>{t('cm.components_SplitFolioDialog.aktarilacak_toplam')}</span>
                 <span>${(evenPerSplit * (evenSplits - 1)).toFixed(2)}</span>
               </div>
             )}
             {mode === 'custom' && (
               <div className="flex items-center justify-between font-semibold text-blue-700">
-                <span>Aktarılacak Toplam:</span>
+                <span>{t('cm.components_SplitFolioDialog.aktarilacak_toplam_03d73')}</span>
                 <span>${customTotal.toFixed(2)}</span>
               </div>
             )}
@@ -413,15 +414,13 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
           </Button>
           <Button variant="outline" onClick={onClose} disabled={processing}>
             <XCircle className="w-4 h-4 mr-2" />
-            İptal
+            {t('cm.components_SplitFolioDialog.iptal')}
           </Button>
         </div>
 
         <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
           <p className="text-xs text-yellow-700">
-            <strong>Uyarı:</strong> Bu işlem geri alınamaz. "Eşit" ve "Özel" modlarında yeni
-            folioya tek bir "Folio bölme aktarımı" kalemi yazılır; orijinal folioya da eşdeğer
-            negatif ayarlama eklenir, böylece toplam bakiye korunur.
+            <strong>{t('cm.components_SplitFolioDialog.uyari')}</strong> {t('cm.components_SplitFolioDialog.bu_islem_geri_alinamaz_esit_ve_ozel_modl')}
           </p>
         </div>
       </CardContent>

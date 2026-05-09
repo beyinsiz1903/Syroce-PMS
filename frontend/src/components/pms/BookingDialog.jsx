@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Plus, Trash2, User, Search, UserCheck, UserPlus } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const BookingDialog = ({
   open,
@@ -39,6 +40,7 @@ const BookingDialog = ({
   isLite,
   setOpenDialog,
 }) => {
+  const { t } = useTranslation();
   // Guest search state
   const [guestSearchQuery, setGuestSearchQuery] = useState('');
   const [guestSearchResults, setGuestSearchResults] = useState([]);
@@ -107,14 +109,14 @@ const BookingDialog = ({
 <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
   <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
     <DialogHeader>
-      <DialogTitle>Yeni Rezervasyon Olustur</DialogTitle>
-      <DialogDescription>Rezervasyon bilgilerini asagiya girin</DialogDescription>
+      <DialogTitle>{t('cm.components_pms_BookingDialog.yeni_rezervasyon_olustur')}</DialogTitle>
+      <DialogDescription>{t('cm.components_pms_BookingDialog.rezervasyon_bilgilerini_asagiya_girin')}</DialogDescription>
     </DialogHeader>
     <form onSubmit={handleCreateBooking} className="space-y-6">
       {/* Guest search */}
       <div className="grid grid-cols-2 gap-4 items-end">
         <div>
-          <Label>Misafir *</Label>
+          <Label>{t('cm.components_pms_BookingDialog.misafir')}</Label>
           {selectedGuest ? (
             <div className="mt-1 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md p-2.5" data-testid="booking-dialog-selected-guest">
               <UserCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
@@ -145,7 +147,7 @@ const BookingDialog = ({
                   value={guestSearchQuery}
                   onChange={(e) => handleGuestSearch(e.target.value)}
                   onFocus={() => { if (guestSearchResults.length > 0) setShowGuestDropdown(true); }}
-                  placeholder="Misafir ara (isim, e-posta, telefon)..."
+                  placeholder={t('cm.components_pms_BookingDialog.misafir_ara_isim_e_posta_telefon')}
                   className="pl-9"
                   data-testid="booking-dialog-guest-search"
                 />
@@ -191,7 +193,7 @@ const BookingDialog = ({
                 <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg px-3 py-2">
                   <div className="flex items-center gap-2 text-gray-500">
                     <UserPlus className="w-3.5 h-3.5" />
-                    <span className="text-sm">Sonuç bulunamadı. Yeni misafir kaydedin.</span>
+                    <span className="text-sm">{t('cm.components_pms_BookingDialog.sonuc_bulunamadi_yeni_misafir_kaydedin')}</span>
                   </div>
                 </div>
               )}
@@ -206,7 +208,7 @@ const BookingDialog = ({
             onClick={() => setOpenDialog('guest')}
             data-testid="booking-dialog-register-guest"
           >
-            Yeni Misafir Kaydet
+            {t('cm.components_pms_BookingDialog.yeni_misafir_kaydet')}
           </Button>
         </div>
       </div>

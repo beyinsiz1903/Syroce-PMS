@@ -4,9 +4,11 @@ import { toast } from 'sonner';
 import SplitFolioDialog from './SplitFolioDialog';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 
 const EnhancedFolioManager = ({ bookingId }) => {
+  const { t } = useTranslation();
   const [folio, setFolio] = useState(null);
   const [charges, setCharges] = useState([]);
   const [payments, setPayments] = useState([]);
@@ -91,7 +93,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
   if (!folio) {
     return (
       <div className="p-6 bg-white">
-        <p>Folio yükleniyor...</p>
+        <p>{t('cm.components_EnhancedFolioManager.folio_yukleniyor')}</p>
       </div>
     );
   }
@@ -105,13 +107,13 @@ const EnhancedFolioManager = ({ bookingId }) => {
             onClick={() => setShowChargeModal(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
-            Masraf Ekle
+            {t('cm.components_EnhancedFolioManager.masraf_ekle')}
           </button>
           <button
             onClick={() => setShowPaymentModal(true)}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
           >
-            Ödeme Kaydet
+            {t('cm.components_EnhancedFolioManager.odeme_kaydet')}
           </button>
           <button
             onClick={() => setShowSplitModal(true)}
@@ -124,7 +126,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
             onClick={handleCheckout}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
           >
-            Çıkış Yap
+            {t('cm.components_EnhancedFolioManager.cikis_yap')}
           </button>
         </div>
       </div>
@@ -217,7 +219,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
       {showChargeModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-[500px]">
-            <h3 className="text-xl font-bold mb-4">Masraf Ekle</h3>
+            <h3 className="text-xl font-bold mb-4">{t('cm.components_EnhancedFolioManager.masraf_ekle_f6944')}</h3>
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.target);
@@ -256,7 +258,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
               </div>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setShowChargeModal(false)} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Masraf Ekle</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{t('cm.components_EnhancedFolioManager.masraf_ekle_f6944')}</button>
               </div>
             </form>
           </div>
@@ -267,7 +269,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
       {showPaymentModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-[500px]">
-            <h3 className="text-xl font-bold mb-4">Ödeme Kaydet</h3>
+            <h3 className="text-xl font-bold mb-4">{t('cm.components_EnhancedFolioManager.odeme_kaydet_c61db')}</h3>
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.target);
@@ -297,7 +299,7 @@ const EnhancedFolioManager = ({ bookingId }) => {
               </div>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setShowPaymentModal(false)} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Ödeme Kaydet</button>
+                <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">{t('cm.components_EnhancedFolioManager.odeme_kaydet_c61db')}</button>
               </div>
             </form>
           </div>

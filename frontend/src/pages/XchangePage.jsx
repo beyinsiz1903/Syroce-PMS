@@ -22,6 +22,7 @@ import {
   Server, Globe, Building2, Send, Inbox, Power, Eye, Trash2,
   ChevronLeft, ChevronRight, Filter, PlayCircle,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const CATEGORY_META = {
   gds:     { label: 'GDS / CRS',      icon: Globe,    color: 'text-indigo-600' },
@@ -75,6 +76,7 @@ const looksPrivate = (url) => {
 };
 
 export default function XchangePage() {
+  const { t } = useTranslation();
   const [partners, setPartners] = useState([]);
   const [configs, setConfigs] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
@@ -281,7 +283,7 @@ export default function XchangePage() {
               Otomatik (30s)
             </label>
             <Button variant="outline" size="sm" onClick={loadAll} disabled={loading}>
-              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Yenile
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> {t('cm.pages_XchangePage.yenile')}
             </Button>
           </div>
         }
@@ -291,14 +293,14 @@ export default function XchangePage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <KpiCard
           icon={Server}
-          label="Tanımlı Partner"
+          label={t('cm.pages_XchangePage.tanimli_partner')}
           value={partners.length}
           intent="info"
           onClick={() => setActiveTab('partners')}
         />
         <KpiCard
           icon={CheckCircle2}
-          label="Aktif Bağlantı"
+          label={t('cm.pages_XchangePage.aktif_baglanti')}
           value={configs.filter((c) => c.enabled).length}
           intent="success"
           onClick={() => setActiveTab('partners')}
@@ -312,7 +314,7 @@ export default function XchangePage() {
         />
         <KpiCard
           icon={AlertTriangle}
-          label="Hatalı"
+          label={t('cm.pages_XchangePage.hatali')}
           value={counts.failed || 0}
           intent="warning"
           onClick={() => { setActiveTab('messages'); setFilterStatus('failed'); resetPagination(); }}
@@ -329,7 +331,7 @@ export default function XchangePage() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="partners">Partner'lar</TabsTrigger>
-          <TabsTrigger value="messages">Mesaj Akışı</TabsTrigger>
+          <TabsTrigger value="messages">{t('cm.pages_XchangePage.mesaj_akisi')}</TabsTrigger>
         </TabsList>
 
         {/* ───── Partners ───── */}
@@ -355,7 +357,7 @@ export default function XchangePage() {
                             <StatusBadge intent={cert.intent}>{cert.label}</StatusBadge>
                           </span>
                           {cfg?.enabled && (
-                            <StatusBadge intent="success" icon={CheckCircle2}>Aktif</StatusBadge>
+                            <StatusBadge intent="success" icon={CheckCircle2}>{t('cm.pages_XchangePage.aktif')}</StatusBadge>
                           )}
                         </CardTitle>
                         <CardDescription className="mt-1">{p.description}</CardDescription>
@@ -363,11 +365,11 @@ export default function XchangePage() {
                     </div>
                     <div className="flex gap-2 shrink-0">
                       <Button size="sm" variant="outline" onClick={() => openEditor(p)}>
-                        <Settings2 className="w-4 h-4 mr-1.5" /> Yapılandır
+                        <Settings2 className="w-4 h-4 mr-1.5" /> {t('cm.pages_XchangePage.yapilandir')}
                       </Button>
                       {cfg && (
                         <Button size="sm" variant="outline" onClick={() => removeConfig(p.code)}>
-                          <Trash2 className="w-4 h-4 mr-1.5" /> Sil
+                          <Trash2 className="w-4 h-4 mr-1.5" /> {t('cm.pages_XchangePage.sil')}
                         </Button>
                       )}
                     </div>
@@ -410,7 +412,7 @@ export default function XchangePage() {
           <Card>
             <CardContent className="p-3 flex items-center gap-2 flex-wrap">
               <div className="flex items-center gap-1.5 text-sm text-slate-600">
-                <Filter className="w-4 h-4" /> Filtre:
+                <Filter className="w-4 h-4" /> {t('cm.pages_XchangePage.filtre')}
               </div>
               <Select value={filterPartner} onValueChange={(v) => { setFilterPartner(v); resetPagination(); }}>
                 <SelectTrigger className="w-[200px] h-8 text-sm"><SelectValue /></SelectTrigger>
@@ -423,7 +425,7 @@ export default function XchangePage() {
               <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); resetPagination(); }}>
                 <SelectTrigger className="w-[180px] h-8 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tüm durumlar</SelectItem>
+                  <SelectItem value="all">{t('cm.pages_XchangePage.tum_durumlar')}</SelectItem>
                   {Object.entries(STATUS_META).map(([k, m]) => (
                     <SelectItem key={k} value={k}>{m.label}</SelectItem>
                   ))}
@@ -455,10 +457,10 @@ export default function XchangePage() {
                       <th className="p-2">Zaman</th>
                       <th className="p-2">Partner</th>
                       <th className="p-2">Mesaj</th>
-                      <th className="p-2">Yön</th>
-                      <th className="p-2">Durum</th>
+                      <th className="p-2">{t('cm.pages_XchangePage.yon')}</th>
+                      <th className="p-2">{t('cm.pages_XchangePage.durum')}</th>
                       <th className="p-2">Deneme</th>
-                      <th className="p-2 text-right">İşlem</th>
+                      <th className="p-2 text-right">{t('cm.pages_XchangePage.islem')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -527,13 +529,13 @@ export default function XchangePage() {
           <DialogHeader>
             <DialogTitle>{editingPartner?.name || ''}</DialogTitle>
             <DialogDescription>
-              Bu partner için bağlantı bilgileri. Secret alanlar maskelenmiş gelirse boş bırakırsanız mevcut değer korunur.
+              {t('cm.pages_XchangePage.bu_partner_icin_baglanti_bilgileri_secre')}
             </DialogDescription>
           </DialogHeader>
           {editingPartner && (
             <form onSubmit={(e) => { e.preventDefault(); save(); }} autoComplete="off" className="space-y-3">
               <div className="flex items-center justify-between rounded border p-2">
-                <Label className="cursor-pointer">Aktif</Label>
+                <Label className="cursor-pointer">{t('cm.pages_XchangePage.aktif_81c33')}</Label>
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
               </div>
               {Object.entries(editingPartner.config_schema || {}).map(([k, meta]) => {
@@ -559,19 +561,17 @@ export default function XchangePage() {
                     />
                     {sshWarn && (
                       <p className="text-xs text-rose-700 mt-1">
-                        ⚠ Bu URL özel/loopback bir adres gibi görünüyor (SSRF riski). Backend büyük olasılıkla reddedecektir.
+                        {t('cm.pages_XchangePage.bu_url_ozel_loopback_bir_adres_gibi_goru')}
                       </p>
                     )}
                   </div>
                 );
               })}
               <p className="text-xs text-slate-500">
-                Secret alanlar maskelenmiş (***masked***) görünüyorsa <strong>mevcut değer korunur</strong>.
-                Yeni bir kurulumda tüm zorunlu alanlar boş bırakılırsa adapter <strong>dry-run</strong> moduna düşer
-                (mesajlar log'a yazılır, dış servise gönderilmez).
+                {t('cm.pages_XchangePage.secret_alanlar_maskelenmis_masked_gorunu')} <strong>{t('cm.pages_XchangePage.mevcut_deger_korunur')}</strong>{t('cm.pages_XchangePage.yeni_bir_kurulumda_tum_zorunlu_alanlar_b')} <strong>dry-run</strong> {t('cm.pages_XchangePage.moduna_duser_mesajlar_log_a_yazilir_dis_')}
               </p>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setEditing(null)}>İptal</Button>
+                <Button type="button" variant="outline" onClick={() => setEditing(null)}>{t('cm.pages_XchangePage.iptal')}</Button>
                 <Button type="submit" disabled={saving}>
                   {saving ? 'Kaydediliyor…' : 'Kaydet'}
                 </Button>
@@ -599,7 +599,7 @@ export default function XchangePage() {
             <div className="space-y-3 text-sm">
               {detail.last_error && (
                 <div>
-                  <div className="text-xs font-semibold text-rose-700 uppercase mb-1">Son Hata</div>
+                  <div className="text-xs font-semibold text-rose-700 uppercase mb-1">{t('cm.pages_XchangePage.son_hata')}</div>
                   <pre className="text-xs bg-rose-50 text-rose-900 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-48">
                     {detail.last_error}
                   </pre>
@@ -608,13 +608,13 @@ export default function XchangePage() {
               <Section label="Request Excerpt" body={detail.request_excerpt} />
               <Section label="Response Excerpt" body={detail.response_excerpt} />
               <details>
-                <summary className="cursor-pointer text-slate-600 text-sm">Tam Envelope (secret alanlar maskelenmiştir)</summary>
+                <summary className="cursor-pointer text-slate-600 text-sm">{t('cm.pages_XchangePage.tam_envelope_secret_alanlar_maskelenmist')}</summary>
                 <pre className="text-xs bg-slate-50 rounded p-2 overflow-x-auto mt-1 max-h-72">
                   {JSON.stringify(detail.envelope, null, 2)}
                 </pre>
               </details>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setDetail(null)}>Kapat</Button>
+                <Button variant="outline" onClick={() => setDetail(null)}>{t('cm.pages_XchangePage.kapat')}</Button>
               </DialogFooter>
             </div>
           )}

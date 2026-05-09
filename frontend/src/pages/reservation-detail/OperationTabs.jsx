@@ -8,7 +8,9 @@ import { Loader2, Home, Repeat2, AlertTriangle } from 'lucide-react';
 import { API, fmtTL, fmtTs } from './helpers';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
+  const { t } = useTranslation();
   const [roomTypes, setRoomTypes] = useState([]);
   const [selectedType, setSelectedType] = useState('');
   const [selectedRoomId, setSelectedRoomId] = useState('');
@@ -54,7 +56,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
   return (
     <div data-testid="room-change-tab" className="space-y-4">
       <div className="border rounded-lg p-4 bg-blue-50/50">
-        <div className="text-xs font-semibold text-blue-600 uppercase mb-2">Mevcut Oda</div>
+        <div className="text-xs font-semibold text-blue-600 uppercase mb-2">{t('cm.pages_reservationdetail_OperationTabs.mevcut_oda')}</div>
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold">{booking?.room_number || '-'}</div>
           <div>
@@ -65,27 +67,27 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
       </div>
 
       <div className="border rounded-lg p-4 space-y-3">
-        <div className="text-sm font-semibold text-gray-700">Yeni Oda Seç</div>
+        <div className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_OperationTabs.yeni_oda_sec')}</div>
         {loadingRooms ? (
-          <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Müsait odalar yükleniyor...</div>
+          <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> {t('cm.pages_reservationdetail_OperationTabs.musait_odalar_yukleniyor')}</div>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">Oda Tipi</Label>
+                <Label className="text-xs">{t('cm.pages_reservationdetail_OperationTabs.oda_tipi')}</Label>
                 <select value={selectedType} onChange={e => { setSelectedType(e.target.value); setSelectedRoomId(''); }} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="room-change-type-select">
-                  <option value="">Oda tipi seçiniz...</option>
+                  <option value="">{t('cm.pages_reservationdetail_OperationTabs.oda_tipi_seciniz')}</option>
                   {roomTypes.map(rt => (
                     <option key={rt.type} value={rt.type}>
-                      {rt.type} ({rt.rooms.filter(r => r.is_available && r.id !== booking?.room_id).length} müsait) - {fmtTL(rt.base_price)} TL
+                      {rt.type} ({rt.rooms.filter(r => r.is_available && r.id !== booking?.room_id).length} {t('cm.pages_reservationdetail_OperationTabs.musait')} {fmtTL(rt.base_price)} TL
                     </option>
                   ))}
                 </select>
               </div>
               <div>
-                <Label className="text-xs">Oda</Label>
+                <Label className="text-xs">{t('cm.pages_reservationdetail_OperationTabs.oda')}</Label>
                 <select value={selectedRoomId} onChange={e => setSelectedRoomId(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="room-change-room-select">
-                  <option value="">Oda Seçiniz...</option>
+                  <option value="">{t('cm.pages_reservationdetail_OperationTabs.oda_seciniz')}</option>
                   {selectedType && roomTypes.find(rt => rt.type === selectedType)?.rooms
                     .filter(r => r.is_available && r.id !== booking?.room_id)
                     .map(r => (
@@ -98,49 +100,49 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
 
             {isUpgrade && selectedType && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-                <div className="text-xs font-semibold text-amber-800">Üst Kategori Oda - Fiyat Farkı: {fmtTL(priceDiff)} TL/gece</div>
+                <div className="text-xs font-semibold text-amber-800">{t('cm.pages_reservationdetail_OperationTabs.ust_kategori_oda_fiyat_farki')} {fmtTL(priceDiff)} TL/gece</div>
                 <div className="flex gap-3">
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="current" checked={pricingOption === 'current'} onChange={e => setPricingOption(e.target.value)} />
-                    Mevcut fiyat (ek ücret yok)
+                    {t('cm.pages_reservationdetail_OperationTabs.mevcut_fiyat_ek_ucret_yok')}
                   </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="upgrade" checked={pricingOption === 'upgrade'} onChange={e => setPricingOption(e.target.value)} />
-                    Güncel fiyat farkı ({fmtTL(priceDiff)} TL)
+                    {t('cm.pages_reservationdetail_OperationTabs.guncel_fiyat_farki')}{fmtTL(priceDiff)} TL)
                   </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="radio" name="pricing" value="custom" checked={pricingOption === 'custom'} onChange={e => setPricingOption(e.target.value)} />
-                    Özel fiyat
+                    {t('cm.pages_reservationdetail_OperationTabs.ozel_fiyat')}
                   </label>
                 </div>
                 {pricingOption === 'custom' && (
-                  <Input type="number" value={customPrice} onChange={e => setCustomPrice(e.target.value)} placeholder="Ek ücret (TL)" className="h-8 text-sm w-40" />
+                  <Input type="number" value={customPrice} onChange={e => setCustomPrice(e.target.value)} placeholder={t('cm.pages_reservationdetail_OperationTabs.ek_ucret_tl')} className="h-8 text-sm w-40" />
                 )}
               </div>
             )}
 
             <div>
-              <Label className="text-xs">Değişiklik Sebebi</Label>
+              <Label className="text-xs">{t('cm.pages_reservationdetail_OperationTabs.degisiklik_sebebi')}</Label>
               <select value={reason} onChange={e => setReason(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white">
-                <option value="">Sebep Seçiniz...</option>
-                <option value="Misafir isteği">Misafir isteği</option>
-                <option value="Teknik arıza">Teknik arıza</option>
+                <option value="">{t('cm.pages_reservationdetail_OperationTabs.sebep_seciniz')}</option>
+                <option value="Misafir isteği">{t('cm.pages_reservationdetail_OperationTabs.misafir_istegi')}</option>
+                <option value="Teknik arıza">{t('cm.pages_reservationdetail_OperationTabs.teknik_ariza')}</option>
                 <option value="Upgrade">Upgrade</option>
                 <option value="Downgrade">Downgrade</option>
                 <option value="Temizlik sorunu">Temizlik sorunu</option>
-                <option value="Diğer">Diğer</option>
+                <option value="Diğer">{t('cm.pages_reservationdetail_OperationTabs.diger')}</option>
               </select>
             </div>
           </>
         )}
         <Button size="sm" onClick={handleChange} disabled={loading || !selectedRoomId || !reason} className="bg-indigo-600 hover:bg-indigo-700 text-white h-8 text-xs" data-testid="room-change-submit-btn">
-          {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Repeat2 className="w-3 h-3 mr-1" />} Oda Değiştir
+          {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Repeat2 className="w-3 h-3 mr-1" />} {t('cm.pages_reservationdetail_OperationTabs.oda_degistir')}
         </Button>
       </div>
 
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-gray-500 uppercase">Oda Değişiklik Geçmişi</div>
-        {(!roomMoves || roomMoves.length === 0) ? <div className="text-center py-4 text-gray-400 text-sm">Geçmiş oda değişikliği yok</div> : (
+        <div className="text-xs font-semibold text-gray-500 uppercase">{t('cm.pages_reservationdetail_OperationTabs.oda_degisiklik_gecmisi')}</div>
+        {(!roomMoves || roomMoves.length === 0) ? <div className="text-center py-4 text-gray-400 text-sm">{t('cm.pages_reservationdetail_OperationTabs.gecmis_oda_degisikligi_yok')}</div> : (
           roomMoves.map((rm, i) => (
             <div key={rm.id || i} className="border rounded-lg p-3 flex items-center gap-3">
               <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center"><Home className="w-4 h-4 text-indigo-600" /></div>
@@ -197,17 +199,17 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
   return (
     <div data-testid="cancel-tab" className="space-y-4 max-w-lg">
       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-        <div className="text-sm font-semibold text-red-800 mb-3">Rezervasyon İptali</div>
+        <div className="text-sm font-semibold text-red-800 mb-3">{t('cm.pages_reservationdetail_OperationTabs.rezervasyon_iptali')}</div>
         <div className="space-y-3">
           <div>
-            <Label className="text-xs">İptal Nedeni *</Label>
+            <Label className="text-xs">{t('cm.pages_reservationdetail_OperationTabs.iptal_nedeni')}</Label>
             <select value={cancelType} onChange={e => setCancelType(e.target.value)} className="w-full h-8 text-sm border rounded-md px-2 bg-white" data-testid="cancel-type-select">
               {Object.entries(cancelTypes).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           <div>
-            <Label className="text-xs">Açıklama *</Label>
-            <textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full h-16 text-sm border rounded-md p-2 resize-none bg-white" placeholder="İptal açıklaması..." data-testid="cancel-reason-input" />
+            <Label className="text-xs">{t('cm.pages_reservationdetail_OperationTabs.aciklama')}</Label>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} className="w-full h-16 text-sm border rounded-md p-2 resize-none bg-white" placeholder={t('cm.pages_reservationdetail_OperationTabs.iptal_aciklamasi')} data-testid="cancel-reason-input" />
           </div>
 
           <div className="border-t pt-3">
@@ -219,7 +221,7 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
 
           {applyNoshow && (
             <div className="bg-white border rounded-lg p-3 space-y-2">
-              <div className="text-xs font-semibold text-gray-700">No-Show Ücreti</div>
+              <div className="text-xs font-semibold text-gray-700">{t('cm.pages_reservationdetail_OperationTabs.no_show_ucreti')}</div>
               <div className="flex gap-2">
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="per_night" checked={noshowChargeType === 'per_night'} onChange={e => setNoshowChargeType(e.target.value)} />
@@ -227,14 +229,14 @@ export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
                 </label>
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="full_stay" checked={noshowChargeType === 'full_stay'} onChange={e => setNoshowChargeType(e.target.value)} />
-                  Tüm Konaklama ({fmtTL(booking?.total_amount)} TL)
+                  {t('cm.pages_reservationdetail_OperationTabs.tum_konaklama')}{fmtTL(booking?.total_amount)} TL)
                 </label>
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="noshowType" value="custom" checked={noshowChargeType === 'custom'} onChange={e => setNoshowChargeType(e.target.value)} />
-                  Özel Tutar
+                  {t('cm.pages_reservationdetail_OperationTabs.ozel_tutar')}
                 </label>
               </div>
-              <Input type="number" value={noshowAmount} onChange={e => { setNoshowAmount(e.target.value); setNoshowChargeType('custom'); }} placeholder="Tutar (TL)" className="h-8 text-sm w-40" data-testid="noshow-amount-input" />
+              <Input type="number" value={noshowAmount} onChange={e => { setNoshowAmount(e.target.value); setNoshowChargeType('custom'); }} placeholder={t('cm.pages_reservationdetail_OperationTabs.tutar_tl')} className="h-8 text-sm w-40" data-testid="noshow-amount-input" />
             </div>
           )}
 

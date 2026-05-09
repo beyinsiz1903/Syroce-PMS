@@ -13,8 +13,10 @@ import {
   Hotel,
   Home
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const PropertySwitcher = ({ onPropertyChange }) => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [properties, setProperties] = useState([]);
   const [currentPropertyId, setCurrentPropertyId] = useState(null);
@@ -105,7 +107,7 @@ const PropertySwitcher = ({ onPropertyChange }) => {
       <button
         onClick={handleOpen}
         className="fixed bottom-20 left-4 z-50 bg-gradient-to-r from-indigo-600 to-indigo-600 text-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all hover:scale-110"
-        title="Tesis Değiştir"
+        title={t('cm.components_PropertySwitcher.tesis_degistir')}
       >
         <Building2 className="h-6 w-6" />
         {properties.length > 1 && (
@@ -121,7 +123,7 @@ const PropertySwitcher = ({ onPropertyChange }) => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Building2 className="h-5 w-5" />
-              Tesis Seç
+              {t('cm.components_PropertySwitcher.tesis_sec')}
             </DialogTitle>
           </DialogHeader>
 
@@ -131,7 +133,7 @@ const PropertySwitcher = ({ onPropertyChange }) => {
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-5 w-5 text-blue-600" />
                 <div>
-                  <div className="font-semibold text-blue-900">Aktif Tesis</div>
+                  <div className="font-semibold text-blue-900">{t('cm.components_PropertySwitcher.aktif_tesis')}</div>
                   <div className="text-sm text-blue-700">{currentProperty.name}</div>
                 </div>
               </div>
@@ -158,14 +160,14 @@ const PropertySwitcher = ({ onPropertyChange }) => {
           {loading ? (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
-              <p className="text-gray-500 mt-2">Tesisler yükleniyor...</p>
+              <p className="text-gray-500 mt-2">{t('cm.components_PropertySwitcher.tesisler_yukleniyor')}</p>
             </div>
           ) : (
             <div className="space-y-2">
               {filteredProperties.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <Building2 className="h-12 w-12 mx-auto mb-2 text-gray-300" />
-                  <p>Tesis bulunamadı</p>
+                  <p>{t('cm.components_PropertySwitcher.tesis_bulunamadi')}</p>
                 </div>
               ) : (
                 filteredProperties.map((property) => {
@@ -206,7 +208,7 @@ const PropertySwitcher = ({ onPropertyChange }) => {
                               </Badge>
                               {property.room_count > 0 && (
                                 <Badge variant="outline" className="text-xs">
-                                  {property.room_count} Oda
+                                  {property.room_count} {t('cm.components_PropertySwitcher.oda')}
                                 </Badge>
                               )}
                             </div>
@@ -222,7 +224,7 @@ const PropertySwitcher = ({ onPropertyChange }) => {
 
           {/* Info */}
           <div className="mt-4 text-xs text-gray-500 text-center">
-            Tesis değiştirdiğinizde sayfa yeniden yüklenecektir
+            {t('cm.components_PropertySwitcher.tesis_degistirdiginizde_sayfa_yeniden_yu')}
           </div>
         </DialogContent>
       </Dialog>

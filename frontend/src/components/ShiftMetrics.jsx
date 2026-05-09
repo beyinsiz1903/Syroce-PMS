@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Clock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ShiftMetrics = () => {
+  const { t } = useTranslation();
   const [shiftData, setShiftData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -23,7 +25,7 @@ const ShiftMetrics = () => {
   };
 
   if (loading || !shiftData) {
-    return <div className="text-center py-4">Yükleniyor...</div>;
+    return <div className="text-center py-4">{t('cm.components_ShiftMetrics.yukleniyor')}</div>;
   }
 
   const shifts = shiftData.shifts;
@@ -62,7 +64,7 @@ const ShiftMetrics = () => {
                 <div className="text-xs font-medium">{shiftNames[key]}</div>
                 <div className="text-xs opacity-80">{data.hours}</div>
                 <div className="text-lg font-bold mt-2">₺{data.sales}</div>
-                <div className="text-xs opacity-90">{data.orders} sipariş</div>
+                <div className="text-xs opacity-90">{data.orders} {t('cm.components_ShiftMetrics.siparis')}</div>
               </div>
             </div>
           ))}

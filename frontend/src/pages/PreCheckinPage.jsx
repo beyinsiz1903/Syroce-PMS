@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, CheckCircle2, ScanLine, Camera, Upload, X, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -26,6 +27,7 @@ function fileToBase64(file) {
  * Path: /precheckin/:token
  */
 export default function PreCheckinPage() {
+  const { t } = useTranslation();
   const { token } = useParams();
   const [info, setInfo] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
@@ -75,7 +77,7 @@ export default function PreCheckinPage() {
         <Card className="max-w-md w-full">
           <CardContent className="pt-8 pb-8 text-center">
             <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
-            <h2 className="text-lg font-semibold text-gray-900">Geçersiz QR kod</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t('cm.pages_PreCheckinPage.gecersiz_qr_kod')}</h2>
             <p className="text-sm text-gray-600 mt-2">{loadErr}</p>
           </CardContent>
         </Card>
@@ -97,10 +99,9 @@ export default function PreCheckinPage() {
         <Card className="max-w-md w-full">
           <CardContent className="pt-8 pb-8 text-center">
             <CheckCircle2 className="w-14 h-14 text-emerald-600 mx-auto mb-3" />
-            <h2 className="text-lg font-semibold text-gray-900">Teşekkürler!</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t('cm.pages_PreCheckinPage.tesekkurler')}</h2>
             <p className="text-sm text-gray-600 mt-2">
-              Kimliğiniz <b>{info.property_name}</b> resepsiyonuna iletildi.
-              Otele vardığınızda check-in işleminiz hızlıca tamamlanacaktır.
+              {t('cm.pages_PreCheckinPage.kimliginiz')} <b>{info.property_name}</b> {t('cm.pages_PreCheckinPage.resepsiyonuna_iletildi_otele_vardiginizd')}
             </p>
           </CardContent>
         </Card>
@@ -115,31 +116,31 @@ export default function PreCheckinPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ScanLine className="w-5 h-5 text-indigo-600" />
-              Hızlı Ön Check-in
+              {t('cm.pages_PreCheckinPage.hizli_on_check_in')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div><span className="text-gray-500">Otel:</span> <b>{info.property_name}</b></div>
-            {info.guest_name && <div><span className="text-gray-500">Misafir:</span> <b>{info.guest_name}</b></div>}
-            {info.reservation_ref && <div><span className="text-gray-500">Rezervasyon:</span> <b>{info.reservation_ref}</b></div>}
+            {info.guest_name && <div><span className="text-gray-500">{t('cm.pages_PreCheckinPage.misafir')}</span> <b>{info.guest_name}</b></div>}
+            {info.reservation_ref && <div><span className="text-gray-500">{t('cm.pages_PreCheckinPage.rezervasyon')}</span> <b>{info.reservation_ref}</b></div>}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Kimliğinizi Tarayın</CardTitle>
+            <CardTitle className="text-base">{t('cm.pages_PreCheckinPage.kimliginizi_tarayin')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {!preview && (
               <div className="grid grid-cols-2 gap-2">
                 <label className="border-2 border-dashed border-gray-300 hover:border-indigo-400 rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer">
                   <Camera className="w-8 h-8 text-gray-400" />
-                  <span className="text-xs font-medium text-gray-700">Kamerayla Çek</span>
+                  <span className="text-xs font-medium text-gray-700">{t('cm.pages_PreCheckinPage.kamerayla_cek')}</span>
                   <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => handleFile(e.target.files?.[0])} />
                 </label>
                 <label className="border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-xl p-4 flex flex-col items-center gap-2 cursor-pointer">
                   <Upload className="w-8 h-8 text-gray-400" />
-                  <span className="text-xs font-medium text-gray-700">Galeriden Seç</span>
+                  <span className="text-xs font-medium text-gray-700">{t('cm.pages_PreCheckinPage.galeriden_sec')}</span>
                   <input type="file" accept="image/*" className="hidden" onChange={e => handleFile(e.target.files?.[0])} />
                 </label>
               </div>
@@ -157,13 +158,12 @@ export default function PreCheckinPage() {
             <label className="flex items-start gap-2 text-xs text-gray-700 mt-3">
               <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-0.5" />
               <span>
-                Kimliğimin <b>{info.property_name}</b> tarafından check-in için işlenmesine onay veriyorum.
-                Veriler KVKK kapsamında saklanır.
+                {t('cm.pages_PreCheckinPage.kimligimin')} <b>{info.property_name}</b> {t('cm.pages_PreCheckinPage.tarafindan_check_in_icin_islenmesine_ona')}
               </span>
             </label>
 
             <Button onClick={submit} disabled={scanning || !file || !consent} className="w-full bg-indigo-600 hover:bg-indigo-700">
-              {scanning ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Gönderiliyor</> : <><CheckCircle2 className="w-4 h-4 mr-2" /> Gönder</>}
+              {scanning ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t('cm.pages_PreCheckinPage.gonderiliyor')}</> : <><CheckCircle2 className="w-4 h-4 mr-2" /> {t('cm.pages_PreCheckinPage.gonder')}</>}
             </Button>
           </CardContent>
         </Card>

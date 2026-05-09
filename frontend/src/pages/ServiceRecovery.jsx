@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 const CATEGORIES = [
   { value: 'room', label: 'Oda', color: 'bg-blue-100 text-blue-800' },
   { value: 'service', label: 'Hizmet', color: 'bg-indigo-100 text-indigo-800' },
@@ -85,6 +86,7 @@ const formatDate = (iso) => {
 };
 
 const SlaBadge = ({ complaint }) => {
+  const { t } = useTranslation();
   if (!complaint?.age_hours && complaint?.age_hours !== 0) return null;
   if (complaint.status === 'resolved') return null;
   const overdue = complaint.is_overdue;
@@ -434,7 +436,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
         <div className="flex items-center justify-center h-96">
           <div className="text-center">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-red-600 mx-auto mb-4" />
-            <p className="text-gray-500">Yükleniyor...</p>
+            <p className="text-gray-500">{t('cm.pages_ServiceRecovery.yukleniyor')}</p>
           </div>
         </div>
       </>
@@ -451,8 +453,8 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
               <Home className="w-4 h-4" />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Şikayet Yönetimi</h1>
-              <p className="text-sm text-gray-500">Misafir şikayetleri ve çözüm takibi</p>
+              <h1 className="text-2xl font-bold text-gray-900">{t('cm.pages_ServiceRecovery.sikayet_yonetimi')}</h1>
+              <p className="text-sm text-gray-500">{t('cm.pages_ServiceRecovery.misafir_sikayetleri_ve_cozum_takibi')}</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -466,11 +468,11 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
               disabled={!stats.overdue}
               title={stats.overdue ? `${stats.overdue} şikayetin çözüm süresi aşıldı` : 'Süresi aşılan şikayet yok'}
             >
-              <Zap className="w-4 h-4 mr-2" /> Gecikenleri Yönetime İlet
+              <Zap className="w-4 h-4 mr-2" /> {t('cm.pages_ServiceRecovery.gecikenleri_yonetime_ilet')}
               {stats.overdue ? <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs">{stats.overdue}</span> : null}
             </Button>
             <Button onClick={openCreateDialog} className="bg-red-600 hover:bg-red-700">
-              <Plus className="w-4 h-4 mr-2" /> Yeni Şikayet
+              <Plus className="w-4 h-4 mr-2" /> {t('cm.pages_ServiceRecovery.yeni_sikayet')}
             </Button>
           </div>
         </div>
@@ -500,11 +502,11 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
           <CardContent className="pt-4 pb-3">
             <div className="flex flex-col md:flex-row gap-3 items-end">
               <div className="flex-1 min-w-0">
-                <Label className="text-xs text-gray-500 mb-1 block">Ara</Label>
+                <Label className="text-xs text-gray-500 mb-1 block">{t('cm.pages_ServiceRecovery.ara')}</Label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <Input
-                    placeholder="Misafir, oda, konu..."
+                    placeholder={t('cm.pages_ServiceRecovery.misafir_oda_konu')}
                     value={searchText}
                     onChange={e => setSearchText(e.target.value)}
                     className="pl-9"
@@ -512,11 +514,11 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 </div>
               </div>
               <div className="w-full md:w-36">
-                <Label className="text-xs text-gray-500 mb-1 block">Durum</Label>
+                <Label className="text-xs text-gray-500 mb-1 block">{t('cm.pages_ServiceRecovery.durum')}</Label>
                 <Select value={filterStatus} onValueChange={setFilterStatus}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tümünü Göster</SelectItem>
+                    <SelectItem value="all">{t('cm.pages_ServiceRecovery.tumunu_goster')}</SelectItem>
                     {STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -526,17 +528,17 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 <Select value={filterCategory} onValueChange={setFilterCategory}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tümü</SelectItem>
+                    <SelectItem value="all">{t('cm.pages_ServiceRecovery.tumu')}</SelectItem>
                     {CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="w-full md:w-36">
-                <Label className="text-xs text-gray-500 mb-1 block">Önem</Label>
+                <Label className="text-xs text-gray-500 mb-1 block">{t('cm.pages_ServiceRecovery.onem')}</Label>
                 <Select value={filterSeverity} onValueChange={setFilterSeverity}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tümü</SelectItem>
+                    <SelectItem value="all">{t('cm.pages_ServiceRecovery.tumu_ff12f')}</SelectItem>
                     {SEVERITIES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -551,8 +553,8 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
             <Card>
               <CardContent className="py-12 text-center">
                 <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 font-medium">Şikayet bulunamadı</p>
-                <p className="text-sm text-gray-400 mt-1">Filtreleri değiştirmeyi deneyin</p>
+                <p className="text-gray-500 font-medium">{t('cm.pages_ServiceRecovery.sikayet_bulunamadi')}</p>
+                <p className="text-sm text-gray-400 mt-1">{t('cm.pages_ServiceRecovery.filtreleri_degistirmeyi_deneyin')}</p>
               </CardContent>
             </Card>
           ) : (
@@ -582,7 +584,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                           </span>
                           {complaint.source === 'guest_qr' && (
                             <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-100 text-indigo-700">
-                              Misafir QR
+                              {t('cm.pages_ServiceRecovery.misafir_qr')}
                             </span>
                           )}
                           <SlaBadge complaint={complaint} />
@@ -596,7 +598,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                           )}
                           {complaint.room_number && (
                             <span className="flex items-center gap-1">
-                              <DoorOpen className="w-3 h-3" /> Oda {complaint.room_number}
+                              <DoorOpen className="w-3 h-3" /> {t('cm.pages_ServiceRecovery.oda')} {complaint.room_number}
                               {complaint.room_type && <span className="text-gray-400">({complaint.room_type})</span>}
                             </span>
                           )}
@@ -626,17 +628,17 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
         <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Yeni Şikayet Kaydı</DialogTitle>
+              <DialogTitle>{t('cm.pages_ServiceRecovery.yeni_sikayet_kaydi')}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleCreateComplaint} className="space-y-4 mt-2">
               <div>
-                <Label className="text-sm font-medium">Aktif Rezervasyon (Otomatik Doldurur)</Label>
+                <Label className="text-sm font-medium">{t('cm.pages_ServiceRecovery.aktif_rezervasyon_otomatik_doldurur')}</Label>
                 <Select value={newComplaint.booking_id} onValueChange={handleBookingSelect} disabled={!auxLoaded}>
                   <SelectTrigger><SelectValue placeholder={auxLoaded ? "Rezervasyon seçin..." : "Yükleniyor..."} /></SelectTrigger>
                   <SelectContent>
                     {bookings.map(b => (
                       <SelectItem key={b.id} value={b.id}>
-                        {b.guest_name} — Oda {b.room_number} ({b.room_type}) [{b.status === 'checked_in' ? 'Konaklıyor' : 'Onaylı'}]
+                        {b.guest_name} {t('cm.pages_ServiceRecovery.oda_bec22')} {b.room_number} ({b.room_type}) [{b.status === 'checked_in' ? 'Konaklıyor' : 'Onaylı'}]
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -645,7 +647,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-sm font-medium">Oda</Label>
+                  <Label className="text-sm font-medium">{t('cm.pages_ServiceRecovery.oda_e4b47')}</Label>
                   <Select value={newComplaint.room_id} onValueChange={handleRoomSelect} disabled={!auxLoaded}>
                     <SelectTrigger><SelectValue placeholder={auxLoaded ? "Oda seçin..." : "Yükleniyor..."} /></SelectTrigger>
                     <SelectContent>
@@ -658,7 +660,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium">Misafir</Label>
+                  <Label className="text-sm font-medium">{t('cm.pages_ServiceRecovery.misafir')}</Label>
                   <Select value={newComplaint.guest_id} onValueChange={handleGuestSelect} disabled={!auxLoaded}>
                     <SelectTrigger><SelectValue placeholder={auxLoaded ? "Misafir seçin..." : "Yükleniyor..."} /></SelectTrigger>
                     <SelectContent>
@@ -678,7 +680,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                   value={newComplaint.subject}
                   onChange={e => setNewComplaint(p => ({ ...p, subject: e.target.value }))}
                   required
-                  placeholder="Şikayet konusu..."
+                  placeholder={t('cm.pages_ServiceRecovery.sikayet_konusu')}
                 />
               </div>
 
@@ -693,7 +695,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium">Önem</Label>
+                  <Label className="text-sm font-medium">{t('cm.pages_ServiceRecovery.onem_fc622')}</Label>
                   <Select value={newComplaint.severity} onValueChange={v => setNewComplaint(p => ({ ...p, severity: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -713,13 +715,13 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
               </div>
 
               <div>
-                <Label className="text-sm font-medium">Açıklama *</Label>
+                <Label className="text-sm font-medium">{t('cm.pages_ServiceRecovery.aciklama')}</Label>
                 <Textarea
                   value={newComplaint.description}
                   onChange={e => setNewComplaint(p => ({ ...p, description: e.target.value }))}
                   required
                   rows={3}
-                  placeholder="Şikayet detaylarını yazın..."
+                  placeholder={t('cm.pages_ServiceRecovery.sikayet_detaylarini_yazin')}
                 />
               </div>
 
@@ -734,7 +736,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
         <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
           <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Şikayet Detayı</DialogTitle>
+              <DialogTitle>{t('cm.pages_ServiceRecovery.sikayet_detayi')}</DialogTitle>
             </DialogHeader>
             {selectedComplaint && (
               <div className="space-y-4 mt-2">
@@ -750,7 +752,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                   </span>
                   {selectedComplaint.source === 'guest_qr' && (
                     <span className="px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-700">
-                      Misafir QR ile geldi
+                      {t('cm.pages_ServiceRecovery.misafir_qr_ile_geldi')}
                     </span>
                   )}
                   <SlaBadge complaint={selectedComplaint} />
@@ -762,17 +764,17 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 </div>
 
                 <div>
-                  <Label className="text-xs text-gray-500">Açıklama</Label>
+                  <Label className="text-xs text-gray-500">{t('cm.pages_ServiceRecovery.aciklama_1babd')}</Label>
                   <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded">{selectedComplaint.description}</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-blue-50 p-3 rounded">
-                    <Label className="text-xs text-blue-600 flex items-center gap-1"><User className="w-3 h-3" /> Misafir</Label>
+                    <Label className="text-xs text-blue-600 flex items-center gap-1"><User className="w-3 h-3" /> {t('cm.pages_ServiceRecovery.misafir_633b8')}</Label>
                     <p className="font-medium text-sm mt-1">{selectedComplaint.guest_name || '-'}</p>
                   </div>
                   <div className="bg-indigo-50 p-3 rounded">
-                    <Label className="text-xs text-indigo-600 flex items-center gap-1"><DoorOpen className="w-3 h-3" /> Oda</Label>
+                    <Label className="text-xs text-indigo-600 flex items-center gap-1"><DoorOpen className="w-3 h-3" /> {t('cm.pages_ServiceRecovery.oda_e4b47')}</Label>
                     <p className="font-medium text-sm mt-1">
                       {selectedComplaint.room_number ? `${selectedComplaint.room_number} (${selectedComplaint.room_type || ''})` : '-'}
                     </p>
@@ -785,7 +787,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                     <p className="text-sm font-medium">{(DEPARTMENTS.find(d => d.value === selectedComplaint.assigned_department) || {}).label || '-'}</p>
                   </div>
                   <div>
-                    <Label className="text-xs text-gray-500">Oluşturulma</Label>
+                    <Label className="text-xs text-gray-500">{t('cm.pages_ServiceRecovery.olusturulma')}</Label>
                     <p className="text-sm">{formatDate(selectedComplaint.created_at)}</p>
                   </div>
                 </div>
@@ -793,7 +795,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 {selectedComplaint.status === 'escalated' && (
                   <div className="bg-indigo-50 border border-indigo-200 p-3 rounded space-y-1">
                     <Label className="text-xs text-indigo-700 font-semibold flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> Yönetime İletme Bilgileri
+                      <AlertTriangle className="w-3 h-3" /> {t('cm.pages_ServiceRecovery.yonetime_iletme_bilgileri')}
                     </Label>
                     <p className="text-sm text-indigo-800">
                       <strong>Havale edilen:</strong>{' '}
@@ -810,7 +812,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
 
                 {selectedComplaint.status === 'resolved' && (
                   <div className="bg-green-50 border border-green-200 p-3 rounded space-y-2">
-                    <Label className="text-xs text-green-700 font-semibold">Çözüm</Label>
+                    <Label className="text-xs text-green-700 font-semibold">{t('cm.pages_ServiceRecovery.cozum')}</Label>
                     <p className="text-sm text-green-800">{selectedComplaint.resolution_notes}</p>
                     {selectedComplaint.compensation_offered && (
                       <p className="text-xs text-green-600">
@@ -819,7 +821,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                       </p>
                     )}
                     {selectedComplaint.resolved_at && (
-                      <p className="text-xs text-green-500">Çözüm zamanı: {formatDate(selectedComplaint.resolved_at)}</p>
+                      <p className="text-xs text-green-500">{t('cm.pages_ServiceRecovery.cozum_zamani')} {formatDate(selectedComplaint.resolved_at)}</p>
                     )}
                   </div>
                 )}
@@ -827,7 +829,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 {Array.isArray(selectedComplaint.history) && selectedComplaint.history.length > 0 && (
                   <div className="border rounded p-3 bg-gray-50">
                     <Label className="text-xs text-gray-700 font-semibold flex items-center gap-1 mb-2">
-                      <History className="w-3 h-3" /> Geçmiş ({selectedComplaint.history.length})
+                      <History className="w-3 h-3" /> {t('cm.pages_ServiceRecovery.gecmis')}{selectedComplaint.history.length})
                     </Label>
                     <ol className="space-y-2">
                       {selectedComplaint.history.map((h, i) => (
@@ -843,7 +845,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                             {h.notes && <p className="text-gray-600 mt-0.5">{h.notes}</p>}
                             {h.changes && (
                               <p className="text-gray-600 mt-0.5">
-                                Değişen: {Object.keys(h.changes).join(', ')}
+                                {t('cm.pages_ServiceRecovery.degisen')} {Object.keys(h.changes).join(', ')}
                               </p>
                             )}
                           </div>
@@ -858,11 +860,11 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                   {selectedComplaint.status !== 'resolved' && (
                     <>
                       <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={openResolveDialog}>
-                        <CheckCircle2 className="w-3 h-3 mr-1" /> Çöz
+                        <CheckCircle2 className="w-3 h-3 mr-1" /> {t('cm.pages_ServiceRecovery.coz')}
                       </Button>
                       {selectedComplaint.status === 'open' && (
                         <Button size="sm" variant="outline" onClick={() => handleStatusChange(selectedComplaint, 'in_progress')}>
-                          <ArrowUpCircle className="w-3 h-3 mr-1" /> İşleme Al
+                          <ArrowUpCircle className="w-3 h-3 mr-1" /> {t('cm.pages_ServiceRecovery.isleme_al')}
                         </Button>
                       )}
                       {selectedComplaint.status !== 'escalated' && (
@@ -872,7 +874,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                           className="text-indigo-700 border-indigo-300 hover:bg-indigo-50"
                           onClick={openEscalateDialog}
                         >
-                          <AlertTriangle className="w-3 h-3 mr-1" /> Yönetime İlet
+                          <AlertTriangle className="w-3 h-3 mr-1" /> {t('cm.pages_ServiceRecovery.yonetime_ilet')}
                         </Button>
                       )}
                       {selectedComplaint.status === 'escalated' && (
@@ -886,7 +888,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                         </Button>
                       )}
                       <Button size="sm" variant="outline" onClick={handleEditOpen}>
-                        <Edit className="w-3 h-3 mr-1" /> Düzenle
+                        <Edit className="w-3 h-3 mr-1" /> {t('cm.pages_ServiceRecovery.duzenle')}
                       </Button>
                     </>
                   )}
@@ -896,7 +898,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                     className="text-red-600 border-red-200 hover:bg-red-50 ml-auto"
                     onClick={() => handleDelete(selectedComplaint)}
                   >
-                    <Trash2 className="w-3 h-3 mr-1" /> Sil
+                    <Trash2 className="w-3 h-3 mr-1" /> {t('cm.pages_ServiceRecovery.sil')}
                   </Button>
                 </div>
               </div>
@@ -908,11 +910,11 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
         <Dialog open={showEscalateDialog} onOpenChange={setShowEscalateDialog}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Şikayeti Yönetime İlet</DialogTitle>
+              <DialogTitle>{t('cm.pages_ServiceRecovery.sikayeti_yonetime_ilet')}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 mt-2">
               <p className="text-sm text-gray-600">
-                Bu şikayet seçtiğiniz kişiye havale edilecek ve yöneticilere otomatik e-posta gönderilecek.
+                {t('cm.pages_ServiceRecovery.bu_sikayet_sectiginiz_kisiye_havale_edil')}
               </p>
               <div>
                 <Label className="text-sm font-medium">Kime havale edilsin?</Label>
@@ -927,12 +929,12 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 </Select>
               </div>
               <div>
-                <Label className="text-sm font-medium">Açıklama *</Label>
+                <Label className="text-sm font-medium">{t('cm.pages_ServiceRecovery.aciklama_bdb34')}</Label>
                 <Textarea
                   value={escalateData.notes}
                   onChange={e => setEscalateData(p => ({ ...p, notes: e.target.value }))}
                   rows={3}
-                  placeholder="Neden yönetime iletiyorsunuz? Ne yapılması gerekiyor?"
+                  placeholder={t('cm.pages_ServiceRecovery.neden_yonetime_iletiyorsunuz_ne_yapilmas')}
                 />
               </div>
               <Button
@@ -950,7 +952,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
         <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Şikayeti Düzenle</DialogTitle>
+              <DialogTitle>{t('cm.pages_ServiceRecovery.sikayeti_duzenle')}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 mt-2">
               <div>
@@ -961,7 +963,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                 />
               </div>
               <div>
-                <Label className="text-sm font-medium">Açıklama *</Label>
+                <Label className="text-sm font-medium">{t('cm.pages_ServiceRecovery.aciklama_bdb34')}</Label>
                 <Textarea
                   value={editData.description}
                   onChange={e => setEditData(p => ({ ...p, description: e.target.value }))}
@@ -979,7 +981,7 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium">Önem</Label>
+                  <Label className="text-sm font-medium">{t('cm.pages_ServiceRecovery.onem_fc622')}</Label>
                   <Select value={editData.severity} onValueChange={v => setEditData(p => ({ ...p, severity: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -1008,19 +1010,19 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
         <Dialog open={showResolveDialog} onOpenChange={setShowResolveDialog}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Şikayeti Çöz</DialogTitle>
+              <DialogTitle>{t('cm.pages_ServiceRecovery.sikayeti_coz')}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 mt-2">
               <p className="text-xs text-gray-500">
-                Çözüm kaydedildiğinde misafire otomatik e-posta gönderilir.
+                {t('cm.pages_ServiceRecovery.cozum_kaydedildiginde_misafire_otomatik_')}
               </p>
               <div>
-                <Label className="text-sm font-medium">Çözüm Açıklaması *</Label>
+                <Label className="text-sm font-medium">{t('cm.pages_ServiceRecovery.cozum_aciklamasi')}</Label>
                 <Textarea
                   value={resolveData.resolution_notes}
                   onChange={e => setResolveData(p => ({ ...p, resolution_notes: e.target.value }))}
                   rows={3}
-                  placeholder="Sorunu nasıl çözdünüz?"
+                  placeholder={t('cm.pages_ServiceRecovery.sorunu_nasil_cozdunuz')}
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1030,14 +1032,14 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
                     value={resolveData.compensation_offered}
                     onValueChange={v => setResolveData(p => ({ ...p, compensation_offered: v }))}
                   >
-                    <SelectTrigger><SelectValue placeholder="Seçin..." /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={t('cm.pages_ServiceRecovery.secin')} /></SelectTrigger>
                     <SelectContent>
                       {COMPENSATIONS.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium">Tutar (TL)</Label>
+                  <Label className="text-sm font-medium">{t('cm.pages_ServiceRecovery.tutar_tl')}</Label>
                   <Input
                     type="number"
                     value={resolveData.compensation_amount}
@@ -1067,15 +1069,15 @@ const ServiceRecovery = ({ user, tenant, onLogout }) => {
             </DialogHeader>
             <div className="space-y-3 mt-2">
               {!compensationReport ? (
-                <p className="text-sm text-gray-500 text-center py-6">Yükleniyor...</p>
+                <p className="text-sm text-gray-500 text-center py-6">{t('cm.pages_ServiceRecovery.yukleniyor_4deb0')}</p>
               ) : compensationReport.breakdown.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-6">Henüz verilmiş tazminat yok.</p>
+                <p className="text-sm text-gray-500 text-center py-6">{t('cm.pages_ServiceRecovery.henuz_verilmis_tazminat_yok')}</p>
               ) : (
                 <>
                   <div className="bg-blue-50 p-3 rounded text-center">
-                    <p className="text-xs text-blue-600">Toplam Tazminat</p>
+                    <p className="text-xs text-blue-600">{t('cm.pages_ServiceRecovery.toplam_tazminat')}</p>
                     <p className="text-2xl font-bold text-blue-900">{compensationReport.totals.amount.toLocaleString('tr-TR')} TL</p>
-                    <p className="text-xs text-blue-500">{compensationReport.totals.count} şikayetten</p>
+                    <p className="text-xs text-blue-500">{compensationReport.totals.count} {t('cm.pages_ServiceRecovery.sikayetten')}</p>
                   </div>
                   <div className="space-y-2">
                     {compensationReport.breakdown.map(b => (

@@ -17,10 +17,12 @@ import {
   Wand2, Trash2
 } from 'lucide-react';
 import TestBookingVerification from '@/components/TestBookingVerification';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
 const ExelyIntegration = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('connection');
   const [loading, setLoading] = useState(false);
   const [connection, setConnection] = useState(null);
@@ -201,7 +203,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900" data-testid="exely-page-title">Exely Entegrasyonu</h1>
-            <p className="text-sm text-slate-500 mt-1">SOAP Channel Manager &middot; OTA Standart &middot; Rezervasyon Pull</p>
+            <p className="text-sm text-slate-500 mt-1">{t('cm.pages_ExelyIntegration.soap_channel_manager_ota_standart_rezerv')}</p>
           </div>
           <Badge
             data-testid="exely-connection-badge"
@@ -214,7 +216,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid grid-cols-6 w-full max-w-3xl">
-            <TabsTrigger value="connection" data-testid="exely-tab-connection"><Link2 className="w-4 h-4 mr-1" /> Bağlantı</TabsTrigger>
+            <TabsTrigger value="connection" data-testid="exely-tab-connection"><Link2 className="w-4 h-4 mr-1" /> {t('cm.pages_ExelyIntegration.baglanti')}</TabsTrigger>
             <TabsTrigger value="rooms" data-testid="exely-tab-rooms" disabled={!isConnected}><Building2 className="w-4 h-4 mr-1" /> Odalar</TabsTrigger>
             <TabsTrigger value="reservations" data-testid="exely-tab-reservations" disabled={!isConnected}><CalendarCheck className="w-4 h-4 mr-1" /> Rezervasyonlar</TabsTrigger>
             <TabsTrigger value="test-booking" data-testid="exely-tab-test-booking" disabled={!isConnected}><FlaskConical className="w-4 h-4 mr-1" /> Test Booking</TabsTrigger>
@@ -233,13 +235,13 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="exely-user">Kullanıcı Adı</Label>
-                      <Input id="exely-user" data-testid="exely-username-input" placeholder="Exely kullanıcı adı"
+                      <Label htmlFor="exely-user">{t('cm.pages_ExelyIntegration.kullanici_adi')}</Label>
+                      <Input id="exely-user" data-testid="exely-username-input" placeholder={t('cm.pages_ExelyIntegration.exely_kullanici_adi')}
                         value={connectForm.username} onChange={e => setConnectForm(p => ({ ...p, username: e.target.value }))} />
                     </div>
                     <div>
-                      <Label htmlFor="exely-pass">Şifre</Label>
-                      <Input id="exely-pass" data-testid="exely-password-input" type="password" placeholder="Exely şifre"
+                      <Label htmlFor="exely-pass">{t('cm.pages_ExelyIntegration.sifre')}</Label>
+                      <Input id="exely-pass" data-testid="exely-password-input" type="password" placeholder={t('cm.pages_ExelyIntegration.exely_sifre')}
                         value={connectForm.password} onChange={e => setConnectForm(p => ({ ...p, password: e.target.value }))} />
                     </div>
                     <div>
@@ -248,7 +250,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                         value={connectForm.hotel_code} onChange={e => setConnectForm(p => ({ ...p, hotel_code: e.target.value }))} />
                     </div>
                     <div>
-                      <Label htmlFor="exely-name">Tesis Adi (opsiyonel)</Label>
+                      <Label htmlFor="exely-name">{t('cm.pages_ExelyIntegration.tesis_adi_opsiyonel')}</Label>
                       <Input id="exely-name" data-testid="exely-name-input" placeholder="Ornek: Otelim"
                         value={connectForm.property_name} onChange={e => setConnectForm(p => ({ ...p, property_name: e.target.value }))} />
                     </div>
@@ -279,7 +281,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                   <div className="flex items-center gap-2 pt-2">
                     <Switch checked={connectForm.auto_sync_reservations}
                       onCheckedChange={v => setConnectForm(p => ({ ...p, auto_sync_reservations: v }))} />
-                    <Label>Otomatik Rezervasyon Sync</Label>
+                    <Label>{t('cm.pages_ExelyIntegration.otomatik_rezervasyon_sync')}</Label>
                   </div>
                   <Button data-testid="exely-connect-btn" onClick={handleConnect} disabled={loading} className="w-full">
                     {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link2 className="w-4 h-4 mr-2" />}
@@ -291,17 +293,16 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
               <div className="space-y-4">
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><CheckCircle className="w-5 h-5 text-emerald-600" /> Exely Baglantisi Aktif</CardTitle>
+                    <CardTitle className="flex items-center gap-2"><CheckCircle className="w-5 h-5 text-emerald-600" /> {t('cm.pages_ExelyIntegration.exely_baglantisi_aktif')}</CardTitle>
                     <CardDescription>
-                      {connection.connection?.property_name || 'Exely'} &middot; Otel Kodu: {connection.connection?.hotel_code || '-'} &middot;
-                      Bağlantı: {connection.connection?.connected_at ? new Date(connection.connection.connected_at).toLocaleString('tr-TR') : '-'}
+                      {connection.connection?.property_name || 'Exely'} &middot; Otel Kodu: {connection.connection?.hotel_code || '-'} {t('cm.pages_ExelyIntegration.baglanti_c9964')} {connection.connection?.connected_at ? new Date(connection.connection.connected_at).toLocaleString('tr-TR') : '-'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-3 items-center">
                       <Button data-testid="exely-test-btn" variant="outline" onClick={handleTest} disabled={loading}>
                         {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                        Bağlantı Test
+                        {t('cm.pages_ExelyIntegration.baglanti_test')}
                       </Button>
                       <Button data-testid="exely-disconnect-btn" variant="destructive" onClick={handleDisconnect}>
                         <Unlink className="w-4 h-4 mr-2" /> Baglantivi Kes
@@ -334,7 +335,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                     {syncStatus && (
                       <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
                         <div className="bg-slate-50 rounded-lg p-3 border">
-                          <p className="text-xs text-slate-500">Toplam Rezervasyon</p>
+                          <p className="text-xs text-slate-500">{t('cm.pages_ExelyIntegration.toplam_rezervasyon')}</p>
                           <p className="text-lg font-bold" data-testid="exely-total-reservations">{syncStatus.total_reservations || 0}</p>
                         </div>
                         <div className="bg-slate-50 rounded-lg p-3 border">
@@ -342,7 +343,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                           <p className="text-lg font-bold">{syncStatus.pending_events || 0}</p>
                         </div>
                         <div className="bg-slate-50 rounded-lg p-3 border">
-                          <p className="text-xs text-slate-500">Hata Event</p>
+                          <p className="text-xs text-slate-500">{t('cm.pages_ExelyIntegration.hata_event')}</p>
                           <p className="text-lg font-bold text-red-600">{syncStatus.error_events || 0}</p>
                         </div>
                         <div className="bg-slate-50 rounded-lg p-3 border">
@@ -364,7 +365,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle>Exely Oda Tipleri & Fiyat Planlari</CardTitle>
+                  <CardTitle>{t('cm.pages_ExelyIntegration.exely_oda_tipleri_fiyat_planlari')}</CardTitle>
                   <CardDescription>OTA_HotelAvailRQ ile kesfedilen oda ve rate bilgileri</CardDescription>
                 </div>
                 <Button data-testid="exely-discover-btn" onClick={handleDiscover} disabled={loading}>
@@ -374,18 +375,18 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent className="space-y-6">
                 {roomTypes.length === 0 && ratePlans.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Henüz oda/rate kesfedilmedi. "Kesfet" butonu ile Exely'den yukleyin.</p>
+                  <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_ExelyIntegration.henuz_oda_rate_kesfedilmedi_kesfet_buton')}</p>
                 ) : (
                   <>
                     {roomTypes.length > 0 && (
                       <div>
-                        <h3 className="text-sm font-semibold text-slate-700 mb-2">Oda Tipleri ({roomTypes.length})</h3>
+                        <h3 className="text-sm font-semibold text-slate-700 mb-2">{t('cm.pages_ExelyIntegration.oda_tipleri')}{roomTypes.length})</h3>
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm" data-testid="exely-room-types-table">
                             <thead>
                               <tr className="border-b text-left text-slate-500">
                                 <th className="pb-2 pr-4">Kod</th>
-                                <th className="pb-2 pr-4">Oda Adi</th>
+                                <th className="pb-2 pr-4">{t('cm.pages_ExelyIntegration.oda_adi')}</th>
                                 <th className="pb-2">Kapasite</th>
                               </tr>
                             </thead>
@@ -410,7 +411,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                             <thead>
                               <tr className="border-b text-left text-slate-500">
                                 <th className="pb-2 pr-4">Kod</th>
-                                <th className="pb-2">Plan Adi</th>
+                                <th className="pb-2">{t('cm.pages_ExelyIntegration.plan_adi')}</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -446,21 +447,21 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent>
                 {reservations.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Henüz rezervasyon yok. "Rezervasyonlari Cek" ile Exely'den aktarin.</p>
+                  <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_ExelyIntegration.henuz_rezervasyon_yok_rezervasyonlari_ce')}</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm" data-testid="exely-reservations-table">
                       <thead>
                         <tr className="border-b text-left text-slate-500">
                           <th className="pb-2 pr-4">Rez. ID</th>
-                          <th className="pb-2 pr-4">Misafir</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_ExelyIntegration.misafir')}</th>
                           <th className="pb-2 pr-4">Kanal</th>
-                          <th className="pb-2 pr-4">Giriş</th>
-                          <th className="pb-2 pr-4">Çıkış</th>
-                          <th className="pb-2 pr-4">Tutar</th>
-                          <th className="pb-2 pr-4">Durum</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_ExelyIntegration.giris')}</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_ExelyIntegration.cikis')}</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_ExelyIntegration.tutar')}</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_ExelyIntegration.durum')}</th>
                           <th className="pb-2">PMS</th>
-                          <th className="pb-2">İşlem</th>
+                          <th className="pb-2">{t('cm.pages_ExelyIntegration.islem')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -554,7 +555,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle>Oda Eslemeleri</CardTitle>
+                  <CardTitle>{t('cm.pages_ExelyIntegration.oda_eslemeleri')}</CardTitle>
                   <CardDescription>PMS oda tipleri ile Exely oda/fiyat planlarini esleyin</CardDescription>
                 </div>
                 {!mappingStatus && (
@@ -568,7 +569,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                 {mappings.length === 0 ? (
                   <div className="text-center py-8">
                     <ArrowDownUp className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                    <p className="text-sm text-slate-500">Henüz oda eslemesi yok</p>
+                    <p className="text-sm text-slate-500">{t('cm.pages_ExelyIntegration.henuz_oda_eslemesi_yok')}</p>
                     <p className="text-xs text-slate-400 mt-1">Odalar kesfedildikten sonra esleme yapilabilir</p>
                   </div>
                 ) : (
@@ -576,12 +577,12 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                     <table className="w-full text-sm" data-testid="exely-mappings-table">
                       <thead>
                         <tr className="border-b text-left text-slate-500">
-                          <th className="pb-2 pr-4">PMS Oda Tipi</th>
-                          <th className="pb-2 pr-4">Exely Oda Kodu</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_ExelyIntegration.pms_oda_tipi')}</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_ExelyIntegration.exely_oda_kodu')}</th>
                           <th className="pb-2 pr-4">Exely Rate Plan</th>
-                          <th className="pb-2 pr-4">Exely Oda Adi</th>
+                          <th className="pb-2 pr-4">{t('cm.pages_ExelyIntegration.exely_oda_adi')}</th>
                           <th className="pb-2 pr-4">Sync</th>
-                          <th className="pb-2 text-right">İşlem</th>
+                          <th className="pb-2 text-right">{t('cm.pages_ExelyIntegration.islem_792e7')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -618,7 +619,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                       <div>
                         <p className="text-sm font-medium text-amber-800">{mappingStatus.unmapped_count} PMS oda tipi eslenmemis</p>
                         <p className="text-xs text-amber-600 mt-1">
-                          Eslenmemis oda tipleri Exely'ye fiyat/musaitlik push edilemez. Provider'da karsilik gelen oda tipleri yoksa, Exely panelinden oda tipi oluşturun.
+                          {t('cm.pages_ExelyIntegration.eslenmemis_oda_tipleri_exely_ye_fiyat_mu')}
                         </p>
                       </div>
                     </div>
@@ -637,7 +638,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                   <div className="space-y-4 mt-2">
                     {autoMapSuggestions.suggestions.length > 0 ? (
                       <>
-                        <p className="text-sm text-slate-600">Isim benzerligine göre eslesme onerileri:</p>
+                        <p className="text-sm text-slate-600">{t('cm.pages_ExelyIntegration.isim_benzerligine_gore_eslesme_onerileri')}</p>
                         <div className="space-y-2">
                           {autoMapSuggestions.suggestions.map((s, i) => (
                             <div key={i} className="flex items-center justify-between p-3 bg-slate-50 border rounded-lg" data-testid={`auto-map-suggestion-${i}`}>
@@ -660,20 +661,20 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                         </div>
                         <Button className="w-full" onClick={() => handleAutoMapApply(autoMapSuggestions.suggestions)} disabled={autoMapLoading} data-testid="auto-map-apply-btn">
                           {autoMapLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
-                          Tüm Onerileri Uygula ({autoMapSuggestions.suggestions.length})
+                          {t('cm.pages_ExelyIntegration.tum_onerileri_uygula')}{autoMapSuggestions.suggestions.length})
                         </Button>
                       </>
                     ) : (
                       <div className="text-center py-4">
                         <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                        <p className="text-sm text-slate-600">Otomatik eşleştirilecek yeni oda tipi bulunamadı.</p>
+                        <p className="text-sm text-slate-600">{t('cm.pages_ExelyIntegration.otomatik_eslestirilecek_yeni_oda_tipi_bu')}</p>
                       </div>
                     )}
 
                     {/* Unmapped PMS types */}
                     {autoMapSuggestions.unmapped_pms_types?.length > 0 && (
                       <div className="border-t pt-4">
-                        <p className="text-sm font-medium text-amber-700 mb-2">Eslenmemis PMS Oda Tipleri (Provider'da karsiligi yok):</p>
+                        <p className="text-sm font-medium text-amber-700 mb-2">{t('cm.pages_ExelyIntegration.eslenmemis_pms_oda_tipleri_provider_da_k')}</p>
                         <div className="flex flex-wrap gap-2">
                           {autoMapSuggestions.unmapped_pms_types.map((t, i) => (
                             <Badge key={i} variant="outline" className="bg-amber-50 border-amber-300 text-amber-700" data-testid={`unmapped-pms-${i}`}>
@@ -710,15 +711,15 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>Senkronizasyon Loglari</CardTitle>
-                  <CardDescription>Exely SOAP işlem geçmişi</CardDescription>
+                  <CardDescription>{t('cm.pages_ExelyIntegration.exely_soap_islem_gecmisi')}</CardDescription>
                 </div>
                 <Button variant="outline" size="sm" onClick={fetchAll}>
-                  <RefreshCw className="w-4 h-4 mr-1" /> Yenile
+                  <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_ExelyIntegration.yenile')}
                 </Button>
               </CardHeader>
               <CardContent>
                 {syncLogs.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-8">Henüz log kaydı yok</p>
+                  <p className="text-sm text-slate-500 text-center py-8">{t('cm.pages_ExelyIntegration.henuz_log_kaydi_yok')}</p>
                 ) : (
                   <div className="space-y-2" data-testid="exely-sync-logs">
                     {syncLogs.map((log, i) => (
@@ -731,7 +732,7 @@ const ExelyIntegration = ({ user, tenant, onLogout }) => {
                           )}
                           <div>
                             <p className="text-sm font-medium">{log.sync_type}</p>
-                            <p className="text-xs text-slate-500">{log.initiator} &middot; {log.records_synced} kayıt</p>
+                            <p className="text-xs text-slate-500">{log.initiator} &middot; {log.records_synced} {t('cm.pages_ExelyIntegration.kayit')}</p>
                           </div>
                         </div>
                         <div className="text-right">

@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 // Sprint A palette: indigo / sky / emerald / rose / amber / slate. Gradient yok.
 const COLOR = {
@@ -25,6 +26,7 @@ const COLOR = {
 };
 
 function ActionBadge({ action }) {
+  const { t } = useTranslation();
   const map = {
     increase:        { label: 'Artır',       icon: ArrowUp,   cls: 'text-emerald-600' },
     slight_increase: { label: 'Hafif Artır', icon: ArrowUp,   cls: 'text-emerald-500' },
@@ -75,7 +77,7 @@ export default function RevenueMLPanel() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-        <span className="ml-3 text-sm text-slate-500">ML hesaplanıyor…</span>
+        <span className="ml-3 text-sm text-slate-500">{t('cm.pages_RevenueMLPanel.ml_hesaplaniyor')}</span>
       </div>
     );
   }
@@ -87,7 +89,7 @@ export default function RevenueMLPanel() {
           <AlertTriangle className="h-10 w-10 text-amber-500 mx-auto" />
           <p className="text-sm text-slate-700">{error}</p>
           <Button variant="outline" size="sm" onClick={load}>
-            <RefreshCw className="h-4 w-4 mr-1.5" /> Yenile
+            <RefreshCw className="h-4 w-4 mr-1.5" /> {t('cm.pages_RevenueMLPanel.yenile')}
           </Button>
         </CardContent>
       </Card>
@@ -105,10 +107,10 @@ export default function RevenueMLPanel() {
     <div className="space-y-6 p-2" data-testid="revenue-ml-panel">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold flex items-center gap-2 text-slate-900">
-          <Brain className="w-5 h-5 text-indigo-600" /> Revenue ML Sonuçları
+          <Brain className="w-5 h-5 text-indigo-600" /> {t('cm.pages_RevenueMLPanel.revenue_ml_sonuclari')}
         </h3>
         <Button variant="outline" size="sm" onClick={load} data-testid="refresh-ml-btn">
-          <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+          <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_RevenueMLPanel.yenile_aedf3')}
         </Button>
       </div>
 
@@ -117,7 +119,7 @@ export default function RevenueMLPanel() {
           <CardContent className="py-3 text-sm text-amber-800 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-600 flex-shrink-0" />
             <div>
-              Bazı alt boru hatları başarısız oldu (kısmi sonuç gösteriliyor):{' '}
+              {t('cm.pages_RevenueMLPanel.bazi_alt_boru_hatlari_basarisiz_oldu_kis')}{' '}
               <strong>{Object.keys(sectionErrors).join(', ')}</strong>
             </div>
           </CardContent>
@@ -135,19 +137,19 @@ export default function RevenueMLPanel() {
         <KpiCard
           icon={Target}
           intent="success"
-          label="Fiyat Opt. Fırsatı"
+          label={t('cm.pages_RevenueMLPanel.fiyat_opt_firsati')}
           value={priceOpt.length}
         />
         <KpiCard
           icon={TrendingUp}
           intent="info"
-          label="Yüksek Talep Günü"
+          label={t('cm.pages_RevenueMLPanel.yuksek_talep_gunu')}
           value={`${data?.summary?.high_demand_days_next_14 || 0}/14`}
         />
         <KpiCard
           icon={AlertTriangle}
           intent="warning"
-          label="Riskli Rez. Sayısı"
+          label={t('cm.pages_RevenueMLPanel.riskli_rez_sayisi')}
           value={data?.cancellation_risk?.at_risk_count || 0}
         />
       </div>
@@ -208,7 +210,7 @@ export default function RevenueMLPanel() {
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-400" />
                     <div>
-                      <div className="text-xs text-slate-500">Önerilen</div>
+                      <div className="text-xs text-slate-500">{t('cm.pages_RevenueMLPanel.onerilen')}</div>
                       <div className="text-sm font-bold text-emerald-700">{pp.suggested_price} TL</div>
                     </div>
                     <ActionBadge action={pp.action} />
@@ -226,7 +228,7 @@ export default function RevenueMLPanel() {
         <Card data-testid="conversion-rates-card">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2 text-slate-800">
-              <Users className="w-4 h-4 text-sky-600" /> Dönüşüm Oranları (Kaynak)
+              <Users className="w-4 h-4 text-sky-600" /> {t('cm.pages_RevenueMLPanel.donusum_oranlari_kaynak')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -248,7 +250,7 @@ export default function RevenueMLPanel() {
                 </ResponsiveContainer>
               </div>
             ) : (
-              <p className="text-sm text-slate-400 text-center py-8">Dönüşüm verisi yok.</p>
+              <p className="text-sm text-slate-400 text-center py-8">{t('cm.pages_RevenueMLPanel.donusum_verisi_yok')}</p>
             )}
           </CardContent>
         </Card>
@@ -258,7 +260,7 @@ export default function RevenueMLPanel() {
       <Card data-testid="at-risk-bookings-card">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2 text-slate-800">
-            <AlertTriangle className="w-4 h-4 text-rose-500" /> İptal Riski Yüksek Rezervasyonlar
+            <AlertTriangle className="w-4 h-4 text-rose-500" /> {t('cm.pages_RevenueMLPanel.iptal_riski_yuksek_rezervasyonlar')}
             <Badge variant="destructive" className="ml-2">{atRisk.length}</Badge>
           </CardTitle>
         </CardHeader>
@@ -267,10 +269,10 @@ export default function RevenueMLPanel() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left">
-                  <th className="pb-2 text-slate-500 font-medium">Misafir</th>
-                  <th className="pb-2 text-slate-500 font-medium">Giriş</th>
+                  <th className="pb-2 text-slate-500 font-medium">{t('cm.pages_RevenueMLPanel.misafir')}</th>
+                  <th className="pb-2 text-slate-500 font-medium">{t('cm.pages_RevenueMLPanel.giris')}</th>
                   <th className="pb-2 text-slate-500 font-medium">Kaynak</th>
-                  <th className="pb-2 text-slate-500 font-medium text-right">Tutar</th>
+                  <th className="pb-2 text-slate-500 font-medium text-right">{t('cm.pages_RevenueMLPanel.tutar')}</th>
                   <th className="pb-2 text-slate-500 font-medium text-right">Risk</th>
                 </tr>
               </thead>

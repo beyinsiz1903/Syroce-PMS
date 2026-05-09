@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Home, Search } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const RoomAssignment = ({ booking }) => {
+  const { t } = useTranslation();
   const [availableRooms, setAvailableRooms] = useState([]);
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -55,21 +57,21 @@ const RoomAssignment = ({ booking }) => {
         }}
       >
         <Home className="w-4 h-4 mr-1" />
-        Oda Ata
+        {t('cm.components_RoomAssignment.oda_ata')}
       </Button>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md max-h-[70vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Müsait Odalar</DialogTitle>
+            <DialogTitle>{t('cm.components_RoomAssignment.musait_odalar')}</DialogTitle>
           </DialogHeader>
           
           {loading ? (
-            <div className="text-center py-8">Yükleniyor...</div>
+            <div className="text-center py-8">{t('cm.components_RoomAssignment.yukleniyor')}</div>
           ) : (
             <div className="space-y-2">
               {availableRooms.length === 0 ? (
-                <p className="text-center text-gray-500 py-8">Müsait oda yok</p>
+                <p className="text-center text-gray-500 py-8">{t('cm.components_RoomAssignment.musait_oda_yok')}</p>
               ) : (
                 availableRooms.map((room) => (
                   <div
@@ -79,10 +81,10 @@ const RoomAssignment = ({ booking }) => {
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-bold">Oda {room.room_number}</div>
+                        <div className="font-bold">{t('cm.components_RoomAssignment.oda')} {room.room_number}</div>
                         <div className="text-sm text-gray-600">{room.room_type}</div>
                         <div className="text-xs text-gray-500">
-                          {room.bed_type} • Max {room.max_occupancy} kişi
+                          {room.bed_type} • Max {room.max_occupancy} {t('cm.components_RoomAssignment.kisi')}
                         </div>
                       </div>
                       <div className="text-right">

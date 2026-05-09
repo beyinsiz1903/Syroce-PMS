@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Building2, Plus, RefreshCw, Trash2, DoorOpen, Loader2, Link2 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 /**
  * Opera #9 — Suite & Connecting Rooms.
@@ -25,6 +26,7 @@ import { Building2, Plus, RefreshCw, Trash2, DoorOpen, Loader2, Link2 } from "lu
  */
 
 export default function SuiteConnectingPage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [tab, setTab] = useState("suites");
 
@@ -143,33 +145,32 @@ export default function SuiteConnectingPage() {
             <Building2 className="h-6 w-6" /> Suite & Connecting Rooms
           </h2>
           <p className="text-sm text-muted-foreground">
-            Suite tanımları (master + bileşenler) ve oda kapı bağlantıları.
+            {t('cm.pages_SuiteConnectingPage.suite_tanimlari_master_bilesenler_ve_oda')}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={loadAll} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> Yenile
+          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} /> {t('cm.pages_SuiteConnectingPage.yenile')}
         </Button>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="suites" data-testid="tab-suites">Suite Tanımları</TabsTrigger>
+          <TabsTrigger value="suites" data-testid="tab-suites">{t('cm.pages_SuiteConnectingPage.suite_tanimlari')}</TabsTrigger>
           <TabsTrigger value="connecting" data-testid="tab-connecting">Connecting Pairs</TabsTrigger>
         </TabsList>
 
         <TabsContent value="suites">
           <Card>
             <CardHeader>
-              <CardTitle>Suite Tanımları</CardTitle>
+              <CardTitle>{t('cm.pages_SuiteConnectingPage.suite_tanimlari_09f3c')}</CardTitle>
               <CardDescription>
-                Bir master oda + bileşen odalar. Suite satıldığında tüm bileşenler bloke edilir.
-                Bir oda yalnızca bir suite'te kullanılabilir.
+                {t('cm.pages_SuiteConnectingPage.bir_master_oda_bilesen_odalar_suite_sati')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <form onSubmit={addSuite} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
                 <div>
-                  <Label>Suite Adı</Label>
+                  <Label>{t('cm.pages_SuiteConnectingPage.suite_adi')}</Label>
                   <Input
                     value={suiteForm.name}
                     onChange={(e) => setSuiteForm({ ...suiteForm, name: e.target.value })}
@@ -178,12 +179,12 @@ export default function SuiteConnectingPage() {
                   />
                 </div>
                 <div>
-                  <Label>Master Oda</Label>
+                  <Label>{t('cm.pages_SuiteConnectingPage.master_oda')}</Label>
                   <Select
                     value={suiteForm.master_room_id}
                     onValueChange={(v) => setSuiteForm({ ...suiteForm, master_room_id: v })}
                   >
-                    <SelectTrigger data-testid="select-suite-master"><SelectValue placeholder="Oda seç" /></SelectTrigger>
+                    <SelectTrigger data-testid="select-suite-master"><SelectValue placeholder={t('cm.pages_SuiteConnectingPage.oda_sec')} /></SelectTrigger>
                     <SelectContent>
                       {rooms.map((r) => (
                         <SelectItem key={r.id || r._id} value={r.id || r._id}>{roomLabel(r.id || r._id)}</SelectItem>
@@ -192,17 +193,17 @@ export default function SuiteConnectingPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Açıklama</Label>
+                  <Label>{t('cm.pages_SuiteConnectingPage.aciklama')}</Label>
                   <Input
                     value={suiteForm.description}
                     onChange={(e) => setSuiteForm({ ...suiteForm, description: e.target.value })}
                   />
                 </div>
                 <div className="md:col-span-3">
-                  <Label>Bileşen Odalar (çoklu seçim)</Label>
+                  <Label>{t('cm.pages_SuiteConnectingPage.bilesen_odalar_coklu_secim')}</Label>
                   <div className="flex flex-wrap gap-1 p-2 border rounded max-h-32 overflow-y-auto">
                     {rooms.length === 0 ? (
-                      <span className="text-xs text-muted-foreground">Oda bulunamadı.</span>
+                      <span className="text-xs text-muted-foreground">{t('cm.pages_SuiteConnectingPage.oda_bulunamadi')}</span>
                     ) : rooms.filter((r) => (r.id || r._id) !== suiteForm.master_room_id).map((r) => {
                       const id = r.id || r._id;
                       const on = suiteForm.component_room_ids.includes(id);
@@ -220,7 +221,7 @@ export default function SuiteConnectingPage() {
                 </div>
                 <Button type="submit" disabled={submitting} data-testid="button-suite-add">
                   {submitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
-                  Suite Ekle
+                  {t('cm.pages_SuiteConnectingPage.suite_ekle')}
                 </Button>
               </form>
 
@@ -229,8 +230,8 @@ export default function SuiteConnectingPage() {
                   <TableRow>
                     <TableHead>Ad</TableHead>
                     <TableHead>Master</TableHead>
-                    <TableHead>Bileşenler</TableHead>
-                    <TableHead>Toplam Oda</TableHead>
+                    <TableHead>{t('cm.pages_SuiteConnectingPage.bilesenler')}</TableHead>
+                    <TableHead>{t('cm.pages_SuiteConnectingPage.toplam_oda')}</TableHead>
                     <TableHead className="w-[60px]" />
                   </TableRow>
                 </TableHeader>
@@ -238,7 +239,7 @@ export default function SuiteConnectingPage() {
                   {suites.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
-                        Henüz suite tanımı yok.
+                        {t('cm.pages_SuiteConnectingPage.henuz_suite_tanimi_yok')}
                       </TableCell>
                     </TableRow>
                   ) : suites.map((s) => (
@@ -269,26 +270,26 @@ export default function SuiteConnectingPage() {
         <TabsContent value="connecting">
           <Card>
             <CardHeader>
-              <CardTitle>Connecting Room Çiftleri</CardTitle>
+              <CardTitle>{t('cm.pages_SuiteConnectingPage.connecting_room_ciftleri')}</CardTitle>
               <CardDescription>
-                Yan yana kapı bağlı odalar. Aile rezervasyonları ve housekeeping için bilgi.
+                {t('cm.pages_SuiteConnectingPage.yan_yana_kapi_bagli_odalar_aile_rezervas')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <form onSubmit={addPair} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
                 <div>
-                  <Label>Oda A</Label>
+                  <Label>{t('cm.pages_SuiteConnectingPage.oda_a')}</Label>
                   <Select value={pairForm.room_a_id} onValueChange={(v) => setPairForm({ ...pairForm, room_a_id: v })}>
-                    <SelectTrigger data-testid="select-pair-a"><SelectValue placeholder="Oda A" /></SelectTrigger>
+                    <SelectTrigger data-testid="select-pair-a"><SelectValue placeholder={t('cm.pages_SuiteConnectingPage.oda_a_4674d')} /></SelectTrigger>
                     <SelectContent>
                       {rooms.map((r) => <SelectItem key={r.id || r._id} value={r.id || r._id}>{roomLabel(r.id || r._id)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label>Oda B</Label>
+                  <Label>{t('cm.pages_SuiteConnectingPage.oda_b')}</Label>
                   <Select value={pairForm.room_b_id} onValueChange={(v) => setPairForm({ ...pairForm, room_b_id: v })}>
-                    <SelectTrigger data-testid="select-pair-b"><SelectValue placeholder="Oda B" /></SelectTrigger>
+                    <SelectTrigger data-testid="select-pair-b"><SelectValue placeholder={t('cm.pages_SuiteConnectingPage.oda_b_c22ba')} /></SelectTrigger>
                     <SelectContent>
                       {rooms.filter((r) => (r.id || r._id) !== pairForm.room_a_id).map((r) =>
                         <SelectItem key={r.id || r._id} value={r.id || r._id}>{roomLabel(r.id || r._id)}</SelectItem>
@@ -306,15 +307,15 @@ export default function SuiteConnectingPage() {
                 </div>
                 <Button type="submit" disabled={submitting || !pairForm.room_a_id || !pairForm.room_b_id} data-testid="button-pair-add">
                   {submitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
-                  Bağlantı Ekle
+                  {t('cm.pages_SuiteConnectingPage.baglanti_ekle')}
                 </Button>
               </form>
 
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Oda A</TableHead>
-                    <TableHead>Oda B</TableHead>
+                    <TableHead>{t('cm.pages_SuiteConnectingPage.oda_a_4674d')}</TableHead>
+                    <TableHead>{t('cm.pages_SuiteConnectingPage.oda_b_c22ba')}</TableHead>
                     <TableHead>Not</TableHead>
                     <TableHead className="w-[60px]" />
                   </TableRow>
@@ -323,7 +324,7 @@ export default function SuiteConnectingPage() {
                   {pairs.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
-                        Bağlantı yok.
+                        {t('cm.pages_SuiteConnectingPage.baglanti_yok')}
                       </TableCell>
                     </TableRow>
                   ) : pairs.map((p) => (
@@ -349,11 +350,11 @@ export default function SuiteConnectingPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Suite sil?</DialogTitle>
-            <DialogDescription>"{deleteSuite?.name}" pasife alınacak.</DialogDescription>
+            <DialogDescription>"{deleteSuite?.name}{t('cm.pages_SuiteConnectingPage.pasife_alinacak')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteSuite(null)}>Vazgeç</Button>
-            <Button variant="destructive" onClick={confirmDeleteSuite}>Sil</Button>
+            <Button variant="outline" onClick={() => setDeleteSuite(null)}>{t('cm.pages_SuiteConnectingPage.vazgec')}</Button>
+            <Button variant="destructive" onClick={confirmDeleteSuite}>{t('cm.pages_SuiteConnectingPage.sil')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -361,12 +362,12 @@ export default function SuiteConnectingPage() {
       <Dialog open={!!deletePair} onOpenChange={(o) => !o && setDeletePair(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Bağlantıyı sil?</DialogTitle>
-            <DialogDescription>Bu connecting pair pasife alınacak.</DialogDescription>
+            <DialogTitle>{t('cm.pages_SuiteConnectingPage.baglantiyi_sil')}</DialogTitle>
+            <DialogDescription>{t('cm.pages_SuiteConnectingPage.bu_connecting_pair_pasife_alinacak')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeletePair(null)}>Vazgeç</Button>
-            <Button variant="destructive" onClick={confirmDeletePair}>Sil</Button>
+            <Button variant="outline" onClick={() => setDeletePair(null)}>{t('cm.pages_SuiteConnectingPage.vazgec_bf814')}</Button>
+            <Button variant="destructive" onClick={confirmDeletePair}>{t('cm.pages_SuiteConnectingPage.sil_491de')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

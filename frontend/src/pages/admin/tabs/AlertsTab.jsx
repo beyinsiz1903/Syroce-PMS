@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw, Bell, BellOff, Check, X, Eye } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { API, SeverityBadge, MetricCard } from '../shared';
+import { useTranslation } from 'react-i18next';
 
 const AlertsTab = () => {
+  const { t } = useTranslation();
   const [alerts, setAlerts] = useState([]);
   const [summary, setSummary] = useState({});
   const [rules, setRules] = useState([]);
@@ -68,7 +70,7 @@ const AlertsTab = () => {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <MetricCard title="Aktif Alarm" value={summary.active || 0} icon={Bell} color="text-red-400" />
+        <MetricCard title={t('cm.pages_admin_tabs_AlertsTab.aktif_alarm')} value={summary.active || 0} icon={Bell} color="text-red-400" />
         <MetricCard title="Onaylanan" value={summary.acknowledged || 0} icon={Eye} color="text-amber-400" />
         <MetricCard title="Cozulen" value={summary.resolved || 0} icon={Check} color="text-emerald-400" />
         <MetricCard title="Susturulan" value={summary.muted || 0} icon={BellOff} color="text-slate-400" />
@@ -78,8 +80,8 @@ const AlertsTab = () => {
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger data-testid="alert-status-filter" className="w-36 bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tüm Durum</SelectItem>
-            <SelectItem value="active">Aktif</SelectItem>
+            <SelectItem value="all">{t('cm.pages_admin_tabs_AlertsTab.tum_durum')}</SelectItem>
+            <SelectItem value="active">{t('cm.pages_admin_tabs_AlertsTab.aktif')}</SelectItem>
             <SelectItem value="acknowledged">Onaylanan</SelectItem>
             <SelectItem value="resolved">Cozulen</SelectItem>
             <SelectItem value="muted">Susturulan</SelectItem>
@@ -88,13 +90,13 @@ const AlertsTab = () => {
         <Select value={filterSeverity} onValueChange={setFilterSeverity}>
           <SelectTrigger data-testid="alert-severity-filter" className="w-32 bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tüm Seviye</SelectItem>
+            <SelectItem value="all">{t('cm.pages_admin_tabs_AlertsTab.tum_seviye')}</SelectItem>
             <SelectItem value="critical">Critical</SelectItem>
             <SelectItem value="warning">Warning</SelectItem>
             <SelectItem value="info">Info</SelectItem>
           </SelectContent>
         </Select>
-        <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchAlerts}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile</Button>
+        <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchAlerts}><RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_AlertsTab.yenile')}</Button>
         <Button data-testid="evaluate-alerts-btn" size="sm" variant="outline" className="border-blue-700 text-blue-400" disabled={actionLoading === 'evaluate'} onClick={handleEvaluate}>
           {actionLoading === 'evaluate' ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Bell className="w-3.5 h-3.5 mr-1" />} Degerlendirme Calistir
         </Button>
@@ -127,7 +129,7 @@ const AlertsTab = () => {
       ) : loading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
       ) : alerts.length === 0 ? (
-        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Alarm bulunamadı</CardContent></Card>
+        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">{t('cm.pages_admin_tabs_AlertsTab.alarm_bulunamadi')}</CardContent></Card>
       ) : (
         <div className="space-y-2">
           {alerts.map(alert => (

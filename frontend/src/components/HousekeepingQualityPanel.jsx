@@ -14,15 +14,17 @@ import {
 } from '@/components/ui/select';
 import { Image, RefreshCw, ShieldCheck, CheckCircle2, XCircle } from 'lucide-react';
 import PhotoUploadComponent from './PhotoUploadComponent';
+import { useTranslation } from 'react-i18next';
 
 const emptyState = (
   <div className="flex flex-col items-center justify-center py-8 text-sm text-gray-500">
     <Image className="w-8 h-8 mb-2 text-gray-400" />
-    Fotoğraf bulunamadı
+    {t('cm.components_HousekeepingQualityPanel.fotograf_bulunamadi')}
   </div>
 );
 
 const HousekeepingQualityPanel = ({ rooms = [] }) => {
+  const { t } = useTranslation();
   const [selectedRoomId, setSelectedRoomId] = useState(rooms[0]?.id || null);
   const [roomPhotos, setRoomPhotos] = useState([]);
   const [recentPhotos, setRecentPhotos] = useState([]);
@@ -141,18 +143,18 @@ const HousekeepingQualityPanel = ({ rooms = [] }) => {
             Quality Control Studio
           </CardTitle>
           <p className="text-sm text-gray-500">
-            Oda bazlı önce/sonra fotoğrafları ve kalite skorlarını izleyin
+            {t('cm.components_HousekeepingQualityPanel.oda_bazli_once_sonra_fotograflari_ve_kal')}
           </p>
         </div>
         <div className="flex gap-3">
           <Select value={selectedRoomId || ''} onValueChange={setSelectedRoomId}>
             <SelectTrigger className="w-48">
-              <SelectValue placeholder="Oda seçin" />
+              <SelectValue placeholder={t('cm.components_HousekeepingQualityPanel.oda_secin')} />
             </SelectTrigger>
             <SelectContent>
               {rooms.map((room) => (
                 <SelectItem key={room.id} value={room.id}>
-                  Oda {room.room_number}
+                  {t('cm.components_HousekeepingQualityPanel.oda')} {room.room_number}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -195,27 +197,27 @@ const HousekeepingQualityPanel = ({ rooms = [] }) => {
                 {qualityScore ?? '--'}
               </p>
               <p className="text-xs text-blue-500 mt-1">
-                En son &quot;sonra&quot; fotoğrafından otomatik alınır
+                {t('cm.components_HousekeepingQualityPanel.en_son_sonra_fotografindan_otomatik_alin')}
               </p>
             </CardContent>
           </Card>
           <Card className="border-green-100 bg-green-50">
             <CardContent className="p-4">
               <p className="text-xs text-green-600 font-semibold mb-2">
-                Fotoğraf Sayısı
+                {t('cm.components_HousekeepingQualityPanel.fotograf_sayisi')}
               </p>
               <p className="text-4xl font-bold text-green-700">
                 {roomPhotos.length}
               </p>
               <p className="text-xs text-green-500 mt-1">
-                Bu odaya ait tüm kayıtlı görüntüler
+                {t('cm.components_HousekeepingQualityPanel.bu_odaya_ait_tum_kayitli_goruntuler')}
               </p>
             </CardContent>
           </Card>
           <Card className="border-gray-100 bg-gray-50">
             <CardContent className="p-4">
               <p className="text-xs text-gray-600 font-semibold mb-2">
-                Son Yükleme
+                {t('cm.components_HousekeepingQualityPanel.son_yukleme')}
               </p>
               <p className="text-lg font-bold text-gray-900">
                 {roomPhotos[0]
@@ -232,9 +234,9 @@ const HousekeepingQualityPanel = ({ rooms = [] }) => {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-semibold text-gray-800">
-              {selectedRoom?.room_number} Numaralı Oda Fotoğrafları
+              {selectedRoom?.room_number} {t('cm.components_HousekeepingQualityPanel.numarali_oda_fotograflari')}
             </h4>
-            <Badge variant="secondary">{roomPhotos.length} kayıt</Badge>
+            <Badge variant="secondary">{roomPhotos.length} {t('cm.components_HousekeepingQualityPanel.kayit')}</Badge>
           </div>
           {loadingRoomPhotos ? (
             <div className="grid gap-3 md:grid-cols-3">
@@ -298,7 +300,7 @@ const HousekeepingQualityPanel = ({ rooms = [] }) => {
                             ) : (
                               <CheckCircle2 className="w-3 h-3 mr-1" />
                             )}
-                            Onayla
+                            {t('cm.components_HousekeepingQualityPanel.onayla')}
                           </Button>
                           <Button
                             size="xs"
@@ -329,7 +331,7 @@ const HousekeepingQualityPanel = ({ rooms = [] }) => {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-semibold text-gray-800">
-              Son 6 Fotoğraf (Tüm Otel)
+              {t('cm.components_HousekeepingQualityPanel.son_6_fotograf_tum_otel')}
             </h4>
             <Badge variant="outline">{recentPhotos.length}</Badge>
           </div>
@@ -356,7 +358,7 @@ const HousekeepingQualityPanel = ({ rooms = [] }) => {
                     emptyState
                   )}
                   <div className="p-2 text-[11px]">
-                    <p className="font-semibold">Oda {photo.room_number || '--'}</p>
+                    <p className="font-semibold">{t('cm.components_HousekeepingQualityPanel.oda_e4b47')} {photo.room_number || '--'}</p>
                     <p className="text-gray-500 capitalize">{photo.photo_type}</p>
                   </div>
                 </div>

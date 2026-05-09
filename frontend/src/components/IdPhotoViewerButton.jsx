@@ -14,6 +14,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { IdCard } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ALLOWED_ROLES = ['front_desk', 'frontdesk', 'supervisor', 'admin', 'super_admin'];
 
@@ -56,6 +57,7 @@ const IdPhotoViewerButton = ({
   hideWhenNotPermitted = true,
   testId,
 }) => {
+  const { t } = useTranslation();
   const effectiveUser = useMemo(() => user ?? readUserFromStorage(), [user]);
   const canView = useMemo(() => canUserViewIdPhoto(effectiveUser), [effectiveUser]);
 
@@ -209,11 +211,10 @@ const IdPhotoViewerButton = ({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IdCard className="w-5 h-5 text-blue-600" />
-              Görüntüleme Gerekçesi
+              {t('cm.components_IdPhotoViewerButton.goruntuleme_gerekcesi')}
             </DialogTitle>
             <DialogDescription>
-              KVKK amaç sınırlandırması gereği kimlik fotoğrafını açma sebebinizi
-              belirtmeniz gerekir. Bu gerekçe denetim kaydına yazılır.
+              {t('cm.components_IdPhotoViewerButton.kvkk_amac_sinirlandirmasi_geregi_kimlik_')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -251,7 +252,7 @@ const IdPhotoViewerButton = ({
                 id={`reason-note-${bookingId}`}
                 value={reasonNote}
                 onChange={(e) => setReasonNote(e.target.value)}
-                placeholder="Örn: Polis ekibi kimlik teyidi istiyor"
+                placeholder={t('cm.components_IdPhotoViewerButton.orn_polis_ekibi_kimlik_teyidi_istiyor')}
                 rows={2}
                 maxLength={400}
                 data-testid="input-id-photo-reason-note"
@@ -264,14 +265,14 @@ const IdPhotoViewerButton = ({
               onClick={closeReasonPrompt}
               data-testid="btn-id-photo-reason-cancel"
             >
-              Vazgeç
+              {t('cm.components_IdPhotoViewerButton.vazgec')}
             </Button>
             <Button
               onClick={submitReasonAndOpen}
               className="bg-blue-600 hover:bg-blue-700"
               data-testid="btn-id-photo-reason-confirm"
             >
-              Görüntüle
+              {t('cm.components_IdPhotoViewerButton.goruntule')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -281,7 +282,7 @@ const IdPhotoViewerButton = ({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IdCard className="w-5 h-5 text-blue-600" />
-              Misafir Kimlik Fotoğrafı
+              {t('cm.components_IdPhotoViewerButton.misafir_kimlik_fotografi')}
               {meta?.guestName && (
                 <span className="text-sm font-normal text-gray-500">
                   — {meta.guestName}
@@ -293,29 +294,28 @@ const IdPhotoViewerButton = ({
             {loading ? (
               <div className="flex flex-col items-center gap-2 py-8">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
-                <p className="text-sm text-gray-500">Şifreli fotoğraf çözülüyor…</p>
+                <p className="text-sm text-gray-500">{t('cm.components_IdPhotoViewerButton.sifreli_fotograf_cozuluyor')}</p>
               </div>
             ) : photoUrl ? (
               <img
                 src={photoUrl}
-                alt="Misafir kimlik fotoğrafı"
+                alt={t('cm.components_IdPhotoViewerButton.misafir_kimlik_fotografi_a8b40')}
                 className="max-h-[70vh] max-w-full object-contain"
                 data-testid="img-id-photo"
               />
             ) : (
-              <p className="text-sm text-gray-500 py-8">Fotoğraf yüklenemedi.</p>
+              <p className="text-sm text-gray-500 py-8">{t('cm.components_IdPhotoViewerButton.fotograf_yuklenemedi')}</p>
             )}
           </div>
           {photoUrl && (
             <div className="text-xs text-gray-500 space-y-1">
               {meta?.reason && (
                 <p data-testid="text-id-photo-reason">
-                  <strong>Gerekçe:</strong> {meta.reason}
+                  <strong>{t('cm.components_IdPhotoViewerButton.gerekce')}</strong> {meta.reason}
                 </p>
               )}
               <p>
-                Bu görüntüleme denetim kaydına yazıldı. Fotoğraf önbelleğe alınmaz;
-                pencereyi kapattığınızda bellekten silinir.
+                {t('cm.components_IdPhotoViewerButton.bu_goruntuleme_denetim_kaydina_yazildi_f')}
               </p>
             </div>
           )}

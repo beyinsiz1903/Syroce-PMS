@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Save, Loader2, RotateCcw, Home, Moon, ChevronDown, ChevronUp, AlertTriangle, CopyCheck } from 'lucide-react';
 import { DAYS, UPDATE_FIELDS } from './constants';
 import { ChannelList } from './ChannelList';
+import { useTranslation } from 'react-i18next';
 
 export const BulkUpdatePanel = ({
   roomTypeTree, roomTypes, ratePlans, enabledFields, toggleField,
@@ -49,7 +50,7 @@ export const BulkUpdatePanel = ({
         {/* Date Range */}
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold text-gray-700">Tarih Araligi</CardTitle>
+            <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_ratemanager_BulkUpdatePanel.tarih_araligi')}</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-2">
             <div>
@@ -100,7 +101,7 @@ export const BulkUpdatePanel = ({
         <Card className="h-full">
           <CardHeader className="pb-2 pt-4 px-4">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold text-gray-700">Oda adi</CardTitle>
+              <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_ratemanager_BulkUpdatePanel.oda_adi')}</CardTitle>
               <button onClick={toggleAllRoomTypes} className="text-xs text-blue-600 hover:underline" data-testid="select-all-rooms">
                 {roomTypes.length > 0 && roomTypes.every(rt => isRoomTypeFullySelected(rt.code)) ? 'Tumunu kaldir' : 'Tumunu sec'}
               </button>
@@ -110,7 +111,7 @@ export const BulkUpdatePanel = ({
             {loading && roomTypes.length === 0 ? (
               <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
             ) : roomTypes.length === 0 ? (
-              <div className="text-center py-12 text-gray-400 text-sm px-4">Exely bağlantısı bulunamadı veya oda tipi tanımlı değil</div>
+              <div className="text-center py-12 text-gray-400 text-sm px-4">{t('cm.pages_ratemanager_BulkUpdatePanel.exely_baglantisi_bulunamadi_veya_oda_tip')}</div>
             ) : (
               <RoomTypeList
                 roomTypeTree={roomTypeTree} enabledFields={enabledFields} selections={selections}
@@ -146,7 +147,7 @@ export const BulkUpdatePanel = ({
       <Card className="border-amber-200 bg-amber-50/50 mt-4" data-testid="bulk-summary">
         <CardContent className="py-3 px-4">
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <span className="font-medium text-gray-700">Özet:</span>
+            <span className="font-medium text-gray-700">{t('cm.pages_ratemanager_BulkUpdatePanel.ozet')}</span>
             <Badge variant="outline" className="bg-white">{totalSelectedRoomTypes} oda tipi</Badge>
             <Badge variant="outline" className="bg-white">{totalSelectedPlans} plan</Badge>
             <Badge variant="outline" className="bg-white">{enabledFields.size} alan</Badge>
@@ -163,6 +164,7 @@ const gridColTemplate = (enabledFields) =>
   `minmax(220px, 1fr)${enabledFields.has('rate') ? ' 150px' : ''}${enabledFields.has('availability') ? ' 130px' : ''}${enabledFields.has('min_stay') ? ' 150px' : ''}${enabledFields.has('max_stay') ? ' 150px' : ''}${enabledFields.has('stop_sell') ? ' 100px' : ''}${enabledFields.has('cta') ? ' 80px' : ''}${enabledFields.has('ctd') ? ' 80px' : ''}`;
 
 const ApplyAllButton = ({ field, value, applyToAllSelected, totalSelectedRoomTypes }) => {
+  const { t } = useTranslation();
   if (totalSelectedRoomTypes < 2 || !value) return null;
   return (
     <button
@@ -188,12 +190,12 @@ const RoomTypeList = ({
     <div className="grid items-center border-b bg-gray-50 px-4 py-2 text-xs font-medium text-gray-500 gap-3"
       style={{ gridTemplateColumns: 'minmax(220px, 1fr) repeat(auto-fit, minmax(130px, 1fr))' }}>
       <div className="grid items-center gap-3" style={{ gridTemplateColumns: gridColTemplate(enabledFields) }}>
-        <span>Oda adi</span>
+        <span>{t('cm.pages_ratemanager_BulkUpdatePanel.oda_adi_8e806')}</span>
         {enabledFields.has('rate') && <span className="flex items-center gap-1">{currencySymbol} Fiyat</span>}
         {enabledFields.has('availability') && <span className="flex items-center gap-1"><Home className="w-3 h-3" /> Musaitlik</span>}
         {enabledFields.has('min_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Min. konaklama</span>}
         {enabledFields.has('max_stay') && <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Max. konaklama</span>}
-        {enabledFields.has('stop_sell') && <span>Satış durdur</span>}
+        {enabledFields.has('stop_sell') && <span>{t('cm.pages_ratemanager_BulkUpdatePanel.satis_durdur')}</span>}
         {enabledFields.has('cta') && <span>CTA</span>}
         {enabledFields.has('ctd') && <span>CTD</span>}
       </div>
@@ -217,13 +219,13 @@ const RoomTypeList = ({
                   <div className="flex items-center gap-1.5">
                     <span className="font-semibold text-sm text-gray-900">{rt.name}</span>
                     {rt.availability_update === false && (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium" title="HotelRunner bu oda tipi için musaitlik guncellemeye izin vermiyor">
-                        <AlertTriangle className="w-2.5 h-2.5" /> Musaitlik kapalı
+                      <span className="inline-flex items-center gap-0.5 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium" title={t('cm.pages_ratemanager_BulkUpdatePanel.hotelrunner_bu_oda_tipi_icin_musaitlik_g')}>
+                        <AlertTriangle className="w-2.5 h-2.5" /> {t('cm.pages_ratemanager_BulkUpdatePanel.musaitlik_kapali')}
                       </span>
                     )}
                     {rt.price_update === false && (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium" title="HotelRunner bu oda tipi için fiyat guncellemeye izin vermiyor">
-                        <AlertTriangle className="w-2.5 h-2.5" /> Fiyat kapalı
+                      <span className="inline-flex items-center gap-0.5 text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium" title={t('cm.pages_ratemanager_BulkUpdatePanel.hotelrunner_bu_oda_tipi_icin_fiyat_gunce')}>
+                        <AlertTriangle className="w-2.5 h-2.5" /> {t('cm.pages_ratemanager_BulkUpdatePanel.fiyat_kapali')}
                       </span>
                     )}
                   </div>

@@ -13,6 +13,7 @@ import {
   AlarmClock, Plus, Phone, CheckCircle, XCircle, Clock,
   Trash2, Edit2, RefreshCw, PhoneCall, PhoneOff, Repeat, Bell, BellOff
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 // Tek, uzun ömürlü AudioContext — kullanıcı etkileşimiyle bir kez
 // resume edildikten sonra timer-tabanlı sonraki alarmlar da çalar
@@ -81,6 +82,7 @@ const RESPONSE_LABELS = {
 const METHOD_LABELS = { phone: 'Telefon', system: 'Sistem', both: 'Her İkisi' };
 
 const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [calls, setCalls] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
@@ -253,8 +255,8 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
         <PageHeader
           icon={AlarmClock}
           iconClassName="text-indigo-600"
-          title="Uyandırma Çağrısı Yönetimi"
-          subtitle="Misafir uyandırma çağrılarını planlayıp takip edin"
+          title={t('cm.pages_WakeUpCallsPage.uyandirma_cagrisi_yonetimi')}
+          subtitle={t('cm.pages_WakeUpCallsPage.misafir_uyandirma_cagrilarini_planlayip_')}
           actions={
             <>
               {!alertsArmed ? (
@@ -264,33 +266,33 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
                   className="border-amber-300 text-amber-700 hover:bg-amber-50"
                   data-testid="arm-alerts-btn"
                 >
-                  <BellOff className="w-4 h-4 mr-1.5" /> Sesli Alarmı Aç
+                  <BellOff className="w-4 h-4 mr-1.5" /> {t('cm.pages_WakeUpCallsPage.sesli_alarmi_ac')}
                 </Button>
               ) : (
                 <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1 self-center">
-                  <Bell className="w-3 h-3" /> Alarm Aktif
+                  <Bell className="w-3 h-3" /> {t('cm.pages_WakeUpCallsPage.alarm_aktif')}
                 </Badge>
               )}
               <Button variant="outline" size="sm" onClick={() => { setLoading(true); loadCalls(); }}>
-                <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+                <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_WakeUpCallsPage.yenile')}
               </Button>
               <Button size="sm" onClick={() => { setForm(f => ({ ...f, wake_date: filterDate })); setShowCreate(true); }} data-testid="create-wakeup-btn">
-                <Plus className="w-4 h-4 mr-1.5" /> Yeni Çağrı
+                <Plus className="w-4 h-4 mr-1.5" /> {t('cm.pages_WakeUpCallsPage.yeni_cagri')}
               </Button>
             </>
           }
         />
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KpiCard icon={Clock} label="Bugün Toplam" value={stats.total_today || 0} intent="info" />
+          <KpiCard icon={Clock} label={t('cm.pages_WakeUpCallsPage.bugun_toplam')} value={stats.total_today || 0} intent="info" />
           <KpiCard icon={AlarmClock} label="Bekliyor" value={stats.pending || 0} intent="warning" />
-          <KpiCard icon={CheckCircle} label="Tamamlandı" value={stats.completed || 0} intent="success" />
-          <KpiCard icon={XCircle} label="Cevapsız" value={stats.missed || 0} intent="danger" highlight={(stats.missed || 0) > 0} />
+          <KpiCard icon={CheckCircle} label={t('cm.pages_WakeUpCallsPage.tamamlandi')} value={stats.completed || 0} intent="success" />
+          <KpiCard icon={XCircle} label={t('cm.pages_WakeUpCallsPage.cevapsiz')} value={stats.missed || 0} intent="danger" highlight={(stats.missed || 0) > 0} />
         </div>
 
         <div className="flex flex-wrap gap-3 items-center">
           <div>
-            <Label className="text-xs text-gray-500">Tarih</Label>
+            <Label className="text-xs text-gray-500">{t('cm.pages_WakeUpCallsPage.tarih')}</Label>
             <Input
               type="date"
               value={filterDate}
@@ -300,14 +302,14 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
             />
           </div>
           <div>
-            <Label className="text-xs text-gray-500">Durum</Label>
+            <Label className="text-xs text-gray-500">{t('cm.pages_WakeUpCallsPage.durum')}</Label>
             <select
               value={filterStatus}
               onChange={e => setFilterStatus(e.target.value)}
               className="h-9 border rounded-md px-3 text-sm"
               data-testid="filter-status"
             >
-              <option value="">Tümü</option>
+              <option value="">{t('cm.pages_WakeUpCallsPage.tumu')}</option>
               {Object.entries(STATUS_LABELS).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
@@ -316,13 +318,13 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
         </div>
 
         {loading ? (
-          <div className="text-center py-12 text-gray-400">Yükleniyor...</div>
+          <div className="text-center py-12 text-gray-400">{t('cm.pages_WakeUpCallsPage.yukleniyor')}</div>
         ) : calls.length === 0 ? (
           <Card className="p-12 text-center">
             <AlarmClock className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">Bu tarih için uyandırma çağrısı yok</p>
+            <p className="text-gray-500">{t('cm.pages_WakeUpCallsPage.bu_tarih_icin_uyandirma_cagrisi_yok')}</p>
             <Button size="sm" className="mt-3" onClick={() => { setForm(f => ({ ...f, wake_date: filterDate })); setShowCreate(true); }}>
-              <Plus className="w-4 h-4 mr-1" /> Yeni Oluştur
+              <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_WakeUpCallsPage.yeni_olustur')}
             </Button>
           </Card>
         ) : (
@@ -341,12 +343,12 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold">Oda {call.room_number}</span>
+                        <span className="font-semibold">{t('cm.pages_WakeUpCallsPage.oda')} {call.room_number}</span>
                         {call.guest_name && <span className="text-sm text-gray-500">- {call.guest_name}</span>}
                         {call.recurring && <Badge variant="outline" className="text-[10px] gap-1"><Repeat className="w-3 h-3" />Tekrar</Badge>}
                         {call.is_due && (
                           <Badge className="bg-red-600 text-white text-[10px] gap-1">
-                            <AlarmClock className="w-3 h-3" /> ŞİMDİ ARA!
+                            <AlarmClock className="w-3 h-3" /> {t('cm.pages_WakeUpCallsPage.simdi_ara')}
                           </Badge>
                         )}
                       </div>
@@ -375,7 +377,7 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
                           onClick={() => handleStatus(call.id, 'missed', 'no_answer')}
                           data-testid={`missed-btn-${call.id}`}
                         >
-                          <PhoneOff className="w-3 h-3 mr-1" /> Cevapsız
+                          <PhoneOff className="w-3 h-3 mr-1" /> {t('cm.pages_WakeUpCallsPage.cevapsiz_ff6c6')}
                         </Button>
                         <Button size="sm" variant="ghost" className="h-8 text-xs text-gray-500"
                           onClick={() => handleStatus(call.id, 'cancelled')}
@@ -400,43 +402,43 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <AlarmClock className="w-5 h-5 text-indigo-600" /> Yeni Uyandırma Çağrısı
+                <AlarmClock className="w-5 h-5 text-indigo-600" /> {t('cm.pages_WakeUpCallsPage.yeni_uyandirma_cagrisi')}
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Oda No *</Label>
+                  <Label>{t('cm.pages_WakeUpCallsPage.oda_no')}</Label>
                   <Input value={form.room_number} onChange={e => setForm(f => ({ ...f, room_number: e.target.value }))} placeholder="101" data-testid="wakeup-room-input" />
                 </div>
                 <div>
-                  <Label>Misafir Adı</Label>
+                  <Label>{t('cm.pages_WakeUpCallsPage.misafir_adi')}</Label>
                   <Input value={form.guest_name} onChange={e => setForm(f => ({ ...f, guest_name: e.target.value }))} placeholder="Ad Soyad" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Saat *</Label>
+                  <Label>{t('cm.pages_WakeUpCallsPage.saat')}</Label>
                   <Input type="time" value={form.wake_time} onChange={e => setForm(f => ({ ...f, wake_time: e.target.value }))} data-testid="wakeup-time-input" />
                 </div>
                 <div>
-                  <Label>Tarih *</Label>
+                  <Label>{t('cm.pages_WakeUpCallsPage.tarih_fabdd')}</Label>
                   <Input type="date" value={form.wake_date} onChange={e => setForm(f => ({ ...f, wake_date: e.target.value }))} data-testid="wakeup-date-input" />
                 </div>
               </div>
               <div>
-                <Label>Yöntem</Label>
+                <Label>{t('cm.pages_WakeUpCallsPage.yontem')}</Label>
                 <select value={form.method} onChange={e => setForm(f => ({ ...f, method: e.target.value }))} className="w-full border rounded-md px-3 py-2 text-sm">
                   <option value="phone">Telefon</option>
                   <option value="system">Sistem</option>
-                  <option value="both">Her İkisi</option>
+                  <option value="both">{t('cm.pages_WakeUpCallsPage.her_ikisi')}</option>
                 </select>
               </div>
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={form.recurring} onChange={e => setForm(f => ({ ...f, recurring: e.target.checked }))} className="w-4 h-4 rounded" id="recurring" />
                 <Label htmlFor="recurring" className="cursor-pointer">Tekrar Eden</Label>
                 {form.recurring && (
-                  <Input type="date" value={form.recurrence_end_date} onChange={e => setForm(f => ({ ...f, recurrence_end_date: e.target.value }))} placeholder="Bitiş tarihi" className="ml-2 h-8 w-36 text-sm" />
+                  <Input type="date" value={form.recurrence_end_date} onChange={e => setForm(f => ({ ...f, recurrence_end_date: e.target.value }))} placeholder={t('cm.pages_WakeUpCallsPage.bitis_tarihi')} className="ml-2 h-8 w-36 text-sm" />
                 )}
               </div>
               <div>
@@ -444,8 +446,8 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
                 <Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Ek bilgi..." />
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setShowCreate(false)}>İptal</Button>
-                <Button onClick={handleCreate} data-testid="save-wakeup-btn">Oluştur</Button>
+                <Button variant="outline" onClick={() => setShowCreate(false)}>{t('cm.pages_WakeUpCallsPage.iptal')}</Button>
+                <Button onClick={handleCreate} data-testid="save-wakeup-btn">{t('cm.pages_WakeUpCallsPage.olustur')}</Button>
               </div>
             </div>
           </DialogContent>
@@ -454,15 +456,15 @@ const WakeUpCallsPage = ({ user, tenant, onLogout }) => {
         <Dialog open={!!deleteConfirm} onOpenChange={o => { if (!o) setDeleteConfirm(null); }}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
-              <DialogTitle>Silme Onayı</DialogTitle>
+              <DialogTitle>{t('cm.pages_WakeUpCallsPage.silme_onayi')}</DialogTitle>
             </DialogHeader>
             <p className="text-sm text-gray-600">
-              Bu uyandırma çağrısını silmek istediğinize emin misiniz?
-              {deleteConfirm && <span className="font-medium"> (Oda {deleteConfirm.room_number} - {deleteConfirm.wake_time})</span>}
+              {t('cm.pages_WakeUpCallsPage.bu_uyandirma_cagrisini_silmek_istedigini')}
+              {deleteConfirm && <span className="font-medium"> {t('cm.pages_WakeUpCallsPage.oda_68a89')} {deleteConfirm.room_number} - {deleteConfirm.wake_time})</span>}
             </p>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setDeleteConfirm(null)}>İptal</Button>
-              <Button variant="destructive" onClick={() => handleDelete(deleteConfirm?.id)}>Sil</Button>
+              <Button variant="outline" onClick={() => setDeleteConfirm(null)}>{t('cm.pages_WakeUpCallsPage.iptal_25174')}</Button>
+              <Button variant="destructive" onClick={() => handleDelete(deleteConfirm?.id)}>{t('cm.pages_WakeUpCallsPage.sil')}</Button>
             </div>
           </DialogContent>
         </Dialog>

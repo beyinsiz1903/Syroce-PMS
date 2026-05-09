@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import api from "@/api/axios";
 import { alertDialog, promptDialog } from "@/lib/dialogs";
+import { useTranslation } from 'react-i18next';
 
 export default function LoyaltyAdminPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState("tiers");
   const [tiers, setTiers] = useState([]);
   const [members, setMembers] = useState([]);
@@ -87,7 +89,7 @@ export default function LoyaltyAdminPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
-      <h2>Loyalty Yönetimi</h2>
+      <h2>{t('cm.pages_LoyaltyAdminPage.loyalty_yonetimi')}</h2>
       {err && <div style={{ color: "crimson" }}>{err}</div>}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         {["tiers", "members", "rewards"].map(t => (
@@ -103,15 +105,15 @@ export default function LoyaltyAdminPage() {
           <form onSubmit={addTier} style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(5, 1fr)", marginBottom: 16 }}>
             <input placeholder="Ad (Bronze)" value={tierForm.name} onChange={e => setTierForm({ ...tierForm, name: e.target.value })} required />
             <input type="number" placeholder="Min puan" value={tierForm.min_points} onChange={e => setTierForm({ ...tierForm, min_points: e.target.value })} />
-            <input type="number" step="0.1" placeholder="Çarpan" value={tierForm.earn_multiplier} onChange={e => setTierForm({ ...tierForm, earn_multiplier: e.target.value })} />
-            <input placeholder="Avantajlar (virgülle)" value={tierForm.benefits} onChange={e => setTierForm({ ...tierForm, benefits: e.target.value })} />
-            <button type="submit">Ekle</button>
+            <input type="number" step="0.1" placeholder={t('cm.pages_LoyaltyAdminPage.carpan')} value={tierForm.earn_multiplier} onChange={e => setTierForm({ ...tierForm, earn_multiplier: e.target.value })} />
+            <input placeholder={t('cm.pages_LoyaltyAdminPage.avantajlar_virgulle')} value={tierForm.benefits} onChange={e => setTierForm({ ...tierForm, benefits: e.target.value })} />
+            <button type="submit">{t('cm.pages_LoyaltyAdminPage.ekle')}</button>
           </form>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr style={{ background: "#eee" }}>
               <th style={{ padding: 8, textAlign: "left" }}>Ad</th>
               <th style={{ padding: 8 }}>Min Puan</th>
-              <th style={{ padding: 8 }}>Çarpan</th>
+              <th style={{ padding: 8 }}>{t('cm.pages_LoyaltyAdminPage.carpan_592f5')}</th>
               <th style={{ padding: 8, textAlign: "left" }}>Avantajlar</th>
             </tr></thead>
             <tbody>{tiers.map(t => (
@@ -130,11 +132,11 @@ export default function LoyaltyAdminPage() {
         <div>
           <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
             <form onSubmit={enroll} style={{ display: "flex", gap: 8 }}>
-              <input placeholder="Misafir ID" value={enrollForm.guest_id} onChange={e => setEnrollForm({ guest_id: e.target.value })} required />
-              <button type="submit">Üye Yap</button>
+              <input placeholder={t('cm.pages_LoyaltyAdminPage.misafir_id')} value={enrollForm.guest_id} onChange={e => setEnrollForm({ guest_id: e.target.value })} required />
+              <button type="submit">{t('cm.pages_LoyaltyAdminPage.uye_yap')}</button>
             </form>
             <form onSubmit={earn} style={{ display: "flex", gap: 8 }}>
-              <input placeholder="Misafir ID" value={earnForm.guest_id} onChange={e => setEarnForm({ ...earnForm, guest_id: e.target.value })} required />
+              <input placeholder={t('cm.pages_LoyaltyAdminPage.misafir_id_f1c7f')} value={earnForm.guest_id} onChange={e => setEarnForm({ ...earnForm, guest_id: e.target.value })} required />
               <input type="number" placeholder="Puan" value={earnForm.points} onChange={e => setEarnForm({ ...earnForm, points: e.target.value })} />
               <input placeholder="Kaynak" value={earnForm.source} onChange={e => setEarnForm({ ...earnForm, source: e.target.value })} />
               <button type="submit">Puan Ver</button>
@@ -142,9 +144,9 @@ export default function LoyaltyAdminPage() {
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr style={{ background: "#eee" }}>
-              <th style={{ padding: 8, textAlign: "left" }}>Misafir</th>
+              <th style={{ padding: 8, textAlign: "left" }}>{t('cm.pages_LoyaltyAdminPage.misafir')}</th>
               <th style={{ padding: 8 }}>Tier</th>
-              <th style={{ padding: 8 }}>Bakiye</th>
+              <th style={{ padding: 8 }}>{t('cm.pages_LoyaltyAdminPage.bakiye')}</th>
               <th style={{ padding: 8 }}>Lifetime</th>
             </tr></thead>
             <tbody>{members.map(m => (
@@ -167,16 +169,16 @@ export default function LoyaltyAdminPage() {
             <select value={rewardForm.type} onChange={e => setRewardForm({ ...rewardForm, type: e.target.value })}>
               {["discount","free_night","upgrade","amenity","fnb","spa"].map(o => <option key={o}>{o}</option>)}
             </select>
-            <input type="number" placeholder="Değer" value={rewardForm.value} onChange={e => setRewardForm({ ...rewardForm, value: e.target.value })} />
-            <input type="number" placeholder="Stok (boş=∞)" value={rewardForm.stock} onChange={e => setRewardForm({ ...rewardForm, stock: e.target.value })} />
-            <button type="submit">Ekle</button>
+            <input type="number" placeholder={t('cm.pages_LoyaltyAdminPage.deger')} value={rewardForm.value} onChange={e => setRewardForm({ ...rewardForm, value: e.target.value })} />
+            <input type="number" placeholder={t('cm.pages_LoyaltyAdminPage.stok_bos')} value={rewardForm.stock} onChange={e => setRewardForm({ ...rewardForm, stock: e.target.value })} />
+            <button type="submit">{t('cm.pages_LoyaltyAdminPage.ekle_b9fc4')}</button>
           </form>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr style={{ background: "#eee" }}>
               <th style={{ padding: 8, textAlign: "left" }}>Ad</th>
               <th style={{ padding: 8 }}>Tip</th>
               <th style={{ padding: 8 }}>Puan</th>
-              <th style={{ padding: 8 }}>Değer</th>
+              <th style={{ padding: 8 }}>{t('cm.pages_LoyaltyAdminPage.deger_f8b76')}</th>
               <th style={{ padding: 8 }}>Stok</th>
               <th style={{ padding: 8 }}>Aksiyon</th>
             </tr></thead>
@@ -187,7 +189,7 @@ export default function LoyaltyAdminPage() {
                 <td style={{ padding: 8, textAlign: "right" }}>{r.points_cost}</td>
                 <td style={{ padding: 8, textAlign: "right" }}>{r.value || "-"}</td>
                 <td style={{ padding: 8, textAlign: "right" }}>{r.stock ?? "∞"}</td>
-                <td style={{ padding: 8 }}>{r.active && <button onClick={() => redeem(r.id)}>Kullandır</button>}</td>
+                <td style={{ padding: 8 }}>{r.active && <button onClick={() => redeem(r.id)}>{t('cm.pages_LoyaltyAdminPage.kullandir')}</button>}</td>
               </tr>
             ))}</tbody>
           </table>

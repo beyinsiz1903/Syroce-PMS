@@ -11,6 +11,7 @@ import {
   Calendar, Shield, Brain, ChevronRight, Info, Plus, Trash2,
   ToggleLeft, ToggleRight, RefreshCw, Target, Zap, BarChart3
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /* ─── Color maps ───────────────────────────────────────── */
 const CHANNEL_COLORS = {
@@ -34,12 +35,13 @@ const WEEKDAY_SHORT = ['Pzt', 'Sal', 'Car', 'Per', 'Cum', 'Cmt', 'Paz'];
 
 /* ─── Data quality banner ──────────────────────────────── */
 const DataQualityBanner = ({ dq }) => {
+  const { t } = useTranslation();
   if (!dq) return null;
   const colors = { low: 'bg-red-50 border-red-200 text-red-700', medium: 'bg-amber-50 border-amber-200 text-amber-700', high: 'bg-emerald-50 border-emerald-200 text-emerald-700' };
   return (
     <div className={`rounded-lg border px-4 py-2.5 flex items-center gap-2 text-sm ${colors[dq.confidence] || colors.low}`} data-testid="data-quality-banner">
       <Info className="w-4 h-4 flex-shrink-0" />
-      <span>{CONFIDENCE_ICONS[dq.confidence]} <strong>Güvenilirlik: {dq.confidence === 'high' ? 'Yüksek' : dq.confidence === 'medium' ? 'Orta' : 'Düşük'}</strong> — {dq.note}</span>
+      <span>{CONFIDENCE_ICONS[dq.confidence]} <strong>{t('cm.pages_NoShowAnalytics.guvenilirlik')} {dq.confidence === 'high' ? 'Yüksek' : dq.confidence === 'medium' ? 'Orta' : 'Düşük'}</strong> — {dq.note}</span>
     </div>
   );
 };
@@ -72,23 +74,23 @@ const ChannelLossTab = ({ period }) => {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="border-l-4 border-l-red-500" data-testid="ch-total-loss">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-medium text-gray-500 uppercase">Toplam Kayıp</p>
+            <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.toplam_kayip')}</p>
             <p className="text-2xl font-bold text-red-600 mt-1">{data.total_loss?.toLocaleString('tr-TR')} TL</p>
             <p className="text-xs text-gray-400 mt-1">{data.total_no_shows} no-show</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-amber-500" data-testid="ch-worst-channel">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-medium text-gray-500 uppercase">En Kötü Kanal</p>
+            <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.en_kotu_kanal')}</p>
             <p className="text-2xl font-bold text-gray-900 mt-1 capitalize">{data.top3_worst?.[0]?.channel || '-'}</p>
-            <p className="text-xs text-gray-400 mt-1">{data.top3_worst?.[0]?.total_loss?.toLocaleString('tr-TR')} TL kayıp</p>
+            <p className="text-xs text-gray-400 mt-1">{data.top3_worst?.[0]?.total_loss?.toLocaleString('tr-TR')} {t('cm.pages_NoShowAnalytics.tl_kayip')}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-blue-500" data-testid="ch-channels-count">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-medium text-gray-500 uppercase">Kanal Sayısı</p>
+            <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.kanal_sayisi')}</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{data.channels?.length || 0}</p>
-            <p className="text-xs text-gray-400 mt-1">Aktif kanal</p>
+            <p className="text-xs text-gray-400 mt-1">{t('cm.pages_NoShowAnalytics.aktif_kanal')}</p>
           </CardContent>
         </Card>
       </div>
@@ -114,8 +116,8 @@ const ChannelLossTab = ({ period }) => {
                   <p className={`text-lg font-bold capitalize ${clr.text}`}>{ch.channel}</p>
                   <div className="mt-2 space-y-1 text-xs text-gray-600">
                     <div className="flex justify-between"><span>No-show</span><span className="font-semibold">{ch.no_show_count}</span></div>
-                    <div className="flex justify-between"><span>Toplam Kayıp</span><span className="font-semibold text-red-600">-{ch.total_loss?.toLocaleString('tr-TR')} TL</span></div>
-                    <div className="flex justify-between"><span>Ort. Kayıp</span><span className="font-semibold">{ch.avg_loss?.toLocaleString('tr-TR')} TL</span></div>
+                    <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.toplam_kayip_e38cc')}</span><span className="font-semibold text-red-600">-{ch.total_loss?.toLocaleString('tr-TR')} TL</span></div>
+                    <div className="flex justify-between"><span>{t('cm.pages_NoShowAnalytics.ort_kayip')}</span><span className="font-semibold">{ch.avg_loss?.toLocaleString('tr-TR')} TL</span></div>
                   </div>
                 </div>
               );
@@ -127,7 +129,7 @@ const ChannelLossTab = ({ period }) => {
       {/* Full channel table */}
       <Card data-testid="channel-table-card">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-gray-700">Kanal Bazlı Detay</CardTitle>
+          <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.kanal_bazli_detay')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -136,10 +138,10 @@ const ChannelLossTab = ({ period }) => {
                 <tr className="border-b text-left text-xs text-gray-500 uppercase tracking-wide">
                   <th className="pb-2 pr-3">Kanal</th>
                   <th className="pb-2 pr-3 text-right">No-Show</th>
-                  <th className="pb-2 pr-3 text-right">Toplam Kayıp</th>
-                  <th className="pb-2 pr-3 text-right">Ort. Kayıp</th>
+                  <th className="pb-2 pr-3 text-right">{t('cm.pages_NoShowAnalytics.toplam_kayip_e38cc')}</th>
+                  <th className="pb-2 pr-3 text-right">{t('cm.pages_NoShowAnalytics.ort_kayip_d319f')}</th>
                   <th className="pb-2 pr-3 text-right">No-Show %</th>
-                  <th className="pb-2 text-right">Rez. Sayısı</th>
+                  <th className="pb-2 text-right">{t('cm.pages_NoShowAnalytics.rez_sayisi')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -171,7 +173,7 @@ const ChannelLossTab = ({ period }) => {
       {/* Channel trend chart */}
       <Card data-testid="channel-trend-card">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-gray-700">Kanal Bazlı Zaman Trendi</CardTitle>
+          <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.kanal_bazli_zaman_trendi')}</CardTitle>
         </CardHeader>
         <CardContent>
           {data.trend?.length > 0 ? (
@@ -258,19 +260,19 @@ const OverbookingHeatmapTab = ({ period }) => {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="border-l-4 border-l-red-500" data-testid="ob-total">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-medium text-gray-500 uppercase">Toplam Overbooking</p>
+            <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.toplam_overbooking')}</p>
             <p className="text-2xl font-bold text-red-600 mt-1">{data.total_overbookings}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-amber-500" data-testid="ob-loss">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-medium text-gray-500 uppercase">Overbooking Kaybı</p>
+            <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.overbooking_kaybi')}</p>
             <p className="text-2xl font-bold text-amber-600 mt-1">{data.total_loss?.toLocaleString('tr-TR')} TL</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-blue-500" data-testid="ob-peak-day">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-medium text-gray-500 uppercase">En Riskli Gün</p>
+            <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.en_riskli_gun')}</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{data.peak_days?.[0]?.date || '-'}</p>
             <p className="text-xs text-gray-400">{data.peak_days?.[0]?.overbooking_count || 0} overbooking</p>
           </CardContent>
@@ -282,7 +284,7 @@ const OverbookingHeatmapTab = ({ period }) => {
         <CardHeader className="pb-2">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-gray-500" />
-            <CardTitle className="text-sm font-semibold text-gray-700">Overbooking Haritası</CardTitle>
+            <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.overbooking_haritasi')}</CardTitle>
           </div>
         </CardHeader>
         <CardContent>
@@ -298,7 +300,7 @@ const OverbookingHeatmapTab = ({ period }) => {
                     {d.overbooking_count > 0 && <span className="text-[9px] font-bold text-white">{d.overbooking_count}</span>}
                     <div className="absolute -top-12 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-800 text-white text-[10px] px-2 py-1.5 rounded whitespace-nowrap z-20">
                       <div>{d.date}</div>
-                      <div>OB: {d.overbooking_count} | Toplam NS: {d.total_noshow}</div>
+                      <div>OB: {d.overbooking_count} {t('cm.pages_NoShowAnalytics.toplam_ns')} {d.total_noshow}</div>
                       <div>Kayip: {d.loss?.toLocaleString('tr-TR')} TL</div>
                     </div>
                   </div>
@@ -312,7 +314,7 @@ const OverbookingHeatmapTab = ({ period }) => {
                 <div className="w-4 h-4 rounded-sm bg-amber-400" />
                 <div className="w-4 h-4 rounded-sm bg-red-400" />
                 <div className="w-4 h-4 rounded-sm bg-red-500" />
-                <span>Çok</span>
+                <span>{t('cm.pages_NoShowAnalytics.cok')}</span>
               </div>
             </>
           ) : (
@@ -327,7 +329,7 @@ const OverbookingHeatmapTab = ({ period }) => {
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
               <Flame className="w-4 h-4 text-red-500" />
-              <CardTitle className="text-sm font-semibold text-gray-700">Top 5 Riskli Gün</CardTitle>
+              <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.top_5_riskli_gun')}</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
@@ -339,7 +341,7 @@ const OverbookingHeatmapTab = ({ period }) => {
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-medium text-gray-800">{d.date}</p>
-                    <p className="text-xs text-gray-500">{d.total_noshow} toplam no-show | {d.loss?.toLocaleString('tr-TR')} TL kayıp</p>
+                    <p className="text-xs text-gray-500">{d.total_noshow} toplam no-show | {d.loss?.toLocaleString('tr-TR')} {t('cm.pages_NoShowAnalytics.tl_kayip_72ee7')}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-bold text-red-600">{d.overbooking_count}</p>
@@ -355,7 +357,7 @@ const OverbookingHeatmapTab = ({ period }) => {
         {/* Weekly pattern */}
         <Card data-testid="weekly-pattern-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-gray-700">Haftalık Desen (Hafta Sonu vs Hafta İçi)</CardTitle>
+            <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.haftalik_desen_hafta_sonu_vs_hafta_ici')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -391,7 +393,7 @@ const OverbookingHeatmapTab = ({ period }) => {
       {data.channel_overlay?.length > 0 && (
         <Card data-testid="ob-channel-overlay-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-gray-700">Overbooking Kanal Katkısı</CardTitle>
+            <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.overbooking_kanal_katkisi')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
@@ -499,16 +501,16 @@ const RuleEngineTab = () => {
       {/* Alert banner */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 flex items-center gap-2 text-sm text-amber-700">
         <Shield className="w-4 h-4" />
-        <span>Kurallar sadece <strong>öneri/alert</strong> modunda çalışır — otomatik yazma işlemi yapılmaz (Shadow Mode)</span>
+        <span>Kurallar sadece <strong>{t('cm.pages_NoShowAnalytics.oneri_alert')}</strong> {t('cm.pages_NoShowAnalytics.modunda_calisir_otomatik_yazma_islemi_ya')}</span>
       </div>
 
       {/* Actions */}
       <div className="flex items-center gap-3 flex-wrap">
         <Button variant="outline" size="sm" onClick={() => setShowForm(!showForm)} data-testid="add-rule-btn">
-          <Plus className="w-4 h-4 mr-1" /> Kural Ekle
+          <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_NoShowAnalytics.kural_ekle')}
         </Button>
         <Button variant="default" size="sm" onClick={evaluate} disabled={evaluating} data-testid="evaluate-btn">
-          <RefreshCw className={`w-4 h-4 mr-1 ${evaluating ? 'animate-spin' : ''}`} /> Kuralları Değerlendir
+          <RefreshCw className={`w-4 h-4 mr-1 ${evaluating ? 'animate-spin' : ''}`} /> {t('cm.pages_NoShowAnalytics.kurallari_degerlendir')}
         </Button>
       </div>
 
@@ -518,8 +520,8 @@ const RuleEngineTab = () => {
           <CardContent className="pt-4 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Kural Adı</label>
-                <Input placeholder="örn: Yüksek overbooking alarmı" value={form.rule_name} onChange={e => setForm(p => ({...p, rule_name: e.target.value}))} data-testid="rule-name-input" />
+                <label className="text-xs text-gray-500 mb-1 block">{t('cm.pages_NoShowAnalytics.kural_adi')}</label>
+                <Input placeholder={t('cm.pages_NoShowAnalytics.orn_yuksek_overbooking_alarmi')} value={form.rule_name} onChange={e => setForm(p => ({...p, rule_name: e.target.value}))} data-testid="rule-name-input" />
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">Metrik</label>
@@ -531,13 +533,13 @@ const RuleEngineTab = () => {
                 </Select>
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Eşik Değeri</label>
-                <Input type="number" placeholder="örn: 5" value={form.condition_value} onChange={e => setForm(p => ({...p, condition_value: e.target.value}))} data-testid="rule-threshold-input" />
+                <label className="text-xs text-gray-500 mb-1 block">{t('cm.pages_NoShowAnalytics.esik_degeri')}</label>
+                <Input type="number" placeholder={t('cm.pages_NoShowAnalytics.orn_5')} value={form.condition_value} onChange={e => setForm(p => ({...p, condition_value: e.target.value}))} data-testid="rule-threshold-input" />
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Öneri Aksiyonu</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('cm.pages_NoShowAnalytics.oneri_aksiyonu')}</label>
                 <Select value={form.action_suggestion} onValueChange={v => setForm(p => ({...p, action_suggestion: v}))}>
-                  <SelectTrigger data-testid="rule-action-select"><SelectValue placeholder="Aksiyon seç" /></SelectTrigger>
+                  <SelectTrigger data-testid="rule-action-select"><SelectValue placeholder={t('cm.pages_NoShowAnalytics.aksiyon_sec')} /></SelectTrigger>
                   <SelectContent>
                     {ACTION_PRESETS.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
                   </SelectContent>
@@ -545,12 +547,12 @@ const RuleEngineTab = () => {
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">Kanal Filtresi (opsiyonel)</label>
-                <Input placeholder="örn: booking" value={form.channel_filter} onChange={e => setForm(p => ({...p, channel_filter: e.target.value}))} data-testid="rule-channel-input" />
+                <Input placeholder={t('cm.pages_NoShowAnalytics.orn_booking')} value={form.channel_filter} onChange={e => setForm(p => ({...p, channel_filter: e.target.value}))} data-testid="rule-channel-input" />
               </div>
             </div>
             <div className="flex gap-2">
-              <Button size="sm" onClick={createRule} data-testid="save-rule-btn">Kaydet</Button>
-              <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>İptal</Button>
+              <Button size="sm" onClick={createRule} data-testid="save-rule-btn">{t('cm.pages_NoShowAnalytics.kaydet')}</Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>{t('cm.pages_NoShowAnalytics.iptal')}</Button>
             </div>
           </CardContent>
         </Card>
@@ -559,7 +561,7 @@ const RuleEngineTab = () => {
       {/* Active rules */}
       <Card data-testid="active-rules-card">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-gray-700">Tanımlı Kurallar ({rules.length})</CardTitle>
+          <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.tanimli_kurallar')}{rules.length})</CardTitle>
         </CardHeader>
         <CardContent>
           {rules.length > 0 ? (
@@ -584,7 +586,7 @@ const RuleEngineTab = () => {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-400 py-4 text-center">Henüz kural tanımlanmadı</p>
+            <p className="text-sm text-gray-400 py-4 text-center">{t('cm.pages_NoShowAnalytics.henuz_kural_tanimlanmadi')}</p>
           )}
         </CardContent>
       </Card>
@@ -607,7 +609,7 @@ const RuleEngineTab = () => {
                     <Badge variant="destructive" className="text-xs">ALERT</Badge>
                   </div>
                   <p className="text-xs text-red-600 mt-1">
-                    Metrik: {a.metric_value} (eşik: {a.threshold}) → Öneri: <strong>{a.action_suggestion}</strong>
+                    Metrik: {a.metric_value} {t('cm.pages_NoShowAnalytics.esik')} {a.threshold}{t('cm.pages_NoShowAnalytics.oneri')} <strong>{a.action_suggestion}</strong>
                     {a.channel_filter ? ` [${a.channel_filter}]` : ''}
                   </p>
                 </div>
@@ -625,7 +627,7 @@ const RuleEngineTab = () => {
       {/* Trigger history */}
       <Card data-testid="trigger-history-card">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-gray-700">Tetikleme Geçmişi</CardTitle>
+          <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.tetikleme_gecmisi')}</CardTitle>
         </CardHeader>
         <CardContent>
           {history.filter(h => h.rule_name).length > 0 ? (
@@ -635,14 +637,14 @@ const RuleEngineTab = () => {
                   <Zap className="w-3 h-3 text-amber-500 flex-shrink-0" />
                   <span className="text-gray-500 w-24 flex-shrink-0">{(h.triggered_at || '').slice(0, 10)}</span>
                   <span className="font-medium text-gray-700 flex-1 truncate">{h.rule_name}</span>
-                  <span className="text-gray-500">değer: {h.metric_value}</span>
+                  <span className="text-gray-500">{t('cm.pages_NoShowAnalytics.deger')} {h.metric_value}</span>
                   <ChevronRight className="w-3 h-3 text-gray-400" />
                   <span className="text-amber-600 font-medium">{h.action_suggestion}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-400 py-4 text-center">Henüz tetikleme geçmişi yok</p>
+            <p className="text-sm text-gray-400 py-4 text-center">{t('cm.pages_NoShowAnalytics.henuz_tetikleme_gecmisi_yok')}</p>
           )}
         </CardContent>
       </Card>
@@ -678,10 +680,10 @@ const PredictionTab = () => {
         <Select value={daysAhead} onValueChange={setDaysAhead}>
           <SelectTrigger className="w-36" data-testid="pred-days-select"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="3">3 gün sonrası</SelectItem>
-            <SelectItem value="7">7 gün sonrası</SelectItem>
-            <SelectItem value="14">14 gün sonrası</SelectItem>
-            <SelectItem value="30">30 gün sonrası</SelectItem>
+            <SelectItem value="3">{t('cm.pages_NoShowAnalytics.3_gun_sonrasi')}</SelectItem>
+            <SelectItem value="7">{t('cm.pages_NoShowAnalytics.7_gun_sonrasi')}</SelectItem>
+            <SelectItem value="14">{t('cm.pages_NoShowAnalytics.14_gun_sonrasi')}</SelectItem>
+            <SelectItem value="30">{t('cm.pages_NoShowAnalytics.30_gun_sonrasi')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -690,7 +692,7 @@ const PredictionTab = () => {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card className="border-l-4 border-l-red-500" data-testid="pred-high-risk">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-medium text-gray-500 uppercase">Yüksek Risk</p>
+            <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.yuksek_risk')}</p>
             <p className="text-2xl font-bold text-red-600 mt-1">{data.summary?.high_risk || 0}</p>
           </CardContent>
         </Card>
@@ -702,13 +704,13 @@ const PredictionTab = () => {
         </Card>
         <Card className="border-l-4 border-l-green-500" data-testid="pred-low-risk">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-medium text-gray-500 uppercase">Düşük Risk</p>
+            <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.dusuk_risk')}</p>
             <p className="text-2xl font-bold text-green-600 mt-1">{data.summary?.low_risk || 0}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-indigo-500" data-testid="pred-potential-loss">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs font-medium text-gray-500 uppercase">Potansiyel Kayıp</p>
+            <p className="text-xs font-medium text-gray-500 uppercase">{t('cm.pages_NoShowAnalytics.potansiyel_kayip')}</p>
             <p className="text-2xl font-bold text-indigo-600 mt-1">{data.summary?.potential_loss?.toLocaleString('tr-TR') || 0} TL</p>
           </CardContent>
         </Card>
@@ -719,7 +721,7 @@ const PredictionTab = () => {
         <CardHeader className="pb-2">
           <div className="flex items-center gap-2">
             <Brain className="w-4 h-4 text-indigo-500" />
-            <CardTitle className="text-sm font-semibold text-gray-700">Rezervasyon Risk Tahminleri</CardTitle>
+            <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.rezervasyon_risk_tahminleri')}</CardTitle>
           </div>
         </CardHeader>
         <CardContent>
@@ -729,11 +731,11 @@ const PredictionTab = () => {
                 <thead>
                   <tr className="border-b text-left text-xs text-gray-500 uppercase tracking-wide">
                     <th className="pb-2 pr-3">Risk</th>
-                    <th className="pb-2 pr-3">Misafir</th>
+                    <th className="pb-2 pr-3">{t('cm.pages_NoShowAnalytics.misafir')}</th>
                     <th className="pb-2 pr-3">Kanal</th>
                     <th className="pb-2 pr-3">Check-in</th>
-                    <th className="pb-2 pr-3">Oda Tipi</th>
-                    <th className="pb-2 pr-3 text-right">Tutar</th>
+                    <th className="pb-2 pr-3">{t('cm.pages_NoShowAnalytics.oda_tipi')}</th>
+                    <th className="pb-2 pr-3 text-right">{t('cm.pages_NoShowAnalytics.tutar')}</th>
                     <th className="pb-2 text-right">Skor</th>
                   </tr>
                 </thead>
@@ -767,7 +769,7 @@ const PredictionTab = () => {
               </table>
             </div>
           ) : (
-            <p className="text-sm text-gray-400 py-6 text-center">Yaklaşan rezervasyon bulunamadı</p>
+            <p className="text-sm text-gray-400 py-6 text-center">{t('cm.pages_NoShowAnalytics.yaklasan_rezervasyon_bulunamadi')}</p>
           )}
         </CardContent>
       </Card>
@@ -777,7 +779,7 @@ const PredictionTab = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <Card data-testid="hist-channel-rates-card">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold text-gray-700">Kanal Bazlı Geçmiş No-Show Oranı</CardTitle>
+              <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.kanal_bazli_gecmis_no_show_orani')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
@@ -796,7 +798,7 @@ const PredictionTab = () => {
 
           <Card data-testid="hist-dow-rates-card">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold text-gray-700">Gün Bazlı Geçmiş No-Show Oranı</CardTitle>
+              <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_NoShowAnalytics.gun_bazli_gecmis_no_show_orani')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
@@ -853,7 +855,7 @@ const NoShowAnalytics = ({ user, tenant, onLogout, embedded = false }) => {
             </div>
             <div>
               <h1 className="text-xl font-bold text-gray-900">No-Show & Gelir Analitik</h1>
-              <p className="text-sm text-gray-500">Kanal kaybı, overbooking haritası, kurallar ve tahminler</p>
+              <p className="text-sm text-gray-500">{t('cm.pages_NoShowAnalytics.kanal_kaybi_overbooking_haritasi_kuralla')}</p>
             </div>
           </div>
           {activeTab !== 'rules' && activeTab !== 'prediction' && (
@@ -862,10 +864,10 @@ const NoShowAnalytics = ({ user, tenant, onLogout, embedded = false }) => {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="7">Son 7 gün</SelectItem>
-                <SelectItem value="30">Son 30 gün</SelectItem>
-                <SelectItem value="90">Son 90 gün</SelectItem>
-                <SelectItem value="365">Son 1 yıl</SelectItem>
+                <SelectItem value="7">{t('cm.pages_NoShowAnalytics.son_7_gun')}</SelectItem>
+                <SelectItem value="30">{t('cm.pages_NoShowAnalytics.son_30_gun')}</SelectItem>
+                <SelectItem value="90">{t('cm.pages_NoShowAnalytics.son_90_gun')}</SelectItem>
+                <SelectItem value="365">{t('cm.pages_NoShowAnalytics.son_1_yil')}</SelectItem>
               </SelectContent>
             </Select>
           )}

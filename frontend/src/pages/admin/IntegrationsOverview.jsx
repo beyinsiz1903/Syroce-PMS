@@ -13,6 +13,7 @@ import {
   ExternalLink, ShieldCheck, AlertCircle, Settings2,
   ArrowRight, Info,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const CATEGORY_TONE = {
   ai: "bg-indigo-50 text-indigo-700 border-indigo-200",
@@ -47,6 +48,7 @@ function categoryRank(cat) {
 }
 
 function CategoryBadge({ category, label }) {
+  const { t } = useTranslation();
   const tone = CATEGORY_TONE[category] || "bg-slate-50 text-slate-600 border-slate-200";
   return (
     <span
@@ -89,9 +91,9 @@ function IntegrationCard({ item, status }) {
             {item.per_tenant && (
               <span
                 className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border bg-slate-100 text-slate-600 border-slate-300"
-                title="Bu entegrasyon her otelin kendi panelinden ayrı ayrı bağlanır."
+                title={t('cm.pages_admin_IntegrationsOverview.bu_entegrasyon_her_otelin_kendi_panelind')}
               >
-                Otel-başına
+                {t('cm.pages_admin_IntegrationsOverview.otel_basina')}
               </span>
             )}
           </div>
@@ -99,19 +101,19 @@ function IntegrationCard({ item, status }) {
         {isReady && (
           <CheckCircle2
             className="w-5 h-5 text-emerald-600 flex-shrink-0"
-            aria-label="Hazır"
+            aria-label={t('cm.pages_admin_IntegrationsOverview.hazir')}
           />
         )}
         {isNeeds && (
           <KeyRound
             className="w-5 h-5 text-amber-600 flex-shrink-0"
-            aria-label="API anahtarı bekleniyor"
+            aria-label={t('cm.pages_admin_IntegrationsOverview.api_anahtari_bekleniyor')}
           />
         )}
         {isDev && (
           <Wrench
             className="w-5 h-5 text-slate-500 flex-shrink-0"
-            aria-label="Geliştirme aşamasında"
+            aria-label={t('cm.pages_admin_IntegrationsOverview.gelistirme_asamasinda')}
           />
         )}
       </div>
@@ -123,7 +125,7 @@ function IntegrationCard({ item, status }) {
       {item.per_tenant && (
         <div className="flex items-start gap-1.5 text-[11px] text-slate-500 bg-slate-50 px-2 py-1.5 rounded">
           <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-          <span>Otele özel kimlik bilgileri (her otel kendi panelinden girer).</span>
+          <span>{t('cm.pages_admin_IntegrationsOverview.otele_ozel_kimlik_bilgileri_her_otel_ken')}</span>
         </div>
       )}
 
@@ -161,8 +163,8 @@ function IntegrationCard({ item, status }) {
 
       <div className="flex items-center justify-between pt-2 mt-auto border-t border-slate-100">
         {item.module_key ? (
-          <span className="text-[10px] font-mono text-slate-400" title="Otele atama için modül anahtarı">
-            modül: {item.module_key}
+          <span className="text-[10px] font-mono text-slate-400" title={t('cm.pages_admin_IntegrationsOverview.otele_atama_icin_modul_anahtari')}>
+            {t('cm.pages_admin_IntegrationsOverview.modul')} {item.module_key}
           </span>
         ) : <span />}
         <div className="flex items-center gap-1">
@@ -184,7 +186,7 @@ function IntegrationCard({ item, status }) {
               aria-label={`${item.name} için API anahtarlarını gir`}
             >
               <Button size="sm" variant="default" className="h-7 text-xs">
-                Anahtarları Gir
+                {t('cm.pages_admin_IntegrationsOverview.anahtarlari_gir')}
                 <ArrowRight className="w-3 h-3 ml-1" aria-hidden="true" />
               </Button>
             </Link>
@@ -196,7 +198,7 @@ function IntegrationCard({ item, status }) {
             >
               <Button size="sm" variant="outline" className="h-7 text-xs">
                 <Settings2 className="w-3 h-3 mr-1" aria-hidden="true" />
-                Yönet
+                {t('cm.pages_admin_IntegrationsOverview.yonet')}
               </Button>
             </Link>
           )}
@@ -262,19 +264,19 @@ export default function IntegrationsOverview() {
     <div className="p-4 lg:p-6 max-w-[1600px] mx-auto">
       <PageHeader
         icon={Plug}
-        title="Entegrasyon Genel Bakış"
-        subtitle="Tüm 3. parti servislerin kod ve API anahtarı durumu. Bir anahtar girildiğinde entegrasyon otomatik olarak Hazır sütununa geçer."
+        title={t('cm.pages_admin_IntegrationsOverview.entegrasyon_genel_bakis')}
+        subtitle={t('cm.pages_admin_IntegrationsOverview.tum_3_parti_servislerin_kod_ve_api_anaht')}
         actions={
           <>
             <Link to="/admin/integration-credentials">
               <Button variant="outline" size="sm">
                 <KeyRound className="w-4 h-4 mr-1.5" />
-                Anahtar Yönetimi
+                {t('cm.pages_admin_IntegrationsOverview.anahtar_yonetimi')}
               </Button>
             </Link>
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
-              Yenile
+              {t('cm.pages_admin_IntegrationsOverview.yenile')}
             </Button>
           </>
         }
@@ -283,14 +285,14 @@ export default function IntegrationsOverview() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <KpiCard
           icon={ShieldCheck}
-          label="Toplam Entegrasyon"
+          label={t('cm.pages_admin_IntegrationsOverview.toplam_entegrasyon')}
           value={total}
           sub={`${readyPct}% kullanıma hazır`}
           intent="default"
         />
         <KpiCard
           icon={CheckCircle2}
-          label="Hazır"
+          label={t('cm.pages_admin_IntegrationsOverview.hazir_3ae38')}
           value={totals.ready || 0}
           sub="Otellere atanabilir"
           intent="success"
@@ -304,7 +306,7 @@ export default function IntegrationsOverview() {
         />
         <KpiCard
           icon={Wrench}
-          label="Geliştirmede"
+          label={t('cm.pages_admin_IntegrationsOverview.gelistirmede')}
           value={totals.in_development || 0}
           sub="Kod henüz tamamlanmadı"
           intent="neutral"
@@ -314,11 +316,11 @@ export default function IntegrationsOverview() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* HAZIR */}
         <div className="flex flex-col">
-          <ColumnHeader icon={CheckCircle2} title="Hazır" count={ready.length} intent="success" />
+          <ColumnHeader icon={CheckCircle2} title={t('cm.pages_admin_IntegrationsOverview.hazir_3ae38')} count={ready.length} intent="success" />
           <div className="border border-t-0 border-emerald-200 rounded-b-md p-3 space-y-3 bg-white min-h-[200px]">
-            {loading && <div className="text-xs text-slate-400">Yükleniyor…</div>}
+            {loading && <div className="text-xs text-slate-400">{t('cm.pages_admin_IntegrationsOverview.yukleniyor')}</div>}
             {!loading && ready.length === 0 && (
-              <div className="text-xs text-slate-400 text-center py-8">Henüz hazır entegrasyon yok.</div>
+              <div className="text-xs text-slate-400 text-center py-8">{t('cm.pages_admin_IntegrationsOverview.henuz_hazir_entegrasyon_yok')}</div>
             )}
             {ready.map((it) => (
               <IntegrationCard key={it.key} item={it} status="ready" />
@@ -333,7 +335,7 @@ export default function IntegrationsOverview() {
             {!loading && needs.length === 0 && (
               <div className="text-xs text-slate-400 text-center py-8">
                 <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                Tüm anahtarlar tanımlı.
+                {t('cm.pages_admin_IntegrationsOverview.tum_anahtarlar_tanimli')}
               </div>
             )}
             {needs.map((it) => (
@@ -344,10 +346,10 @@ export default function IntegrationsOverview() {
 
         {/* GELİŞTİRMEDE */}
         <div className="flex flex-col">
-          <ColumnHeader icon={Wrench} title="Geliştirme Sürecinde" count={dev.length} intent="neutral" />
+          <ColumnHeader icon={Wrench} title={t('cm.pages_admin_IntegrationsOverview.gelistirme_surecinde')} count={dev.length} intent="neutral" />
           <div className="border border-t-0 border-slate-200 rounded-b-md p-3 space-y-3 bg-slate-50/30 min-h-[200px]">
             {!loading && dev.length === 0 && (
-              <div className="text-xs text-slate-400 text-center py-8">Bekleyen geliştirme yok.</div>
+              <div className="text-xs text-slate-400 text-center py-8">{t('cm.pages_admin_IntegrationsOverview.bekleyen_gelistirme_yok')}</div>
             )}
             {dev.map((it) => (
               <IntegrationCard key={it.key} item={it} status="dev" />
@@ -359,9 +361,7 @@ export default function IntegrationsOverview() {
       <div className="mt-6 p-3 bg-sky-50 border border-sky-200 rounded text-xs text-sky-900 flex items-start gap-2">
         <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
         <div>
-          <strong>Otomatik geçiş:</strong> "API Bilgileri Gerekli" sütunundaki bir entegrasyona Anahtar Yönetimi'nden eksik
-          değerleri girdiğinizde, sayfayı yenilediğinizde otomatik olarak "Hazır" sütununa düşer. Otele özel ayar gereken
-          entegrasyonlar (Exely, HotelRunner, WhatsApp) burada hazır görünür — her otel kendi panelinden bağlar.
+          <strong>{t('cm.pages_admin_IntegrationsOverview.otomatik_gecis')}</strong> {t('cm.pages_admin_IntegrationsOverview.api_bilgileri_gerekli_sutunundaki_bir_en')}
         </div>
       </div>
     </div>

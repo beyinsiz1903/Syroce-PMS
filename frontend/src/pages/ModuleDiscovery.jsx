@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { NAV_ITEMS } from "@/config/navItems";
 import { getRouteConfigs } from "@/routes/routeDefinitions";
+import { useTranslation } from 'react-i18next';
 
 /**
  * Module Discovery
@@ -28,6 +29,7 @@ import { getRouteConfigs } from "@/routes/routeDefinitions";
  * reachable. Purely client-side — no backend endpoint required.
  */
 export default function ModuleDiscovery({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("hidden"); // hidden | all | visible
 
@@ -118,15 +120,15 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
     <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
       <PageHeader
         icon={Compass}
-        title="Modül Keşfi"
-        subtitle="Tanımlı tüm rotalar ve sidebar görünürlük durumu — yetim sayfaları (menüsüz) buradan keşfedin"
+        title={t('cm.pages_ModuleDiscovery.modul_kesfi')}
+        subtitle={t('cm.pages_ModuleDiscovery.tanimli_tum_rotalar_ve_sidebar_gorunurlu')}
       />
 
       {/* Summary KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <KpiCard
           icon={Compass}
-          label="Toplam rota"
+          label={t('cm.pages_ModuleDiscovery.toplam_rota')}
           value={totals.total}
           intent="info"
           active={filter === "all"}
@@ -134,7 +136,7 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
         />
         <KpiCard
           icon={MenuIcon}
-          label="Menüde görünür"
+          label={t('cm.pages_ModuleDiscovery.menude_gorunur')}
           value={totals.inNav}
           intent="success"
           active={filter === "visible"}
@@ -142,7 +144,7 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
         />
         <KpiCard
           icon={EyeOff}
-          label="Gizli (menüsüz)"
+          label={t('cm.pages_ModuleDiscovery.gizli_menusuz')}
           value={totals.hidden}
           intent="warning"
           highlight={totals.hidden > 0}
@@ -167,11 +169,11 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
           <Tabs value={filter} onValueChange={setFilter}>
             <TabsList>
               <TabsTrigger value="hidden">Gizli</TabsTrigger>
-              <TabsTrigger value="all">Tümü</TabsTrigger>
-              <TabsTrigger value="visible">Menüde</TabsTrigger>
+              <TabsTrigger value="all">{t('cm.pages_ModuleDiscovery.tumu')}</TabsTrigger>
+              <TabsTrigger value="visible">{t('cm.pages_ModuleDiscovery.menude')}</TabsTrigger>
             </TabsList>
           </Tabs>
-          <div className="text-xs text-slate-500">{filtered.length} sonuç</div>
+          <div className="text-xs text-slate-500">{filtered.length} {t('cm.pages_ModuleDiscovery.sonuc')}</div>
         </CardContent>
       </Card>
 
@@ -204,9 +206,9 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
                     {r.type === "public" ? (
                       <Globe className="w-4 h-4 text-indigo-500 flex-shrink-0" aria-label="Public route" />
                     ) : r.type === "module" ? (
-                      <Lock className="w-4 h-4 text-indigo-600 flex-shrink-0" aria-label="Modül korumalı" />
+                      <Lock className="w-4 h-4 text-indigo-600 flex-shrink-0" aria-label={t('cm.pages_ModuleDiscovery.modul_korumali')} />
                     ) : (
-                      <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" aria-label="Korumalı" />
+                      <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" aria-label={t('cm.pages_ModuleDiscovery.korumali')} />
                     )}
                     <code className="text-xs font-mono text-slate-700 flex-shrink-0">{r.path}</code>
                     {r.navLabel && (
@@ -224,7 +226,7 @@ export default function ModuleDiscovery({ user, tenant, onLogout }) {
                       </Badge>
                     )}
                     {r.inNav ? (
-                      <StatusBadge intent="success">menüde</StatusBadge>
+                      <StatusBadge intent="success">{t('cm.pages_ModuleDiscovery.menude_f3f35')}</StatusBadge>
                     ) : (
                       <StatusBadge intent="warning">gizli</StatusBadge>
                     )}

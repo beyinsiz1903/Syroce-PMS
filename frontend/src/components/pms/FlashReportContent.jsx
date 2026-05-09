@@ -11,6 +11,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip
 } from 'recharts';
 import { useCurrency } from '@/context/CurrencyContext';
+import { useTranslation } from 'react-i18next';
 
 const PIE_COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#6366f1'];
 
@@ -22,6 +23,7 @@ const FlashReportContent = ({
   departures,
   inhouse,
 }) => {
+  const { t } = useTranslation();
   const { format: fmtMoney, symbol: currencySymbol, code: currencyCode } = useCurrency();
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [reportData, setReportData] = useState(null);
@@ -155,7 +157,7 @@ const FlashReportContent = ({
         <CardContent className="p-6 text-center space-y-3">
           <AlertTriangle className="w-10 h-10 mx-auto text-red-500" />
           <div>
-            <p className="text-base font-semibold text-red-800">Rapor yüklenemedi</p>
+            <p className="text-base font-semibold text-red-800">{t('cm.components_pms_FlashReportContent.rapor_yuklenemedi')}</p>
             <p className="text-sm text-red-700 mt-1">{error}</p>
           </div>
           <Button variant="outline" size="sm" onClick={loadFlashReport} disabled={loading}>
@@ -169,7 +171,7 @@ const FlashReportContent = ({
   if (!reportData) {
     return (
       <div className="text-center py-12 text-gray-500 text-sm" data-testid="flash-empty">
-        Henüz veri yok.
+        {t('cm.components_pms_FlashReportContent.henuz_veri_yok')}
       </div>
     );
   }
@@ -187,9 +189,9 @@ const FlashReportContent = ({
       {/* Toolbar: tarih + yazdır + yenile */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-gray-600">
-          Tarih: <span className="font-medium text-gray-900">{d.date}</span>
+          {t('cm.components_pms_FlashReportContent.tarih')} <span className="font-medium text-gray-900">{d.date}</span>
           {usingFallback && (
-            <span className="ml-2 text-xs text-amber-600">(çevrimdışı veri — anlık değil)</span>
+            <span className="ml-2 text-xs text-amber-600">{t('cm.components_pms_FlashReportContent.cevrimdisi_veri_anlik_degil')}</span>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -203,10 +205,10 @@ const FlashReportContent = ({
             />
           )}
           <Button variant="outline" size="sm" onClick={loadFlashReport} disabled={loading} data-testid="flash-refresh">
-            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Yenile
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> {t('cm.components_pms_FlashReportContent.yenile')}
           </Button>
           <Button variant="outline" size="sm" onClick={printReport} data-testid="flash-print">
-            <Printer className="w-4 h-4 mr-1.5" /> Yazdır
+            <Printer className="w-4 h-4 mr-1.5" /> {t('cm.components_pms_FlashReportContent.yazdir')}
           </Button>
         </div>
       </div>
@@ -217,7 +219,7 @@ const FlashReportContent = ({
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-blue-700 font-medium">Doluluk Oranı</p>
+                <p className="text-xs text-blue-700 font-medium">{t('cm.components_pms_FlashReportContent.doluluk_orani')}</p>
                 <p className="text-2xl font-bold text-blue-900">{(d.occupancy?.rate || 0).toFixed(1)}%</p>
                 <p className="text-xs text-blue-600 mt-0.5">{d.occupancy?.occupied || 0}/{d.occupancy?.total || 0} oda</p>
               </div>
@@ -231,7 +233,7 @@ const FlashReportContent = ({
               <div>
                 <p className="text-xs text-emerald-700 font-medium">ADR</p>
                 <p className="text-2xl font-bold text-emerald-900">{fmtMoney(d.kpi?.adr || 0)}</p>
-                <p className="text-xs text-emerald-600 mt-0.5">Ort. Oda Fiyatı</p>
+                <p className="text-xs text-emerald-600 mt-0.5">{t('cm.components_pms_FlashReportContent.ort_oda_fiyati')}</p>
               </div>
               <DollarSign className="w-7 h-7 text-emerald-500" />
             </div>
@@ -243,7 +245,7 @@ const FlashReportContent = ({
               <div>
                 <p className="text-xs text-indigo-700 font-medium">RevPAR</p>
                 <p className="text-2xl font-bold text-indigo-900">{fmtMoney(d.kpi?.revpar || 0)}</p>
-                <p className="text-xs text-indigo-600 mt-0.5">/ Mevcut Oda</p>
+                <p className="text-xs text-indigo-600 mt-0.5">{t('cm.components_pms_FlashReportContent.mevcut_oda')}</p>
               </div>
               <TrendingUp className="w-7 h-7 text-indigo-500" />
             </div>
@@ -255,7 +257,7 @@ const FlashReportContent = ({
               <div>
                 <p className="text-xs text-amber-700 font-medium">TRevPAR</p>
                 <p className="text-2xl font-bold text-amber-900">{fmtMoney(trevpar)}</p>
-                <p className="text-xs text-amber-600 mt-0.5">Toplam / Mevcut Oda</p>
+                <p className="text-xs text-amber-600 mt-0.5">{t('cm.components_pms_FlashReportContent.toplam_mevcut_oda')}</p>
               </div>
               <Sparkles className="w-7 h-7 text-amber-500" />
             </div>
@@ -268,14 +270,14 @@ const FlashReportContent = ({
         <Card data-testid="flash-ops-arrivals">
           <CardContent className="p-3 text-center">
             <LogIn className="w-5 h-5 mx-auto text-emerald-500" />
-            <p className="text-[11px] text-gray-500 mt-1">Girişler</p>
+            <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_FlashReportContent.girisler')}</p>
             <p className="text-xl font-bold text-emerald-700">{d.operations?.arrivals || 0}</p>
           </CardContent>
         </Card>
         <Card data-testid="flash-ops-departures">
           <CardContent className="p-3 text-center">
             <LogOut className="w-5 h-5 mx-auto text-blue-500" />
-            <p className="text-[11px] text-gray-500 mt-1">Çıkışlar</p>
+            <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_FlashReportContent.cikislar')}</p>
             <p className="text-xl font-bold text-blue-700">{d.operations?.departures || 0}</p>
           </CardContent>
         </Card>
@@ -303,7 +305,7 @@ const FlashReportContent = ({
         <Card data-testid="flash-ops-cancel">
           <CardContent className="p-3 text-center">
             <XCircle className="w-5 h-5 mx-auto text-amber-500" />
-            <p className="text-[11px] text-gray-500 mt-1">İptal</p>
+            <p className="text-[11px] text-gray-500 mt-1">{t('cm.components_pms_FlashReportContent.iptal')}</p>
             <p className="text-xl font-bold text-amber-700">{d.operations?.cancellations || 0}</p>
           </CardContent>
         </Card>
@@ -314,7 +316,7 @@ const FlashReportContent = ({
         <Card data-testid="flash-departments">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-emerald-500" /> Departman Bazlı Gelir
+              <DollarSign className="w-4 h-4 text-emerald-500" /> {t('cm.components_pms_FlashReportContent.departman_bazli_gelir')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -355,7 +357,7 @@ const FlashReportContent = ({
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Toplam Gelir</span>
+              <span className="text-sm text-gray-600">{t('cm.components_pms_FlashReportContent.toplam_gelir')}</span>
               <span className="text-lg font-bold text-gray-900">{fmtMoney(totalRev)}</span>
             </div>
             <div className="flex items-center justify-between bg-emerald-50 px-3 py-2 rounded">
@@ -363,12 +365,12 @@ const FlashReportContent = ({
               <span className="text-lg font-bold text-emerald-700">{fmtMoney(d.revenue?.collected || 0)}</span>
             </div>
             <div className="flex items-center justify-between bg-red-50 px-3 py-2 rounded">
-              <span className="text-sm text-red-700 font-medium">Açık Bakiye</span>
+              <span className="text-sm text-red-700 font-medium">{t('cm.components_pms_FlashReportContent.acik_bakiye')}</span>
               <span className="text-lg font-bold text-red-700">{fmtMoney(d.revenue?.outstanding || 0)}</span>
             </div>
             <div className="pt-2">
               <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                <span>Tahsilat Oranı</span>
+                <span>{t('cm.components_pms_FlashReportContent.tahsilat_orani')}</span>
                 <span className="font-medium">{collectionPct.toFixed(1)}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
@@ -401,7 +403,7 @@ const FlashReportContent = ({
               {(d.operations?.cancellations || 0) > 0 && (
                 <div className="flex items-center gap-2 text-amber-700">
                   <XCircle className="w-4 h-4" />
-                  <span className="font-semibold">{d.operations.cancellations} İptal</span>
+                  <span className="font-semibold">{d.operations.cancellations} {t('cm.components_pms_FlashReportContent.iptal_25174')}</span>
                 </div>
               )}
             </div>

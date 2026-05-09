@@ -141,7 +141,7 @@ export default function ReconciliationTab(props) {
                 ) : (
                   <div className="text-center py-8">
                     <CheckCircle className="w-10 h-10 mx-auto text-emerald-500/50 mb-2" />
-                    <p className="text-slate-500 text-sm">Açık reconciliation sorunu yok</p>
+                    <p className="text-slate-500 text-sm">{t('cm.components_integrationhub_tabs_ReconciliationTab.acik_reconciliation_sorunu_yok')}</p>
                   </div>
                 )}
               </CardContent>

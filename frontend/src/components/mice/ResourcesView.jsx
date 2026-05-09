@@ -7,8 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Plus, Trash2 } from 'lucide-react';
 import { Field, Modal } from './_shared';
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 const ResourcesView = ({ resources, reload }) => {
+  const { t } = useTranslation();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', type: 'av', total_stock: 1, unit: 'unit',
                                      unit_price: 0, currency: 'TRY' });
@@ -33,7 +35,7 @@ const ResourcesView = ({ resources, reload }) => {
       <div className="flex justify-between items-center mb-3">
         <h3 className="font-semibold">Kaynak Envanteri (AV / Dekor)</h3>
         <Button size="sm" onClick={() => setShowForm(true)}>
-          <Plus className="w-3 h-3 mr-1" /> Yeni Kaynak
+          <Plus className="w-3 h-3 mr-1" /> {t('cm.components_mice_ResourcesView.yeni_kaynak')}
         </Button>
       </div>
       {resources.length === 0 && <p className="text-center text-gray-500 p-4">Envanter yok.</p>}
@@ -62,7 +64,7 @@ const ResourcesView = ({ resources, reload }) => {
       </div>
 
       {showForm && (
-        <Modal title="Yeni Kaynak" onClose={() => setShowForm(false)}>
+        <Modal title={t('cm.components_mice_ResourcesView.yeni_kaynak_1ed22')} onClose={() => setShowForm(false)}>
           <form onSubmit={create} className="space-y-2">
             <Field label="Ad"><Input required value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
@@ -75,14 +77,14 @@ const ResourcesView = ({ resources, reload }) => {
               </Field>
               <Field label="Birim"><Input value={form.unit}
                 onChange={(e) => setForm({ ...form, unit: e.target.value })} /></Field>
-              <Field label="Toplam Stok"><Input type="number" required value={form.total_stock}
+              <Field label={t('cm.components_mice_ResourcesView.toplam_stok')}><Input type="number" required value={form.total_stock}
                 onChange={(e) => setForm({ ...form, total_stock: +e.target.value })} /></Field>
               <Field label="Birim ₺"><Input type="number" value={form.unit_price}
                 onChange={(e) => setForm({ ...form, unit_price: +e.target.value })} /></Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>İptal</Button>
-              <Button type="submit">Oluştur</Button>
+              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>{t('cm.components_mice_ResourcesView.iptal')}</Button>
+              <Button type="submit">{t('cm.components_mice_ResourcesView.olustur')}</Button>
             </div>
           </form>
         </Modal>

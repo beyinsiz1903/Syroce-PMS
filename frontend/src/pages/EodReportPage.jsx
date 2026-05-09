@@ -13,10 +13,12 @@ import {
   AlertTriangle, CheckCircle2, TrendingUp, DollarSign, ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 function KpiCard({ label, value, sub, accent = 'slate', icon: Icon, onClick }) {
+  const { t } = useTranslation();
   const tone = {
     slate: 'border-slate-200 bg-white',
     amber: 'border-amber-300 bg-amber-50/60',
@@ -106,11 +108,10 @@ function OpenFoliosDialog({ open, onClose, businessDate }) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-amber-600" />
-            Açık Folyolar
+            {t('cm.pages_EodReportPage.acik_folyolar')}
           </DialogTitle>
           <DialogDescription>
-            Toplam {total} açık folyo. Çıkışı geçmiş olanlar gün sonundan önce kapatılmalıdır;
-            in-house misafirler için açık olması normaldir.
+            {t('cm.pages_EodReportPage.toplam')} {total} {t('cm.pages_EodReportPage.acik_folyo_cikisi_gecmis_olanlar_gun_son')}
           </DialogDescription>
         </DialogHeader>
 
@@ -121,7 +122,7 @@ function OpenFoliosDialog({ open, onClose, businessDate }) {
         ) : error ? (
           <div className="py-8 text-center">
             <AlertTriangle className="inline w-8 h-8 text-rose-500 mb-2" />
-            <div className="text-sm text-rose-700 mb-3">Folyolar yüklenemedi: {error}</div>
+            <div className="text-sm text-rose-700 mb-3">{t('cm.pages_EodReportPage.folyolar_yuklenemedi')} {error}</div>
             <Button
               variant="outline"
               size="sm"
@@ -134,7 +135,7 @@ function OpenFoliosDialog({ open, onClose, businessDate }) {
         ) : folios.length === 0 ? (
           <div className="py-12 text-center text-slate-500">
             <CheckCircle2 className="inline w-8 h-8 text-emerald-500 mb-2" /><br />
-            Açık folyo yok.
+            {t('cm.pages_EodReportPage.acik_folyo_yok')}
           </div>
         ) : (
           <div className="max-h-[60vh] overflow-auto">
@@ -142,9 +143,9 @@ function OpenFoliosDialog({ open, onClose, businessDate }) {
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Badge className="bg-rose-100 text-rose-800 border-rose-200">
-                    Çıkışı Geçmiş — {overdue.length}
+                    {t('cm.pages_EodReportPage.cikisi_gecmis')} {overdue.length}
                   </Badge>
-                  <span className="text-xs text-slate-500">öncelikli inceleme</span>
+                  <span className="text-xs text-slate-500">{t('cm.pages_EodReportPage.oncelikli_inceleme')}</span>
                 </div>
                 <FolioTable rows={overdue} highlight />
               </div>
@@ -155,7 +156,7 @@ function OpenFoliosDialog({ open, onClose, businessDate }) {
                   <Badge className="bg-sky-100 text-sky-800 border-sky-200">
                     Tesiste — {inHouse.length}
                   </Badge>
-                  <span className="text-xs text-slate-500">çıkışta otomatik kapanır</span>
+                  <span className="text-xs text-slate-500">{t('cm.pages_EodReportPage.cikista_otomatik_kapanir')}</span>
                 </div>
                 <FolioTable rows={inHouse} />
               </div>
@@ -173,11 +174,11 @@ function FolioTable({ rows, highlight = false }) {
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-slate-600 text-xs">
           <tr>
-            <th className="text-left px-3 py-2 font-medium">Oda</th>
-            <th className="text-left px-3 py-2 font-medium">Misafir</th>
-            <th className="text-left px-3 py-2 font-medium">Giriş</th>
-            <th className="text-left px-3 py-2 font-medium">Çıkış</th>
-            <th className="text-right px-3 py-2 font-medium">Bakiye</th>
+            <th className="text-left px-3 py-2 font-medium">{t('cm.pages_EodReportPage.oda')}</th>
+            <th className="text-left px-3 py-2 font-medium">{t('cm.pages_EodReportPage.misafir')}</th>
+            <th className="text-left px-3 py-2 font-medium">{t('cm.pages_EodReportPage.giris')}</th>
+            <th className="text-left px-3 py-2 font-medium">{t('cm.pages_EodReportPage.cikis')}</th>
+            <th className="text-right px-3 py-2 font-medium">{t('cm.pages_EodReportPage.bakiye')}</th>
             <th className="text-left px-3 py-2 font-medium">Folyo</th>
           </tr>
         </thead>
@@ -218,7 +219,7 @@ function ProgressKpi({ label, actual, expected, accent = 'sky' }) {
       <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
         <div className={`${barColor} h-full transition-all`} style={{ width: `${pct}%` }} />
       </div>
-      <div className="text-[11px] text-slate-500 mt-1">{pct}% tamamlandı</div>
+      <div className="text-[11px] text-slate-500 mt-1">{pct}{t('cm.pages_EodReportPage.tamamlandi')}</div>
     </div>
   );
 }
@@ -294,14 +295,14 @@ export default function EodReportPage({ user, tenant, onLogout }) {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2 text-slate-900">
-              <FileText className="w-6 h-6 text-amber-600" /> Gün Sonu Raporu
+              <FileText className="w-6 h-6 text-amber-600" /> {t('cm.pages_EodReportPage.gun_sonu_raporu')}
             </h1>
             <p className="text-sm text-slate-500 mt-1">
               {new Date(businessDate).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric', weekday: 'long' })}
               {' · '}
               {data?.audit_status === 'completed'
-                ? <span className="text-emerald-700 font-medium">Audit Tamamlandı</span>
-                : <span className="text-amber-700 font-medium">Audit Henüz Yapılmadı</span>}
+                ? <span className="text-emerald-700 font-medium">{t('cm.pages_EodReportPage.audit_tamamlandi')}</span>
+                : <span className="text-amber-700 font-medium">{t('cm.pages_EodReportPage.audit_henuz_yapilmadi')}</span>}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -315,12 +316,12 @@ export default function EodReportPage({ user, tenant, onLogout }) {
           <div className="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-lg p-3">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div className="text-sm text-amber-900">
-              <div className="font-semibold">Kapanmamış kalem var.</div>
+              <div className="font-semibold">{t('cm.pages_EodReportPage.kapanmamis_kalem_var')}</div>
               <div className="text-amber-800 mt-0.5">
-                {data.open_folios > 0 && <span>{data.open_folios} açık folyo</span>}
+                {data.open_folios > 0 && <span>{data.open_folios} {t('cm.pages_EodReportPage.acik_folyo')}</span>}
                 {data.open_folios > 0 && data.open_handovers > 0 && <span> · </span>}
-                {data.open_handovers > 0 && <span>{data.open_handovers} onaylanmamış vardiya devri</span>}
-                . Gün sonu kapatılmadan önce tamamlanmalıdır.
+                {data.open_handovers > 0 && <span>{data.open_handovers} {t('cm.pages_EodReportPage.onaylanmamis_vardiya_devri')}</span>}
+                {t('cm.pages_EodReportPage.gun_sonu_kapatilmadan_once_tamamlanmalid')}
               </div>
             </div>
           </div>
@@ -340,7 +341,7 @@ export default function EodReportPage({ user, tenant, onLogout }) {
                 icon={TrendingUp}
               />
               <KpiCard
-                label="Toplam Gelir"
+                label={t('cm.pages_EodReportPage.toplam_gelir')}
                 value={`${(data.revenue_total || 0).toLocaleString('tr-TR')} ₺`}
                 sub={`Ödeme ${(data.payments_total || 0).toLocaleString('tr-TR')} ₺ · Ekstra ${(data.extras_total || 0).toLocaleString('tr-TR')} ₺`}
                 accent="emerald"
@@ -350,16 +351,16 @@ export default function EodReportPage({ user, tenant, onLogout }) {
 
             {/* Operasyonel blok — yatay küçük */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <ProgressKpi label="Giriş" actual={data.actual_checkins} expected={data.arrivals} />
-              <ProgressKpi label="Çıkış" actual={data.actual_checkouts} expected={data.departures} />
+              <ProgressKpi label={t('cm.pages_EodReportPage.giris_1ffbd')} actual={data.actual_checkins} expected={data.arrivals} />
+              <ProgressKpi label={t('cm.pages_EodReportPage.cikis_b9015')} actual={data.actual_checkouts} expected={data.departures} />
               <KpiCard label="No-Show" value={data.no_shows} accent={data.no_shows > 0 ? 'rose' : 'slate'} />
-              <KpiCard label="İptal" value={data.cancels} accent="slate" />
+              <KpiCard label={t('cm.pages_EodReportPage.iptal')} value={data.cancels} accent="slate" />
             </div>
 
             {/* Risk blok — vurgulu */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <KpiCard
-                label="Açık Folyo"
+                label={t('cm.pages_EodReportPage.acik_folyo_fa529')}
                 value={data.open_folios}
                 sub={data.open_folios > 0 ? 'Detayları görmek için tıklayın' : 'Tüm folyolar kapalı'}
                 accent={data.open_folios > 0 ? 'amber' : 'emerald'}
@@ -367,7 +368,7 @@ export default function EodReportPage({ user, tenant, onLogout }) {
                 onClick={data.open_folios > 0 ? () => setShowOpenFolios(true) : undefined}
               />
               <KpiCard
-                label="Onaylanmamış Devir"
+                label={t('cm.pages_EodReportPage.onaylanmamis_devir')}
                 value={data.open_handovers}
                 sub={data.open_handovers > 0 ? 'Vardiya notu beklemede' : 'Tüm devirler onaylı'}
                 accent={data.open_handovers > 0 ? 'amber' : 'emerald'}
@@ -380,17 +381,17 @@ export default function EodReportPage({ user, tenant, onLogout }) {
         {/* Gönderim bloğu */}
         <Card className="p-4 space-y-3 border-slate-200">
           <h2 className="font-semibold flex items-center gap-2 text-slate-900">
-            <Send className="w-4 h-4 text-amber-600" /> Yöneticilere Gönder
+            <Send className="w-4 h-4 text-amber-600" /> {t('cm.pages_EodReportPage.yoneticilere_gonder')}
           </h2>
 
           {/* Chips */}
           <div>
-            <Label className="text-xs text-slate-700">Alıcılar</Label>
+            <Label className="text-xs text-slate-700">{t('cm.pages_EodReportPage.alicilar')}</Label>
             <div className="mt-1.5 border border-slate-200 rounded-md p-2 bg-white min-h-[42px] flex flex-wrap gap-1.5 items-center focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-400">
               {recipients.map(email => (
                 <span key={email} className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-900 text-xs px-2 py-1 rounded-md">
                   {email}
-                  <button onClick={() => removeRecipient(email)} className="hover:text-amber-700" aria-label="Sil">
+                  <button onClick={() => removeRecipient(email)} className="hover:text-amber-700" aria-label={t('cm.pages_EodReportPage.sil')}>
                     <XIcon className="w-3 h-3" />
                   </button>
                 </span>
@@ -412,25 +413,25 @@ export default function EodReportPage({ user, tenant, onLogout }) {
                 data-testid="eod-recipient-input"
               />
             </div>
-            <div className="text-[11px] text-slate-500 mt-1">Birden fazla adres için her birini Enter veya virgül ile ayırın.</div>
+            <div className="text-[11px] text-slate-500 mt-1">{t('cm.pages_EodReportPage.birden_fazla_adres_icin_her_birini_enter')}</div>
           </div>
 
           <div className="flex gap-2 flex-wrap">
             <Button onClick={send} disabled={sending || recipients.length === 0} className="bg-amber-600 hover:bg-amber-700 text-white">
               {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-              E-posta Gönder
+              {t('cm.pages_EodReportPage.e_posta_gonder')}
             </Button>
             <Button onClick={downloadPdf} disabled={downloadingPdf} variant="outline" className="border-slate-300">
               {downloadingPdf
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Hazırlanıyor…</>
-                : <><Download className="w-4 h-4 mr-2" /> PDF İndir</>}
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t('cm.pages_EodReportPage.hazirlaniyor')}</>
+                : <><Download className="w-4 h-4 mr-2" /> {t('cm.pages_EodReportPage.pdf_indir')}</>}
             </Button>
           </div>
 
           {lastResult && (
             <div className="border-t border-slate-200 pt-3 space-y-1.5">
               <div className="text-sm font-medium text-slate-900">
-                Son Gönderim: {lastResult.sent}/{lastResult.total} başarılı
+                {t('cm.pages_EodReportPage.son_gonderim')} {lastResult.sent}/{lastResult.total} {t('cm.pages_EodReportPage.basarili')}
               </div>
               {(lastResult.results || []).map((r, i) => (
                 <div key={i} className="flex items-center gap-2 text-xs">

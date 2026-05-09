@@ -143,7 +143,7 @@ export default function MappingsTab(props) {
                   )}
                   <Button data-testid="add-mapping-btn" size="sm" onClick={() => setShowNewMapping(true)} disabled={!selectedConnector}
                     className="bg-blue-600 hover:bg-blue-700">
-                    <Plus className="w-4 h-4 mr-1" /> Mapping Ekle
+                    <Plus className="w-4 h-4 mr-1" /> {t('cm.components_integrationhub_tabs_MappingsTab.mapping_ekle')}
                   </Button>
                 </div>
               </div>
@@ -164,7 +164,7 @@ export default function MappingsTab(props) {
                       </div>
                       <div className="flex items-center gap-4 text-xs">
                         <span className="text-slate-500">
-                          Toplam: <span className="text-slate-300">{mappingReadiness.total_mappings || 0}</span>
+                          {t('cm.components_integrationhub_tabs_MappingsTab.toplam')} <span className="text-slate-300">{mappingReadiness.total_mappings || 0}</span>
                         </span>
                         {(mappingReadiness.missing_count || 0) > 0 && (
                           <span data-testid="missing-count" className="text-amber-400">
@@ -173,7 +173,7 @@ export default function MappingsTab(props) {
                         )}
                         {(mappingReadiness.invalid_count || 0) > 0 && (
                           <span data-testid="invalid-count" className="text-red-400">
-                            Geçersiz: {mappingReadiness.invalid_count}
+                            {t('cm.components_integrationhub_tabs_MappingsTab.gecersiz')} {mappingReadiness.invalid_count}
                           </span>
                         )}
                         {(mappingReadiness.duplicate_count || 0) > 0 && (
@@ -236,7 +236,7 @@ export default function MappingsTab(props) {
                         <th className="text-left px-4 py-2">PMS Entity</th>
                         <th className="text-center px-4 py-2"><ArrowUpDown className="w-3 h-3 inline" /></th>
                         <th className="text-left px-4 py-2">External Entity</th>
-                        <th className="text-left px-4 py-2">Durum</th>
+                        <th className="text-left px-4 py-2">{t('cm.components_integrationhub_tabs_MappingsTab.durum')}</th>
                         <th className="text-left px-4 py-2">Dogrulama</th>
                         <th className="text-right px-4 py-2">Islemler</th>
                       </tr>
@@ -301,14 +301,14 @@ export default function MappingsTab(props) {
                 <Card className="bg-slate-900/50 border-slate-800">
                   <CardContent className="p-8 text-center">
                     <Unlink className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-                    <p className="text-slate-400 text-sm">Bu connector için mapping yok</p>
+                    <p className="text-slate-400 text-sm">{t('cm.components_integrationhub_tabs_MappingsTab.bu_connector_icin_mapping_yok')}</p>
                   </CardContent>
                 </Card>
               ) : (
                 <Card className="bg-slate-900/50 border-slate-800">
                   <CardContent className="p-8 text-center">
                     <Map className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-                    <p className="text-slate-400 text-sm">Connector seçin</p>
+                    <p className="text-slate-400 text-sm">{t('cm.components_integrationhub_tabs_MappingsTab.connector_secin')}</p>
                   </CardContent>
                 </Card>
               )}

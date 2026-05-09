@@ -28,6 +28,7 @@ import {
   getUnassignedUrgency,
   sortByUrgency,
 } from './calendar';
+import { useTranslation } from 'react-i18next';
 
 const ReservationSidebar = lazy(() => import('@/components/ReservationSidebar'));
 const FolioDetailView = lazy(() => import('@/pages/FolioDetailView'));
@@ -36,6 +37,7 @@ const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal
 const DEBUG_ROOMS = false;
 
 const ReservationCalendar = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   // Core state
@@ -684,7 +686,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f97316' }}></div>
-                <span>Bugün Gelis</span>
+                <span>{t('cm.pages_ReservationCalendar.bugun_gelis')}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded" style={{ backgroundColor: '#2563eb' }}></div>
@@ -692,21 +694,21 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f87171' }}></div>
-                <span>Geçmiş / Check-out</span>
+                <span>{t('cm.pages_ReservationCalendar.gecmis_check_out')}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                <span>Müsait</span>
+                <span>{t('cm.pages_ReservationCalendar.musait')}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                <span>Dolu</span>
+                <span>{t('cm.pages_ReservationCalendar.dolu')}</span>
               </div>
             </div>
             <div className="flex items-center gap-3 text-gray-400">
-              <span>Tıkla = Yeni rez.</span>
-              <span>Çift tıkla = Detay</span>
-              <span>Sürükle = Taşı</span>
+              <span>{t('cm.pages_ReservationCalendar.tikla_yeni_rez')}</span>
+              <span>{t('cm.pages_ReservationCalendar.cift_tikla_detay')}</span>
+              <span>{t('cm.pages_ReservationCalendar.surukle_tasi')}</span>
             </div>
           </div>
         </div>
@@ -790,15 +792,15 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <Ban className="w-5 h-5" />
-              Çakışan Rezervasyonlar ({conflicts.length})
+              {t('cm.pages_ReservationCalendar.cakisan_rezervasyonlar')}{conflicts.length})
             </DialogTitle>
           </DialogHeader>
           {conflicts.length === 0 ? (
-            <div className="py-6 text-center text-sm text-gray-500">Çakışma kalmadı.</div>
+            <div className="py-6 text-center text-sm text-gray-500">{t('cm.pages_ReservationCalendar.cakisma_kalmadi')}</div>
           ) : (
             <div className="space-y-3">
               <p className="text-xs text-gray-600">
-                Aynı odaya aynı tarihlerde birden fazla rezervasyon atanmış. Sorunu çözmek için aşağıdaki rezervasyonlardan birini açıp odasını değiştirin veya iptal edin.
+                {t('cm.pages_ReservationCalendar.ayni_odaya_ayni_tarihlerde_birden_fazla_')}
               </p>
               {conflicts.map((c, idx) => {
                 const b1 = bookings.find(b => b.id === c.booking1_id);
@@ -814,10 +816,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                   <div key={idx} className="border border-red-200 rounded-lg p-3 bg-red-50/50" data-testid={`conflict-row-${idx}`}>
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-semibold text-sm text-red-700">
-                        Oda {c.room_number || c.room_id}
+                        {t('cm.pages_ReservationCalendar.oda')} {c.room_number || c.room_id}
                       </div>
                       <div className="text-xs text-gray-600">
-                        Çakışma: {fmt(c.overlap_start)} – {fmt(c.overlap_end)}
+                        {t('cm.pages_ReservationCalendar.cakisma')} {fmt(c.overlap_start)} – {fmt(c.overlap_end)}
                       </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -828,10 +830,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                         className="text-left p-2 bg-white border rounded hover:bg-amber-50 hover:border-amber-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
                         data-testid={`conflict-open-b1-${idx}`}
                       >
-                        <div className="text-xs text-gray-500">Rezervasyon 1</div>
+                        <div className="text-xs text-gray-500">{t('cm.pages_ReservationCalendar.rezervasyon_1')}</div>
                         <div className="text-sm font-medium truncate">{c.guest1 || '(misafir bilinmiyor)'}</div>
                         {b1 && <div className="text-xs text-gray-600">{fmt(b1.check_in)} → {fmt(b1.check_out)}</div>}
-                        <div className="text-xs text-amber-600 mt-1">Aç ve düzenle →</div>
+                        <div className="text-xs text-amber-600 mt-1">{t('cm.pages_ReservationCalendar.ac_ve_duzenle')}</div>
                       </button>
                       <button
                         type="button"
@@ -840,10 +842,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                         className="text-left p-2 bg-white border rounded hover:bg-amber-50 hover:border-amber-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
                         data-testid={`conflict-open-b2-${idx}`}
                       >
-                        <div className="text-xs text-gray-500">Rezervasyon 2</div>
+                        <div className="text-xs text-gray-500">{t('cm.pages_ReservationCalendar.rezervasyon_2')}</div>
                         <div className="text-sm font-medium truncate">{c.guest2 || '(misafir bilinmiyor)'}</div>
                         {b2 && <div className="text-xs text-gray-600">{fmt(b2.check_in)} → {fmt(b2.check_out)}</div>}
-                        <div className="text-xs text-amber-600 mt-1">Aç ve düzenle →</div>
+                        <div className="text-xs text-amber-600 mt-1">{t('cm.pages_ReservationCalendar.ac_ve_duzenle_9ee29')}</div>
                       </button>
                     </div>
                   </div>
@@ -852,7 +854,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowConflictsModal(false)}>Kapat</Button>
+            <Button variant="outline" onClick={() => setShowConflictsModal(false)}>{t('cm.pages_ReservationCalendar.kapat')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -927,7 +929,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                 <X className="w-4 h-4" />
               </Button>
             </div>
-            <Suspense fallback={<div className="p-8 text-center text-gray-400">Yükleniyor...</div>}>
+            <Suspense fallback={<div className="p-8 text-center text-gray-400">{t('cm.pages_ReservationCalendar.yukleniyor')}</div>}>
               <FolioDetailView folioId={folioPanelId} onClose={() => setShowFolioPanel(false)} />
             </Suspense>
           </div>
@@ -936,7 +938,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
       {/* Reservation Detail Modal */}
       {showDetailModal && detailModalBookingId && (
-        <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">Yükleniyor...</div></div>}>
+        <Suspense fallback={<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"><div className="bg-white rounded-xl p-6 text-gray-500">{t('cm.pages_ReservationCalendar.yukleniyor_4deb0')}</div></div>}>
           <ReservationDetailModal
             bookingId={detailModalBookingId}
             onClose={() => { setShowDetailModal(false); setDetailModalBookingId(null); loadCalendarData(); }}
@@ -985,7 +987,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                       <CalendarIcon className={`w-4 h-4 ${overdueList.length > 0 ? 'text-red-600' : todayList.length > 0 ? 'text-amber-600' : 'text-blue-600'}`} />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">Atanmamış Rezervasyonlar</h3>
+                      <h3 className="font-semibold text-gray-800 text-sm" data-testid="unassigned-panel-title">{t('cm.pages_ReservationCalendar.atanmamis_rezervasyonlar')}</h3>
                       <p className="text-xs text-gray-500">{allUnassigned.length} aktif rezervasyon</p>
                     </div>
                   </div>
@@ -999,15 +1001,15 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                     <div className="px-5 pb-3 grid grid-cols-4 gap-2">
                       <div className={`rounded-lg p-2 text-center cursor-pointer transition-colors ${overdueList.length > 0 ? 'bg-red-50 hover:bg-red-100' : 'bg-gray-50'}`} onClick={() => setUnassignedFilter('overdue')}>
                         <div className={`text-lg font-bold ${overdueList.length > 0 ? 'text-red-600' : 'text-gray-400'}`}>{overdueList.length}</div>
-                        <div className="text-[10px] text-gray-500">Gecikmiş</div>
+                        <div className="text-[10px] text-gray-500">{t('cm.pages_ReservationCalendar.gecikmis')}</div>
                       </div>
                       <div className={`rounded-lg p-2 text-center cursor-pointer transition-colors ${todayList.length > 0 ? 'bg-amber-50 hover:bg-amber-100' : 'bg-gray-50'}`} onClick={() => setUnassignedFilter('today')}>
                         <div className={`text-lg font-bold ${todayList.length > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{todayList.length}</div>
-                        <div className="text-[10px] text-gray-500">Bugün</div>
+                        <div className="text-[10px] text-gray-500">{t('cm.pages_ReservationCalendar.bugun')}</div>
                       </div>
                       <div className={`rounded-lg p-2 text-center cursor-pointer transition-colors ${tomorrowList.length > 0 ? 'bg-amber-50 hover:bg-amber-100' : 'bg-gray-50'}`} onClick={() => setUnassignedFilter('tomorrow')}>
                         <div className={`text-lg font-bold ${tomorrowList.length > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{tomorrowList.length}</div>
-                        <div className="text-[10px] text-gray-500">Yarın</div>
+                        <div className="text-[10px] text-gray-500">{t('cm.pages_ReservationCalendar.yarin')}</div>
                       </div>
                       <div className={`rounded-lg p-2 text-center cursor-pointer transition-colors bg-blue-50 hover:bg-blue-100`} onClick={() => setUnassignedFilter('future')}>
                         <div className="text-lg font-bold text-blue-600">{futureList.length}</div>
@@ -1116,17 +1118,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
                                   }
                                 }}
                               >
-                                <option value="">Oda sec...</option>
+                                <option value="">{t('cm.pages_ReservationCalendar.oda_sec')}</option>
                                 {matchingRooms.map(r => (
                                   <option key={r.id} value={r.id}>
                                     {r.room_number} - {r.room_type}
                                   </option>
                                 ))}
                               </select>
-                              <span className="text-[10px] text-green-600 font-medium">{matchingRooms.length} müsait</span>
+                              <span className="text-[10px] text-green-600 font-medium">{matchingRooms.length} {t('cm.pages_ReservationCalendar.musait_873fb')}</span>
                             </div>
                           ) : (
-                            <span className="text-[10px] text-red-500 font-medium">Müsait oda yok</span>
+                            <span className="text-[10px] text-red-500 font-medium">{t('cm.pages_ReservationCalendar.musait_oda_yok')}</span>
                           )}
                           <Button
                             size="sm"
@@ -1165,17 +1167,17 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-gray-500">
-              Rezervasyonu no-show olarak isaretlemek ve sanal odaya atamak için bir sebep seçin.
+              {t('cm.pages_ReservationCalendar.rezervasyonu_no_show_olarak_isaretlemek_')}
             </p>
             <div className="space-y-2">
               <Label className="text-sm font-medium">Sebep</Label>
               <Select value={noShowReason} onValueChange={setNoShowReason}>
                 <SelectTrigger data-testid="noshow-reason-select">
-                  <SelectValue placeholder="Sebep seçin..." />
+                  <SelectValue placeholder={t('cm.pages_ReservationCalendar.sebep_secin')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="misafir_gelmedi">Misafir Gelmedi</SelectItem>
-                  <SelectItem value="iptal_gec_islendi">İptal Edildi ama Gec Islendi</SelectItem>
+                  <SelectItem value="misafir_gelmedi">{t('cm.pages_ReservationCalendar.misafir_gelmedi')}</SelectItem>
+                  <SelectItem value="iptal_gec_islendi">{t('cm.pages_ReservationCalendar.iptal_edildi_ama_gec_islendi')}</SelectItem>
                   <SelectItem value="overbooking">Overbooking</SelectItem>
                 </SelectContent>
               </Select>

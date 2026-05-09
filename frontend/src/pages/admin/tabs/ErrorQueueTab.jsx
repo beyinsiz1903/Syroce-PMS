@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw, RotateCcw, ArrowUpRight, XCircle, Trash2, AlertOctagon, AlertTriangle, Database } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { API, MetricCard } from '../shared';
+import { useTranslation } from 'react-i18next';
 
 const ErrorQueueTab = () => {
+  const { t } = useTranslation();
   const [queue, setQueue] = useState({ items: [], summary: {} });
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState('all');
@@ -45,26 +47,26 @@ const ErrorQueueTab = () => {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <MetricCard title="Toplam Hata" value={summary.total || 0} icon={AlertOctagon} color="text-red-400" />
-        <MetricCard title="Sync Hatası" value={summary.sync_failed || 0} icon={RefreshCw} color="text-amber-400" />
-        <MetricCard title="Import Hatası" value={summary.import_failed || 0} icon={Database} color="text-amber-400" />
-        <MetricCard title="ACK Hatası" value={summary.ack_failed || 0} icon={AlertTriangle} color="text-red-400" />
+        <MetricCard title={t('cm.pages_admin_tabs_ErrorQueueTab.toplam_hata')} value={summary.total || 0} icon={AlertOctagon} color="text-red-400" />
+        <MetricCard title={t('cm.pages_admin_tabs_ErrorQueueTab.sync_hatasi')} value={summary.sync_failed || 0} icon={RefreshCw} color="text-amber-400" />
+        <MetricCard title={t('cm.pages_admin_tabs_ErrorQueueTab.import_hatasi')} value={summary.import_failed || 0} icon={Database} color="text-amber-400" />
+        <MetricCard title={t('cm.pages_admin_tabs_ErrorQueueTab.ack_hatasi')} value={summary.ack_failed || 0} icon={AlertTriangle} color="text-red-400" />
       </div>
       <div className="flex flex-wrap gap-2 items-center">
         <Select value={filterType} onValueChange={setFilterType}>
           <SelectTrigger data-testid="error-type-filter" className="w-40 bg-slate-800 border-slate-700 text-white"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tüm Tipler</SelectItem>
-            <SelectItem value="sync_failed">Sync Hatası</SelectItem>
-            <SelectItem value="import_failed">Import Hatası</SelectItem>
-            <SelectItem value="ack_failed">ACK Hatası</SelectItem>
+            <SelectItem value="all">{t('cm.pages_admin_tabs_ErrorQueueTab.tum_tipler')}</SelectItem>
+            <SelectItem value="sync_failed">{t('cm.pages_admin_tabs_ErrorQueueTab.sync_hatasi_b6679')}</SelectItem>
+            <SelectItem value="import_failed">{t('cm.pages_admin_tabs_ErrorQueueTab.import_hatasi_f1031')}</SelectItem>
+            <SelectItem value="ack_failed">{t('cm.pages_admin_tabs_ErrorQueueTab.ack_hatasi_3b9e2')}</SelectItem>
           </SelectContent>
         </Select>
-        <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchQueue}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile</Button>
+        <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchQueue}><RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_ErrorQueueTab.yenile')}</Button>
         {selected.size > 0 && (
           <>
             <Button data-testid="bulk-retry-btn" size="sm" variant="outline" className="border-emerald-700 text-emerald-400 ml-auto" onClick={() => handleBulk('retry')}><RotateCcw className="w-3.5 h-3.5 mr-1" /> Toplu Yeniden Dene ({selected.size})</Button>
-            <Button data-testid="bulk-dismiss-btn" size="sm" variant="outline" className="border-red-700 text-red-400" onClick={() => handleBulk('dismiss')}><Trash2 className="w-3.5 h-3.5 mr-1" /> Toplu Kapat ({selected.size})</Button>
+            <Button data-testid="bulk-dismiss-btn" size="sm" variant="outline" className="border-red-700 text-red-400" onClick={() => handleBulk('dismiss')}><Trash2 className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_ErrorQueueTab.toplu_kapat')}{selected.size})</Button>
           </>
         )}
         {queue.items.length > 0 && selected.size === 0 && <Button size="sm" variant="ghost" className="text-slate-400 ml-auto" onClick={selectAll}>Tumu Sec</Button>}
@@ -72,7 +74,7 @@ const ErrorQueueTab = () => {
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
       ) : queue.items.length === 0 ? (
-        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Hata kuyrugunda oge yok</CardContent></Card>
+        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">{t('cm.pages_admin_tabs_ErrorQueueTab.hata_kuyrugunda_oge_yok')}</CardContent></Card>
       ) : (
         <div className="space-y-2">
           {queue.items.map(item => (

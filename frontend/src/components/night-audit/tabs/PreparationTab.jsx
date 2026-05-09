@@ -10,6 +10,7 @@ import {
   ArrowRight, RefreshCw, Building2, Users, Bed, Brush,
   ShieldAlert, Clock, Info, Play,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ACTION_LABELS = {
   edit_booking: 'Rezervasyona git',
@@ -41,6 +42,7 @@ async function openFolioForBooking(bookingId, navigate) {
 }
 
 function StatTile({ icon: Icon, label, value, hint, tone = 'gray' }) {
+  const { t } = useTranslation();
   const toneMap = {
     gray: 'bg-gray-50 text-gray-700',
     indigo: 'bg-indigo-50 text-indigo-700',
@@ -95,7 +97,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
     return (
       <div className="flex items-center justify-center py-12 text-gray-500 text-sm">
         <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-        Hazırlık özeti yükleniyor...
+        {t('cm.components_nightaudit_tabs_PreparationTab.hazirlik_ozeti_yukleniyor')}
       </div>
     );
   }
@@ -116,10 +118,10 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
             <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5" />
             <div className="text-sm">
               <p className="font-semibold text-amber-900">
-                Sistem tarihi PMS iş gününden farklı
+                {t('cm.components_nightaudit_tabs_PreparationTab.sistem_tarihi_pms_is_gununden_farkli')}
               </p>
               <p className="text-amber-800">
-                Takvim: <span className="font-medium">{data.calendar_date}</span> · PMS iş günü:{' '}
+                Takvim: <span className="font-medium">{data.calendar_date}</span> {t('cm.components_nightaudit_tabs_PreparationTab.pms_is_gunu')}{' '}
                 <span className="font-medium">{data.business_date}</span>{' '}
                 <span className="opacity-80">({drift > 0 ? `${drift} gün geride` : `${-drift} gün ileride`})</span>
               </p>
@@ -144,14 +146,14 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
                   : `Başlatılamıyor — ${blockers.length} engelleyici sorun var`}
               </p>
               <p className="text-xs text-gray-500">
-                İş günü: {data.business_date} · {warnings.length} uyarı
+                {t('cm.components_nightaudit_tabs_PreparationTab.is_gunu')} {data.business_date} · {warnings.length} {t('cm.components_nightaudit_tabs_PreparationTab.uyari')}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
-              Yenile
+              {t('cm.components_nightaudit_tabs_PreparationTab.yenile')}
             </Button>
             <Button
               size="sm"
@@ -160,7 +162,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
               data-testid="prep-start-btn"
             >
               <Play className="w-4 h-4 mr-1" />
-              Denetim Başlat
+              {t('cm.components_nightaudit_tabs_PreparationTab.denetim_baslat')}
             </Button>
           </div>
         </CardContent>
@@ -168,13 +170,13 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
 
       {/* Genel durum kartları */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatTile icon={Bed} tone="indigo" label="Oda Toplam" value={rooms.total ?? '-'}
+        <StatTile icon={Bed} tone="indigo" label={t('cm.components_nightaudit_tabs_PreparationTab.oda_toplam')} value={rooms.total ?? '-'}
           hint={`Dolu ${rooms.occupied ?? 0} · Müsait ${rooms.available ?? 0}`} />
-        <StatTile icon={Brush} tone="amber" label="Kirli Oda" value={rooms.dirty ?? 0}
+        <StatTile icon={Brush} tone="amber" label={t('cm.components_nightaudit_tabs_PreparationTab.kirli_oda')} value={rooms.dirty ?? 0}
           hint={`Arıza ${rooms.out_of_order ?? 0} · Blok ${rooms.blocked ?? 0}`} />
-        <StatTile icon={Users} tone="emerald" label="İçerideki Misafir" value={guests.in_house ?? 0}
+        <StatTile icon={Users} tone="emerald" label={t('cm.components_nightaudit_tabs_PreparationTab.icerideki_misafir')} value={guests.in_house ?? 0}
           hint={`Bugün giriş ${guests.arriving_today ?? 0} · Çıkış ${guests.departing_today ?? 0}`} />
-        <StatTile icon={Calendar} tone="blue" label="İş Günü" value={data.business_date}
+        <StatTile icon={Calendar} tone="blue" label={t('cm.components_nightaudit_tabs_PreparationTab.is_gunu_7704e')} value={data.business_date}
           hint={drift !== 0 ? `Takvim ${data.calendar_date}` : 'Takvimle aynı'} />
       </div>
 
@@ -229,7 +231,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
                                     || (it.id ? `#${String(it.id).slice(0, 8)}` : '-')}
                                 </span>
                                 {it.room_no && (
-                                  <span className="text-gray-500">Oda {it.room_no}</span>
+                                  <span className="text-gray-500">{t('cm.components_nightaudit_tabs_PreparationTab.oda')} {it.room_no}</span>
                                 )}
                                 {(it.check_in || it.check_out) && (
                                   <span className="text-gray-400">
@@ -277,7 +279,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2 text-amber-800">
               <AlertTriangle className="w-4 h-4" />
-              Uyarılar ({warnings.length})
+              {t('cm.components_nightaudit_tabs_PreparationTab.uyarilar')}{warnings.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -299,7 +301,7 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
       {/* Hazır rozeti — engelleyici yoksa: yalnızca öneri notu, durum kartı yukarıda zaten gösteriyor */}
       {blockers.length === 0 && warnings.length === 0 && (
         <p className="text-xs text-gray-500 px-1" data-testid="ready-hint">
-          İpucu: ilk kez çalıştırıyorsanız önce Simülasyon (kuru çalıştırma) yapıp ne yazılacağını kontrol etmenizi öneririz.
+          {t('cm.components_nightaudit_tabs_PreparationTab.ipucu_ilk_kez_calistiriyorsaniz_once_sim')}
         </p>
       )}
     </div>

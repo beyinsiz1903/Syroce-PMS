@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import {
   BellOff, Link2, Wine, Plus, Trash2, Clock, CheckCircle, AlertTriangle, DoorOpen
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const MINIBAR_ITEMS = [
   { code: 'water', name: 'Su (500ml)', price: 5 },
@@ -34,6 +35,7 @@ const CHECKOUT_RULES = [
 ];
 
 const RoomFeaturesPanel = ({ room, onUpdate }) => {
+  const { t } = useTranslation();
   const [dndEnabled, setDndEnabled] = useState(room?.dnd || false);
   const [connectedRoom, setConnectedRoom] = useState(room?.connected_room || '');
   const [minibarItems, setMinibarItems] = useState([]);
@@ -123,13 +125,13 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <Link2 className="h-4 w-4" />
-              Bağlantı Oda
+              {t('cm.components_pms_RoomFeaturesPanel.baglanti_oda')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex gap-2">
               <Input
-                placeholder="Oda No"
+                placeholder={t('cm.components_pms_RoomFeaturesPanel.oda_no')}
                 value={connectedRoom}
                 onChange={(e) => setConnectedRoom(e.target.value)}
                 className="flex-1"
@@ -163,7 +165,7 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <Clock className="h-4 w-4" />
-            Erken / Gec Çıkış Kurallari
+            {t('cm.components_pms_RoomFeaturesPanel.erken_gec_cikis_kurallari')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -185,14 +187,14 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Wine className="h-5 w-5" /> Minibar Tuketim Girisi - Oda {room?.room_number}
+              <Wine className="h-5 w-5" /> {t('cm.components_pms_RoomFeaturesPanel.minibar_tuketim_girisi_oda')} {room?.room_number}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex gap-2">
               <Select value={selectedMinibarItem} onValueChange={setSelectedMinibarItem}>
                 <SelectTrigger className="flex-1">
-                  <SelectValue placeholder="Urun seçin..." />
+                  <SelectValue placeholder={t('cm.components_pms_RoomFeaturesPanel.urun_secin')} />
                 </SelectTrigger>
                 <SelectContent>
                   {MINIBAR_ITEMS.map(item => (
@@ -231,14 +233,14 @@ const RoomFeaturesPanel = ({ room, onUpdate }) => {
                   ))}
                 </div>
                 <div className="border-t p-2 flex justify-between font-bold">
-                  <span>Toplam</span>
+                  <span>{t('cm.components_pms_RoomFeaturesPanel.toplam')}</span>
                   <span>{minibarTotal} TL</span>
                 </div>
               </div>
             )}
 
             <Button className="w-full" onClick={postMinibarCharges} disabled={minibarItems.length === 0}>
-              <CheckCircle className="h-4 w-4 mr-1" /> Folyoya Ekle ({minibarTotal} TL)
+              <CheckCircle className="h-4 w-4 mr-1" /> {t('cm.components_pms_RoomFeaturesPanel.folyoya_ekle')}{minibarTotal} TL)
             </Button>
           </div>
         </DialogContent>

@@ -1,8 +1,10 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DollarSign, TrendingDown, Package, Users, Zap, ShoppingCart } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ExpenseSummaryCard = ({ expenseData }) => {
+  const { t } = useTranslation();
   if (!expenseData || !expenseData.categories) {
     return null;
   }
@@ -26,7 +28,7 @@ const ExpenseSummaryCard = ({ expenseData }) => {
         <CardTitle className="flex items-center justify-between">
           <span>Gider Kategorileri</span>
           <span className="text-sm font-normal text-gray-500">
-            Toplam: ₺{expenseData.total_expenses?.toLocaleString('tr-TR')}
+            {t('cm.components_ExpenseSummaryCard.toplam')}{expenseData.total_expenses?.toLocaleString('tr-TR')}
           </span>
         </CardTitle>
       </CardHeader>
@@ -57,7 +59,7 @@ const ExpenseSummaryCard = ({ expenseData }) => {
         
         <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-amber-800">Günlük Ortalama</span>
+            <span className="text-sm font-medium text-amber-800">{t('cm.components_ExpenseSummaryCard.gunluk_ortalama')}</span>
             <span className="text-sm font-bold text-amber-900">₺{expenseData.daily_average?.toLocaleString('tr-TR')}</span>
           </div>
         </div>

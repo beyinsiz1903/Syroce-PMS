@@ -35,6 +35,7 @@ import {
   History,
   TrendingUp,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const HOURS_24 = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 const PAGE_SIZE = 50;
@@ -75,6 +76,7 @@ function downloadCsv(filename, rows) {
 }
 
 function HourBar({ hour, count, max }) {
+  const { t } = useTranslation();
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
   return (
     <div
@@ -331,7 +333,7 @@ export default function RecalledMessagesReportPage() {
       <RefreshCw
         className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`}
       />
-      Yenile
+      {t('cm.pages_RecalledMessagesReportPage.yenile')}
     </Button>
   );
 
@@ -366,8 +368,8 @@ export default function RecalledMessagesReportPage() {
     >
       <PageHeader
         icon={Undo2}
-        title="Geri Alınan Mesajlar"
-        subtitle="5 dakikalık pencere içinde geri çekilen iç mesajların denetim raporu"
+        title={t('cm.pages_RecalledMessagesReportPage.geri_alinan_mesajlar')}
+        subtitle={t('cm.pages_RecalledMessagesReportPage.5_dakikalik_pencere_icinde_geri_cekilen_')}
         actions={
           <>
             {backButton}
@@ -383,7 +385,7 @@ export default function RecalledMessagesReportPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 items-end">
             <div>
               <label className="text-[11px] text-slate-500 block mb-1">
-                Başlangıç
+                {t('cm.pages_RecalledMessagesReportPage.baslangic')}
               </label>
               <Input
                 data-testid="filter-start-date"
@@ -397,7 +399,7 @@ export default function RecalledMessagesReportPage() {
             </div>
             <div>
               <label className="text-[11px] text-slate-500 block mb-1">
-                Bitiş
+                {t('cm.pages_RecalledMessagesReportPage.bitis')}
               </label>
               <Input
                 data-testid="filter-end-date"
@@ -411,7 +413,7 @@ export default function RecalledMessagesReportPage() {
             </div>
             <div>
               <label className="text-[11px] text-slate-500 block mb-1">
-                Geri alan kullanıcı kimliği
+                {t('cm.pages_RecalledMessagesReportPage.geri_alan_kullanici_kimligi')}
               </label>
               <Input
                 data-testid="filter-sender-id"
@@ -425,7 +427,7 @@ export default function RecalledMessagesReportPage() {
             </div>
             <div>
               <label className="text-[11px] text-slate-500 block mb-1">
-                Orijinal öncelik
+                {t('cm.pages_RecalledMessagesReportPage.orijinal_oncelik')}
               </label>
               <select
                 data-testid="filter-priority"
@@ -435,7 +437,7 @@ export default function RecalledMessagesReportPage() {
                 }
                 className="bg-white border border-slate-300 rounded text-xs px-2 h-8 text-slate-700 w-full"
               >
-                <option value="">Tümü</option>
+                <option value="">{t('cm.pages_RecalledMessagesReportPage.tumu')}</option>
                 <option value="urgent">Acil</option>
                 <option value="normal">Normal</option>
               </select>
@@ -466,7 +468,7 @@ export default function RecalledMessagesReportPage() {
               htmlFor="filter-include-denied"
               className="text-[11px] text-slate-700 cursor-pointer"
             >
-              Süre dolduğu için reddedilen geri alma denemelerini de göster
+              {t('cm.pages_RecalledMessagesReportPage.sure_doldugu_icin_reddedilen_geri_alma_d')}
             </label>
           </div>
         </CardContent>
@@ -490,7 +492,7 @@ export default function RecalledMessagesReportPage() {
           data-testid="card-total"
           icon={Inbox}
           intent="info"
-          label="Toplam geri alma"
+          label={t('cm.pages_RecalledMessagesReportPage.toplam_geri_alma')}
           value={total}
           sub={
             applied.include_denied
@@ -502,7 +504,7 @@ export default function RecalledMessagesReportPage() {
           data-testid="card-urgent-recalls"
           icon={AlertTriangle}
           intent={urgentCount > 0 ? "warning" : "neutral"}
-          label="Acilden geri alınan"
+          label={t('cm.pages_RecalledMessagesReportPage.acilden_geri_alinan')}
           value={urgentCount}
           sub="Öncelik = Acil olan kayıtlar"
         />
@@ -510,7 +512,7 @@ export default function RecalledMessagesReportPage() {
           data-testid="card-peak-hour"
           icon={History}
           intent="danger"
-          label="En yoğun saat (UTC)"
+          label={t('cm.pages_RecalledMessagesReportPage.en_yogun_saat_utc')}
           value={peakHour ? `${peakHour.hour}:00` : "—"}
           sub={peakHour ? `${peakHour.count} kayıt` : "Veri yok"}
         />
@@ -518,7 +520,7 @@ export default function RecalledMessagesReportPage() {
           data-testid="card-top-sender"
           icon={TrendingUp}
           intent="neutral"
-          label="En çok geri alan"
+          label={t('cm.pages_RecalledMessagesReportPage.en_cok_geri_alan')}
           value={topSender ? topSender.sender_name || topSender.sender_id : "—"}
           sub={
             topSender
@@ -533,10 +535,9 @@ export default function RecalledMessagesReportPage() {
           data-testid="denied-summary-banner"
           className="text-xs bg-rose-50 border border-rose-200 text-rose-800 rounded p-2"
         >
-          Bu sayfadaki kayıtların{" "}
+          {t('cm.pages_RecalledMessagesReportPage.bu_sayfadaki_kayitlarin')}{" "}
           <strong data-testid="denied-count-inline">{deniedCount}</strong>{" "}
-          tanesi süre dolduğu için reddedilen geri alma denemesidir
-          (5 dakikalık pencere aşıldı).
+          {t('cm.pages_RecalledMessagesReportPage.tanesi_sure_doldugu_icin_reddedilen_geri')}
         </div>
       )}
 
@@ -547,7 +548,7 @@ export default function RecalledMessagesReportPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-slate-700 flex items-center gap-2">
                 <Undo2 className="w-4 h-4 text-rose-600" />
-                Geri Alma Kayıtları
+                {t('cm.pages_RecalledMessagesReportPage.geri_alma_kayitlari')}
                 <span
                   data-testid="page-range-label"
                   className="text-[10px] bg-rose-50 text-rose-700 border border-rose-200 rounded px-1.5 py-0.5"
@@ -566,7 +567,7 @@ export default function RecalledMessagesReportPage() {
                   data-testid="empty-state"
                   className="text-center py-8 text-slate-500 text-sm"
                 >
-                  Seçili filtrelerle eşleşen geri alma kaydı yok.
+                  {t('cm.pages_RecalledMessagesReportPage.secili_filtrelerle_eslesen_geri_alma_kay')}
                 </div>
               ) : (
                 <ul data-testid="event-list" className="divide-y divide-slate-100">
@@ -629,7 +630,7 @@ export default function RecalledMessagesReportPage() {
                                   intent="danger"
                                   data-testid={`badge-denied-${id}`}
                                 >
-                                  Reddedildi (süre doldu
+                                  {t('cm.pages_RecalledMessagesReportPage.reddedildi_sure_doldu')}
                                   {typeof after.elapsed_seconds === "number"
                                     ? ` · ${Math.round(
                                         after.elapsed_seconds / 60,
@@ -642,7 +643,7 @@ export default function RecalledMessagesReportPage() {
                                   intent="success"
                                   data-testid={`badge-recalled-${id}`}
                                 >
-                                  Geri alındı
+                                  {t('cm.pages_RecalledMessagesReportPage.geri_alindi')}
                                 </StatusBadge>
                               )}
                             </div>
@@ -685,7 +686,7 @@ export default function RecalledMessagesReportPage() {
                   className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100 text-xs text-slate-600"
                 >
                   <span>
-                    {pageStart}–{pageEnd} arası, toplam {total} kayıt
+                    {pageStart}–{pageEnd} {t('cm.pages_RecalledMessagesReportPage.arasi_toplam')} {total} {t('cm.pages_RecalledMessagesReportPage.kayit')}
                   </span>
                   <div className="flex gap-2">
                     <Button
@@ -698,7 +699,7 @@ export default function RecalledMessagesReportPage() {
                       disabled={!hasPrev || loading}
                       className="h-7 text-xs"
                     >
-                      Önceki
+                      {t('cm.pages_RecalledMessagesReportPage.onceki')}
                     </Button>
                     <Button
                       data-testid="pagination-next"
@@ -722,7 +723,7 @@ export default function RecalledMessagesReportPage() {
           <Card data-testid="card-by-sender">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-slate-700 flex items-center gap-2">
-                <UserIcon className="w-4 h-4" /> Geri alan sıralaması
+                <UserIcon className="w-4 h-4" /> {t('cm.pages_RecalledMessagesReportPage.geri_alan_siralamasi')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -757,7 +758,7 @@ export default function RecalledMessagesReportPage() {
           <Card data-testid="card-by-priority">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-slate-700 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4" /> Önceliğe göre
+                <AlertTriangle className="w-4 h-4" /> {t('cm.pages_RecalledMessagesReportPage.oncelige_gore')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -789,7 +790,7 @@ export default function RecalledMessagesReportPage() {
           <Card data-testid="card-by-hour">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-slate-700 flex items-center gap-2">
-                <Clock className="w-4 h-4" /> Saat dağılımı (UTC)
+                <Clock className="w-4 h-4" /> {t('cm.pages_RecalledMessagesReportPage.saat_dagilimi_utc')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1">

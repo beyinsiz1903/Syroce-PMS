@@ -1,5 +1,6 @@
 import React from 'react';
 import { Zap, Crown, Lock, ArrowRight, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const TIER_INFO = {
   professional: {
@@ -29,6 +30,7 @@ const TIER_INFO = {
  * @param {string} featureName - Name of the locked feature
  */
 export const UpgradeBanner = ({ requiredTier = 'professional', variant = 'inline', featureName = '' }) => {
+  const { t } = useTranslation();
   const tier = TIER_INFO[requiredTier] || TIER_INFO.professional;
   const Icon = tier.icon;
 
@@ -37,7 +39,7 @@ export const UpgradeBanner = ({ requiredTier = 'professional', variant = 'inline
       <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${tier.lightBg} border cursor-pointer hover:shadow-sm transition-all group`}>
         <Lock className="w-3 h-3 text-gray-400 group-hover:text-gray-600 transition" />
         <span className={`text-[11px] font-medium ${tier.textColor}`}>
-          {tier.label} planında
+          {tier.label} {t('cm.components_UpgradeBanner.planinda')}
         </span>
         <ArrowRight className="w-3 h-3 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
       </div>
@@ -49,7 +51,7 @@ export const UpgradeBanner = ({ requiredTier = 'professional', variant = 'inline
       <div className={`mx-2 mt-2 mb-1 p-3 rounded-xl bg-gradient-to-r ${tier.gradient} text-white shadow-lg cursor-pointer hover:shadow-xl transition-all`}>
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4" />
-          <span className="text-xs font-bold">Daha fazla özellik</span>
+          <span className="text-xs font-bold">{t('cm.components_UpgradeBanner.daha_fazla_ozellik')}</span>
         </div>
         <p className="text-[10px] opacity-90 mt-1">
           {requiredTier === 'professional' 
@@ -57,7 +59,7 @@ export const UpgradeBanner = ({ requiredTier = 'professional', variant = 'inline
             : 'AI, Revenue Management, CRM, Multi-Property...'}
         </p>
         <div className="flex items-center gap-1 mt-2 text-[10px] font-semibold opacity-90">
-          <span>{tier.label} plana yükselt</span>
+          <span>{tier.label} {t('cm.components_UpgradeBanner.plana_yukselt')}</span>
           <ArrowRight className="w-3 h-3" />
         </div>
       </div>
@@ -85,7 +87,7 @@ export const UpgradeBanner = ({ requiredTier = 'professional', variant = 'inline
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className={`text-xs font-bold ${tier.textColor}`}>{tier.price}'dan</span>
           <div className={`px-3 py-1.5 rounded-lg bg-gradient-to-r ${tier.gradient} text-white text-xs font-bold shadow hover:shadow-md transition cursor-pointer flex items-center gap-1`}>
-            Yükselt <ArrowRight className="w-3 h-3" />
+            {t('cm.components_UpgradeBanner.yukselt')} <ArrowRight className="w-3 h-3" />
           </div>
         </div>
       </div>
@@ -102,17 +104,17 @@ export const UpgradeBanner = ({ requiredTier = 'professional', variant = 'inline
         {featureName || 'Bu Özellik'} Kilitli
       </h3>
       <p className="text-sm text-gray-500 mb-4">
-        Bu özellik <span className={`font-semibold ${tier.textColor}`}>{tier.label}</span> planında kullanılabilir.
+        {t('cm.components_UpgradeBanner.bu_ozellik')} <span className={`font-semibold ${tier.textColor}`}>{tier.label}</span> {t('cm.components_UpgradeBanner.planinda_kullanilabilir')}
         {requiredTier === 'professional'
           ? ' Orta ölçekli oteller için Channel Manager, Folio ve daha fazlası.'
           : ' Büyük oteller için AI, RMS, CRM ve tüm modüller.'}
       </p>
       <div className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r ${tier.gradient} text-white font-bold text-sm shadow-lg hover:shadow-xl transition cursor-pointer`}>
         <Icon className="w-4 h-4" />
-        {tier.label} Plana Yükselt
+        {tier.label} {t('cm.components_UpgradeBanner.plana_yukselt_ee44d')}
         <ArrowRight className="w-4 h-4" />
       </div>
-      <p className="text-xs text-gray-400 mt-3">{tier.price}'dan başlayan fiyatlarla</p>
+      <p className="text-xs text-gray-400 mt-3">{tier.price}{t('cm.components_UpgradeBanner.dan_baslayan_fiyatlarla')}</p>
     </div>
   );
 };

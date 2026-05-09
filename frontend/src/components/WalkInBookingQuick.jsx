@@ -7,12 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { UserPlus, Zap, ScanLine } from 'lucide-react';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Walk-in Booking Quick Form
  * Tek tık ile yürü-içeri rezervasyon
  */
 const WalkInBookingQuick = ({ onSuccess }) => {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
     guest_name: '',
     guest_phone: '',
@@ -82,7 +84,7 @@ const WalkInBookingQuick = ({ onSuccess }) => {
         <CardTitle className="flex items-center justify-between">
           <span className="flex items-center gap-2">
             <UserPlus className="w-5 h-5 text-green-600" />
-            Walk-in Rezervasyon
+            {t('cm.components_WalkInBookingQuick.walk_in_rezervasyon')}
           </span>
           <Button
             type="button" size="sm" variant="outline"
@@ -101,7 +103,7 @@ const WalkInBookingQuick = ({ onSuccess }) => {
             <Input
               value={formData.guest_name}
               onChange={(e) => setFormData({...formData, guest_name: e.target.value})}
-              placeholder="Ahmet Yılmaz"
+              placeholder={t('cm.components_WalkInBookingQuick.ahmet_yilmaz')}
               className="h-9"
             />
           </div>
@@ -146,7 +148,7 @@ const WalkInBookingQuick = ({ onSuccess }) => {
               <option value="">—</option>
               <option value="tc_kimlik">TC Kimlik</option>
               <option value="passport">Pasaport</option>
-              <option value="drivers_license">Sürücü Belgesi</option>
+              <option value="drivers_license">{t('cm.components_WalkInBookingQuick.surucu_belgesi')}</option>
             </select>
           </div>
           <div>
@@ -162,7 +164,7 @@ const WalkInBookingQuick = ({ onSuccess }) => {
 
         <div className="grid grid-cols-3 gap-2">
           <div>
-            <Label className="text-xs">Oda Tipi</Label>
+            <Label className="text-xs">{t('cm.components_WalkInBookingQuick.oda_tipi')}</Label>
             <select
               value={formData.room_type}
               onChange={(e) => setFormData({...formData, room_type: e.target.value})}
@@ -184,7 +186,7 @@ const WalkInBookingQuick = ({ onSuccess }) => {
             />
           </div>
           <div>
-            <Label className="text-xs">Yetişkin</Label>
+            <Label className="text-xs">{t('cm.components_WalkInBookingQuick.yetiskin')}</Label>
             <Input
               type="number"
               value={formData.adults}

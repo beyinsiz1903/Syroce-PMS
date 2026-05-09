@@ -7,8 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { KeyRound } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ResetPasswordPage = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const token = useMemo(() => params.get('token') || '', [params]);
@@ -46,22 +48,22 @@ const ResetPasswordPage = () => {
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: 20 }}>
       <Card style={{ width: '100%', maxWidth: 440 }}>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><KeyRound className="w-5 h-5" /> Şifre Sıfırlama</CardTitle>
-          <CardDescription>Yeni bir şifre belirleyin.</CardDescription>
+          <CardTitle className="flex items-center gap-2"><KeyRound className="w-5 h-5" /> {t('cm.pages_ResetPasswordPage.sifre_sifirlama')}</CardTitle>
+          <CardDescription>{t('cm.pages_ResetPasswordPage.yeni_bir_sifre_belirleyin')}</CardDescription>
         </CardHeader>
         <CardContent>
           {!token ? (
             <div className="text-sm text-red-600">
-              Geçersiz veya eksik bağlantı. Lütfen e-postanızdaki bağlantıyı tekrar açın.
+              {t('cm.pages_ResetPasswordPage.gecersiz_veya_eksik_baglanti_lutfen_e_po')}
             </div>
           ) : done ? (
             <div className="text-sm text-green-700">
-              Şifreniz güncellendi. Giriş ekranına yönlendiriliyorsunuz…
+              {t('cm.pages_ResetPasswordPage.sifreniz_guncellendi_giris_ekranina_yonl')}
             </div>
           ) : (
             <form onSubmit={submit} className="space-y-4">
               <div>
-                <Label>Yeni Şifre</Label>
+                <Label>{t('cm.pages_ResetPasswordPage.yeni_sifre')}</Label>
                 <Input
                   type="password"
                   value={pwd.new_password}
@@ -73,7 +75,7 @@ const ResetPasswordPage = () => {
                 <p className="text-xs text-gray-500 mt-1">En az 6 karakter.</p>
               </div>
               <div>
-                <Label>Yeni Şifre (Tekrar)</Label>
+                <Label>{t('cm.pages_ResetPasswordPage.yeni_sifre_tekrar')}</Label>
                 <Input
                   type="password"
                   value={pwd.confirm}
@@ -91,7 +93,7 @@ const ResetPasswordPage = () => {
                 onClick={() => navigate('/auth')}
                 className="text-sm text-blue-600 hover:text-blue-800 w-full text-center"
               >
-                ← Giriş ekranına dön
+                {t('cm.pages_ResetPasswordPage.giris_ekranina_don')}
               </button>
             </form>
           )}

@@ -20,6 +20,7 @@ import {
   Activity,
   Shield,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem('token');
@@ -27,6 +28,7 @@ const getAuthHeaders = () => {
 };
 
 const RiskBadge = ({ risk }) => {
+  const { t } = useTranslation();
   const map = {
     high: { color: 'bg-red-100 text-red-700 border-red-300', label: 'Yüksek' },
     medium: { color: 'bg-amber-100 text-amber-700 border-amber-300', label: 'Orta' },
@@ -90,7 +92,7 @@ const ConnectorBreakdownDialog = ({ open, connectorId, onClose }) => {
             ) : (
               <WifiOff className="w-5 h-5 text-rose-600" />
             )}
-            <span className="capitalize">{data?.provider || 'Connector'} Detayı</span>
+            <span className="capitalize">{data?.provider || 'Connector'} {t('cm.components_ops_ConnectorBreakdownDialog.detayi')}</span>
             {data?.property_name && (
               <span className="text-sm font-normal text-slate-500">— {data.property_name}</span>
             )}
@@ -110,7 +112,7 @@ const ConnectorBreakdownDialog = ({ open, connectorId, onClose }) => {
         {loading && !data && (
           <div className="flex items-center justify-center py-10 text-slate-500">
             <RefreshCw className="w-5 h-5 animate-spin mr-2" />
-            Yükleniyor…
+            {t('cm.components_ops_ConnectorBreakdownDialog.yukleniyor')}
           </div>
         )}
 
@@ -131,13 +133,13 @@ const ConnectorBreakdownDialog = ({ open, connectorId, onClose }) => {
                   <div className="flex items-center gap-2 mt-0.5">
                     <RiskBadge risk={data.risk_assessment?.overall_risk} />
                     <span className="text-xs text-slate-500">
-                      Maks güven: <strong>%{data.risk_assessment?.max_confidence ?? 0}</strong>
+                      {t('cm.components_ops_ConnectorBreakdownDialog.maks_guven')} <strong>%{data.risk_assessment?.max_confidence ?? 0}</strong>
                     </span>
                   </div>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-xs text-slate-500 uppercase tracking-wider">Aktif Uyarı</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wider">{t('cm.components_ops_ConnectorBreakdownDialog.aktif_uyari')}</p>
                 <p className="text-2xl font-bold text-slate-900">{data.warning_count || 0}</p>
               </div>
             </div>
@@ -146,12 +148,12 @@ const ConnectorBreakdownDialog = ({ open, connectorId, onClose }) => {
             <div>
               <h4 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4 text-amber-500" />
-                Aktif Uyarılar
+                {t('cm.components_ops_ConnectorBreakdownDialog.aktif_uyarilar')}
               </h4>
               {(data.warnings || []).length === 0 ? (
                 <div className="text-center py-6 text-slate-500 bg-emerald-50/50 rounded-md border border-emerald-200">
                   <CheckCircle2 className="w-7 h-7 mx-auto mb-1.5 text-emerald-500 opacity-70" />
-                  <p className="text-sm">Bu connector için aktif uyarı yok</p>
+                  <p className="text-sm">{t('cm.components_ops_ConnectorBreakdownDialog.bu_connector_icin_aktif_uyari_yok')}</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -192,27 +194,27 @@ const ConnectorBreakdownDialog = ({ open, connectorId, onClose }) => {
             <div>
               <h4 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
                 <TrendingUp className="w-4 h-4 text-indigo-500" />
-                Trend Özeti
+                {t('cm.components_ops_ConnectorBreakdownDialog.trend_ozeti')}
               </h4>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="bg-white border rounded-md p-2.5">
-                  <p className="text-slate-500 uppercase tracking-wider text-[10px]">Hata Oranı</p>
+                  <p className="text-slate-500 uppercase tracking-wider text-[10px]">{t('cm.components_ops_ConnectorBreakdownDialog.hata_orani')}</p>
                   <p className="text-base font-bold text-slate-900 mt-0.5">
                     %{data.trends?.failure_rate?.current ?? data.trends?.failure_rate?.latest ?? 0}
                   </p>
                   {data.trends?.failure_rate?.trend && (
-                    <p className="text-[10px] text-slate-500 mt-0.5">Yön: {data.trends.failure_rate.trend}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{t('cm.components_ops_ConnectorBreakdownDialog.yon')} {data.trends.failure_rate.trend}</p>
                   )}
                 </div>
                 <div className="bg-white border rounded-md p-2.5">
-                  <p className="text-slate-500 uppercase tracking-wider text-[10px]">Sağlık Skoru</p>
+                  <p className="text-slate-500 uppercase tracking-wider text-[10px]">{t('cm.components_ops_ConnectorBreakdownDialog.saglik_skoru')}</p>
                   <p className="text-base font-bold text-slate-900 mt-0.5">
                     {data.trends?.health_score?.current ?? data.trends?.health_score?.latest ?? '—'}
                   </p>
                 </div>
                 <div className="bg-white border rounded-md p-2.5">
                   <p className="text-slate-500 uppercase tracking-wider text-[10px] flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> Son Başarı
+                    <Clock className="w-3 h-3" /> {t('cm.components_ops_ConnectorBreakdownDialog.son_basari')}
                   </p>
                   <p className="text-xs text-slate-700 mt-0.5">
                     {data.trends?.staleness?.last_success_at
@@ -232,7 +234,7 @@ const ConnectorBreakdownDialog = ({ open, connectorId, onClose }) => {
             </div>
 
             <div className="text-[10px] text-slate-400 text-right border-t pt-2">
-              Üretildi: {data.generated_at ? new Date(data.generated_at).toLocaleString('tr-TR') : '—'}
+              {t('cm.components_ops_ConnectorBreakdownDialog.uretildi')} {data.generated_at ? new Date(data.generated_at).toLocaleString('tr-TR') : '—'}
             </div>
           </div>
         )}

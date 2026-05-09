@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
+import { useTranslation } from 'react-i18next';
 
 const CHART_COLORS = {
   sync: "#10b981",
@@ -22,6 +23,7 @@ const CHART_COLORS = {
 };
 
 function CustomTooltip({ active, payload, label }) {
+  const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 shadow-xl">
@@ -99,7 +101,7 @@ export function WeeklyProof() {
     return (
       <div className="text-center py-16 text-zinc-500" data-testid="weekly-proof-empty">
         <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">Haftalık veri bulunamadı</p>
+        <p className="text-sm">{t('cm.components_WeeklyProofDashboard.haftalik_veri_bulunamadi')}</p>
       </div>
     );
   }
@@ -122,7 +124,7 @@ export function WeeklyProof() {
         <div className="flex items-center gap-3">
           <Award className="h-4 w-4 text-amber-400" />
           <span className="text-xs text-zinc-400 font-mono">
-            Deger Kaniti — Hafta Hafta Iyilesme
+            {t('cm.components_WeeklyProofDashboard.deger_kaniti_hafta_hafta_iyilesme')}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -136,7 +138,7 @@ export function WeeklyProof() {
             ))}
           </div>
           <Button variant="ghost" size="sm" className="h-7 text-xs text-zinc-500" onClick={() => { setLoading(true); fetchData(true); }} data-testid="weekly-proof-refresh">
-            <RefreshCw className="h-3 w-3 mr-1" />Yenile
+            <RefreshCw className="h-3 w-3 mr-1" />{t('cm.components_WeeklyProofDashboard.yenile')}
           </Button>
         </div>
       </div>
@@ -145,7 +147,7 @@ export function WeeklyProof() {
       {Object.keys(imp).length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" data-testid="improvement-cards">
           <ImprovementCard icon={<TrendingUp className="h-4 w-4" />} label="Sync Basari" delta={imp.sync_success_delta ?? 0} unit="%" testId="imp-sync" />
-          <ImprovementCard icon={<TrendingDown className="h-4 w-4" />} label="Drift Sayısı" delta={imp.drift_delta ?? 0} unit="" invertGood testId="imp-drift" />
+          <ImprovementCard icon={<TrendingDown className="h-4 w-4" />} label={t('cm.components_WeeklyProofDashboard.drift_sayisi')} delta={imp.drift_delta ?? 0} unit="" invertGood testId="imp-drift" />
           <ImprovementCard icon={<Clock className="h-4 w-4" />} label="MTTR" delta={imp.mttr_delta ?? 0} unit="s" invertGood testId="imp-mttr" />
           <ImprovementCard icon={<Shield className="h-4 w-4" />} label="SLA Uyum" delta={imp.sla_delta ?? 0} unit="%" testId="imp-sla" />
           <ImprovementCard icon={<BarChart3 className="h-4 w-4" />} label="Push p95" delta={imp.push_p95_delta ?? 0} unit="ms" invertGood testId="imp-p95" />
@@ -201,7 +203,7 @@ export function WeeklyProof() {
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-zinc-500" /> Push Latency p95 Haftalık
+            <BarChart3 className="h-4 w-4 text-zinc-500" /> {t('cm.components_WeeklyProofDashboard.push_latency_p95_haftalik')}
           </CardTitle>
         </CardHeader>
         <CardContent data-testid="chart-p95-weekly">

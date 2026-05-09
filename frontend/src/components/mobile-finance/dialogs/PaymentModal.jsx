@@ -10,14 +10,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Wallet, CreditCard, TrendingUp, AlertTriangle, FileText, DollarSign, ArrowDownCircle, ArrowUpCircle, Receipt, Banknote, Clock, CheckCircle, XCircle, Calendar, Filter, Download, Upload, Eye, Search, Plus, Minus, RefreshCw, ChevronRight, ChevronDown, BarChart3, PieChart, Activity, Users, Building, Briefcase, ShoppingCart, Coffee, Utensils, Bed, Home } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export default function PaymentModal(props) {
+  const { t } = useTranslation();
   const { formatCurrency, handleRecordPayment, paymentModalOpen, selectedFolio, setPaymentModalOpen } = props;
   return (
     <Dialog open={paymentModalOpen} onOpenChange={setPaymentModalOpen}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Tahsilat Kaydı</DialogTitle>
+          <DialogTitle>{t('cm.components_mobilefinance_dialogs_PaymentModal.tahsilat_kaydi')}</DialogTitle>
         </DialogHeader>
         {selectedFolio && (
           <form onSubmit={(e) => {
@@ -32,15 +34,15 @@ export default function PaymentModal(props) {
           }}>
             <div className="space-y-4">
               <div>
-                <Label>Misafir</Label>
+                <Label>{t('cm.components_mobilefinance_dialogs_PaymentModal.misafir')}</Label>
                 <Input value={selectedFolio.guest_name} disabled />
               </div>
               <div>
-                <Label>Kalan Bakiye</Label>
+                <Label>{t('cm.components_mobilefinance_dialogs_PaymentModal.kalan_bakiye')}</Label>
                 <Input value={formatCurrency(selectedFolio.balance)} disabled />
               </div>
               <div>
-                <Label>Tahsilat Tutarı *</Label>
+                <Label>{t('cm.components_mobilefinance_dialogs_PaymentModal.tahsilat_tutari')}</Label>
                 <Input 
                   name="amount" 
                   type="number" 
@@ -50,12 +52,12 @@ export default function PaymentModal(props) {
                 />
               </div>
               <div>
-                <Label>Ödeme Yöntemi *</Label>
+                <Label>{t('cm.components_mobilefinance_dialogs_PaymentModal.odeme_yontemi')}</Label>
                 <select name="payment_method" className="w-full p-2 border rounded" required>
                   <option value="cash">Nakit</option>
-                  <option value="card">Kredi Kartı</option>
+                  <option value="card">{t('cm.components_mobilefinance_dialogs_PaymentModal.kredi_karti')}</option>
                   <option value="transfer">Havale</option>
-                  <option value="check">Çek</option>
+                  <option value="check">{t('cm.components_mobilefinance_dialogs_PaymentModal.cek')}</option>
                 </select>
               </div>
               <div>
@@ -63,7 +65,7 @@ export default function PaymentModal(props) {
                 <Textarea name="notes" rows={3} />
               </div>
               <Button type="submit" className="w-full bg-green-600 hover:bg-green-700">
-                Tahsilat Kaydet
+                {t('cm.components_mobilefinance_dialogs_PaymentModal.tahsilat_kaydet')}
               </Button>
             </div>
           </form>

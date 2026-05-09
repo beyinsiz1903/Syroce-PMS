@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Shirt, Plus, RefreshCw, Search, Settings, Trash2, Pencil, Check, X } from 'lucide-react';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 const SERVICE_TYPES = [
   { code: 'wash_iron', name: 'Yikama + Utuleme', multiplier: 1 },
   { code: 'dry_clean', name: 'Kuru Temizleme', multiplier: 1.5 },
@@ -25,6 +26,7 @@ const FALLBACK_ITEMS = [
 ];
 
 const LaundryTab = () => {
+  const { t } = useTranslation();
   const [orders, setOrders] = useState([]);
   const [items, setItems] = useState([]);
   const [showNewOrder, setShowNewOrder] = useState(false);
@@ -250,7 +252,7 @@ const LaundryTab = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold flex items-center gap-2">
-          <Shirt className="w-6 h-6" /> Camasirhane Yönetimi
+          <Shirt className="w-6 h-6" /> {t('cm.components_pms_LaundryTab.camasirhane_yonetimi')}
         </h2>
       </div>
 
@@ -265,25 +267,25 @@ const LaundryTab = () => {
         <TabsContent value="orders" className="space-y-4">
           <div className="flex justify-end gap-2">
             <Button onClick={() => setShowNewOrder(true)} className="bg-blue-600 hover:bg-blue-700">
-              <Plus className="w-4 h-4 mr-2" /> Yeni Sipariş
+              <Plus className="w-4 h-4 mr-2" /> {t('cm.components_pms_LaundryTab.yeni_siparis')}
             </Button>
             <Button variant="outline" onClick={loadOrders}>
-              <RefreshCw className="w-4 h-4 mr-2" /> Yenile
+              <RefreshCw className="w-4 h-4 mr-2" /> {t('cm.components_pms_LaundryTab.yenile')}
             </Button>
           </div>
 
           <div className="flex gap-3">
             <div className="relative flex-1">
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
-              <Input className="pl-9" placeholder="Oda no veya misafir adi ile ara..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+              <Input className="pl-9" placeholder={t('cm.components_pms_LaundryTab.oda_no_veya_misafir_adi_ile_ara')} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="Durum" /></SelectTrigger>
+              <SelectTrigger className="w-40"><SelectValue placeholder={t('cm.components_pms_LaundryTab.durum')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tüm Durumlar</SelectItem>
+                <SelectItem value="all">{t('cm.components_pms_LaundryTab.tum_durumlar')}</SelectItem>
                 <SelectItem value="pending">Bekliyor</SelectItem>
                 <SelectItem value="in_progress">Isleniyor</SelectItem>
-                <SelectItem value="ready">Hazir</SelectItem>
+                <SelectItem value="ready">{t('cm.components_pms_LaundryTab.hazir')}</SelectItem>
                 <SelectItem value="delivered">Teslim Edildi</SelectItem>
               </SelectContent>
             </Select>
@@ -309,7 +311,7 @@ const LaundryTab = () => {
             {filteredOrders.length === 0 ? (
               <Card className="border-dashed"><CardContent className="py-8 text-center text-gray-400">
                 <Shirt className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                <p>Sipariş bulunamadı</p>
+                <p>{t('cm.components_pms_LaundryTab.siparis_bulunamadi')}</p>
               </CardContent></Card>
             ) : filteredOrders.map(order => {
               const sc = statusConfig[order.status] || statusConfig.pending;
@@ -341,7 +343,7 @@ const LaundryTab = () => {
                             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'in_progress')}>Basla</Button>
                           )}
                           {order.status === 'in_progress' && (
-                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'ready')}>Hazir</Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'ready')}>{t('cm.components_pms_LaundryTab.hazir_04e6f')}</Button>
                           )}
                           {order.status === 'ready' && (
                             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateStatus(order.id, 'delivered')}>Teslim Et</Button>
@@ -360,14 +362,14 @@ const LaundryTab = () => {
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <Plus className="w-4 h-4" /> Yeni Urun Ekle
+                <Plus className="w-4 h-4" /> {t('cm.components_pms_LaundryTab.yeni_urun_ekle')}
               </CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <Input placeholder="Kod (orn: shirt)" value={newItem.code} onChange={e => setNewItem(p => ({ ...p, code: e.target.value }))} />
               <Input placeholder="Ad (orn: Gomlek)" value={newItem.name} onChange={e => setNewItem(p => ({ ...p, name: e.target.value }))} />
               <Input type="number" min="0" step="0.01" placeholder="Fiyat (TL)" value={newItem.price} onChange={e => setNewItem(p => ({ ...p, price: e.target.value }))} />
-              <Button onClick={createItem}><Plus className="w-4 h-4 mr-1" /> Ekle</Button>
+              <Button onClick={createItem}><Plus className="w-4 h-4 mr-1" /> {t('cm.components_pms_LaundryTab.ekle')}</Button>
             </CardContent>
           </Card>
 
@@ -378,7 +380,7 @@ const LaundryTab = () => {
             <CardContent>
               <div className="space-y-2">
                 {items.length === 0 ? (
-                  <p className="text-center text-gray-400 py-6">Henüz urun yok</p>
+                  <p className="text-center text-gray-400 py-6">{t('cm.components_pms_LaundryTab.henuz_urun_yok')}</p>
                 ) : items.map(it => (
                   <div key={it.id} className="flex items-center justify-between border rounded-lg p-3 hover:bg-gray-50">
                     {editingId === it.id ? (
@@ -420,12 +422,12 @@ const LaundryTab = () => {
       <Dialog open={showNewOrder} onOpenChange={setShowNewOrder}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Shirt className="w-5 h-5" /> Yeni Çamaşır Siparişi</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Shirt className="w-5 h-5" /> {t('cm.components_pms_LaundryTab.yeni_camasir_siparisi')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Oda No</Label>
+                <Label>{t('cm.components_pms_LaundryTab.oda_no')}</Label>
                 <Input
                   value={orderForm.room_number}
                   onChange={e => setOrderForm(p => ({ ...p, room_number: e.target.value }))}
@@ -435,9 +437,9 @@ const LaundryTab = () => {
               </div>
               <div>
                 <Label>
-                  Misafir Adi
+                  {t('cm.components_pms_LaundryTab.misafir_adi')}
                   {roomLookupBusy && <span className="ml-2 text-xs text-blue-500">araniyor...</span>}
-                  {orderForm.booking_id && <Badge className="ml-2 bg-emerald-100 text-emerald-700 text-[10px]">Aktif</Badge>}
+                  {orderForm.booking_id && <Badge className="ml-2 bg-emerald-100 text-emerald-700 text-[10px]">{t('cm.components_pms_LaundryTab.aktif')}</Badge>}
                 </Label>
                 <Input value={orderForm.guest_name} onChange={e => setOrderForm(p => ({ ...p, guest_name: e.target.value }))} />
               </div>
@@ -458,14 +460,14 @@ const LaundryTab = () => {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="normal">Normal</SelectItem>
-                    <SelectItem value="high">Yüksek</SelectItem>
+                    <SelectItem value="high">{t('cm.components_pms_LaundryTab.yuksek')}</SelectItem>
                     <SelectItem value="urgent">Acil</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="border rounded-lg p-3 space-y-2">
-              <Label>Urun Ekle</Label>
+              <Label>{t('cm.components_pms_LaundryTab.urun_ekle')}</Label>
               <div className="flex gap-2">
                 <Select value={itemToAdd.code} onValueChange={v => setItemToAdd(p => ({ ...p, code: v }))}>
                   <SelectTrigger className="flex-1"><SelectValue placeholder="Urun secin" /></SelectTrigger>
@@ -488,16 +490,16 @@ const LaundryTab = () => {
                     </div>
                   ))}
                   <div className="flex justify-between text-sm font-bold pt-1 border-t">
-                    <span>Toplam:</span>
+                    <span>{t('cm.components_pms_LaundryTab.toplam')}</span>
                     <span>{orderTotal.toFixed(2)} TL</span>
                   </div>
                 </div>
               )}
             </div>
-            <div><Label>Not</Label><Input value={orderForm.notes} onChange={e => setOrderForm(p => ({ ...p, notes: e.target.value }))} placeholder="Özel talimatlar..." /></div>
+            <div><Label>Not</Label><Input value={orderForm.notes} onChange={e => setOrderForm(p => ({ ...p, notes: e.target.value }))} placeholder={t('cm.components_pms_LaundryTab.ozel_talimatlar')} /></div>
             <Button onClick={submitOrder} disabled={loading} className="w-full">
               {loading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-              Sipariş Olustur ({orderTotal.toFixed(2)} TL)
+              {t('cm.components_pms_LaundryTab.siparis_olustur')}{orderTotal.toFixed(2)} TL)
             </Button>
           </div>
         </DialogContent>

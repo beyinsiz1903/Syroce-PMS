@@ -14,6 +14,7 @@ import {
   Star, MessageCircle, RefreshCw, Send, TrendingUp, Mail, Globe,
   Building2, ClipboardList, Inbox, Search, ExternalLink, CheckCircle2
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const SOURCE_META = {
   internal: { label: 'Otel İçi', color: 'bg-indigo-100 text-indigo-700 border-indigo-200', icon: Inbox },
@@ -50,6 +51,7 @@ const formatDate = (raw) => {
 };
 
 const FeedbackSystem = () => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState('all');
   const [internal, setInternal] = useState([]);
@@ -229,10 +231,10 @@ const FeedbackSystem = () => {
   }, [bookings, bookingSearch]);
 
   const getRatingBadge = (rating) => {
-    if (!rating) return <Badge variant="outline" className="text-gray-500">Puanlanmamış</Badge>;
+    if (!rating) return <Badge variant="outline" className="text-gray-500">{t('cm.components_FeedbackSystem.puanlanmamis')}</Badge>;
     if (rating >= 4) return <Badge className="bg-green-100 text-green-700">Memnun</Badge>;
     if (rating >= 3) return <Badge className="bg-yellow-100 text-yellow-700">Orta</Badge>;
-    return <Badge className="bg-red-100 text-red-700">Memnun değil</Badge>;
+    return <Badge className="bg-red-100 text-red-700">{t('cm.components_FeedbackSystem.memnun_degil')}</Badge>;
   };
 
   return (
@@ -240,16 +242,16 @@ const FeedbackSystem = () => {
       <div className="flex justify-between items-center flex-wrap gap-3">
         <div>
           <h3 className="text-2xl font-bold flex items-center gap-2">
-            <MessageCircle className="w-6 h-6" /> Misafir Geri Bildirimleri
+            <MessageCircle className="w-6 h-6" /> {t('cm.components_FeedbackSystem.misafir_geri_bildirimleri')}
           </h3>
-          <p className="text-gray-600 text-sm">Tüm kaynaklardan gelen değerlendirmeleri tek yerden takip edin ve yanıtlayın</p>
+          <p className="text-gray-600 text-sm">{t('cm.components_FeedbackSystem.tum_kaynaklardan_gelen_degerlendirmeleri')}</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={loadAll} disabled={loading} data-testid="btn-feedback-refresh">
-            <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Yenile
+            <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> {t('cm.components_FeedbackSystem.yenile')}
           </Button>
           <Button size="sm" onClick={openInvite} data-testid="btn-feedback-invite">
-            <Mail className="w-4 h-4 mr-2" /> Değerlendirme İste
+            <Mail className="w-4 h-4 mr-2" /> {t('cm.components_FeedbackSystem.degerlendirme_iste')}
           </Button>
         </div>
       </div>
@@ -266,28 +268,28 @@ const FeedbackSystem = () => {
         <Card className="bg-blue-50 border-blue-200">
           <CardContent className="p-5 text-center">
             <MessageCircle className="w-6 h-6 mx-auto mb-1 text-blue-500" />
-            <p className="text-xs text-blue-600">Toplam Değerlendirme</p>
+            <p className="text-xs text-blue-600">{t('cm.components_FeedbackSystem.toplam_degerlendirme')}</p>
             <p className="text-3xl font-bold text-blue-700">{stats.total}</p>
             <p className="text-xs text-blue-500 mt-1">
-              {stats.breakdown.internal || 0} otel içi · {stats.breakdown.external || 0} dış · {stats.breakdown.survey || 0} anket · {stats.breakdown.department || 0} dep.
+              {stats.breakdown.internal || 0} {t('cm.components_FeedbackSystem.otel_ici')} {stats.breakdown.external || 0} {t('cm.components_FeedbackSystem.dis')} {stats.breakdown.survey || 0} anket · {stats.breakdown.department || 0} dep.
             </p>
           </CardContent>
         </Card>
         <Card className="bg-green-50 border-green-200">
           <CardContent className="p-5 text-center">
             <TrendingUp className="w-6 h-6 mx-auto mb-1 text-green-500" />
-            <p className="text-xs text-green-600">Memnuniyet Oranı</p>
+            <p className="text-xs text-green-600">{t('cm.components_FeedbackSystem.memnuniyet_orani')}</p>
             <p className="text-3xl font-bold text-green-700">%{stats.sat}</p>
-            <p className="text-xs text-green-500">(4+ yıldız)</p>
+            <p className="text-xs text-green-500">{t('cm.components_FeedbackSystem.4_yildiz')}</p>
           </CardContent>
         </Card>
       </div>
 
       <Tabs value={view} onValueChange={setView}>
         <TabsList className="grid grid-cols-5 w-full max-w-3xl">
-          <TabsTrigger value="all">Tümü ({combined.length})</TabsTrigger>
-          <TabsTrigger value="internal">Otel İçi ({stats.breakdown.internal || 0})</TabsTrigger>
-          <TabsTrigger value="external">Dış Platform ({stats.breakdown.external || 0})</TabsTrigger>
+          <TabsTrigger value="all">{t('cm.components_FeedbackSystem.tumu')}{combined.length})</TabsTrigger>
+          <TabsTrigger value="internal">{t('cm.components_FeedbackSystem.otel_ici_6653c')}{stats.breakdown.internal || 0})</TabsTrigger>
+          <TabsTrigger value="external">{t('cm.components_FeedbackSystem.dis_platform')}{stats.breakdown.external || 0})</TabsTrigger>
           <TabsTrigger value="survey">Anket ({stats.breakdown.survey || 0})</TabsTrigger>
           <TabsTrigger value="department">Departman ({stats.breakdown.department || 0})</TabsTrigger>
         </TabsList>
@@ -297,8 +299,8 @@ const FeedbackSystem = () => {
             <Card>
               <CardContent className="py-12 text-center text-gray-500">
                 <MessageCircle className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p className="font-medium">Bu kategoride değerlendirme yok</p>
-                <p className="text-sm mt-1">"Değerlendirme İste" düğmesiyle misafirlerinize davet gönderebilirsiniz</p>
+                <p className="font-medium">{t('cm.components_FeedbackSystem.bu_kategoride_degerlendirme_yok')}</p>
+                <p className="text-sm mt-1">{t('cm.components_FeedbackSystem.degerlendirme_iste_dugmesiyle_misafirler')}</p>
               </CardContent>
             </Card>
           ) : (
@@ -336,18 +338,18 @@ const FeedbackSystem = () => {
                       )}
                       {item.response ? (
                         <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg">
-                          <p className="text-xs font-semibold text-blue-700 mb-1">Yönetim Yanıtı</p>
+                          <p className="text-xs font-semibold text-blue-700 mb-1">{t('cm.components_FeedbackSystem.yonetim_yaniti')}</p>
                           <p className="text-sm text-gray-700">{item.response}</p>
                         </div>
                       ) : canRespond ? (
                         <div className="flex gap-2 flex-wrap">
                           <Button size="sm" variant="outline" onClick={() => { setRespondDialog({ id: item.id, source: item._source, guest_name: item.guest_name }); setResponseText(''); }}>
-                            <Send className="w-4 h-4 mr-2" /> Yanıtla
+                            <Send className="w-4 h-4 mr-2" /> {t('cm.components_FeedbackSystem.yanitla')}
                           </Button>
                           {item.external_url && (
                             <Button size="sm" variant="ghost" asChild>
                               <a href={item.external_url} target="_blank" rel="noreferrer">
-                                <ExternalLink className="w-4 h-4 mr-1" /> Platformda görüntüle
+                                <ExternalLink className="w-4 h-4 mr-1" /> {t('cm.components_FeedbackSystem.platformda_goruntule')}
                               </a>
                             </Button>
                           )}
@@ -366,7 +368,7 @@ const FeedbackSystem = () => {
       <Dialog open={!!respondDialog} onOpenChange={(o) => { if (!o) { setRespondDialog(null); setResponseText(''); } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Değerlendirmeye yanıt ver</DialogTitle>
+            <DialogTitle>{t('cm.components_FeedbackSystem.degerlendirmeye_yanit_ver')}</DialogTitle>
             <DialogDescription>
               {respondDialog?.guest_name ? `${respondDialog.guest_name} adlı misafirin değerlendirmesine yanıt yazıyorsunuz.` : 'Yanıtınız panelde görünür olacak.'}
             </DialogDescription>
@@ -376,12 +378,12 @@ const FeedbackSystem = () => {
               value={responseText}
               onChange={(e) => setResponseText(e.target.value)}
               rows={5}
-              placeholder="Misafire teşekkür edin, geri bildirimini değerlendirin..."
+              placeholder={t('cm.components_FeedbackSystem.misafire_tesekkur_edin_geri_bildirimini_')}
               maxLength={2000}
             />
             <p className="text-xs text-gray-500">{responseText.length} / 2000 karakter</p>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => { setRespondDialog(null); setResponseText(''); }}>İptal</Button>
+              <Button variant="outline" onClick={() => { setRespondDialog(null); setResponseText(''); }}>{t('cm.components_FeedbackSystem.iptal')}</Button>
               <Button onClick={respondToReview} disabled={!responseText.trim() || sending}>
                 <Send className="w-4 h-4 mr-2" /> {sending ? 'Gönderiliyor...' : 'Gönder'}
               </Button>
@@ -394,9 +396,9 @@ const FeedbackSystem = () => {
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Misafire değerlendirme daveti gönder</DialogTitle>
+            <DialogTitle>{t('cm.components_FeedbackSystem.misafire_degerlendirme_daveti_gonder')}</DialogTitle>
             <DialogDescription>
-              E-posta adresi kayıtlı olan misafirlerin listesi. Seçtiğiniz misafire değerlendirme bağlantısı içeren bir e-posta gönderilir.
+              {t('cm.components_FeedbackSystem.e_posta_adresi_kayitli_olan_misafirlerin')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -404,18 +406,18 @@ const FeedbackSystem = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
                 className="pl-9"
-                placeholder="Misafir adı, e-posta veya oda numarası ara..."
+                placeholder={t('cm.components_FeedbackSystem.misafir_adi_e_posta_veya_oda_numarasi_ar')}
                 value={bookingSearch}
                 onChange={(e) => setBookingSearch(e.target.value)}
               />
             </div>
             <ScrollArea className="h-[420px] pr-3">
               {bookingsLoading ? (
-                <div className="py-8 text-center text-gray-500">Rezervasyonlar yükleniyor...</div>
+                <div className="py-8 text-center text-gray-500">{t('cm.components_FeedbackSystem.rezervasyonlar_yukleniyor')}</div>
               ) : filteredBookings.length === 0 ? (
                 <div className="py-8 text-center text-gray-500">
                   <Mail className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-                  <p className="text-sm">E-postası kayıtlı misafir bulunamadı</p>
+                  <p className="text-sm">{t('cm.components_FeedbackSystem.e_postasi_kayitli_misafir_bulunamadi')}</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -426,7 +428,7 @@ const FeedbackSystem = () => {
                           <p className="font-medium text-sm truncate">{b.guest_name || 'Misafir'}</p>
                           <p className="text-xs text-gray-500 truncate">{b.guest_email}</p>
                           <p className="text-xs text-gray-400 mt-0.5">
-                            Oda {b.room_number || '-'} · {formatDate(b.check_in)} → {formatDate(b.check_out)}
+                            {t('cm.components_FeedbackSystem.oda')} {b.room_number || '-'} · {formatDate(b.check_in)} → {formatDate(b.check_out)}
                           </p>
                         </div>
                         <Button
@@ -436,9 +438,9 @@ const FeedbackSystem = () => {
                           disabled={sendingInvite === b.id}
                         >
                           {sendingInvite === b.id ? (
-                            <><RefreshCw className="w-4 h-4 mr-1 animate-spin" /> Gönderiliyor</>
+                            <><RefreshCw className="w-4 h-4 mr-1 animate-spin" /> {t('cm.components_FeedbackSystem.gonderiliyor')}</>
                           ) : (
-                            <><Send className="w-4 h-4 mr-1" /> Gönder</>
+                            <><Send className="w-4 h-4 mr-1" /> {t('cm.components_FeedbackSystem.gonder')}</>
                           )}
                         </Button>
                       </CardContent>
@@ -449,7 +451,7 @@ const FeedbackSystem = () => {
             </ScrollArea>
             <div className="flex items-center gap-2 text-xs text-gray-500 pt-1 border-t">
               <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
-              <span>Bağlantı 30 gün geçerlidir ve tek kullanımlıktır</span>
+              <span>{t('cm.components_FeedbackSystem.baglanti_30_gun_gecerlidir_ve_tek_kullan')}</span>
             </div>
           </div>
         </DialogContent>

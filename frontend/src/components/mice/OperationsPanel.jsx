@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2 } from 'lucide-react';
 import { Field } from './_shared';
+import { useTranslation } from 'react-i18next';
 
 const STAFF_ROLES = [
   ['chef', 'Aşçı'], ['server', 'Servis'], ['technician', 'Teknisyen'],
@@ -19,6 +20,7 @@ const TECH_BOOLS = [
 ];
 
 const OperationsPanel = ({ form, setForm }) => {
+  const { t } = useTranslation();
   const tr = form.technical_requirements || {};
   const ent = form.entertainment || {};
   const setTr = (patch) =>
@@ -60,11 +62,11 @@ const OperationsPanel = ({ form, setForm }) => {
             <Input type="number" min="0" value={tr.microphone_wireless || 0}
                    onChange={(e) => setTr({ microphone_wireless: +e.target.value })} />
           </Field>
-          <Field label="İnternet (Mbps)">
+          <Field label={t('cm.components_mice_OperationsPanel.internet_mbps')}>
             <Input type="number" min="0" value={tr.internet_mbps || 0}
                    onChange={(e) => setTr({ internet_mbps: +e.target.value })} />
           </Field>
-          <Field label="Çeviri Kabin Sayısı">
+          <Field label={t('cm.components_mice_OperationsPanel.ceviri_kabin_sayisi')}>
             <Input type="number" min="0" value={tr.translation_booths || 0}
                    onChange={(e) => setTr({ translation_booths: +e.target.value })} />
           </Field>
@@ -72,22 +74,22 @@ const OperationsPanel = ({ form, setForm }) => {
         <Field label="Teknik Notlar">
           <Input value={tr.notes || ''}
                  onChange={(e) => setTr({ notes: e.target.value })}
-                 placeholder="Özel kurulum, jenerator, vb." />
+                 placeholder={t('cm.components_mice_OperationsPanel.ozel_kurulum_jenerator_vb')} />
         </Field>
       </section>
 
       <section>
         <div className="flex items-center justify-between">
           <Label className="text-sm font-semibold">
-            Görevli Personel ({(form.staff_assignments || []).length})
+            {t('cm.components_mice_OperationsPanel.gorevli_personel')}{(form.staff_assignments || []).length})
           </Label>
           <Button type="button" size="sm" variant="outline" onClick={addStaff}>
-            <Plus className="w-3 h-3 mr-1" /> Personel Ekle
+            <Plus className="w-3 h-3 mr-1" /> {t('cm.components_mice_OperationsPanel.personel_ekle')}
           </Button>
         </div>
         {(form.staff_assignments || []).length === 0 && (
           <p className="text-xs text-gray-500 text-center p-3 border rounded mt-2">
-            Etkinlikte görevli olacak personeli ekleyin (aşçı, servis, teknisyen, vb.)
+            {t('cm.components_mice_OperationsPanel.etkinlikte_gorevli_olacak_personeli_ekle')}
           </p>
         )}
         {(form.staff_assignments || []).map((s, i) => (
@@ -97,7 +99,7 @@ const OperationsPanel = ({ form, setForm }) => {
                     onChange={(e) => setStaff(i, { role: e.target.value })}>
               {STAFF_ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
-            <Input className="col-span-4 text-xs" placeholder="İsim"
+            <Input className="col-span-4 text-xs" placeholder={t('cm.components_mice_OperationsPanel.isim')}
                    value={s.name || ''}
                    onChange={(e) => setStaff(i, { name: e.target.value })} required />
             <Input className="col-span-4 text-xs" placeholder="Not (opsiyonel)"
@@ -110,7 +112,7 @@ const OperationsPanel = ({ form, setForm }) => {
       </section>
 
       <section>
-        <Label className="text-sm font-semibold">Müzik / Eğlence</Label>
+        <Label className="text-sm font-semibold">{t('cm.components_mice_OperationsPanel.muzik_eglence')}</Label>
         <div className="grid grid-cols-3 gap-2 mt-2">
           <Field label="Tip">
             <select className="w-full border rounded px-2 py-1.5"
@@ -119,37 +121,37 @@ const OperationsPanel = ({ form, setForm }) => {
               {ENT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </Field>
-          <Field label="İsim / Sanatçı">
+          <Field label={t('cm.components_mice_OperationsPanel.isim_sanatci')}>
             <Input value={ent.name || ''}
                    onChange={(e) => setEnt({ name: e.target.value })}
                    disabled={ent.type === 'none'} />
           </Field>
-          <Field label="İletişim">
+          <Field label={t('cm.components_mice_OperationsPanel.iletisim')}>
             <Input value={ent.contact || ''}
                    onChange={(e) => setEnt({ contact: e.target.value })}
                    disabled={ent.type === 'none'} />
           </Field>
-          <Field label="Başlama">
+          <Field label={t('cm.components_mice_OperationsPanel.baslama')}>
             <Input type="datetime-local" value={ent.start_at || ''}
                    onChange={(e) => setEnt({ start_at: e.target.value })}
                    disabled={ent.type === 'none'} />
           </Field>
-          <Field label="Bitiş">
+          <Field label={t('cm.components_mice_OperationsPanel.bitis')}>
             <Input type="datetime-local" value={ent.end_at || ''}
                    onChange={(e) => setEnt({ end_at: e.target.value })}
                    disabled={ent.type === 'none'} />
           </Field>
-          <Field label="Ücret (₺)">
+          <Field label={t('cm.components_mice_OperationsPanel.ucret')}>
             <Input type="number" min="0" value={ent.fee || 0}
                    onChange={(e) => setEnt({ fee: +e.target.value })}
                    disabled={ent.type === 'none'} />
           </Field>
         </div>
-        <Field label="Teknik İhtiyaçlar / Notlar">
+        <Field label={t('cm.components_mice_OperationsPanel.teknik_ihtiyaclar_notlar')}>
           <Input value={ent.requirements || ''}
                  onChange={(e) => setEnt({ requirements: e.target.value })}
                  disabled={ent.type === 'none'}
-                 placeholder="Hoparlör sayısı, sahne ölçüsü, vb." />
+                 placeholder={t('cm.components_mice_OperationsPanel.hoparlor_sayisi_sahne_olcusu_vb')} />
         </Field>
       </section>
     </div>

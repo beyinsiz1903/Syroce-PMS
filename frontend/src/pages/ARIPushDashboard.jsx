@@ -16,6 +16,7 @@ import {
   RefreshCw, AlertTriangle, Loader2, Zap, BarChart3,
   Shield, Gauge, Timer, Inbox, Play, AlertOctagon,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const STATUS_LABEL = {
   pending: { tr: 'Bekliyor', intent: 'warning' },
@@ -46,6 +47,7 @@ const FIELD_LABEL = {
 };
 
 const StatusPill = ({ status }) => {
+  const { t } = useTranslation();
   const m = STATUS_LABEL[status];
   if (!m) return <StatusBadge intent="neutral">{status || '-'}</StatusBadge>;
   return <StatusBadge intent={m.intent}>{m.tr}</StatusBadge>;
@@ -266,15 +268,14 @@ const ARIPushDashboard = ({ user, tenant }) => {
   if (!scopeReady) {
     return (
       <div className="p-6">
-        <PageHeader icon={Zap} title="ARI Push Motoru" subtitle="Stok, fiyat ve kısıtlama itme ardışık düzeni" />
+        <PageHeader icon={Zap} title="ARI Push Motoru" subtitle={t('cm.pages_ARIPushDashboard.stok_fiyat_ve_kisitlama_itme_ardisik_duz')} />
         <Card className="border-l-4 border-l-amber-500">
           <CardContent className="p-4 flex items-start gap-3">
             <AlertOctagon className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
             <div className="text-sm text-slate-700">
-              <p className="font-semibold mb-1">Property bilgisi bulunamadı</p>
+              <p className="font-semibold mb-1">{t('cm.pages_ARIPushDashboard.property_bilgisi_bulunamadi')}</p>
               <p>
-                Bu sayfanın çalışabilmesi için aktif bir tenant ve property/hotel kimliği gerekiyor.
-                Lütfen oturumu kapatıp tekrar giriş yapın veya yöneticinize başvurun.
+                {t('cm.pages_ARIPushDashboard.bu_sayfanin_calisabilmesi_icin_aktif_bir')}
               </p>
               <p className="mt-2 text-xs text-slate-500">
                 tenant_id: {tenantId || '—'} • hotel_id: {propertyId || '—'}
@@ -291,11 +292,11 @@ const ARIPushDashboard = ({ user, tenant }) => {
       <PageHeader
         icon={Zap}
         title="ARI Push Motoru"
-        subtitle="Stok, fiyat ve kısıtlama itme ardışık düzeni"
+        subtitle={t('cm.pages_ARIPushDashboard.stok_fiyat_ve_kisitlama_itme_ardisik_duz_e1aae')}
         actions={
           <>
             <Button data-testid="push-pending-btn" onClick={pushPending} size="sm">
-              <Zap className="w-4 h-4 mr-1.5" /> Bekleyenleri Gönder
+              <Zap className="w-4 h-4 mr-1.5" /> {t('cm.pages_ARIPushDashboard.bekleyenleri_gonder')}
             </Button>
             <Button
               data-testid="refresh-btn"
@@ -304,7 +305,7 @@ const ARIPushDashboard = ({ user, tenant }) => {
               size="sm"
               disabled={loading || refreshingTab}
             >
-              <RefreshCw className={`w-4 h-4 mr-1.5 ${(loading || refreshingTab) ? 'animate-spin' : ''}`} /> Yenile
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${(loading || refreshingTab) ? 'animate-spin' : ''}`} /> {t('cm.pages_ARIPushDashboard.yenile')}
             </Button>
           </>
         }
@@ -315,17 +316,17 @@ const ARIPushDashboard = ({ user, tenant }) => {
           <CardContent className="p-3 flex items-start gap-2 text-sm">
             <AlertOctagon className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
             <div className="flex-1 text-slate-700">{errorBanner}</div>
-            <Button variant="outline" size="sm" onClick={() => setErrorBanner(null)}>Kapat</Button>
+            <Button variant="outline" size="sm" onClick={() => setErrorBanner(null)}>{t('cm.pages_ARIPushDashboard.kapat')}</Button>
           </CardContent>
         </Card>
       )}
 
       {/* KPI Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-        <KpiCard data-testid="metric-total-events" icon={Activity} intent="info" label="Toplam Olay" value={stats?.total_events ?? 0} />
+        <KpiCard data-testid="metric-total-events" icon={Activity} intent="info" label={t('cm.pages_ARIPushDashboard.toplam_olay')} value={stats?.total_events ?? 0} />
         <KpiCard data-testid="metric-pending" icon={Clock} intent="warning" label="Bekliyor" value={stats?.pending_changes ?? 0} />
-        <KpiCard data-testid="metric-acked" icon={CheckCircle} intent="success" label="Onaylandı" value={stats?.acked_changes ?? 0} />
-        <KpiCard data-testid="metric-failed" icon={XCircle} intent="danger" label="Başarısız" value={stats?.failed_changes ?? 0} />
+        <KpiCard data-testid="metric-acked" icon={CheckCircle} intent="success" label={t('cm.pages_ARIPushDashboard.onaylandi')} value={stats?.acked_changes ?? 0} />
+        <KpiCard data-testid="metric-failed" icon={XCircle} intent="danger" label={t('cm.pages_ARIPushDashboard.basarisiz')} value={stats?.failed_changes ?? 0} />
         <KpiCard data-testid="metric-drift" icon={AlertTriangle} intent="warning" label="Drift" value={stats?.drift_count ?? 0} />
         <KpiCard data-testid="metric-outbound" icon={ArrowUpDown} intent="neutral" label="Giden" value={stats?.total_outbound_pushes ?? 0} />
       </div>
@@ -342,7 +343,7 @@ const ARIPushDashboard = ({ user, tenant }) => {
               </div>
               <div className="flex items-center gap-2">
                 <Shield className="w-3.5 h-3.5 text-slate-500" />
-                <span className="text-slate-600">Adaptörler:</span>
+                <span className="text-slate-600">{t('cm.pages_ARIPushDashboard.adaptorler')}</span>
                 {(engineStats.registered_adapters || []).map((a) => (
                   <StatusBadge key={a} intent="neutral">{a}</StatusBadge>
                 ))}
@@ -350,13 +351,13 @@ const ARIPushDashboard = ({ user, tenant }) => {
               {driftMode && (
                 <div className="flex items-center gap-2">
                   <Timer className="w-3.5 h-3.5 text-slate-500" />
-                  <span className="text-slate-600">Drift modu (sadece bu kiracı):</span>
+                  <span className="text-slate-600">{t('cm.pages_ARIPushDashboard.drift_modu_sadece_bu_kiraci')}</span>
                   <button
                     type="button"
                     data-testid="drift-mode-badge"
                     onClick={toggleDriftMode}
                     className="cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 rounded-md"
-                    title="Drift modunu değiştir (kiracıya özel)"
+                    title={t('cm.pages_ARIPushDashboard.drift_modunu_degistir_kiraciya_ozel')}
                   >
                     <StatusBadge intent={driftMode.mode === 'recovery' ? 'warning' : 'success'}>
                       {driftMode.mode === 'recovery' ? 'Kurtarma' : 'Normal'} ({driftMode.interval}s)
@@ -376,22 +377,22 @@ const ARIPushDashboard = ({ user, tenant }) => {
             <Card key={prov} data-testid={`health-card-${prov}`}>
               <CardHeader className="pb-2 pt-3 px-4">
                 <CardTitle className="text-xs text-slate-500 flex items-center gap-1.5">
-                  <Gauge className="w-3.5 h-3.5" /> {prov} sağlığı
+                  <Gauge className="w-3.5 h-3.5" /> {prov} {t('cm.pages_ARIPushDashboard.sagligi')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-3">
                 <div className="grid grid-cols-3 gap-3 text-center">
                   <div>
                     <p className="text-lg font-bold text-emerald-600">%{h.ack_rate}</p>
-                    <p className="text-[10px] text-slate-500">Onay Oranı</p>
+                    <p className="text-[10px] text-slate-500">{t('cm.pages_ARIPushDashboard.onay_orani')}</p>
                   </div>
                   <div>
                     <p className="text-lg font-bold text-rose-600">%{h.error_rate}</p>
-                    <p className="text-[10px] text-slate-500">Hata Oranı</p>
+                    <p className="text-[10px] text-slate-500">{t('cm.pages_ARIPushDashboard.hata_orani')}</p>
                   </div>
                   <div>
                     <p className="text-lg font-bold text-amber-600">%{h.retry_rate}</p>
-                    <p className="text-[10px] text-slate-500">Tekrar Oranı</p>
+                    <p className="text-[10px] text-slate-500">{t('cm.pages_ARIPushDashboard.tekrar_orani')}</p>
                   </div>
                 </div>
               </CardContent>
@@ -435,15 +436,15 @@ const ARIPushDashboard = ({ user, tenant }) => {
                 <div className="grid grid-cols-3 gap-3 text-center">
                   <div>
                     <p className="text-lg font-bold text-sky-600">{opMetrics.queue.queue_depth}</p>
-                    <p className="text-[10px] text-slate-500">Kuyruk Derinliği</p>
+                    <p className="text-[10px] text-slate-500">{t('cm.pages_ARIPushDashboard.kuyruk_derinligi')}</p>
                   </div>
                   <div>
                     <p className="text-lg font-bold text-amber-600">{opMetrics.queue.retry_backlog}</p>
-                    <p className="text-[10px] text-slate-500">Tekrar Yığını</p>
+                    <p className="text-[10px] text-slate-500">{t('cm.pages_ARIPushDashboard.tekrar_yigini')}</p>
                   </div>
                   <div>
                     <p className="text-lg font-bold text-rose-600">{opMetrics.queue.dead_letter_count}</p>
-                    <p className="text-[10px] text-slate-500">Ölü Mektuplar</p>
+                    <p className="text-[10px] text-slate-500">{t('cm.pages_ARIPushDashboard.olu_mektuplar')}</p>
                   </div>
                 </div>
               </CardContent>
@@ -455,8 +456,8 @@ const ARIPushDashboard = ({ user, tenant }) => {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
-          <TabsTrigger data-testid="tab-queue" value="queue">Kuyruk Monitörü</TabsTrigger>
-          <TabsTrigger data-testid="tab-outbound" value="outbound">Giden İstekler</TabsTrigger>
+          <TabsTrigger data-testid="tab-queue" value="queue">{t('cm.pages_ARIPushDashboard.kuyruk_monitoru')}</TabsTrigger>
+          <TabsTrigger data-testid="tab-outbound" value="outbound">{t('cm.pages_ARIPushDashboard.giden_istekler')}</TabsTrigger>
           <TabsTrigger data-testid="tab-drift" value="drift">Drift</TabsTrigger>
           <TabsTrigger data-testid="tab-events" value="events">Olaylar</TabsTrigger>
           <TabsTrigger data-testid="tab-harness" value="harness">Test Paneli</TabsTrigger>
@@ -467,22 +468,22 @@ const ARIPushDashboard = ({ user, tenant }) => {
           <div className="flex gap-3 flex-wrap">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger data-testid="status-filter" className="w-[160px] text-sm">
-                <SelectValue placeholder="Durum" />
+                <SelectValue placeholder={t('cm.pages_ARIPushDashboard.durum')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tüm Durumlar</SelectItem>
+                <SelectItem value="all">{t('cm.pages_ARIPushDashboard.tum_durumlar')}</SelectItem>
                 <SelectItem value="pending">Bekliyor</SelectItem>
-                <SelectItem value="acked">Onaylandı</SelectItem>
+                <SelectItem value="acked">{t('cm.pages_ARIPushDashboard.onaylandi_64902')}</SelectItem>
                 <SelectItem value="failed_retryable">Tekrar Denenecek</SelectItem>
-                <SelectItem value="manual_review">Başarısız</SelectItem>
+                <SelectItem value="manual_review">{t('cm.pages_ARIPushDashboard.basarisiz_3260d')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={providerFilter} onValueChange={setProviderFilter}>
               <SelectTrigger data-testid="provider-filter" className="w-[180px] text-sm">
-                <SelectValue placeholder="Sağlayıcı" />
+                <SelectValue placeholder={t('cm.pages_ARIPushDashboard.saglayici')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tüm Sağlayıcılar</SelectItem>
+                <SelectItem value="all">{t('cm.pages_ARIPushDashboard.tum_saglayicilar')}</SelectItem>
                 <SelectItem value="hotelrunner">HotelRunner</SelectItem>
                 <SelectItem value="exely">Exely</SelectItem>
               </SelectContent>
@@ -491,25 +492,25 @@ const ARIPushDashboard = ({ user, tenant }) => {
 
           <Card>
             <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-sm text-slate-700">Değişiklik Setleri ({filteredCS.length})</CardTitle>
+              <CardTitle className="text-sm text-slate-700">{t('cm.pages_ARIPushDashboard.degisiklik_setleri')}{filteredCS.length})</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table data-testid="change-sets-table" className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-500 text-xs">
-                      <th className="text-left py-2.5 px-4 font-medium">Sağlayıcı</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.saglayici_1a787')}</th>
                       <th className="text-left py-2.5 px-4 font-medium">Kapsam</th>
-                      <th className="text-left py-2.5 px-4 font-medium">Oda</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.oda')}</th>
                       <th className="text-left py-2.5 px-4 font-medium">Tarihler</th>
-                      <th className="text-left py-2.5 px-4 font-medium">Durum</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.durum_074f4')}</th>
                       <th className="text-left py-2.5 px-4 font-medium">Deneme</th>
-                      <th className="text-left py-2.5 px-4 font-medium">Güncellendi</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.guncellendi')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredCS.length === 0 ? (
-                      <tr><td colSpan={7} className="text-center py-8 text-slate-500">Değişiklik seti bulunamadı</td></tr>
+                      <tr><td colSpan={7} className="text-center py-8 text-slate-500">{t('cm.pages_ARIPushDashboard.degisiklik_seti_bulunamadi')}</td></tr>
                     ) : filteredCS.map((cs, i) => (
                       <tr key={cs.id || i} className="border-b border-slate-100 hover:bg-slate-50">
                         <td className="py-2.5 px-4"><StatusBadge intent="neutral">{cs.provider}</StatusBadge></td>
@@ -532,24 +533,24 @@ const ARIPushDashboard = ({ user, tenant }) => {
         <TabsContent value="outbound" className="space-y-4">
           <Card>
             <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-sm text-slate-700">Giden İstek Kayıtları ({outboundLogs.length})</CardTitle>
+              <CardTitle className="text-sm text-slate-700">{t('cm.pages_ARIPushDashboard.giden_istek_kayitlari')}{outboundLogs.length})</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table data-testid="outbound-logs-table" className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-500 text-xs">
-                      <th className="text-left py-2.5 px-4 font-medium">Sağlayıcı</th>
-                      <th className="text-left py-2.5 px-4 font-medium">İşlem</th>
-                      <th className="text-left py-2.5 px-4 font-medium">Sonuç</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.saglayici_1a787')}</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.islem')}</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.sonuc')}</th>
                       <th className="text-left py-2.5 px-4 font-medium">HTTP</th>
-                      <th className="text-left py-2.5 px-4 font-medium">Süre</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.sure')}</th>
                       <th className="text-left py-2.5 px-4 font-medium">Zaman</th>
                     </tr>
                   </thead>
                   <tbody>
                     {outboundLogs.length === 0 ? (
-                      <tr><td colSpan={6} className="text-center py-8 text-slate-500">Giden istek kaydı yok</td></tr>
+                      <tr><td colSpan={6} className="text-center py-8 text-slate-500">{t('cm.pages_ARIPushDashboard.giden_istek_kaydi_yok')}</td></tr>
                     ) : outboundLogs.map((log, i) => (
                       <tr key={log.id || i} className="border-b border-slate-100 hover:bg-slate-50">
                         <td className="py-2.5 px-4"><StatusBadge intent="neutral">{log.provider}</StatusBadge></td>
@@ -575,9 +576,9 @@ const ARIPushDashboard = ({ user, tenant }) => {
         <TabsContent value="drift" className="space-y-4">
           <Card>
             <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-sm text-slate-700">Drift Durumları ({driftStates.length})</CardTitle>
+              <CardTitle className="text-sm text-slate-700">{t('cm.pages_ARIPushDashboard.drift_durumlari')}{driftStates.length})</CardTitle>
               <CardDescription className="text-xs text-slate-500">
-                PMS gerçeği ile sağlayıcı durumu arasındaki farklar. Alan ayrıntısı gösterilir.
+                {t('cm.pages_ARIPushDashboard.pms_gercegi_ile_saglayici_durumu_arasind')}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -585,19 +586,19 @@ const ARIPushDashboard = ({ user, tenant }) => {
                 <table data-testid="drift-table" className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-500 text-xs">
-                      <th className="text-left py-2.5 px-4 font-medium">Sağlayıcı</th>
-                      <th className="text-left py-2.5 px-4 font-medium">Oda</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.saglayici_1a787')}</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.oda_e4b47')}</th>
                       <th className="text-left py-2.5 px-4 font-medium">Tarihler</th>
                       <th className="text-left py-2.5 px-4 font-medium">Drift</th>
-                      <th className="text-left py-2.5 px-4 font-medium">Farklı Alanlar</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.farkli_alanlar')}</th>
                       <th className="text-left py-2.5 px-4 font-medium">PMS Hash</th>
-                      <th className="text-left py-2.5 px-4 font-medium">Sağlayıcı Hash</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.saglayici_hash')}</th>
                       <th className="text-left py-2.5 px-4 font-medium">Son Kontrol</th>
                     </tr>
                   </thead>
                   <tbody>
                     {driftStates.length === 0 ? (
-                      <tr><td colSpan={8} className="text-center py-8 text-slate-500">Drift kaydı yok. Olay-tetikli karşılaştırma çalıştığında burada görünür.</td></tr>
+                      <tr><td colSpan={8} className="text-center py-8 text-slate-500">{t('cm.pages_ARIPushDashboard.drift_kaydi_yok_olay_tetikli_karsilastir')}</td></tr>
                     ) : driftStates.map((ds, i) => (
                       <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
                         <td className="py-2.5 px-4"><StatusBadge intent="neutral">{ds.provider}</StatusBadge></td>
@@ -635,7 +636,7 @@ const ARIPushDashboard = ({ user, tenant }) => {
         <TabsContent value="events" className="space-y-4">
           <Card>
             <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-sm text-slate-700">Son ARI Olayları ({events.length})</CardTitle>
+              <CardTitle className="text-sm text-slate-700">{t('cm.pages_ARIPushDashboard.son_ari_olaylari')}{events.length})</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
@@ -644,15 +645,15 @@ const ARIPushDashboard = ({ user, tenant }) => {
                     <tr className="border-b border-slate-200 text-slate-500 text-xs">
                       <th className="text-left py-2.5 px-4 font-medium">Kaynak</th>
                       <th className="text-left py-2.5 px-4 font-medium">Tip</th>
-                      <th className="text-left py-2.5 px-4 font-medium">Oda</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.oda_e4b47')}</th>
                       <th className="text-left py-2.5 px-4 font-medium">Tarihler</th>
-                      <th className="text-left py-2.5 px-4 font-medium">Yük</th>
+                      <th className="text-left py-2.5 px-4 font-medium">{t('cm.pages_ARIPushDashboard.yuk')}</th>
                       <th className="text-left py-2.5 px-4 font-medium">Zaman</th>
                     </tr>
                   </thead>
                   <tbody>
                     {events.length === 0 ? (
-                      <tr><td colSpan={6} className="text-center py-8 text-slate-500">Henüz olay yok</td></tr>
+                      <tr><td colSpan={6} className="text-center py-8 text-slate-500">{t('cm.pages_ARIPushDashboard.henuz_olay_yok')}</td></tr>
                     ) : events.map((ev, i) => (
                       <tr key={ev.id || i} className="border-b border-slate-100 hover:bg-slate-50">
                         <td className="py-2.5 px-4"><StatusBadge intent="neutral">{ev.source_service}</StatusBadge></td>
@@ -677,8 +678,8 @@ const ARIPushDashboard = ({ user, tenant }) => {
               <Card key={provider} data-testid={`test-harness-${provider}`}>
                 <CardHeader className="pb-2 pt-4 px-4 flex flex-row items-center justify-between">
                   <div>
-                    <CardTitle className="text-sm text-slate-700 capitalize">{provider} doğrulama</CardTitle>
-                    <CardDescription className="text-xs text-slate-500">Sandbox / canlı test kontrol listesi</CardDescription>
+                    <CardTitle className="text-sm text-slate-700 capitalize">{provider} {t('cm.pages_ARIPushDashboard.dogrulama')}</CardTitle>
+                    <CardDescription className="text-xs text-slate-500">{t('cm.pages_ARIPushDashboard.sandbox_canli_test_kontrol_listesi')}</CardDescription>
                   </div>
                   <Button
                     data-testid={`run-test-${provider}`}
@@ -688,8 +689,8 @@ const ARIPushDashboard = ({ user, tenant }) => {
                     disabled={testRunning === provider}
                   >
                     {testRunning === provider
-                      ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Çalışıyor…</>
-                      : <><Play className="w-3.5 h-3.5 mr-1.5" /> Tümünü Çalıştır</>}
+                      ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> {t('cm.pages_ARIPushDashboard.calisiyor')}</>
+                      : <><Play className="w-3.5 h-3.5 mr-1.5" /> {t('cm.pages_ARIPushDashboard.tumunu_calistir')}</>}
                   </Button>
                 </CardHeader>
                 <CardContent className="px-4 pb-4">
@@ -711,15 +712,15 @@ const ARIPushDashboard = ({ user, tenant }) => {
                       ))}
                       {testResults[provider].summary && (
                         <div className="mt-2 pt-2 border-t border-slate-200 flex gap-3 text-xs">
-                          <span className="text-emerald-700">{testResults[provider].summary.passed} geçti</span>
-                          <span className="text-rose-700">{testResults[provider].summary.failed} başarısız</span>
+                          <span className="text-emerald-700">{testResults[provider].summary.passed} {t('cm.pages_ARIPushDashboard.gecti')}</span>
+                          <span className="text-rose-700">{testResults[provider].summary.failed} {t('cm.pages_ARIPushDashboard.basarisiz_f592b')}</span>
                           <span className="text-slate-500">/ toplam {testResults[provider].summary.total}</span>
                         </div>
                       )}
                     </div>
                   ) : (
                     <p className="text-xs text-slate-500 py-4 text-center">
-                      Doğrulama listesini çalıştırmak için "Tümünü Çalıştır"a tıklayın
+                      {t('cm.pages_ARIPushDashboard.dogrulama_listesini_calistirmak_icin_tum')}
                     </p>
                   )}
                 </CardContent>

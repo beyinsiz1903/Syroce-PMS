@@ -10,6 +10,7 @@ import { Loader2, Plus, Trash2, Save, Clock, RefreshCw, AlertCircle } from 'luci
 import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
 import { formatCurrency } from '@/lib/currency';
+import { useTranslation } from 'react-i18next';
 
 const CHARGE_TYPES = [
   { v: 'flat', l: 'Sabit Tutar' },
@@ -61,6 +62,7 @@ function detectIssues(rules, sectionName) {
 }
 
 function RuleEditor({ title, rules, setRules, onDelete }) {
+  const { t } = useTranslation();
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between mb-3">
@@ -68,12 +70,12 @@ function RuleEditor({ title, rules, setRules, onDelete }) {
           <Clock className="w-4 h-4 text-slate-500" /> {title}
         </h2>
         <Button size="sm" variant="outline" onClick={() => setRules([...rules, blank()])}>
-          <Plus className="w-3.5 h-3.5 mr-1" /> Kural Ekle
+          <Plus className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_EarlyLatePricingSettings.kural_ekle')}
         </Button>
       </div>
       {rules.length === 0 && (
         <div className="text-sm text-slate-400 py-6 text-center border border-dashed rounded">
-          Henüz kural yok — "Kural Ekle" ile başlayın.
+          {t('cm.pages_EarlyLatePricingSettings.henuz_kural_yok_kural_ekle_ile_baslayin')}
         </div>
       )}
       <div className="space-y-2">
@@ -89,7 +91,7 @@ function RuleEditor({ title, rules, setRules, onDelete }) {
               />
             </div>
             <div className="col-span-2">
-              <Label className="text-[10px] text-slate-500">Başlangıç (saat)</Label>
+              <Label className="text-[10px] text-slate-500">{t('cm.pages_EarlyLatePricingSettings.baslangic_saat')}</Label>
               <Input
                 type="number" min={0} max={23} value={r.from_hour}
                 onChange={(e) => { const c = [...rules]; c[i] = { ...r, from_hour: clampHour(e.target.value, 0) }; setRules(c); }}
@@ -97,7 +99,7 @@ function RuleEditor({ title, rules, setRules, onDelete }) {
               />
             </div>
             <div className="col-span-2">
-              <Label className="text-[10px] text-slate-500">Bitiş (saat)</Label>
+              <Label className="text-[10px] text-slate-500">{t('cm.pages_EarlyLatePricingSettings.bitis_saat')}</Label>
               <Input
                 type="number" min={0} max={23} value={r.to_hour}
                 onChange={(e) => { const c = [...rules]; c[i] = { ...r, to_hour: clampHour(e.target.value, 0) }; setRules(c); }}
@@ -105,7 +107,7 @@ function RuleEditor({ title, rules, setRules, onDelete }) {
               />
             </div>
             <div className="col-span-2">
-              <Label className="text-[10px] text-slate-500">Ücret Tipi</Label>
+              <Label className="text-[10px] text-slate-500">{t('cm.pages_EarlyLatePricingSettings.ucret_tipi')}</Label>
               <Select value={r.charge_type} onValueChange={(v) => { const c = [...rules]; c[i] = { ...r, charge_type: v }; setRules(c); }}>
                 <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                 <SelectContent>{CHARGE_TYPES.map((t) => <SelectItem key={t.v} value={t.v}>{t.l}</SelectItem>)}</SelectContent>
@@ -113,7 +115,7 @@ function RuleEditor({ title, rules, setRules, onDelete }) {
             </div>
             <div className="col-span-2">
               <Label className="text-[10px] text-slate-500">
-                Değer {r.charge_type === 'flat' ? `(${TENANT_CURRENCY})` : r.charge_type.startsWith('percent') ? '(%)' : ''}
+                {t('cm.pages_EarlyLatePricingSettings.deger')} {r.charge_type === 'flat' ? `(${TENANT_CURRENCY})` : r.charge_type.startsWith('percent') ? '(%)' : ''}
               </Label>
               <Input
                 type="number" min={0} value={r.charge_value}
@@ -132,7 +134,7 @@ function RuleEditor({ title, rules, setRules, onDelete }) {
                   });
                   if (ok) onDelete(i);
                 }}
-                title="Sil"
+                title={t('cm.pages_EarlyLatePricingSettings.sil')}
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </Button>
@@ -209,7 +211,7 @@ export default function EarlyLatePricingSettings() {
       <div className="p-6 max-w-3xl mx-auto">
         <Card className="p-6 text-center">
           <AlertCircle className="w-10 h-10 text-rose-500 mx-auto mb-3" />
-          <div className="font-semibold text-slate-900 mb-1">Kurallar yüklenemedi</div>
+          <div className="font-semibold text-slate-900 mb-1">{t('cm.pages_EarlyLatePricingSettings.kurallar_yuklenemedi')}</div>
           <div className="text-sm text-slate-500 mb-4">{error || 'Bilinmeyen hata'}</div>
           <Button onClick={load} variant="outline">
             <RefreshCw className="w-4 h-4 mr-1.5" /> Tekrar Dene
@@ -223,16 +225,16 @@ export default function EarlyLatePricingSettings() {
     <div className="p-6 max-w-6xl mx-auto space-y-4" data-testid="early-late-pricing-settings">
       <PageHeader
         icon={Clock}
-        title="Erken Giriş / Geç Çıkış Ücretleri"
+        title={t('cm.pages_EarlyLatePricingSettings.erken_giris_gec_cikis_ucretleri')}
         subtitle={`Saat-bazlı otomatik ek ücret kuralları. Para birimi: ${TENANT_CURRENCY}.`}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={load} disabled={loading || saving}>
-              <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+              <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_EarlyLatePricingSettings.yenile')}
             </Button>
             <Button onClick={save} disabled={saving} size="sm">
               {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-              Kaydet
+              {t('cm.pages_EarlyLatePricingSettings.kaydet')}
             </Button>
           </div>
         }
@@ -242,7 +244,7 @@ export default function EarlyLatePricingSettings() {
         <div className="text-xs text-slate-500">
           {meta.is_default
             ? 'Varsayılan kurallar gösteriliyor (henüz kaydedilmemiş).'
-            : <>Son güncelleme: {meta.updated_at ? new Date(meta.updated_at).toLocaleString('tr-TR') : '—'} {meta.updated_by_name ? `· ${meta.updated_by_name}` : ''}</>
+            : <>{t('cm.pages_EarlyLatePricingSettings.son_guncelleme')} {meta.updated_at ? new Date(meta.updated_at).toLocaleString('tr-TR') : '—'} {meta.updated_by_name ? `· ${meta.updated_by_name}` : ''}</>
           }
         </div>
       )}
@@ -252,7 +254,7 @@ export default function EarlyLatePricingSettings() {
           <div className="flex items-start gap-2 text-sm text-amber-900">
             <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <div>
-              <div className="font-semibold mb-1">{issues.length} uyarı:</div>
+              <div className="font-semibold mb-1">{issues.length} {t('cm.pages_EarlyLatePricingSettings.uyari')}</div>
               <ul className="list-disc ml-5 space-y-0.5">
                 {issues.map((m, i) => <li key={i}>{m}</li>)}
               </ul>
@@ -263,7 +265,7 @@ export default function EarlyLatePricingSettings() {
 
       <Card className="p-4 grid grid-cols-2 gap-4">
         <div>
-          <Label className="text-xs text-slate-500">Standart Giriş Saati (0–23)</Label>
+          <Label className="text-xs text-slate-500">{t('cm.pages_EarlyLatePricingSettings.standart_giris_saati_0_23')}</Label>
           <Input
             type="number" min={0} max={23} value={cfg.standard_checkin_hour}
             onChange={(e) => setCfg({ ...cfg, standard_checkin_hour: clampHour(e.target.value, 14) })}
@@ -271,7 +273,7 @@ export default function EarlyLatePricingSettings() {
           />
         </div>
         <div>
-          <Label className="text-xs text-slate-500">Standart Çıkış Saati (0–23)</Label>
+          <Label className="text-xs text-slate-500">{t('cm.pages_EarlyLatePricingSettings.standart_cikis_saati_0_23')}</Label>
           <Input
             type="number" min={0} max={23} value={cfg.standard_checkout_hour}
             onChange={(e) => setCfg({ ...cfg, standard_checkout_hour: clampHour(e.target.value, 12) })}
@@ -281,13 +283,13 @@ export default function EarlyLatePricingSettings() {
       </Card>
 
       <RuleEditor
-        title="Erken Giriş Kuralları"
+        title={t('cm.pages_EarlyLatePricingSettings.erken_giris_kurallari')}
         rules={cfg.early_checkin}
         setRules={(r) => setCfg({ ...cfg, early_checkin: r })}
         onDelete={(i) => setCfg({ ...cfg, early_checkin: cfg.early_checkin.filter((_, j) => j !== i) })}
       />
       <RuleEditor
-        title="Geç Çıkış Kuralları"
+        title={t('cm.pages_EarlyLatePricingSettings.gec_cikis_kurallari')}
         rules={cfg.late_checkout}
         setRules={(r) => setCfg({ ...cfg, late_checkout: r })}
         onDelete={(i) => setCfg({ ...cfg, late_checkout: cfg.late_checkout.filter((_, j) => j !== i) })}
@@ -295,10 +297,10 @@ export default function EarlyLatePricingSettings() {
 
       {/* Kural önizleme rozetleri */}
       <Card className="p-4">
-        <div className="text-xs font-semibold text-slate-500 mb-2">ÖZET</div>
+        <div className="text-xs font-semibold text-slate-500 mb-2">{t('cm.pages_EarlyLatePricingSettings.ozet')}</div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <div className="text-xs text-slate-500 mb-1">Erken Giriş</div>
+            <div className="text-xs text-slate-500 mb-1">{t('cm.pages_EarlyLatePricingSettings.erken_giris')}</div>
             <div className="flex flex-wrap gap-1.5">
               {cfg.early_checkin.map((r) => (
                 <span key={r.id || r.label} className="text-xs px-2 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-800">
@@ -308,7 +310,7 @@ export default function EarlyLatePricingSettings() {
             </div>
           </div>
           <div>
-            <div className="text-xs text-slate-500 mb-1">Geç Çıkış</div>
+            <div className="text-xs text-slate-500 mb-1">{t('cm.pages_EarlyLatePricingSettings.gec_cikis')}</div>
             <div className="flex flex-wrap gap-1.5">
               {cfg.late_checkout.map((r) => (
                 <span key={r.id || r.label} className="text-xs px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800">

@@ -14,8 +14,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Package, AlertTriangle, DollarSign, Boxes } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const IngredientInventoryPanel = () => {
+  const { t } = useTranslation();
   const [ingredients, setIngredients] = useState([]);
   const [summary, setSummary] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -85,7 +87,7 @@ const IngredientInventoryPanel = () => {
           <CardContent className="p-4">
             <p className="text-xs text-amber-700 font-semibold flex items-center gap-2">
               <Package className="w-4 h-4" />
-              Toplam Kalem
+              {t('cm.components_IngredientInventoryPanel.toplam_kalem')}
             </p>
             <p className="text-3xl font-bold">{summary?.total_items ?? ingredients.length}</p>
           </CardContent>
@@ -94,7 +96,7 @@ const IngredientInventoryPanel = () => {
           <CardContent className="p-4">
             <p className="text-xs text-red-700 font-semibold flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
-              Düşük Stok
+              {t('cm.components_IngredientInventoryPanel.dusuk_stok')}
             </p>
             <p className="text-3xl font-bold">{summary?.low_stock ?? 0}</p>
           </CardContent>
@@ -103,7 +105,7 @@ const IngredientInventoryPanel = () => {
           <CardContent className="p-4">
             <p className="text-xs text-emerald-700 font-semibold flex items-center gap-2">
               <DollarSign className="w-4 h-4" />
-              Envanter Değeri
+              {t('cm.components_IngredientInventoryPanel.envanter_degeri')}
             </p>
             <p className="text-3xl font-bold">
               €{summary?.inventory_value?.toFixed(2) ?? '0.00'}
@@ -124,7 +126,7 @@ const IngredientInventoryPanel = () => {
             </Button>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Yeni Ingredient</DialogTitle>
+                <DialogTitle>{t('cm.components_IngredientInventoryPanel.yeni_ingredient')}</DialogTitle>
               </DialogHeader>
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="grid gap-4 md:grid-cols-2">
@@ -159,7 +161,7 @@ const IngredientInventoryPanel = () => {
                     />
                   </div>
                   <div>
-                    <Label>Tedarikçi</Label>
+                    <Label>{t('cm.components_IngredientInventoryPanel.tedarikci')}</Label>
                     <Input
                       value={form.supplier}
                       onChange={(e) => setForm({ ...form, supplier: e.target.value })}
@@ -219,7 +221,7 @@ const IngredientInventoryPanel = () => {
         </CardHeader>
         <CardContent className="space-y-3">
           {ingredients.length === 0 && (
-            <p className="text-sm text-gray-500">Henüz ingredient kaydı yok.</p>
+            <p className="text-sm text-gray-500">{t('cm.components_IngredientInventoryPanel.henuz_ingredient_kaydi_yok')}</p>
           )}
           {ingredients.map((ingredient) => {
             const isLow = ingredient.current_stock <= ingredient.reorder_point;

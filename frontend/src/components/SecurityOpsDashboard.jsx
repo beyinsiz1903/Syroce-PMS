@@ -12,8 +12,10 @@ import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
 import { RotationOpsPanel } from "./RotationOpsPanel";
 import { FieldEncryptionPanel } from "./FieldEncryptionPanel";
+import { useTranslation } from 'react-i18next';
 
 function SecretHealthCard({ data }) {
+  const { t } = useTranslation();
   if (!data) return <Skeleton className="h-40 bg-zinc-800" />;
 
   const health = data.health || {};
@@ -24,7 +26,7 @@ function SecretHealthCard({ data }) {
     <Card className="bg-zinc-900 border-zinc-800" data-testid="secrets-health-card">
       <CardHeader className="pb-2 pt-4 px-4">
         <CardTitle className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
-          <Key className="h-3.5 w-3.5" /> SEC-001 Secrets Yönetimi
+          <Key className="h-3.5 w-3.5" /> {t('cm.components_SecurityOpsDashboard.sec_001_secrets_yonetimi')}
         </CardTitle>
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-3">
@@ -196,7 +198,7 @@ function CutoverMetricsCard({ data }) {
           <span>SYR1: <span className="text-emerald-400 font-mono">{data.totals?.syr1 || 0}</span></span>
           <span>AES-GCM: <span className="text-yellow-400 font-mono">{data.totals?.aes_gcm_legacy || 0}</span></span>
           <span>Diger: <span className="text-zinc-400 font-mono">{data.totals?.other_legacy || 0}</span></span>
-          <span>Toplam: <span className="text-zinc-300 font-mono">{cutover.total_credential_fields || 0}</span></span>
+          <span>{t('cm.components_SecurityOpsDashboard.toplam')} <span className="text-zinc-300 font-mono">{cutover.total_credential_fields || 0}</span></span>
         </div>
 
         <p className="text-[10px] text-zinc-600">{cutover.recommended_action}</p>
@@ -233,7 +235,7 @@ function RotationPlanCard({ data }) {
       <CardContent className="px-4 pb-4 space-y-2">
         <div className="flex items-center gap-4 text-xs">
           <span className="text-zinc-500">
-            Toplam: <span className="text-zinc-300 font-mono">{summary.total_secrets}</span>
+            {t('cm.components_SecurityOpsDashboard.toplam_68af4')} <span className="text-zinc-300 font-mono">{summary.total_secrets}</span>
           </span>
           {summary.urgent_rotations > 0 && (
             <span className="text-red-400">
@@ -242,7 +244,7 @@ function RotationPlanCard({ data }) {
           )}
           {summary.recommended_rotations > 0 && (
             <span className="text-yellow-400">
-              Önerilen: <span className="font-mono">{summary.recommended_rotations}</span>
+              {t('cm.components_SecurityOpsDashboard.onerilen')} <span className="font-mono">{summary.recommended_rotations}</span>
             </span>
           )}
           <span className="text-emerald-400">
@@ -283,7 +285,7 @@ function RotationPlanCard({ data }) {
 
         {items.length === 0 && (
           <div className="text-xs text-zinc-600 py-1">
-            Henüz yonetilen secret yok
+            {t('cm.components_SecurityOpsDashboard.henuz_yonetilen_secret_yok')}
           </div>
         )}
       </CardContent>
@@ -344,7 +346,7 @@ export function SecurityOpsDashboard() {
           data-testid="security-refresh-btn"
         >
           <RefreshCw className={`h-3 w-3 mr-1 ${loading ? "animate-spin" : ""}`} />
-          Yenile
+          {t('cm.components_SecurityOpsDashboard.yenile')}
         </Button>
       </div>
 

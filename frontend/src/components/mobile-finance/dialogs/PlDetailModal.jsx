@@ -10,8 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Wallet, CreditCard, TrendingUp, AlertTriangle, FileText, DollarSign, ArrowDownCircle, ArrowUpCircle, Receipt, Banknote, Clock, CheckCircle, XCircle, Calendar, Filter, Download, FileDown, Upload, Eye, Search, Plus, Minus, RefreshCw, ChevronRight, ChevronDown, BarChart3, PieChart, Activity, Users, Building, Briefcase, ShoppingCart, Coffee, Utensils, Bed, Home } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export default function PlDetailModal(props) {
+  const { t } = useTranslation();
   const { downloadPLReport, formatCurrency, formatPercent, plData, plDetailModalOpen, setPlDetailModalOpen } = props;
   return (
     <Dialog open={plDetailModalOpen} onOpenChange={setPlDetailModalOpen}>
@@ -19,7 +21,7 @@ export default function PlDetailModal(props) {
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <BarChart3 className="w-5 h-5 text-green-600" />
-            <span>Kar/Zarar Detayı (P&L)</span>
+            <span>{t('cm.components_mobilefinance_dialogs_PlDetailModal.kar_zarar_detayi_p_l')}</span>
           </DialogTitle>
         </DialogHeader>
     
@@ -29,7 +31,7 @@ export default function PlDetailModal(props) {
             <Card className="bg-gradient-to-r from-green-50 to-blue-50">
               <CardContent className="p-4">
                 <div className="text-center">
-                  <p className="text-sm text-gray-600">Dönem</p>
+                  <p className="text-sm text-gray-600">{t('cm.components_mobilefinance_dialogs_PlDetailModal.donem')}</p>
                   <p className="text-lg font-bold text-gray-900">
                     {plData.period || new Date().toLocaleDateString('tr-TR', { year: 'numeric', month: 'long' })}
                   </p>
@@ -44,7 +46,7 @@ export default function PlDetailModal(props) {
               </CardHeader>
               <CardContent className="space-y-2 pt-3">
                 <div className="flex justify-between p-2 bg-green-50 rounded">
-                  <span className="text-gray-700">Oda Gelirleri:</span>
+                  <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_PlDetailModal.oda_gelirleri')}</span>
                   <span className="font-bold">{formatCurrency(plData.room_revenue || 0)}</span>
                 </div>
                 <div className="flex justify-between p-2">
@@ -52,11 +54,11 @@ export default function PlDetailModal(props) {
                   <span className="font-bold">{formatCurrency(plData.fnb_revenue || 0)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-green-50 rounded">
-                  <span className="text-gray-700">Diğer Gelirler:</span>
+                  <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_PlDetailModal.diger_gelirler')}</span>
                   <span className="font-bold">{formatCurrency(plData.other_revenue || 0)}</span>
                 </div>
                 <div className="flex justify-between p-3 bg-green-200 rounded-lg border-2 border-green-400 mt-2">
-                  <span className="font-bold text-green-900">TOPLAM GELİR:</span>
+                  <span className="font-bold text-green-900">{t('cm.components_mobilefinance_dialogs_PlDetailModal.toplam_gelir')}</span>
                   <span className="font-bold text-xl text-green-700">
                     {formatCurrency(plData.total_revenue || 0)}
                   </span>
@@ -67,7 +69,7 @@ export default function PlDetailModal(props) {
             {/* Cost of Sales Section */}
             <Card>
               <CardHeader className="pb-3 bg-amber-50">
-                <CardTitle className="text-base text-amber-800">Satış Maliyeti</CardTitle>
+                <CardTitle className="text-base text-amber-800">{t('cm.components_mobilefinance_dialogs_PlDetailModal.satis_maliyeti')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 pt-3">
                 <div className="flex justify-between p-2 bg-amber-50 rounded">
@@ -79,7 +81,7 @@ export default function PlDetailModal(props) {
                   <span className="font-bold">{formatCurrency(plData.housekeeping_cost || 0)}</span>
                 </div>
                 <div className="flex justify-between p-3 bg-amber-200 rounded-lg border-2 border-amber-400 mt-2">
-                  <span className="font-bold text-amber-900">TOPLAM SATIŞ MALİYETİ:</span>
+                  <span className="font-bold text-amber-900">{t('cm.components_mobilefinance_dialogs_PlDetailModal.toplam_satis_maliyeti')}</span>
                   <span className="font-bold text-xl text-amber-700">
                     {formatCurrency(plData.total_cost_of_sales || 0)}
                   </span>
@@ -92,9 +94,9 @@ export default function PlDetailModal(props) {
               <CardContent className="p-4">
                 <div className="flex justify-between items-center">
                   <div>
-                    <p className="text-sm text-blue-700 font-medium">BRÜT KAR</p>
+                    <p className="text-sm text-blue-700 font-medium">{t('cm.components_mobilefinance_dialogs_PlDetailModal.brut_kar')}</p>
                     <p className="text-xs text-blue-600 mt-1">
-                      Brüt Kar Marjı: {formatPercent(plData.gross_profit_margin || 0)}
+                      {t('cm.components_mobilefinance_dialogs_PlDetailModal.brut_kar_marji')} {formatPercent(plData.gross_profit_margin || 0)}
                     </p>
                   </div>
                   <p className="text-3xl font-bold text-blue-700">
@@ -119,7 +121,7 @@ export default function PlDetailModal(props) {
                   <span className="font-bold">{formatCurrency(plData.utility_cost || 0)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-indigo-50 rounded">
-                  <span className="text-gray-700">Bakım Onarım:</span>
+                  <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_PlDetailModal.bakim_onarim')}</span>
                   <span className="font-bold">{formatCurrency(plData.maintenance_cost || 0)}</span>
                 </div>
                 <div className="flex justify-between p-2">
@@ -127,11 +129,11 @@ export default function PlDetailModal(props) {
                   <span className="font-bold">{formatCurrency(plData.marketing_cost || 0)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-indigo-50 rounded">
-                  <span className="text-gray-700">Yönetim Giderleri:</span>
+                  <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_PlDetailModal.yonetim_giderleri')}</span>
                   <span className="font-bold">{formatCurrency(plData.admin_cost || 0)}</span>
                 </div>
                 <div className="flex justify-between p-3 bg-indigo-200 rounded-lg border-2 border-indigo-400 mt-2">
-                  <span className="font-bold text-indigo-900">TOPLAM FAALİYET GİDERİ:</span>
+                  <span className="font-bold text-indigo-900">{t('cm.components_mobilefinance_dialogs_PlDetailModal.toplam_faaliyet_gideri')}</span>
                   <span className="font-bold text-xl text-indigo-700">
                     {formatCurrency(plData.total_operating_expenses || 0)}
                   </span>
@@ -148,7 +150,7 @@ export default function PlDetailModal(props) {
                       {plData.net_profit >= 0 ? 'NET KAR' : 'NET ZARAR'}
                     </p>
                     <p className={`text-sm mt-1 ${plData.net_profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                      Net Kar Marjı: {formatPercent(plData.net_profit_margin || 0)}
+                      {t('cm.components_mobilefinance_dialogs_PlDetailModal.net_kar_marji')} {formatPercent(plData.net_profit_margin || 0)}
                     </p>
                   </div>
                   <p className={`text-4xl font-bold ${plData.net_profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
@@ -200,7 +202,7 @@ export default function PlDetailModal(props) {
                 onClick={downloadPLReport}
               >
                 <Download className="w-4 h-4 mr-2" />
-                PDF İndir
+                {t('cm.components_mobilefinance_dialogs_PlDetailModal.pdf_indir')}
               </Button>
               <Button 
                 variant="outline"
@@ -208,14 +210,14 @@ export default function PlDetailModal(props) {
                 onClick={() => window.print()}
               >
                 <FileDown className="w-4 h-4 mr-2" />
-                Yazdır
+                {t('cm.components_mobilefinance_dialogs_PlDetailModal.yazdir')}
               </Button>
             </div>
           </div>
         ) : (
           <div className="text-center py-8">
             <FileText className="w-12 h-12 mx-auto text-gray-300 mb-2" />
-            <p className="text-gray-500">P&L raporu yükleniyor...</p>
+            <p className="text-gray-500">{t('cm.components_mobilefinance_dialogs_PlDetailModal.p_l_raporu_yukleniyor')}</p>
           </div>
         )}
       </DialogContent>

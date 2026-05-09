@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2, Map as MapIcon, Crown, Calendar, RefreshCw, Info, X as XIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -23,6 +24,7 @@ function statusMeta(status, occupied) {
 }
 
 function RoomCell({ room, onDrop }) {
+  const { t } = useTranslation();
   const [over, setOver] = useState(false);
   const occupied = !!room.booking;
   const meta = statusMeta(room.status, occupied);
@@ -60,7 +62,7 @@ function RoomCell({ room, onDrop }) {
             {room.booking.guest_name}
           </div>
           <div className="text-[11px] opacity-75 mt-0.5">
-            {room.booking.adults}+{room.booking.children} · {room.booking.check_out?.slice(5)} çıkış
+            {room.booking.adults}+{room.booking.children} · {room.booking.check_out?.slice(5)} {t('cm.pages_RoomMapPage.cikis')}
           </div>
         </div>
       ) : (
@@ -130,7 +132,7 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2 text-slate-900">
-              <MapIcon className="w-6 h-6 text-amber-600" /> Oda Haritası
+              <MapIcon className="w-6 h-6 text-amber-600" /> {t('cm.pages_RoomMapPage.oda_haritasi')}
             </h1>
             <p className="text-sm text-slate-500 mt-1">
               {new Date(date).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' })}
@@ -141,7 +143,7 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
             <Calendar className="w-4 h-4 text-slate-500" />
             <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-9 w-40" />
             <Button size="sm" variant="outline" onClick={load} className="border-slate-300">
-              <RefreshCw className="w-3 h-3 mr-1" /> Yenile
+              <RefreshCw className="w-3 h-3 mr-1" /> {t('cm.pages_RoomMapPage.yenile')}
             </Button>
           </div>
         </div>
@@ -170,8 +172,8 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
         {hintOpen && (
           <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-sm text-amber-900">
             <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <div className="flex-1">Misafir kartını başka odaya <b>sürükleyip bırakarak</b> oda değişikliği yapabilirsiniz.</div>
-            <button onClick={() => setHintOpen(false)} className="text-amber-700 hover:text-amber-900" aria-label="Kapat">
+            <div className="flex-1">{t('cm.pages_RoomMapPage.misafir_kartini_baska_odaya')} <b>{t('cm.pages_RoomMapPage.surukleyip_birakarak')}</b> {t('cm.pages_RoomMapPage.oda_degisikligi_yapabilirsiniz')}</div>
+            <button onClick={() => setHintOpen(false)} className="text-amber-700 hover:text-amber-900" aria-label={t('cm.pages_RoomMapPage.kapat')}>
               <XIcon className="w-4 h-4" />
             </button>
           </div>
@@ -181,7 +183,7 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
         {data?.unassigned?.length > 0 && (
           <Card className="p-3 bg-sky-50/40 border-sky-200">
             <div className="font-semibold text-sm mb-2 text-sky-900">
-              Atanmamış Rezervasyonlar ({data.unassigned.length})
+              {t('cm.pages_RoomMapPage.atanmamis_rezervasyonlar')}{data.unassigned.length})
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
               {data.unassigned.map(b => <UnassignedItem key={b.booking_id} b={b} />)}

@@ -25,6 +25,7 @@ import {
   Send, RefreshCw, AlertTriangle, CheckCircle, XCircle,
   FileText, BarChart3, Loader2, RotateCcw, Eye, ScrollText, Info,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || "";
 const headers = () => ({
@@ -54,6 +55,7 @@ const EMPTY_FORM = {
 };
 
 export default function ReportScheduler() {
+  const { t } = useTranslation();
   const [schedules, setSchedules] = useState([]);
   const [history, setHistory] = useState([]);
   const [reportTypes, setReportTypes] = useState([]);
@@ -260,7 +262,7 @@ export default function ReportScheduler() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
-        <span className="ml-3 text-slate-500 text-sm">Yükleniyor...</span>
+        <span className="ml-3 text-slate-500 text-sm">{t('cm.pages_ReportScheduler.yukleniyor')}</span>
       </div>
     );
   }
@@ -272,31 +274,31 @@ export default function ReportScheduler() {
         <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
           <span className="text-sm text-rose-700 flex-1">{error}</span>
-          <Button variant="ghost" size="sm" onClick={() => setError(null)}>Kapat</Button>
+          <Button variant="ghost" size="sm" onClick={() => setError(null)}>{t('cm.pages_ReportScheduler.kapat')}</Button>
         </div>
       )}
 
       <PageHeader
         icon={ScrollText}
-        title="Rapor Zamanlayıcı"
-        subtitle="Otomatik rapor gönderim zamanlamalarını yönetin"
+        title={t('cm.pages_ReportScheduler.rapor_zamanlayici')}
+        subtitle={t('cm.pages_ReportScheduler.otomatik_rapor_gonderim_zamanlamalarini_')}
         actions={
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={loadData}>
-              <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+              <RefreshCw className="w-4 h-4 mr-1.5" /> {t('cm.pages_ReportScheduler.yenile')}
             </Button>
             <Button size="sm" onClick={openCreate}>
-              <Plus className="h-4 w-4 mr-1.5" /> Yeni Zamanlama
+              <Plus className="h-4 w-4 mr-1.5" /> {t('cm.pages_ReportScheduler.yeni_zamanlama')}
             </Button>
           </div>
         }
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard icon={Calendar}    label="Toplam Zamanlama" value={stats.total}      intent="info" />
-        <KpiCard icon={Play}        label="Aktif"            value={stats.active}     intent="success" />
-        <KpiCard icon={CheckCircle} label="Gönderilen"       value={stats.totalSent}  intent="success" />
-        <KpiCard icon={XCircle}     label="Başarısız"        value={stats.totalFailed} intent="danger" />
+        <KpiCard icon={Calendar}    label={t('cm.pages_ReportScheduler.toplam_zamanlama')} value={stats.total}      intent="info" />
+        <KpiCard icon={Play}        label={t('cm.pages_ReportScheduler.aktif')}            value={stats.active}     intent="success" />
+        <KpiCard icon={CheckCircle} label={t('cm.pages_ReportScheduler.gonderilen')}       value={stats.totalSent}  intent="success" />
+        <KpiCard icon={XCircle}     label={t('cm.pages_ReportScheduler.basarisiz')}        value={stats.totalFailed} intent="danger" />
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -305,7 +307,7 @@ export default function ReportScheduler() {
             <Calendar className="h-4 w-4" /> Zamanlamalar
           </TabsTrigger>
           <TabsTrigger value="history" className="gap-1">
-            <FileText className="h-4 w-4" /> Gönderim Geçmişi
+            <FileText className="h-4 w-4" /> {t('cm.pages_ReportScheduler.gonderim_gecmisi')}
           </TabsTrigger>
         </TabsList>
 
@@ -314,10 +316,10 @@ export default function ReportScheduler() {
             <Card>
               <CardContent className="p-12 text-center">
                 <Mail className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                <h3 className="font-semibold text-slate-700 mb-2">Henüz zamanlama yok</h3>
-                <p className="text-sm text-slate-500 mb-4">Yeni bir rapor zamanlaması oluşturarak başlayın</p>
+                <h3 className="font-semibold text-slate-700 mb-2">{t('cm.pages_ReportScheduler.henuz_zamanlama_yok')}</h3>
+                <p className="text-sm text-slate-500 mb-4">{t('cm.pages_ReportScheduler.yeni_bir_rapor_zamanlamasi_olusturarak_b')}</p>
                 <Button size="sm" onClick={openCreate}>
-                  <Plus className="h-4 w-4 mr-1.5" /> Oluştur
+                  <Plus className="h-4 w-4 mr-1.5" /> {t('cm.pages_ReportScheduler.olustur')}
                 </Button>
               </CardContent>
             </Card>
@@ -351,22 +353,22 @@ export default function ReportScheduler() {
                             {s.frequency === "monthly" && s.day_of_month && ` — Ayın ${s.day_of_month}. günü`}
                           </span>
                           <span className="flex items-center gap-1">
-                            <Mail className="h-3 w-3" /> {(s.recipients || []).length} alıcı
+                            <Mail className="h-3 w-3" /> {(s.recipients || []).length} {t('cm.pages_ReportScheduler.alici')}
                           </span>
                           {s.total_sent > 0 && (
                             <span className="flex items-center gap-1">
-                              <CheckCircle className="h-3 w-3 text-emerald-500" /> {s.total_sent} gönderildi
+                              <CheckCircle className="h-3 w-3 text-emerald-500" /> {s.total_sent} {t('cm.pages_ReportScheduler.gonderildi')}
                             </span>
                           )}
                           {s.total_failed > 0 && (
                             <span className="flex items-center gap-1">
-                              <XCircle className="h-3 w-3 text-rose-500" /> {s.total_failed} başarısız
+                              <XCircle className="h-3 w-3 text-rose-500" /> {s.total_failed} {t('cm.pages_ReportScheduler.basarisiz_f592b')}
                             </span>
                           )}
                         </div>
                         {s.next_run && (
                           <div className="text-xs text-slate-600 mt-1">
-                            Sonraki gönderim: {new Date(s.next_run).toLocaleString("tr-TR")}
+                            {t('cm.pages_ReportScheduler.sonraki_gonderim')} {new Date(s.next_run).toLocaleString("tr-TR")}
                           </div>
                         )}
                       </div>
@@ -379,7 +381,7 @@ export default function ReportScheduler() {
                               {actionLoading[s._id] === "send" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>Şimdi Gönder</TooltipContent>
+                          <TooltipContent>{t('cm.pages_ReportScheduler.simdi_gonder')}</TooltipContent>
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -397,7 +399,7 @@ export default function ReportScheduler() {
                               <Edit className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>Düzenle</TooltipContent>
+                          <TooltipContent>{t('cm.pages_ReportScheduler.duzenle')}</TooltipContent>
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -407,7 +409,7 @@ export default function ReportScheduler() {
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>Sil</TooltipContent>
+                          <TooltipContent>{t('cm.pages_ReportScheduler.sil')}</TooltipContent>
                         </Tooltip>
                       </div>
                     </div>
@@ -425,10 +427,10 @@ export default function ReportScheduler() {
                 <SelectValue placeholder="Filtrele" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tümünü Göster</SelectItem>
-                <SelectItem value="sent">Gönderildi</SelectItem>
-                <SelectItem value="failed">Başarısız</SelectItem>
-                <SelectItem value="partial">Kısmi</SelectItem>
+                <SelectItem value="all">{t('cm.pages_ReportScheduler.tumunu_goster')}</SelectItem>
+                <SelectItem value="sent">{t('cm.pages_ReportScheduler.gonderildi_ed666')}</SelectItem>
+                <SelectItem value="failed">{t('cm.pages_ReportScheduler.basarisiz_3260d')}</SelectItem>
+                <SelectItem value="partial">{t('cm.pages_ReportScheduler.kismi')}</SelectItem>
                 <SelectItem value="mock">Mock (SMTP yok)</SelectItem>
               </SelectContent>
             </Select>
@@ -438,8 +440,8 @@ export default function ReportScheduler() {
             <Card>
               <CardContent className="p-12 text-center">
                 <FileText className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                <h3 className="font-semibold text-slate-700">Gönderim geçmişi boş</h3>
-                <p className="text-sm text-slate-500 mt-1">Zamanlamalar çalıştığında burada görünecek</p>
+                <h3 className="font-semibold text-slate-700">{t('cm.pages_ReportScheduler.gonderim_gecmisi_bos')}</h3>
+                <p className="text-sm text-slate-500 mt-1">{t('cm.pages_ReportScheduler.zamanlamalar_calistiginda_burada_gorunec')}</p>
               </CardContent>
             </Card>
           ) : (
@@ -450,11 +452,11 @@ export default function ReportScheduler() {
                     <TableRow>
                       <TableHead>Zamanlama</TableHead>
                       <TableHead>Rapor</TableHead>
-                      <TableHead>Tarih</TableHead>
-                      <TableHead>Durum</TableHead>
-                      <TableHead>Alıcılar</TableHead>
+                      <TableHead>{t('cm.pages_ReportScheduler.tarih')}</TableHead>
+                      <TableHead>{t('cm.pages_ReportScheduler.durum')}</TableHead>
+                      <TableHead>{t('cm.pages_ReportScheduler.alicilar')}</TableHead>
                       <TableHead>Tetikleyen</TableHead>
-                      <TableHead className="text-right">İşlem</TableHead>
+                      <TableHead className="text-right">{t('cm.pages_ReportScheduler.islem')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -514,15 +516,15 @@ export default function ReportScheduler() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-slate-700">Zamanlama Adı *</label>
+              <label className="text-sm font-medium text-slate-700">{t('cm.pages_ReportScheduler.zamanlama_adi')}</label>
               <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="örn: Günlük Doluluk Raporu" className="mt-1" />
+                placeholder={t('cm.pages_ReportScheduler.orn_gunluk_doluluk_raporu')} className="mt-1" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium text-slate-700">Rapor Tipi *</label>
                 <Select value={form.report_type} onValueChange={(v) => setForm((f) => ({ ...f, report_type: v }))}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Rapor seçin" /></SelectTrigger>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder={t('cm.pages_ReportScheduler.rapor_secin')} /></SelectTrigger>
                   <SelectContent>
                     {reportTypes.map((rt) => (
                       <SelectItem key={rt.key} value={rt.key}>{rt.label}</SelectItem>
@@ -537,7 +539,7 @@ export default function ReportScheduler() {
                   <SelectContent>
                     <SelectItem value="pdf">PDF (e-posta eki)</SelectItem>
                     <SelectItem value="csv">CSV (e-posta eki)</SelectItem>
-                    <SelectItem value="link">Link (sadece bağlantı)</SelectItem>
+                    <SelectItem value="link">{t('cm.pages_ReportScheduler.link_sadece_baglanti')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -548,21 +550,21 @@ export default function ReportScheduler() {
                 <Select value={form.frequency} onValueChange={(v) => setForm((f) => ({ ...f, frequency: v }))}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="daily">Günlük</SelectItem>
-                    <SelectItem value="weekly">Haftalık</SelectItem>
-                    <SelectItem value="monthly">Aylık</SelectItem>
+                    <SelectItem value="daily">{t('cm.pages_ReportScheduler.gunluk')}</SelectItem>
+                    <SelectItem value="weekly">{t('cm.pages_ReportScheduler.haftalik')}</SelectItem>
+                    <SelectItem value="monthly">{t('cm.pages_ReportScheduler.aylik')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <label className="text-sm font-medium text-slate-700">Gönderim Saati</label>
+                <label className="text-sm font-medium text-slate-700">{t('cm.pages_ReportScheduler.gonderim_saati')}</label>
                 <Input type="time" value={form.send_time}
                   onChange={(e) => setForm((f) => ({ ...f, send_time: e.target.value }))} className="mt-1" />
               </div>
             </div>
             {form.frequency === "weekly" && (
               <div>
-                <label className="text-sm font-medium text-slate-700">Gönderim Günü *</label>
+                <label className="text-sm font-medium text-slate-700">{t('cm.pages_ReportScheduler.gonderim_gunu')}</label>
                 <Select value={form.day_of_week} onValueChange={(v) => setForm((f) => ({ ...f, day_of_week: v }))}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -575,30 +577,30 @@ export default function ReportScheduler() {
             )}
             {form.frequency === "monthly" && (
               <div>
-                <label className="text-sm font-medium text-slate-700">Ayın Günü (1-28) *</label>
+                <label className="text-sm font-medium text-slate-700">{t('cm.pages_ReportScheduler.ayin_gunu_1_28')}</label>
                 <Input type="number" min={1} max={28} value={form.day_of_month}
                   onChange={(e) => setForm((f) => ({ ...f, day_of_month: Number(e.target.value) }))} className="mt-1" />
                 <p className="text-xs text-slate-500 mt-1 flex items-start gap-1">
                   <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                  Şubat ayında 29-31 olmadığı için aralık 1-28 ile sınırlandırılmıştır.
+                  {t('cm.pages_ReportScheduler.subat_ayinda_29_31_olmadigi_icin_aralik_')}
                 </p>
               </div>
             )}
             <div>
-              <label className="text-sm font-medium text-slate-700">Alıcılar (virgül ile ayırın) *</label>
+              <label className="text-sm font-medium text-slate-700">{t('cm.pages_ReportScheduler.alicilar_virgul_ile_ayirin')}</label>
               <Input value={form.recipients}
                 onChange={(e) => setForm((f) => ({ ...f, recipients: e.target.value }))}
                 placeholder="ad@otel.com, yonetici@otel.com" className="mt-1" />
-              <p className="text-xs text-slate-500 mt-1">Birden fazla alıcı için virgül ile ayırın</p>
+              <p className="text-xs text-slate-500 mt-1">{t('cm.pages_ReportScheduler.birden_fazla_alici_icin_virgul_ile_ayiri')}</p>
             </div>
             <div>
               <label className="text-sm font-medium text-slate-700">Notlar</label>
               <Input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                placeholder="Opsiyonel açıklama" className="mt-1" />
+                placeholder={t('cm.pages_ReportScheduler.opsiyonel_aciklama')} className="mt-1" />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => handleModalChange(false)}>İptal</Button>
+            <Button variant="outline" onClick={() => handleModalChange(false)}>{t('cm.pages_ReportScheduler.iptal')}</Button>
             <Button onClick={handleSave} disabled={saving || formInvalid}>
               {saving ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" /> Kaydediliyor</> : (editingId ? "Güncelle" : "Oluştur")}
             </Button>
@@ -609,7 +611,7 @@ export default function ReportScheduler() {
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Gönderim Detayı</DialogTitle>
+            <DialogTitle>{t('cm.pages_ReportScheduler.gonderim_detayi')}</DialogTitle>
           </DialogHeader>
           {detailEntry && (
             <div className="space-y-3 text-sm">
@@ -618,9 +620,9 @@ export default function ReportScheduler() {
                 <span className="font-medium">{detailEntry.schedule_name}</span>
                 <span className="text-slate-500">Rapor:</span>
                 <span>{detailEntry.report_label || detailEntry.report_type}</span>
-                <span className="text-slate-500">Tarih:</span>
+                <span className="text-slate-500">{t('cm.pages_ReportScheduler.tarih_197b8')}</span>
                 <span>{detailEntry.sent_at ? new Date(detailEntry.sent_at).toLocaleString("tr-TR") : "-"}</span>
-                <span className="text-slate-500">Durum:</span>
+                <span className="text-slate-500">{t('cm.pages_ReportScheduler.durum_6d192')}</span>
                 <span>
                   {STATUS_INTENT[detailEntry.status] && (
                     <StatusBadge intent={STATUS_INTENT[detailEntry.status].intent} icon={STATUS_INTENT[detailEntry.status].icon}>
@@ -630,7 +632,7 @@ export default function ReportScheduler() {
                 </span>
                 <span className="text-slate-500">Tetikleyen:</span>
                 <span>{detailEntry.triggered_by === "system" ? "Otomatik" : detailEntry.triggered_by}</span>
-                <span className="text-slate-500">Alıcılar:</span>
+                <span className="text-slate-500">{t('cm.pages_ReportScheduler.alicilar_cc47a')}</span>
                 <span className="break-all">{(detailEntry.recipients || []).join(", ")}</span>
               </div>
               {detailEntry.error_message && (
@@ -640,22 +642,22 @@ export default function ReportScheduler() {
               )}
               {detailEntry.delivery_details && (
                 <div className="bg-slate-50 rounded p-3 text-xs space-y-1">
-                  <div>Gönderilen: {detailEntry.delivery_details.sent_count || 0}</div>
-                  <div>Başarısız: {detailEntry.delivery_details.failed_count || 0}</div>
+                  <div>{t('cm.pages_ReportScheduler.gonderilen_08803')} {detailEntry.delivery_details.sent_count || 0}</div>
+                  <div>{t('cm.pages_ReportScheduler.basarisiz_bda18')} {detailEntry.delivery_details.failed_count || 0}</div>
                   {detailEntry.delivery_details.mock_count > 0 && (
                     <div className="text-slate-600">Mock (SMTP yok): {detailEntry.delivery_details.mock_count}</div>
                   )}
                   {detailEntry.delivery_details.attachment_count > 0 && (
-                    <div>Ek dosya sayısı: {detailEntry.delivery_details.attachment_count}</div>
+                    <div>{t('cm.pages_ReportScheduler.ek_dosya_sayisi')} {detailEntry.delivery_details.attachment_count}</div>
                   )}
                   {(detailEntry.delivery_details.failed_recipients || []).length > 0 && (
                     <div className="text-rose-600 break-all">
-                      Başarısız alıcılar: {detailEntry.delivery_details.failed_recipients.join(", ")}
+                      {t('cm.pages_ReportScheduler.basarisiz_alicilar')} {detailEntry.delivery_details.failed_recipients.join(", ")}
                     </div>
                   )}
                   {(detailEntry.delivery_details.report_summary || []).length > 0 && (
                     <div className="pt-2 border-t border-slate-200">
-                      <div className="font-medium text-slate-700 mb-1">Rapor özeti:</div>
+                      <div className="font-medium text-slate-700 mb-1">{t('cm.pages_ReportScheduler.rapor_ozeti')}</div>
                       {detailEntry.delivery_details.report_summary.map((r, i) => (
                         <div key={i} className="text-slate-600">• {r.label}: {String(r.value)}</div>
                       ))}
@@ -664,7 +666,7 @@ export default function ReportScheduler() {
                 </div>
               )}
               {detailEntry.retry_count > 0 && (
-                <div className="text-xs text-slate-500">Tekrar deneme sayısı: {detailEntry.retry_count}</div>
+                <div className="text-xs text-slate-500">{t('cm.pages_ReportScheduler.tekrar_deneme_sayisi')} {detailEntry.retry_count}</div>
               )}
             </div>
           )}

@@ -12,6 +12,7 @@ import {
   ArrowLeftRight, CheckCircle, XCircle, AlertTriangle, RefreshCw,
   Plus, Trash2, ShieldCheck, ArrowLeft, Loader2, Info
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const API = "";
 
@@ -24,6 +25,7 @@ const ENTITY_TYPE_LABELS = {
 };
 
 const ScoreGauge = ({ score, size = 120 }) => {
+  const { t } = useTranslation();
   const radius = (size - 16) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
@@ -45,8 +47,8 @@ const ScoreGauge = ({ score, size = 120 }) => {
 };
 
 const ValidationBadge = ({ status }) => {
-  if (status === 'valid') return <Badge className="bg-green-100 text-green-800 border-green-300" data-testid="validation-valid"><CheckCircle className="w-3 h-3 mr-1" />Geçerli</Badge>;
-  if (status === 'invalid') return <Badge className="bg-red-100 text-red-800 border-red-300" data-testid="validation-invalid"><XCircle className="w-3 h-3 mr-1" />Geçersiz</Badge>;
+  if (status === 'valid') return <Badge className="bg-green-100 text-green-800 border-green-300" data-testid="validation-valid"><CheckCircle className="w-3 h-3 mr-1" />{t('cm.pages_MappingManager.gecerli')}</Badge>;
+  if (status === 'invalid') return <Badge className="bg-red-100 text-red-800 border-red-300" data-testid="validation-invalid"><XCircle className="w-3 h-3 mr-1" />{t('cm.pages_MappingManager.gecersiz')}</Badge>;
   return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300" data-testid="validation-pending"><AlertTriangle className="w-3 h-3 mr-1" />Bekliyor</Badge>;
 };
 
@@ -170,17 +172,17 @@ const MappingManager = ({ user, tenant, onLogout }) => {
               <ArrowLeft className="w-4 h-4" />
             </Button>
             <div>
-              <h1 className="text-3xl font-bold" data-testid="mapping-manager-title">Mapping Yönetimi</h1>
-              <p className="text-sm text-gray-500 mt-1">PMS varlıkları ile provider varlıkları arasındaki eşlemeleri yönetin</p>
+              <h1 className="text-3xl font-bold" data-testid="mapping-manager-title">{t('cm.pages_MappingManager.mapping_yonetimi')}</h1>
+              <p className="text-sm text-gray-500 mt-1">{t('cm.pages_MappingManager.pms_varliklari_ile_provider_varliklari_a')}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleValidateAll} disabled={validating || !selectedConnector} data-testid="validate-all-btn">
               {validating ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-1" />}
-              Tümünü Doğrula
+              {t('cm.pages_MappingManager.tumunu_dogrula')}
             </Button>
             <Button size="sm" onClick={() => { setAddForm({ ...addForm, entity_type: activeEntityType }); setShowAddDialog(true); }} disabled={!selectedConnector} data-testid="add-mapping-btn">
-              <Plus className="w-4 h-4 mr-1" /> Yeni Eşleme
+              <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_MappingManager.yeni_esleme')}
             </Button>
           </div>
         </div>
@@ -205,14 +207,14 @@ const MappingManager = ({ user, tenant, onLogout }) => {
         {loading ? (
           <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
         ) : !report ? (
-          <Card><CardContent className="py-12 text-center text-gray-500">Connector seçin veya yeni bir connector oluşturun.</CardContent></Card>
+          <Card><CardContent className="py-12 text-center text-gray-500">{t('cm.pages_MappingManager.connector_secin_veya_yeni_bir_connector_')}</CardContent></Card>
         ) : (
           <>
             {/* Readiness Overview */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <Card className="lg:col-span-1" data-testid="readiness-card">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">Senkronizasyon Hazırlığı</CardTitle>
+                  <CardTitle className="text-lg">{t('cm.pages_MappingManager.senkronizasyon_hazirligi')}</CardTitle>
                   <CardDescription>Mapping tamamlanma skoru</CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col items-center gap-3">
@@ -221,14 +223,14 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                     {readiness?.ready ? 'Senkronizasyona Hazır' : 'Hazır Değil'}
                   </Badge>
                   <div className="text-sm text-gray-500 text-center">
-                    Toplam {readiness?.total_mappings || 0} eşleme, {readiness?.invalid_mappings_count || 0} geçersiz
+                    {t('cm.pages_MappingManager.toplam')} {readiness?.total_mappings || 0} {t('cm.pages_MappingManager.esleme')} {readiness?.invalid_mappings_count || 0} {t('cm.pages_MappingManager.gecersiz_04427')}
                   </div>
                 </CardContent>
               </Card>
 
               <Card className="lg:col-span-2" data-testid="blocked-reasons-card">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">Durum Özeti</CardTitle>
+                  <CardTitle className="text-lg">{t('cm.pages_MappingManager.durum_ozeti')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {readiness?.blocked_reasons?.length > 0 ? (
@@ -244,7 +246,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                   ) : (
                     <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded p-3">
                       <CheckCircle className="w-5 h-5" />
-                      <span className="font-medium">Tüm eşlemeler tamamlanmış, engel yok!</span>
+                      <span className="font-medium">{t('cm.pages_MappingManager.tum_eslemeler_tamamlanmis_engel_yok')}</span>
                     </div>
                   )}
                   {/* Summary stats */}
@@ -256,7 +258,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                           <span className="text-lg font-bold">{data.mapped}</span>
                           <span className="text-sm text-gray-500">/ {data.total_pms || data.total_external || 0}</span>
                         </div>
-                        {data.invalid > 0 && <span className="text-xs text-red-500">{data.invalid} geçersiz</span>}
+                        {data.invalid > 0 && <span className="text-xs text-red-500">{data.invalid} {t('cm.pages_MappingManager.gecersiz_04427')}</span>}
                       </div>
                     ))}
                   </div>
@@ -283,13 +285,13 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                     {/* Active Mappings */}
                     <Card className="lg:col-span-2" data-testid={`mappings-table-${entityType}`}>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-base">Aktif Eşlemeler</CardTitle>
+                        <CardTitle className="text-base">{t('cm.pages_MappingManager.aktif_eslemeler')}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         {(mappingsByType[entityType] || []).length === 0 ? (
                           <div className="text-center py-8 text-gray-400">
                             <ArrowLeftRight className="w-10 h-10 mx-auto mb-2 opacity-40" />
-                            <p className="text-sm">Henüz {ENTITY_TYPE_LABELS[entityType]} eşlemesi yok</p>
+                            <p className="text-sm">{t('cm.pages_MappingManager.henuz')} {ENTITY_TYPE_LABELS[entityType]} {t('cm.pages_MappingManager.eslemesi_yok')}</p>
                           </div>
                         ) : (
                           <div className="overflow-x-auto">
@@ -299,8 +301,8 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                                   <th className="text-left p-2 font-medium">PMS</th>
                                   <th className="text-center p-2 w-10"></th>
                                   <th className="text-left p-2 font-medium">External</th>
-                                  <th className="text-center p-2 font-medium">Durum</th>
-                                  <th className="text-right p-2 font-medium">İşlem</th>
+                                  <th className="text-center p-2 font-medium">{t('cm.pages_MappingManager.durum')}</th>
+                                  <th className="text-right p-2 font-medium">{t('cm.pages_MappingManager.islem')}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -334,7 +336,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                         {/* Validation errors detail */}
                         {(mappingsByType[entityType] || []).some(m => m.validation_errors?.length > 0) && (
                           <div className="mt-4 space-y-2">
-                            <p className="text-xs font-medium text-red-600">Doğrulama Hataları:</p>
+                            <p className="text-xs font-medium text-red-600">{t('cm.pages_MappingManager.dogrulama_hatalari')}</p>
                             {(mappingsByType[entityType] || []).filter(m => m.validation_errors?.length > 0).map(m => (
                               <div key={m.id} className="bg-red-50 rounded p-2 text-xs text-red-700">
                                 <span className="font-medium">{m.pms_entity_name}:</span>
@@ -349,7 +351,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                     {/* Unmapped Entities Panel */}
                     <Card data-testid={`unmapped-panel-${entityType}`}>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-base">Eşlenmemiş Varlıklar</CardTitle>
+                        <CardTitle className="text-base">{t('cm.pages_MappingManager.eslenmemis_varliklar')}</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         {entityType === 'room_type' || entityType === 'rate_plan' ? (
@@ -379,14 +381,14 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                             {unmappedPms.length === 0 && unmappedExt.length === 0 && (
                               <div className="text-center text-sm text-green-600 py-4">
                                 <CheckCircle className="w-6 h-6 mx-auto mb-1" />
-                                Tüm varlıklar eşlenmiş
+                                {t('cm.pages_MappingManager.tum_varliklar_eslenmis')}
                               </div>
                             )}
                           </>
                         ) : (
                           <div className="text-center text-sm text-gray-400 py-4">
-                            Bu mapping türü için otomatik tespit yok.
-                            <br />Manuel eşleme ekleyebilirsiniz.
+                            {t('cm.pages_MappingManager.bu_mapping_turu_icin_otomatik_tespit_yok')}
+                            <br />{t('cm.pages_MappingManager.manuel_esleme_ekleyebilirsiniz')}
                           </div>
                         )}
                       </CardContent>
@@ -402,11 +404,11 @@ const MappingManager = ({ user, tenant, onLogout }) => {
         <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>Yeni Eşleme Oluştur</DialogTitle>
+              <DialogTitle>{t('cm.pages_MappingManager.yeni_esleme_olustur')}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 mt-2">
               <div>
-                <Label>Eşleme Türü</Label>
+                <Label>{t('cm.pages_MappingManager.esleme_turu')}</Label>
                 <select
                   className="w-full border rounded-md p-2 mt-1"
                   value={addForm.entity_type}
@@ -419,7 +421,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                 </select>
               </div>
               <div>
-                <Label>PMS Varlık</Label>
+                <Label>{t('cm.pages_MappingManager.pms_varlik')}</Label>
                 {currentPmsOptions.length > 0 ? (
                   <select
                     className="w-full border rounded-md p-2 mt-1"
@@ -430,7 +432,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                     }}
                     data-testid="add-mapping-pms"
                   >
-                    <option value="">Seçin...</option>
+                    <option value="">{t('cm.pages_MappingManager.secin')}</option>
                     {currentPmsOptions.map(o => (
                       <option key={o.id} value={o.id}>{o.name || o.id}</option>
                     ))}
@@ -446,7 +448,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                 )}
               </div>
               <div>
-                <Label>External Varlık</Label>
+                <Label>{t('cm.pages_MappingManager.external_varlik')}</Label>
                 {currentExtOptions.length > 0 ? (
                   <select
                     className="w-full border rounded-md p-2 mt-1"
@@ -457,7 +459,7 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                     }}
                     data-testid="add-mapping-external"
                   >
-                    <option value="">Seçin...</option>
+                    <option value="">{t('cm.pages_MappingManager.secin_4f7bd')}</option>
                     {currentExtOptions.map(o => (
                       <option key={o.external_id || o.id} value={o.external_id || o.id}>{o.name || o.external_id || o.id}</option>
                     ))}
@@ -473,8 +475,8 @@ const MappingManager = ({ user, tenant, onLogout }) => {
                 )}
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setShowAddDialog(false)} data-testid="add-mapping-cancel">İptal</Button>
-                <Button onClick={handleCreateMapping} data-testid="add-mapping-submit">Kaydet</Button>
+                <Button variant="outline" onClick={() => setShowAddDialog(false)} data-testid="add-mapping-cancel">{t('cm.pages_MappingManager.iptal')}</Button>
+                <Button onClick={handleCreateMapping} data-testid="add-mapping-submit">{t('cm.pages_MappingManager.kaydet')}</Button>
               </div>
             </div>
           </DialogContent>

@@ -2,6 +2,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export const API = "";
 
@@ -78,6 +79,7 @@ export function bookingRef(booking) {
 }
 
 export function InfoField({ label, value, className = '' }) {
+  const { t } = useTranslation();
   return (
     <div>
       <Label className="text-[11px] font-medium text-slate-500 mb-1 block">{label}</Label>
@@ -149,9 +151,9 @@ export function FormPanel({ color, title, testid, children, onClose, onSubmit, l
       {children}
       <div className="flex gap-2">
         <Button size="sm" onClick={onSubmit} disabled={loading} className={`bg-${color}-600 hover:bg-${color}-700 text-white h-8 text-xs`}>
-          {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Check className="w-3 h-3 mr-1" />} Kaydet
+          {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Check className="w-3 h-3 mr-1" />} {t('cm.pages_reservationdetail_helpers.kaydet')}
         </Button>
-        <Button size="sm" variant="ghost" onClick={onClose} className="h-8 text-xs">İptal</Button>
+        <Button size="sm" variant="ghost" onClick={onClose} className="h-8 text-xs">{t('cm.pages_reservationdetail_helpers.iptal')}</Button>
       </div>
     </div>
   );

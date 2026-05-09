@@ -13,6 +13,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
+import { useTranslation } from 'react-i18next';
 
 const TIER_LABELS = {
   pr_gate: { name: "PR Gate", color: "text-blue-400", border: "border-blue-500/30", bg: "bg-blue-500/10" },
@@ -29,6 +30,7 @@ const VERDICT_STYLES = {
 };
 
 function PipelineTooltip({ active, payload, label }) {
+  const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 shadow-xl">
@@ -235,7 +237,7 @@ function TrendChart({ data }) {
   if (!data || data.length < 2) {
     return (
       <div className="text-xs text-zinc-600 text-center py-4">
-        Trend için en az 2 calistirma gerekli
+        {t('cm.components_CICDPipelineDashboard.trend_icin_en_az_2_calistirma_gerekli')}
       </div>
     );
   }
@@ -351,7 +353,7 @@ export function CICDPipelineDashboard() {
             CI/CD Pipeline Validation
           </h3>
           <p className="text-[10px] text-zinc-600 mt-0.5">
-            3 katmanli sandbox doğrulama: PR Gate / Staging Gate / Nightly Resilience
+            {t('cm.components_CICDPipelineDashboard.3_katmanli_sandbox_dogrulama_pr_gate_sta')}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -363,7 +365,7 @@ export function CICDPipelineDashboard() {
             disabled={loading}
             data-testid="cicd-refresh-btn"
           >
-            <RefreshCw className={`h-3 w-3 mr-1 ${loading ? "animate-spin" : ""}`} /> Yenile
+            <RefreshCw className={`h-3 w-3 mr-1 ${loading ? "animate-spin" : ""}`} /> {t('cm.components_CICDPipelineDashboard.yenile')}
           </Button>
         </div>
       </div>
@@ -375,7 +377,7 @@ export function CICDPipelineDashboard() {
         ))}
         {badgeList.length === 0 && (
           <div className="col-span-3 text-xs text-zinc-600 text-center py-3">
-            Henüz pipeline calistirilmadi
+            {t('cm.components_CICDPipelineDashboard.henuz_pipeline_calistirilmadi')}
           </div>
         )}
       </div>
@@ -425,7 +427,7 @@ export function CICDPipelineDashboard() {
           <Card className="bg-zinc-900 border-zinc-800">
             <CardContent className="p-6 text-center">
               <GitBranch className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
-              <p className="text-sm text-zinc-400">Henüz CI/CD pipeline calistirilmadi</p>
+              <p className="text-sm text-zinc-400">{t('cm.components_CICDPipelineDashboard.henuz_ci_cd_pipeline_calistirilmadi')}</p>
               <p className="text-xs text-zinc-600 mt-1">
                 Yukaridaki butonlardan bir tier secip calistirabilirsiniz
               </p>

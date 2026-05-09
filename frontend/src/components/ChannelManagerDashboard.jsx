@@ -5,8 +5,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Globe, TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const ChannelManagerDashboard = () => {
+  const { t } = useTranslation();
   const [overview, setOverview] = useState(null);
   const [rateComparison, setRateComparison] = useState(null);
   const [revenueByChannel, setRevenueByChannel] = useState(null);
@@ -36,7 +38,7 @@ const ChannelManagerDashboard = () => {
   };
 
   if (loading || !overview) {
-    return <div className="text-center py-4">Yükleniyor...</div>;
+    return <div className="text-center py-4">{t('cm.components_ChannelManagerDashboard.yukleniyor')}</div>;
   }
 
   const getChannelLogo = (channel) => {
@@ -70,13 +72,13 @@ const ChannelManagerDashboard = () => {
               <div className="text-2xl font-bold text-blue-600">
                 {overview.summary.total_bookings_today}
               </div>
-              <div className="text-xs text-gray-600">Bugünkü Rezervasyon</div>
+              <div className="text-xs text-gray-600">{t('cm.components_ChannelManagerDashboard.bugunku_rezervasyon')}</div>
             </div>
             <div className="text-center p-3 bg-green-50 rounded-lg">
               <div className="text-2xl font-bold text-green-600">
                 ₺{overview.summary.total_revenue_today.toLocaleString()}
               </div>
-              <div className="text-xs text-gray-600">Bugünkü Gelir</div>
+              <div className="text-xs text-gray-600">{t('cm.components_ChannelManagerDashboard.bugunku_gelir')}</div>
             </div>
           </div>
 
@@ -108,7 +110,7 @@ const ChannelManagerDashboard = () => {
       {rateComparison && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Fiyat Karşılaştırma</CardTitle>
+            <CardTitle className="text-base">{t('cm.components_ChannelManagerDashboard.fiyat_karsilastirma')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -127,13 +129,13 @@ const ChannelManagerDashboard = () => {
             
             <div className="mt-4 p-3 bg-blue-50 rounded-lg">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Sizin Fiyatınız:</span>
+                <span className="text-sm font-medium">{t('cm.components_ChannelManagerDashboard.sizin_fiyatiniz')}</span>
                 <span className="text-lg font-bold text-blue-600">
                   ₺{rateComparison.your_rate}
                 </span>
               </div>
               <div className="flex items-center justify-between mt-2">
-                <span className="text-xs text-gray-600">Öneri:</span>
+                <span className="text-xs text-gray-600">{t('cm.components_ChannelManagerDashboard.oneri')}</span>
                 <div className="flex items-center space-x-1">
                   {rateComparison.recommendation === 'increase' ? (
                     <TrendingUp className="w-4 h-4 text-green-500" />

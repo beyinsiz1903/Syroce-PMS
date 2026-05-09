@@ -4,8 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { API, ScoreRing, StatusDot } from '../shared';
+import { useTranslation } from 'react-i18next';
 
 const SyncHealthTab = () => {
+  const { t } = useTranslation();
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -37,11 +39,11 @@ const SyncHealthTab = () => {
           <p className="text-sm text-slate-400">{health.connector_count} connector izleniyor</p>
           <div className="flex gap-4 mt-2 text-xs">
             <span className="text-red-400">{health.error_summary?.total || 0} hata</span>
-            <span className="text-amber-400">{health.error_summary?.sync_failed || 0} sync hatası</span>
+            <span className="text-amber-400">{health.error_summary?.sync_failed || 0} {t('cm.pages_admin_tabs_SyncHealthTab.sync_hatasi')}</span>
           </div>
         </div>
         <Button size="sm" variant="outline" className="ml-auto border-slate-700 text-slate-300" onClick={fetchHealth}>
-          <RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile
+          <RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_SyncHealthTab.yenile')}
         </Button>
       </div>
 
@@ -61,7 +63,7 @@ const SyncHealthTab = () => {
               ))}
             </div>
             <div className="flex gap-4 mt-2 text-[10px]">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-500" />Basarili</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-500" />{t('cm.pages_admin_tabs_SyncHealthTab.basarili')}</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-red-500" />Basarisiz</span>
             </div>
           </CardContent>

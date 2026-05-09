@@ -19,7 +19,7 @@ export default function RiskModal(props) {
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <AlertTriangle className="w-5 h-5 text-red-600" />
-            <span>Risk Yönetimi</span>
+            <span>{t('cm.components_mobilefinance_dialogs_RiskModal.risk_yonetimi')}</span>
           </DialogTitle>
         </DialogHeader>
     
@@ -27,13 +27,13 @@ export default function RiskModal(props) {
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="overdue">Vadeli</TabsTrigger>
             <TabsTrigger value="limits">Limitler</TabsTrigger>
-            <TabsTrigger value="suspicious">Şüpheli</TabsTrigger>
-            <TabsTrigger value="alerts">Uyarılar</TabsTrigger>
+            <TabsTrigger value="suspicious">{t('cm.components_mobilefinance_dialogs_RiskModal.supheli')}</TabsTrigger>
+            <TabsTrigger value="alerts">{t('cm.components_mobilefinance_dialogs_RiskModal.uyarilar')}</TabsTrigger>
           </TabsList>
       
           <TabsContent value="overdue" className="space-y-2">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-gray-900">Vadesi Geçmiş Hesaplar (7+ gün)</h3>
+              <h3 className="font-semibold text-gray-900">{t('cm.components_mobilefinance_dialogs_RiskModal.vadesi_gecmis_hesaplar_7_gun')}</h3>
               {overdueAccounts && (
                 <Badge className="bg-red-500">
                   {overdueAccounts.summary?.total_count || 0}
@@ -49,14 +49,14 @@ export default function RiskModal(props) {
                       <div className="flex-1">
                         <p className="font-bold">{account.guest_name}</p>
                         <p className="text-sm">Folio: {account.folio_number}</p>
-                        <p className="text-sm">Oda: {account.room_number}</p>
-                        <p className="text-sm">Çıkış: {new Date(account.checkout_date).toLocaleDateString('tr-TR')}</p>
+                        <p className="text-sm">{t('cm.components_mobilefinance_dialogs_RiskModal.oda')} {account.room_number}</p>
+                        <p className="text-sm">{t('cm.components_mobilefinance_dialogs_RiskModal.cikis')} {new Date(account.checkout_date).toLocaleDateString('tr-TR')}</p>
                         <Badge className={`mt-1 ${
                           account.risk_level === 'suspicious' ? 'bg-gray-900 text-white' :
                           account.risk_level === 'critical' ? 'bg-red-600' :
                           account.risk_level === 'warning' ? 'bg-yellow-500' : 'bg-green-500'
                         }`}>
-                          {account.days_overdue} gün gecikmiş
+                          {account.days_overdue} {t('cm.components_mobilefinance_dialogs_RiskModal.gun_gecikmis')}
                         </Badge>
                       </div>
                       <div className="text-right">
@@ -77,17 +77,17 @@ export default function RiskModal(props) {
                 <div className="mt-4 p-3 bg-gray-100 rounded-lg">
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div>
-                      <span className="text-gray-600">Toplam:</span>
+                      <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_RiskModal.toplam')}</span>
                       <span className="font-bold ml-2">{overdueAccounts.summary.total_count}</span>
                     </div>
                     <div>
-                      <span className="text-gray-600">Tutar:</span>
+                      <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_RiskModal.tutar')}</span>
                       <span className="font-bold ml-2 text-red-700">
                         {formatCurrency(overdueAccounts.summary.total_amount)}
                       </span>
                     </div>
                     <div>
-                      <span className="text-gray-600">Şüpheli:</span>
+                      <span className="text-gray-600">{t('cm.components_mobilefinance_dialogs_RiskModal.supheli_c38a2')}</span>
                       <span className="font-bold ml-2">{overdueAccounts.summary.suspicious_count}</span>
                     </div>
                     <div>
@@ -98,13 +98,13 @@ export default function RiskModal(props) {
                 </div>
               </div>
             ) : (
-              <p className="text-center text-gray-500 py-8">Vadesi geçmiş hesap yok</p>
+              <p className="text-center text-gray-500 py-8">{t('cm.components_mobilefinance_dialogs_RiskModal.vadesi_gecmis_hesap_yok')}</p>
             )}
           </TabsContent>
       
           <TabsContent value="limits" className="space-y-2">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-gray-900">Kredi Limiti Aşımları</h3>
+              <h3 className="font-semibold text-gray-900">{t('cm.components_mobilefinance_dialogs_RiskModal.kredi_limiti_asimlari')}</h3>
               {creditViolations && (
                 <Badge className="bg-amber-500">
                   {creditViolations.summary?.total_count || 0}
@@ -127,21 +127,21 @@ export default function RiskModal(props) {
                             <p className="font-semibold">{formatCurrency(violation.credit_limit)}</p>
                           </div>
                           <div>
-                            <p className="text-gray-600">Borç:</p>
+                            <p className="text-gray-600">{t('cm.components_mobilefinance_dialogs_RiskModal.borc')}</p>
                             <p className="font-semibold text-red-600">{formatCurrency(violation.current_debt)}</p>
                           </div>
                           <div>
-                            <p className="text-gray-600">Kullanım:</p>
+                            <p className="text-gray-600">{t('cm.components_mobilefinance_dialogs_RiskModal.kullanim')}</p>
                             <p className="font-semibold">{violation.utilization_percentage.toFixed(1)}%</p>
                           </div>
                           <div>
                             <p className="text-gray-600">Vade:</p>
-                            <p className="font-semibold">{violation.payment_terms_days} gün</p>
+                            <p className="font-semibold">{violation.payment_terms_days} {t('cm.components_mobilefinance_dialogs_RiskModal.gun')}</p>
                           </div>
                         </div>
                         {violation.over_limit_amount > 0 && (
                           <Badge className="mt-2 bg-red-600">
-                            Limit aşımı: {formatCurrency(violation.over_limit_amount)}
+                            {t('cm.components_mobilefinance_dialogs_RiskModal.limit_asimi')} {formatCurrency(violation.over_limit_amount)}
                           </Badge>
                         )}
                         {violation.warning && (
@@ -153,7 +153,7 @@ export default function RiskModal(props) {
                     </div>
                     {violation.contact_person && (
                       <div className="mt-2 pt-2 border-t text-xs text-gray-600">
-                        <p>İletişim: {violation.contact_person}</p>
+                        <p>{t('cm.components_mobilefinance_dialogs_RiskModal.iletisim')} {violation.contact_person}</p>
                         {violation.contact_phone && <p>Tel: {violation.contact_phone}</p>}
                       </div>
                     )}
@@ -161,13 +161,13 @@ export default function RiskModal(props) {
                 ))}
               </div>
             ) : (
-              <p className="text-center text-gray-500 py-8">Limit aşımı yok</p>
+              <p className="text-center text-gray-500 py-8">{t('cm.components_mobilefinance_dialogs_RiskModal.limit_asimi_yok')}</p>
             )}
           </TabsContent>
       
           <TabsContent value="suspicious" className="space-y-2">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-gray-900">Şüpheli Alacaklar</h3>
+              <h3 className="font-semibold text-gray-900">{t('cm.components_mobilefinance_dialogs_RiskModal.supheli_alacaklar')}</h3>
               {suspiciousReceivables && (
                 <Badge className="bg-gray-900 text-white">
                   {suspiciousReceivables.summary?.total_count || 0}
@@ -183,12 +183,12 @@ export default function RiskModal(props) {
                       <div className="flex-1">
                         <p className="font-bold text-gray-900">{item.guest_name}</p>
                         <p className="text-sm">Folio: {item.folio_number}</p>
-                        <p className="text-sm">Çıkış: {new Date(item.checkout_date).toLocaleDateString('tr-TR')}</p>
+                        <p className="text-sm">{t('cm.components_mobilefinance_dialogs_RiskModal.cikis_c7b4a')} {new Date(item.checkout_date).toLocaleDateString('tr-TR')}</p>
                         <Badge className="mt-1 bg-gray-900 text-white">
-                          {item.days_overdue} gün gecikmiş
+                          {item.days_overdue} {t('cm.components_mobilefinance_dialogs_RiskModal.gun_gecikmis_2e290')}
                         </Badge>
                         <p className="text-xs text-gray-600 mt-1">{item.reason}</p>
-                        <p className="text-xs text-gray-500">Ödeme sayısı: {item.payment_history_count}</p>
+                        <p className="text-xs text-gray-500">{t('cm.components_mobilefinance_dialogs_RiskModal.odeme_sayisi')} {item.payment_history_count}</p>
                       </div>
                       <div className="text-right">
                         <p className="font-bold text-lg text-gray-900">{formatCurrency(item.balance)}</p>
@@ -208,11 +208,11 @@ export default function RiskModal(props) {
                 <div className="mt-4 p-3 bg-gray-900 text-white rounded-lg">
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div>
-                      <span>Toplam:</span>
+                      <span>{t('cm.components_mobilefinance_dialogs_RiskModal.toplam_68af4')}</span>
                       <span className="font-bold ml-2">{suspiciousReceivables.summary.total_count}</span>
                     </div>
                     <div>
-                      <span>Tutar:</span>
+                      <span>{t('cm.components_mobilefinance_dialogs_RiskModal.tutar_64d2c')}</span>
                       <span className="font-bold ml-2">
                         {formatCurrency(suspiciousReceivables.summary.total_amount)}
                       </span>
@@ -221,7 +221,7 @@ export default function RiskModal(props) {
                 </div>
               </div>
             ) : (
-              <p className="text-center text-gray-500 py-8">Şüpheli alacak yok</p>
+              <p className="text-center text-gray-500 py-8">{t('cm.components_mobilefinance_dialogs_RiskModal.supheli_alacak_yok')}</p>
             )}
           </TabsContent>
       
@@ -242,7 +242,7 @@ export default function RiskModal(props) {
                         <p className="text-sm text-gray-700">{alert.message}</p>
                         {alert.amount && (
                           <p className="text-sm font-bold text-red-600 mt-1">
-                            Tutar: {formatCurrency(alert.amount)}
+                            {t('cm.components_mobilefinance_dialogs_RiskModal.tutar_64d2c')} {formatCurrency(alert.amount)}
                           </p>
                         )}
                         {alert.action_required && (
@@ -254,7 +254,7 @@ export default function RiskModal(props) {
                 ))}
               </div>
             ) : (
-              <p className="text-center text-gray-500 py-8">Uyarı yok</p>
+              <p className="text-center text-gray-500 py-8">{t('cm.components_mobilefinance_dialogs_RiskModal.uyari_yok')}</p>
             )}
           </TabsContent>
         </Tabs>

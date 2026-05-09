@@ -130,7 +130,7 @@ export default function AuditTab(props) {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-slate-500 text-sm">Audit log boş</div>
+                  <div className="text-center py-8 text-slate-500 text-sm">{t('cm.components_integrationhub_tabs_AuditTab.audit_log_bos')}</div>
                 )}
               </CardContent>
             </Card>

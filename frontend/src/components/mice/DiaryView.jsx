@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CalendarDays } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const STATUS = {
   lead: { label: 'Lead', cls: 'bg-slate-100 text-slate-700' },
@@ -20,6 +21,7 @@ const MONTHS_TR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
                    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 
 const DiaryView = ({ spaceById, spaces }) => {
+  const { t } = useTranslation();
   const today = new Date();
   const [view, setView] = useState('calendar');
   const [calMonth, setCalMonth] = useState({ year: today.getFullYear(), month: today.getMonth() });
@@ -94,15 +96,15 @@ const DiaryView = ({ spaceById, spaces }) => {
             {MONTHS_TR[calMonth.month]} {calMonth.year}
           </div>
           <Button variant="outline" size="sm" onClick={nextMonth}>›</Button>
-          <Button variant="outline" size="sm" onClick={goToday}>Bugün</Button>
+          <Button variant="outline" size="sm" onClick={goToday}>{t('cm.components_mice_DiaryView.bugun')}</Button>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 text-xs">
             <span className="inline-block w-3 h-3 rounded bg-indigo-100 border border-indigo-300" /> Etkinlik
-            <span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-300 ml-2" /> Müsait
+            <span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-300 ml-2" /> {t('cm.components_mice_DiaryView.musait')}
           </div>
           <Button variant={view === 'calendar' ? 'default' : 'outline'} size="sm" onClick={() => setView('calendar')}>Takvim</Button>
-          <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')}>Liste</Button>
+          <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')}>{t('cm.components_mice_DiaryView.liste')}</Button>
         </div>
       </div>
 
@@ -141,7 +143,7 @@ const DiaryView = ({ spaceById, spaces }) => {
                     )}
                     {(spaces?.length || 0) > 0 && (
                       <div className="mt-0.5 text-[10px] text-emerald-700">
-                        {cell.freeCount}/{spaces.length} müsait
+                        {cell.freeCount}/{spaces.length} {t('cm.components_mice_DiaryView.musait_873fb')}
                       </div>
                     )}
                   </button>
@@ -158,7 +160,7 @@ const DiaryView = ({ spaceById, spaces }) => {
                   {selectedDate}
                 </div>
                 <div className="text-xs text-gray-600 mb-2">
-                  {selectedDayEvents.length} etkinlik • {selectedDayFreeSpaces.length} müsait mekan
+                  {selectedDayEvents.length} etkinlik • {selectedDayFreeSpaces.length} {t('cm.components_mice_DiaryView.musait_mekan')}
                 </div>
                 {selectedDayEvents.length > 0 && (
                   <div className="space-y-1.5 mb-3">
@@ -184,7 +186,7 @@ const DiaryView = ({ spaceById, spaces }) => {
                 )}
                 {selectedDayBookedSpaces.length > 0 && (
                   <div className="space-y-1 mb-3">
-                    <div className="text-[11px] font-semibold text-gray-500 uppercase">Dolu Mekanlar</div>
+                    <div className="text-[11px] font-semibold text-gray-500 uppercase">{t('cm.components_mice_DiaryView.dolu_mekanlar')}</div>
                     <div className="flex flex-wrap gap-1">
                       {selectedDayBookedSpaces.map((s) => (
                         <Badge key={s.id} variant="outline" className="text-[10px] bg-rose-50 border-rose-200 text-rose-700">{s.name}</Badge>
@@ -194,7 +196,7 @@ const DiaryView = ({ spaceById, spaces }) => {
                 )}
                 {selectedDayFreeSpaces.length > 0 && (
                   <div className="space-y-1">
-                    <div className="text-[11px] font-semibold text-gray-500 uppercase">Müsait Mekanlar</div>
+                    <div className="text-[11px] font-semibold text-gray-500 uppercase">{t('cm.components_mice_DiaryView.musait_mekanlar')}</div>
                     <div className="flex flex-wrap gap-1">
                       {selectedDayFreeSpaces.map((s) => (
                         <Badge key={s.id} variant="outline" className="text-[10px] bg-emerald-50 border-emerald-200 text-emerald-700">{s.name}</Badge>
@@ -205,7 +207,7 @@ const DiaryView = ({ spaceById, spaces }) => {
               </>
             ) : (
               <div className="text-xs text-gray-500 text-center py-8">
-                Detay için bir gün seçin
+                {t('cm.components_mice_DiaryView.detay_icin_bir_gun_secin')}
               </div>
             )}
           </div>

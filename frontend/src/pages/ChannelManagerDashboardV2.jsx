@@ -12,8 +12,10 @@ import {
   Signal, Wifi, WifiOff, X, Zap, Eye, ChevronDown, ChevronUp,
   ArrowLeftRight, BarChart3, Users,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const StatusBadge = ({ status }) => {
+  const { t } = useTranslation();
   const map = {
     active: { cls: 'bg-emerald-100 text-emerald-800', label: 'Aktif' },
     paused: { cls: 'bg-amber-100 text-amber-800', label: 'Durduruldu' },
@@ -152,7 +154,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout, embedded = false })
               <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>
                 Channel Manager Dashboard
               </h1>
-              <p className="text-sm text-slate-500">Tüm kanal operasyonlarinin birlesik gorunumu</p>
+              <p className="text-sm text-slate-500">{t('cm.pages_ChannelManagerDashboardV2.tum_kanal_operasyonlarinin_birlesik_goru')}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -164,13 +166,13 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout, embedded = false })
             )}
             <Button variant="outline" size="sm" onClick={fetchDashboard} disabled={loading}>
               <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-              Yenile
+              {t('cm.pages_ChannelManagerDashboardV2.yenile')}
             </Button>
           </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="kpi-grid">
-          <KpiCard icon={Plug} label="Toplam Connector" value={kpis.total_connectors || 0} />
+          <KpiCard icon={Plug} label={t('cm.pages_ChannelManagerDashboardV2.toplam_connector')} value={kpis.total_connectors || 0} />
           <KpiCard icon={CheckCircle} label="Saglikli" value={kpis.healthy || 0} color="text-emerald-600" />
           <KpiCard icon={AlertTriangle} label="Bozulmus" value={(kpis.degraded || 0) + (kpis.error || 0)} color={(kpis.degraded || 0) + (kpis.error || 0) > 0 ? 'text-red-600' : 'text-slate-500'} sub={`${kpis.degraded || 0} yavaslama, ${kpis.error || 0} hata`} />
           <KpiCard icon={Users} label="Son 24s Rez." value={kpis.recent_reservations_24h || 0} color="text-blue-600" />
@@ -231,15 +233,15 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout, embedded = false })
                       <tr className="border-b bg-slate-50">
                         <th className="text-left px-4 py-2 text-xs font-medium text-slate-500">Connector</th>
                         <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Saglayici</th>
-                        <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Durum</th>
+                        <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">{t('cm.pages_ChannelManagerDashboardV2.durum')}</th>
                         <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Son Sync</th>
-                        <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">Son Hata</th>
-                        <th className="text-right px-3 py-2 text-xs font-medium text-slate-500">İşlem</th>
+                        <th className="text-left px-3 py-2 text-xs font-medium text-slate-500">{t('cm.pages_ChannelManagerDashboardV2.son_hata')}</th>
+                        <th className="text-right px-3 py-2 text-xs font-medium text-slate-500">{t('cm.pages_ChannelManagerDashboardV2.islem')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {connectors.length === 0 ? (
-                        <tr><td colSpan={6} className="text-center py-8 text-slate-400">Connector bulunamadı</td></tr>
+                        <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('cm.pages_ChannelManagerDashboardV2.connector_bulunamadi')}</td></tr>
                       ) : connectors.map((c, i) => (
                         <tr key={c.id || i} className="border-b last:border-0 hover:bg-slate-50 transition-colors" data-testid={`connector-row-${i}`}>
                           <td className="px-4 py-3">
@@ -288,7 +290,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout, embedded = false })
               </CardHeader>
               <CardContent>
                 {recentRes.length === 0 ? (
-                  <p className="text-sm text-slate-400 text-center py-6">Henüz ithal edilen rezervasyon yok</p>
+                  <p className="text-sm text-slate-400 text-center py-6">{t('cm.pages_ChannelManagerDashboardV2.henuz_ithal_edilen_rezervasyon_yok')}</p>
                 ) : (
                   <div className="space-y-2">
                     {recentRes.map((r, i) => {
@@ -418,7 +420,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout, embedded = false })
                       data-testid="ops-summary-cta"
                     >
                       <Zap className="w-3.5 h-3.5 mr-1.5" />
-                      Detaylı Operasyon Gorunumu
+                      {t('cm.pages_ChannelManagerDashboardV2.detayli_operasyon_gorunumu')}
                       <ArrowRight className="w-3.5 h-3.5 ml-auto" />
                     </Button>
                   </div>
@@ -461,28 +463,28 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout, embedded = false })
                       <div className="grid grid-cols-3 gap-3">
                         <div className="p-3 rounded-lg bg-slate-50 text-center">
                           <div className="text-lg font-bold text-slate-800">{c.total_syncs || 0}</div>
-                          <div className="text-[10px] text-slate-500">Toplam Sync</div>
+                          <div className="text-[10px] text-slate-500">{t('cm.pages_ChannelManagerDashboardV2.toplam_sync')}</div>
                         </div>
                         <div className="p-3 rounded-lg bg-slate-50 text-center">
                           <div className="text-lg font-bold text-red-600">{c.total_errors || 0}</div>
-                          <div className="text-[10px] text-slate-500">Toplam Hata</div>
+                          <div className="text-[10px] text-slate-500">{t('cm.pages_ChannelManagerDashboardV2.toplam_hata')}</div>
                         </div>
                         <div className="p-3 rounded-lg bg-slate-50 text-center">
                           <div className="text-lg font-bold text-amber-600">{c.consecutive_failures || 0}</div>
-                          <div className="text-[10px] text-slate-500">Ardisik Hata</div>
+                          <div className="text-[10px] text-slate-500">{t('cm.pages_ChannelManagerDashboardV2.ardisik_hata')}</div>
                         </div>
                       </div>
 
                       <div className="space-y-2">
                         <div className="flex items-center justify-between text-sm">
-                          <span className="text-slate-500">Son Basarili Sync</span>
+                          <span className="text-slate-500">{t('cm.pages_ChannelManagerDashboardV2.son_basarili_sync')}</span>
                           <TimeAgo ts={c.last_successful_sync} />
                         </div>
                         {c.last_error && (
                           <div className="p-3 bg-red-50 rounded-lg border border-red-100">
                             <div className="flex items-center gap-2 mb-1">
                               <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
-                              <span className="text-xs font-medium text-red-700">Son Hata</span>
+                              <span className="text-xs font-medium text-red-700">{t('cm.pages_ChannelManagerDashboardV2.son_hata_aeb44')}</span>
                               <TimeAgo ts={c.last_error_at} />
                             </div>
                             <p className="text-xs text-red-600">{c.last_error}</p>
@@ -509,7 +511,7 @@ const ChannelManagerDashboardV2 = ({ user, tenant, onLogout, embedded = false })
                       </div>
 
                       <div>
-                        <h4 className="text-sm font-semibold text-slate-700 mb-2">Rezervasyon Istatistikleri</h4>
+                        <h4 className="text-sm font-semibold text-slate-700 mb-2">{t('cm.pages_ChannelManagerDashboardV2.rezervasyon_istatistikleri')}</h4>
                         <div className="flex flex-wrap gap-2">
                           {Object.entries(resSt).map(([status, count]) => (
                             <div key={status} className="px-2.5 py-1 rounded-full bg-slate-100 text-xs">

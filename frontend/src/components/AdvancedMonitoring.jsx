@@ -3,8 +3,10 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Activity, Cpu, HardDrive, Database, Zap, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const AdvancedMonitoring = () => {
+  const { t } = useTranslation();
   const [metrics, setMetrics] = useState(null);
   const [health, setHealth] = useState(null);
   const [thresholds, setThresholds] = useState(null);
@@ -57,7 +59,7 @@ const AdvancedMonitoring = () => {
   };
 
   if (loading || !health) {
-    return <div className="text-center py-4">Yükleniyor...</div>;
+    return <div className="text-center py-4">{t('cm.components_AdvancedMonitoring.yukleniyor')}</div>;
   }
 
   return (
@@ -69,10 +71,10 @@ const AdvancedMonitoring = () => {
             <div className="text-5xl font-bold text-blue-600 mb-2">
               {health.health_score}%
             </div>
-            <div className="text-sm text-gray-600">Sistem Sağlık Skoru</div>
+            <div className="text-sm text-gray-600">{t('cm.components_AdvancedMonitoring.sistem_saglik_skoru')}</div>
             <div className="mt-3">
               <Badge className={getStatusColor('healthy')}>
-                Tüm Sistemler Operasyonel
+                {t('cm.components_AdvancedMonitoring.tum_sistemler_operasyonel')}
               </Badge>
             </div>
           </div>
@@ -85,14 +87,14 @@ const AdvancedMonitoring = () => {
           <CardHeader>
             <CardTitle className="flex items-center text-base">
               <Cpu className="w-5 h-5 mr-2" />
-              Sistem Kaynakları
+              {t('cm.components_AdvancedMonitoring.sistem_kaynaklari')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {/* CPU */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-medium">CPU Kullanımı</span>
+                <span className="text-sm font-medium">{t('cm.components_AdvancedMonitoring.cpu_kullanimi')}</span>
                 <span className="text-sm font-bold">
                   {health.system.cpu?.usage_percent?.toFixed(1)}%
                 </span>
@@ -154,7 +156,7 @@ const AdvancedMonitoring = () => {
         <CardHeader>
           <CardTitle className="flex items-center text-base">
             <Activity className="w-5 h-5 mr-2" />
-            Servis Durumları
+            {t('cm.components_AdvancedMonitoring.servis_durumlari')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -187,7 +189,7 @@ const AdvancedMonitoring = () => {
           <CardHeader>
             <CardTitle className="flex items-center text-base">
               <Zap className="w-5 h-5 mr-2" />
-              API Metrikleri (Son 1 Saat)
+              {t('cm.components_AdvancedMonitoring.api_metrikleri_son_1_saat')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -196,7 +198,7 @@ const AdvancedMonitoring = () => {
                 <div className="text-xl font-bold text-blue-600">
                   {metrics.summary.avg_response_time}ms
                 </div>
-                <div className="text-xs text-gray-600">Ort. Yanıt Süresi</div>
+                <div className="text-xs text-gray-600">{t('cm.components_AdvancedMonitoring.ort_yanit_suresi')}</div>
               </div>
               <div className="text-center p-3 bg-green-50 rounded-lg">
                 <div className="text-xl font-bold text-green-600">
@@ -208,13 +210,13 @@ const AdvancedMonitoring = () => {
                 <div className="text-xl font-bold text-indigo-600">
                   {(metrics.summary.total_requests / 1000).toFixed(1)}K
                 </div>
-                <div className="text-xs text-gray-600">Toplam İstek</div>
+                <div className="text-xs text-gray-600">{t('cm.components_AdvancedMonitoring.toplam_istek')}</div>
               </div>
               <div className="text-center p-3 bg-amber-50 rounded-lg">
                 <div className="text-xl font-bold text-amber-600">
                   {metrics.summary.avg_error_rate}%
                 </div>
-                <div className="text-xs text-gray-600">Hata Oranı</div>
+                <div className="text-xs text-gray-600">{t('cm.components_AdvancedMonitoring.hata_orani')}</div>
               </div>
             </div>
           </CardContent>
@@ -227,7 +229,7 @@ const AdvancedMonitoring = () => {
           <CardHeader>
             <CardTitle className="flex items-center text-base">
               <AlertTriangle className="w-5 h-5 mr-2" />
-              Uyarı Eşikleri
+              {t('cm.components_AdvancedMonitoring.uyari_esikleri')}
             </CardTitle>
           </CardHeader>
           <CardContent>

@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Package, TrendingUp, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Allotment Consumption Chart
@@ -10,6 +11,7 @@ import { Package, TrendingUp, AlertCircle, CheckCircle, Clock } from 'lucide-rea
  * Demo pitch: "Siz otelinizdeki allotment kaosunu tek tuşla yönetiyorsunuz"
  */
 const AllotmentConsumptionChart = ({ dateRange }) => {
+  const { t } = useTranslation();
   const [allotments, setAllotments] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -72,10 +74,10 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Package className="w-5 h-5 text-indigo-600" />
-          Allotment Consumption - Operatör Bazlı
+          {t('cm.components_AllotmentConsumptionChart.allotment_consumption_operator_bazli')}
         </CardTitle>
         <CardDescription>
-          Ayrılan / Satılan / Kalan Oda Durumu
+          {t('cm.components_AllotmentConsumptionChart.ayrilan_satilan_kalan_oda_durumu')}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -86,19 +88,19 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
               <div className="text-2xl font-bold text-blue-700">
                 {allotments.reduce((sum, a) => sum + a.allocated, 0)}
               </div>
-              <div className="text-xs text-gray-600">Toplam Ayrılan</div>
+              <div className="text-xs text-gray-600">{t('cm.components_AllotmentConsumptionChart.toplam_ayrilan')}</div>
             </div>
             <div className="p-3 bg-green-50 rounded-lg text-center">
               <div className="text-2xl font-bold text-green-700">
                 {allotments.reduce((sum, a) => sum + a.sold, 0)}
               </div>
-              <div className="text-xs text-gray-600">Toplam Satılan</div>
+              <div className="text-xs text-gray-600">{t('cm.components_AllotmentConsumptionChart.toplam_satilan')}</div>
             </div>
             <div className="p-3 bg-amber-50 rounded-lg text-center">
               <div className="text-2xl font-bold text-amber-700">
                 {allotments.reduce((sum, a) => sum + a.remaining, 0)}
               </div>
-              <div className="text-xs text-gray-600">Toplam Kalan</div>
+              <div className="text-xs text-gray-600">{t('cm.components_AllotmentConsumptionChart.toplam_kalan')}</div>
             </div>
           </div>
 
@@ -129,7 +131,7 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
                     </Badge>
                   </div>
                   <div className="text-xs text-gray-600">
-                    {allotment.remaining} oda kaldı
+                    {allotment.remaining} {t('cm.components_AllotmentConsumptionChart.oda_kaldi')}
                   </div>
                 </div>
 
@@ -181,12 +183,12 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
                   )}
                   {allotment.status === 'warning' && (
                     <span className="text-yellow-700 font-semibold">
-                      Düşük stok - Takibe alın
+                      {t('cm.components_AllotmentConsumptionChart.dusuk_stok_takibe_alin')}
                     </span>
                   )}
                   {allotment.status === 'good' && (
                     <span className="text-green-700 font-semibold">
-                      Sağlıklı seviyede
+                      {t('cm.components_AllotmentConsumptionChart.saglikli_seviyede')}
                     </span>
                   )}
                 </div>
@@ -200,12 +202,10 @@ const AllotmentConsumptionChart = ({ dateRange }) => {
               <TrendingUp className="w-6 h-6 text-indigo-600 mt-1" />
               <div>
                 <div className="font-bold text-indigo-900 mb-1">
-                  Demo Pitch: "Allotment Kaosunu Tek Tuşla Yönetin"
+                  {t('cm.components_AllotmentConsumptionChart.demo_pitch_allotment_kaosunu_tek_tusla_y')}
                 </div>
                 <p className="text-sm text-indigo-800">
-                  Tüm operatörlerin allotment durumunu tek ekranda görün. Kalan oda sayısını 
-                  an instant takip edin. Kritik durumlar otomatik highlight edilir. 
-                  Revenue Management toplantılarında çok etkili!
+                  {t('cm.components_AllotmentConsumptionChart.tum_operatorlerin_allotment_durumunu_tek')}
                 </p>
               </div>
             </div>

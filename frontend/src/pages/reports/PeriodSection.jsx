@@ -5,37 +5,39 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { formatCurrency, calcChange, CustomTooltip, SectionHeader } from './ReportHelpers';
+import { useTranslation } from 'react-i18next';
 
 const PeriodSection = ({ data, pc }) => {
+  const { t } = useTranslation();
   const revChange = calcChange(pc.month_revenue, pc.prev_month_revenue);
   const bookChange = calcChange(pc.month_bookings, pc.prev_month_bookings);
   return (
     <div className="space-y-6" data-testid="section-period">
-      <SectionHeader title="Dönem Karşılaştırma" description="Haftalık, aylık ve önceki dönem karşılaştırmaları" />
+      <SectionHeader title={t('cm.pages_reports_PeriodSection.donem_karsilastirma')} description={t('cm.pages_reports_PeriodSection.haftalik_aylik_ve_onceki_donem_karsilast')} />
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="border-l-4 border-l-sky-500"><CardContent className="p-4">
-          <p className="text-[11px] text-slate-500 uppercase tracking-wide">Son 7 Gün Gelir</p>
+          <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('cm.pages_reports_PeriodSection.son_7_gun_gelir')}</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(pc.week_revenue)}</p>
           <p className="text-xs text-slate-400 mt-1">{pc.week_bookings} rezervasyon</p>
         </CardContent></Card>
         <Card className="border-l-4 border-l-emerald-500"><CardContent className="p-4">
-          <p className="text-[11px] text-slate-500 uppercase tracking-wide">Son 30 Gün Gelir</p>
+          <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('cm.pages_reports_PeriodSection.son_30_gun_gelir')}</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(pc.month_revenue)}</p>
           <p className="text-xs text-slate-400 mt-1">{pc.month_bookings} rezervasyon</p>
         </CardContent></Card>
         <Card className="border-l-4 border-l-indigo-500"><CardContent className="p-4">
-          <p className="text-[11px] text-slate-500 uppercase tracking-wide">Önceki 30 Gün Gelir</p>
+          <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('cm.pages_reports_PeriodSection.onceki_30_gun_gelir')}</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(pc.prev_month_revenue)}</p>
           <p className="text-xs text-slate-400 mt-1">{pc.prev_month_bookings} rezervasyon</p>
         </CardContent></Card>
         <Card className="border-l-4 border-l-amber-500"><CardContent className="p-4">
-          <p className="text-[11px] text-slate-500 uppercase tracking-wide">Geçen Yıl (Aynı Dönem)</p>
+          <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('cm.pages_reports_PeriodSection.gecen_yil_ayni_donem')}</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(pc.last_year_revenue)}</p>
           <p className="text-xs text-slate-400 mt-1">{pc.last_year_bookings} rezervasyon</p>
         </CardContent></Card>
       </div>
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Gelir & Rezervasyon Trendi</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">{t('cm.pages_reports_PeriodSection.gelir_rezervasyon_trendi')}</CardTitle></CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={320}>
             <ComposedChart data={data?.revenue_trend || []}>
@@ -52,7 +54,7 @@ const PeriodSection = ({ data, pc }) => {
       <div className="grid md:grid-cols-2 gap-4">
         <Card className={`border-2 ${Number(revChange.pct) > 0 && revChange.direction === 'up' ? 'border-emerald-200 bg-emerald-50/30' : 'border-rose-200 bg-rose-50/30'}`}>
           <CardContent className="p-5 text-center">
-            <p className="text-sm font-medium text-gray-600">Gelir Değişimi (Önceki Aya Göre)</p>
+            <p className="text-sm font-medium text-gray-600">{t('cm.pages_reports_PeriodSection.gelir_degisimi_onceki_aya_gore')}</p>
             <p className={`text-3xl font-bold mt-2 ${revChange.direction === 'up' ? 'text-emerald-700' : 'text-rose-700'}`}>
               {revChange.direction === 'up' ? '+' : '-'}{revChange.pct}%
             </p>
@@ -61,7 +63,7 @@ const PeriodSection = ({ data, pc }) => {
         </Card>
         <Card className={`border-2 ${Number(bookChange.pct) > 0 && bookChange.direction === 'up' ? 'border-emerald-200 bg-emerald-50/30' : 'border-rose-200 bg-rose-50/30'}`}>
           <CardContent className="p-5 text-center">
-            <p className="text-sm font-medium text-gray-600">Rezervasyon Değişimi (Önceki Aya Göre)</p>
+            <p className="text-sm font-medium text-gray-600">{t('cm.pages_reports_PeriodSection.rezervasyon_degisimi_onceki_aya_gore')}</p>
             <p className={`text-3xl font-bold mt-2 ${bookChange.direction === 'up' ? 'text-emerald-700' : 'text-rose-700'}`}>
               {bookChange.direction === 'up' ? '+' : '-'}{bookChange.pct}%
             </p>

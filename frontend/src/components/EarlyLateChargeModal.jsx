@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Clock, Calculator } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 export default function EarlyLateChargeModal({ open, onClose, bookingId, direction, defaultHour = 10, onApplied }) {
+  const { t } = useTranslation();
   const [hour, setHour] = useState(defaultHour);
   const [calc, setCalc] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -58,9 +60,9 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label className="text-xs">Gerçekleşen Saat (0-23)</Label>
+            <Label className="text-xs">{t('cm.components_EarlyLateChargeModal.gerceklesen_saat_0_23')}</Label>
             <div className="flex gap-2">
-              <Input type="number" step="0.25" min={0} max={24} value={hour} onChange={e => setHour(parseFloat(e.target.value) || 0)} className="h-9" placeholder="örn. 13.75 = 13:45" />
+              <Input type="number" step="0.25" min={0} max={24} value={hour} onChange={e => setHour(parseFloat(e.target.value) || 0)} className="h-9" placeholder={t('cm.components_EarlyLateChargeModal.orn_13_75_13_45')} />
               <Button onClick={calculate} disabled={busy} variant="outline">
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calculator className="w-4 h-4" />}
               </Button>
@@ -84,15 +86,15 @@ export default function EarlyLateChargeModal({ open, onClose, bookingId, directi
           <div className="border-t pt-2">
             <Label className="text-xs text-gray-500">Manuel Override (opsiyonel)</Label>
             <div className="grid grid-cols-2 gap-2 mt-1">
-              <Input type="number" placeholder="Tutar" value={overrideAmount} onChange={e => setOverrideAmount(e.target.value)} className="h-9" />
+              <Input type="number" placeholder={t('cm.components_EarlyLateChargeModal.tutar')} value={overrideAmount} onChange={e => setOverrideAmount(e.target.value)} className="h-9" />
               <Input placeholder="Sebep" value={overrideReason} onChange={e => setOverrideReason(e.target.value)} className="h-9" />
             </div>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>İptal</Button>
+          <Button variant="outline" onClick={onClose}>{t('cm.components_EarlyLateChargeModal.iptal')}</Button>
           <Button onClick={apply} disabled={busy || (!calc?.applicable && !overrideAmount)}>
-            Folyoya Ekle
+            {t('cm.components_EarlyLateChargeModal.folyoya_ekle')}
           </Button>
         </DialogFooter>
       </DialogContent>

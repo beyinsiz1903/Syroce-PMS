@@ -10,8 +10,10 @@ import {
   ShoppingBag, Wrench, Crown,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from 'react-i18next';
 
 export default function AfsadakatLauncher({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -82,8 +84,7 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
             Sadakat & Omni Inbox
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Sadakat programı, AI yorum yönetimi, WhatsApp/Meta birleşik mesaj kutusu
-            ve misafir servisleri tek panelde — Syroce PMS ile entegre.
+            {t('cm.pages_AfsadakatLauncher.sadakat_programi_ai_yorum_yonetimi_whats')}
           </p>
         </div>
 
@@ -91,16 +92,15 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
           <Card className="border-amber-200 bg-amber-50">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2 text-amber-900">
-                <AlertCircle className="w-5 h-5" /> Aktif aboneliğiniz yok
+                <AlertCircle className="w-5 h-5" /> {t('cm.pages_AfsadakatLauncher.aktif_aboneliginiz_yok')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-sm text-amber-900">
-                Bu modülü kullanmak için Modül Pazarı'ndan abonelik başlatın
-                (14 gün ücretsiz deneme mevcut).
+                {t('cm.pages_AfsadakatLauncher.bu_modulu_kullanmak_icin_modul_pazari_nd')}
               </p>
               <Button onClick={() => navigate("/app/module-store")}>
-                <ShoppingBag className="w-4 h-4 mr-1" /> Modül Pazarı'na Git
+                <ShoppingBag className="w-4 h-4 mr-1" /> {t('cm.pages_AfsadakatLauncher.modul_pazari_na_git')}
               </Button>
             </CardContent>
           </Card>
@@ -111,10 +111,10 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                Bağlantı Durumu
+                {t('cm.pages_AfsadakatLauncher.baglanti_durumu')}
                 {viaSuper && (
                   <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 ml-1">
-                    <Crown className="w-3 h-3 mr-1" /> Süper-admin erişimi
+                    <Crown className="w-3 h-3 mr-1" /> {t('cm.pages_AfsadakatLauncher.super_admin_erisimi')}
                   </Badge>
                 )}
               </CardTitle>
@@ -122,9 +122,7 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
             <CardContent className="space-y-4">
               {viaSuper && (
                 <div className="border-l-4 border-indigo-400 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
-                  Bu tenant'ın aktif Af-sadakat aboneliği yok; süper-admin yetkinizle
-                  modüle doğrudan erişiyorsunuz. Üretim kullanımı için tenant adına
-                  Modül Pazarı'ndan abonelik başlatılmalıdır.
+                  {t('cm.pages_AfsadakatLauncher.bu_tenant_in_aktif_af_sadakat_aboneligi_')}
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3 text-sm">
@@ -137,7 +135,7 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between border rounded-md px-3 py-2">
-                  <span className="text-slate-600">Hazırlık</span>
+                  <span className="text-slate-600">{t('cm.pages_AfsadakatLauncher.hazirlik')}</span>
                   <Badge className={provisioned
                     ? "bg-emerald-100 text-emerald-800 border-emerald-200"
                     : "bg-amber-100 text-amber-800 border-amber-200"}>
@@ -157,8 +155,7 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
                 <div className="border-l-4 border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-900 flex gap-2">
                   <Wrench className="w-4 h-4 mt-0.5 shrink-0" />
                   <div>
-                    Af-sadakat sunucusu henüz konfigüre edilmemiş. Aboneliğiniz aktif —
-                    sunucu yayına alındığında "Aç" butonu otomatik olarak çalışacak.
+                    {t('cm.pages_AfsadakatLauncher.af_sadakat_sunucusu_henuz_konfigure_edil')}
                   </div>
                 </div>
               )}
@@ -174,12 +171,12 @@ export default function AfsadakatLauncher({ user, tenant, onLogout }) {
                 ) : (
                   <>
                     <ExternalLink className="w-5 h-5 mr-2" />
-                    Sadakat & Inbox'ı Yeni Sekmede Aç
+                    {t('cm.pages_AfsadakatLauncher.sadakat_inbox_i_yeni_sekmede_ac')}
                   </>
                 )}
               </Button>
               <p className="text-xs text-slate-500 text-center">
-                Tek kullanımlık güvenli giriş bağlantısı (2 dk geçerli)
+                {t('cm.pages_AfsadakatLauncher.tek_kullanimlik_guvenli_giris_baglantisi')}
               </p>
             </CardContent>
           </Card>

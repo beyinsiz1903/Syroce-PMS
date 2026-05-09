@@ -25,6 +25,7 @@ import GuestAlertModal from '@/components/GuestAlertModal';
 import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 // Statü için pill rengi (sıkı palet: amber/emerald/rose/slate)
 const STATUS_PILL = {
@@ -39,6 +40,7 @@ const STATUS_PILL = {
 };
 
 export default function ReservationDetailModal({ bookingId, onClose, allBookings }) {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('general');
@@ -67,7 +69,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-3">
         <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
-        <span className="text-sm text-slate-500">Yükleniyor...</span>
+        <span className="text-sm text-slate-500">{t('cm.pages_ReservationDetailModal.yukleniyor')}</span>
       </div>
     </div>
   );
@@ -114,7 +116,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
         <div className="flex items-center justify-between px-6 py-3 border-b bg-gradient-to-r from-slate-900 to-slate-800">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex items-baseline gap-2 min-w-0">
-              <h2 className="text-white font-semibold text-base whitespace-nowrap">Rezervasyon</h2>
+              <h2 className="text-white font-semibold text-base whitespace-nowrap">{t('cm.pages_ReservationDetailModal.rezervasyon')}</h2>
               <span className="text-amber-300 font-mono text-sm tracking-wide truncate">{refLabel}</span>
             </div>
             <Badge className={`text-[11px] h-5 px-2 ${STATUS_PILL[booking?.status] || STATUS_PILL.pending}`}>
@@ -125,7 +127,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             )}
             {hasOpenBalance && (
               <Badge className="bg-rose-500/20 text-rose-100 border border-rose-400/30 text-[11px] h-5 px-2 hidden md:inline-flex">
-                <AlertTriangle className="w-3 h-3 mr-1" /> Bakiye: {fmtTL(balance)} TL
+                <AlertTriangle className="w-3 h-3 mr-1" /> {t('cm.pages_ReservationDetailModal.bakiye')} {fmtTL(balance)} TL
               </Badge>
             )}
           </div>
@@ -133,7 +135,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
             onClick={onClose}
             className="text-white/70 hover:text-white hover:bg-white/10 rounded-full p-2 transition-colors"
             data-testid="close-reservation-detail"
-            aria-label="Kapat"
+            aria-label={t('cm.pages_ReservationDetailModal.kapat')}
           ><X className="w-5 h-5" /></button>
         </div>
 
@@ -158,7 +160,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
               <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2.5 shadow-sm">
                 <div className="flex items-center gap-2 text-xs">
                   <DoorOpen className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="text-slate-500">Oda</span>
+                  <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.oda')}</span>
                   <span className="ml-auto font-semibold text-slate-800">{booking?.room_number || room?.room_number || '—'}</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs">
@@ -178,7 +180,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     <div className="pt-2 border-t border-slate-100">
                       <div className="flex items-center justify-between gap-2">
                         <div className="text-center flex-1">
-                          <div className="text-[9px] text-slate-400 uppercase tracking-wider">Giriş</div>
+                          <div className="text-[9px] text-slate-400 uppercase tracking-wider">{t('cm.pages_ReservationDetailModal.giris')}</div>
                           <div className="text-[13px] font-semibold text-slate-800 leading-tight">{fmt(ci)}</div>
                           <div className="text-[10px] text-slate-400 capitalize">{dow(ci)}</div>
                         </div>
@@ -187,7 +189,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                           <div className="text-base leading-none mt-0.5">→</div>
                         </div>
                         <div className="text-center flex-1">
-                          <div className="text-[9px] text-slate-400 uppercase tracking-wider">Çıkış</div>
+                          <div className="text-[9px] text-slate-400 uppercase tracking-wider">{t('cm.pages_ReservationDetailModal.cikis')}</div>
                           <div className="text-[13px] font-semibold text-slate-800 leading-tight">{fmt(co)}</div>
                           <div className="text-[10px] text-slate-400 capitalize">{dow(co)}</div>
                         </div>
@@ -199,7 +201,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 {booking?.created_at && (
                   <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 text-[10px] text-slate-400">
                     <Clock className="w-3 h-3 shrink-0" />
-                    <span>Oluşturuldu</span>
+                    <span>{t('cm.pages_ReservationDetailModal.olusturuldu')}</span>
                     <span className="ml-auto" title={fmtDateTime(booking.created_at)}>
                       {new Date(booking.created_at).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}
                     </span>
@@ -209,28 +211,28 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
               {/* Operasyonel Durum — yalnızca anlamlı olanlar */}
               <div className="space-y-1.5" data-testid="reservation-ops-panel">
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Operasyonel Durum</p>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('cm.pages_ReservationDetailModal.operasyonel_durum')}</p>
                 {hasOpenBalance ? (
                   <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 rounded-md px-2 py-1.5" data-testid="ops-payment-alert">
                     <AlertTriangle className="w-3 h-3 text-rose-500 flex-shrink-0" />
-                    <span className="text-[11px] text-rose-700 font-medium">Ödeme bekleniyor: {fmtTL(balance)} TL</span>
+                    <span className="text-[11px] text-rose-700 font-medium">{t('cm.pages_ReservationDetailModal.odeme_bekleniyor')} {fmtTL(balance)} TL</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1.5" data-testid="ops-payment-ok">
                     <Shield className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                    <span className="text-[11px] text-emerald-700">Ödeme tamam</span>
+                    <span className="text-[11px] text-emerald-700">{t('cm.pages_ReservationDetailModal.odeme_tamam')}</span>
                   </div>
                 )}
                 {room && (room.status === 'dirty' || room.status === 'cleaning') && (
                   <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5" data-testid="ops-room-dirty">
                     <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
-                    <span className="text-[11px] text-amber-700 font-medium">Oda {room.status === 'cleaning' ? 'temizleniyor' : 'kirli'}</span>
+                    <span className="text-[11px] text-amber-700 font-medium">{t('cm.pages_ReservationDetailModal.oda_e4b47')} {room.status === 'cleaning' ? 'temizleniyor' : 'kirli'}</span>
                   </div>
                 )}
                 {room && room.status === 'available' && (
                   <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-md px-2 py-1.5" data-testid="ops-room-ready">
                     <Shield className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                    <span className="text-[11px] text-emerald-700">Oda hazır</span>
+                    <span className="text-[11px] text-emerald-700">{t('cm.pages_ReservationDetailModal.oda_hazir')}</span>
                   </div>
                 )}
                 {guest?.total_stays > 1 && (
@@ -258,11 +260,11 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 hasOpenBalance ? 'bg-rose-50 border-2 border-rose-300' : 'bg-white border border-slate-200'
               }`} data-testid="financial-summary-card">
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Toplam</span>
+                  <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.toplam')}</span>
                   <span className="font-semibold text-slate-800">{fmtTL(summary?.total_amount)} TL</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Ödenen</span>
+                  <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.odenen')}</span>
                   <span className="font-semibold text-emerald-600">{fmtTL(summary?.total_payments)} TL</span>
                 </div>
                 {(summary?.total_deposits || 0) > 0 && (
@@ -272,7 +274,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   </div>
                 )}
                 <div className={`pt-2 border-t flex justify-between items-baseline ${hasOpenBalance ? 'border-rose-200' : 'border-slate-200'}`}>
-                  <span className={`text-[11px] font-semibold uppercase tracking-wider ${hasOpenBalance ? 'text-rose-700' : 'text-slate-500'}`}>Bakiye</span>
+                  <span className={`text-[11px] font-semibold uppercase tracking-wider ${hasOpenBalance ? 'text-rose-700' : 'text-slate-500'}`}>{t('cm.pages_ReservationDetailModal.bakiye_33769')}</span>
                   <span className={`text-base font-bold ${hasOpenBalance ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtTL(balance)} TL</span>
                 </div>
               </div>
@@ -287,10 +289,10 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   className="w-full h-8 text-xs justify-start bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
                 />
                 <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giriş yapıldı')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
-                  <LogIn className="w-3 h-3 mr-2" /> Erken Giriş
+                  <LogIn className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.erken_giris')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Geç çıkış kaydedildi')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
-                  <LogOut className="w-3 h-3 mr-2" /> Geç Çıkış
+                  <LogOut className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.gec_cikis')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={async () => {
                   const vip = data?.guest?.vip_status || false;
@@ -306,7 +308,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   <AlertTriangle className="w-3 h-3 mr-2" /> No-Show
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50" data-testid="btn-cancel-reservation">
-                  <X className="w-3 h-3 mr-2" /> İptal Et
+                  <X className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.iptal_et')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setActiveTab('voucher')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-voucher">
                   <FileText className="w-3 h-3 mr-2" /> Voucher
@@ -323,7 +325,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
                   data-testid="btn-checkin"
                 >
-                  <LogIn className="w-4 h-4 mr-2" /> Giriş Yap
+                  <LogIn className="w-4 h-4 mr-2" /> {t('cm.pages_ReservationDetailModal.giris_yap')}
                 </Button>
               </div>
             )}
@@ -353,7 +355,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                   className="w-full h-10 bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-sm"
                   data-testid="btn-checkout"
                 >
-                  <LogOut className="w-4 h-4 mr-2" /> Çıkış Yap
+                  <LogOut className="w-4 h-4 mr-2" /> {t('cm.pages_ReservationDetailModal.cikis_yap')}
                 </Button>
               </div>
             )}

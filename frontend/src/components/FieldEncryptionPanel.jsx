@@ -9,8 +9,10 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
+import { useTranslation } from 'react-i18next';
 
 function CoverageBar({ collection, data }) {
+  const { t } = useTranslation();
   const pct = data.coverage_percent || 0;
   const barColor =
     pct >= 100 ? "bg-emerald-500" : pct >= 50 ? "bg-yellow-500" : "bg-red-500";
@@ -155,7 +157,7 @@ export function FieldEncryptionPanel() {
               data-testid="field-enc-refresh-btn"
             >
               <RefreshCw className={`h-3 w-3 mr-1 ${loading ? "animate-spin" : ""}`} />
-              Yenile
+              {t('cm.components_FieldEncryptionPanel.yenile')}
             </Button>
           </div>
         </div>
@@ -232,7 +234,7 @@ export function FieldEncryptionPanel() {
                 <div key={i} className="flex items-center justify-between text-[10px] text-zinc-400">
                   <span className="font-mono">{p.collection}</span>
                   <div className="flex items-center gap-2">
-                    <span>{p.processed} kayıt</span>
+                    <span>{p.processed} {t('cm.components_FieldEncryptionPanel.kayit')}</span>
                     {p.errors > 0 && (
                       <Badge variant="outline" className="text-[8px] text-red-400 border-red-500/30 px-1 py-0">
                         {p.errors} hata

@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, Pencil, CalendarRange, X, Loader2 } from 'lucide-react';
 
 import { confirmDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 const SEASON_TYPES = [
   { value: 'peak', label: 'Pik Sezon', color: '#f59e0b' },
   { value: 'high', label: 'Yüksek Sezon', color: '#ef4444' },
@@ -22,6 +23,7 @@ const emptySeason = {
 };
 
 export default function SeasonCalendarPanel() {
+  const { t } = useTranslation();
   const [seasons, setSeasons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -98,14 +100,14 @@ export default function SeasonCalendarPanel() {
           <p className="text-sm text-slate-500">Fiyat carpanlarini ve minimum konaklama kurallarini belirleyin</p>
         </div>
         <Button size="sm" onClick={openAdd} data-testid="add-season-btn">
-          <Plus className="w-4 h-4 mr-1" /> Yeni Sezon
+          <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_SeasonCalendarPanel.yeni_sezon')}
         </Button>
       </div>
 
       {/* Visual Timeline */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-slate-600">Yıllık Gorunum</CardTitle>
+          <CardTitle className="text-sm font-medium text-slate-600">{t('cm.pages_SeasonCalendarPanel.yillik_gorunum')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div data-testid="season-timeline" className="relative">
@@ -147,7 +149,7 @@ export default function SeasonCalendarPanel() {
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">Sezon Adi</Label>
+                <Label className="text-xs">{t('cm.pages_SeasonCalendarPanel.sezon_adi')}</Label>
                 <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Yaz Sezonu" data-testid="season-name-input" />
               </div>
               <div>
@@ -192,7 +194,7 @@ export default function SeasonCalendarPanel() {
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>İptal</Button>
+              <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>{t('cm.pages_SeasonCalendarPanel.iptal')}</Button>
               <Button size="sm" onClick={handleSave} data-testid="save-season-btn">{editId ? 'Guncelle' : 'Kaydet'}</Button>
             </div>
           </CardContent>
@@ -202,7 +204,7 @@ export default function SeasonCalendarPanel() {
       {/* Seasons List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {seasons.length === 0 ? (
-          <Card className="md:col-span-2"><CardContent className="py-8 text-center text-sm text-slate-400">Henüz sezon tanimlanmamis.</CardContent></Card>
+          <Card className="md:col-span-2"><CardContent className="py-8 text-center text-sm text-slate-400">{t('cm.pages_SeasonCalendarPanel.henuz_sezon_tanimlanmamis')}</CardContent></Card>
         ) : (
           seasons.map(s => {
             const info = getTypeInfo(s.season_type);

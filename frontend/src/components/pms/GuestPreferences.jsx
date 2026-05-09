@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Heart, Bed, Thermometer, AlertTriangle, Coffee, Save, Gift, Cake, Star, Bell
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const PREFERENCE_CATEGORIES = {
   room: {
@@ -57,6 +58,7 @@ const PREFERENCE_CATEGORIES = {
 };
 
 const GuestPreferences = ({ guest, onSave }) => {
+  const { t } = useTranslation();
   const [prefs, setPrefs] = useState(guest?.preferences || {});
   const [notes, setNotes] = useState(guest?.preference_notes || '');
   const [birthday, setBirthday] = useState(guest?.birthday || '');
@@ -87,15 +89,15 @@ const GuestPreferences = ({ guest, onSave }) => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold flex items-center gap-2">
-          <Heart className="h-5 w-5 text-red-500" /> Misafir Tercihleri - {guest?.name}
+          <Heart className="h-5 w-5 text-red-500" /> {t('cm.components_pms_GuestPreferences.misafir_tercihleri')} {guest?.name}
         </h3>
-        <Button onClick={savePreferences} disabled={saving}><Save className="h-4 w-4 mr-1" /> Kaydet</Button>
+        <Button onClick={savePreferences} disabled={saving}><Save className="h-4 w-4 mr-1" /> {t('cm.components_pms_GuestPreferences.kaydet')}</Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2"><Star className="h-4 w-4" /> VIP & Özel Gunler</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2"><Star className="h-4 w-4" /> {t('cm.components_pms_GuestPreferences.vip_ozel_gunler')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div>
@@ -125,13 +127,13 @@ const GuestPreferences = ({ guest, onSave }) => {
 
         <Card className="md:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2"><Bell className="h-4 w-4" /> Özel Notlar</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2"><Bell className="h-4 w-4" /> {t('cm.components_pms_GuestPreferences.ozel_notlar')}</CardTitle>
           </CardHeader>
           <CardContent>
             <Textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              placeholder="Misafir hakkinda özel notlar, istekler, dikkat edilecek hususlar..."
+              placeholder={t('cm.components_pms_GuestPreferences.misafir_hakkinda_ozel_notlar_istekler_di')}
               rows={4}
             />
           </CardContent>

@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Ban, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Stop-Sale Manager
@@ -12,6 +13,7 @@ import { Ban, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
  * Use case: TUI stop-sale verdiğinde tek tıkla kapatmak
  */
 const StopSaleManager = ({ operators = [] }) => {
+  const { t } = useTranslation();
   const [stopSaleStatus, setStopSaleStatus] = useState({});
   const [loading, setLoading] = useState({});
 
@@ -68,10 +70,10 @@ const StopSaleManager = ({ operators = [] }) => {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Ban className="w-5 h-5 text-amber-600" />
-          Stop-Sale Yönetimi
+          {t('cm.components_StopSaleManager.stop_sale_yonetimi')}
         </CardTitle>
         <CardDescription>
-          Operatör bazlı satışları tek tıkla durdur/başlat
+          {t('cm.components_StopSaleManager.operator_bazli_satislari_tek_tikla_durdu')}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -81,8 +83,7 @@ const StopSaleManager = ({ operators = [] }) => {
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5" />
               <div className="text-xs text-amber-800">
-                <strong>Dikkat:</strong> Stop-sale aktif olduğunda, seçili operatörden yeni rezervasyon alınamaz.
-                Mevcut rezervasyonlar etkilenmez.
+                <strong>Dikkat:</strong> {t('cm.components_StopSaleManager.stop_sale_aktif_oldugunda_secili_operato')}
               </div>
             </div>
           </div>
@@ -116,11 +117,11 @@ const StopSaleManager = ({ operators = [] }) => {
                       <div className="text-xs text-gray-600">
                         {isStopSale ? (
                           <span className="text-red-700 font-semibold">
-                            Stop-Sale Aktif - Satışlar Durdu
+                            {t('cm.components_StopSaleManager.stop_sale_aktif_satislar_durdu')}
                           </span>
                         ) : (
                           <span className="text-green-700 font-semibold">
-                            Aktif - Satışlar Devam Ediyor
+                            {t('cm.components_StopSaleManager.aktif_satislar_devam_ediyor')}
                           </span>
                         )}
                       </div>
@@ -155,7 +156,7 @@ const StopSaleManager = ({ operators = [] }) => {
                 {/* Timestamp */}
                 {stopSaleStatus[`${operator.id}_timestamp`] && (
                   <div className="text-xs text-gray-500 mt-2 pt-2 border-t">
-                    Son değişiklik:{' '}
+                    {t('cm.components_StopSaleManager.son_degisiklik')}{' '}
                     {new Date(stopSaleStatus[`${operator.id}_timestamp`]).toLocaleString('tr-TR')}
                   </div>
                 )}
@@ -165,10 +166,10 @@ const StopSaleManager = ({ operators = [] }) => {
 
           {/* Summary */}
           <div className="mt-4 p-3 bg-gray-100 rounded text-sm">
-            <strong>Özet:</strong>
+            <strong>{t('cm.components_StopSaleManager.ozet')}</strong>
             <div className="mt-2 flex gap-4">
               <span className="text-green-700">
-                Aktif: {Object.values(stopSaleStatus).filter(s => !s).length}
+                {t('cm.components_StopSaleManager.aktif')} {Object.values(stopSaleStatus).filter(s => !s).length}
               </span>
               <span className="text-red-700">
                 Stop-Sale: {Object.values(stopSaleStatus).filter(s => s).length}

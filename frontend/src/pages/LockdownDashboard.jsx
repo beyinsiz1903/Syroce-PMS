@@ -15,10 +15,12 @@ import {
   FileWarning, Clock, TrendingUp, Eye,
   Server, Database, Zap,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const POLL_MS = 30000;
 
 const StatusDot = ({ status }) => {
+  const { t } = useTranslation();
   const colors = {
     healthy: 'bg-emerald-500',
     degraded: 'bg-amber-500',
@@ -158,8 +160,8 @@ export default function LockdownDashboard({ user, tenant }) {
 
       <PageHeader
         icon={HeaderIcon}
-        title="Çekirdek Kilitlenme"
-        subtitle="Üretime Hazırlık Panosu"
+        title={t('cm.pages_LockdownDashboard.cekirdek_kilitlenme')}
+        subtitle={t('cm.pages_LockdownDashboard.uretime_hazirlik_panosu')}
         actions={
           <>
             <StatusBadge intent={isReady ? 'success' : 'danger'} icon={Shield}>
@@ -184,7 +186,7 @@ export default function LockdownDashboard({ user, tenant }) {
               disabled={refreshing}
             >
               <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
-              Yenile
+              {t('cm.pages_LockdownDashboard.yenile')}
             </Button>
           </>
         }
@@ -195,7 +197,7 @@ export default function LockdownDashboard({ user, tenant }) {
           <CardContent className="p-3 flex items-start gap-2 text-sm">
             <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
             <div className="flex-1 text-slate-700">{errorBanner}</div>
-            <Button variant="outline" size="sm" onClick={() => setErrorBanner(null)}>Kapat</Button>
+            <Button variant="outline" size="sm" onClick={() => setErrorBanner(null)}>{t('cm.pages_LockdownDashboard.kapat')}</Button>
           </CardContent>
         </Card>
       )}
@@ -230,21 +232,21 @@ export default function LockdownDashboard({ user, tenant }) {
                   {key === 'ingest' && (
                     <>
                       <div className="flex justify-between"><span>24s Olay</span><span className="text-slate-800 font-medium">{check.events_24h ?? 0}</span></div>
-                      <div className="flex justify-between"><span>Başarısız</span><span className={check.failed_24h > 0 ? 'text-rose-700 font-medium' : 'text-emerald-700 font-medium'}>{check.failed_24h ?? 0}</span></div>
-                      <div className="flex justify-between"><span>Hata Oranı</span><span className={check.failure_rate_pct > 0 ? 'text-rose-700 font-medium' : 'text-emerald-700 font-medium'}>{check.failure_rate_pct ?? 0}%</span></div>
+                      <div className="flex justify-between"><span>{t('cm.pages_LockdownDashboard.basarisiz')}</span><span className={check.failed_24h > 0 ? 'text-rose-700 font-medium' : 'text-emerald-700 font-medium'}>{check.failed_24h ?? 0}</span></div>
+                      <div className="flex justify-between"><span>{t('cm.pages_LockdownDashboard.hata_orani')}</span><span className={check.failure_rate_pct > 0 ? 'text-rose-700 font-medium' : 'text-emerald-700 font-medium'}>{check.failure_rate_pct ?? 0}%</span></div>
                     </>
                   )}
                   {key === 'mapping' && (
                     <>
-                      <div className="flex justify-between"><span>Aktif Eşleme</span><span className="text-slate-800 font-medium">{check.active_room_mappings ?? 0}</span></div>
-                      <div className="flex justify-between"><span>Kırık Eşleme</span><span className={check.broken_room_mappings > 0 ? 'text-rose-700 font-medium' : 'text-emerald-700 font-medium'}>{check.broken_room_mappings ?? 0}</span></div>
+                      <div className="flex justify-between"><span>{t('cm.pages_LockdownDashboard.aktif_esleme')}</span><span className="text-slate-800 font-medium">{check.active_room_mappings ?? 0}</span></div>
+                      <div className="flex justify-between"><span>{t('cm.pages_LockdownDashboard.kirik_esleme')}</span><span className={check.broken_room_mappings > 0 ? 'text-rose-700 font-medium' : 'text-emerald-700 font-medium'}>{check.broken_room_mappings ?? 0}</span></div>
                     </>
                   )}
                   {key === 'reconciliation' && (
                     <>
-                      <div className="flex justify-between"><span>Açık Vakalar</span><span className={check.open_cases > 0 ? 'text-amber-700 font-medium' : 'text-emerald-700 font-medium'}>{check.open_cases ?? 0}</span></div>
+                      <div className="flex justify-between"><span>{t('cm.pages_LockdownDashboard.acik_vakalar')}</span><span className={check.open_cases > 0 ? 'text-amber-700 font-medium' : 'text-emerald-700 font-medium'}>{check.open_cases ?? 0}</span></div>
                       <div className="flex justify-between"><span>Kritik Vakalar</span><span className={check.critical_cases > 0 ? 'text-rose-700 font-medium' : 'text-emerald-700 font-medium'}>{check.critical_cases ?? 0}</span></div>
-                      <div className="flex justify-between"><span>Eşleşmemiş</span><span className="text-slate-800 font-medium">{check.unreconciled_lineages ?? 0}</span></div>
+                      <div className="flex justify-between"><span>{t('cm.pages_LockdownDashboard.eslesmemis')}</span><span className="text-slate-800 font-medium">{check.unreconciled_lineages ?? 0}</span></div>
                     </>
                   )}
                 </div>
@@ -257,17 +259,17 @@ export default function LockdownDashboard({ user, tenant }) {
       {/* Key Metrics Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard data-testid="metric-total-events" intent="info" icon={Activity}
-          label="Toplam Olay (24s)" value={totals.total_events ?? 0} />
+          label={t('cm.pages_LockdownDashboard.toplam_olay_24s')} value={totals.total_events ?? 0} />
         <KpiCard data-testid="metric-duplicate-rate" intent={(rates.duplicate_rate_pct ?? 0) > 10 ? 'danger' : 'warning'} icon={FileWarning}
-          label="Duplikat Oranı" value={`${rates.duplicate_rate_pct ?? 0}%`} />
+          label={t('cm.pages_LockdownDashboard.duplikat_orani')} value={`${rates.duplicate_rate_pct ?? 0}%`} />
         <KpiCard data-testid="metric-stale-rate" intent={(rates.stale_rate_pct ?? 0) > 5 ? 'danger' : 'warning'} icon={Clock}
-          label="Stale Oranı" value={`${rates.stale_rate_pct ?? 0}%`} />
+          label={t('cm.pages_LockdownDashboard.stale_orani')} value={`${rates.stale_rate_pct ?? 0}%`} />
         <KpiCard data-testid="metric-success-rate" intent="success" icon={CheckCircle}
-          label="Başarı Oranı" value={`${rates.success_rate_pct ?? 0}%`} />
+          label={t('cm.pages_LockdownDashboard.basari_orani')} value={`${rates.success_rate_pct ?? 0}%`} />
         <KpiCard data-testid="metric-total-lineages" intent="info" icon={TrendingUp}
-          label="Toplam Lineage" value={lin.total_lineages ?? 0} />
+          label={t('cm.pages_LockdownDashboard.toplam_lineage')} value={lin.total_lineages ?? 0} />
         <KpiCard data-testid="metric-unreconciled" intent={(lin.unreconciled ?? 0) > 0 ? 'danger' : 'neutral'} icon={AlertTriangle}
-          label="Eşleşmemiş" value={lin.unreconciled ?? 0} />
+          label={t('cm.pages_LockdownDashboard.eslesmemis_5b18f')} value={lin.unreconciled ?? 0} />
       </div>
 
       {/* Ingest Pipeline Detail + Lineage by Status */}
@@ -276,17 +278,17 @@ export default function LockdownDashboard({ user, tenant }) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-slate-800 flex items-center gap-2">
               <Zap className="w-4 h-4 text-sky-600" />
-              Ingest Hattı (Son 24 Saat)
+              {t('cm.pages_LockdownDashboard.ingest_hatti_son_24_saat')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-0.5">
-            <RatePill label="İşlenen" value={rates.success_rate_pct ?? 0} good={true} />
+            <RatePill label={t('cm.pages_LockdownDashboard.islenen')} value={rates.success_rate_pct ?? 0} good={true} />
             <RatePill label="Duplikat" value={rates.duplicate_rate_pct ?? 0} good={false} />
-            <RatePill label="Stale (Eski)" value={rates.stale_rate_pct ?? 0} good={false} />
-            <RatePill label="Başarısız" value={rates.failure_rate_pct ?? 0} good={false} />
+            <RatePill label={t('cm.pages_LockdownDashboard.stale_eski')} value={rates.stale_rate_pct ?? 0} good={false} />
+            <RatePill label={t('cm.pages_LockdownDashboard.basarisiz_3260d')} value={rates.failure_rate_pct ?? 0} good={false} />
             <div className="border-t border-slate-200 mt-2 pt-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-600 font-medium">Karar Dağılımı</span>
+                <span className="text-xs text-slate-600 font-medium">{t('cm.pages_LockdownDashboard.karar_dagilimi')}</span>
               </div>
               {ingestMetrics?.decisions && Object.entries(ingestMetrics.decisions).length > 0 ? (
                 Object.entries(ingestMetrics.decisions).map(([key, val]) => (
@@ -306,21 +308,21 @@ export default function LockdownDashboard({ user, tenant }) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-slate-800 flex items-center gap-2">
               <Database className="w-4 h-4 text-indigo-600" />
-              Rezervasyon Lineage
+              {t('cm.pages_LockdownDashboard.rezervasyon_lineage')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
               <div className="flex justify-between text-xs">
-                <span className="text-slate-600">Toplam</span>
+                <span className="text-slate-600">{t('cm.pages_LockdownDashboard.toplam')}</span>
                 <span className="text-slate-800 font-semibold">{lin.total_lineages ?? 0}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-slate-600">Eşleşmiş</span>
+                <span className="text-slate-600">{t('cm.pages_LockdownDashboard.eslesmis')}</span>
                 <span className="text-emerald-700 font-semibold">{lin.reconciled ?? 0}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-slate-600">Eşleşmemiş</span>
+                <span className="text-slate-600">{t('cm.pages_LockdownDashboard.eslesmemis_5b18f')}</span>
                 <span className={`font-semibold ${(lin.unreconciled ?? 0) > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
                   {lin.unreconciled ?? 0}
                 </span>
@@ -329,7 +331,7 @@ export default function LockdownDashboard({ user, tenant }) {
 
             {lin.by_status && Object.keys(lin.by_status).length > 0 && (
               <div className="mt-3 pt-3 border-t border-slate-200">
-                <span className="text-xs text-slate-600 font-medium mb-1 block">Duruma Göre</span>
+                <span className="text-xs text-slate-600 font-medium mb-1 block">{t('cm.pages_LockdownDashboard.duruma_gore')}</span>
                 {Object.entries(lin.by_status).map(([st, cnt]) => (
                   <div key={st} className="flex justify-between py-0.5">
                     <span className="text-xs text-slate-600 capitalize">{st}</span>
@@ -341,7 +343,7 @@ export default function LockdownDashboard({ user, tenant }) {
 
             {lin.by_provider && Object.keys(lin.by_provider).length > 0 && (
               <div className="mt-3 pt-3 border-t border-slate-200">
-                <span className="text-xs text-slate-600 font-medium mb-1 block">Sağlayıcıya Göre</span>
+                <span className="text-xs text-slate-600 font-medium mb-1 block">{t('cm.pages_LockdownDashboard.saglayiciya_gore')}</span>
                 {Object.entries(lin.by_provider).map(([prov, cnt]) => (
                   <div key={prov} className="flex items-center justify-between py-0.5">
                     <ProviderBadge name={prov} />
@@ -360,7 +362,7 @@ export default function LockdownDashboard({ user, tenant }) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-slate-800 flex items-center gap-2">
               <Database className="w-4 h-4 text-sky-600" />
-              Eşleme Sağlığı
+              {t('cm.pages_LockdownDashboard.esleme_sagligi')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -389,12 +391,12 @@ export default function LockdownDashboard({ user, tenant }) {
                   </div>
                   {mh.room_mapping && (
                     <div className="text-xs text-slate-600 grid grid-cols-3 gap-1">
-                      <span>Oda: {mh.room_mapping.total ?? 0}</span>
+                      <span>{t('cm.pages_LockdownDashboard.oda')} {mh.room_mapping.total ?? 0}</span>
                       <span className={mh.room_mapping.broken > 0 ? 'text-rose-700 font-medium' : ''}>
-                        Kırık: {mh.room_mapping.broken ?? 0}
+                        {t('cm.pages_LockdownDashboard.kirik')} {mh.room_mapping.broken ?? 0}
                       </span>
                       <span className={mh.room_mapping.inactive > 0 ? 'text-amber-700 font-medium' : ''}>
-                        Pasif: {mh.room_mapping.inactive ?? 0}
+                        {t('cm.pages_LockdownDashboard.pasif')} {mh.room_mapping.inactive ?? 0}
                       </span>
                     </div>
                   )}
@@ -417,23 +419,23 @@ export default function LockdownDashboard({ user, tenant }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="text-center p-2 rounded-lg bg-slate-50">
               <p data-testid="recon-total" className="text-lg font-bold text-slate-800">{recon.total_cases ?? 0}</p>
-              <p className="text-[10px] text-slate-600">Toplam Vaka</p>
+              <p className="text-[10px] text-slate-600">{t('cm.pages_LockdownDashboard.toplam_vaka')}</p>
             </div>
             <div className="text-center p-2 rounded-lg bg-slate-50">
               <p data-testid="recon-open" className={`text-lg font-bold ${(recon.open_cases ?? 0) > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
                 {recon.open_cases ?? 0}
               </p>
-              <p className="text-[10px] text-slate-600">Açık</p>
+              <p className="text-[10px] text-slate-600">{t('cm.pages_LockdownDashboard.acik')}</p>
             </div>
             <div className="text-center p-2 rounded-lg bg-slate-50">
               <p data-testid="recon-resolved" className="text-lg font-bold text-emerald-700">{recon.resolved_cases ?? 0}</p>
-              <p className="text-[10px] text-slate-600">Çözülmüş</p>
+              <p className="text-[10px] text-slate-600">{t('cm.pages_LockdownDashboard.cozulmus')}</p>
             </div>
             <div className="text-center p-2 rounded-lg bg-slate-50">
               <p className={`text-lg font-bold ${recon.oldest_unresolved_age_hours ? 'text-rose-700' : 'text-slate-500'}`}>
                 {recon.oldest_unresolved_age_hours ? `${recon.oldest_unresolved_age_hours}s` : '-'}
               </p>
-              <p className="text-[10px] text-slate-600">En Eski Açık (saat)</p>
+              <p className="text-[10px] text-slate-600">{t('cm.pages_LockdownDashboard.en_eski_acik_saat')}</p>
             </div>
           </div>
         </CardContent>
@@ -445,7 +447,7 @@ export default function LockdownDashboard({ user, tenant }) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-slate-800 flex items-center gap-2">
               <Server className="w-4 h-4 text-indigo-600" />
-              Sağlayıcı Yetenek Matrisi
+              {t('cm.pages_LockdownDashboard.saglayici_yetenek_matrisi')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -453,12 +455,12 @@ export default function LockdownDashboard({ user, tenant }) {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-slate-200">
-                    <th className="text-left py-2 text-slate-500 font-medium">Sağlayıcı</th>
+                    <th className="text-left py-2 text-slate-500 font-medium">{t('cm.pages_LockdownDashboard.saglayici')}</th>
                     <th className="text-left py-2 text-slate-500 font-medium">Ingest</th>
                     <th className="text-left py-2 text-slate-500 font-medium">ARI Push</th>
                     <th className="text-center py-2 text-slate-500 font-medium">Delta</th>
-                    <th className="text-center py-2 text-slate-500 font-medium">ACK=Uygulandı</th>
-                    <th className="text-right py-2 text-slate-500 font-medium">Hız Sınırı</th>
+                    <th className="text-center py-2 text-slate-500 font-medium">{t('cm.pages_LockdownDashboard.ack_uygulandi')}</th>
+                    <th className="text-right py-2 text-slate-500 font-medium">{t('cm.pages_LockdownDashboard.hiz_siniri')}</th>
                     <th className="text-right py-2 text-slate-500 font-medium">Tekrar</th>
                   </tr>
                 </thead>
@@ -497,7 +499,7 @@ export default function LockdownDashboard({ user, tenant }) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-slate-800 flex items-center gap-2">
               <Eye className="w-4 h-4 text-indigo-600" />
-              Mutabakat Doğruluk Tablosu
+              {t('cm.pages_LockdownDashboard.mutabakat_dogruluk_tablosu')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -506,9 +508,9 @@ export default function LockdownDashboard({ user, tenant }) {
                 <thead>
                   <tr className="border-b border-slate-200">
                     <th className="text-left py-2 text-slate-500 font-medium">Drift Tipi</th>
-                    <th className="text-left py-2 text-slate-500 font-medium">Altın Kaynak</th>
-                    <th className="text-left py-2 text-slate-500 font-medium">Çözüm</th>
-                    <th className="text-center py-2 text-slate-500 font-medium">Oto-İyileştirme</th>
+                    <th className="text-left py-2 text-slate-500 font-medium">{t('cm.pages_LockdownDashboard.altin_kaynak')}</th>
+                    <th className="text-left py-2 text-slate-500 font-medium">{t('cm.pages_LockdownDashboard.cozum')}</th>
+                    <th className="text-center py-2 text-slate-500 font-medium">{t('cm.pages_LockdownDashboard.oto_iyilestirme')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -546,7 +548,7 @@ export default function LockdownDashboard({ user, tenant }) {
       )}
 
       <p className="text-[11px] text-slate-500 text-right">
-        Son güncelleme: {lastUpdated ? lastUpdated.toLocaleString('tr-TR') : '-'}
+        {t('cm.pages_LockdownDashboard.son_guncelleme')} {lastUpdated ? lastUpdated.toLocaleString('tr-TR') : '-'}
         {autoRefresh && <span className="ml-2 text-slate-400">• 30s'de bir otomatik yenilenir</span>}
       </p>
     </div>

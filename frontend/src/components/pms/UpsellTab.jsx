@@ -13,6 +13,7 @@ import {
   ArrowUpRight, Clock, Car, LogIn, LogOut, BedDouble, BarChart3,
   DollarSign, Target, Percent, Building2, Settings as SettingsIcon
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const PRICE_FIELDS = [
   { key: 'late_checkout', label: 'Geç Check-out', icon: LogOut },
@@ -49,6 +50,7 @@ const INSIGHT_TEXT_COLOR = {
 };
 
 const UpsellTab = ({ bookings = [] }) => {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [offers, setOffers] = useState([]);
@@ -215,10 +217,10 @@ const UpsellTab = ({ bookings = [] }) => {
         <h2 className="text-2xl font-semibold">Upsell & Gelir Optimizasyonu</h2>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={openSettings} data-testid="btn-upsell-settings">
-            <SettingsIcon className="w-4 h-4 mr-2" /> Fiyat Ayarları
+            <SettingsIcon className="w-4 h-4 mr-2" /> {t('cm.components_pms_UpsellTab.fiyat_ayarlari')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => { loadAllOffers(); loadInsights(); }}>
-            <RefreshCw className="w-4 h-4 mr-2" /> Yenile
+            <RefreshCw className="w-4 h-4 mr-2" /> {t('cm.components_pms_UpsellTab.yenile')}
           </Button>
         </div>
       </div>
@@ -226,13 +228,13 @@ const UpsellTab = ({ bookings = [] }) => {
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Upsell Fiyat Ayarları</DialogTitle>
+            <DialogTitle>{t('cm.components_pms_UpsellTab.upsell_fiyat_ayarlari')}</DialogTitle>
             <DialogDescription>
-              Sabit ücretli upsell tekliflerinin fiyatlarını otelinize göre belirleyin. Oda yükseltme fiyatı oda yönetimindeki gecelik fiyatlardan otomatik hesaplanır, burada değiştirilmez.
+              {t('cm.components_pms_UpsellTab.sabit_ucretli_upsell_tekliflerinin_fiyat')}
             </DialogDescription>
           </DialogHeader>
           {settingsLoading ? (
-            <div className="py-6 text-center text-sm text-gray-500">Yükleniyor...</div>
+            <div className="py-6 text-center text-sm text-gray-500">{t('cm.components_pms_UpsellTab.yukleniyor')}</div>
           ) : (
             <div className="space-y-4 py-2">
               {PRICE_FIELDS.map((f) => {
@@ -259,7 +261,7 @@ const UpsellTab = ({ bookings = [] }) => {
                       <span className="text-sm text-gray-500">TL</span>
                     </div>
                     {def != null && (
-                      <p className="text-xs text-gray-400">Sistem varsayılanı: {def} TL</p>
+                      <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.sistem_varsayilani')} {def} TL</p>
                     )}
                   </div>
                 );
@@ -268,7 +270,7 @@ const UpsellTab = ({ bookings = [] }) => {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setSettingsOpen(false)} disabled={settingsSaving}>
-              Vazgeç
+              {t('cm.components_pms_UpsellTab.vazgec')}
             </Button>
             <Button onClick={savePriceSettings} disabled={settingsLoading || settingsSaving} data-testid="btn-save-upsell-prices">
               {settingsSaving ? 'Kaydediliyor...' : 'Kaydet'}
@@ -294,7 +296,7 @@ const UpsellTab = ({ bookings = [] }) => {
                 <DollarSign className="w-4 h-4" /> ADR
               </div>
               <p className="text-2xl font-bold">{kpis.adr?.toFixed(0)} TL</p>
-              <p className="text-xs text-gray-400">Ortalama Günlük Fiyat</p>
+              <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.ortalama_gunluk_fiyat')}</p>
             </CardContent>
           </Card>
           <Card className="border-l-4 border-l-indigo-500">
@@ -303,7 +305,7 @@ const UpsellTab = ({ bookings = [] }) => {
                 <BarChart3 className="w-4 h-4" /> RevPAR
               </div>
               <p className="text-2xl font-bold">{kpis.revpar?.toFixed(0)} TL</p>
-              <p className="text-xs text-gray-400">Oda Basina Gelir</p>
+              <p className="text-xs text-gray-400">{t('cm.components_pms_UpsellTab.oda_basina_gelir')}</p>
             </CardContent>
           </Card>
           <Card className="border-l-4 border-l-amber-500">
@@ -324,20 +326,20 @@ const UpsellTab = ({ bookings = [] }) => {
         <Card className="lg:col-span-1">
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Search className="w-4 h-4" /> Rezervasyon Sec
+              <Search className="w-4 h-4" /> {t('cm.components_pms_UpsellTab.rezervasyon_sec')}
             </CardTitle>
-            <CardDescription>Upsell teklifi uretmek için bir rezervasyon seçin</CardDescription>
+            <CardDescription>{t('cm.components_pms_UpsellTab.upsell_teklifi_uretmek_icin_bir_rezervas')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <Input
-              placeholder="Misafir adi, oda no veya rez. ID..."
+              placeholder={t('cm.components_pms_UpsellTab.misafir_adi_oda_no_veya_rez_id')}
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               className="text-sm"
             />
             <div className="max-h-[400px] overflow-y-auto space-y-2">
               {filteredBookings.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">Aktif rezervasyon bulunamadı</p>
+                <p className="text-sm text-gray-400 text-center py-4">{t('cm.components_pms_UpsellTab.aktif_rezervasyon_bulunamadi')}</p>
               ) : (
                 filteredBookings.slice(0, 20).map(b => (
                   <div
@@ -350,7 +352,7 @@ const UpsellTab = ({ bookings = [] }) => {
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-medium text-sm">{b.guest_name || 'Misafir'}</p>
-                        <p className="text-xs text-gray-500">Oda {b.room_number} - {b.room_type}</p>
+                        <p className="text-xs text-gray-500">{t('cm.components_pms_UpsellTab.oda')} {b.room_number} - {b.room_type}</p>
                       </div>
                       <Badge variant="outline" className="text-xs">
                         {b.status === 'checked_in' ? 'Konaklama' : 'Onaylanmis'}
@@ -393,7 +395,7 @@ const UpsellTab = ({ bookings = [] }) => {
             {!selectedBooking && offers.length === 0 ? (
               <div className="text-center py-12 text-gray-400">
                 <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p className="font-medium">Henüz teklif yok</p>
+                <p className="font-medium">{t('cm.components_pms_UpsellTab.henuz_teklif_yok')}</p>
                 <p className="text-sm">Bir rezervasyon sectiginizde AI otomatik teklif uretecek</p>
               </div>
             ) : (
@@ -437,7 +439,7 @@ const UpsellTab = ({ bookings = [] }) => {
                               disabled={loadingAction === offer.id}
                               onClick={() => handleOfferAction(offer.id, 'rejected')}
                             >
-                              <XCircle className="w-3 h-3 mr-1" /> Reddet
+                              <XCircle className="w-3 h-3 mr-1" /> {t('cm.components_pms_UpsellTab.reddet')}
                             </Button>
                             <Button
                               size="sm"
@@ -472,7 +474,7 @@ const UpsellTab = ({ bookings = [] }) => {
           <CardHeader className="pb-3">
             <div className="flex justify-between items-center">
               <CardTitle className="text-base flex items-center gap-2">
-                <BarChart3 className="w-4 h-4" /> Teklif Geçmişi
+                <BarChart3 className="w-4 h-4" /> {t('cm.components_pms_UpsellTab.teklif_gecmisi')}
               </CardTitle>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
                 <SelectTrigger className="w-[140px] h-8 text-xs">
@@ -489,7 +491,7 @@ const UpsellTab = ({ bookings = [] }) => {
           </CardHeader>
           <CardContent>
             {displayOffers.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">Henüz teklif geçmişi yok</p>
+              <p className="text-sm text-gray-400 text-center py-6">{t('cm.components_pms_UpsellTab.henuz_teklif_gecmisi_yok')}</p>
             ) : (
               <div className="max-h-[350px] overflow-y-auto space-y-2">
                 {displayOffers.slice(0, 50).map(offer => {
@@ -527,7 +529,7 @@ const UpsellTab = ({ bookings = [] }) => {
           </CardHeader>
           <CardContent>
             {!revenueInsights?.insights?.length ? (
-              <p className="text-sm text-gray-400 text-center py-6">Analiz için yeterli veri yok</p>
+              <p className="text-sm text-gray-400 text-center py-6">{t('cm.components_pms_UpsellTab.analiz_icin_yeterli_veri_yok')}</p>
             ) : (
               <div className="space-y-3">
                 {revenueInsights.insights.map((insight, i) => (

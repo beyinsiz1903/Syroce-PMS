@@ -11,8 +11,10 @@ import {
   Cloud, ExternalLink, Key, Layers, Loader2, MapPin, Plug, RefreshCw,
   Rocket, Shield, Signal, TestTube, Wifi, WifiOff, X, Zap,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ChecklistItem = ({ label, status, detail, action, actionLabel, icon: Icon }) => {
+  const { t } = useTranslation();
   const statusConfig = {
     pass: { color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle, iconColor: 'text-emerald-500' },
     fail: { color: 'bg-red-100 text-red-700 border-red-200', icon: X, iconColor: 'text-red-500' },
@@ -231,7 +233,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
             </Button>
             <Button variant="outline" size="sm" onClick={fetchAll} disabled={loading}>
               <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-              Yenile
+              {t('cm.pages_GoLiveReadinessCockpit.yenile')}
             </Button>
           </div>
         </div>
@@ -239,7 +241,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
         {fetchErrors.length > 0 && (
           <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm" data-testid="fetch-errors">
             <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-            <span className="text-amber-700">Bazi veriler yüklenemedi: {fetchErrors.join(', ')}. Sayfa kismi veriyle gosteriliyor.</span>
+            <span className="text-amber-700">{t('cm.pages_GoLiveReadinessCockpit.bazi_veriler_yuklenemedi')} {fetchErrors.join(', ')}. Sayfa kismi veriyle gosteriliyor.</span>
           </div>
         )}
 
@@ -259,7 +261,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
               </CardHeader>
               <CardContent className="space-y-2">
                 <ChecklistItem
-                  label="Credential & Bağlantı"
+                  label={t('cm.pages_GoLiveReadinessCockpit.credential_baglanti')}
                   icon={Key}
                   status={hasCredentials && hasActiveConnectors ? 'pass' : hasCredentials ? 'warn' : 'fail'}
                   detail={hasActiveConnectors
@@ -330,7 +332,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                   >
                     {testingConnector ? <Loader2 className="w-5 h-5 animate-spin text-blue-500" /> : <Wifi className="w-5 h-5 text-blue-500" />}
                     <span className="text-xs font-medium">Test Connection</span>
-                    <span className="text-[10px] text-slate-400">Bağlantı dogrulamasi</span>
+                    <span className="text-[10px] text-slate-400">{t('cm.pages_GoLiveReadinessCockpit.baglanti_dogrulamasi')}</span>
                   </Button>
 
                   <Button
@@ -353,7 +355,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                   >
                     <Layers className="w-5 h-5 text-amber-500" />
                     <span className="text-xs font-medium">Mapping Sihirbazi</span>
-                    <span className="text-[10px] text-slate-400">Oda eşleştirmesi</span>
+                    <span className="text-[10px] text-slate-400">{t('cm.pages_GoLiveReadinessCockpit.oda_eslestirmesi')}</span>
                   </Button>
                 </div>
 
@@ -421,7 +423,7 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                     />
                   ))}
                   {Object.keys(categories).length === 0 && (
-                    <p className="text-xs text-slate-400 text-center py-2">Skor verileri mevcut değil</p>
+                    <p className="text-xs text-slate-400 text-center py-2">{t('cm.pages_GoLiveReadinessCockpit.skor_verileri_mevcut_degil')}</p>
                   )}
                 </div>
               </CardContent>
@@ -440,9 +442,9 @@ const GoLiveReadinessCockpit = ({ user, tenant, onLogout }) => {
                 {connectors.length === 0 ? (
                   <div className="text-center py-4">
                     <WifiOff className="w-6 h-6 text-slate-300 mx-auto mb-2" />
-                    <p className="text-xs text-slate-400">Aktif connector bulunamadı</p>
+                    <p className="text-xs text-slate-400">{t('cm.pages_GoLiveReadinessCockpit.aktif_connector_bulunamadi')}</p>
                     <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={() => navigate('/channel-connections')}>
-                      Bağlantı Ekle <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                      {t('cm.pages_GoLiveReadinessCockpit.baglanti_ekle')} <ArrowRight className="w-3.5 h-3.5 ml-1" />
                     </Button>
                   </div>
                 ) : connectors.map((c, i) => (

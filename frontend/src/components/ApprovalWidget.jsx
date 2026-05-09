@@ -7,8 +7,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { CheckCircle, XCircle, Clock, DollarSign, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { promptDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 const ApprovalWidget = ({ userRole }) => {
+  const { t } = useTranslation();
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [myRequests, setMyRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -101,7 +103,7 @@ const ApprovalWidget = ({ userRole }) => {
   };
 
   if (loading) {
-    return <div className="text-center py-4">Yükleniyor...</div>;
+    return <div className="text-center py-4">{t('cm.components_ApprovalWidget.yukleniyor')}</div>;
   }
 
   return (
@@ -158,7 +160,7 @@ const ApprovalWidget = ({ userRole }) => {
             <div className="space-y-2">
               <p className="text-sm text-gray-600 mb-3">Talepleriniz:</p>
               {myRequests.length === 0 ? (
-                <p className="text-center text-gray-500 text-sm py-4">Henüz talep yok</p>
+                <p className="text-center text-gray-500 text-sm py-4">{t('cm.components_ApprovalWidget.henuz_talep_yok')}</p>
               ) : (
                 myRequests.slice(0, 3).map((request) => (
                   <div key={request.id} className="p-2 bg-gray-50 rounded-lg">
@@ -200,7 +202,7 @@ const ApprovalWidget = ({ userRole }) => {
                   <div className="font-medium">{selectedApproval.requested_by_name}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-500">Tutar</div>
+                  <div className="text-xs text-gray-500">{t('cm.components_ApprovalWidget.tutar')}</div>
                   <div className="font-bold text-green-600">₺{selectedApproval.amount?.toFixed(2)}</div>
                 </div>
               </div>
@@ -213,7 +215,7 @@ const ApprovalWidget = ({ userRole }) => {
               </div>
 
               <div>
-                <div className="text-xs text-gray-500 mb-1">Öncelik</div>
+                <div className="text-xs text-gray-500 mb-1">{t('cm.components_ApprovalWidget.oncelik')}</div>
                 <Badge className={getPriorityColor(selectedApproval.priority)}>
                   {selectedApproval.priority}
                 </Badge>
@@ -226,14 +228,14 @@ const ApprovalWidget = ({ userRole }) => {
                   onClick={() => handleReject(selectedApproval.id)}
                 >
                   <XCircle className="w-4 h-4 mr-1" />
-                  Reddet
+                  {t('cm.components_ApprovalWidget.reddet')}
                 </Button>
                 <Button
                   className="bg-green-600 hover:bg-green-700"
                   onClick={() => handleApprove(selectedApproval.id)}
                 >
                   <CheckCircle className="w-4 h-4 mr-1" />
-                  Onayla
+                  {t('cm.components_ApprovalWidget.onayla')}
                 </Button>
               </div>
             </div>

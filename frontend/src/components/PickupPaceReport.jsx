@@ -7,8 +7,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const PickupPaceReport = () => {
+  const { t } = useTranslation();
   const [targetDate, setTargetDate] = useState(() => {
     try {
       const stored = localStorage.getItem('pickup_target_date');
@@ -145,8 +147,7 @@ const PickupPaceReport = () => {
       {/* If no bookings for this arrival date, show helpful message */}
       {!loading && data && summary && summary.total_bookings === 0 && (
         <div className="text-sm text-gray-600 py-3">
-          Seçtiğiniz giriş tarihinde henüz rezervasyon yok. Lütfen dolu bir varış tarihi seçin veya
-          Reservation Calendar üzerinden dolu bir günü kontrol ederek burada aynı tarihi seçin.
+          {t('cm.components_PickupPaceReport.sectiginiz_giris_tarihinde_henuz_rezerva')}
         </div>
       )}
 

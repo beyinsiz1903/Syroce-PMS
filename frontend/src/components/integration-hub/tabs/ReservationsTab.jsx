@@ -121,8 +121,8 @@ export default function ReservationsTab(props) {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Download className="w-4 h-4 text-blue-400" />
-                        <span className="text-sm text-white font-medium">Rezervasyon Çek</span>
-                        <span className="text-xs text-slate-500">Provider'dan yeni ve güncellenmiş rezervasyonları çek</span>
+                        <span className="text-sm text-white font-medium">{t('cm.components_integrationhub_tabs_ReservationsTab.rezervasyon_cek')}</span>
+                        <span className="text-xs text-slate-500">{t('cm.components_integrationhub_tabs_ReservationsTab.provider_dan_yeni_ve_guncellenmis_rezerv')}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         {connectors.filter(c => c.status === 'active').map(c => (
@@ -145,7 +145,7 @@ export default function ReservationsTab(props) {
                 <Card className="bg-amber-950/30 border-amber-800/50">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base text-amber-300 flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4" /> Manuel İnceleme Kuyruğu ({reservationReviewQueue.length})
+                      <AlertCircle className="w-4 h-4" /> {t('cm.components_integrationhub_tabs_ReservationsTab.manuel_inceleme_kuyrugu')}{reservationReviewQueue.length})
                     </CardTitle>
                     <CardDescription className="text-amber-400/70 text-xs">
                       Bu rezervasyonlar manuel inceleme gerektiriyor
@@ -171,7 +171,7 @@ export default function ReservationsTab(props) {
                               {r.review_reason && ` — ${r.review_reason}`}
                             </span>
                             {r.suggested_action && (
-                              <span className="text-[10px] text-amber-400/70 mt-0.5">Önerilen: {r.suggested_action}</span>
+                              <span className="text-[10px] text-amber-400/70 mt-0.5">{t('cm.components_integrationhub_tabs_ReservationsTab.onerilen')} {r.suggested_action}</span>
                             )}
                           </div>
                         </div>
@@ -257,7 +257,7 @@ export default function ReservationsTab(props) {
               <Card className="bg-slate-900/50 border-slate-800">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base text-white">Imported Reservations</CardTitle>
-                  <CardDescription className="text-xs text-slate-500">{importedReservations.length} kayıt</CardDescription>
+                  <CardDescription className="text-xs text-slate-500">{importedReservations.length} {t('cm.components_integrationhub_tabs_ReservationsTab.kayit')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   {importedReservations.length > 0 ? (
@@ -266,11 +266,11 @@ export default function ReservationsTab(props) {
                         <thead className="bg-slate-800/50 text-slate-400">
                           <tr>
                             <th className="text-left px-4 py-2">Ref</th>
-                            <th className="text-left px-4 py-2">Misafir</th>
-                            <th className="text-left px-4 py-2">Tarih</th>
+                            <th className="text-left px-4 py-2">{t('cm.components_integrationhub_tabs_ReservationsTab.misafir')}</th>
+                            <th className="text-left px-4 py-2">{t('cm.components_integrationhub_tabs_ReservationsTab.tarih')}</th>
                             <th className="text-left px-4 py-2">Kanal</th>
-                            <th className="text-right px-4 py-2">Tutar</th>
-                            <th className="text-left px-4 py-2">Durum</th>
+                            <th className="text-right px-4 py-2">{t('cm.components_integrationhub_tabs_ReservationsTab.tutar')}</th>
+                            <th className="text-left px-4 py-2">{t('cm.components_integrationhub_tabs_ReservationsTab.durum')}</th>
                             <th className="text-left px-4 py-2">ACK</th>
                             <th className="text-center px-4 py-2">Detay</th>
                           </tr>
@@ -303,7 +303,7 @@ export default function ReservationsTab(props) {
                       </table>
                     </div>
                   ) : (
-                    <div className="text-center py-8 text-slate-500 text-sm">Henüz import edilen rezervasyon yok</div>
+                    <div className="text-center py-8 text-slate-500 text-sm">{t('cm.components_integrationhub_tabs_ReservationsTab.henuz_import_edilen_rezervasyon_yok')}</div>
                   )}
                 </CardContent>
               </Card>

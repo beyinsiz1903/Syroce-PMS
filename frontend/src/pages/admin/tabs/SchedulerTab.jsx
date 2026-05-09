@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw, Zap } from 'lucide-react';
 import { API } from '../shared';
+import { useTranslation } from 'react-i18next';
 
 const SchedulerTab = () => {
+  const { t } = useTranslation();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [triggerLoading, setTriggerLoading] = useState(null);
@@ -50,7 +52,7 @@ const SchedulerTab = () => {
           <Button data-testid="trigger-all-btn" size="sm" variant="outline" className="border-slate-700 text-slate-300" disabled={triggerLoading === 'all'} onClick={handleTriggerAll}>
             {triggerLoading === 'all' ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Zap className="w-3.5 h-3.5 mr-1" />} Tumu Calistir
           </Button>
-          <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchStatus}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile</Button>
+          <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchStatus}><RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_SchedulerTab.yenile')}</Button>
         </div>
       </div>
       {(status?.connectors || []).map(c => (
@@ -78,7 +80,7 @@ const SchedulerTab = () => {
         </Card>
       ))}
       {(!status?.connectors || status.connectors.length === 0) && (
-        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Aktif connector bulunamadı</CardContent></Card>
+        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">{t('cm.pages_admin_tabs_SchedulerTab.aktif_connector_bulunamadi')}</CardContent></Card>
       )}
     </div>
   );

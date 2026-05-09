@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Download, Clock, Loader2, Brain, BarChart3 } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
+import { useTranslation } from 'react-i18next';
 
 const AnalyticsExportDashboard = lazy(() => import('@/pages/AnalyticsExportDashboard'));
 const MLSchedulerDashboard = lazy(() => import('@/pages/MLSchedulerDashboard'));
@@ -13,10 +14,11 @@ const VALID_TABS = ['revenue-ml', 'rapor-export', 'ml-scheduler'];
 const DEFAULT_TAB = 'rapor-export';
 
 function TabLoading() {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center justify-center h-64">
       <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-      <span className="ml-3 text-slate-500">Yükleniyor…</span>
+      <span className="ml-3 text-slate-500">{t('cm.pages_AnalitikRaporlarPage.yukleniyor')}</span>
     </div>
   );
 }
@@ -46,7 +48,7 @@ export default function AnalitikRaporlarPage() {
       <PageHeader
         icon={BarChart3}
         title="Analitik & Raporlar"
-        subtitle="ML tahminleri, rapor dışa aktarma ve model zamanlayıcısı"
+        subtitle={t('cm.pages_AnalitikRaporlarPage.ml_tahminleri_rapor_disa_aktarma_ve_mode')}
       />
 
       <Tabs value={tab} onValueChange={onTabChange}>
@@ -55,10 +57,10 @@ export default function AnalitikRaporlarPage() {
             <Brain className="h-4 w-4" /> Revenue ML
           </TabsTrigger>
           <TabsTrigger value="rapor-export" data-testid="tab-rapor-export" className="flex items-center gap-2">
-            <Download className="h-4 w-4" /> Rapor Dışa Aktarma
+            <Download className="h-4 w-4" /> {t('cm.pages_AnalitikRaporlarPage.rapor_disa_aktarma')}
           </TabsTrigger>
           <TabsTrigger value="ml-scheduler" data-testid="tab-ml-scheduler" className="flex items-center gap-2">
-            <Clock className="h-4 w-4" /> ML Zamanlayıcı
+            <Clock className="h-4 w-4" /> {t('cm.pages_AnalitikRaporlarPage.ml_zamanlayici')}
           </TabsTrigger>
         </TabsList>
 

@@ -13,8 +13,10 @@ import {
   ArrowRight, ArrowLeft, Save, XCircle, ChevronDown, RotateCcw,
   Info, ShieldAlert, Eye,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ScoreBar = ({ label, value, color }) => {
+  const { t } = useTranslation();
   if (value === null || value === undefined) return null;
   return (
     <div className="flex items-center gap-2 text-xs">
@@ -317,7 +319,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>
-              Oda Eslestirme Sihirbazi
+              {t('cm.pages_RoomMappingWizard.oda_eslestirme_sihirbazi')}
             </h1>
             <p className="text-sm text-slate-500">PMS oda tiplerini kanal oda tiplerine otomatik eslestirin</p>
           </div>
@@ -354,11 +356,11 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-slate-600">
-                Eslestirme yapmak istediginiz kanal baglantisinii seçin. Sistem, PMS oda tiplerinizi kanal oda tipleriyle otomatik olarak eşleştirmeye calisacaktir.
+                {t('cm.pages_RoomMappingWizard.eslestirme_yapmak_istediginiz_kanal_bagl')}
               </p>
               <Select value={selectedConnectorId} onValueChange={setSelectedConnectorId}>
                 <SelectTrigger className="w-full max-w-md" data-testid="connector-select">
-                  <SelectValue placeholder="Kanal seçin..." />
+                  <SelectValue placeholder={t('cm.pages_RoomMappingWizard.kanal_secin')} />
                 </SelectTrigger>
                 <SelectContent>
                   {connectors.map((c) => (
@@ -384,7 +386,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                       <p className="font-medium">{selectedConnector.provider}</p>
                     </div>
                     <div>
-                      <span className="text-slate-500">Durum:</span>
+                      <span className="text-slate-500">{t('cm.pages_RoomMappingWizard.durum')}</span>
                       <p className="font-medium">{selectedConnector.status}</p>
                     </div>
                     <div>
@@ -393,7 +395,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                     </div>
                   </div>
                   <p className="text-xs text-slate-400 mt-3">
-                    İleri butonuna tikladiginizda, kanal saglayicisinin API'sinden gerçek oda tipleri ve fiyat planlari otomatik olarak cekilecektir.
+                    {t('cm.pages_RoomMappingWizard.ileri_butonuna_tikladiginizda_kanal_sagl')}
                   </p>
                 </div>
               )}
@@ -406,10 +408,10 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
                 <CardTitle className="text-lg" style={{ fontFamily: 'Manrope, sans-serif' }}>
-                  Oda Tipi Eslestirme
+                  {t('cm.pages_RoomMappingWizard.oda_tipi_eslestirme')}
                 </CardTitle>
                 <p className="text-sm text-slate-500 mt-1">
-                  Sistem, isim benzerligi, kapasite ve fiyat sinyallerine göre otomatik eşleştirme onerdi. Düşük guvenli oneriler inceleme bolumunde listelenir.
+                  {t('cm.pages_RoomMappingWizard.sistem_isim_benzerligi_kapasite_ve_fiyat')}
                 </p>
               </div>
               {roomData?.summary && (
@@ -469,7 +471,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   )}
 
                   {roomSelections.length === 0 && !loading && (
-                    <p className="text-center text-slate-400 py-8">Eşleştirme önerisi bulunamadı</p>
+                    <p className="text-center text-slate-400 py-8">{t('cm.pages_RoomMappingWizard.eslestirme_onerisi_bulunamadi')}</p>
                   )}
 
                   {roomData?.conflicts?.length > 0 && (
@@ -531,10 +533,10 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                                 disabled={!sel.enabled}
                               >
                                 <SelectTrigger className="w-full text-sm" data-testid={`room-ext-select-${idx}`}>
-                                  <SelectValue placeholder="Kanal oda tipi seçin..." />
+                                  <SelectValue placeholder={t('cm.pages_RoomMappingWizard.kanal_oda_tipi_secin')} />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="__none__">-- Seçim yapilmadi --</SelectItem>
+                                  <SelectItem value="__none__">{t('cm.pages_RoomMappingWizard.secim_yapilmadi')}</SelectItem>
                                   {roomData?.external_room_types?.map((e) => (
                                     <SelectItem key={e.id} value={e.id}>
                                       {e.name}{e.max_occupancy > 0 ? ` (K:${e.max_occupancy})` : ''}
@@ -571,7 +573,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                             <div className="flex items-center gap-2 py-1">
                               <CheckCircle className="w-4 h-4 text-emerald-600" />
                               <span className="text-sm font-semibold text-emerald-800">Otomatik Eslestirmeler ({autoItems.length})</span>
-                              <span className="text-[10px] text-slate-400">Yüksek guven — otomatik uygulanabilir</span>
+                              <span className="text-[10px] text-slate-400">{t('cm.pages_RoomMappingWizard.yuksek_guven_otomatik_uygulanabilir')}</span>
                             </div>
                             {autoItems.map((sel) => renderRow(sel, roomSelections.indexOf(sel)))}
                           </div>
@@ -582,7 +584,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                             <div className="flex items-center gap-2 py-1">
                               <Eye className="w-4 h-4 text-amber-600" />
                               <span className="text-sm font-semibold text-amber-800">Inceleme Gerektiren ({reviewItems.length})</span>
-                              <span className="text-[10px] text-slate-400">Düşük guven — operator onayi gerekli</span>
+                              <span className="text-[10px] text-slate-400">{t('cm.pages_RoomMappingWizard.dusuk_guven_operator_onayi_gerekli')}</span>
                             </div>
                             {reviewItems.map((sel) => renderRow(sel, roomSelections.indexOf(sel)))}
                           </div>
@@ -593,7 +595,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                             <div className="flex items-center gap-2 py-1">
                               <XCircle className="w-4 h-4 text-red-500" />
                               <span className="text-sm font-semibold text-red-700">Eslesmedi ({unmatchedItems.length})</span>
-                              <span className="text-[10px] text-slate-400">Kanal oda tipi bulunamadı — manuel seçim yapın</span>
+                              <span className="text-[10px] text-slate-400">{t('cm.pages_RoomMappingWizard.kanal_oda_tipi_bulunamadi_manuel_secim_y')}</span>
                             </div>
                             {unmatchedItems.map((sel) => renderRow(sel, roomSelections.indexOf(sel)))}
                           </div>
@@ -652,7 +654,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   )}
 
                   {rateSelections.length === 0 && !loading && (
-                    <p className="text-center text-slate-400 py-8">Fiyat planı önerisi bulunamadı</p>
+                    <p className="text-center text-slate-400 py-8">{t('cm.pages_RoomMappingWizard.fiyat_plani_onerisi_bulunamadi')}</p>
                   )}
                   {rateSelections.map((sel, idx) => (
                     <div
@@ -680,10 +682,10 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                           disabled={!sel.enabled}
                         >
                           <SelectTrigger className="w-full text-sm" data-testid={`rate-ext-select-${idx}`}>
-                            <SelectValue placeholder="Kanal fiyat plani seçin..." />
+                            <SelectValue placeholder={t('cm.pages_RoomMappingWizard.kanal_fiyat_plani_secin')} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="__none__">-- Seçim yapilmadi --</SelectItem>
+                            <SelectItem value="__none__">{t('cm.pages_RoomMappingWizard.secim_yapilmadi_ab459')}</SelectItem>
                             {rateData?.external_rate_plans?.map((e) => (
                               <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
                             ))}
@@ -703,7 +705,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
           <Card data-testid="step-confirm">
             <CardHeader>
               <CardTitle className="text-lg" style={{ fontFamily: 'Manrope, sans-serif' }}>
-                Özet & Onay
+                {t('cm.pages_RoomMappingWizard.ozet_onay')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -712,9 +714,9 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-lg border border-emerald-200">
                     <CheckCircle className="w-6 h-6 text-emerald-600" />
                     <div>
-                      <p className="font-semibold text-emerald-900">Eslestirmeler Tamamlandi</p>
+                      <p className="font-semibold text-emerald-900">{t('cm.pages_RoomMappingWizard.eslestirmeler_tamamlandi')}</p>
                       <p className="text-sm text-emerald-700">
-                        {(results.rooms?.created || 0) + (results.rates?.created || 0)} eşleştirme oluşturuldu
+                        {(results.rooms?.created || 0) + (results.rates?.created || 0)} {t('cm.pages_RoomMappingWizard.eslestirme_olusturuldu')}
                         {((results.rooms?.failed || 0) + (results.rates?.failed || 0)) > 0 &&
                           `, ${(results.rooms?.failed || 0) + (results.rates?.failed || 0)} başarısız`
                         }
@@ -723,9 +725,9 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   </div>
                   {results.rooms && (
                     <div className="p-3 bg-white rounded-lg border">
-                      <p className="text-sm font-medium mb-1">Oda Tipi Eslestirmeleri</p>
+                      <p className="text-sm font-medium mb-1">{t('cm.pages_RoomMappingWizard.oda_tipi_eslestirmeleri')}</p>
                       <p className="text-sm text-slate-600">
-                        {results.rooms.created} oluşturuldu / {results.rooms.failed} başarısız
+                        {results.rooms.created} {t('cm.pages_RoomMappingWizard.olusturuldu')} {results.rooms.failed} {t('cm.pages_RoomMappingWizard.basarisiz')}
                       </p>
                       {results.rooms.errors?.length > 0 && (
                         <div className="mt-2 space-y-1">
@@ -742,7 +744,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                     <div className="p-3 bg-white rounded-lg border">
                       <p className="text-sm font-medium mb-1">Fiyat Plani Eslestirmeleri</p>
                       <p className="text-sm text-slate-600">
-                        {results.rates.created} oluşturuldu / {results.rates.failed} başarısız
+                        {results.rates.created} {t('cm.pages_RoomMappingWizard.olusturuldu_9f448')} {results.rates.failed} {t('cm.pages_RoomMappingWizard.basarisiz_f592b')}
                       </p>
                       {results.rates.errors?.length > 0 && (
                         <div className="mt-2 space-y-1">
@@ -761,7 +763,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                     data-testid="wizard-restart-btn"
                   >
                     <RotateCcw className="w-4 h-4 mr-2" />
-                    Yeni Eslestirme Baslat
+                    {t('cm.pages_RoomMappingWizard.yeni_eslestirme_baslat')}
                   </Button>
                 </div>
               ) : (
@@ -769,9 +771,9 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Room summary */}
                     <div className="p-4 bg-slate-50 rounded-lg border">
-                      <p className="text-sm font-medium text-slate-700 mb-3">Oda Tipi Eslestirmeleri</p>
+                      <p className="text-sm font-medium text-slate-700 mb-3">{t('cm.pages_RoomMappingWizard.oda_tipi_eslestirmeleri_85762')}</p>
                       {roomSelections.filter((s) => s.enabled && s.external_entity_id).length === 0 ? (
-                        <p className="text-sm text-slate-400">Secili eşleştirme yok</p>
+                        <p className="text-sm text-slate-400">{t('cm.pages_RoomMappingWizard.secili_eslestirme_yok')}</p>
                       ) : (
                         <div className="space-y-2">
                           {roomSelections.filter((s) => s.enabled && s.external_entity_id).map((s, i) => (
@@ -789,7 +791,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                     <div className="p-4 bg-slate-50 rounded-lg border">
                       <p className="text-sm font-medium text-slate-700 mb-3">Fiyat Plani Eslestirmeleri</p>
                       {rateSelections.filter((s) => s.enabled && s.external_entity_id).length === 0 ? (
-                        <p className="text-sm text-slate-400">Secili eşleştirme yok</p>
+                        <p className="text-sm text-slate-400">{t('cm.pages_RoomMappingWizard.secili_eslestirme_yok_90619')}</p>
                       ) : (
                         <div className="space-y-2">
                           {rateSelections.filter((s) => s.enabled && s.external_entity_id).map((s, i) => (
@@ -808,9 +810,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
                   <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
                     <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
                     <p className="text-sm text-amber-800">
-                      Toplam <strong>{enabledRooms + enabledRates}</strong> eşleştirme olusturulacak
-                      ({enabledRooms} oda tipi + {enabledRates} fiyat plani).
-                      Onayladiktan sonra eşleştirmeler aktif olarak kaydedilecektir.
+                      {t('cm.pages_RoomMappingWizard.toplam')} <strong>{enabledRooms + enabledRates}</strong> {t('cm.pages_RoomMappingWizard.eslestirme_olusturulacak')}{enabledRooms} oda tipi + {enabledRates} {t('cm.pages_RoomMappingWizard.fiyat_plani_onayladiktan_sonra_eslestirm')}
                     </p>
                   </div>
                 </>

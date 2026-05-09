@@ -134,7 +134,7 @@ export default function RoomRequestPage() {
         <Card className="max-w-md w-full">
           <CardContent className="p-8 text-center">
             <div className="flex justify-center mb-4"><AlertTriangle className="w-14 h-14 text-red-600" /></div>
-            <h2 className="text-xl font-semibold mb-2">Talep açılamadı</h2>
+            <h2 className="text-xl font-semibold mb-2">{t('cm.pages_guest_RoomRequestPage.talep_acilamadi')}</h2>
             <p className="text-gray-600 text-sm">{error}</p>
           </CardContent>
         </Card>

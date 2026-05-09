@@ -16,6 +16,7 @@ import {
   Sparkles, Plus, Calendar, Users, DoorOpen, RefreshCw, Trash2,
   CheckCircle2, XCircle, PlayCircle, Receipt, History,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const STATUS = {
   scheduled: { label: 'Planlandı', cls: 'bg-sky-100 text-sky-800' },
@@ -30,6 +31,7 @@ const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('tr-TR', {
 }) : '—';
 
 const SpaWellness = ({ user, tenant, onLogout }) => {
+  const { t } = useTranslation();
   const [services, setServices] = useState([]);
   const [therapists, setTherapists] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -143,7 +145,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
     return (
       <>
         <div className="p-8 text-center text-gray-500">
-          <RefreshCw className="w-6 h-6 animate-spin inline" /> Yükleniyor…
+          <RefreshCw className="w-6 h-6 animate-spin inline" /> {t('cm.pages_SpaWellness.yukleniyor')}
         </div>
       </>
     );
@@ -158,12 +160,12 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
             <Sparkles className="w-6 h-6 text-indigo-600" /> Spa & Wellness
           </h1>
           <p className="text-sm text-gray-500">
-            Hizmet kataloğu, terapist & oda yönetimi, çakışma kontrollü randevu planlama.
+            {t('cm.pages_SpaWellness.hizmet_katalogu_terapist_oda_yonetimi_ca')}
           </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={load}>
-            <RefreshCw className="w-4 h-4 mr-1" /> Yenile
+            <RefreshCw className="w-4 h-4 mr-1" /> {t('cm.pages_SpaWellness.yenile')}
           </Button>
           <Button onClick={() => setShowBook(true)}>
             <Plus className="w-4 h-4 mr-1" /> Randevu
@@ -173,10 +175,10 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
 
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Stat label="Bugün Toplam" value={summary.total} />
+          <Stat label={t('cm.pages_SpaWellness.bugun_toplam')} value={summary.total} />
           <Stat label="Tamamlanan" value={summary.by_status?.completed || 0} cls="text-emerald-600" />
           <Stat label="Planlanan" value={summary.by_status?.scheduled || 0} cls="text-sky-600" />
-          <Stat label="Bugünkü Ciro" value={`₺${(summary.revenue || 0).toLocaleString('tr-TR')}`} cls="text-indigo-600" />
+          <Stat label={t('cm.pages_SpaWellness.bugunku_ciro')} value={`₺${(summary.revenue || 0).toLocaleString('tr-TR')}`} cls="text-indigo-600" />
         </div>
       )}
 
@@ -196,7 +198,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
             <select className="border rounded px-2 text-sm"
                     value={filter.therapist_id}
                     onChange={(e) => setFilter({ ...filter, therapist_id: e.target.value })}>
-              <option value="">Tüm terapistler</option>
+              <option value="">{t('cm.pages_SpaWellness.tum_terapistler')}</option>
               {therapists.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
@@ -205,10 +207,10 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b text-left">
                   <tr>
-                    <th className="p-2">Saat</th><th className="p-2">Misafir</th>
+                    <th className="p-2">{t('cm.pages_SpaWellness.saat')}</th><th className="p-2">{t('cm.pages_SpaWellness.misafir')}</th>
                     <th className="p-2">Hizmet</th><th className="p-2">Terapist</th>
-                    <th className="p-2">Oda</th><th className="p-2">Tutar</th>
-                    <th className="p-2">Durum</th><th className="p-2 text-right">İşlem</th>
+                    <th className="p-2">{t('cm.pages_SpaWellness.oda')}</th><th className="p-2">{t('cm.pages_SpaWellness.tutar')}</th>
+                    <th className="p-2">{t('cm.pages_SpaWellness.durum')}</th><th className="p-2 text-right">{t('cm.pages_SpaWellness.islem')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -235,7 +237,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                         <td className="p-2"><Badge className={`${st.cls} border-0`}>{st.label}</Badge></td>
                         <td className="p-2 text-right space-x-1">
                           {a.status === 'scheduled' && (
-                            <Button size="sm" variant="ghost" title="Başlat"
+                            <Button size="sm" variant="ghost" title={t('cm.pages_SpaWellness.baslat')}
                                     onClick={() => updateStatus(a.id, 'in_progress')}>
                               <PlayCircle className="w-4 h-4" />
                             </Button>
@@ -247,7 +249,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                             </Button>
                           )}
                           {a.status === 'scheduled' && (
-                            <Button size="sm" variant="ghost" title="İptal"
+                            <Button size="sm" variant="ghost" title={t('cm.pages_SpaWellness.iptal')}
                                     onClick={() => updateStatus(a.id, 'cancelled')}>
                               <XCircle className="w-4 h-4 text-red-500" />
                             </Button>
@@ -267,7 +269,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
 
         <TabsContent value="services" className="space-y-3">
           <Button size="sm" onClick={() => setShowServiceForm(true)}>
-            <Plus className="w-4 h-4 mr-1" /> Hizmet Ekle
+            <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_SpaWellness.hizmet_ekle')}
           </Button>
           <div className="grid md:grid-cols-3 gap-3">
             {services.map((s) => (
@@ -296,11 +298,11 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
 
         <TabsContent value="therapists" className="space-y-3">
           <Button size="sm" onClick={() => setShowTherapistForm(true)}>
-            <Plus className="w-4 h-4 mr-1" /> Terapist Ekle
+            <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_SpaWellness.terapist_ekle')}
           </Button>
           <div className="grid md:grid-cols-2 gap-3">
             {therapists.length === 0 && (
-              <p className="text-sm text-gray-500 col-span-full">Henüz terapist yok.</p>
+              <p className="text-sm text-gray-500 col-span-full">{t('cm.pages_SpaWellness.henuz_terapist_yok')}</p>
             )}
             {therapists.map((t) => (
               <Card key={t.id}>
@@ -311,7 +313,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                       {t.name}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {t.work_start}–{t.work_end} • Uzmanlık: {(t.specialties || []).join(', ') || '—'}
+                      {t.work_start}–{t.work_end} {t('cm.pages_SpaWellness.uzmanlik')} {(t.specialties || []).join(', ') || '—'}
                     </div>
                   </div>
                 </CardContent>
@@ -322,11 +324,11 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
 
         <TabsContent value="rooms" className="space-y-3">
           <Button size="sm" onClick={() => setShowRoomForm(true)}>
-            <Plus className="w-4 h-4 mr-1" /> Oda Ekle
+            <Plus className="w-4 h-4 mr-1" /> {t('cm.pages_SpaWellness.oda_ekle')}
           </Button>
           <div className="grid md:grid-cols-3 gap-3">
             {rooms.length === 0 && (
-              <p className="text-sm text-gray-500 col-span-full">Henüz tedavi odası yok.</p>
+              <p className="text-sm text-gray-500 col-span-full">{t('cm.pages_SpaWellness.henuz_tedavi_odasi_yok')}</p>
             )}
             {rooms.map((r) => (
               <Card key={r.id}>
@@ -346,20 +348,20 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
 
       {/* ── Booking modal ── */}
       {showBook && (
-        <Modal title="Yeni Randevu" onClose={() => setShowBook(false)}>
+        <Modal title={t('cm.pages_SpaWellness.yeni_randevu')} onClose={() => setShowBook(false)}>
           <form onSubmit={book} className="space-y-3">
             <Field label="Hizmet">
               <select required className="w-full border rounded px-2 py-1.5"
                       value={bookForm.service_id}
                       onChange={(e) => setBookForm({ ...bookForm, service_id: e.target.value })}>
-                <option value="">Seçin…</option>
+                <option value="">{t('cm.pages_SpaWellness.secin')}</option>
                 {services.map((s) => <option key={s.id} value={s.id}>
                   {s.name} ({s.duration_minutes}dk • ₺{s.price})
                 </option>)}
               </select>
             </Field>
             <div className="grid grid-cols-2 gap-2">
-              <Field label="Terapist (otomatik için boş)">
+              <Field label={t('cm.pages_SpaWellness.terapist_otomatik_icin_bos')}>
                 <select className="w-full border rounded px-2 py-1.5"
                         value={bookForm.therapist_id}
                         onChange={(e) => setBookForm({ ...bookForm, therapist_id: e.target.value })}>
@@ -367,7 +369,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                   {therapists.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </Field>
-              <Field label="Oda">
+              <Field label={t('cm.pages_SpaWellness.oda_e4b47')}>
                 <select className="w-full border rounded px-2 py-1.5"
                         value={bookForm.room_id}
                         onChange={(e) => setBookForm({ ...bookForm, room_id: e.target.value })}>
@@ -376,12 +378,12 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                 </select>
               </Field>
             </div>
-            <Field label="Başlangıç">
+            <Field label={t('cm.pages_SpaWellness.baslangic')}>
               <Input type="datetime-local" required value={bookForm.starts_at}
                      onChange={(e) => setBookForm({ ...bookForm, starts_at: e.target.value })} />
             </Field>
             <div className="grid grid-cols-2 gap-2">
-              <Field label="Misafir Adı">
+              <Field label={t('cm.pages_SpaWellness.misafir_adi')}>
                 <Input required value={bookForm.guest_name}
                        onChange={(e) => setBookForm({ ...bookForm, guest_name: e.target.value })} />
               </Field>
@@ -390,25 +392,25 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                        onChange={(e) => setBookForm({ ...bookForm, guest_phone: e.target.value })} />
               </Field>
             </div>
-            <Field label="PMS Rezervasyon ID (opsiyonel)">
+            <Field label={t('cm.pages_SpaWellness.pms_rezervasyon_id_opsiyonel')}>
               <Input value={bookForm.reservation_id}
                      onChange={(e) => setBookForm({ ...bookForm, reservation_id: e.target.value })} />
             </Field>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={bookForm.charge_to_room}
                      onChange={(e) => setBookForm({ ...bookForm, charge_to_room: e.target.checked })} />
-              Oda hesabına yansıtılsın
+              {t('cm.pages_SpaWellness.oda_hesabina_yansitilsin')}
             </label>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setShowBook(false)}>İptal</Button>
-              <Button type="submit">Randevu Oluştur</Button>
+              <Button type="button" variant="ghost" onClick={() => setShowBook(false)}>{t('cm.pages_SpaWellness.iptal_25174')}</Button>
+              <Button type="submit">{t('cm.pages_SpaWellness.randevu_olustur')}</Button>
             </div>
           </form>
         </Modal>
       )}
 
       {showServiceForm && (
-        <Modal title="Yeni Hizmet" onClose={() => setShowServiceForm(false)}>
+        <Modal title={t('cm.pages_SpaWellness.yeni_hizmet')} onClose={() => setShowServiceForm(false)}>
           <form onSubmit={addService} className="space-y-3">
             <Field label="Ad"><Input required value={serviceForm.name}
               onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} /></Field>
@@ -421,22 +423,22 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                     <option key={c}>{c}</option>)}
                 </select>
               </Field>
-              <Field label="Süre (dk)"><Input type="number" required value={serviceForm.duration_minutes}
+              <Field label={t('cm.pages_SpaWellness.sure_dk')}><Input type="number" required value={serviceForm.duration_minutes}
                 onChange={(e) => setServiceForm({ ...serviceForm, duration_minutes: +e.target.value })} /></Field>
             </div>
             <Field label="Fiyat (₺)"><Input type="number" required value={serviceForm.price}
               onChange={(e) => setServiceForm({ ...serviceForm, price: +e.target.value })} /></Field>
-            <div className="flex justify-end gap-2"><Button type="submit">Ekle</Button></div>
+            <div className="flex justify-end gap-2"><Button type="submit">{t('cm.pages_SpaWellness.ekle')}</Button></div>
           </form>
         </Modal>
       )}
 
       {showTherapistForm && (
-        <Modal title="Yeni Terapist" onClose={() => setShowTherapistForm(false)}>
+        <Modal title={t('cm.pages_SpaWellness.yeni_terapist')} onClose={() => setShowTherapistForm(false)}>
           <form onSubmit={addTherapist} className="space-y-3">
             <Field label="Ad"><Input required value={therapistForm.name}
               onChange={(e) => setTherapistForm({ ...therapistForm, name: e.target.value })} /></Field>
-            <Field label="Uzmanlık (virgülle)">
+            <Field label={t('cm.pages_SpaWellness.uzmanlik_virgulle')}>
               <Input placeholder="massage, facial"
                      onChange={(e) => setTherapistForm({
                        ...therapistForm,
@@ -444,18 +446,18 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
                      })} />
             </Field>
             <div className="grid grid-cols-2 gap-2">
-              <Field label="Mesai Başı"><Input type="time" value={therapistForm.work_start}
+              <Field label={t('cm.pages_SpaWellness.mesai_basi')}><Input type="time" value={therapistForm.work_start}
                 onChange={(e) => setTherapistForm({ ...therapistForm, work_start: e.target.value })} /></Field>
               <Field label="Mesai Sonu"><Input type="time" value={therapistForm.work_end}
                 onChange={(e) => setTherapistForm({ ...therapistForm, work_end: e.target.value })} /></Field>
             </div>
-            <div className="flex justify-end gap-2"><Button type="submit">Ekle</Button></div>
+            <div className="flex justify-end gap-2"><Button type="submit">{t('cm.pages_SpaWellness.ekle_b9fc4')}</Button></div>
           </form>
         </Modal>
       )}
 
       {showRoomForm && (
-        <Modal title="Yeni Oda" onClose={() => setShowRoomForm(false)}>
+        <Modal title={t('cm.pages_SpaWellness.yeni_oda')} onClose={() => setShowRoomForm(false)}>
           <form onSubmit={addRoom} className="space-y-3">
             <Field label="Ad"><Input required value={roomForm.name}
               onChange={(e) => setRoomForm({ ...roomForm, name: e.target.value })} /></Field>
@@ -470,7 +472,7 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
               <Field label="Kapasite"><Input type="number" min={1} value={roomForm.capacity}
                 onChange={(e) => setRoomForm({ ...roomForm, capacity: +e.target.value })} /></Field>
             </div>
-            <div className="flex justify-end gap-2"><Button type="submit">Ekle</Button></div>
+            <div className="flex justify-end gap-2"><Button type="submit">{t('cm.pages_SpaWellness.ekle_b9fc4')}</Button></div>
           </form>
         </Modal>
       )}

@@ -7,8 +7,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Package, ArrowRight, CheckCircle, XCircle, Clock, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { promptDialog } from '@/lib/dialogs';
+import { useTranslation } from 'react-i18next';
 
 const LostFoundWorkflow = () => {
+  const { t } = useTranslation();
   const [items, setItems] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -111,7 +113,7 @@ const LostFoundWorkflow = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-4">Yükleniyor...</div>;
+    return <div className="text-center py-4">{t('cm.components_LostFoundWorkflow.yukleniyor')}</div>;
   }
 
   return (
@@ -121,7 +123,7 @@ const LostFoundWorkflow = () => {
           <CardTitle className="flex items-center justify-between text-lg">
             <span className="flex items-center">
               <Package className="w-5 h-5 mr-2" />
-              Kayıp Eşya
+              {t('cm.components_LostFoundWorkflow.kayip_esya')}
             </span>
             <Badge className="bg-blue-500">
               {items.filter(i => i.status === 'found').length} aktif
@@ -131,7 +133,7 @@ const LostFoundWorkflow = () => {
         <CardContent>
           <div className="space-y-2">
             {items.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">Kayıp eşya yok</p>
+              <p className="text-center text-gray-500 py-8">{t('cm.components_LostFoundWorkflow.kayip_esya_yok')}</p>
             ) : (
               items.map((item) => (
                 <div
@@ -151,7 +153,7 @@ const LostFoundWorkflow = () => {
                         <div className="flex items-center space-x-2 mt-1 text-xs text-gray-500">
                           <MapPin className="w-3 h-3" />
                           <span>{item.current_location || item.location_found}</span>
-                          {item.room_number && <span>• Oda {item.room_number}</span>}
+                          {item.room_number && <span>{t('cm.components_LostFoundWorkflow.oda')} {item.room_number}</span>}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
                           Bulan: {item.found_by} • {new Date(item.created_at).toLocaleDateString('tr-TR')}
@@ -173,7 +175,7 @@ const LostFoundWorkflow = () => {
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
         <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Kayıp Eşya Detayı</DialogTitle>
+            <DialogTitle>{t('cm.components_LostFoundWorkflow.kayip_esya_detayi')}</DialogTitle>
           </DialogHeader>
           {selectedItem && (
             <div className="space-y-4">
@@ -190,7 +192,7 @@ const LostFoundWorkflow = () => {
 
               {/* Current Status */}
               <div>
-                <div className="text-xs text-gray-500 mb-1">Mevcut Durum</div>
+                <div className="text-xs text-gray-500 mb-1">{t('cm.components_LostFoundWorkflow.mevcut_durum')}</div>
                 <Badge className={getStatusColor(selectedItem.status)}>
                   {getStatusLabel(selectedItem.status)}
                 </Badge>
@@ -208,7 +210,7 @@ const LostFoundWorkflow = () => {
               {/* Transfer History */}
               {history && history.transfers.length > 0 && (
                 <div>
-                  <div className="text-xs text-gray-500 mb-2">Transfer Geçmişi</div>
+                  <div className="text-xs text-gray-500 mb-2">{t('cm.components_LostFoundWorkflow.transfer_gecmisi')}</div>
                   <div className="space-y-2">
                     {history.transfers.map((transfer) => (
                       <div key={transfer.id} className="flex items-center space-x-2 text-xs p-2 bg-gray-50 rounded">

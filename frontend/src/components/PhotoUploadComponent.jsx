@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import useMediaCapture from '@/hooks/useMediaCapture';
+import { useTranslation } from 'react-i18next';
 
 const PhotoUploadComponent = ({
   roomId,
@@ -14,6 +15,7 @@ const PhotoUploadComponent = ({
   onUploadComplete,
   showNotes = true
 }) => {
+  const { t } = useTranslation();
   const [photo, setPhoto] = useState(null);
   const [preview, setPreview] = useState(null);
   const [qualityScore, setQualityScore] = useState(photoType === 'after' ? 9 : 0);
@@ -87,13 +89,13 @@ const PhotoUploadComponent = ({
       <CardContent className="p-4">
         <div className="text-center">
           <p className="font-semibold mb-2">{getTitle()}</p>
-          <p className="text-xs text-gray-600 mb-3">Oda {roomNumber}</p>
+          <p className="text-xs text-gray-600 mb-3">{t('cm.components_PhotoUploadComponent.oda')} {roomNumber}</p>
 
           {!preview ? (
             <label className="cursor-pointer">
               <div className="flex flex-col items-center justify-center h-40 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
                 <Camera className="w-12 h-12 text-gray-400 mb-2" />
-                <p className="text-sm text-gray-600">Fotoğraf Çek</p>
+                <p className="text-sm text-gray-600">{t('cm.components_PhotoUploadComponent.fotograf_cek')}</p>
               </div>
               <input
                 type="file"
@@ -133,7 +135,7 @@ const PhotoUploadComponent = ({
                 ) : (
                   <Upload className="w-4 h-4 mr-2" />
                 )}
-                Yükle
+                {t('cm.components_PhotoUploadComponent.yukle')}
               </Button>
               {photoType === 'after' && (
                 <div className="text-left space-y-2">
@@ -155,7 +157,7 @@ const PhotoUploadComponent = ({
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     rows={2}
-                    placeholder="Lekeler, bakım notları..."
+                    placeholder={t('cm.components_PhotoUploadComponent.lekeler_bakim_notlari')}
                   />
                 </div>
               )}

@@ -1,6 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useTranslation } from 'react-i18next';
 
 export function OccupancyChart({ dateRange, bookings, rooms, isBookingOnDate, isWeekend, formatDateWithDay }) {
+  const { t } = useTranslation();
   if (!dateRange?.length || !rooms?.length) return null;
 
   // Calculate occupancy for each date
@@ -74,8 +76,8 @@ export function CalendarLegend() {
       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-blue-500" /> Tatilbudur/Online</div>
       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-blue-600" /> Booking.com</div>
       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-gray-600" /> Kesin</div>
-      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-emerald-500" /> Müsait</div>
-      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-red-500" /> Dolu</div>
+      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-emerald-500" /> {t('cm.components_calendar_CalendarWidgets.musait')}</div>
+      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-red-500" /> {t('cm.components_calendar_CalendarWidgets.dolu')}</div>
     </div>
   );
 }
@@ -93,7 +95,7 @@ export function CalendarStats({ bookings, rooms, dateRange, isBookingOnDate }) {
     <div className="grid grid-cols-4 gap-3 mb-3" data-testid="calendar-stats">
       <Card className="bg-white border shadow-sm">
         <CardContent className="p-3 text-center">
-          <div className="text-xs text-gray-500 font-medium">Bugün Dolu</div>
+          <div className="text-xs text-gray-500 font-medium">{t('cm.components_calendar_CalendarWidgets.bugun_dolu')}</div>
           <div className="text-lg font-bold text-gray-800">{todayBookings.length} / {rooms.length}</div>
         </CardContent>
       </Card>
@@ -105,13 +107,13 @@ export function CalendarStats({ bookings, rooms, dateRange, isBookingOnDate }) {
       </Card>
       <Card className="bg-white border shadow-sm">
         <CardContent className="p-3 text-center">
-          <div className="text-xs text-gray-500 font-medium">Ort. Günlük Gelir</div>
+          <div className="text-xs text-gray-500 font-medium">{t('cm.components_calendar_CalendarWidgets.ort_gunluk_gelir')}</div>
           <div className="text-lg font-bold text-emerald-600">{adr.toLocaleString('tr-TR')} TL</div>
         </CardContent>
       </Card>
       <Card className="bg-white border shadow-sm">
         <CardContent className="p-3 text-center">
-          <div className="text-xs text-gray-500 font-medium">Toplam Rev.</div>
+          <div className="text-xs text-gray-500 font-medium">{t('cm.components_calendar_CalendarWidgets.toplam_rev')}</div>
           <div className="text-lg font-bold text-blue-600">{Math.round(todayRevenue).toLocaleString('tr-TR')} TL</div>
         </CardContent>
       </Card>

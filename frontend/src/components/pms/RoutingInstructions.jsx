@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ArrowRightLeft, Plus, Trash2, Building2, User, CreditCard, FileText } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const CHARGE_CATEGORIES = [
   { value: 'room', label: 'Oda Ucreti' },
@@ -42,6 +43,7 @@ const enrichRule = (rule) => {
 };
 
 const RoutingInstructions = ({ booking, onSave }) => {
+  const { t } = useTranslation();
   const [rules, setRules] = useState(() =>
     (booking?.routing_rules || []).map(enrichRule),
   );
@@ -115,16 +117,16 @@ const RoutingInstructions = ({ booking, onSave }) => {
           </CardTitle>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
-              <Plus className="h-3 w-3 mr-1" /> Kural Ekle
+              <Plus className="h-3 w-3 mr-1" /> {t('cm.components_pms_RoutingInstructions.kural_ekle')}
             </Button>
-            <Button size="sm" onClick={saveRules} disabled={rules.length === 0 || saving}>Kaydet</Button>
+            <Button size="sm" onClick={saveRules} disabled={rules.length === 0 || saving}>{t('cm.components_pms_RoutingInstructions.kaydet')}</Button>
           </div>
         </div>
       </CardHeader>
       <CardContent>
         {rules.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">
-            Henüz yonlendirme kuralı tanimlanmadi. Tüm masraflar misafir folyosuna yansiyacak.
+            {t('cm.components_pms_RoutingInstructions.henuz_yonlendirme_kurali_tanimlanmadi_tu')}
           </p>
         ) : (
           <div className="space-y-2">
@@ -147,13 +149,13 @@ const RoutingInstructions = ({ booking, onSave }) => {
         <Dialog open={showAdd} onOpenChange={setShowAdd}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Yeni Yonlendirme Kurali</DialogTitle>
+              <DialogTitle>{t('cm.components_pms_RoutingInstructions.yeni_yonlendirme_kurali')}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
                 <Label>Masraf Kategorisi</Label>
                 <Select value={newRule.category} onValueChange={v => setNewRule(p => ({ ...p, category: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Kategori seçin..." /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('cm.components_pms_RoutingInstructions.kategori_secin')} /></SelectTrigger>
                   <SelectContent>
                     {CHARGE_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
                   </SelectContent>
@@ -162,7 +164,7 @@ const RoutingInstructions = ({ booking, onSave }) => {
               <div>
                 <Label>Hedef Folyo</Label>
                 <Select value={newRule.target} onValueChange={v => setNewRule(p => ({ ...p, target: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Hedef seçin..." /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('cm.components_pms_RoutingInstructions.hedef_secin')} /></SelectTrigger>
                   <SelectContent>
                     {ROUTING_TARGETS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
                   </SelectContent>
@@ -174,9 +176,9 @@ const RoutingInstructions = ({ booking, onSave }) => {
               </div>
               <div>
                 <Label>Not</Label>
-                <Input value={newRule.notes} onChange={e => setNewRule(p => ({ ...p, notes: e.target.value }))} placeholder="Opsiyonel açıklama" />
+                <Input value={newRule.notes} onChange={e => setNewRule(p => ({ ...p, notes: e.target.value }))} placeholder={t('cm.components_pms_RoutingInstructions.opsiyonel_aciklama')} />
               </div>
-              <Button className="w-full" onClick={addRule}>Kural Ekle</Button>
+              <Button className="w-full" onClick={addRule}>{t('cm.components_pms_RoutingInstructions.kural_ekle_ce691')}</Button>
             </div>
           </DialogContent>
         </Dialog>

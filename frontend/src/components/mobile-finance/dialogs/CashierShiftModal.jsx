@@ -11,8 +11,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Wallet, CreditCard, TrendingUp, AlertTriangle, FileText, DollarSign, ArrowDownCircle, ArrowUpCircle, Receipt, Banknote, Clock, CheckCircle, XCircle, Calendar, Filter, Download, Upload, Eye, Search, Plus, Minus, RefreshCw, ChevronRight, ChevronDown, BarChart3, PieChart, Activity, Users, Building, User, Briefcase, ShoppingCart, Coffee, Utensils, Bed, Home } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export default function CashierShiftModal(props) {
+  const { t } = useTranslation();
   const { cashierShiftModalOpen, formatCurrency, setCashierShiftModalOpen, shiftReportData, user } = props;
   return (
     <Dialog open={cashierShiftModalOpen} onOpenChange={setCashierShiftModalOpen}>
@@ -39,14 +41,14 @@ export default function CashierShiftModal(props) {
                     <p className="font-bold text-gray-900">{shiftReportData.shift_name || 'Gündüz'}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-600">Başlangıç</p>
+                    <p className="text-xs text-gray-600">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.baslangic')}</p>
                     <p className="text-sm font-medium">
                       <Clock className="w-3 h-3 inline mr-1" />
                       {shiftReportData.shift_start ? new Date(shiftReportData.shift_start).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '08:00'}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-600">Bitiş</p>
+                    <p className="text-xs text-gray-600">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.bitis')}</p>
                     <p className="text-sm font-medium">
                       <Clock className="w-3 h-3 inline mr-1" />
                       {shiftReportData.shift_end ? new Date(shiftReportData.shift_end).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : 'Devam Ediyor'}
@@ -63,25 +65,25 @@ export default function CashierShiftModal(props) {
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex justify-between p-3 bg-blue-50 rounded">
-                  <span className="text-gray-700">Açılış Bakiyesi:</span>
+                  <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.acilis_bakiyesi')}</span>
                   <span className="font-bold text-blue-700">
                     {formatCurrency(shiftReportData.opening_balance || 0)}
                   </span>
                 </div>
                 <div className="flex justify-between p-3 bg-green-50 rounded">
-                  <span className="text-gray-700">Toplam Tahsilat:</span>
+                  <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.toplam_tahsilat')}</span>
                   <span className="font-bold text-green-700">
                     {formatCurrency(shiftReportData.total_collected || 0)}
                   </span>
                 </div>
                 <div className="flex justify-between p-3 bg-red-50 rounded">
-                  <span className="text-gray-700">Ödemeler:</span>
+                  <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.odemeler')}</span>
                   <span className="font-bold text-red-700">
                     -{formatCurrency(shiftReportData.total_paid_out || 0)}
                   </span>
                 </div>
                 <div className="flex justify-between p-4 bg-indigo-100 rounded-lg border-2 border-indigo-300">
-                  <span className="font-bold text-indigo-900">Beklenen Bakiye:</span>
+                  <span className="font-bold text-indigo-900">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.beklenen_bakiye')}</span>
                   <span className="font-bold text-2xl text-indigo-700">
                     {formatCurrency(shiftReportData.expected_balance || 0)}
                   </span>
@@ -90,7 +92,7 @@ export default function CashierShiftModal(props) {
                 {shiftReportData.actual_balance !== undefined && (
                   <>
                     <div className="flex justify-between p-3 bg-yellow-50 rounded mt-2">
-                      <span className="text-gray-700">Fiili Bakiye:</span>
+                      <span className="text-gray-700">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.fiili_bakiye')}</span>
                       <span className="font-bold">
                         {formatCurrency(shiftReportData.actual_balance)}
                       </span>
@@ -113,12 +115,12 @@ export default function CashierShiftModal(props) {
             {/* Transaction Summary */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">İşlem Özeti</CardTitle>
+                <CardTitle className="text-base">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.islem_ozeti')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="text-center p-3 bg-green-50 rounded">
-                    <p className="text-xs text-green-600">Toplam İşlem</p>
+                    <p className="text-xs text-green-600">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.toplam_islem')}</p>
                     <p className="text-2xl font-bold text-green-900">
                       {shiftReportData.transaction_count || 0}
                     </p>
@@ -136,7 +138,7 @@ export default function CashierShiftModal(props) {
                     </p>
                   </div>
                   <div className="text-center p-3 bg-amber-50 rounded">
-                    <p className="text-xs text-amber-600">Ort. İşlem</p>
+                    <p className="text-xs text-amber-600">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.ort_islem')}</p>
                     <p className="text-2xl font-bold text-amber-900">
                       {formatCurrency(shiftReportData.average_transaction || 0)}
                     </p>
@@ -149,7 +151,7 @@ export default function CashierShiftModal(props) {
             {shiftReportData.payment_methods && (
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Ödeme Yöntemleri</CardTitle>
+                  <CardTitle className="text-base">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.odeme_yontemleri')}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {Object.entries(shiftReportData.payment_methods).map(([method, data]) => (
@@ -163,7 +165,7 @@ export default function CashierShiftModal(props) {
                              method === 'check' ? 'Çek' : method}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {data.count || 0} işlem
+                            {data.count || 0} {t('cm.components_mobilefinance_dialogs_CashierShiftModal.islem')}
                           </p>
                         </div>
                         <p className="font-bold text-lg text-indigo-700">
@@ -193,13 +195,13 @@ export default function CashierShiftModal(props) {
               onClick={() => toast.success('Vardiya raporu kapatıldı!')}
             >
               <CheckCircle className="w-4 h-4 mr-2" />
-              Vardiya Kapat
+              {t('cm.components_mobilefinance_dialogs_CashierShiftModal.vardiya_kapat')}
             </Button>
           </div>
         ) : (
           <div className="text-center py-8">
             <User className="w-12 h-12 mx-auto text-gray-300 mb-2" />
-            <p className="text-gray-500">Vardiya raporu yükleniyor...</p>
+            <p className="text-gray-500">{t('cm.components_mobilefinance_dialogs_CashierShiftModal.vardiya_raporu_yukleniyor')}</p>
           </div>
         )}
       </DialogContent>

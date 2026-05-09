@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { Loader2, Save, KeyRound, Eye, EyeOff, CheckCircle2, XCircle, ShieldAlert, ScanLine } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const AUTO_PROVIDER = "__auto__";
 const PROVIDERS = [
@@ -21,6 +22,7 @@ const PROVIDERS = [
 ];
 
 export default function QuickIdSettings({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -95,9 +97,9 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
   if (!settings) return null;
 
   const StatusBadge = ({ cfg, env }) => {
-    if (cfg) return <Badge variant="default" className="bg-emerald-600">Yapılandırılmış</Badge>;
-    if (env) return <Badge variant="secondary">Ortam değişkeninden</Badge>;
-    return <Badge variant="outline" className="text-amber-600 border-amber-600">Yapılandırılmamış</Badge>;
+    if (cfg) return <Badge variant="default" className="bg-emerald-600">{t('cm.pages_admin_QuickIdSettings.yapilandirilmis')}</Badge>;
+    if (env) return <Badge variant="secondary">{t('cm.pages_admin_QuickIdSettings.ortam_degiskeninden')}</Badge>;
+    return <Badge variant="outline" className="text-amber-600 border-amber-600">{t('cm.pages_admin_QuickIdSettings.yapilandirilmamis')}</Badge>;
   };
 
   return (
@@ -105,10 +107,10 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
       <div className="max-w-4xl mx-auto p-6 space-y-6">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
-            <ScanLine className="w-8 h-8" /> Kimlik Tarama (Quick-ID) Ayarları
+            <ScanLine className="w-8 h-8" /> {t('cm.pages_admin_QuickIdSettings.kimlik_tarama_quick_id_ayarlari')}
           </h1>
           <p className="text-gray-500 mt-2">
-            OCR sağlayıcı API anahtarlarını yönetin. Anahtarlar şifrelenmiş olarak veritabanında saklanır.
+            {t('cm.pages_admin_QuickIdSettings.ocr_saglayici_api_anahtarlarini_yonetin_')}
           </p>
         </div>
 
@@ -117,8 +119,7 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
             <ShieldAlert className="w-4 h-4 text-amber-600" />
             <AlertTitle>Demo modu aktif</AlertTitle>
             <AlertDescription>
-              Hiçbir API anahtarı yapılandırılmadığı için tarama sahte demo veri döndürüyor.
-              Gerçek tarama için aşağıya OpenAI veya Gemini anahtarınızı girin.
+              {t('cm.pages_admin_QuickIdSettings.hicbir_api_anahtari_yapilandirilmadigi_i')}
             </AlertDescription>
           </Alert>
         )}
@@ -126,9 +127,9 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
         {!settings.service_key_configured && (
           <Alert variant="destructive">
             <XCircle className="w-4 h-4" />
-            <AlertTitle>Servis anahtarı eksik</AlertTitle>
+            <AlertTitle>{t('cm.pages_admin_QuickIdSettings.servis_anahtari_eksik')}</AlertTitle>
             <AlertDescription>
-              QUICKID_SERVICE_KEY ortam değişkeni tanımlı değil. Sunucu yöneticisiyle iletişime geçin.
+              {t('cm.pages_admin_QuickIdSettings.quickid_service_key_ortam_degiskeni_tani')}
             </AlertDescription>
           </Alert>
         )}
@@ -136,10 +137,9 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
         {settings.transport_safe === false && (
           <Alert variant="destructive">
             <ShieldAlert className="w-4 h-4" />
-            <AlertTitle>Güvensiz iletim</AlertTitle>
+            <AlertTitle>{t('cm.pages_admin_QuickIdSettings.guvensiz_iletim')}</AlertTitle>
             <AlertDescription>
-              Quick-ID uzak bir HTTP adresine yapılandırılmış. API anahtarları güvenlik nedeniyle
-              header üzerinden iletilmeyecek. Loopback (localhost) veya HTTPS gerekiyor.
+              {t('cm.pages_admin_QuickIdSettings.quick_id_uzak_bir_http_adresine_yapiland')}
             </AlertDescription>
           </Alert>
         )}
@@ -147,11 +147,10 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
         {settings.encryption_key_source === "jwt_secret" && (
           <Alert className="border-amber-300 bg-amber-50">
             <ShieldAlert className="w-4 h-4 text-amber-600" />
-            <AlertTitle>Adanmış şifreleme anahtarı önerilir</AlertTitle>
+            <AlertTitle>{t('cm.pages_admin_QuickIdSettings.adanmis_sifreleme_anahtari_onerilir')}</AlertTitle>
             <AlertDescription>
-              Şu anda anahtarlar JWT_SECRET'tan türetilen anahtarla şifreleniyor. JWT secret döndürüldüğünde
-              kayıtlı API anahtarları okunamaz hale gelir. Üretim için <code>QUICKID_SETTINGS_ENC_KEY</code>
-              ayarlamanız önerilir.
+              {t('cm.pages_admin_QuickIdSettings.su_anda_anahtarlar_jwt_secret_tan_tureti')} <code>QUICKID_SETTINGS_ENC_KEY</code>
+              {t('cm.pages_admin_QuickIdSettings.ayarlamaniz_onerilir')}
             </AlertDescription>
           </Alert>
         )}
@@ -159,11 +158,9 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
         {(settings.openai.decrypt_failed || settings.gemini.decrypt_failed) && (
           <Alert variant="destructive">
             <XCircle className="w-4 h-4" />
-            <AlertTitle>Şifre çözme başarısız</AlertTitle>
+            <AlertTitle>{t('cm.pages_admin_QuickIdSettings.sifre_cozme_basarisiz')}</AlertTitle>
             <AlertDescription>
-              Kayıtlı bir veya daha fazla anahtar mevcut şifreleme anahtarıyla okunamadı.
-              Eski anahtarınız varsa <code>QUICKID_SETTINGS_ENC_KEY_OLD</code> olarak ekleyip
-              yeniden kaydedin; yoksa anahtarları silip tekrar girin.
+              {t('cm.pages_admin_QuickIdSettings.kayitli_bir_veya_daha_fazla_anahtar_mevc')} <code>QUICKID_SETTINGS_ENC_KEY_OLD</code> {t('cm.pages_admin_QuickIdSettings.olarak_ekleyip_yeniden_kaydedin_yoksa_an')}
             </AlertDescription>
           </Alert>
         )}
@@ -174,9 +171,9 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
-                  <KeyRound className="w-5 h-5" /> OpenAI API Anahtarı
+                  <KeyRound className="w-5 h-5" /> {t('cm.pages_admin_QuickIdSettings.openai_api_anahtari')}
                 </CardTitle>
-                <CardDescription>GPT-4o ve GPT-4o-mini için kullanılır</CardDescription>
+                <CardDescription>{t('cm.pages_admin_QuickIdSettings.gpt_4o_ve_gpt_4o_mini_icin_kullanilir')}</CardDescription>
               </div>
               <StatusBadge cfg={settings.openai.configured} env={settings.openai.env_fallback} />
             </div>
@@ -188,7 +185,7 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
               </div>
             )}
             <div>
-              <Label>Yeni anahtar (boş bırakırsanız değişmez)</Label>
+              <Label>{t('cm.pages_admin_QuickIdSettings.yeni_anahtar_bos_birakirsaniz_degismez')}</Label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Input
@@ -213,7 +210,7 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
                 )}
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                Anahtarınızı <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-blue-600 underline">platform.openai.com</a> üzerinden alabilirsiniz.
+                {t('cm.pages_admin_QuickIdSettings.anahtarinizi')} <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-blue-600 underline">platform.openai.com</a> {t('cm.pages_admin_QuickIdSettings.uzerinden_alabilirsiniz')}
               </p>
             </div>
           </CardContent>
@@ -225,9 +222,9 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
-                  <KeyRound className="w-5 h-5" /> Google Gemini API Anahtarı
+                  <KeyRound className="w-5 h-5" /> {t('cm.pages_admin_QuickIdSettings.google_gemini_api_anahtari')}
                 </CardTitle>
-                <CardDescription>Gemini 2.0 Flash için kullanılır</CardDescription>
+                <CardDescription>{t('cm.pages_admin_QuickIdSettings.gemini_2_0_flash_icin_kullanilir')}</CardDescription>
               </div>
               <StatusBadge cfg={settings.gemini.configured} env={settings.gemini.env_fallback} />
             </div>
@@ -239,7 +236,7 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
               </div>
             )}
             <div>
-              <Label>Yeni anahtar (boş bırakırsanız değişmez)</Label>
+              <Label>{t('cm.pages_admin_QuickIdSettings.yeni_anahtar_bos_birakirsaniz_degismez_bd136')}</Label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Input
@@ -264,7 +261,7 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
                 )}
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                Anahtarınızı <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-blue-600 underline">aistudio.google.com</a> üzerinden alabilirsiniz.
+                {t('cm.pages_admin_QuickIdSettings.anahtarinizi_d0442')} <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-blue-600 underline">aistudio.google.com</a> {t('cm.pages_admin_QuickIdSettings.uzerinden_alabilirsiniz_8b375')}
               </p>
             </div>
           </CardContent>
@@ -273,8 +270,8 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
         {/* Tercih edilen sağlayıcı */}
         <Card>
           <CardHeader>
-            <CardTitle>Tercih Edilen Sağlayıcı</CardTitle>
-            <CardDescription>Kullanıcı belirtmezse bu sağlayıcı kullanılır</CardDescription>
+            <CardTitle>{t('cm.pages_admin_QuickIdSettings.tercih_edilen_saglayici')}</CardTitle>
+            <CardDescription>{t('cm.pages_admin_QuickIdSettings.kullanici_belirtmezse_bu_saglayici_kulla')}</CardDescription>
           </CardHeader>
           <CardContent>
             <Select value={provider} onValueChange={setProvider}>
@@ -297,7 +294,7 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
         {testResults && (
           <Card>
             <CardHeader>
-              <CardTitle>Bağlantı Testi Sonuçları</CardTitle>
+              <CardTitle>{t('cm.pages_admin_QuickIdSettings.baglanti_testi_sonuclari')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {Object.entries(testResults).map(([prov, res]) => (
@@ -321,17 +318,17 @@ export default function QuickIdSettings({ user, tenant, onLogout }) {
         <div className="flex gap-3 sticky bottom-4 bg-white p-4 border rounded-lg shadow-lg">
           <Button onClick={() => save()} disabled={saving} className="flex-1">
             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-            Kaydet
+            {t('cm.pages_admin_QuickIdSettings.kaydet')}
           </Button>
           <Button variant="outline" onClick={runTest} disabled={testing}>
             {testing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-            Bağlantıyı Test Et
+            {t('cm.pages_admin_QuickIdSettings.baglantiyi_test_et')}
           </Button>
         </div>
 
         {settings.updated_at && (
           <p className="text-xs text-gray-400 text-center">
-            Son güncelleme: {new Date(settings.updated_at).toLocaleString("tr-TR")} • {settings.updated_by}
+            {t('cm.pages_admin_QuickIdSettings.son_guncelleme')} {new Date(settings.updated_at).toLocaleString("tr-TR")} • {settings.updated_by}
           </p>
         )}
       </div>

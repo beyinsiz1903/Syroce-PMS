@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { KPICard, CustomTooltip, COLORS, formatNumber } from './reports/ReportHelpers';
 import { formatCurrency as formatTenantCurrency } from '@/lib/currency';
+import { useTranslation } from 'react-i18next';
 
 // Tur 21 #3: raw fetch yerine axios — silent token refresh, retry, axios-cache
 // ve correlation-id interceptor'larina otomatik dahil olur. Token Authorization
@@ -67,6 +68,7 @@ const fetchJsonWithRetry = async (path, params, signal) => {
 };
 
 export default function B2BAnalyticsDashboard({ user, tenant }) {
+  const { t } = useTranslation();
   // Tur 21 #5: tenant currency override (multi-currency tenant'lar icin).
   const tenantCurrency = (tenant?.currency || tenant?.default_currency || 'TRY').toUpperCase();
   const fmtMoney = useCallback((v) => formatTenantCurrency(v ?? 0, tenantCurrency, { decimals: 0 }), [tenantCurrency]);
@@ -213,7 +215,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
             B2B Analytics
           </h1>
           {/* #7: performansi → performansı, kullanım zaten unicode; hizala */}
-          <p className="text-sm text-gray-500 mt-1">Acente performansı ve API kullanım analitikleri</p>
+          <p className="text-sm text-gray-500 mt-1">{t('cm.pages_B2BAnalyticsDashboard.acente_performansi_ve_api_kullanim_anali')}</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -230,10 +232,10 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
 
           <Select value={agencyFilter} onValueChange={setAgencyFilter}>
             <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Tüm Acenteler" />
+              <SelectValue placeholder={t('cm.pages_B2BAnalyticsDashboard.tum_acenteler')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tüm Acenteler</SelectItem>
+              <SelectItem value="all">{t('cm.pages_B2BAnalyticsDashboard.tum_acenteler_ce665')}</SelectItem>
               {agencies.map((a) => (
                 <SelectItem key={a.agency_id} value={a.agency_id}>{a.agency_name}</SelectItem>
               ))}
@@ -243,7 +245,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
           {/* Sprint A: standart Yenile butonu */}
           <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading || trendsLoading ? 'animate-spin' : ''}`} />
-            Yenile
+            {t('cm.pages_B2BAnalyticsDashboard.yenile')}
           </Button>
         </div>
       </div>
@@ -252,32 +254,32 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center justify-between">
           <p className="text-sm text-amber-800">{error}</p>
           <Button variant="ghost" size="sm" onClick={() => setError(null)} className="text-amber-600 hover:text-amber-800">
-            Kapat
+            {t('cm.pages_B2BAnalyticsDashboard.kapat')}
           </Button>
         </div>
       )}
 
       {/* Tur 21 #6: purple → indigo (replit.md Color Palette Convention) */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <KPICard title="Toplam Rez." value={kpis.total_bookings || 0} icon={FileText} color="blue" />
+        <KPICard title={t('cm.pages_B2BAnalyticsDashboard.toplam_rez')} value={kpis.total_bookings || 0} icon={FileText} color="blue" />
         <KPICard title="Onaylanan" value={kpis.approved_bookings || 0} icon={TrendingUp} color="green" />
-        <KPICard title="Dönüşüm %" value={`%${kpis.conversion_rate || 0}`} icon={Zap} color="indigo" />
+        <KPICard title={t('cm.pages_B2BAnalyticsDashboard.donusum')} value={`%${kpis.conversion_rate || 0}`} icon={Zap} color="indigo" />
         <KPICard
-          title="Toplam Gelir"
+          title={t('cm.pages_B2BAnalyticsDashboard.toplam_gelir')}
           // KPICard kendi formatCurrency'sini cagiriyor (TRY-only); sayisal istemiyoruz,
           // tenant para birimiyle once formatlayip string verelim.
           value={fmtMoney(kpis.total_revenue || 0)}
           icon={DollarSign} color="amber"
         />
-        <KPICard title="Aktif Acente" value={kpis.active_agencies || 0} icon={Building2} color="cyan" />
-        <KPICard title="API Çağrısı" value={kpis.api_calls || 0} icon={Activity} color="indigo" />
+        <KPICard title={t('cm.pages_B2BAnalyticsDashboard.aktif_acente')} value={kpis.active_agencies || 0} icon={Building2} color="cyan" />
+        <KPICard title={t('cm.pages_B2BAnalyticsDashboard.api_cagrisi')} value={kpis.api_calls || 0} icon={Activity} color="indigo" />
       </div>
 
       <Tabs defaultValue="bookings" className="space-y-4">
         <TabsList className="bg-white border">
           <TabsTrigger value="bookings">Rez. Trendleri</TabsTrigger>
-          <TabsTrigger value="agencies">Acente Performansı</TabsTrigger>
-          <TabsTrigger value="api">API Kullanımı</TabsTrigger>
+          <TabsTrigger value="agencies">{t('cm.pages_B2BAnalyticsDashboard.acente_performansi')}</TabsTrigger>
+          <TabsTrigger value="api">{t('cm.pages_B2BAnalyticsDashboard.api_kullanimi')}</TabsTrigger>
           <TabsTrigger value="endpoints">Top Endpointler</TabsTrigger>
         </TabsList>
 
@@ -286,7 +288,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold text-gray-700">
-                  Günlük Rezervasyonlar {trendsLoading && <span className="text-[10px] text-gray-400 ml-2">(güncelleniyor…)</span>}
+                  {t('cm.pages_B2BAnalyticsDashboard.gunluk_rezervasyonlar')} {trendsLoading && <span className="text-[10px] text-gray-400 ml-2">{t('cm.pages_B2BAnalyticsDashboard.guncelleniyor')}</span>}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -305,7 +307,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm">
-                    Veri bulunamadı
+                    {t('cm.pages_B2BAnalyticsDashboard.veri_bulunamadi')}
                   </div>
                 )}
               </CardContent>
@@ -313,7 +315,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-gray-700">Günlük Gelir Trendi</CardTitle>
+                <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.gunluk_gelir_trendi')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {trends.length > 0 ? (
@@ -334,7 +336,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm">
-                    Veri bulunamadı
+                    {t('cm.pages_B2BAnalyticsDashboard.veri_bulunamadi_c60c4')}
                   </div>
                 )}
               </CardContent>
@@ -345,7 +347,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
         <TabsContent value="agencies" className="space-y-4">
           <Card>
             <CardHeader className="pb-2 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-semibold text-gray-700">Acente Bazlı Performans</CardTitle>
+              <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.acente_bazli_performans')}</CardTitle>
               <Button variant="outline" size="sm" onClick={() => handleExport('agencies')} disabled={exporting}>
                 <Download className="w-4 h-4 mr-1" />
                 CSV
@@ -357,11 +359,11 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                   <thead>
                     <tr className="border-b text-left text-gray-500">
                       <th className="py-2 px-3 font-medium">Acente</th>
-                      <th className="py-2 px-3 font-medium text-center">Durum</th>
+                      <th className="py-2 px-3 font-medium text-center">{t('cm.pages_B2BAnalyticsDashboard.durum')}</th>
                       <th className="py-2 px-3 font-medium text-right">Komisyon %</th>
                       <th className="py-2 px-3 font-medium text-right">Rez.</th>
                       <th className="py-2 px-3 font-medium text-right">Onay</th>
-                      <th className="py-2 px-3 font-medium text-right">Dönüşüm</th>
+                      <th className="py-2 px-3 font-medium text-right">{t('cm.pages_B2BAnalyticsDashboard.donusum_d70ec')}</th>
                       <th className="py-2 px-3 font-medium text-right">Gelir</th>
                       <th className="py-2 px-3 font-medium text-right">Net</th>
                     </tr>
@@ -389,7 +391,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                     )) : (
                       <tr>
                         <td colSpan="8" className="py-8 text-center text-gray-400">
-                          Acente verisi bulunamadı
+                          {t('cm.pages_B2BAnalyticsDashboard.acente_verisi_bulunamadi')}
                         </td>
                       </tr>
                     )}
@@ -403,7 +405,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold text-gray-700">Acente Gelir Dağılımı</CardTitle>
+                  <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.acente_gelir_dagilimi')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={280}>
@@ -429,7 +431,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
 
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold text-gray-700">Acente Rez. Karşılaştırması</CardTitle>
+                  <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.acente_rez_karsilastirmasi')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={280}>
@@ -452,7 +454,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="lg:col-span-2">
               <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm font-semibold text-gray-700">API Kullanım Trendi</CardTitle>
+                <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.api_kullanim_trendi')}</CardTitle>
                 <Button variant="outline" size="sm" onClick={() => handleExport('usage')} disabled={exporting}>
                   <Download className="w-4 h-4 mr-1" />
                   CSV
@@ -491,7 +493,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-[320px] flex items-center justify-center text-gray-400 text-sm">
-                    Veri bulunamadı
+                    {t('cm.pages_B2BAnalyticsDashboard.veri_bulunamadi_c60c4')}
                   </div>
                 )}
               </CardContent>
@@ -499,7 +501,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-gray-700">Olay Tipi Dağılımı</CardTitle>
+                <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.olay_tipi_dagilimi')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {apiUsage.totals.length > 0 ? (
@@ -524,7 +526,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-[320px] flex items-center justify-center text-gray-400 text-sm">
-                    Veri bulunamadı
+                    {t('cm.pages_B2BAnalyticsDashboard.veri_bulunamadi_c60c4')}
                   </div>
                 )}
               </CardContent>
@@ -535,7 +537,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
         <TabsContent value="endpoints" className="space-y-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold text-gray-700">En Çok Kullanılan Endpointler</CardTitle>
+              <CardTitle className="text-sm font-semibold text-gray-700">{t('cm.pages_B2BAnalyticsDashboard.en_cok_kullanilan_endpointler')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
@@ -557,7 +559,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
                   </div>
                 )) : (
                   <div className="py-8 text-center text-gray-400 text-sm">
-                    Veri bulunamadı
+                    {t('cm.pages_B2BAnalyticsDashboard.veri_bulunamadi_c60c4')}
                   </div>
                 )}
               </div>
@@ -577,7 +579,7 @@ export default function B2BAnalyticsDashboard({ user, tenant }) {
         </Button>
         <Button variant="outline" size="sm" onClick={() => handleExport('usage')} disabled={exporting}>
           <Download className="w-4 h-4 mr-1" />
-          Kullanım CSV
+          {t('cm.pages_B2BAnalyticsDashboard.kullanim_csv')}
         </Button>
       </div>
     </div>

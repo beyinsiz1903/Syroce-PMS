@@ -12,6 +12,7 @@ import {
   ShieldCheck, AlertTriangle, CheckCircle2, Cloud, MinusCircle,
   Download, FileText, RefreshCw, Lock, ShieldAlert,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const STATUS_META = {
   met:            { label: 'Karşılandı',  intent: 'success', icon: CheckCircle2,  border: 'border-l-emerald-500' },
@@ -21,6 +22,7 @@ const STATUS_META = {
 };
 
 const ControlStatus = ({ status }) => {
+  const { t } = useTranslation();
   const meta = STATUS_META[status] || STATUS_META.not_applicable;
   const Icon = meta.icon;
   return (
@@ -105,7 +107,7 @@ export default function PCIComplianceDashboard() {
     return (
       <div className="max-w-6xl mx-auto p-8 text-center">
         <ShieldAlert className="w-10 h-10 text-rose-500 mx-auto mb-3" />
-        <div className="text-slate-700 mb-3">Rapor mevcut değil.</div>
+        <div className="text-slate-700 mb-3">{t('cm.pages_PCIComplianceDashboard.rapor_mevcut_degil')}</div>
         <Button variant="outline" onClick={() => load(true)}>
           <RefreshCw className="w-4 h-4 mr-1.5" /> Tekrar Dene
         </Button>
@@ -123,7 +125,7 @@ export default function PCIComplianceDashboard() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => load(true)} disabled={loading}>
-              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Yenile
+              <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> {t('cm.pages_PCIComplianceDashboard.yenile')}
             </Button>
             <Button variant="outline" size="sm" onClick={() => download('csv')} disabled={downloading === 'csv'}>
               <Download className="w-4 h-4 mr-1.5" /> CSV
@@ -146,7 +148,7 @@ export default function PCIComplianceDashboard() {
         />
         <KpiCard
           icon={CheckCircle2}
-          label="Tam Karşılanan"
+          label={t('cm.pages_PCIComplianceDashboard.tam_karsilanan')}
           value={met}
           intent="success"
         />
@@ -158,14 +160,14 @@ export default function PCIComplianceDashboard() {
         />
         <KpiCard
           icon={Cloud}
-          label="Paylaşılan"
+          label={t('cm.pages_PCIComplianceDashboard.paylasilan')}
           value={shared}
           intent="info"
           sub="Cloud / müşteri"
         />
         <KpiCard
           icon={MinusCircle}
-          label="Geçersiz (N/A)"
+          label={t('cm.pages_PCIComplianceDashboard.gecersiz_n_a')}
           value={notApp}
           intent="neutral"
         />
@@ -176,10 +178,7 @@ export default function PCIComplianceDashboard() {
         <CardContent className="p-3 flex gap-3 text-sm">
           <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
           <div className="text-amber-900">
-            <strong>Bilgilendirme:</strong> Bu panel teknik kontrollerin durumunu
-            gösteren bir öz-değerlendirmedir. Resmi PCI-DSS sertifikası için yetkili
-            bir QSA (Qualified Security Assessor) değerlendirmesi gereklidir.
-            Kart verisi işlemediğiniz akışlar için SAQ-A formu yeterli olabilir.
+            <strong>Bilgilendirme:</strong> {t('cm.pages_PCIComplianceDashboard.bu_panel_teknik_kontrollerin_durumunu_go')}
           </div>
         </CardContent>
       </Card>
@@ -194,9 +193,9 @@ export default function PCIComplianceDashboard() {
               checked={anonymize}
               onChange={(e) => setAnonymize(e.target.checked)}
             />
-            <span>JSON beyan paketinde kişisel detayları (e-posta, kullanıcı kimliği) gizle <span className="text-slate-500">(KVKK/GDPR önerilen)</span></span>
+            <span>{t('cm.pages_PCIComplianceDashboard.json_beyan_paketinde_kisisel_detaylari_e')} <span className="text-slate-500">{t('cm.pages_PCIComplianceDashboard.kvkk_gdpr_onerilen')}</span></span>
           </label>
-          <span className="text-xs text-slate-500">JSON paketi imza anahtarı (ATTESTATION_SIGNING_KEY/JWT_SECRET) ayarlıysa HMAC-SHA256 ile imzalanır.</span>
+          <span className="text-xs text-slate-500">{t('cm.pages_PCIComplianceDashboard.json_paketi_imza_anahtari_attestation_si')}</span>
         </CardContent>
       </Card>
 
@@ -229,7 +228,7 @@ export default function PCIComplianceDashboard() {
                 {(c.recommendations?.length ?? 0) > 0 && (
                   <div>
                     <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">
-                      Öneriler
+                      {t('cm.pages_PCIComplianceDashboard.oneriler')}
                     </div>
                     <ul className="list-disc list-inside text-sm text-amber-800 space-y-0.5">
                       {c.recommendations.map((r, i) => <li key={i}>{r}</li>)}

@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, Play, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { API } from '../shared';
+import { useTranslation } from 'react-i18next';
 
 const SandboxValidationTab = () => {
+  const { t } = useTranslation();
   const [connectors, setConnectors] = useState([]);
   const [selectedConnector, setSelectedConnector] = useState('');
   const [report, setReport] = useState(null);
@@ -41,7 +43,7 @@ const SandboxValidationTab = () => {
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <Select value={selectedConnector} onValueChange={setSelectedConnector}>
-          <SelectTrigger data-testid="sandbox-connector-select" className="w-64 bg-slate-800 border-slate-700 text-white"><SelectValue placeholder="Connector seçin..." /></SelectTrigger>
+          <SelectTrigger data-testid="sandbox-connector-select" className="w-64 bg-slate-800 border-slate-700 text-white"><SelectValue placeholder={t('cm.pages_admin_tabs_SandboxValidationTab.connector_secin')} /></SelectTrigger>
           <SelectContent>
             {connectors.map(c => <SelectItem key={c.id} value={c.id}>{c.display_name} ({c.provider})</SelectItem>)}
           </SelectContent>
@@ -117,7 +119,7 @@ const SandboxValidationTab = () => {
       )}
 
       {!loading && !report && (
-        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Sandbox validation calistirmak için connector seçin</CardContent></Card>
+        <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">{t('cm.pages_admin_tabs_SandboxValidationTab.sandbox_validation_calistirmak_icin_conn')}</CardContent></Card>
       )}
     </div>
   );

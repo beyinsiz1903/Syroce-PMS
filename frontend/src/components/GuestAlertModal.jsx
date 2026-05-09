@@ -3,6 +3,7 @@ import api from "@/api/axios";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertTriangle, Crown, Repeat, Cake, Heart, ShieldAlert, Utensils, Bed, MapPin, FileText, Loader2 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const LEVEL_STYLE = {
   danger: "border-red-300 bg-red-50 text-red-800",
@@ -16,6 +17,7 @@ const ICON_BY_TYPE = {
 };
 
 export default function GuestAlertModal({ guestId, open, onClose, onConfirm, confirmLabel = "Devam Et" }) {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -37,20 +39,20 @@ export default function GuestAlertModal({ guestId, open, onClose, onConfirm, con
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {blacklisted ? <ShieldAlert className="w-5 h-5 text-red-600" /> : <Crown className="w-5 h-5 text-yellow-600" />}
-            Misafir Bilgileri
+            {t('cm.components_GuestAlertModal.misafir_bilgileri')}
           </DialogTitle>
         </DialogHeader>
 
         {loading && (
           <div className="flex items-center justify-center py-8 text-gray-500">
-            <Loader2 className="w-5 h-5 animate-spin mr-2" /> Yükleniyor...
+            <Loader2 className="w-5 h-5 animate-spin mr-2" /> {t('cm.components_GuestAlertModal.yukleniyor')}
           </div>
         )}
 
         {!loading && data && (
           <div className="space-y-2 max-h-[60vh] overflow-y-auto">
             {data.alerts?.length === 0 && (
-              <p className="text-sm text-gray-500">Bu misafir için özel bir uyarı yok.</p>
+              <p className="text-sm text-gray-500">{t('cm.components_GuestAlertModal.bu_misafir_icin_ozel_bir_uyari_yok')}</p>
             )}
             {data.alerts?.map((a, i) => {
               const Icon = ICON_BY_TYPE[a.type] || AlertTriangle;
@@ -79,7 +81,7 @@ export default function GuestAlertModal({ guestId, open, onClose, onConfirm, con
 
             {(data.total_stays || data.last_visit_date) && (
               <div className="mt-3 border-t pt-3 text-sm text-gray-600 flex items-center gap-4">
-                {data.total_stays > 0 && <span><Repeat className="inline w-3.5 h-3.5 mr-1" /> Toplam ziyaret: <b>{data.total_stays}</b></span>}
+                {data.total_stays > 0 && <span><Repeat className="inline w-3.5 h-3.5 mr-1" /> {t('cm.components_GuestAlertModal.toplam_ziyaret')} <b>{data.total_stays}</b></span>}
                 {data.last_visit_date && <span><Heart className="inline w-3.5 h-3.5 mr-1" /> Son ziyaret: <b>{data.last_visit_date}</b></span>}
               </div>
             )}
@@ -87,7 +89,7 @@ export default function GuestAlertModal({ guestId, open, onClose, onConfirm, con
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} data-testid="guest-alert-cancel">Vazgeç</Button>
+          <Button variant="outline" onClick={onClose} data-testid="guest-alert-cancel">{t('cm.components_GuestAlertModal.vazgec')}</Button>
           {onConfirm && (
             <Button
               onClick={() => { onConfirm(); }}

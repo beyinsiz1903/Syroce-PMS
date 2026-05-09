@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw, CheckCircle, AlertTriangle, XCircle, Shield } from 'lucide-react';
 import { API } from '../shared';
+import { useTranslation } from 'react-i18next';
 
 const ReadinessTab = () => {
+  const { t } = useTranslation();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [runLoading, setRunLoading] = useState(null);
@@ -38,7 +40,7 @@ const ReadinessTab = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-slate-300">Production Readiness Report</h3>
-        <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchOverview}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Yenile</Button>
+        <Button size="sm" variant="outline" className="border-slate-700 text-slate-300" onClick={fetchOverview}><RefreshCw className="w-3.5 h-3.5 mr-1" /> {t('cm.pages_admin_tabs_ReadinessTab.yenile')}</Button>
       </div>
       {reports.map(r => (
         <Card key={r.connector_id} data-testid={`readiness-${r.connector_id}`} className="bg-slate-800/50 border-slate-700">
@@ -82,7 +84,7 @@ const ReadinessTab = () => {
           </CardContent>
         </Card>
       ))}
-      {reports.length === 0 && <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">Connector bulunamadı</CardContent></Card>}
+      {reports.length === 0 && <Card className="bg-slate-800/50 border-slate-700"><CardContent className="py-12 text-center text-slate-400">{t('cm.pages_admin_tabs_ReadinessTab.connector_bulunamadi')}</CardContent></Card>}
     </div>
   );
 };

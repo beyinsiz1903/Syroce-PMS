@@ -7,6 +7,7 @@ import {
   Plus, RefreshCw, Loader2, AlertTriangle
 } from "lucide-react";
 import { getUnassignedUrgency } from "./calendarHelpers";
+import { useTranslation } from 'react-i18next';
 
 const CalendarHeader = ({
   dateRange,
@@ -24,6 +25,7 @@ const CalendarHeader = ({
   onShowUnassigned,
   onShowConflicts,
 }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const unassignedList = bookings.filter(b => !b.room_id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
   const unassignedCount = unassignedList.length;
@@ -71,9 +73,9 @@ const CalendarHeader = ({
               onClick={() => onShowUnassigned?.()}
             >
               {hasUrgent && <AlertTriangle className="w-3.5 h-3.5 mr-1" />}
-              {unassignedCount} atanmamış
-              {overdueCount > 0 && <span className="ml-1 text-red-600 font-bold">({overdueCount} gecikmiş!)</span>}
-              {overdueCount === 0 && todayCount > 0 && <span className="ml-1 text-amber-600 font-bold">({todayCount} bugün)</span>}
+              {unassignedCount} {t('cm.pages_calendar_CalendarHeader.atanmamis')}
+              {overdueCount > 0 && <span className="ml-1 text-red-600 font-bold">({overdueCount} {t('cm.pages_calendar_CalendarHeader.gecikmis')}</span>}
+              {overdueCount === 0 && todayCount > 0 && <span className="ml-1 text-amber-600 font-bold">({todayCount} {t('cm.pages_calendar_CalendarHeader.bugun')}</span>}
             </Button>
           )}
           {conflicts.length > 0 && (
@@ -82,10 +84,10 @@ const CalendarHeader = ({
               className="h-7 px-2 py-1 bg-red-500 hover:bg-red-600 animate-pulse text-white text-xs gap-1"
               onClick={() => onShowConflicts?.()}
               data-testid="conflicts-btn"
-              title="Çakışan rezervasyonları görüntüle"
+              title={t('cm.pages_calendar_CalendarHeader.cakisan_rezervasyonlari_goruntule')}
             >
               <AlertTriangle className="w-3.5 h-3.5" />
-              {conflicts.length} Çakışma
+              {conflicts.length} {t('cm.pages_calendar_CalendarHeader.cakisma')}
             </Button>
           )}
         </div>
@@ -110,7 +112,7 @@ const CalendarHeader = ({
             />
           </div>
           <Button variant="outline" size="sm" onClick={() => onGoToDate(new Date())} className="h-8 px-3 text-xs font-medium" data-testid="go-today-shortcut-btn">
-            Bugün
+            {t('cm.pages_calendar_CalendarHeader.bugun_01475')}
           </Button>
           <Button variant="outline" size="sm" onClick={onNavigateNext} className="h-8 w-8 p-0" data-testid="nav-next-btn">
             <ChevronRight className="w-4 h-4" />
@@ -145,7 +147,7 @@ const CalendarHeader = ({
             className="text-xs h-8"
             data-testid="find-room-btn"
           >
-            Genel Bakış
+            {t('cm.pages_calendar_CalendarHeader.genel_bakis')}
           </Button>
           <Button
             onClick={onShowNewBookingDialog}
@@ -153,7 +155,7 @@ const CalendarHeader = ({
             data-testid="add-reservation-btn"
           >
             <Plus className="w-3.5 h-3.5 mr-1" />
-            Rezervasyon ekle
+            {t('cm.pages_calendar_CalendarHeader.rezervasyon_ekle')}
           </Button>
         </div>
       </div>
@@ -169,7 +171,7 @@ const CalendarHeader = ({
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 text-xs text-gray-600">
-            <span>Rezervasyon durumu</span>
+            <span>{t('cm.pages_calendar_CalendarHeader.rezervasyon_durumu')}</span>
             <select className="border rounded px-2 py-1 text-xs" data-testid="status-filter">
               <option>Hepsi</option>
             </select>

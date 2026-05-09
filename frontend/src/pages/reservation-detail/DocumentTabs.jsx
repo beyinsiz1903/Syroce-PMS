@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Plus, Banknote, RefreshCw, Shield, FileText } from 'lucide-react';
 import { API, fmtTL, fmtTs, SummaryCard, EmptyState, FormField, SelectField } from './helpers';
+import { useTranslation } from 'react-i18next';
 
 export function DepositsTab({ deposits, booking, onRefresh }) {
+  const { t } = useTranslation();
   const [showDeposit, setShowDeposit] = useState(false);
   const [showRefund, setShowRefund] = useState(null);
   const [depForm, setDepForm] = useState({ amount: '', method: 'cash', reference: '' });
@@ -39,9 +41,9 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
   return (
     <div data-testid="deposits-tab" className="space-y-4">
       <div className="grid grid-cols-3 gap-3">
-        <SummaryCard label="Toplam Depozito" value={totalDeposits} color="blue" />
+        <SummaryCard label={t('cm.pages_reservationdetail_DocumentTabs.toplam_depozito')} value={totalDeposits} color="blue" />
         <SummaryCard label="Iade Edilen" value={totalRefunded} color="amber" />
-        <SummaryCard label="Aktif" value={totalDeposits - totalRefunded} color="emerald" />
+        <SummaryCard label={t('cm.pages_reservationdetail_DocumentTabs.aktif')} value={totalDeposits - totalRefunded} color="emerald" />
       </div>
 
       <div className="flex items-center justify-between">
@@ -52,14 +54,14 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
       {showDeposit && (
         <div className="border rounded-lg p-4 bg-blue-50/50 space-y-3">
           <div className="grid grid-cols-3 gap-3">
-            <FormField label="Tutar (TL)" type="number" value={depForm.amount} onChange={v => setDepForm(p => ({ ...p, amount: v }))} />
+            <FormField label={t('cm.pages_reservationdetail_DocumentTabs.tutar_tl')} type="number" value={depForm.amount} onChange={v => setDepForm(p => ({ ...p, amount: v }))} />
             <SelectField label="Yontem" value={depForm.method} onChange={v => setDepForm(p => ({ ...p, method: v }))}
               options={[['cash','Nakit'],['card','Kredi Kartı'],['bank_transfer','Havale/EFT']]} />
             <FormField label="Referans" value={depForm.reference} onChange={v => setDepForm(p => ({ ...p, reference: v }))} />
           </div>
           <div className="flex gap-2">
             <Button size="sm" onClick={handleDeposit} disabled={loading} className="bg-blue-600 text-white h-8 text-xs">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Kaydet'}</Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowDeposit(false)} className="h-8 text-xs">İptal</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowDeposit(false)} className="h-8 text-xs">{t('cm.pages_reservationdetail_DocumentTabs.iptal')}</Button>
           </div>
         </div>
       )}
@@ -131,7 +133,7 @@ export function VoucherTab({ booking, bookingId }) {
   return (
     <div data-testid="voucher-tab" className="space-y-4">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-gray-700">Misafir Voucher</span>
+        <span className="text-sm font-semibold text-gray-700">{t('cm.pages_reservationdetail_DocumentTabs.misafir_voucher')}</span>
         <Button size="sm" onClick={generateVoucher} disabled={loading} className="bg-teal-600 hover:bg-teal-700 text-white h-8 text-xs" data-testid="generate-voucher-btn">
           {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <FileText className="w-3 h-3 mr-1" />} Voucher Olustur
         </Button>
@@ -139,7 +141,7 @@ export function VoucherTab({ booking, bookingId }) {
       {voucherHtml && (
         <div className="space-y-3">
           <div className="flex gap-2">
-            <Button size="sm" onClick={printVoucher} className="h-8 text-xs" data-testid="print-voucher-btn">Yazdir / PDF</Button>
+            <Button size="sm" onClick={printVoucher} className="h-8 text-xs" data-testid="print-voucher-btn">{t('cm.pages_reservationdetail_DocumentTabs.yazdir_pdf')}</Button>
           </div>
           <div className="border rounded-lg overflow-hidden">
             <iframe srcDoc={voucherHtml} className="w-full h-[500px] border-0" title="Voucher" />
@@ -149,7 +151,7 @@ export function VoucherTab({ booking, bookingId }) {
       {!voucherHtml && !loading && (
         <div className="text-center py-12 text-gray-400">
           <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p className="text-sm">Voucher oluşturmak için yukaridaki butona tiklayin</p>
+          <p className="text-sm">{t('cm.pages_reservationdetail_DocumentTabs.voucher_olusturmak_icin_yukaridaki_buton')}</p>
         </div>
       )}
     </div>
@@ -234,10 +236,10 @@ export function InvoiceTab({ booking, bookingId }) {
 
           <div className="text-sm font-semibold text-gray-700 flex items-center justify-between">
             <span>Faturaya Eklenecek Kalemler</span>
-            <span className="text-xs text-gray-500">{selectedIds.size}/{charges.length} secili | Toplam: {fmtTL(selectedTotal)} TL</span>
+            <span className="text-xs text-gray-500">{selectedIds.size}/{charges.length} {t('cm.pages_reservationdetail_DocumentTabs.secili_toplam')} {fmtTL(selectedTotal)} TL</span>
           </div>
           {loadingCharges ? (
-            <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Yükleniyor...</div>
+            <div className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> {t('cm.pages_reservationdetail_DocumentTabs.yukleniyor')}</div>
           ) : (
             <div className="space-y-1 border rounded-lg overflow-hidden">
               {charges.map(c => (
@@ -262,8 +264,8 @@ export function InvoiceTab({ booking, bookingId }) {
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-gray-700">Fatura Onizleme</span>
             <div className="flex gap-2">
-              <Button size="sm" onClick={printInvoice} className="h-8 text-xs" data-testid="print-invoice-btn">Yazdir / PDF</Button>
-              <Button size="sm" variant="outline" onClick={() => setInvoiceHtml('')} className="h-8 text-xs">Yeni Fatura</Button>
+              <Button size="sm" onClick={printInvoice} className="h-8 text-xs" data-testid="print-invoice-btn">{t('cm.pages_reservationdetail_DocumentTabs.yazdir_pdf_871eb')}</Button>
+              <Button size="sm" variant="outline" onClick={() => setInvoiceHtml('')} className="h-8 text-xs">{t('cm.pages_reservationdetail_DocumentTabs.yeni_fatura')}</Button>
             </div>
           </div>
           <div className="border rounded-lg overflow-hidden">

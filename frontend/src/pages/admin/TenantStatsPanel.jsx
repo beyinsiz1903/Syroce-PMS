@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { BarChart3, BedDouble, Users, CalendarCheck, UserCheck } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const TenantStatsPanel = ({ tenantId }) => {
+  const { t } = useTranslation();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -15,7 +17,7 @@ const TenantStatsPanel = ({ tenantId }) => {
       .finally(() => setLoading(false));
   }, [tenantId]);
 
-  if (loading) return <div className="text-xs text-slate-400 py-2">İstatistikler yükleniyor...</div>;
+  if (loading) return <div className="text-xs text-slate-400 py-2">{t('cm.pages_admin_TenantStatsPanel.istatistikler_yukleniyor')}</div>;
   if (!stats) return null;
 
   const items = [

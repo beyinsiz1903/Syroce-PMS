@@ -28,8 +28,10 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
+import { useTranslation } from 'react-i18next';
 
 function StatCard({ label, value, sub, icon: Icon, color, testId }) {
+  const { t } = useTranslation();
   const colorMap = {
     emerald: "border-emerald-500/30 text-emerald-400",
     red: "border-red-500/30 text-red-400",
@@ -62,7 +64,7 @@ function DeployTrendChart({ trend }) {
     return (
       <div className="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-xs font-mono shadow-lg">
         <div className="text-zinc-300 mb-1">{label}</div>
-        <div className="text-emerald-400">Basarili: {d?.success || 0}</div>
+        <div className="text-emerald-400">{t('cm.components_DeployDashboard.basarili')} {d?.success || 0}</div>
         <div className="text-red-400">Basarisiz: {d?.failure || 0}</div>
         {d?.rollbacks > 0 && <div className="text-amber-400">Rollback: {d.rollbacks}</div>}
       </div>
@@ -115,7 +117,7 @@ function DeployTrendChart({ trend }) {
       <div className="flex items-center gap-4 mt-2 justify-center">
         <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
           <div className="w-2.5 h-2.5 rounded-sm bg-emerald-400/70" />
-          Basarili
+          {t('cm.components_DeployDashboard.basarili_44280')}
         </div>
         <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
           <div className="w-2.5 h-2.5 rounded-sm bg-red-400/70" />
@@ -257,7 +259,7 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
               <div className="bg-zinc-900 border border-zinc-800 rounded overflow-hidden">
                 <div className="px-3 py-1.5 border-b border-zinc-800 text-[10px] text-zinc-500 uppercase tracking-wider font-medium flex items-center gap-1.5">
                   <Activity className="h-3 w-3" />
-                  Smoke Test Sonuçlari
+                  {t('cm.components_DeployDashboard.smoke_test_sonuclari')}
                 </div>
                 <table className="w-full text-xs font-mono">
                   <thead>
@@ -265,7 +267,7 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
                       <th className="text-left px-3 py-1.5">Endpoint</th>
                       <th className="text-left px-3 py-1.5">Status</th>
                       <th className="text-left px-3 py-1.5">Latency</th>
-                      <th className="text-left px-3 py-1.5">Sonuç</th>
+                      <th className="text-left px-3 py-1.5">{t('cm.components_DeployDashboard.sonuc')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -360,7 +362,7 @@ export function DeployDashboard() {
       {/* Stats Strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
-          label="Toplam Deploy"
+          label={t('cm.components_DeployDashboard.toplam_deploy')}
           value={overall.total_deploys || 0}
           sub={envStats.map((e) => `${e.environment}: ${e.total}`).join(" | ") || "Henüz veri yok"}
           icon={Rocket}
@@ -450,7 +452,7 @@ export function DeployDashboard() {
                   </div>
                   <div>
                     <div className="text-lg font-bold font-mono text-red-400">{env.failure}</div>
-                    <div className="text-[10px] text-zinc-600">başarısız</div>
+                    <div className="text-[10px] text-zinc-600">{t('cm.components_DeployDashboard.basarisiz')}</div>
                   </div>
                   <div>
                     <div className="text-lg font-bold font-mono text-amber-400">
@@ -471,7 +473,7 @@ export function DeployDashboard() {
           <div className="flex items-center gap-2">
             <GitBranch className="h-3.5 w-3.5 text-zinc-500" />
             <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-              Deploy Geçmişi
+              {t('cm.components_DeployDashboard.deploy_gecmisi')}
             </span>
             <span className="text-[10px] text-zinc-600">
               (son {history.length})
@@ -491,7 +493,7 @@ export function DeployDashboard() {
         {history.length === 0 ? (
           <div className="text-center py-12 text-zinc-500" data-testid="deploy-empty-state">
             <Rocket className="h-10 w-10 mx-auto mb-3 opacity-20" />
-            <p className="text-sm">Henüz deploy kaydi yok</p>
+            <p className="text-sm">{t('cm.components_DeployDashboard.henuz_deploy_kaydi_yok')}</p>
             <p className="text-xs mt-1 text-zinc-600">
               CI/CD pipeline deploy sonuclarini buraya raporlar
             </p>

@@ -5,6 +5,7 @@ import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Layers, Plus, RefreshCw, User, Building2, Crown, Briefcase } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const PAYOR_OPTIONS = [
   { value: "guest", label: "Misafir", Icon: User },
@@ -18,6 +19,7 @@ function payorMeta(type) {
 }
 
 export default function FolioWindowsPanel({ bookingId, currentFolioId }) {
+  const { t } = useTranslation();
   const [windows, setWindows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -90,7 +92,7 @@ export default function FolioWindowsPanel({ bookingId, currentFolioId }) {
               className="bg-blue-600 hover:bg-blue-700 text-white"
               data-testid="window-add-btn"
             >
-              <Plus className="w-3.5 h-3.5 mr-1" /> Window Ekle
+              <Plus className="w-3.5 h-3.5 mr-1" /> {t('cm.components_folio_FolioWindowsPanel.window_ekle')}
             </Button>
           </div>
         </div>
@@ -111,7 +113,7 @@ export default function FolioWindowsPanel({ bookingId, currentFolioId }) {
             <Button size="sm" onClick={openWindow} disabled={adding} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               {adding ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : "Aç"}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)}>İptal</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowAdd(false)}>{t('cm.components_folio_FolioWindowsPanel.iptal')}</Button>
           </div>
         )}
 
@@ -120,7 +122,7 @@ export default function FolioWindowsPanel({ bookingId, currentFolioId }) {
         )}
 
         {windows.length === 0 && !loading && (
-          <p className="text-sm text-gray-500 py-6 text-center">Henüz window yok.</p>
+          <p className="text-sm text-gray-500 py-6 text-center">{t('cm.components_folio_FolioWindowsPanel.henuz_window_yok')}</p>
         )}
 
         <div className="grid gap-2">
@@ -150,13 +152,13 @@ export default function FolioWindowsPanel({ bookingId, currentFolioId }) {
                       {isCurrent && <Badge className="bg-blue-100 text-blue-700 text-xs">aktif</Badge>}
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5">
-                      {w.charges_count} masraf · {w.payments_count} ödeme
+                      {w.charges_count} masraf · {w.payments_count} {t('cm.components_folio_FolioWindowsPanel.odeme')}
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="text-right">
-                    <p className="text-xs text-gray-500">Bakiye</p>
+                    <p className="text-xs text-gray-500">{t('cm.components_folio_FolioWindowsPanel.bakiye')}</p>
                     <p className={`text-sm font-bold ${w.balance > 0 ? "text-red-600" : "text-emerald-600"}`}>
                       {(w.balance || 0).toFixed(2)}
                     </p>
@@ -166,7 +168,7 @@ export default function FolioWindowsPanel({ bookingId, currentFolioId }) {
                       className="border rounded-md px-2 py-1 text-xs"
                       value={w.payor_type || ""}
                       onChange={(e) => changePayor(w.folio_id, e.target.value)}
-                      title="Payor değiştir"
+                      title={t('cm.components_folio_FolioWindowsPanel.payor_degistir')}
                       data-testid={`window-payor-${w.window_number || 0}`}
                     >
                       <option value="" disabled>Payor</option>

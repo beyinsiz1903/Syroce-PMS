@@ -23,6 +23,7 @@ import {
   AlertCircle, CheckCheck, MoreVertical, Trash2, Pencil, X, Send,
 } from 'lucide-react';
 import { ROLE_LABELS, RECALL_WINDOW_MS, EDIT_WINDOW_MS } from './constants';
+import { useTranslation } from 'react-i18next';
 
 const ThreadView = ({
   selectedConvUserId,
@@ -56,19 +57,19 @@ const ThreadView = ({
   urgentConfirmOpen, setUrgentConfirmOpen,
   handleConfirmUrgentSend,
 }) => {
+  const { t } = useTranslation();
   if (!selectedConvUserId) {
     return (
       <div className="flex flex-col h-full items-center justify-center border rounded-md bg-background text-muted-foreground p-6 text-center">
         <MessagesSquare className="h-14 w-14 mb-3 opacity-30" />
-        <p className="text-sm font-medium">Bir konuşma seçin</p>
+        <p className="text-sm font-medium">{t('cm.components_pms_internalChat_ThreadView.bir_konusma_secin')}</p>
         <p className="text-xs mt-1 max-w-xs">
-          Soldaki listeden bir personele tıklayarak mesaj geçmişinizi görüntüleyin
-          ve hızlı yanıt gönderin.
+          {t('cm.components_pms_internalChat_ThreadView.soldaki_listeden_bir_personele_tiklayara')}
         </p>
         {!usersAccessDenied && users.length > 0 && (
           <div className="mt-4 w-full max-w-xs text-left">
             <p className="text-xs text-muted-foreground mb-1.5">
-              veya yeni bir konuşma başlatın:
+              {t('cm.components_pms_internalChat_ThreadView.veya_yeni_bir_konusma_baslatin')}
             </p>
             <Select
               value=""
@@ -78,7 +79,7 @@ const ThreadView = ({
               }}
             >
               <SelectTrigger data-testid="select-start-conversation">
-                <SelectValue placeholder="Personel seç…" />
+                <SelectValue placeholder={t('cm.components_pms_internalChat_ThreadView.personel_sec')} />
               </SelectTrigger>
               <SelectContent>
                 {users.slice(0, 100).map((u) => (
@@ -126,7 +127,7 @@ const ThreadView = ({
                 className="text-primary font-medium"
                 data-testid="text-thread-typing-indicator"
               >
-                yazıyor…
+                {t('cm.components_pms_internalChat_ThreadView.yaziyor')}
               </span>
             ) : (
               'Birebir mesaj · Otomatik yenileme: 15 sn'
@@ -140,7 +141,7 @@ const ThreadView = ({
           onClick={() => loadThread(selectedConvUserId, { markRead: true })}
           disabled={loadingThread}
           data-testid="button-refresh-thread"
-          title="Yenile"
+          title={t('cm.components_pms_internalChat_ThreadView.yenile')}
         >
           <RefreshCw className={`h-4 w-4 ${loadingThread ? 'animate-spin' : ''}`} />
         </Button>
@@ -154,13 +155,13 @@ const ThreadView = ({
       >
         {loadingThread && threadMessages.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
-            Yükleniyor…
+            {t('cm.components_pms_internalChat_ThreadView.yukleniyor')}
           </div>
         ) : threadMessages.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             <MessageSquare className="h-10 w-10 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">Henüz mesaj yok.</p>
-            <p className="text-xs mt-1">İlk mesajı aşağıdan gönderin.</p>
+            <p className="text-sm">{t('cm.components_pms_internalChat_ThreadView.henuz_mesaj_yok')}</p>
+            <p className="text-xs mt-1">{t('cm.components_pms_internalChat_ThreadView.ilk_mesaji_asagidan_gonderin')}</p>
           </div>
         ) : (
           threadMessages.map((m) => {
@@ -193,8 +194,8 @@ const ThreadView = ({
                           size="sm"
                           className="h-6 w-6 p-0"
                           data-testid={`button-message-menu-${m.id}`}
-                          title="Mesaj seçenekleri"
-                          aria-label="Mesaj seçenekleri"
+                          title={t('cm.components_pms_internalChat_ThreadView.mesaj_secenekleri')}
+                          aria-label={t('cm.components_pms_internalChat_ThreadView.mesaj_secenekleri_0a444')}
                         >
                           <MoreVertical className="h-3.5 w-3.5" />
                         </Button>
@@ -208,7 +209,7 @@ const ThreadView = ({
                           data-testid={`button-edit-message-${m.id}`}
                         >
                           <Pencil className="h-3.5 w-3.5 mr-2" />
-                          Düzenle
+                          {t('cm.components_pms_internalChat_ThreadView.duzenle')}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onSelect={(e) => {
@@ -248,7 +249,7 @@ const ThreadView = ({
                       className="text-sm break-words"
                       data-testid={`text-message-recalled-${m.id}`}
                     >
-                      Bu mesaj kaldırıldı
+                      {t('cm.components_pms_internalChat_ThreadView.bu_mesaj_kaldirildi')}
                     </p>
                   ) : isEditing ? (
                     <div
@@ -286,7 +287,7 @@ const ThreadView = ({
                           disabled={savingEdit}
                           data-testid={`button-cancel-edit-${m.id}`}
                         >
-                          <X className="h-3 w-3 mr-1" /> Vazgeç
+                          <X className="h-3 w-3 mr-1" /> {t('cm.components_pms_internalChat_ThreadView.vazgec')}
                         </Button>
                         <Button
                           type="button"
@@ -336,10 +337,10 @@ const ThreadView = ({
                             type="button"
                             className="italic underline decoration-dotted underline-offset-2 hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring rounded-sm"
                             data-testid={`text-thread-edited-${m.id}`}
-                            aria-label="Düzenleme geçmişini göster"
+                            aria-label={t('cm.components_pms_internalChat_ThreadView.duzenleme_gecmisini_goster')}
                             title={m.edited_at ? `Son düzenleme: ${m.edited_at}` : 'Düzenleme geçmişini göster'}
                           >
-                            (düzenlendi)
+                            {t('cm.components_pms_internalChat_ThreadView.duzenlendi')}
                           </button>
                         </PopoverTrigger>
                         <PopoverContent
@@ -348,7 +349,7 @@ const ThreadView = ({
                           data-testid={`popover-thread-edit-history-${m.id}`}
                         >
                           <div className="px-3 py-2 border-b text-xs font-medium">
-                            Düzenleme geçmişi
+                            {t('cm.components_pms_internalChat_ThreadView.duzenleme_gecmisi')}
                           </div>
                           <div className="max-h-72 overflow-y-auto p-3 space-y-2 text-xs">
                             {(() => {
@@ -356,7 +357,7 @@ const ThreadView = ({
                               if (!entry || entry.loading) {
                                 return (
                                   <div className="text-muted-foreground italic">
-                                    Yükleniyor…
+                                    {t('cm.components_pms_internalChat_ThreadView.yukleniyor_b597b')}
                                   </div>
                                 );
                               }
@@ -371,7 +372,7 @@ const ThreadView = ({
                               if (versions.length === 0) {
                                 return (
                                   <div className="text-muted-foreground italic">
-                                    Önceki sürüm bulunamadı.
+                                    {t('cm.components_pms_internalChat_ThreadView.onceki_surum_bulunamadi')}
                                   </div>
                                 );
                               }
@@ -397,7 +398,7 @@ const ThreadView = ({
                                     data-testid={`row-thread-edit-current-${m.id}`}
                                   >
                                     <div className="text-muted-foreground text-[10px]">
-                                      Şu anki sürüm
+                                      {t('cm.components_pms_internalChat_ThreadView.su_anki_surum')}
                                       {m.edited_at ? ` · ${m.edited_at}` : ''}
                                     </div>
                                     <div className="whitespace-pre-wrap break-words">
@@ -431,9 +432,9 @@ const ThreadView = ({
         <div
           className="flex items-center gap-1.5 flex-wrap"
           role="radiogroup"
-          aria-label="Mesaj önceliği"
+          aria-label={t('cm.components_pms_internalChat_ThreadView.mesaj_onceligi')}
         >
-          <span className="text-xs text-muted-foreground mr-1">Öncelik:</span>
+          <span className="text-xs text-muted-foreground mr-1">{t('cm.components_pms_internalChat_ThreadView.oncelik')}</span>
           <Button
             type="button"
             size="sm"
@@ -456,7 +457,7 @@ const ThreadView = ({
             aria-checked={threadPriority === 'high'}
             data-testid="button-thread-priority-high"
           >
-            Yüksek
+            {t('cm.components_pms_internalChat_ThreadView.yuksek')}
           </Button>
           {canSendUrgent && (
             <Button
@@ -472,7 +473,7 @@ const ThreadView = ({
               role="radio"
               aria-checked={threadPriority === 'urgent'}
               data-testid="button-thread-priority-urgent"
-              title="Acil — alıcıya alarm oluşturur"
+              title={t('cm.components_pms_internalChat_ThreadView.acil_aliciya_alarm_olusturur')}
             >
               <AlertCircle className="h-3 w-3 mr-1" />
               Acil
@@ -483,14 +484,14 @@ const ThreadView = ({
               className="text-[11px] text-destructive font-medium"
               data-testid="text-thread-priority-urgent-hint"
             >
-              Alarm oluşturulacak
+              {t('cm.components_pms_internalChat_ThreadView.alarm_olusturulacak')}
             </span>
           )}
           {!canSendUrgent && (
             <span
               className="text-[11px] text-muted-foreground"
               data-testid="text-thread-urgent-permission-hint"
-              title="Acil mesaj yalnızca yönetici/süpervizör rollerine açıktır"
+              title={t('cm.components_pms_internalChat_ThreadView.acil_mesaj_yalnizca_yonetici_supervizor_')}
             >
               Acil yetkisiz
             </span>
@@ -506,7 +507,7 @@ const ThreadView = ({
                 emitTyping();
               }
             }}
-            placeholder="Mesajınızı yazın… (Enter göndermek için, Shift+Enter yeni satır)"
+            placeholder={t('cm.components_pms_internalChat_ThreadView.mesajinizi_yazin_enter_gondermek_icin_sh')}
             rows={1}
             maxLength={2000}
             className={`resize-none min-h-[40px] max-h-32 ${
@@ -556,16 +557,15 @@ const ThreadView = ({
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertCircle className="h-5 w-5 text-destructive" />
-              Acil mesaj göndermek istediğinize emin misiniz?
+              {t('cm.components_pms_internalChat_ThreadView.acil_mesaj_gondermek_istediginize_emin_m')}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Acil mesaj alıcıda alarm oluşturur. Onaylamak için Enter'a,
-              vazgeçmek için Esc'e basabilirsiniz.
+              {t('cm.components_pms_internalChat_ThreadView.acil_mesaj_alicida_alarm_olusturur_onayl')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-urgent-cancel">
-              Vazgeç
+              {t('cm.components_pms_internalChat_ThreadView.vazgec_bf814')}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleConfirmUrgentSend}
@@ -574,7 +574,7 @@ const ThreadView = ({
               data-testid="button-urgent-confirm"
             >
               <AlertCircle className="h-4 w-4 mr-1" />
-              Acil Gönder
+              {t('cm.components_pms_internalChat_ThreadView.acil_gonder')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

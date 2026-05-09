@@ -13,6 +13,7 @@ import {
   ResponsiveContainer, BarChart, Bar, ComposedChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, AreaChart, Area
 } from 'recharts';
+import { useTranslation } from 'react-i18next';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
@@ -22,6 +23,7 @@ const fmtCurrency = (n) => {
 };
 
 const ReportsTab = () => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [subTab, setSubTab] = useState('overview');
 
@@ -162,7 +164,7 @@ const ReportsTab = () => {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold">Raporlar & Analiz</h2>
         <Button variant="outline" size="sm" onClick={() => loadAll(true)} disabled={loading}>
-          <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> Yenile
+          <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} /> {t('cm.components_pms_ReportsTab.yenile')}
         </Button>
       </div>
 
@@ -182,7 +184,7 @@ const ReportsTab = () => {
               <DollarSign className="w-4 h-4" /> ADR
             </div>
             <p className="text-2xl font-bold">{revenue ? fmtCurrency(adr) : '...'}</p>
-            <p className="text-xs text-gray-400">Ortalama Günlük Oda Fiyati</p>
+            <p className="text-xs text-gray-400">{t('cm.components_pms_ReportsTab.ortalama_gunluk_oda_fiyati')}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-violet-500">
@@ -191,13 +193,13 @@ const ReportsTab = () => {
               <TrendingUp className="w-4 h-4" /> RevPAR
             </div>
             <p className="text-2xl font-bold">{revenue ? fmtCurrency(revpar) : '...'}</p>
-            <p className="text-xs text-gray-400">Oda Basina Gelir</p>
+            <p className="text-xs text-gray-400">{t('cm.components_pms_ReportsTab.oda_basina_gelir')}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-amber-500">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
-              <BarChart3 className="w-4 h-4" /> Toplam Gelir
+              <BarChart3 className="w-4 h-4" /> {t('cm.components_pms_ReportsTab.toplam_gelir')}
             </div>
             <p className="text-2xl font-bold">{revenue ? fmtCurrency(totalRevenue) : '...'}</p>
             <p className="text-xs text-gray-400">Bu ay — {revenue?.bookings_count ?? 0} rezervasyon</p>
@@ -207,7 +209,7 @@ const ReportsTab = () => {
 
       <Tabs value={subTab} onValueChange={setSubTab}>
         <TabsList>
-          <TabsTrigger value="overview">Günlük Özet</TabsTrigger>
+          <TabsTrigger value="overview">{t('cm.components_pms_ReportsTab.gunluk_ozet')}</TabsTrigger>
           <TabsTrigger value="forecast">Tahmin ({forecast.length + forecast30.length > 0 ? '7/30 Gun' : '-'})</TabsTrigger>
           <TabsTrigger value="market">Pazar Segmenti</TabsTrigger>
           <TabsTrigger value="housekeeping">Kat Hizmetleri</TabsTrigger>
@@ -220,14 +222,14 @@ const ReportsTab = () => {
                 <CardContent className="pt-4 pb-3 text-center">
                   <LogIn className="w-6 h-6 mx-auto mb-1 text-blue-500" />
                   <p className="text-2xl font-bold text-blue-600">{movements.arrivals ?? 0}</p>
-                  <p className="text-xs text-gray-500">Giriş</p>
+                  <p className="text-xs text-gray-500">{t('cm.components_pms_ReportsTab.giris')}</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="pt-4 pb-3 text-center">
                   <LogOut className="w-6 h-6 mx-auto mb-1 text-green-500" />
                   <p className="text-2xl font-bold text-green-600">{movements.departures ?? 0}</p>
-                  <p className="text-xs text-gray-500">Çıkış</p>
+                  <p className="text-xs text-gray-500">{t('cm.components_pms_ReportsTab.cikis')}</p>
                 </CardContent>
               </Card>
               <Card>
@@ -241,12 +243,12 @@ const ReportsTab = () => {
                 <CardContent className="pt-4 pb-3 text-center">
                   <Hotel className="w-6 h-6 mx-auto mb-1 text-amber-500" />
                   <p className="text-2xl font-bold text-amber-600">%{flashOcc.occupancy_rate?.toFixed(1) ?? '0'}</p>
-                  <p className="text-xs text-gray-500">{flashOcc.occupied_rooms ?? 0}/{flashOcc.total_rooms ?? totalRooms} Oda</p>
+                  <p className="text-xs text-gray-500">{flashOcc.occupied_rooms ?? 0}/{flashOcc.total_rooms ?? totalRooms} {t('cm.components_pms_ReportsTab.oda')}</p>
                 </CardContent>
               </Card>
             </div>
           ) : (
-            <Card><CardContent className="py-8 text-center text-gray-400">Günlük özet yüklenemedi</CardContent></Card>
+            <Card><CardContent className="py-8 text-center text-gray-400">{t('cm.components_pms_ReportsTab.gunluk_ozet_yuklenemedi')}</CardContent></Card>
           )}
 
           {dailyFlash?.revenue && (
@@ -258,7 +260,7 @@ const ReportsTab = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="border rounded-lg p-3 text-center">
                     <p className="text-lg font-bold">{fmtCurrency(flashRev.room_revenue)}</p>
-                    <p className="text-xs text-gray-500">Oda Geliri</p>
+                    <p className="text-xs text-gray-500">{t('cm.components_pms_ReportsTab.oda_geliri')}</p>
                   </div>
                   <div className="border rounded-lg p-3 text-center">
                     <p className="text-lg font-bold">{fmtCurrency(flashRev.fb_revenue)}</p>
@@ -270,7 +272,7 @@ const ReportsTab = () => {
                   </div>
                   <div className="border rounded-lg p-3 text-center bg-gray-50">
                     <p className="text-lg font-bold">{fmtCurrency(flashRev.total_revenue)}</p>
-                    <p className="text-xs text-gray-500">Toplam</p>
+                    <p className="text-xs text-gray-500">{t('cm.components_pms_ReportsTab.toplam')}</p>
                   </div>
                 </div>
               </CardContent>
@@ -280,18 +282,18 @@ const ReportsTab = () => {
           {dailySummary && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Günlük Rapor Ozeti</CardTitle>
+                <CardTitle className="text-base">{t('cm.components_pms_ReportsTab.gunluk_rapor_ozeti')}</CardTitle>
                 <CardDescription>{dailySummary.date}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-3 md:grid-cols-5 gap-4 text-center">
                   <div>
                     <p className="text-lg font-bold">{dailySummary.arrivals}</p>
-                    <p className="text-xs text-gray-500">Giriş</p>
+                    <p className="text-xs text-gray-500">{t('cm.components_pms_ReportsTab.giris_1ffbd')}</p>
                   </div>
                   <div>
                     <p className="text-lg font-bold">{dailySummary.departures}</p>
-                    <p className="text-xs text-gray-500">Çıkış</p>
+                    <p className="text-xs text-gray-500">{t('cm.components_pms_ReportsTab.cikis_b9015')}</p>
                   </div>
                   <div>
                     <p className="text-lg font-bold">{dailySummary.inhouse}</p>
@@ -303,7 +305,7 @@ const ReportsTab = () => {
                   </div>
                   <div>
                     <p className="text-lg font-bold">{fmtCurrency(dailySummary.daily_revenue)}</p>
-                    <p className="text-xs text-gray-500">Günlük Gelir</p>
+                    <p className="text-xs text-gray-500">{t('cm.components_pms_ReportsTab.gunluk_gelir')}</p>
                   </div>
                 </div>
               </CardContent>
@@ -313,8 +315,8 @@ const ReportsTab = () => {
           {revenueBreakdownData.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Gelir Dağılımı</CardTitle>
-                <CardDescription>Gelir kaynağına göre dağılım</CardDescription>
+                <CardTitle className="text-base">{t('cm.components_pms_ReportsTab.gelir_dagilimi')}</CardTitle>
+                <CardDescription>{t('cm.components_pms_ReportsTab.gelir_kaynagina_gore_dagilim')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={340}>
@@ -364,8 +366,8 @@ const ReportsTab = () => {
           {forecast.length > 0 ? (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">7 Günlük Doluluk Tahmini</CardTitle>
-                <CardDescription>Onumuzdeki 7 gun için beklenen doluluk ve rezervasyon sayısı</CardDescription>
+                <CardTitle className="text-base">{t('cm.components_pms_ReportsTab.7_gunluk_doluluk_tahmini')}</CardTitle>
+                <CardDescription>{t('cm.components_pms_ReportsTab.onumuzdeki_7_gun_icin_beklenen_doluluk_v')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
@@ -383,14 +385,14 @@ const ReportsTab = () => {
               </CardContent>
             </Card>
           ) : (
-            <Card><CardContent className="py-8 text-center text-gray-400">Tahmin verisi bulunamadı</CardContent></Card>
+            <Card><CardContent className="py-8 text-center text-gray-400">{t('cm.components_pms_ReportsTab.tahmin_verisi_bulunamadi')}</CardContent></Card>
           )}
 
           {forecast30.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">30 Günlük Doluluk Trendi</CardTitle>
-                <CardDescription>Onumuzdeki 30 gun için doluluk tahmini</CardDescription>
+                <CardTitle className="text-base">{t('cm.components_pms_ReportsTab.30_gunluk_doluluk_trendi')}</CardTitle>
+                <CardDescription>{t('cm.components_pms_ReportsTab.onumuzdeki_30_gun_icin_doluluk_tahmini')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={250}>
@@ -413,7 +415,7 @@ const ReportsTab = () => {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">Pazar Segmenti Dagilimi</CardTitle>
-                  <CardDescription>Rezervasyon kaynaklarina göre dağılım — {marketSegment?.total_bookings ?? 0} toplam rezervasyon</CardDescription>
+                  <CardDescription>{t('cm.components_pms_ReportsTab.rezervasyon_kaynaklarina_gore_dagilim')} {marketSegment?.total_bookings ?? 0} toplam rezervasyon</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
@@ -421,7 +423,7 @@ const ReportsTab = () => {
                       <thead>
                         <tr className="border-b">
                           <th className="text-left py-2 px-3">Segment</th>
-                          <th className="text-right py-2 px-3">Rezervasyon</th>
+                          <th className="text-right py-2 px-3">{t('cm.components_pms_ReportsTab.rezervasyon')}</th>
                           <th className="text-right py-2 px-3">Gece</th>
                           <th className="text-right py-2 px-3">Gelir</th>
                           <th className="text-right py-2 px-3">ADR</th>
@@ -472,7 +474,7 @@ const ReportsTab = () => {
                         <thead>
                           <tr className="border-b">
                             <th className="text-left py-2 px-3">Fiyat Tipi</th>
-                            <th className="text-right py-2 px-3">Rezervasyon</th>
+                            <th className="text-right py-2 px-3">{t('cm.components_pms_ReportsTab.rezervasyon_e95e9')}</th>
                             <th className="text-right py-2 px-3">Gece</th>
                             <th className="text-right py-2 px-3">Gelir</th>
                             <th className="text-right py-2 px-3">ADR</th>
@@ -496,7 +498,7 @@ const ReportsTab = () => {
               )}
             </>
           ) : (
-            <Card><CardContent className="py-8 text-center text-gray-400">Pazar segmenti verisi bulunamadı</CardContent></Card>
+            <Card><CardContent className="py-8 text-center text-gray-400">{t('cm.components_pms_ReportsTab.pazar_segmenti_verisi_bulunamadi')}</CardContent></Card>
           )}
         </TabsContent>
 
@@ -506,21 +508,21 @@ const ReportsTab = () => {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <Card className="border-l-4 border-l-blue-500">
                   <CardContent className="pt-4 pb-3">
-                    <p className="text-sm text-gray-500">Tamamlanan Görev</p>
+                    <p className="text-sm text-gray-500">{t('cm.components_pms_ReportsTab.tamamlanan_gorev')}</p>
                     <p className="text-2xl font-bold">{hkEfficiency.total_tasks_completed}</p>
-                    <p className="text-xs text-gray-400">{hkEfficiency.date_range_days} günlük dönem</p>
+                    <p className="text-xs text-gray-400">{hkEfficiency.date_range_days} {t('cm.components_pms_ReportsTab.gunluk_donem')}</p>
                   </CardContent>
                 </Card>
                 <Card className="border-l-4 border-l-emerald-500">
                   <CardContent className="pt-4 pb-3">
-                    <p className="text-sm text-gray-500">Günlük Ortalama</p>
+                    <p className="text-sm text-gray-500">{t('cm.components_pms_ReportsTab.gunluk_ortalama')}</p>
                     <p className="text-2xl font-bold">{hkEfficiency.daily_average_all_staff?.toFixed(1) ?? 0}</p>
-                    <p className="text-xs text-gray-400">görev/gün</p>
+                    <p className="text-xs text-gray-400">{t('cm.components_pms_ReportsTab.gorev_gun')}</p>
                   </CardContent>
                 </Card>
                 <Card className="border-l-4 border-l-violet-500">
                   <CardContent className="pt-4 pb-3">
-                    <p className="text-sm text-gray-500">Personel Sayısı</p>
+                    <p className="text-sm text-gray-500">{t('cm.components_pms_ReportsTab.personel_sayisi')}</p>
                     <p className="text-2xl font-bold">{Object.keys(staffPerf).length}</p>
                     <p className="text-xs text-gray-400">aktif personel</p>
                   </CardContent>
@@ -531,7 +533,7 @@ const ReportsTab = () => {
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base">Personel Performansi</CardTitle>
-                    <CardDescription>Görev tamamlama sayisina göre</CardDescription>
+                    <CardDescription>{t('cm.components_pms_ReportsTab.gorev_tamamlama_sayisina_gore')}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
@@ -550,7 +552,7 @@ const ReportsTab = () => {
               {staffData.length > 0 && (
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Detaylı Personel Raporu</CardTitle>
+                    <CardTitle className="text-base">{t('cm.components_pms_ReportsTab.detayli_personel_raporu')}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="overflow-x-auto">
@@ -558,9 +560,9 @@ const ReportsTab = () => {
                         <thead>
                           <tr className="border-b">
                             <th className="text-left py-2 px-3">Personel</th>
-                            <th className="text-right py-2 px-3">Toplam</th>
-                            <th className="text-right py-2 px-3">Günlük Ort.</th>
-                            <th className="text-left py-2 px-3">Görev Turleri</th>
+                            <th className="text-right py-2 px-3">{t('cm.components_pms_ReportsTab.toplam_29757')}</th>
+                            <th className="text-right py-2 px-3">{t('cm.components_pms_ReportsTab.gunluk_ort')}</th>
+                            <th className="text-left py-2 px-3">{t('cm.components_pms_ReportsTab.gorev_turleri')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -588,7 +590,7 @@ const ReportsTab = () => {
               )}
             </>
           ) : (
-            <Card><CardContent className="py-8 text-center text-gray-400">Kat hizmetleri verisi bulunamadı</CardContent></Card>
+            <Card><CardContent className="py-8 text-center text-gray-400">{t('cm.components_pms_ReportsTab.kat_hizmetleri_verisi_bulunamadi')}</CardContent></Card>
           )}
         </TabsContent>
       </Tabs>

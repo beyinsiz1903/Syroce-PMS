@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ChevronLeft, ChevronRight, Calendar, BedDouble, ZoomIn, ZoomOut } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const statusColors = {
   confirmed: { bg: '#3B82F6', text: '#fff' },
@@ -16,6 +17,7 @@ const statusColors = {
 };
 
 const RoomTimelineView = ({ rooms = [], bookings = [], onBookingClick }) => {
+  const { t } = useTranslation();
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
@@ -98,15 +100,15 @@ const RoomTimelineView = ({ rooms = [], bookings = [], onBookingClick }) => {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-lg font-semibold flex items-center gap-2">
-          <Calendar className="w-5 h-5" /> Oda Zaman Cizelgesi
+          <Calendar className="w-5 h-5" /> {t('cm.components_pms_RoomTimelineView.oda_zaman_cizelgesi')}
         </h3>
         <div className="flex items-center gap-2">
           <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger className="w-36 h-8 text-xs">
-              <SelectValue placeholder="Oda Tipi" />
+              <SelectValue placeholder={t('cm.components_pms_RoomTimelineView.oda_tipi')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tüm Tipler</SelectItem>
+              <SelectItem value="all">{t('cm.components_pms_RoomTimelineView.tum_tipler')}</SelectItem>
               {roomTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -119,7 +121,7 @@ const RoomTimelineView = ({ rooms = [], bookings = [], onBookingClick }) => {
           <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
             <ChevronLeft className="w-4 h-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={goToToday}>Bugün</Button>
+          <Button variant="outline" size="sm" onClick={goToToday}>{t('cm.components_pms_RoomTimelineView.bugun')}</Button>
           <Button variant="outline" size="sm" onClick={() => navigate(1)}>
             <ChevronRight className="w-4 h-4" />
           </Button>
@@ -132,7 +134,7 @@ const RoomTimelineView = ({ rooms = [], bookings = [], onBookingClick }) => {
             <div className="flex border-b border-gray-200 sticky top-0 bg-white z-10">
               <div className="flex-shrink-0 border-r border-gray-200 bg-gray-50 p-2 font-medium text-xs text-gray-500"
                 style={{ width: roomColWidth }}>
-                Oda
+                {t('cm.components_pms_RoomTimelineView.oda')}
               </div>
               {dates.map((date, i) => {
                 const d = new Date(date);

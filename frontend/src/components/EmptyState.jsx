@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Construction, Rocket, Settings, ExternalLink } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const EmptyState = ({ 
   title = "Henüz Veri Yok",
@@ -13,6 +14,7 @@ const EmptyState = ({
   comingSoon = false,
   setupRequired = false
 }) => {
+  const { t } = useTranslation();
   return (
     <Card className="border-2 border-dashed">
       <CardContent className="p-8 text-center">
@@ -39,7 +41,7 @@ const EmptyState = ({
         {comingSoon && (
           <Badge className="bg-indigo-500 text-white mb-4">
             <Rocket className="w-3 h-3 mr-1" />
-            Yakında Gelecek
+            {t('cm.components_EmptyState.yakinda_gelecek')}
           </Badge>
         )}
 

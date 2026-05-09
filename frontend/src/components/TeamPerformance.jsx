@@ -3,8 +3,10 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Users, Trophy, TrendingUp } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const TeamPerformance = () => {
+  const { t } = useTranslation();
   const [performance, setPerformance] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -24,7 +26,7 @@ const TeamPerformance = () => {
   };
 
   if (loading || !performance) {
-    return <div className="text-center py-4">Yükleniyor...</div>;
+    return <div className="text-center py-4">{t('cm.components_TeamPerformance.yukleniyor')}</div>;
   }
 
   const departments = performance.departments;
@@ -35,7 +37,7 @@ const TeamPerformance = () => {
         <CardTitle className="flex items-center justify-between text-lg">
           <span className="flex items-center">
             <Users className="w-5 h-5 mr-2" />
-            Takım Performansı
+            {t('cm.components_TeamPerformance.takim_performansi')}
           </span>
           <Badge className="bg-blue-500">
             Genel: {performance.overall_performance}%
@@ -67,7 +69,7 @@ const TeamPerformance = () => {
 
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-600">
-                  {dept.tasks_completed} görev tamamlandı
+                  {dept.tasks_completed} {t('cm.components_TeamPerformance.gorev_tamamlandi')}
                 </span>
                 <div className="flex items-center text-green-600">
                   <Trophy className="w-3 h-3 mr-1" />

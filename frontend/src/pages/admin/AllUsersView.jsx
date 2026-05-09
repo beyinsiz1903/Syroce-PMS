@@ -3,8 +3,10 @@ import axios from 'axios';
 import { Search, ChevronLeft, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ROLE_LABELS } from './tenantConstants';
+import { useTranslation } from 'react-i18next';
 
 const AllUsersView = ({ onBack, tenants }) => {
+  const { t } = useTranslation();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
@@ -62,14 +64,14 @@ const AllUsersView = ({ onBack, tenants }) => {
         <Button variant="ghost" size="sm" onClick={onBack} data-testid="users-back-btn">
           <ChevronLeft className="w-4 h-4 mr-1" /> Geri
         </Button>
-        <h2 className="text-lg font-bold text-gray-900">Tüm Kullanıcılar ({users.length})</h2>
+        <h2 className="text-lg font-bold text-gray-900">{t('cm.pages_admin_AllUsersView.tum_kullanicilar')}{users.length})</h2>
       </div>
 
       <div className="flex flex-wrap gap-2">
         <button
           className={`px-3 py-1.5 text-xs rounded-full border transition ${roleFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
           onClick={() => setRoleFilter('all')}
-        >Tümü ({users.length})</button>
+        >{t('cm.pages_admin_AllUsersView.tumu')}{users.length})</button>
         {Object.entries(roleCounts).sort((a, b) => b[1] - a[1]).map(([role, count]) => (
           <button
             key={role}
@@ -92,17 +94,17 @@ const AllUsersView = ({ onBack, tenants }) => {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-gray-400 text-sm">Yükleniyor...</div>
+        <div className="text-center py-12 text-gray-400 text-sm">{t('cm.pages_admin_AllUsersView.yukleniyor')}</div>
       ) : (
         <div className="bg-white border rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">Kullanıcı</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">{t('cm.pages_admin_AllUsersView.kullanici')}</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">E-posta</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">Otel</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">Rol</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">Durum</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500">{t('cm.pages_admin_AllUsersView.durum')}</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -132,7 +134,7 @@ const AllUsersView = ({ onBack, tenants }) => {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={5} className="text-center py-8 text-gray-400">Kullanıcı bulunamadı</td></tr>
+                <tr><td colSpan={5} className="text-center py-8 text-gray-400">{t('cm.pages_admin_AllUsersView.kullanici_bulunamadi')}</td></tr>
               )}
             </tbody>
           </table>

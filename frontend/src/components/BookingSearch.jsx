@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Search, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 const BookingSearch = ({ onSelectBooking }) => {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -59,7 +61,7 @@ const BookingSearch = ({ onSelectBooking }) => {
       <CardHeader>
         <CardTitle className="flex items-center text-lg">
           <Search className="w-5 h-5 mr-2" />
-          Rezervasyon Arama
+          {t('cm.components_BookingSearch.rezervasyon_arama')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -67,7 +69,7 @@ const BookingSearch = ({ onSelectBooking }) => {
           <input
             type="text"
             className="flex-1 p-2 border rounded-lg text-sm"
-            placeholder="Rezervasyon no veya misafir adı..."
+            placeholder={t('cm.components_BookingSearch.rezervasyon_no_veya_misafir_adi')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
@@ -103,7 +105,7 @@ const BookingSearch = ({ onSelectBooking }) => {
                 {booking.check_in} → {booking.check_out}
               </div>
               <div className="flex items-center justify-between mt-2">
-                <span className="text-xs text-gray-500">Oda: {booking.room_number || 'Atanmadı'}</span>
+                <span className="text-xs text-gray-500">{t('cm.components_BookingSearch.oda')} {booking.room_number || 'Atanmadı'}</span>
                 <span className="text-sm font-bold text-green-600">₺{booking.total_amount}</span>
               </div>
             </div>

@@ -14,6 +14,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
+import { useTranslation } from 'react-i18next';
 
 const PERIOD_OPTIONS = [
   { label: "24s", value: 24 },
@@ -49,6 +50,7 @@ function formatBucketTime(ts) {
 }
 
 function CustomTooltip({ active, payload, label }) {
+  const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 shadow-xl">
@@ -91,7 +93,7 @@ function FieldKPICard({ icon, label, kpi, invertTrend, testId }) {
         </div>
       </div>
       <div className="text-2xl font-bold font-mono text-zinc-100">{val}{unit === "%" ? "%" : ""}<span className="text-sm text-zinc-600 ml-1">{unit !== "%" ? unit : ""}</span></div>
-      <div className="text-[10px] text-zinc-600 mt-1.5 font-mono">önceki dönem: {prev}{unit === "%" ? "%" : ` ${unit}`}</div>
+      <div className="text-[10px] text-zinc-600 mt-1.5 font-mono">{t('cm.components_ChannelHealthDashboard.onceki_donem')} {prev}{unit === "%" ? "%" : ` ${unit}`}</div>
     </div>
   );
 }
@@ -159,7 +161,7 @@ function EmptyChart({ label }) {
 
 function FailureBreakdownBar({ data }) {
   const total = Object.values(data).reduce((a, b) => a + b, 0);
-  if (total === 0) return <div className="text-center py-4 text-zinc-600 text-xs" data-testid="failure-breakdown-empty">Hata kaydi yok</div>;
+  if (total === 0) return <div className="text-center py-4 text-zinc-600 text-xs" data-testid="failure-breakdown-empty">{t('cm.components_ChannelHealthDashboard.hata_kaydi_yok')}</div>;
   const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
   return (
     <div className="space-y-2" data-testid="failure-breakdown-chart">
@@ -303,7 +305,7 @@ export function ChannelHealth() {
     return (
       <div className="text-center py-16 text-zinc-500" data-testid="channel-health-empty">
         <Activity className="h-12 w-12 mx-auto mb-3 opacity-30" />
-        <p className="text-sm">Kanal sağlığı verisi bulunamadı</p>
+        <p className="text-sm">{t('cm.components_ChannelHealthDashboard.kanal_sagligi_verisi_bulunamadi')}</p>
       </div>
     );
   }
@@ -346,7 +348,7 @@ export function ChannelHealth() {
             ))}
           </div>
           <Button variant="ghost" size="sm" className="h-7 text-xs text-zinc-500" onClick={handleRefresh} disabled={refreshing} data-testid="channel-health-refresh">
-            <RefreshCw className={`h-3 w-3 mr-1 ${refreshing ? "animate-spin" : ""}`} />Yenile
+            <RefreshCw className={`h-3 w-3 mr-1 ${refreshing ? "animate-spin" : ""}`} />{t('cm.components_ChannelHealthDashboard.yenile')}
           </Button>
         </div>
       </div>
@@ -358,7 +360,7 @@ export function ChannelHealth() {
         </h2>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" data-testid="field-kpis-grid">
           <FieldKPICard icon={<TrendingUp className="h-4 w-4" />} label="Sync Basari Orani" kpi={fk.sync_success} testId="fkpi-sync-success" />
-          <FieldKPICard icon={<AlertTriangle className="h-4 w-4" />} label="Drift Sayısı" kpi={fk.drift_reduction} invertTrend testId="fkpi-drift" />
+          <FieldKPICard icon={<AlertTriangle className="h-4 w-4" />} label={t('cm.components_ChannelHealthDashboard.drift_sayisi')} kpi={fk.drift_reduction} invertTrend testId="fkpi-drift" />
           <FieldKPICard icon={<Timer className="h-4 w-4" />} label="MTTR" kpi={fk.mttr_hours} invertTrend testId="fkpi-mttr" />
           <FieldKPICard icon={<Wrench className="h-4 w-4" />} label="Operator Mudahale" kpi={fk.operator_interventions} invertTrend testId="fkpi-operator" />
           <FieldKPICard icon={<Shield className="h-4 w-4" />} label="Push SLA Uyum" kpi={fk.push_sla_compliance} testId="fkpi-push-sla" />
@@ -369,7 +371,7 @@ export function ChannelHealth() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KPISummaryCard icon={<Gauge className="h-4 w-4" />} label="Push Latency p95" value={`${overallLatency.p95 || 0}ms`} sub={`p50: ${overallLatency.p50 || 0}ms · p99: ${overallLatency.p99 || 0}ms`} ok={(overallLatency.p95 || 0) <= 5000} testId="kpi-push-latency" />
         <KPISummaryCard icon={<TrendingUp className="h-4 w-4" />} label="Sync Basari" value={`${overallSync.success_rate ?? 100}%`} sub={`${overallSync.completed || 0}/${overallSync.total || 0} basarili`} ok={(overallSync.success_rate ?? 100) >= 95} testId="kpi-sync-success" />
-        <KPISummaryCard icon={<AlertTriangle className="h-4 w-4" />} label="Drift Sayısı" value={drift.total_open || 0} sub={`${allProviders.length} provider`} ok={(drift.total_open || 0) < 10} testId="kpi-drift-count" />
+        <KPISummaryCard icon={<AlertTriangle className="h-4 w-4" />} label={t('cm.components_ChannelHealthDashboard.drift_sayisi_46d42')} value={drift.total_open || 0} sub={`${allProviders.length} provider`} ok={(drift.total_open || 0) < 10} testId="kpi-drift-count" />
         <KPISummaryCard icon={<Zap className="h-4 w-4" />} label="Retry Basari" value={`${overallRetry.retry_success_rate ?? 0}%`} sub={`${overallRetry.retried_success || 0}/${overallRetry.total_retried || 0}`} ok={(overallRetry.retry_success_rate ?? 100) >= 80} testId="kpi-retry-success" />
       </div>
 
@@ -405,7 +407,7 @@ export function ChannelHealth() {
           <Card className="bg-zinc-900 border-zinc-800">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-zinc-500" /> Hata & Retry Hacmi
+                <BarChart3 className="h-4 w-4 text-zinc-500" /> {t('cm.components_ChannelHealthDashboard.hata_retry_hacmi')}
               </CardTitle>
             </CardHeader>
             <CardContent data-testid="chart-retry-failure-trend">
@@ -425,7 +427,7 @@ export function ChannelHealth() {
         <Card className="bg-zinc-900 border-zinc-800 mb-4">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-zinc-500" /> Hata Dagilimi
+              <BarChart3 className="h-4 w-4 text-zinc-500" /> {t('cm.components_ChannelHealthDashboard.hata_dagilimi')}
               {(failures.total_failures || 0) > 0 && (
                 <Badge variant="outline" className="text-red-400 border-red-500/30 text-[10px] ml-2">{failures.total_failures} hata</Badge>
               )}
@@ -448,7 +450,7 @@ export function ChannelHealth() {
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
                 <TrendingDown className="h-4 w-4 text-zinc-500" /> Reconciliation Drift
-                <Badge variant="outline" className={`text-[10px] ml-auto border ${(drift.total_open || 0) >= 50 ? "text-red-400 border-red-500/30" : (drift.total_open || 0) >= 10 ? "text-yellow-400 border-yellow-500/30" : "text-emerald-400 border-emerald-500/30"}`}>{drift.total_open || 0} açık</Badge>
+                <Badge variant="outline" className={`text-[10px] ml-auto border ${(drift.total_open || 0) >= 50 ? "text-red-400 border-red-500/30" : (drift.total_open || 0) >= 10 ? "text-yellow-400 border-yellow-500/30" : "text-emerald-400 border-emerald-500/30"}`}>{drift.total_open || 0} {t('cm.components_ChannelHealthDashboard.acik')}</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -496,8 +498,8 @@ export function ChannelHealth() {
                     <span className={`text-sm font-bold font-mono ${pSync.success_rate >= 95 ? "text-emerald-400" : pSync.success_rate >= 80 ? "text-yellow-400" : "text-red-400"}`}>{pSync.success_rate}%</span>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-[10px] font-mono">
-                    <div><div className="text-zinc-600">Toplam</div><div className="text-zinc-300">{pSync.total}</div></div>
-                    <div><div className="text-zinc-600">Basarili</div><div className="text-emerald-400">{pSync.completed}</div></div>
+                    <div><div className="text-zinc-600">{t('cm.components_ChannelHealthDashboard.toplam')}</div><div className="text-zinc-300">{pSync.total}</div></div>
+                    <div><div className="text-zinc-600">{t('cm.components_ChannelHealthDashboard.basarili')}</div><div className="text-emerald-400">{pSync.completed}</div></div>
                     <div><div className="text-zinc-600">Basarisiz</div><div className="text-red-400">{pSync.failed}</div></div>
                   </div>
                   <div className="text-[10px] text-zinc-600 mt-1 font-mono">avg duration: {pSync.avg_duration_ms}ms</div>

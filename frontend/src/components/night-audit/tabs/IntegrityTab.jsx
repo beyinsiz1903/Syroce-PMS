@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { TabsContent } from '@/components/ui/tabs';
 import { CheckCircle2, XCircle, AlertTriangle, Loader2, Shield, ShieldCheck, ChevronRight } from 'lucide-react';
 import IntegrityItemsModal from '../IntegrityItemsModal';
+import { useTranslation } from 'react-i18next';
 
 async function navigateToItem(it, navigate) {
   // Folyo açma: önce folio_id, yoksa booking_id üzerinden açık folio bul
@@ -40,6 +41,7 @@ async function navigateToItem(it, navigate) {
 }
 
 export default function IntegrityTab(props) {
+  const { t } = useTranslation();
   const { IntegrityBadge, StatCard, integrityCheck } = props;
   const navigate = useNavigate();
   const [modalCheck, setModalCheck] = useState(null);
@@ -65,10 +67,10 @@ export default function IntegrityTab(props) {
         <>
           {/* Summary */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard icon={ShieldCheck} label="Toplam Kontrol" value={integrityCheck.summary?.total || 0} color="text-indigo-600" />
+            <StatCard icon={ShieldCheck} label={t('cm.components_nightaudit_tabs_IntegrityTab.toplam_kontrol')} value={integrityCheck.summary?.total || 0} color="text-indigo-600" />
             <StatCard icon={CheckCircle2} label="Gecen" value={integrityCheck.summary?.passed || 0} color="text-emerald-600" />
-            <StatCard icon={AlertTriangle} label="Uyarı" value={integrityCheck.summary?.warnings || 0} color="text-amber-600" />
-            <StatCard icon={XCircle} label="Başarısız" value={integrityCheck.summary?.failures || 0} color="text-red-600" />
+            <StatCard icon={AlertTriangle} label={t('cm.components_nightaudit_tabs_IntegrityTab.uyari')} value={integrityCheck.summary?.warnings || 0} color="text-amber-600" />
+            <StatCard icon={XCircle} label={t('cm.components_nightaudit_tabs_IntegrityTab.basarisiz')} value={integrityCheck.summary?.failures || 0} color="text-red-600" />
           </div>
 
           {/* Overall Status */}
@@ -165,7 +167,7 @@ export default function IntegrityTab(props) {
         </>
       ) : (
         <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
-          <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Bütünlük kontrolu yükleniyor...
+          <Loader2 className="w-5 h-5 mr-2 animate-spin" /> {t('cm.components_nightaudit_tabs_IntegrityTab.butunluk_kontrolu_yukleniyor')}
         </div>
       )}
     </TabsContent>

@@ -13,6 +13,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
+import { useTranslation } from 'react-i18next';
 
 const SCENARIO_LABELS = {
   duplicate_delivery: "Duplicate Delivery",
@@ -23,6 +24,7 @@ const SCENARIO_LABELS = {
 };
 
 function SandboxTooltip({ active, payload, label }) {
+  const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 shadow-xl">
@@ -139,7 +141,7 @@ function RegressionAlert({ regressions }) {
       <div className="flex items-center gap-2">
         <AlertTriangle className="h-4 w-4 text-red-400 animate-pulse" />
         <span className="text-xs font-bold text-red-300 uppercase tracking-wider">
-          Sandbox Regression Algılandi
+          {t('cm.components_SandboxDashboard.sandbox_regression_algilandi')}
         </span>
       </div>
       {regressions.map((r, i) => (
@@ -169,7 +171,7 @@ function TrendChart({ data }) {
   if (!data || data.length < 2) {
     return (
       <div className="text-xs text-zinc-600 text-center py-4">
-        Trend için en az 2 calistirma gerekli
+        {t('cm.components_SandboxDashboard.trend_icin_en_az_2_calistirma_gerekli')}
       </div>
     );
   }
@@ -296,7 +298,7 @@ export function SandboxDashboard() {
             data-testid="sandbox-refresh-btn"
           >
             <RefreshCw className={`h-3 w-3 mr-1 ${loading ? "animate-spin" : ""}`} />
-            Yenile
+            {t('cm.components_SandboxDashboard.yenile')}
           </Button>
           <Button
             variant="outline"
@@ -320,7 +322,7 @@ export function SandboxDashboard() {
         <Card className="bg-zinc-900 border-zinc-800">
           <CardContent className="p-8 text-center">
             <Shield className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
-            <p className="text-sm text-zinc-400">Henüz sandbox simulasyonu calistirilmadi</p>
+            <p className="text-sm text-zinc-400">{t('cm.components_SandboxDashboard.henuz_sandbox_simulasyonu_calistirilmadi')}</p>
             <p className="text-xs text-zinc-600 mt-1">
               Yukaridaki butonu kullanarak ilk simulasyonu baslatabilirsiniz
             </p>
@@ -380,7 +382,7 @@ export function SandboxDashboard() {
             <Card className="bg-zinc-900 border-zinc-800" data-testid="sandbox-most-failing">
               <CardHeader className="pb-2 pt-4 px-4">
                 <CardTitle className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
-                  <TrendingDown className="h-3.5 w-3.5" /> En Cok Kırılan Senaryolar
+                  <TrendingDown className="h-3.5 w-3.5" /> {t('cm.components_SandboxDashboard.en_cok_kirilan_senaryolar')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4">

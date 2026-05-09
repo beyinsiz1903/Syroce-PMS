@@ -15,6 +15,7 @@ import {
   Activity, RefreshCw, Send, AlertTriangle, CheckCircle2,
   XCircle, Clock, Inbox, RotateCcw, Trash2, Hourglass, ServerCrash, ShieldCheck,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 // status → Sprint A intent mapping (StatusBadge intent palette: success/warning/danger/info/neutral)
 const STATUS_INTENT = {
@@ -60,6 +61,7 @@ const StatusPill = ({ status }) => (
 );
 
 export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState("outbox");
   const [outboxStatus, setOutboxStatus] = useState(null);
   const [webhookStatus, setWebhookStatus] = useState(null);
@@ -172,11 +174,11 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
       <PageHeader
         icon={Inbox}
         title="Outbox & Webhook Admin"
-        subtitle="Olay kuyruğu, webhook teslimatları ve DLQ yönetimi"
+        subtitle={t('cm.pages_WebhookOutboxAdmin.olay_kuyrugu_webhook_teslimatlari_ve_dlq')}
         actions={
           <Button onClick={loadAll} disabled={loading} variant="outline" size="sm">
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
-            Yenile
+            {t('cm.pages_WebhookOutboxAdmin.yenile')}
           </Button>
         }
       />
@@ -213,7 +215,7 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
           <div className="h-4 w-px bg-slate-200" aria-hidden="true" />
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-slate-500" aria-hidden="true" />
-            <span className="text-slate-600">Son işlenen:</span>
+            <span className="text-slate-600">{t('cm.pages_WebhookOutboxAdmin.son_islenen')}</span>
             <span className="font-mono text-xs text-slate-700">{fmtDate(outboxStatus?.last_processed_at)}</span>
           </div>
           <div className="h-4 w-px bg-slate-200" aria-hidden="true" />
@@ -279,9 +281,9 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="outbox">Outbox Olayları</TabsTrigger>
+          <TabsTrigger value="outbox">{t('cm.pages_WebhookOutboxAdmin.outbox_olaylari')}</TabsTrigger>
           <TabsTrigger value="dlq">Webhook DLQ</TabsTrigger>
-          <TabsTrigger value="deliveries">Webhook Teslimatları</TabsTrigger>
+          <TabsTrigger value="deliveries">{t('cm.pages_WebhookOutboxAdmin.webhook_teslimatlari')}</TabsTrigger>
         </TabsList>
 
         {/* ─── OUTBOX EVENTS ───────────────────────────────── */}
@@ -289,14 +291,14 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
               <CardTitle className="text-base flex items-center gap-2">
-                <Activity className="w-4 h-4 text-slate-700" aria-hidden="true" /> Outbox Olayları
+                <Activity className="w-4 h-4 text-slate-700" aria-hidden="true" /> {t('cm.pages_WebhookOutboxAdmin.outbox_olaylari_df9db')}
               </CardTitle>
               <div className="flex items-center gap-2">
                 <Select value={outboxFilter} onValueChange={setOutboxFilter}>
                   <SelectTrigger className="w-40 h-8 text-xs" aria-label="Outbox filtre"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Tümü</SelectItem>
-                    <SelectItem value="failed">Başarısız</SelectItem>
+                    <SelectItem value="all">{t('cm.pages_WebhookOutboxAdmin.tumu')}</SelectItem>
+                    <SelectItem value="failed">{t('cm.pages_WebhookOutboxAdmin.basarisiz')}</SelectItem>
                     <SelectItem value="retry">Retry</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="processed">Processed</SelectItem>
@@ -304,7 +306,7 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
                 </Select>
                 {(outboxFilter === "failed" || outboxFilter === "all") && outboxEvents.some((e) => e.status === "failed") && (
                   <Button onClick={handleReplayAll} size="sm" variant="outline">
-                    <RotateCcw className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> Başarısızları Replay Et
+                    <RotateCcw className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> {t('cm.pages_WebhookOutboxAdmin.basarisizlari_replay_et')}
                   </Button>
                 )}
               </div>
@@ -313,7 +315,7 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
               {outboxEvents.length === 0 ? (
                 <div className="py-10 text-center text-sm text-slate-500">
                   <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" aria-hidden="true" />
-                  Bu filtrede kayıt yok
+                  {t('cm.pages_WebhookOutboxAdmin.bu_filtrede_kayit_yok')}
                 </div>
               ) : (
                 <div className="space-y-2 max-h-[60vh] overflow-y-auto">
@@ -355,7 +357,7 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
           {outboxStatus?.provider_failures && Object.keys(outboxStatus.provider_failures).length > 0 && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Sağlayıcı Bazlı Hata Sayıları</CardTitle>
+                <CardTitle className="text-sm">{t('cm.pages_WebhookOutboxAdmin.saglayici_bazli_hata_sayilari')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
@@ -380,7 +382,7 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
               <Select value={dlqFilter} onValueChange={setDlqFilter}>
                 <SelectTrigger className="w-40 h-8 text-xs" aria-label="DLQ filtre"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tümü</SelectItem>
+                  <SelectItem value="all">{t('cm.pages_WebhookOutboxAdmin.tumu_ff12f')}</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="retrying">Retrying</SelectItem>
                   <SelectItem value="resolved">Resolved</SelectItem>
@@ -439,12 +441,12 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
               <CardTitle className="text-base flex items-center gap-2">
-                <Send className="w-4 h-4 text-slate-700" aria-hidden="true" /> Webhook Teslimatları
+                <Send className="w-4 h-4 text-slate-700" aria-hidden="true" /> {t('cm.pages_WebhookOutboxAdmin.webhook_teslimatlari_130b6')}
               </CardTitle>
               <Select value={deliveryFilter} onValueChange={setDeliveryFilter}>
                 <SelectTrigger className="w-40 h-8 text-xs" aria-label="Teslimat filtre"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tümü</SelectItem>
+                  <SelectItem value="all">{t('cm.pages_WebhookOutboxAdmin.tumu_ff12f')}</SelectItem>
                   <SelectItem value="retrying">Retrying</SelectItem>
                   <SelectItem value="delivering">Delivering</SelectItem>
                   <SelectItem value="succeeded">Succeeded</SelectItem>
@@ -474,7 +476,7 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
                       </div>
                       <div className="text-xs text-slate-500 truncate">→ {d.url}</div>
                       <div className="text-xs text-slate-500 mt-1">
-                        Oluşturuldu: {fmtDate(d.created_at)}
+                        {t('cm.pages_WebhookOutboxAdmin.olusturuldu')} {fmtDate(d.created_at)}
                         {d.next_retry_at && <> · Sonraki retry: {fmtDate(d.next_retry_at)}</>}
                       </div>
                       {d.last_error && (

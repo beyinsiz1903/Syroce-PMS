@@ -17,6 +17,7 @@ import {
   Wallet,
   TrendingUp,
 } from "lucide-react";
+import { useTranslation } from 'react-i18next';
 
 const VENDOR_TOKEN_KEY = "vendor_token";
 const CATEGORIES = [
@@ -60,6 +61,7 @@ vendorApi.interceptors.request.use((config) => {
 
 // ─── Login / Register ─────────────────────────────────────
 function VendorAuth({ onAuthed }) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState("login");
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
@@ -106,11 +108,11 @@ function VendorAuth({ onAuthed }) {
       </div>
       <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full relative z-10">
         <div className="text-center mb-6">
-          <a href="/" title="Ana sayfaya dön" className="inline-block">
+          <a href="/" title={t('cm.pages_VendorPortal.ana_sayfaya_don')} className="inline-block">
             <Store className="w-12 h-12 mx-auto text-blue-600 mb-2 hover:text-blue-700 transition" />
           </a>
-          <h1 className="text-2xl font-bold">Toptancı Portalı</h1>
-          <p className="text-sm text-gray-500">Syroce Tedarik Pazarı</p>
+          <h1 className="text-2xl font-bold">{t('cm.pages_VendorPortal.toptanci_portali')}</h1>
+          <p className="text-sm text-gray-500">{t('cm.pages_VendorPortal.syroce_tedarik_pazari')}</p>
         </div>
 
         <div className="flex gap-2 mb-5">
@@ -120,7 +122,7 @@ function VendorAuth({ onAuthed }) {
               mode === "login" ? "bg-blue-600 text-white" : "bg-gray-100"
             }`}
           >
-            Giriş
+            {t('cm.pages_VendorPortal.giris')}
           </button>
           <button
             onClick={() => setMode("register")}
@@ -128,7 +130,7 @@ function VendorAuth({ onAuthed }) {
               mode === "register" ? "bg-blue-600 text-white" : "bg-gray-100"
             }`}
           >
-            Kayıt Ol
+            {t('cm.pages_VendorPortal.kayit_ol')}
           </button>
         </div>
 
@@ -143,7 +145,7 @@ function VendorAuth({ onAuthed }) {
           />
           <input
             type="password"
-            placeholder="Şifre"
+            placeholder={t('cm.pages_VendorPortal.sifre')}
             required
             minLength={8}
             value={form.password}
@@ -154,14 +156,14 @@ function VendorAuth({ onAuthed }) {
           {mode === "register" && (
             <>
               <input
-                placeholder="Şirket Adı *"
+                placeholder={t('cm.pages_VendorPortal.sirket_adi')}
                 required
                 value={form.company_name}
                 onChange={(e) => setForm({ ...form, company_name: e.target.value })}
                 className="w-full border rounded p-2 text-sm"
               />
               <input
-                placeholder="Yetkili Kişi *"
+                placeholder={t('cm.pages_VendorPortal.yetkili_kisi')}
                 required
                 value={form.contact_name}
                 onChange={(e) => setForm({ ...form, contact_name: e.target.value })}
@@ -206,7 +208,7 @@ function VendorAuth({ onAuthed }) {
                 className="w-full border rounded p-2 text-sm"
               />
               <input
-                placeholder="Şehir *"
+                placeholder={t('cm.pages_VendorPortal.sehir')}
                 required
                 value={form.city}
                 onChange={(e) => setForm({ ...form, city: e.target.value })}
@@ -232,7 +234,7 @@ function VendorAuth({ onAuthed }) {
 
         {mode === "register" && (
           <p className="text-xs text-gray-500 mt-3 text-center">
-            Kayıt sonrası Syroce ekibi onayı sonrası ürünleriniz yayına alınır.
+            {t('cm.pages_VendorPortal.kayit_sonrasi_syroce_ekibi_onayi_sonrasi')}
           </p>
         )}
       </div>
@@ -366,7 +368,7 @@ function VendorDashboard({ vendor, onLogout }) {
             <div>
               <div className="font-bold text-sm">{vendor?.company_name || "Toptancı"}</div>
               <div className="text-xs text-gray-500">
-                Durum:{" "}
+                {t('cm.pages_VendorPortal.durum')}{" "}
                 <span
                   className={`font-medium ${
                     vendor?.status === "approved"
@@ -390,7 +392,7 @@ function VendorDashboard({ vendor, onLogout }) {
             onClick={onLogout}
             className="text-sm flex items-center gap-1 text-gray-600 hover:text-gray-900"
           >
-            <LogOut className="w-4 h-4" /> Çıkış
+            <LogOut className="w-4 h-4" /> {t('cm.pages_VendorPortal.cikis')}
           </button>
         </div>
       </header>
@@ -398,7 +400,7 @@ function VendorDashboard({ vendor, onLogout }) {
       <div className="max-w-6xl mx-auto p-4">
         {vendor?.status === "pending" && (
           <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
-            Hesabınız onay bekliyor. Onaylanana kadar ürünleriniz otellerin kataloğunda görünmez.
+            {t('cm.pages_VendorPortal.hesabiniz_onay_bekliyor_onaylanana_kadar')}
           </div>
         )}
 
@@ -409,7 +411,7 @@ function VendorDashboard({ vendor, onLogout }) {
               tab === "products" ? "bg-blue-600 text-white" : "bg-white border"
             }`}
           >
-            <Package className="w-4 h-4 inline mr-1" /> Ürünlerim
+            <Package className="w-4 h-4 inline mr-1" /> {t('cm.pages_VendorPortal.urunlerim')}
           </button>
           <button
             onClick={() => setTab("orders")}
@@ -417,7 +419,7 @@ function VendorDashboard({ vendor, onLogout }) {
               tab === "orders" ? "bg-blue-600 text-white" : "bg-white border"
             }`}
           >
-            <ClipboardList className="w-4 h-4 inline mr-1" /> Siparişler
+            <ClipboardList className="w-4 h-4 inline mr-1" /> {t('cm.pages_VendorPortal.siparisler')}
           </button>
           <button
             onClick={() => setTab("earnings")}
@@ -425,7 +427,7 @@ function VendorDashboard({ vendor, onLogout }) {
               tab === "earnings" ? "bg-blue-600 text-white" : "bg-white border"
             }`}
           >
-            <Wallet className="w-4 h-4 inline mr-1" /> Kazançlarım
+            <Wallet className="w-4 h-4 inline mr-1" /> {t('cm.pages_VendorPortal.kazanclarim')}
           </button>
         </div>
 
@@ -456,7 +458,7 @@ function VendorDashboard({ vendor, onLogout }) {
                 }
                 className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm flex items-center gap-1"
               >
-                <Plus className="w-4 h-4" /> Yeni Ürün
+                <Plus className="w-4 h-4" /> {t('cm.pages_VendorPortal.yeni_urun')}
               </button>
             </div>
 
@@ -469,11 +471,11 @@ function VendorDashboard({ vendor, onLogout }) {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                     <tr>
-                      <th className="text-left p-3">Ürün</th>
+                      <th className="text-left p-3">{t('cm.pages_VendorPortal.urun')}</th>
                       <th className="text-left p-3">Kategori</th>
                       <th className="text-right p-3">Fiyat</th>
                       <th className="text-right p-3">Stok</th>
-                      <th className="text-center p-3">Aktif</th>
+                      <th className="text-center p-3">{t('cm.pages_VendorPortal.aktif')}</th>
                       <th className="p-3"></th>
                     </tr>
                   </thead>
@@ -481,7 +483,7 @@ function VendorDashboard({ vendor, onLogout }) {
                     {products.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="text-center py-8 text-gray-500">
-                          Henüz ürün yok
+                          {t('cm.pages_VendorPortal.henuz_urun_yok')}
                         </td>
                       </tr>
                     ) : (
@@ -535,7 +537,7 @@ function VendorDashboard({ vendor, onLogout }) {
               </div>
             ) : orders.length === 0 ? (
               <div className="text-center py-8 text-gray-500 bg-white border rounded">
-                Sipariş yok
+                {t('cm.pages_VendorPortal.siparis_yok')}
               </div>
             ) : (
               orders.map((o) => {
@@ -577,7 +579,7 @@ function VendorDashboard({ vendor, onLogout }) {
                       <b>Teslimat:</b> {o.shipping_address} —{" "}
                       <b>{o.contact_name}</b> ({o.contact_phone})
                       <br />
-                      <b>Ödeme:</b> {PAYMENT_LABELS[o.payment_method] || o.payment_method}
+                      <b>{t('cm.pages_VendorPortal.odeme')}</b> {PAYMENT_LABELS[o.payment_method] || o.payment_method}
                       {o.notes && (
                         <>
                           <br /> <b>Not:</b> {o.notes}
@@ -599,13 +601,13 @@ function VendorDashboard({ vendor, onLogout }) {
                             onClick={() => confirmOrder(o.id)}
                             className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded"
                           >
-                            Onayla
+                            {t('cm.pages_VendorPortal.onayla')}
                           </button>
                           <button
                             onClick={() => cancelOrder(o.id)}
                             className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded"
                           >
-                            İptal
+                            {t('cm.pages_VendorPortal.iptal')}
                           </button>
                         </>
                       )}
@@ -621,7 +623,7 @@ function VendorDashboard({ vendor, onLogout }) {
                             onClick={() => cancelOrder(o.id)}
                             className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded"
                           >
-                            İptal
+                            {t('cm.pages_VendorPortal.iptal_25174')}
                           </button>
                         </>
                       )}
@@ -651,14 +653,14 @@ function VendorDashboard({ vendor, onLogout }) {
             <h3 className="text-lg font-bold">Kargo Bilgisi · {shipModal.order_no}</h3>
             <input
               required
-              placeholder="Kargo Firması (örn. Aras Kargo)"
+              placeholder={t('cm.pages_VendorPortal.kargo_firmasi_orn_aras_kargo')}
               value={shipForm.carrier}
               onChange={(e) => setShipForm({ ...shipForm, carrier: e.target.value })}
               className="w-full border rounded p-2 text-sm"
             />
             <input
               required
-              placeholder="Takip Numarası"
+              placeholder={t('cm.pages_VendorPortal.takip_numarasi')}
               value={shipForm.tracking_no}
               onChange={(e) => setShipForm({ ...shipForm, tracking_no: e.target.value })}
               className="w-full border rounded p-2 text-sm"
@@ -676,13 +678,13 @@ function VendorDashboard({ vendor, onLogout }) {
                 onClick={() => setShipModal(null)}
                 className="flex-1 py-2 bg-gray-100 rounded"
               >
-                İptal
+                {t('cm.pages_VendorPortal.iptal_25174')}
               </button>
               <button
                 type="submit"
                 className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded"
               >
-                Kaydet
+                {t('cm.pages_VendorPortal.kaydet')}
               </button>
             </div>
           </form>
@@ -700,7 +702,7 @@ function EarningsPanel({ data, loading, commissionPct }) {
   if (loading || !data) {
     return (
       <div className="flex items-center justify-center py-12 text-gray-500">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Yükleniyor…
+        <Loader2 className="w-5 h-5 animate-spin mr-2" /> {t('cm.pages_VendorPortal.yukleniyor')}
       </div>
     );
   }
@@ -724,28 +726,28 @@ function EarningsPanel({ data, loading, commissionPct }) {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <Card
           icon={Wallet}
-          title="Net Kazancım (Tüm Zamanlar)"
+          title={t('cm.pages_VendorPortal.net_kazancim_tum_zamanlar')}
           value={fmt(all_time.net)}
           sub={`${all_time.orders} tamamlanan sipariş`}
           color="text-green-600"
         />
         <Card
           icon={TrendingUp}
-          title="Son 30 Gün Net"
+          title={t('cm.pages_VendorPortal.son_30_gun_net')}
           value={fmt(last_30_days.net)}
           sub={`${last_30_days.orders} sipariş`}
           color="text-blue-600"
         />
         <Card
           icon={XCircle}
-          title="Toplam Komisyon Gideri"
+          title={t('cm.pages_VendorPortal.toplam_komisyon_gideri')}
           value={fmt(all_time.commission)}
           sub={commissionPct ? `Komisyon oranı: %${commissionPct}` : null}
           color="text-amber-600"
         />
         <Card
           icon={ClipboardList}
-          title="Bekleyen Siparişler"
+          title={t('cm.pages_VendorPortal.bekleyen_siparisler')}
           value={fmt(pending.gross)}
           sub={`${pending.orders} sipariş onay bekliyor`}
           color="text-yellow-600"
@@ -754,10 +756,10 @@ function EarningsPanel({ data, loading, commissionPct }) {
 
       {/* Brüt / Komisyon / Net özet */}
       <div className="bg-white rounded-lg border p-4">
-        <h3 className="text-sm font-semibold mb-3">Tüm Zamanlar Özeti</h3>
+        <h3 className="text-sm font-semibold mb-3">{t('cm.pages_VendorPortal.tum_zamanlar_ozeti')}</h3>
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div>
-            <div className="text-xs text-gray-500">Brüt Satış</div>
+            <div className="text-xs text-gray-500">{t('cm.pages_VendorPortal.brut_satis')}</div>
             <div className="font-semibold text-gray-900">{fmt(all_time.gross)}</div>
           </div>
           <div>
@@ -765,13 +767,13 @@ function EarningsPanel({ data, loading, commissionPct }) {
             <div className="font-semibold text-amber-600">- {fmt(all_time.commission)}</div>
           </div>
           <div>
-            <div className="text-xs text-gray-500">Net Kazanç</div>
+            <div className="text-xs text-gray-500">{t('cm.pages_VendorPortal.net_kazanc')}</div>
             <div className="font-semibold text-green-600">{fmt(all_time.net)}</div>
           </div>
         </div>
         {cancelled.orders > 0 && (
           <div className="mt-3 pt-3 border-t text-xs text-gray-500">
-            İptal/iade: <span className="font-medium text-red-600">{cancelled.orders} sipariş</span> ·{" "}
+            {t('cm.pages_VendorPortal.iptal_iade')} <span className="font-medium text-red-600">{cancelled.orders} {t('cm.pages_VendorPortal.siparis')}</span> ·{" "}
             {fmt(cancelled.gross)}
           </div>
         )}
@@ -779,10 +781,10 @@ function EarningsPanel({ data, loading, commissionPct }) {
 
       {/* Aylık trend */}
       <div className="bg-white rounded-lg border p-4">
-        <h3 className="text-sm font-semibold mb-3">Aylık Net Kazanç (son 12 ay)</h3>
+        <h3 className="text-sm font-semibold mb-3">{t('cm.pages_VendorPortal.aylik_net_kazanc_son_12_ay')}</h3>
         {monthly.length === 0 ? (
           <div className="text-sm text-gray-400 py-6 text-center">
-            Henüz tamamlanmış sipariş yok.
+            {t('cm.pages_VendorPortal.henuz_tamamlanmis_siparis_yok')}
           </div>
         ) : (
           <div className="space-y-2">
@@ -806,7 +808,7 @@ function EarningsPanel({ data, loading, commissionPct }) {
       </div>
 
       <div className="text-xs text-gray-400">
-        * Net kazanç = Brüt satış − Platform komisyonu. Sadece onaylı/kargolanan/teslim edilmiş siparişler gelire dahil edilir.
+        {t('cm.pages_VendorPortal.net_kazanc_brut_satis_platform_komisyonu')}
       </div>
     </div>
   );
@@ -928,13 +930,13 @@ function ProductModal({ product, onClose, onSave }) {
         <h3 className="text-lg font-bold">{form.id ? "Ürünü Düzenle" : "Yeni Ürün"}</h3>
         <input
           required
-          placeholder="Ürün Adı"
+          placeholder={t('cm.pages_VendorPortal.urun_adi')}
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           className="w-full border rounded p-2 text-sm"
         />
         <textarea
-          placeholder="Açıklama"
+          placeholder={t('cm.pages_VendorPortal.aciklama')}
           rows={2}
           value={form.description || ""}
           onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -982,7 +984,7 @@ function ProductModal({ product, onClose, onSave }) {
             />
           </label>
           <label className="text-xs">
-            Min Sipariş
+            {t('cm.pages_VendorPortal.min_siparis')}
             <input
               type="number"
               min={1}
@@ -1002,7 +1004,7 @@ function ProductModal({ product, onClose, onSave }) {
             />
           </label>
           <label className="text-xs">
-            Teslim Süresi (gün)
+            {t('cm.pages_VendorPortal.teslim_suresi_gun')}
             <input
               type="number"
               min={0}
@@ -1013,7 +1015,7 @@ function ProductModal({ product, onClose, onSave }) {
             />
           </label>
           <label className="text-xs">
-            Vade (gün, 0=peşin)
+            {t('cm.pages_VendorPortal.vade_gun_0_pesin')}
             <input
               type="number"
               min={0}
@@ -1029,19 +1031,19 @@ function ProductModal({ product, onClose, onSave }) {
         <div className="border rounded p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-gray-700">
-              Kademeli Fiyat (miktara göre indirim)
+              {t('cm.pages_VendorPortal.kademeli_fiyat_miktara_gore_indirim')}
             </span>
             <button
               type="button"
               onClick={addTier}
               className="text-xs px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200"
             >
-              + Kademe Ekle
+              {t('cm.pages_VendorPortal.kademe_ekle')}
             </button>
           </div>
           {(form.price_tiers || []).length === 0 && (
             <p className="text-xs text-gray-400">
-              Örn: 50 adet → 90 TL · 100 adet → 80 TL. Boş bırakılırsa tek fiyat uygulanır.
+              {t('cm.pages_VendorPortal.orn_50_adet_90_tl_100_adet_80_tl_bos_bir')}
             </p>
           )}
           {(form.price_tiers || []).map((t, i) => (
@@ -1068,7 +1070,7 @@ function ProductModal({ product, onClose, onSave }) {
                 onClick={() => removeTier(i)}
                 className="text-red-600 hover:text-red-700 text-xs px-2"
               >
-                Sil
+                {t('cm.pages_VendorPortal.sil')}
               </button>
             </div>
           ))}
@@ -1083,18 +1085,18 @@ function ProductModal({ product, onClose, onSave }) {
               onClick={addPromo}
               className="text-xs px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded border border-amber-200"
             >
-              + Promosyon Ekle
+              {t('cm.pages_VendorPortal.promosyon_ekle')}
             </button>
           </div>
           {(form.promotions || []).length === 0 && (
             <p className="text-xs text-gray-400">
-              Örn: "Ay sonu kampanyası" %10 indirim, min 30 adet, 30/06 tarihine kadar.
+              {t('cm.pages_VendorPortal.orn_ay_sonu_kampanyasi_10_indirim_min_30')}
             </p>
           )}
           {(form.promotions || []).map((p, i) => (
             <div key={i} className="space-y-1.5 border-b pb-2 last:border-0">
               <input
-                placeholder="Kampanya başlığı"
+                placeholder={t('cm.pages_VendorPortal.kampanya_basligi')}
                 value={p.title}
                 onChange={(e) => updatePromo(i, "title", e.target.value)}
                 className="w-full border rounded p-1.5 text-sm"
@@ -1105,7 +1107,7 @@ function ProductModal({ product, onClose, onSave }) {
                   step="0.5"
                   min={1}
                   max={90}
-                  placeholder="İndirim %"
+                  placeholder={t('cm.pages_VendorPortal.indirim')}
                   value={p.discount_pct}
                   onChange={(e) => updatePromo(i, "discount_pct", e.target.value)}
                   className="border rounded p-1.5 text-sm"
@@ -1130,14 +1132,14 @@ function ProductModal({ product, onClose, onSave }) {
                 onClick={() => removePromo(i)}
                 className="text-red-600 hover:text-red-700 text-xs"
               >
-                Promosyonu Sil
+                {t('cm.pages_VendorPortal.promosyonu_sil')}
               </button>
             </div>
           ))}
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-700">Ürün Görselleri</span>
+            <span className="text-xs font-medium text-gray-700">{t('cm.pages_VendorPortal.urun_gorselleri')}</span>
             <label className="cursor-pointer text-xs px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200">
               {uploading ? "Yükleniyor…" : "+ Görsel Ekle"}
               <input
@@ -1154,12 +1156,12 @@ function ProductModal({ product, onClose, onSave }) {
             <div className="grid grid-cols-4 gap-2">
               {form.images.map((url) => (
                 <div key={url} className="relative group aspect-square border rounded overflow-hidden bg-gray-50">
-                  <img src={url} alt="ürün" className="w-full h-full object-cover" />
+                  <img src={url} alt={t('cm.pages_VendorPortal.urun_b5791')} className="w-full h-full object-cover" />
                   <button
                     type="button"
                     onClick={() => removeImage(url)}
                     className="absolute top-1 right-1 bg-red-600 text-white text-xs w-5 h-5 rounded-full opacity-0 group-hover:opacity-100 transition"
-                    title="Kaldır"
+                    title={t('cm.pages_VendorPortal.kaldir')}
                   >
                     ×
                   </button>
@@ -1167,7 +1169,7 @@ function ProductModal({ product, onClose, onSave }) {
               ))}
             </div>
           )}
-          <div className="text-xs text-gray-400">JPG, PNG, WEBP · max 5 MB · birden fazla seçebilirsiniz</div>
+          <div className="text-xs text-gray-400">{t('cm.pages_VendorPortal.jpg_png_webp_max_5_mb_birden_fazla_seceb')}</div>
         </div>
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -1175,14 +1177,14 @@ function ProductModal({ product, onClose, onSave }) {
             checked={form.is_active}
             onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
           />
-          Aktif (otellerin kataloğunda görünür)
+          {t('cm.pages_VendorPortal.aktif_otellerin_katalogunda_gorunur')}
         </label>
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onClose} className="flex-1 py-2 bg-gray-100 rounded">
-            İptal
+            {t('cm.pages_VendorPortal.iptal_25174')}
           </button>
           <button type="submit" className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded">
-            Kaydet
+            {t('cm.pages_VendorPortal.kaydet_a9270')}
           </button>
         </div>
       </form>
