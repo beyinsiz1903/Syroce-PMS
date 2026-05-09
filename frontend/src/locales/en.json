@@ -3512,6 +3512,8 @@
     "channel_col_share": "Share (%)",
     "demo_mode_label": "Demo Mode",
     "demo_mode_on": "Demo mode active — defaults are used when real data is missing",
+    "demo_fallback_disclaimer": "Trend and RevPAR figures are derived from demo defaults (30 rooms, 10% cancellation); they switch to real data automatically once a booking is recorded.",
+    "forbidden": "You do not have permission to view this module — contact your administrator.",
     "demo_mode_tooltip": "Lets a brand-new hotel test the RMS module. Recommendations can be produced even without real data.",
     "data_quality_banner_title": "Insufficient RMS data",
     "data_quality_banner_desc": "For a real account, fill in the missing items below. For testing, enable Demo mode at the top right.",

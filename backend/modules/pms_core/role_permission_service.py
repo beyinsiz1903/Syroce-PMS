@@ -52,6 +52,10 @@ OPERATION_PERMISSIONS = {
     # split-payment uses existing "post_payment" key (FRONT_DESK has POST_PAYMENT)
     # Departments / Reports / Rates / POS / Loyalty (Bug CU — v60)
     "view_finance_reports": [Permission.VIEW_FINANCIAL_REPORTS],
+    # RMS / Revenue dashboard — finance-grade data (ADR/RevPAR/cancellation/total
+    # revenue). Front desk & housekeeping intentionally locked out (Bug — yetki boşluğu).
+    "view_revenue": [Permission.VIEW_FINANCIAL_REPORTS],
+    "manage_pricing": [Permission.OVERRIDE_RATE],
     "export_data": [Permission.EXPORT_DATA],
     "view_corporate_accounts": [Permission.VIEW_COMPANIES],
     "view_vip_notes": [Permission.VIEW_REPORTS],

@@ -7,7 +7,7 @@ import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from core.cache import cached
@@ -208,7 +208,12 @@ async def update_rms_settings(
 @cached(ttl=300, key_prefix="rms_dashboard_kpis")  # 5 min cache; period+tenant scoped
 async def get_rms_dashboard_kpis(
     period: str = "30",
-    current_user: User = Depends(get_current_user)
+    # `?refresh=1` (UI Yenile butonu) → cache_manager.cached wrapper'ında `_nocache`
+    # kwarg'ı pop edilir, fresh fetch yapılır + sonuç cache'e tazelenir. Query alias
+    # ile public adı `refresh`, internal adı `_nocache`.
+    _nocache: bool = Query(False, alias="refresh"),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_revenue")),  # RBAC — finance-grade dashboard
 ):
     """Comprehensive RMS dashboard KPIs based on internal hotel data only."""
     clean = period.rstrip("dDmM").strip()

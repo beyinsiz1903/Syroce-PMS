@@ -3512,6 +3512,8 @@
     "channel_col_share": "Pay (%)",
     "demo_mode_label": "Demo Modu",
     "demo_mode_on": "Demo modu aktif — gerçek veri eksikse varsayılan değerler kullanılır",
+    "demo_fallback_disclaimer": "Trend ve RevPAR verileri demo varsayılanlarından (30 oda, %10 iptal) üretilmiştir; gerçek rezervasyon kaydedildiğinde otomatik gerçek veriye geçer.",
+    "forbidden": "Bu modülü görüntüleme yetkiniz yok — yöneticinizle iletişime geçin.",
     "demo_mode_tooltip": "Yeni kurulan otelin RMS modülünü test etmesi için. Gerçek veri olmadan da öneri üretilebilir hale gelir.",
     "data_quality_banner_title": "RMS verisi yetersiz",
     "data_quality_banner_desc": "Gerçek hesap için aşağıdaki eksiklikleri tamamlayın. Test için sağ üstten Demo modunu açabilirsiniz.",

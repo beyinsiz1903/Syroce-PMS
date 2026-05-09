@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { PageHeader } from '@/components/ui/page-header';
+import { KpiCard } from '@/components/ui/kpi-card';
 import { Line, Doughnut, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -22,9 +24,9 @@ import {
   Filler,
 } from 'chart.js';
 import {
-  TrendingUp, TrendingDown, Hotel, CalendarDays,
+  TrendingUp, Hotel, CalendarDays,
   Ban, Zap, ArrowUpRight, ArrowDownRight, Minus,
-  RefreshCw, Loader2, AlertTriangle, Info, FlaskConical
+  RefreshCw, Loader2, AlertTriangle, Info, FlaskConical, BarChart3
 } from 'lucide-react';
 
 ChartJS.register(
@@ -42,7 +44,7 @@ function DeltaBadge({ current, previous }) {
   const pct = ((current - previous) / previous * 100).toFixed(1);
   const up = pct > 0;
   return (
-    <span data-testid="delta-badge" className={`inline-flex items-center text-xs font-medium ${up ? 'text-emerald-600' : 'text-red-500'}`}>
+    <span data-testid="delta-badge" className={`inline-flex items-center text-xs font-medium ${up ? 'text-emerald-600' : 'text-rose-500'}`}>
       {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
       {up ? '+' : ''}{pct}%
     </span>
@@ -118,10 +120,15 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="rms">{content}</Layout>
   );
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (forceRefresh = false) => {
     try {
+      // `forceRefresh=true` (Yenile butonu) → backend `?refresh=1` query'siyle
+      // `_nocache=True` kwarg'ını tetikler; cache_manager.cached wrapper cache hit
+      // yerine fresh fetch yapar ve sonucu cache'e tazeler.
+      const dashUrl = `/rms/dashboard-kpis?period=${period}`
+        + (forceRefresh ? '&refresh=1' : '');
       const [dashRes, recRes, settingsRes] = await Promise.all([
-        axios.get(`/rms/dashboard-kpis?period=${period}`),
+        axios.get(dashUrl),
         axios.get('/rms/pricing-recommendations?status=pending'),
         axios.get('/rms/settings').catch(() => null),
       ]);
@@ -140,7 +147,11 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
       setDemoMode(typeof dmFromSettings === 'boolean' ? dmFromSettings : !!dmFromDash);
     } catch (e) {
       console.error('RMS data load error:', e);
-      toast.error(t('rmsModule.load_failed'));
+      // 403 → kullanıcının revenue dashboard yetkisi yok (RBAC: view_revenue).
+      const msg = e?.response?.status === 403
+        ? (t('rmsModule.forbidden') || 'Bu modülü görüntüleme yetkiniz yok.')
+        : t('rmsModule.load_failed');
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -154,7 +165,8 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
       await axios.patch('/rms/settings', { rms_demo_mode: next });
       setDemoMode(next);
       setLoading(true);
-      loadData();
+      // Toggle sonrası backend cache'i invalidate'liyor; client de fresh ister.
+      loadData(true);
     } catch (e) {
       toast.error(t('common.error') || 'Error');
     } finally {
@@ -236,8 +248,10 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
     }],
   };
 
-  // Chart: Channel Revenue Distribution
-  const channelColors = ['#0ea5e9', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#64748b'];
+  // Chart: Channel Revenue Distribution — Sprint A palette
+  // (sky / amber / emerald / indigo / rose / slate). Eski violet (#8b5cf6) ve
+  // saf red (#ef4444) DS dışıydı; rose-500/indigo-500 ile değiştirildi.
+  const channelColors = ['#0ea5e9', '#f59e0b', '#10b981', '#6366f1', '#f43f5e', '#64748b'];
   const channelData = {
     labels: channels.map(c => c.label),
     datasets: [{
@@ -247,18 +261,18 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
     }],
   };
 
-  // Chart: Room Type Revenue
+  // Chart: Room Type Revenue — sky + amber Sprint A
   const rtData = {
     labels: roomTypePerf.map(r => r.room_type),
     datasets: [{
       label: 'Gelir (TRY)',
       data: roomTypePerf.map(r => r.revenue),
-      backgroundColor: 'rgba(14,165,233,0.7)',
+      backgroundColor: 'rgba(14,165,233,0.7)', // sky-500
       borderRadius: 4,
     }, {
       label: 'Rez. Sayısı',
       data: roomTypePerf.map(r => r.count),
-      backgroundColor: 'rgba(245,158,11,0.7)',
+      backgroundColor: 'rgba(245,158,11,0.7)', // amber-500
       borderRadius: 4,
       yAxisID: 'y1',
     }],
@@ -271,46 +285,54 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
   const revparVal = hasBookings ? `${fmt(k.revpar)}` : dash;
   const cancelVal = hasBookings ? `%${k.cancel_rate || 0}` : dash;
 
+  const headerActions = (
+    <>
+      {canToggleDemoMode && (
+        <div
+          className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5"
+          title={t('rmsModule.demo_mode_tooltip')}
+          data-testid="demo-mode-toggle-wrap"
+        >
+          <FlaskConical className={`w-3.5 h-3.5 ${demoMode ? 'text-amber-500' : 'text-slate-400'}`} />
+          <span className="text-slate-600">{t('rmsModule.demo_mode_label')}</span>
+          <Switch
+            checked={demoMode}
+            disabled={demoToggling}
+            onCheckedChange={handleToggleDemoMode}
+            data-testid="demo-mode-toggle"
+          />
+        </div>
+      )}
+      <select
+        data-testid="period-select"
+        value={period}
+        onChange={e => { setPeriod(e.target.value); setLoading(true); }}
+        className="text-sm border rounded-md px-2 py-1.5 bg-white"
+      >
+        <option value="7">{t('rmsModule.period_7d')}</option>
+        <option value="30">{t('rmsModule.period_30d')}</option>
+        <option value="90">{t('rmsModule.period_90d')}</option>
+      </select>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => { setLoading(true); loadData(true); }}
+        data-testid="refresh-btn"
+      >
+        <RefreshCw className="w-4 h-4 mr-1.5" />
+        {t('common.refresh') || 'Yenile'}
+      </Button>
+    </>
+  );
+
   return wrap(
     <div data-testid="rms-dashboard" className="space-y-6 p-1">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight text-slate-800">{t('rmsModule.title')}</h2>
-          <p className="text-sm text-slate-500">{t('rmsModule.subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {canToggleDemoMode && (
-            <div
-              className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-md px-2 py-1"
-              title={t('rmsModule.demo_mode_tooltip')}
-              data-testid="demo-mode-toggle-wrap"
-            >
-              <FlaskConical className={`w-3.5 h-3.5 ${demoMode ? 'text-amber-500' : 'text-slate-400'}`} />
-              <span className="text-slate-600">{t('rmsModule.demo_mode_label')}</span>
-              <Switch
-                checked={demoMode}
-                disabled={demoToggling}
-                onCheckedChange={handleToggleDemoMode}
-                data-testid="demo-mode-toggle"
-              />
-            </div>
-          )}
-          <select
-            data-testid="period-select"
-            value={period}
-            onChange={e => { setPeriod(e.target.value); setLoading(true); }}
-            className="text-sm border rounded-md px-2 py-1.5 bg-white"
-          >
-            <option value="7">{t('rmsModule.period_7d')}</option>
-            <option value="30">{t('rmsModule.period_30d')}</option>
-            <option value="90">{t('rmsModule.period_90d')}</option>
-          </select>
-          <Button size="sm" variant="outline" onClick={() => { setLoading(true); loadData(); }} data-testid="refresh-btn">
-            <RefreshCw className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        icon={BarChart3}
+        title={t('rmsModule.title')}
+        subtitle={t('rmsModule.subtitle')}
+        actions={headerActions}
+      />
 
       {/* Demo mode active banner */}
       {demoMode && (
@@ -351,70 +373,81 @@ const RMSModule = ({ user, tenant, onLogout, embedded = false }) => {
         </div>
       )}
 
-      {/* KPI Cards */}
+      {/* KPI Cards — Sprint A KpiCard intent palette (sky/emerald/amber/rose).
+          Önceki violet/red gradient'ler DS dışıydı; KpiCard sol border + ikon
+          renklendirmesi ile tutarlı görünüm sağlıyor. */}
       {showDashboard && (
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <Card className="bg-gradient-to-br from-sky-50 to-white border-sky-100">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-sky-600 uppercase tracking-wide">{t('rmsModule.kpi_occupancy')}</span>
-              <Hotel className="w-4 h-4 text-sky-400" />
-            </div>
-            <p data-testid="kpi-occupancy" className="text-2xl font-bold text-slate-800" title={!hasBookings ? t('rmsModule.kpi_no_data') : undefined}>{occVal}</p>
-            {hasBookings && <DeltaBadge current={k.occupancy} previous={k.occupancy_prev} />}
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-emerald-50 to-white border-emerald-100">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-emerald-600 uppercase tracking-wide">{t('rmsModule.kpi_adr')}</span>
-              <TrendingUp className="w-4 h-4 text-emerald-400" />
-            </div>
-            <p data-testid="kpi-adr" className="text-2xl font-bold text-slate-800" title={!hasBookings ? t('rmsModule.kpi_no_data') : undefined}>
+        <KpiCard
+          icon={Hotel}
+          intent="info"
+          label={t('rmsModule.kpi_occupancy')}
+          value={
+            <span title={!hasBookings ? t('rmsModule.kpi_no_data') : undefined} data-testid="kpi-occupancy">
+              {occVal}
+            </span>
+          }
+          sub={hasBookings ? <DeltaBadge current={k.occupancy} previous={k.occupancy_prev} /> : null}
+        />
+        <KpiCard
+          icon={TrendingUp}
+          intent="success"
+          label={t('rmsModule.kpi_adr')}
+          value={
+            <span title={!hasBookings ? t('rmsModule.kpi_no_data') : undefined} data-testid="kpi-adr">
               {adrVal}{hasBookings && <span className="text-sm font-normal"> TRY</span>}
-            </p>
-            {hasBookings && <DeltaBadge current={k.adr} previous={k.adr_prev} />}
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-violet-50 to-white border-violet-100">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-violet-600 uppercase tracking-wide">{t('rmsModule.kpi_revpar')}</span>
-              <Zap className="w-4 h-4 text-violet-400" />
-            </div>
-            <p data-testid="kpi-revpar" className="text-2xl font-bold text-slate-800" title={!hasBookings ? t('rmsModule.kpi_no_data') : undefined}>
+            </span>
+          }
+          sub={hasBookings ? <DeltaBadge current={k.adr} previous={k.adr_prev} /> : null}
+        />
+        <KpiCard
+          icon={Zap}
+          intent="info"
+          label={t('rmsModule.kpi_revpar')}
+          value={
+            <span title={!hasBookings ? t('rmsModule.kpi_no_data') : undefined} data-testid="kpi-revpar">
               {revparVal}{hasBookings && <span className="text-sm font-normal"> TRY</span>}
-            </p>
-            {hasBookings && <DeltaBadge current={k.revpar} previous={k.revpar_prev} />}
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-amber-50 to-white border-amber-100">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-amber-600 uppercase tracking-wide">{t('rmsModule.kpi_pickup')}</span>
-              <CalendarDays className="w-4 h-4 text-amber-400" />
-            </div>
-            <p data-testid="kpi-pickup" className="text-2xl font-bold text-slate-800">
+            </span>
+          }
+          sub={hasBookings ? <DeltaBadge current={k.revpar} previous={k.revpar_prev} /> : null}
+        />
+        <KpiCard
+          icon={CalendarDays}
+          intent="warning"
+          label={t('rmsModule.kpi_pickup')}
+          value={
+            <span data-testid="kpi-pickup">
               {k.pickup_rate || 0}<span className="text-sm font-normal">{t('rmsModule.kpi_pickup_unit')}</span>
-            </p>
-            <span className="text-xs text-slate-500">{t('rmsModule.kpi_pickup_sub', { count: k.pickup_count_7d || 0 })}</span>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-red-50 to-white border-red-100">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-red-600 uppercase tracking-wide">{t('rmsModule.kpi_cancel')}</span>
-              <Ban className="w-4 h-4 text-red-400" />
-            </div>
-            <p data-testid="kpi-cancel" className="text-2xl font-bold text-slate-800" title={!hasBookings ? t('rmsModule.kpi_no_data') : undefined}>{cancelVal}</p>
-            <span className="text-xs text-slate-500">{t('rmsModule.kpi_total_revenue', { amount: fmt(k.total_revenue) })}</span>
-          </CardContent>
-        </Card>
+            </span>
+          }
+          sub={t('rmsModule.kpi_pickup_sub', { count: k.pickup_count_7d || 0 })}
+        />
+        <KpiCard
+          icon={Ban}
+          intent="danger"
+          label={t('rmsModule.kpi_cancel')}
+          value={
+            <span title={!hasBookings ? t('rmsModule.kpi_no_data') : undefined} data-testid="kpi-cancel">
+              {cancelVal}
+            </span>
+          }
+          sub={t('rmsModule.kpi_total_revenue', { amount: fmt(k.total_revenue) })}
+        />
       </div>
+      )}
+
+      {/* Demo modu disclaimer — total_rooms == 0 olduğunda backend
+          DEMO_FALLBACK_TOTAL_ROOMS=30 ile RevPAR/doluluk hesaplıyor.
+          Üst banner sadece "Demo modu aktif" diyor; bu satır KPI/trend'in
+          gerçek veriden değil demo çarpanından geldiğini netleştirir. */}
+      {showDashboard && demoMode && !hasBookings && (
+        <div
+          data-testid="demo-fallback-disclaimer"
+          className="text-xs text-amber-700 bg-amber-50/60 border border-amber-200 rounded-md px-3 py-2 flex items-start gap-2"
+        >
+          <FlaskConical className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          <span>{t('rmsModule.demo_fallback_disclaimer') || 'Trend ve RevPAR verileri demo varsayılanlarından üretilmiştir; gerçek rezervasyon kaydedildiğinde otomatik güncellenir.'}</span>
+        </div>
       )}
 
       {/* Charts Row */}

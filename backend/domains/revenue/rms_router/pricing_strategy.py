@@ -448,7 +448,8 @@ async def generate_auto_pricing(
 async def get_pricing_recommendations(
     date: str = None,
     status: str = 'pending',
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_revenue")),  # RBAC — finance-grade pricing data
 ):
     """Get pricing recommendations"""
     query = {'tenant_id': current_user.tenant_id}
