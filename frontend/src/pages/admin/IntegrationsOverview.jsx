@@ -26,10 +26,33 @@ const CATEGORY_TONE = {
   infrastructure: "bg-zinc-50 text-zinc-700 border-zinc-200",
 };
 
+// Ekran sıralaması: TR ürün önceliğine göre stabil sıra (alfabetik
+// localeCompare yerine açıkça tanımlı, böylece "ai" ile "Altyapı" yan yana
+// gelmek gibi tutarsızlıklar olmaz).
+const CATEGORY_ORDER = [
+  "channel-manager",
+  "ai",
+  "messaging",
+  "payment",
+  "loyalty",
+  "b2b",
+  "identity",
+  "monitoring",
+  "infrastructure",
+];
+
+function categoryRank(cat) {
+  const i = CATEGORY_ORDER.indexOf(cat);
+  return i === -1 ? 999 : i;
+}
+
 function CategoryBadge({ category, label }) {
   const tone = CATEGORY_TONE[category] || "bg-slate-50 text-slate-600 border-slate-200";
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${tone}`}>
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${tone}`}
+      title={label}
+    >
       {label}
     </span>
   );
@@ -40,22 +63,62 @@ function IntegrationCard({ item, status }) {
   const isReady = status === "ready";
   const isNeeds = status === "needs";
   const isDev = status === "dev";
+  const firstEnv = (item.required_envs && item.required_envs.length > 0)
+    ? item.required_envs[0]
+    : null;
 
   return (
-    <Card className={`p-4 flex flex-col gap-3 ${isDev ? "opacity-70 bg-slate-50/40" : ""}`}>
+    <Card
+      className={`p-4 flex flex-col gap-3 ${
+        isDev ? "bg-slate-50/60 border-slate-200" : ""
+      }`}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-semibold text-slate-900 text-sm leading-tight truncate">{item.name}</h3>
+            <h3
+              className={`font-semibold text-sm leading-tight truncate ${
+                isDev ? "text-slate-700" : "text-slate-900"
+              }`}
+            >
+              {item.name}
+            </h3>
           </div>
-          <CategoryBadge category={item.category} label={item.category_label} />
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <CategoryBadge category={item.category} label={item.category_label} />
+            {item.per_tenant && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border bg-slate-100 text-slate-600 border-slate-300"
+                title="Bu entegrasyon her otelin kendi panelinden ayrı ayrı bağlanır."
+              >
+                Otel-başına
+              </span>
+            )}
+          </div>
         </div>
-        {isReady && <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />}
-        {isNeeds && <KeyRound className="w-5 h-5 text-amber-600 flex-shrink-0" />}
-        {isDev && <Wrench className="w-5 h-5 text-slate-400 flex-shrink-0" />}
+        {isReady && (
+          <CheckCircle2
+            className="w-5 h-5 text-emerald-600 flex-shrink-0"
+            aria-label="Hazır"
+          />
+        )}
+        {isNeeds && (
+          <KeyRound
+            className="w-5 h-5 text-amber-600 flex-shrink-0"
+            aria-label="API anahtarı bekleniyor"
+          />
+        )}
+        {isDev && (
+          <Wrench
+            className="w-5 h-5 text-slate-500 flex-shrink-0"
+            aria-label="Geliştirme aşamasında"
+          />
+        )}
       </div>
 
-      <p className="text-xs text-slate-600 leading-relaxed">{item.description}</p>
+      <p className={`text-xs leading-relaxed ${isDev ? "text-slate-600" : "text-slate-600"}`}>
+        {item.description}
+      </p>
 
       {item.per_tenant && (
         <div className="flex items-start gap-1.5 text-[11px] text-slate-500 bg-slate-50 px-2 py-1.5 rounded">
@@ -98,7 +161,7 @@ function IntegrationCard({ item, status }) {
 
       <div className="flex items-center justify-between pt-2 mt-auto border-t border-slate-100">
         {item.module_key ? (
-          <span className="text-[10px] font-mono text-slate-400">
+          <span className="text-[10px] font-mono text-slate-400" title="Otele atama için modül anahtarı">
             modül: {item.module_key}
           </span>
         ) : <span />}
@@ -108,24 +171,31 @@ function IntegrationCard({ item, status }) {
               href={item.doc_url}
               target="_blank"
               rel="noreferrer"
-              className="text-slate-400 hover:text-slate-700 p-1"
-              title="Sağlayıcı dokümanı"
+              className="text-slate-400 hover:text-slate-700 p-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+              title={`Sağlayıcı dokümanı: ${item.name}`}
+              aria-label={`${item.name} sağlayıcı dokümanını yeni sekmede aç`}
             >
-              <ExternalLink className="w-3.5 h-3.5" />
+              <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
             </a>
           )}
-          {isNeeds && (
-            <Link to={`/admin/integration-credentials#${item.required_envs[0] || ""}`}>
+          {isNeeds && firstEnv && (
+            <Link
+              to={`/admin/integration-credentials#${firstEnv}`}
+              aria-label={`${item.name} için API anahtarlarını gir`}
+            >
               <Button size="sm" variant="default" className="h-7 text-xs">
                 Anahtarları Gir
-                <ArrowRight className="w-3 h-3 ml-1" />
+                <ArrowRight className="w-3 h-3 ml-1" aria-hidden="true" />
               </Button>
             </Link>
           )}
-          {isReady && !item.per_tenant && item.required_envs?.length > 0 && (
-            <Link to={`/admin/integration-credentials#${item.required_envs[0] || ""}`}>
+          {isReady && !item.per_tenant && firstEnv && (
+            <Link
+              to={`/admin/integration-credentials#${firstEnv}`}
+              aria-label={`${item.name} anahtarlarını yönet`}
+            >
               <Button size="sm" variant="outline" className="h-7 text-xs">
-                <Settings2 className="w-3 h-3 mr-1" />
+                <Settings2 className="w-3 h-3 mr-1" aria-hidden="true" />
                 Yönet
               </Button>
             </Link>
@@ -162,8 +232,8 @@ export default function IntegrationsOverview() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get("/admin/integrations-overview");
-      setData(data);
+      const resp = await axios.get("/admin/integrations-overview");
+      setData(resp.data);
     } catch (e) {
       toast.error("Entegrasyon listesi yüklenemedi: " + (e?.response?.data?.detail || e.message));
     } finally {
@@ -177,9 +247,12 @@ export default function IntegrationsOverview() {
   const total = totals.all || 0;
   const readyPct = total ? Math.round(((totals.ready || 0) / total) * 100) : 0;
 
+  // Önce TR-öncelikli kategori sırası, sonra isim (TR locale).
   const sortByCategory = (a, b) => {
-    if (a.category === b.category) return a.name.localeCompare(b.name, "tr");
-    return a.category.localeCompare(b.category);
+    const ra = categoryRank(a.category);
+    const rb = categoryRank(b.category);
+    if (ra !== rb) return ra - rb;
+    return (a.name || "").localeCompare(b.name || "", "tr");
   };
   const ready = useMemo(() => [...(data.ready || [])].sort(sortByCategory), [data.ready]);
   const needs = useMemo(() => [...(data.needs_credentials || [])].sort(sortByCategory), [data.needs_credentials]);
