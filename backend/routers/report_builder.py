@@ -1,11 +1,27 @@
 """
-Report Builder Router - Özel Rapor Oluşturucu
-Kullanıcıların dinamik rapor oluşturmasını, filtrelemesini ve dışa aktarmasını sağlar.
+Report Builder Router - Özel Rapor Oluşturucu (Tur 28+ hardened).
+
+Kullanıcıların dinamik rapor oluşturmasını, filtrelemesini ve dışa aktarmasını
+sağlar. P0/P1 düzeltmeleri:
+  - DB alan adlarıyla uyumlu projection (room_number/room_type/base_price/
+    capacity, charge_category, booking_source, vip_status vb.) + alias
+    fallback (eski tenant verilerinde alternatif alan adları).
+  - Tarih filtresi end-of-day çevirisi (T23:59:59).
+  - Filtre değer tip dönüşümü (number/boolean/date) — string karşılaştırma
+    sessizce boş döndüğü için.
+  - sort_by allow-list (yalnızca tanımlı sütunlar) + limit cap (1..5000).
+  - Permission gate: tüm endpoint'ler `view_reports`; PII sütunları
+    (id_number, passport_number, email, phone) admin/manager/granted
+    olmayan kullanıcılarda otomatik maskelenir.
+  - Şablon silmede created_by kontrolü (sadece sahibi veya admin/manager).
+  - Nested ObjectId temizliği (recursive).
+  - Excel TOPLAM yanlış sütuna düşmesi (col 1 numeric ise üzerine yazıyordu).
+  - PDF sütun sayısı çok fazla ise font otomatik küçülür.
 """
 import io
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -35,7 +51,7 @@ class ReportConfig(BaseModel):
     sort_order: str | None = "desc"
     date_from: str | None = None
     date_to: str | None = None
-    group_by: str | None = None
+    group_by: str | None = None  # ileride kullanılmak üzere; şu an no-op
     limit: int | None = 500
 
 
@@ -61,10 +77,6 @@ def get_db():
     return _db
 
 
-def get_user():
-    return Depends(_get_current_user)
-
-
 # ─── Data Source Definitions ──────────────────────────────────────────────
 
 DATA_SOURCES = {
@@ -79,7 +91,7 @@ DATA_SOURCES = {
             "check_out": {"label": "Çıkış Tarihi", "type": "date"},
             "status": {"label": "Durum", "type": "select", "options": ["confirmed", "checked_in", "checked_out", "cancelled", "no_show"]},
             "total_amount": {"label": "Toplam Tutar", "type": "currency"},
-            "source": {"label": "Kaynak", "type": "select", "options": ["direct", "ota", "corporate", "walk_in", "booking_com"]},
+            "source": {"label": "Kaynak", "type": "select", "options": ["direct", "ota", "corporate", "walk_in", "booking_com", "hotelrunner", "exely"]},
             "nights": {"label": "Gece Sayısı", "type": "number"},
             "adults": {"label": "Yetişkin", "type": "number"},
             "children": {"label": "Çocuk", "type": "number"},
@@ -179,85 +191,314 @@ DATA_SOURCES = {
 }
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────
+# ─── Field aliases: column key → list of candidate DB field names ────────
+# İlk dolu olan değer kullanılır. Eski tenant verilerinde alternatif alan
+# isimleri olabilir; bu sayede projection sessizce boş dönmez.
+SOURCE_FIELD_MAP: dict[str, dict[str, list[str]]] = {
+    "reservations": {
+        "source": ["booking_source", "source_channel", "source", "channel"],
+        "rate_code": ["rate_plan", "rate_code"],
+        "id_number": ["id_number", "national_id"],
+    },
+    "guests": {
+        "name": ["name", "full_name"],
+        "id_number": ["id_number", "national_id", "passport_number"],
+        "vip": ["vip_status", "vip"],
+        "phone": ["phone", "phone_number"],
+        "total_stays": ["total_stays", "stay_count"],
+        "total_revenue": ["total_revenue", "lifetime_value"],
+    },
+    "rooms": {
+        "number": ["room_number", "number"],
+        "type": ["room_type", "type"],
+        "base_rate": ["base_price", "base_rate", "price_per_night"],
+        "max_occupancy": ["capacity", "max_occupancy"],
+    },
+    "revenue": {
+        "charge_type": ["charge_category", "charge_type"],
+    },
+    "folios": {
+        "total_charges": ["total_charges", "charges_total"],
+        "total_payments": ["total_payments", "payments_total"],
+    },
+}
+
+# PII column keys per source (column-level masking when no PII access).
+PII_COLUMNS: dict[str, set[str]] = {
+    "reservations": {"id_number", "passport_number", "guest_email", "guest_phone"},
+    "guests": {"id_number", "email", "phone"},
+    "folios": {"guest_name"},  # name itself is sensitive in some KVKK contexts
+}
+
+# Maximum allowed result rows per request (DoS guard).
+MAX_LIMIT = 5000
+
+# Maximum columns for landscape PDF (above this, font shrinks).
+PDF_FIT_COLUMNS = 8
+
+
+# ─── PII helpers ─────────────────────────────────────────────────────────
+
+def _user_has_pii_access(user) -> bool:
+    role = getattr(user, 'role', None)
+    role_str = getattr(role, 'value', None) or str(role or '')
+    if role_str in ('admin', 'super_admin', 'manager', 'general_manager'):
+        return True
+    granted = getattr(user, 'granted_permissions', None) or []
+    return 'view_guest_pii' in granted
+
+
+def _mask_pii(value):
+    if value is None or value == "":
+        return value
+    s = str(value)
+    if len(s) <= 4:
+        return '*' * len(s)
+    return s[:2] + '*' * (len(s) - 4) + s[-2:]
+
+
+# ─── Type coercion for filter values ─────────────────────────────────────
+
+def _coerce_value(value, col_type: str | None):
+    """Backend filter value tipi her zaman string gelir (HTML input). DB
+    karşılaştırması doğru tip ile yapılmazsa sessiz boş döner.
+    """
+    if value is None:
+        return value
+    if isinstance(value, list):
+        return [_coerce_value(v, col_type) for v in value]
+    s = str(value).strip()
+    if s == "":
+        return s
+    try:
+        if col_type == "number":
+            if "." in s:
+                return float(s)
+            return int(s)
+        if col_type == "currency":
+            return float(s)
+        if col_type == "boolean":
+            return s.lower() in ("true", "1", "yes", "evet", "var")
+        if col_type == "date":
+            # Tarih filtresinde tam ISO string ile karşılaştırma yeterli.
+            return s
+        return value
+    except (ValueError, TypeError):
+        return value
+
+
+# ─── Mongo filter / projection ───────────────────────────────────────────
+
+def _resolve_db_field(source_key: str, col_key: str) -> str:
+    """API column key → birinci DB alan adı (legacy fallback için tüm
+    listeyi `_resolve_db_fields` ile alın).
+    """
+    return _resolve_db_fields(source_key, col_key)[0]
+
+
+def _resolve_db_fields(source_key: str, col_key: str) -> list[str]:
+    aliases = SOURCE_FIELD_MAP.get(source_key, {}).get(col_key)
+    if aliases:
+        return aliases
+    return [col_key]
+
 
 def build_mongo_filter(config: ReportConfig, tenant_id: str) -> dict:
-    """Build MongoDB query filter from ReportConfig."""
-    query = {"tenant_id": tenant_id}
+    """Build MongoDB query filter from ReportConfig.
+    Column-key referansları DB alan adına çözülür ve değerler tipe göre
+    cast edilir.
+    """
+    query: dict = {"tenant_id": tenant_id}
+    source_key = config.data_source
+    source_def = DATA_SOURCES.get(source_key, {})
+    cols = source_def.get("columns", {})
 
-    # Date range filter
-    date_field = DATA_SOURCES.get(config.data_source, {}).get("date_field")
+    # Date range filter (end-of-day düzeltmesi).
+    date_field = source_def.get("date_field")
     if date_field and (config.date_from or config.date_to):
-        date_q = {}
+        date_q: dict = {}
         if config.date_from:
-            date_q["$gte"] = config.date_from
+            df = str(config.date_from).strip()
+            # `T` yoksa gün başlangıcına çevir.
+            if "T" not in df:
+                df = df + "T00:00:00"
+            date_q["$gte"] = df
         if config.date_to:
-            date_q["$lte"] = config.date_to
+            dt = str(config.date_to).strip()
+            if "T" not in dt:
+                dt = dt + "T23:59:59"
+            date_q["$lte"] = dt
         query[date_field] = date_q
 
-    # Custom filters
+    # Custom filters (allow-list field, type-aware value).
     for f in (config.filters or []):
-        field = f.field
+        if f.field not in cols:
+            # Sadece tanımlı sütunlar üzerinde filtre. Bilinmeyen alanları
+            # sessizce düşür (silent drop yerine reddedilebilir; sızıntı
+            # vektörünü kapatmak için bilinmeyen alan kabul edilmiyor).
+            continue
+        col_type = cols.get(f.field, {}).get("type")
+        db_field = _resolve_db_field(source_key, f.field)
         op = f.operator
-        val = f.value
+        val = _coerce_value(f.value, col_type)
+
+        # `contains` haricinde boş değer filtreyi düşürmesin — boş string
+        # yine `eq ""` olabilir; ama None ise atla.
+        if val is None:
+            continue
 
         if op == "eq":
-            query[field] = val
+            query[db_field] = val
         elif op == "ne":
-            query[field] = {"$ne": val}
+            query[db_field] = {"$ne": val}
         elif op == "gt":
-            query[field] = {"$gt": val}
+            query[db_field] = {"$gt": val}
         elif op == "gte":
-            query[field] = {"$gte": val}
+            query[db_field] = {"$gte": val}
         elif op == "lt":
-            query[field] = {"$lt": val}
+            query[db_field] = {"$lt": val}
         elif op == "lte":
-            query[field] = {"$lte": val}
+            query[db_field] = {"$lte": val}
         elif op == "in":
-            query[field] = {"$in": val if isinstance(val, list) else [val]}
+            query[db_field] = {"$in": val if isinstance(val, list) else [val]}
         elif op == "contains":
             from security.query_safety import safe_search_term
             _v = safe_search_term(str(val))
             if _v:
-                query[field] = {"$regex": _v, "$options": "i"}
+                query[db_field] = {"$regex": _v, "$options": "i"}
+            # Aksi halde filtreyi DROP etmiyoruz — eşleşmeyecek bir
+            # sentinel kullanıyoruz ki "tüm kayıtlar gelir" sızıntısı
+            # olmasın.
+            else:
+                query[db_field] = {"$exists": False, "$type": "null"}
 
     return query
 
 
-def build_projection(columns: list[str]) -> dict:
-    """Build MongoDB projection from column list."""
-    proj = {"_id": 0}
+def _projection_fields(source_key: str, columns: list[str]) -> set[str]:
+    """Tüm gerekli DB alanlarını (alias ve compute girdileri dahil) toplar."""
+    fields: set[str] = set()
     for col in columns:
-        proj[col] = 1
+        for alias in _resolve_db_fields(source_key, col):
+            fields.add(alias)
+        # Compute girdileri:
+        if source_key == "reservations" and col == "nights":
+            fields.update({"check_in", "check_out", "nights"})
+        if source_key == "guests" and col == "name":
+            fields.update({"first_name", "last_name"})
+    return fields
+
+
+def build_projection(source_key: str, columns: list[str]) -> dict:
+    proj = {"_id": 0}
+    for f in _projection_fields(source_key, columns):
+        proj[f] = 1
     return proj
 
 
-async def fetch_report_data(config: ReportConfig, tenant_id: str) -> list:
-    """Fetch data from MongoDB based on report config."""
+# ─── Cleaning helpers ────────────────────────────────────────────────────
+
+def _clean_value(v):
+    """Recursive ObjectId / datetime serialize-safe çevirme."""
+    if v is None:
+        return None
+    t = type(v).__name__
+    if t == "ObjectId":
+        return str(v)
+    if isinstance(v, datetime):
+        return v.isoformat()
+    if isinstance(v, date):
+        return v.isoformat()
+    if isinstance(v, dict):
+        return {k: _clean_value(val) for k, val in v.items()}
+    if isinstance(v, list):
+        return [_clean_value(x) for x in v]
+    return v
+
+
+def _compute_nights(doc: dict) -> int | None:
+    if doc.get("nights"):
+        try:
+            return int(doc["nights"])
+        except (TypeError, ValueError):
+            pass
+    ci, co = doc.get("check_in"), doc.get("check_out")
+    if not ci or not co:
+        return None
+    try:
+        ci_d = ci if isinstance(ci, datetime) else datetime.fromisoformat(str(ci).replace("Z", "+00:00"))
+        co_d = co if isinstance(co, datetime) else datetime.fromisoformat(str(co).replace("Z", "+00:00"))
+        n = (co_d.date() - ci_d.date()).days
+        return max(n, 1)
+    except (ValueError, TypeError):
+        return None
+
+
+def _compose_guest_name(doc: dict) -> str | None:
+    n = doc.get("name") or doc.get("full_name")
+    if n:
+        return n
+    fn, ln = doc.get("first_name") or "", doc.get("last_name") or ""
+    composed = f"{fn} {ln}".strip()
+    return composed or None
+
+
+# ─── Fetch ──────────────────────────────────────────────────────────────
+
+async def fetch_report_data(config: ReportConfig, tenant_id: str, has_pii: bool) -> list:
     db = get_db()
     source_def = DATA_SOURCES.get(config.data_source)
     if not source_def:
         raise HTTPException(status_code=400, detail=f"Geçersiz veri kaynağı: {config.data_source}")
 
+    cols_def = source_def.get("columns", {})
+    # Bilinmeyen sütunları reddet.
+    for c in config.columns:
+        if c not in cols_def:
+            raise HTTPException(status_code=400, detail=f"Bilinmeyen sütun: {c}")
+
+    # sort_by allow-list.
+    sort_field_key = config.sort_by if config.sort_by in cols_def else None
+    sort_field_db = _resolve_db_field(config.data_source, sort_field_key) if sort_field_key else (source_def.get("date_field") or "_id")
+    sort_dir = -1 if (config.sort_order or "desc") == "desc" else 1
+
+    # Limit cap.
+    raw_limit = config.limit or 500
+    try:
+        raw_limit = int(raw_limit)
+    except (TypeError, ValueError):
+        raw_limit = 500
+    safe_limit = max(1, min(raw_limit, MAX_LIMIT))
+
     collection = db[source_def["collection"]]
     query = build_mongo_filter(config, tenant_id)
-    projection = build_projection(config.columns)
+    projection = build_projection(config.data_source, config.columns)
 
-    sort_field = config.sort_by or source_def.get("date_field") or "_id"
-    sort_dir = -1 if config.sort_order == "desc" else 1
+    cursor = collection.find(query, projection).sort(sort_field_db, sort_dir).limit(safe_limit)
+    raw = await cursor.to_list(length=safe_limit)
 
-    cursor = collection.find(query, projection).sort(sort_field, sort_dir).limit(config.limit or 500)
-    results = await cursor.to_list(length=config.limit or 500)
+    pii_keys = PII_COLUMNS.get(config.data_source, set())
 
-    # Clean data: convert any remaining ObjectIds
-    cleaned = []
-    for doc in results:
-        row = {}
+    cleaned: list[dict] = []
+    for doc in raw:
+        row: dict = {}
         for col in config.columns:
-            val = doc.get(col, "")
-            if hasattr(val, '__str__') and type(val).__name__ == 'ObjectId':
-                val = str(val)
-            row[col] = val
+            # Compute virtual fields.
+            if config.data_source == "reservations" and col == "nights":
+                v = _compute_nights(doc)
+            elif config.data_source == "guests" and col == "name":
+                v = _compose_guest_name(doc)
+            else:
+                v = None
+                for alias in _resolve_db_fields(config.data_source, col):
+                    cand = doc.get(alias)
+                    if cand not in (None, ""):
+                        v = cand
+                        break
+            v = _clean_value(v)
+            if (not has_pii) and col in pii_keys:
+                v = _mask_pii(v)
+            row[col] = v
         cleaned.append(row)
 
     return cleaned
@@ -266,46 +507,46 @@ async def fetch_report_data(config: ReportConfig, tenant_id: str) -> list:
 # ─── Endpoints ────────────────────────────────────────────────────────────
 
 @router.get("/config")
-async def get_builder_config(credentials=Depends(HTTPBearer())):
+async def get_builder_config(
+    credentials=Depends(HTTPBearer()),
+    _perm=Depends(require_op("view_reports")),
+):
     """Rapor oluşturucu için mevcut veri kaynaklarını ve sütun tanımlarını döndürür."""
     await _get_current_user(credentials)
-
     sources = {}
     for key, src in DATA_SOURCES.items():
         sources[key] = {
             "label": src["label"],
             "columns": src["columns"],
             "date_field": src.get("date_field"),
+            "pii_columns": sorted(PII_COLUMNS.get(key, set())),
         }
-    return {"data_sources": sources}
+    return {"data_sources": sources, "max_limit": MAX_LIMIT}
 
 
 @router.post("/generate")
-async def generate_report(config: ReportConfig, credentials=Depends(HTTPBearer()),
-    _perm=Depends(require_op("view_reports")),  # v92 DW
+async def generate_report(
+    config: ReportConfig,
+    credentials=Depends(HTTPBearer()),
+    _perm=Depends(require_op("view_reports")),
 ):
     """Özel rapor verisini üretir."""
     current_user = await _get_current_user(credentials)
-
     tenant_id = getattr(current_user, 'tenant_id', None)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
+    has_pii = _user_has_pii_access(current_user)
 
-    data = await fetch_report_data(config, tenant_id)
+    data = await fetch_report_data(config, tenant_id, has_pii)
 
-    # Build column labels
     source_def = DATA_SOURCES.get(config.data_source, {})
-    column_labels = {}
-    for col in config.columns:
-        col_def = source_def.get("columns", {}).get(col, {})
-        column_labels[col] = col_def.get("label", col)
+    column_labels = {col: source_def.get("columns", {}).get(col, {}).get("label", col) for col in config.columns}
 
-    # Calculate summary stats for numeric/currency columns
     summary = {}
     for col in config.columns:
         col_type = source_def.get("columns", {}).get(col, {}).get("type")
         if col_type in ("number", "currency"):
-            values = [row.get(col, 0) for row in data if isinstance(row.get(col), (int, float))]
+            values = [row.get(col) for row in data if isinstance(row.get(col), (int, float)) and not isinstance(row.get(col), bool)]
             if values:
                 summary[col] = {
                     "sum": round(sum(values), 2),
@@ -320,68 +561,79 @@ async def generate_report(config: ReportConfig, credentials=Depends(HTTPBearer()
         "total_count": len(data),
         "column_labels": column_labels,
         "summary": summary,
+        "pii_masked": not has_pii,
         "generated_at": datetime.now(UTC).isoformat(),
     }
 
 
+def _first_numeric_col_index(source_def: dict, columns: list[str]) -> int | None:
+    """1-tabanlı sütun indeksi (Excel için)."""
+    for i, c in enumerate(columns, 1):
+        t = source_def.get("columns", {}).get(c, {}).get("type")
+        if t in ("number", "currency"):
+            return i
+    return None
+
+
 @router.post("/export/excel")
-async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBearer()),
-    _perm=Depends(require_op("view_reports")),  # v92 DW
+async def export_report_excel(
+    config: ReportConfig,
+    credentials=Depends(HTTPBearer()),
+    _perm=Depends(require_op("view_reports")),
 ):
     """Özel raporu Excel formatında dışa aktarır."""
     current_user = await _get_current_user(credentials)
-
     tenant_id = getattr(current_user, 'tenant_id', None)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
+    has_pii = _user_has_pii_access(current_user)
 
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 
-    data = await fetch_report_data(config, tenant_id)
+    data = await fetch_report_data(config, tenant_id, has_pii)
     source_def = DATA_SOURCES.get(config.data_source, {})
 
     wb = Workbook()
     ws = wb.active
-    ws.title = source_def.get("label", "Rapor")
+    ws.title = (source_def.get("label", "Rapor") or "Rapor")[:30]
+
+    headers = [source_def.get("columns", {}).get(col, {}).get("label", col) for col in config.columns]
+    n_cols = max(len(headers), 1)
 
     # Title row
-    headers = []
-    for col in config.columns:
-        col_def = source_def.get("columns", {}).get(col, {})
-        headers.append(col_def.get("label", col))
-
-    ws.merge_cells('A1:' + get_column_letter(max(len(headers), 1)) + '1')
-    title_cell = ws['A1']
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    title_cell = ws.cell(row=1, column=1)
     title_cell.value = f"{source_def.get('label', 'Rapor')} - Özel Rapor"
     title_cell.font = Font(size=14, bold=True, color="FFFFFF")
-    title_cell.fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    title_cell.fill = PatternFill(start_color="0F172A", end_color="0F172A", fill_type="solid")
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 32
 
-    # Date info row
-    ws.merge_cells('A2:' + get_column_letter(max(len(headers), 1)) + '2')
-    date_cell = ws['A2']
-    date_parts = []
+    # Date / meta row
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    date_cell = ws.cell(row=2, column=1)
+    parts = []
     if config.date_from:
-        date_parts.append(f"Başlangıç: {config.date_from}")
+        parts.append(f"Başlangıç: {config.date_from}")
     if config.date_to:
-        date_parts.append(f"Bitiş: {config.date_to}")
-    date_cell.value = " | ".join(date_parts) if date_parts else f"Oluşturma: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+        parts.append(f"Bitiş: {config.date_to}")
+    if not has_pii:
+        parts.append("PII alanları maskelenmiştir")
+    date_cell.value = " | ".join(parts) if parts else f"Oluşturma: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
     date_cell.font = Font(size=10, italic=True, color="666666")
     date_cell.alignment = Alignment(horizontal="center")
 
     # Headers
-    header_fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
+    header_fill = PatternFill(start_color="0284C7", end_color="0284C7", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=11)
     border = Border(
         left=Side(style='thin', color='D9D9D9'),
         right=Side(style='thin', color='D9D9D9'),
         top=Side(style='thin', color='D9D9D9'),
-        bottom=Side(style='thin', color='D9D9D9')
+        bottom=Side(style='thin', color='D9D9D9'),
     )
-
     for col_num, header in enumerate(headers, 1):
         cell = ws.cell(row=3, column=col_num)
         cell.value = header
@@ -392,23 +644,24 @@ async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBear
         ws.column_dimensions[get_column_letter(col_num)].width = max(len(header) + 4, 14)
 
     # Data rows
-    light_fill = PatternFill(start_color="F2F7FB", end_color="F2F7FB", fill_type="solid")
+    light_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
     for row_num, row_data in enumerate(data, 4):
         for col_num, col_key in enumerate(config.columns, 1):
             cell = ws.cell(row=row_num, column=col_num)
             val = row_data.get(col_key, "")
             col_type = source_def.get("columns", {}).get(col_key, {}).get("type")
 
-            if col_type == "currency" and isinstance(val, (int, float)):
+            if col_type == "currency" and isinstance(val, (int, float)) and not isinstance(val, bool):
                 cell.value = val
                 cell.number_format = '#,##0.00 ₺'
-            elif col_type == "number" and isinstance(val, (int, float)):
+            elif col_type == "number" and isinstance(val, (int, float)) and not isinstance(val, bool):
                 cell.value = val
                 cell.number_format = '#,##0'
             elif isinstance(val, list):
-                # Bug AN: any list item may start with =/+/-/@ → formula injection.
                 from core.csv_safe import xlsx_safe
                 cell.value = xlsx_safe(", ".join(str(v) for v in val))
+            elif isinstance(val, bool):
+                cell.value = "Evet" if val else "Hayır"
             else:
                 from core.csv_safe import xlsx_safe
                 cell.value = xlsx_safe(str(val)) if val is not None else ""
@@ -418,35 +671,33 @@ async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBear
             if (row_num - 4) % 2 == 1:
                 cell.fill = light_fill
 
-    # Summary row
-    summary_row = len(data) + 5
-    ws.cell(row=summary_row, column=1, value="TOPLAM").font = Font(bold=True, size=11)
-    for col_num, col_key in enumerate(config.columns, 1):
-        col_type = source_def.get("columns", {}).get(col_key, {}).get("type")
-        if col_type in ("number", "currency"):
-            values = [r.get(col_key, 0) for r in data if isinstance(r.get(col_key), (int, float))]
-            if values:
-                cell = ws.cell(row=summary_row, column=col_num)
-                cell.value = sum(values)
-                cell.font = Font(bold=True, size=11)
-                cell.border = Border(top=Side(style='double'))
-                if col_type == "currency":
-                    cell.number_format = '#,##0.00 ₺'
+    # Summary row — TOPLAM yalnızca uygun sütuna düşsün.
+    if data:
+        summary_row = len(data) + 5
+        # 1. sütun numeric değilse TOPLAM etiketini oraya, değilse ilk text
+        # sütununa, hiç text yoksa A sütunu üzerine yazma.
+        label_col = None
+        for i, c in enumerate(config.columns, 1):
+            t = source_def.get("columns", {}).get(c, {}).get("type")
+            if t not in ("number", "currency"):
+                label_col = i
+                break
+        if label_col is not None:
+            cell = ws.cell(row=summary_row, column=label_col, value="TOPLAM")
+            cell.font = Font(bold=True, size=11)
+            cell.border = Border(top=Side(style='double'))
 
-    # Auto-width
-    for col in ws.columns:
-        max_length = 0
-        try:
-            column_letter = col[0].column_letter
-        except AttributeError:
-            continue
-        for cell in col:
-            try:
-                if cell.value and len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except Exception:
-                logger.debug("report_builder: column width calc failed for cell", exc_info=True)
-        ws.column_dimensions[column_letter].width = min(max_length + 3, 50)
+        for col_num, col_key in enumerate(config.columns, 1):
+            col_type = source_def.get("columns", {}).get(col_key, {}).get("type")
+            if col_type in ("number", "currency"):
+                values = [r.get(col_key) for r in data if isinstance(r.get(col_key), (int, float)) and not isinstance(r.get(col_key), bool)]
+                if values:
+                    cell = ws.cell(row=summary_row, column=col_num)
+                    cell.value = sum(values)
+                    cell.font = Font(bold=True, size=11)
+                    cell.border = Border(top=Side(style='double'))
+                    if col_type == "currency":
+                        cell.number_format = '#,##0.00 ₺'
 
     output = io.BytesIO()
     wb.save(output)
@@ -456,41 +707,41 @@ async def export_report_excel(config: ReportConfig, credentials=Depends(HTTPBear
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
 @router.post("/export/pdf")
-async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer()),
-    _perm=Depends(require_op("view_reports")),  # v92 DW
+async def export_report_pdf(
+    config: ReportConfig,
+    credentials=Depends(HTTPBearer()),
+    _perm=Depends(require_op("view_reports")),
 ):
     """Özel raporu PDF formatında dışa aktarır."""
     current_user = await _get_current_user(credentials)
-
     tenant_id = getattr(current_user, 'tenant_id', None)
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
+    has_pii = _user_has_pii_access(current_user)
 
-    data = await fetch_report_data(config, tenant_id)
+    data = await fetch_report_data(config, tenant_id, has_pii)
     source_def = DATA_SOURCES.get(config.data_source, {})
 
-    headers = []
-    for col in config.columns:
-        col_def = source_def.get("columns", {}).get(col, {})
-        headers.append(col_def.get("label", col))
+    headers = [source_def.get("columns", {}).get(col, {}).get("label", col) for col in config.columns]
 
-    # Bug AO (April 2026): every interpolation below is escaped with html.escape()
-    # to prevent HTML injection into the rendered PDF. Stored guest names like
-    # `<img src="file:///etc/passwd">` would otherwise be honored by WeasyPrint
-    # (file:// SSRF / local file inclusion). date_from/date_to come straight from
-    # the request body, so they're an instant injection vector even without
-    # storing anything. We also pin a strict url_fetcher on WeasyPrint that
-    # blocks every scheme except https; this neutralizes residual `<img>`/`<link>`
-    # tags that may slip into source data via other escape gaps.
     import html as _html_mod
 
     def _e(v) -> str:
         return _html_mod.escape("" if v is None else str(v), quote=True)
+
+    # Sütun sayısına göre font scale (A4 yatay max ~10 sütun rahat).
+    n_cols = max(len(config.columns), 1)
+    if n_cols <= PDF_FIT_COLUMNS:
+        body_size, header_size, cell_pad = 10, 10, "6px 8px"
+    elif n_cols <= 12:
+        body_size, header_size, cell_pad = 8, 8, "4px 6px"
+    else:
+        body_size, header_size, cell_pad = 7, 7, "3px 4px"
 
     rows_html = ""
     for i, row in enumerate(data):
@@ -499,39 +750,45 @@ async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer
         for col_key in config.columns:
             val = row.get(col_key, "")
             col_type = source_def.get("columns", {}).get(col_key, {}).get("type")
-            if col_type == "currency" and isinstance(val, (int, float)):
+            if col_type == "currency" and isinstance(val, (int, float)) and not isinstance(val, bool):
                 display = f"₺{val:,.2f}"
+            elif col_type == "boolean":
+                display = "Evet" if val else "Hayır"
             elif isinstance(val, list):
                 display = ", ".join(str(v) for v in val)
             else:
                 display = str(val) if val is not None else ""
-            cells += f'<td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;font-size:10px;">{_e(display)}</td>'
+            cells += f'<td style="padding:{cell_pad};border-bottom:1px solid #e2e8f0;font-size:{body_size}px;">{_e(display)}</td>'
         rows_html += f'<tr style="background:{bg}">{cells}</tr>'
 
     header_cells = "".join(
-        f'<th style="padding:8px;background:#1e3a5f;color:white;font-size:10px;text-align:left;border-bottom:2px solid #0d2137;">{_e(h)}</th>'
+        f'<th style="padding:8px;background:#0F172A;color:white;font-size:{header_size}px;text-align:left;border-bottom:2px solid #0d2137;">{_e(h)}</th>'
         for h in headers
     )
 
     date_info = ""
-    if config.date_from or config.date_to:
+    if config.date_from or config.date_to or not has_pii:
         parts = []
         if config.date_from:
             parts.append(f"Başlangıç: {_e(config.date_from)}")
         if config.date_to:
             parts.append(f"Bitiş: {_e(config.date_to)}")
+        if not has_pii:
+            parts.append("<i>PII alanları maskelenmiştir</i>")
         date_info = f'<p style="color:#64748b;font-size:11px;margin:4px 0 12px;">{" | ".join(parts)}</p>'
 
     title_label = _e(source_def.get('label', 'Rapor'))
+    page_size = "A4 landscape" if n_cols <= PDF_FIT_COLUMNS else "A3 landscape"
+
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <style>
-  @page {{ size: A4 landscape; margin: 1.5cm; }}
+  @page {{ size: {page_size}; margin: 1.2cm; }}
   body {{ font-family: Arial, Helvetica, sans-serif; color: #1e293b; margin:0; padding:0; }}
-  .header {{ background: linear-gradient(135deg, #1e3a5f, #2563eb); color: white; padding: 20px 24px; margin-bottom: 16px; }}
-  .header h1 {{ margin: 0; font-size: 18px; }}
+  .header {{ background: #0F172A; color: white; padding: 16px 20px; margin-bottom: 12px; }}
+  .header h1 {{ margin: 0; font-size: 16px; }}
   .header p {{ margin: 4px 0 0; font-size: 11px; opacity: 0.8; }}
-  table {{ width: 100%; border-collapse: collapse; font-size: 10px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: {body_size}px; table-layout: auto; }}
   .footer {{ text-align: center; font-size: 9px; color: #94a3b8; margin-top: 16px; padding-top: 8px; border-top: 1px solid #e2e8f0; }}
 </style></head><body>
 <div class="header">
@@ -545,18 +802,16 @@ async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer
 
     try:
         from weasyprint import HTML
-        # Bug AO defense in depth: refuse every URL scheme except https, so
-        # any residual <img src="file://..."> can't read local files even if
-        # escape gets bypassed somewhere.
+
         def _safe_fetcher(url: str, timeout=10, ssl_context=None):
             if not url.lower().startswith("https://"):
                 raise ValueError(f"blocked URL scheme: {url[:40]}")
             from weasyprint import default_url_fetcher  # type: ignore
             return default_url_fetcher(url, timeout=timeout, ssl_context=ssl_context)
+
         pdf_bytes = HTML(string=html, url_fetcher=_safe_fetcher).write_pdf()
         output = io.BytesIO(pdf_bytes)
     except Exception:
-        # Fallback when WeasyPrint isn't installed: return the (escaped) HTML.
         output = io.BytesIO(html.encode('utf-8'))
 
     output.seek(0)
@@ -564,43 +819,54 @@ async def export_report_pdf(config: ReportConfig, credentials=Depends(HTTPBearer
     return StreamingResponse(
         output,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
 # ─── Template CRUD ────────────────────────────────────────────────────────
 
 @router.get("/templates")
-async def list_templates(credentials=Depends(HTTPBearer())):
-    """Kayıtlı rapor şablonlarını listeler."""
+async def list_templates(
+    credentials=Depends(HTTPBearer()),
+    _perm=Depends(require_op("view_reports")),
+):
+    """Kayıtlı rapor şablonlarını listeler (tenant scoped)."""
     current_user = await _get_current_user(credentials)
-
     db = get_db()
     tenant_id = getattr(current_user, 'tenant_id', None)
     templates = await db.report_templates.find(
         {"tenant_id": tenant_id},
-        {"_id": 0}
+        {"_id": 0},
     ).sort("created_at", -1).to_list(100)
     return {"templates": templates}
 
 
 @router.post("/templates")
-async def save_template(template: SavedTemplate, credentials=Depends(HTTPBearer()),
-    _perm=Depends(require_op("view_reports")),  # v92 DW
+async def save_template(
+    template: SavedTemplate,
+    credentials=Depends(HTTPBearer()),
+    _perm=Depends(require_op("view_reports")),
 ):
     """Rapor şablonunu kaydeder."""
     current_user = await _get_current_user(credentials)
-
     db = get_db()
     tenant_id = getattr(current_user, 'tenant_id', None)
     user_id = getattr(current_user, 'id', None)
+
+    # Sütun ve veri kaynağı doğrulaması.
+    if template.config.data_source not in DATA_SOURCES:
+        raise HTTPException(status_code=400, detail="Geçersiz veri kaynağı")
+    cols_def = DATA_SOURCES[template.config.data_source].get("columns", {})
+    for c in template.config.columns or []:
+        if c not in cols_def:
+            raise HTTPException(status_code=400, detail=f"Bilinmeyen sütun: {c}")
 
     doc = {
         "id": str(uuid.uuid4()),
         "tenant_id": tenant_id,
         "created_by": user_id,
-        "name": template.name,
-        "description": template.description,
+        "name": template.name.strip()[:120],
+        "description": (template.description or "").strip()[:500],
         "config": template.config.dict(),
         "created_at": datetime.now(UTC).isoformat(),
         "updated_at": datetime.now(UTC).isoformat(),
@@ -611,14 +877,32 @@ async def save_template(template: SavedTemplate, credentials=Depends(HTTPBearer(
 
 
 @router.delete("/templates/{template_id}")
-async def delete_template(template_id: str, credentials=Depends(HTTPBearer()),
-    _perm=Depends(require_op("view_reports")),  # v92 DW
+async def delete_template(
+    template_id: str,
+    credentials=Depends(HTTPBearer()),
+    _perm=Depends(require_op("view_reports")),
 ):
-    """Rapor şablonunu siler."""
+    """Rapor şablonunu siler. Sadece şablonu oluşturan kullanıcı veya
+    admin/manager silebilir.
+    """
     current_user = await _get_current_user(credentials)
-
     db = get_db()
     tenant_id = getattr(current_user, 'tenant_id', None)
+    user_id = getattr(current_user, 'id', None)
+
+    role = getattr(current_user, 'role', None)
+    role_str = getattr(role, 'value', None) or str(role or '')
+    is_admin = role_str in ('admin', 'super_admin', 'manager', 'general_manager')
+
+    existing = await db.report_templates.find_one(
+        {"id": template_id, "tenant_id": tenant_id},
+        {"_id": 0, "created_by": 1},
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Şablon bulunamadı")
+    if not is_admin and existing.get("created_by") and existing.get("created_by") != user_id:
+        raise HTTPException(status_code=403, detail="Bu şablonu silme yetkiniz yok")
+
     result = await db.report_templates.delete_one({"id": template_id, "tenant_id": tenant_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Şablon bulunamadı")
