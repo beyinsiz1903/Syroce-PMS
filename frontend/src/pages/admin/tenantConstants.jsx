@@ -33,9 +33,9 @@ export const PLANS = {
   professional: {
     key: 'professional',
     label: 'Professional',
-    color: 'blue',
-    badgeClass: 'bg-blue-100 text-blue-800 border-blue-200',
-    iconBg: 'bg-blue-100',
+    color: 'sky',
+    badgeClass: 'bg-sky-100 text-sky-800 border-sky-200',
+    iconBg: 'bg-sky-100 text-sky-700',
     icon: Zap,
     description: '31-80 oda · orta ölçekli otel',
     maxRooms: 80,
@@ -45,9 +45,9 @@ export const PLANS = {
   enterprise: {
     key: 'enterprise',
     label: 'Enterprise',
-    color: 'purple',
+    color: 'indigo',
     badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-    iconBg: 'bg-indigo-100',
+    iconBg: 'bg-indigo-100 text-indigo-700',
     icon: Crown,
     description: '80+ oda · resort / zincir',
     maxRooms: null,
@@ -99,7 +99,7 @@ export const MODULE_GROUPS = [
     id: 'professional',
     title: 'Professional — Orta Ölçekli Otel',
     icon: BarChart3,
-    color: 'blue',
+    color: 'sky',
     description: 'Basic\'in tümü + gelir-yönetimi ve operasyonel derinlik.',
     items: [
       { key: 'folio_management', label: 'Folio Yönetimi (Tam)', hint: 'Split, routing, posting', tier: 'professional' },
@@ -115,7 +115,7 @@ export const MODULE_GROUPS = [
     id: 'enterprise',
     title: 'Enterprise Modüller',
     icon: Crown,
-    color: 'purple',
+    color: 'indigo',
     items: [
       { key: 'revenue_management', label: 'Revenue Management', hint: 'Dinamik fiyatlandırma, RMS', tier: 'enterprise' },
       { key: 'multi_property', label: 'Multi-Property', hint: 'Çoklu otel yönetimi', tier: 'enterprise' },

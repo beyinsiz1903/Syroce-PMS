@@ -93,14 +93,14 @@ const TeamManagementModal = ({ open, onOpenChange, tenant }) => {
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-500">{users.length} kullanıcı</span>
+            <span className="text-sm text-slate-500">{users.length} kullanıcı</span>
             <Button data-testid="team-add-btn" size="sm" variant="outline" onClick={() => setShowAdd(!showAdd)}>
               <UserPlus className="w-4 h-4 mr-1" /> Üye Ekle
             </Button>
           </div>
 
           {showAdd && (
-            <div className="border rounded-lg p-3 bg-blue-50/50 space-y-2">
+            <div className="border rounded-lg p-3 bg-indigo-50/50 space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label className="text-xs">Ad *</Label>
@@ -134,21 +134,21 @@ const TeamManagementModal = ({ open, onOpenChange, tenant }) => {
             </div>
           )}
 
-          {error && <div className="p-2 rounded bg-red-50 text-red-700 text-sm">{error}</div>}
+          {error && <div className="p-2 rounded bg-rose-50 text-rose-700 text-sm">{error}</div>}
 
           {loading ? (
-            <div className="text-center py-6 text-gray-400 text-sm">Yükleniyor...</div>
+            <div className="text-center py-6 text-slate-400 text-sm">Yükleniyor...</div>
           ) : (
             <div className="divide-y">
               {users.map((u) => (
                 <div key={u.id} className="flex items-center justify-between py-2.5 px-1">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-600">
+                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
                       {(u.name || '?')[0].toUpperCase()}
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{u.name}</p>
-                      <p className="text-xs text-gray-400">{u.email}</p>
+                      <p className="text-sm font-medium text-slate-900">{u.name}</p>
+                      <p className="text-xs text-slate-400">{u.email}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -167,19 +167,20 @@ const TeamManagementModal = ({ open, onOpenChange, tenant }) => {
                     ) : (
                       <button
                         data-testid={`team-role-${u.id}`}
-                        className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center gap-1"
+                        className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1"
                         onClick={() => u.role !== 'super_admin' && setEditingRole(u.id)}
                         disabled={u.role === 'super_admin'}
                       >
-                        <ShieldCheck className="w-3 h-3" />
+                        <ShieldCheck className="w-3 h-3" aria-hidden="true" />
                         {ROLE_LABELS[u.role] || u.role}
                       </button>
                     )}
                     {u.role !== 'super_admin' && (
                       <button
                         data-testid={`team-remove-${u.id}`}
-                        className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition"
+                        className="p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition"
                         onClick={() => handleRemove(u.id, u.name)}
+                        aria-label={`${u.name} sil`}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
