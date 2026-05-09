@@ -143,15 +143,41 @@ async def calculate(
     }
 
 
-def _period_bounds(year: int, month: int) -> tuple[datetime, datetime]:
+async def _tenant_tz(tenant_id: str):
+    """Tenant TZ'sini çöz; konaklama vergisi sadece TR olduğu için
+    fallback Europe/Istanbul. tenant_settings.timezone öncelikli."""
+    try:
+        from zoneinfo import ZoneInfo
+    except Exception:  # pragma: no cover
+        return UTC
+    doc = await db.tenant_settings.find_one(
+        {"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}) or {}
+    name = doc.get("timezone") or "Europe/Istanbul"
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return ZoneInfo("Europe/Istanbul")
+
+
+async def _period_bounds(
+    tenant_id: str, year: int, month: int,
+) -> tuple[datetime, datetime]:
+    """Aylık dönem sınırlarını tenant TZ'ye göre üret; UTC'ye çevir.
+
+    Önceki sürümde sınırlar doğrudan UTC ay başlangıcıydı; bu, TR'deki
+    bir otelin ay sonu (ör. 31 Mart 23:30 Europe/Istanbul = 31 Mart 20:30
+    UTC) charge'ını **Mart** dönemine değil **Şubat**'a/yanlış aya
+    düşürebiliyordu. Şimdi ay TR yereline göre, sonra UTC'ye dönüşüyor.
+    """
     if month < 1 or month > 12:
         raise HTTPException(status_code=400, detail="month must be 1-12")
-    start = datetime(year, month, 1, tzinfo=UTC)
+    tz = await _tenant_tz(tenant_id)
+    start_local = datetime(year, month, 1, tzinfo=tz)
     if month == 12:
-        end = datetime(year + 1, 1, 1, tzinfo=UTC)
+        end_local = datetime(year + 1, 1, 1, tzinfo=tz)
     else:
-        end = datetime(year, month + 1, 1, tzinfo=UTC)
-    return start, end
+        end_local = datetime(year, month + 1, 1, tzinfo=tz)
+    return start_local.astimezone(UTC), end_local.astimezone(UTC)
 
 
 async def _tenant_summary(tenant_id: str) -> dict[str, Any]:
@@ -176,9 +202,35 @@ async def _tenant_summary(tenant_id: str) -> dict[str, Any]:
 
 
 async def _aggregate_period(tenant_id: str, year: int, month: int) -> dict[str, Any]:
-    start, end = _period_bounds(year, month)
+    start, end = await _period_bounds(tenant_id, year, month)
     cfg = await _load_config(tenant_id)
     rate = float(cfg.get("rate_percent", DEFAULT_RATE_PERCENT))
+
+    # v95.7: effective_from kullanılıyor — yürürlük öncesi charge'lar matraha
+    # girmesin (ör. 1 Mart'tan itibaren oran değişimi → Şubat çağrısı boş).
+    # TZ-aware: effective_from tenant TZ (TR) gün başlangıcına sabitlenir,
+    # sonra UTC'ye dönüşür; aksi halde TR/UTC fark penceresi yanlış dışlanır.
+    effective_from = (cfg.get("effective_from") or "").strip()
+    if effective_from:
+        try:
+            from datetime import date as _d
+            tz = await _tenant_tz(tenant_id)
+            ef_date = _d.fromisoformat(effective_from[:10])
+            ef_dt = datetime(
+                ef_date.year, ef_date.month, ef_date.day, tzinfo=tz,
+            ).astimezone(UTC)
+            if ef_dt > start:
+                start = ef_dt
+        except Exception:
+            pass
+
+    if start >= end:
+        # effective_from dönemin tamamen ötesinde — boş sonuç dön.
+        return {
+            "year": year, "month": month, "rate_percent": rate,
+            "folio_count": 0, "total_nights": 0, "total_base": 0.0,
+            "total_tax": 0.0, "rows": [],
+        }
 
     pipeline: list[dict[str, Any]] = [
         {
@@ -202,6 +254,22 @@ async def _aggregate_period(tenant_id: str, year: int, month: int) -> dict[str, 
         },
     ]
     rows = await db.folio_charges.aggregate(pipeline).to_list(length=None)
+
+    # v95.7: exempt_segments — booking.segment listede ise matrah dışı.
+    exempt = [s for s in (cfg.get("exempt_segments") or []) if s]
+    if exempt and rows:
+        booking_ids = [r.get("booking_id") for r in rows if r.get("booking_id")]
+        if booking_ids:
+            exempt_ids = set()
+            async for b in db.bookings.find(
+                {"tenant_id": tenant_id, "id": {"$in": booking_ids},
+                 "segment": {"$in": exempt}},
+                {"_id": 0, "id": 1},
+            ):
+                exempt_ids.add(b["id"])
+            if exempt_ids:
+                rows = [r for r in rows if r.get("booking_id") not in exempt_ids]
+
     total_base = round(sum(r.get("base_amount", 0.0) for r in rows), 2)
     total_nights = round(sum(r.get("nights", 0.0) for r in rows), 2)
     total_tax = round(total_base * (rate / 100.0), 2)

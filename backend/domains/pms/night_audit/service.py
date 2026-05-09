@@ -149,7 +149,7 @@ class NightAuditCoreService:
             arrivals_pending = await self._validate_pending_arrivals(ctx, bd, audit_id, exceptions)
             departures_pending = await self._validate_pending_departures(ctx, bd, audit_id, exceptions)
             balanced, unbalanced = await self._check_folio_balances(ctx, audit_id, exceptions)
-            await self._validate_tax_consistency(ctx, bd, audit_id, exceptions)
+            await self._validate_tax_consistency(ctx, bd, audit_id, exceptions)  # rate resolved internally
 
             # 6. Business date roll
             if not dry_run:
@@ -456,6 +456,12 @@ class NightAuditCoreService:
     async def _validate_tax_consistency(
         self, ctx: OperationContext, bd: str, audit_id: str, exceptions: list,
     ):
+        # v95.7: tenant'a özel oranı kullan (eskiden hardcoded ACCOMMODATION_TAX_RATE
+        # vardı ve bu sembol kaldırılınca NameError'a sebep oluyordu).
+        accommodation_tax_rate = await self._resolve_accommodation_tax_rate(
+            ctx.tenant_id
+        )
+        expected_rate = DEFAULT_VAT_RATE + accommodation_tax_rate
         cursor = self._db.folio_charges.find({
             "tenant_id": ctx.tenant_id,
             "date": bd,
@@ -466,7 +472,7 @@ class NightAuditCoreService:
         async for charge in cursor:
             amount = charge.get("amount", 0)
             tax = charge.get("tax_amount", 0)
-            if amount > 0 and abs(tax - amount * (DEFAULT_VAT_RATE + ACCOMMODATION_TAX_RATE)) > 0.05:
+            if amount > 0 and abs(tax - amount * expected_rate) > 0.05:
                 inconsistent += 1
         if inconsistent > 0:
             exceptions.append(self._make_exception(

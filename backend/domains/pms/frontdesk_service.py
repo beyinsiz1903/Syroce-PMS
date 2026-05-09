@@ -152,6 +152,30 @@ class FrontdeskService:
             "booking_id": booking_id, "tenant_id": ctx.tenant_id, "status": "open",
         }).to_list(100)
 
+        # v95.7: KVB auto_post — config'te aktifse, balance hesabı yapılmadan
+        # ÖNCE konaklama vergisi satırı folio'ya idempotent eklensin; aksi
+        # halde checkbox açık olsa bile satır hiç oluşmuyordu.
+        try:
+            from routers.finance.konaklama_vergisi_core import (
+                load_tax_config,
+                post_konaklama_vergisi_to_folio,
+            )
+            cfg = await load_tax_config(ctx.tenant_id)
+            if cfg.get("active", True) and cfg.get("auto_post"):
+                for f in folios:
+                    await post_konaklama_vergisi_to_folio(
+                        tenant_id=ctx.tenant_id, folio_id=f["id"],
+                        posted_by=f"system:checkout:{ctx.actor_id}",
+                        raise_on_error=False,
+                    )
+                # Balance değişmiş olabilir — folio doc'larını yenile.
+                folios = await self._db.folios.find({
+                    "booking_id": booking_id, "tenant_id": ctx.tenant_id,
+                    "status": "open",
+                }).to_list(100)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("KVB auto_post (checkout) failed: %s", exc)
+
         total_balance = 0.0
         folio_details = []
         for folio in folios:

@@ -104,6 +104,16 @@ async def post_konaklama_vergisi_to_folio(
             raise ValueError(msg)
         return {"ok": False, "posted": False, "reason": "inactive"}
 
+    # v95.7: exempt_segments — booking segmentine göre vergi muafiyeti.
+    exempt = [s for s in (cfg.get("exempt_segments") or []) if s]
+    if exempt and folio.get("booking_id"):
+        booking = await db.bookings.find_one(
+            {"id": folio["booking_id"], "tenant_id": tenant_id},
+            {"_id": 0, "segment": 1},
+        )
+        if booking and booking.get("segment") in exempt:
+            return {"ok": False, "posted": False, "reason": "exempt_segment"}
+
     rate_percent = float(cfg.get("rate_percent", DEFAULT_RATE_PERCENT))
 
     room_charges = await db.folio_charges.find(
@@ -161,8 +171,23 @@ async def post_konaklama_vergisi_to_folio(
                 "posted_by": posted_by,
             }
         )
-    except Exception:
-        # Olası unique-index race: charge'ı geri al, idempotent dön.
+    except Exception as exc:  # noqa: BLE001 — narrow check below
+        # v95.7: yalnızca unique-index ihlalini idempotent kabul et;
+        # diğer DB hataları (timeout, network, validation) maskelenmesin.
+        from pymongo.errors import DuplicateKeyError
+        if not isinstance(exc, DuplicateKeyError):
+            # Charge'ı geri al ve hatayı yukarı raporla (gerçek bir
+            # arıza vardır; "already_posted" gibi sessiz davranma).
+            await db.folio_charges.delete_one({"id": charge_id})
+            logger.exception(
+                "konaklama_vergisi posting insert failed (non-duplicate): "
+                "tenant=%s folio=%s",
+                tenant_id, folio_id,
+            )
+            if raise_on_error:
+                raise
+            return {"ok": False, "posted": False, "reason": "posting_insert_failed"}
+        # Duplicate-key race: charge'ı geri al, idempotent dön.
         await db.folio_charges.delete_one({"id": charge_id})
         existing = await db.accommodation_tax_postings.find_one(
             {"tenant_id": tenant_id, "folio_id": folio_id}

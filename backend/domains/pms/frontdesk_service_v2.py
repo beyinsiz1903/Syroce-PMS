@@ -318,7 +318,8 @@ class FrontdeskServiceV2:
                 booking_id, exc,
             )
 
-        # Folio balance check
+        # Folio balance check — auto_post yukarıda (L260-319) zaten tamamlandı,
+        # burada sadece güncel balance ile folio'ları yeniden okuyoruz.
         folios = await self._db.folios.find(
             {"booking_id": booking_id, "tenant_id": ctx.tenant_id, "status": "open"},
             {"_id": 0},

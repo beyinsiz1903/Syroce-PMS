@@ -512,7 +512,9 @@ async def post_charge_to_folio(
             if tax_rule.get('flat_amount'):
                 tax_amount = round(tax_rule['flat_amount'], 2)
             else:
-                tax_amount = round(net * (tax_rule['tax_percentage'] / 100), 2)
+                # v95.7: rate_percent yeni canonical alan; tax_percentage legacy fallback.
+                rate_pct = tax_rule.get('rate_percent', tax_rule.get('tax_percentage', 0))
+                tax_amount = round(net * (float(rate_pct) / 100), 2)
 
     total = round(net + vat_amount + tax_amount, 2)
 
