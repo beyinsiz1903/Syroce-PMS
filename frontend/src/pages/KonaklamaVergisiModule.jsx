@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { KpiCard } from '@/components/ui/kpi-card';
 import { Button } from '@/components/ui/button';
 import {
   Building2,
@@ -15,15 +16,18 @@ import {
   FileCode,
   FileText,
   History,
+  Info,
   Loader2,
   Lock,
   Percent,
+  Plus,
   Printer,
   Receipt,
   RefreshCw,
   Save,
   Send,
   Settings,
+  ShieldOff,
   Wallet,
 } from "lucide-react";
 
@@ -35,10 +39,6 @@ const TABS = [
   { key: "calculator", label: "Hesaplayıcı", icon: Calculator },
 ];
 
-// Beyanname state machine → Sprint A StatusBadge intent eşlemesi.
-// (Eski local STATUS_BADGE map kullanılmıyordu; <StatusBadge> JSX'i import
-// edilmemiş bir component'e referans veriyordu — Geçmiş/Beyanname tab'larında
-// runtime ReferenceError'a sebep oluyordu. v95.6 fix.)
 const STATUS_INTENT = {
   draft:     { intent: 'neutral', label: 'Taslak' },
   finalized: { intent: 'warning', label: 'Onaylı' },
@@ -240,7 +240,6 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
         "/finance/konaklama-vergisi/declaration",
         { params: { year, month } });
       setDeclaration(data);
-      // Check whether this period already has a persisted record.
       const list = await axios.get(
         "/finance/konaklama-vergisi/declarations");
       const existing = (list.data?.items || [])
@@ -265,17 +264,28 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
   const exportReportCSV = () => {
     if (!report) return;
     const rows = [
-      ["Folio ID", "Booking ID", "Geceleme", "Matrah (TRY)"],
+      ["Folio ID", "Booking ID", "Geceleme", "Matrah (KDV hariç, TRY)"],
       ...report.rows.map((r) => [r._id, r.booking_id, r.nights, r.base_amount?.toFixed(2)]),
       [],
       ["TOPLAM", "", report.total_nights, report.total_base?.toFixed(2)],
       ["VERGİ (%" + report.rate_percent + ")", "", "", report.total_tax?.toFixed(2)],
     ];
+    if (report.exempt_count) {
+      rows.push([], ["MUAF FOLIO", "", "", report.exempt_count]);
+      if (report.exempt_base) rows.push(["MUAF MATRAH", "", "", report.exempt_base?.toFixed(2)]);
+    }
     downloadCSV(rows, `konaklama-vergisi-${year}-${String(month).padStart(2, "0")}.csv`);
   };
 
   const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1);
   const yearOptions = Array.from({ length: 5 }, (_, i) => today.getFullYear() - i);
+
+  const refreshAll = () => {
+    loadConfig();
+    loadHistory();
+    if (tab === "report") loadReport();
+    if (tab === "declaration") loadDeclaration();
+  };
 
   return (
     <>
@@ -289,7 +299,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => { loadConfig(); loadHistory(); }}
+            onClick={refreshAll}
             disabled={loading}
           >
             <RefreshCw className="w-4 h-4 mr-1.5" />
@@ -308,7 +318,9 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                 key={t.key}
                 onClick={() => setTab(t.key)}
                 className={`flex items-center gap-2 px-4 py-2 border-b-2 -mb-px text-sm transition ${
-                  active ? "border-amber-600 text-amber-700 font-semibold" : "border-transparent text-gray-500 hover:text-gray-800"
+                  active
+                    ? "border-slate-900 text-slate-900 font-semibold"
+                    : "border-transparent text-gray-500 hover:text-gray-800"
                 }`}
               >
                 <Icon className="h-4 w-4" /> {t.label}
@@ -324,6 +336,16 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
             <div className="flex items-center gap-2 text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Yükleniyor…</div>
           ) : (
             <>
+              <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-3">
+                <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                <div>
+                  <b>Matrah = oda satırı (KDV hariç).</b> Konaklama vergisi
+                  7194 SK uyarınca KDV matrahına dâhil edilmez. Folio'daki
+                  "Oda" satırlarının net (KDV öncesi) tutarı toplanır;
+                  KDV ve diğer hizmet kalemleri matrah dışındadır.
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-medium text-gray-600">Vergi Oranı (%)</label>
@@ -382,14 +404,10 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
               </div>
 
               <div className="flex justify-end pt-2">
-                <button
-                  onClick={saveConfig}
-                  disabled={saving}
-                  className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                <Button onClick={saveConfig} disabled={saving}>
+                  {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
                   Kaydet
-                </button>
+                </Button>
               </div>
             </>
           )}
@@ -411,40 +429,44 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                 {monthOptions.map((m) => <option key={m} value={m}>{String(m).padStart(2, "0")}</option>)}
               </select>
             </div>
-            <button
+            <Button
               onClick={tab === "report" ? loadReport : loadDeclaration}
               disabled={loading}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50"
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
               {tab === "report" ? "Raporu Hesapla" : "Beyannameyi Oluştur"}
-            </button>
+            </Button>
             {tab === "report" && report && (
-              <button
-                onClick={exportReportCSV}
-                className="flex items-center gap-2 border px-4 py-2 rounded hover:bg-gray-50"
-              >
-                <Download className="h-4 w-4" /> CSV İndir
-              </button>
+              <Button variant="outline" onClick={exportReportCSV}>
+                <Download className="h-4 w-4 mr-1.5" /> CSV İndir
+              </Button>
             )}
             {tab === "declaration" && declaration && (
-              <button
-                onClick={() => window.print()}
-                className="flex items-center gap-2 border px-4 py-2 rounded hover:bg-gray-50"
-              >
-                <Printer className="h-4 w-4" /> Yazdır
-              </button>
+              <Button variant="outline" onClick={() => window.print()}>
+                <Printer className="h-4 w-4 mr-1.5" /> Yazdır
+              </Button>
             )}
           </div>
 
           {tab === "report" && report && (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <KPI title="Folio Sayısı" value={report.folio_count} />
-                <KPI title="Toplam Geceleme" value={report.total_nights} />
-                <KPI title="Matrah" value={fmtTRY(report.total_base)} />
-                <KPI title={`Vergi (%${report.rate_percent})`} value={fmtTRY(report.total_tax)} highlight />
+                <KpiCard icon={FileText} label="Folio Sayısı" value={report.folio_count} />
+                <KpiCard icon={ClipboardList} label="Toplam Geceleme" value={report.total_nights} />
+                <KpiCard icon={Calculator} label="Matrah (KDV hariç)" value={fmtTRY(report.total_base)} />
+                <KpiCard icon={Receipt} label={`Vergi (%${report.rate_percent})`} value={fmtTRY(report.total_tax)} intent="warning" highlight />
               </div>
+              {!!report.exempt_count && (
+                <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-3">
+                  <ShieldOff className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div>
+                    Bu dönemde <b>{report.exempt_count}</b> folio muaf segment
+                    nedeniyle matraha dâhil edilmedi
+                    {report.exempt_base ? ` (toplam ${fmtTRY(report.exempt_base)} matrah dışı).` : "."}
+                    {' '}Muafiyet kaynağı: <b>Yapılandırma → exempt_segments</b>.
+                  </div>
+                </div>
+              )}
               <div className="overflow-auto border rounded">
                 <table className="min-w-full text-sm">
                   <thead className="bg-gray-50">
@@ -452,7 +474,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                       <th className="text-left px-3 py-2">Folio ID</th>
                       <th className="text-left px-3 py-2">Booking</th>
                       <th className="text-right px-3 py-2">Geceleme</th>
-                      <th className="text-right px-3 py-2">Matrah</th>
+                      <th className="text-right px-3 py-2">Matrah (KDV hariç)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -498,41 +520,28 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
 
               <div className="flex flex-wrap gap-2">
                 {!finalized && (
-                  <button
-                    onClick={finalizeDeclaration}
-                    disabled={working}
-                    className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded disabled:opacity-50">
-                    <Lock className="h-4 w-4" /> Beyannameyi Onayla & Kilitle
-                  </button>
+                  <Button onClick={finalizeDeclaration} disabled={working}>
+                    <Lock className="h-4 w-4 mr-1.5" /> Beyannameyi Onayla & Kilitle
+                  </Button>
                 )}
                 {finalized && finalized.status === "finalized" && (
-                  <button
-                    onClick={() => submitDeclaration(finalized)}
-                    disabled={working}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50">
-                    <Send className="h-4 w-4" /> GİB Tahakkuk Numarası Kaydet
-                  </button>
+                  <Button variant="outline" onClick={() => submitDeclaration(finalized)} disabled={working}>
+                    <Send className="h-4 w-4 mr-1.5" /> GİB Tahakkuk Numarası Kaydet
+                  </Button>
                 )}
                 {finalized && (finalized.status === "submitted" || finalized.status === "finalized") && (
-                  <button
-                    onClick={() => payDeclaration(finalized)}
-                    disabled={working}
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded disabled:opacity-50">
-                    <Wallet className="h-4 w-4" /> Ödeme Kaydet
-                  </button>
+                  <Button variant="outline" onClick={() => payDeclaration(finalized)} disabled={working}>
+                    <Wallet className="h-4 w-4 mr-1.5" /> Ödeme Kaydet
+                  </Button>
                 )}
                 {finalized && (
                   <>
-                    <button
-                      onClick={() => exportDecl(finalized, "xml")}
-                      className="flex items-center gap-2 border px-4 py-2 rounded hover:bg-gray-50">
-                      <FileCode className="h-4 w-4" /> XML İndir (GİB)
-                    </button>
-                    <button
-                      onClick={() => exportDecl(finalized, "json")}
-                      className="flex items-center gap-2 border px-4 py-2 rounded hover:bg-gray-50">
-                      <Download className="h-4 w-4" /> JSON Arşiv
-                    </button>
+                    <Button variant="outline" onClick={() => exportDecl(finalized, "xml")}>
+                      <FileCode className="h-4 w-4 mr-1.5" /> XML İndir (GİB)
+                    </Button>
+                    <Button variant="outline" onClick={() => exportDecl(finalized, "json")}>
+                      <Download className="h-4 w-4 mr-1.5" /> JSON Arşiv
+                    </Button>
                   </>
                 )}
               </div>
@@ -549,7 +558,7 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                 <DeclRow label="Vergi Oranı">{`%${declaration.rate_percent}`}</DeclRow>
                 <DeclRow label="Folio Sayısı">{declaration.folio_count}</DeclRow>
                 <DeclRow label="Toplam Geceleme">{declaration.total_nights}</DeclRow>
-                <DeclRow label="Matrah">{fmtTRY(declaration.total_base)}</DeclRow>
+                <DeclRow label="Matrah (KDV hariç)">{fmtTRY(declaration.total_base)}</DeclRow>
                 <DeclRow label="Tahakkuk Eden Vergi" highlight>{fmtTRY(declaration.total_tax)}</DeclRow>
                 <p className="text-xs text-gray-400 mt-6">
                   Bu özet, dahili kontrol amaçlıdır. Resmi beyanname için Gelir
@@ -569,11 +578,9 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
             <h3 className="font-semibold flex items-center gap-2">
               <History className="h-4 w-4" /> Beyanname Geçmişi
             </h3>
-            <button
-              onClick={loadHistory}
-              className="text-sm flex items-center gap-1 text-blue-600 hover:underline">
-              <RefreshCw className="h-3 w-3" /> Yenile
-            </button>
+            <Button variant="outline" size="sm" onClick={loadHistory}>
+              <RefreshCw className="w-4 h-4 mr-1.5" /> Yenile
+            </Button>
           </div>
           <div className="overflow-auto border rounded">
             <table className="min-w-full text-sm">
@@ -600,19 +607,29 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
                     <td className="px-3 py-2 text-xs">{d.submission_ref || "-"}</td>
                     <td className="px-3 py-2 text-xs">{d.payment_ref || "-"}</td>
                     <td className="px-3 py-2 text-right">
-                      <button
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => exportDecl(d, "xml")}
                         title="XML indir"
-                        className="text-blue-600 hover:underline">
+                      >
                         <FileCode className="h-4 w-4" />
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
                 {history.length === 0 && (
-                  <tr><td colSpan={8} className="text-center text-gray-400 py-6">
-                    Henüz onaylanmış beyanname yok.
-                  </td></tr>
+                  <tr>
+                    <td colSpan={8} className="text-center text-gray-500 py-10">
+                      <div className="flex flex-col items-center gap-3">
+                        <FileText className="h-8 w-8 text-gray-300" />
+                        <div>Henüz onaylanmış beyanname yok.</div>
+                        <Button onClick={() => setTab("declaration")}>
+                          <Plus className="h-4 w-4 mr-1.5" /> İlk Beyannameyi Oluştur
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -622,9 +639,17 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
 
       {tab === "calculator" && (
         <div className="bg-white rounded-lg border p-4 max-w-xl space-y-4">
+          <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-3">
+            <Info className="h-4 w-4 mt-0.5 shrink-0" />
+            <div>
+              Girdiğiniz <b>Tutar</b> KDV <b>hariç</b> oda satırı tutarı
+              olmalıdır. Konaklama vergisi 7194 SK uyarınca KDV matrahına
+              dâhil değildir.
+            </div>
+          </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-xs font-medium text-gray-600">Tutar (TRY)</label>
+              <label className="text-xs font-medium text-gray-600">Tutar (TRY, KDV hariç)</label>
               <input type="number" className="border rounded px-3 py-2 w-full mt-1" value={calc.amount}
                 onChange={(e) => setCalc({ ...calc, amount: parseFloat(e.target.value) || 0 })} />
             </div>
@@ -640,15 +665,15 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
               </label>
             </div>
           </div>
-          <button onClick={runCalc} className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded flex items-center gap-2">
-            <Calculator className="h-4 w-4" /> Hesapla
-          </button>
+          <Button onClick={runCalc}>
+            <Calculator className="h-4 w-4 mr-1.5" /> Hesapla
+          </Button>
           {calcResult && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-              <KPI title="Matrah" value={fmtTRY(calcResult.base_amount)} />
-              <KPI title={`Vergi %${calcResult.rate_percent}`} value={fmtTRY(calcResult.tax_amount)} highlight />
-              <KPI title="Toplam" value={fmtTRY(calcResult.total_with_tax)} />
-              <KPI title="Geceleme" value={calcResult.nights} />
+              <KpiCard label="Matrah (KDV hariç)" value={fmtTRY(calcResult.base_amount)} />
+              <KpiCard label={`Vergi %${calcResult.rate_percent}`} value={fmtTRY(calcResult.tax_amount)} intent="warning" highlight />
+              <KpiCard label="Toplam (vergi dâhil)" value={fmtTRY(calcResult.total_with_tax)} />
+              <KpiCard label="Geceleme" value={calcResult.nights} />
             </div>
           )}
         </div>
@@ -658,20 +683,11 @@ export default function KonaklamaVergisiModule({ user, tenant, onLogout }) {
   );
 }
 
-function KPI({ title, value, highlight }) {
-  return (
-    <div className={`border rounded-lg p-3 ${highlight ? "bg-amber-50 border-amber-300" : ""}`}>
-      <div className="text-xs text-gray-500">{title}</div>
-      <div className={`text-lg font-semibold ${highlight ? "text-amber-700" : ""}`}>{value}</div>
-    </div>
-  );
-}
-
 function DeclRow({ label, children, highlight }) {
   return (
-    <div className={`flex justify-between border-b py-2 ${highlight ? "bg-amber-50 px-2 rounded font-bold" : ""}`}>
+    <div className={`flex justify-between border-b py-2 ${highlight ? "bg-slate-100 px-2 rounded font-bold text-slate-900" : ""}`}>
       <span className="text-gray-600">{label}</span>
-      <span className={highlight ? "text-amber-700" : ""}>{children}</span>
+      <span>{children}</span>
     </div>
   );
 }

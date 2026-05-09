@@ -226,10 +226,13 @@ async def _aggregate_period(tenant_id: str, year: int, month: int) -> dict[str, 
 
     if start >= end:
         # effective_from dönemin tamamen ötesinde — boş sonuç dön.
+        # v95.8: exempt_count/exempt_base alanları normal path ile aynı
+        # şekilde döner; frontend her durumda alan bekleyebilsin.
         return {
             "year": year, "month": month, "rate_percent": rate,
             "folio_count": 0, "total_nights": 0, "total_base": 0.0,
-            "total_tax": 0.0, "rows": [],
+            "total_tax": 0.0, "exempt_count": 0, "exempt_base": 0.0,
+            "rows": [],
         }
 
     pipeline: list[dict[str, Any]] = [
@@ -256,7 +259,11 @@ async def _aggregate_period(tenant_id: str, year: int, month: int) -> dict[str, 
     rows = await db.folio_charges.aggregate(pipeline).to_list(length=None)
 
     # v95.7: exempt_segments — booking.segment listede ise matrah dışı.
+    # v95.8: muafiyet sayısı/tutarı rapora ayrı alan olarak yansıtılır
+    # (denetim/iz için frontend "X folio muaf" notu gösterir).
     exempt = [s for s in (cfg.get("exempt_segments") or []) if s]
+    exempt_count = 0
+    exempt_base = 0.0
     if exempt and rows:
         booking_ids = [r.get("booking_id") for r in rows if r.get("booking_id")]
         if booking_ids:
@@ -268,6 +275,9 @@ async def _aggregate_period(tenant_id: str, year: int, month: int) -> dict[str, 
             ):
                 exempt_ids.add(b["id"])
             if exempt_ids:
+                exempt_rows = [r for r in rows if r.get("booking_id") in exempt_ids]
+                exempt_count = len(exempt_rows)
+                exempt_base = round(sum(r.get("base_amount", 0.0) for r in exempt_rows), 2)
                 rows = [r for r in rows if r.get("booking_id") not in exempt_ids]
 
     total_base = round(sum(r.get("base_amount", 0.0) for r in rows), 2)
@@ -281,6 +291,8 @@ async def _aggregate_period(tenant_id: str, year: int, month: int) -> dict[str, 
         "total_nights": total_nights,
         "total_base": total_base,
         "total_tax": total_tax,
+        "exempt_count": exempt_count,
+        "exempt_base": exempt_base,
         "rows": rows,
     }
 

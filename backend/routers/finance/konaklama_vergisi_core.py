@@ -112,6 +112,34 @@ async def post_konaklama_vergisi_to_folio(
             {"_id": 0, "segment": 1},
         )
         if booking and booking.get("segment") in exempt:
+            # v95.8: muafiyet izi — denetim/iz için accommodation_tax_postings'e
+            # exempt=True kaydı eklenir. Aynı (tenant, folio) için unique
+            # index sayesinde idempotent; tekrar çağrıda DuplicateKeyError
+            # sessizce yutulur (mevcut iz korunur).
+            try:
+                await db.accommodation_tax_postings.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "folio_id": folio_id,
+                    "exempt": True,
+                    "exempt_reason": "exempt_segment",
+                    "exempt_segment": booking.get("segment"),
+                    "rate_percent": float(cfg.get("rate_percent", DEFAULT_RATE_PERCENT)),
+                    "tax_amount": 0.0,
+                    "base_amount": 0.0,
+                    "posted_at": datetime.now(UTC).isoformat(),
+                    "posted_by": posted_by,
+                })
+            except Exception as exc:  # noqa: BLE001
+                # Yalnızca duplicate-key (aynı folio için iz zaten var) sessiz
+                # geç; diğer hataları logla ki denetim izi kaybı görünür olsun.
+                from pymongo.errors import DuplicateKeyError
+                if not isinstance(exc, DuplicateKeyError):
+                    logger.warning(
+                        "konaklama_vergisi exempt audit insert failed: "
+                        "tenant=%s folio=%s err=%s",
+                        tenant_id, folio_id, exc,
+                    )
             return {"ok": False, "posted": False, "reason": "exempt_segment"}
 
     rate_percent = float(cfg.get("rate_percent", DEFAULT_RATE_PERCENT))
