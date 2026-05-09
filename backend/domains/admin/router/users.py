@@ -484,14 +484,24 @@ async def list_tenant_users(
     cursor = db.users.find({"tenant_id": target_tenant})
     items: list[dict] = []
     async for u in cursor:
+        # KVKK strict mode: email/name/username DB'de aes256gcm:/SYR1: olarak
+        # şifreli tutuluyor. Frontend'e ciphertext sızdırmamak için
+        # decrypt_user_doc ile plaintext'e çeviriyoruz (admin RBAC zaten
+        # endpoint'te uygulanıyor; aynı helper /admin/users ve
+        # /admin/hotel/* listelerinde de kullanılıyor).
+        decoded = decrypt_user_doc(u)
         items.append({
-            "id": u.get("id"),
-            "email": u.get("email"),
-            "name": u.get("name"),
-            "username": u.get("username"),
-            "role": u.get("role"),
-            "tenant_id": u.get("tenant_id"),
-            "granted_permissions": u.get("granted_permissions") or [],
+            "id": decoded.get("id") or u.get("id"),
+            "email": decoded.get("email"),
+            "name": decoded.get("name"),
+            "username": decoded.get("username"),
+            "role": decoded.get("role") or u.get("role"),
+            "tenant_id": decoded.get("tenant_id") or u.get("tenant_id"),
+            "granted_permissions": (
+                decoded.get("granted_permissions")
+                or u.get("granted_permissions")
+                or []
+            ),
         })
     items.sort(key=lambda x: (x.get("name") or x.get("email") or "").lower())
     return {

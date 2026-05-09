@@ -15,8 +15,9 @@ import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { PageHeader } from "../components/ui/page-header";
 import { useToast } from "../hooks/use-toast";
-import { AlertTriangle, BellRing, RefreshCw, Search, ShieldCheck, Loader2 } from "lucide-react";
+import { AlertTriangle, BellRing, Check, RefreshCw, Search, ShieldCheck, Loader2 } from "lucide-react";
 
 const ROLE_LABELS = {
   super_admin: "Süper Admin",
@@ -30,8 +31,30 @@ const ROLE_LABELS = {
   sales: "Satış",
 };
 
+// Sprint A intent paleti — rol rozetleri için.
+const ROLE_BADGE = {
+  super_admin: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200",
+  admin:       "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200",
+  manager:     "bg-sky-50 text-sky-700 ring-1 ring-sky-200",
+  supervisor:  "bg-sky-50 text-sky-700 ring-1 ring-sky-200",
+  front_desk:  "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+  housekeeping:"bg-amber-50 text-amber-800 ring-1 ring-amber-200",
+  finance:     "bg-violet-50 text-violet-700 ring-1 ring-violet-200",
+  revenue:     "bg-violet-50 text-violet-700 ring-1 ring-violet-200",
+  sales:       "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
+};
+
 function roleLabel(role) {
   return ROLE_LABELS[role] || role || "—";
+}
+
+// Defensive guard: backend her ne kadar decrypt etmek zorunda olsa da
+// (KVKK strict mode regression olursa) ciphertext UI'ya sızdırılmasın.
+// `aes256gcm:` ve `SYR1:` prefiksleri tespit edilirse boş string dönülür.
+function safePii(value) {
+  if (typeof value !== "string" || !value) return "";
+  if (value.startsWith("aes256gcm:") || value.startsWith("SYR1:")) return "";
+  return value;
 }
 
 function MetricNumber({ label, value, tone = "default" }) {
@@ -61,19 +84,27 @@ export default function UrgentPermissionAdminPage() {
   // Task #32: Push gönderim metrikleri.
   const [metrics, setMetrics] = useState(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
+  const [metricsError, setMetricsError] = useState(null);
 
   const loadMetrics = useCallback(async () => {
     setMetricsLoading(true);
+    setMetricsError(null);
     try {
       const res = await axios.get("/admin/web-push/metrics", {
         params: { days: 30 },
       });
       setMetrics(res.data || null);
     } catch (err) {
-      // Sessiz: panel kullanılamaz duruma düşmesin, ana liste çalışsın.
-       
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      const msg = detail
+        || (status === 403 ? "Bu istatistikler için yetkiniz yok."
+        :  status === 404 ? "Push metrik servisi bu tenant'ta etkin değil."
+        :  status ? `İstatistik alınamadı (HTTP ${status}).`
+        :  "İstatistik servisine ulaşılamadı.");
       console.warn("web-push metrics fetch failed", err?.message);
       setMetrics(null);
+      setMetricsError(msg);
     } finally {
       setMetricsLoading(false);
     }
@@ -103,17 +134,26 @@ export default function UrgentPermissionAdminPage() {
     load();
   }, [load]);
 
+  // Defensive normalize: PII ciphertext sızdırma — backend hatalı dönerse
+  // bile UI'da `aes256gcm:...` görünmez, "—" gösterilir.
+  const safeUsers = useMemo(() => users.map((u) => ({
+    ...u,
+    name: safePii(u.name),
+    email: safePii(u.email),
+    username: safePii(u.username),
+  })), [users]);
+
   const filtered = useMemo(() => {
     const f = filter.trim().toLowerCase();
-    if (!f) return users;
-    return users.filter((u) => {
+    if (!f) return safeUsers;
+    return safeUsers.filter((u) => {
       return (
         (u.name || "").toLowerCase().includes(f)
         || (u.email || "").toLowerCase().includes(f)
         || (u.username || "").toLowerCase().includes(f)
       );
     });
-  }, [users, filter]);
+  }, [safeUsers, filter]);
 
   const toggleUrgent = useCallback(async (user) => {
     const has = (user.granted_permissions || []).includes("send_urgent_message");
@@ -162,22 +202,24 @@ export default function UrgentPermissionAdminPage() {
     <>
       <div data-testid="urgent-permission-admin-page" className="min-h-screen bg-gray-50">
         <div className="max-w-5xl mx-auto p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-indigo-600" />
-              <h1 className="text-xl font-bold text-gray-900">Acil Mesaj İzni Yönetimi</h1>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => { load(); loadMetrics(); }}
-              disabled={loading}
-            >
-              {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                       : <RefreshCw className="w-4 h-4 mr-2" />}
-              Yenile
-            </Button>
-          </div>
+          <PageHeader
+            icon={ShieldCheck}
+            iconClassName="text-indigo-600"
+            title="Acil Mesaj İzni Yönetimi"
+            subtitle="Bu izni alan kullanıcılar diğer personelin ekranında alarm tetikleyen acil mesaj gönderebilir."
+            actions={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { load(); loadMetrics(); }}
+                disabled={loading}
+              >
+                {loading ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                         : <RefreshCw className="w-4 h-4 mr-1.5" />}
+                Yenile
+              </Button>
+            }
+          />
 
           {/* Task #32: Push gönderim sayaçları */}
           <Card data-testid="urgent-permission-metrics-card">
@@ -194,8 +236,18 @@ export default function UrgentPermissionAdminPage() {
                   Yükleniyor...
                 </div>
               ) : !metrics ? (
-                <div className="py-3 text-sm text-gray-500">
-                  İstatistik alınamadı.
+                <div className="py-3 text-sm flex items-center justify-between gap-3">
+                  <span className="text-rose-700">
+                    {metricsError || "İstatistik alınamadı."}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadMetrics}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                    Tekrar dene
+                  </Button>
                 </div>
               ) : (metrics.totals?.attempted || 0) === 0 ? (
                 <div className="py-3 text-sm text-gray-500">
@@ -282,6 +334,9 @@ export default function UrgentPermissionAdminPage() {
                   {filtered.map((u) => {
                     const has = (u.granted_permissions || []).includes("send_urgent_message");
                     const saving = !!savingMap[u.id];
+                    const displayName = u.name || u.email || u.username || "—";
+                    const secondary = u.email || u.username || "";
+                    const roleCls = ROLE_BADGE[u.role] || "bg-slate-50 text-slate-700 ring-1 ring-slate-200";
                     return (
                       <div
                         key={u.id}
@@ -289,15 +344,21 @@ export default function UrgentPermissionAdminPage() {
                         className="flex items-center gap-3 px-4 py-3"
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900 truncate">
-                            {u.name || u.email || u.username}
-                          </div>
-                          <div className="text-xs text-gray-500 truncate">
-                            {u.email}
-                            <span className="ml-2 inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-sm font-medium text-gray-900 truncate">
+                              {displayName}
+                            </span>
+                            <span
+                              className={`shrink-0 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${roleCls}`}
+                            >
                               {roleLabel(u.role)}
                             </span>
                           </div>
+                          {secondary && (
+                            <div className="text-xs text-gray-500 truncate mt-0.5">
+                              {secondary}
+                            </div>
+                          )}
                         </div>
                         <Button
                           data-testid={`urgent-permission-toggle-${u.id}`}
@@ -305,13 +366,14 @@ export default function UrgentPermissionAdminPage() {
                           size="sm"
                           disabled={saving}
                           onClick={() => toggleUrgent(u)}
+                          title={has ? "İzni kaldır" : "Acil mesaj iznini ver"}
                         >
                           {saving ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : has ? (
-                            "İzin Var (kaldır)"
+                            <><Check className="w-3.5 h-3.5 mr-1.5" />İzinli</>
                           ) : (
-                            "İzin Ver"
+                            <>İzin Ver</>
                           )}
                         </Button>
                       </div>
