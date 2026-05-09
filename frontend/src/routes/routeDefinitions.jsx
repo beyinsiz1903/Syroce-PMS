@@ -565,7 +565,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/admin/pos", ...pa(POSDashboard) , wrapLayout: true, layoutModule: "pos" },
     { path: "/admin/features", ...pa(FeaturesShowcase) , wrapLayout: true },
     { path: "/admin/webhook-outbox", ...pa(WebhookOutboxAdmin) , wrapLayout: true, layoutModule: "webhook-outbox-admin" },
-    { path: "/admin/early-warning", ...pa(EarlyWarningDashboard) , wrapLayout: true, layoutModule: "early-warning" },
+    { path: "/admin/early-warning", ...pa(EarlyWarningDashboard) , wrapLayout: true, layoutModule: "early_warning_dashboard" },
     { path: "/admin/module-discovery", ...pa(ModuleDiscovery) , wrapLayout: true, layoutModule: "module-discovery" },
     { path: "/admin/integration-credentials", ...pa(IntegrationCredentials) , wrapLayout: true, layoutModule: "integration-credentials" },
     { path: "/admin/integrations-overview", ...pa(IntegrationsOverview) , wrapLayout: true, layoutModule: "integrations_overview" },

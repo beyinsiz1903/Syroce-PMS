@@ -49,52 +49,51 @@ def _get_tenant(user: User) -> str:
 # 1. Get All Early Warnings
 # ══════════════════════════════════════════════════════════════════════
 
+async def _build_warnings_payload(tenant_id: str, min_confidence: int, emit: bool) -> dict:
+    """Inner builder; side-effect (event emission) gated by `emit`."""
+    warnings = await generate_all_warnings(tenant_id)
+    filtered = [w for w in warnings if w["confidence"] >= min_confidence]
+
+    emitted_count = 0
+    if emit and filtered:
+        emitted_count = await emit_warning_events(tenant_id, filtered)
+
+    critical = [w for w in filtered if w["severity"] == "critical"]
+    warning_level = [w for w in filtered if w["severity"] == "warning"]
+    info = [w for w in filtered if w["severity"] == "info"]
+
+    return {
+        "warnings": filtered,
+        "total": len(filtered),
+        "by_severity": {
+            "critical": len(critical),
+            "warning": len(warning_level),
+            "info": len(info),
+        },
+        "events_emitted": emitted_count,
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+
+
+@cached(ttl=30, key_prefix="early_warnings_list")
+async def _build_warnings_cached(current_user: User, min_confidence: int) -> dict:
+    """Cached read-only path — `current_user` kept in signature so cache_manager
+    extracts tenant_id from it. Never emits events."""
+    return await _build_warnings_payload(current_user.tenant_id, min_confidence, emit=False)
+
+
 @router.get("")
 async def get_early_warnings(
     emit_events: bool = Query(False, description="Emit ops events for warnings"),
     min_confidence: int = Query(50, ge=0, le=100, description="Minimum confidence filter"),
     current_user: User = Depends(get_current_user),
 ):
-    """Tüm erken uyarıları getir.
-
-    Her uyarı için:
-    - warning_type: Uyarı tipi
-    - provider: Etkilenen kanal
-    - confidence: Güven skoru (0-100)
-    - reason: Uyarı nedeni (Türkçe)
-    - recommended_action: Önerilen aksiyon
-    - impacted_scope: Etki alanı
-    - trend_data: Trend verileri
-    """
-    tenant_id = _get_tenant(current_user)
-
+    """Tüm erken uyarıları getir. Read-only akış 30sn cache; `emit_events=true`
+    yan-etki içerdiği için cache bypass eder (POST /force-check emisyonun ana yoludur)."""
     try:
-        warnings = await generate_all_warnings(tenant_id)
-
-        # Filter by confidence
-        filtered = [w for w in warnings if w["confidence"] >= min_confidence]
-
-        # Emit events if requested
-        emitted_count = 0
-        if emit_events and filtered:
-            emitted_count = await emit_warning_events(tenant_id, filtered)
-
-        # Group by severity
-        critical = [w for w in filtered if w["severity"] == "critical"]
-        warning_level = [w for w in filtered if w["severity"] == "warning"]
-        info = [w for w in filtered if w["severity"] == "info"]
-
-        return {
-            "warnings": filtered,
-            "total": len(filtered),
-            "by_severity": {
-                "critical": len(critical),
-                "warning": len(warning_level),
-                "info": len(info),
-            },
-            "events_emitted": emitted_count,
-            "generated_at": datetime.now(UTC).isoformat(),
-        }
+        if emit_events:
+            return await _build_warnings_payload(_get_tenant(current_user), min_confidence, emit=True)
+        return await _build_warnings_cached(current_user, min_confidence)
     except Exception as exc:
         logger.error("Failed to generate warnings: %s", exc)
         raise HTTPException(status_code=500, detail=f"Warning generation error: {exc}")
@@ -233,6 +232,7 @@ async def get_connector_warnings(
 # ══════════════════════════════════════════════════════════════════════
 
 @router.get("/trends")
+@cached(ttl=60, key_prefix="early_warnings_trends")  # N+1 over connectors + 12 bucket queries
 async def get_warning_trends(
     hours: int = Query(6, ge=1, le=24, description="Hours of trend data"),
     current_user: User = Depends(get_current_user),
@@ -316,6 +316,7 @@ async def get_warning_trends(
 # ══════════════════════════════════════════════════════════════════════
 
 @router.get("/recent-events")
+@cached(ttl=60, key_prefix="early_warnings_recent_events")  # regex scan over ops_events
 async def get_recent_warning_events(
     limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
