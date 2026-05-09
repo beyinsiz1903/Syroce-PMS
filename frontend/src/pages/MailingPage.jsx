@@ -135,6 +135,7 @@ export default function MailingPage({ user, tenant, onLogout }) {
 
 // ── Campaign Tab ──────────────────────────────────────────────
 function CampaignTab({ templates, recipients, credits, onSent }) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [subject, setSubject] = useState('');
@@ -347,6 +348,7 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
 
 // ── Automations Tab ──────────────────────────────────────────
 function AutomationsTab({ automations, templates, onChanged }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const noTemplates = templates.length === 0;
 
@@ -454,6 +456,7 @@ function AutomationsTab({ automations, templates, onChanged }) {
 
 // ── Templates Tab ──────────────────────────────────────────────
 function TemplatesTab({ templates, onChanged }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(null);
   const empty = { name: '', subject: '', html: '', description: '' };
 
@@ -521,6 +524,7 @@ function TemplatesTab({ templates, onChanged }) {
 }
 
 function TemplateEditor({ initial, onSave, onCancel }) {
+  const { t } = useTranslation();
   const [d, setD] = useState(initial);
   return (
     <Card>
@@ -554,6 +558,7 @@ function TemplateEditor({ initial, onSave, onCancel }) {
 
 // ── History Tab ──────────────────────────────────────────────
 function HistoryTab({ campaigns, loading }) {
+  const { t } = useTranslation();
   const [stats, setStats] = useState(null);
   useEffect(() => {
     axios.get(`${API}/stats`).then(r => setStats(r.data)).catch(() => {});
@@ -626,6 +631,7 @@ function StatBox({ label, value, sub, color = "text-foreground" }) {
 
 // ── Credits Tab ──────────────────────────────────────────────
 function CreditsTab({ credits }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   if (!credits) return null;
 

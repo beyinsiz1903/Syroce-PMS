@@ -93,6 +93,7 @@ function Sparkline({ data = [], color = "#6366f1", height = 40 }) {
 }
 
 export default function EarlyWarningDashboard({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [summary, setSummary] = useState(null);
   const [trends, setTrends] = useState(null);
   const [engineStatus, setEngineStatus] = useState(null);

@@ -156,6 +156,7 @@ export default function RoomQrCodes({ user, tenant, onLogout }) {
 }
 
 function PrintAllQrCodes({ rooms }) {
+  const { t } = useTranslation();
   const [loaded, setLoaded] = useState({});
   useEffect(() => {
     const loadAll = async () => {

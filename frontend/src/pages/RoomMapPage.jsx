@@ -89,6 +89,7 @@ function UnassignedItem({ b }) {
 }
 
 export default function RoomMapPage({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [date, setDate] = useState(today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);

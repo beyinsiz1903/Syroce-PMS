@@ -76,6 +76,7 @@ function MetricNumber({ label, value, tone = "default" }) {
 }
 
 export default function UrgentPermissionAdminPage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [users, setUsers] = useState([]);
   const [grantable, setGrantable] = useState(["send_urgent_message"]);

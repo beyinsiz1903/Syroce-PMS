@@ -127,6 +127,7 @@ function ConnectionBadge({ provider }) {
 // Settings Tab
 // ════════════════════════════════════════════════
 function SettingsTab({ onChanged }) {
+  const { t } = useTranslation();
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -376,6 +377,7 @@ function SettingsTab({ onChanged }) {
 // Templates Tab
 // ════════════════════════════════════════════════
 function TemplatesTab() {
+  const { t } = useTranslation();
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterChannel, setFilterChannel] = useState('all');
@@ -577,6 +579,7 @@ function TemplatesTab() {
 // Send Message Tab
 // ════════════════════════════════════════════════
 function SendTab() {
+  const { t } = useTranslation();
   const [templates, setTemplates] = useState([]);
   const [sending, setSending] = useState(false);
   const [form, setForm] = useState({
@@ -750,6 +753,7 @@ function SendTab() {
 // Delivery Logs Tab
 // ════════════════════════════════════════════════
 function DeliveryLogsTab() {
+  const { t } = useTranslation();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -845,6 +849,7 @@ function DeliveryLogsTab() {
 // Metrics Tab
 // ════════════════════════════════════════════════
 function MetricsTab() {
+  const { t } = useTranslation();
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -933,6 +938,7 @@ const TRIGGER_INTENT = {
 };
 
 function AutomationTab() {
+  const { t } = useTranslation();
   const [rules, setRules] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1160,6 +1166,7 @@ function AutomationTab() {
 // Scheduler Card (inside Automation Tab)
 // ════════════════════════════════════════════════
 function SchedulerCard() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -1274,6 +1281,7 @@ function SchedulerCard() {
 // WhatsApp HSM Template Tab (Bug #13)
 // ════════════════════════════════════════════════
 function WhatsAppTemplateTab() {
+  const { t } = useTranslation();
   const [recipient, setRecipient] = useState('');
   const [templateName, setTemplateName] = useState('');
   const [languageCode, setLanguageCode] = useState('tr');
@@ -1371,6 +1379,7 @@ function WhatsAppTemplateTab() {
 // Activity Tab
 // ════════════════════════════════════════════════
 function ActivityTab() {
+  const { t } = useTranslation();
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -1464,6 +1473,7 @@ function ActivityTab() {
 // Main Dashboard
 // ════════════════════════════════════════════════
 export default function MessagingDashboard() {
+  const { t } = useTranslation();
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 

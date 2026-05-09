@@ -64,6 +64,7 @@ function HourBar({ hour, count, max }) {
 }
 
 export default function IdPhotoViewReportPage({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   // `filters` kullanıcının yazmakta olduğu draft, `appliedFilters`
   // ise sunucuya gönderilen son haldir. Her tuş basımında sorgu

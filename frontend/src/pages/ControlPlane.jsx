@@ -329,6 +329,7 @@ function TraceTimeline({ events, onLoadRaw }) {
 
 // ─── Gap Warnings ────────────────────────────────────────────────
 function GapWarnings({ warnings }) {
+  const { t } = useTranslation();
   return (
     <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3" data-testid="gap-warnings">
       <div className="flex items-center gap-2 mb-2">
@@ -382,6 +383,7 @@ function RawPayloadViewer({ payload, onCopy, onClose }) {
 
 // ─── System Health ───────────────────────────────────────────────
 function SystemHealth() {
+  const { t } = useTranslation();
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -514,6 +516,7 @@ function MetricCard({ label, value, sub, ok, testId }) {
 
 // ─── Live Feed ───────────────────────────────────────────────────
 function LiveFeed() {
+  const { t } = useTranslation();
   const [events, setEvents] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -626,6 +629,7 @@ function formatTime(isoStr) {
 
 // ─── Main Page ───────────────────────────────────────────────────
 export default function ControlPlane({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   return (
     <>
       <div className="min-h-screen bg-white text-gray-900" data-testid="control-plane-page">

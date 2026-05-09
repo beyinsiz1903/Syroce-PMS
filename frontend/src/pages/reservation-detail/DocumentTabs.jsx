@@ -110,6 +110,7 @@ export function DepositsTab({ deposits, booking, onRefresh }) {
 }
 
 export function VoucherTab({ booking, bookingId }) {
+  const { t } = useTranslation();
   const [voucherHtml, setVoucherHtml] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -159,6 +160,7 @@ export function VoucherTab({ booking, bookingId }) {
 }
 
 export function InvoiceTab({ booking, bookingId }) {
+  const { t } = useTranslation();
   const [charges, setCharges] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [billingInfo, setBillingInfo] = useState({ name: '', tax_id: '', tax_office: '', address: '', email: '', note: '' });

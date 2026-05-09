@@ -89,6 +89,7 @@ export function NewBookingDialog({ open, onOpenChange, newBooking, setNewBooking
 }
 
 export function MoveReasonDialog({ open, onOpenChange, moveData, moveReason, setMoveReason, handleConfirmMove }) {
+  const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -136,6 +137,7 @@ export function MoveReasonDialog({ open, onOpenChange, moveData, moveReason, set
 }
 
 export function FindRoomDialog({ open, onOpenChange, findRoomCriteria, setFindRoomCriteria, availableRooms, handleFindRoom, rooms }) {
+  const { t } = useTranslation();
   const roomTypes = [...new Set(rooms.map(r => r.room_type || 'standard'))];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

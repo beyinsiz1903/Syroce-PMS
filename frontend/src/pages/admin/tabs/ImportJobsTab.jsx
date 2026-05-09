@@ -25,6 +25,7 @@ const Badge = ({ status }) => {
 };
 
 export default function ImportJobsTab() {
+  const { t } = useTranslation();
   const [jobs, setJobs] = useState([]);
   const [environments, setEnvironments] = useState({});
   const [loading, setLoading] = useState(true);

@@ -212,6 +212,7 @@ function DeployHealthBlock({ data, onDrillDown }) {
 // ═══════════════════════════════════════════════════════════════════
 
 function DriftAlertPanel({ summary, alerts, onEvaluate, onAcknowledge, evaluating }) {
+  const { t } = useTranslation();
   const highest = summary?.highest_severity || "none";
   const style = DRIFT_SEVERITY_STYLES[highest] || DRIFT_SEVERITY_STYLES.none;
   const Icon = style.icon;
@@ -332,6 +333,7 @@ function KpiValue({ label, value, unit, trend, trendLabel, good, testId }) {
 }
 
 function KpiDashboard({ kpiData, dora, correlation, onDrillDown }) {
+  const { t } = useTranslation();
   if (!kpiData && !dora) return <Skeleton className="h-48 bg-zinc-800" />;
 
   const kpis = kpiData?.field_kpis || {};
@@ -477,6 +479,7 @@ function KpiDashboard({ kpiData, dora, correlation, onDrillDown }) {
 // ═══════════════════════════════════════════════════════════════════
 
 export function UnifiedOpsView() {
+  const { t } = useTranslation();
   const [alignment, setAlignment] = useState(null);
   const [dora, setDora] = useState(null);
   const [correlation, setCorrelation] = useState(null);

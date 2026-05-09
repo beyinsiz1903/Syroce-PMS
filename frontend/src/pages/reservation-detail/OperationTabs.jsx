@@ -159,6 +159,7 @@ export function RoomChangeTab({ booking, room, roomMoves, onRefresh }) {
 }
 
 export function CancelTab({ booking, bookingId, onRefresh, onClose }) {
+  const { t } = useTranslation();
   const [reason, setReason] = useState('');
   const [cancelType, setCancelType] = useState('guest_request');
   const [applyNoshow, setApplyNoshow] = useState(false);

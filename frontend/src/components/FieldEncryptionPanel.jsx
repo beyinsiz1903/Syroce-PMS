@@ -55,6 +55,7 @@ function CoverageBar({ collection, data }) {
 }
 
 export function FieldEncryptionPanel() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState(null);
   const [progress, setProgress] = useState([]);
   const [audit, setAudit] = useState([]);

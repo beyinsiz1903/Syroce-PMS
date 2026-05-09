@@ -56,6 +56,7 @@ function StatCard({ label, value, sub, icon: Icon, color, testId }) {
 }
 
 function DeployTrendChart({ trend }) {
+  const { t } = useTranslation();
   if (!trend || trend.length === 0) return null;
 
   const CustomTooltip = ({ active, payload, label }) => {
@@ -129,6 +130,7 @@ function DeployTrendChart({ trend }) {
 }
 
 function DeployRow({ deploy, isExpanded, onToggle }) {
+  const { t } = useTranslation();
   const statusConfig = {
     success: {
       icon: CheckCircle,
@@ -309,6 +311,7 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
 }
 
 export function DeployDashboard() {
+  const { t } = useTranslation();
   const [history, setHistory] = useState([]);
   const [stats, setStats] = useState(null);
   const [trend, setTrend] = useState([]);

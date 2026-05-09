@@ -81,6 +81,7 @@ function ExpiryBadge({ expiresAt }) {
 }
 
 export default function IdPhotoAdminPage({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);

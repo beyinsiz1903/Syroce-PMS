@@ -24,6 +24,7 @@ function TabLoading() {
 }
 
 export default function AnalitikRaporlarPage() {
+  const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const initial = VALID_TABS.includes(searchParams.get('tab')) ? searchParams.get('tab') : DEFAULT_TAB;
   const [tab, setTab] = useState(initial);

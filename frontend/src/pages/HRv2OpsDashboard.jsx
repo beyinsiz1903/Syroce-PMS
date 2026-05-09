@@ -279,6 +279,7 @@ function AlertItem({ name, alert }) {
 }
 
 export default function HRv2OpsDashboard({ tenant }) {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

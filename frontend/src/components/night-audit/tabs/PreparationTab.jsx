@@ -66,6 +66,7 @@ function StatTile({ icon: Icon, label, value, hint, tone = 'gray' }) {
 }
 
 export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey = 0 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);

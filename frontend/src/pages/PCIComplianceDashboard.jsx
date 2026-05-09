@@ -31,6 +31,7 @@ const ControlStatus = ({ status }) => {
 };
 
 export default function PCIComplianceDashboard() {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(null);

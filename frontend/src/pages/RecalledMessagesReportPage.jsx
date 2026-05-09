@@ -114,6 +114,7 @@ function DetailGrid({ data }) {
 }
 
 export default function RecalledMessagesReportPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   // Draft (UI) vs applied (effective) filters: prevents per-keystroke fetches.

@@ -40,6 +40,7 @@ function fmt(val) {
 }
 
 function DeltaBadge({ current, previous }) {
+  const { t } = useTranslation();
   if (!previous || previous === 0) return null;
   const pct = ((current - previous) / previous * 100).toFixed(1);
   const up = pct > 0;

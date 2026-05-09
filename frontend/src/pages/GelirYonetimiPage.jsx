@@ -20,6 +20,7 @@ function TabLoading() {
 }
 
 export default function GelirYonetimiPage({ user, tenant, onLogout, embedded = false }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState('dashboard');
 
   return (

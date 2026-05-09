@@ -18,6 +18,7 @@ function TabLoading() {
 }
 
 export default function AIZekaPage({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState('ai-hub');
 
   return (

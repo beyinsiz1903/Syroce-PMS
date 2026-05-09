@@ -64,6 +64,7 @@ function fmtDate(iso) {
 }
 
 function OpenFoliosDialog({ open, onClose, businessDate }) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [folios, setFolios] = useState([]);
   const [total, setTotal] = useState(0);
@@ -169,6 +170,7 @@ function OpenFoliosDialog({ open, onClose, businessDate }) {
 }
 
 function FolioTable({ rows, highlight = false }) {
+  const { t } = useTranslation();
   return (
     <div className="border border-slate-200 rounded-md overflow-hidden">
       <table className="w-full text-sm">
@@ -207,6 +209,7 @@ function FolioTable({ rows, highlight = false }) {
 }
 
 function ProgressKpi({ label, actual, expected, accent = 'sky' }) {
+  const { t } = useTranslation();
   const pct = expected > 0 ? Math.min(100, Math.round((actual / expected) * 100)) : 0;
   const barColor = pct >= 100 ? 'bg-emerald-500' : pct >= 70 ? 'bg-sky-500' : 'bg-amber-500';
   return (
@@ -225,6 +228,7 @@ function ProgressKpi({ label, actual, expected, accent = 'sky' }) {
 }
 
 export default function EodReportPage({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [businessDate, setBusinessDate] = useState(today());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);

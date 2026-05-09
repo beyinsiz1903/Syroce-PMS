@@ -335,6 +335,7 @@ const ProfilePage = ({ user, tenant, onLogout }) => {
 
 // ── 2FA Management ─────────────────────────────────────────────────
 function TwoFactorSection() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState(null);
   const [statusError, setStatusError] = useState(false);
   const [setup, setSetup] = useState(null); // {secret, qr_code, otpauth_uri}

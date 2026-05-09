@@ -93,6 +93,7 @@ function CategoryCard({ cat }) {
 }
 
 export function TechDebtDashboard() {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 

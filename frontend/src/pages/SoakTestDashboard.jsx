@@ -117,6 +117,7 @@ function SnapshotChart({ snapshots }) {
 }
 
 export default function SoakTestDashboard() {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);

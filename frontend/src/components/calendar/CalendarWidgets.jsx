@@ -70,6 +70,7 @@ export function OccupancyChart({ dateRange, bookings, rooms, isBookingOnDate, is
 }
 
 export function CalendarLegend() {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center gap-4 text-xs text-gray-500" data-testid="calendar-legend">
       <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-amber-400" /> Expedia</div>
@@ -83,6 +84,7 @@ export function CalendarLegend() {
 }
 
 export function CalendarStats({ bookings, rooms, dateRange, isBookingOnDate }) {
+  const { t } = useTranslation();
   const todayBookings = bookings.filter(b => b.status !== 'cancelled' && b.status !== 'no_show' && isBookingOnDate(b, new Date()));
   const occupancyPct = rooms.length > 0 ? Math.round((todayBookings.length / rooms.length) * 100) : 0;
   const todayRevenue = todayBookings.reduce((sum, b) => {

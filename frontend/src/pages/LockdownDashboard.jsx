@@ -50,6 +50,7 @@ const ProviderBadge = ({ name }) => (
 );
 
 export default function LockdownDashboard({ user, tenant }) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);

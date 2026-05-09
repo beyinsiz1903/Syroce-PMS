@@ -156,6 +156,7 @@ function CryptoStatusCard({ data }) {
 }
 
 function CutoverMetricsCard({ data }) {
+  const { t } = useTranslation();
   if (!data) return <Skeleton className="h-32 bg-zinc-800" />;
 
   const cutover = data.cutover || {};
@@ -208,6 +209,7 @@ function CutoverMetricsCard({ data }) {
 }
 
 function RotationPlanCard({ data }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   if (!data) return <Skeleton className="h-32 bg-zinc-800" />;
 
@@ -294,6 +296,7 @@ function RotationPlanCard({ data }) {
 }
 
 export function SecurityOpsDashboard() {
+  const { t } = useTranslation();
   const [secretsStatus, setSecretsStatus] = useState(null);
   const [cryptoStatus, setCryptoStatus] = useState(null);
   const [cutoverMetrics, setCutoverMetrics] = useState(null);

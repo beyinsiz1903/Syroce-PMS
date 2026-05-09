@@ -147,6 +147,7 @@ function RuleEditor({ title, rules, setRules, onDelete }) {
 }
 
 export default function EarlyLatePricingSettings() {
+  const { t } = useTranslation();
   const [cfg, setCfg] = useState(null);
   const [meta, setMeta] = useState(null);
   const [loading, setLoading] = useState(true);

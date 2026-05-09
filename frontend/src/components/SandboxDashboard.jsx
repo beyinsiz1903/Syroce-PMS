@@ -131,6 +131,7 @@ function ProviderCard({ card }) {
 }
 
 function RegressionAlert({ regressions }) {
+  const { t } = useTranslation();
   if (!regressions || regressions.length === 0) return null;
 
   return (
@@ -168,6 +169,7 @@ function RegressionAlert({ regressions }) {
 }
 
 function TrendChart({ data }) {
+  const { t } = useTranslation();
   if (!data || data.length < 2) {
     return (
       <div className="text-xs text-zinc-600 text-center py-4">
@@ -205,6 +207,7 @@ function TrendChart({ data }) {
 }
 
 export function SandboxDashboard() {
+  const { t } = useTranslation();
   const [dashboard, setDashboard] = useState(null);
   const [trends, setTrends] = useState(null);
   const [regressions, setRegressions] = useState(null);

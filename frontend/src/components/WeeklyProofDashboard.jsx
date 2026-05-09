@@ -65,6 +65,7 @@ function ImprovementCard({ icon, label, delta, unit, invertGood, testId }) {
 }
 
 export function WeeklyProof() {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [weeks, setWeeks] = useState(8);

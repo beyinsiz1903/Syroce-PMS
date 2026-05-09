@@ -69,6 +69,7 @@ function MetricCard({ icon: Icon, label, value, sub, color = "text-foreground" }
 }
 
 export default function TrialBalancePage() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [data, setData] = useState(null);

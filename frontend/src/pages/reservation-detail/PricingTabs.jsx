@@ -55,6 +55,7 @@ export function DailyRatesTab({ dailyRates, booking, onRefresh }) {
 }
 
 export function ExtraChargesTab({ extra_charges, charges, booking, onRefresh, allBookings }) {
+  const { t } = useTranslation();
   const [showAdd, setShowAdd] = useState(false);
   const [showSplit, setShowSplit] = useState(null);
   const [elDirection, setElDirection] = useState(null);

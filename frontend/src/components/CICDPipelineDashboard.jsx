@@ -234,6 +234,7 @@ function RunCard({ run }) {
 }
 
 function TrendChart({ data }) {
+  const { t } = useTranslation();
   if (!data || data.length < 2) {
     return (
       <div className="text-xs text-zinc-600 text-center py-4">
@@ -275,6 +276,7 @@ function TrendChart({ data }) {
 }
 
 export function CICDPipelineDashboard() {
+  const { t } = useTranslation();
   const [badges, setBadges] = useState(null);
   const [runs, setRuns] = useState([]);
   const [trends, setTrends] = useState(null);

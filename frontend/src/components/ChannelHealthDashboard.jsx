@@ -67,6 +67,7 @@ function CustomTooltip({ active, payload, label }) {
 }
 
 function FieldKPICard({ icon, label, kpi, invertTrend, testId }) {
+  const { t } = useTranslation();
   const val = kpi?.current ?? 0;
   const prev = kpi?.previous ?? 0;
   const delta = kpi?.delta ?? 0;
@@ -160,6 +161,7 @@ function EmptyChart({ label }) {
 }
 
 function FailureBreakdownBar({ data }) {
+  const { t } = useTranslation();
   const total = Object.values(data).reduce((a, b) => a + b, 0);
   if (total === 0) return <div className="text-center py-4 text-zinc-600 text-xs" data-testid="failure-breakdown-empty">{t('cm.components_ChannelHealthDashboard.hata_kaydi_yok')}</div>;
   const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
@@ -256,6 +258,7 @@ function DriftCard({ provider, drift }) {
 }
 
 export function ChannelHealth() {
+  const { t } = useTranslation();
   const [hours, setHours] = useState(24);
   const [data, setData] = useState(null);
   const [trends, setTrends] = useState(null);

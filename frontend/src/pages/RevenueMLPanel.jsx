@@ -45,6 +45,7 @@ function ActionBadge({ action }) {
 }
 
 export default function RevenueMLPanel() {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

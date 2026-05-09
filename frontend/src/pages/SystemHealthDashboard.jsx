@@ -59,6 +59,7 @@ function MetricCard({ icon: Icon, title, value, sub, testId }) {
 }
 
 function PanelCard({ title, icon: Icon, children, status, onAction, actionLabel, actionLoading, testId, permissionGated }) {
+  const { t } = useTranslation();
   return (
     <Card data-testid={testId} className="bg-white border-slate-200">
       <CardHeader className="pb-3 flex flex-row items-center justify-between gap-2">
@@ -122,6 +123,7 @@ function DataRow({ label, value, valueClass }) {
 
 /* ── WS Bridge Sparkline ─────────────────────────────────────────── */
 function ErrorSparkline({ points, testId }) {
+  const { t } = useTranslation();
   const series = Array.isArray(points) ? points : [];
   if (series.length < 2) {
     return (
@@ -152,6 +154,7 @@ function ErrorSparkline({ points, testId }) {
 }
 
 function WSBridgePanel({ wsBridge, testIdPrefix = "ws-bridge" }) {
+  const { t } = useTranslation();
   if (!wsBridge) return null;
   const detail = wsBridge.detail || {};
   const status = wsBridge.status || "unknown";
@@ -219,6 +222,7 @@ function WSBridgePanel({ wsBridge, testIdPrefix = "ws-bridge" }) {
 }
 
 function RoomServiceLivePanel({ roomService, testIdPrefix = "room-service" }) {
+  const { t } = useTranslation();
   if (!roomService) return null;
   const detail = roomService.detail || {};
   const status = roomService.status || "healthy";
@@ -259,6 +263,7 @@ function RoomServiceLivePanel({ roomService, testIdPrefix = "room-service" }) {
 
 /* ── GM Property Panel ───────────────────────────────────── */
 function GMPropertyView({ cmStatus, alerts }) {
+  const { t } = useTranslation();
   const alertCount = alerts?.count || 0;
   const criticalAlerts = alerts?.critical || 0;
   const driftActive = cmStatus?.drift?.active_drifts || 0;
@@ -306,6 +311,7 @@ function GMPropertyView({ cmStatus, alerts }) {
 
 /* ── Admin Tenant Panel ─────────────────────────────────── */
 function AdminTenantView(props) {
+  const { t } = useTranslation();
   const { cmStatus, queueHealth, secAudit, rateLimit, tenantGuard, logSanit, alerts, stuckTasks, auditMetrics, wsBridge, roomService, triggerDriftScan, driftScanLoading, triggerRecon, reconLoading, canTrigger } = props;
   const alertCount = alerts?.count || 0;
   const criticalAlerts = alerts?.critical || 0;
@@ -415,6 +421,7 @@ function AdminTenantView(props) {
 
 /* ── Superadmin Global Panel ─────────────────────────────── */
 function SuperadminGlobalView(props) {
+  const { t } = useTranslation();
   const { cmStatus, queueHealth, secAudit, rateLimit, tenantGuard, logSanit, alerts, stuckTasks, metrics, auditMetrics, normalizedOverview, wsBridge, roomService, triggerDriftScan, driftScanLoading, triggerRecon, reconLoading, canTrigger } = props;
   const alertCount = alerts?.count || 0;
   const criticalAlerts = alerts?.critical || 0;
@@ -574,6 +581,7 @@ function DashboardSkeleton() {
 
 /* ── Main Dashboard ──────────────────────────────────────── */
 export default function SystemHealthDashboard({ user }) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [cmStatus, setCmStatus] = useState(null);

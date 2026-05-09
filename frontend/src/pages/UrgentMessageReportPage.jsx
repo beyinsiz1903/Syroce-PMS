@@ -57,6 +57,7 @@ function HourBar({ hour, count, max }) {
 }
 
 export default function UrgentMessageReportPage({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [filters, setFilters] = useState({
     start_date: "",

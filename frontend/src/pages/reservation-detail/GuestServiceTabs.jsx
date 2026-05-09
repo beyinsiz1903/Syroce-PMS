@@ -95,6 +95,7 @@ export function CommunicationTab({ booking, onRefresh, communicationLogs }) {
 }
 
 export function NotesTab({ notes, booking, onRefresh }) {
+  const { t } = useTranslation();
   const [content, setContent] = useState('');
   const [noteType, setNoteType] = useState('general');
   const [loading, setLoading] = useState(false);
@@ -141,6 +142,7 @@ export function NotesTab({ notes, booking, onRefresh }) {
 }
 
 export function HistoryTab({ history, roomMoves }) {
+  const { t } = useTranslation();
   const allEvents = [
     ...(history || []).map(h => ({ ...h, _src: 'activity' })),
     ...(roomMoves || []).map(rm => ({ ...rm, _src: 'room_move', action: 'room_changed', actor: rm.moved_by, created_at: rm.moved_at, details: { from_room: rm.from_room_number, to_room: rm.to_room_number, reason: rm.reason } })),

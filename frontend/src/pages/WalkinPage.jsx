@@ -45,6 +45,7 @@ function Stepper({ step }) {
 }
 
 function RoomGroup({ type, rooms, selectedId, onSelect, nights, defaultOpen }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -99,6 +100,7 @@ function RoomGroup({ type, rooms, selectedId, onSelect, nights, defaultOpen }) {
 }
 
 export default function WalkinPage({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const nav = useNavigate();
   const [step, setStep] = useState(1);
   const [done, setDone] = useState(false);

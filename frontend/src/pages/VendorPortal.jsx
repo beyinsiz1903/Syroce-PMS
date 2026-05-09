@@ -244,6 +244,7 @@ function VendorAuth({ onAuthed }) {
 
 // ─── Dashboard ────────────────────────────────────────────
 function VendorDashboard({ vendor, onLogout }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState("products");
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -696,6 +697,7 @@ function VendorDashboard({ vendor, onLogout }) {
 
 // ─── Earnings Panel ──────────────────────────────────────
 function EarningsPanel({ data, loading, commissionPct }) {
+  const { t } = useTranslation();
   const fmt = (n) =>
     new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(Number(n || 0));
 
@@ -815,6 +817,7 @@ function EarningsPanel({ data, loading, commissionPct }) {
 }
 
 function ProductModal({ product, onClose, onSave }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     ...product,
     images: product.images || [],

@@ -61,6 +61,7 @@ function CategoryBadge({ category, label }) {
 }
 
 function IntegrationCard({ item, status }) {
+  const { t } = useTranslation();
   // status: "ready" | "needs" | "dev"
   const isReady = status === "ready";
   const isNeeds = status === "needs";
@@ -228,6 +229,7 @@ function ColumnHeader({ icon: Icon, title, count, intent }) {
 }
 
 export default function IntegrationsOverview() {
+  const { t } = useTranslation();
   const [data, setData] = useState({ ready: [], needs_credentials: [], in_development: [], totals: {} });
   const [loading, setLoading] = useState(true);
 

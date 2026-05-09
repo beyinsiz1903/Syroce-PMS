@@ -150,6 +150,7 @@ const GateCheck = ({ check }) => (
 );
 
 export default function RuntimeCockpitPage({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [cockpit, setCockpit] = useState(null);

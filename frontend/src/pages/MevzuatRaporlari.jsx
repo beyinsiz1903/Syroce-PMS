@@ -46,6 +46,7 @@ function RefreshButton({ onClick, loading, label = "Yenile" }) {
 }
 
 export default function MevzuatRaporlari({ user, tenant }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [tab, setTab] = useState("tuik");
   const isSuperAdmin = user?.role === "SUPER_ADMIN" || user?.role === "super_admin";

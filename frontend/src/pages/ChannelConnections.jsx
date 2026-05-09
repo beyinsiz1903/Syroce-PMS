@@ -657,6 +657,7 @@ function ProviderCard({
   testing, disconnecting, onConnect, onTest, onDisconnect,
   detailsPath, credentialFields, extraInfo,
 }) {
+  const { t } = useTranslation();
   const connected = data?.connected;
   const mappings = data?.room_mappings_count || 0;
 

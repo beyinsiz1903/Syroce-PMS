@@ -145,6 +145,7 @@ export function SelectField({ label, value, onChange, options }) {
 }
 
 export function FormPanel({ color, title, testid, children, onClose, onSubmit, loading }) {
+  const { t } = useTranslation();
   return (
     <div className={`border rounded-lg p-4 bg-${color}-50/50 space-y-3`} data-testid={testid}>
       <div className={`text-sm font-semibold text-${color}-800`}>{title}</div>

@@ -118,6 +118,7 @@ function ProductCard({ product, owned, onPurchase, onStartTrial, onLaunch, buyin
 }
 
 export default function ModuleStorePage({ user, tenant, onLogout }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [subs, setSubs] = useState([]);
