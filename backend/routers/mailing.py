@@ -384,15 +384,22 @@ async def get_credits(current_user: User = Depends(get_current_user)) -> dict:
         raise HTTPException(status_code=403, detail="Tenant gerekli")
     doc = await _get_or_init_credits(current_user.tenant_id)
     db = _db()
-    sent_30d = await db.mailing_sends.count_documents({
+    # Bug AK fix: variable was misnamed `sent_30d` but the query window is
+    # actually "today since 00:00 UTC" (we slice the ISO string to a YYYY-MM-DD
+    # date and use $gte). The response field is correctly named `sent_today`;
+    # only the local var is renamed for clarity.
+    today_iso = datetime.now(UTC).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).isoformat()[:10]
+    sent_today = await db.mailing_sends.count_documents({
         "tenant_id": current_user.tenant_id,
-        "sent_at": {"$gte": (datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)).isoformat()[:10]},
+        "sent_at": {"$gte": today_iso},
     })
     return {
         "balance": doc.get("balance", 0),
         "lifetime_used": doc.get("lifetime_used", 0),
         "free_granted": doc.get("free_granted", DEFAULT_FREE_CREDITS),
-        "sent_today": sent_30d,
+        "sent_today": sent_today,
     }
 
 
@@ -654,15 +661,11 @@ def _guest_display_name(g: dict) -> str:
     return full or "Misafir"
 
 
-@router.get("/recipients")
-async def list_recipients(
-    search: str | None = None,
-    current_user: User = Depends(get_current_user),
-) -> list[dict]:
-    """Return guests of this tenant who have a valid email."""
-    if not current_user.tenant_id:
-        raise HTTPException(status_code=403, detail="Tenant gerekli")
-    query: dict[str, Any] = {"tenant_id": current_user.tenant_id}
+async def _enumerate_recipients(tenant_id: str, search: str | None = None) -> list[dict]:
+    """Internal helper: enumerate tenant guests with valid email. No RBAC —
+    callers must enforce. Reused by both the public /recipients endpoint
+    (KVKK-gated) and the campaign sender (already gated by manage_sales)."""
+    query: dict[str, Any] = {"tenant_id": tenant_id}
     if search:
         rgx = re.escape(search.strip())
         query["$or"] = [
@@ -684,11 +687,24 @@ async def list_recipients(
     return out
 
 
+@router.get("/recipients")
+async def list_recipients(
+    search: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_guest_list")),  # KVKK: misafir e-posta listesi PII
+) -> list[dict]:
+    """Return guests of this tenant who have a valid email."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="Tenant gerekli")
+    return await _enumerate_recipients(current_user.tenant_id, search)
+
+
 # ── Quick recipient filters (today's check-in/out, in-house) ────────────
 @router.get("/recipients/quick/{filter_type}")
 async def quick_recipients(
     filter_type: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_guest_list")),  # KVKK: misafir e-posta listesi PII
 ) -> dict:
     """Build a recipient list from current bookings using a simple filter:
     - in_house    : currently staying (check_in <= today < check_out)
@@ -877,7 +893,7 @@ async def create_and_send_campaign(
     else:
         if not payload.recipient_ids:
             raise HTTPException(status_code=400, detail="En az 1 alıcı seçin")
-        all_recipients = await list_recipients(current_user=current_user)
+        all_recipients = await _enumerate_recipients(current_user.tenant_id)
         wanted = set(payload.recipient_ids)
         recipients = [r for r in all_recipients if r["id"] in wanted]
         if not recipients:

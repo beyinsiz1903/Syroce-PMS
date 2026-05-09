@@ -9,7 +9,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Mail, Users, FileText, Send, Trash2, Plus, Sparkles, AlertCircle, Zap } from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
+import { KpiCard } from '@/components/ui/kpi-card';
+import { Mail, Users, FileText, Send, Trash2, Plus, Sparkles, AlertCircle, Zap, RefreshCw, Wallet, Gift, BarChart3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { confirmDialog } from '@/lib/dialogs';
@@ -56,20 +58,44 @@ export default function MailingPage({ user, tenant, onLogout }) {
   useEffect(() => { refresh(); }, [refresh]);
 
   return (
-    <>
     <div className="container mx-auto p-6 max-w-7xl space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Mail className="w-7 h-7 text-indigo-600" />
-            E-posta Pazarlama
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Misafirlerinize toplu e-posta gönderin, şablonları yönetin
-          </p>
+      <PageHeader
+        icon={Mail}
+        title="E-posta Pazarlama"
+        subtitle="Misafirlerinize toplu e-posta gönderin, şablonları yönetin"
+        actions={
+          <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+            Yenile
+          </Button>
+        }
+      />
+
+      {credits && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <KpiCard
+            icon={Wallet}
+            label="Kalan Kredi"
+            value={credits.balance.toLocaleString('tr-TR')}
+            sub={credits.balance < 50 ? 'Düşük bakiye — yükleme önerilir' : 'Kullanıma hazır'}
+            intent={credits.balance < 50 ? 'warning' : 'info'}
+          />
+          <KpiCard
+            icon={Send}
+            label="Bugün Gönderilen"
+            value={(credits.sent_today ?? 0).toLocaleString('tr-TR')}
+            sub="Son 24 saat"
+            intent="default"
+          />
+          <KpiCard
+            icon={BarChart3}
+            label="Toplam Gönderim"
+            value={(credits.lifetime_used ?? 0).toLocaleString('tr-TR')}
+            sub="Hesabın açıldığı günden bu yana"
+            intent="success"
+          />
         </div>
-        <CreditsBadge credits={credits} />
-      </div>
+      )}
 
       <Tabs defaultValue="campaign" className="space-y-4">
         <TabsList className="grid w-full grid-cols-5">
@@ -102,20 +128,6 @@ export default function MailingPage({ user, tenant, onLogout }) {
         </TabsContent>
       </Tabs>
     </div>
-    </>
-  );
-}
-
-function CreditsBadge({ credits }) {
-  if (!credits) return null;
-  const low = credits.balance < 50;
-  return (
-    <div className={`px-4 py-2 rounded-lg border ${low ? 'bg-amber-50 border-amber-300' : 'bg-indigo-50 border-indigo-200'}`}>
-      <div className="text-xs text-muted-foreground">Kalan kredi</div>
-      <div className={`text-2xl font-bold ${low ? 'text-amber-700' : 'text-indigo-700'}`}>
-        {credits.balance.toLocaleString('tr-TR')}
-      </div>
-    </div>
   );
 }
 
@@ -135,18 +147,22 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
     if (tpl) { setSubject(tpl.subject); setHtml(tpl.html); }
   }, [templateId, tpl]);
 
+  const filtered = recipients.filter(r =>
+    !search || r.name.toLowerCase().includes(search.toLowerCase()) || r.email.toLowerCase().includes(search.toLowerCase())
+  );
+
   const toggleAll = () => {
     if (selected.size === filtered.length) setSelected(new Set());
     else setSelected(new Set(filtered.map(r => r.id)));
   };
 
-  const filtered = recipients.filter(r =>
-    !search || r.name.toLowerCase().includes(search.toLowerCase()) || r.email.toLowerCase().includes(search.toLowerCase())
-  );
+  const balance = credits?.balance ?? 0;
+  const insufficientForTest = balance < 1;
 
   const sendTest = async () => {
     if (!testEmail) { toast.error('Test e-posta adresi girin'); return; }
     if (!subject || !html) { toast.error('Konu ve içerik gerekli'); return; }
+    if (insufficientForTest) { toast.error('Yetersiz kredi: en az 1 kredi gerekli'); return; }
     setSending(true);
     try {
       const res = await axios.post(`${API}/campaigns`, {
@@ -163,8 +179,8 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
     if (!name) { toast.error('Kampanya adı gerekli'); return; }
     if (selected.size === 0) { toast.error('En az 1 alıcı seçin'); return; }
     if (!subject || !html) { toast.error('Konu ve içerik gerekli'); return; }
-    if (credits && selected.size > credits.balance) {
-      toast.error(`Yetersiz kredi: ${selected.size} gerekli, ${credits.balance} mevcut`);
+    if (selected.size > balance) {
+      toast.error(`Yetersiz kredi: ${selected.size} gerekli, ${balance} mevcut`);
       return;
     }
     if (!await confirmDialog({ message: `${selected.size} misafire e-posta gönderilecek. Onaylıyor musunuz?` })) return;
@@ -182,6 +198,8 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
       toast.error(e.response?.data?.detail || 'Gönderim başarısız');
     } finally { setSending(false); }
   };
+
+  const insufficientForCampaign = selected.size === 0 || selected.size > balance;
 
   return (
     <div className="grid lg:grid-cols-2 gap-6">
@@ -221,8 +239,18 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
             <div className="flex gap-2 mt-1">
               <Input type="email" value={testEmail} onChange={e => setTestEmail(e.target.value)}
                 placeholder="test@adresiniz.com" />
-              <Button variant="outline" onClick={sendTest} disabled={sending}>Test Gönder</Button>
+              <Button
+                variant="outline"
+                onClick={sendTest}
+                disabled={sending || insufficientForTest}
+                title={insufficientForTest ? 'Test göndermek için en az 1 kredi gerekli' : undefined}
+              >
+                Test Gönder
+              </Button>
             </div>
+            {insufficientForTest && (
+              <p className="text-xs text-amber-700 mt-1">Test gönderimi için en az 1 kredi gerekli.</p>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -276,7 +304,7 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
               </div>
             )}
             {filtered.map(r => (
-              <label key={r.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 cursor-pointer">
+              <label key={r.id} className="flex items-center gap-3 p-2 hover:bg-slate-50 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={selected.has(r.id)}
@@ -293,11 +321,22 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
               </label>
             ))}
           </div>
-          <Button className="w-full mt-4 bg-indigo-600 hover:bg-indigo-700"
-            onClick={sendCampaign} disabled={sending || selected.size === 0}>
+          <Button
+            className="w-full mt-4"
+            onClick={sendCampaign}
+            disabled={sending || insufficientForCampaign}
+            title={selected.size > balance ? `Yetersiz kredi (${selected.size}/${balance})` : undefined}
+          >
             <Send className="w-4 h-4 mr-2" />
-            {sending ? 'Gönderiliyor…' : `${selected.size} alıcıya gönder (${selected.size} kredi)`}
+            {sending
+              ? 'Gönderiliyor…'
+              : `${selected.size} alıcıya gönder (${selected.size} kredi)`}
           </Button>
+          {selected.size > balance && (
+            <p className="text-xs text-amber-700 mt-2 text-center">
+              Yetersiz kredi: {selected.size} gerekli, {balance} mevcut.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -306,6 +345,9 @@ function CampaignTab({ templates, recipients, credits, onSent }) {
 
 // ── Automations Tab ──────────────────────────────────────────
 function AutomationsTab({ automations, templates, onChanged }) {
+  const navigate = useNavigate();
+  const noTemplates = templates.length === 0;
+
   const save = async (a, patch) => {
     try {
       await axios.put(`${API}/automations/${a.trigger_type}`, {
@@ -322,9 +364,9 @@ function AutomationsTab({ automations, templates, onChanged }) {
 
   return (
     <div className="space-y-4">
-      <Card className="bg-blue-50 border-blue-200">
+      <Card className="bg-slate-50 border-slate-200">
         <CardContent className="pt-4">
-          <p className="text-sm text-blue-900">
+          <p className="text-sm text-slate-700">
             <strong>Nasıl çalışır?</strong> Aşağıdan bir tetikleyici seçip şablon atayın.
             Sistem her 10 dakikada bir tarar ve uygun rezervasyonlara otomatik olarak e-posta gönderir.
             Aynı misafire aynı tetikleyici için sadece <strong>bir kez</strong> mail gönderilir.
@@ -332,7 +374,29 @@ function AutomationsTab({ automations, templates, onChanged }) {
           </p>
         </CardContent>
       </Card>
-      {automations.length === 0 && (
+      {noTemplates && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="pt-4 flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <FileText className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="font-semibold text-amber-900">Önce şablon oluşturun</div>
+                <p className="text-sm text-amber-800 mt-1">
+                  Otomasyonları aktif edebilmek için en az bir e-posta şablonu gerekli.
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => {
+              const trigger = document.querySelector('[role="tab"][value="templates"]');
+              trigger?.click();
+            }}>
+              <Plus className="w-4 h-4 mr-1.5" />
+              Şablon Oluştur
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+      {automations.length === 0 && !noTemplates && (
         <div className="text-center py-12 text-muted-foreground">Yükleniyor…</div>
       )}
       {automations.map(a => (
@@ -341,16 +405,20 @@ function AutomationsTab({ automations, templates, onChanged }) {
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <Zap className={`w-5 h-5 ${a.enabled ? 'text-green-600' : 'text-gray-400'}`} />
+                  <Zap className={`w-5 h-5 ${a.enabled ? 'text-emerald-600' : 'text-slate-400'}`} />
                   <h3 className="font-semibold text-lg">{a.label}</h3>
-                  {a.enabled && <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Aktif</Badge>}
+                  {a.enabled && (
+                    <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Aktif</Badge>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground mb-3">{a.description}</p>
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs">Şablon</Label>
-                    <select className="w-full border rounded px-3 py-2 text-sm mt-1"
+                    <select
+                      className="w-full border rounded px-3 py-2 text-sm mt-1 disabled:opacity-50"
                       value={a.template_id || ''}
+                      disabled={noTemplates}
                       onChange={e => save(a, { template_id: e.target.value || null })}>
                       <option value="">— Şablon seçin —</option>
                       {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -373,6 +441,7 @@ function AutomationsTab({ automations, templates, onChanged }) {
               </div>
               <Switch
                 checked={a.enabled}
+                disabled={noTemplates && !a.enabled}
                 onCheckedChange={(v) => save(a, { enabled: v })}
               />
             </div>
@@ -432,7 +501,7 @@ function TemplatesTab({ templates, onChanged }) {
         ) : (
           <div className="space-y-2">
             {templates.map(t => (
-              <div key={t.id} className="flex items-center justify-between p-3 border rounded hover:bg-gray-50">
+              <div key={t.id} className="flex items-center justify-between p-3 border rounded hover:bg-slate-50">
                 <div className="min-w-0">
                   <div className="font-medium">{t.name}</div>
                   <div className="text-sm text-muted-foreground truncate">{t.subject}</div>
@@ -440,7 +509,7 @@ function TemplatesTab({ templates, onChanged }) {
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => setEditing(t)}>Düzenle</Button>
                   <Button variant="outline" size="sm" onClick={() => remove(t.id)}>
-                    <Trash2 className="w-4 h-4 text-red-600" />
+                    <Trash2 className="w-4 h-4 text-rose-600" />
                   </Button>
                 </div>
               </div>
@@ -501,10 +570,10 @@ function HistoryTab({ campaigns, loading }) {
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <StatBox label="Gönderildi"  value={stats.sent}      sub="" />
-              <StatBox label="Ulaştı"      value={stats.delivered} sub={`%${stats.delivery_rate}`} color="text-blue-600" />
-              <StatBox label="Açıldı"      value={stats.opened}    sub={`%${stats.open_rate}`}    color="text-green-600" />
+              <StatBox label="Ulaştı"      value={stats.delivered} sub={`%${stats.delivery_rate}`} color="text-sky-600" />
+              <StatBox label="Açıldı"      value={stats.opened}    sub={`%${stats.open_rate}`}    color="text-emerald-600" />
               <StatBox label="Tıklandı"    value={stats.clicked}   sub={`%${stats.click_rate}`}   color="text-indigo-600" />
-              <StatBox label="Geri döndü"  value={stats.bounced}   sub={`%${stats.bounce_rate}`}  color="text-red-600" />
+              <StatBox label="Geri döndü"  value={stats.bounced}   sub={`%${stats.bounce_rate}`}  color="text-rose-600" />
             </div>
             {stats.sent === 0 && (
               <p className="text-xs text-muted-foreground mt-3">
@@ -533,8 +602,8 @@ function HistoryTab({ campaigns, loading }) {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm font-medium text-green-700">{c.sent_count} gönderildi</div>
-                  {c.failed_count > 0 && <div className="text-xs text-red-600">{c.failed_count} hatalı</div>}
+                  <div className="text-sm font-medium text-emerald-700">{c.sent_count} gönderildi</div>
+                  {c.failed_count > 0 && <div className="text-xs text-rose-600">{c.failed_count} hatalı</div>}
                 </div>
               </div>
             ))}
@@ -564,30 +633,35 @@ function CreditsTab({ credits }) {
   return (
     <div className="space-y-6">
       <div className="grid md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <p className="text-sm text-muted-foreground">Kalan Kredi</p>
-            <p className="font-bold text-3xl text-indigo-700 mt-1">{credits.balance}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <p className="text-sm text-muted-foreground">Toplam Gönderilen</p>
-            <p className="font-bold text-3xl text-gray-700 mt-1">{credits.lifetime_used}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <p className="text-sm text-muted-foreground">Hediye Kredi</p>
-            <p className="font-bold text-3xl text-green-700 mt-1">{credits.free_granted}</p>
-          </CardContent>
-        </Card>
+        <KpiCard
+          icon={Wallet}
+          label="Kalan Kredi"
+          value={(credits.balance ?? 0).toLocaleString('tr-TR')}
+          sub="Hesabınızda kullanılabilir"
+          intent="info"
+        />
+        <KpiCard
+          icon={Send}
+          label="Toplam Gönderilen"
+          value={(credits.lifetime_used ?? 0).toLocaleString('tr-TR')}
+          sub="Hesabın açıldığı günden bu yana"
+          intent="default"
+        />
+        <KpiCard
+          icon={Gift}
+          label="Hediye Kredi"
+          value={(credits.free_granted ?? 0).toLocaleString('tr-TR')}
+          sub="Karşılama paketi"
+          intent="success"
+        />
       </div>
 
-      <Card className="border-indigo-200 bg-gradient-to-br from-indigo-50 to-white">
+      <Card>
         <CardContent className="pt-6">
           <div className="flex items-start gap-4">
-            <div className="text-4xl"></div>
+            <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
+              <Wallet className="w-5 h-5 text-indigo-600" />
+            </div>
             <div className="flex-1">
               <h3 className="text-lg font-semibold mb-1">Kredi yüklemek ister misiniz?</h3>
               <p className="text-sm text-muted-foreground mb-4">
@@ -595,7 +669,7 @@ function CreditsTab({ credits }) {
                 Tek vitrinden tüm modül, entegrasyon ve kredi paketlerinize ulaşabilirsiniz.
                 Mevcut krediniz ve geçmişiniz aynen korunuyor.
               </p>
-              <Button onClick={() => navigate('/app/module-store')} className="bg-indigo-600 hover:bg-indigo-700">
+              <Button onClick={() => navigate('/app/module-store')}>
                 Modül Pazarı'na Git →
               </Button>
             </div>
