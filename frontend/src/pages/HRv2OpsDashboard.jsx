@@ -16,7 +16,9 @@ import {
   CircleSlash, ShieldCheck,
 } from "lucide-react";
 
-const TENANT_ID = "syroce_default";
+// Round-7: Hardcoded "syroce_default" cross-tenant sızıntı riskiydi. Tenant
+// JWT'den geliyor; backend tenant_id parametresi opsiyonel ve verilmezse
+// current_user.tenant_id kullanılıyor.
 const PROPERTY_ID = "default";
 
 // Health status indicator component
@@ -287,7 +289,8 @@ export default function HRv2OpsDashboard({ tenant }) {
   const [runningFailSim, setRunningFailSim] = useState(null);
   const [triggeringAutoSnapshot, setTriggeringAutoSnapshot] = useState(false);
 
-  const tenantId = tenant?.tenant_id || TENANT_ID;
+  // tenant_id'yi backend JWT'den çözer; sadece prop'tan gelirse override geçeriz
+  const tenantId = tenant?.tenant_id || null;
 
   const fetchDashboard = useCallback(async (showToast = false) => {
     try {

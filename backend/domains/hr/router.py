@@ -2,13 +2,21 @@
 Domain Router: HR Operations
 
 HR complete suite, F&B complete suite for department managers.
-"""
-import base64
-import uuid
-from datetime import UTC, date, datetime, timedelta
-from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+Türk İş Kanunu uyumlu defaultlar (2026):
+  - Aylık standart saat: 195 (45 sa/hf × 4.33)
+  - Saatlik brüt asgari taban: 140 TL (yaklaşık 2026 asgari ücret)
+  - Fazla mesai zammı: %50 (overtime_rate = hourly_rate * 1.5)
+  - Para birimi: TRY
+"""
+import io
+import uuid
+from datetime import UTC, date, datetime, timedelta, timezone
+from typing import Any, Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field, field_validator
 
 from core.database import db
 from core.security import get_current_user
@@ -17,6 +25,21 @@ from modules.pms_core.role_permission_service import require_op  # v96 DW
 
 router = APIRouter(prefix="/api", tags=["hr-operations"])
 
+# ============= TR Labor Defaults =============
+TR_DEFAULT_HOURLY_RATE = 140.0   # 2026 asgari ücret yaklaşık saatlik brüt
+TR_DEFAULT_MONTHLY_HOURS = 195   # 45 sa/hafta × 4.33 hafta
+TR_DEFAULT_OVERTIME_MULTIPLIER = 1.5  # %50 zam (İş K. m.41)
+TR_CURRENCY = "TRY"
+
+# Türkiye saat dilimi (UTC+3, sabit — yaz saati uygulaması yok)
+TR_TZ = timezone(timedelta(hours=3))
+
+
+def _today_local() -> date:
+    """Türkiye TZ'ne göre bugünün tarihi — UTC vs local skew'unu engeller."""
+    return datetime.now(TR_TZ).date()
+
+
 # ============= HR COMPLETE SUITE =============
 
 async def _get_staff_map(tenant_id: str):
@@ -24,32 +47,132 @@ async def _get_staff_map(tenant_id: str):
     return {member['id']: member for member in staff}
 
 
+async def _verify_staff_in_tenant(staff_id: str, tenant_id: str) -> dict | None:
+    """
+    Bug DAK round-7: Cross-tenant clock-in açığı.
+    staff_id'nin gerçekten bu tenant'a ait olduğunu doğrular.
+    staff_members'da bulunamazsa users tablosundan (derived staff) kontrol eder.
+    """
+    if not staff_id:
+        return None
+    sm = await db.staff_members.find_one(
+        {'id': staff_id, 'tenant_id': tenant_id},
+        {'_id': 0}
+    )
+    if sm:
+        return sm
+    # users tablosundan türetilmiş staff (HRv2 — derived_from=users)
+    user = await db.users.find_one(
+        {'id': staff_id, 'tenant_id': tenant_id, 'is_active': True},
+        {'_id': 0, 'id': 1, 'name': 1, 'role': 1, 'email': 1}
+    )
+    if user:
+        return {
+            'id': user['id'],
+            'tenant_id': tenant_id,
+            'name': user.get('name') or 'Personel',
+            'department': user.get('role') or 'staff',
+            'derived_from': 'users',
+        }
+    return None
+
+
+# ============= Pydantic Models =============
+
+class ClockInRequest(BaseModel):
+    staff_id: str = Field(..., min_length=1, max_length=128)
+
+
+class LeaveRequestPayload(BaseModel):
+    staff_id: str = Field(..., min_length=1, max_length=128)
+    staff_name: str | None = Field(None, max_length=200)
+    leave_type: Literal['annual', 'sick', 'maternity', 'paternity', 'unpaid', 'bereavement', 'excused'] = 'annual'
+    start_date: str = Field(..., description="ISO date YYYY-MM-DD")
+    end_date: str = Field(..., description="ISO date YYYY-MM-DD")
+    reason: str | None = Field(None, max_length=500)
+    total_days: int | None = Field(None, ge=0, le=365)
+
+    @field_validator('start_date', 'end_date')
+    @classmethod
+    def _valid_iso(cls, v: str) -> str:
+        try:
+            datetime.fromisoformat(v).date()
+        except Exception as exc:
+            raise ValueError("Geçersiz tarih formatı (YYYY-MM-DD)") from exc
+        return v
+
+
+class LeaveDecision(BaseModel):
+    decision: Literal['approve', 'reject']
+    note: str | None = Field(None, max_length=500)
+
+
+class PayrollFinalizePayload(BaseModel):
+    month: str = Field(..., pattern=r'^\d{4}-\d{2}$')
+
+
+class PerformanceReviewPayload(BaseModel):
+    staff_id: str = Field(..., min_length=1, max_length=128)
+    reviewer_name: str | None = Field(None, max_length=200)
+    period: str | None = Field(None, max_length=64)
+    overall_score: float = Field(..., ge=0, le=10)
+    goals: str | None = Field(None, max_length=2000)
+    strengths: str | None = Field(None, max_length=2000)
+    improvement_areas: str | None = Field(None, max_length=2000)
+
+
+class JobPostingPayload(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    department: str = Field(..., max_length=100)
+    description: str | None = Field(None, max_length=5000)
+    employment_type: Literal['full_time', 'part_time', 'seasonal', 'intern', 'contract'] = 'full_time'
+    location: str | None = Field(None, max_length=200)
+    salary_range: str | None = Field(None, max_length=100)
+
+
+# ============= Attendance =============
+
 @router.post("/hr/clock-in")
-async def clock_in(staff_data: dict, current_user: User = Depends(get_current_user)):
-    """Personel giris kaydi"""
+async def clock_in(payload: ClockInRequest, current_user: User = Depends(get_current_user)):
+    """Personel giriş kaydı — tenant scoped, TR-TZ tarih, validated staff_id."""
+    staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı veya bu tenant'a ait değil")
+
+    today_iso = _today_local().isoformat()
+    # Aynı gün içinde açık clock-in varsa, çift kayıt önle
+    existing = await db.attendance_records.find_one({
+        'tenant_id': current_user.tenant_id,
+        'staff_id': payload.staff_id,
+        'date': today_iso,
+        'clock_out': None,
+    })
+    if existing:
+        return {'success': False, 'message': 'Açık giriş kaydı mevcut', 'time': existing.get('clock_in')}
+
     record = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
-        'staff_id': staff_data['staff_id'],
-        'date': date.today().isoformat(),
+        'staff_id': payload.staff_id,
+        'staff_name': staff.get('name'),
+        'date': today_iso,
         'clock_in': datetime.now(UTC).isoformat(),
         'clock_out': None,
         'status': 'present',
         'created_at': datetime.now(UTC).isoformat()
     }
     await db.attendance_records.insert_one(record)
-    return {'success': True, 'message': 'Clock-in recorded', 'time': record['clock_in']}
+    return {'success': True, 'message': 'Giriş kaydedildi', 'time': record['clock_in']}
+
 
 @router.post("/hr/clock-out")
-async def clock_out(staff_data: dict, current_user: User = Depends(get_current_user)):
-    # v109 Bug DAK round-6 (T08 P1): cross-tenant clock-out.
-    # Previously find_one filtered only by staff_id without tenant_id, so
-    # tenant B could clock-out tenant A's staff by guessing/knowing staff_id.
-    # Both find AND update now scope to current_user.tenant_id.
+async def clock_out(payload: ClockInRequest, current_user: User = Depends(get_current_user)):
+    # v109 Bug DAK round-6 (T08 P1): tenant_id scoped on both find and update.
+    today_iso = _today_local().isoformat()
     record = await db.attendance_records.find_one({
         'tenant_id': current_user.tenant_id,
-        'staff_id': staff_data['staff_id'],
-        'date': date.today().isoformat(),
+        'staff_id': payload.staff_id,
+        'date': today_iso,
         'clock_out': None,
     })
     if record:
@@ -61,39 +184,11 @@ async def clock_out(staff_data: dict, current_user: User = Depends(get_current_u
             {'$set': {'clock_out': clock_out_time.isoformat(), 'total_hours': round(hours, 2)}}
         )
         return {'success': True, 'hours_worked': round(hours, 2)}
-    return {'success': False, 'message': 'Clock-in record not found'}
-
-@router.post("/hr/leave-request")
-async def create_leave_request(leave_data: dict, current_user: User = Depends(get_current_user)):
-    # Calculate total days if not provided
-    if 'total_days' not in leave_data:
-        from datetime import datetime
-        start = datetime.fromisoformat(leave_data['start_date'])
-        end = datetime.fromisoformat(leave_data['end_date'])
-        total_days = (end - start).days + 1
-    else:
-        total_days = leave_data['total_days']
-
-    leave = {
-        'id': str(uuid.uuid4()), 'tenant_id': current_user.tenant_id,
-        'staff_id': leave_data['staff_id'], 'staff_name': leave_data.get('staff_name', 'Unknown'),
-        'leave_type': leave_data['leave_type'],
-        'start_date': leave_data['start_date'], 'end_date': leave_data['end_date'],
-        'total_days': total_days, 'reason': leave_data.get('reason'),
-        'status': 'pending', 'created_at': datetime.now(UTC).isoformat()
-    }
-    await db.leave_requests.insert_one(leave)
-    return {'success': True, 'leave_id': leave['id'], 'total_days': total_days}
-
-# NOTE: The dynamic `GET /hr/payroll/{month}` is intentionally declared
-# AFTER `GET /hr/payroll/export` (further below) so that FastAPI matches
-# the static "export" path first. Keeping the dynamic route here used to
-# silently swallow the export call (month="export" → empty payroll JSON);
-# see Task #133 for the route-shadowing CI guard that prevents regressions.
+    return {'success': False, 'message': 'Açık giriş kaydı bulunamadı'}
 
 
 def _parse_date_range(start: str | None, end: str | None, days: int = 7):
-    today = date.today()
+    today = _today_local()
     start_date = datetime.fromisoformat(start).date() if start else today - timedelta(days=days)
     end_date = datetime.fromisoformat(end).date() if end else today
     if start_date > end_date:
@@ -121,7 +216,7 @@ async def get_attendance_records(
     for record in records:
         staff = staff_map.get(record['staff_id'])
         if staff:
-            record['staff_name'] = staff.get('name')
+            record['staff_name'] = staff.get('name') or record.get('staff_name')
             record['department'] = staff.get('department')
             record['position'] = staff.get('position')
     return {
@@ -163,7 +258,7 @@ async def get_attendance_summary(
         data['staff_name'] = staff.get('name', staff_id)
         data['department'] = staff.get('department', 'unknown')
         data['position'] = staff.get('position', 'Staff')
-        overtime_threshold = staff.get('monthly_hours', 160)
+        overtime_threshold = staff.get('monthly_hours', TR_DEFAULT_MONTHLY_HOURS)
         if data['total_hours'] > overtime_threshold:
             data['overtime_hours'] = round(data['total_hours'] - overtime_threshold, 2)
         data['average_daily_hours'] = round(
@@ -185,13 +280,160 @@ async def get_attendance_summary(
     }
 
 
-@router.get("/hr/payroll/export")
-async def export_payroll(
-    month: str | None = None,
-    format: str = 'json',
-    current_user: User = Depends(get_current_user)
+# ============= Leave =============
+
+@router.post("/hr/leave-request")
+async def create_leave_request(
+    payload: LeaveRequestPayload,
+    current_user: User = Depends(get_current_user),
 ):
-    today = date.today()
+    """
+    İzin talebi oluştur. Bug DAK round-7: Önceden permission gate yoktu ve
+    Pydantic doğrulaması yapılmıyordu — kullanıcı başkası adına talep yaratabiliyordu.
+    Şimdi: staff_id mutlaka aynı tenant'ta olmalı; HR yönetici yetkisi yoksa
+    kullanıcı SADECE kendi user.id'sine eşleşen staff_id ile talep oluşturabilir.
+    """
+    staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı veya bu tenant'a ait değil")
+
+    # Self-leave kontrolü: HR yönetici izni olmayan kullanıcı sadece kendi adına talep edebilir
+    is_self = (payload.staff_id == getattr(current_user, 'id', None))
+    if not is_self:
+        # HR yönetici yetkisi gereken roller: admin/supervisor/finance
+        manager_roles = {'admin', 'supervisor', 'finance'}
+        if (getattr(current_user, 'role', None) or '').lower() not in manager_roles:
+            raise HTTPException(
+                status_code=403,
+                detail="Başka personel adına izin talebi oluşturma yetkiniz yok"
+            )
+
+    start = datetime.fromisoformat(payload.start_date).date()
+    end = datetime.fromisoformat(payload.end_date).date()
+    if end < start:
+        raise HTTPException(status_code=400, detail="Bitiş tarihi başlangıçtan önce olamaz")
+    total_days = payload.total_days if payload.total_days is not None else (end - start).days + 1
+
+    leave = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'staff_id': payload.staff_id,
+        'staff_name': payload.staff_name or staff.get('name') or 'Personel',
+        'leave_type': payload.leave_type,
+        'start_date': payload.start_date,
+        'end_date': payload.end_date,
+        'total_days': total_days,
+        'reason': payload.reason,
+        'status': 'pending',
+        'requested_by': getattr(current_user, 'id', None),
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.leave_requests.insert_one(leave)
+    return {'success': True, 'leave_id': leave['id'], 'total_days': total_days, 'status': 'pending'}
+
+
+@router.get("/hr/leave-requests")
+async def list_leave_requests(
+    status: str | None = None,
+    staff_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    if status:
+        query['status'] = status
+    if staff_id:
+        query['staff_id'] = staff_id
+    items = await db.leave_requests.find(query, {'_id': 0}).sort('created_at', -1).to_list(500)
+    counts = {'pending': 0, 'approved': 0, 'rejected': 0}
+    for item in items:
+        counts[item.get('status', 'pending')] = counts.get(item.get('status', 'pending'), 0) + 1
+    return {'items': items, 'total': len(items), 'counts': counts}
+
+
+@router.post("/hr/leave-request/{leave_id}/decision")
+async def decide_leave_request(
+    leave_id: str,
+    payload: LeaveDecision,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # HR yönetici yetkisi
+):
+    leave = await db.leave_requests.find_one({
+        'tenant_id': current_user.tenant_id, 'id': leave_id
+    })
+    if not leave:
+        raise HTTPException(status_code=404, detail="İzin talebi bulunamadı")
+    new_status = 'approved' if payload.decision == 'approve' else 'rejected'
+    await db.leave_requests.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': leave_id},
+        {'$set': {
+            'status': new_status,
+            'decision_note': payload.note,
+            'decided_by': getattr(current_user, 'id', None),
+            'decided_at': datetime.now(UTC).isoformat(),
+        }}
+    )
+    return {'success': True, 'status': new_status}
+
+
+# ============= Payroll =============
+
+# NOTE: The dynamic `GET /hr/payroll/{month}` is intentionally declared
+# AFTER the static export/finalize routes so FastAPI matches static first.
+
+def _compute_payroll_for_month(
+    records: list[dict],
+    staff_map: dict[str, dict],
+    month: str,
+) -> list[dict]:
+    payroll_rows: dict[str, float] = {}
+    for record in records:
+        staff_id = record['staff_id']
+        payroll_rows.setdefault(staff_id, 0.0)
+        payroll_rows[staff_id] += record.get('total_hours', 0)
+
+    payroll: list[dict] = []
+    for staff_id, total_hours in payroll_rows.items():
+        staff = staff_map.get(staff_id, {})
+        hourly_rate = float(staff.get('hourly_rate') or TR_DEFAULT_HOURLY_RATE)
+        monthly_hours = float(staff.get('monthly_hours') or TR_DEFAULT_MONTHLY_HOURS)
+        overtime_rate = float(staff.get('overtime_rate') or hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER)
+        overtime_hours = max(0.0, total_hours - monthly_hours)
+        base_hours = total_hours - overtime_hours
+        gross_pay = (base_hours * hourly_rate) + (overtime_hours * overtime_rate)
+
+        # Basitleştirilmiş TR kesinti modeli (yaklaşık):
+        # SGK işçi payı %14, işsizlik %1, gelir vergisi %15 (matrah - SGK), damga %0.759
+        sgk_employee = round(gross_pay * 0.14, 2)
+        unemployment = round(gross_pay * 0.01, 2)
+        income_tax_base = max(0.0, gross_pay - sgk_employee - unemployment)
+        income_tax = round(income_tax_base * 0.15, 2)
+        stamp_tax = round(gross_pay * 0.00759, 2)
+        total_deductions = round(sgk_employee + unemployment + income_tax + stamp_tax, 2)
+        net_pay = round(gross_pay - total_deductions, 2)
+
+        payroll.append({
+            'staff_id': staff_id,
+            'staff_name': staff.get('name', staff_id),
+            'department': staff.get('department', 'unknown'),
+            'period_month': month,
+            'total_hours': round(total_hours, 2),
+            'overtime_hours': round(overtime_hours, 2),
+            'hourly_rate': round(hourly_rate, 2),
+            'overtime_rate': round(overtime_rate, 2),
+            'gross_pay': round(gross_pay, 2),
+            'sgk_employee': sgk_employee,
+            'unemployment': unemployment,
+            'income_tax': income_tax,
+            'stamp_tax': stamp_tax,
+            'total_deductions': total_deductions,
+            'net_salary': net_pay,
+            'currency': TR_CURRENCY,
+        })
+    return payroll
+
+
+async def _build_payroll(month: str | None, tenant_id: str):
+    today = _today_local()
     if month:
         start_dt = datetime.fromisoformat(f"{month}-01").date()
     else:
@@ -200,86 +442,227 @@ async def export_payroll(
     end_dt = next_month - timedelta(days=next_month.day)
 
     query = {
-        'tenant_id': current_user.tenant_id,
+        'tenant_id': tenant_id,
         'date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()}
     }
     records = await db.attendance_records.find(query, {'_id': 0}).to_list(5000)
-    staff_map = await _get_staff_map(current_user.tenant_id)
+    staff_map = await _get_staff_map(tenant_id)
+    period_month = start_dt.strftime('%Y-%m')
+    payroll = _compute_payroll_for_month(records, staff_map, period_month)
+    return period_month, payroll
 
-    payroll_rows = {}
-    for record in records:
-        staff_id = record['staff_id']
-        payroll_rows.setdefault(staff_id, 0)
-        payroll_rows[staff_id] += record.get('total_hours', 0)
 
-    payroll = []
-    for staff_id, total_hours in payroll_rows.items():
-        staff = staff_map.get(staff_id, {})
-        hourly_rate = staff.get('hourly_rate', 12)
-        overtime_hours = max(0, total_hours - staff.get('monthly_hours', 160))
-        overtime_rate = staff.get('overtime_rate', hourly_rate * 1.5)
-        base_hours = total_hours - overtime_hours
-        gross_pay = (base_hours * hourly_rate) + (overtime_hours * overtime_rate)
-        payroll.append({
-            'staff_id': staff_id,
-            'staff_name': staff.get('name', staff_id),
-            'department': staff.get('department', 'unknown'),
-            'total_hours': round(total_hours, 2),
-            'overtime_hours': round(overtime_hours, 2),
-            'hourly_rate': hourly_rate,
-            'overtime_rate': overtime_rate,
-            'gross_pay': round(gross_pay, 2)
-        })
+@router.get("/hr/payroll/export")
+async def export_payroll(
+    month: str | None = None,
+    format: str = 'json',
+    current_user: User = Depends(get_current_user),
+    # Bug DAK round-7: Maaş PII'sı için yetki gate'i (KVKK + iş hukuku).
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    period_month, payroll = await _build_payroll(month, current_user.tenant_id)
 
-    response = {
-        'month': start_dt.strftime('%Y-%m'),
+    response: dict[str, Any] = {
+        'month': period_month,
         'payroll': payroll,
         'staff_count': len(payroll),
-        'total_gross_pay': round(sum(row['gross_pay'] for row in payroll), 2)
+        'total_gross_pay': round(sum(row['gross_pay'] for row in payroll), 2),
+        'total_net_pay': round(sum(row['net_salary'] for row in payroll), 2),
+        'currency': TR_CURRENCY,
     }
 
-    if format == 'csv':
-        import csv
-        from io import StringIO
-        buffer = StringIO()
-        writer = csv.DictWriter(buffer, fieldnames=list(payroll[0].keys()) if payroll else [
-            'staff_id', 'staff_name', 'department', 'total_hours', 'overtime_hours',
-            'hourly_rate', 'overtime_rate', 'gross_pay'
-        ])
-        # Bug AN: payroll rows include user-supplied staff_name etc.
-        from core.csv_safe import safe_dict_writerow
-        writer.writeheader()
-        for row in payroll:
-            safe_dict_writerow(writer, row)
-        response['csv'] = base64.b64encode(buffer.getvalue().encode()).decode()
-
+    # NOT: format=csv için inline base64 desteği kaldırıldı. UI artık
+    # /hr/payroll/export/csv (StreamingResponse) endpoint'ini kullanıyor —
+    # data: URL'in 2MB tarayıcı limitini aşan büyük tenant'larda doğru çözüm.
     return response
 
 
-@router.get("/hr/payroll/{month}")
-async def get_payroll(month: str, current_user: User = Depends(get_current_user)):
-    """Per-month payroll lookup.
+@router.get("/hr/payroll/export/csv")
+async def export_payroll_csv_stream(
+    month: str | None = Query(None),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    """Streaming CSV download — büyük dosyalar için data: URL limiti yok."""
+    period_month, payroll = await _build_payroll(month, current_user.tenant_id)
 
-    Declared after `/hr/payroll/export` on purpose: FastAPI matches in
-    declaration order and a `{month}` placeholder declared first would
-    silently swallow the static `/hr/payroll/export` GET (Task #133).
+    import csv
+
+    from core.csv_safe import safe_dict_writerow
+    buf = io.StringIO()
+    fields = [
+        'staff_id', 'staff_name', 'department', 'period_month',
+        'total_hours', 'overtime_hours', 'hourly_rate', 'overtime_rate',
+        'gross_pay', 'sgk_employee', 'unemployment', 'income_tax',
+        'stamp_tax', 'total_deductions', 'net_salary', 'currency'
+    ]
+    writer = csv.DictWriter(buf, fieldnames=fields)
+    writer.writeheader()
+    for row in payroll:
+        safe_dict_writerow(writer, row)
+    csv_text = buf.getvalue()
+
+    return StreamingResponse(
+        iter([csv_text]),
+        media_type='text/csv; charset=utf-8',
+        headers={
+            'Content-Disposition': f'attachment; filename="payroll_{period_month}.csv"'
+        }
+    )
+
+
+@router.post("/hr/payroll/finalize")
+async def finalize_payroll(
+    payload: PayrollFinalizePayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
     """
-    payroll = await db.payroll_records.find({'tenant_id': current_user.tenant_id, 'period_month': month}, {'_id': 0}).to_list(200)
-    total = sum([p.get('net_salary', 0) for p in payroll])
-    return {'payroll': payroll, 'total': total, 'count': len(payroll)}
+    Bordroyu hesapla ve payroll_records koleksiyonuna kalıcı olarak yaz.
+    Önceden bu koleksiyona insert YOKTU — GET /hr/payroll/{month} her zaman
+    boş dönüyordu (3-katmanlı dead code).
+    """
+    period_month, payroll = await _build_payroll(payload.month, current_user.tenant_id)
+    if not payroll:
+        return {'success': False, 'message': 'Bu ay için attendance kaydı yok', 'count': 0}
 
+    # Önce eski kayıtları sil (idempotent finalize), sonra yeni satırları ekle
+    await db.payroll_records.delete_many({
+        'tenant_id': current_user.tenant_id,
+        'period_month': period_month,
+    })
+    for row in payroll:
+        row['id'] = str(uuid.uuid4())
+        row['tenant_id'] = current_user.tenant_id
+        row['finalized_by'] = getattr(current_user, 'id', None)
+        row['finalized_at'] = datetime.now(UTC).isoformat()
+    await db.payroll_records.insert_many(payroll)
+    return {
+        'success': True,
+        'period_month': period_month,
+        'count': len(payroll),
+        'total_gross': round(sum(r['gross_pay'] for r in payroll), 2),
+        'total_net': round(sum(r['net_salary'] for r in payroll), 2),
+        'currency': TR_CURRENCY,
+    }
+
+
+@router.get("/hr/payroll/{month}")
+async def get_payroll(
+    month: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    """Per-month payroll lookup — finalize edilmiş kayıtları okur."""
+    payroll = await db.payroll_records.find(
+        {'tenant_id': current_user.tenant_id, 'period_month': month},
+        {'_id': 0}
+    ).to_list(500)
+    total_gross = round(sum(p.get('gross_pay', 0) for p in payroll), 2)
+    total_net = round(sum(p.get('net_salary', 0) for p in payroll), 2)
+    return {
+        'payroll': payroll,
+        'period_month': month,
+        'count': len(payroll),
+        'total_gross': total_gross,
+        'total_net': total_net,
+        'currency': TR_CURRENCY,
+    }
+
+
+# ============= Performance =============
+
+@router.post("/hr/performance")
+async def create_performance_review(
+    payload: PerformanceReviewPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    review = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'staff_id': payload.staff_id,
+        'staff_name': staff.get('name'),
+        'reviewer_id': getattr(current_user, 'id', None),
+        'reviewer_name': payload.reviewer_name,
+        'period': payload.period,
+        'overall_score': payload.overall_score,
+        'goals': payload.goals,
+        'strengths': payload.strengths,
+        'improvement_areas': payload.improvement_areas,
+        'reviewed_at': datetime.now(UTC).isoformat(),
+    }
+    await db.performance_reviews.insert_one(review)
+    return {'success': True, 'review_id': review['id']}
+
+
+@router.get("/hr/performance")
+async def list_performance_reviews(
+    staff_id: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    if staff_id:
+        query['staff_id'] = staff_id
+    items = await db.performance_reviews.find(query, {'_id': 0}).sort('reviewed_at', -1).to_list(500)
+    avg = round(sum(i.get('overall_score', 0) for i in items) / len(items), 2) if items else 0
+    return {'items': items, 'total': len(items), 'avg_score': avg}
+
+
+# ============= Recruitment =============
 
 @router.post("/hr/job-posting")
-async def create_job_posting(job_data: dict, current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_sales")),  # v101 DW
+async def create_job_posting(
+    payload: JobPostingPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),  # HR yönetici yetkisi (manage_sales semantik olarak yanlıştı)
 ):
     job = {
-        'id': str(uuid.uuid4()), 'tenant_id': current_user.tenant_id,
-        **job_data, 'status': 'active', 'applicants_count': 0,
-        'created_at': datetime.now(UTC).isoformat()
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'title': payload.title,
+        'department': payload.department,
+        'description': payload.description,
+        'employment_type': payload.employment_type,
+        'location': payload.location,
+        'salary_range': payload.salary_range,
+        'status': 'active',
+        'applicants_count': 0,
+        'created_by': getattr(current_user, 'id', None),
+        'created_at': datetime.now(UTC).isoformat(),
     }
     await db.job_postings.insert_one(job)
     return {'success': True, 'job_id': job['id']}
+
+
+@router.get("/hr/job-postings")
+async def list_job_postings(
+    status: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    if status:
+        query['status'] = status
+    items = await db.job_postings.find(query, {'_id': 0}).sort('created_at', -1).to_list(500)
+    return {'items': items, 'total': len(items)}
+
+
+@router.post("/hr/job-posting/{job_id}/close")
+async def close_job_posting(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    res = await db.job_postings.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': job_id},
+        {'$set': {'status': 'closed', 'closed_at': datetime.now(UTC).isoformat()}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="İş ilanı bulunamadı")
+    return {'success': True}
 
 
 # ============= F&B COMPLETE SUITE =============
@@ -410,10 +793,7 @@ async def create_beo(beo_data: dict, current_user: User = Depends(get_current_us
     await db.banquet_event_orders.insert_one(beo)
     return {'success': True, 'beo_id': beo['id'], 'message': 'BEO olusturuldu'}
 
-# NOTE: Kitchen Display System endpoints (/fnb/kitchen-display, /fnb/kitchen-order,
-# /fnb/kitchen-order/{id}/status) and their helpers were moved to
-# backend/domains/pms/pos_fnb_router.py where the rest of the F&B / POS surface
-# lives. This file now only owns true HR endpoints + the F&B "ingredients" set.
+# NOTE: Kitchen Display System endpoints moved to pos_fnb_router.py
 
 
 @router.get("/fnb/ingredients")
@@ -481,4 +861,3 @@ async def update_ingredient(ingredient_id: str, ing_data: dict, current_user: Us
     )
     updated.pop('_id', None)
     return {'success': True, 'ingredient': updated}
-

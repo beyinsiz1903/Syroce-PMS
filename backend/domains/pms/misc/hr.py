@@ -20,7 +20,9 @@ sub_router = APIRouter()
 
 @sub_router.post("/hr/staff")
 async def add_staff_member(staff_data: dict, current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+    # Bug DAK round-7: "view_system_diagnostics" semantik olarak yanlıştı —
+    # personel ekleme HR yönetici işidir, sistem tanılaması değil.
+    _perm=Depends(require_op("view_executive_reports")),
 ):
     """Yeni personel ekle"""
     staff = {
@@ -46,7 +48,7 @@ async def add_staff_member(staff_data: dict, current_user: User = Depends(get_cu
 async def get_staff_list(
     department: str | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v95.5 KVKK — HR PII koruması
+    _perm=Depends(require_op("view_executive_reports")),  # v95.5 KVKK — HR PII koruması (round-7: view_system_diagnostics yerine)
 ):
     """Personel listesi.
 
@@ -126,7 +128,7 @@ async def get_staff_list(
 
 @sub_router.post("/hr/shift")
 async def create_shift(shift_data: dict, current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
+    _perm=Depends(require_op("view_executive_reports")),  # round-7: HR yetkisi
 ):
     """Vardiya oluştur"""
     shift = {
