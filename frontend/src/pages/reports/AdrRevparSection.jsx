@@ -16,25 +16,25 @@ const AdrRevparSection = ({ data, s, pc }) => (
       <KPICard title="Toplam Oda" value={s.total_rooms} icon={Hotel} color="cyan" />
     </div>
     <div className="grid md:grid-cols-2 gap-4">
-      <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200">
+      <Card className="border-l-4 border-l-sky-500">
         <CardContent className="p-6">
-          <h3 className="text-sm font-semibold text-blue-900 mb-3">ADR Detay</h3>
+          <h3 className="text-sm font-semibold text-slate-900 mb-3">ADR Detay</h3>
           <div className="space-y-3">
-            <div className="flex justify-between"><span className="text-sm text-blue-700">Bugünkü ADR</span><span className="font-bold text-blue-900">{formatCurrency(s.adr)}</span></div>
-            <div className="flex justify-between"><span className="text-sm text-blue-700">Önceki Ay ADR</span><span className="font-bold text-blue-900">{formatCurrency(pc.prev_month_adr)}</span></div>
-            <div className="flex justify-between"><span className="text-sm text-blue-700">Dolu Oda Sayısı</span><span className="font-bold text-blue-900">{s.occupied_rooms}</span></div>
-            <div className="flex justify-between"><span className="text-sm text-blue-700">Bugünkü Oda Geliri</span><span className="font-bold text-blue-900">{formatCurrency(s.today_revenue)}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-600">Bugünkü ADR</span><span className="font-bold text-slate-900">{formatCurrency(s.adr)}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-600">Önceki Ay ADR</span><span className="font-bold text-slate-900">{formatCurrency(pc.prev_month_adr)}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-600">Dolu Oda Sayısı</span><span className="font-bold text-slate-900">{s.occupied_rooms}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-600">Bugünkü Oda Geliri</span><span className="font-bold text-slate-900">{formatCurrency(s.today_revenue)}</span></div>
           </div>
         </CardContent>
       </Card>
-      <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-200">
+      <Card className="border-l-4 border-l-emerald-500">
         <CardContent className="p-6">
-          <h3 className="text-sm font-semibold text-emerald-900 mb-3">RevPAR Detay</h3>
+          <h3 className="text-sm font-semibold text-slate-900 mb-3">RevPAR Detay</h3>
           <div className="space-y-3">
-            <div className="flex justify-between"><span className="text-sm text-emerald-700">Bugünkü RevPAR</span><span className="font-bold text-emerald-900">{formatCurrency(s.revpar)}</span></div>
-            <div className="flex justify-between"><span className="text-sm text-emerald-700">Toplam Oda</span><span className="font-bold text-emerald-900">{s.total_rooms}</span></div>
-            <div className="flex justify-between"><span className="text-sm text-emerald-700">Müsait Oda</span><span className="font-bold text-emerald-900">{(s.total_rooms || 0) - (s.occupied_rooms || 0)}</span></div>
-            <div className="flex justify-between"><span className="text-sm text-emerald-700">Doluluk</span><span className="font-bold text-emerald-900">{formatPercent(s.occupancy_percentage)}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-600">Bugünkü RevPAR</span><span className="font-bold text-slate-900">{formatCurrency(s.revpar)}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-600">Toplam Oda</span><span className="font-bold text-slate-900">{s.total_rooms}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-600">Müsait Oda</span><span className="font-bold text-slate-900">{(s.total_rooms || 0) - (s.occupied_rooms || 0)}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-slate-600">Doluluk</span><span className="font-bold text-slate-900">{formatPercent(s.occupancy_percentage)}</span></div>
           </div>
         </CardContent>
       </Card>
@@ -48,7 +48,7 @@ const AdrRevparSection = ({ data, s, pc }) => (
             <XAxis dataKey="label" tick={{ fontSize: 10 }} />
             <YAxis tick={{ fontSize: 10 }} tickFormatter={v => (v / 1000).toFixed(0) + 'K'} />
             <Tooltip content={<CustomTooltip formatter={formatCurrency} />} />
-            <Bar dataKey="revenue" name="Günlük Gelir" fill="#2563EB" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="revenue" name="Günlük Gelir" fill="#0284C7" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </CardContent>

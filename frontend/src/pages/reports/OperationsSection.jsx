@@ -56,7 +56,7 @@ export const NoShowSection = ({ s, noShowGuests, cancelledGuests }) => {
 
 export const RoomStatusSection = ({ roomStatus, roomStatusData }) => (
   <div className="space-y-6" data-testid="section-room-status">
-    <SectionHeader title="Oda Durumu" description="Canlı oda durumu özeti" actions={<Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Canli</Badge>} />
+    <SectionHeader title="Oda Durumu" description="Canlı oda durumu özeti" actions={<Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Canlı</Badge>} />
     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
       {Object.entries(roomStatus).map(([key, val]) => (
         <StatBox key={key} label={ROOM_STATUS_LABELS[key] || key} value={val} color={key === 'available' ? 'green' : key === 'occupied' ? 'blue' : key === 'dirty' ? 'amber' : key === 'maintenance' ? 'red' : 'gray'} />
@@ -94,7 +94,7 @@ export const HousekeepingSection = ({ hk }) => (
             const val = hk[status] || 0;
             const total = (hk.completed || 0) + (hk.pending || 0) + (hk.in_progress || 0);
             const pct = total > 0 ? (val / total * 100).toFixed(0) : 0;
-            const colors = { completed: 'bg-emerald-500', pending: 'bg-amber-500', in_progress: 'bg-blue-500' };
+            const colors = { completed: 'bg-emerald-500', pending: 'bg-amber-500', in_progress: 'bg-sky-500' };
             const labels = { completed: 'Tamamlanan', pending: 'Bekleyen', in_progress: 'Devam Eden' };
             return (
               <div key={status}>
@@ -121,7 +121,7 @@ export const PaymentsSection = ({ payments, paymentData }) => {
     </div>
     <div className="grid md:grid-cols-2 gap-4">
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Ödeme Yöntemi Dagilimi</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Ödeme Yöntemi Dağılımı</CardTitle></CardHeader>
         <CardContent>
           {paymentData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
@@ -159,7 +159,7 @@ export const DepartmentsSection = ({ s, hk, maint, finance }) => {
   <div className="space-y-6" data-testid="section-departments">
     <SectionHeader title="Departman Özeti" description="Tüm departmanların günlük performans özeti" />
     <div className="grid md:grid-cols-2 gap-4">
-      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Users className="w-4 h-4 text-blue-500" />Ön Büro</CardTitle></CardHeader>
+      <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Users className="w-4 h-4 text-sky-500" />Ön Büro</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-3 gap-3">
           <StatBox label="Giriş" value={s.arrivals || 0} color="blue" />
           <StatBox label={t('common.departureSingle')} value={s.departures || 0} color="amber" />
@@ -182,7 +182,7 @@ export const DepartmentsSection = ({ s, hk, maint, finance }) => {
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><DollarSign className="w-4 h-4 text-emerald-500" />Finans</CardTitle></CardHeader>
         <CardContent><div className="grid grid-cols-2 gap-3">
           <StatBox label="Bekleyen" value={finance.pending_invoices || 0} color="red" />
-          <StatBox label="Odenen" value={finance.paid_invoices_month || 0} color="green" />
+          <StatBox label="Ödenen" value={finance.paid_invoices_month || 0} color="green" />
         </div></CardContent>
       </Card>
     </div>
@@ -197,15 +197,15 @@ export const FnBSection = ({ s }) => (
       <KPICard title="Bugünkü F&B Geliri" value={s.fnb_revenue} icon={Utensils} color="amber" />
       <KPICard title="Toplam Gelir İçi Payı" value={s.today_revenue > 0 ? (((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) + '%') : '%0'} icon={Activity} color="purple" />
     </div>
-    <Card className="bg-gradient-to-br from-amber-50 to-amber-100/30 border-amber-200">
+    <Card className="border-l-4 border-l-amber-500">
       <CardContent className="p-6 text-center">
         <Utensils className="w-12 h-12 text-amber-500 mx-auto mb-3" />
-        <h3 className="text-lg font-bold text-gray-900">F&B Geliri</h3>
-        <p className="text-3xl font-bold text-amber-700 mt-2">{formatCurrency(s.fnb_revenue)}</p>
-        <p className="text-sm text-gray-500 mt-2">Bugünkü toplam yiyecek & içecek geliri</p>
+        <h3 className="text-lg font-bold text-slate-900">F&B Geliri</h3>
+        <p className="text-3xl font-bold text-slate-900 mt-2">{formatCurrency(s.fnb_revenue)}</p>
+        <p className="text-sm text-slate-500 mt-2">Bugünkü toplam yiyecek & içecek geliri</p>
         <div className="mt-4 grid grid-cols-2 gap-3 max-w-xs mx-auto">
-          <div className="p-3 bg-white/70 rounded-lg"><p className="text-xs text-gray-500">Oda Geliri</p><p className="font-bold text-gray-900">{formatCurrency(s.today_revenue)}</p></div>
-          <div className="p-3 bg-white/70 rounded-lg"><p className="text-xs text-gray-500">F&B Payi</p><p className="font-bold text-amber-700">{s.today_revenue > 0 ? ((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) : '0'}%</p></div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">Oda Geliri</p><p className="font-bold text-slate-900">{formatCurrency(s.today_revenue)}</p></div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200"><p className="text-xs text-slate-500">F&B Payı</p><p className="font-bold text-slate-900">{s.today_revenue > 0 ? ((s.fnb_revenue || 0) / s.today_revenue * 100).toFixed(1) : '0'}%</p></div>
         </div>
       </CardContent>
     </Card>

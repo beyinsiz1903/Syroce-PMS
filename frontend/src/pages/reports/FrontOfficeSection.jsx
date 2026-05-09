@@ -15,12 +15,12 @@ const FrontOfficeSection = ({ s, todayArrivals, todayDepartures }) => (
     </div>
     {todayArrivals.length > 0 && (
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Bugunku Beklenen Girişler ({todayArrivals.length})</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Bugünkü Beklenen Girişler ({todayArrivals.length})</CardTitle></CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead><tr className="border-b bg-blue-50"><th className="text-left py-2 px-3 text-xs font-semibold text-blue-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-blue-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-blue-700">Çıkış</th><th className="text-right py-2 px-3 text-xs font-semibold text-blue-700">Tutar</th></tr></thead>
+            <thead><tr className="border-b bg-sky-50"><th className="text-left py-2 px-3 text-xs font-semibold text-sky-700">Misafir</th><th className="text-left py-2 px-3 text-xs font-semibold text-sky-700">Oda</th><th className="text-left py-2 px-3 text-xs font-semibold text-sky-700">Çıkış</th><th className="text-right py-2 px-3 text-xs font-semibold text-sky-700">Tutar</th></tr></thead>
             <tbody>{todayArrivals.map((g, i) => (
-              <tr key={i} className="border-b hover:bg-blue-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3 text-xs">{g.check_out ? new Date(g.check_out).toLocaleDateString('tr-TR') : '-'}</td><td className="py-2 px-3 text-right font-medium">{formatCurrency(g.total_amount)}</td></tr>
+              <tr key={i} className="border-b hover:bg-sky-50/30"><td className="py-2 px-3 font-medium">{g.guest_name || '-'}</td><td className="py-2 px-3">{g.room_number || '-'}</td><td className="py-2 px-3 text-xs">{g.check_out ? new Date(g.check_out).toLocaleDateString('tr-TR') : '-'}</td><td className="py-2 px-3 text-right font-medium">{formatCurrency(g.total_amount)}</td></tr>
             ))}</tbody>
           </table></div>
         </CardContent>

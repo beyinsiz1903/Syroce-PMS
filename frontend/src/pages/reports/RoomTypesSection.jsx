@@ -30,7 +30,7 @@ const RoomTypesSection = ({ roomTypeData }) => (
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis type="number" domain={[0, 100]} tickFormatter={v => v + '%'} tick={{ fontSize: 10 }} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                <Tooltip /><Bar dataKey="occupancy" name="Doluluk %" fill="#7C3AED" radius={[0, 4, 4, 0]} />
+                <Tooltip /><Bar dataKey="occupancy" name="Doluluk %" fill="#4F46E5" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -46,7 +46,7 @@ const RoomTypesSection = ({ roomTypeData }) => (
               <th className="text-center py-2.5 px-3 font-semibold text-gray-600">Dolu</th>
               <th className="text-center py-2.5 px-3 font-semibold text-gray-600">Doluluk</th>
               <th className="text-right py-2.5 px-3 font-semibold text-gray-600">Gelir</th>
-              <th className="text-right py-2.5 px-3 font-semibold text-gray-600">Oda Basi Gelir</th>
+              <th className="text-right py-2.5 px-3 font-semibold text-gray-600">Oda Başı Gelir</th>
             </tr></thead>
             <tbody>{roomTypeData.map((rt, i) => (
               <tr key={i} className="border-b hover:bg-gray-50">

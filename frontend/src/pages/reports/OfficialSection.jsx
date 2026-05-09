@@ -21,7 +21,7 @@ export const OfficialSection = ({
             <Calendar className="w-4 h-4 text-gray-500" />
             <Input type="date" value={officialDate} onChange={e => setOfficialDate(e.target.value)} className="h-9 text-sm w-[170px] bg-white border-gray-300 text-gray-900" data-testid="official-date-input" />
           </div>
-          <Button size="sm" onClick={() => fetchOfficialGuests(officialDate)} disabled={officialLoading} className="bg-blue-600 hover:bg-blue-700 text-white" data-testid="official-fetch-btn">
+          <Button size="sm" onClick={() => fetchOfficialGuests(officialDate)} disabled={officialLoading} data-testid="official-fetch-btn">
             {officialLoading ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Search className="w-3.5 h-3.5 mr-1.5" />}
             Listeyi Getir
           </Button>
@@ -43,9 +43,9 @@ export const OfficialSection = ({
 
     {officialRows.length > 0 && (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-center">
-          <p className="text-xs text-blue-600 font-medium">Toplam Kayıt</p>
-          <p className="text-xl font-bold text-blue-800">{officialRows.length}</p>
+        <div className="p-3 bg-sky-50 rounded-lg border border-sky-100 text-center">
+          <p className="text-xs text-sky-600 font-medium">Toplam Kayıt</p>
+          <p className="text-xl font-bold text-slate-900">{officialRows.length}</p>
         </div>
         <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-100 text-center">
           <p className="text-xs text-emerald-600 font-medium">Toplam Kişi</p>
@@ -55,9 +55,9 @@ export const OfficialSection = ({
           <p className="text-xs text-amber-600 font-medium">Toplam Tutar</p>
           <p className="text-xl font-bold text-amber-800">{officialTotalRevenue.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY' })}</p>
         </div>
-        <div className="p-3 bg-violet-50 rounded-lg border border-violet-100 text-center">
-          <p className="text-xs text-violet-600 font-medium">Seçili Tarih</p>
-          <p className="text-xl font-bold text-violet-800">{new Date(officialDate).toLocaleDateString('tr-TR')}</p>
+        <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100 text-center">
+          <p className="text-xs text-indigo-600 font-medium">Seçili Tarih</p>
+          <p className="text-xl font-bold text-slate-900">{new Date(officialDate).toLocaleDateString('tr-TR')}</p>
         </div>
       </div>
     )}
@@ -96,9 +96,9 @@ export const OfficialSection = ({
             </thead>
             <tbody>
               {officialLoading ? (
-                <tr><td colSpan={7} className="py-12 text-center"><Loader2 className="w-5 h-5 animate-spin text-blue-500 mx-auto mb-2" /><span className="text-gray-400 text-xs">Yükleniyor...</span></td></tr>
+                <tr><td colSpan={7} className="py-12 text-center"><Loader2 className="w-5 h-5 animate-spin text-sky-500 mx-auto mb-2" /><span className="text-gray-400 text-xs">Yükleniyor...</span></td></tr>
               ) : filteredOfficialRows.length > 0 ? filteredOfficialRows.map((r, i) => (
-                <tr key={r.booking_id || i} className="border-b hover:bg-blue-50/30 transition-colors">
+                <tr key={r.booking_id || i} className="border-b hover:bg-sky-50/30 transition-colors">
                   <td className="px-3 py-2"><div className="font-medium text-gray-800">{r.guest_name || 'Misafir'}</div><div className="text-[10px] text-gray-400">Rez: {r.booking_id}</div></td>
                   <td className="px-3 py-2"><div className="text-[11px] text-gray-700">TCKN: {r.national_id || '-'}</div><div className="text-[11px] text-gray-500">Pasaport: {r.passport_number || '-'}</div></td>
                   <td className="px-3 py-2"><div className="text-[11px] text-gray-700">{r.country || '-'}</div><div className="text-[11px] text-gray-500">{r.city || ''}</div></td>
@@ -122,9 +122,9 @@ export const OfficialSection = ({
 
 export const PoliceSection = ({ filteredGuests, searchGuest, setSearchGuest }) => (
   <div data-testid="section-police">
-    <Card className="mb-5 border-blue-200 bg-blue-50/30">
+    <Card className="mb-5 border-sky-200 bg-sky-50/30">
       <CardContent className="p-4 flex items-start gap-3">
-        <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+        <Shield className="w-5 h-5 text-sky-600 flex-shrink-0 mt-0.5" />
         <div>
           <h4 className="font-semibold text-gray-900 text-sm">Polis Bildirimi (Emniyet Listesi)</h4>
           <p className="text-xs text-gray-600 mt-0.5">Emniyet Müdürlüğü'ne bildirilmesi gereken konaklayan misafir listesi. TC Kimlik No ve pasaport bilgileri dahildir.</p>

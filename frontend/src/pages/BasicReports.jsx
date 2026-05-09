@@ -193,7 +193,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
     <>
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-3" />
+          <Loader2 className="w-8 h-8 animate-spin text-sky-600 mx-auto mb-3" />
           <p className="text-sm text-gray-500">Raporlar yükleniyor...</p>
         </div>
       </div>
@@ -301,7 +301,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
         <aside className="w-[260px] bg-white border-r border-gray-200 flex-shrink-0 hidden lg:flex lg:flex-col" data-testid="reports-sidebar">
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-blue-600" />
+              <BarChart3 className="w-5 h-5 text-sky-600" />
               <h1 className="text-base font-bold text-gray-900">Rapor Merkezi</h1>
             </div>
             <p className="text-[11px] text-gray-400 mt-1">{new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
@@ -319,12 +319,12 @@ const BasicReports = ({ user, tenant, onLogout }) => {
                   onClick={() => setActiveSection(item.id)}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-all text-[13px] ${
                     isActive
-                      ? 'bg-blue-50 text-blue-700 font-semibold border-l-[3px] border-blue-600 pl-[9px]'
+                      ? 'bg-sky-50 text-sky-700 font-semibold border-l-[3px] border-sky-600 pl-[9px]'
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                   data-testid={`report-nav-${item.id}`}
                 >
-                  <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
+                  <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-sky-600' : 'text-gray-400'}`} />
                   <span className="truncate">{item.label}</span>
                 </button>
               );
@@ -333,7 +333,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
           <div className="p-3 border-t border-gray-100">
             <a
               href="/app/rapor-olusturucu"
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-blue-600 hover:bg-blue-50 font-medium transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-sky-600 hover:bg-sky-50 font-medium transition-colors"
               data-testid="report-builder-link"
             >
               <ListChecks className="w-4 h-4" />
@@ -345,7 +345,7 @@ const BasicReports = ({ user, tenant, onLogout }) => {
         <div className="lg:hidden w-full">
           <div className="p-3 bg-white border-b sticky top-0 z-10">
             <div className="flex items-center gap-2 mb-2">
-              <BarChart3 className="w-4 h-4 text-blue-600" />
+              <BarChart3 className="w-4 h-4 text-sky-600" />
               <span className="text-sm font-bold text-gray-900">Rapor Merkezi</span>
             </div>
             <select

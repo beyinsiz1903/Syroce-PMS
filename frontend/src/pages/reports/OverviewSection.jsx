@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
 import {
   DollarSign, BedDouble, Users, Hotel, Utensils, TrendingUp,
   AlertTriangle, BarChart3, ArrowUpRight, ArrowDownRight, Calendar, BookOpen, LayoutDashboard
@@ -20,14 +20,14 @@ const OverviewSection = ({ data, s, pc, roomStatusData }) => {
   const { t } = useTranslation();
   return (
   <div className="space-y-6" data-testid="section-overview">
-    <SectionHeader title="Genel Bakış - Yönetici Özeti" description="Temel KPI'lar ve günlük operasyonel özet" actions={<Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Canlı</Badge>} />
+    <SectionHeader title="Genel Bakış - Yönetici Özeti" description="Temel KPI'lar ve günlük operasyonel özet" icon={LayoutDashboard} actions={<StatusBadge intent="success">Canlı</StatusBadge>} />
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-      <KPICard title="Toplam Gelir (30 Gün)" value={pc.month_revenue} prevValue={pc.prev_month_revenue} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_revenue)} icon={DollarSign} color="green" />
-      <KPICard title="Ortalama ADR" value={s.adr} prevValue={pc.prev_month_adr} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="blue" />
-      <KPICard title="RevPAR" value={s.revpar} icon={BarChart3} color="amber" />
-      <KPICard title="Doluluk Oranı" value={formatPercent(s.occupancy_percentage)} icon={Hotel} color="purple" />
-      <KPICard title="Toplam Rezervasyon" value={pc.month_bookings} prevValue={pc.prev_month_bookings} prevLabel={'Önceki ay: ' + (pc.prev_month_bookings || 0)} icon={BookOpen} color="cyan" />
-      <KPICard title="F&B Geliri (Bugün)" value={s.fnb_revenue} icon={Utensils} color="teal" />
+      <KPICard title="Toplam Gelir (30 Gün)" value={pc.month_revenue} prevValue={pc.prev_month_revenue} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_revenue)} icon={DollarSign} color="success" />
+      <KPICard title="Ortalama ADR" value={s.adr} prevValue={pc.prev_month_adr} prevLabel={'Önceki ay: ' + formatCurrency(pc.prev_month_adr)} icon={TrendingUp} color="info" />
+      <KPICard title="RevPAR" value={s.revpar} icon={BarChart3} color="warning" />
+      <KPICard title="Doluluk Oranı" value={formatPercent(s.occupancy_percentage)} icon={Hotel} color="info" />
+      <KPICard title="Toplam Rezervasyon" value={pc.month_bookings} prevValue={pc.prev_month_bookings} prevLabel={'Önceki ay: ' + (pc.prev_month_bookings || 0)} icon={BookOpen} color="info" />
+      <KPICard title="F&B Geliri (Bugün)" value={s.fnb_revenue} icon={Utensils} color="warning" />
     </div>
 
     <Card>
@@ -63,11 +63,11 @@ const OverviewSection = ({ data, s, pc, roomStatusData }) => {
         <CardContent className="pb-3">
           <ResponsiveContainer width="100%" height={160}>
             <AreaChart data={data?.occupancy_trend || []}>
-              <defs><linearGradient id="ocG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563EB" stopOpacity={0.3} /><stop offset="95%" stopColor="#2563EB" stopOpacity={0} /></linearGradient></defs>
+              <defs><linearGradient id="ocG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0284C7" stopOpacity={0.3} /><stop offset="95%" stopColor="#0284C7" stopOpacity={0} /></linearGradient></defs>
               <XAxis dataKey="label" tick={{ fontSize: 9 }} interval={5} />
               <YAxis tick={{ fontSize: 9 }} domain={[0, 100]} tickFormatter={v => v + '%'} />
               <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="occupancy" stroke="#2563EB" fill="url(#ocG)" strokeWidth={2} />
+              <Area type="monotone" dataKey="occupancy" stroke="#0284C7" fill="url(#ocG)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </CardContent>
@@ -87,21 +87,21 @@ const OverviewSection = ({ data, s, pc, roomStatusData }) => {
     </div>
 
     <div className="grid md:grid-cols-3 gap-3">
-      <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
-        <p className="text-xs text-blue-600 font-medium mb-1">Son 7 Gün</p>
-        <p className="text-2xl font-bold text-blue-800">{formatCurrency(pc.week_revenue)}</p>
-        <p className="text-[11px] text-blue-500 mt-0.5">{pc.week_bookings} rezervasyon</p>
-      </div>
-      <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
-        <p className="text-xs text-emerald-600 font-medium mb-1">Son 30 Gün</p>
-        <p className="text-2xl font-bold text-emerald-800">{formatCurrency(pc.month_revenue)}</p>
-        <p className="text-[11px] text-emerald-500 mt-0.5">{pc.month_bookings} rezervasyon</p>
-      </div>
-      <div className="p-4 bg-violet-50 rounded-xl border border-violet-100">
-        <p className="text-xs text-violet-600 font-medium mb-1">Önceki 30 Gün</p>
-        <p className="text-2xl font-bold text-violet-800">{formatCurrency(pc.prev_month_revenue)}</p>
-        <p className="text-[11px] text-violet-500 mt-0.5">{pc.prev_month_bookings} rezervasyon</p>
-      </div>
+      <Card className="p-4 border-l-4 border-l-sky-500">
+        <p className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wide">Son 7 Gün</p>
+        <p className="text-2xl font-bold text-slate-900">{formatCurrency(pc.week_revenue)}</p>
+        <p className="text-[11px] text-slate-500 mt-0.5">{pc.week_bookings} rezervasyon</p>
+      </Card>
+      <Card className="p-4 border-l-4 border-l-emerald-500">
+        <p className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wide">Son 30 Gün</p>
+        <p className="text-2xl font-bold text-slate-900">{formatCurrency(pc.month_revenue)}</p>
+        <p className="text-[11px] text-slate-500 mt-0.5">{pc.month_bookings} rezervasyon</p>
+      </Card>
+      <Card className="p-4 border-l-4 border-l-indigo-500">
+        <p className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wide">Önceki 30 Gün</p>
+        <p className="text-2xl font-bold text-slate-900">{formatCurrency(pc.prev_month_revenue)}</p>
+        <p className="text-[11px] text-slate-500 mt-0.5">{pc.prev_month_bookings} rezervasyon</p>
+      </Card>
     </div>
   </div>
   );

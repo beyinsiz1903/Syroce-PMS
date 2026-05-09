@@ -48,6 +48,7 @@ async def get_official_guest_list(
     bilgilerini döner. Check-in <= tarih <= Check-out koşulunu kullanır.
     """
     target_date = datetime.now(UTC).date() if not date else datetime.fromisoformat(date).date()
+    has_pii = _user_has_pii_access(current_user)
 
     # Tarihi gün başlangıç/bitiş aralığına çevir
     day_start = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=UTC)
@@ -115,8 +116,8 @@ async def get_official_guest_list(
         row = {
             'booking_id': b.get('id'),
             'guest_name': full_name,
-            'national_id': (g or {}).get('national_id'),
-            'passport_number': (g or {}).get('passport_number'),
+            'national_id': _mask_pii((g or {}).get('national_id')) if not has_pii else (g or {}).get('national_id'),
+            'passport_number': _mask_pii((g or {}).get('passport_number')) if not has_pii else (g or {}).get('passport_number'),
             'country': (g or {}).get('country'),
             'city': (g or {}).get('city'),
             'date_of_birth': (g or {}).get('date_of_birth'),
@@ -142,14 +143,44 @@ async def get_official_guest_list(
 
 
 
+def _user_has_pii_access(user) -> bool:
+    """KVKK PII gate: TCKN / pasaport sadece yöneticilere açıktır.
+
+    - Admin / Super-Admin / Manager / General Manager rolleri: tam erişim.
+    - Diğer roller: yalnızca `granted_permissions` içinde "view_guest_pii"
+      anahtarı bulunan kullanıcılar PII alanlarını görebilir.
+    """
+    role = getattr(user, 'role', None)
+    role_str = getattr(role, 'value', None) or str(role or '')
+    if role_str in ('admin', 'super_admin', 'manager', 'general_manager'):
+        return True
+    granted = getattr(user, 'granted_permissions', None) or []
+    return 'view_guest_pii' in granted
+
+
+def _mask_pii(value):
+    if not value:
+        return value
+    s = str(value)
+    if len(s) <= 4:
+        return '*' * len(s)
+    return s[:2] + '*' * (len(s) - 4) + s[-2:]
+
+
 @sub_router.get("/reports/basic-dashboard")
 async def get_basic_reports_dashboard(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("basic_reporting")),
 ):
     """
-    Temel Raporlar Dashboard - OPTIMIZED: Batch queries
+    Temel Raporlar Dashboard - OPTIMIZED: Batch queries + cache (Tur 28).
     """
+    has_pii = _user_has_pii_access(current_user)
+    return await _basic_dashboard_impl(current_user, has_pii)
+
+
+@cached(ttl=120, key_prefix="reports:basic_dashboard", role_aware=True)
+async def _basic_dashboard_impl(current_user: User, has_pii: bool):
     today = datetime.now(UTC)
     today_start = today.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today.replace(hour=23, minute=59, second=59)
@@ -168,17 +199,17 @@ async def get_basic_reports_dashboard(
 
     results = await asyncio.gather(
         db.rooms.find({'tenant_id': tenant_id}).to_list(1000),
-        db.bookings.find({'tenant_id': tenant_id, '$or': [{'check_in': {'$gte': trend_start.isoformat(), '$lte': today_end.isoformat()}}, {'check_out': {'$gte': trend_start.isoformat(), '$lte': today_end.isoformat()}}, {'check_in': {'$lte': trend_start.isoformat()}, 'check_out': {'$gte': today_end.isoformat()}}]}, {'_id': 0, 'check_in': 1, 'check_out': 1, 'total_amount': 1, 'status': 1, 'booking_source': 1, 'room_type': 1, 'created_at': 1, 'guest_name': 1, 'guest_email': 1, 'guest_phone': 1, 'room_number': 1, 'nationality': 1, 'id_number': 1, 'passport_number': 1}).to_list(10000),
+        db.bookings.find({'tenant_id': tenant_id, '$or': [{'check_in': {'$gte': trend_start.isoformat(), '$lte': today_end.isoformat()}}, {'check_out': {'$gte': trend_start.isoformat(), '$lte': today_end.isoformat()}}, {'check_in': {'$lte': trend_start.isoformat()}, 'check_out': {'$gte': today_end.isoformat()}}]}, {'_id': 0, 'check_in': 1, 'check_out': 1, 'total_amount': 1, 'status': 1, 'booking_source': 1, 'room_type': 1, 'created_at': 1, 'guest_id': 1, 'guest_name': 1, 'guest_email': 1, 'guest_phone': 1, 'room_number': 1, 'nationality': 1, 'id_number': 1, 'passport_number': 1}).to_list(10000),
         db.bookings.count_documents({'tenant_id': tenant_id, 'status': 'checked_in'}),
         db.housekeeping_tasks.find({'tenant_id': tenant_id, 'created_at': {'$gte': (today - timedelta(days=7)).isoformat()}}).to_list(5000),
         db.maintenance_tasks.count_documents({'tenant_id': tenant_id, 'status': {'$in': ['open', 'in_progress', 'pending']}}),
         db.maintenance_tasks.count_documents({'tenant_id': tenant_id, 'status': 'completed', 'completed_at': {'$gte': month_start.isoformat()}}),
         db.invoices.count_documents({'tenant_id': tenant_id, 'payment_status': {'$in': ['pending', 'partial']}}),
         db.invoices.count_documents({'tenant_id': tenant_id, 'payment_status': 'paid', 'created_at': {'$gte': month_start.isoformat()}}),
-        db.guests.find({'tenant_id': tenant_id}, {'_id': 0, 'nationality': 1, 'country': 1}).to_list(5000),
+        db.guests.find({'tenant_id': tenant_id}, {'_id': 0, 'id': 1, 'nationality': 1, 'country': 1}).to_list(5000),
         db.payments.find({'tenant_id': tenant_id, 'processed_at': {'$gte': month_start.isoformat()}}, {'_id': 0, 'amount': 1, 'method': 1, 'status': 1}).to_list(5000),
-        db.bookings.find({'tenant_id': tenant_id, 'check_in': {'$gte': (today - timedelta(days=60)).replace(hour=0,minute=0,second=0,microsecond=0).isoformat(), '$lt': month_start.isoformat()}, 'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}}, {'_id': 0, 'total_amount': 1}).to_list(10000),
-        db.bookings.find({'tenant_id': tenant_id, 'check_in': {'$gte': (today - timedelta(days=365)).isoformat(), '$lt': (today - timedelta(days=335)).isoformat()}, 'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}}, {'_id': 0, 'total_amount': 1}).to_list(10000),
+        db.bookings.find({'tenant_id': tenant_id, 'check_in': {'$gte': (today - timedelta(days=60)).replace(hour=0,minute=0,second=0,microsecond=0).isoformat(), '$lt': month_start.isoformat()}, 'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}}, {'_id': 0, 'total_amount': 1, 'check_in': 1, 'check_out': 1}).to_list(10000),
+        db.bookings.find({'tenant_id': tenant_id, 'check_in': {'$gte': (today - timedelta(days=365)).isoformat(), '$lt': (today - timedelta(days=335)).isoformat()}, 'status': {'$in': ['confirmed', 'checked_in', 'checked_out']}}, {'_id': 0, 'total_amount': 1, 'check_in': 1, 'check_out': 1}).to_list(10000),
         get_fnb(),
     )
     rooms, all_bk, in_house, hk_tasks, maint_open, maint_completed, pending_invoices, paid_invoices, all_guests, all_payments, prev_bookings, ly_bookings, fnb_revenue = results
@@ -198,22 +229,43 @@ async def get_basic_reports_dashboard(
     ms_s, ws_s = month_start.isoformat(), week_start.isoformat()
     occupied_today = arrivals = departures = no_shows = cancellations = today_revenue = 0
     recent_bookings = []; week_bookings = []; month_bookings = []; recent_guests_data = []
+    ALL_REVENUE_STATUSES = ('confirmed', 'guaranteed', 'checked_in', 'checked_out')
 
     for bk in all_bk:
         ci, co, status = bk.get('check_in',''), bk.get('check_out',''), bk.get('status','')
         amt = bk.get('total_amount', 0) or 0
         created = bk.get('created_at', '')
-        if status == 'checked_in' and ci <= ts_e and co >= ts_s: occupied_today += 1
+        # P0 fix: Tür 28 — occupied_today STAY-DATE bazlı (overlap),
+        # status'u checked_in'e kısıtlamak günün gerçek doluluğunu sıfırlıyordu.
+        if status in ALL_REVENUE_STATUSES and ci <= ts_e and co >= ts_s: occupied_today += 1
         if ci >= ts_s and ci <= ts_e and status in ('confirmed','guaranteed','checked_in'): arrivals += 1
         if co >= ts_s and co <= ts_e: departures += 1
         if ci >= ts_s and ci <= ts_e and status == 'no_show': no_shows += 1
         if status == 'cancelled' and created >= ts_s and created <= ts_e: cancellations += 1
         if ci >= ts_s and ci <= ts_e: today_revenue += amt
         if created >= ms_s: recent_bookings.append(bk)
-        if ci >= ws_s and status in ('confirmed','checked_in','checked_out'): week_bookings.append(bk)
-        if ci >= ms_s and status in ('confirmed','checked_in','checked_out'):
-            month_bookings.append(bk)
-            recent_guests_data.append({'guest_name': bk.get('guest_name'), 'guest_email': bk.get('guest_email'), 'guest_phone': bk.get('guest_phone'), 'room_number': bk.get('room_number'), 'room_type': bk.get('room_type'), 'check_in': ci, 'check_out': co, 'total_amount': amt, 'status': status, 'nationality': bk.get('nationality'), 'id_number': bk.get('id_number'), 'passport_number': bk.get('passport_number'), 'booking_source': bk.get('booking_source')})
+        if ci >= ws_s and status in ALL_REVENUE_STATUSES: week_bookings.append(bk)
+        # P1 fix: ay listesi — cancelled / no_show da dahil edilmeli; aksi
+        # halde "No-Show & İptaller" sekmesi recent_guests_data filtresinden
+        # geçemediği için boş görünür.
+        if ci >= ms_s and status in (*ALL_REVENUE_STATUSES, 'cancelled', 'no_show'):
+            if status in ALL_REVENUE_STATUSES:
+                month_bookings.append(bk)
+            recent_guests_data.append({
+                'guest_name': bk.get('guest_name'),
+                'guest_email': bk.get('guest_email'),
+                'guest_phone': bk.get('guest_phone'),
+                'room_number': bk.get('room_number'),
+                'room_type': bk.get('room_type'),
+                'check_in': ci,
+                'check_out': co,
+                'total_amount': amt,
+                'status': status,
+                'nationality': bk.get('nationality'),
+                'id_number': bk.get('id_number') if has_pii else _mask_pii(bk.get('id_number')),
+                'passport_number': bk.get('passport_number') if has_pii else _mask_pii(bk.get('passport_number')),
+                'booking_source': bk.get('booking_source'),
+            })
 
     occupancy_pct = round(min((occupied_today / total_rooms * 100), 100.0), 1) if total_rooms > 0 else 0
     adr = round(today_revenue / occupied_today, 2) if occupied_today > 0 else 0
@@ -248,9 +300,18 @@ async def get_basic_reports_dashboard(
     week_revenue = sum(b.get('total_amount', 0) or 0 for b in week_bookings)
     month_revenue = sum(b.get('total_amount', 0) or 0 for b in month_bookings)
 
+    # P1 fix: Milliyet dağılımı tüm zamanlar yerine SADECE bu ayın
+    # rezervasyonlarından (month_bookings) türetilir. Booking üstünde
+    # nationality yoksa guest dokümanından lookup yapılır.
+    guests_by_id = {g.get('id'): g for g in all_guests if g.get('id')}
     country_dist = {}
-    for g in all_guests:
-        c = g.get('nationality') or g.get('country') or 'Belirtilmemiş'
+    for bk in month_bookings:
+        c = bk.get('nationality')
+        if not c:
+            g = guests_by_id.get(bk.get('guest_id'))
+            if g:
+                c = g.get('nationality') or g.get('country')
+        c = c or 'Belirtilmemiş'
         country_dist[c] = country_dist.get(c, 0) + 1
 
     room_type_occ = {}
@@ -270,11 +331,24 @@ async def get_basic_reports_dashboard(
         if p.get('status') == 'paid': total_paid += amt
     payment_methods = {k: round(v, 2) for k, v in payment_methods.items()}
 
+    # P1 fix: ADR — room_nights HER REZERVASYONUN GECE SAYISI toplamı
+    # olmalı (rezervasyon adedi değil). (check_out - check_in).days; min 1.
+    def _nights(b):
+        try:
+            ci_s, co_s = b.get('check_in', ''), b.get('check_out', '')
+            if not ci_s or not co_s:
+                return 1
+            ci_d = datetime.fromisoformat(ci_s.replace('Z', '+00:00'))
+            co_d = datetime.fromisoformat(co_s.replace('Z', '+00:00'))
+            return max(1, (co_d.date() - ci_d.date()).days)
+        except Exception:
+            return 1
+
     prev_revenue = sum(b.get('total_amount', 0) or 0 for b in prev_bookings)
-    prev_room_nights = len(prev_bookings)
+    prev_room_nights = sum(_nights(b) for b in prev_bookings)
     prev_adr = round(prev_revenue / prev_room_nights, 2) if prev_room_nights > 0 else 0
     ly_revenue = sum(b.get('total_amount', 0) or 0 for b in ly_bookings)
-    ly_room_nights = len(ly_bookings)
+    ly_room_nights = sum(_nights(b) for b in ly_bookings)
 
     return {
         'date': today.strftime('%Y-%m-%d'),
@@ -301,7 +375,7 @@ async def get_basic_reports_dashboard(
             'prev_month_bookings': len(prev_bookings),
             'prev_month_adr': prev_adr,
             'last_year_revenue': round(ly_revenue, 2),
-            'last_year_bookings': ly_room_nights,
+            'last_year_bookings': len(ly_bookings),
         },
         'occupancy_trend': occupancy_trend,
         'revenue_trend': revenue_trend,
@@ -318,7 +392,10 @@ async def get_basic_reports_dashboard(
             'total_paid': round(total_paid, 2),
             'total_pending': pending_invoices,
         },
-        'guest_list': recent_guests_data[:100],
+        # P1 fix: Polis bildirimi ve maliye listesinde 100 kayıt yetersiz —
+        # tüm aylık misafir listesi (cap 5000) döndürülür; frontend tarafı
+        # sayfalar / arama ile sınırlı gösterim yapar.
+        'guest_list': recent_guests_data[:5000],
         'housekeeping': {
             'completed': hk_completed,
             'pending': hk_pending,

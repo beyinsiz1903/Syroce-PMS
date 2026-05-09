@@ -32,7 +32,7 @@ const NationalitySection = ({ countryData }) => {
                   <div key={i} className="flex items-center gap-3">
                     <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
                     <span className="flex-1 text-sm font-medium truncate">{c.name}</span>
-                    <span className="text-sm text-gray-500">{c.count} kisi</span>
+                    <span className="text-sm text-gray-500">{c.count} kişi</span>
                     <span className="text-xs text-gray-400 w-12 text-right">{pct}%</span>
                   </div>
                 );

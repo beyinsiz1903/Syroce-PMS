@@ -9,7 +9,7 @@ import { COLORS, formatCurrency, SectionHeader, EmptyState, CustomTooltip } from
 
 export const ChannelsSection = ({ sourceData }) => (
   <div className="space-y-6" data-testid="section-channels">
-    <SectionHeader title="Kanal Dagilimi" description="Rezervasyon kanalları ve performans analizi" />
+    <SectionHeader title="Kanal Dağılımı" description="Rezervasyon kanalları ve performans analizi" />
     <div className="grid md:grid-cols-2 gap-4">
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">Kaynak Dağılımı</CardTitle></CardHeader>
@@ -91,7 +91,7 @@ export const SourcesSection = ({ sourceData }) => (
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} />
                 <Tooltip content={<CustomTooltip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="count" name="Rezervasyon" fill="#2563EB" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" name="Rezervasyon" fill="#0284C7" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

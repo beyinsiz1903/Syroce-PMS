@@ -13,25 +13,25 @@ const PeriodSection = ({ data, pc }) => {
     <div className="space-y-6" data-testid="section-period">
       <SectionHeader title="Dönem Karşılaştırma" description="Haftalık, aylık ve önceki dönem karşılaştırmaları" />
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card className="border-l-4 border-l-blue-500"><CardContent className="p-4">
-          <p className="text-[11px] text-gray-500 uppercase tracking-wide">Son 7 Gün Gelir</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(pc.week_revenue)}</p>
-          <p className="text-xs text-gray-400 mt-1">{pc.week_bookings} rezervasyon</p>
+        <Card className="border-l-4 border-l-sky-500"><CardContent className="p-4">
+          <p className="text-[11px] text-slate-500 uppercase tracking-wide">Son 7 Gün Gelir</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(pc.week_revenue)}</p>
+          <p className="text-xs text-slate-400 mt-1">{pc.week_bookings} rezervasyon</p>
         </CardContent></Card>
         <Card className="border-l-4 border-l-emerald-500"><CardContent className="p-4">
-          <p className="text-[11px] text-gray-500 uppercase tracking-wide">Son 30 Gün Gelir</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(pc.month_revenue)}</p>
-          <p className="text-xs text-gray-400 mt-1">{pc.month_bookings} rezervasyon</p>
+          <p className="text-[11px] text-slate-500 uppercase tracking-wide">Son 30 Gün Gelir</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(pc.month_revenue)}</p>
+          <p className="text-xs text-slate-400 mt-1">{pc.month_bookings} rezervasyon</p>
         </CardContent></Card>
-        <Card className="border-l-4 border-l-violet-500"><CardContent className="p-4">
-          <p className="text-[11px] text-gray-500 uppercase tracking-wide">Önceki 30 Gün Gelir</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(pc.prev_month_revenue)}</p>
-          <p className="text-xs text-gray-400 mt-1">{pc.prev_month_bookings} rezervasyon</p>
+        <Card className="border-l-4 border-l-indigo-500"><CardContent className="p-4">
+          <p className="text-[11px] text-slate-500 uppercase tracking-wide">Önceki 30 Gün Gelir</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(pc.prev_month_revenue)}</p>
+          <p className="text-xs text-slate-400 mt-1">{pc.prev_month_bookings} rezervasyon</p>
         </CardContent></Card>
         <Card className="border-l-4 border-l-amber-500"><CardContent className="p-4">
-          <p className="text-[11px] text-gray-500 uppercase tracking-wide">Geçen Yıl (Aynı Dönem)</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(pc.last_year_revenue)}</p>
-          <p className="text-xs text-gray-400 mt-1">{pc.last_year_bookings} rezervasyon</p>
+          <p className="text-[11px] text-slate-500 uppercase tracking-wide">Geçen Yıl (Aynı Dönem)</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(pc.last_year_revenue)}</p>
+          <p className="text-xs text-slate-400 mt-1">{pc.last_year_bookings} rezervasyon</p>
         </CardContent></Card>
       </div>
       <Card>
@@ -43,8 +43,8 @@ const PeriodSection = ({ data, pc }) => {
               <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={3} />
               <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={v => (v / 1000).toFixed(0) + 'K'} />
               <Tooltip content={<CustomTooltip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar yAxisId="left" dataKey="revenue" name="Gelir" fill="#2563EB" opacity={0.6} radius={[2, 2, 0, 0]} />
-              <Line yAxisId="left" type="monotone" dataKey="revenue" name="Trend" stroke="#EA580C" strokeWidth={2} dot={{ r: 2 }} />
+              <Bar yAxisId="left" dataKey="revenue" name="Gelir" fill="#0284C7" opacity={0.6} radius={[2, 2, 0, 0]} />
+              <Line yAxisId="left" type="monotone" dataKey="revenue" name="Trend" stroke="#D97706" strokeWidth={2} dot={{ r: 2 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </CardContent>

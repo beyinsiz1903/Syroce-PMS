@@ -10,7 +10,7 @@ import { formatPercent, KPICard, CustomTooltip, SectionHeader } from './ReportHe
 
 const OccupancySection = ({ data, s }) => (
   <div className="space-y-6" data-testid="section-occupancy">
-    <SectionHeader title="Doluluk Raporu" description="Doluluk oranları ve trendler" actions={<Badge className="bg-blue-100 text-blue-700 border-blue-200">Canli</Badge>} />
+    <SectionHeader title="Doluluk Raporu" description="Doluluk oranları ve trendler" actions={<Badge className="bg-sky-100 text-sky-700 border-sky-200">Canlı</Badge>} />
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <KPICard title="Toplam Oda" value={s.total_rooms} icon={Hotel} color="blue" />
       <KPICard title="Dolu Oda" value={s.occupied_rooms} icon={BedDouble} color="green" />
@@ -22,14 +22,14 @@ const OccupancySection = ({ data, s }) => (
       <CardContent>
         <ResponsiveContainer width="100%" height={320}>
           <ComposedChart data={data?.occupancy_trend || []}>
-            <defs><linearGradient id="occFull" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563EB" stopOpacity={0.2} /><stop offset="95%" stopColor="#2563EB" stopOpacity={0} /></linearGradient></defs>
+            <defs><linearGradient id="occFull" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0284C7" stopOpacity={0.2} /><stop offset="95%" stopColor="#0284C7" stopOpacity={0} /></linearGradient></defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={2} />
             <YAxis yAxisId="left" domain={[0, 100]} tickFormatter={v => v + '%'} tick={{ fontSize: 10 }} />
             <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
             <Tooltip content={<CustomTooltip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
-            <Area yAxisId="left" type="monotone" dataKey="occupancy" name="Doluluk %" stroke="#2563EB" fill="url(#occFull)" strokeWidth={2} />
-            <Bar yAxisId="right" dataKey="rooms_occupied" name="Dolu Oda" fill="#EA580C" opacity={0.5} radius={[2, 2, 0, 0]} />
+            <Area yAxisId="left" type="monotone" dataKey="occupancy" name="Doluluk %" stroke="#0284C7" fill="url(#occFull)" strokeWidth={2} />
+            <Bar yAxisId="right" dataKey="rooms_occupied" name="Dolu Oda" fill="#D97706" opacity={0.5} radius={[2, 2, 0, 0]} />
           </ComposedChart>
         </ResponsiveContainer>
       </CardContent>

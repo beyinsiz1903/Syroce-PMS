@@ -148,7 +148,7 @@ const RevenueSection = ({ data, s, pc, roomTypeData }) => (
             <Tooltip content={<CustomTooltip formatter={formatCurrency} />} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Area type="monotone" dataKey="revenue" name="Gelir" stroke="#059669" fill="url(#rvFull)" strokeWidth={2} />
-            <Line type="monotone" dataKey="revenue" name="Trend" stroke="#EA580C" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+            <Line type="monotone" dataKey="revenue" name="Trend" stroke="#D97706" strokeWidth={2} dot={false} strokeDasharray="5 5" />
           </ComposedChart>
         </ResponsiveContainer>
       </CardContent>
