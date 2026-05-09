@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -12,38 +13,26 @@ import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell,
 } from 'recharts';
-import { KPICard, CustomTooltip, COLORS, formatCurrency, formatNumber } from './reports/ReportHelpers';
+import { KPICard, CustomTooltip, COLORS, formatNumber } from './reports/ReportHelpers';
+import { formatCurrency as formatTenantCurrency } from '@/lib/currency';
 
-const BACKEND_URL = "";
-
-const apiFetch = async (path, params = {}) => {
-  const token = localStorage.getItem('token');
-  const qs = new URLSearchParams(params).toString();
-  const url = `${BACKEND_URL}${path}${qs ? '?' + qs : ''}`;
-  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-  if (!res.ok) throw new Error(`API ${res.status}`);
-  return res.json();
-};
-
-const apiFetchBlob = async (path, params = {}) => {
-  const token = localStorage.getItem('token');
-  const qs = new URLSearchParams(params).toString();
-  const url = `${BACKEND_URL}${path}${qs ? '?' + qs : ''}`;
-  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-  if (!res.ok) throw new Error(`Export ${res.status}`);
-  return res.blob();
-};
+// Tur 21 #3: raw fetch yerine axios — silent token refresh, retry, axios-cache
+// ve correlation-id interceptor'larina otomatik dahil olur. Token Authorization
+// header'i App.jsx'te axios.defaults uzerinden ekleniyor; manuel set gereksiz.
+// `/api/...` mutlak path bilincli (skill: native fetch icin /api/, axios icin
+// relative; ama burada interceptor zinciri istedigimiz icin axios + tam path).
 
 const PERIOD_OPTIONS = [
-  { value: '7d', label: 'Son 7 Gun' },
-  { value: '30d', label: 'Son 30 Gun' },
-  { value: '90d', label: 'Son 90 Gun' },
+  // Tur 21 #7: Türkçe karakter normalizasyonu (Gun → Gün, Yil → Yıl).
+  { value: '7d', label: 'Son 7 Gün' },
+  { value: '30d', label: 'Son 30 Gün' },
+  { value: '90d', label: 'Son 90 Gün' },
   { value: '180d', label: 'Son 6 Ay' },
-  { value: '365d', label: 'Son 1 Yil' },
+  { value: '365d', label: 'Son 1 Yıl' },
 ];
 
 const EVENT_TYPE_LABELS = {
-  api_call: 'API Cagrisi',
+  api_call: 'API Çağrısı',
   reservation_created: 'Rezervasyon',
   reservation_cancelled: 'İptal',
   channel_sync: 'Kanal Senk.',
@@ -55,13 +44,37 @@ const EVENT_TYPE_LABELS = {
   login: 'Giriş',
   night_audit_run: 'Gece Audit',
 };
-
 const getEventLabel = (type) => EVENT_TYPE_LABELS[type] || type;
 
-export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
+// Tur 21 #2: reservation_cancelled grafikte yoktu — eklendi.
+const TIMELINE_KEYS = [
+  'api_call', 'reservation_created', 'reservation_cancelled',
+  'channel_sync', 'webhook_received',
+];
+
+// Tur 21 #3: 5xx tek-retry yardimcisi (4xx'te retry yok, abort sessiz).
+const fetchJsonWithRetry = async (path, params, signal) => {
+  const tryOnce = () => axios.get(path, { params, signal }).then(r => r.data);
+  try {
+    return await tryOnce();
+  } catch (e) {
+    if (axios.isCancel?.(e) || e?.name === 'CanceledError') throw e;
+    const st = e?.response?.status;
+    if (st && st >= 400 && st < 500) throw e;
+    await new Promise(r => setTimeout(r, 1500));
+    return tryOnce();
+  }
+};
+
+export default function B2BAnalyticsDashboard({ user, tenant }) {
+  // Tur 21 #5: tenant currency override (multi-currency tenant'lar icin).
+  const tenantCurrency = (tenant?.currency || tenant?.default_currency || 'TRY').toUpperCase();
+  const fmtMoney = useCallback((v) => formatTenantCurrency(v ?? 0, tenantCurrency, { decimals: 0 }), [tenantCurrency]);
+
   const [period, setPeriod] = useState('30d');
   const [agencyFilter, setAgencyFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [trendsLoading, setTrendsLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [agencies, setAgencies] = useState([]);
   const [trends, setTrends] = useState([]);
@@ -70,46 +83,108 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState(null);
 
-  const fetchData = useCallback(async () => {
+  const ctrlRef = useRef(null);
+  const trendCtrlRef = useRef(null);
+
+  // Tur 21 #4: agency filter sadece booking-trends'i tetikler.
+  // Period degisince HEPSI; agency degisince SADECE trends.
+  const fetchAllByPeriod = useCallback(async () => {
+    ctrlRef.current?.abort();
+    const ctrl = new AbortController();
+    ctrlRef.current = ctrl;
     setLoading(true);
     setError(null);
     try {
       const params = { period };
       const trendParams = { ...params, ...(agencyFilter !== 'all' ? { agency_id: agencyFilter } : {}) };
-      const [sumRes, agRes, trendRes, usageRes, topRes] = await Promise.all([
-        apiFetch('/api/b2b-analytics/summary', params).catch(() => null),
-        apiFetch('/api/b2b-analytics/agency-breakdown', params).catch(() => null),
-        apiFetch('/api/b2b-analytics/booking-trends', trendParams).catch(() => null),
-        apiFetch('/api/b2b-analytics/api-usage', params).catch(() => null),
-        apiFetch('/api/b2b-analytics/top-endpoints', params).catch(() => null),
+      const results = await Promise.allSettled([
+        fetchJsonWithRetry('/b2b-analytics/summary', params, ctrl.signal),
+        fetchJsonWithRetry('/b2b-analytics/agency-breakdown', params, ctrl.signal),
+        fetchJsonWithRetry('/b2b-analytics/booking-trends', trendParams, ctrl.signal),
+        fetchJsonWithRetry('/b2b-analytics/api-usage', params, ctrl.signal),
+        fetchJsonWithRetry('/b2b-analytics/top-endpoints', params, ctrl.signal),
       ]);
+      if (ctrl.signal.aborted) return;
 
-      const failedCount = [sumRes, agRes, trendRes, usageRes, topRes].filter(r => !r).length;
-      if (failedCount === 5) {
-        setError('Analitik verileri yüklenemedi. Lutfen tekrar deneyin.');
-      } else if (failedCount > 0) {
-        setError('Bazi veriler yüklenemedi. Eksik bolumler olabilir.');
+      const [sumR, agR, trR, usR, topR] = results;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      // 403'leri daha aciklayici yap (yeni permission gate).
+      const has403 = results.some(r => r.status === 'rejected' && r.reason?.response?.status === 403);
+      if (has403) {
+        setError('Finans raporu görüntüleme yetkiniz yok (view_finance_reports izni gerekli).');
+      } else if (failed === 5) {
+        setError('Analitik verileri yüklenemedi. Lütfen tekrar deneyin.');
+      } else if (failed > 0) {
+        setError('Bazı veriler yüklenemedi. Eksik bölümler olabilir.');
       }
 
-      if (sumRes) setSummary(sumRes);
-      if (agRes) setAgencies(agRes.agencies || []);
-      if (trendRes) setTrends(trendRes.trends || []);
-      if (usageRes) setApiUsage({ timeline: usageRes.timeline || [], totals: usageRes.totals || [] });
-      if (topRes) setTopEndpoints(topRes.endpoints || []);
-    } catch {
-      setError('Analitik verileri yüklenemedi. Lutfen tekrar deneyin.');
+      if (sumR.status === 'fulfilled') setSummary(sumR.value);
+      if (agR.status === 'fulfilled') setAgencies(agR.value.agencies || []);
+      if (trR.status === 'fulfilled') setTrends(trR.value.trends || []);
+      if (usR.status === 'fulfilled') setApiUsage({ timeline: usR.value.timeline || [], totals: usR.value.totals || [] });
+      if (topR.status === 'fulfilled') setTopEndpoints(topR.value.endpoints || []);
     } finally {
-      setLoading(false);
+      if (!ctrl.signal.aborted) setLoading(false);
     }
-  }, [period, agencyFilter]);
+  // agencyFilter degisikliginde tekrar tetiklemiyoruz — ayri effect'te.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Period'u ref'te tut — agency-only effect'in callback identity'sine
+  // bagli olmamasi icin (period degisikliginde TEKRAR trends cagirilmasini
+  // engeller; period zaten fetchAllByPeriod ile hepsini ceker).
+  const periodRef = useRef(period);
+  useEffect(() => { periodRef.current = period; }, [period]);
+
+  const fetchTrendsOnly = useCallback(async (agencyId) => {
+    trendCtrlRef.current?.abort();
+    const ctrl = new AbortController();
+    trendCtrlRef.current = ctrl;
+    setTrendsLoading(true);
+    try {
+      const trendParams = {
+        period: periodRef.current,
+        ...(agencyId && agencyId !== 'all' ? { agency_id: agencyId } : {}),
+      };
+      const data = await fetchJsonWithRetry('/b2b-analytics/booking-trends', trendParams, ctrl.signal);
+      if (!ctrl.signal.aborted) setTrends(data.trends || []);
+    } catch (e) {
+      if (axios.isCancel?.(e) || e?.name === 'CanceledError') return;
+      // Sessiz hata — tum-yukleme effect'i ana hatalari yonetir.
+    } finally {
+      if (!ctrl.signal.aborted) setTrendsLoading(false);
+    }
+  }, []);
+
+  // Period degistiginde HEPSI yuklenir.
+  useEffect(() => {
+    fetchAllByPeriod();
+    return () => ctrlRef.current?.abort();
+  }, [fetchAllByPeriod]);
+
+  // YALNIZCA agencyFilter degisiminde trends'i ceker. period degisikliginde
+  // (callback identity degisse bile) tetiklenmez — fetchTrendsOnly stabil
+  // (deps=[]) ve period periodRef'ten okunur.
+  const isFirstAgencyRender = useRef(true);
+  useEffect(() => {
+    if (isFirstAgencyRender.current) {
+      isFirstAgencyRender.current = false;
+      return;
+    }
+    fetchTrendsOnly(agencyFilter);
+    return () => trendCtrlRef.current?.abort();
+  }, [agencyFilter, fetchTrendsOnly]);
+
+  const handleRefresh = () => fetchAllByPeriod();
 
   const handleExport = async (type) => {
     setExporting(true);
     try {
-      const blob = await apiFetchBlob('/api/b2b-analytics/export', { period, export_type: type });
-      const url = window.URL.createObjectURL(blob);
+      const res = await axios.get('/b2b-analytics/export', {
+        params: { period, export_type: type },
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(res.data);
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', `b2b_${type}_${period}.csv`);
@@ -117,8 +192,11 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-    } catch {
-      setError('Dosya indirilemedi. Lutfen tekrar deneyin.');
+    } catch (e) {
+      const st = e?.response?.status;
+      setError(st === 403
+        ? 'CSV dışa aktarma yetkiniz yok (view_finance_reports izni gerekli).'
+        : 'Dosya indirilemedi. Lütfen tekrar deneyin.');
     } finally {
       setExporting(false);
     }
@@ -127,7 +205,6 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
   const kpis = summary?.kpis || {};
 
   return (
-    <>
     <div className="min-h-screen bg-gray-50/50 p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -135,7 +212,8 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
             <BarChart3 className="w-7 h-7 text-indigo-600" />
             B2B Analytics
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Acente performansi ve API kullanım analitikleri</p>
+          {/* #7: performansi → performansı, kullanım zaten unicode; hizala */}
+          <p className="text-sm text-gray-500 mt-1">Acente performansı ve API kullanım analitikleri</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -162,8 +240,10 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
             </SelectContent>
           </Select>
 
-          <Button variant="outline" size="icon" onClick={fetchData} disabled={loading}>
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          {/* Sprint A: standart Yenile butonu */}
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading || trendsLoading ? 'animate-spin' : ''}`} />
+            Yenile
           </Button>
         </div>
       </div>
@@ -177,20 +257,27 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
         </div>
       )}
 
+      {/* Tur 21 #6: purple → indigo (replit.md Color Palette Convention) */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <KPICard title="Toplam Rez." value={kpis.total_bookings || 0} icon={FileText} color="blue" />
         <KPICard title="Onaylanan" value={kpis.approved_bookings || 0} icon={TrendingUp} color="green" />
-        <KPICard title="Donusum %" value={`%${kpis.conversion_rate || 0}`} icon={Zap} color="purple" />
-        <KPICard title="Toplam Gelir" value={kpis.total_revenue || 0} icon={DollarSign} color="amber" />
+        <KPICard title="Dönüşüm %" value={`%${kpis.conversion_rate || 0}`} icon={Zap} color="indigo" />
+        <KPICard
+          title="Toplam Gelir"
+          // KPICard kendi formatCurrency'sini cagiriyor (TRY-only); sayisal istemiyoruz,
+          // tenant para birimiyle once formatlayip string verelim.
+          value={fmtMoney(kpis.total_revenue || 0)}
+          icon={DollarSign} color="amber"
+        />
         <KPICard title="Aktif Acente" value={kpis.active_agencies || 0} icon={Building2} color="cyan" />
-        <KPICard title="API Cagrisi" value={kpis.api_calls || 0} icon={Activity} color="indigo" />
+        <KPICard title="API Çağrısı" value={kpis.api_calls || 0} icon={Activity} color="indigo" />
       </div>
 
       <Tabs defaultValue="bookings" className="space-y-4">
         <TabsList className="bg-white border">
           <TabsTrigger value="bookings">Rez. Trendleri</TabsTrigger>
-          <TabsTrigger value="agencies">Acente Performansi</TabsTrigger>
-          <TabsTrigger value="api">API Kullanimi</TabsTrigger>
+          <TabsTrigger value="agencies">Acente Performansı</TabsTrigger>
+          <TabsTrigger value="api">API Kullanımı</TabsTrigger>
           <TabsTrigger value="endpoints">Top Endpointler</TabsTrigger>
         </TabsList>
 
@@ -198,7 +285,9 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-gray-700">Günlük Rezervasyonlar</CardTitle>
+                <CardTitle className="text-sm font-semibold text-gray-700">
+                  Günlük Rezervasyonlar {trendsLoading && <span className="text-[10px] text-gray-400 ml-2">(güncelleniyor…)</span>}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 {trends.length > 0 ? (
@@ -239,7 +328,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={(v) => v.slice(5)} />
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
-                      <Tooltip content={<CustomTooltip formatter={formatCurrency} />} />
+                      <Tooltip content={<CustomTooltip formatter={fmtMoney} />} />
                       <Area type="monotone" dataKey="revenue" name="Gelir" stroke="#2563EB" fill="url(#revenueGrad)" strokeWidth={2} />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -256,7 +345,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
         <TabsContent value="agencies" className="space-y-4">
           <Card>
             <CardHeader className="pb-2 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-semibold text-gray-700">Acente Bazli Performans</CardTitle>
+              <CardTitle className="text-sm font-semibold text-gray-700">Acente Bazlı Performans</CardTitle>
               <Button variant="outline" size="sm" onClick={() => handleExport('agencies')} disabled={exporting}>
                 <Download className="w-4 h-4 mr-1" />
                 CSV
@@ -272,7 +361,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
                       <th className="py-2 px-3 font-medium text-right">Komisyon %</th>
                       <th className="py-2 px-3 font-medium text-right">Rez.</th>
                       <th className="py-2 px-3 font-medium text-right">Onay</th>
-                      <th className="py-2 px-3 font-medium text-right">Donusum</th>
+                      <th className="py-2 px-3 font-medium text-right">Dönüşüm</th>
                       <th className="py-2 px-3 font-medium text-right">Gelir</th>
                       <th className="py-2 px-3 font-medium text-right">Net</th>
                     </tr>
@@ -294,8 +383,8 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
                             %{a.conversion_rate}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-right font-medium">{formatCurrency(a.revenue)}</td>
-                        <td className="py-2.5 px-3 text-right font-medium text-indigo-600">{formatCurrency(a.net_revenue)}</td>
+                        <td className="py-2.5 px-3 text-right font-medium">{fmtMoney(a.revenue)}</td>
+                        <td className="py-2.5 px-3 text-right font-medium text-indigo-600">{fmtMoney(a.net_revenue)}</td>
                       </tr>
                     )) : (
                       <tr>
@@ -314,7 +403,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold text-gray-700">Acente Gelir Dagilimi</CardTitle>
+                  <CardTitle className="text-sm font-semibold text-gray-700">Acente Gelir Dağılımı</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={280}>
@@ -332,7 +421,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
                           <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(val) => formatCurrency(val)} />
+                      <Tooltip formatter={(val) => fmtMoney(val)} />
                     </PieChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -340,7 +429,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
 
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold text-gray-700">Acente Rez. Karsilastirmasi</CardTitle>
+                  <CardTitle className="text-sm font-semibold text-gray-700">Acente Rez. Karşılaştırması</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={280}>
@@ -363,7 +452,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="lg:col-span-2">
               <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                <CardTitle className="text-sm font-semibold text-gray-700">API Kullanim Trendi</CardTitle>
+                <CardTitle className="text-sm font-semibold text-gray-700">API Kullanım Trendi</CardTitle>
                 <Button variant="outline" size="sm" onClick={() => handleExport('usage')} disabled={exporting}>
                   <Download className="w-4 h-4 mr-1" />
                   CSV
@@ -374,7 +463,8 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
                   <ResponsiveContainer width="100%" height={320}>
                     <AreaChart data={apiUsage.timeline}>
                       <defs>
-                        {['api_call', 'reservation_created', 'channel_sync', 'webhook_received'].map((key, i) => (
+                        {/* Tur 21 #2: 5. seri (reservation_cancelled) eklendi */}
+                        {TIMELINE_KEYS.map((key, i) => (
                           <linearGradient key={key} id={`grad_${key}`} x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor={COLORS[i]} stopOpacity={0.2} />
                             <stop offset="95%" stopColor={COLORS[i]} stopOpacity={0} />
@@ -386,7 +476,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip content={<CustomTooltip formatter={formatNumber} />} />
                       <Legend />
-                      {['api_call', 'reservation_created', 'channel_sync', 'webhook_received'].map((key, i) => (
+                      {TIMELINE_KEYS.map((key, i) => (
                         <Area
                           key={key}
                           type="monotone"
@@ -409,7 +499,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-gray-700">Olay Tipi Dagilimi</CardTitle>
+                <CardTitle className="text-sm font-semibold text-gray-700">Olay Tipi Dağılımı</CardTitle>
               </CardHeader>
               <CardContent>
                 {apiUsage.totals.length > 0 ? (
@@ -445,7 +535,7 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
         <TabsContent value="endpoints" className="space-y-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold text-gray-700">En Cok Kullanilan Endpointler</CardTitle>
+              <CardTitle className="text-sm font-semibold text-gray-700">En Çok Kullanılan Endpointler</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
@@ -487,10 +577,9 @@ export default function B2BAnalyticsDashboard({ user, tenant, onLogout }) {
         </Button>
         <Button variant="outline" size="sm" onClick={() => handleExport('usage')} disabled={exporting}>
           <Download className="w-4 h-4 mr-1" />
-          Kullanim CSV
+          Kullanım CSV
         </Button>
       </div>
     </div>
-    </>
   );
 }

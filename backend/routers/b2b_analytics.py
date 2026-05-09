@@ -128,6 +128,7 @@ async def get_agency_breakdown(
     end_date: str | None = Query(None),
     period: str = Query("30d"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # Tur 21 #1: finans raporu izni
 ):
     _require_hotel_role(current_user)
     tenant_id = current_user.tenant_id
@@ -188,6 +189,7 @@ async def get_booking_trends(
     period: str = Query("30d"),
     agency_id: str | None = Query(None),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # Tur 21 #1
 ):
     _require_hotel_role(current_user)
     tenant_id = current_user.tenant_id
@@ -234,6 +236,7 @@ async def get_api_usage(
     end_date: str | None = Query(None),
     period: str = Query("30d"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # Tur 21 #1
 ):
     _require_hotel_role(current_user)
     tenant_id = current_user.tenant_id
@@ -277,6 +280,7 @@ async def get_top_endpoints(
     period: str = Query("30d"),
     limit: int = Query(10, ge=1, le=50),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # Tur 21 #1
 ):
     _require_hotel_role(current_user)
     tenant_id = current_user.tenant_id
@@ -309,6 +313,7 @@ async def export_b2b_data(
     period: str = Query("30d"),
     export_type: str = Query("bookings", pattern="^(bookings|agencies|usage)$"),
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),  # Tur 21 #1: CSV export icin de izin sart
 ):
     _require_hotel_role(current_user)
     tenant_id = current_user.tenant_id
