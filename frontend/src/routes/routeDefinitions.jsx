@@ -505,7 +505,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/recalled-messages-report", ...p(RecalledMessagesReportPage, {}) , wrapLayout: true, layoutModule: "recalled_messages_report" },
     { path: "/id-photo-view-report", ...p(IdPhotoViewReportPage, {}) , wrapLayout: true, layoutModule: "id-photo-view-report" },
     { path: "/id-photo-admin", ...p(IdPhotoAdminPage, {}) , wrapLayout: true, layoutModule: "id-photo-admin" },
-    { path: "/admin/urgent-permissions", ...p(UrgentPermissionAdminPage, {}) , wrapLayout: true, layoutModule: "urgent-permission-admin" },
+    { path: "/admin/urgent-permissions", ...p(UrgentPermissionAdminPage, {}) , wrapLayout: true, layoutModule: "urgent_permission_admin" },
     { path: "/pilot-readiness", ...p(PilotReadinessPage, {}) },
     { path: "/incident-dashboard", ...p(IncidentDashboardPage, {}) },
     { path: "/golive-dashboard", ...p(GoLiveDashboardPage, {}) },

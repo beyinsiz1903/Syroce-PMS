@@ -39,8 +39,8 @@ const ROLE_BADGE = {
   supervisor:  "bg-sky-50 text-sky-700 ring-1 ring-sky-200",
   front_desk:  "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
   housekeeping:"bg-amber-50 text-amber-800 ring-1 ring-amber-200",
-  finance:     "bg-violet-50 text-violet-700 ring-1 ring-violet-200",
-  revenue:     "bg-violet-50 text-violet-700 ring-1 ring-violet-200",
+  finance:     "bg-slate-100 text-slate-700 ring-1 ring-slate-300",
+  revenue:     "bg-slate-100 text-slate-700 ring-1 ring-slate-300",
   sales:       "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
 };
 
@@ -59,15 +59,15 @@ function safePii(value) {
 
 function MetricNumber({ label, value, tone = "default" }) {
   const toneCls = {
-    default: "text-gray-900",
+    default: "text-slate-900",
     good: "text-emerald-700",
     bad: "text-rose-700",
     info: "text-indigo-700",
-    muted: "text-gray-600",
-  }[tone] || "text-gray-900";
+    muted: "text-slate-600",
+  }[tone] || "text-slate-900";
   return (
     <div className="flex flex-col">
-      <span className="text-xs uppercase tracking-wide text-gray-500">{label}</span>
+      <span className="text-xs uppercase tracking-wide text-slate-500">{label}</span>
       <span className={`text-2xl font-semibold tabular-nums ${toneCls}`}>{value}</span>
     </div>
   );
@@ -200,8 +200,8 @@ export default function UrgentPermissionAdminPage() {
 
   return (
     <>
-      <div data-testid="urgent-permission-admin-page" className="min-h-screen bg-gray-50">
-        <div className="max-w-5xl mx-auto p-6 space-y-4">
+      <div data-testid="urgent-permission-admin-page">
+        <div className="max-w-5xl mx-auto px-4 py-4 space-y-4">
           <PageHeader
             icon={ShieldCheck}
             iconClassName="text-indigo-600"
@@ -231,7 +231,7 @@ export default function UrgentPermissionAdminPage() {
             </CardHeader>
             <CardContent>
               {metricsLoading ? (
-                <div className="py-3 text-sm text-gray-500">
+                <div className="py-3 text-sm text-slate-500">
                   <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
                   Yükleniyor...
                 </div>
@@ -250,14 +250,14 @@ export default function UrgentPermissionAdminPage() {
                   </Button>
                 </div>
               ) : (metrics.totals?.attempted || 0) === 0 ? (
-                <div className="py-3 text-sm text-gray-500">
+                <div className="py-3 text-sm text-slate-500">
                   Son {metrics.range_days} günde acil push bildirimi
                   gönderilmemiş.
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div>
-                    <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                    <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">
                       Bugün
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -268,7 +268,7 @@ export default function UrgentPermissionAdminPage() {
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                    <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">
                       Son {metrics.range_days} gün
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -278,7 +278,7 @@ export default function UrgentPermissionAdminPage() {
                       <MetricNumber label="Anlık temizlenen" value={metrics.totals?.pruned || 0} tone="muted" />
                     </div>
                   </div>
-                  <div className="text-[11px] text-gray-500 space-y-1">
+                  <div className="text-[11px] text-slate-500 space-y-1">
                     <div>
                       "Anlık temizlenen": gönderim sırasında geçersiz bulunup
                       silinen abonelik sayısıdır.
@@ -309,7 +309,7 @@ export default function UrgentPermissionAdminPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Kullanıcılar ({filtered.length})</CardTitle>
               <div className="relative mt-2">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <Input
                   data-testid="urgent-permission-filter"
                   placeholder="İsim, e-posta veya kullanıcı adı..."
@@ -321,12 +321,12 @@ export default function UrgentPermissionAdminPage() {
             </CardHeader>
             <CardContent className="p-0">
               {loading ? (
-                <div className="py-10 text-center text-sm text-gray-500">
+                <div className="py-10 text-center text-sm text-slate-500">
                   <Loader2 className="w-5 h-5 animate-spin inline mr-2" />
                   Yükleniyor...
                 </div>
               ) : filtered.length === 0 ? (
-                <div className="py-10 text-center text-sm text-gray-500">
+                <div className="py-10 text-center text-sm text-slate-500">
                   Kayıt bulunamadı.
                 </div>
               ) : (
@@ -345,7 +345,7 @@ export default function UrgentPermissionAdminPage() {
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-sm font-medium text-gray-900 truncate">
+                            <span className="text-sm font-medium text-slate-900 truncate">
                               {displayName}
                             </span>
                             <span
@@ -355,7 +355,7 @@ export default function UrgentPermissionAdminPage() {
                             </span>
                           </div>
                           {secondary && (
-                            <div className="text-xs text-gray-500 truncate mt-0.5">
+                            <div className="text-xs text-slate-500 truncate mt-0.5">
                               {secondary}
                             </div>
                           )}
@@ -385,7 +385,7 @@ export default function UrgentPermissionAdminPage() {
           </Card>
 
           {grantable.length > 1 && (
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-slate-500">
               Atanabilir izinler: {grantable.join(", ")}
             </div>
           )}
