@@ -372,7 +372,7 @@ export function getRouteConfigs({ user, tenant, modules, isAuthenticated, onLogo
     { path: "/ari-push", ...pa(ARIPushDashboard) , wrapLayout: true },
     { path: "/rate-manager", ...pa(UnifiedRateManager) },
     { path: "/hr-rate-manager", ...pa(UnifiedRateManager) },
-    { path: "/unified-rate-manager", ...p(UnifiedRateManager) },
+    { path: "/unified-rate-manager", ...p(UnifiedRateManager), wrapLayout: true, layoutModule: "unified_rate_manager" },
     { path: "/wire-failures", ...pa(WireFailureDashboard) , wrapLayout: true, layoutModule: "channel-manager" },
     { path: "/data-model", ...pa(DataModelDashboard) , wrapLayout: true },
     { path: "/lockdown", ...pa(LockdownDashboard) , wrapLayout: true },

@@ -13,19 +13,26 @@ logger = logging.getLogger(__name__)
 # ─── Default Onboarding Steps ───
 DEFAULT_STEPS = [
     {
+        # P1 #4: order=0 (önceki kodda account_created ve hotel_info_completed
+        # ikisi de order=1 idi → tutarsız sıra).
         "step_id": "account_created",
         "label": "Hesap olusturuldu",
         "description": "Otel hesabi ve admin kullanicisi olusturuldu",
         "category": "setup",
         "auto_detect": True,
-        "order": 1,
+        "detect_collection": "tenants",
+        "detect_id_field": "id",  # tenant kendi varsa ✓ (custom handler aşağıda)
+        "order": 0,
     },
     {
+        # P0 #1: artık auto_detect=True; tenant doc'u dolu (property_name +
+        # contact_phone + total_rooms varsa) ✓ otomatik işaretlenir.
         "step_id": "hotel_info_completed",
         "label": "Otel bilgileri girildi",
         "description": "Mülk adı, adres, telefon ve oda kapasitesi tamamlandı",
         "category": "setup",
-        "auto_detect": False,
+        "auto_detect": True,
+        "detect_handler": "hotel_info",  # özel handler — _auto_detect_step içinde
         "order": 1,
     },
     {
@@ -148,12 +155,38 @@ DEFAULT_STEPS = [
 
 
 async def _auto_detect_step(tenant_id: str, step: dict) -> bool:
-    """Auto-detect if a step is completed based on collection counts."""
-    coll_name = step.get("detect_collection")
-    if not coll_name:
-        return False
+    """Auto-detect if a step is completed.
 
+    Yeni davranış:
+    - `detect_handler="hotel_info"` → tenant doc'unda property_name + contact_phone
+      + total_rooms varsa True (P0 #1).
+    - `detect_handler="account_created"` → tenant doc varsa True.
+    - Aksi halde detect_collection üzerinden count/distinct sorgusu.
+    """
+    handler = step.get("detect_handler")
     try:
+        if handler == "hotel_info":
+            from core.database import _raw_db
+            tenant = await _raw_db.tenants.find_one(
+                {"id": tenant_id},
+                {"_id": 0, "property_name": 1, "contact_phone": 1, "total_rooms": 1},
+            ) or {}
+            return bool(
+                (tenant.get("property_name") or "").strip()
+                and (tenant.get("contact_phone") or "").strip()
+                and int(tenant.get("total_rooms") or 0) > 0
+            )
+
+        if step.get("step_id") == "account_created":
+            # Tenant doc'u var = hesap oluşturulmuş ✓ (P2 #22 fix).
+            from core.database import _raw_db
+            t = await _raw_db.tenants.find_one({"id": tenant_id}, {"_id": 0, "id": 1})
+            return bool(t)
+
+        coll_name = step.get("detect_collection")
+        if not coll_name:
+            return False
+
         collection = db[coll_name]
         query = {"tenant_id": tenant_id}
 
