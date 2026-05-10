@@ -60,7 +60,10 @@ async def ensure_performance_indexes():
         ("night_audit_runs", [("tenant_id", 1), ("business_date", -1)], "idx_night_audit_date", {}),
         # R5 follow-up audit (2026-05-03): 7 yoğun koleksiyonda tenant_id'li
         # bileşik index eksikti — kapsama tamamlandı.
-        ("exely_sync_logs", [("tenant_id", 1), ("created_at", -1)], "idx_exely_sync_tenant_created", {}),
+        # idx_exely_sync_tenant_created: KALDIRILDI (2026-05-10) — collection
+        # `created_at` alanı kullanmıyor (`log_sync` `timestamp` yazıyor),
+        # 6024/6024 doc'ta `created_at` YOK. Yerine
+        # idx_exely_sync_tenant_timestamp (aşağıda) eklendi.
         ("hotelrunner_sync_logs", [("tenant_id", 1), ("created_at", -1)], "idx_hr_sync_tenant_created", {}),
         ("idempotency_keys", [("tenant_id", 1), ("created_at", -1)], "idx_idempotency_tenant_created", {}),
         ("audit_exceptions", [("tenant_id", 1), ("created_at", -1)], "idx_audit_exc_tenant_created", {}),
@@ -76,6 +79,18 @@ async def ensure_performance_indexes():
          "idx_monitoring_metrics_tenant_name_ts", {}),
         ("monitoring_metrics_history", [("timestamp", -1)],
          "idx_monitoring_metrics_ts", {}),
+        # Atlas Performance Advisor (2026-05-10):
+        #   - channel_reconciliation_cases: rollout_framework + cockpit_snapshot
+        #     worker'ları `find({tenant_id, ...}).sort(created_at)` yapıyor;
+        #     7336 docs scan / 100 returned (targeting 73, 147ms).
+        #   - exely_sync_logs: wire_failure_router (`_bump` ve `find`) gerçek
+        #     sorgu alanı `timestamp` (created_at değil); mevcut
+        #     idx_exely_sync_tenant_created bu pattern'i karşılamıyor.
+        #     5745 scan / 101 returned (targeting 57, 256ms).
+        ("channel_reconciliation_cases", [("tenant_id", 1), ("created_at", -1)],
+         "idx_recon_cases_tenant_created", {}),
+        ("exely_sync_logs", [("tenant_id", 1), ("timestamp", -1)],
+         "idx_exely_sync_tenant_timestamp", {}),
         # WhatsApp inbound idempotency — Meta retry'larda duplicate önler.
         # Webhook upsert'i (tenant_id, wa_message_id) key'iyle yapıyor;
         # concurrency altında race-free garanti için unique index gerekli.
