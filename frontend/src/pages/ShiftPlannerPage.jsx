@@ -110,6 +110,39 @@ const ShiftPlannerPage = () => {
     }
   };
 
+  const consentSwap = async (req, action) => {
+    let note = '';
+    if (action === 'reject') {
+      note = await promptDialog({ message: 'Red sebebi (opsiyonel):', defaultValue: '' });
+      if (note === null) return;
+    } else if (!await confirmDialog({
+      message: `${req.shift_date} ${req.shift_type} vardiyasını devralmayı kabul ediyor musunuz?`,
+    })) return;
+    try {
+      await axios.post(`/hr/shift-swap-request/${req.id}/consent`, { action, note });
+      toast.success(action === 'approve' ? 'Onay verildi — İK kararını bekliyor' : 'Reddettiniz');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'İşlem başarısız');
+    }
+  };
+
+  const currentUserEmail = useMemo(() => {
+    try { return (JSON.parse(localStorage.getItem('user') || '{}').email || '').toLowerCase(); }
+    catch { return ''; }
+  }, []);
+
+  const incomingConsentRequests = useMemo(() => {
+    if (!currentUserEmail) return [];
+    return swapRequests.filter((r) => {
+      if (r.target_consent_status !== 'pending' || r.status !== 'pending') return false;
+      const target = staff.find((s) => s.id === r.target_staff_id);
+      return target && (target.email || '').toLowerCase() === currentUserEmail;
+    });
+  }, [swapRequests, staff, currentUserEmail]);
+
+  // Yöneticiler için bekleyen swaplar — sadece hedef rıza vermiş olanlar onaylanabilir,
+  // diğerleri "rıza bekleniyor" olarak gösterilir.
   const pendingSwaps = useMemo(() => swapRequests.filter((r) => r.status === 'pending'), [swapRequests]);
 
   useEffect(() => { load(); }, [load]);
@@ -225,6 +258,39 @@ const ShiftPlannerPage = () => {
           value={`${days[0].toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })} – ${days[6].toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}`} />
       </div>
 
+      {incomingConsentRequests.length > 0 && (
+        <Card className="mb-4 border-sky-200 bg-sky-50/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sky-900">
+              <Repeat className="w-4 h-4" />Bana Gelen Devralma Talepleri ({incomingConsentRequests.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {incomingConsentRequests.map((r) => (
+                <div key={r.id} className="flex items-center gap-3 text-sm rounded border border-sky-200 bg-white p-2">
+                  <div className="flex-1">
+                    <div className="font-medium">
+                      <span className="text-slate-700">{r.from_staff_name}</span> sizden devralmanızı istiyor
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {r.shift_date} • {r.shift_type}
+                      {r.reason && ` • Sebep: ${r.reason}`}
+                    </div>
+                  </div>
+                  <Button size="sm" onClick={() => consentSwap(r, 'approve')}>
+                    <Check className="w-3.5 h-3.5 mr-1" />Kabul Et
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => consentSwap(r, 'reject')}>
+                    <X className="w-3.5 h-3.5 mr-1 text-rose-600" />Reddet
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {pendingSwaps.length > 0 && (
         <Card className="mb-4 border-amber-200 bg-amber-50/50">
           <CardHeader>
@@ -234,25 +300,33 @@ const ShiftPlannerPage = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {pendingSwaps.map((r) => (
-                <div key={r.id} className="flex items-center gap-3 text-sm rounded border border-amber-200 bg-white p-2">
-                  <div className="flex-1">
-                    <div className="font-medium">
-                      {r.from_staff_name} → <span className="text-sky-700">{r.target_staff_name}</span>
+              {pendingSwaps.map((r) => {
+                const consentApproved = r.target_consent_status === 'approved';
+                return (
+                  <div key={r.id} className="flex items-center gap-3 text-sm rounded border border-amber-200 bg-white p-2">
+                    <div className="flex-1">
+                      <div className="font-medium">
+                        {r.from_staff_name} → <span className="text-sky-700">{r.target_staff_name}</span>
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {r.shift_date} • {r.shift_type}
+                        {r.reason && ` • Sebep: ${r.reason}`}
+                      </div>
                     </div>
-                    <div className="text-xs text-slate-500">
-                      {r.shift_date} • {r.shift_type}
-                      {r.reason && ` • Sebep: ${r.reason}`}
-                    </div>
+                    <StatusBadge intent={consentApproved ? 'success' : 'warning'}>
+                      {consentApproved ? 'Hedef onayladı' : 'Hedef rızası bekleniyor'}
+                    </StatusBadge>
+                    <Button size="sm" variant="outline" disabled={!consentApproved}
+                      title={consentApproved ? 'Onayla' : 'Hedef personelin rızası alınmadan onaylanamaz'}
+                      onClick={() => decideSwap(r, 'approve')}>
+                      <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" />Onayla
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => decideSwap(r, 'reject')}>
+                      <X className="w-3.5 h-3.5 mr-1 text-rose-600" />Reddet
+                    </Button>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => decideSwap(r, 'approve')}>
-                    <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" />Onayla
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => decideSwap(r, 'reject')}>
-                    <X className="w-3.5 h-3.5 mr-1 text-rose-600" />Reddet
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>

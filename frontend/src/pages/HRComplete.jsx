@@ -98,6 +98,10 @@ const HRComplete = () => {
   const [overtimeItems, setOvertimeItems] = useState([]);
   const [overtimeCounts, setOvertimeCounts] = useState({ pending: 0, approved: 0, rejected: 0 });
 
+  // Kıdem tazminatı tavanı (tenant ayarı)
+  const [severanceCap, setSeveranceCap] = useState(null);
+  const [savingSeverance, setSavingSeverance] = useState(false);
+
   // Recruitment / Personel Talebi
   const [jobItems, setJobItems] = useState([]);
   const [jobForm, setJobForm] = useState({
@@ -174,6 +178,37 @@ const HRComplete = () => {
       console.error('Şablonlar yüklenemedi', e);
     }
   }, []);
+
+  const loadSeveranceCap = useCallback(async () => {
+    try {
+      const res = await axios.get('/hr/settings/severance-cap');
+      setSeveranceCap(res.data || null);
+    } catch { /* yetki yoksa sessiz geç */ }
+  }, []);
+
+  const updateSeveranceCap = async () => {
+    const current = severanceCap?.daily_cap || '';
+    const input = await promptDialog({
+      message: 'Yeni günlük kıdem tazminatı tavanı (TL):',
+      defaultValue: String(current),
+    });
+    if (input === null) return;
+    const val = parseFloat(String(input).replace(',', '.'));
+    if (!Number.isFinite(val) || val <= 0) {
+      toast.error('Geçerli bir tutar girin');
+      return;
+    }
+    try {
+      setSavingSeverance(true);
+      await axios.put('/hr/settings/severance-cap', { daily_cap: val });
+      toast.success('Kıdem tavanı güncellendi');
+      loadSeveranceCap();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Güncellenemedi');
+    } finally {
+      setSavingSeverance(false);
+    }
+  };
 
   const loadOvertimeRequests = useCallback(async () => {
     try {
@@ -326,11 +361,11 @@ const HRComplete = () => {
   const loadAll = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([loadStaff(), loadAttendance(), loadLeaves(), loadPerformance(), loadJobs(), loadPerfTemplates(), loadOvertimeRequests()]);
+      await Promise.all([loadStaff(), loadAttendance(), loadLeaves(), loadPerformance(), loadJobs(), loadPerfTemplates(), loadOvertimeRequests(), loadSeveranceCap()]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadStaff, loadAttendance, loadLeaves, loadPerformance, loadJobs, loadPerfTemplates, loadOvertimeRequests]);
+  }, [loadStaff, loadAttendance, loadLeaves, loadPerformance, loadJobs, loadPerfTemplates, loadOvertimeRequests, loadSeveranceCap]);
 
   useEffect(() => {
     loadAll();
@@ -1161,6 +1196,49 @@ const HRComplete = () => {
                 sub="bu yıl" />
               <KpiCard intent="danger" icon={XCircle} label="Reddedilen" value={overtimeCounts.rejected || 0} />
             </div>
+
+            {severanceCap && (
+              <Card className="border-slate-200">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-base">
+                      <Timer className="w-4 h-4" />Kıdem Tazminatı Tavanı (Tenant Ayarı)
+                    </span>
+                    <Button size="sm" variant="outline" onClick={updateSeveranceCap} disabled={savingSeverance}>
+                      {savingSeverance ? 'Kaydediliyor…' : 'Tavanı Güncelle'}
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 md:grid-cols-3 text-sm">
+                    <div className="rounded border border-slate-200 p-3">
+                      <div className="text-xs text-slate-500">Günlük Brüt Tavan</div>
+                      <div className="text-lg font-semibold mt-1">
+                        ₺{Number(severanceCap.daily_cap || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                      </div>
+                      {severanceCap.is_default && (
+                        <div className="text-[11px] text-amber-600 mt-1">Default değer kullanılıyor</div>
+                      )}
+                    </div>
+                    <div className="rounded border border-slate-200 p-3">
+                      <div className="text-xs text-slate-500">30 Günlük Tavan (yaklaşık)</div>
+                      <div className="text-lg font-semibold mt-1">
+                        ₺{Number(severanceCap.monthly_cap_estimate || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div className="rounded border border-slate-200 p-3">
+                      <div className="text-xs text-slate-500">Son Güncelleme</div>
+                      <div className="text-sm mt-1">
+                        {severanceCap.updated_at ? severanceCap.updated_at.slice(0, 10) : 'Hiç güncellenmemiş'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-3">
+                    {severanceCap.note}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardHeader>

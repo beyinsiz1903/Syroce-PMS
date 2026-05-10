@@ -19,8 +19,14 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
-from core.database import db
+from core.database import _raw_db, db
 from core.security import get_current_user
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+from bson import ObjectId
+
+# GridFS bucket — personel belgeleri için (5MB üstü destek + memory verimi).
+# Eski kayıtlar `data_b64` alanı üzerinden okunmaya devam eder (geriye uyum).
+_hr_docs_bucket = AsyncIOMotorGridFSBucket(_raw_db, bucket_name='staff_docs')
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v96 DW
 
@@ -1922,20 +1928,101 @@ async def create_shift_swap(
         'target_staff_name': target.get('name'),
         'reason': payload.reason,
         'status': 'pending',
+        # Çift onay akışı: önce hedef personelin rızası, sonra İK kararı.
+        'target_consent_status': 'pending',
+        'target_consent_at': None,
+        'target_consent_note': None,
         'requested_by': getattr(current_user, 'id', None),
         'requested_at': datetime.now(UTC).isoformat(),
     }
     await db.shift_swap_requests.insert_one(item)
     item.pop('_id', None)
+    # Hedef personele bildirim — rıza bekleniyor.
+    target_user = await db.users.find_one(
+        {'tenant_id': current_user.tenant_id, 'email': (target.get('email') or '').lower()},
+        {'_id': 0, 'id': 1},
+    ) if target.get('email') else None
+    if target_user and target_user.get('id'):
+        await _notify_user(
+            current_user.tenant_id, user_id=target_user['id'],
+            kind='shift_swap_consent_request',
+            title="Vardiya devralma talebi",
+            body=f"{shift.get('staff_name')} {shift.get('shift_date')} {shift.get('shift_type')} vardiyasını size devretmek istiyor",
+            link="/hr/shifts",
+            ref_id=item['id'],
+        )
     await _notify_hr_managers(
         current_user.tenant_id,
         kind='shift_swap_request',
-        title="Vardiya değişim talebi",
+        title="Vardiya değişim talebi (hedef onayı bekliyor)",
         body=f"{shift.get('staff_name')} → {target.get('name')} ({shift.get('shift_date')} {shift.get('shift_type')})",
         link="/hr/shifts",
         ref_id=item['id'],
     )
     return {'success': True, 'request': item}
+
+
+class ShiftSwapConsentPayload(BaseModel):
+    action: Literal['approve', 'reject']
+    note: str | None = Field(None, max_length=500)
+
+
+@router.post("/hr/shift-swap-request/{req_id}/consent")
+async def consent_shift_swap(
+    req_id: str,
+    payload: ShiftSwapConsentPayload,
+    current_user: User = Depends(get_current_user),
+):
+    """Hedef personelin vardiyayı devralmaya rıza/red bildirmesi."""
+    req = await db.shift_swap_requests.find_one({
+        'tenant_id': current_user.tenant_id, 'id': req_id,
+    })
+    if not req:
+        raise HTTPException(status_code=404, detail="Talep bulunamadı")
+    if req.get('status') != 'pending':
+        raise HTTPException(status_code=400, detail="Talep zaten karara bağlanmış")
+    if req.get('target_consent_status') != 'pending':
+        raise HTTPException(status_code=400, detail="Bu talebe daha önce yanıt verilmiş")
+
+    # Sadece hedef personel rıza verebilir (yöneticiler dahil değil — etik gereği bizzat hedef).
+    target = await db.staff.find_one(
+        {'tenant_id': current_user.tenant_id, 'id': req['target_staff_id']},
+        {'_id': 0, 'email': 1},
+    )
+    user_email = (getattr(current_user, 'email', None) or '').lower()
+    target_email = ((target or {}).get('email') or '').lower()
+    if not user_email or user_email != target_email:
+        raise HTTPException(status_code=403, detail="Bu talep size ait değil — sadece hedef personel yanıtlayabilir")
+
+    new_consent = 'approved' if payload.action == 'approve' else 'rejected'
+    new_status = req.get('status') if new_consent == 'approved' else 'rejected'
+    # Atomik update: target_consent_status hâlâ 'pending' iken yaz; aksi halde başka bir
+    # eşzamanlı çağrı yanıt vermiş demektir (race koruması).
+    res = await db.shift_swap_requests.update_one(
+        {
+            'tenant_id': current_user.tenant_id,
+            'id': req_id,
+            'target_consent_status': 'pending',
+        },
+        {'$set': {
+            'target_consent_status': new_consent,
+            'target_consent_at': datetime.now(UTC).isoformat(),
+            'target_consent_note': payload.note,
+            'status': new_status,
+        }},
+    )
+    if res.modified_count == 0:
+        raise HTTPException(status_code=409, detail="Bu talebe bu sırada başka bir yanıt verildi")
+    # Talep sahibine bildir.
+    if req.get('requested_by'):
+        await _notify_user(
+            current_user.tenant_id, user_id=req['requested_by'],
+            kind=f'shift_swap_consent_{new_consent}',
+            title=f"Hedef personel vardiyayı {('kabul etti' if new_consent == 'approved' else 'reddetti')}",
+            body=f"{req.get('shift_date')} {req.get('shift_type')} — " + (payload.note or ''),
+            ref_id=req_id,
+        )
+    return {'success': True, 'target_consent_status': new_consent, 'status': new_status}
 
 
 @router.get("/hr/shift-swap-requests")
@@ -1966,6 +2053,12 @@ async def decide_shift_swap(
         raise HTTPException(status_code=400, detail="Bu talep zaten karara bağlanmış")
 
     if payload.action == 'approve':
+        # Çift onay gate: hedef personelin rızası alınmadan İK onaylayamaz.
+        if req.get('target_consent_status') != 'approved':
+            raise HTTPException(
+                status_code=409,
+                detail="Hedef personel henüz rıza vermedi — önce rıza beklenmeli",
+            )
         # Atomik swap: shift'i target_staff_id'ye devret
         target = await _verify_staff_in_tenant(req['target_staff_id'], current_user.tenant_id)
         if not target:
@@ -2326,6 +2419,17 @@ async def upload_staff_document(
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="Boş dosya")
 
+    # GridFS'e yaz — büyük dosyalar memory'de tutulmaz, koleksiyon liste sorguları hızlı kalır.
+    gridfs_id = await _hr_docs_bucket.upload_from_stream(
+        file.filename or 'document',
+        content,
+        metadata={
+            'tenant_id': current_user.tenant_id,
+            'staff_id': staff_id,
+            'doc_type': doc_type,
+            'content_type': file.content_type,
+        },
+    )
     item = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -2336,13 +2440,13 @@ async def upload_staff_document(
         'filename': file.filename,
         'content_type': file.content_type,
         'size_bytes': len(content),
-        'data_b64': base64.b64encode(content).decode('ascii'),
+        'gridfs_id': str(gridfs_id),
+        'storage': 'gridfs',
         'uploaded_by': getattr(current_user, 'id', None),
         'uploaded_at': datetime.now(UTC).isoformat(),
     }
     await db.staff_documents.insert_one(item)
-    # Cevapta data_b64 yer almasın (büyük + frontend ayrı GET ile indirir)
-    response = {k: v for k, v in item.items() if k not in ('data_b64', '_id')}
+    response = {k: v for k, v in item.items() if k != '_id'}
     return {'success': True, 'document': response}
 
 
@@ -2354,7 +2458,7 @@ async def list_staff_documents(
 ):
     items = await db.staff_documents.find(
         {'tenant_id': current_user.tenant_id, 'staff_id': staff_id},
-        {'_id': 0, 'data_b64': 0},  # Liste yanıtında binary yok
+        {'_id': 0, 'data_b64': 0},  # Legacy binary alanı liste yanıtında olmasın
     ).sort('uploaded_at', -1).to_list(500)
     return {'items': items, 'total': len(items)}
 
@@ -2370,7 +2474,32 @@ async def download_staff_document(
     })
     if not doc:
         raise HTTPException(status_code=404, detail="Belge bulunamadı")
-    raw = base64.b64decode(doc['data_b64'])
+
+    # GridFS'ten oku; eski (data_b64) kayıtlar için geriye dönük destek.
+    if doc.get('gridfs_id'):
+        try:
+            gridfs_oid = ObjectId(doc['gridfs_id'])
+        except Exception:
+            raise HTTPException(status_code=404, detail="Belge depolamada bulunamadı")
+        # Defense-in-depth: GridFS bucket tenant-aware proxy bypass'lı (_raw_db) olduğundan
+        # metadata.tenant_id'yi tekrar doğrula. Meta kaydı zaten scoped ama belge bütünlüğü
+        # için cross-check yapıyoruz.
+        gf_meta = await _hr_docs_bucket.find({
+            '_id': gridfs_oid,
+            'metadata.tenant_id': current_user.tenant_id,
+        }).to_list(1)
+        if not gf_meta:
+            raise HTTPException(status_code=404, detail="Belge depolamada bulunamadı")
+        try:
+            stream = await _hr_docs_bucket.open_download_stream(gridfs_oid)
+            raw = await stream.read()
+        except Exception:
+            raise HTTPException(status_code=404, detail="Belge depolamada bulunamadı")
+    elif doc.get('data_b64'):
+        raw = base64.b64decode(doc['data_b64'])
+    else:
+        raise HTTPException(status_code=410, detail="Belge içeriği yok")
+
     headers = {
         'Content-Disposition': f'attachment; filename="{doc.get("filename", doc_id)}"',
         'Content-Length': str(len(raw)),
@@ -2388,12 +2517,62 @@ async def delete_staff_document(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),
 ):
-    res = await db.staff_documents.delete_one({
+    doc = await db.staff_documents.find_one({
         'tenant_id': current_user.tenant_id, 'id': doc_id,
     })
-    if res.deleted_count == 0:
+    if not doc:
         raise HTTPException(status_code=404, detail="Belge bulunamadı")
+    # Önce GridFS chunk'larını temizle (varsa); sonra meta kaydını sil.
+    if doc.get('gridfs_id'):
+        try:
+            await _hr_docs_bucket.delete(ObjectId(doc['gridfs_id']))
+        except Exception:
+            pass  # Çoktan silinmiş olabilir — meta silmeyi engellemesin.
+    await db.staff_documents.delete_one({
+        'tenant_id': current_user.tenant_id, 'id': doc_id,
+    })
     return {'success': True}
+
+
+# ============= 6b. Kıdem Tazminatı Tavanı Ayarı =============
+
+class SeveranceCapPayload(BaseModel):
+    daily_cap: float = Field(..., gt=0, le=100000, description="Günlük brüt tavanı TL")
+
+
+@router.get("/hr/settings/severance-cap")
+async def get_severance_cap(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    s = await db.tenant_settings.find_one(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0, 'severance_daily_cap': 1, 'severance_cap_updated_at': 1},
+    ) or {}
+    return {
+        'daily_cap': s.get('severance_daily_cap') or TR_SEVERANCE_DAILY_CAP_DEFAULT,
+        'is_default': not s.get('severance_daily_cap'),
+        'updated_at': s.get('severance_cap_updated_at'),
+        'monthly_cap_estimate': round((s.get('severance_daily_cap') or TR_SEVERANCE_DAILY_CAP_DEFAULT) * 30, 2),
+        'note': "Hazine yarıyıl açıklamasıyla (Ocak/Temmuz) güncellenmeli. Boş bırakılırsa default tavan uygulanır.",
+    }
+
+
+@router.put("/hr/settings/severance-cap")
+async def set_severance_cap(
+    payload: SeveranceCapPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    await db.tenant_settings.update_one(
+        {'tenant_id': current_user.tenant_id},
+        {'$set': {
+            'severance_daily_cap': payload.daily_cap,
+            'severance_cap_updated_at': datetime.now(UTC).isoformat(),
+            'severance_cap_updated_by': getattr(current_user, 'id', None),
+        }},
+        upsert=True,
+    )
+    return {'success': True, 'daily_cap': payload.daily_cap}
 
 
 # ============= 7. Performans Hedef Check-in =============
