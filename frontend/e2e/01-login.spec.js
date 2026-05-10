@@ -26,14 +26,15 @@ test.describe.serial('Login', () => {
 
     test('demo kullanıcı ile login → dashboard', async ({ page, context }) => {
         await loginAsDemo(page);
-        // Layout shell yüklendi mi (sidebar ya da header)
+        // Layout shell yüklendi mi (sidebar ya da header).
+        // ÖNEMLİ: /app/dashboard rotası lazy chunk olduğundan Suspense fallback
+        // sırasında nav DOM'da olmaz. `isVisible()` bekleme yapmaz; bu yüzden
+        // explicit wait kullanıyoruz (CI'da 8s'ye kadar lazy chunk + Layout
+        // hidratasyonu beklenebilir).
         await expect(page.locator('body')).toBeVisible();
-        const hasNav = await page
-            .locator('nav, [role="navigation"], aside')
-            .first()
-            .isVisible()
-            .catch(() => false);
-        expect(hasNav).toBeTruthy();
+        await expect(
+            page.locator('nav, [role="navigation"], aside').first()
+        ).toBeVisible({ timeout: 15_000 });
 
         // Storage state'i kaydet (sonraki spec'ler kullansın)
         fs.mkdirSync(path.dirname(STORAGE_STATE), { recursive: true });
