@@ -294,7 +294,7 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
         // on id/guest_name/room_number). booking_id query param YOK; UUID'yi
         // search ile bul (uuid eşsiz olduğundan tek sonuç döner).
         const r = await api.get(
-            `/api/pms/bookings?search=${encodeURIComponent(bookingId)}&limit=10`
+            `/api/pms/bookings?search=${encodeURIComponent(bookingId)}&include_completed=true&limit=10`
         );
 
         if (!r.ok()) {
@@ -327,19 +327,43 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
         ).toMatch(/checked.?out|departed|completed/);
     });
 
-    test('9) UI smoke: Arrivals sayfası açılır + heading görünür', async ({ page }) => {
+    test('9) UI smoke: Arrivals sayfası açılır + heading görünür', async ({ page, request }) => {
         // 05-checkin-flow.spec.js ile aynı navigasyon pattern'i: önce
         // hash-route (`/#/arrivals`), olmazsa pathname (`/arrivals`).
         // JWT'yi localStorage'a inject et — frontend kodu hem `token` hem
         // `access_token` anahtarlarını kullanıyor; ikisini de yazıyoruz.
+        // App.jsx ek olarak `user`, `tenant`, `token_ts` da bekliyor; bunlar
+        // yoksa <ProtectedRoute> /auth'a redirect edip UI smoke soft-skip'e
+        // düşüyor. /auth/me ile freshUser çekip tüm auth state'i yazıyoruz.
+        let freshUser = null;
+        let tenantData = null;
+        try {
+            const meRes = await request.get(`${API_BASE_URL}/api/auth/me`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (meRes.ok()) {
+                const me = await meRes.json();
+                freshUser = me.user || me;
+                tenantData = me.tenant || freshUser?.tenant || null;
+            }
+        } catch {
+            /* best-effort; soft-skip aşağıda yakalar */
+        }
+
         // Auth sayfasına git ki localStorage origin context'i oluşsun.
         await page.goto('/auth');
         await page.evaluate(
-            ({ tk }) => {
+            ({ tk, user, tenant }) => {
                 localStorage.setItem('token', tk);
                 localStorage.setItem('access_token', tk);
+                localStorage.setItem('token_ts', String(Date.now()));
+                if (user) localStorage.setItem('user', JSON.stringify(user));
+                localStorage.setItem(
+                    'tenant',
+                    tenant ? JSON.stringify(tenant) : 'null'
+                );
             },
-            { tk: token }
+            { tk: token, user: freshUser, tenant: tenantData }
         );
 
         // Hash-route → pathname fallback (mevcut spec konvansiyonu)
