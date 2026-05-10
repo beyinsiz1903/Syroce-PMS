@@ -928,8 +928,20 @@ class EarlyWarningEngine:
             await asyncio.sleep(self._check_interval)
 
     async def _check_all_tenants(self):
-        """Check warnings for all tenants."""
-        tenants = await db.tenants.find({}, {"_id": 0, "id": 1}).to_list(100)
+        """Check warnings for all tenants.
+
+        Sentry PYTHON-FASTAPI-M (TENANT VIOLATION cm_connectors, 388 events):
+        Engine background loop inherits the contextvar of whoever called
+        `engine.start()`. Without per-iteration `tenant_context(tid)`, the
+        downstream `db.cm_connectors.find({tenant_id: <other>})` triggers
+        TenantViolationError because the contextvar is still pinned to the
+        original requester. Wrap each tenant pass + use `get_system_db()`
+        for the cross-tenant tenants list.
+        """
+        from core.tenant_db import get_system_db, tenant_context
+
+        sys_db = get_system_db()
+        tenants = await sys_db.tenants.find({}, {"_id": 0, "id": 1}).to_list(100)
 
         for tenant in tenants:
             tenant_id = tenant.get("id", "")
@@ -937,14 +949,15 @@ class EarlyWarningEngine:
                 continue
 
             try:
-                warnings = await generate_all_warnings(tenant_id)
-                if warnings:
-                    emitted = await emit_warning_events(tenant_id, warnings)
-                    if emitted > 0:
-                        logger.info(
-                            "[EARLY-WARNING] tenant=%s warnings=%d emitted=%d",
-                            tenant_id, len(warnings), emitted
-                        )
+                with tenant_context(tenant_id):
+                    warnings = await generate_all_warnings(tenant_id)
+                    if warnings:
+                        emitted = await emit_warning_events(tenant_id, warnings)
+                        if emitted > 0:
+                            logger.info(
+                                "[EARLY-WARNING] tenant=%s warnings=%d emitted=%d",
+                                tenant_id, len(warnings), emitted
+                            )
             except Exception as exc:
                 logger.warning("[EARLY-WARNING] tenant=%s error: %s", tenant_id, exc)
 

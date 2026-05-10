@@ -27,6 +27,7 @@ from core.utils import (
     create_excel_workbook,
     excel_response,
 )
+from shared_kernel.migration_observability import migration_observability_service
 
 try:
     from infra.logging_service import get_logging_service

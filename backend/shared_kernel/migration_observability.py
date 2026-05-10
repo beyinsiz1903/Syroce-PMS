@@ -725,3 +725,9 @@ class MigrationObservabilityService:
                 "recent_events": recent_shadow_events,
             },
         }
+
+
+# Module-level singleton — used by routers/reports_pkg/flash_email.py
+# (Sentry PYTHON-FASTAPI-3F: NameError 'migration_observability_service'
+# is not defined — 9 events). Class was defined but no instance exposed.
+migration_observability_service = MigrationObservabilityService()
