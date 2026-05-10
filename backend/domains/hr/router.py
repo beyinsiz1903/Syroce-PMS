@@ -1223,8 +1223,145 @@ async def delete_position(
     return {'success': True}
 
 
-# ============= Staff CRUD (PUT/DELETE/profile) =============
-# NOT: POST /hr/staff `domains/pms/misc/hr.py` içinde mevcut.
+# ============= Staff CRUD (POST/GET/PUT/DELETE/profile) =============
+
+def _scrub_encrypted(value):
+    if isinstance(value, str) and value.startswith('aes256gcm:'):
+        return ''
+    return value or ''
+
+
+@router.post("/hr/staff")
+async def add_staff_member(
+    staff_data: dict,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    """Yeni personel ekle.
+
+    Zorunlu: name. Diğer alanlar opsiyonel; UI form akışı eksik bilgiyle
+    de minimum personel kaydı oluşturabilsin diye gevşetildi.
+    Ek finansal alanlar (hourly_rate, monthly_hours, annual_leave_entitlement)
+    payroll ve izin bakiyesi hesaplarında kullanılır.
+    """
+    if not staff_data.get('name'):
+        raise HTTPException(status_code=400, detail="Personel adı zorunludur")
+    staff = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'name': staff_data['name'],
+        'email': staff_data.get('email'),
+        'phone': staff_data.get('phone'),
+        'department': staff_data.get('department'),
+        'position': staff_data.get('position'),
+        'hire_date': staff_data.get('hire_date'),
+        'employment_type': staff_data.get('employment_type', 'full_time'),
+        'hourly_rate': staff_data.get('hourly_rate'),
+        'monthly_hours': staff_data.get('monthly_hours'),
+        'annual_leave_entitlement': staff_data.get('annual_leave_entitlement', 14),
+        'performance_score': 0.0,
+        'active': True,
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.staff_members.insert_one(staff)
+    return {'success': True, 'staff_id': staff['id']}
+
+
+@router.get("/hr/staff")
+async def get_staff_list(
+    department: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    """Personel listesi.
+
+    Önce `staff_members` koleksiyonundan açıkça eklenen kayıtları al; sonra
+    `users` tablosundan staff role'lerini (housekeeping, front_desk,
+    supervisor, finance, sales, admin) türeterek listeyi tamamla.
+    Email bazlı dedup + KVKK için yetki kısıtı + allow-list projection.
+    """
+    tid = current_user.tenant_id
+    role_to_dept = {
+        'housekeeping': 'housekeeping',
+        'front_desk': 'front_desk',
+        'supervisor': 'management',
+        'finance': 'finance',
+        'sales': 'sales',
+        'admin': 'management',
+    }
+
+    explicit_query: dict = {'tenant_id': tid, 'active': True}
+    if department:
+        explicit_query['department'] = department
+    explicit = await db.staff_members.find(explicit_query, {'_id': 0}).to_list(200)
+    seen_emails = {(s.get('email') or '').lower() for s in explicit if s.get('email')}
+
+    user_query: dict = {
+        'tenant_id': tid,
+        'is_active': True,
+        'role': {'$in': list(role_to_dept.keys())},
+    }
+    if department:
+        roles_in_dept = [r for r, d in role_to_dept.items() if d == department or r == department]
+        user_query['role'] = {'$in': roles_in_dept or ['__none__']}
+
+    user_projection = {
+        '_id': 0,
+        'id': 1, 'name': 1, 'email': 1, 'phone': 1,
+        'role': 1, 'created_at': 1,
+    }
+
+    derived: list = []
+    cursor = db.users.find(user_query, user_projection).limit(500)
+    async for u in cursor:
+        email_raw = (u.get('email') or '')
+        em = email_raw.lower()
+        if em and em in seen_emails:
+            continue
+        role = u.get('role')
+        email_clean = _scrub_encrypted(email_raw)
+        phone_clean = _scrub_encrypted(u.get('phone'))
+        derived.append({
+            'id': u.get('id'),
+            'tenant_id': tid,
+            'name': u.get('name') or email_clean or 'Personel',
+            'email': email_clean,
+            'phone': phone_clean,
+            'department': role_to_dept.get(role, role or 'other'),
+            'position': role or 'staff',
+            'hire_date': (u.get('created_at') or '')[:10],
+            'employment_type': 'full_time',
+            'performance_score': 0.0,
+            'active': True,
+            'derived_from': 'users',
+        })
+        if em:
+            seen_emails.add(em)
+
+    combined = explicit + derived
+    return {'staff': combined, 'total': len(combined)}
+
+
+@router.get("/hr/performance/{staff_id}")
+async def get_staff_performance_summary(
+    staff_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Personel performans özeti (son 10 review + ortalama puan)."""
+    reviews = await db.performance_reviews.find({
+        'staff_id': staff_id,
+        'tenant_id': current_user.tenant_id,
+    }, {'_id': 0}).sort('reviewed_at', -1).to_list(10)
+
+    avg_score = sum([r.get('overall_score', 0) for r in reviews]) / len(reviews) if reviews else 0
+
+    return {
+        'staff_id': staff_id,
+        'recent_reviews': reviews,
+        'avg_performance_score': round(avg_score, 2),
+        'total_reviews': len(reviews),
+    }
+
 
 class StaffUpdatePayload(BaseModel):
     name: str | None = Field(None, max_length=200)

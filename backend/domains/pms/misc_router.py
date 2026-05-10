@@ -12,11 +12,10 @@ router = APIRouter(prefix="/api", tags=["PMS / Operations"])
 from .misc.analytics_network import sub_router as _analytics
 from .misc.companies import sub_router as _companies
 from .misc.complaints import sub_router as _complaints
-from .misc.hr import sub_router as _hr
 from .misc.inventory_export import sub_router as _inv
 from .misc.mobile import sub_router as _mobile
 from .misc.payments_folio import sub_router as _payments
 from .misc.properties import sub_router as _props
 
-for _r in (_complaints, _payments, _mobile, _hr, _companies, _inv, _props, _analytics):
+for _r in (_complaints, _payments, _mobile, _companies, _inv, _props, _analytics):
     router.include_router(_r)
