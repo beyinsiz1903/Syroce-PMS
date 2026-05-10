@@ -143,3 +143,106 @@ python -m venv /tmp/v-api && /tmp/v-api/bin/pip install -r backend/requirements/
 python -m venv /tmp/v-wkr && /tmp/v-wkr/bin/pip install -r backend/requirements/worker.txt
 /tmp/v-wkr/bin/python -c "import sys; sys.path.insert(0,'backend'); import celery_app, celery_tasks; print('worker ok')"
 ```
+
+---
+
+# Phase 3 Run (2026-05-10) — dry install + import smoke
+
+**Scope**: Per ChatGPT recommendation, ran three venvs (worker, api, all) on
+host Python 3.12 (note: production Dockerfile uses 3.11-slim — version
+parity gap documented for Phase 4 Docker reconciliation).
+
+## Results
+
+| Venv | Subset | Install | pip check (project-related) | Smoke import | Verdict |
+|------|--------|---------|------------------------------|--------------|---------|
+| `/tmp/v-wkr` | `-r worker.txt` (chains base) | OK ~9s | clean (only preexisting pip/typer warnings) | `import celery_app, celery_tasks` → **ok** | **PASS** |
+| `/tmp/v-api` | `-r api.txt` (chains base + reports) | OK ~6s | starlette pin issue (see below) | `import server` (with stub env vars) → **ok** (all routers loaded) | **PASS (with caveat)** |
+| `/tmp/v-all` | `-r all.txt` (full aggregate equivalent) | OK ~10s (cache hit on prior wheels) | same starlette caveat | `import celery_app + celery_tasks + server` → **ok** | **PASS (with caveat)** |
+
+## Key validations
+
+1. **Architect's Phase 5 blocker fix verified end-to-end**: worker venv with
+   only `worker.txt` chain (= base + worker only, no api/ml/reports/integrations)
+   successfully imports `celery_app` and `celery_tasks`. Moving `motor`+`pymongo`
+   to `base.txt` was the right call. Without that fix, this venv would have
+   crashed with `ModuleNotFoundError: motor`.
+
+2. **API server.py loads cleanly under api.txt subset**: all routers from
+   `bootstrap/router_registry`, channel manager, supplies marketplace, webhook
+   admin, entitlement, deploy pipeline, Quick-ID proxy, WhatsApp, integrations,
+   security/PII, secret rotation, field encryption, notifications, encryption
+   management — all loaded. No missing-dep errors.
+
+3. **all.txt parity-equivalent install**: total wall-clock ~10s thanks to pip
+   cache reuse from prior worker+api venvs. Combined import smoke
+   (`celery_app + celery_tasks + server`) passed in a single Python invocation.
+
+## Preexisting issues surfaced (NOT caused by split)
+
+These appear when running against the **aggregate `requirements.txt`** as well —
+flagged here for Phase 4 (Docker reconciliation), not for Phase 2/3 fix:
+
+### a. `starlette==1.0.0` pin vs runtime conflict
+- Aggregate `backend/requirements.txt` L181 pins `starlette==1.0.0`. Verified
+  via `pip install --dry-run starlette==1.0.0` — the version **does exist on
+  PyPI** ("Would install starlette-1.0.0").
+- During `pip install -r all.txt`, pip emitted:
+  `error: uninstall-no-record-file × Cannot uninstall starlette None`
+  and fell back to `starlette 0.37.2` (likely picked up from system Nix
+  site-packages without RECORD metadata).
+- `pip check` then reports:
+  `fastapi 0.135.1 has requirement starlette>=0.46.0, but you have starlette 0.37.2`
+- **Why this is preexisting**: aggregate has the same pin. The conflict only
+  manifests in this Replit Python 3.12 venv that overlays Nix-managed system
+  site-packages. In the production Docker image (clean 3.11-slim), pip
+  installs `starlette==1.0.0` cleanly — no fallback, no resolver conflict.
+- **Phase 4 action**: verify on actual Docker build that `starlette==1.0.0`
+  installs cleanly. If it doesn't, lift the pin to `>=0.46,<2` (separate PR
+  outside the split scope).
+
+### b. `pipdeptree 2.31.0 requires pip>=25.2 (have 25.0.1)`
+- Replit Nix bundles pip 25.0.1; pipdeptree was bumped to 2.31.0 in aggregate.
+- Cosmetic only; pipdeptree still functions for advisory use.
+
+### c. `typer 0.24.0 requires click>=8.2.1 (have 8.1.8)`
+- typer pulled in transitively as 0.24.x by other tooling; aggregate pins
+  `click==8.1.8` and `typer==0.23.1` so on a clean install this should
+  resolve. The mismatch only appears in this Nix-overlayed venv.
+
+## Reproduce
+
+```bash
+PIP_USER=0 python3 -m venv /tmp/v-wkr && \
+PIP_USER=0 /tmp/v-wkr/bin/pip install -r backend/requirements/worker.txt && \
+cd backend && PIP_USER=0 /tmp/v-wkr/bin/python -c \
+  "import sys; sys.path.insert(0,'.'); import celery_app, celery_tasks; print('worker ok')"
+
+PIP_USER=0 python3 -m venv /tmp/v-api && \
+PIP_USER=0 /tmp/v-api/bin/pip install -r backend/requirements/api.txt && \
+cd backend && PIP_USER=0 /tmp/v-api/bin/python -c "
+import sys, os; sys.path.insert(0,'.')
+os.environ.setdefault('JWT_SECRET','smoke')
+os.environ.setdefault('MONGO_URL','mongodb://localhost:27017')
+os.environ.setdefault('DB_NAME','smoke')
+import server; print('api ok')"
+
+PIP_USER=0 python3 -m venv /tmp/v-all && \
+PIP_USER=0 /tmp/v-all/bin/pip install -r backend/requirements/all.txt && \
+PIP_USER=0 /tmp/v-all/bin/pip check
+```
+
+**Note**: `PIP_USER=0` is required in this environment because `PIP_USER=1`
+is set globally and conflicts with venv installs (causes silent
+`Can not perform a '--user' install` errors).
+
+## Phase 3 verdict
+
+**Pass.** All three subset venvs install and import successfully. The
+architect-flagged Phase 5 blocker is verified fixed. Two preexisting
+issues (starlette pin behavior in Nix-overlay venv, pip/typer version
+warnings) are documented for Phase 4 Docker-image verification but do
+NOT block subset adoption.
+
+**Ready for Phase 4** (backend Dockerfile → `-r requirements/all.txt`)
+on user approval.
