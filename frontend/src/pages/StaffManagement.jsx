@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import {
-  Users, UserPlus, RefreshCw, Search, Pencil, Trash2,
+  Users, UserPlus, RefreshCw, Search, Pencil, UserMinus,
   ExternalLink, Building2, Briefcase, Calendar, Clock, Plus, X,
 } from 'lucide-react';
 
@@ -17,7 +17,7 @@ import {
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { confirmDialog } from '@/lib/dialogs';
+import { confirmDialog, promptDialog } from '@/lib/dialogs';
 
 const EMPTY_STAFF = {
   name: '', email: '', phone: '', department: '', position: '',
@@ -88,14 +88,11 @@ const StaffManagement = () => {
     }).length;
   }, [staff]);
 
-  const openCreate = () => setStaffDialog({ open: true, mode: 'create', form: EMPTY_STAFF, id: null });
+  const openCreate = () => setStaffDialog({ open: true, mode: 'create', form: EMPTY_STAFF, id: null, derived: false });
   const openEdit = (s) => {
-    if (s.derived_from === 'users') {
-      toast.info('Bu personel kullanıcı kaydından türetildi. Düzenlemek için Kullanıcı Yönetimi\'ni kullanın.');
-      return;
-    }
     setStaffDialog({
       open: true, mode: 'edit', id: s.id,
+      derived: s.derived_from === 'users',
       form: {
         name: s.name || '', email: s.email || '', phone: s.phone || '',
         department: s.department || '', position: s.position || '',
@@ -110,12 +107,22 @@ const StaffManagement = () => {
     e.preventDefault();
     const f = staffDialog.form;
     if (!f.name?.trim()) { toast.error('İsim zorunludur'); return; }
-    const payload = {
-      ...f,
-      hourly_rate: f.hourly_rate === '' ? undefined : Number(f.hourly_rate),
-      monthly_hours: f.monthly_hours === '' ? undefined : Number(f.monthly_hours),
-      annual_leave_entitlement: Number(f.annual_leave_entitlement) || 14,
-    };
+    let payload;
+    if (staffDialog.mode === 'edit' && staffDialog.derived) {
+      // Users-derived personel: sadece iletişim alanları gönder
+      payload = {
+        name: f.name,
+        email: f.email || null,
+        phone: f.phone || null,
+      };
+    } else {
+      payload = {
+        ...f,
+        hourly_rate: f.hourly_rate === '' ? undefined : Number(f.hourly_rate),
+        monthly_hours: f.monthly_hours === '' ? undefined : Number(f.monthly_hours),
+        annual_leave_entitlement: Number(f.annual_leave_entitlement) || 14,
+      };
+    }
     try {
       setSavingStaff(true);
       if (staffDialog.mode === 'create') {
@@ -123,9 +130,9 @@ const StaffManagement = () => {
         toast.success('Personel eklendi');
       } else {
         await axios.put(`/hr/staff/${staffDialog.id}`, payload);
-        toast.success('Personel güncellendi');
+        toast.success('İletişim bilgileri güncellendi');
       }
-      setStaffDialog({ open: false, mode: 'create', form: EMPTY_STAFF, id: null });
+      setStaffDialog({ open: false, mode: 'create', form: EMPTY_STAFF, id: null, derived: false });
       loadAll();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Kaydedilemedi');
@@ -134,18 +141,33 @@ const StaffManagement = () => {
     }
   };
 
-  const deleteStaff = async (s) => {
-    if (s.derived_from === 'users') {
-      toast.info('Türetilmiş personel silinemez. Kullanıcıyı pasifleştirin.');
+  const offboardStaff = async (s) => {
+    // Personel ASLA silinmez. "Ayrılış" = pasifleştirme; bordro/devam/izin
+    // kayıtları korunur, sadece aktif listeden çıkar. Yanlışlıkla tıklamayı
+    // önlemek için ad-yazarak onay iste.
+    const expected = (s.name || '').trim();
+    const typed = await promptDialog({
+      title: 'İşten Ayrılış Kaydı',
+      message:
+        `"${expected}" personeli için ayrılış işlemi yapılacak.\n\n`
+        + 'Personel sistemden silinmez — bordro, devam ve izin geçmişi korunur, '
+        + 'sadece aktif listeden çıkar.\n\n'
+        + 'Onaylamak için personelin tam adını aşağıya yazın:',
+      placeholder: expected,
+      confirmText: 'Ayrılışı Onayla',
+      cancelText: 'Vazgeç',
+    });
+    if (typed === null) return; // iptal
+    if ((typed || '').trim().toLocaleLowerCase('tr-TR') !== expected.toLocaleLowerCase('tr-TR')) {
+      toast.error('Ad eşleşmedi. Ayrılış iptal edildi.');
       return;
     }
-    if (!await confirmDialog({ message: `${s.name} adlı personel pasifleştirilecek. Devam edilsin mi?` })) return;
     try {
       await axios.delete(`/hr/staff/${s.id}`);
-      toast.success('Personel pasifleştirildi');
+      toast.success(`${expected} ayrılış olarak işaretlendi (kayıtlar korundu)`);
       loadAll();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Silinemedi');
+      toast.error(err.response?.data?.detail || 'Ayrılış işlenemedi');
     }
   };
 
@@ -298,13 +320,24 @@ const StaffManagement = () => {
                         <Button size="sm" variant="ghost" onClick={() => navigate(`/staff/${s.id}`)} title="Profil">
                           <ExternalLink className="w-3.5 h-3.5" />
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(s)} title="Düzenle"
-                          disabled={s.derived_from === 'users'}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => openEdit(s)}
+                          title={s.derived_from === 'users'
+                            ? 'İletişim bilgilerini düzenle (rol/departman için Kullanıcı Yönetimi)'
+                            : 'Düzenle'}
+                        >
                           <Pencil className="w-3.5 h-3.5" />
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => deleteStaff(s)} title="Pasifleştir"
-                          disabled={s.derived_from === 'users'}>
-                          <Trash2 className="w-3.5 h-3.5" />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => offboardStaff(s)}
+                          title="İşten Ayrılış (silmez, pasifleştirir)"
+                          className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                        >
+                          <UserMinus className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </td>
@@ -334,8 +367,20 @@ const StaffManagement = () => {
       <Dialog open={staffDialog.open} onOpenChange={(o) => !o && setStaffDialog({ ...staffDialog, open: false })}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{staffDialog.mode === 'create' ? 'Yeni Personel Ekle' : 'Personeli Düzenle'}</DialogTitle>
+            <DialogTitle>
+              {staffDialog.mode === 'create'
+                ? 'Yeni Personel Ekle'
+                : staffDialog.derived
+                  ? 'İletişim Bilgilerini Düzenle'
+                  : 'Personeli Düzenle'}
+            </DialogTitle>
           </DialogHeader>
+          {staffDialog.mode === 'edit' && staffDialog.derived && (
+            <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+              Bu personel kullanıcı kaydından türetildi. Yalnızca <b>isim, e-posta, telefon</b> buradan
+              güncellenebilir; rol, departman ve maaş gibi alanlar için <b>Kullanıcı Yönetimi</b>'ni kullanın.
+            </div>
+          )}
           <form onSubmit={submitStaff} className="grid gap-3 md:grid-cols-2">
             <div className="md:col-span-2">
               <Label className="text-xs">Ad Soyad *</Label>
@@ -356,8 +401,9 @@ const StaffManagement = () => {
               <Label className="text-xs">Departman</Label>
               <select
                 value={staffDialog.form.department}
+                disabled={staffDialog.mode === 'edit' && staffDialog.derived}
                 onChange={(e) => setStaffDialog({ ...staffDialog, form: { ...staffDialog.form, department: e.target.value } })}
-                className="w-full rounded-md border border-input px-3 py-2 text-sm"
+                className="w-full rounded-md border border-input px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="">— Seçin —</option>
                 {departments.map((d) => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
@@ -375,6 +421,7 @@ const StaffManagement = () => {
             <div>
               <Label className="text-xs">Pozisyon</Label>
               <Input list="positions-list" value={staffDialog.form.position}
+                disabled={staffDialog.mode === 'edit' && staffDialog.derived}
                 onChange={(e) => setStaffDialog({ ...staffDialog, form: { ...staffDialog.form, position: e.target.value } })} />
               <datalist id="positions-list">
                 {positions.map((p) => <option key={p.id} value={p.title} />)}
@@ -383,14 +430,16 @@ const StaffManagement = () => {
             <div>
               <Label className="text-xs">İşe Giriş</Label>
               <Input type="date" value={staffDialog.form.hire_date}
+                disabled={staffDialog.mode === 'edit' && staffDialog.derived}
                 onChange={(e) => setStaffDialog({ ...staffDialog, form: { ...staffDialog.form, hire_date: e.target.value } })} />
             </div>
             <div>
               <Label className="text-xs">Çalışma Şekli</Label>
               <select
                 value={staffDialog.form.employment_type}
+                disabled={staffDialog.mode === 'edit' && staffDialog.derived}
                 onChange={(e) => setStaffDialog({ ...staffDialog, form: { ...staffDialog.form, employment_type: e.target.value } })}
-                className="w-full rounded-md border border-input px-3 py-2 text-sm"
+                className="w-full rounded-md border border-input px-3 py-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="full_time">Tam Zamanlı</option>
                 <option value="part_time">Yarı Zamanlı</option>
@@ -403,17 +452,20 @@ const StaffManagement = () => {
               <Label className="text-xs">Saatlik Ücret (TRY, brüt)</Label>
               <Input type="number" step="0.01" min="0" value={staffDialog.form.hourly_rate}
                 placeholder="boş bırakırsanız 140 (asgari)"
+                disabled={staffDialog.mode === 'edit' && staffDialog.derived}
                 onChange={(e) => setStaffDialog({ ...staffDialog, form: { ...staffDialog.form, hourly_rate: e.target.value } })} />
             </div>
             <div>
               <Label className="text-xs">Aylık Standart Saat</Label>
               <Input type="number" step="1" min="0" value={staffDialog.form.monthly_hours}
                 placeholder="varsayılan 195"
+                disabled={staffDialog.mode === 'edit' && staffDialog.derived}
                 onChange={(e) => setStaffDialog({ ...staffDialog, form: { ...staffDialog.form, monthly_hours: e.target.value } })} />
             </div>
             <div>
               <Label className="text-xs">Yıllık İzin Hakkı (gün)</Label>
               <Input type="number" min="0" max="365" value={staffDialog.form.annual_leave_entitlement}
+                disabled={staffDialog.mode === 'edit' && staffDialog.derived}
                 onChange={(e) => setStaffDialog({ ...staffDialog, form: { ...staffDialog.form, annual_leave_entitlement: e.target.value } })} />
             </div>
             <DialogFooter className="md:col-span-2">

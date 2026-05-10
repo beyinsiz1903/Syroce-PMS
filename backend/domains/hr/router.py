@@ -1385,26 +1385,51 @@ async def update_staff_member(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),
 ):
+    """Personel güncelle.
+
+    HR-managed (`staff_members`): tüm alanlar güncellenebilir.
+    Users-derived (kullanıcı kaydından türetilmiş): sadece **iletişim**
+    alanları (email/phone/name) güncellenebilir; rol/departman/maaş gibi
+    alanlar Kullanıcı Yönetimi üzerinden değiştirilir.
+    """
     existing = await db.staff_members.find_one(
         {'tenant_id': current_user.tenant_id, 'id': staff_id}
     )
-    if not existing:
-        raise HTTPException(
-            status_code=404,
-            detail="Personel bulunamadı (yalnızca HR-managed personel düzenlenebilir)"
+    if existing:
+        update = {
+            k: v for k, v in payload.model_dump(exclude_unset=True).items()
+            if v is not None
+        }
+        if not update:
+            return {'success': True, 'updated_fields': 0}
+        update['updated_at'] = datetime.now(UTC).isoformat()
+        await db.staff_members.update_one(
+            {'tenant_id': current_user.tenant_id, 'id': staff_id},
+            {'$set': update}
         )
-    update = {
-        k: v for k, v in payload.model_dump(exclude_unset=True).items()
-        if v is not None
-    }
-    if not update:
-        return {'success': True, 'updated_fields': 0}
-    update['updated_at'] = datetime.now(UTC).isoformat()
-    await db.staff_members.update_one(
-        {'tenant_id': current_user.tenant_id, 'id': staff_id},
-        {'$set': update}
+        return {'success': True, 'updated_fields': len(update) - 1, 'source': 'staff'}
+
+    # Users-derived path — sadece iletişim alanları
+    user = await db.users.find_one(
+        {'tenant_id': current_user.tenant_id, 'id': staff_id, 'is_active': True},
+        {'_id': 0, 'id': 1}
     )
-    return {'success': True, 'updated_fields': len(update) - 1}
+    if not user:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+
+    raw = payload.model_dump(exclude_unset=True)
+    allowed = {k: v for k, v in raw.items() if k in {'name', 'email', 'phone'} and v is not None}
+    if not allowed:
+        raise HTTPException(
+            status_code=400,
+            detail="Türetilmiş personel için yalnızca isim, e-posta ve telefon güncellenebilir."
+        )
+    allowed['updated_at'] = datetime.now(UTC).isoformat()
+    await db.users.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': staff_id},
+        {'$set': allowed}
+    )
+    return {'success': True, 'updated_fields': len(allowed) - 1, 'source': 'users'}
 
 
 @router.delete("/hr/staff/{staff_id}")
@@ -1413,17 +1438,34 @@ async def delete_staff_member(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),
 ):
-    """Soft delete (active=False)."""
+    """İşten ayrılış (soft deactivate). Personel ASLA hard-delete edilmez —
+    bordro / devam / izin geçmişi korunur, listeden çıkar.
+
+    HR-managed: `staff_members.active=False`.
+    Users-derived: `users.is_active=False`.
+    """
+    now_iso = datetime.now(UTC).isoformat()
     res = await db.staff_members.update_one(
         {'tenant_id': current_user.tenant_id, 'id': staff_id},
         {'$set': {
             'active': False,
-            'deactivated_at': datetime.now(UTC).isoformat(),
+            'deactivated_at': now_iso,
         }}
     )
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Personel bulunamadı")
-    return {'success': True}
+    if res.matched_count > 0:
+        return {'success': True, 'source': 'staff', 'deactivated_at': now_iso}
+
+    # Users-derived ayrılış
+    res2 = await db.users.update_one(
+        {'tenant_id': current_user.tenant_id, 'id': staff_id, 'is_active': True},
+        {'$set': {
+            'is_active': False,
+            'deactivated_at': now_iso,
+        }}
+    )
+    if res2.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı veya zaten ayrılmış")
+    return {'success': True, 'source': 'users', 'deactivated_at': now_iso}
 
 
 @router.get("/hr/staff/{staff_id}/profile")
