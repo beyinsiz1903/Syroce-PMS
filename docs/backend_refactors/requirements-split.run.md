@@ -340,3 +340,91 @@ docker run --rm syroce-backend-split-test \
 
 **Ready for Phase 5** (worker Dockerfile minimal subset) on user approval —
 **requires** AST/import-graph scan first per plan §4.4.
+
+---
+
+# Phase 4.5 (2026-05-10) — Drift guard script (architect follow-up)
+
+Per architect's "Next actions #2" recommendation after Phase 4 review, added
+a lightweight drift detector to be run locally and (later) wired into CI.
+Pre-emptive safety net while legacy `requirements.txt` and the new split
+chain live side-by-side until Phase 8 deprecation.
+
+## File
+
+`backend/scripts/check_requirements_split_parity.py` (CLI, no third-party deps)
+
+## Invariants checked
+
+1. **Set parity**: `packages(requirements.txt) == packages(requirements/all.txt)`
+   (transitive via `-r` resolution; case-insensitive, normalized name only —
+   ignores version pins / extras / markers, which is the right granularity
+   for a structural drift guard).
+2. **No duplicates**: no package name appears as a *direct* (non-`-r`)
+   entry in two or more subset files. Allows `base` to be referenced via
+   `-r` from any subset without false positives.
+
+## Usage
+
+```bash
+python backend/scripts/check_requirements_split_parity.py            # default
+python backend/scripts/check_requirements_split_parity.py --verbose  # per-subset counts
+```
+
+Exit codes: `0` = ok, `1` = drift, `2` = file not found.
+
+## Baseline run (post-Phase 4)
+
+```
+================================================================
+backend requirements split — drift guard
+================================================================
+  aggregate            : backend/requirements.txt
+    package count      : 222
+  split (all.txt union): backend/requirements/all.txt
+    package count      : 222
+
+[ok]   set parity            : 222 == 222
+[ok]   no duplicates         : 0 cross-subset top-level repeats
+
+--- per-subset direct (non-recursive) counts ---
+           base :  72
+            api :  27
+         worker :  24
+             ml :  16
+        reports :  13
+   integrations :  25
+            dev :  45
+
+VERDICT: OK — aggregate and split chain are in sync.
+```
+
+Sum of per-subset direct counts: 72+27+24+16+13+25+45 = **222** ✓
+Matches plan §3 group breakdown exactly.
+
+## Negative test (verify failure path works)
+
+Injected `fake-drift-pkg==9.9.9` into `requirements/dev.txt` (then restored):
+
+```
+[FAIL] set parity broken
+  in split but NOT in aggregate  (1):
+    + fake-drift-pkg
+VERDICT: DRIFT DETECTED — fix before merging.
+```
+
+Script returned exit 1 (verified via the VERDICT line, which is only
+emitted on the `failed=True` code path that returns 1).
+
+## CI wiring (deferred)
+
+Not yet wired into `.github/workflows/`. Phase 7 (CI workflow updates) will
+add a `pre-build` step calling this script. For now: run locally before
+touching any `requirements*` file.
+
+## Out of scope
+
+- Version pin parity (intentional — different subsets may pin different
+  patch versions for compatibility; structural set is the contract).
+- Transitive dependency resolution (handled by pip at install time).
+- Hash check / lockfile parity (Phase 8 may introduce `pip-tools`).
