@@ -1718,8 +1718,13 @@ async def delete_performance_template(
 
 # TR İş Kanunu m.41/3: yıllık fazla mesai üst sınırı 270 saat.
 TR_ANNUAL_OVERTIME_CAP_HOURS = 270
-# m.14 / m.17: kıdem tazminatı = 30 günlük brüt × tam yıl (taban tavanı yok burada).
+# m.14 / m.17: kıdem tazminatı = 30 günlük brüt × tam yıl. Yasal tavan
+# (kıdem tazminatı tavanı) günlük üst sınır olarak uygulanır — 2026 yarıyıl
+# için yaklaşık 53.919,68 TL/aylık (1.797,32 TL/gün). Tenant override için
+# settings.severance_daily_cap kullanılabilir.
 SEVERANCE_DAYS_PER_YEAR = 30
+TR_SEVERANCE_DAILY_CAP_DEFAULT = 1797.32  # 2026 H1 — günlük brüt tavanı
+HR_ELEVATED_ROLES = {'admin', 'owner', 'supervisor', 'manager', 'hr', 'finance'}
 # Belge boyut sınırı (MongoDB document ~16MB üst sınırı; güvenli marj).
 DOC_MAX_BYTES = 5 * 1024 * 1024
 
@@ -1760,6 +1765,12 @@ async def create_overtime_request(
     staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    # Self-service guard: yetkisi olmayan kullanıcı sadece kendi adına talep açabilir.
+    if getattr(current_user, 'role', None) not in HR_ELEVATED_ROLES:
+        user_email = (getattr(current_user, 'email', None) or '').lower()
+        staff_email = (staff.get('email') or '').lower()
+        if not user_email or user_email != staff_email:
+            raise HTTPException(status_code=403, detail="Sadece kendi adınıza talep açabilirsiniz")
     item = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -1889,6 +1900,16 @@ async def create_shift_swap(
         raise HTTPException(status_code=404, detail="Hedef personel bulunamadı")
     if shift['staff_id'] == payload.target_staff_id:
         raise HTTPException(status_code=400, detail="Hedef personel mevcut sahibinin aynısı olamaz")
+    # Self-service guard: yetkisiz kullanıcı sadece kendi vardiyasını değişime sunabilir.
+    if getattr(current_user, 'role', None) not in HR_ELEVATED_ROLES:
+        user_email = (getattr(current_user, 'email', None) or '').lower()
+        owner = await db.staff.find_one(
+            {'tenant_id': current_user.tenant_id, 'id': shift['staff_id']},
+            {'_id': 0, 'email': 1},
+        )
+        owner_email = ((owner or {}).get('email') or '').lower()
+        if not user_email or user_email != owner_email:
+            raise HTTPException(status_code=403, detail="Sadece kendi vardiyanızı değişime sunabilirsiniz")
     item = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -2065,11 +2086,18 @@ class TerminationPayload(BaseModel):
     eligible_for_rehire: bool = True
 
 
-def _calc_severance_tr(hire_date_str: str | None, last_day_str: str, monthly_gross: float) -> dict:
+def _calc_severance_tr(
+    hire_date_str: str | None,
+    last_day_str: str,
+    monthly_gross: float,
+    daily_cap: float | None = None,
+) -> dict:
     """Türk İş K. m.14: kıdem tazminatı = 30 günlük brüt × tam yıl + orantılı.
 
-    Bu fonksiyon bilgilendirme amaçlı — yasal tavan (asgari ücret tavanı)
-    ve kıdem dışı bileşenler (ihbar, izin alacağı) ayrı hesaplanır.
+    `daily_cap` parametresi yasal tavanı (2026 H1 için ~1.797,32 TL/gün)
+    uygular. Çalışanın günlük brüt ücreti tavanı aşıyorsa hesap tavandan
+    yapılır. Bu sayede yüksek maaşlı pozisyonlarda şişirilmiş tazminat
+    çıkmaz. İhbar tazminatı + birikmiş izin alacağı ayrı hesaplanır.
     """
     if not hire_date_str:
         return {'years_of_service': 0, 'severance_amount': 0, 'note': 'İşe başlama tarihi yok'}
@@ -2086,13 +2114,22 @@ def _calc_severance_tr(hire_date_str: str | None, last_day_str: str, monthly_gro
             'note': '1 yıldan az kıdem — kıdem tazminatına hak kazanılmaz',
         }
     years = days / 365.0
-    daily_gross = monthly_gross / 30.0
+    raw_daily = monthly_gross / 30.0
+    cap = daily_cap if (daily_cap is not None and daily_cap > 0) else TR_SEVERANCE_DAILY_CAP_DEFAULT
+    capped = raw_daily > cap
+    daily_gross = min(raw_daily, cap)
     severance = round(years * SEVERANCE_DAYS_PER_YEAR * daily_gross, 2)
+    note = f'{years:.2f} yıl × 30 gün × {daily_gross:.2f} TL/gün'
+    if capped:
+        note += f' (yasal tavan uygulandı; ham günlük: {raw_daily:.2f} TL)'
     return {
         'years_of_service': round(years, 2),
         'daily_gross': round(daily_gross, 2),
+        'raw_daily_gross': round(raw_daily, 2),
+        'daily_cap_applied': capped,
+        'daily_cap': round(cap, 2),
         'severance_amount': severance,
-        'note': f'{years:.2f} yıl × 30 gün × {daily_gross:.2f} TL/gün',
+        'note': note,
     }
 
 
@@ -2113,7 +2150,14 @@ async def terminate_staff(
     hourly_rate = float(staff.get('hourly_rate') or TR_DEFAULT_HOURLY_RATE)
     monthly_gross = monthly_hours * hourly_rate
 
-    severance_calc = _calc_severance_tr(staff.get('hire_date'), payload.last_day, monthly_gross)
+    # Tenant'a özel kıdem tavan override'ı (settings.severance_daily_cap) — yoksa default.
+    tenant_settings = await db.tenant_settings.find_one(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0, 'severance_daily_cap': 1},
+    ) or {}
+    severance_calc = _calc_severance_tr(
+        staff.get('hire_date'), payload.last_day, monthly_gross,
+        daily_cap=tenant_settings.get('severance_daily_cap'),
+    )
     final_severance = (
         payload.severance_override
         if payload.severance_override is not None

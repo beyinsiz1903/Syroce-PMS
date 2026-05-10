@@ -10,7 +10,7 @@ import {
   Timer, Check, X,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { promptDialog } from '@/lib/dialogs';
+import { promptDialog, confirmDialog } from '@/lib/dialogs';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -200,7 +200,18 @@ const HRComplete = () => {
     }
   };
 
-  const onTemplateChange = (tplId) => {
+  const onTemplateChange = async (tplId) => {
+    // Daha önce girilmiş skor varsa kullanıcıya kayıp uyarısı göster.
+    const hasScores = Object.values(perfForm.competency_scores || {})
+      .some((v) => typeof v === 'number' && v > 0);
+    if (hasScores) {
+      const ok = await confirmDialog({
+        title: 'Şablonu değiştir?',
+        description: 'Mevcut yetkinlik puanlarınız sıfırlanacak. Devam edilsin mi?',
+        confirmText: 'Devam et', cancelText: 'Vazgeç',
+      });
+      if (!ok) return;
+    }
     const tpl = perfTemplates.find((t) => t.id === tplId);
     const competency_scores = {};
     if (tpl?.competencies) {

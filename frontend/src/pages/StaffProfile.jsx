@@ -58,9 +58,11 @@ const StaffProfile = () => {
   const [data, setData] = useState(null);
 
   // Section states
-  const [certs, setCerts] = useState({ items: [], active: 0, expired: 0 });
+  const [certs, setCerts] = useState({ items: [], active: 0, expired: 0, error: null });
   const [docs, setDocs] = useState([]);
+  const [docsError, setDocsError] = useState(null);
   const [salaryHistory, setSalaryHistory] = useState([]);
+  const [salaryError, setSalaryError] = useState(null);
   const [termination, setTermination] = useState(null);
 
   // Dialogs
@@ -89,29 +91,43 @@ const StaffProfile = () => {
   const loadCerts = useCallback(async () => {
     try {
       const r = await axios.get(`/hr/staff/${id}/certifications`);
-      setCerts({ items: r.data.items || [], active: r.data.active || 0, expired: r.data.expired || 0 });
-    } catch (err) { /* sessizce geç */ }
+      setCerts({ items: r.data.items || [], active: r.data.active || 0, expired: r.data.expired || 0, error: null });
+    } catch (err) {
+      setCerts((s) => ({ ...s, error: err?.response?.data?.detail || 'Sertifikalar yüklenemedi' }));
+    }
   }, [id]);
 
   const loadDocs = useCallback(async () => {
     try {
       const r = await axios.get(`/hr/staff/${id}/documents`);
       setDocs(r.data.items || []);
-    } catch (err) { /* sessizce geç */ }
+      setDocsError(null);
+    } catch (err) {
+      setDocsError(err?.response?.data?.detail || 'Belgeler yüklenemedi');
+    }
   }, [id]);
 
   const loadSalary = useCallback(async () => {
     try {
       const r = await axios.get(`/hr/staff/${id}/salary-history`);
       setSalaryHistory(r.data.items || []);
-    } catch (err) { /* sessizce geç */ }
+      setSalaryError(null);
+    } catch (err) {
+      setSalaryError(err?.response?.data?.detail || 'Maaş geçmişi yüklenemedi');
+    }
   }, [id]);
 
   const loadTermination = useCallback(async () => {
     try {
       const r = await axios.get(`/hr/staff/${id}/termination`);
       setTermination(r.data.record || null);
-    } catch (err) { setTermination(null); }
+    } catch (err) {
+      // 404 beklenen — aktif personelde ayrılış kaydı olmayabilir
+      if (err?.response?.status !== 404) {
+        toast.error(err?.response?.data?.detail || 'Ayrılış bilgisi yüklenemedi');
+      }
+      setTermination(null);
+    }
   }, [id]);
 
   useEffect(() => {
@@ -604,6 +620,11 @@ const StaffProfile = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {certs.error && (
+                <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {certs.error} <button onClick={loadCerts} className="underline ml-2">Tekrar dene</button>
+                </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead><tr className="text-left text-slate-500 border-b">
@@ -661,6 +682,11 @@ const StaffProfile = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {docsError && (
+                <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {docsError} <button onClick={loadDocs} className="underline ml-2">Tekrar dene</button>
+                </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead><tr className="text-left text-slate-500 border-b">
@@ -709,6 +735,11 @@ const StaffProfile = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {salaryError && (
+                <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {salaryError} <button onClick={loadSalary} className="underline ml-2">Tekrar dene</button>
+                </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead><tr className="text-left text-slate-500 border-b">
