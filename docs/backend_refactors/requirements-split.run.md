@@ -428,3 +428,150 @@ touching any `requirements*` file.
   patch versions for compatibility; structural set is the contract).
 - Transitive dependency resolution (handled by pip at install time).
 - Hash check / lockfile parity (Phase 8 may introduce `pip-tools`).
+
+---
+
+# Phase 4.6 (2026-05-10) — Worker AST/import-graph scan (Phase 5 prerequisite)
+
+Per plan §4.4 and user direction, ran an AST-based static scan to determine
+which third-party packages the Celery worker process actually imports —
+recursively, starting from worker entry points — before slimming the worker
+Docker image.
+
+## File
+
+`backend/scripts/check_worker_import_closure.py` (CLI, pure stdlib + AST)
+
+## Two target modes
+
+| Target | Subset closure | Purpose |
+|--------|----------------|---------|
+| `--target worker` | `worker.txt` (chains base) | Strict minimum |
+| `--target worker-runtime` | `worker.txt + ml.txt + reports.txt + integrations.txt` | Realistic Phase-5 candidate (worker listens on default/ml/analytics/messaging/pipeline/backup queues) |
+
+## Scan v1 (initial — INCORRECT entry points)
+
+Initially included **all** of `backend/workers/*.py` as entry points. Result:
+
+| target | files visited | 3p modules | missing |
+|--------|---------------|------------|---------|
+| worker | 401 | 39 | 17 |
+| worker-runtime | 401 | 39 | 9 |
+
+The 17/9 missing list was dominated by FastAPI/starlette/uvicorn/aiohttp/
+sentry-sdk/python-socketio/strawberry-graphql/prometheus_client/psutil —
+suspiciously high. Investigation revealed:
+
+- `backend/workers/hardening_router.py` is actually a **FastAPI router**
+  (`from fastapi import APIRouter, Depends, HTTPException, Query`) mounted
+  by `server.py`, NOT loaded into the worker process.
+- `celery_app.py` defines no `autodiscover_tasks()` and no `include=` arg,
+  so the worker boots **only** via `celery_app + celery_tasks`.
+- Other `backend/workers/*.py` files (mailing_automation, ari_drift_worker,
+  etc.) are reached only when celery_tasks (or its transitive imports)
+  imports them — they should be discovered by the recursive walk, not as roots.
+
+## Scan v2 (corrected — entry points narrowed to celery_app + celery_tasks)
+
+Same script, now `ENTRY_POINTS = [celery_app.py, celery_tasks.py]`:
+
+| target | files visited | 3p modules | missing | Δ vs v1 |
+|--------|---------------|------------|---------|---------|
+| worker | **103** | **14** | **1** | -298 files, -25 modules, -16 missing |
+| worker-runtime | **103** | **14** | **1** | -298 files, -25 modules, -8 missing |
+
+**The same single missing module in both targets**: `fastapi`.
+
+## v2 covered set (13 modules → 11 unique distributions)
+
+```
+bcrypt          -> bcrypt          motor       -> motor
+bson            -> pymongo         pydantic    -> pydantic
+celery          -> celery          pymongo     -> pymongo
+cryptography    -> cryptography    qrcode      -> qrcode
+dotenv          -> python-dotenv   redis       -> redis
+httpcore        -> httpcore
+httpx           -> httpx
+jwt             -> pyjwt
+```
+
+All 11 are in `base.txt` (motor/pymongo moved there in Phase 2 architect fix;
+celery in worker.txt; rest in base). **The worker.txt subset alone — without
+ml/reports/integrations — covers 13 of 14 imports.**
+
+## The lone fastapi gap — root cause
+
+`celery_tasks.py` L15-25:
+```python
+try:
+    from integrations.booking import BookingAPIClient, ...
+    from models.enums import ChannelType
+except ImportError as e:
+    logger.warning(f"Optional booking integration not available: {e}")
+    BookingAPIClient = None
+    ...
+```
+
+`backend/integrations/booking.py:5` then does
+`from fastapi import APIRouter, Depends, HTTPException` — i.e. the integration
+module is implemented as a hybrid FastAPI router + worker helper class.
+
+**Two interpretations**:
+
+1. **Optimistic**: ImportError is already handled. If fastapi is absent in
+   the worker image, `BookingAPIClient = None` and the booking_push_task /
+   booking_pull_task become no-ops with a warning log — worker still boots.
+2. **Pessimistic**: The branch was meant only for the `models.enums.ChannelType`
+   import, not for fastapi-induced ImportError; the booking integration may
+   actually be needed for the worker's queue contracts.
+
+**Static AST cannot decide between these**. Phase 5 worker boot smoke must
+confirm. If interpretation 1 holds, worker.txt alone is sufficient. If
+interpretation 2 holds, Phase 5 must add fastapi (or refactor booking.py to
+split the FastAPI router from the worker-side client class).
+
+## False positives discovered + fixed during v1→v2
+
+| module | reality |
+|--------|---------|
+| `opentelemetry` | Optional in `bootstrap/observability_init.py` and `infra/cloud_observability.py`, both wrapped in try/except with `"opentelemetry SDK not installed – skipping OTel init"` graceful skip. Not actually required at runtime. v2 doesn't see it (not reached from celery_app/celery_tasks). |
+| `rate_limiter` | Top-level shadow import in `backend/infra/security_checklist.py:135` (`from rate_limiter import RateLimiter  # noqa: F401`), referencing a non-existent top-level module. Other usages are `from domains.channel_manager.ari.rate_limit_service import rate_limiter` (variable, not module). v2 doesn't see it. |
+| `hardening_router` (entry, not import) | FastAPI router mounted by server.py, never loaded by celery worker. v1 false-positive eliminated by entry-point narrowing. |
+| `prometheus_client` (v1) | Underscore form; declared in api.txt as `prometheus_client==0.24.1`. v1 "missing" was a downstream display-side false-positive. |
+| `psutil` (v1) | Declared in `dev.txt` only — would be a real prod gap if reached, but v2 doesn't reach it from worker entry. |
+
+## Implications for Phase 5
+
+| Scenario | Worker image footprint | Confidence |
+|----------|------------------------|------------|
+| **Best case** (fastapi import accidental) | `worker.txt` alone (~11 base + worker delta) | Needs boot smoke |
+| **Pragmatic case** (keep booking working) | `worker.txt + fastapi` only | Needs boot smoke |
+| **Conservative case** (worker-runtime full set) | `worker.txt + ml.txt + reports.txt + integrations.txt` | Lower risk, less savings |
+| **Original aggregate** (today) | Full `requirements.txt` | Zero risk, zero savings |
+
+## Caveats (per user direction, recorded prominently)
+
+> AST scan is not a guarantee. It can miss:
+> - dynamic imports (`importlib.import_module(name_from_var)`)
+> - provider/plugin discovery via setuptools entry_points
+> - Celery `autodiscover_tasks()` targets (none in this codebase, verified)
+> - string-based feature loaders / lazy-loaded plugins
+> - imports gated behind runtime feature flags evaluated at boot
+>
+> A worker boot smoke is therefore STILL required before promoting any
+> Phase 5 worker.txt-only Dockerfile.
+
+The script's output prints this caveat verbatim on every run.
+
+## Out of scope (untouched, per user direction)
+
+- `worker/Dockerfile` — Phase 5 (pending decision on subset choice above)
+- `.github/workflows/*.yml` — Phase 7
+- `backend/requirements.txt` and the split files — no changes needed
+
+## Next decision point (USER)
+
+Pick one of the four scenarios in the table above. Recommendation:
+**Pragmatic case** (`worker.txt + fastapi` line, with boot smoke as gate).
+This gives meaningful image-size reduction while preserving booking integration
+functionality without a refactor.
