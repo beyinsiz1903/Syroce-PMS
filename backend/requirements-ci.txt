@@ -1,3 +1,18 @@
-# CI requirements - references main requirements.txt
-# This avoids duplicate maintenance
+# CI requirements — INTENTIONALLY references the legacy aggregate.
+#
+# Status (Phase 7 of requirements split, May 2026):
+#   The CI test/load/security/e2e jobs in .github/workflows/ci-cd.yml and
+#   frontend-quality.yml install backend deps via `pip install -r
+#   requirements.txt`. These jobs MUST exercise the full surface area —
+#   ML, reports, integrations, dev/test extras — so narrowing to a
+#   per-subset install would break them.
+#
+# Phase 8 will revisit this file:
+#   - If `requirements.txt` is dropped in favour of `requirements/all.txt`,
+#     update this to `-r requirements/all.txt`.
+#   - If CI is re-architected to install only what each test layer needs
+#     (e.g. unit tests use base+api, integration tests add integrations,
+#     ML pipeline tests add ml), this file disappears entirely.
+#
+# Do not delete or modify without coordinating with Phase 8.
 -r requirements.txt

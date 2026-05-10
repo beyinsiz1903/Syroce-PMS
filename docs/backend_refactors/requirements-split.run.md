@@ -693,3 +693,123 @@ If any of (1)-(3) fail, revert the worker Dockerfile RUN line to
 with the missing module(s) added.
 
 **Phase 5 status: COMPLETE in source; gated on first CI build for image-level confirmation.**
+
+---
+
+# Phase 7 (2026-05-10) — CI workflow guards + drift wiring
+
+User selected Phase 7 (CI safety net) before Phase 6 (API image slimming),
+correctly: Phase 6 is riskier, and the safety net should land first.
+
+## Discovery findings (no rsync changes needed)
+
+- `.github/workflows/ci-cd.yml` already has a `backend-lint` job with two
+  pure-stdlib regression guards (`check_orphan_files.py`,
+  `check_import_boundaries.py`). This is the natural home for the new
+  requirements guards (same model: AST/text only, no pip install, fast).
+- `.github/workflows/deploy.yml:76` already does
+  `file: ./worker/Dockerfile` for a real Docker build — i.e. the
+  worker boot smoke ChatGPT requested as a CI gate is **already wired**
+  via the CD pipeline. Phase 5's worker-runtime.txt swap will be
+  exercised on the next deploy automatically; no additional CI step
+  needed.
+- There is **no rsync deploy in the actual CI pipeline**; the only
+  rsync reference is an example in `deploy/DEPLOYMENT_GUIDE.md:65`.
+  ChatGPT's rsync-exclude advice is N/A for this codebase. Documented
+  here so the question doesn't recur.
+- The four other `pip install -r requirements.txt` sites in CI
+  (ci-cd.yml lines 105/209/337, frontend-quality.yml line 74) belong to
+  test/load/security/e2e jobs that **must** exercise the full surface
+  area (ML, reports, integrations, dev/test extras). Narrowing them
+  per-subset is Phase 8 territory; no Phase 7 changes.
+
+## Changes
+
+1. **`.github/workflows/ci-cd.yml`** — `backend-lint` job, two new steps
+   appended after the import boundary guard:
+
+   ```yaml
+   - name: Requirements split parity guard
+     run: python backend/scripts/check_requirements_split_parity.py
+
+   - name: Worker import closure check
+     run: python backend/scripts/check_worker_import_closure.py --target worker-runtime
+   ```
+
+   Comment block above explains why these are pure-stdlib (no pip
+   install needed in this job — `backend-lint` only installs ruff) and
+   the CAVEAT that worker scan is static-only; the authoritative boot
+   smoke remains the deploy.yml worker Docker build.
+
+2. **`backend/requirements-ci.txt`** — header comment promoted from
+   2-line note to a 17-line policy block. States explicitly:
+   - The CI test/load/security/e2e jobs need the full aggregate.
+   - Phase 8 will revisit (either point at `requirements/all.txt` or
+     re-architect CI per-layer subsets).
+   - Do not delete or modify without coordinating with Phase 8.
+
+   No functional change — still resolves to `-r requirements.txt`.
+
+## Verification
+
+| Check | Result |
+|-------|--------|
+| `python -c "import yaml; yaml.safe_load(open('ci-cd.yml'))"` | OK |
+| New step 1 local: parity guard exit | 0 (222 == 222) |
+| New step 2 local: worker scan exit | 0 (14/14 covered) |
+| Existing step `check_orphan_files.py` exit | 0 (regression-free) |
+| Existing step `check_import_boundaries.py` exit | 0 (regression-free) |
+| Negative test: append `fakepkg==1.0.0` to requirements.txt → parity | exit 1 (correct fail) |
+| Restored requirements.txt cleanly | OK |
+
+## Why no Docker-build job added in ci-cd.yml
+
+ChatGPT's Phase 7 plan §5 suggested adding builder-stage Dockerfile
+build targets to CI. After review, this is unnecessary because:
+
+- `deploy.yml` already builds both `backend/Dockerfile` and
+  `worker/Dockerfile` end-to-end as part of the CD pipeline (line 76).
+- The Phase 4/5 swaps (api side: requirements.txt → requirements/all.txt;
+  worker side: requirements.txt → requirements/worker-runtime.txt) will
+  be exercised on the next CD run with no extra wiring.
+- Adding a redundant builder-stage build to ci-cd.yml on every PR
+  would consume ~3-5 minutes per PR for zero additional safety
+  (deploy.yml already gates the same artefacts, just at merge-to-main
+  time instead of PR time).
+
+If image-build issues slip past deploy.yml, Phase 8 can promote a
+PR-time builder-stage check. For now, the parity + scan guards in
+backend-lint catch the textual drift, and deploy.yml catches the
+runtime build itself.
+
+## Out of scope (untouched, verified `git diff` empty)
+
+- `backend/Dockerfile` — Phase 4
+- `worker/Dockerfile` — Phase 5
+- `backend/requirements/*.txt` — no changes
+- `backend/scripts/check_*.py` — no changes (script logic stable since
+  Phase 4.5 / 4.6 / 5)
+- `.github/workflows/deploy.yml` — already builds the right Dockerfiles
+- `.github/workflows/frontend-quality.yml` — full aggregate intentional
+- `.github/workflows/ci-cd.yml` test/load/security jobs — full
+  aggregate intentional (Phase 8 may reconsider)
+- `deploy/DEPLOYMENT_GUIDE.md` — rsync example is documentation only
+
+## Replit workflow continuity
+
+Zero local impact. CI workflows do not run in the Replit dev
+environment. All four dev workflows (Backend API, Mobile Web,
+Quick-ID API, Start application) confirmed running with new logs
+after the edits.
+
+**Phase 7 status: COMPLETE. Drift safety net live on next push.**
+
+## What's left
+
+- **Phase 6** (plan §4.5): backend/Dockerfile aggregate → smaller
+  api-side subset (e.g. `requirements/api.txt` + `reports.txt`),
+  skipping ML / dev / integrations. Risk: medium-high. Boot smoke
+  required (uvicorn + a handful of import endpoints).
+- **Phase 8** (plan §4.7): legacy `backend/requirements.txt`
+  deprecation strategy; CI test/load/security job per-layer install
+  evaluation; `requirements-ci.txt` final disposition.
