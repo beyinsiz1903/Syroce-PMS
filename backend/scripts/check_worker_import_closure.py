@@ -17,13 +17,18 @@ Phase 5 worker.txt-only Dockerfile.
 
 Targets (which subset closure to compare against):
 
-    --target worker          : closure of requirements/worker.txt
-                                (worker.txt -r base.txt). Strict minimum.
-    --target worker-runtime  : closure of base + worker + ml + reports
-                                + integrations. Realistic Phase-5 candidate
-                                because the live worker listens on queues
-                                {default, ml, analytics, messaging, pipeline,
-                                backup} which exercise all of those subsets.
+    --target worker               : closure of requirements/worker.txt
+                                     (= base.txt). Strict minimum.
+    --target worker-runtime       : closure of requirements/worker-runtime.txt
+                                     (= worker.txt + fastapi + starlette).
+                                     Phase-5 production worker image (Pragmatic
+                                     case from plan §4.4).
+    --target worker-conservative  : closure of base + worker + ml + reports
+                                     + integrations. Fall-back if Pragmatic
+                                     boot smoke fails — covers all subsets
+                                     the worker queues might transitively
+                                     touch (default/ml/analytics/messaging/
+                                     pipeline/backup).
 
 Exit codes:
     0 : every imported third-party module is covered by the chosen subset
@@ -263,7 +268,8 @@ def build_module_to_dist_map() -> dict[str, str]:
 
 TARGETS: dict[str, list[str]] = {
     "worker": ["worker.txt"],
-    "worker-runtime": ["worker.txt", "ml.txt", "reports.txt", "integrations.txt"],
+    "worker-runtime": ["worker-runtime.txt"],
+    "worker-conservative": ["worker.txt", "ml.txt", "reports.txt", "integrations.txt"],
 }
 
 

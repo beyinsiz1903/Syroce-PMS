@@ -1,0 +1,26 @@
+# worker-runtime.txt — Phase 5 (Pragmatic case) production worker image
+#
+# Per docs/backend_refactors/requirements-split-plan.md §4.4 and the Phase 4.6
+# AST scan run (docs/backend_refactors/requirements-split.run.md), the Celery
+# worker process imports exactly 14 third-party top-level modules, of which
+# 13 are covered by base.txt (transitively via worker.txt). The lone gap is
+# `fastapi`, pulled in via:
+#
+#   celery_tasks.py L17  →  from integrations.booking import BookingAPIClient...
+#                            (try/except ImportError-wrapped)
+#   integrations/booking.py:5  →  from fastapi import APIRouter, Depends, ...
+#
+# integrations/booking.py is implemented as a hybrid FastAPI router + worker
+# helper class. To keep the Booking.com push/pull tasks live (rather than
+# silently no-op'ing to BookingAPIClient = None), the worker image must carry
+# fastapi + starlette.
+#
+# This file deliberately keeps `worker.txt` clean (celery + scheduler + flower
+# core only) and adds web-stack symbols here at the production-image layer.
+# If a future refactor splits booking.py into a router module + a pure-Python
+# client, this file can shrink to `-r worker.txt`.
+
+-r worker.txt
+
+fastapi==0.135.1
+starlette==1.0.0

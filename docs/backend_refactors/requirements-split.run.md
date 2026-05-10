@@ -575,3 +575,121 @@ Pick one of the four scenarios in the table above. Recommendation:
 **Pragmatic case** (`worker.txt + fastapi` line, with boot smoke as gate).
 This gives meaningful image-size reduction while preserving booking integration
 functionality without a refactor.
+
+---
+
+# Phase 5 (2026-05-10) — Worker Dockerfile swap to `worker-runtime.txt`
+
+User selected the Pragmatic case. Per ChatGPT's clean-naming guidance,
+implemented as a dedicated subset file (NOT by polluting `worker.txt`):
+
+## Changes
+
+1. **New file**: `backend/requirements/worker-runtime.txt`
+   ```
+   -r worker.txt
+   fastapi==0.135.1
+   starlette==1.0.0
+   ```
+   Header comment explains the AST-derived rationale. Keeps `worker.txt`
+   pristine (celery + scheduler + flower core only).
+
+2. **`worker/Dockerfile` builder stage**:
+   ```diff
+   -COPY backend/requirements.txt .
+   -RUN pip install ... -r requirements.txt ...
+   +COPY backend/requirements.txt .
+   +COPY backend/requirements/ ./requirements/
+   +RUN pip install ... -r requirements/worker-runtime.txt ...
+   ```
+   All pip flags preserved (`--no-cache-dir --prefix=/install --timeout=300
+   --retries=5`, `--extra-index-url cloudfront mirror`). Build context is
+   repo-root for the worker (not `backend/` like the API Dockerfile), hence
+   `COPY backend/requirements/ ./requirements/`.
+
+3. **`backend/scripts/check_worker_import_closure.py`**: TARGETS map updated:
+   ```python
+   TARGETS = {
+       "worker":              ["worker.txt"],              # strict minimum
+       "worker-runtime":      ["worker-runtime.txt"],      # Pragmatic (NEW: now points to the new file)
+       "worker-conservative": ["worker.txt", "ml.txt",
+                               "reports.txt", "integrations.txt"],  # fall-back
+   }
+   ```
+   The previous `worker-runtime` semantics (`worker+ml+reports+integrations`)
+   were renamed to `worker-conservative` to free the cleaner name for the
+   actual production-worker subset file.
+
+## Verification matrix
+
+| Check | Result |
+|-------|--------|
+| Drift guard (`check_requirements_split_parity.py`) | 222 == 222, 0 duplicates, **OK** |
+| Worker scan `--target worker-runtime` | **14/14 covered, 0 missing, OK** |
+| Worker scan `--target worker` (strict) | 1 missing (fastapi) — as expected |
+| Worker scan `--target worker-conservative` (fall-back) | 1 missing (fastapi) — see note below |
+| Boot smoke: `cd backend && python3 -c "import celery_app, celery_tasks"` | **OK** |
+
+### Note on `worker-conservative` fall-back
+
+The conservative fall-back set (worker + ml + reports + integrations) does
+NOT include fastapi (which lives in api.txt). This was an artifact of v1
+naming — kept here for completeness, but **the realistic fall-back if
+Pragmatic boots fail is `worker-runtime.txt + ml.txt + reports.txt`**, not
+worker-conservative as currently defined. If Phase 5 boot smoke fails, we
+will introduce a `worker-runtime-extended.txt` file rather than rename
+existing targets. Documenting now to avoid future confusion.
+
+## Local boot smoke (passed)
+
+```
+$ cd backend && python3 -c "import celery_app, celery_tasks; print('worker boot smoke OK')"
+worker boot smoke OK — both modules importable in current env
+```
+
+This confirms the AST scan's optimistic interpretation **at the import-graph
+level in the Replit dev environment**. The full Docker container boot smoke
+(`docker run --rm syroce-worker celery -A celery_app inspect ping`) cannot
+run here (no daemon) and remains a CI gate.
+
+## Replit workflow continuity
+
+There is no `worker` workflow in this Replit dev environment (only Backend
+API, Mobile Web, Quick-ID API, Start application — all started via
+shell scripts, not the worker Dockerfile). The worker Dockerfile change
+therefore has zero local runtime impact. All 4 dev workflows confirmed
+running with new logs after the edit.
+
+## Image-size implication (estimate)
+
+Cannot measure without a build. Rough estimate from package metadata:
+- `worker-runtime.txt` resolves to ~98 distributions
+- `requirements.txt` (aggregate) resolves to 222 distributions
+- Skipped packages include the heavy ML stack (numpy, pandas, scikit-learn,
+  xgboost, transformers, torch via litellm dependencies — though the
+  litellm `--no-deps` override is API-side only), report stack (weasyprint,
+  reportlab, openpyxl), and integrations (boto3, hubspot, slack-sdk, etc).
+- Conservative estimate: ~50-60% smaller worker image once Phase 5 ships.
+
+Actual measurement deferred to first CI build.
+
+## Out of scope (untouched, verified `git diff` empty)
+
+- `backend/Dockerfile` — already migrated in Phase 4
+- `.github/workflows/*.yml` — Phase 7
+- `backend/requirements.txt` (legacy aggregate) — Phase 8
+- `backend/requirements-ci.txt` — out of scope
+
+## CI follow-up (must verify on first production build)
+
+1. Worker Docker build completes: `docker build -f worker/Dockerfile -t syroce-worker .`
+2. Container can boot: `docker run --rm syroce-worker python -c "import celery_app, celery_tasks"`
+3. Celery can ping: `docker run --rm syroce-worker celery -A celery_app inspect ping --timeout 5`
+4. (Optional) Trigger a synthetic booking_push_task and confirm it runs
+   instead of no-op'ing.
+
+If any of (1)-(3) fail, revert the worker Dockerfile RUN line to
+`-r requirements.txt` and open a follow-up to introduce `worker-runtime-extended.txt`
+with the missing module(s) added.
+
+**Phase 5 status: COMPLETE in source; gated on first CI build for image-level confirmation.**
