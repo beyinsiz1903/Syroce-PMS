@@ -9,20 +9,20 @@ Türk İş Kanunu uyumlu defaultlar (2026):
   - Fazla mesai zammı: %50 (overtime_rate = hourly_rate * 1.5)
   - Para birimi: TRY
 """
+import base64
 import io
 import uuid
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Any, Literal
 
-import base64
+from bson import ObjectId
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, Field, field_validator
 
 from core.database import _raw_db, db
 from core.security import get_current_user
-from motor.motor_asyncio import AsyncIOMotorGridFSBucket
-from bson import ObjectId
 
 # GridFS bucket — personel belgeleri için (5MB üstü destek + memory verimi).
 # Eski kayıtlar `data_b64` alanı üzerinden okunmaya devam eder (geriye uyum).
