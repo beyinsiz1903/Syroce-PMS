@@ -1,8 +1,24 @@
-"""Compatibility / stub endpoints for modules referenced by the frontend
-but not yet (re)implemented in the active backend.
+"""Compatibility / transitional endpoints for modules referenced by the
+frontend but not yet promoted to a dedicated domain router.
 
-These return safe defaults so dependent UI pages do not crash.
-Once a real domain router is added, the corresponding stub here can be removed.
+NOT every endpoint here is a "fake" — many already perform real, tenant-scoped
+DB reads/writes; they live here only because their long-term home (a proper
+`backend/domains/<area>/router.py`) hasn't been carved out yet.
+
+Each endpoint is annotated with one of the following status labels (see
+`docs/MODULE_INVENTORY.md` for the project-wide convention):
+
+    # STATUS: production_ready  → real CRUD with permissions; safe to migrate
+    #                              as-is to a domain router
+    # STATUS: partial            → real DB read but missing
+    #                              create/update/delete or workflow
+    # STATUS: stub               → returns hard-coded / empty defaults so the
+    #                              UI does not crash; backend logic missing
+    # STATUS: deprecated         → kept only for old clients; remove on next
+    #                              frontend release
+
+Migration target: every endpoint here should either move to a domain router
+or be deleted. New endpoints SHOULD NOT be added to this file.
 """
 from __future__ import annotations
 
@@ -23,6 +39,8 @@ router = APIRouter(prefix="/api", tags=["compat"])
 # ─────────────────────────────────────────────────────────────────────
 # UPSELL
 # ─────────────────────────────────────────────────────────────────────
+# STATUS: partial — real tenant-scoped DB read; create/update/delete missing.
+#                   Move to domains/sales/upsell_router.py when CRUD is added.
 @router.get("/upsell/products")
 async def upsell_products(
     current_user= Depends(get_current_user),
@@ -41,6 +59,8 @@ async def upsell_products(
 # ─────────────────────────────────────────────────────────────────────
 # GDPR / KVKK COMPLIANCE
 # ─────────────────────────────────────────────────────────────────────
+# STATUS: partial — real aggregation over guests/consents/erasure;
+#                   "status: active" hard-coded; no DPA upload/audit history.
 @router.get("/gdpr/compliance-status")
 async def gdpr_compliance_status(current_user= Depends(get_current_user)):
     tid = current_user.tenant_id
@@ -59,6 +79,7 @@ async def gdpr_compliance_status(current_user= Depends(get_current_user)):
     }
 
 
+# STATUS: partial — real read of dpa_records; no create/sign workflow.
 @router.get("/gdpr/dpa")
 async def gdpr_dpa(current_user= Depends(get_current_user)):
     items: list[dict] = []
@@ -67,6 +88,8 @@ async def gdpr_dpa(current_user= Depends(get_current_user)):
     return {"agreements": items, "total": len(items)}
 
 
+# STATUS: stub — hard-coded retention list; should be tenant-configurable
+#                and persist edits + trigger anonymisation jobs.
 @router.get("/gdpr/retention-policy")
 async def gdpr_retention(current_user= Depends(get_current_user)):
     return {
@@ -82,6 +105,8 @@ async def gdpr_retention(current_user= Depends(get_current_user)):
 # ─────────────────────────────────────────────────────────────────────
 # CENTRAL OFFICE (multi-property HQ view)
 # ─────────────────────────────────────────────────────────────────────
+# STATUS: partial — real properties read; KPIs hard-coded to 0.
+#                   Aggregation across hotels not implemented.
 @router.get("/central-office/dashboard")
 async def central_office_dashboard(current_user= Depends(get_current_user)):
     tid = current_user.tenant_id
@@ -103,16 +128,20 @@ async def central_office_dashboard(current_user= Depends(get_current_user)):
     }
 
 
+# STATUS: stub — empty alerts. Needs alert engine wired to ops/incident bus.
 @router.get("/central-office/alerts")
 async def central_office_alerts(current_user= Depends(get_current_user)):
     return {"alerts": [], "total": 0}
 
 
+# STATUS: stub — empty comparison. Needs cross-property occupancy aggregator.
 @router.get("/central-office/occupancy-comparison")
 async def central_office_occupancy(current_user= Depends(get_current_user)):
     return {"properties": [], "period": {"start": None, "end": None}}
 
 
+# STATUS: stub — empty revenue. Needs cross-property revenue aggregator
+#                (folio totals × tenant_id × period).
 @router.get("/central-office/revenue-report")
 async def central_office_revenue(current_user= Depends(get_current_user)):
     return {"properties": [], "totals": {"revenue": 0.0, "bookings": 0}}
@@ -121,16 +150,20 @@ async def central_office_revenue(current_user= Depends(get_current_user)):
 # ─────────────────────────────────────────────────────────────────────
 # CENTRAL PRICING
 # ─────────────────────────────────────────────────────────────────────
+# STATUS: stub — central pricing not implemented. Real implementation
+#                belongs in domains/revenue/pricing/ (cross-property tier).
 @router.get("/central-pricing/rates")
 async def central_pricing_rates(current_user= Depends(get_current_user)):
     return {"rates": [], "total": 0}
 
 
+# STATUS: stub — see /central-pricing/rates above.
 @router.get("/central-pricing/rate-history")
 async def central_pricing_history(current_user= Depends(get_current_user)):
     return {"history": [], "total": 0}
 
 
+# STATUS: stub — see /central-pricing/rates above.
 @router.get("/central-pricing/rate-templates")
 async def central_pricing_templates(current_user= Depends(get_current_user)):
     return {"templates": [], "total": 0}
@@ -139,6 +172,9 @@ async def central_pricing_templates(current_user= Depends(get_current_user)):
 # ─────────────────────────────────────────────────────────────────────
 # SECURITY / IP ACCESS CONTROL
 # ─────────────────────────────────────────────────────────────────────
+# STATUS: production_ready — real CRUD on db.ip_rules with require_op
+#                            permission gates. Move to a dedicated
+#                            routers/security_ip.py.
 @router.get("/security/ip/rules")
 async def ip_rules_list(current_user= Depends(get_current_user)):
     items: list[dict] = []
@@ -189,6 +225,8 @@ async def ip_rules_delete(
     return {"deleted": True, "id": rule_id}
 
 
+# STATUS: stub — always returns allowed=true. Should evaluate request IP
+#                against rules + return matched_rule.
 @router.post("/security/ip/check")
 async def ip_check(current_user= Depends(get_current_user)):
     return {"client_ip": None, "allowed": True, "matched_rule": None}
@@ -197,6 +235,9 @@ async def ip_check(current_user= Depends(get_current_user)):
 # ─────────────────────────────────────────────────────────────────────
 # AGENCY / HOTEL BOOKING REQUESTS
 # ─────────────────────────────────────────────────────────────────────
+# STATUS: production_ready — real list/approve/reject workflow with
+#                            require_op + tenant scope + audit fields.
+#                            Move to routers/agency_portal.py companion.
 @router.get("/hotel/booking-requests")
 async def hotel_booking_requests(
     current_user= Depends(get_current_user),
@@ -279,6 +320,9 @@ async def hotel_booking_request_reject(
 # ─────────────────────────────────────────────────────────────────────
 # MEDIA LIBRARY
 # ─────────────────────────────────────────────────────────────────────
+# STATUS: partial — real list of media_files; no upload/delete/metadata
+#                   endpoints. Upload path is handled separately by
+#                   /uploads/* (static mount).
 @router.get("/media/list")
 async def media_list(
     current_user= Depends(get_current_user),
@@ -299,6 +343,8 @@ async def media_list(
 # ─────────────────────────────────────────────────────────────────────
 # BOOKING GUEST-INFO PATCH (used by ArrivalList side panel)
 # ─────────────────────────────────────────────────────────────────────
+# STATUS: production_ready — real PATCH with permission + tenant scope.
+#                            Move to routers/pms_bookings.py.
 class GuestInfoPatch(BaseModel):
     guest_name: str | None = None
     guest_phone: str | None = None
