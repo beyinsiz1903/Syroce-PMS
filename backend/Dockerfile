@@ -9,8 +9,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libffi-dev libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN python -m pip install --no-cache-dir --prefix=/install --timeout=300 --retries=5 -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ && \
+# Phase 4 of requirements split: install via requirements/all.txt (legacy
+# aggregate composer that chains base+api+worker+ml+reports+integrations+dev).
+# Behavior is parity-preserving with the prior `-r requirements.txt` call;
+# see docs/backend_refactors/requirements-split-plan.md and run.md.
+# requirements.txt is still copied for now (legacy callers / debugging);
+# Phase 8 will deprecate it once all consumers point to requirements/.
+COPY requirements.txt ./
+COPY requirements/ ./requirements/
+RUN python -m pip install --no-cache-dir --prefix=/install --timeout=300 --retries=5 -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ && \
     PYTHONPATH=/install/lib/python3.11/site-packages python -m pip install --no-cache-dir --prefix=/install "litellm>=1.83.2" --no-deps
 
 # Stage 2: Runtime

@@ -246,3 +246,97 @@ NOT block subset adoption.
 
 **Ready for Phase 4** (backend Dockerfile → `-r requirements/all.txt`)
 on user approval.
+
+---
+
+# Phase 4 Run (2026-05-10) — backend Dockerfile swap to `requirements/all.txt`
+
+**Scope**: Only `backend/Dockerfile` builder stage modified. Worker Dockerfile,
+CI workflows, and aggregate `requirements.txt` untouched.
+
+## Diff applied
+
+```diff
+-COPY requirements.txt .
+-RUN python -m pip install ... -r requirements.txt ... && \
++# Phase 4 of requirements split: install via requirements/all.txt ...
++COPY requirements.txt ./
++COPY requirements/ ./requirements/
++RUN python -m pip install ... -r requirements/all.txt ... && \
+     PYTHONPATH=/install/lib/python3.11/site-packages python -m pip install \
+       --no-cache-dir --prefix=/install "litellm>=1.83.2" --no-deps
+```
+
+All preserved verbatim:
+- `--no-cache-dir --prefix=/install --timeout=300 --retries=5`
+- `--extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/`
+- litellm `--no-deps` override to `>=1.83.2` (Plan B parity)
+- Stage 2 runtime, healthcheck, USER appuser, EXPOSE 8001, CMD uvicorn
+
+## ChatGPT's 5 attention points — status
+
+| # | Point | Status |
+|---|-------|--------|
+| 1 | litellm override preserved | ✓ Verbatim — same line, same flags |
+| 2 | requirements/ folder added to build context | ✓ Separate `COPY requirements/ ./requirements/` |
+| 3 | Parity only, no API image shrink | ✓ Uses `all.txt` (= aggregate footprint) |
+| 4 | Build smoke after | ⚠ Docker daemon not available in this Replit env; equivalent verified in Phase 3 (real `pip install -r backend/requirements/all.txt` + combined import smoke passed). Full Docker build will run in production CI. |
+| 5 | Starlette pin behavior in Docker build | ⚠ Flagged Phase 3 §a: in clean Docker (3.11-slim) without Nix overlay, `starlette==1.0.0` should install cleanly. Must observe first CI build for confirmation. |
+
+## Why pip-level parity is sufficient evidence
+
+The Dockerfile builder stage executes:
+```
+pip install --no-cache-dir --prefix=/install ... -r requirements/all.txt
+```
+
+This is the **same install command** Phase 3 ran (modulo `--prefix=/install`,
+which only redirects install path — does not affect resolver). Phase 3
+verified:
+- `pip install -r backend/requirements/all.txt` → exit 0
+- Combined import smoke: `celery_app + celery_tasks + server` → ok
+- Set parity: split union = aggregate (222=222)
+
+Therefore the Phase 4 Dockerfile change is a **pip-equivalent rename**:
+`-r requirements.txt` → `-r requirements/all.txt`, where the right-hand side
+resolves to the same package set. The only Docker-specific risks are:
+- Build context COPY (handled by separate `COPY requirements/` line)
+- Layer cache invalidation on first build (one-time cost, not a regression)
+
+## Out-of-scope confirmations (verified `git diff` empty)
+
+- `worker/Dockerfile`: untouched (Phase 5)
+- `.github/workflows/*.yml`: untouched (Phase 7)
+- `backend/requirements.txt`: untouched (Phase 8)
+- `backend/requirements-ci.txt`: untouched
+
+## Replit dev workflow continuity
+
+Backend API workflow (`bash backend/start.sh`) starts uvicorn directly,
+**does not use Dockerfile**. All 4 dev workflows still running with new logs
+post-edit; no restart needed.
+
+```
+runner   183  python server.py
+runner   192  python -m uvicorn server:app --host 0.0.0.0 --port 8000
+```
+
+## Phase 4 verdict
+
+**Pass (with CI follow-up).** Dockerfile mutation is minimal, scope-tight,
+and pip-equivalent to the verified Phase 3 install. First production CI
+build must confirm:
+1. Builder stage completes (no COPY/install errors).
+2. `starlette==1.0.0` installs without RECORD-file fallback.
+3. litellm override step still produces `litellm>=1.83.2` in `/install`.
+
+## Reproduce locally (when daemon available)
+
+```bash
+docker build --target builder -t syroce-backend-split-test backend/
+docker run --rm syroce-backend-split-test \
+  python -c "import sys; sys.path.insert(0,'/app'); import server; print('container ok')"
+```
+
+**Ready for Phase 5** (worker Dockerfile minimal subset) on user approval —
+**requires** AST/import-graph scan first per plan §4.4.
