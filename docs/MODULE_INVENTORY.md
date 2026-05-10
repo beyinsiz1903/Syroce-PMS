@@ -19,6 +19,7 @@
 
 Etiketler **nominal**; ölçütler:
 - `production_ready` → en az 1 backend test + 1 frontend test, permission decorator, audit field
+  - **Public endpoint istisnası:** Permission decorator doğal olarak yoktur. Yerine: explicit public-access rationale (yorumda) + rate limit + abuse guard (örn. token, captcha veya IP throttle) aranır. Örnek: `/g/room/...`, `/review/:token`, `/precheckin`.
 - `partial` → tenant scope OK, ama eksik workflow listelenmeli
 - `stub` → yorumda hangi alan eksik açıklanmalı
 - `demo` → environment var ile kapatılabilir olmalı
@@ -51,11 +52,11 @@ Etiketler **nominal**; ölçütler:
 | Modül | Dosya | Statü | Not |
 |---|---|---|---|
 | Housekeeping | `routers/housekeeping.py` | `production_ready` | Mobil push notification var |
-| Maintenance Work Orders | (frontend `MaintenanceWorkOrders.jsx`) | `production_ready` | Sprint A pilot |
+| Maintenance Work Orders | `domains/pms/maintenance_router.py` + frontend `MaintenanceWorkOrders.jsx` | `production_ready` | Sprint A pilot; backend: work-orders CRUD + mobile/technician-task + repeat-issues + sla-metrics |
 | Shift Handover | `routers/shift_handover.py` | `production_ready` | |
 | Departments | `routers/departments/` (bookings/dashboards/housekeeping/pos/reports/rms_rates) | `production_ready` | Klasör; 7 alt-router |
-| Lost & Found | (frontend `LostFoundPage.jsx`) | `production_ready` | Sprint A pilot |
-| Wake-up Calls | (frontend `WakeUpCallsPage.jsx`) | `production_ready` | Sprint A pilot |
+| Lost & Found | `routers/b2b_api/lost_found.py` + frontend `LostFoundPage.jsx` | `production_ready` | Sprint A pilot; backend: GET/POST `/lost-found` (b2b_api altında ama internal UI de tüketir) |
+| Wake-up Calls | `routers/b2b_api/wake_up.py` + frontend `WakeUpCallsPage.jsx` | `production_ready` | Sprint A pilot; backend: GET/POST `/wake-up-calls` (b2b_api altında ama internal UI de tüketir) |
 | Night Audit | `domains/pms/night_audit/router.py` | `production_ready` | N+1 fix done |
 | EOD Report | `routers/eod_report.py` | `production_ready` | |
 | Frontdesk Audit Checklist | (frontend pilot) | `production_ready` | Sprint A pilot |
@@ -242,7 +243,7 @@ DepartureList, NoShowToday, WakeUpCallsPage, LostFoundPage, DepositTracking, Arr
 | `partial` | 6 | Eksik workflow'lar tamamlanmalı (upsell, gdpr-status, gdpr-dpa, central-office-dashboard, media-list) |
 | `stub` | 8 | Gerçek implementasyon eksik (gdpr-retention, central-office-{alerts,occupancy,revenue}, central-pricing × 3, security-ip-check) |
 
-**Migration kuralı:** Bu dosyaya **yeni endpoint eklenmemeli**. Her sprint'te en az 2 `production_ready` etiketli endpoint domain router'a taşınmalı.
+**Migration kuralı:** Bu dosyaya **yeni endpoint eklenmemeli**. Her **cleanup/refactor sprint**'inde en az 2 `production_ready` etiketli endpoint domain router'a taşınmalı (ürün/bugfix sprintlerinde zorunlu borç baskısı oluşturmamak için bu kural cleanup sprintlerine yönlendirildi).
 
 ---
 
@@ -255,9 +256,9 @@ Bu katman tek başına bir "modül" değil; ama birçok `production_ready` modü
 | Outbox Dispatcher | `core/outbox_dispatcher.py` | `production_ready` | At-least-once event delivery |
 | Event System | `routers/event_system.py` + `modules/event_system/` | `production_ready` | SXI bus altyapısı |
 | Tenant DB | `core/tenant_db.py` | `production_ready` | 4 katman test |
-| Cache Manager | `core/cache_manager.py` | `production_ready` | `?refresh=1` ile `_nocache` |
+| Cache Manager | `backend/cache_manager.py` (ana) + `backend/core/cache.py` (helper) + `backend/advanced_cache.py` (advanced layer) | `production_ready` | `?refresh=1` ile `_nocache` kwarg tetikler |
 | Auth cache invalidation | (Redis pub/sub) | `production_ready` | Multi-worker |
-| Mobile push | `routers/mobile_push.py` (varsa) | `partial` | DISABLE_EXPO_PUSH flag |
+| Mobile push | `services/expo_push.py` + `workers/mobile_push_scheduler.py` + `domains/pms/notification_router.py` | `partial` | DISABLE_EXPO_PUSH flag; tek bir `routers/mobile_push.py` yok — push akışı service+worker+notification router'a dağıtılmış |
 | Xchange Integration | `backend/integrations/xchange` | `partial` | |
 | CapX Webhook | `routers/capx_webhook.py` | `production_ready` | |
 
