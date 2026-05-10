@@ -245,12 +245,19 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
                                   </Badge>
                                 )}
                               </div>
-                              {(href || (b.action === 'checkout_or_extend' && it.id)) && (
+                              {(href || ((b.action === 'checkout_or_extend' || b.action === 'checkin_or_no_show') && it.id)) && (
                                 <Button
                                   size="sm" variant="ghost"
                                   className="h-7 px-2 text-indigo-700 hover:text-indigo-900"
                                   onClick={() => {
-                                    if (b.action === 'checkout_or_extend' && it.id) {
+                                    // checkout_or_extend ve checkin_or_no_show:
+                                    // doğrudan rezervasyonun folyosunu aç (kullanıcı
+                                    // listeye atılmasın, hemen işlem yapsın).
+                                    if (
+                                      it.id
+                                      && (b.action === 'checkout_or_extend'
+                                        || b.action === 'checkin_or_no_show')
+                                    ) {
                                       openFolioForBooking(it.id, navigate);
                                     } else if (href) {
                                       navigate(href);
