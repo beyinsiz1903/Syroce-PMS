@@ -1,0 +1,10 @@
+# All — legacy aggregate. Mirrors the pre-split backend/requirements.txt
+# install footprint exactly. Existing consumers (Dockerfile, CI) are NOT
+# yet pointed here; this file exists so Phase 4+ can swap them in safely.
+#
+# api.txt already chains base.txt + reports.txt; worker.txt chains base.txt.
+-r api.txt
+-r worker.txt
+-r ml.txt
+-r integrations.txt
+-r dev.txt

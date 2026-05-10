@@ -1,0 +1,17 @@
+# Reports — PDF/Excel/HTML rendering (WeasyPrint, openpyxl, lxml, pillow).
+# Pulled by api.txt because invoice/report endpoints live in API surface.
+# Pillow stays here per split plan §3 (image processing for reports);
+# brotli lives in api.txt (uvicorn-side compression).
+cssselect2==0.9.0
+et_xmlfile==2.0.0
+fonttools==4.61.1
+lxml==6.1.0
+openpyxl==3.1.2
+pillow==12.2.0
+pydyf==0.12.1
+pyphen==0.17.2
+tinycss2==1.5.1
+tinyhtml5==2.0.0
+weasyprint==68.1
+webencodings==0.5.1
+zopfli==0.4.1
