@@ -13,6 +13,8 @@ export function publicRoutes({ pa }) {
     { path: "/gizlilik", type: "public", component: PrivacyPolicy },
     { path: "/pms-lite", type: "public", component: PmsLiteLanding },
     { path: "/agency-portal", type: "public", component: AgencyPortalDashboard },
+    // Public URL namespace, but admin-protected docs route (intentional —
+    // mirrors original behavior; URL grouping rather than auth grouping).
     { path: "/b2b/docs", ...pa(B2BApiDocs) },
     { path: "/system-status", type: "public", component: SimpleAdminPanel },
     { path: "/auth/reset-password", type: "public", component: ResetPasswordPage },
