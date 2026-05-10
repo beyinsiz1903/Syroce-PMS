@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send } from 'lucide-react';
+import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send, Loader2 } from 'lucide-react';
 
 const VAT_OPTIONS = [
   { value: '0', label: '%0' },
@@ -26,12 +26,14 @@ const FolioViewDialog = ({
   open,
   onClose,
   selectedFolio,
+  folios = [],
   folioCharges,
   folioPayments,
   guests,
   bookings,
   onChargePosted,
   onPaymentPosted,
+  onPickFolio,
 }) => {
   const { t } = useTranslation();
   const [subDialog, setSubDialog] = useState(null);
@@ -241,6 +243,41 @@ th{background:#f5f5f5}
               {selectedFolio && `Folio ${selectedFolio.folio_number} - ${selectedFolio.folio_type?.toUpperCase?.()}`}
             </DialogDescription>
           </DialogHeader>
+
+          {!selectedFolio && folios.length === 0 && (
+            <div className="py-12 text-center" data-testid="folio-loading">
+              <Loader2 className="w-8 h-8 mx-auto animate-spin text-indigo-500 mb-3" />
+              <p className="text-sm text-gray-600">Folyo yükleniyor…</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Birkaç saniye sürebilir. Yanıt gelmezse sayfayı yenileyin.
+              </p>
+            </div>
+          )}
+
+          {!selectedFolio && folios.length > 0 && (
+            <div className="py-8 space-y-3" data-testid="folio-picker">
+              <p className="text-sm text-gray-600 text-center">
+                Bu rezervasyonda birden fazla folyo var — açmak istediğinizi seçin:
+              </p>
+              <div className="grid gap-2 max-w-md mx-auto">
+                {folios.map((f) => (
+                  <Button
+                    key={f.id}
+                    variant="outline"
+                    onClick={() => onPickFolio?.(f.id)}
+                    className="justify-between h-auto py-2.5"
+                  >
+                    <span className="font-medium">
+                      {f.folio_number || f.id?.slice(0, 8)} · {f.folio_type?.toUpperCase?.()}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      Bakiye: {fmt(f.balance)} ₺
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {selectedFolio && (
             <div className="space-y-6">

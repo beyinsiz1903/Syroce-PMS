@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, Suspense, lazy, memo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense, lazy, memo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -125,6 +125,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [folio, setFolio] = useState(null);
   const [folios, setFolios] = useState([]);
   const [selectedFolio, setSelectedFolio] = useState(null);
+  const folioReqIdRef = useRef(null);
   const [folioCharges, setFolioCharges] = useState([]);
   const [folioPayments, setFolioPayments] = useState([]);
   const [roomBlocks, setRoomBlocks] = useState([]);
@@ -678,12 +679,35 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   };
 
   const loadBookingFolios = async (bookingId) => {
+    // 1) Önce dialog'u AÇ ve önceki state'i temizle — kullanıcı tıkladığında
+    //    anında geri bildirim görsün; veri arkadan dolar (yavaş açılma fix).
+    setSelectedFolio(null);
+    setFolioCharges([]);
+    setFolioPayments([]);
+    setFolios([]);
+    setSelectedBooking(bookingId);
+    setOpenDialog('folio-view');
+    // 2) Race-guard: A→B hızlı tıklamalarda A'nın geç gelen yanıtı
+    //    B'nin state'ini ezmesin. selectedBookingRef'in en son istek
+    //    olduğunu doğrula.
+    folioReqIdRef.current = bookingId;
     try {
       const response = await axios.get(`/folio/booking/${bookingId}`);
-      setFolios(response.data); setSelectedBooking(bookingId); setOpenDialog('folio-view');
-      const guestFolio = response.data.find(f => f.folio_type === 'guest');
-      if (guestFolio) loadFolioDetails(guestFolio.id);
-    } catch (error) { toast.error('Failed to load folios'); }
+      if (folioReqIdRef.current !== bookingId) return; // stale yanıt
+      const list = Array.isArray(response.data)
+        ? response.data
+        : (response.data?.folios || []);
+      setFolios(list);
+      if (list.length === 0) {
+        toast.warning('Bu rezervasyon için folyo bulunamadı (check-in yapılmamış olabilir)');
+        return;
+      }
+      const guestFolio = list.find(f => f.folio_type === 'guest') || list[0];
+      if (guestFolio?.id) loadFolioDetails(guestFolio.id);
+    } catch (error) {
+      if (folioReqIdRef.current !== bookingId) return; // stale yanıt
+      toast.error('Folyo yüklenemedi: ' + (error.response?.data?.detail || error.message));
+    }
   };
 
   const loadFolioDetails = async (folioId) => {
@@ -886,7 +910,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         <CompanyDialog open={openDialog === 'company'} onClose={() => setOpenDialog(null)} newCompany={newCompany} setNewCompany={setNewCompany} onSubmit={handleCreateCompany} />
         {visitedDialogs.has('folio-view') && (
           <Suspense fallback={null}>
-            <FolioViewDialog open={openDialog === 'folio-view'} onClose={() => setOpenDialog(null)} selectedFolio={selectedFolio} folioCharges={folioCharges} folioPayments={folioPayments} guests={guests} bookings={bookings} onChargePosted={(folioId) => { loadFolioDetails(folioId); }} onPaymentPosted={(folioId) => { loadFolioDetails(folioId); }} />
+            <FolioViewDialog open={openDialog === 'folio-view'} onClose={() => setOpenDialog(null)} selectedFolio={selectedFolio} folios={folios} folioCharges={folioCharges} folioPayments={folioPayments} guests={guests} bookings={bookings} onChargePosted={(folioId) => { loadFolioDetails(folioId); }} onPaymentPosted={(folioId) => { loadFolioDetails(folioId); }} onPickFolio={(folioId) => loadFolioDetails(folioId)} />
           </Suspense>
         )}
         <HKTaskDialog open={openDialog === 'hktask'} onClose={() => setOpenDialog(null)} rooms={rooms} newHKTask={newHKTask} setNewHKTask={setNewHKTask} onSubmit={handleCreateHKTask} />
