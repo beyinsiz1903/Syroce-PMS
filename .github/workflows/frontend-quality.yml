@@ -28,6 +28,28 @@ jobs:
               # Sıfırlamak için: && exit 1 ekle.
               run: cd frontend && yarn knip --reporter compact || true
 
+    # ============ VITEST UNIT TESTS (HARD GATE) ============
+    # Pilot Readiness Checklist hard-blocker #2: frontend Vitest suite
+    # was running locally (13 files, 117 tests, ~47s) but never gated
+    # on PRs. This job blocks merges if any frontend unit test fails.
+    # Coverage thresholds intentionally deferred to a follow-up turn.
+    vitest:
+        name: Frontend Unit Tests (Vitest)
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v5
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'yarn'
+                  cache-dependency-path: frontend/yarn.lock
+            - name: Install
+              run: cd frontend && yarn install --ignore-engines --frozen-lockfile
+            - name: Run vitest (hard gate)
+              run: cd frontend && yarn test
+
     # ============ E2E SMOKE (HARD GATE on PR) ============
     e2e-smoke:
         runs-on: ubuntu-latest
