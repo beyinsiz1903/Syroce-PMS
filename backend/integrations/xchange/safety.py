@@ -185,7 +185,7 @@ def _pinned_transport(host: str, ip: str) -> httpx.AsyncHTTPTransport:
     transport = httpx.AsyncHTTPTransport()
     # Replace the pool's default network backend with a pinned one.
     # ``_pool`` and ``_network_backend`` are private attrs but stable in
-    # httpcore 1.x — we own version pinning in requirements.txt.
+    # httpcore 1.x — we own version pinning in requirements/api.txt.
     transport._pool._network_backend = _PinnedNetworkBackend({host: ip})
     return transport
 

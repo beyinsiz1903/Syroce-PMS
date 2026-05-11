@@ -148,7 +148,7 @@ def evaluate_controls(tenant_signals: dict[str, Any] | None = None) -> list[dict
                 *( ["JWT_SECRET ortam değişkeninde tanımlı"] if has_jwt_secret else [] ),
                 *( ["Log temizleyici çalışma zamanı loglarından sırları/PII'yi ayıklar"] if has_log_sanitizer else [] ),
                 *( ["Kimlik bilgisi koruyucu zayıf/sızdırılmış sırları engeller"] if has_credential_guard else [] ),
-                "Güvenli bağımlılık kilit dosyaları (requirements.txt, yarn.lock)",
+                "Güvenli bağımlılık kilit dosyaları (requirements/, yarn.lock)",
             ],
             "recommendations": [
                 *( [] if has_jwt_secret else ["Üretim ortamında JWT_SECRET değerini ayarlayın"] ),

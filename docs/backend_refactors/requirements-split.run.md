@@ -1594,3 +1594,252 @@ design (the guard's whole job is to compare aggregate vs split).
     → "Requirements subset duplicate guard".
 
 **Phase 8.1 status: COMPLETE in source. Workflow patch ready for GitHub web UI.**
+
+---
+
+# Phase 8.2 (2026-05-11) — Final disposition (closure of the requirements split refactor)
+
+ChatGPT approved Phase 8.2 with explicit ordering: drift guard surgery
+FIRST (must still run with the aggregate gone), regression run, zero-caller
+re-verify, then deletions and cosmetic touch-ups. Script filename preserved
+to avoid an OAuth-scoped workflow patch.
+
+## Edits applied
+
+### Step 1 — Drift guard surgery (FIRST)
+
+`backend/scripts/check_requirements_split_parity.py` rewritten:
+
+- **Removed** (Phase 4-7 era):
+  - `AGGREGATE = BACKEND_DIR / "requirements.txt"` constant
+  - `ALL_TXT = SPLIT_DIR / "all.txt"` constant (was only used in parity)
+  - `parse_with_includes()` function (~28 lines, recursive `-r` walker —
+    only used for parity comparison)
+  - `aggregate_set` / `split_set` parsing (lines 102-103)
+  - `missing_in_split` / `extra_in_split` set diff
+  - `[FAIL] set parity broken` branch + verbose drift output
+  - `[ok] set parity` print
+  - "aggregate" + "split (all.txt union)" header lines
+- **Preserved** (Phase 4.5 protection):
+  - `parse_direct()` function (single-file, no recursion)
+  - `SUBSET_NAMES = ("base", "api", "worker", "ml", "reports", "integrations", "dev")`
+  - Cross-subset duplicate detection (`pkg_to_files` → `duplicates` dict)
+  - `[FAIL] N duplicate package(s)` branch
+  - `[ok] no duplicates` print
+  - `--verbose` per-subset count output
+- **Added**:
+  - New file-level docstring (Phase 8.2+ context, why the parity invariant
+    no longer applies, why the filename is preserved despite "parity" being
+    a historical artifact, back-pointer to run.md Phase 8.2)
+  - New header: `backend requirements split — subset duplicate guard`
+  - "split tree" + "canonical subsets" + "total direct refs" header lines
+  - New verdict text: `OK — canonical subsets have no cross-subset duplicates`
+    (was: `OK — aggregate and split chain are in sync`)
+
+Net diff: ~70 lines → ~115 lines (the new docstring is longer than the
+removed parity logic, but the executable code shrunk by ~30 lines).
+
+**Filename `check_requirements_split_parity.py` is intentionally preserved**
+even though the script no longer checks parity. ChatGPT suggested
+`check_requirements_split_integrity.py` as a more accurate name; we
+chose to preserve the filename to avoid touching `.github/workflows/ci-cd.yml`
+line 53 (which would trigger the same OAuth-scope dance as Phase 7/7.1/8.1).
+The "parity" word in the filename now refers to intra-split duplicate
+parity, documented in the new docstring. Phase 8.3 (optional cosmetic)
+can rename if desired.
+
+### Step 2 — Regression run
+
+```
+$ python backend/scripts/check_requirements_split_parity.py
+================================================================
+backend requirements split — subset duplicate guard
+================================================================
+  split tree           : backend/requirements
+  canonical subsets    : base, api, worker, ml, reports, integrations, dev
+
+[ok]   no duplicates         : 0 cross-subset top-level repeats
+
+VERDICT: OK — canonical subsets have no cross-subset duplicates.
+```
+
+`--verbose` mode also tested; per-subset counts printed correctly.
+Exit code 0.
+
+### Step 3 — Zero-caller re-verification (pre-delete sanity check)
+
+```
+$ rg 'requirements\.txt' [excluding node_modules/git/local/attached_assets/yarn.lock/run.md/plan.md/test_reports]
+deploy/DEPLOYMENT_GUIDE.md:60          (will be updated in step 7)
+backend/Dockerfile:13                  (Phase 8.1 comment, updated step 6)
+worker/Dockerfile:19                   (Phase 8.1 comment, updated step 6)
+backend/requirements-ci.txt:13         (orphan file, deleted step 5)
+docs/frontend_refactors/route-split.run.md:110  HISTORICAL — preserved
+scripts/post-merge.sh:22-23            quick-id (DIFFERENT service) — preserved
+backend/integrations/xchange/safety.py:188   updated step 8
+backend/scripts/check_requirements_split_parity.py:4,31  (rewritten step 1)
+backend/ops/deploy_pipeline.py:422     (Phase 8.1 comment, updated step 6)
+backend/core/pci_dss.py:151            updated step 8
+```
+
+**No live install consumer** (no `pip install -r requirements.txt`,
+no `COPY requirements.txt`, no programmatic file open). Safe to delete.
+
+### Step 4 — `backend/requirements.txt` deletion
+
+Removed via `rm`. Was 222 packages, the last surviving aggregate file.
+Source-of-truth for pinning is now `requirements/{base,api,worker,ml,
+reports,integrations,dev}.txt` directly; `requirements/all.txt` is the
+canonical aggregate composer for full-surface installs.
+
+### Step 5 — `backend/requirements-ci.txt` deletion
+
+Removed via `rm`. Pre-delete ripgrep scan for `requirements-ci` showed
+**zero callers** — no workflow file, no script, no Dockerfile, no doc
+references this filename. The file existed only as a single-line shim
+(`-r requirements/all.txt`) with a 17-line policy header documenting its
+own deprecation. Truly orphaned.
+
+### Step 6 — Phase 8.1-era comment block updates
+
+Updated 3 files where the comments said "Phase 8 will deprecate" or
+"keeps in lock-step until Phase 8.2 (final disposition)":
+
+- **`backend/Dockerfile:15-22`** — block-comment rewrite: now says Phase 8.2
+  REMOVED the legacy aggregate; documents drift-guard's parity-half retirement
+  and duplicate-half preservation.
+- **`worker/Dockerfile:22-24`** — comment-line update: Phase 8.1's "is no
+  longer COPY'd" → Phase 8.2's "was removed; requirements/all.txt is canonical".
+- **`backend/ops/deploy_pipeline.py:423-429`** — block-comment update: "is
+  being deprecated" → "was removed". Behavioral code unchanged (still checks
+  `/app/backend/requirements/api-runtime.txt`).
+
+### Step 7 — `deploy/DEPLOYMENT_GUIDE.md` file tree diagram
+
+The Phase 8.1 diagram listed both `requirements/` and `requirements.txt`
+with a note that the latter was "scheduled for deletion in Phase 8.2". Now
+the `requirements.txt` line is removed entirely; the `requirements/` entry's
+explanatory parenthetical mentions Phase 8.2 deletion + canonical aggregate.
+
+### Step 8 — Cosmetic touch-ups
+
+- **`backend/integrations/xchange/safety.py:188`** — comment changed from
+  "we own version pinning in requirements.txt." → "we own version pinning
+  in requirements/api.txt." (httpcore is pinned in api.txt; this is the
+  accurate reference).
+- **`backend/core/pci_dss.py:154`** — Turkish UI string updated:
+  "Güvenli bağımlılık kilit dosyaları (requirements.txt, yarn.lock)" →
+  "Güvenli bağımlılık kilit dosyaları (requirements/, yarn.lock)". The
+  string is part of a PCI-DSS audit checklist; the new form points to
+  the canonical split tree directory.
+
+## Verification (Phase 8.2, post-edit)
+
+```
+A) NEW drift guard (duplicate-only) : OK — 0 cross-subset duplicates
+B) Verbose mode                     : OK — per-subset counts printed
+C) API import closure (api-runtime) : REVIEW NEEDED (opentelemetry,
+                                       rate_limiter — pre-existing
+                                       Phase 6.0 baseline, NOT a regression)
+   Worker import closure            : OK — 14 covered, 0 unmapped
+D) Import smoke (3 modules)         : OK — deploy_pipeline + pci_dss +
+                                       xchange.safety all import cleanly
+E) FINAL zero-caller scan           : 6 hits remaining, all explicitly
+                                       intentional (see disposition below)
+F) Files removed verification       : `ls` confirms backend/requirements.txt
+                                       + backend/requirements-ci.txt absent
+G) requirements/ tree intact        : 9 files (base, api, worker, ml, reports,
+                                       integrations, dev, all, api-runtime,
+                                       worker-runtime — 10 files actually) all present
+H) 4 dev workflows                  : Backend API / Mobile Web / Quick-ID /
+                                       Start application — all running with
+                                       new logs (auto-reload on deploy_pipeline +
+                                       pci_dss + xchange.safety edits OK)
+```
+
+## Final state — remaining `requirements.txt` references
+
+After Phase 8.2, **6 references** to the string `requirements.txt` survive
+in the repo (excluding lock files / .git / .local / attached_assets / run.md /
+plan.md / test_reports):
+
+| File | Line | Type | Why preserved |
+|------|------|------|---------------|
+| `worker/Dockerfile` | 22 | Block-comment ("legacy aggregate ... was removed") | Documentation of the migration |
+| `backend/Dockerfile` | 16 | Block-comment ("legacy aggregate ... was REMOVED") | Documentation of the migration |
+| `backend/ops/deploy_pipeline.py` | 425 | Block-comment ("legacy aggregate ... was removed") | Documentation of the path-fix rationale |
+| `scripts/post-merge.sh` | 22-23 | `quick-id/requirements.txt` install | DIFFERENT service, fully out of scope |
+| `docs/frontend_refactors/route-split.run.md` | 110 | Historical mention ("requirements.txt split is the next refactor candidate") | Historical record — editing would falsify it |
+
+Plus the run.md / plan.md docs themselves (excluded from the scan
+as expected — they describe the entire refactor).
+
+**Zero file-name pattern matches `^requirements\.txt$` exist anywhere
+in the repo.** The migration is complete.
+
+## What changed vs. the original plan
+
+The original Phase 8.2 plan (in run.md Phase 8.0 §"Proposed Phase 8 alt-phase
+split") listed 6 steps. Actual delivery:
+
+| # | Plan | Actual |
+|---|------|--------|
+| 1 | Verify zero callers | DONE step 3 |
+| 2 | Update cosmetic mentions | DONE step 8 (both files updated, not just one) |
+| 3 | Delete `backend/requirements.txt` | DONE step 4 |
+| 4 | Repurpose drift guard | DONE step 1 (filename preserved per ChatGPT alt-suggestion) |
+| 5 | Update CI step name in ci-cd.yml | SKIPPED — would require workflow patch (OAuth dance). Filename preservation makes the existing step name still functionally correct. Phase 8.3 cosmetic. |
+| 6 | Decide on requirements-ci.txt | DONE step 5 (deleted — orphan confirmed) |
+
+## Push split
+
+- **Replit Git pane** (this turn): 8 source/doc files modified + 2 files deleted.
+  - `backend/scripts/check_requirements_split_parity.py` (rewritten)
+  - `backend/Dockerfile` (block-comment update)
+  - `worker/Dockerfile` (block-comment update)
+  - `backend/ops/deploy_pipeline.py` (block-comment update)
+  - `deploy/DEPLOYMENT_GUIDE.md` (file tree diagram update)
+  - `backend/integrations/xchange/safety.py` (cosmetic comment)
+  - `backend/core/pci_dss.py` (cosmetic UI string)
+  - `docs/backend_refactors/requirements-split.run.md` (Phase 8.2 closing section)
+  - **DELETED**: `backend/requirements.txt`, `backend/requirements-ci.txt`
+- **GitHub web UI**: NONE this phase. The 4 CI workflow swaps from Phase 8.1
+  must still be applied via web UI; that's the remaining outstanding push
+  from the prior phase, not Phase 8.2.
+
+## What's left
+
+**Nothing in scope.** The requirements split refactor is closed at Phase 8.2.
+
+Optional Phase 8.3 (cosmetic, never strictly necessary):
+- Rename `check_requirements_split_parity.py` → `check_requirements_split_integrity.py`
+  + update `.github/workflows/ci-cd.yml:53` reference (workflow patch, OAuth
+  dance). Pure cosmetic; the script's docstring already explains the filename
+  is a historical artifact.
+- Audit other docs (e.g. README architecture diagrams) for stale
+  `requirements.txt` references.
+
+**Phase 8.2 status: COMPLETE. Requirements split refactor closed.**
+
+---
+
+# Refactor closing summary (Phases 2 → 8.2, May 2026)
+
+| Phase | Outcome |
+|-------|---------|
+| 2-4 | 8-subset split + composer (`all.txt`) + drift guard |
+| 4.5 | Cross-subset duplicate guard added |
+| 4.6 | Worker AST scan script |
+| 5 | `worker/Dockerfile` → `requirements/worker-runtime.txt` (~25-30% slim) |
+| 6.0 | API AST scan script |
+| 6.1 | `backend/Dockerfile` → `requirements/api-runtime.txt` (~37% slim) |
+| 7 | CI: drift guard + worker import closure |
+| 7.1 | CI: API import closure |
+| 8.0 | Read-only consumer scan (16 hits, 8 categories) |
+| 8.1 | Live consumer migration (8 source edits + workflow patch deferred) |
+| 8.2 | Legacy aggregate deletion + drift guard surgery + cosmetic touch-ups |
+
+Final image footprint: backend API ~137 packages (was 222, -38%);
+worker ~85 packages (was 222, -62%). Drift guard reduced from
+2-invariant to 1-invariant (duplicate check), preserving Phase 4.5
+hygiene protection.

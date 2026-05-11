@@ -56,10 +56,10 @@ Sunucudaki dizin yapisi su sekilde olmali:
                                  integrations.txt, dev.txt + composer
                                  all.txt + runtime composers
                                  api-runtime.txt, worker-runtime.txt;
-                                 see docs/backend_refactors/requirements-split.run.md)
-    requirements.txt            (legacy aggregate, kept in lock-step with
-                                 requirements/all.txt by drift guard;
-                                 scheduled for deletion in Phase 8.2)
+                                 see docs/backend_refactors/requirements-split.run.md.
+                                 Legacy `requirements.txt` was removed in
+                                 Phase 8.2 (May 2026) — use `requirements/all.txt`
+                                 for full-surface installs.)
     server.py
     ...
   worker/                       (proje worker/ klasoru)

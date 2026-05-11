@@ -10,14 +10,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 # Phase 4 of requirements split: install via the requirements/ tree.
-# Phase 8.1 (May 2026): legacy aggregate `requirements.txt` is no longer
-# COPY'd into the image — all consumers (Dockerfile RUN, deploy_pipeline.py
-# runtime check, CI install commands, post-merge.sh) now reference the
-# split tree directly. See docs/backend_refactors/requirements-split.run.md
-# Phase 8.1 for the consumer migration log. The drift guard
-# (backend/scripts/check_requirements_split_parity.py) keeps the legacy
-# `backend/requirements.txt` source-of-truth in sync with `requirements/all.txt`
-# until Phase 8.2 (final disposition).
+# Phase 8.2 (May 2026): legacy aggregate `requirements.txt` was REMOVED;
+# `requirements/all.txt` is now the canonical full-surface aggregate
+# composer (`-r base.txt + api.txt + worker.txt + ml.txt + reports.txt +
+# integrations.txt + dev.txt`). The drift guard's parity invariant was
+# retired (no aggregate to compare against); the duplicate-check half
+# remains as a Phase 4.5 protection against subset hygiene regressions.
+# See docs/backend_refactors/requirements-split.run.md Phases 8.1 / 8.2.
 COPY requirements/ ./requirements/
 # Phase 6.1 of requirements split (Pragmatic case): install the production
 # backend API subset, NOT the full backend aggregate.

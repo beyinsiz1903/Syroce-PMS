@@ -1,22 +1,39 @@
 #!/usr/bin/env python3
-"""Drift guard for the backend requirements split (Phases 4-7).
+"""Subset duplicate guard for the backend requirements split (Phase 8.2+).
 
-Verifies two invariants while the legacy aggregate `requirements.txt` and the
-new `requirements/{base,api,worker,ml,reports,integrations,dev}.txt` chain
-live side-by-side (until Phase 8 deprecates the aggregate):
+Phase 8.2 (May 2026) of the requirements split refactor removed the legacy
+aggregate `backend/requirements.txt`. The script's prior "set parity"
+invariant (packages(requirements.txt) == packages(requirements/all.txt))
+no longer applies — there is no aggregate left to compare against. The
+remaining and still-valuable invariant is:
 
-    1. SET PARITY      : packages(requirements.txt) == packages(requirements/all.txt)
-    2. NO DUPLICATES   : no package name appears as a direct (top-level) entry
-                         in two or more subset files (base is allowed to be
-                         referenced via `-r` from any subset).
+    NO DUPLICATES : no package name appears as a direct (top-level) entry
+                    in two or more canonical subset files. `base.txt` is
+                    allowed to be referenced via `-r` from any subset
+                    (those are includes, not direct entries).
+
+The canonical subset names are pinned in `SUBSET_NAMES`. Compose files
+(`all.txt`, `api-runtime.txt`, `worker-runtime.txt`) are intentionally
+NOT included in the duplicate check — they are aggregators by design and
+re-list packages via `-r` includes; checking them would produce false
+positives.
+
+The CI step that invokes this script (`.github/workflows/ci-cd.yml`)
+keeps its existing name; the script filename (`check_requirements_split_parity.py`)
+is preserved to avoid an OAuth-scoped workflow patch. The "parity" word
+in the filename is a historical artifact of Phases 4-7 and now refers to
+intra-split duplicate parity, not aggregate-vs-split parity.
+
+See docs/backend_refactors/requirements-split.run.md Phase 8.2 for the
+full surgery log.
 
 Usage:
     python backend/scripts/check_requirements_split_parity.py
     python backend/scripts/check_requirements_split_parity.py --verbose
 
 Exit codes:
-    0 : parity ok
-    1 : drift detected (set diff or duplicate)
+    0 : no duplicates
+    1 : duplicates detected
     2 : usage / file not found
 """
 from __future__ import annotations
@@ -28,9 +45,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_DIR = REPO_ROOT / "backend"
-AGGREGATE = BACKEND_DIR / "requirements.txt"
 SPLIT_DIR = BACKEND_DIR / "requirements"
-ALL_TXT = SPLIT_DIR / "all.txt"
 
 SUBSET_NAMES = ("base", "api", "worker", "ml", "reports", "integrations", "dev")
 
@@ -64,46 +79,11 @@ def parse_direct(path: Path) -> set[str]:
     return out
 
 
-def parse_with_includes(path: Path, _seen: set[Path] | None = None) -> set[str]:
-    """Return full transitive package set for *path*, following `-r` includes."""
-    if _seen is None:
-        _seen = set()
-    rp = path.resolve()
-    if rp in _seen:
-        return set()
-    _seen.add(rp)
-    if not rp.exists():
-        print(f"ERROR: file not found: {rp}", file=sys.stderr)
-        sys.exit(2)
-
-    out: set[str] = set()
-    for raw in rp.read_text(encoding="utf-8").splitlines():
-        line = raw.split("#", 1)[0].strip()
-        if not line:
-            continue
-        if line.startswith("-r ") or line.startswith("--requirement "):
-            ref = line.split(None, 1)[1].strip()
-            out |= parse_with_includes(rp.parent / ref, _seen)
-            continue
-        if line.startswith("-"):
-            continue
-        name = normalize_pkg_name(line)
-        if name:
-            out.add(name)
-    return out
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--verbose", "-v", action="store_true",
-                        help="Print full package sets even on success.")
+                        help="Print full per-subset counts even on success.")
     args = parser.parse_args()
-
-    aggregate_set = parse_with_includes(AGGREGATE)
-    split_set = parse_with_includes(ALL_TXT)
-
-    missing_in_split = aggregate_set - split_set
-    extra_in_split = split_set - aggregate_set
 
     direct_per_subset: dict[str, set[str]] = {
         name: parse_direct(SPLIT_DIR / f"{name}.txt") for name in SUBSET_NAMES
@@ -118,31 +98,16 @@ def main() -> int:
         if len(files) > 1:
             duplicates[pkg] = sorted(files)
 
-    failed = False
-
     print("=" * 64)
-    print("backend requirements split — drift guard")
+    print("backend requirements split — subset duplicate guard")
     print("=" * 64)
-    print(f"  aggregate            : {AGGREGATE.relative_to(REPO_ROOT)}")
-    print(f"    package count      : {len(aggregate_set)}")
-    print(f"  split (all.txt union): {ALL_TXT.relative_to(REPO_ROOT)}")
-    print(f"    package count      : {len(split_set)}")
+    print(f"  split tree           : {SPLIT_DIR.relative_to(REPO_ROOT)}")
+    print(f"  canonical subsets    : {', '.join(SUBSET_NAMES)}")
+    total = sum(len(p) for p in direct_per_subset.values())
+    print(f"    total direct refs  : {total}")
     print()
 
-    if missing_in_split or extra_in_split:
-        failed = True
-        print("[FAIL] set parity broken")
-        if missing_in_split:
-            print(f"  in aggregate but NOT in split  ({len(missing_in_split)}):")
-            for p in sorted(missing_in_split):
-                print(f"    - {p}")
-        if extra_in_split:
-            print(f"  in split but NOT in aggregate  ({len(extra_in_split)}):")
-            for p in sorted(extra_in_split):
-                print(f"    + {p}")
-    else:
-        print(f"[ok]   set parity            : {len(aggregate_set)} == {len(split_set)}")
-
+    failed = False
     if duplicates:
         failed = True
         print(f"[FAIL] {len(duplicates)} duplicate package(s) across subset direct entries:")
@@ -159,9 +124,9 @@ def main() -> int:
 
     print()
     if failed:
-        print("VERDICT: DRIFT DETECTED — fix before merging.")
+        print("VERDICT: DUPLICATES DETECTED — fix before merging.")
         return 1
-    print("VERDICT: OK — aggregate and split chain are in sync.")
+    print("VERDICT: OK — canonical subsets have no cross-subset duplicates.")
     return 0
 
 
