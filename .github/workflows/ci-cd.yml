@@ -42,6 +42,25 @@ jobs:
 
       - name: Import boundary guard
         run: python backend/scripts/check_import_boundaries.py
+        
+      # ---- Requirements split guards (Phase 7 of requirements split) ----
+      # Both scripts are pure-stdlib (no pip install needed) and run in <1s.
+      # See docs/backend_refactors/requirements-split-plan.md and run.md.
+      - name: Requirements split parity guard
+        # Fails if backend/requirements.txt (legacy aggregate) and the
+        # backend/requirements/all.txt union drift apart in package set
+        # or duplicate top-level pins across subsets.
+        run: python backend/scripts/check_requirements_split_parity.py
+
+      - name: Worker import closure check
+        # AST scan of celery_app + celery_tasks recursive import graph,
+        # validated against backend/requirements/worker-runtime.txt
+        # (Pragmatic case from Phase 4.6 / 5). Fails if any third-party
+        # module reachable from worker entry points is NOT covered by
+        # the production worker subset. CAVEAT: this is static-only —
+        # CI Docker build of worker/Dockerfile remains the authoritative
+        # boot smoke (see Phase 5 run.md).
+        run: python backend/scripts/check_worker_import_closure.py --target worker-runtime
 
   # ============ FRONTEND LINTING (HARD GATE) ============
   frontend-lint:
