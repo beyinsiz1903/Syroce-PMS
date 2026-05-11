@@ -1,5 +1,6 @@
 {pkgs}: {
   deps = [
+    pkgs.mongodb-tools
     pkgs.liberation_ttf
     pkgs.gdk-pixbuf
     pkgs.gtk3

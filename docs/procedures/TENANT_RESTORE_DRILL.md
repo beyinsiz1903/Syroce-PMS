@@ -1,8 +1,10 @@
 # Tenant Restore Drill — Runbook
 
 > Pilot Readiness Checklist hard-blocker #3.
-> Phase 1 (May 2026): tooling + guardrails + dry-run only.
-> Phase 2 (planned): real backup → staging restore smoke.
+> Phase 1 (May 2026): tooling + guardrails + dry-run only. ✅ MERGED `cb52fb68`.
+> Phase 2 (May 2026): sandbox-only real `mongodump` → restore → prune →
+> validate → report. ✅ Local smoke PASS (24/24 tests, manual run leak=0,
+> FK orphans=0). Atlas/prod hard-BLOCK guardrail koda gömüldü.
 > Phase 3 (planned): periodic Celery drill + DR plan integration.
 
 ## Amaç
@@ -66,6 +68,41 @@ modunda çalışır. Aşağıdaki kurallar koda gömülüdür ve bypass edilemez
    çağrılmaz ve script exit 1 ile çıkar.
 6. Hiçbir kod yolu production DB'yi `dropDatabase` yapmaz, çağırmaz veya
    referans almaz.
+7. **Atlas hard-BLOCK (Faz 2):** `MONGO_URL` veya `--mongo-url` aşağıdaki
+   pattern'lerden HERHANGİ birine **case-insensitive** uyarsa `BLOCK`
+   verdict üretilir:
+   - `mongodb+srv://` (her case kombinasyonu, SRV scheme her zaman
+     yönetilen cluster lookup'ı demektir → fail-closed),
+   - host kısmında `.mongodb.net`, `.mongodb-dev.net`, `.mongodbgov.net`
+     suffix'i (`mongodb://node1.cluster.mongodb.net:27017,node2...` gibi
+     çoklu-host URL'ler de yakalanır).
+   Bu kural `--allow-prod-target` flag'i ile bypass EDİLEMEZ. Sandbox
+   drill yalnızca lokal Mongo'ya bağlanabilir. **Bilinen sınır:** Atlas
+   suffix'i içermeyen custom DNS/CNAME alias'ları string heuristic ile
+   tespit edilemez — operatör sandbox drill'i böyle hostlara
+   yönlendirmemelidir.
+8. `run_execute` çalışmaya başlamadan önce ikinci bir Atlas-URL kontrolü
+   yapar (defense-in-depth); eşleşirse exit 2 ile çıkar.
+9. **Prune over-delete koruması (Faz 2):** `prune_cross_tenant`
+   `tenant_id`-eksik docları SİLMEZ (`$exists: true` filter zorunlu).
+   Ek olarak iki fazlı bir tarama yapar: önce TÜM koleksiyonlarda 100
+   doc örnekleyerek `tenant_id` tipinin homojen ve CLI input tipiyle
+   strict (`is`) eşleştiğini doğrular; herhangi birinde uyumsuzluk
+   varsa hiçbir koleksiyonda `delete_many` çağrılmaz (no partial
+   mutation).
+   > **Eşzamanlılık notu:** Tarama-sonra-silme **atomic değildir**.
+   > Sandbox drill'de yazıcı yoktur (fixture seed → mongodump →
+   > restore → prune ardışıktır), bu kabul edilebilir. Sandbox dışı
+   > kullanım için write quiescence (maintenance window) veya
+   > transactional strateji gerekir; bu Faz 3 kapsamında ele alınacaktır.
+10. **Validation `untagged` raporu:** `tenant_id`-eksik docs ayrı
+    sayılır ve `untagged_total > 0` ise verdict `FAIL` olur (silinmez,
+    operatör review gerektirir).
+11. **Rapor dosya adı sanitize:** `tenant_id` filename'e yazılmadan
+    önce `[^A-Za-z0-9._-]` karakterler `_` ile değiştirilir, max 64
+    karakter, path traversal denemesi (`../`) absolute olarak
+    `report_dir` dışına çıkarsa `RuntimeError`. Yazım atomic
+    (temp + rename).
 
 ## Backup arşivi formatı
 
@@ -147,28 +184,86 @@ Beklenen çıktı (örnek):
     * 6 collection(s) are UNKNOWN_REVIEW_REQUIRED — confirm tenant scoping...
 ```
 
-## Execute adımları (Phase 2)
+## Execute adımları (Phase 2 — sandbox-only smoke)
 
-> **Faz 1'de execute path test edilmez.** Aşağıdaki adımlar Faz 2'de
-> dev/staging cluster üzerinde valide edilecektir.
+> Faz 2 execute path **sandbox-only**'dir. Atlas/prod URL'lere
+> bağlanma denemesi guardrail tarafından BLOCK edilir (kural #7-8).
+> Production tenant restore senaryosu Faz 3'te ayrı change-control
+> ile yönetilecektir.
+
+### Sandbox smoke koşusu (lokal Mongo)
 
 ```bash
+# 1. Lokal mongo başlat (alt port, ayrı dbpath)
+DBPATH=$(mktemp -d -t drill_mongo_XXX)
+mongod --dbpath "$DBPATH" --port 27018 --bind_ip 127.0.0.1 \
+  --logpath /tmp/drill_mongod.log --fork
+
+# 2. Fake 3-tenant fixture seed et (T1, T2, T3 × 7 koleksiyon)
+python backend/scripts/seed_drill_fixture.py \
+  --mongo-url mongodb://127.0.0.1:27018 \
+  --db-name drill_source
+
+# 3. mongodump al
+ARCH=$(mktemp -d -t drill_archive_XXX)
+mongodump --uri=mongodb://127.0.0.1:27018 --db=drill_source \
+  --out="$ARCH" --gzip
+
+# 4. Drill --execute (Atlas BLOCK guard aktif; lokal URL geçer)
+unset DB_NAME
+MONGO_URL=mongodb://127.0.0.1:27018 \
 python tools/tenant_restore_drill.py \
-  --backup-archive /var/backups/bk_20260511_020000_abc123 \
-  --tenant-id 64a1b2c3d4e5f6789abcdef0 \
-  --target-db hotel_pms_drill_staging \
+  --backup-archive "$ARCH" \
+  --tenant-id T1 \
+  --target-db drill_staging \
+  --source-db-name drill_source \
   --execute
+
+# 5. Rapor: docs/drill_reports/<TS>_T1_drill.md
 ```
 
 Helper sırasıyla:
 
-1. Plan + risk verdict üretir. `BLOCK` ise exit 1.
-2. Her TENANT_SCOPED koleksiyon için `mongorestore --gzip --nsInclude=
-   <DB>.<col> --nsFrom=<DB>.<col> --nsTo=<TARGET_DB>.<col> <archive>`
-   komutunu çalıştırır.
-3. Post-restore prune (Faz 2 takibinde implement edilecek):
-   her koleksiyonda `deleteMany({tenant_id: {$ne: <TENANT_ID>}})`.
-4. Drill report'u stdout + `drill_report_<timestamp>.md` olarak yazar.
+1. Plan + risk verdict üretir. `BLOCK` (Atlas / prod-target / boş plan) ise
+   exit 1.
+2. Atlas-URL ikinci kontrolü (`run_execute` içinde, defense-in-depth).
+3. Her TENANT_SCOPED koleksiyon için `mongorestore --gzip
+   --nsInclude=<DB>.<col> --nsFrom=<DB>.<col> --nsTo=<TARGET_DB>.<col>
+   <archive>` komutunu çalıştırır. Arşivde olmayan koleksiyonlar
+   `SKIP` mesajıyla atlanır (klasifikasyon kapsamlı, fixture küçük).
+4. Post-restore prune (`motor`): her restore edilen koleksiyonda
+   `deleteMany({tenant_id: {$ne: <TENANT_ID>}})`.
+5. Validation: per-collection `target_count > 0` + `leak_count == 0` +
+   FK integrity (booking → guest, booking → room, folio → booking).
+6. Drill report'u `docs/drill_reports/<YYYYMMDDTHHMMSS>_<TENANT>_drill.md`
+   olarak yazar. Verdict `PASS` ise exit 0; `FAIL` (leak veya FK orphan)
+   ise exit 2.
+
+### Otomatik smoke testi
+
+```bash
+cd backend && pytest tests/test_tenant_restore_drill_smoke.py -v
+```
+
+Bu test mongod'u kendisi spawn eder (`mongod`/`mongodump`/`mongorestore`
+PATH'te değilse skip), tüm akışı koşar, leak=0 + FK=0 + rapor dosyası
+yazıldığını assert eder. Atlas-URL guardrail testleri ayrıca koşar
+(`mongodb+srv://` ve `.mongodb.net` hostname için exit 1).
+
+### Faz 2 ilk smoke sonucu (referans)
+
+İlk başarılı manuel koşu:
+
+- Tarih: 2026-05-11 16:43 UTC
+- Backup: lokal mongodump (3 tenant × 7 koleksiyon, ~38 doc)
+- Target tenant: T1
+- Target DB: `drill_staging_manual`
+- Restore edilen koleksiyon sayısı: 7 (tenants, users, guests, rooms,
+  bookings, folios, payments)
+- Leak total: **0** (T2 + T3 verisi prune ile temizlendi)
+- FK orphan total: **0**
+- Verdict: **PASS**
+- Rapor: `docs/drill_reports/20260511T164309_T1_drill.md`
 
 ## Validation queries
 
@@ -308,23 +403,29 @@ PASS / FAIL
    destination and scheduled backup job are verified."*
 2. **`BACKUP_PATH=/tmp/backups`** container ephemeral. Production için
    kalıcı volume + off-site sync (S3/GCS) gerekir.
-3. **Post-restore prune** Faz 2'de `motor` ile implement edilecek; Faz 1
-   sadece restore subprocess'lerini çalıştırır, prune'u çağırmaz.
-4. **Drill report yazıcısı** Faz 2'de eklenecek; Faz 1 sadece stdout plan
-   üretir.
+3. **Post-restore prune** ✅ Faz 2'de `motor` ile implement edildi
+   (`prune_cross_tenant`).
+4. **Drill report yazıcısı** ✅ Faz 2'de eklendi (`write_drill_report`,
+   markdown çıktısı `docs/drill_reports/`).
 5. **UNKNOWN_REVIEW_REQUIRED** koleksiyonlarının schema sahipleriyle
    görüşülüp tenant-scope'larının netleştirilmesi gerekiyor:
    `connector_dlq`, `connector_outbox`, `connector_metrics`,
    `cm_webhook_events`, `raw_channel_events`, `reservation_lineage`.
 6. **Periodic drill (Phase 3)** Celery beat ile quarterly çalıştırılacak;
-   Faz 1'de schedule entry yok.
+   Faz 1/2'de schedule entry yok.
+7. **Production tenant restore** Faz 2 sandbox-only'dir; gerçek tenant
+   verisi restore senaryosu Faz 3 change-control kapsamına aittir
+   (4-eyes onay + maintenance window + post-restore audit).
 
 ## İlişkili dosyalar
 
-- `tools/tenant_restore_drill.py` — drill helper
+- `tools/tenant_restore_drill.py` — drill helper (Faz 1+2)
 - `backend/scripts/classify_tenant_scope.py` — collection classifier
-- `backend/tests/test_tenant_restore_drill.py` — guardrail testleri
+- `backend/scripts/seed_drill_fixture.py` — sandbox fake 3-tenant seeder
+- `backend/tests/test_tenant_restore_drill.py` — Faz 1 guardrail testleri (20)
+- `backend/tests/test_tenant_restore_drill_smoke.py` — Faz 2 sandbox smoke (4)
 - `backend/infra/backup_manager.py` — backup mantığı
+- `docs/drill_reports/` — drill rapor çıktısı klasörü
 - `docs/procedures/BACKUP_AND_RESTORE.md` — tam-DB backup/restore
 - `docs/procedures/DISASTER_RECOVERY.md` — DR plan
 - `docs/PILOT_READINESS_CHECKLIST.md` — hard-blocker listesi
