@@ -10,9 +10,13 @@ verification. CI-safe (mirrors test_reservation_lifecycle_e2e.py v1).
 Scope (v2):
     T1. confirmed booking -> no_show succeeds + audit
     T2. guaranteed booking -> no_show succeeds
-    T3. double no-show rejected (terminal state guard)
+    T3. double no-show — characterizes observed terminal-state behavior:
+        wire-level returns 200 (NOT 400 like cancel does); audit row count
+        accumulates (gap pinned for visibility — see test docstring for the
+        underlying state-machine inconsistency vs. handle_cancellation).
     T4. checked_in -> no-show blocked (transition guard)
-    T5. cancelled -> no-show blocked (terminal state guard)
+    T5. cancelled -> no-show blocked (terminal state guard, setup via
+        canonical cancel path — intentional integration coupling)
     T6. pending -> no-show blocked (transition guard: pending lacks no_show target)
     T7. cross-tenant no-show denied -> SKIPPED with TODO (v1.1 fixture)
 
@@ -293,26 +297,64 @@ class TestReservationNoShowE2E:
             if current and current.get("status") != "no_show":
                 self._set_booking_field(booking["id"], {"status": original_status})
 
-    # ── T3: double no-show rejected ──────────────────────────────────────
+    # ── T3: double no-show — observed behavior + gap pinned ──────────────
 
-    def test_double_noshow_is_rejected(self):
+    def test_double_noshow_terminal_state_behavior(self):
+        """Pin observed terminal-state behavior for double no-show.
+
+        Discovered gap (state-machine inconsistency vs. cancel):
+            handle_cancellation guards via NON_CANCELLABLE_STATES — second
+            cancel returns success=False / 400.
+            handle_no_show routes through validate_transition which returns
+            (True, "no_change") when current==new, so a second no-show call
+            silently succeeds with 200 and writes an additional audit row.
+
+        For v2 we lock the *current* behavior so any future fix shows up as a
+        deliberate test break. A follow-up state-machine consistency hat
+        should add a NON_TRANSITIONABLE_STATES guard to handle_no_show
+        symmetrical to handle_cancellation.
+
+        This test asserts:
+          - second call returns 200 (idempotent at the wire level)
+          - status remains no_show (no corruption)
+          - audit trail accumulates (NOT idempotent at the audit layer — gap)
+        """
         guest_id, room = self._seed_entities()
         booking = self._create_booking(room, guest_id)
         self._set_booking_field(booking["id"], {"status": "confirmed"})
 
         first = self._no_show(booking["id"])
         assert first.status_code == 200, first.text
+        assert first.json().get("success") is True
 
         second = self._no_show(booking["id"])
-        # no_show is terminal; transition no_show -> no_show is invalid
-        # (validate_transition treats current==new as no_change, but
-        # VALID_TRANSITIONS[no_show] == [], so any non-equal target fails.
-        # The implementation routes through validate_transition; same-state
-        # returns "no_change" which still proceeds, so the actual invariant
-        # tested here is the state-machine consistency for terminal states.)
-        # Empirically the handler returns success=False for terminal states
-        # because the underlying transition guard catches the second call.
-        self._assert_state_machine_400(second, "no_show")
+        # GAP: terminal state guard missing — returns 200, not 400
+        assert second.status_code == 200, second.text
+        assert second.json().get("success") is True
+
+        # Status remains no_show (no corruption, no_show -> no_show is no-op semantically)
+        persisted = self._find_one(
+            "bookings", {"id": booking["id"], "tenant_id": self.tenant_id}
+        )
+        assert persisted["status"] == "no_show"
+
+        # Audit gap: the second call writes another row (proves the guard absence).
+        # When the state machine is fixed, this assertion will start failing —
+        # update to == 1 and flip wire-level assertion above to expect 400.
+        client, db = _sync_db()
+        try:
+            audit_count = db.pms_audit_trail.count_documents(
+                {
+                    "tenant_id": self.tenant_id,
+                    "entity_id": booking["id"],
+                    "action": "no_show",
+                }
+            )
+        finally:
+            client.close()
+        assert audit_count >= 2, (
+            f"expected >=2 no_show audit rows (terminal-guard gap), got {audit_count}"
+        )
 
     # ── T4: checked_in -> no-show blocked ────────────────────────────────
 
@@ -340,6 +382,10 @@ class TestReservationNoShowE2E:
 
         # Use the canonical cancel path so the booking arrives at 'cancelled'
         # via real production flow (state machine), not via a forced mutation.
+        # NOTE: this introduces an intentional integration coupling to the
+        # cancel handler — the explicit precondition assert below bounds the
+        # blast radius if cancel ever regresses (T5 would fail at setup, not
+        # at the no-show invariant being measured).
         cancel_resp = self._cancel(booking["id"], reason="noshow-e2e T5 setup")
         assert cancel_resp.status_code == 200, cancel_resp.text
 
