@@ -117,6 +117,8 @@ class FolioHardeningService:
         folio = await db.folios.find_one({"id": folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not folio:
             return {"success": False, "error": "Folio not found"}
+        if folio.get("status") != "open":
+            return {"success": False, "error": f"Folio is {folio.get('status')}, cannot post refunds"}
 
         if amount <= 0:
             return {"success": False, "error": "Refund amount must be positive"}
@@ -162,6 +164,10 @@ class FolioHardeningService:
         if not reason:
             return {"success": False, "error": "Void reason is required"}
 
+        folio = await db.folios.find_one({"id": charge["folio_id"], "tenant_id": tenant_id}, {"_id": 0, "status": 1})
+        if folio and folio.get("status") != "open":
+            return {"success": False, "error": f"Folio is {folio.get('status')}, cannot void charge"}
+
         now = datetime.now(UTC)
         await db.folio_charges.update_one(
             {"id": charge_id, "tenant_id": tenant_id},
@@ -194,6 +200,10 @@ class FolioHardeningService:
             return {"success": False, "error": "Payment already voided"}
         if not reason:
             return {"success": False, "error": "Void reason is required"}
+
+        folio = await db.folios.find_one({"id": payment["folio_id"], "tenant_id": tenant_id}, {"_id": 0, "status": 1})
+        if folio and folio.get("status") != "open":
+            return {"success": False, "error": f"Folio is {folio.get('status')}, cannot void payment"}
 
         now = datetime.now(UTC)
         await db.payments.update_one(

@@ -550,27 +550,22 @@ class TestFolioChargePaymentE2E:
         finally:
             self._set_folio_field(folio_id, {"status": original_status})
 
-    # ── T9: refund on closed folio succeeds — GAP pinned ─────────────────
+    # ── T9: refund on closed folio blocked (gap closed) ──────────────────
 
-    def test_refund_on_closed_folio_succeeds_GAP(self):
-        """Pin observed gap: post_refund has no closed-folio guard.
+    def test_refund_on_closed_folio_blocked(self):
+        """Closed-folio refund guard (symmetric with post_charge / post_payment).
 
-        Discovered gap (parallel to no-show v2 T3 inconsistency):
+        Previously a known gap (`test_refund_on_closed_folio_succeeds_GAP`):
             post_charge   -> rejects when folio.status != "open"  (400)
             post_payment  -> rejects when folio.status != "open"  (400)
-            post_refund   -> NO STATUS GUARD; refund proceeds even when the
-                             folio is closed, writing a negative payment row
-                             and recalculating balance.
+            post_refund   -> proceeded silently on closed folios
 
-        For v3 we lock the *current* behavior so any future fix shows up as a
-        deliberate test break. A follow-up folio hardening hat should add a
-        closed-state guard to post_refund symmetrical to post_charge /
-        post_payment.
-
+        Production hardening (May 2026) added the closed-state guard to
+        `post_refund` so balance integrity on closed folios is preserved.
         This test asserts:
-          - refund call returns 200 on closed folio
-          - refund persisted in payments collection (payment_type="refund")
-          - audit row written (refund_posted)
+          - refund call returns 400 on closed folio (detail contains "closed")
+          - no refund row is persisted in payments collection
+          - no `refund_posted` audit row is written
         """
         _, folio = self._create_booking_with_folio()
         folio_id = folio["id"]
@@ -583,22 +578,111 @@ class TestFolioChargePaymentE2E:
         )
         try:
             r = self._post_refund(
-                folio_id, booking_id, 50.0, reason="closed-folio refund GAP"
+                folio_id, booking_id, 50.0, reason="closed-folio refund blocked"
             )
-            # GAP: closed-folio guard missing — returns 200, not 400
-            assert r.status_code == 200, r.text
-            body = r.json()
-            assert body.get("success") is True
-            refund_id = body["refund"]["id"]
+            self._assert_400(r, "closed")
 
             refund_doc = self._find_one(
-                "payments", {"id": refund_id, "tenant_id": self.tenant_id}
+                "payments",
+                {"folio_id": folio_id, "payment_type": "refund", "tenant_id": self.tenant_id},
             )
-            assert refund_doc is not None
-            assert refund_doc.get("payment_type") == "refund"
-            assert abs(float(refund_doc.get("amount", 0)) - (-50.0)) < EPS
+            assert refund_doc is None, "refund must not be persisted on closed folio"
 
-            self._assert_audit(folio_id, "refund_posted")
+            # No refund_posted audit row should be written on a blocked refund.
+            audit_count = self._count(
+                "pms_audit_trail",
+                {
+                    "tenant_id": self.tenant_id,
+                    "action": "refund_posted",
+                    "metadata.folio_id": folio_id,
+                },
+            )
+            assert audit_count == 0, (
+                f"blocked refund must not write refund_posted audit row, got {audit_count}"
+            )
+        finally:
+            self._set_folio_field(folio_id, {"status": original_status})
+
+    # ── T10: void charge on closed folio blocked ─────────────────────────
+
+    def test_void_charge_on_closed_folio_blocked(self):
+        """Void of an existing charge must be rejected when folio is closed."""
+        _, folio = self._create_booking_with_folio()
+        folio_id = folio["id"]
+        booking_id = folio["booking_id"]
+
+        # Post a charge while folio is open, then close the folio.
+        post = self._post_charge(folio_id, booking_id, 75.0)
+        assert post.status_code == 200, post.text
+        charge_id = post.json()["charge"]["id"]
+
+        original_status = folio.get("status", "open")
+        self._set_folio_field(
+            folio_id,
+            {"status": "closed", "closed_at": datetime.now(UTC).isoformat()},
+        )
+        try:
+            r = self._void_charge(charge_id, reason="void on closed folio")
+            self._assert_400(r, "closed")
+
+            doc = self._find_one(
+                "folio_charges", {"id": charge_id, "tenant_id": self.tenant_id}
+            )
+            assert doc is not None
+            assert doc.get("voided") is False, "charge must not flip to voided on closed folio"
+        finally:
+            self._set_folio_field(folio_id, {"status": original_status})
+
+    # ── T11: void payment on closed folio blocked ────────────────────────
+
+    @pytest.mark.parametrize("folio_status", ["closed", "transferred", "voided"])
+    def test_refund_blocked_for_all_non_open_folio_statuses(self, folio_status):
+        """Guard symmetry across every non-open FolioStatus value.
+
+        post_refund must reject refunds when folio is `closed`, `transferred`,
+        or `voided` — the guard logic is `status != "open"` so all three
+        terminal states should behave identically.
+        """
+        _, folio = self._create_booking_with_folio()
+        folio_id = folio["id"]
+        booking_id = folio["booking_id"]
+
+        original_status = folio.get("status", "open")
+        self._set_folio_field(folio_id, {"status": folio_status})
+        try:
+            r = self._post_refund(
+                folio_id, booking_id, 25.0,
+                reason=f"refund on {folio_status} folio must be blocked",
+            )
+            self._assert_400(r, folio_status)
+        finally:
+            self._set_folio_field(folio_id, {"status": original_status})
+
+    def test_void_payment_on_closed_folio_blocked(self):
+        """Void of an existing payment must be rejected when folio is closed."""
+        _, folio = self._create_booking_with_folio()
+        folio_id = folio["id"]
+        booking_id = folio["booking_id"]
+
+        # Post a payment while folio is open, then close the folio.
+        pay = self._post_payment(folio_id, booking_id, 60.0)
+        assert pay.status_code == 200, pay.text
+        payment_id = pay.json()["payment"]["id"]
+
+        original_status = folio.get("status", "open")
+        self._set_folio_field(
+            folio_id,
+            {"status": "closed", "closed_at": datetime.now(UTC).isoformat()},
+        )
+        try:
+            r = self._void_payment(payment_id, reason="void on closed folio")
+            self._assert_400(r, "closed")
+
+            doc = self._find_one(
+                "payments", {"id": payment_id, "tenant_id": self.tenant_id}
+            )
+            assert doc is not None
+            assert doc.get("voided") is False, "payment must not flip to voided on closed folio"
         finally:
             self._set_folio_field(folio_id, {"status": original_status})
 
