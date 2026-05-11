@@ -1823,6 +1823,105 @@ Optional Phase 8.3 (cosmetic, never strictly necessary):
 
 ---
 
+# Phase 8.2-W (2026-05-11) — CI workflow patch landing (operational closure)
+
+ChatGPT identified the 4 outstanding CI install commands as the only
+remaining blocker for operational closure (CI runs would fail with
+`requirements.txt: not found` after Phase 8.2 deletion). Applied this
+turn in a single workflow patch commit, plus 2 bonus cleanups in
+`ci-cd.yml` swept up in the same commit:
+
+## Edits applied
+
+### Step 1 — `.github/workflows/ci-cd.yml` install swap (3 hits)
+
+All 3 occurrences of `pip install -r requirements.txt --extra-index-url ...`
+swapped to `pip install -r requirements/all.txt --extra-index-url ...`
+via `replace_all` (identical text, identical replacement). Affected
+steps:
+
+- L135: `Install backend dependencies` — main test job (pytest-cov,
+  pytest-timeout)
+- L239: `Install backend dependencies` — secondary test job
+  (pytest-asyncio, httpx, pytest-timeout)
+- L367: `Install backend dependencies` — third job (no extra pytest
+  install; standalone backend deps for security scan)
+
+### Step 2 — `ci-cd.yml:49-58` drift guard step comment update (BONUS)
+
+The `Requirements split parity guard` step's 3-line comment ("Fails if
+`backend/requirements.txt` (legacy aggregate) and the
+`backend/requirements/all.txt` union drift apart …") was now factually
+wrong post-Phase-8.2 (no aggregate to drift against). Replaced with a
+9-line comment explaining the Phase 8.2 surgery: parity invariant
+retired, duplicate-check half (Phase 4.5) still runs here, step name +
+script filename both preserved deliberately. Back-pointer to run.md
+Phase 8.2 added.
+
+### Step 3 — `ci-cd.yml:413` security-scan exclude cleanup (BONUS)
+
+The hard-gate password regex `grep -rn "password\s*=..."` had
+`--exclude="requirements.txt"` in its exclude list. The file no longer
+exists (Phase 8.2 deletion), so the exclude is a no-op. Removed for
+clarity; the other excludes (`*test*`, `*demo*`, `*seed*`, `*create_*`,
+`*conftest*`) preserved.
+
+### Step 4 — `.github/workflows/frontend-quality.yml:74` install swap (1 hit)
+
+Single occurrence swapped to `pip install -r requirements/all.txt …`.
+Step: `Install backend deps` in the frontend-quality e2e backend boot
+flow.
+
+## Verification
+
+- All 4 originally-flagged CI install commands now reference
+  `requirements/all.txt`.
+- ripgrep post-edit confirms zero remaining `requirements\.txt` matches
+  in `.github/workflows/`:
+  ```
+  $ rg 'requirements\.txt' .github/workflows/
+  (no output)
+  ```
+- The drift guard step name (`Requirements split parity guard`) is
+  intact — dashboards and CI history continue to reference the same
+  step name.
+- `requirements/all.txt` itself was previously verified to be a valid
+  pip requirements file (composer with 7 `-r` includes covering all
+  222 packages); CI pip installs will succeed.
+
+## Push
+
+- **Replit Git pane** (this turn): 1 doc file
+  (`docs/backend_refactors/requirements-split.run.md` — Phase 8.2-W
+  closing section).
+- **GitHub web UI** (next, REQUIRED for operational closure): 2
+  workflow files
+  (`.github/workflows/ci-cd.yml`, `.github/workflows/frontend-quality.yml`)
+  — same OAuth-scope dance as Phase 7/7.1/8.1. Local edits are staged
+  and ready to copy-paste.
+  - Suggested commit message: `requirements: phase 8.2-W — CI workflow swap to requirements/all.txt + drift-guard comment cleanup`
+
+## Operational closure cadence
+
+After the GitHub web UI commit lands and the next CI run is green:
+
+> **Requirements / Docker / CI dependency refactor is FULLY closed.**
+> Backend and worker images run on runtime subsets, legacy aggregate is
+> gone, drift / import-closure guards are active, and CI install
+> commands reference the canonical split aggregate.
+
+Next focus per ChatGPT (post-CI-landing):
+1. CI patch landing verification (one green run on `main`)
+2. Core PMS E2E expansion (reservation modify/cancel, no-show, folio
+   refund/void)
+3. Pilot readiness checklist (backup, rollback, tenant isolation smoke,
+   channel manager reconciliation smoke)
+4. Compat `production_ready` endpoint migration
+
+**Phase 8.2-W status: COMPLETE in source. Workflow patch READY for GitHub web UI commit.**
+
+---
+
 # Refactor closing summary (Phases 2 → 8.2, May 2026)
 
 | Phase | Outcome |
