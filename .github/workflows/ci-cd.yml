@@ -47,7 +47,7 @@ jobs:
       # Both scripts are pure-stdlib (no pip install needed) and run in <1s.
       # See docs/backend_refactors/requirements-split-plan.md and run.md.
       - name: Requirements split parity guard
-        # Phase 8.2 (May 2026): legacy aggregate `backend/requirements.txt`
+        # Phase 8.2 (May 2026): legacy aggregate `backend/requirements/all.txt`
         # was removed; the script's parity-vs-aggregate invariant was
         # retired. The remaining duplicate-check half (Phase 4.5) still
         # runs here: fails if any package name appears as a direct
@@ -370,7 +370,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           cd backend
-          pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
           bash scripts/post_install.sh
 
       - name: Python dependency security audit (CRITICAL — hard gate)
