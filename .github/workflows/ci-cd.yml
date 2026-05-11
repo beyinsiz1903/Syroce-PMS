@@ -47,9 +47,15 @@ jobs:
       # Both scripts are pure-stdlib (no pip install needed) and run in <1s.
       # See docs/backend_refactors/requirements-split-plan.md and run.md.
       - name: Requirements split parity guard
-        # Fails if backend/requirements.txt (legacy aggregate) and the
-        # backend/requirements/all.txt union drift apart in package set
-        # or duplicate top-level pins across subsets.
+        # Phase 8.2 (May 2026): legacy aggregate `backend/requirements.txt`
+        # was removed; the script's parity-vs-aggregate invariant was
+        # retired. The remaining duplicate-check half (Phase 4.5) still
+        # runs here: fails if any package name appears as a direct
+        # top-level entry in two or more canonical subset files
+        # (base/api/worker/ml/reports/integrations/dev). The CI step name
+        # is preserved to avoid breaking dashboards; the script filename
+        # is preserved to avoid an OAuth-scoped workflow patch.
+        # See docs/backend_refactors/requirements-split.run.md Phase 8.2.
         run: python backend/scripts/check_requirements_split_parity.py
 
       - name: Worker import closure check
@@ -410,7 +416,7 @@ jobs:
           # is found, which is the SUCCESS case. The FOUND flag handles the gate.
           grep -rn "password\s*=\s*['\"][^'\"]\{8,\}" backend/ --include="*.py" \
             --exclude="*test*" --exclude="*demo*" --exclude="*seed*" \
-            --exclude="*create_*" --exclude="requirements.txt" \
+            --exclude="*create_*"\
             --exclude="*conftest*" && FOUND=1 || true
           grep -rn "api_key\s*=\s*['\"]sk-" backend/ --include="*.py" \
             --exclude="*test*" --exclude="*.env" && FOUND=1 || true
