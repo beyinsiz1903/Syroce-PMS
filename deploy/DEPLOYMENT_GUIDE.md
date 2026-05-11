@@ -51,7 +51,15 @@ Sunucudaki dizin yapisi su sekilde olmali:
     api.conf
   backend/                      (proje backend/ klasoru)
     Dockerfile
-    requirements.txt
+    requirements/               (canonical split tree — base.txt, api.txt,
+                                 worker.txt, ml.txt, reports.txt,
+                                 integrations.txt, dev.txt + composer
+                                 all.txt + runtime composers
+                                 api-runtime.txt, worker-runtime.txt;
+                                 see docs/backend_refactors/requirements-split.run.md)
+    requirements.txt            (legacy aggregate, kept in lock-step with
+                                 requirements/all.txt by drift guard;
+                                 scheduled for deletion in Phase 8.2)
     server.py
     ...
   worker/                       (proje worker/ klasoru)

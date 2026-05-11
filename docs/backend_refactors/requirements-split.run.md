@@ -1398,3 +1398,199 @@ After Phase 8.1, `backend/requirements.txt` would have **zero live consumers**. 
 - **Phase 8.2**: final disposition per the 6-step list above (pending Phase 8.1 completion + a re-scan).
 
 **Phase 8.0 status: COMPLETE. Read-only consumer scan delivered. Awaiting ChatGPT approval of Phase 8.1 scope.**
+
+---
+
+# Phase 8.1 (2026-05-11) — Low-risk consumer migration (8 source edits)
+
+ChatGPT approved Phase 8.1 scope with explicit ordering: deploy_pipeline.py
+path fix FIRST, then everything else. Workflow file patches deferred to
+GitHub web UI (same Phase 7 / 7.1 OAuth-scope dance) so the source push
+from Replit Git pane is not blocked.
+
+## Edits applied
+
+### Step 1 — `backend/ops/deploy_pipeline.py:420-428` (RUNTIME CHECK fix, FIRST)
+
+The pre-existing hardcoded `/app/backend/requirements.txt` existence check
+inside `_gate_build()` would have reported a phantom error
+`"requirements.txt missing"` once the Dockerfile COPY was removed.
+
+Updated to check `/app/backend/requirements/api-runtime.txt` instead — per
+ChatGPT direction, this is the file the production API image actually
+RUN-installs (Phase 6.1), so it's the most meaningful proof-of-image-integrity
+target. Output line updated to `[REQ] api-runtime: N lines (incl. -r includes)`
+(reflects that this file uses `-r api.txt` + `-r integrations.txt` + 2 gap
+packages, so naive line count is now an indicator, not a package count).
+
+7-line block-comment added explaining Phase 8.1 rationale + back-pointer to
+run.md.
+
+### Step 2 — `backend/Dockerfile:18` (legacy COPY removed)
+
+Removed `COPY requirements.txt ./` (line 18 in pre-Phase-8.1 source). The
+RUN install at line 33 already targets `requirements/api-runtime.txt` (per
+Phase 6.1) — the legacy aggregate was never consumed by the build, only
+copied for "debug/legacy callers" intent. The replaced 5-line block-comment
+("Phase 4 ... Phase 8 will deprecate ...") is now an 8-line block-comment
+documenting Phase 8.1 disposition + back-pointer to drift guard.
+
+### Step 3 — `worker/Dockerfile:21` (legacy COPY removed)
+
+Removed `COPY backend/requirements.txt .` (line 21 in pre-Phase-8.1 source).
+Same rationale as backend; worker RUN install at line 23 targets
+`requirements/worker-runtime.txt` (Phase 5).
+
+### Step 4 — `backend/requirements-ci.txt` (shim swap + policy header rewrite)
+
+Replaced `-r requirements.txt` with `-r requirements/all.txt`. 17-line policy
+header rewritten to reflect Phase 8.1 status: file now references the canonical
+split aggregate (`requirements/all.txt`), notes that drift guard verifies
+parity, and flags Phase 8.2 may delete this file entirely (current ripgrep
+status: 0 callers — the file is effectively orphaned).
+
+### Step 5 — `scripts/post-merge.sh:14-15` (consumer swap)
+
+Existence check + install swapped from `backend/requirements.txt` →
+`backend/requirements/all.txt`. The `|| true` failure-swallowing semantics are
+preserved (a transient swap mistake is non-fatal). 4-line comment added
+documenting Phase 8.1 forward-compatibility with Phase 8.2 (legacy deletion).
+
+**Out of scope (explicitly preserved)**: `scripts/post-merge.sh:18-19`'s
+`quick-id/requirements.txt` install is a SEPARATE service's dependency tree
+and was NOT touched. Quick-ID has its own deps tree, fully independent of
+the backend split refactor.
+
+### Step 6 — `README.md:104` (user-facing install instruction)
+
+`pip install -r requirements.txt` → `pip install -r requirements/all.txt` in
+the Local Development section.
+
+### Step 7 — `backend/README.md:82` (dev-facing install instruction)
+
+Same swap. 2-line comment added pointing readers to run.md for the canonical
+explanation of the split aggregate.
+
+### Step 8 — `deploy/DEPLOYMENT_GUIDE.md:54` (file tree diagram update)
+
+The deployment guide's `backend/` filename diagram was updated to list
+`requirements/` (with full subset enumeration: base/api/worker/ml/reports/
+integrations/dev + composer all.txt + runtime composers api-runtime.txt /
+worker-runtime.txt) BEFORE `requirements.txt`, with a clarifying note that the
+legacy file is kept in lock-step by drift guard and scheduled for deletion
+in Phase 8.2.
+
+## Workflow patch (deferred — GitHub web UI required)
+
+The 4 CI install commands in `.github/workflows/ci-cd.yml` (lines 135, 239,
+367) and `.github/workflows/frontend-quality.yml` (line 74) all use the
+identical pattern. They MUST be swapped to keep CI green after Phase 8.2
+deletes `requirements.txt`.
+
+These workflow files are NOT edited from Replit (would block the source push
+because the OAuth integration lacks `workflow` scope — same Phase 7 / 7.1
+limitation). Apply via GitHub web UI:
+
+```diff
+--- a/.github/workflows/ci-cd.yml
++++ b/.github/workflows/ci-cd.yml
+@@ -132,7 +132,7 @@
+       - name: Install backend dependencies
+         run: |
+           cd backend
+-          pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
++          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+           bash scripts/post_install.sh
+           pip install pytest pytest-asyncio httpx pytest-cov pytest-timeout
+
+@@ -236,7 +236,7 @@
+       - name: Install backend dependencies
+         run: |
+           cd backend
+-          pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
++          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+           bash scripts/post_install.sh
+           pip install pytest pytest-asyncio httpx pytest-timeout
+
+@@ -364,7 +364,7 @@
+       - name: Install backend dependencies
+         run: |
+           cd backend
+-          pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
++          pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+           bash scripts/post_install.sh
+```
+
+```diff
+--- a/.github/workflows/frontend-quality.yml
++++ b/.github/workflows/frontend-quality.yml
+@@ -71,7 +71,7 @@
+             - name: Install backend deps
+               run: |
+                   cd backend
+-                  pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
++                  pip install -r requirements/all.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+                   bash scripts/post_install.sh
+```
+
+Suggested commit message: `requirements: phase 8.1 — CI install commands → requirements/all.txt`
+
+## Verification (Phase 8.1, post-edit)
+
+```
+A) Drift guard          : OK — set parity 222 == 222, 0 cross-subset duplicates
+B) API import closure   : REVIEW NEEDED (2 unmapped: opentelemetry, rate_limiter)
+                          — pre-existing baseline since Phase 6.0; opentelemetry
+                            is covered by opentelemetry-api/sdk distributions in
+                            api.txt, rate_limiter is the internal module
+                            backend/core/rate_limiter.py. NOT a Phase 8.1 regression.
+C) Worker import closure: OK — 14 modules covered, 0 unmapped, 0 missing
+D) deploy_pipeline.py   : import smoke OK (`from ops.deploy_pipeline import DeployPipeline`)
+E) 4 dev workflows      : Backend API / Mobile Web / Quick-ID API / Start application
+                          — all running with new logs (auto-reload picked up the
+                            deploy_pipeline.py edit; no startup errors)
+```
+
+## Re-scan: remaining `requirements.txt` references
+
+After Phase 8.1, the only surviving references are:
+
+| File | Line | Type | Disposition |
+|------|------|------|-------------|
+| `backend/Dockerfile` | 13, 16, 19, 22 | Block-comment explaining Phase 8.1 | KEEP — documentation |
+| `worker/Dockerfile` | 19 | Block-comment explaining Phase 8.1 | KEEP — documentation |
+| `backend/requirements-ci.txt` | 13, 16 | Policy header explaining Phase 8.1 | KEEP — documentation |
+| `deploy/DEPLOYMENT_GUIDE.md` | 60, 63 | Diagram + lock-step note | KEEP — documentation |
+| `backend/scripts/check_requirements_split_parity.py` | 4, 31 | Drift guard's actual comparison target | KEEP — Phase 8.2 surgery target |
+| `backend/ops/deploy_pipeline.py` | 422-425 | Comment explaining old path origin | KEEP — documentation |
+| `scripts/post-merge.sh` | 22-23 | `quick-id/requirements.txt` install | KEEP — DIFFERENT service, out of scope |
+| `backend/integrations/xchange/safety.py` | 188 | Cosmetic comment | Phase 8.2 cosmetic touch-up candidate |
+| `backend/core/pci_dss.py` | 151 | Cosmetic Turkish UI string | Phase 8.2 cosmetic touch-up candidate |
+| `docs/frontend_refactors/route-split.run.md` | 110 | Historical mention | KEEP — historical record |
+
+**Zero live consumers of `backend/requirements.txt` remain after Phase 8.1.**
+Drift guard is the only file that programmatically reads it; that's by
+design (the guard's whole job is to compare aggregate vs split).
+
+## Push split
+
+- **Replit Git pane** (this turn): 9 source files
+  (`backend/ops/deploy_pipeline.py`, `backend/Dockerfile`, `worker/Dockerfile`,
+  `backend/requirements-ci.txt`, `scripts/post-merge.sh`, `README.md`,
+  `backend/README.md`, `deploy/DEPLOYMENT_GUIDE.md`,
+  `docs/backend_refactors/requirements-split.run.md`).
+- **GitHub web UI** (next): 2 workflow files per the diff blocks above.
+
+## What's left
+
+- **Phase 8.2** (next, after CI workflow patch lands): final disposition.
+  - Re-run zero-callers ripgrep to confirm no new references slipped in.
+  - Delete `backend/requirements.txt` (zero live consumers).
+  - Repurpose drift guard: drop the aggregate-vs-union half (~30 lines);
+    keep the cross-subset duplicate-check half (Phase 4.5 protection).
+  - Decide on `backend/requirements-ci.txt`: if still 0 callers, delete it.
+  - Cosmetic touch-ups: `pci_dss.py:151`, `xchange/safety.py:188`.
+  - Update CI step name in ci-cd.yml: "Requirements split parity guard"
+    → "Requirements subset duplicate guard".
+
+**Phase 8.1 status: COMPLETE in source. Workflow patch ready for GitHub web UI.**

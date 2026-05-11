@@ -9,13 +9,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libffi-dev libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Phase 4 of requirements split: install via requirements/all.txt (legacy
-# aggregate composer that chains base+api+worker+ml+reports+integrations+dev).
-# Behavior is parity-preserving with the prior `-r requirements.txt` call;
-# see docs/backend_refactors/requirements-split-plan.md and run.md.
-# requirements.txt is still copied for now (legacy callers / debugging);
-# Phase 8 will deprecate it once all consumers point to requirements/.
-COPY requirements.txt ./
+# Phase 4 of requirements split: install via the requirements/ tree.
+# Phase 8.1 (May 2026): legacy aggregate `requirements.txt` is no longer
+# COPY'd into the image — all consumers (Dockerfile RUN, deploy_pipeline.py
+# runtime check, CI install commands, post-merge.sh) now reference the
+# split tree directly. See docs/backend_refactors/requirements-split.run.md
+# Phase 8.1 for the consumer migration log. The drift guard
+# (backend/scripts/check_requirements_split_parity.py) keeps the legacy
+# `backend/requirements.txt` source-of-truth in sync with `requirements/all.txt`
+# until Phase 8.2 (final disposition).
 COPY requirements/ ./requirements/
 # Phase 6.1 of requirements split (Pragmatic case): install the production
 # backend API subset, NOT the full backend aggregate.

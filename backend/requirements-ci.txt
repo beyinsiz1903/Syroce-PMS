@@ -1,18 +1,20 @@
-# CI requirements — INTENTIONALLY references the legacy aggregate.
+# CI requirements — references the split aggregate.
 #
-# Status (Phase 7 of requirements split, May 2026):
+# Status (Phase 8.1 of requirements split, May 2026):
 #   The CI test/load/security/e2e jobs in .github/workflows/ci-cd.yml and
 #   frontend-quality.yml install backend deps via `pip install -r
-#   requirements.txt`. These jobs MUST exercise the full surface area —
-#   ML, reports, integrations, dev/test extras — so narrowing to a
-#   per-subset install would break them.
+#   requirements/all.txt` directly (Phase 8.1 swap). These jobs MUST exercise
+#   the full surface area — ML, reports, integrations, dev/test extras —
+#   so narrowing to a per-subset install would break them.
 #
-# Phase 8 will revisit this file:
-#   - If `requirements.txt` is dropped in favour of `requirements/all.txt`,
-#     update this to `-r requirements/all.txt`.
-#   - If CI is re-architected to install only what each test layer needs
-#     (e.g. unit tests use base+api, integration tests add integrations,
-#     ML pipeline tests add ml), this file disappears entirely.
+# `requirements/all.txt` is the canonical aggregate composer
+# (`-r base.txt + api.txt + worker.txt + ml.txt + reports.txt
+# + integrations.txt + dev.txt`) — same 222-package surface as the
+# legacy `requirements.txt`, verified by check_requirements_split_parity.py
+# on every CI run.
 #
-# Do not delete or modify without coordinating with Phase 8.
--r requirements.txt
+# Phase 8.2 may delete this file entirely if it has zero callers
+# (current ripgrep status: 0 callers found in workflows or scripts).
+#
+# Do not delete or modify without coordinating with Phase 8.2.
+-r requirements/all.txt

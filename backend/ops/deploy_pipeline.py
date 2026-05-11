@@ -417,15 +417,21 @@ class DeployPipeline:
         errors = []
         output_lines = []
 
-        # Check requirements.txt parseable
+        # Check API runtime requirements file is present and parseable.
+        # Phase 8.1 of requirements split (May 2026): the legacy aggregate
+        # `/app/backend/requirements.txt` is being deprecated. The backend
+        # API Docker image's RUN install now uses `requirements/api-runtime.txt`
+        # (see backend/Dockerfile + docs/backend_refactors/requirements-split.run.md
+        # Phase 6.1). We validate the file the production image actually
+        # depends on, which is what catches a corrupted image.
         import os
-        req_path = "/app/backend/requirements.txt"
+        req_path = "/app/backend/requirements/api-runtime.txt"
         if os.path.exists(req_path):
             with open(req_path) as f:
                 lines = f.readlines()
-            output_lines.append(f"[REQ] {len(lines)} dependencies listed")
+            output_lines.append(f"[REQ] api-runtime: {len(lines)} lines (incl. -r includes)")
         else:
-            errors.append("requirements.txt missing")
+            errors.append("requirements/api-runtime.txt missing")
 
         # Check package.json valid
         pkg_path = "/app/frontend/package.json"

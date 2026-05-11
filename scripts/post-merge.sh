@@ -11,8 +11,12 @@ if [ -f frontend/package.json ]; then
   fi
 fi
 
-if [ -f backend/requirements.txt ]; then
-  python -m pip install -q --disable-pip-version-check -r backend/requirements.txt || true
+if [ -f backend/requirements/all.txt ]; then
+  # Phase 8.1 of requirements split (May 2026): install via the split aggregate
+  # (`requirements/all.txt`) instead of the legacy `requirements.txt`. The two
+  # are kept in lock-step by check_requirements_split_parity.py; switching to
+  # the split aggregate is forward-compatible with Phase 8.2 (legacy deletion).
+  python -m pip install -q --disable-pip-version-check -r backend/requirements/all.txt || true
 fi
 
 if [ -f quick-id/requirements.txt ]; then

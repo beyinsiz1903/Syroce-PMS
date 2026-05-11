@@ -101,7 +101,7 @@ Password: demo123
 ```bash
 # Backend
 cd backend
-pip install -r requirements.txt
+pip install -r requirements/all.txt
 # Requires: MONGO_URL, JWT_SECRET in .env
 
 # Frontend

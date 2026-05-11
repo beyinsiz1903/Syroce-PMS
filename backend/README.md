@@ -78,8 +78,9 @@ backend/
 ## Development
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (canonical split aggregate; see
+# docs/backend_refactors/requirements-split.run.md)
+pip install -r requirements/all.txt
 
 # Run server (managed by supervisor in production)
 uvicorn server:app --host 0.0.0.0 --port 8001 --reload

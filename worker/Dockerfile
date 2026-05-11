@@ -16,9 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   FastAPI router + worker helper imported by celery_tasks.py.
 # - See docs/backend_refactors/requirements-split-plan.md §4.4 and run.md
 #   Phase 4.6 (worker AST scan) + Phase 5 (this swap).
-# - backend/requirements.txt is still copied so legacy callers / debugging
-#   commands inside the container can reference it; Phase 8 will drop it.
-COPY backend/requirements.txt .
+# - Phase 8.1 (May 2026): legacy aggregate `backend/requirements.txt` is no
+#   longer COPY'd into the worker image — see run.md Phase 8.1.
 COPY backend/requirements/ ./requirements/
 RUN pip install --no-cache-dir --prefix=/install --timeout=300 --retries=5 -r requirements/worker-runtime.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
 
