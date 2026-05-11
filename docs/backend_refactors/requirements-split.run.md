@@ -804,12 +804,168 @@ after the edits.
 
 **Phase 7 status: COMPLETE. Drift safety net live on next push.**
 
-## What's left
+---
 
-- **Phase 6** (plan §4.5): backend/Dockerfile aggregate → smaller
-  api-side subset (e.g. `requirements/api.txt` + `reports.txt`),
-  skipping ML / dev / integrations. Risk: medium-high. Boot smoke
-  required (uvicorn + a handful of import endpoints).
+# Phase 6.0 (2026-05-10) — API import closure scan (Phase 6.1 prerequisite)
+
+User selected Phase 6.0 (scan-only, no Dockerfile change) per the same
+"prove first, swap second" pattern that worked for Phase 4.6 / 5.
+
+## File
+
+`backend/scripts/check_api_import_closure.py` (CLI, pure stdlib + AST,
+~370 lines, copied from `check_worker_import_closure.py` and adapted)
+
+## Entry point
+
+Single entry: `backend/server.py` — the uvicorn entrypoint, which
+orchestrates app factory + bootstrap modules + router registration.
+All routers (`domains/*/router.py`, `routers/*.py`) and bootstrap
+modules (`bootstrap/*.py`) are reached transitively through:
+
+- `from app import create_app, register_shutdown, register_startup`
+- `from bootstrap.observability_init import init_observability`
+- `bootstrap/router_registry.py` wiring (recursively imports every router)
+
+Verified by reading server.py top section. **Contrast with worker scan**
+which needs two entry points (celery_app + celery_tasks) because there's
+no analogous orchestrator.
+
+## Three target modes
+
+| Target | Subset closure | Phase-6.1 candidate? |
+|--------|----------------|----------------------|
+| `--target api` | `api.txt` (= base.txt + FastAPI/uvicorn/starlette) | Strict minimum |
+| `--target api-runtime` | `api.txt + integrations.txt` | Pragmatic |
+| `--target api-conservative` | `api.txt + integrations.txt + ml.txt` | Fall-back if AI/RMS routes pull ML stack |
+
+## Scan results
+
+| Target | Files visited | 3p modules | Missing | Subset distribution count |
+|--------|---------------|------------|---------|----------------------------|
+| **api** | 391 | 39 | **6** (boto3, botocore, celery, openai, psutil, resend) | 112 |
+| **api-runtime** | 391 | 39 | **2** (celery, psutil) | 137 |
+| **api-conservative** | 391 | 39 | **2** (celery, psutil) | 153 |
+
+**Same 2 leftovers across both runtime and conservative** → adding ml.txt
+does NOT close the gap. The two missing modules belong elsewhere.
+
+## Where boto3/botocore/openai/resend live (closed by integrations.txt)
+
+| Module | Subset | Notes |
+|--------|--------|-------|
+| `boto3` | integrations.txt | AWS SDK |
+| `botocore` | integrations.txt | boto3 transitive root |
+| `openai` | integrations.txt | LLM client |
+| `resend` | integrations.txt | Email API client (RESEND_API_KEY env var) |
+
+Adding `integrations.txt` closes 4 of the 6 api-strict gaps. Confirms the
+3-tier target ladder is well-shaped.
+
+## The 2 stubborn leftovers — root cause
+
+```bash
+$ grep -rn -E 'from celery|import celery|from psutil|import psutil' \
+    backend/server.py backend/app.py backend/bootstrap/
+
+backend/bootstrap/worker_registry.py:18:    from celery_app import celery_app
+backend/bootstrap/worker_registry.py:25:    import celery_tasks  # noqa: F401
+```
+
+`celery` is imported by the API to **dispatch tasks** to the worker
+(fire-and-forget queue producer pattern). It is currently in `worker.txt`,
+which is logically correct for the worker but the API also needs it.
+
+`psutil` is currently in `dev.txt`. AST trace shows it's reachable from
+server.py via some health/monitoring router (the recursive walk found it
+in `391` files; precise origin not located in this scan but it WILL be
+exercised at API runtime).
+
+## Unmapped modules (manual review)
+
+Two modules the AST sees but `packages_distributions()` cannot map:
+
+- **`opentelemetry`**: optional in `bootstrap/observability_init.py` and
+  `infra/cloud_observability.py`, both wrapped in `try/except` with
+  `"opentelemetry SDK not installed – skipping OTel init"` graceful skip.
+  **Not actually required** at runtime — same false-positive class as
+  the worker scan's v1.
+- **`rate_limiter`**: top-level shadow import in
+  `backend/infra/security_checklist.py:135`
+  (`from rate_limiter import RateLimiter  # noqa: F401`), referencing a
+  non-existent top-level module. Other usages are
+  `from domains.channel_manager.ari.rate_limit_service import rate_limiter`
+  (variable, not module). **Not a real dependency.**
+
+Both can be ignored. Same false-positives as Phase 4.6 worker scan
+(documented there).
+
+## Implications for Phase 6.1
+
+| Scenario | Backend API image footprint | Δ vs all.txt | Confidence |
+|----------|------------------------------|--------------|------------|
+| **Best case** (clean refactor — promote `celery` and `psutil` to base.txt, drop `psutil` from dev.txt and `celery` from worker.txt) | `api-runtime.txt` (= api + integrations) ~137 dist | ~38% smaller | Needs uvicorn boot smoke + drift guard re-validation |
+| **Pragmatic case** (mirror Phase 5 pattern: new `api-runtime.txt` hybrid file with `-r api + -r integrations + celery + psutil`) | ~139 dist | ~37% smaller | Needs uvicorn boot smoke; **drift guard interaction with cross-subset duplicates needs verification** (see open question below) |
+| **Conservative case** (api + integrations + ml + celery + psutil) | ~155 dist | ~30% smaller | Lower risk, ML routes safe even if ML import is dynamic |
+| **Status quo** | `all.txt` 222 dist | 0 | Zero risk, zero savings |
+
+## Open question for Phase 6.1 (drift guard interaction)
+
+Phase 4.5's `check_requirements_split_parity.py` enforces "0 cross-subset
+top-level repeats" — but Phase 5's `worker-runtime.txt` (`-r worker.txt +
+fastapi + starlette`) shipped without breaking that check, even though
+fastapi/starlette ALSO appear in api.txt. This means the drift guard
+either (a) ignores compose files like `*-runtime.txt` or (b) only walks
+the canonical subset chain (base/api/worker/ml/reports/integrations/dev).
+
+Before Phase 6.1 implements `api-runtime.txt`, **must verify which of
+(a)/(b) holds** by inspecting the script. If (a), Pragmatic case is
+trivial. If (b), Pragmatic case needs the same exception worker-runtime
+got, OR Best case (promote celery+psutil to base.txt) is preferable.
+
+## Caveats (per user direction, recorded prominently)
+
+> AST scan is not a guarantee. Specific to API:
+> - Imports performed inside route handlers reached only at request time
+>   ARE visited (the AST walks function bodies), but late-binding
+>   monkey-patches and runtime feature-flag-gated imports are NOT
+> - 391 internal files visited (vs 103 for worker) — much wider blast
+>   radius if the scan is wrong
+>
+> An API boot smoke (uvicorn boot + GET /api/docs probe + a handful
+> of router-touching endpoints) is therefore STILL required before
+> promoting any Phase 6.1 backend Dockerfile swap.
+
+The script's output prints this caveat verbatim on every run.
+
+## Out of scope (untouched, verified `git diff` empty for Dockerfiles)
+
+- `backend/Dockerfile` — Phase 6.1 (pending decision on subset choice above)
+- `worker/Dockerfile` — done in Phase 5
+- `backend/requirements/*.txt` — no changes
+- `backend/scripts/check_*.py` (other) — no changes
+- `.github/workflows/*.yml` — Phase 6.1 will add a third `backend-lint`
+  guard step (`--target api-runtime` once chosen)
+
+## Local impact
+
+Zero. The new script is opt-in; all 4 dev workflows confirmed running
+with new logs after the changes.
+
+## Next decision point (USER)
+
+Pick one of the four scenarios above. Recommendation: **Pragmatic case**
+(`api-runtime.txt` hybrid file) IF the drift guard tolerates it as it
+did for `worker-runtime.txt`; otherwise **Best case** (clean refactor:
+promote celery + psutil to base.txt). Both deliver ~37-38% backend
+image reduction; difference is whether to keep base.txt minimal
+(Pragmatic) or accept a slightly broader base for cleaner subset
+semantics (Best).
+
+**Phase 6.0 status: COMPLETE. Awaiting decision on Phase 6.1 scenario.**
+
+## What's left after Phase 6.1
+
 - **Phase 8** (plan §4.7): legacy `backend/requirements.txt`
   deprecation strategy; CI test/load/security job per-layer install
   evaluation; `requirements-ci.txt` final disposition.
