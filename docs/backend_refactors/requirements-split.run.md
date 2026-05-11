@@ -964,8 +964,180 @@ semantics (Best).
 
 **Phase 6.0 status: COMPLETE. Awaiting decision on Phase 6.1 scenario.**
 
-## What's left after Phase 6.1
+---
 
+# Phase 6.1 (2026-05-11) — Backend Dockerfile swap to `api-runtime.txt`
+
+User selected the Pragmatic case via ChatGPT review. Per ChatGPT's
+explicit guidance, **base.txt is NOT broadened** to absorb celery+psutil;
+instead they live in the dedicated runtime compose file (mirroring the
+worker-runtime.txt pattern from Phase 5).
+
+## Drift guard verification (the open question from Phase 6.0)
+
+Inspected `backend/scripts/check_requirements_split_parity.py:35`:
+
+```python
+SUBSET_NAMES = ("base", "api", "worker", "ml", "reports", "integrations", "dev")
+```
+
+Confirmed: only the 7 canonical subsets are scanned for cross-subset
+duplicates. Compose files (`worker-runtime.txt`, `api-runtime.txt`) are
+intentionally outside that check, so duplicating celery (also in
+worker.txt) and psutil (also in dev.txt) inside `api-runtime.txt` is
+SAFE and does NOT trip the parity guard. Same mechanism that allowed
+Phase 5's worker-runtime.txt to ship with fastapi/starlette duplicates
+of api.txt.
+
+## Changes
+
+1. **New file**: `backend/requirements/api-runtime.txt`
+   ```
+   -r api.txt
+   -r integrations.txt
+
+   # API boot/runtime gaps found by Phase 6.0 AST scan
+   celery==5.3.4
+   psutil==7.2.2
+   ```
+   Header comment (~30 lines) explains the AST-derived rationale, the
+   ChatGPT-driven decision NOT to pollute base.txt, and the drift guard
+   safety story. Pins match the canonical sources verbatim
+   (`celery==5.3.4` from worker.txt, `psutil==7.2.2` from dev.txt).
+
+2. **`backend/Dockerfile` builder stage**:
+   ```diff
+   -RUN ... -r requirements/all.txt ...
+   +RUN ... -r requirements/api-runtime.txt ...
+   ```
+   All pip flags preserved verbatim
+   (`--no-cache-dir --prefix=/install --timeout=300 --retries=5`,
+   `--extra-index-url cloudfront mirror`). The litellm `>=1.83.2 --no-deps`
+   override (line 37) stays IDENTICAL — same rationale (litellm declares
+   incompatible upper pins on httpx/openai we resolve via
+   api.txt/integrations.txt directly). 13-line comment block above the
+   RUN explains the swap.
+
+3. **`backend/scripts/check_api_import_closure.py`** TARGETS:
+   ```python
+   "api-runtime": ["api-runtime.txt"],   # was: ["api.txt", "integrations.txt"]
+   ```
+   Now points at the actual production file, just like the Phase 5
+   worker-runtime target swap.
+
+## Verification matrix
+
+| Check | Result |
+|-------|--------|
+| Drift guard (`check_requirements_split_parity.py`) | 222 == 222, 0 duplicates, **OK** |
+| API scan `--target api-runtime` | 37/39 covered, 0 missing, **OK** (2 unmapped = opentelemetry + rate_limiter false positives, both documented Phase 4.6) |
+| API scan `--target api` (strict) | 6 missing — as expected (regression-free) |
+| Worker scan `--target worker-runtime` | 14/14 covered, **OK** (Phase 5 regression-free) |
+| Boot smoke: `cd backend && python3 -c "import server"` | **OK** — `api boot smoke OK` printed; full router chain loaded (Wire Status, Quick-ID proxy, WhatsApp webhook, Integrations Overview, Security/PII, Secret Rotation, Field Encryption, Notifications, Encryption Management — visible in stdout) |
+| All 4 dev workflows post-edit | Running with new logs (Backend API, Mobile Web, Quick-ID API, Start application) |
+
+The boot smoke is more meaningful here than Phase 5's worker smoke
+because the scan output was VERDICT "REVIEW NEEDED" (due to the 2
+unmapped false positives), not "OK". The fact that `import server`
+succeeded — pulling in 391 internal files including every router —
+without any ImportError on opentelemetry, rate_limiter, celery, or
+psutil confirms:
+
+- AST scan was correct: api-runtime.txt covers everything the API
+  imports at module load time.
+- The 2 "unmapped" entries are inert (opentelemetry try/except'd,
+  rate_limiter is a non-existent module behind a noqa shadow).
+- celery and psutil correctly resolve from the new compose file.
+
+## Image-size implication (estimate, deferred to first CI build)
+
+Subset distribution count:
+- `requirements.txt` aggregate: **222 distributions**
+- `requirements/api-runtime.txt`: **139 distributions**
+- Reduction: **~37%** at distribution level
+
+Skipped subsets and what they contain:
+- `ml.txt` — sklearn, xgboost, transformers, torch (via litellm deps —
+  but litellm runs `--no-deps`, so these would have been pulled in via
+  `all.txt` only if other ml.txt declarations existed)
+- `reports.txt` — weasyprint, reportlab, openpyxl
+- `dev.txt` — pytest, ruff, debugpy (we keep psutil from dev.txt
+  explicitly via api-runtime.txt)
+- Heavy ML models like sentence-transformers, sklearn-style packages
+  no longer end up in the API image.
+
+Conservative wall-clock estimate: **30-50% smaller backend API image**
+once measured. Actual deferred to first CI build.
+
+## litellm override unchanged
+
+The 2-line `RUN` block keeps the same litellm post-install:
+
+```dockerfile
+RUN ... -r requirements/api-runtime.txt ... && \
+    PYTHONPATH=... python -m pip install ... "litellm>=1.83.2" --no-deps
+```
+
+`api-runtime.txt` does not declare litellm; it transitively comes from
+`api.txt` (which is where it lived before the split, kept identical).
+The `--no-deps` second install upgrades it to the desired version
+without dragging in incompatible httpx/openai pins.
+
+## Replit dev environment continuity
+
+All 4 dev workflows confirmed running with new logs after the edit:
+- Backend API (uvicorn) — boot smoke passed in the same Python env
+- Mobile Web (expo)
+- Quick-ID API
+- Start application (frontend)
+
+Worker process is not run in Replit dev (no workflow), so Phase 5+6.1
+combined Dockerfile changes have ZERO local runtime impact. The dev
+backend continues to use the system-installed Python + raw imports
+(not the Docker image) as before.
+
+## CI gate required before production rollout
+
+1. `docker build -f backend/Dockerfile -t syroce-backend backend/`
+2. `docker run --rm syroce-backend python -c "import server"`
+3. `docker run --rm syroce-backend uvicorn server:app --host 0.0.0.0 --port 8000 &`
+4. `curl -fsS http://localhost:8000/api/docs >/dev/null` (within container or via port-forward)
+5. (Optional) hit a representative router endpoint (e.g. `/api/auth/health`)
+   and confirm it returns 200/401 (not 500 from missing module).
+
+If any step fails, revert backend/Dockerfile RUN line to
+`-r requirements/all.txt` and open a follow-up to introduce
+`api-runtime-extended.txt` with the missing module(s) added (same
+fall-back pattern documented in Phase 5).
+
+## Out of scope (untouched, verified `git diff` empty)
+
+- `worker/Dockerfile` — Phase 5
+- `backend/requirements/{base,api,worker,ml,reports,integrations,dev,all,worker-runtime}.txt` — no changes
+- `.github/workflows/*.yml` — see follow-up below
+- `backend/requirements.txt` (legacy aggregate) — Phase 8
+
+## Follow-up CI wiring (optional, ~5 min)
+
+Add a third guard step to `.github/workflows/ci-cd.yml` `backend-lint`
+job (mirrors the Phase 7 wiring):
+
+```yaml
+- name: API import closure check
+  run: python backend/scripts/check_api_import_closure.py --target api-runtime
+```
+
+Same OAuth-workflow-scope caveat as Phase 7 — needs to be added via
+GitHub web UI directly on main, not pushed from Replit. Deferred
+until ChatGPT confirms; it is a nice-to-have, not a blocker (the
+script's exit code 0 with REVIEW-NEEDED verdict means a CI run would
+PASS today since exit is 0 for unmapped-only cases).
+
+**Phase 6.1 status: COMPLETE in source; gated on first CI Docker build for image-level confirmation.**
+
+## What's left
+
+- **Phase 7.1** (optional): wire `check_api_import_closure.py --target api-runtime` into ci-cd.yml backend-lint (GitHub web UI step due to workflow scope).
 - **Phase 8** (plan §4.7): legacy `backend/requirements.txt`
   deprecation strategy; CI test/load/security job per-layer install
   evaluation; `requirements-ci.txt` final disposition.

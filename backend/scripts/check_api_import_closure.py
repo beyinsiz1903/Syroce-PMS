@@ -274,7 +274,7 @@ def build_module_to_dist_map() -> dict[str, str]:
 
 TARGETS: dict[str, list[str]] = {
     "api": ["api.txt"],
-    "api-runtime": ["api.txt", "integrations.txt"],
+    "api-runtime": ["api-runtime.txt"],
     "api-conservative": ["api.txt", "integrations.txt", "ml.txt"],
 }
 

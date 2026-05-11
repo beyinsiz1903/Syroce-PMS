@@ -1,0 +1,37 @@
+# api-runtime.txt — Phase 6.1 (Pragmatic case) production backend API image
+#
+# Per docs/backend_refactors/requirements-split-plan.md §4.5 and the Phase
+# 6.0 AST scan run (docs/backend_refactors/requirements-split.run.md), the
+# FastAPI/uvicorn API process imports exactly 39 third-party top-level
+# modules, of which 35 are covered by `api.txt + integrations.txt`. The
+# two remaining gaps are:
+#
+#   - `celery` (currently only in worker.txt) — imported by
+#     bootstrap/worker_registry.py L18+25 to dispatch tasks from the
+#     API process to the worker queue (fire-and-forget producer pattern).
+#   - `psutil` (currently only in dev.txt) — reachable via a
+#     health/monitoring router; will be exercised at API runtime.
+#
+# Per ChatGPT review of Phase 6.0, base.txt is intentionally NOT broadened
+# to include these two — they are NOT part of every runtime's common floor.
+# Instead, mirror the Phase 5 worker-runtime.txt pattern: keep canonical
+# subsets (api.txt, worker.txt, dev.txt) clean and add web-stack-style
+# fix-up symbols here at the production-image layer.
+#
+# Drift guard (`check_requirements_split_parity.py`) only enforces "no
+# duplicates" across the 7 canonical SUBSET_NAMES (base, api, worker, ml,
+# reports, integrations, dev). Compose files like worker-runtime.txt and
+# api-runtime.txt are intentionally outside that check (verified Phase
+# 6.0 run.md), so the celery/psutil duplicate vs worker.txt/dev.txt is
+# safe and intentional.
+#
+# If a future refactor splits worker_registry.py's task dispatch into
+# its own thin client (no celery import), this file can shrink to
+# `-r api.txt + -r integrations.txt + psutil`.
+
+-r api.txt
+-r integrations.txt
+
+# API boot/runtime gaps found by Phase 6.0 AST scan
+celery==5.3.4
+psutil==7.2.2
