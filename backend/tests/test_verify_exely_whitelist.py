@@ -216,3 +216,168 @@ def test_main_returns_0_on_pass(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "verdict=PASS" in out
+
+
+# ── Verdict model: PASS / REVIEW / FAIL (Paket 1 Mayıs 2026) ─────────────
+
+
+def test_verdict_pass_when_clean():
+    f = verify({"EXELY_IP_WHITELIST": "1.2.3.4"}, environment="production", expect_ips=[])
+    assert f.verdict == "PASS"
+    assert not f.blockers and not f.warnings
+
+
+def test_verdict_review_when_warnings_only():
+    """Staging bypass yields a warning but no blocker -> REVIEW."""
+    f = verify(
+        {"ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK": "1"},
+        environment="staging",
+        expect_ips=[],
+    )
+    assert not f.blockers
+    assert f.warnings
+    assert f.verdict == "REVIEW"
+
+
+def test_verdict_fail_when_blockers_present():
+    f = verify({}, environment="production", expect_ips=[])
+    assert f.blockers
+    assert f.verdict == "FAIL"
+
+
+def test_main_returns_0_on_review(monkeypatch, capsys):
+    """REVIEW (warnings only) must NOT block deploy by default — exit 0."""
+    monkeypatch.delenv("EXELY_IP_WHITELIST", raising=False)
+    monkeypatch.setenv("ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK", "1")
+    monkeypatch.delenv("EXELY_TRUST_FORWARDED", raising=False)
+    rc = verify_mod.main(["--env", "staging"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "verdict=REVIEW" in out
+
+
+def test_main_strict_warnings_escalates_review_to_fail(monkeypatch, capsys):
+    """--strict-warnings: REVIEW becomes exit 1 for tight CI/deploy gates."""
+    monkeypatch.delenv("EXELY_IP_WHITELIST", raising=False)
+    monkeypatch.setenv("ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK", "1")
+    monkeypatch.delenv("EXELY_TRUST_FORWARDED", raising=False)
+    rc = verify_mod.main(["--env", "staging", "--strict-warnings"])
+    out = capsys.readouterr().out
+    # Verdict text stays REVIEW (not promoted to FAIL); only exit code changes.
+    assert "verdict=REVIEW" in out
+    assert rc == 1
+
+
+def test_main_strict_warnings_does_not_change_pass(monkeypatch, capsys):
+    monkeypatch.setenv("EXELY_IP_WHITELIST", "1.2.3.4")
+    monkeypatch.delenv("ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK", raising=False)
+    monkeypatch.delenv("EXELY_TRUST_FORWARDED", raising=False)
+    rc = verify_mod.main(["--env", "production", "--strict-warnings"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "verdict=PASS" in out
+
+
+# ── IP/token redaction (security: no raw IPs in output) ──────────────────
+
+
+def test_redact_ipv4_masks_third_octet():
+    assert verify_mod._redact_ip("1.2.3.4") == "1.2.x.4"
+    assert verify_mod._redact_ip("203.0.113.42") == "203.0.x.42"
+
+
+def test_redact_ipv4_cidr_preserves_suffix():
+    assert verify_mod._redact_ip("10.0.0.0/24") == "10.0.x.0/24"
+
+
+def test_redact_ipv6_keeps_first_and_last_segment():
+    redacted = verify_mod._redact_ip("2001:db8::1")
+    assert redacted.startswith("2001:")
+    assert redacted.endswith(":1")
+    assert "…" in redacted
+
+
+def test_redact_invalid_token_never_echoed():
+    """Bad tokens must NEVER appear verbatim — only length fingerprint."""
+    out = verify_mod._redact_ip("not-an-ip")
+    assert "not-an-ip" not in out
+    assert out.startswith("<invalid:")
+
+
+def test_redact_empty_token():
+    assert verify_mod._redact_ip("") == "<empty>"
+
+
+def test_production_info_does_not_leak_raw_ip():
+    """Configured whitelist preview must be redacted in info messages."""
+    f = verify(
+        {"EXELY_IP_WHITELIST": "203.0.113.42,198.51.100.7"},
+        environment="production",
+        expect_ips=[],
+    )
+    joined = " ".join(f.info + f.blockers + f.warnings)
+    assert "203.0.113.42" not in joined
+    assert "198.51.100.7" not in joined
+    # But redacted forms are present (operator can still match by knowing IPs).
+    assert "203.0.x.42" in joined
+    assert "198.51.x.7" in joined
+
+
+def test_invalid_token_blocker_does_not_leak_raw_value():
+    f = verify(
+        {"EXELY_IP_WHITELIST": "1.2.3.4,super-secret-not-an-ip,5.6.7.8"},
+        environment="production",
+        expect_ips=[],
+    )
+    joined = " ".join(f.blockers + f.info + f.warnings)
+    assert "super-secret-not-an-ip" not in joined
+    # Length fingerprint allowed.
+    assert any("invalid IP token" in b for b in f.blockers)
+
+
+def test_cidr_blocker_does_not_leak_raw_range():
+    f = verify(
+        {"EXELY_IP_WHITELIST": "1.2.3.4,10.0.0.0/24"},
+        environment="production",
+        expect_ips=[],
+    )
+    joined = " ".join(f.blockers + f.info + f.warnings)
+    assert "10.0.0.0/24" not in joined
+    assert "10.0.x.0/24" in joined
+
+
+def test_expect_ips_missing_blocker_does_not_leak_raw_ip():
+    f = verify(
+        {"EXELY_IP_WHITELIST": "1.2.3.4"},
+        environment="production",
+        expect_ips=["203.0.113.99"],
+    )
+    joined = " ".join(f.blockers + f.info + f.warnings)
+    assert "203.0.113.99" not in joined
+    assert "203.0.x.99" in joined
+
+
+def test_proxy_invalid_warning_does_not_leak_raw_token():
+    f = verify(
+        {
+            "EXELY_IP_WHITELIST": "1.2.3.4",
+            "EXELY_TRUST_FORWARDED": "1",
+            "EXELY_TRUSTED_PROXY_IPS": "10.0.0.1,garbage-proxy",
+        },
+        environment="production",
+        expect_ips=[],
+    )
+    joined = " ".join(f.blockers + f.info + f.warnings)
+    assert "garbage-proxy" not in joined
+
+
+def test_main_output_contains_no_raw_ip(monkeypatch, capsys):
+    """End-to-end: CLI stdout must redact configured IPs."""
+    monkeypatch.setenv("EXELY_IP_WHITELIST", "203.0.113.42,198.51.100.7")
+    monkeypatch.delenv("ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK", raising=False)
+    monkeypatch.delenv("EXELY_TRUST_FORWARDED", raising=False)
+    verify_mod.main(["--env", "production"])
+    out = capsys.readouterr().out
+    assert "203.0.113.42" not in out
+    assert "198.51.100.7" not in out
+    assert "203.0.x.42" in out

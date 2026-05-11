@@ -25,8 +25,15 @@
 \* v4 ile finansal/yetki/PII yüzeyi ana hatları kapatıldı; kalan 16 yüzeyin **hiçbiri tek başına BLOCKER değil** ama 7’si HIGH — pilot öncesi v5 testine girmesi şiddetle önerilir.
 
 **Net pilot kararı (öneri)**:
-- **GO** — eğer aşağıdaki **3 hard-blocker** kapatılırsa: (a) `EXELY_IP_WHITELIST` üretim secret’ı, (b) frontend Vitest CI gate’e girer, (c) Tenant-bazlı restore prosedürü dokümante + bir kez drill yapılır.
+- **GO** — eğer aşağıdaki **3 hard-blocker** kapatılırsa: (a) `EXELY_IP_WHITELIST` üretim secret'ı **doğrulama hattıyla** (Replit Secrets'a girilir + `verify_exely_whitelist.py` PASS verir + readiness API `exely_whitelist.verdict=PASS` döner), (b) frontend Vitest CI gate'e girer, (c) Tenant-bazlı restore prosedürü dokümante + bir kez drill yapılır.
 - **NO-GO** — bu üçünden biri eksikse.
+
+> **EXELY_IP_WHITELIST kapanış kriteri (Mayıs 2026 — Paket 1+2 merged)**: Doğrulama altyapısı hazır. Pilot deploy'undan önce tek yapılacak: pilot Exely outbound IP'leri Replit Secrets'a yazılır ve aşağıdaki komut PASS dönmeli:
+> ```bash
+> python backend/scripts/verify_exely_whitelist.py --env production \
+>     --expect-ips "$PILOT_EXELY_IPS"
+> ```
+> Aynı doğrulama otomatik olarak `/api/production-golive/readiness` (alt-check `exely_whitelist`) ve startup guardrail (`security.startup_guardrail` logger) tarafından da uygulanır. Tüm üç hat `verify()` fonksiyonunu paylaşır → tek doğruluk kaynağı. Verdict modeli: PASS / REVIEW / FAIL. IP/token değerleri çıktıda redacted (ham IP log/JSON'a sızmaz).
 
 Diğer HIGH bulgular pilot başlamadan önce takvime alınmalı, ama pilot’u bloklamaz.
 
@@ -97,7 +104,7 @@ Diğer HIGH bulgular pilot başlamadan önce takvime alınmalı, ama pilot’u b
 - **BLOCKER — Pilot-spesifik smoke runbook yok**: CI içinde inline smoke var, ama `deploy/SMOKE.md` veya `deploy/smoke.sh` (deploy sonrası 1 dakikada çalışan checklist) yok. Önerilen 6 adım: (1) `/health/ready` 200, (2) admin login, (3) `GET /api/pms/bookings` 200, (4) reservation create + cancel, (5) `/api/production-golive/readiness` skoru ≥X, (6) Sentry’de yeni `ERROR` yok.
 - **HIGH — Atlas TLS sertifikalarının deploy entegrasyonu**: `deploy/deploy.sh`’de Atlas-spesifik TLS bundle adımı yok; pilot tenant için Atlas `mongodb+srv://` bağlantısının deploy environment’ta TLS doğrulamasından geçtiği test edilmedi.
 - **HIGH — `userenv.shared` içinde production secret’lar plaintext**: `.replit`’te `JWT_SECRET`, `CM_MASTER_KEY_CURRENT`, `AFSADAKAT_ADMIN_TOKEN` plaintext görünüyor. Bunlar dev için OK ama pilot deployment’ı **Replit Secrets vault**’tan okuyacak şekilde sabitlenmeli — replit.md `Production Secret Management` gotcha’sı zaten uyarıyor.
-- **MEDIUM — `EXELY_IP_WHITELIST` env**: `replit.md` BLOCKER olarak işaretliyor (üretimde yoksa 503). Pilot `.env`’ine eklenmeli (Channel Manager altında tekrar geçecek).
+- **MEDIUM — `EXELY_IP_WHITELIST` env**: `replit.md` BLOCKER olarak işaretliyor (üretimde yoksa 503). Pilot Replit Secrets'a eklenmeli + `python backend/scripts/verify_exely_whitelist.py --env production --expect-ips "$PILOT_EXELY_IPS"` PASS dönmeli (Channel Manager altında tekrar geçecek). Doğrulama altyapısı: script + 46 test + readiness API alt-check `exely_whitelist` + startup guardrail — hepsi merge edildi (Paket 1+2, Mayıs 2026).
 - **LOW — `CORS_ORIGINS` pilot domain’e güncellenmeli**: şu an dev domain’ler.
 
 ### Sahibi: DevOps
@@ -156,7 +163,7 @@ Diğer HIGH bulgular pilot başlamadan önce takvime alınmalı, ama pilot’u b
 - **Sandbox simulation**: `backend/channel_manager/application/sandbox_simulation/scenarios.py` — Duplicate Delivery, Delayed Ack, Retry Storm, Stale Provider State senaryoları **var**.
 
 ### Bulgular
-- **BLOCKER — `EXELY_IP_WHITELIST` env**: replit.md’de explicit BLOCKER. Pilot otelin Exely instance’ının source IP’leri öğrenilip env’e yazılmalı, yoksa 503.
+- **BLOCKER — `EXELY_IP_WHITELIST` env**: replit.md'de explicit BLOCKER. Pilot otelin Exely instance'ının source IP'leri öğrenilip Replit Secrets'a yazılmalı, yoksa 503. Doğrulama hattı (Mayıs 2026, Paket 1+2 merged): `backend/scripts/verify_exely_whitelist.py` (PASS/REVIEW/FAIL verdict, IP redaction, 46 test) + readiness API alt-check `exely_whitelist` (verdict + counts, ham IP yok) + startup guardrail (production'da CRITICAL log, abort yok). **CIDR kabul etmez** — `EXELY_IP_WHITELIST` literal IP listesidir; CIDR sadece `EXELY_TRUSTED_PROXY_IPS` (XFF resolve) için geçerlidir.
 - **BLOCKER — “Stop-sale push” + “No-show sync” reconciliation senaryosu sandbox’ta yok**: Akışlar unit test seviyesinde var (v2 no-show E2E) ama provider sandbox simulation’ında smoke senaryosu olarak yok. Pilot’ta bir over-booking olursa stop-sale’in push edildiğini kanıtlayan canlı drill yok.
 - **BLOCKER — Over-booking detection alerting yok**: `backend/tests/test_overbooking_prevention_e2e.py` mantığı `reconciliation_engine`’e “alerting task” olarak entegre edilmemiş; tespit ediliyor ama operatöre uyarı kanalı (Slack/email/in-app) hooked değil.
 - **MEDIUM — Pilot otel sync frequency tuning**: `sync_scheduler.py` default frequency’si pilot otelin OTA volume’una göre tune edilmemiş.
@@ -204,7 +211,7 @@ Diğer HIGH bulgular pilot başlamadan önce takvime alınmalı, ama pilot’u b
 |---|---|---|
 | MongoDB Atlas 500-collection limit | **BLOCKER** | Workaround uygulanmış (embedded array + discriminator); pilot’ta yeni koleksiyon eklenmemeli. |
 | Production Secret Management (JWT_SECRET vb.) | **BLOCKER** | Replit Secrets vault’tan gelmeli; `.replit:userenv.shared` plaintext değil. |
-| `EXELY_IP_WHITELIST` üretimde | **BLOCKER** | Pilot Exely IP’leri eklensin. |
+| `EXELY_IP_WHITELIST` üretimde | **BLOCKER** | Pilot Exely IP'leri Replit Secrets'a + `verify_exely_whitelist.py --env production --expect-ips $IPS` PASS. CIDR yasak (literal IP listesi). |
 | API Call Conventions (`/api/` ile/`/api/` olmadan) | HIGH | Geliştirici hatası riski; pilot’ta yeni feature eklenirse code review. |
 | JWT Lifespan (15dk default → 7gün override) | HIGH | Pilot’ta refresh token rotation çalışıyor mu doğrula. |
 | CORS Configuration | HIGH | Pilot domain’i `CORS_ORIGINS`’e eklenmeli. |
@@ -250,7 +257,7 @@ Diğer HIGH bulgular pilot başlamadan önce takvime alınmalı, ama pilot’u b
 | # | Aksiyon | Sahibi | Tahmin |
 |---|---|---|---|
 | 1 | Pilot tenant kimliği + property_profile karar | PM | 1 saat |
-| 2 | `EXELY_IP_WHITELIST` pilot Exely IP’leriyle Replit Secrets’a | DevOps | 30 dk |
+| 2 | `EXELY_IP_WHITELIST` pilot Exely IP'leriyle Replit Secrets'a + `python backend/scripts/verify_exely_whitelist.py --env production --expect-ips "$PILOT_EXELY_IPS"` PASS doğrulaması | DevOps | 30 dk |
 | 3 | `JWT_SECRET`, `CM_MASTER_KEY_CURRENT` `.replit:userenv.shared` → Replit Secrets vault | DevOps | 1 saat |
 | 4 | Frontend Vitest CI gate ekle | Platform | 2 saat |
 | 5 | `deploy/SMOKE.md` + `deploy/smoke.sh` (6 adımlı post-deploy smoke) | DevOps | 3 saat |

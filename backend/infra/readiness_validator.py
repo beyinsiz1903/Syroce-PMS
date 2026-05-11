@@ -145,6 +145,66 @@ class ReadinessValidator:
             checks["configuration"] = {"status": "error", "error": str(e)}
             scores.append(0.0)
 
+        # 9. Exely webhook IP-allowlist (Pilot Readiness hard-blocker #1).
+        # We re-use backend/scripts/verify_exely_whitelist.py as the single
+        # source of truth so CLI, readiness API, and startup guardrail all
+        # reach identical verdicts. The JSON exposed here is intentionally
+        # IP-free: only verdict + counts. Raw IP/token values must NEVER
+        # leave this process via readiness output (Sentry/CI/log sinks).
+        try:
+            import os as _os
+            from scripts.verify_exely_whitelist import verify as _verify_exely
+            _env_label = (
+                _os.environ.get("ENVIRONMENT")
+                or _os.environ.get("APP_ENV")
+                or "development"
+            )
+            _findings = _verify_exely(
+                dict(_os.environ), environment=_env_label, expect_ips=[]
+            )
+            _verdict = _findings.verdict
+            _is_prod = _env_label.strip().lower() in ("production", "prod", "live")
+            _configured_count = len(
+                [t for t in (_os.environ.get("EXELY_IP_WHITELIST") or "").split(",") if t.strip()]
+            )
+            # NOTE: do NOT attach blocker/warning message strings — they
+            # may include redacted IP previews, but readiness JSON should
+            # stay metadata-only. Operators run the CLI for details.
+            if _verdict == "FAIL":
+                _status = "blocked" if _is_prod else "misconfigured"
+            elif _verdict == "REVIEW":
+                _status = "review"
+            else:
+                _status = "ok"
+            checks["exely_whitelist"] = {
+                "status": _status,
+                "verdict": _verdict,
+                "environment": _env_label,
+                "blocker_count": len(_findings.blockers),
+                "warning_count": len(_findings.warnings),
+                "configured_count": _configured_count,
+            }
+            # Production scoring: FAIL is a hard zero (NOT_READY contributor),
+            # REVIEW partially degrades, PASS is full credit. Non-prod missing
+            # whitelist is informational only (0.7) — webhook is offline but
+            # the rest of the PMS is healthy and the operator is staging.
+            if _verdict == "FAIL" and _is_prod:
+                scores.append(0.0)
+            elif _verdict == "FAIL":
+                scores.append(0.5)
+            elif _verdict == "REVIEW":
+                scores.append(0.7)
+            else:
+                scores.append(1.0)
+        except Exception as e:
+            # Fail-safe: never let the check itself crash readiness.
+            # Log error type only, never IP/env contents.
+            checks["exely_whitelist"] = {
+                "status": "error",
+                "error_type": type(e).__name__,
+            }
+            scores.append(0.0)
+
         # Calculate overall readiness
         avg_score = sum(scores) / len(scores) if scores else 0
         readiness_score = round(avg_score * 100)

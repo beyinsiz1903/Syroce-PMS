@@ -634,6 +634,42 @@ async def _startup():
                     "X-Forwarded-For will NOT be honored. Verify configuration."
                 )
 
+    # Pilot Readiness hard-blocker #1 — Exely IP-allowlist startup audit.
+    # Reuses scripts/verify_exely_whitelist.verify so verdict matches the
+    # CLI and readiness API exactly. We log CRITICAL when production has
+    # blockers but DO NOT abort startup — the rest of the PMS must keep
+    # serving even if Exely is misconfigured. Readiness/deploy smoke is
+    # the gate that should reject the deploy. Counts only — no raw IPs.
+    if _is_prod:
+        try:
+            from scripts.verify_exely_whitelist import verify as _verify_exely
+            _exely_findings = _verify_exely(
+                dict(_os.environ), environment=_env, expect_ips=[]
+            )
+            _exely_log = logging.getLogger("security.startup_guardrail")
+            if _exely_findings.blockers:
+                _exely_log.critical(
+                    "EXELY_WHITELIST_PRODUCTION_BLOCKER verdict=%s blockers=%d "
+                    "warnings=%d — run `python backend/scripts/verify_exely_whitelist.py "
+                    "--env production` for redacted details. Webhook deliveries "
+                    "will be rejected until configuration is fixed.",
+                    _exely_findings.verdict,
+                    len(_exely_findings.blockers),
+                    len(_exely_findings.warnings),
+                )
+            elif _exely_findings.warnings:
+                _exely_log.warning(
+                    "EXELY_WHITELIST_PRODUCTION_REVIEW verdict=REVIEW warnings=%d — "
+                    "non-blocking but operator should inspect via the CLI.",
+                    len(_exely_findings.warnings),
+                )
+        except Exception as _exely_exc:
+            logging.getLogger("security.startup_guardrail").error(
+                "EXELY_WHITELIST_AUDIT_ERROR type=%s — startup audit failed; "
+                "readiness check still active.",
+                type(_exely_exc).__name__,
+            )
+
 
 @register_shutdown
 async def _shutdown():
