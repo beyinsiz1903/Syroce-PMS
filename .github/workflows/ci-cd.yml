@@ -62,6 +62,17 @@ jobs:
         # boot smoke (see Phase 5 run.md).
         run: python backend/scripts/check_worker_import_closure.py --target worker-runtime
 
+      - name: API import closure check
+        # AST scan of backend/server.py recursive import graph (visits
+        # 391 internal files including all routers / bootstrap / domains),
+        # validated against backend/requirements/api-runtime.txt
+        # (Pragmatic case from Phase 6.0 / 6.1). Fails if any third-party
+        # module reachable from server.py is NOT covered by the
+        # production backend API subset. CAVEAT: this is static-only —
+        # CI Docker build of backend/Dockerfile remains the authoritative
+        # boot smoke (see Phase 6.1 run.md).
+        run: python backend/scripts/check_api_import_closure.py --target api-runtime
+
   # ============ FRONTEND LINTING (HARD GATE) ============
   frontend-lint:
     runs-on: ubuntu-latest

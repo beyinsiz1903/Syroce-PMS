@@ -25,12 +25,15 @@ Targets (which subset closure to compare against):
     --target api                : closure of requirements/api.txt
                                    (= base.txt + FastAPI/uvicorn/starlette
                                    web stack). Strict minimum.
-    --target api-runtime        : closure of api.txt + integrations.txt.
-                                   Phase-6 candidate IF integrations
-                                   modules are statically reachable from
-                                   server.py (likely yes — most channel
-                                   manager/OTA routers live in domains/
-                                   and are wired in via bootstrap routers).
+    --target api-runtime        : closure of requirements/api-runtime.txt
+                                   (= api.txt + integrations.txt + celery
+                                   + psutil). Phase-6.1 production
+                                   backend API image (Pragmatic case
+                                   from plan §4.5; mirrors the Phase 5
+                                   worker-runtime.txt pattern). celery
+                                   covers bootstrap/worker_registry.py
+                                   API-side task dispatch; psutil
+                                   covers health/monitoring router.
     --target api-conservative   : closure of api.txt + integrations.txt
                                    + ml.txt. Fall-back if AI/RMS routes
                                    pull ML stack at import time

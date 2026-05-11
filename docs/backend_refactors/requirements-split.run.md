@@ -1135,9 +1135,101 @@ PASS today since exit is 0 for unmapped-only cases).
 
 **Phase 6.1 status: COMPLETE in source; gated on first CI Docker build for image-level confirmation.**
 
+---
+
+# Phase 7.1 (2026-05-11) — CI guard wiring + docstring fix-up
+
+Per ChatGPT review of Phase 6.1, two small follow-ups before Phase 8:
+
+1. **Docstring drift fix** in `backend/scripts/check_api_import_closure.py`:
+   the `--target api-runtime` description still said "closure of api.txt
+   + integrations.txt" from Phase 6.0, but in Phase 6.1 the target was
+   re-pointed at the new `api-runtime.txt` compose file. Updated to:
+
+   ```
+   --target api-runtime : closure of requirements/api-runtime.txt
+                          (= api.txt + integrations.txt + celery + psutil).
+                          Phase-6.1 production backend API image
+                          (Pragmatic case from plan §4.5; mirrors the
+                          Phase 5 worker-runtime.txt pattern). celery
+                          covers bootstrap/worker_registry.py API-side
+                          task dispatch; psutil covers health/monitoring
+                          router.
+   ```
+
+   No behavior change; comment-only.
+
+2. **CI guard wiring** — append a third Requirements-split guard step to
+   `.github/workflows/ci-cd.yml` `backend-lint` job (after the Phase 7
+   parity guard and the worker import closure check):
+
+   ```yaml
+   - name: API import closure check
+     # AST scan of backend/server.py recursive import graph (visits 391
+     # internal files including all routers / bootstrap / domains),
+     # validated against backend/requirements/api-runtime.txt (Pragmatic
+     # case from Phase 6.0 / 6.1). Fails if any third-party module
+     # reachable from server.py is NOT covered by the production backend
+     # API subset. CAVEAT: this is static-only — CI Docker build of
+     # backend/Dockerfile remains the authoritative boot smoke
+     # (see Phase 6.1 run.md).
+     run: python backend/scripts/check_api_import_closure.py --target api-runtime
+   ```
+
+   YAML syntax verified (`yaml.safe_load`); backend-lint job step count
+   8 → 9. Step naming pattern matches Phase 7's "Worker import closure
+   check" verbatim for symmetry. Exit-code semantics: 0 = pass (covered
+   or only-unmapped-false-positives), 1 = fail (real missing module).
+   The two known unmapped false positives (opentelemetry, rate_limiter)
+   produce exit 0 with VERDICT "REVIEW NEEDED" — CI will pass.
+
+## OAuth-scope caveat (same as Phase 7)
+
+The Replit ↔ GitHub OAuth lacks the `workflow` scope, so any change
+under `.github/workflows/` cannot be pushed from Replit. Same workflow
+as Phase 7:
+
+- **From Replit**: push only the docstring change
+  (`backend/scripts/check_api_import_closure.py`), since it lives
+  outside `.github/workflows/`. This is safe to push immediately
+  alongside Phase 6.1 source changes.
+- **From GitHub web UI**: open `.github/workflows/ci-cd.yml`, paste the
+  new `- name: API import closure check` block (10 lines) immediately
+  after the existing "Worker import closure check" step (currently
+  ending at line 66 in working tree), and commit directly to `main`.
+  The diff is in the working tree — `git diff .github/workflows/ci-cd.yml`
+  shows the exact 11-line addition (block + trailing blank line).
+
+## Verification matrix (Phase 7.1)
+
+| Check | Result |
+|-------|--------|
+| Docstring update | ✓ Verbatim ChatGPT-suggested text applied (with minor wording extension explaining celery/psutil sources) |
+| Script regression: `--target api-runtime` | ✓ Same result as Phase 6.1 (37/39 covered, 0 missing, 2 unmapped false positives, exit 0) |
+| Script regression: `--target api` | ✓ Same result (6 missing, regression-free) |
+| Script regression: `--target api-conservative` | ✓ Same result (2 missing, regression-free) |
+| Worker scan regression: `--target worker-runtime` | ✓ OK (Phase 5 + 7 regression-free) |
+| Drift guard regression | ✓ 222 == 222, 0 dup |
+| YAML parse: `yaml.safe_load(ci-cd.yml)` | ✓ Loads; backend-lint job has 9 named steps (was 8): Set up Python, Install ruff, Run ruff, Orphan-file regression guard, Import boundary guard, Requirements split parity guard, Worker import closure check, **API import closure check** (new) |
+| All 4 dev workflows post-edit | ✓ Running with new logs (Backend API, Mobile Web, Quick-ID API, Start application) |
+
+## Out of scope (untouched, verified `git diff` empty)
+
+- `backend/Dockerfile`, `worker/Dockerfile` — Phases 4 / 5 / 6.1
+- `backend/requirements/*.txt` — no changes
+- `backend/scripts/check_*.py` (other) — no changes
+- `backend/requirements.txt` legacy aggregate — Phase 8
+
+## Local impact
+
+Zero. Both changes are documentation/CI-only — no runtime code, no
+package install changes. All 4 dev workflows confirmed running with
+new logs after the edits.
+
+**Phase 7.1 status: COMPLETE in source. Push split: script change pushable from Replit; ci-cd.yml change requires GitHub web UI commit (same OAuth-scope limitation as Phase 7).**
+
 ## What's left
 
-- **Phase 7.1** (optional): wire `check_api_import_closure.py --target api-runtime` into ci-cd.yml backend-lint (GitHub web UI step due to workflow scope).
 - **Phase 8** (plan §4.7): legacy `backend/requirements.txt`
   deprecation strategy; CI test/load/security job per-layer install
   evaluation; `requirements-ci.txt` final disposition.
