@@ -17,11 +17,12 @@ Scope (v3) — 9 tests:
     T6. double void charge rejected (already-voided guard)
     T7. charge on closed folio blocked (status guard)
     T8. payment on closed folio blocked (status guard)
-    T9. refund on closed folio succeeds — GAP pinned
-        post_refund does NOT check folio.status, while post_charge/post_payment
-        DO. This characterization test pins the observed behavior so any
-        future hardening (adding a closed-state guard to post_refund) shows
-        up as a deliberate test break — same pattern as no-show v2 T3.
+    T9. refund on closed folio blocked (status guard — gap closed May 2026)
+    T10. void charge on closed folio blocked (status guard)
+    T11. void payment on closed folio blocked (status guard)
+    T12. refund blocked for all non-open folio statuses [closed/transferred/voided]
+        Parametrize across every non-open FolioStatus value to pin guard
+        symmetry across the full status set (production hardening, May 2026).
 
 Out of scope:
     - /api/folio-ledger/* (alternative immutable ledger path)

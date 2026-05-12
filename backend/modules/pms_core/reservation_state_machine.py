@@ -23,6 +23,13 @@ VALID_TRANSITIONS: dict[str, list[str]] = {
 # States that block cancellation
 NON_CANCELLABLE_STATES = {"checked_in", "checked_out", "cancelled", "no_show"}
 
+# States that block no-show transition (terminal + occupied lifecycle states).
+# Symmetric with NON_CANCELLABLE_STATES — production hardening, May 2026.
+# Without this guard, a second no-show call on an already-no_show booking
+# silently accumulated audit rows because validate_transition treats
+# current==new as ("no_change", True) for idempotency at the wire layer.
+NON_NOSHOWABLE_STATES = {"checked_in", "checked_out", "cancelled", "no_show"}
+
 # States that count as "active" for availability
 ACTIVE_BOOKING_STATES = {"pending", "confirmed", "guaranteed", "checked_in"}
 
@@ -203,6 +210,11 @@ class ReservationStateMachine:
     async def handle_no_show(self, tenant_id: str, booking: dict, marked_by: str) -> dict:
         """Mark a reservation as no-show. Only confirmed/guaranteed bookings can be no-showed."""
         current_status = booking.get("status")
+        # Terminal-state guard (symmetric with handle_cancellation).
+        # Without this, current==no_show falls into validate_transition's
+        # "no_change" branch and silently writes a duplicate audit row.
+        if current_status in NON_NOSHOWABLE_STATES:
+            return {"success": False, "error": f"Cannot mark reservation as no_show in '{current_status}' state"}
         valid, msg = self.validate_transition(current_status, "no_show")
         if not valid:
             return {"success": False, "error": msg}
