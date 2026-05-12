@@ -21,9 +21,12 @@ the lock insert is the source of truth for "is this room actually free", not
 a calendar query.
 
 Out of scope (sonraki turlarda):
-  - Conflict Queue UI (Turu #1c)
   - Auto-suggest free room of same type (analytics)
-  - Bulk resolve
+  - WebSocket push for live queue updates
+
+Already shipped (later turus):
+  - Conflict Queue UI (Turu #1c, May 2026)
+  - Bulk resolve endpoint + UI (Turu #2, May 2026 — see POST /bulk-resolve)
 """
 import logging
 import uuid
@@ -52,6 +55,16 @@ PENDING_QUERY: dict[str, Any] = {
 
 class ResolveRequest(BaseModel):
     room_id: str = Field(..., min_length=1, description="Target room id to assign")
+
+
+class BulkResolveItem(BaseModel):
+    booking_id: str = Field(..., min_length=1)
+    room_id: str = Field(..., min_length=1)
+
+
+class BulkResolveRequest(BaseModel):
+    # Capped at 50 to keep one HTTP call's wall-time bounded; UI paginates above.
+    items: list[BulkResolveItem] = Field(..., min_length=1, max_length=50)
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────
@@ -289,5 +302,102 @@ async def resolve_pending_booking(
         "ok": True,
         "booking_id": booking_id,
         "room_id": payload.room_id,
+        "resolved_by": resolved_by,
+    }
+
+
+@router.post("/bulk-resolve")
+async def bulk_resolve_pending_bookings(
+    payload: BulkResolveRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("edit_booking")),
+):
+    """Resolve multiple pending_assignment bookings in one call.
+
+    Per-item semantics mirror the single-resolve endpoint:
+      - 200 always (partial success is the normal case)
+      - Each item processed independently — one item's conflict does not
+        roll back another's success (mirrors `create_booking_atomic`'s
+        per-booking lock acquisition; failures release their own claims).
+      - Duplicate booking_ids in the request are de-duplicated server-side
+        (last room_id for a given booking_id wins) to prevent the second
+        call from racing the first into a self-conflict.
+
+    Response shape:
+      {
+        "succeeded": [{"booking_id", "room_id"}, ...],
+        "failed":    [{"booking_id", "error", "conflict_night"?, "conflicting_booking_id"?, "room_id"?}, ...],
+        "total":     N,
+        "resolved_by": "<user>"
+      }
+    """
+    tenant_id = current_user.tenant_id
+    resolved_by = getattr(current_user, "username", None) or getattr(current_user, "id", "front_desk")
+
+    # De-dup: last assignment wins per booking_id (preserves request order otherwise)
+    dedup: dict[str, str] = {}
+    for it in payload.items:
+        dedup[it.booking_id] = it.room_id
+
+    succeeded: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+
+    # Pre-load tenant's valid rooms in one round-trip to avoid N+1 lookups.
+    requested_room_ids = list({rid for rid in dedup.values()})
+    valid_room_ids = set()
+    if requested_room_ids:
+        async for r in db.rooms.find(
+            {"id": {"$in": requested_room_ids}, "tenant_id": tenant_id},
+            {"_id": 0, "id": 1},
+        ):
+            valid_room_ids.add(r["id"])
+
+    for booking_id, room_id in dedup.items():
+        if room_id not in valid_room_ids:
+            failed.append({
+                "booking_id": booking_id,
+                "room_id": room_id,
+                "error": "room_not_found",
+                "message": "Room does not belong to this tenant",
+            })
+            continue
+
+        booking = await db.bookings.find_one(
+            {**PENDING_QUERY, "id": booking_id, "tenant_id": tenant_id},
+            {"_id": 0},
+        )
+        if not booking:
+            failed.append({
+                "booking_id": booking_id,
+                "room_id": room_id,
+                "error": "not_pending",
+                "message": "Booking is not in pending_assignment state",
+            })
+            continue
+
+        ok, err = await _claim_room_for_pending_booking(
+            tenant_id=tenant_id,
+            booking=booking,
+            room_id=room_id,
+            resolved_by=resolved_by,
+        )
+        if ok:
+            succeeded.append({"booking_id": booking_id, "room_id": room_id})
+        else:
+            entry = {
+                "booking_id": booking_id,
+                "room_id": room_id,
+                "error": err.get("reason", "resolve_failed"),
+            }
+            if err.get("conflict_night"):
+                entry["conflict_night"] = err["conflict_night"]
+            if err.get("conflicting_booking_id"):
+                entry["conflicting_booking_id"] = err["conflicting_booking_id"]
+            failed.append(entry)
+
+    return {
+        "succeeded": succeeded,
+        "failed": failed,
+        "total": len(dedup),
         "resolved_by": resolved_by,
     }

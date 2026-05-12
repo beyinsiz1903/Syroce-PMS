@@ -23,6 +23,11 @@ Pinned behaviour:
   T5: resolve returns 404 for cross-tenant booking_id (auth scope)
   T6: resolve returns 409 if target room is no longer free for any night,
       with conflict_night + conflicting_booking_id in the error body
+  T8: bulk-resolve mixed batch (1 success + 1 conflict) → 200 with both
+      succeeded[] and failed[] populated; success row gets locks, failure
+      row stays pending (Turu #2)
+  T9: bulk-resolve invalid room_id is reported as failed without aborting
+      the rest of the batch (Turu #2)
 """
 import os
 import uuid
@@ -255,6 +260,114 @@ async def test_resolve_compensation_releases_partial_locks_on_mid_stay_conflict(
             "tenant_id": tenant_id, "room_id": rid, "booking_id": blocker_id,
         })
         await _cleanup(tenant_id, [bid], [rid])
+
+
+async def test_bulk_resolve_partial_success_does_not_abort_batch():
+    """T8 (Turu #2): mixed batch — first booking has a clean room, second
+    booking targets a room with a planted conflict on its first night.
+    Both items must be processed; succeeded[] holds row 1, failed[] holds
+    row 2 with conflict metadata. The success row's booking and locks must
+    persist; the failure row's booking stays pending and leaves no locks.
+    """
+    headers, tenant_id = await _login()
+    bid_ok = await _seed_pending_booking(tenant_id, anchor_days=520)
+    bid_fail = await _seed_pending_booking(tenant_id, anchor_days=525)
+    rid_ok = await _seed_room(tenant_id)
+    rid_fail = await _seed_room(tenant_id)
+
+    # Plant blocker on the FIRST night of the failing booking's stay
+    pending = await db.bookings.find_one(
+        {"id": bid_fail, "tenant_id": tenant_id}, {"_id": 0, "check_in": 1},
+    )
+    first_night = (
+        datetime.fromisoformat(pending["check_in"].replace("Z", "+00:00")).date().isoformat()
+    )
+    blocker_id = f"queue-bulk-blocker-{uuid.uuid4().hex[:8]}"
+    await db.room_night_locks.insert_one({
+        "tenant_id": tenant_id,
+        "room_id": rid_fail,
+        "night_date": first_night,
+        "booking_id": blocker_id,
+        "lock_type": "booking",
+        "created_at": datetime.now(UTC).isoformat(),
+    })
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            resp = await c.post(
+                f"{QUEUE}/bulk-resolve",
+                headers=headers,
+                json={"items": [
+                    {"booking_id": bid_ok, "room_id": rid_ok},
+                    {"booking_id": bid_fail, "room_id": rid_fail},
+                ]},
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] == 2
+
+        succeeded_ids = [r["booking_id"] for r in body["succeeded"]]
+        failed_rows = {r["booking_id"]: r for r in body["failed"]}
+        assert bid_ok in succeeded_ids
+        assert bid_fail in failed_rows
+        assert failed_rows[bid_fail]["error"] == "room_not_available"
+        assert failed_rows[bid_fail]["conflict_night"] == first_night
+        assert failed_rows[bid_fail]["conflicting_booking_id"] == blocker_id
+
+        # Success row promoted, failure row still pending
+        ok_doc = await db.bookings.find_one({"id": bid_ok, "tenant_id": tenant_id}, {"_id": 0})
+        fail_doc = await db.bookings.find_one({"id": bid_fail, "tenant_id": tenant_id}, {"_id": 0})
+        assert ok_doc["room_id"] == rid_ok
+        assert ok_doc["allocation_source"] == "front_desk_resolve"
+        assert fail_doc["room_id"] is None
+        assert fail_doc["allocation_source"] == "pending_assignment"
+
+        # No leftover locks for failed booking
+        leftover = await db.room_night_locks.count_documents({
+            "tenant_id": tenant_id, "room_id": rid_fail, "booking_id": bid_fail,
+        })
+        assert leftover == 0
+    finally:
+        await db.room_night_locks.delete_many({
+            "tenant_id": tenant_id, "room_id": rid_fail, "booking_id": blocker_id,
+        })
+        await _cleanup(tenant_id, [bid_ok, bid_fail], [rid_ok, rid_fail])
+
+
+async def test_bulk_resolve_invalid_room_id_reported_per_row():
+    """T9 (Turu #2): a non-existent room_id surfaces as a failed row with
+    error='room_not_found' — the rest of the batch must still process.
+    """
+    headers, tenant_id = await _login()
+    bid_ok = await _seed_pending_booking(tenant_id, anchor_days=530)
+    bid_bad = await _seed_pending_booking(tenant_id, anchor_days=532)
+    rid_ok = await _seed_room(tenant_id)
+    bogus_room = f"does-not-exist-{uuid.uuid4().hex[:6]}"
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            resp = await c.post(
+                f"{QUEUE}/bulk-resolve",
+                headers=headers,
+                json={"items": [
+                    {"booking_id": bid_ok, "room_id": rid_ok},
+                    {"booking_id": bid_bad, "room_id": bogus_room},
+                ]},
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] == 2
+
+        succeeded_ids = [r["booking_id"] for r in body["succeeded"]]
+        failed_rows = {r["booking_id"]: r for r in body["failed"]}
+        assert bid_ok in succeeded_ids
+        assert failed_rows[bid_bad]["error"] == "room_not_found"
+
+        # bid_bad still pending (no claim attempted)
+        bad_doc = await db.bookings.find_one({"id": bid_bad, "tenant_id": tenant_id}, {"_id": 0})
+        assert bad_doc["room_id"] is None
+    finally:
+        await _cleanup(tenant_id, [bid_ok, bid_bad], [rid_ok])
 
 
 async def test_resolve_returns_409_when_room_not_available():

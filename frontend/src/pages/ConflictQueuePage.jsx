@@ -6,27 +6,29 @@
  * bookings (rooms that could not be claimed atomically when imported
  * from Exely / HotelRunner / B2B / agency portals).
  *
- * Backed by `routers/cm_conflict_queue.py` (Turu #1b):
- *   GET    /channel-manager/conflict-queue          → list
- *   GET    /channel-manager/conflict-queue/count    → KPI
- *   POST   /channel-manager/conflict-queue/{id}/resolve {"room_id"}
+ * Backed by `routers/cm_conflict_queue.py`:
+ *   GET    /channel-manager/conflict-queue            → list                (Turu #1b)
+ *   GET    /channel-manager/conflict-queue/count      → KPI                 (Turu #1b)
+ *   POST   /channel-manager/conflict-queue/{id}/resolve {"room_id"}         (Turu #1b)
+ *   POST   /channel-manager/conflict-queue/bulk-resolve {"items":[...]}     (Turu #2)
  *
  * Renders embedded inside <ChannelHub> as the "Çakışmalar" tab — so this
  * component does NOT include its own Layout or PageHeader (Hub owns the
  * page chrome). Standalone usage would need a wrapping route.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { toast } from 'sonner';
 import {
-  AlertTriangle, RefreshCw, CheckCircle, Inbox, Loader2, Building2,
+  AlertTriangle, RefreshCw, CheckCircle, Inbox, Loader2, Building2, Layers,
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -37,6 +39,9 @@ import { formatCurrency } from '@/lib/currency';
 
 const QK_LIST = ['cm-conflict-queue', 'list'];
 const QK_ROOMS = ['cm-conflict-queue', 'rooms'];
+// Server enforces this cap on /bulk-resolve (BulkResolveRequest.max_length).
+// Mirror it in the UI so "Tümünü Seç" + a 200-row queue doesn't trigger a 422.
+const BULK_LIMIT = 50;
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -57,6 +62,10 @@ export default function ConflictQueuePage({ user, tenant, embedded = false }) { 
   const qc = useQueryClient();
   const [resolveTarget, setResolveTarget] = useState(null);
   const [selectedRoomId, setSelectedRoomId] = useState('');
+  // Bulk-resolve state (Turu #2)
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkAssignments, setBulkAssignments] = useState({}); // booking_id -> room_id
 
   const listQuery = useQuery({
     queryKey: QK_LIST,
@@ -80,7 +89,7 @@ export default function ConflictQueuePage({ user, tenant, embedded = false }) { 
       });
       return Array.isArray(data) ? data : (data?.items || []);
     },
-    enabled: !!resolveTarget,
+    enabled: !!resolveTarget || bulkOpen,
     staleTime: 60_000,
   });
 
@@ -126,6 +135,142 @@ export default function ConflictQueuePage({ user, tenant, embedded = false }) { 
   const items = listQuery.data?.items || [];
   const total = listQuery.data?.total ?? items.length;
 
+  // Drop selections that no longer appear in the latest list (resolved by
+  // someone else, paginated out, etc.) so the toolbar count stays honest.
+  useEffect(() => {
+    if (selectedIds.size === 0) return;
+    const visible = new Set(items.map((b) => b.id));
+    let changed = false;
+    const next = new Set();
+    selectedIds.forEach((id) => {
+      if (visible.has(id)) next.add(id);
+      else changed = true;
+    });
+    if (changed) setSelectedIds(next);
+  }, [items, selectedIds]);
+
+  const allSelected = items.length > 0 && items.every((b) => selectedIds.has(b.id));
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      // Cap at server's bulk limit; warn the operator if we had to truncate.
+      const ids = items.slice(0, BULK_LIMIT).map((b) => b.id);
+      setSelectedIds(new Set(ids));
+      if (items.length > BULK_LIMIT) {
+        toast.warning(`İlk ${BULK_LIMIT} satır seçildi`, {
+          description: `Toplu atama tek seferde en fazla ${BULK_LIMIT} satır işler.`,
+        });
+      }
+    }
+  };
+  const toggleOne = (id) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      if (next.size >= BULK_LIMIT) {
+        toast.warning(`En fazla ${BULK_LIMIT} satır seçilebilir`);
+        return;
+      }
+      next.add(id);
+    }
+    setSelectedIds(next);
+  };
+
+  const bulkMutation = useMutation({
+    mutationFn: async (assignments) => {
+      const { data } = await axios.post('/channel-manager/conflict-queue/bulk-resolve', {
+        items: assignments,
+      });
+      return data;
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: QK_LIST });
+      qc.invalidateQueries({ queryKey: QK_ROOMS });
+      qc.invalidateQueries({ queryKey: ['pms'] });
+    },
+    onSuccess: (data) => {
+      const okCount = data.succeeded?.length || 0;
+      const failCount = data.failed?.length || 0;
+      if (okCount > 0 && failCount === 0) {
+        toast.success(`${okCount} rezervasyon atandı`);
+      } else if (okCount > 0 && failCount > 0) {
+        toast.warning(`${okCount} başarılı, ${failCount} başarısız`, {
+          description: 'Başarısız satırlar kuyrukta kalmaya devam ediyor.',
+          duration: 8000,
+        });
+      } else {
+        toast.error(`${failCount} atama başarısız oldu`, {
+          description: data.failed?.[0]?.error || 'Detaylar konsolda',
+          duration: 8000,
+        });
+      }
+      // Drop only successful selections; keep failures so user can retry.
+      const okIds = new Set((data.succeeded || []).map((r) => r.booking_id));
+      const remaining = new Set();
+      selectedIds.forEach((id) => { if (!okIds.has(id)) remaining.add(id); });
+      setSelectedIds(remaining);
+      // Same for assignments map.
+      const nextAssign = {};
+      Object.entries(bulkAssignments).forEach(([bid, rid]) => {
+        if (!okIds.has(bid)) nextAssign[bid] = rid;
+      });
+      setBulkAssignments(nextAssign);
+      if (failCount === 0) setBulkOpen(false);
+    },
+    onError: (err) => {
+      const detail = err?.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : (detail?.message || err?.message || 'Toplu atama başarısız');
+      toast.error(msg);
+    },
+  });
+
+  const openBulkDialog = () => {
+    if (selectedIds.size === 0) {
+      toast.warning('Önce en az bir rezervasyon seçin');
+      return;
+    }
+    setBulkAssignments({}); // reset
+    setBulkOpen(true);
+  };
+
+  const autoAssignBulk = () => {
+    const all = roomsQuery.data || [];
+    const used = new Set();
+    const next = { ...bulkAssignments };
+    items.filter((b) => selectedIds.has(b.id)).forEach((b) => {
+      if (next[b.id] && !used.has(next[b.id])) {
+        used.add(next[b.id]);
+        return;
+      }
+      const sameType = all.filter(
+        (r) => !used.has(r.id)
+          && (!b.room_type || (r.room_type || '').toLowerCase() === String(b.room_type).toLowerCase()),
+      );
+      const candidate = (sameType[0] || all.find((r) => !used.has(r.id)));
+      if (candidate) {
+        next[b.id] = candidate.id;
+        used.add(candidate.id);
+      }
+    });
+    setBulkAssignments(next);
+  };
+
+  const handleBulkSubmit = () => {
+    const assignments = items
+      .filter((b) => selectedIds.has(b.id) && bulkAssignments[b.id])
+      .map((b) => ({ booking_id: b.id, room_id: bulkAssignments[b.id] }));
+    if (assignments.length === 0) {
+      toast.warning('En az bir satır için oda seçin');
+      return;
+    }
+    bulkMutation.mutate(assignments);
+  };
+
+  // Open the rooms query when the bulk dialog opens too (not only single dialog).
+  // Achieved by toggling enabled via a derived condition reused below.
+
   const candidateRooms = useMemo(() => {
     if (!resolveTarget) return [];
     const all = roomsQuery.data || [];
@@ -170,16 +315,28 @@ export default function ConflictQueuePage({ user, tenant, embedded = false }) { 
             </p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => listQuery.refetch()}
-          disabled={refreshing}
-          data-testid="conflict-queue-refresh"
-        >
-          <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
-          Yenile
-        </Button>
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 ? (
+            <Button
+              size="sm"
+              onClick={openBulkDialog}
+              data-testid="conflict-bulk-open"
+            >
+              <Layers className="w-4 h-4 mr-1.5" />
+              Toplu Ata ({selectedIds.size})
+            </Button>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => listQuery.refetch()}
+            disabled={refreshing}
+            data-testid="conflict-queue-refresh"
+          >
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
+            Yenile
+          </Button>
+        </div>
       </div>
 
       {/* KPI strip */}
@@ -236,6 +393,14 @@ export default function ConflictQueuePage({ user, tenant, embedded = false }) { 
               <table className="w-full text-sm">
                 <thead className="text-xs uppercase text-gray-500 border-b">
                   <tr>
+                    <th className="py-2 px-2 w-8">
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={toggleAll}
+                        aria-label="Tümünü seç"
+                        data-testid="conflict-select-all"
+                      />
+                    </th>
                     <th className="text-left py-2 px-2">Misafir</th>
                     <th className="text-left py-2 px-2">Kanal</th>
                     <th className="text-left py-2 px-2">Oda Tipi</th>
@@ -250,9 +415,17 @@ export default function ConflictQueuePage({ user, tenant, embedded = false }) { 
                   {items.map((b) => (
                     <tr
                       key={b.id}
-                      className="border-b last:border-b-0 hover:bg-gray-50"
+                      className={`border-b last:border-b-0 hover:bg-gray-50 ${selectedIds.has(b.id) ? 'bg-amber-50/40' : ''}`}
                       data-testid={`conflict-row-${b.id}`}
                     >
+                      <td className="py-2 px-2">
+                        <Checkbox
+                          checked={selectedIds.has(b.id)}
+                          onCheckedChange={() => toggleOne(b.id)}
+                          aria-label={`Seç: ${b.guest_name || b.id}`}
+                          data-testid={`conflict-select-${b.id}`}
+                        />
+                      </td>
                       <td className="py-2 px-2 font-medium text-gray-900">{b.guest_name || 'Misafir'}</td>
                       <td className="py-2 px-2"><ChannelChip channel={b.channel || b.source} /></td>
                       <td className="py-2 px-2 text-gray-700">{b.room_type || '—'}</td>
@@ -362,6 +535,122 @@ export default function ConflictQueuePage({ user, tenant, embedded = false }) { 
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Atanıyor…</>
               ) : (
                 'Atamayı Onayla'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk resolve dialog (Turu #2) */}
+      <Dialog
+        open={bulkOpen}
+        onOpenChange={(open) => {
+          if (!open && !bulkMutation.isPending) {
+            setBulkOpen(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl" data-testid="conflict-bulk-dialog">
+          <DialogHeader>
+            <DialogTitle>Toplu Oda Ataması</DialogTitle>
+            <DialogDescription>
+              Seçili {selectedIds.size} rezervasyon için her satıra bir oda atayın.
+              Çakışan satırlar kuyrukta kalır, başarılı satırlar düşer.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 max-h-[60vh] overflow-y-auto">
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={autoAssignBulk}
+                disabled={roomsQuery.isLoading || (roomsQuery.data || []).length === 0}
+                data-testid="conflict-bulk-autoassign"
+              >
+                {roomsQuery.isLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                ) : null}
+                Tümünü Otomatik Ata
+              </Button>
+            </div>
+
+            <table className="w-full text-sm">
+              <thead className="text-xs uppercase text-gray-500 border-b">
+                <tr>
+                  <th className="text-left py-1.5 px-2">Misafir</th>
+                  <th className="text-left py-1.5 px-2">Tip / Tarih</th>
+                  <th className="text-left py-1.5 px-2 w-64">Atanacak Oda</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.filter((b) => selectedIds.has(b.id)).map((b) => {
+                  const all = roomsQuery.data || [];
+                  const wantedType = b.room_type;
+                  const filtered = wantedType
+                    ? (all.filter((r) => (r.room_type || '').toLowerCase() === String(wantedType).toLowerCase())
+                       .length ? all.filter((r) => (r.room_type || '').toLowerCase() === String(wantedType).toLowerCase()) : all)
+                    : all;
+                  return (
+                    <tr key={b.id} className="border-b last:border-b-0">
+                      <td className="py-2 px-2 font-medium text-gray-900">
+                        {b.guest_name || 'Misafir'}
+                        <div className="text-xs text-gray-500">{b.external_confirmation || b.id.slice(0, 8)}</div>
+                      </td>
+                      <td className="py-2 px-2 text-gray-700">
+                        {b.room_type || '—'}
+                        <div className="text-xs text-gray-500">
+                          {fmtDate(b.check_in)} → {fmtDate(b.check_out)}
+                        </div>
+                      </td>
+                      <td className="py-2 px-2">
+                        <Select
+                          value={bulkAssignments[b.id] || ''}
+                          onValueChange={(v) => setBulkAssignments({ ...bulkAssignments, [b.id]: v })}
+                        >
+                          <SelectTrigger data-testid={`conflict-bulk-room-${b.id}`}>
+                            <SelectValue placeholder={
+                              roomsQuery.isLoading
+                                ? 'Yükleniyor…'
+                                : filtered.length === 0
+                                  ? 'Müsait oda yok'
+                                  : 'Oda seçin'
+                            } />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {filtered.map((r) => (
+                              <SelectItem key={r.id} value={r.id}>
+                                Oda {r.room_number} · {r.room_type || 'tip yok'}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setBulkOpen(false)}
+              disabled={bulkMutation.isPending}
+            >
+              İptal
+            </Button>
+            <Button
+              onClick={handleBulkSubmit}
+              disabled={bulkMutation.isPending || Object.keys(bulkAssignments).length === 0}
+              data-testid="conflict-bulk-submit"
+            >
+              {bulkMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Atanıyor…</>
+              ) : (
+                `Atamayı Onayla (${Object.keys(bulkAssignments).length})`
               )}
             </Button>
           </DialogFooter>
