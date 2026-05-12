@@ -43,7 +43,49 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Exit 1 on DEGRADED verdict too (stricter cron policy)",
     )
+    p.add_argument(
+        "--sentry-capture",
+        action="store_true",
+        help=(
+            "If SENTRY_DSN is set, push FAIL verdict and sampler errors as "
+            "Sentry events with subsystem=cm-backlog tag (in-process "
+            "alternative to sentry-cli monitor wrap; both can coexist)."
+        ),
+    )
     return p
+
+
+def _sentry_capture(level: str, message: str, extra: dict | None = None) -> None:
+    """Best-effort Sentry capture for cron context.
+
+    Never raises. Tags follow the SENTRY_ALERT_POLICY.md taxonomy:
+      subsystem=cm-backlog, severity=warning|error|fatal.
+    No tenant_ids, IPs, or payloads are forwarded — only counts +
+    threshold reasons (already scrub-safe in cm_observability_check).
+    """
+    try:
+        if not os.environ.get("SENTRY_DSN"):
+            return
+        import sentry_sdk
+
+        if not sentry_sdk.Hub.current.client:
+            sentry_sdk.init(
+                dsn=os.environ["SENTRY_DSN"],
+                environment=os.environ.get("SENTRY_ENVIRONMENT", "development"),
+                send_default_pii=False,
+                traces_sample_rate=0.0,
+            )
+        with sentry_sdk.push_scope() as scope:
+            scope.set_tag("subsystem", "cm-backlog")
+            scope.set_tag("severity", level)
+            scope.set_tag("source", "cm_backlog_alert.py")
+            if extra:
+                for k, v in extra.items():
+                    if k in ("backlog", "failed", "oldest_seconds", "open", "verdict"):
+                        scope.set_tag(k, str(v))
+            sentry_sdk.capture_message(message, level="error" if level == "fatal" else level)
+    except Exception:
+        pass
 
 
 async def _run(args) -> int:
@@ -55,12 +97,16 @@ async def _run(args) -> int:
         from infra.cm_observability_check import get_cm_observability_snapshot
     except Exception as e:
         sys.stderr.write(f"[FATAL] import error: {type(e).__name__}: {e}\n")
+        if args.sentry_capture:
+            _sentry_capture("fatal", f"cm_backlog_alert import error: {type(e).__name__}")
         return 2
 
     try:
         snapshot = await get_cm_observability_snapshot(db)
     except Exception as e:
         sys.stderr.write(f"[FATAL] snapshot error: {type(e).__name__}: {e}\n")
+        if args.sentry_capture:
+            _sentry_capture("fatal", f"cm_backlog_alert snapshot error: {type(e).__name__}")
         return 2
 
     verdict = snapshot.get("verdict", "unknown")
@@ -82,6 +128,22 @@ async def _run(args) -> int:
                 print(f"  • {r}")
 
     if verdict == "fail":
+        if args.sentry_capture:
+            outbox = snapshot.get("outbox", {})
+            cb = snapshot.get("circuit_breakers", {})
+            _sentry_capture(
+                "error",
+                "CM backlog FAIL: " + "; ".join(
+                    (outbox.get("reasons") or []) + (cb.get("reasons") or [])
+                )[:500],
+                extra={
+                    "verdict": verdict,
+                    "backlog": outbox.get("backlog"),
+                    "failed": outbox.get("failed"),
+                    "oldest_seconds": outbox.get("oldest_seconds"),
+                    "open": cb.get("open"),
+                },
+            )
         return 1
     if verdict == "degraded" and args.treat_degraded_as_fail:
         return 1
@@ -98,6 +160,11 @@ async def _run(args) -> int:
                 f"[FATAL] sampler error — outbox={outbox_err} "
                 f"breakers={cb_err}\n"
             )
+            if args.sentry_capture:
+                _sentry_capture(
+                    "fatal",
+                    f"cm_backlog_alert sampler error: outbox={outbox_err} breakers={cb_err}",
+                )
             return 2
     return 0
 

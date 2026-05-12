@@ -21,16 +21,58 @@
 | 1   | Tek komutlu rollback                  | ✅ **DONE** (12 May 2026)      | ~~EVET~~       | ~~2–3 saat~~ |
 | 2   | Backup automation + durable storage   | ✅ **DONE** (Atlas-first, M10) | ~~EVET~~       | ~~4–6 saat~~ |
 | 3   | Outbox / CM backlog görünürlük + alarm | ✅ **DONE** (12 May 2026)      | ~~EVET~~       | ~~3–4 saat~~ |
-| 4   | Sentry alert policy                   | DSN var, routing yok          | **EVET**       | 1–2 saat     |
+| 4   | Sentry alert policy                   | ✅ **DONE** (12 May 2026)      | ~~EVET~~       | ~~1–2 saat~~ |
 | 5   | Admin "Sistem Sağlığı" ekranı         | Sayfa var, parça eksik        | HAYIR          | 2–3 saat     |
 | 6   | Kill-switch / feature flag standardı  | Altyapı var, env-var yok      | HAYIR          | 2 saat       |
 | 7   | İlk 24 saat izleme runbook'u          | Go/No-Go içinde gömülü        | HAYIR          | 1 saat       |
 | 8   | Replit OPS cheat-sheet                | YOK                           | HAYIR          | 1–2 saat     |
 
-**Kalan pilot-blocker iş yükü:** #4 = ~1–2 saat.
-**Tüm paket (kalan):** ~7–10 saat.
+**Kalan pilot-blocker iş yükü:** YOK ✅ — pilot güvenlik dörtgeni
+(rollback + backup + observability + alarm) tamam.
+**Tüm paket (kalan, non-blocker):** ~6–8 saat.
 
-**Önerilen sıra:** ~~2 → 1 → 3~~ → **4** → 8 → 7 → 5 → 6.
+**Önerilen sıra:** ~~2 → 1 → 3 → 4~~ → **8 → 7 → 5 → 6**.
+
+---
+
+## ✅ Kapsam #4 — Tamamlandı (12 Mayıs 2026)
+
+**Sentry alert policy + routing + PII scrub:**
+
+**Yazılan kod:**
+- `backend/infra/cloud_observability.py:18-93` — `before_send` PII scrub
+  hook (JWT/Bearer/email/IPv4/ObjectId/query-token regex pattern). Her
+  Sentry event SDK'dan çıkmadan önce 6 pattern üzerinden tarakanır;
+  scrub fail olsa bile event drop edilmez (defense-in-depth).
+- `backend/scripts/cm_backlog_alert.py` — `--sentry-capture` flag.
+  In-process SENTRY_DSN init + tag taxonomy (`subsystem=cm-backlog`,
+  `severity=error|fatal`); FAIL → error event, sampler error → fatal
+  event (DBA queue), DEGRADED Sentry'ye gitmez.
+- `docs/SENTRY_ALERT_POLICY.md` — 10 bölüm:
+  1. Environment taxonomy (development/pilot/production/staging)
+  2. Severity matrix (CRITICAL < 5dk page → INFO no-notify)
+  3. **Routing tablosu — 11 alarm kuralı** (tenant_leak, 5xx burst,
+     HR sync, outbox FAIL/sampler, CB OPEN, Atlas backup, KVKK,
+     JWT weak, ChunkLoad)
+  4. Tag taxonomy (subsystem + severity zorunlu; tenant_id/property_id
+     ASLA — PII)
+  5. PII guard (5 pattern + frontend replay maskAllText)
+  6. cm_backlog cron — sentry-cli monitor + --sentry-capture
+  7. Manuel kurulum checklist (8 madde, pilot deploy öncesi)
+  8. Doğrulama (sandbox PII scrub testi + pilot 4 senaryo)
+  9. Out of scope (Sentry CLI provisioning, multi-region)
+  10. İlgili dosya pinleri
+
+**Replit Secrets'a eklenmesi gereken (deploy adımı):**
+- `SENTRY_ENVIRONMENT=pilot` (default `production` — pilot için override)
+- `SENTRY_DSN` zaten var (VITE_SENTRY_DSN frontend için, SENTRY_DSN backend)
+
+**Doğrulama (sandbox):**
+- 2 dosya py_compile PASS (cloud_observability + cm_backlog_alert)
+- PII scrub runtime testi PASS — 6 pattern (JWT/email/IPv4/OID/Bearer/
+  query-token) doğru maskelendi
+- `--sentry-capture` flag SENTRY_DSN yokken no-op (ImportError-safe);
+  varken tag-only capture (PII guarantee korundu)
 
 ---
 

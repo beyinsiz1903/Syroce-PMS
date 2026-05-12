@@ -6,14 +6,98 @@ Environment:
     OTEL_EXPORTER_ENDPOINT — OpenTelemetry collector endpoint
     OTEL_SERVICE_NAME      — Service name (default: syroce-pms)
     SENTRY_DSN             — Sentry DSN for error tracking
-    SENTRY_ENVIRONMENT     — Sentry environment tag
+    SENTRY_ENVIRONMENT     — Sentry environment tag (development/pilot/production)
 """
 import logging
 import os
+import re
 from collections import defaultdict
 from typing import Any
 
 logger = logging.getLogger("infra.observability")
+
+
+# ── Sentry PII Scrub ───────────────────────────────────────────────
+# Defense-in-depth: even though `send_default_pii=False` strips the most
+# common PII (cookies, request bodies, IP), tenant-specific identifiers
+# can still leak via:
+#   • exception messages ("invalid token=eyJ...", "tenant 7a3f... not found")
+#   • breadcrumb URLs (?token=..., ?email=...)
+#   • custom tags / extras a developer might have added ad-hoc
+# `_pii_scrubber()` runs on every Sentry event before it leaves the
+# process. Keep this list narrow — over-scrubbing destroys debuggability.
+_PII_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # JWTs: 3 base64url segments separated by dots, ≥20 chars total.
+    (re.compile(r"\beyJ[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]{6,}\b"), "<JWT>"),
+    # Bearer tokens & ?token=… / ?api_key=… query params.
+    (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9_\-\.=]{12,}"), r"\1<TOKEN>"),
+    (re.compile(r"(?i)([?&](?:token|api[_-]?key|secret|password|access[_-]?token)=)[^&\s\"']+"), r"\1<REDACTED>"),
+    # Email addresses.
+    (re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"), "<EMAIL>"),
+    # IPv4 (third octet masked, like the Exely whitelist redactor pattern).
+    (re.compile(r"\b(\d{1,3}\.\d{1,3}\.)\d{1,3}(\.\d{1,3})\b"), r"\1x\2"),
+    # MongoDB ObjectId (24 hex chars) — common tenant_id surrogate in messages.
+    (re.compile(r"\b[a-f0-9]{24}\b"), "<OID>"),
+]
+
+
+def _scrub_str(s: str) -> str:
+    if not isinstance(s, str) or not s:
+        return s
+    out = s
+    for pat, repl in _PII_PATTERNS:
+        out = pat.sub(repl, out)
+    return out
+
+
+def _scrub_event_inplace(event: Any) -> None:
+    """Recursive PII scrub for Sentry event dicts.
+
+    Bounded to depth 6 + container size 200 to avoid pathological
+    recursion on malformed events. Errors are swallowed — a partial scrub
+    is always safer than dropping the event entirely (we still want to
+    see the error class / stack frame).
+    """
+    def _walk(node: Any, depth: int = 0) -> Any:
+        if depth > 6:
+            return node
+        if isinstance(node, str):
+            return _scrub_str(node)
+        if isinstance(node, dict):
+            keys = list(node.keys())[:200]
+            for k in keys:
+                try:
+                    node[k] = _walk(node[k], depth + 1)
+                except Exception:
+                    pass
+            return node
+        if isinstance(node, list):
+            for i in range(min(len(node), 200)):
+                try:
+                    node[i] = _walk(node[i], depth + 1)
+                except Exception:
+                    pass
+            return node
+        return node
+
+    try:
+        _walk(event)
+    except Exception:
+        # Never let scrubber raise — Sentry would drop the event entirely
+        pass
+
+
+def _sentry_before_send(event: dict, hint: dict) -> dict | None:
+    """Sentry SDK ``before_send`` hook — final PII scrub.
+
+    Returning ``None`` would drop the event; we always return the scrubbed
+    event so error tracking still works even if scrubbing logs a warning.
+    """
+    try:
+        _scrub_event_inplace(event)
+    except Exception as e:
+        logger.warning(f"sentry before_send scrub failed: {e}")
+    return event
 
 
 # ── OpenTelemetry Integration ──────────────────────────────────────
@@ -121,9 +205,10 @@ class SentryIntegration:
                 profiles_sample_rate=0.1,
                 integrations=integrations,
                 send_default_pii=False,
+                before_send=_sentry_before_send,
             )
             self._active = True
-            logger.info(f"Sentry initialized: env={self._environment}")
+            logger.info(f"Sentry initialized: env={self._environment} (PII scrub active)")
         except ImportError:
             logger.warning("sentry-sdk not installed — error tracking unavailable")
         except Exception as e:
