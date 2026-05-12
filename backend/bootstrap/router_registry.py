@@ -274,6 +274,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     # Room QR Requests — Per-room QR codes for guest service requests
     # NOTE: route paths inside the router already start with /api, so no extra prefix
     ("routers.room_qr_requests", "router", ["Room QR Requests"], None, None),
+    # CM Conflict Queue — front-desk resolution UI for pending_assignment bookings (Turu #1b)
+    ("routers.cm_conflict_queue", "router", ["channel-manager"], None, None),
 ]
 
 # Optional routers with special import paths
