@@ -340,7 +340,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 **Verification** (manuel):
 - Son 24 saatte staging'de rollback drill yapıldı.
-- `deploy/deploy.sh --rollback` veya Replit checkpoint restore süresi <5 dk.
+- `bash deploy/rollback.sh` veya Replit checkpoint restore süresi <5 dk (detay: `docs/ROLLBACK.md`).
 - DB rollback adımı doküman olarak hazır (`deploy/DEPLOYMENT_GUIDE.md`).
 
 **Expected**:
@@ -499,7 +499,8 @@ Pilot trafiği açıldıktan sonra **derhal rollback** tetikleyici eşikleri:
 
 **Rollback komutu**:
 ```bash
-bash deploy/deploy.sh --rollback   # veya Replit checkpoint restore
+bash deploy/rollback.sh            # tek komut — last_good_tag'e döner + smoke koşar
+                                   # detay: docs/ROLLBACK.md
 ```
 
 **RTO hedefi**: < 5 dk (rollback başlat → trafik eski versiyona dönsün).

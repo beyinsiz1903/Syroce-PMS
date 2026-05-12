@@ -305,7 +305,8 @@ DELAY  ☐  (yeni hedef tarih: __________)
 
 **Rollback komutu**:
 ```bash
-bash deploy/deploy.sh --rollback   # veya Replit checkpoint restore
+bash deploy/rollback.sh            # tek komut — last_good_tag'e döner + smoke koşar
+                                   # detay: docs/ROLLBACK.md
 ```
 
 **RTO hedefi**: < 5 dk.

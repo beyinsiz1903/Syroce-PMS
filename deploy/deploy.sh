@@ -9,6 +9,13 @@ NC='\033[0m'
 
 DOMAIN="api.syroce.com"
 
+# Script-relative compose path: hem `bash deploy/deploy.sh` hem
+# `cd deploy && bash deploy.sh` çalışır.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+COMPOSE_FILE="${COMPOSE_FILE:-$SCRIPT_DIR/docker-compose.production.yml}"
+cd "$REPO_ROOT"
+
 log()  { echo -e "${GREEN}[OK]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 err()  { echo -e "${RED}[HATA]${NC} $1"; }
@@ -114,12 +121,12 @@ fi
 
 # ── 5. Build ──
 info "5/7 - Docker imajlari build ediliyor..."
-docker compose -f docker-compose.production.yml build --no-cache
+docker compose -f "$COMPOSE_FILE" build --no-cache
 log "Build tamamlandi"
 
 # ── 6. Deploy ──
 info "6/7 - Servisler baslatiliyor..."
-docker compose -f docker-compose.production.yml up -d
+docker compose -f "$COMPOSE_FILE" up -d
 log "Servisler baslatildi"
 
 # ── 7. Dogrulama ──
@@ -143,9 +150,9 @@ check_service() {
 PASS=0
 FAIL=0
 
-check_service "MongoDB" "docker compose -f docker-compose.production.yml exec -T mongo mongosh --eval 'db.adminCommand(\"ping\")' --quiet" && ((PASS++)) || ((FAIL++))
-check_service "Redis" "docker compose -f docker-compose.production.yml exec -T redis redis-cli ping" && ((PASS++)) || ((FAIL++))
-check_service "Backend" "docker compose -f docker-compose.production.yml exec -T backend curl -sf http://localhost:8001/api/health/liveness" && ((PASS++)) || ((FAIL++))
+check_service "MongoDB" "docker compose -f "$COMPOSE_FILE" exec -T mongo mongosh --eval 'db.adminCommand(\"ping\")' --quiet" && ((PASS++)) || ((FAIL++))
+check_service "Redis" "docker compose -f "$COMPOSE_FILE" exec -T redis redis-cli ping" && ((PASS++)) || ((FAIL++))
+check_service "Backend" "docker compose -f "$COMPOSE_FILE" exec -T backend curl -sf http://localhost:8001/api/health/liveness" && ((PASS++)) || ((FAIL++))
 
 sleep 5
 
@@ -163,17 +170,25 @@ echo ""
 
 if [ $FAIL -eq 0 ]; then
     log "TUM SERVISLER AKTIF!"
+
+    # Tek-komutlu rollback için son başarılı imaj tag'ini kaydet.
+    # deploy/rollback.sh bu dosyadan okuyarak önceki sürüme döner.
+    LAST_GOOD_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d_%H%M%S)}"
+    echo "$LAST_GOOD_TAG" > deploy/.last_good_tag
+    log "Last-good tag kaydedildi: $LAST_GOOD_TAG (deploy/.last_good_tag)"
+
     echo ""
     echo "  API URL:      https://$DOMAIN"
     echo "  Health:       https://$DOMAIN/api/health/liveness"
     echo "  Callback:     https://$DOMAIN/api/integrations/hotelrunner/callback"
     echo "  Webhook:      https://$DOMAIN/api/integrations/hotelrunner/webhook"
     echo ""
-    echo "  Loglar:       docker compose -f docker-compose.production.yml logs -f backend"
-    echo "  Durdurma:     docker compose -f docker-compose.production.yml down"
+    echo "  Loglar:       docker compose -f "$COMPOSE_FILE" logs -f backend"
+    echo "  Durdurma:     docker compose -f "$COMPOSE_FILE" down"
+    echo "  Rollback:     bash deploy/rollback.sh"
     echo ""
 else
     err "Bazi servisler baslatilmadi!"
     echo "  Loglari inceleyin:"
-    echo "  docker compose -f docker-compose.production.yml logs"
+    echo "  docker compose -f "$COMPOSE_FILE" logs"
 fi

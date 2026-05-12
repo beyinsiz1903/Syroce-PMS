@@ -18,8 +18,8 @@
 
 | #   | Konu                                  | Mevcut Durum                  | Pilot Blocker? | Tahmini Süre |
 | --- | ------------------------------------- | ----------------------------- | -------------- | ------------ |
-| 1   | Tek komutlu rollback                  | Engine var, kullanıcı API yok | **EVET**       | 2–3 saat     |
-| 2   | Backup automation + durable storage   | Local var, S3 upload kod yok  | **EVET**       | 4–6 saat     |
+| 1   | Tek komutlu rollback                  | ✅ **DONE** (12 May 2026)      | ~~EVET~~       | ~~2–3 saat~~ |
+| 2   | Backup automation + durable storage   | ✅ **DONE** (Atlas-first, M10) | ~~EVET~~       | ~~4–6 saat~~ |
 | 3   | Outbox / CM backlog görünürlük + alarm | Endpoint var, alarm yok       | **EVET**       | 3–4 saat     |
 | 4   | Sentry alert policy                   | DSN var, routing yok          | **EVET**       | 1–2 saat     |
 | 5   | Admin "Sistem Sağlığı" ekranı         | Sayfa var, parça eksik        | HAYIR          | 2–3 saat     |
@@ -27,10 +27,51 @@
 | 7   | İlk 24 saat izleme runbook'u          | Go/No-Go içinde gömülü        | HAYIR          | 1 saat       |
 | 8   | Replit OPS cheat-sheet                | YOK                           | HAYIR          | 1–2 saat     |
 
-**Toplam pilot-blocker iş yükü:** ~10–15 saat (1–2 gün).
-**Tüm paket:** ~16–23 saat (2–3 gün).
+**Kalan pilot-blocker iş yükü:** #3 + #4 = ~4–6 saat.
+**Tüm paket (kalan):** ~10–14 saat.
 
-**Önerilen sıra (kritiklik × bağımlılık):** **2 → 1 → 3 → 4 → 8 → 7 → 5 → 6.**
+**Önerilen sıra:** ~~2 → 1~~ → **3 → 4** → 8 → 7 → 5 → 6.
+
+---
+
+## ✅ Kapsam #1 + #2 — Tamamlandı (12 Mayıs 2026)
+
+**#2 (Backup) — Atlas-First yaklaşım:** Kullanıcı M10+ Atlas plan'ını
+onayladı → `mongodump` + R2 upload **gereksiz** oldu. Atlas zaten
+continuous backup + PITR sunuyor (S3 managed, retention configurable).
+
+**Yazılan kod:**
+- `backend/infra/atlas_backup_check.py` — URI-based Atlas detection +
+  `resolve_backup_check()` Atlas-aware skor.
+- `backend/scripts/verify_atlas_backup.py` — Atlas Admin API ile snapshot
+  tazeliği doğrulama (opsiyonel, API key'siz no-op).
+- `backend/infra/readiness_validator.py:97-112` — backup check Atlas-aware.
+- `docs/ATLAS_BACKUP_AND_RESTORE.md` — restore senaryoları + tier
+  matrisi + verification.
+
+**#1 (Rollback) — Tek komutlu:**
+- `deploy/rollback.sh` — `--list / --dry-run / [tag]` destekli, smoke
+  otomatik koşar, başarıda `last_good_tag` günceller, başarısızlıkta
+  `.rollback_from` sidecar bırakır.
+- `deploy/deploy.sh` — başarılı deploy sonunda `IMAGE_TAG`'i
+  `deploy/.last_good_tag`'e yazar, kullanıcıya `Rollback: bash
+  deploy/rollback.sh` satırını gösterir.
+- `docs/ROLLBACK.md` — 4 senaryo (kod hatası, auto-rollback, Atlas
+  restore, tam felaket) + doğrulama komutları.
+
+**Replit Secrets'a eklenmesi gereken (deploy zamanı):**
+- `ATLAS_TIER=M10` (veya M20/M30)
+- Opsiyonel: `ATLAS_API_PUBLIC_KEY`, `ATLAS_API_PRIVATE_KEY`,
+  `ATLAS_PROJECT_ID`, `ATLAS_CLUSTER_NAME` — sadece snapshot tazelik
+  doğrulaması için.
+
+**Doğrulama (sandbox):**
+- `bash -n deploy/{rollback,deploy,smoke}.sh` → tümü PASS
+- `python3 -m py_compile backend/infra/atlas_backup_check.py
+  backend/scripts/verify_atlas_backup.py
+  backend/infra/readiness_validator.py` → tümü PASS
+- Runtime: `resolve_backup_check()` M10 + Atlas SRV → `status="atlas_managed",
+  score=1.0` (test edildi).
 
 ---
 

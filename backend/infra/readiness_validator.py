@@ -91,16 +91,19 @@ class ReadinessValidator:
             checks["providers"] = {"status": "error", "error": str(e)}
             scores.append(0.0)
 
-        # 5. Backup readiness
+        # 5. Backup readiness (Atlas-aware — see infra/atlas_backup_check.py).
+        # When the cluster is on MongoDB Atlas M10+, continuous cloud backup
+        # + PITR are managed by Atlas itself; the local backup_manager mongodump
+        # path becomes a secondary defense layer. URI detection avoids any
+        # network call here — the Atlas Admin API verification (when keys
+        # are configured) lives in backend/scripts/verify_atlas_backup.py.
         try:
+            from infra.atlas_backup_check import resolve_backup_check
             from infra.backup_manager import backup_manager
             backup_status = backup_manager.get_status()
-            enabled = backup_status.get("enabled", False)
-            checks["backup"] = {
-                "status": "enabled" if enabled else "disabled",
-                "details": backup_status,
-            }
-            scores.append(1.0 if enabled else 0.3)
+            backup_check, backup_score = resolve_backup_check(backup_status)
+            checks["backup"] = backup_check
+            scores.append(backup_score)
         except Exception as e:
             checks["backup"] = {"status": "error", "error": str(e)}
             scores.append(0.0)
