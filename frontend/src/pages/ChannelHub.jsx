@@ -1,14 +1,15 @@
 import React, { Suspense, lazy } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Loader2, PlugZap, BarChart3, Settings2 } from 'lucide-react';
+import { Loader2, PlugZap, BarChart3, Settings2, AlertTriangle } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const ChannelConnections = lazy(() => import('@/pages/ChannelConnections'));
 const ChannelManagerDashboardV2 = lazy(() => import('@/pages/ChannelManagerDashboardV2'));
 const ChannelOpsPage = lazy(() => import('@/pages/ChannelOpsPage'));
+const ConflictQueuePage = lazy(() => import('@/pages/ConflictQueuePage'));
 
-const ALL_TABS = ['connections', 'dashboard', 'ops'];
+const ALL_TABS = ['connections', 'dashboard', 'conflicts', 'ops'];
 const SUPER_ADMIN_ONLY_TABS = new Set(['ops']);
 
 export default function ChannelHub({ user, tenant, onLogout }) { // eslint-disable-line no-unused-vars
@@ -60,7 +61,11 @@ export default function ChannelHub({ user, tenant, onLogout }) { // eslint-disab
         </div>
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <TabsList className={`grid w-full max-w-2xl ${allowedTabs.length === 3 ? 'grid-cols-3' : (allowedTabs.length === 2 ? 'grid-cols-2' : 'grid-cols-1')}`}>
+          <TabsList className={`grid w-full max-w-3xl ${
+            allowedTabs.length === 4 ? 'grid-cols-4'
+              : allowedTabs.length === 3 ? 'grid-cols-3'
+                : (allowedTabs.length === 2 ? 'grid-cols-2' : 'grid-cols-1')
+          }`}>
             {allowedTabs.includes('connections') && (
               <TabsTrigger value="connections" data-testid="tab-channel-connections">
                 <PlugZap className="w-4 h-4 mr-2" />
@@ -71,6 +76,12 @@ export default function ChannelHub({ user, tenant, onLogout }) { // eslint-disab
               <TabsTrigger value="dashboard" data-testid="tab-channel-dashboard">
                 <BarChart3 className="w-4 h-4 mr-2" />
                 {t('channelHub.tabs.dashboard', 'Dashboard')}
+              </TabsTrigger>
+            )}
+            {allowedTabs.includes('conflicts') && (
+              <TabsTrigger value="conflicts" data-testid="tab-channel-conflicts">
+                <AlertTriangle className="w-4 h-4 mr-2" />
+                {t('channelHub.tabs.conflicts', 'Çakışmalar')}
               </TabsTrigger>
             )}
             {allowedTabs.includes('ops') && (
@@ -94,6 +105,11 @@ export default function ChannelHub({ user, tenant, onLogout }) { // eslint-disab
             {allowedTabs.includes('dashboard') && (
               <TabsContent value="dashboard" className="mt-6">
                 {activeTab === 'dashboard' && <ChannelManagerDashboardV2 {...childProps} />}
+              </TabsContent>
+            )}
+            {allowedTabs.includes('conflicts') && (
+              <TabsContent value="conflicts" className="mt-6">
+                {activeTab === 'conflicts' && <ConflictQueuePage {...childProps} />}
               </TabsContent>
             )}
             {allowedTabs.includes('ops') && (

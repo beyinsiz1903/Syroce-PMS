@@ -235,6 +235,7 @@ export const ChannelOpsPage = lazy(() => import("@/pages/ChannelOpsPage"));
 // Hubs
 export const SecurityHub = lazy(() => import("@/pages/SecurityHub"));
 export const ChannelHub = lazy(() => import("@/pages/ChannelHub"));
+export const ConflictQueuePage = lazy(() => import("@/pages/ConflictQueuePage"));
 export const RevenueHub = lazy(() => import("@/pages/RevenueHub"));
 export const AdminHub = lazy(() => import("@/pages/AdminHub"));
 export const HRHub = lazy(() => import("@/pages/HRHub"));
