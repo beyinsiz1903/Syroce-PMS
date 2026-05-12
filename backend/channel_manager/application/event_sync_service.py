@@ -24,6 +24,7 @@ SUPPORTED_EVENTS = {
     "booking_created",
     "booking_modified",
     "booking_cancelled",
+    "booking_no_show",
     "room_blocked",
     "room_unblocked",
     "rate_changed",
@@ -35,6 +36,7 @@ EVENT_SYNC_MAP = {
     "booking_created": SyncType.INVENTORY,
     "booking_modified": SyncType.INVENTORY,
     "booking_cancelled": SyncType.INVENTORY,
+    "booking_no_show": SyncType.INVENTORY,
     "room_blocked": SyncType.INVENTORY,
     "room_unblocked": SyncType.INVENTORY,
     "rate_changed": SyncType.RATES,
@@ -195,7 +197,7 @@ class EventSyncService:
     @staticmethod
     def _extract_date_range(event_type: str, payload: dict[str, Any]) -> tuple:
         """Extract affected date range from event payload."""
-        if event_type in ("booking_created", "booking_modified", "booking_cancelled"):
+        if event_type in ("booking_created", "booking_modified", "booking_cancelled", "booking_no_show"):
             check_in = payload.get("check_in", payload.get("date_start", ""))
             check_out = payload.get("check_out", payload.get("date_end", ""))
             return check_in, check_out
