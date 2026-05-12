@@ -145,24 +145,81 @@ Outbox enqueue exception'ı sessiz log'lanır (cancel paterniyle simetrik, trans
 
 ---
 
-## Turu #3c — Exely No-Show Parity (DEFERRED)
+## Turu #3c — Exely No-Show Parity (DISCOVERY COMPLETE — Mayıs 2026)
 
-Discovery sonucu (Mayıs 2026): pilotta Exely müşterisi yok → **Strategy C (defer)** seçildi.
+Pilotta Exely müşterisi yok → uygulama **DEFERRED**. Bu bölüm discovery turunun (kod yazılmadan) tam mimari haritasını çıkarır; gelecekteki implementasyon turu için referans dokümandır.
 
-**Bulgular**:
-- `ExelyProvider` (`backend/domains/channel_manager/providers/exely/provider.py:49`) sadece ARI/SOAP push (`OTA_HotelAvailNotifRQ`/`OTA_HotelRateAmountNotifRQ`) yapıyor, transactional booking metodu YOK (HR ile aynı durum)
-- `InventorySyncService._dispatch_single_event` (~L805) **sadece HotelRunner'ı tanıyor** → Exely connector'lar `ValueError: Unsupported provider` alır
-- `ConnectorProvider` enum'unda EXELY YOK; Exely bağlantıları ayrı `exely_connections` repo'sunda
-- Exely için event-driven inventory push genelde **scheduler-driven** (`exely_pull_worker.py`, `sync_scheduler.py`) — periyodik recompute zaten oda boşalmasını HR'a göre biraz gecikmeli ama yansıtır
+### Mevcut akış haritası (Mayıs 2026)
 
-**Karar**: Pilot deploy sonrası mimari unification turu (Turu #4 kapsamı):
-1. `ConnectorProvider` enum'una `EXELY` ekle
-2. `InventorySyncService._dispatch_single_event` Exely kolu (Strategy A — inventory recompute)
-3. `_repo.get_active_connectors` ile `exely_connections` köprüleme veya unified repo
+**Outbox → EventSyncService akışı (Turu #3a + #3b ile çalışan kısım — ✅)**:
+1. `core/outbox_dispatcher.py:25` → `EVENT_TYPE_TO_CM_EVENT["booking.no_show.v1"] = "booking_no_show"` (Turu #3b'de eklendi)
+2. `core/outbox_dispatcher.py:64-71` → `EventSyncService.handle_event(tenant_id, "booking_no_show", payload)` çağrılıyor
+3. `channel_manager/application/event_sync_service.py:23-44` → `booking_no_show` zaten `SUPPORTED_EVENTS` + `EVENT_SYNC_MAP[booking_no_show] = SyncType.INVENTORY` + `_extract_date_range` üçlüsünde
+4. `event_sync_service.py:72` → `repo.get_active_connectors(tenant_id, property_id)` ile aktif connector'lar çekiliyor
+5. Her connector için `InventorySyncService.trigger_inventory_sync(...)` → `_dispatch_single_event` → provider push
 
-**Risk**: Şu an Exely tenant'ları `EventSyncService` event akışına dahil değil — sadece no-show değil, `booking_created/cancelled/modified` da gerçek-zamanlı push almıyor. Periyodik scheduler kapsıyor, dolayısıyla pilot süresince katlanılabilir gap.
+**Akış HR tenant'larında doğru çalışıyor**, çünkü HR connector'lar `connector_accounts` koleksiyonunda (`channel_manager/infrastructure/repository.py:48-51` bu koleksiyonu sorgular) ve `_dispatch_single_event` (`channel_manager/application/inventory_sync_service.py:792-803`) `ConnectorProvider.HOTELRUNNER` branch'ine sahip.
 
-**Implementation effort tahmini**: 4-6 saat (Strategy B — minimal Exely hook) ila 1-2 gün (Strategy A — full unification).
+### Discovery'nin asıl bulgusu — iki ayrı CM modülü, iki farklı enum
+
+Repo'da **iki paralel CM kod tabanı** var:
+
+| Modül | `ConnectorProvider` enum | Bağlantı koleksiyonu |
+|---|---|---|
+| `backend/channel_manager/` (event sync, dispatch) | `HOTELRUNNER, SITEMINDER, CHANNEX` (`domain/models/connector_account.py:18`) — **EXELY yok** | `connector_accounts` |
+| `backend/domains/channel_manager/` (provider push, ARI) | `HOTELRUNNER, EXELY` (`data_model.py:29`) | `hotelrunner_connections` + `exely_connections` (ayrı) |
+
+EventSyncService (`backend/channel_manager/`) **Exely'yi tanımıyor** — ne enum'da, ne dispatch branch'inde, ne de connector koleksiyonunda. `_dispatch_single_event` (`backend/channel_manager/application/inventory_sync_service.py:792-805`):
+
+```python
+if connector.provider == ConnectorProvider.HOTELRUNNER:
+    # ... HR push
+else:
+    raise ValueError(f"Unsupported provider: {connector.provider}")
+```
+
+### Exely tenant'ı için fiili davranış
+
+`get_active_connectors(tenant_id, property_id)` `connector_accounts` koleksiyonunu sorguluyor → Exely conn'lar oraya yazılmadığı için **boş liste** döner → `event_sync_service.py:74` → `{"handled": True, "sync_jobs_created": 0, "reason": "No active connectors"}` → `outbox_dispatcher.py:75-77` "No active connectors → mark as processed" diye **sessizce yutuluyor**.
+
+**Sonuç**: Exely-only tenant'lar için `booking_no_show` (ve `booking_created/cancelled/modified` da!) gerçek-zamanlı push ALMIYOR — sessizce drop ediliyor. Periyodik `exely_pull_worker.py` (180s interval) ve `availability_reconciliation_worker.py` (15min interval) gap'i kısmen kapatıyor, dolayısıyla pilot süresince katlanılabilir.
+
+### `ExelyProvider` push yetenekleri
+
+`backend/domains/channel_manager/providers/exely/provider.py:222-254` → tek push metodu `push_ari(room_type_code, rate_plan_code, start_date, end_date, availability, rate_amount, ...)`. Rate ve availability'yi tek call'da birleşik gönderir (iki SOAP RQ üretir: `OTA_HotelRateAmountNotifRQ` + `OTA_HotelAvailNotifRQ`). Ayrı `push_availability`/`push_rates` metodu **YOK** — `_dispatch_single_event`'taki HR pattern'ine (`client.push_availability(updates)` / `client.push_rates(updates)`) doğrudan map etmiyor. Adapter gerekecek.
+
+### Gelecekteki implementasyon — iki strateji
+
+#### Strategy A — Minimal Hook (~4-6 saat) ⭐ ÖNERİLEN
+
+`EventSyncService.handle_event` içinde köprü:
+1. Mevcut `connector_accounts` lookup'ı sonrası `exely_connections` koleksiyonunu da kontrol et (yeni repo helper: `get_active_exely_connections(tenant_id, property_id)`)
+2. Bulunan her Exely conn için `_dispatch_single_event` yerine **yeni `_dispatch_exely_event` helper** çağır — `unified_rate_manager_router._push_to_exely` mantığına benzer doğrudan ARI recompute (room mapping → `provider.push_ari` for affected dates)
+3. `_dispatch_single_event` ve `ConnectorProvider` enum'una **dokunma** — sıfır breaking change
+4. Test: 2-3 unit (Exely conn varsa no_show event recompute tetikler / yoksa skip / HR + Exely birlikte aktifse ikisi de tetiklenir)
+
+**Avantaj**: HR-only tenant'lar etkilenmez, schema migration yok, geri çevirmesi kolay.
+**Dezavantaj**: İki connector path paralelde — teknik borç birikir, aynı pattern başka eventler için tekrarlanır.
+
+#### Strategy B — Full Unification (~1-2 gün)
+
+1. `backend/channel_manager/domain/models/connector_account.py:ConnectorProvider`'a `EXELY = "exely"` ekle
+2. `_dispatch_single_event`'a `EXELY` branch ekle: `ExelyClient` adapter (push_availability/push_rates) → mevcut `push_ari` üzerine wrapper
+3. Schema migration: `exely_connections` → `connector_accounts` (discriminator field veya view); pilot Exely müşterisi yok = sıfır risk
+4. `repository.py` ve `unified_rate_manager_router._push_to_exely` unified path'e refactor
+5. 8-10 unit + integration test
+
+**Avantaj**: Tek source-of-truth, gelecekteki tüm event türleri otomatik Exely desteği alır, teknik borç temizlenir.
+**Dezavantaj**: Daha geniş etki yüzeyi, schema migration test'i gerekir, refactor regression riski.
+
+### Öneri
+
+**Strategy A** post-pilot'ta ilk Exely müşterisi geldiğinde ya da gerçek bir blocker oluştuğunda. **Strategy B** Q3 2026 mimari turu için (CapX/HotelRunner gibi yeni connector eklenirken birlikte yapılmalı). Pilot süresince **mevcut periyodik scheduler kapsamı yeterli** (180s + 15min) — discovery'de gerçek-zamanlı push gap'inin pilot için katlanılabilir olduğu doğrulandı.
+
+### Discovery turunun ürettiği değişiklikler
+
+**Kod**: 0 satır (sadece keşif).
+**Doküman**: bu bölüm + `replit.md` gotcha güncellemesi (eski Strategy etiketleri ve path referansları düzeltildi).
 
 ---
 
