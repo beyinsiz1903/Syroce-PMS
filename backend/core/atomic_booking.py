@@ -91,6 +91,121 @@ async def _timeline_event(tenant_id: str, stage: str, status: str,
         logger.error("Timeline write failed for %s/%s (booking=%s): %s", stage, status, booking_id, exc)
 
 
+async def _emit_overbooking_alert(
+    *,
+    tenant_id: str,
+    booking_id: str,
+    room_id: str,
+    conflict_type: str,
+    conflict_msg: str,
+    conflict_night: str,
+    conflicting_booking_id: str | None,
+    correlation_id: str | None,
+) -> None:
+    """Best-effort overbooking alert emission for the front-desk signal channel.
+
+    CM-Hardening Turu #1a (May 2026) — closes the silent `lock_conflict` gap
+    surfaced in the CM Sandbox Discovery report. Until now `lock_conflict`
+    events were only persisted to `event_timeline` with no downstream consumer,
+    so OTA-driven conflicts that fell back to `pending_assignment` reached
+    front-desk only via manual queue inspection.
+
+    This helper is invoked once per `BookingConflictError` raise inside
+    `create_booking_atomic` — i.e. exactly when an overbooking is physically
+    blocked by the unique room-night lock. It writes:
+      1. A `db.notifications` row of type `overbooking_risk` (severity=warning)
+         so the existing front-desk notification panel surfaces it without any
+         polling/push wiring change.
+      2. A best-effort `AlertDeliveryService.deliver_alert(...)` dispatch so
+         tenants with email/Slack/Teams/webhook channels configured get an
+         out-of-band ping.
+
+    Both writes are wrapped in a broad try/except so a notification failure
+    can NEVER block the booking flow itself (which already raised
+    `BookingConflictError` to the caller). Mirrors the cancel-flow pattern in
+    `reservation_state_machine.handle_cancellation` (notifications insert
+    inside its own try/except, comment: "Non-critical").
+    """
+    try:
+        import uuid as _uuid
+
+        room_number = ""
+        try:
+            room_doc = await db.rooms.find_one({"id": room_id}, {"_id": 0, "room_number": 1})
+            if room_doc:
+                room_number = room_doc.get("room_number", "") or ""
+        except Exception:
+            pass
+
+        title_room = f"Oda {room_number}" if room_number else f"Oda {room_id}"
+        type_label = {
+            "ooo": "Arıza Bloğu (OOO)",
+            "oos": "Servis Dışı Bloğu (OOS)",
+            "maintenance": "Bakım Bloğu",
+            "booking": "Mevcut Rezervasyon",
+        }.get(conflict_type, "Çakışma")
+
+        await db.notifications.insert_one({
+            "id": str(_uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "type": "overbooking_risk",
+            "severity": "warning",
+            "title": f"Overbooking Engellendi - {title_room}",
+            "message": (
+                f"{conflict_night} gecesi için {title_room} talebi reddedildi "
+                f"(çakışma kaynağı: {type_label}"
+                + (f", booking {conflicting_booking_id}" if conflicting_booking_id else "")
+                + "). "
+                "OTA kaynaklı bookingler 'pending_assignment' kuyruğuna düşmüş olabilir — kontrol edin."
+            ),
+            "related_entity": "booking",
+            "related_id": booking_id or "",
+            "read": False,
+            "created_at": datetime.now(UTC).isoformat(),
+            "metadata": {
+                "conflict_type": conflict_type,
+                "conflict_night": conflict_night,
+                "conflicting_booking_id": conflicting_booking_id,
+                "correlation_id": correlation_id,
+                "rejected_room_id": room_id,
+                "rejected_booking_id": booking_id,
+            },
+        })
+    except Exception as exc:
+        logger.warning(
+            "Overbooking notification insert failed (booking=%s, room=%s): %s",
+            booking_id, room_id, exc,
+        )
+
+    # Best-effort out-of-band delivery (email/Slack/Teams/webhook).
+    # Skipped silently when no channels are configured for the tenant.
+    try:
+        from channel_manager.application.alert_delivery_service import AlertDeliveryService
+
+        alert = {
+            "id": f"overbooking-{booking_id or 'unknown'}-{conflict_night}",
+            "trigger": "overbooking_blocked",
+            "severity": "warning",
+            "connector_id": "*",  # cross-connector signal (PMS-internal source)
+            "description": conflict_msg,
+            "created_at": datetime.now(UTC).isoformat(),
+            "metadata": {
+                "conflict_type": conflict_type,
+                "conflict_night": conflict_night,
+                "conflicting_booking_id": conflicting_booking_id,
+                "rejected_room_id": room_id,
+                "rejected_booking_id": booking_id,
+                "correlation_id": correlation_id,
+            },
+        }
+        await AlertDeliveryService().deliver_alert(tenant_id, alert)
+    except Exception as exc:
+        logger.warning(
+            "AlertDeliveryService dispatch failed (booking=%s, room=%s): %s",
+            booking_id, room_id, exc,
+        )
+
+
 def assert_pending_assignment(booking: dict[str, Any]) -> None:
     """Defensive guard for OTA fallback paths.
 
@@ -246,6 +361,20 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
                             "total_claimed_before_rollback": len(claimed_nights),
                         },
                     )
+
+                # CM-Hardening Turu #1a (May 2026): emit front-desk signal
+                # so OTA-driven conflicts no longer fail silently. Best-effort,
+                # never blocks the BookingConflictError raise that follows.
+                await _emit_overbooking_alert(
+                    tenant_id=tenant_id,
+                    booking_id=booking_id,
+                    room_id=room_id,
+                    conflict_type=conflict_type,
+                    conflict_msg=conflict_msg,
+                    conflict_night=night,
+                    conflicting_booking_id=conflicting_id,
+                    correlation_id=correlation_id,
+                )
 
                 raise BookingConflictError(
                     conflict_msg,
