@@ -189,6 +189,30 @@ class ProviderFailover:
     def get_all_status(self) -> list:
         return [b.get_status() for b in self._breakers.values()]
 
+    def get_state_counts(self) -> dict[str, int]:
+        """Public, ops-friendly count of breakers grouped by state.
+
+        Used by `infra/cm_observability_check.get_circuit_breaker_status`
+        so that observability code never has to touch the private
+        ``_breakers`` mapping (forward-compat: future thread-safe wrapper
+        or LRU eviction can override this method without breaking
+        readiness/alerting consumers).
+
+        Returns dict with keys: ``total``, ``open``, ``half_open``,
+        ``closed``. Counts are point-in-time snapshots — no locking.
+        """
+        breakers = list(self._breakers.values())
+        def _state_str(b) -> str:
+            s = getattr(b, "state", None)
+            return getattr(s, "value", s) if s is not None else "unknown"
+        states = [_state_str(b) for b in breakers]
+        return {
+            "total": len(breakers),
+            "open": sum(1 for s in states if s == "open"),
+            "half_open": sum(1 for s in states if s == "half_open"),
+            "closed": sum(1 for s in states if s == "closed"),
+        }
+
     def reset_breaker(self, provider: str):
         breaker = self.get_breaker(provider)
         breaker.state = CircuitState.CLOSED

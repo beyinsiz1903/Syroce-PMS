@@ -20,17 +20,55 @@
 | --- | ------------------------------------- | ----------------------------- | -------------- | ------------ |
 | 1   | Tek komutlu rollback                  | ✅ **DONE** (12 May 2026)      | ~~EVET~~       | ~~2–3 saat~~ |
 | 2   | Backup automation + durable storage   | ✅ **DONE** (Atlas-first, M10) | ~~EVET~~       | ~~4–6 saat~~ |
-| 3   | Outbox / CM backlog görünürlük + alarm | Endpoint var, alarm yok       | **EVET**       | 3–4 saat     |
+| 3   | Outbox / CM backlog görünürlük + alarm | ✅ **DONE** (12 May 2026)      | ~~EVET~~       | ~~3–4 saat~~ |
 | 4   | Sentry alert policy                   | DSN var, routing yok          | **EVET**       | 1–2 saat     |
 | 5   | Admin "Sistem Sağlığı" ekranı         | Sayfa var, parça eksik        | HAYIR          | 2–3 saat     |
 | 6   | Kill-switch / feature flag standardı  | Altyapı var, env-var yok      | HAYIR          | 2 saat       |
 | 7   | İlk 24 saat izleme runbook'u          | Go/No-Go içinde gömülü        | HAYIR          | 1 saat       |
 | 8   | Replit OPS cheat-sheet                | YOK                           | HAYIR          | 1–2 saat     |
 
-**Kalan pilot-blocker iş yükü:** #3 + #4 = ~4–6 saat.
-**Tüm paket (kalan):** ~10–14 saat.
+**Kalan pilot-blocker iş yükü:** #4 = ~1–2 saat.
+**Tüm paket (kalan):** ~7–10 saat.
 
-**Önerilen sıra:** ~~2 → 1~~ → **3 → 4** → 8 → 7 → 5 → 6.
+**Önerilen sıra:** ~~2 → 1 → 3~~ → **4** → 8 → 7 → 5 → 6.
+
+---
+
+## ✅ Kapsam #3 — Tamamlandı (12 Mayıs 2026)
+
+**CM Observability — Outbox + Circuit Breaker tek-kaynak görünürlük:**
+
+**Yazılan kod:**
+- `backend/infra/cm_observability_check.py` — outbox + provider_failover
+  aggregator. 3 public func: `get_outbox_status(db)`,
+  `get_circuit_breaker_status()`, `get_cm_observability_snapshot(db)`.
+  Counts + verdict + score + reasons + thresholds; tenant_id/IP/payload
+  YOK.
+- `backend/infra/readiness_validator.py:214-260` — yeni #10 `cm_outbox`
+  + #11 `cm_circuit_breakers` check'leri.
+- `backend/scripts/cm_backlog_alert.py` — cron-friendly alarm
+  (`--json / --quiet / --treat-degraded-as-fail`). Exit 0=OK, 1=FAIL,
+  2=sampler-error.
+- `backend/domains/channel_manager/provider_failover.py:195-217` — yeni
+  public `get_state_counts()` (architect review fix: private `_breakers`
+  access yerine).
+- `docs/CM_OBSERVABILITY.md` — eşik matrisi + 4 operatör senaryosu +
+  Sentry monitor cron wrap.
+
+**Eşikler (tek-yer-değiştir, `cm_observability_check.py:30-42`):**
+- Outbox `pending+retry` ≥100 DEGRADED / ≥500 FAIL
+- Outbox `failed` ≥50 DEGRADED / ≥200 FAIL
+- Oldest pending ≥600s DEGRADED / ≥1800s FAIL
+- No-throughput-while-backlog ≥1800s DEGRADED
+- CB `open` count ≥1 DEGRADED / ≥3 FAIL (HALF_OPEN informational)
+
+**Doğrulama (sandbox):**
+- 3 dosya `python3 -m py_compile` PASS
+- 8 runtime senaryo PASS: empty CB → ok/1.0; 1 OPEN+1 HALF → degraded/0.5;
+  3 OPEN → fail/0.0; outbox 7 → ok; 350 backlog → degraded; 600 → fail;
+  250 failed → fail; mixed CB states → tüm sayım doğru
+- Architect review APPROVED (privacy + thresholds + race + score
+  weighting + exit-code contract — tüm 7 alan PASS)
 
 ---
 

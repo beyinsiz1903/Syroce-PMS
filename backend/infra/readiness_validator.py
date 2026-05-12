@@ -208,6 +208,54 @@ class ReadinessValidator:
             }
             scores.append(0.0)
 
+        # 10. CM outbox queue health — backlog + failed + age signals.
+        # Reuses backend/infra/cm_observability_check.py so the readiness
+        # API, the cron-driven alert script, and ad-hoc CLI all reach
+        # identical verdicts. NEVER includes tenant_ids or event payloads.
+        try:
+            from core.database import db as mongo_db
+            from infra.cm_observability_check import get_outbox_status
+            outbox = await get_outbox_status(mongo_db)
+            checks["cm_outbox"] = {
+                "status": outbox.get("status", "unknown"),
+                "backlog": outbox.get("backlog", 0),
+                "failed": outbox.get("failed", 0),
+                "oldest_seconds": outbox.get("oldest_seconds"),
+                "last_processed_seconds": outbox.get("last_processed_seconds"),
+                "reasons": outbox.get("reasons", []),
+                "thresholds": outbox.get("thresholds", {}),
+            }
+            scores.append(outbox.get("score", 0.5))
+        except Exception as e:
+            checks["cm_outbox"] = {
+                "status": "error",
+                "error_type": type(e).__name__,
+            }
+            scores.append(0.5)
+
+        # 11. CM provider circuit breakers — count by state, no per-
+        # connection leakage. RBAC drill-down at
+        # GET /api/channel-manager/unified-rate-manager/circuit-breakers.
+        try:
+            from infra.cm_observability_check import get_circuit_breaker_status
+            cb = get_circuit_breaker_status()
+            checks["cm_circuit_breakers"] = {
+                "status": cb.get("status", "unknown"),
+                "total": cb.get("total", 0),
+                "open": cb.get("open", 0),
+                "half_open": cb.get("half_open", 0),
+                "closed": cb.get("closed", 0),
+                "reasons": cb.get("reasons", []),
+                "thresholds": cb.get("thresholds", {}),
+            }
+            scores.append(cb.get("score", 0.7))
+        except Exception as e:
+            checks["cm_circuit_breakers"] = {
+                "status": "error",
+                "error_type": type(e).__name__,
+            }
+            scores.append(0.7)
+
         # Calculate overall readiness
         avg_score = sum(scores) / len(scores) if scores else 0
         readiness_score = round(avg_score * 100)
