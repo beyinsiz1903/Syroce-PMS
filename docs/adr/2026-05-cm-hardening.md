@@ -1,0 +1,165 @@
+# ADR — CM-Hardening Series (May 2026)
+
+Channel Manager pilot readiness sırasında uygulanan hardening turları. Her tur ayrı PR ile merge edildi; bu doküman replit.md'deki dense gotcha entry'lerinin tam detayını taşıyor.
+
+---
+
+## Turu #1a — Overbooking Conflict Alert Emission
+
+`core/atomic_booking.create_booking_atomic` artık `BookingConflictError` raise'inden hemen önce `_emit_overbooking_alert(...)` çağırıyor — `lock_conflict` event'i artık sessiz değil.
+
+İki best-effort yazım:
+1. `db.notifications` `'overbooking_risk'` (severity=warning) row
+2. `AlertDeliveryService.deliver_alert(...)` (email/Slack/Teams/webhook channel config'i olan tenant'lara)
+
+Her iki yazım da geniş try/except içinde — booking flow'u ASLA bloklamaz, `BookingConflictError` her durumda fırlatılır (cancel-flow `handle_cancellation` notifications insert paterniyle simetrik). `connector_id="*"` → tenant'ın tüm uygun kanallarına broadcast.
+
+**Dedup**: `AlertDeliveryService` fingerprint+throttle (default 300s) zaten korur; `db.notifications` per-attempt row (her conflict attempt ayrı physical event olduğu için kasıtlı).
+
+**Kanca noktası tek** (`atomic_booking.py:368-380`) — 7+ catch site'ı (b2b/agency_portal/marketplace/pms_bookings/departments) değiştirmeden tüm akışları kapsar.
+
+**Test pinleri** (5/5 PASS): `tests/test_overbooking_alert_emission.py`
+- T1+T2 notification yazıldı + metadata
+- T3 `notifications.insert_one` boom → conflict yine raise
+- T4 `deliver_alert` boom → conflict yine raise + notification independence
+- T5 multi-night attempt'te `conflict_night` doğru failing night
+- T6 OOO bloğu çakışması → `conflict_type="ooo"` + Türkçe label
+
+**Test side-effect**: integration testlerde yüksek-load conflict simülasyonu sonrası `db.notifications` ve `cm_alert_fingerprints` cleanup gerekebilir.
+
+---
+
+## Turu #1b — Conflict Queue API
+
+Turu #1a sinyal kanalını açtı, Turu #1b çözüm halkasını kapattı: yeni router `backend/routers/cm_conflict_queue.py` (`/api/channel-manager/conflict-queue`) — `GET` liste + `GET /count` (KPI badge için lightweight) + `POST /{booking_id}/resolve` body `{room_id}`.
+
+**Resolve mekanizması**: `_claim_room_for_pending_booking` helper'ı `core.atomic_booking._night_dates` + `_timeline_event` reuse eder, kendi loop'unda her gece için `room_night_locks.insert_one` (aynı unique-index, INV-1/INV-2 paterni); DuplicateKey'de partial-claim compensation (`delete_many` claimed list) + timeline event `"conflict_resolve_failed"` + 409 (`conflict_night` + `conflicting_booking_id` body'de). Başarıda `bookings.update_one` ile `room_id` set + `allocation_source="front_desk_resolve"` (yeni enum) + best-effort `db.notifications` `"overbooking_resolved"` insert.
+
+**RBAC**: `Depends(require_op("edit_booking"))` 3 endpoint'te de — front-desk + supervisor + admin + super_admin'in EDIT_BOOKING permission'ı zaten var.
+
+**Registry**: `backend/bootstrap/router_registry.py` `_EXTRACTED_ROUTERS` listesine eklendi.
+
+**Test pinleri** (`backend/tests/test_cm_conflict_queue_api.py`, 6/6 PASS):
+- T1+T2 list+count parity
+- T3 happy path (room_id atandı + 2 night lock + notification)
+- T4 ikinci resolve 404 (idempotency boundary)
+- T5 bilinmeyen booking_id 404 (auth scope)
+- T6 ilk-gece conflict 409 + body
+- T7 (architect follow-up) **mid-stay** conflict — 2-night booking'in 2. gecesi conflict olduğunda 1. gece lock'unun release edildiği
+
+**Bilinen sınırlama**: `room_night_locks.insert_one` ile `bookings.update_one` ayrı işlemler — process crash arasında orphan lock bırakabilir (booking pending, ama oda lock'lu). Self-conflict idempotent, manuel re-resolve 409 verir; orphan-lock cleanup gelecek bir bakım turunda.
+
+**Out of scope**: Conflict Queue UI (Turu #1c), auto-suggest free room (analytics), bulk resolve (Turu #2).
+
+---
+
+## Turu #1c — Conflict Queue UI
+
+Turu #1b backend Conflict Queue API'sine front-desk UI eklendi. Yeni dosya `frontend/src/pages/ConflictQueuePage.jsx` — `ChannelHub`'ın 4. tab'ı olarak embedded mode'da render edilir (`Çakışmalar`, `AlertTriangle` ikon).
+
+**UI bileşenleri**:
+- 3'lü `KpiCard` (bekleyen sayı intent warning/success, etkilenen kanal sayısı info, 30s refresh periyodu neutral)
+- Tablo: `guest_name` + `ChannelChip` + `room_type` + dates + `formatCurrency` total + `external_confirmation` + "Oda Ata" Button
+- Resolve dialog: `room_type` ile filtrelenmiş Select + "İlk Müsaiti Öner" auto-suggest button
+- 30s auto-refetch
+
+**409 hata davranışı**: `toast.error` `conflict_night` + `conflicting_booking_id` ile (8s duration).
+
+**Architect follow-up'lar uygulandı**:
+1. `invalidateQueries({queryKey: ['pms']})` doğru namespace — önce yanlışlıkla `['pms-bookings']` kullanılmıştı, hiçbir query bu key'le kayıtlı değildi → Arrivals/Calendar refresh edilmiyordu
+2. `onError` da `QK_LIST` + `QK_ROOMS` invalidate eder — başka bir personel oda kapmış olabilir (race), stale veri ile retry loop önlenir
+
+**Değişen dosyalar**: `frontend/src/routes/sections/lazyPages.js` (lazy export), `frontend/src/pages/ChannelHub.jsx` (4. tab + ALL_TABS + grid-cols-4 + AlertTriangle import + i18n key `channelHub.tabs.conflicts`).
+
+**Konvansiyonlar**: axios baseURL `/api` olduğu için relative path WITHOUT `/api`, `formatCurrency`, `<Button variant="outline" size="sm">` Yenile, indigo/amber palet, dialogs (sonner toast).
+
+**i18n**: page içeriği şu an hardcode TR (mevcut Hardening turu konvansiyonu) — teknik borç.
+
+**Available rooms**: `GET /pms/rooms?status=available&limit=2000` + client-side `room_type` filter (fallback: type match yoksa tüm available).
+
+**Out of scope**: standalone route (embedded prop hazır, ileride PageHeader ile kullanılabilir), bulk resolve (Turu #2'de geldi), server-side `room_type` filter, drag-drop reassign.
+
+---
+
+## Turu #2 — Conflict Queue Bulk Resolve
+
+Turu #1b/#1c'nin tek-tek resolve akışına ek olarak toplu (batch) atama eklendi.
+
+**Backend**: `POST /api/channel-manager/conflict-queue/bulk-resolve` body `{items: [{booking_id, room_id}, ...]}` (max 50, RBAC `require_op("edit_booking")`); response her zaman 200 + `{succeeded: [], failed: [], total, resolved_by}` — partial success normal kabul edilir.
+
+**Per-item işleme**: `_claim_room_for_pending_booking` helper'ını yeniden kullanır (her booking kendi atomik lock kazanımı; bir item'ın conflict'i diğer success'leri rollback etmez — `create_booking_atomic` paterniyle simetrik).
+
+**De-dup**: aynı `booking_id` iki kez gelirse last `room_id` wins (race önleme). Pre-load: tenant rooms tek round-trip (set lookup, N+1 önleme).
+
+**Failure error kodları**:
+- `room_not_available` (`conflict_night` + `conflicting_booking_id` ile)
+- `room_not_found` (cross-tenant veya geçersiz id)
+- `not_pending` (zaten resolve edilmiş veya yok)
+
+**Frontend** (`ConflictQueuePage.jsx`): Checkbox kolonu + `Set<booking_id>` selection state + items refresh'te otomatik cleanup `useEffect`; "Toplu Ata (N)" header CTA (`Layers` icon, ≥1 seçili iken görünür); bulk dialog (max-w-2xl) per-row Select + "Tümünü Otomatik Ata" button (same-type filter, batch içinde double-assignment önler — `used` Set); seçili row'lar `bg-amber-50/40` highlight; mixed result toast (warning, 8s); başarılı satırlar selection'dan düşer, başarısızlar retry için kalır.
+
+**Cache invalidation**: `onSettled` `QK_LIST` + `QK_ROOMS` + `['pms']` (success/error fark etmez, race-safe).
+
+**Test pinleri** (`tests/test_cm_conflict_queue_api.py`, 8/8 PASS, 26.25s):
+- T8 `test_bulk_resolve_partial_success_does_not_abort_batch` — 1 success + 1 conflict, succeeded[]/failed[] populate, success row promotion + lock count, failure leftover lock=0
+- T9 `test_bulk_resolve_invalid_room_id_reported_per_row` — bogus `room_id` `room_not_found`, batch continues
+
+**Out of scope**: WebSocket push (Turu #3 candidate), standalone `/conflicts` route (Turu #4), full i18n (Turu #5), AI room scoring (Turu #6).
+
+---
+
+## Turu #3a + #3b — No-Show OTA Outbox Parity
+
+**Turu #3a (Outbox event production)**: `handle_no_show` artık `release_booking_nights` + audit yazımının ardından `enqueue_outbox_event(BOOKING_NOSHOW="booking.no_show.v1")` çağırıyor — `handle_cancellation` paterniyle simetrik.
+
+**Payload**:
+```python
+{
+  "booking_id", "guest_id", "room_id",
+  "check_in", "check_out", "property_id",
+  "previous_status", "new_status": "no_show",
+  "marked_by", "no_show_at",
+  "inventory_released": True,
+}
+```
+
+Sıralama bilinçli: outbox'tan ÖNCE inventory release çalışır, böylece `inventory_released: true` payload'da gerçeği yansıtır.
+
+**Dispatcher mapping**: `outbox_dispatcher.EVENT_TYPE_TO_CM_EVENT["booking.no_show.v1"] = "booking_no_show"` (L26).
+
+**Turu #3b (HotelRunner inventory recompute, Strategy A)**: `EventSyncService.SUPPORTED_EVENTS` + `EVENT_SYNC_MAP` + `_extract_date_range` üçlüsüne `booking_no_show` eklendi → event artık `booking_cancelled` ile aynı `InventorySyncService.trigger_inventory_sync` yoluna giriyor (HR `push_daily_inventory` → `PUT /api/v2/apps/rooms/daily`).
+
+**Discovery sonucu**: `HotelRunnerProvider`'da `cancel_booking`/`mark_no_show` benzeri transactional metod **YOK** — cancel bile sadece envanter recompute kullanıyor; no-show için aynı pattern doğru tercih (hayalet endpoint riski yok). Pilot için kritik olan kazanım: oda HR ARI'sinde geri açılır, tekrar satılabilir görünür. Guest-level `"no_show"` status'u HR'a iletilmez.
+
+**`outbox_dispatcher._build_cm_payload`**: booking-event tuple'ına `booking_no_show` eklendi (payload schema drift'e karşı parity).
+
+**Çift-emit koruması iki katmanlı**:
+1. Terminal-state guard ikinci no-show çağrısını 400 ile durdurur — outbox enqueue'ya hiç ulaşmaz
+2. Outbox `idempotency_key=tenant:event:entity:payload_hash` yedek savunma
+
+**Test pinleri**:
+- `tests/test_reservation_noshow_e2e.py` T9+T10 (outbox event üretimi + double-emit guard) 10/10 PASS
+- `tests/test_reconciliation_complete.py` `test_booking_no_show_routed_like_cancelled` (Strategy A wiring + `trigger_inventory_sync` called with correct kwargs) + `test_booking_cancelled_regression_unchanged` (parity reference)
+
+Outbox enqueue exception'ı sessiz log'lanır (cancel paterniyle simetrik, transition asla bloke edilmez).
+
+---
+
+## Turu #3c — Exely No-Show Parity (DEFERRED)
+
+Discovery sonucu (Mayıs 2026): pilotta Exely müşterisi yok → **Strategy C (defer)** seçildi.
+
+**Bulgular**:
+- `ExelyProvider` (`backend/domains/channel_manager/providers/exely/provider.py:49`) sadece ARI/SOAP push (`OTA_HotelAvailNotifRQ`/`OTA_HotelRateAmountNotifRQ`) yapıyor, transactional booking metodu YOK (HR ile aynı durum)
+- `InventorySyncService._dispatch_single_event` (~L805) **sadece HotelRunner'ı tanıyor** → Exely connector'lar `ValueError: Unsupported provider` alır
+- `ConnectorProvider` enum'unda EXELY YOK; Exely bağlantıları ayrı `exely_connections` repo'sunda
+- Exely için event-driven inventory push genelde **scheduler-driven** (`exely_pull_worker.py`, `sync_scheduler.py`) — periyodik recompute zaten oda boşalmasını HR'a göre biraz gecikmeli ama yansıtır
+
+**Karar**: Pilot deploy sonrası mimari unification turu (Turu #4 kapsamı):
+1. `ConnectorProvider` enum'una `EXELY` ekle
+2. `InventorySyncService._dispatch_single_event` Exely kolu (Strategy A — inventory recompute)
+3. `_repo.get_active_connectors` ile `exely_connections` köprüleme veya unified repo
+
+**Risk**: Şu an Exely tenant'ları `EventSyncService` event akışına dahil değil — sadece no-show değil, `booking_created/cancelled/modified` da gerçek-zamanlı push almıyor. Periyodik scheduler kapsıyor, dolayısıyla pilot süresince katlanılabilir gap.
+
+**Implementation effort tahmini**: 4-6 saat (Strategy B — minimal Exely hook) ila 1-2 gün (Strategy A — full unification).
