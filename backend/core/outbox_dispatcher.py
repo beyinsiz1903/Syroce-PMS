@@ -16,6 +16,14 @@ logger = logging.getLogger("core.outbox_dispatcher")
 EVENT_TYPE_TO_CM_EVENT = {
     "booking.created.v1": "booking_created",
     "booking.cancelled.v1": "booking_cancelled",
+    # CM-Hardening Turu #3a (May 2026): canonical CM event name for no-show.
+    # Provider adapters (HotelRunner / Exely) do NOT yet handle this CM event
+    # — EventSyncService.handle_event will return {"handled": False,
+    # "reason": "unsupported event_type ..."}. The dispatcher classifies that
+    # as `permanent: unsupported`, which marks the outbox row failed-permanent
+    # (no retry storm, no DLQ noise). Once Turu #3b adds a handler the same
+    # row would be re-driven manually via outbox replay.
+    "booking.no_show.v1": "booking_no_show",
     "booking.modified.v1": "booking_modified",
     "inventory.blocked.v1": "room_blocked",
     "inventory.released.v1": "room_unblocked",

@@ -35,6 +35,10 @@ logger = logging.getLogger("core.outbox_service")
 BOOKING_CREATED = "booking.created.v1"
 BOOKING_CANCELLED = "booking.cancelled.v1"
 BOOKING_MODIFIED = "booking.modified.v1"
+# CM-Hardening Turu #3a (May 2026): no-show outbox parity with cancel.
+# Provider handler is deferred (Turu #3b/#3c); dispatcher routes this
+# to a graceful no-op until HotelRunner/Exely adapters land.
+BOOKING_NOSHOW = "booking.no_show.v1"
 INVENTORY_AVAILABILITY_UPDATED = "inventory.availability.updated.v1"
 INVENTORY_BLOCKED = "inventory.blocked.v1"
 INVENTORY_RELEASED = "inventory.released.v1"
@@ -44,6 +48,7 @@ RATE_UPDATED = "rate.updated.v1"
 OTA_OUTBOX_EVENT_TYPES = {
     BOOKING_CREATED,
     BOOKING_CANCELLED,
+    BOOKING_NOSHOW,
     BOOKING_MODIFIED,
     INVENTORY_AVAILABILITY_UPDATED,
     INVENTORY_BLOCKED,

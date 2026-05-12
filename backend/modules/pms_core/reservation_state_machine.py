@@ -256,6 +256,41 @@ class ReservationStateMachine:
             "timestamp": now.isoformat(),
         })
 
+        # CM-Hardening Turu #3a (May 2026): no-show outbox parity with cancel.
+        # Symmetric with handle_cancellation L183-206. Enqueued AFTER
+        # release_booking_nights so payload.inventory_released is truthful.
+        # Terminal-state guard (line 216) prevents double-enqueue at the
+        # business layer; idempotency_key (tenant+event+entity+payload_hash)
+        # gives a second line of defence inside the outbox.
+        # Provider handler is deferred (Turu #3b HotelRunner, #3c Exely) —
+        # dispatcher logs an unsupported-event warning until then but does
+        # NOT mark the row failed/DLQ (graceful no-op).
+        try:
+            from core.outbox_service import BOOKING_NOSHOW, enqueue_outbox_event
+            await enqueue_outbox_event(
+                db,
+                tenant_id=tenant_id,
+                event_type=BOOKING_NOSHOW,
+                entity_type="booking",
+                entity_id=booking["id"],
+                property_id=tenant_id,
+                payload={
+                    "booking_id": booking["id"],
+                    "guest_id": booking.get("guest_id"),
+                    "room_id": booking.get("room_id"),
+                    "check_in": booking.get("check_in"),
+                    "check_out": booking.get("check_out"),
+                    "property_id": tenant_id,
+                    "previous_status": current_status,
+                    "new_status": "no_show",
+                    "marked_by": marked_by,
+                    "no_show_at": now.isoformat(),
+                    "inventory_released": True,
+                },
+            )
+        except Exception as noshow_outbox_err:
+            logger.warning("Outbox enqueue failed for no-show %s: %s", booking["id"], noshow_outbox_err)
+
         return {"success": True, "booking_id": booking["id"]}
 
     async def recalculate_availability_after_modification(self, tenant_id: str, old_room_id: str, new_room_id: str, booking_id: str):

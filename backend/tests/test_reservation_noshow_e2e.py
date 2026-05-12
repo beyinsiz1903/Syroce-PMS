@@ -22,10 +22,17 @@ Scope (v2):
     T7. cross-tenant no-show denied -> SKIPPED with TODO (v1.1 fixture)
     T8. no-show releases room_night_locks (INV-6 symmetry with cancellation,
         production hardening mini-tur, May 2026)
+    T9. no-show emits BOOKING_NOSHOW outbox event (CM-Hardening Turu #3a,
+        May 2026 — closes the parity gap noted in earlier "Out of scope"
+        line. Asserts event_type, entity_id, payload.previous_status /
+        new_status / inventory_released).
+    T10. double no-show does NOT double-emit outbox (terminal-state guard
+        from T3 stops the second call at 400 before reaching enqueue;
+        idempotency_key inside outbox is the secondary safety net).
 
 Out of scope:
     - Legacy /api/reservations/{id}/mark-noshow path (direct DB write, BYPASS state machine)
-    - Outbox event existence (handle_no_show does not emit outbox; tracked separately)
+    - Provider delivery (HotelRunner / Exely API call) — Turu #3b / #3c
     - Idempotency-Key header (endpoint contract does not require it)
     - No-show fee charging (folio refund hat, v3)
 
@@ -465,6 +472,93 @@ class TestReservationNoShowE2E:
         assert post_locks == 0, (
             f"expected 0 room_night_locks after no-show, got {post_locks} "
             f"(pre={pre_locks}) — release_booking_nights symmetry broken"
+        )
+
+
+    # ── T9: no-show emits BOOKING_NOSHOW outbox event ────────────────────
+
+    def test_noshow_emits_booking_noshow_outbox_event(self):
+        """CM-Hardening Turu #3a (May 2026): handle_no_show now writes a
+        booking.no_show.v1 outbox row symmetric with handle_cancellation.
+        Provider handler still deferred — this test only asserts that the
+        event appears in db.outbox_events with the expected shape so that
+        once HotelRunner/Exely adapters land (Turu #3b/#3c) they have a
+        replayable backlog of no-shows.
+        """
+        guest_id, room = self._seed_entities()
+        booking = self._create_booking(room, guest_id)
+        self._set_booking_field(booking["id"], {"status": "confirmed"})
+
+        resp = self._no_show(booking["id"])
+        assert resp.status_code == 200, resp.text
+
+        evt = self._find_one(
+            "outbox_events",
+            {
+                "tenant_id": self.tenant_id,
+                "entity_id": booking["id"],
+                "event_type": "booking.no_show.v1",
+            },
+        )
+        assert evt is not None, "booking.no_show.v1 outbox row not found after no-show"
+        assert evt.get("entity_type") == "booking"
+        payload = evt.get("payload") or {}
+        assert payload.get("booking_id") == booking["id"]
+        assert payload.get("previous_status") == "confirmed"
+        assert payload.get("new_status") == "no_show"
+        assert payload.get("inventory_released") is True
+        assert payload.get("marked_by"), "marked_by missing in outbox payload"
+        assert payload.get("no_show_at"), "no_show_at missing in outbox payload"
+        # Outbox bookkeeping — pending until provider handler ships
+        assert evt.get("status") in {"pending", "processing", "processed", "failed"}
+        assert evt.get("idempotency_key"), "idempotency_key missing"
+
+    # ── T10: double no-show does NOT double-emit outbox ──────────────────
+
+    def test_double_noshow_does_not_double_emit_outbox(self):
+        """CM-Hardening Turu #3a (May 2026): two no-show calls on the same
+        booking must produce exactly one outbox row.
+
+        Defence-in-depth: the terminal-state guard (T3, returns 400 at the
+        wire) is the primary stop, so the second call never reaches
+        enqueue_outbox_event. The outbox's own idempotency_key
+        (`tenant:event:entity:payload_hash`) is the backup if the guard
+        regresses — both layers must hold.
+        """
+        guest_id, room = self._seed_entities()
+        booking = self._create_booking(room, guest_id)
+        self._set_booking_field(booking["id"], {"status": "confirmed"})
+
+        first = self._no_show(booking["id"])
+        assert first.status_code == 200, first.text
+        second = self._no_show(booking["id"])
+        # Terminal-state guard from T3 (production hardening, May 2026)
+        self._assert_state_machine_400(second, "no_show")
+
+        client, db = _sync_db()
+        try:
+            outbox_count = db.outbox_events.count_documents(
+                {
+                    "tenant_id": self.tenant_id,
+                    "entity_id": booking["id"],
+                    "event_type": "booking.no_show.v1",
+                }
+            )
+            audit_count = db.pms_audit_trail.count_documents(
+                {
+                    "tenant_id": self.tenant_id,
+                    "entity_id": booking["id"],
+                    "action": "no_show",
+                }
+            )
+        finally:
+            client.close()
+        assert outbox_count == 1, (
+            f"expected exactly 1 booking.no_show.v1 outbox row, got {outbox_count}"
+        )
+        # Sanity: audit guard from T3 still holds (regression safety net)
+        assert audit_count == 1, (
+            f"expected exactly 1 no_show audit row, got {audit_count}"
         )
 
 
