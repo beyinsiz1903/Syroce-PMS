@@ -163,3 +163,58 @@ Discovery sonucu (Mayıs 2026): pilotta Exely müşterisi yok → **Strategy C (
 **Risk**: Şu an Exely tenant'ları `EventSyncService` event akışına dahil değil — sadece no-show değil, `booking_created/cancelled/modified` da gerçek-zamanlı push almıyor. Periyodik scheduler kapsıyor, dolayısıyla pilot süresince katlanılabilir gap.
 
 **Implementation effort tahmini**: 4-6 saat (Strategy B — minimal Exely hook) ila 1-2 gün (Strategy A — full unification).
+
+---
+
+## Turu #4 — Stop-Sale Circuit Breaker
+
+Persistent gateway outage'larda (504/timeout flood, DNS taşması) provider push'ları log/CPU spam'i üretiyordu. Mevcut `provider_failover.CircuitBreaker` (`backend/domains/channel_manager/provider_failover.py:21`) sınıfı vardı ama **hiçbir provider çağırmıyordu**.
+
+**Yaklaşım 1 — Standalone breaker integration**: `execute_with_failover` semantiği yanıltıcı (single-provider için aşırı abstraction); inline check ile `is_available` → fail-fast, post-call `record_success`/`record_failure`.
+
+**Per-connection key**: `f"{provider}:{connection_id or '_default'}"` — bir kötü tenant diğerlerini tripletmesin. Singleton `provider_failover.get_breaker(key)` sayesinde mevcut admin endpoint'leri (status/reset) otomatik çalışır.
+
+**Sarılan metodlar**:
+- HotelRunner: `push_daily_inventory` + `push_date_range_inventory` (aynı `hotelrunner:{conn_id}` breaker'ını paylaşır) — `provider.py:410, 466`
+- Exely: `push_ari` (rate+avail iki SOAP call'u tek breaker altında, ikisi de fail ise 1 record_failure) — `provider.py:235`
+
+**Retry policy interaction**: `HotelRunnerRetryPolicy` breaker'ın **altında** çalışır. Breaker sadece post-retry sonucu görür → transient flutter'lar (3-attempt retry'ın yediği 504'ler) breaker'ı tripletmez. Sadece persistent outage'lar.
+
+**Fail-fast dönüşü** (breaker OPEN iken):
+```python
+ProviderResult(
+    success=False,
+    error="circuit_open: HotelRunner breaker is OPEN for connection {conn_id}",
+    error_type="CircuitOpen",
+    metadata={"circuit_open": True, "circuit_state": breaker.get_status()},
+)
+```
+HTTP call YAPILMAZ. Outbox dispatcher mevcut backoff ile yeniden dener; breaker `recovery_timeout=60s` sonra HALF_OPEN'a geçer.
+
+**Default breaker config**: `failure_threshold=5`, `recovery_timeout=60s`, `half_open_max_calls=3`.
+
+**Test pinleri** (8/8 PASS): `tests/test_provider_circuit_breaker.py`
+- T1 başarılı push CLOSED tutar, breaker etkisi yok
+- T2 5 ardışık fail → OPEN, 6. çağrıda HTTP yapılmaz, `error_type=CircuitOpen` + `metadata.circuit_open=True`
+- T3 `recovery_timeout` sonrası HALF_OPEN; `half_open_max_calls` başarı → CLOSED + failure_count=0
+- T4 HALF_OPEN'da fail → OPEN'a geri
+- T5 conn-A trip → conn-B etkilenmez (per-connection isolation)
+- T6 Exely `push_ari` aynı pattern, `exely:{conn_id}` namespace'inde — HR namespace ile çakışmaz
+- T6b **Concurrent HALF_OPEN admission bounded** — `half_open_max_calls + 5` paralel task gönderildiğinde tam olarak `half_open_max_calls` kadarı admit edilir, kalan `CircuitOpen` döner (regression guard for non-atomic is_available + record_success race)
+- T7 `push_daily_inventory` ve `push_date_range_inventory` aynı per-conn breaker'ı paylaşır
+
+**Code-review fixleri (architect feedback, May 2026)**:
+1. **Per-connection key collapse → fixed**: HR `factory.py` ve 5 ExelyProvider call site (unified_rate_manager_router, availability_reconciliation_worker, availability_auto_sync, rate_manager_router x2) artık `connection_id=f"{tenant_id}:{property_id_or_hotel_code}"` geçiyor. Önceden boş `connection_id` → tüm tenant'lar `_default` breaker'ını paylaşıyordu (cross-tenant interference).
+2. **Tenant-scoped /circuit-breakers → fixed**: endpoint artık `current_user.tenant_id` ile başlamayan breaker key'lerini reddeder; `connection_id` response'ta tenant prefix'i strip edilmiş halde döner (cross-tenant observability leakage önlemi).
+3. **HALF_OPEN admission race → fixed**: yeni `CircuitBreaker.try_acquire()` atomic metodu — `is_available` check + HALF_OPEN slot rezervasyonu tek call'da. Wrappers `is_available` yerine `try_acquire()` kullanır. Python tek-thread + GIL nedeniyle bu metot içinde await yok = naturally atomic.
+
+**UI (UnifiedRateManager)**:
+1. Yeni endpoint `GET /api/channel-manager/unified-rate-manager/circuit-breakers` — per-provider breaker özeti (severity rule: OPEN > HALF_OPEN > CLOSED, varsayılan CLOSED). RBAC: `view_system_diagnostics`.
+2. Header altı pill banner: yalnızca ANY breaker `state != closed` ise görünür (sağlıklı durumda gürültü yok). Kanal sağlığı: `ShieldCheck/AlertTriangle/ShieldAlert` ikonları, emerald/amber/rose intent.
+3. 30s interval refetch + bulk update sonrası 1.5s'de tek-shot refetch.
+4. `handleBulkUpdate` toast'u akıllılaştı: `channel_push_count > 0 && breaker.state == 'open'` → warning ("kayıt yazıldı, push tekrar denenecek"); `half_open` → warning ("kısmen yanıt veriyor"); else success.
+
+**Out-of-scope** (bilinçli):
+- `_push_to_hotelrunner`/`_push_to_exely` arka plan task'ları senkron `succeeded[]/failed[]` döndürmez (asyncio.create_task fire-and-forget). Senkron partial-success UI bu mimaride mümkün değildi → breaker status banner + akıllı toast pragmatik replacement.
+- HR `update_room` (legacy single-row push) sarılmadı — `push_daily_inventory`/`push_date_range_inventory` modern path; bg push worker bunları kullanır.
+- `push_ari_bulk` HotelRunner'da sequential `update_room` çağırır (henüz sarılmamış). İleriki tur kapsamı.

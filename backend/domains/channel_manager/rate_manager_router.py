@@ -238,6 +238,7 @@ async def update_rates(
             "username": creds.get("username", ""),
             "password": creds.get("password", ""),
             "hotel_code": hotel_code,
+            "connection_id": f"{tenant_id}:{hotel_code}",
         }
         if conn.get("endpoint_url"):
             provider_kwargs["endpoint_url"] = conn["endpoint_url"]
@@ -390,6 +391,7 @@ async def bulk_grid_update(
             "username": creds.get("username", ""),
             "password": creds.get("password", ""),
             "hotel_code": hotel_code,
+            "connection_id": f"{tenant_id}:{hotel_code}",
         }
         if conn.get("endpoint_url"):
             provider_kwargs["endpoint_url"] = conn["endpoint_url"]

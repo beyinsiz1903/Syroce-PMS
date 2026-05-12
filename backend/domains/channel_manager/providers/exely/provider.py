@@ -44,6 +44,13 @@ logger = logging.getLogger("exely.provider")
 
 # Reuse the same ProviderResult from hotelrunner for consistency
 from domains.channel_manager.providers.hotelrunner.schemas import ProviderResult
+from domains.channel_manager.provider_failover import provider_failover
+
+
+def _exely_circuit_key(connection_id: str) -> str:
+    """Per-connection Exely breaker key. One bad tenant must not trip the
+    circuit for other tenants."""
+    return f"exely:{connection_id or '_default'}"
 
 
 class ExelyProvider:
@@ -227,8 +234,23 @@ class ExelyProvider:
         """Push ARI update. Splits into separate SOAP calls:
         - OTA_HotelRateAmountNotifRQ for rate changes
         - OTA_HotelAvailNotifRQ for availability/restrictions
-        Exely requires these as separate operations."""
+        Exely requires these as separate operations.
+
+        Wrapped in a per-connection circuit breaker — when OPEN, the SOAP
+        calls are short-circuited and a fail-fast ProviderResult is returned
+        (metadata.circuit_open=True). Both rate and avail sub-pushes share
+        the same breaker; either failing counts as one push attempt.
+        """
         start = time.time()
+        breaker = provider_failover.get_breaker(_exely_circuit_key(self._connection_id))
+        if not breaker.try_acquire():
+            return ProviderResult(
+                success=False,
+                error=f"circuit_open: Exely breaker is OPEN for connection {self._connection_id or '_default'}",
+                error_type="CircuitOpen",
+                duration_ms=int((time.time() - start) * 1000),
+                metadata={"circuit_open": True, "circuit_state": breaker.get_status()},
+            )
         validate_ari_payload(room_type_code, rate_plan_code, start_date, end_date)
 
         has_rate = rate_amount is not None
@@ -290,7 +312,9 @@ class ExelyProvider:
         duration_ms = int((time.time() - start) * 1000)
 
         if errors:
+            breaker.record_failure()
             return ProviderResult(success=False, error="; ".join(errors), duration_ms=duration_ms)
+        breaker.record_success()
         return ProviderResult(success=True, data={"message": "ARI update applied"}, duration_ms=duration_ms)
 
     # ── Reservation Delivery Confirmation ─────────────────────────────

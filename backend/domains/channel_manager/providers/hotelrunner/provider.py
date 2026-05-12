@@ -43,8 +43,16 @@ from .schemas import ProviderResult
 from .validators import (
     validate_inventory_payload,
 )
+from domains.channel_manager.provider_failover import provider_failover
 
 logger = logging.getLogger("hotelrunner.provider")
+
+
+def _hr_circuit_key(connection_id: str) -> str:
+    """Per-connection breaker key. One bad tenant must not trip the circuit
+    for other tenants. Falls back to a shared key when connection_id is empty
+    (anonymous/test usage)."""
+    return f"hotelrunner:{connection_id or '_default'}"
 
 
 class HotelRunnerProvider:
@@ -404,8 +412,20 @@ class HotelRunnerProvider:
         """Push daily inventory update via PUT /rooms/daily.
 
         HotelRunner v2 REST API expects parameters as query params.
+        Wrapped in a per-connection circuit breaker — when the breaker
+        is OPEN, the HTTP call is short-circuited and a fail-fast
+        ProviderResult is returned (metadata.circuit_open=True).
         """
         start = time.time()
+        breaker = provider_failover.get_breaker(_hr_circuit_key(self._connection_id))
+        if not breaker.try_acquire():
+            return ProviderResult(
+                success=False,
+                error=f"circuit_open: HotelRunner breaker is OPEN for connection {self._connection_id or '_default'}",
+                error_type="CircuitOpen",
+                duration_ms=int((time.time() - start) * 1000),
+                metadata={"circuit_open": True, "circuit_state": breaker.get_status()},
+            )
         try:
             if room_mapping:
                 query_params = map_ari_delta_to_daily_payload(payload, room_mapping)
@@ -426,6 +446,10 @@ class HotelRunnerProvider:
                 duration_ms=duration_ms, success=result.success,
                 connection_id=self._connection_id,
             )
+            if result.success:
+                breaker.record_success()
+            else:
+                breaker.record_failure()
             return ProviderResult(
                 success=result.success,
                 data=result.data,
@@ -433,6 +457,7 @@ class HotelRunnerProvider:
                 duration_ms=duration_ms,
             )
         except HotelRunnerError as e:
+            breaker.record_failure()
             return self._handle_error(e, start, ep.ROOMS_DAILY)
 
     async def push_date_range_inventory(
@@ -443,8 +468,18 @@ class HotelRunnerProvider:
         """Push date range inventory update via PUT /rooms/~.
 
         HotelRunner v2 REST API expects parameters as query params.
+        Wrapped in the same per-connection breaker as push_daily_inventory.
         """
         start = time.time()
+        breaker = provider_failover.get_breaker(_hr_circuit_key(self._connection_id))
+        if not breaker.try_acquire():
+            return ProviderResult(
+                success=False,
+                error=f"circuit_open: HotelRunner breaker is OPEN for connection {self._connection_id or '_default'}",
+                error_type="CircuitOpen",
+                duration_ms=int((time.time() - start) * 1000),
+                metadata={"circuit_open": True, "circuit_state": breaker.get_status()},
+            )
         try:
             if room_mapping:
                 query_params = map_ari_delta_to_daterange_payload(payload, room_mapping)
@@ -465,6 +500,10 @@ class HotelRunnerProvider:
                 duration_ms=duration_ms, success=result.success,
                 connection_id=self._connection_id,
             )
+            if result.success:
+                breaker.record_success()
+            else:
+                breaker.record_failure()
             return ProviderResult(
                 success=result.success,
                 data=result.data,
@@ -472,6 +511,7 @@ class HotelRunnerProvider:
                 duration_ms=duration_ms,
             )
         except HotelRunnerError as e:
+            breaker.record_failure()
             return self._handle_error(e, start, ep.ROOMS_DATERANGE)
 
     # ── Reservation Delivery Confirmation ─────────────────────────────

@@ -110,6 +110,7 @@ async def get_provider(tenant_id: str):
             token=creds["token"],
             hr_id=creds.get("hr_id", ""),
             environment=environment,
+            connection_id=f"{tenant_id}:{property_id}",
         ), conn
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"HotelRunner kimlik bilgileri gecersiz: {exc}")

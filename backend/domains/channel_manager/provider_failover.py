@@ -54,6 +54,23 @@ class CircuitBreaker:
             return self.half_open_calls < self.half_open_max_calls
         return False
 
+    def try_acquire(self) -> bool:
+        """Atomic admission: combines `is_available` check with HALF_OPEN
+        admission accounting. Returns True if call is admitted (and reserves
+        a HALF_OPEN slot when applicable). Python's GIL makes this naturally
+        atomic between two cooperative coroutine awaits — there is no async
+        yield inside this method.
+
+        Without this, concurrent async tasks can all pass `is_available`
+        in HALF_OPEN state and overwhelm a recovering upstream — defeating
+        the purpose of `half_open_max_calls`.
+        """
+        if not self.is_available:
+            return False
+        if self.state == CircuitState.HALF_OPEN:
+            self.half_open_calls += 1
+        return True
+
     def record_success(self):
         if self.state == CircuitState.HALF_OPEN:
             self.success_count += 1

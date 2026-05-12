@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Grid3X3, CalendarDays, Ban, CheckCircle2, Eye, Loader2,
   Building2, ChevronDown, ChevronUp, Settings2, Percent, DollarSign, X,
+  AlertTriangle, ShieldAlert, ShieldCheck,
 } from 'lucide-react';
 
 import { BulkUpdatePanel } from './rate-manager/BulkUpdatePanel';
@@ -63,6 +64,9 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
   const [roomValues, setRoomValues] = useState({});
   const [expandedRoomTypes, setExpandedRoomTypes] = useState(new Set());
 
+  // Circuit breaker statuses (per provider)
+  const [breakers, setBreakers] = useState([]);
+
   // Calendar grid state
   const [gridRoomType, setGridRoomType] = useState('all');
   const [gridRatePlan, setGridRatePlan] = useState('all');
@@ -74,6 +78,28 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
 
   const token = localStorage.getItem('token');
   const headers = { Authorization: `Bearer ${token}` };
+
+  // Fetch circuit breaker status (CM-Hardening Stop-Sale Circuit Breaker, May 2026)
+  const fetchBreakers = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${UNIFIED_PREFIX}/circuit-breakers`, { headers });
+      setBreakers(Array.isArray(data?.breakers) ? data.breakers : []);
+    } catch {
+      // silent — admin-level endpoint, not all roles can read
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBreakers();
+    const id = setInterval(fetchBreakers, 30000);
+    return () => clearInterval(id);
+  }, [fetchBreakers]);
+
+  // Lookup helper: current provider's breaker state ('closed' | 'half_open' | 'open')
+  const activeBreaker = useMemo(
+    () => breakers.find((b) => b.provider === provider) || null,
+    [breakers, provider],
+  );
 
   // Detect active provider
   useEffect(() => {
@@ -348,7 +374,21 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
         agency_ids: agencyIds,
       }, { headers });
 
-      toast.success(data.message || `${data.saved} kayıt güncellendi`);
+      const providerLabel = provider === 'hotelrunner' ? 'HotelRunner' : (provider === 'exely' ? 'Exely' : (providerName || 'kanal'));
+      const breakerState = activeBreaker?.state;
+      if (data.channel_push_count > 0 && breakerState === 'open') {
+        toast.warning(
+          `${data.saved} kayıt veritabanına yazıldı, ancak ${providerLabel} şu an erişilemez (devre OPEN). Push tekrar denenecek.`,
+          { duration: 8000 },
+        );
+      } else if (data.channel_push_count > 0 && breakerState === 'half_open') {
+        toast.warning(
+          `${data.saved} kayıt yazıldı; ${providerLabel} kısmen yanıt veriyor (devre HALF_OPEN). Push gönderildi, sonuç birkaç saniye içinde netleşir.`,
+          { duration: 6000 },
+        );
+      } else {
+        toast.success(data.message || `${data.saved} kayıt güncellendi`);
+      }
       if (data.agency_push_count > 0) {
         toast.success(
           `${data.agency_push_count} acente için kaydedildi (webhook bildirimleri gönderildi)`,
@@ -356,10 +396,35 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
         );
       }
       fetchGrid();
+      setTimeout(fetchBreakers, 1500);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Güncelleme hatası');
     }
     setSaving(false);
+  };
+
+  // Breaker status pill UI helper
+  const renderBreakerPill = (b) => {
+    if (!b) return null;
+    const map = {
+      closed:    { Icon: ShieldCheck, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'Sağlıklı' },
+      half_open: { Icon: AlertTriangle, cls: 'bg-amber-50 text-amber-800 border-amber-200', label: 'Kurtarılıyor' },
+      open:      { Icon: ShieldAlert, cls: 'bg-rose-50 text-rose-700 border-rose-200', label: 'Devre Dışı' },
+    };
+    const meta = map[b.state] || map.closed;
+    const { Icon } = meta;
+    const providerLabel = b.provider === 'hotelrunner' ? 'HotelRunner' : 'Exely';
+    const failBit = b.state !== 'closed' ? ` · ${b.failure_count}/${b.failure_threshold} hata` : '';
+    return (
+      <div
+        key={b.provider}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium ${meta.cls}`}
+        title={b.last_failure ? `Son hata: ${new Date(b.last_failure).toLocaleString('tr-TR')}` : 'Henüz hata yok'}
+      >
+        <Icon className="w-3.5 h-3.5" />
+        <span>{providerLabel}: {meta.label}{failBit}</span>
+      </div>
+    );
   };
 
   // Grid helpers
@@ -454,6 +519,17 @@ const UnifiedRateManager = ({ user, tenant, onLogout, embedded = false }) => {
             )}
           </div>
         </div>
+
+        {/* Circuit breaker status pills (CM-Hardening Stop-Sale, May 2026) */}
+        {breakers.some((b) => b.state !== 'closed') && (
+          <div
+            className="flex flex-wrap items-center gap-2"
+            data-testid="circuit-breaker-pills"
+          >
+            <span className="text-xs text-zinc-500">Kanal sağlığı:</span>
+            {breakers.map(renderBreakerPill)}
+          </div>
+        )}
 
         {/* Provider tabs (HotelRunner / Exely) */}
         {providerOptions.length > 0 && (

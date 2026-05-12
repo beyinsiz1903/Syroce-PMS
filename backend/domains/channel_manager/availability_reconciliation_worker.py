@@ -188,6 +188,7 @@ async def _push_reconciliation_exely(
             "username": creds.get("username", ""),
             "password": creds.get("password", ""),
             "hotel_code": hotel_code,
+            "connection_id": f"{tenant_id}:{hotel_code}",
         }
         if conn.get("endpoint_url"):
             provider_kwargs["endpoint_url"] = conn["endpoint_url"]

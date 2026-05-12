@@ -826,7 +826,8 @@ async def _push_to_exely(tenant_id, conn, request, pairs, per_room_map, update_f
         logger.info("[UNIFIED] Exely push baslatiliyor tenant=%s hotel_code=%s user=%s",
                     tenant_id, hotel_code, creds.get("username", "?"))
         from domains.channel_manager.providers.exely.provider import ExelyProvider
-        kwargs = {"username": creds.get("username", ""), "password": creds.get("password", ""), "hotel_code": hotel_code}
+        kwargs = {"username": creds.get("username", ""), "password": creds.get("password", ""), "hotel_code": hotel_code,
+                  "connection_id": f"{tenant_id}:{hotel_code}"}
         if conn.get("endpoint_url"):
             kwargs["endpoint_url"] = conn["endpoint_url"]
         provider = ExelyProvider(**kwargs)
@@ -1338,6 +1339,74 @@ async def update_pricing_settings(
 
 
 # ── Stop Sale Summary ────────────────────────────────────────────
+
+@router.get("/circuit-breakers")
+async def get_circuit_breakers(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
+):
+    """Return per-provider circuit breaker status, scoped to this tenant.
+
+    Strict tenant scope: only breaker keys prefixed with this tenant's id
+    (`hotelrunner:{tenant_id}:...` / `exely:{tenant_id}:...`) are aggregated.
+    Foreign tenants' breaker keys and identifiers are NEVER returned, even
+    in the same process — prevents cross-tenant observability leakage.
+
+    Severity rule: per provider, the worst state across this tenant's
+    breakers wins (OPEN > HALF_OPEN > CLOSED). When no breaker has been
+    touched yet for a provider, defaults to CLOSED with failure_count=0.
+    `connection_id` in the response strips the tenant prefix to avoid
+    leaking the full key shape.
+    """
+    from domains.channel_manager.provider_failover import provider_failover, CircuitState
+
+    tenant_id = current_user.tenant_id
+    raw = provider_failover.get_all_status()
+
+    severity = {
+        CircuitState.CLOSED.value: 0,
+        CircuitState.HALF_OPEN.value: 1,
+        CircuitState.OPEN.value: 2,
+    }
+    by_provider: dict[str, dict] = {}
+    for entry in raw:
+        key = entry.get("provider", "")
+        if ":" not in key:
+            continue
+        provider_name, conn_id = key.split(":", 1)
+        if provider_name not in ("hotelrunner", "exely"):
+            continue
+        # Tenant scope: conn_id MUST start with current tenant's id.
+        # Legacy `_default` keys (no tenant prefix) are always excluded
+        # from per-tenant views.
+        if not conn_id.startswith(f"{tenant_id}:"):
+            continue
+        local_conn_suffix = conn_id[len(tenant_id) + 1 :]
+        cur = by_provider.get(provider_name)
+        if cur is None or severity.get(entry["state"], 0) > severity.get(cur["state"], 0):
+            by_provider[provider_name] = {
+                "provider": provider_name,
+                "state": entry["state"],
+                "failure_count": entry["failure_count"],
+                "failure_threshold": entry["failure_threshold"],
+                "recovery_timeout": entry["recovery_timeout"],
+                "last_failure": entry["last_failure"],
+                "connection_id": local_conn_suffix,
+            }
+
+    for p in ("hotelrunner", "exely"):
+        by_provider.setdefault(p, {
+            "provider": p,
+            "state": CircuitState.CLOSED.value,
+            "failure_count": 0,
+            "failure_threshold": 5,
+            "recovery_timeout": 60,
+            "last_failure": None,
+            "connection_id": "",
+        })
+
+    return {"breakers": list(by_provider.values())}
+
 
 @router.get("/stop-sale-summary")
 async def get_stop_sale_summary(
