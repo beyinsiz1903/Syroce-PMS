@@ -132,7 +132,12 @@ class ProviderFailover:
         """Execute an operation against a provider with circuit breaker and retry logic."""
         breaker = self.get_breaker(provider)
 
-        if not breaker.is_available:
+        # Atomic admission via try_acquire — combines is_available check with
+        # HALF_OPEN slot reservation in a single non-yielding call so that
+        # concurrent execute_with_failover() invocations cannot exceed
+        # half_open_max_calls (regression guard, same fix as direct provider
+        # wrappers in HR/Exely push paths).
+        if not breaker.try_acquire():
             return {
                 "status": "circuit_open",
                 "provider": provider,
@@ -143,9 +148,9 @@ class ProviderFailover:
         last_error = None
         for attempt in range(self._retry_config["max_retries"]):
             try:
-                if breaker.state == CircuitState.HALF_OPEN:
-                    breaker.half_open_calls += 1
-
+                # Subsequent retry attempts within this admission already hold
+                # a HALF_OPEN slot from the initial try_acquire() — do NOT
+                # double-increment half_open_calls here.
                 result = await operation(*args, **kwargs)
                 breaker.record_success()
                 return {
