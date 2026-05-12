@@ -16,13 +16,12 @@ logger = logging.getLogger("core.outbox_dispatcher")
 EVENT_TYPE_TO_CM_EVENT = {
     "booking.created.v1": "booking_created",
     "booking.cancelled.v1": "booking_cancelled",
-    # CM-Hardening Turu #3a (May 2026): canonical CM event name for no-show.
-    # Provider adapters (HotelRunner / Exely) do NOT yet handle this CM event
-    # — EventSyncService.handle_event will return {"handled": False,
-    # "reason": "unsupported event_type ..."}. The dispatcher classifies that
-    # as `permanent: unsupported`, which marks the outbox row failed-permanent
-    # (no retry storm, no DLQ noise). Once Turu #3b adds a handler the same
-    # row would be re-driven manually via outbox replay.
+    # CM-Hardening Turu #3a + #3b (May 2026): canonical CM event name for no-show.
+    # As of Turu #3b, EventSyncService supports `booking_no_show` and routes it
+    # to the same InventorySyncService.trigger_inventory_sync path as
+    # `booking_cancelled` (Strategy A — inventory recompute, no provider-level
+    # booking/no-show endpoint). HotelRunner side: room is republished as
+    # sellable via PUT /api/v2/apps/rooms/daily. Exely parity is Turu #3c.
     "booking.no_show.v1": "booking_no_show",
     "booking.modified.v1": "booking_modified",
     "inventory.blocked.v1": "room_blocked",
@@ -159,7 +158,7 @@ def _build_cm_payload(event: dict[str, Any], cm_event_name: str) -> dict[str, An
         payload["property_id"] = event.get("property_id", event.get("tenant_id", ""))
 
     # Booking events need check_in/check_out for date range extraction
-    if cm_event_name in ("booking_created", "booking_cancelled", "booking_modified"):
+    if cm_event_name in ("booking_created", "booking_cancelled", "booking_modified", "booking_no_show"):
         if "check_in" not in payload:
             payload.setdefault("date_start", payload.get("check_in", ""))
         if "check_out" not in payload:
