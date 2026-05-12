@@ -230,6 +230,21 @@ class ReservationStateMachine:
             }}
         )
 
+        # Release room-night locks (INV-6 symmetry with handle_cancellation).
+        # Production hardening mini-tur, May 2026: previously no-show left
+        # room_night_locks in place even though the booking is terminal,
+        # which could artificially constrain availability for the same
+        # date range until manual cleanup.
+        try:
+            from core.atomic_booking import release_booking_nights
+            await release_booking_nights(
+                tenant_id, booking["id"],
+                reason=f"no_show:{marked_by or 'system'}",
+                correlation_id=booking.get("correlation_id"),
+            )
+        except Exception as e:
+            logger.warning("Failed to release night locks for no-show %s: %s", booking["id"], e)
+
         await db.pms_audit_trail.insert_one({
             "tenant_id": tenant_id,
             "entity_type": "reservation",

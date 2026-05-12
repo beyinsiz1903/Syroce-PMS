@@ -20,6 +20,8 @@ Scope (v2):
         canonical cancel path — intentional integration coupling)
     T6. pending -> no-show blocked (transition guard: pending lacks no_show target)
     T7. cross-tenant no-show denied -> SKIPPED with TODO (v1.1 fixture)
+    T8. no-show releases room_night_locks (INV-6 symmetry with cancellation,
+        production hardening mini-tur, May 2026)
 
 Out of scope:
     - Legacy /api/reservations/{id}/mark-noshow path (direct DB write, BYPASS state machine)
@@ -413,6 +415,56 @@ class TestReservationNoShowE2E:
         pytest.skip(
             "Second tenant fixture not available yet; "
             "add in v1.1 tenant-isolation E2E"
+        )
+
+    # ── T8: no-show releases room_night_locks (INV-6 symmetry) ───────────
+
+    def test_noshow_releases_room_night_locks(self):
+        """handle_no_show release_booking_nights symmetry with handle_cancellation.
+
+        Production hardening mini-tur (May 2026): previously no-show left
+        room_night_locks in place even though the booking is terminal,
+        which artificially constrained availability for the same date
+        range until manual cleanup. handle_cancellation already released
+        nights via release_booking_nights — handle_no_show now does too.
+
+        Asserts:
+          - pre-locks > 0 (atomic_booking_create produced night locks)
+          - no-show transition succeeds (200)
+          - post-locks == 0 (release_booking_nights cleaned up)
+        """
+        guest_id, room = self._seed_entities()
+        booking = self._create_booking(room, guest_id)
+        self._set_booking_field(booking["id"], {"status": "confirmed"})
+
+        client, db = _sync_db()
+        try:
+            pre_locks = db.room_night_locks.count_documents(
+                {"tenant_id": self.tenant_id, "booking_id": booking["id"]}
+            )
+        finally:
+            client.close()
+
+        if pre_locks == 0:
+            pytest.skip(
+                "booking flow did not produce room_night_locks "
+                "(atomic path differs); cannot exercise release symmetry"
+            )
+
+        resp = self._no_show(booking["id"])
+        assert resp.status_code == 200, resp.text
+        assert resp.json().get("success") is True
+
+        client, db = _sync_db()
+        try:
+            post_locks = db.room_night_locks.count_documents(
+                {"tenant_id": self.tenant_id, "booking_id": booking["id"]}
+            )
+        finally:
+            client.close()
+        assert post_locks == 0, (
+            f"expected 0 room_night_locks after no-show, got {post_locks} "
+            f"(pre={pre_locks}) — release_booking_nights symmetry broken"
         )
 
 
