@@ -171,6 +171,12 @@ async def _run(args) -> int:
 
 def main() -> int:
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
+    # Cron context fallback: backend/start.sh aliases MONGO_URL=$MONGO_ATLAS_URI for
+    # the long-running app, but cron jobs don't go through start.sh. Without this
+    # fallback, this script would silently default to localhost:27017 (see
+    # core/database.py:19) and report verdict=unknown every cycle in production.
+    if not os.environ.get("MONGO_URL") and os.environ.get("MONGO_ATLAS_URI"):
+        os.environ["MONGO_URL"] = os.environ["MONGO_ATLAS_URI"]
     args = _build_parser().parse_args()
     try:
         return asyncio.run(_run(args))
