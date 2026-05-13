@@ -5,6 +5,10 @@
 > bu doküman **alarm kuralları + routing + severity matrisi + manuel
 > Sentry-UI kurulum adımları**'nı netleştirir. "Sistem bir şey yakaladı
 > ama kimse haber almıyor" boşluğunu kapatır.
+>
+> **⚠️ LOCK-STEP:** §3 routing tablosu değişirse `docs/PRODUCTION_LAUNCH_REHEARSAL.md`
+> §2.2 (operatör Sentry-UI tıklama listesi) **aynı PR içinde** güncellenmelidir;
+> aksi halde rehearsal listesi gerçek policy'den drift eder.
 
 ---
 
