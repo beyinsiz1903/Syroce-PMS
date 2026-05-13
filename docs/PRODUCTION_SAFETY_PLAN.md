@@ -24,14 +24,48 @@
 | 4   | Sentry alert policy                   | ✅ **DONE** (12 May 2026)      | ~~EVET~~       | ~~1–2 saat~~ |
 | 5   | Admin "Sistem Sağlığı" ekranı         | Sayfa var, parça eksik        | HAYIR          | 2–3 saat     |
 | 6   | Kill-switch / feature flag standardı  | Altyapı var, env-var yok      | HAYIR          | 2 saat       |
-| 7   | İlk 24 saat izleme runbook'u          | Go/No-Go içinde gömülü        | HAYIR          | 1 saat       |
+| 7   | İlk 24 saat izleme runbook'u          | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~1 saat~~   |
 | 8   | Replit OPS cheat-sheet                | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~1–2 saat~~ |
 
 **Kalan pilot-blocker iş yükü:** YOK ✅ — pilot güvenlik dörtgeni
 (rollback + backup + observability + alarm) tamam.
-**Tüm paket (kalan, non-blocker):** ~5–6 saat (#5 + #6 + #7).
+**Tüm paket (kalan, non-blocker):** ~4–5 saat (#5 + #6).
 
-**Önerilen sıra:** ~~2 → 1 → 3 → 4 → 8~~ → **7 → 5 → 6**.
+**Önerilen sıra:** ~~2 → 1 → 3 → 4 → 8 → 7~~ → **5 → 6**.
+
+---
+
+## ✅ Kapsam #7 — Tamamlandı (12 Mayıs 2026)
+
+**İlk 24 saat izleme runbook'u — operatör nöbet defteri:**
+
+**Yazılan kod:** Sadece dokümantasyon — `docs/PILOT_FIRST_24H_MONITORING.md`
+10 bölüm:
+1. Go-Live anı (T-15 dk hazırlık + T+0 kayıt)
+2. T+0 → T+15 dk yoğun bakım (5 dk frekans, 7 kontrol)
+3. T+15 dk → T+1 saat akut faz (15 dk frekans, +6 ek kontrol)
+4. T+1 saat → T+6 saat stabilizasyon (30 dk frekans, telemetri)
+5. T+6 saat → T+24 saat sürekli izleme (2 saat frekans + gece kuralı)
+6. Eşik tabloları (rollback / sadece izleme / müşteriye bildirim)
+7. Operasyon defteri şablonu (her tur kayıt)
+8. Tatbikat modu (pilot öncesi kuru çalışma + geçer kriteri)
+9. T+24h sonrası transition (manuel → cron + alert otomasyonu)
+10. Dosya çapraz-link + sürüm
+
+**Tasarım kararı:** Zaman bantlarına göre **azalan frekans** (5dk →
+15dk → 30dk → 2sa) — operatör yorgunluğu vs. risk profilinin
+gerçek dağılımı. İlk saatte yoğun manuel test, sonra telemetri-
+ağırlıklı izleme.
+
+**Doğrulama (sandbox):**
+- Tüm referans verilen komutlar mevcut: `deploy/smoke.sh`,
+  `deploy/rollback.sh`, `cm_backlog_alert.py`, `verify_atlas_backup.py`,
+  `index_audit.py`
+- Tüm endpoint URL'leri `REPLIT_OPS_CHEATSHEET.md` §1 matrisi ile
+  cross-check'li
+- Çapraz-link'lenen 7 doküman mevcut: REPLIT_OPS_CHEATSHEET, ROLLBACK,
+  CM_OBSERVABILITY, SENTRY_ALERT_POLICY, ATLAS_BACKUP_AND_RESTORE,
+  PILOT_GO_NO_GO, DISASTER_RECOVERY
 
 ---
 
