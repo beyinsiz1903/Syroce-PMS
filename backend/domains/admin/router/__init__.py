@@ -11,6 +11,7 @@ from .leads import router as _leads_r
 from .ops import router as _ops_r
 from .rbac import router as _rbac_r
 from .sla import router as _sla_r
+from .stress import router as _stress_r
 from .subscription import router as _subscription_r
 from .system import router as _system_r
 from .tenants import router as _tenants_r
@@ -28,3 +29,4 @@ router.include_router(_sla_r)
 router.include_router(_system_r)
 router.include_router(_compliance_r)
 router.include_router(_ops_r)
+router.include_router(_stress_r)

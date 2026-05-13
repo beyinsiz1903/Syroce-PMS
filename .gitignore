@@ -12,6 +12,13 @@ attached_assets/
 # Secure storage (encrypted ID photos, etc. — never commit)
 backend/secure_storage/
 
+# Local-only / agent scratch (sandbox creds, stress-E2E opt-in env, etc.)
+# `.local/` is repo-private — never commit. Specifically, `.local/.stress_env`
+# carries the destructive `E2E_ALLOW_DESTRUCTIVE_STRESS=true` flag during
+# stress runs and must NOT leak.
+.local/
+.local/.stress_env
+
 # IDE and editors
 .idea/
 .vscode/

@@ -70,5 +70,22 @@ export STRICT_TENANT_MODE="${STRICT_TENANT_MODE:-true}"
 # must NOT set this; defaults off.
 export DISABLE_AUTH_THROTTLE="${DISABLE_AUTH_THROTTLE:-1}"
 
+# F5 — Stress E2E support: tenant ids are non-secret (UUIDs), exported
+# here with safe defaults so the stress endpoints can validate
+# `target_tenant_id`. The destructive flag (E2E_ALLOW_DESTRUCTIVE_STRESS)
+# is *intentionally* omitted from these defaults — it must be set
+# externally (e.g. .local/.stress_env or Replit Secrets) for any
+# stress operation to run. Fail-closed.
+export E2E_STRESS_TENANT_ID="${E2E_STRESS_TENANT_ID:-23377306-a501-4232-adc8-8aea50e243c0}"
+export PILOT_TENANT_ID="${PILOT_TENANT_ID:-5bad4a34-6ee3-4566-9053-741b7375a9cf}"
+# Optional opt-in env file (gitignored). Used during F5/F6 stress runs.
+if [ -f "$(dirname "$0")/../.local/.stress_env" ]; then
+  echo "ℹ️  Loading .local/.stress_env (stress E2E opt-in)"
+  set -a
+  # shellcheck disable=SC1091
+  . "$(dirname "$0")/../.local/.stress_env"
+  set +a
+fi
+
 cd "$(dirname "$0")"
 exec python -m uvicorn server:app --host 0.0.0.0 --port 8000
