@@ -23,15 +23,82 @@
 | 3   | Outbox / CM backlog görünürlük + alarm | ✅ **DONE** (12 May 2026)      | ~~EVET~~       | ~~3–4 saat~~ |
 | 4   | Sentry alert policy                   | ✅ **DONE** (12 May 2026)      | ~~EVET~~       | ~~1–2 saat~~ |
 | 5   | Admin "Sistem Sağlığı" ekranı         | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~2–3 saat~~ |
-| 6   | Kill-switch / feature flag standardı  | Altyapı var, env-var yok      | HAYIR          | 2 saat       |
+| 6   | Kill-switch / feature flag standardı  | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~2 saat~~   |
 | 7   | İlk 24 saat izleme runbook'u          | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~1 saat~~   |
 | 8   | Replit OPS cheat-sheet                | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~1–2 saat~~ |
 
 **Kalan pilot-blocker iş yükü:** YOK ✅ — pilot güvenlik dörtgeni
 (rollback + backup + observability + alarm) tamam.
-**Tüm paket (kalan, non-blocker):** ~2 saat (#6 — kill-switch standardı).
+**Tüm paket:** ✅ **TAMAMI BİTTİ** (8/8 paket, ~25 saat efektif iş).
 
-**Önerilen sıra:** ~~2 → 1 → 3 → 4 → 8 → 7 → 5~~ → **6**.
+**Sıra (DONE):** 2 → 1 → 3 → 4 → 8 → 7 → 5 → 6 ✅
+
+---
+
+## ✅ Kapsam #6 — Tamamlandı (12 Mayıs 2026)
+
+**Kill-switch / feature flag standardı:**
+
+**Yazılan kod:** İki yeni dosya (mevcut kod değişmedi — bu tur
+"standart-belirleme" turu):
+
+1. `backend/infra/feature_flags.py` (~190 satır) — helper modül:
+   - `is_enabled(flag, default=False)` — opt-in `ENABLE_*` okuyucu
+   - `is_disabled(flag, default=False)` — opt-out `DISABLE_*` okuyucu
+   - `production_guard(flag, allowed_envs=None)` — güvenlik bypass'ı
+     prod'da YOKSAYILIR (sadece dev/test/sandbox/ci/local); leak
+     denemesinde WARNING log
+   - `snapshot()` — readiness API + admin UI için privacy-safe
+     flag durumu dökümü (raw env value YOK, sadece ad + boolean)
+   - `KNOWN_FLAGS` registry (mevcut 5 kill-switch)
+   - Tutarlı truthy parser: `1/true/yes/on/y/t` (case-insensitive,
+     stripped); bilinmeyen token → WARNING + default
+
+2. `docs/KILL_SWITCH_REGISTRY.md` (~210 satır) — operatör doc'u:
+   - §0 30-saniye TL;DR
+   - §1 Yeni flag ekleme standardı (parsing, naming, fail-closed,
+     registry güncelleme, audit log)
+   - §2 Operatör akışı (Replit Secrets → restart → readiness ile
+     doğrula)
+   - §3 Mevcut 5 kill-switch envanteri (wire noktası, etki, açma
+     süresi, side-effect kolonları)
+   - §4 6 önerilen yeni flag (DEFER, wire EDİLMEDİ — gerektikçe
+     ileri turda eklenir): DISABLE_OUTBOX_DISPATCHER /
+     DISABLE_CM_PUSH / DISABLE_NIGHT_AUDIT / DISABLE_AI_UPSELL /
+     DISABLE_PUBLIC_BOOKING / DISABLE_KVKK_PHOTO_ALERTS
+   - §5 snapshot() programmatik şekil
+   - §6 Çapraz-link 5 doc
+
+**Doğrulama (sandbox, 7 manuel test):**
+- default off + override
+- truthy: `1/true/TRUE/Yes/on/" true "/Y/t`
+- falsy: `0/false/no/""/"  "`
+- bad token → fallback + WARNING
+- production_guard prod leak'i bloklar (APP_ENV=production)
+- production_guard dev'de honoured (APP_ENV=development)
+- snapshot shape: {flags, active_count, non_default_count},
+  len(flags)==5, tüm 5 alan flag başına mevcut
+
+**Tasarım kararları:**
+1. **Mevcut 5 call site'ı migrate etmedik:** Her migration runtime
+   side-effect testi gerektirir; bu tur "standart-belirleme" turu,
+   wire turu değil. §1.1 doc'unda migration pattern gösterildi —
+   ileri turlarda PR per call site.
+2. **`production_guard` warn-and-ignore (raise değil):** Prod leak
+   nadir + recoverable; raise FastAPI startup'ı patlatır, bu
+   gereksiz aşırı tepki. WARNING log + Sentry yakalar (subsystem
+   etiketi auth/security).
+3. **6 candidate flag wire EDİLMEDİ:** Hangi senaryoda gerekirse
+   o turda eklenir; gereksiz flag = operasyonel yük.
+4. **`snapshot()` readiness API'sine wire'lanmadı:** SystemHealth-
+   Dashboard'a 6. KpiCard ekleme önerisi doc'ta — wire ileri tur.
+5. **Truthy `y/t` tek-harf kabul:** Codebase'de zaten varyans var;
+   liberal parser tek-yer-tutarlılık sağlar. Bilinmeyen token
+   warning'i typo'ları yakalar.
+6. **`sandbox` allowed_envs'e dahil:** Pilot Replit sandbox'ta
+   koşar; production guard sandbox'ta honoured olmalı (test
+   senaryoları). Pilot prod'da APP_ENV=production set olur ve
+   sandbox flag yoksayılır.
 
 ---
 
