@@ -22,10 +22,10 @@ test.describe('Scope 17 — Audit / log', () => {
         if (!opened) rec(testInfo, { module: M, scope: 17, step: 'Audit Timeline UI bulunamadı', status: REVIEW });
 
         const api = await makeApi(baseURL);
-        for (const ep of ['/api/audit/timeline?limit=5', '/api/admin/audit-log?limit=5']) {
-            const x = await safeGet(api, ep);
-            rec(testInfo, { module: M, scope: 17, step: `GET ${ep}`, status: x.status < 500 ? PASS : REVIEW, endpoint: ep, http: x.status });
-        }
+        // Kanonik audit endpoint — /api/admin/audit-log probe'u 2026-05-13 cleanup turunda
+        // kaldırıldı (frontend referansı yok, backend'de o path mevcut değil — yetim probe idi).
+        const x = await safeGet(api, '/api/audit/timeline?limit=5');
+        rec(testInfo, { module: M, scope: 17, step: 'GET /api/audit/timeline?limit=5', status: x.ok ? PASS : REVIEW, endpoint: '/api/audit/timeline', http: x.status });
         await api.dispose();
 
         // PII scrub heuristik: response gövdesinde JWT/email/IP regex var mı? (read-only)

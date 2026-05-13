@@ -166,6 +166,9 @@ function VoidDetailsPanel({ voidDetails, t }) {
   );
 }
 
+// Mongo ObjectId formatı: tam olarak 24 hex karakter
+const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+
 export default function FolioDetailView({ user, tenant, onLogout, folioId: propFolioId, onClose }) {
   const { folioId: paramFolioId } = useParams();
   const { t } = useTranslation();
@@ -173,6 +176,8 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("timeline");
+  const [notFound, setNotFound] = useState(false);
+  const [notFoundReason, setNotFoundReason] = useState(""); // 'invalid_format' | 'not_found' | 'forbidden'
   const token = localStorage.getItem("token");
   const [showChargeForm, setShowChargeForm] = useState(false);
   const [chargeForm, setChargeForm] = useState({ description: "", amount: "", category: "room", quantity: 1 });
@@ -180,11 +185,38 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
 
   const fetchDetail = useCallback(async (id) => {
     if (!id) return;
+    setNotFound(false);
+    setNotFoundReason("");
+    // 2026-05-13 UX guard: invalid ObjectId formatı backend'e bile gitmeden NotFound göster
+    // (P2 cleanup — sahte/yanıltıcı sayfa shell render etmesin).
+    // Mevcut `data` sadece kesin NotFound (invalid format / 404 / 401 / 403) durumunda
+    // veya başarılı fetch'te değişir; transient 5xx/network hatasında önceki folio
+    // ekrandan kaybolmaz (refresh sırasında boş shell regression riski yok).
+    if (!OBJECT_ID_RE.test(String(id).trim())) {
+      setData(null);
+      setNotFound(true);
+      setNotFoundReason("invalid_format");
+      return;
+    }
     setLoading(true);
     try {
       const { data: d } = await axios.get(`/pms-core/folio/detail/${id}`, { headers: { Authorization: `Bearer ${token}` } });
       setData(d);
-    } catch (e) { toast.error(e.response?.data?.detail || t("folio.failedToLoad")); }
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 404) {
+        setData(null);
+        setNotFound(true);
+        setNotFoundReason("not_found");
+      } else if (status === 403 || status === 401) {
+        setData(null);
+        setNotFound(true);
+        setNotFoundReason("forbidden");
+      } else {
+        // Transient (5xx / network): mevcut data'yı koru, sadece toast
+        toast.error(e?.response?.data?.detail || t("folio.failedToLoad"));
+      }
+    }
     finally { setLoading(false); }
   }, [token, t]);
 
@@ -217,7 +249,28 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
         </div>
       )}
 
-      {data && (
+      {notFound && !loading && (
+        <Card data-testid="folio-not-found" className="bg-white border-gray-200 shadow-sm max-w-xl mx-auto mt-12">
+          <CardContent className="py-10 px-6 text-center">
+            <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+            <h2 className="text-lg font-semibold text-gray-800 mb-2">
+              {notFoundReason === "forbidden" ? "Erişim yetkisi yok" : "Folio bulunamadı"}
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              {notFoundReason === "invalid_format" && "Geçersiz folio ID formatı (24 karakter hex bekleniyor)."}
+              {notFoundReason === "not_found" && "Bu ID ile bir folio kaydı bulunamadı veya farklı bir tenant'a ait."}
+              {notFoundReason === "forbidden" && "Bu folioyu görüntüleme yetkiniz yok (403)."}
+            </p>
+            {!propFolioId && (
+              <Button variant="outline" size="sm" onClick={() => { setNotFound(false); setFolioId(""); }}>
+                Yeni arama
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {data && !notFound && (
         <>
           <div className="flex items-start justify-between mb-6">
             <div>

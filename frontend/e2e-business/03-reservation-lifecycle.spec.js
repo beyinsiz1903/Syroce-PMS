@@ -41,11 +41,11 @@ test.describe('Scope 3 — Rezervasyon yaşam döngüsü', () => {
         const rooms = await safeGet(api, '/api/pms/rooms?limit=5');
         rec(testInfo, { module: M, scope: 3, step: 'GET /api/pms/rooms', status: rooms.ok ? PASS : REVIEW, endpoint: '/api/pms/rooms', http: rooms.status });
 
-        // Audit endpoint (read-only kontrolü)
-        for (const ep of ['/api/audit/timeline', '/api/admin/audit-log']) {
-            const a = await safeGet(api, `${ep}?limit=5`);
-            rec(testInfo, { module: M, scope: 17, step: `GET ${ep} (audit)`, status: a.status === 200 || a.status === 401 || a.status === 404 ? (a.ok ? PASS : REVIEW) : REVIEW, endpoint: ep, http: a.status });
-        }
+        // Audit endpoint (read-only kontrolü) — sadece kanonik /api/audit/timeline.
+        // Eski /api/admin/audit-log probe'u 2026-05-13 cleanup turunda kaldırıldı
+        // (frontend referansı yok; backend'de plural /admin/audit-logs kayıt için var).
+        const a = await safeGet(api, '/api/audit/timeline?limit=5');
+        rec(testInfo, { module: M, scope: 17, step: 'GET /api/audit/timeline (audit)', status: a.ok ? PASS : REVIEW, endpoint: '/api/audit/timeline', http: a.status });
         await api.dispose();
     });
 

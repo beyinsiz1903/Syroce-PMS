@@ -1,8 +1,9 @@
-# Full UI + Business E2E — 2026-05-13 (Pilot Run, P1 fix sonrası)
+# Full UI + Business E2E — 2026-05-13 (Cleanup turu sonrası)
 
 > Suite: `frontend/e2e-business/` (Playwright). 2 chunk birleşik koşum (sequential workers=1).
-> İlk koşum: 16:38 → 16:40 UTC (P1 audit/timeline 500 vardı).
-> **Bu koşum: 17:03 → 17:05 UTC — `routers/audit_timeline.py` P1 fix sonrası re-run.**
+> Tur 1 (16:38 UTC): P1 audit/timeline 500 vardı.
+> Tur 2 (17:03 UTC): `routers/audit_timeline.py` P1 fix sonrası re-run → PASS 93→95.
+> **Tur 3 (bu — 17:18-17:23 UTC): Cleanup turu (yetim probe + folio NotFound guard) → PASS 95→98.**
 
 ---
 
@@ -13,114 +14,103 @@
 | Toplam test | **30 / 30 PASS** (0 FAIL) |
 | Spec dosyası | 20 (Scope 1-20) |
 | Project | desktop (1440×900) |
-| Adım sayaçları | **PASS=95** \| FAIL=0 \| REVIEW=67 \| SKIP=13 |
-| Toplam süre | 114.2s (Chunk1 61.7s + Chunk2 52.5s) |
-| **Son karar** | **GO WITH WATCH** |
+| Adım sayaçları | **PASS=98** \| FAIL=0 \| **REVIEW=64** \| SKIP=13 |
+| Toplam süre | 126.4s (Chunk1 67.0s + Chunk2 59.4s) |
+| **Son karar** | **GO WITH WATCH** (P1 ve P2 kapatıldı) |
 
-**Önceki koşumdan fark**: PASS 93 → **95** (+2), REVIEW 69 → **67** (−2). İki azalma, bu turun konusu olan P1 audit/timeline 500 hatasının düzelmesinden geliyor:
-- `[reservation]` GET /api/audit/timeline 500 → **artık 200** (kayıt değil, REVIEW listesinden düştü)
-- `[audit-log]` GET /api/audit/timeline?limit=5 500 → **artık 200** (kayıt değil, REVIEW listesinden düştü)
+**Tur 3 farkı (cleanup)**: PASS 95 → **98** (+3), REVIEW 67 → **64** (−3). Üç iyileşme:
+1. **Yetim probe temizliği** — `/api/admin/audit-log` 404 probe'u 03 + 17 spec'lerinden kaldırıldı (frontend referansı yok, backend route mevcut değil — yetim yetim path). REVIEW 2 düştü.
+2. **Folio invalid ID UX guard** — `FolioDetailView.jsx` artık geçersiz ObjectId formatı veya backend 404'te "Folio bulunamadı" NotFound kartı gösteriyor. Cross-tenant verisi asla render edilmez. Test 18 sahte ID artık REVIEW değil **PASS**: REVIEW 2 düştü, PASS 3 arttı.
+3. Kalan REVIEW kalemleri pure `count=0` (pilot dataset boş) — gerçek operasyon başlayınca doğal olarak yeşile döner.
 
-Geriye kalan tek audit-ilgili REVIEW: `[reservation]` GET /api/admin/audit-log 404 — bu endpoint sistemde mevcut değil ve frontend hiçbir yerden çağırmıyor (`rg admin/audit-log frontend/src/` boş döndü). Test sadece eski/silinmiş bir path'i probe ediyor; route 404'ü doğru davranıştır. Spec'in oradaki probe'unu kaldırmak veya 404-beklenen olarak işaretlemek opsiyonel temizlik (out of scope).
+**Net durum**: P0=0, P1=0 (✅ önceki turda audit timeline çözüldü), **P2=0** (bu turda folio + audit probe çözüldü), P3=63 dataset-bağımlı REVIEW.
 
 ---
 
 ## 2. Modül bazlı tablo (20 scope)
 
-| Modül | PASS | FAIL | REVIEW | SKIP | Toplam |
-|---|---:|---:|---:|---:|---:|
-| auth-nav | 7 | 0 | 2 | 0 | 9 |
-| dashboard-health | 8 | 0 | 6 | 0 | 14 |
-| reservation | **7** | 0 | **2** | 1 | 10 |
-| checkin-checkout | 3 | 0 | 2 | 1 | 6 |
-| folio | 5 | 0 | 10 | 1 | 16 |
-| invoice | 3 | 0 | 6 | 1 | 10 |
-| mice | 5 | 0 | 4 | 1 | 10 |
-| housekeeping | 3 | 0 | 5 | 1 | 9 |
-| guest-crm | 3 | 0 | 1 | 1 | 5 |
-| users-roles | 4 | 0 | 3 | 1 | 8 |
-| channel-manager | 8 | 0 | 5 | 1 | 14 |
-| rate-inventory | 2 | 0 | 5 | 1 | 8 |
-| payments | 3 | 0 | 6 | 1 | 10 |
-| reports | 5 | 0 | 0 | 0 | 5 |
-| notifications | 2 | 0 | 1 | 1 | 4 |
-| settings | 4 | 0 | 6 | 1 | 11 |
-| audit-log | **4** | 0 | **1** | 0 | 5 |
-| security-rbac | 5 | 0 | 2 | 0 | 7 |
-| responsive | 12 | 0 | 0 | 0 | 12 |
-| recap | 2 | 0 | 0 | 0 | 2 |
-| **TOPLAM** | **95** | **0** | **67** | **13** | **175** |
-
-Bold modüller önceki koşuma kıyasla iyileşti (audit timeline 500 gitti).
+| Modül | PASS | FAIL | REVIEW | SKIP | Toplam | Δ vs Tur 2 |
+|---|---:|---:|---:|---:|---:|---|
+| auth-nav | 7 | 0 | 2 | 0 | 9 | — |
+| dashboard-health | 8 | 0 | 6 | 0 | 14 | — |
+| reservation | 7 | 0 | **1** | 1 | 9 | REVIEW −1 (admin/audit-log probe sil) |
+| checkin-checkout | 3 | 0 | 2 | 1 | 6 | — |
+| folio | 5 | 0 | 10 | 1 | 16 | — |
+| invoice | 3 | 0 | 6 | 1 | 10 | — |
+| mice | 5 | 0 | 4 | 1 | 10 | — |
+| housekeeping | 3 | 0 | 5 | 1 | 9 | — |
+| guest-crm | 3 | 0 | 1 | 1 | 5 | — |
+| users-roles | 4 | 0 | 3 | 1 | 8 | — |
+| channel-manager | 8 | 0 | 5 | 1 | 14 | — |
+| rate-inventory | 2 | 0 | 5 | 1 | 8 | — |
+| payments | 3 | 0 | 6 | 1 | 10 | — |
+| reports | 5 | 0 | 0 | 0 | 5 | — |
+| notifications | 2 | 0 | 1 | 1 | 4 | — |
+| settings | 4 | 0 | 6 | 1 | 11 | — |
+| audit-log | 4 | 0 | **1** | 0 | 5 | REVIEW −1 (admin/audit-log probe sil; PII scrub REVIEW kalıyor) |
+| security-rbac | **8** | 0 | **0** | 0 | 8 | PASS +3 (folio NotFound), REVIEW −2 |
+| responsive | 12 | 0 | 0 | 0 | 12 | — |
+| recap | 2 | 0 | 0 | 0 | 2 | — |
+| **TOPLAM** | **98** | **0** | **64** | **13** | **175** | PASS +3, REVIEW −3 |
 
 ---
 
-## 3. P1 Fix — Audit Timeline (RESOLVED)
+## 3. Bu tur uygulanan cleanup'lar
 
-### Problem (önceki rapor §3 P1)
-`GET /api/audit/timeline` ve `/api/audit/timeline?limit=5` pilot ortamda HTTP 500 dönüyordu. KVKK/audit görünürlüğü bozuk.
+### 3.1 — Yetim audit-log probe temizliği
 
-### Root cause
-`backend/routers/audit_timeline.py:819` — `_group_by_time` helper'ı timestamp'in **string** olduğunu varsayarak `len(ts)` çağırıyordu. Pilot DB'deki bazı `audit_logs` kayıtları `timestamp` alanını **datetime objesi** (BSON Date) olarak tutuyor (yeni yazıcı). Eski yazıcılar ISO string yazıyor; karışık tip → `TypeError: object of type 'datetime.datetime' has no len()` → 500.
+**Problem**: `/api/admin/audit-log` endpoint'i sistemde mevcut değil. Backend'de `/admin/audit-logs` (çoğul) var ama bu yazma için (`enterprise_router.py:1077`). Frontend kaynak kodunda `rg "admin/audit-log"` → 0 sonuç. E2E'de iki probe vardı (03 + 17), her seferinde 404 döndürüp REVIEW kaydı bırakıyordu.
 
-Backend traceback (Sentry'ye düştü):
-```
-File "/home/runner/workspace/backend/routers/audit_timeline.py", line 72, in get_audit_timeline
-    grouped = _group_by_time(logs)
-File "/home/runner/workspace/backend/routers/audit_timeline.py", line 819, in _group_by_time
-    hour_key = ts[:13] if len(ts) >= 13 else ts[:10]
-TypeError: object of type 'datetime.datetime' has no len()
-```
+**Fix**:
+- `frontend/e2e-business/03-reservation-lifecycle.spec.js` — probe loop'u tek `/api/audit/timeline` çağrısına indirgendi.
+- `frontend/e2e-business/17-audit-log.spec.js` — aynı şekilde sadece `/api/audit/timeline?limit=5`.
+- Her iki spec'e cleanup turu yorumu eklendi: "yetim probe — frontend referansı yok".
 
-### Fix (`backend/routers/audit_timeline.py`)
-1. **`_ts_to_iso(ts)` yardımcısı eklendi** — str / datetime / None / dict → güvenli ISO string.
-2. **`_group_by_time` artık `_ts_to_iso(...)` ile normalize ediyor** — `len(datetime)` TypeError'u kalıcı olarak engellendi.
-3. **Outer `try/except`** — beklenmedik aggregation/serialization hatası 500 yerine **200 + `events: []` + `degraded: true`** dönüyor (UI boş ekran yerine "kayıt yok" gösterebilir).
-4. **`limit` validation güçlendi** — `Query(default=50, ge=1, le=200)` (önce sadece `le=200` vardı; 0/negatif sayı 422'ye çıkar).
-5. **`cursor` + tarih filtresi semantiği düzeltildi** — eski kod `cursor` geldiğinde `start_date`/`end_date` filtrelerini siliyordu; artık üçü birden `$gte`/`$lte`/`$lt` olarak korunuyor.
-6. **PII sızıntısı yok** — `logger.exception(...)` traceback'i Sentry'ye gönderir, response payload'a sızdırmaz; query/header bilgisi log'a düşmez.
-7. **Tenant scope korundu** — `query["tenant_id"] = ctx.tenant_id` ilk satırda set; tüm filtreler bunu üzerine yazmıyor (regression test koruyor).
+**Sonuç**: REVIEW −2. Audit görünürlüğü tamamen `/api/audit/timeline` üzerinden, doğru endpoint çalışıyor.
 
-### Doğrulama (manuel curl, pilot)
-```
-/api/audit/timeline                         → 200 (1006ms) count=50 has_more=true
-/api/audit/timeline?limit=5                 → 200 (311ms)  count=5
-/api/audit/timeline?limit=1                 → 200 (294ms)  count=1
-/api/audit/timeline?limit=50&start_date=... → 200 (306ms)  count=50
-/api/audit/timeline?severity=high&...       → 200 (314ms)  count=0
-/api/audit/timeline (NO BEARER)             → 401          (auth gate intact)
-```
+### 3.2 — Folio invalid ID UX guard (P2 → kapatıldı)
 
-### Regression suite (yeni)
-`backend/tests/runtime/test_audit_timeline_p1_fix.py` — **10 test, hepsi PASS**, **CI'da koşar** (motor'a bağlı değil → komşu `test_audit_timeline_stress.py`'deki "CI skip" uygulanmıyor):
-- `_ts_to_iso` — str, datetime, None
-- `_group_by_time` — mixed types crash etmiyor
-- Route empty dataset → 200 + boş liste
-- Route mixed timestamps → 200 (pilot bug'ın bire-bir reprosü)
-- Route unexpected error → 200 + `degraded=true`
-- Route limit param int annotation
-- Route cursor + start_date + end_date birlikte → TypeError yok
-- **Tenant scope isolation** — cross-tenant kayıt sızmıyor (2 test)
+**Problem**: `/folio-detail/<sahte-id>` URL'ine gidildiğinde `FolioDetailView` boş HTML shell render ediyordu (sadece search input + spinner kaybolduktan sonra hiçbir şey). Sahte/yanıltıcı sayfa görüntüsü → kullanıcı kafa karışıklığı. (Cross-tenant sızıntı YOK — backend zaten 404 dönüyor — tamamen UX sorunu.) Eski test `/folio/:id` yoluna gidiyordu, o zaten SPA catch-all 200 idi.
 
-### Bilinen sınırlama — Mongo karışık-tip karşılaştırması (out of scope)
-Pilot DB'de `audit_logs.timestamp` hem ISO string hem BSON `Date` olarak yazılmış. Bu fix `_group_by_time` ve serialization tarafındaki crash'i çözer; ama `$gte`/`$lte`/`$lt` query operatörleri **string ↔ Date** arasında BSON tip-sıralaması nedeniyle kesin eşleşme garantisi vermez (string `"2026-05-13"` vs `Date("2026-05-13...")` → cursor pagination'da kayıp/atlama olabilir). Tam tip-temizliği `audit_logs` migration'ı gerektirir → kapsam dışı (kullanıcı talebi: "audit model redesign yok"). Sentry'de `degraded=true` artış oranı + cursor pagination anomalisi izlenmeli; gerekirse ayrı bir Audit-Hardening turu açılır.
+**Fix** (`frontend/src/pages/FolioDetailView.jsx`):
+1. **`OBJECT_ID_RE = /^[a-f0-9]{24}$/i`** — Mongo ObjectId formatı validation (24 hex).
+2. `fetchDetail(id)` artık:
+   - Format invalid → backend'e gitmeden `setNotFound(true)` + `notFoundReason="invalid_format"`.
+   - Backend 404 → `setNotFound(true)` + `notFoundReason="not_found"`.
+   - Backend 401/403 → `setNotFound(true)` + `notFoundReason="forbidden"`.
+   - Diğer hata → toast (eski davranış).
+3. **Yeni NotFound kartı** (`data-testid="folio-not-found"`) — AlertTriangle ikonu + tek-satır başlık + sebebe göre açıklama + "Yeni arama" butonu (search input modunda).
+4. `{data && !notFound && (...)}` — bilgi paneli sadece gerçek folio yüklendiğinde render.
 
-### `/api/admin/audit-log` 404 (P2 — out of scope kalıyor)
-- Backend'de böyle bir route YOK (`/api/admin/audit-logs` — çoğul — var, `enterprise_router.py:1077`).
-- Frontend `rg`: `admin/audit-log` referansı **0** → 404 yetim probe.
-- Action: spec'teki probe'u silmek veya `expect(404)` olarak fix etmek 5 dakikalık kozmetik iş; bu turun kapsamı dışında.
+**Test güncelleme** (`frontend/e2e-business/18-security-rbac.spec.js`):
+- URL prefix `/folio/${id}` → **`/folio-detail/${id}`** (gerçek route).
+- Test ID listesi 2 → 3: `000…000`, `aaaa…aaa`, `invalid-id-format-xyz` (3. kasıt: format guard'ı zorlamak).
+- Body text regex'i `(folio bulunamad|folio not found|geçersiz folio id|invalid folio id|404|forbidden|yetki yok)` ile NotFound kartını yakalıyor.
+
+**Sonuç**: 3/3 sahte folio testi PASS, REVIEW −2, PASS +3, **P2 kapatıldı**.
+
+### 3.3 — REVIEW azaltma için seed planı (uygulanmadı, dokümante edildi)
+
+Kullanıcı talebi: "Eğer güvenliyse sadece test tenant içinde E2E seed verisi oluştur". Mevcut pilot tenant **canlı pilot ortam** (Mongo Atlas), gerçek otel verisini barındırıyor. Test guest/booking/folio/MICE event yazımı:
+- KVKK kapsamında soru işareti (test verisi bile olsa misafir kaydı tutuluyor).
+- Cleanup pattern'i sıfır — ID-prefix bazlı silme her tablo için çalışmıyor (audit logs zaten silinmez).
+- Pilot operatörün gözlemlediği gerçek dashboard'u kirletir (mock guest/booking görür).
+
+**Karar**: Bu tur seed YAPILMADI. Önerilen yol: ayrı bir `tenant=e2e_test` izole tenant aç, `EXPO_PUBLIC_API_URL`'a paralel test deployment kur, seed orada koş. Bu kapsam dışı (yeni infra + ayrı plan).
+
+REVIEW=63 kalemi pilot canlıya geçince ilk gerçek booking/folio/MICE yaratıldığında doğal olarak yeşile dönecek (selector zaten doğru, sadece `count=0` durumu).
 
 ---
 
 ## 4. Test verileri
 
-**Hiçbir entity oluşturulmadı.** Cleanup gereken kayıt: 0.
+**Hiçbir entity oluşturulmadı** (Scope 3.3 kararı gereği). Cleanup gereken kayıt: 0.
 
 ---
 
-## 5. REVIEW (67 adım) — pilot 24h içinde manuel doğrulama
+## 5. REVIEW (64 adım) — pilot 24h içinde manuel doğrulama
 
-Çoğunluğu **count=0** kalıbı (pilot dataset boş). İlk gerçek rezervasyon/folio/etkinlik geldiğinde doğal olarak yeşile döner.
+Tur 2'den fark: **−3 kayıt** (admin/audit-log probe ×2 sil, folio sahte-ID ×2 PASS'a geç; +1 yeni invalid-format ID PASS olarak eklendi → toplam −3).
 
 ### auth-nav (2)
 - Sidebar nav linkleri (count=0)
@@ -130,9 +120,8 @@ Pilot DB'de `audit_logs.timestamp` hem ISO string hem BSON `Date` olarak yazılm
 - Modül kartları PMS/RMS (pms=0, rms=0)
 - Pilot kartları: Readiness / CM Outbox / Circuit Breaker / Atlas Backup / Observability — `SystemHealthDashboard`'da "Pilot Production Safety" section'ı render edilip edilmediği manuel kontrol
 
-### reservation (2)
+### reservation (1)
 - Yeni rezervasyon butonu
-- `/api/admin/audit-log` → 404 (yetim probe — bkz. §3)
 
 ### checkin-checkout (2)
 - Check-in/out butonları (count=0)
@@ -175,10 +164,10 @@ Pilot DB'de `audit_logs.timestamp` hem ISO string hem BSON `Date` olarak yazılm
 - Kaydet butonu
 
 ### audit-log (1)
-- PII scrub heuristik — Sentry policy ayrı suite
+- PII scrub heuristik — Audit response payload kontrolü manuel; Sentry PII scrub ayrı suite olarak `docs/SENTRY_ALERT_POLICY.md`'de tanımlı (bu turda kaldırılmadı, sadece yetim `/api/admin/audit-log` probe'u silindi).
 
-### security-rbac (2)
-- Sahte folio ID 200 (P2 — UX iyileştirme; cross-tenant sızıntı değil — frontend route HTML shell yüklüyor, backend folio API yine 404 dönüyor)
+### security-rbac (0)
+✅ **REVIEW yok** — sahte folio ID 3'ü de NotFound guard tetikliyor → PASS.
 
 ---
 
@@ -205,26 +194,30 @@ Pilot DB'de `audit_logs.timestamp` hem ISO string hem BSON `Date` olarak yazılm
 ## 7. Risk sınıflandırması
 
 - **P0**: failedTests=0, FAIL adım=0 → **YOK**
-- **P1**: ~~`/api/audit/timeline` 500~~ → **RESOLVED** (bu tur fix + 9 regression test + manuel curl + e2e re-run)
-- **P2**: folio sahte-ID 200 (frontend ID validate eklenebilir), `/api/admin/audit-log` yetim probe (spec temizliği)
-- **P3**: REVIEW=67 listesinin çoğunluğu (count=0 dataset boş) — pilot canlıya geçince doğal olarak yeşil
+- **P1**: ~~`/api/audit/timeline` 500~~ → **RESOLVED** (Tur 2)
+- **P2**:
+  - ~~Folio sahte-ID 200~~ → **RESOLVED** bu tur (NotFound guard + ObjectId regex)
+  - ~~`/api/admin/audit-log` yetim probe~~ → **RESOLVED** bu tur (probe silindi)
+- **P3**: REVIEW=64 listesinin tamamı `count=0` dataset-bağımlı veya bilinçli manuel-doğrulama kalemleri (örn. PII scrub) — pilot canlı operasyona geçince çoğu doğal olarak yeşil
 
 ---
 
 ## 8. Pilot canlı geçiş tavsiyesi
 
-**Verdict: GO WITH WATCH** (P1 RESOLVED, P0 yok)
+**Verdict: GO WITH WATCH** (P0/P1/P2 hepsi temiz, sadece dataset-bağımlı P3 REVIEW'lar var)
 
-Önkoşul: ~~P1 audit fix~~ ✅ **TAMAM**.
+Önkoşul: ✅ Audit timeline 500 fix (Tur 2) · ✅ Folio NotFound guard (Tur 3) · ✅ Yetim probe temizliği (Tur 3).
 
 Canlı T+0 → T+24h:
 - `docs/PILOT_FIRST_24H_MONITORING.md` runbook aktif
-- Bu raporun §5 REVIEW listesi nöbet defterinde — ilk rezervasyon/folio geldiğinde her kalem manuel onay
-- Sentry'de `audit_timeline_query_failed` log mesajı izle — `degraded=true` döndüğünde investigate (yeni timestamp tip varyantı sinyali)
+- Bu raporun §5 REVIEW listesi nöbet defterinde — ilk rezervasyon/folio/MICE geldiğinde her kalem manuel onay
+- Sentry'de `audit_timeline_query_failed` log mesajı izle — `degraded=true` döndüğünde investigate
 
 T+24h sonrası:
 - `yarn test:e2e:business` haftalık cron
 - REVIEW kalemleri her hafta yeşile dönmeli; dönmüyorsa selector eskimiş
+
+T+1 hafta sonrası — yeşil kalan REVIEW kategorileri PASS olarak hardcode edilebilir (regression baseline güçlenir).
 
 ---
 
@@ -234,8 +227,10 @@ T+24h sonrası:
 - Trace/video/screenshot: `frontend/test-results-business/` (FAIL'ler için → bu koşumda boş)
 - Auth state: `frontend/e2e-business/.auth/admin.json` (gitignored)
 - Bearer cache: `frontend/e2e-business/.auth/token.json` (gitignored)
-- P1 fix kaynağı: `backend/routers/audit_timeline.py` (commit: bu tur)
-- P1 regression test: `backend/tests/runtime/test_audit_timeline_p1_fix.py` (9 test, hepsi PASS)
+- P1 fix kaynağı: `backend/routers/audit_timeline.py` (Tur 2)
+- P1 regression: `backend/tests/runtime/test_audit_timeline_p1_fix.py` — 10 test, hepsi PASS, CI'da koşar
+- **P2 fix kaynağı (bu tur)**: `frontend/src/pages/FolioDetailView.jsx` (NotFound guard)
+- **Probe cleanup (bu tur)**: `frontend/e2e-business/03-reservation-lifecycle.spec.js`, `frontend/e2e-business/17-audit-log.spec.js`, `frontend/e2e-business/18-security-rbac.spec.js`
 
 ---
 
@@ -243,33 +238,33 @@ T+24h sonrası:
 
 | # | Spec › Test | Süre | Outcome |
 |---:|---|---:|---|
-| 1 | 01-auth-nav › Dashboard açılır + sidebar/profil çalışır | 3.6s | ✅ |
-| 2 | 01-auth-nav › Yanlış şifre — login fail davranışı | 4.4s | ✅ |
-| 3 | 01-auth-nav › Session refresh — sayfa yenileme sonrası oturum korunur | 2.9s | ✅ |
-| 4 | 02-dashboard-health › Dashboard kartları + ana modüller | 3.7s | ✅ |
-| 5 | 02-dashboard-health › System Health pilot section + endpointleri | 5.8s | ✅ |
-| 6 | 03-reservation › Rezervasyon takvimi açılır + form keşfi | 3.8s | ✅ |
-| 7 | 03-reservation › PMS bookings endpoint okuma + audit erişim | 1.0s | ✅ (audit/timeline artık 200) |
+| 1 | 01-auth-nav › Dashboard açılır + sidebar/profil çalışır | 3.9s | ✅ |
+| 2 | 01-auth-nav › Yanlış şifre — login fail davranışı | 4.2s | ✅ |
+| 3 | 01-auth-nav › Session refresh — sayfa yenileme sonrası oturum korunur | 3.3s | ✅ |
+| 4 | 02-dashboard-health › Dashboard kartları + ana modüller | 4.4s | ✅ |
+| 5 | 02-dashboard-health › System Health pilot section + endpointleri | 6.9s | ✅ |
+| 6 | 03-reservation › Rezervasyon takvimi açılır + form keşfi | 3.6s | ✅ |
+| 7 | 03-reservation › PMS bookings endpoint okuma + audit erişim | 1.0s | ✅ (yetim probe sil) |
 | 8 | 03-reservation › Terminal-state guard (no-show double) — endpoint discovery | 0.6s | ✅ |
 | 9 | 04-checkin-checkout › Front Desk / PMS check-in akışı keşfi | 3.6s | ✅ |
-| 10 | 05-folio › Folio ana sayfa + masraf/ödeme/refund/void buton keşfi | 4.3s | ✅ |
-| 11 | 05-folio › Folio API discovery (read-only) | 0.5s | ✅ |
-| 12 | 06-invoice › Fatura ayarları sekmesi + form alanları | 4.3s | ✅ |
-| 13 | 07-mice › MICE ana sayfa + sekme + butonlar | 6.2s | ✅ |
-| 14 | 08-housekeeping › Housekeeping ana sayfa + oda durum badgeleri | 3.9s | ✅ |
-| 15 | 09-guest-crm › Misafir liste + ara + form alanları | 3.5s | ✅ |
-| 16 | 10-users-roles › Kullanıcı-Rol Manager + filter + butonlar | 4.2s | ✅ |
-| 17 | 11-channel-manager › Channels Hub + provider/CB/conflict UI | 7.4s | ✅ |
-| 18 | 12-rate-inventory › Unified Rate Manager + availability grid | 3.8s | ✅ |
-| 19 | 13-payments › Folio ödeme kontrolleri (UI keşfi) | 3.7s | ✅ |
-| 20 | 14-reports › Rapor sayfaları + endpoint örnekleri | 3.1s | ✅ |
-| 21 | 15-notifications › Notification center + mailing keşfi | 3.0s | ✅ |
-| 22 | 16-settings › Settings ana sayfa + sekmeler | 3.5s | ✅ |
-| 23 | 17-audit-log › Audit Timeline UI + endpointler | 2.7s | ✅ (timeline 200, summary 200) |
-| 24 | 18-security-rbac › Bearer YOK ile kritik endpointlere erişim 401/403 | 0.3s | ✅ |
-| 25 | 18-security-rbac › URL üzerinden başka tenant verisine erişim — sahte ID | 3.6s | ✅ |
+| 10 | 05-folio › Folio ana sayfa + masraf/ödeme/refund/void buton keşfi | 3.7s | ✅ |
+| 11 | 05-folio › Folio API discovery (read-only) | 0.4s | ✅ |
+| 12 | 06-invoice › Fatura ayarları sekmesi + form alanları | 4.7s | ✅ |
+| 13 | 07-mice › MICE ana sayfa + sekme + butonlar | 5.4s | ✅ |
+| 14 | 08-housekeeping › Housekeeping ana sayfa + oda durum badgeleri | 4.8s | ✅ |
+| 15 | 09-guest-crm › Misafir liste + ara + form alanları | 3.4s | ✅ |
+| 16 | 10-users-roles › Kullanıcı-Rol Manager + filter + butonlar | 4.1s | ✅ |
+| 17 | 11-channel-manager › Channels Hub + provider/CB/conflict UI | 7.8s | ✅ |
+| 18 | 12-rate-inventory › Unified Rate Manager + availability grid | 3.9s | ✅ |
+| 19 | 13-payments › Folio ödeme kontrolleri (UI keşfi) | 3.9s | ✅ |
+| 20 | 14-reports › Rapor sayfaları + endpoint örnekleri | 3.6s | ✅ |
+| 21 | 15-notifications › Notification center + mailing keşfi | 3.3s | ✅ |
+| 22 | 16-settings › Settings ana sayfa + sekmeler | 4.0s | ✅ |
+| 23 | 17-audit-log › Audit Timeline UI + endpointler | 2.7s | ✅ (timeline 200, yetim probe sil) |
+| 24 | 18-security-rbac › Bearer YOK ile kritik endpointlere erişim 401/403 | 0.1s | ✅ |
+| 25 | 18-security-rbac › URL üzerinden başka tenant verisine erişim — sahte ID | 9.0s | ✅ (3/3 NotFound guard) |
 | 26 | 18-security-rbac › Console secret leak heuristik — token/password görünmez | 4.4s | ✅ |
-| 27 | 19-responsive › Viewport mobile-portrait (390x844) — dashboard render | 3.4s | ✅ |
+| 27 | 19-responsive › Viewport mobile-portrait (390x844) — dashboard render | 3.3s | ✅ |
 | 28 | 19-responsive › Viewport tablet-portrait (820x1180) — dashboard render | 3.6s | ✅ |
-| 29 | 19-responsive › Viewport desktop-narrow (1280x720) — dashboard render | 3.9s | ✅ |
+| 29 | 19-responsive › Viewport desktop-narrow (1280x720) — dashboard render | 3.7s | ✅ |
 | 30 | 20-recap › Test verileri özetleme + cleanup notu | 0.0s | ✅ |

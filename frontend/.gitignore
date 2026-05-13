@@ -21,3 +21,7 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Playwright auto-generated reports (regenerated each run)
+playwright-business-report/
+test-results-business/
