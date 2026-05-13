@@ -82,6 +82,8 @@
     "e2e:install": "playwright install --with-deps chromium",
     "test:e2e:smoke": "playwright test --config=playwright.smoke.config.js",
     "test:e2e:smoke:install": "playwright install --with-deps chromium",
+    "test:e2e:business": "playwright test --config=playwright.business.config.js",
+    "test:e2e:business:list": "playwright test --config=playwright.business.config.js --list",
     "knip": "knip",
     "knip:fix": "knip --fix --allow-remove-files",
     "lint": "eslint src/",
