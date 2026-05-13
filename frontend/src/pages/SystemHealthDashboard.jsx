@@ -601,6 +601,7 @@ export default function SystemHealthDashboard({ user }) {
   const [wsConnected, setWsConnected] = useState(false);
   const [liveEvents, setLiveEvents] = useState([]);
   const [auditMetrics, setAuditMetrics] = useState(null);
+  const [pilotReadiness, setPilotReadiness] = useState(null);
   const socketRef = useRef(null);
   const pollTimerRef = useRef(null);
   const lastCriticalFetchRef = useRef(0);
@@ -614,7 +615,7 @@ export default function SystemHealthDashboard({ user }) {
     fetchInFlightRef.current = true;
     if (silent) setRefreshing(true);
     try {
-      const [cm, q, audit, rl, tg, ls, al, mt, st, norm, role, am] = await Promise.allSettled([
+      const [cm, q, audit, rl, tg, ls, al, mt, st, norm, role, am, pr] = await Promise.allSettled([
         axios.get(`/channel-manager/runtime/status`),
         axios.get(`/workers/queues/health`),
         axios.get(`/security/audit/status`),
@@ -627,6 +628,7 @@ export default function SystemHealthDashboard({ user }) {
         axios.get(`/system-health/normalized/overview`),
         axios.get(`/system-health/role-dashboard`),
         axios.get(`/system-health/audit/metrics`),
+        axios.get(`/production-golive/readiness`),
       ]);
       if (cm.status === "fulfilled") setCmStatus(cm.value.data);
       if (q.status === "fulfilled") setQueueHealth(q.value.data);
@@ -640,9 +642,10 @@ export default function SystemHealthDashboard({ user }) {
       if (norm.status === "fulfilled") setNormalizedOverview(norm.value.data);
       if (role.status === "fulfilled") setRoleDashboard(role.value.data);
       if (am.status === "fulfilled") setAuditMetrics(am.value.data);
+      if (pr.status === "fulfilled") setPilotReadiness(pr.value.data);
 
       // Eğer hepsi reddedildiyse kullanıcıya bildir (sessizce yutmayalım).
-      const anyOk = [cm, q, audit, rl, tg, ls, al, mt, st, norm, role, am].some((r) => r.status === "fulfilled");
+      const anyOk = [cm, q, audit, rl, tg, ls, al, mt, st, norm, role, am, pr].some((r) => r.status === "fulfilled");
       if (!anyOk && !silent) toast.error("Sağlık verileri alınamadı. Backend'e ulaşılamıyor olabilir.");
 
       setLastUpdated(new Date());
@@ -842,6 +845,77 @@ export default function SystemHealthDashboard({ user }) {
           <SeverityChip severity={normalizedOverview.overall_severity} />
         </div>
       )}
+
+      {/* Pilot Production Safety — readiness + CM outbox + CB + backup + observability */}
+      {!loading && pilotReadiness && (() => {
+        const checks = pilotReadiness.checks || {};
+        const verdict = (pilotReadiness.verdict || "unknown").toUpperCase();
+        const verdictIntent =
+          verdict === "PASS" ? "success" :
+          verdict === "REVIEW" ? "warning" :
+          verdict === "FAIL" ? "danger" : "neutral";
+        const ox = checks.cm_outbox || {};
+        const cb = checks.cm_circuit_breakers || {};
+        const bk = checks.backup || {};
+        const ob = checks.observability || {};
+        const oxIntent =
+          ox.status === "fail" ? "danger" :
+          ox.status === "degraded" ? "warning" :
+          ox.status === "ok" ? "success" : "neutral";
+        const cbIntent =
+          cb.status === "fail" ? "danger" :
+          cb.status === "degraded" ? "warning" :
+          cb.status === "ok" ? "success" : "neutral";
+        const bkIntent =
+          bk.status === "atlas_managed" || bk.status === "ok" ? "success" :
+          bk.status === "degraded" ? "warning" :
+          bk.status === "fail" ? "danger" : "neutral";
+        const sentryActive = ob.sentry_active === true;
+        const otelActive = ob.otel_active === true;
+        const obIntent =
+          (sentryActive && otelActive) ? "success" :
+          (sentryActive || otelActive) ? "warning" :
+          ob.status === "active" ? "success" : "danger";
+        return (
+          <div data-testid="pilot-production-safety" className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-slate-600" />
+                Pilot Production Safety
+              </h3>
+              <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                <span title="docs/REPLIT_OPS_CHEATSHEET.md" className="cursor-help">OPS Cheat-sheet</span>
+                <span>·</span>
+                <span title="docs/PILOT_FIRST_24H_MONITORING.md" className="cursor-help">İlk 24h Runbook</span>
+                <span>·</span>
+                <span title="docs/CM_OBSERVABILITY.md" className="cursor-help">CM Observability</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <KpiCard icon={CheckCircle2} label="Readiness"
+                value={verdict}
+                sub={typeof pilotReadiness.score === "number" ? `Skor ${(pilotReadiness.score * 100).toFixed(0)}/100` : "—"}
+                intent={verdictIntent} />
+              <KpiCard icon={Database} label="CM Outbox"
+                value={ox.backlog ?? 0}
+                sub={ox.failed > 0 ? `${ox.failed} failed` : (ox.oldest_seconds != null ? `En eski ${Math.round(ox.oldest_seconds)}s` : "Temiz")}
+                intent={oxIntent} />
+              <KpiCard icon={Network} label="Circuit Breakers"
+                value={`${cb.open ?? 0} / ${cb.total ?? 0}`}
+                sub={cb.half_open > 0 ? `${cb.half_open} half-open` : "OPEN / Toplam"}
+                intent={cbIntent} />
+              <KpiCard icon={Server} label="Atlas Backup"
+                value={bk.status === "atlas_managed" ? "Atlas Managed" : (STATUS_META[bk.status]?.label || bk.status || "—")}
+                sub={bk.tier ? `Tier ${bk.tier}` : "Yedek durumu"}
+                intent={bkIntent} />
+              <KpiCard icon={Eye} label="Observability"
+                value={(sentryActive && otelActive) ? "Sentry + OTel" : sentryActive ? "Sentry" : otelActive ? "OTel" : "Pasif"}
+                sub={(sentryActive || otelActive) ? "Aktif" : "Yapılandırma eksik"}
+                intent={obIntent} />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* KPI satırı — Sprint A KpiCard intent palette */}
       {!loading && (

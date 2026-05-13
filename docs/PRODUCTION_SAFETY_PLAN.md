@@ -22,16 +22,60 @@
 | 2   | Backup automation + durable storage   | ✅ **DONE** (Atlas-first, M10) | ~~EVET~~       | ~~4–6 saat~~ |
 | 3   | Outbox / CM backlog görünürlük + alarm | ✅ **DONE** (12 May 2026)      | ~~EVET~~       | ~~3–4 saat~~ |
 | 4   | Sentry alert policy                   | ✅ **DONE** (12 May 2026)      | ~~EVET~~       | ~~1–2 saat~~ |
-| 5   | Admin "Sistem Sağlığı" ekranı         | Sayfa var, parça eksik        | HAYIR          | 2–3 saat     |
+| 5   | Admin "Sistem Sağlığı" ekranı         | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~2–3 saat~~ |
 | 6   | Kill-switch / feature flag standardı  | Altyapı var, env-var yok      | HAYIR          | 2 saat       |
 | 7   | İlk 24 saat izleme runbook'u          | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~1 saat~~   |
 | 8   | Replit OPS cheat-sheet                | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~1–2 saat~~ |
 
 **Kalan pilot-blocker iş yükü:** YOK ✅ — pilot güvenlik dörtgeni
 (rollback + backup + observability + alarm) tamam.
-**Tüm paket (kalan, non-blocker):** ~4–5 saat (#5 + #6).
+**Tüm paket (kalan, non-blocker):** ~2 saat (#6 — kill-switch standardı).
 
-**Önerilen sıra:** ~~2 → 1 → 3 → 4 → 8 → 7~~ → **5 → 6**.
+**Önerilen sıra:** ~~2 → 1 → 3 → 4 → 8 → 7 → 5~~ → **6**.
+
+---
+
+## ✅ Kapsam #5 — Tamamlandı (12 Mayıs 2026)
+
+**Admin "Sistem Sağlığı" ekranı — Pilot Production Safety section:**
+
+**Yazılan kod:** Tek dosya edit — `frontend/src/pages/SystemHealthDashboard.jsx`
+- Yeni state: `pilotReadiness`
+- Mevcut `Promise.allSettled` 12'lisine 13. çağrı eklendi:
+  `axios.get('/production-golive/readiness')` (axios baseURL `/api/`
+  prefix'ini ekler — API call convention gotcha)
+- Mevcut "Genel durum şeridi" ile "KPI satırı" arasına yeni section
+  eklendi: IIFE pattern + nullable-safe destructuring
+
+**Yeni section içeriği:**
+1. Başlık: "Pilot Production Safety" + Shield ikon + 3 doc link
+   (OPS Cheat-sheet, İlk 24h Runbook, CM Observability)
+2. 5 KpiCard (Sprint A intent palette: success/warning/danger/neutral):
+   - Readiness Verdict (PASS/REVIEW/FAIL) + skor %
+   - CM Outbox (backlog + failed/oldest_seconds)
+   - Circuit Breakers (open/total + half_open)
+   - Atlas Backup (status + tier)
+   - Observability (Sentry/OTel aktif mi)
+
+**Tasarım kararı:**
+- Mevcut sayfayı **kırmadan** ekle (operatör için kritik); yeni state
+  null ise section gizli (silent omit, error state YOK — readiness
+  endpoint zaten readiness validator)
+- Yeni endpoint çağrısı mevcut `Promise.allSettled` içine kattı →
+  ek polling cycle YOK; refresh butonu zaten her şeyi yeniler
+- KpiCard intent palette `cm_outbox.status` / `cm_circuit_breakers.
+  status` / `backup.status` ile birebir eşleşiyor — backend
+  observability gerçekleri UI'a düz akıyor (gereksiz çeviri YOK)
+- 3 doc link external `<a target="_blank">` — operatör panik anında
+  ilgili runbook'a tek tıkla erişir
+
+**Doğrulama (sandbox):**
+- JSX brace/paren balance check 423/423 + 686/686 BALANCED
+- Section eklendi (testid + heading + comment grep = 3 hit)
+- Endpoint shape `backend/infra/readiness_validator.py:219-260` ile
+  cross-check'li (cm_outbox + cm_circuit_breakers checks)
+- Mevcut UI elemanları korundu (PageHeader, KPI satırı, role-based
+  views, live event strip, WebSocket bridge)
 
 ---
 
