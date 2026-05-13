@@ -54,13 +54,15 @@ jobs:
     e2e-smoke:
         runs-on: ubuntu-latest
         timeout-minutes: 25
+        # NOTE: MongoDB is intentionally NOT a `services:` entry — it must run
+        # as a single-node replica set (`--replSet`) so that the multi-document
+        # transactions in `core/atomic_checkin_checkout.py`
+        # (`session.start_transaction(read_concern="snapshot")`) succeed.
+        # GitHub Actions `services:` does not allow overriding the container
+        # CMD, so we start mongo manually below. Driver connects via
+        # `?replicaSet=rs0` so motor uses ReplicaSet topology (required for
+        # transactions even with a single member).
         services:
-            mongodb:
-                image: mongo:7.0
-                ports: ['27017:27017']
-                options: >-
-                    --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
-                    --health-interval 10s --health-timeout 5s --health-retries 5
             redis:
                 image: redis:7-alpine
                 ports: ['6379:6379']
@@ -68,7 +70,7 @@ jobs:
                     --health-cmd "redis-cli ping"
                     --health-interval 10s --health-timeout 5s --health-retries 5
         env:
-            MONGO_URL: mongodb://localhost:27017/hotel_pms_test
+            MONGO_URL: mongodb://localhost:27017/hotel_pms_test?replicaSet=rs0&directConnection=true
             DB_NAME: hotel_pms_test
             REDIS_URL: redis://localhost:6379/0
             JWT_SECRET: ci-test-secret-key-do-not-use-in-production
@@ -79,6 +81,28 @@ jobs:
             E2E_EMAIL: demo@syroce.com
         steps:
             - uses: actions/checkout@v5
+            - name: Start MongoDB (single-node replica set, required for transactions)
+              run: |
+                  docker run -d --name mongo \
+                      -p 27017:27017 \
+                      mongo:7.0 \
+                      --replSet rs0 --bind_ip_all
+                  for i in $(seq 1 30); do
+                      if docker exec mongo mongosh --quiet --eval "db.runCommand({ping:1}).ok" 2>/dev/null | grep -q 1; then
+                          echo "✓ mongod up"
+                          break
+                      fi
+                      sleep 2
+                  done
+                  docker exec mongo mongosh --quiet --eval \
+                      "rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]})"
+                  for i in $(seq 1 30); do
+                      if docker exec mongo mongosh --quiet --eval "db.hello().isWritablePrimary" 2>/dev/null | grep -q true; then
+                          echo "✓ replica set primary elected"
+                          break
+                      fi
+                      sleep 2
+                  done
             - name: Set up Python
               uses: actions/setup-python@v5
               with:
