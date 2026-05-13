@@ -84,25 +84,52 @@ async def seed() -> None:
     })
     if existing:
         log.info("demo user exists email=%s id=%s", DEMO_EMAIL, existing.get("id"))
+    else:
+        user_id = str(uuid.uuid4())
+        await db.users.insert_one({
+            "id": user_id,
+            "tenant_id": tenant_id,
+            "agency_id": None,
+            "email": DEMO_EMAIL,
+            "username": DEMO_USERNAME,
+            "name": "Demo Admin",
+            "role": "super_admin",
+            "phone": "+905551234567",
+            "is_active": True,
+            "email_verified": True,
+            "email_verified_at": _now_iso(),
+            "hashed_password": _hash(DEMO_PASSWORD),
+            "created_at": _now_iso(),
+        })
+        log.info("created demo user email=%s id=%s tenant_id=%s", DEMO_EMAIL, user_id, tenant_id)
+
+    await _ensure_rooms(db, tenant_id)
+
+
+async def _ensure_rooms(db, tenant_id: str) -> None:
+    """Idempotent room seeder for E2E.
+
+    The full bootstrap auto_seed (`auto_seed.py`) skips when users collection
+    is non-empty, so once this script creates the demo user the room seed
+    never runs in CI. E2E spec #06 (`Core PMS happy-path`) needs at least one
+    room or test #1 fails with `Received: 0`. We delegate to the same
+    `seed.rooms.seed_rooms` module the bootstrap uses so room shape stays in
+    lock-step with production seed (room_number/status/capacity/etc).
+    """
+    existing_rooms = await db.rooms.count_documents({"tenant_id": tenant_id})
+    if existing_rooms > 0:
+        log.info("rooms exist tenant_id=%s count=%d — skip", tenant_id, existing_rooms)
         return
 
-    user_id = str(uuid.uuid4())
-    await db.users.insert_one({
-        "id": user_id,
-        "tenant_id": tenant_id,
-        "agency_id": None,
-        "email": DEMO_EMAIL,
-        "username": DEMO_USERNAME,
-        "name": "Demo Admin",
-        "role": "super_admin",
-        "phone": "+905551234567",
-        "is_active": True,
-        "email_verified": True,
-        "email_verified_at": _now_iso(),
-        "hashed_password": _hash(DEMO_PASSWORD),
-        "created_at": _now_iso(),
-    })
-    log.info("created demo user email=%s id=%s tenant_id=%s", DEMO_EMAIL, user_id, tenant_id)
+    try:
+        from seed.rooms import seed_rooms  # noqa: WPS433 — local import keeps script standalone
+    except Exception as exc:  # pragma: no cover — import shape mismatch is a CI-fatal bug
+        log.error("seed.rooms import failed: %s", exc)
+        raise
+
+    ctx: dict = {"tenant_id": tenant_id, "rooms": []}
+    await seed_rooms(db, ctx)
+    log.info("seeded rooms tenant_id=%s count=%d", tenant_id, len(ctx["rooms"]))
 
 
 if __name__ == "__main__":
