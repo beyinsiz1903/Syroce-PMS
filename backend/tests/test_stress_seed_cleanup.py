@@ -93,14 +93,93 @@ def test_seed_rejects_when_stress_tid_env_missing(stress_client, monkeypatch):
     assert "E2E_STRESS_TENANT_ID" in r.json()["detail"]
 
 
+def test_seed_accepts_room_count_at_cap(stress_client, monkeypatch):
+    """F6: cap is now 500. room_count=500 must pass validation
+    (Pydantic le=500). Note: this only validates the Pydantic gate;
+    actual DB writes are not exercised here."""
+    monkeypatch.setenv("E2E_ALLOW_DESTRUCTIVE_STRESS", "true")
+    import domains.admin.router.stress as stress_mod
+    from contextlib import contextmanager
+
+    class _StubColl:
+        async def insert_many(self, batch, ordered=False):
+            class R: inserted_ids = list(range(len(batch)))
+            return R()
+
+    class _StubDb:
+        def __getattr__(self, _name): return _StubColl()
+
+    @contextmanager
+    def _noop_ctx(_tid): yield
+    monkeypatch.setattr(stress_mod, "tenant_context", _noop_ctx)
+    import core.database as _coredb
+    monkeypatch.setattr(_coredb, "db", _StubDb())
+
+    r = stress_client.post(
+        SEED_PATH,
+        json={"target_tenant_id": STRESS_TID, "room_count": 500,
+              "data_prefix": "E2E_STRESS_TEST_CAP_"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["room_count"] == 500
+    assert body["max_allowed_this_round"] == 500
+    assert body["seeded_counts"]["rooms"] == 500
+    assert body["seeded_counts"]["guests"] == 500
+    assert body["seeded_counts"]["bookings"] == 500
+    assert body["seeded_counts"]["folios"] == 500
+    # Each folio gets ≥2 charges (per-night room charges + 1 acc tax)
+    assert body["seeded_counts"]["folio_charges"] >= 1000
+    # RNL = sum(stay_nights) where stay_nights cycles 1..4 → avg 2.5
+    assert body["seeded_counts"]["room_night_locks"] >= 500
+    assert body["seeded_counts"]["housekeeping_tasks"] == 500
+    assert body["timing_ms"]["factory"] >= 0
+    assert body["variety"]["room_types"] == 20
+    assert body["variety"]["blocks"] == 5
+    assert body["variety"]["floors"] == 10
+
+
 def test_seed_rejects_room_count_above_cap(stress_client, monkeypatch):
+    """F6: above-cap (501+) must still fail Pydantic validation."""
     monkeypatch.setenv("E2E_ALLOW_DESTRUCTIVE_STRESS", "true")
     r = stress_client.post(
         SEED_PATH,
-        json={"target_tenant_id": STRESS_TID, "room_count": 500},
+        json={"target_tenant_id": STRESS_TID, "room_count": 501},
     )
-    # Pydantic 422 (Field le=25)
     assert r.status_code == 422, r.text
+
+
+def test_seed_factory_counts_at_25(stress_client, monkeypatch):
+    """F6: factory variety check at 25 rooms."""
+    monkeypatch.setenv("E2E_ALLOW_DESTRUCTIVE_STRESS", "true")
+    import domains.admin.router.stress as stress_mod
+    from contextlib import contextmanager
+
+    class _StubColl:
+        async def insert_many(self, batch, ordered=False):
+            class R: inserted_ids = list(range(len(batch)))
+            return R()
+
+    class _StubDb:
+        def __getattr__(self, _name): return _StubColl()
+
+    @contextmanager
+    def _noop_ctx(_tid): yield
+    monkeypatch.setattr(stress_mod, "tenant_context", _noop_ctx)
+    import core.database as _coredb
+    monkeypatch.setattr(_coredb, "db", _StubDb())
+
+    r = stress_client.post(
+        SEED_PATH,
+        json={"target_tenant_id": STRESS_TID, "room_count": 25,
+              "data_prefix": "E2E_STRESS_TEST_25_"},
+    )
+    assert r.status_code == 200, r.text
+    c = r.json()["seeded_counts"]
+    assert c["rooms"] == 25
+    assert c["guests"] == 25
+    assert c["bookings"] == 25
+    assert c["folios"] == 25
 
 
 def test_cleanup_rejects_wrong_tenant_id(stress_client, monkeypatch):
