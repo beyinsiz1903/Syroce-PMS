@@ -22,6 +22,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/audit", tags=["Audit Timeline"])
 
 
+def _ts_to_iso(ts) -> str:
+    """Audit Timeline P1 fix — pilot DB karışık timestamp tipleri içeriyor.
+
+    Eski yazılı kayıtlar `timestamp`'ı ISO string olarak tutuyor; daha
+    yeni kayıtlar Mongo'ya `datetime` (BSON Date) olarak yazıyor. Bu
+    yardımcı her iki tipi de güvenli ISO string'e çevirir; dict cursor
+    ($lt sözlüğü gibi sızıntılar) veya None için boş string döner.
+    """
+    if ts is None:
+        return ""
+    if isinstance(ts, str):
+        return ts
+    if isinstance(ts, datetime):
+        try:
+            return ts.isoformat()
+        except Exception:
+            return str(ts)
+    # Sayı / dict / başka tipler — defansif fallback (logger kayıt almaz)
+    return str(ts)
+
+
 @router.get("/timeline")
 async def get_audit_timeline(
     start_date: str | None = None,
@@ -30,21 +51,38 @@ async def get_audit_timeline(
     action: str | None = None,
     severity: str | None = None,
     entity_type: str | None = None,
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=50, ge=1, le=200),
     cursor: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     """
     Timeline-friendly audit log query.
     Supports cursor-based pagination and comprehensive filtering.
+
+    Audit Timeline P1 fix (2026-05-13):
+      - Karışık timestamp tipleri (str + datetime) crash etmesin diye
+        `_ts_to_iso` ile normalize edilir; `_group_by_time` artık
+        `len(datetime)` çağırmaz.
+      - Beklenmeyen aggregation/serialization hatası 500 yerine 200 +
+        boş `events` listesi + `degraded=true` döner. Audit timeline
+        UI'sı boş düşmek yerine "şu an kayıt yok" gösterebilsin.
+      - `cursor` ile birlikte tarih filtresi gelirse `cursor` üst
+        sınırı baskın; tarih filtreleri `$gte`/`$lte` korunur (eski kod
+        sözlüğü tamamen overwrite ediyordu).
     """
     ctx = OperationContext.from_user(current_user)
-    query = {"tenant_id": ctx.tenant_id}
+    query: dict = {"tenant_id": ctx.tenant_id}
+    ts_filter: dict = {}
 
     if start_date:
-        query.setdefault("timestamp", {})["$gte"] = start_date
+        ts_filter["$gte"] = start_date
     if end_date:
-        query.setdefault("timestamp", {})["$lte"] = end_date
+        ts_filter["$lte"] = end_date
+    if cursor:
+        ts_filter["$lt"] = cursor
+    if ts_filter:
+        query["timestamp"] = ts_filter
+
     if actor_id:
         query["actor_id"] = actor_id
     if action:
@@ -55,29 +93,44 @@ async def get_audit_timeline(
         query["severity"] = severity
     if entity_type:
         query["target_type"] = entity_type
-    if cursor:
-        query["timestamp"] = {"$lt": cursor}
 
-    logs = await db.audit_logs.find(query, {"_id": 0}).sort(
-        "timestamp", -1
-    ).limit(limit + 1).to_list(limit + 1)
+    try:
+        logs = await db.audit_logs.find(query, {"_id": 0}).sort(
+            "timestamp", -1
+        ).limit(limit + 1).to_list(limit + 1)
 
-    has_more = len(logs) > limit
-    if has_more:
-        logs = logs[:limit]
+        has_more = len(logs) > limit
+        if has_more:
+            logs = logs[:limit]
 
-    next_cursor = logs[-1]["timestamp"] if has_more and logs else None
+        # Tüm kayıtların timestamp'ini ISO string'e normalize et —
+        # JSON response + frontend timeline UI string bekliyor.
+        for _log in logs:
+            if "timestamp" in _log:
+                _log["timestamp"] = _ts_to_iso(_log["timestamp"])
 
-    # Group by time buckets for timeline rendering
-    grouped = _group_by_time(logs)
+        next_cursor = logs[-1]["timestamp"] if has_more and logs else None
+        grouped = _group_by_time(logs)
 
-    return {
-        "events": logs,
-        "count": len(logs),
-        "has_more": has_more,
-        "next_cursor": next_cursor,
-        "grouped": grouped,
-    }
+        return {
+            "events": logs,
+            "count": len(logs),
+            "has_more": has_more,
+            "next_cursor": next_cursor,
+            "grouped": grouped,
+        }
+    except Exception:
+        # PII koruması: query/exception detayı log'a düşürülmez,
+        # sadece traceback Sentry'ye gider. Kullanıcıya boş yanıt.
+        logger.exception("audit_timeline query failed (degraded fallback)")
+        return {
+            "events": [],
+            "count": 0,
+            "has_more": False,
+            "next_cursor": None,
+            "grouped": [],
+            "degraded": True,
+        }
 
 
 @router.get("/timeline/{entity_type}/{entity_id}")
@@ -812,10 +865,15 @@ async def export_id_photo_view_report_csv(
 
 
 def _group_by_time(logs: list) -> list:
-    """Group audit events by hour for timeline visualization."""
+    """Group audit events by hour for timeline visualization.
+
+    Pilot DB'de `timestamp` hem ISO string hem `datetime` olarak
+    karşımıza çıkabiliyor (eski/yeni yazıcılar). `_ts_to_iso` ikisini
+    de string'e çevirip `len()` TypeError'unu engeller.
+    """
     buckets = {}
     for log in logs:
-        ts = log.get("timestamp", "")
+        ts = _ts_to_iso(log.get("timestamp"))
         hour_key = ts[:13] if len(ts) >= 13 else ts[:10]
         if hour_key not in buckets:
             buckets[hour_key] = {"time_bucket": hour_key, "count": 0, "events": []}
