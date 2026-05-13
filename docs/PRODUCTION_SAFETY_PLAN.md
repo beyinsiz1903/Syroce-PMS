@@ -25,13 +25,46 @@
 | 5   | Admin "Sistem Sağlığı" ekranı         | Sayfa var, parça eksik        | HAYIR          | 2–3 saat     |
 | 6   | Kill-switch / feature flag standardı  | Altyapı var, env-var yok      | HAYIR          | 2 saat       |
 | 7   | İlk 24 saat izleme runbook'u          | Go/No-Go içinde gömülü        | HAYIR          | 1 saat       |
-| 8   | Replit OPS cheat-sheet                | YOK                           | HAYIR          | 1–2 saat     |
+| 8   | Replit OPS cheat-sheet                | ✅ **DONE** (12 May 2026)      | HAYIR          | ~~1–2 saat~~ |
 
 **Kalan pilot-blocker iş yükü:** YOK ✅ — pilot güvenlik dörtgeni
 (rollback + backup + observability + alarm) tamam.
-**Tüm paket (kalan, non-blocker):** ~6–8 saat.
+**Tüm paket (kalan, non-blocker):** ~5–6 saat (#5 + #6 + #7).
 
-**Önerilen sıra:** ~~2 → 1 → 3 → 4~~ → **8 → 7 → 5 → 6**.
+**Önerilen sıra:** ~~2 → 1 → 3 → 4 → 8~~ → **7 → 5 → 6**.
+
+---
+
+## ✅ Kapsam #8 — Tamamlandı (12 Mayıs 2026)
+
+**Replit OPS cheat-sheet — tek-sayfa operatör referansı:**
+
+**Yazılan kod:** Sadece dokümantasyon — `docs/REPLIT_OPS_CHEATSHEET.md`
+9 bölüm:
+1. Acil durum kısayolları (rollback en üstte)
+2. Sağlık kontrolleri matrisi (8 endpoint + Atlas backup verify)
+3. Sorun → triage akışı (9 belirti + 5dk karar matrisi)
+4. Yaygın senaryo çözümleri (HR sync / Outbox / Backup / Rollback / PII)
+5. Eskalasyon kanalları (CRITICAL/ERROR/WARNING/DBA)
+6. Komut hızlı referansı (alfabetik, kopyala-yapıştır hazır)
+7. İlgili doküman çapraz-link (9 doküman)
+8. Replit-spesifik notlar (workflow restart, secret panel, log paths)
+9. Sürüm
+
+**Tasarım kararı:** "30 saniyede cevap" — operatör nöbette panik
+durumunda doc'u açtığında ilk gördüğü ROLLBACK komutu olmalı,
+açıklama değil. Detay için her bölüm ilgili runbook'a link verir.
+
+**Doğrulama (sandbox):**
+- Tüm endpoint prefix'leri kod ile doğrulandı: `/api/production-golive/`,
+  `/api/observability/`, `/api/infra/` (router APIRouter prefix'leri
+  ile)
+- Tüm script path'leri `backend/scripts/` ve `deploy/` envanteri ile
+  doğrulandı (cm_backlog_alert, verify_atlas_backup, verify_exely_
+  whitelist, index_audit, index_apply, rollback.sh, smoke.sh)
+- Çapraz-link'lenen dokümanlar mevcut (ROLLBACK, ATLAS_BACKUP_AND_RESTORE,
+  CM_OBSERVABILITY, SENTRY_ALERT_POLICY, PILOT_GO_NO_GO ×2,
+  PRODUCTION_SAFETY_PLAN, DISASTER_RECOVERY, INCIDENT_PLAYBOOK)
 
 ---
 
