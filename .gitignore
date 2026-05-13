@@ -1,196 +1,94 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Uploads
-backend/uploads/
-frontend/uploads/
-
-# Replit chat-attached assets (screenshots, pasted images, etc.) — auto-uploaded
-# by the workspace and otherwise auto-checkpointed into the repo, polluting
-# diffs and triggering hygiene warnings in code review.
+.ac
+agenthub/agents/youtube/db
+android-sdk/
+# Archive files and large assets
 attached_assets/
-
-# Secure storage (encrypted ID photos, etc. — never commit)
+backend/celerybeat-schedule
+backend/celerybeat-schedule.*
 backend/secure_storage/
-
-# Local-only / agent scratch (sandbox creds, stress-E2E opt-in env, etc.)
-# `.local/` is repo-private — never commit. Specifically, `.local/.stress_env`
+backend/uploads/
+/build
+# Build caches
+# by the workspace and otherwise auto-checkpointed into the repo, polluting
+.cache/
 # carries the destructive `E2E_ALLOW_DESTRUCTIVE_STRESS=true` flag during
-# stress runs and must NOT leak.
-.local/
-.local/.stress_env
-
-# IDE and editors
-.idea/
-.vscode/
-
+celerybeat-schedule
+celerybeat-schedule.*
+# Celery beat sqlite/dat schedule files (runtime artifact)
+.chainlit
+chainlit.md
+/coverage
+*credentials.json*
+# Data and databases
+*.deb
 # Dependencies
-node_modules/
+# Deployment
+# Development tools
+# diffs and triggering hygiene warnings in code review.
+dist/
+.DS_Store
+dump.rdb
+*.dylib
+-e 
+*.env
+*.env.*
+# Environment files
+frontend/e2e-stress/.auth/
+frontend/playwright-stress-report/
+frontend/test-results-stress/
+frontend/uploads/
+.idea/
+# IDE and editors
+.ipynb_checkpoints/
+.local/
+# `.local/` is repo-private — never commit. Specifically, `.local/.stress_env`
+# Local-only / agent scratch (sandbox creds, stress-E2E opt-in env, etc.)
+.local/.stress_env
+# Logs and debug files
+memory/test_credentials.md
+# Mobile development
+/.next/
+next-env.d.ts
+# Next.js
 /node_modules
+node_modules/
+npm-debug.log*
+/out/
+*.pack
+*.pem
 /.pnp
 .pnp.js
-.yarn/install-state.gz
+.pnpm-debug.log*
+# Production builds
+*pyc*
+__pycache__/
+# Python
+quick-id/backups/
+# Quick-ID local PII backups (never commit)
+# Replit chat-attached assets (screenshots, pasted images, etc.) — auto-uploaded
+# Secure storage (encrypted ID photos, etc. — never commit)
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Sensitive tokens/credentials (NOT .env files - those are needed for deployment)
+# stress runs and must NOT leak.
+# System files
+**/*.tar
+**/*.tar.gz
+# Testing
+**/*.tgz
+*token.json*
+*.tsbuildinfo
+# Uploads
+.venv/
+venv/
+.vercel
+.vscode/
 .yarn/*
+yarn-debug.log*
+yarn-error.log*
+.yarn/install-state.gz
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-
-# Testing
-/coverage
-
-# Next.js
-/.next/
-/out/
-next-env.d.ts
-*.tsbuildinfo
-
-# Production builds
-/build
-dist/
-
-# Sensitive tokens/credentials (NOT .env files - those are needed for deployment)
-*token.json*
-*credentials.json*
-memory/test_credentials.md
-
-# Logs and debug files
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-dump.rdb
-
-# System files
-.DS_Store
-*.pem
-
-# Python
-__pycache__/
-*pyc*
-venv/
-.venv/
-
-# Development tools
-chainlit.md
-.chainlit
-.ipynb_checkpoints/
-.ac
-
-# Deployment
-.vercel
-
-# Data and databases
-agenthub/agents/youtube/db
-
-# Archive files and large assets
 **/*.zip
-**/*.tar.gz
-**/*.tar
-**/*.tgz
-*.pack
-*.deb
-*.dylib
-
-# Build caches
-.cache/
-
-# Mobile development
-android-sdk/
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
-
-# Quick-ID local PII backups (never commit)
-quick-id/backups/
-
-# Celery beat sqlite/dat schedule files (runtime artifact)
-celerybeat-schedule
-celerybeat-schedule.*
-backend/celerybeat-schedule
-backend/celerybeat-schedule.*
-
