@@ -252,12 +252,14 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
             if (typeof bal === 'number' && bal > 0) amountToPay = bal;
         }
         // PaymentCreate: amount + method (PaymentMethod enum) + payment_type
-        // (PaymentType enum). 'cash' + 'final' tam tahsilat senaryosu için en
-        // doğru kombinasyon.
+        // (PaymentType enum). 'card' + 'final' kullanıyoruz — 'cash' aktif
+        // kasa vardiyası (cashier_shifts) gerektirir (cashier_service.py:56,
+        // CASH_METHODS={"cash"}); E2E ortamı vardiya açmıyor → 409. Card için
+        // ensure_active_shift bypass eder, tam tahsilat senaryosu korunur.
         const res = await api.post(`/api/folio/${folioId}/payment`, {
             data: {
                 amount: amountToPay,
-                method: 'cash',
+                method: 'card',
                 payment_type: 'final',
                 notes: 'E2E test full settlement',
             },
