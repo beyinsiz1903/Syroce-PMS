@@ -55,6 +55,10 @@ _Populate as you build_
 
 ## Gotchas
 
+### Testing
+
+- **UI E2E Smoke Suite (May 2026)**: `frontend/playwright.smoke.config.js` + `frontend/e2e-smoke/` (mevcut `frontend/e2e/` happy-path suite'inden ayrı, çakışmaz). Komut: `cd frontend && yarn test:e2e:smoke`. Env zorunlu: `E2E_BASE_URL`, `E2E_ADMIN_EMAIL`, `E2E_ADMIN_PASSWORD` (hardcoded fallback YOK — `fixtures.js:requireEnv` eksikse fail-fast). 24 route × 2 project (`desktop` 1440×900 + `mobile` Pixel 7) = 48 test. **Critical** (17 route, fail = suite FAIL): Dashboard, Sistem Sağlığı, Channels Hub/CM Dashboard/Unified Rate Manager/Channel Connections/Ops/Conflict Queue (`/channels?tab=conflicts`), Rezervasyon Takvimi/PMS/PMS Operasyonlar, Folio/Grup Folio, Admin Control Panel/Kullanıcı-Rol (`/admin/user-roles`), Ayarlar, Güvenlik. **Secondary** (7 route, soft warning): Control Plane, Audit Timeline, Rate Manager, İK, Tedarik Pazarı, Satınalma. Her route için: navigate → boş ekran/404/500/Error UI tespit (`inspectPageContent`) + console error + network 4xx/5xx (allowlist'li: i18next/Sentry beacon/health probe 503 vb.) + güvenli buton tıklama (yalnız `Yenile`/`Refresh`/`Ara`/`Search` regex; destructive blacklist: sil/iptal/refund/void/vardiya kapat/çıkış). **Çıktı**: HTML report `frontend/playwright-smoke-report/` + custom Markdown reporter `docs/drill_reports/YYYYMMDD_ui_e2e_smoke.md` (özet + failed steps + tüm route matrisı + safe-click özeti + artifact path'leri) + trace/video/screenshot `frontend/test-results-smoke/`. Catalog: `frontend/e2e-smoke/routes.js` (`ROUTES` + `CONSOLE_ERROR_ALLOWLIST` + `NETWORK_ERROR_ALLOWLIST`).
+
 ### Conventions (always-on rules)
 
 - **API Call Conventions**: Use relative paths WITHOUT `/api/` for `axios` calls; use `/api/` explicitly for native `fetch`.
