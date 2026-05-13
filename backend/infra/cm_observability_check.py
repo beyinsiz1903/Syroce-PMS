@@ -16,7 +16,7 @@ NEVER returns raw IPs, credentials, tenant_ids, or event payloads —
 only counts + verdicts safe for ops dashboards / Sentry / log sinks.
 """
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger("infra.cm_observability_check")

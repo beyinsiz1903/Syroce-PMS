@@ -1358,7 +1358,7 @@ async def get_circuit_breakers(
     `connection_id` in the response strips the tenant prefix to avoid
     leaking the full key shape.
     """
-    from domains.channel_manager.provider_failover import provider_failover, CircuitState
+    from domains.channel_manager.provider_failover import CircuitState, provider_failover
 
     tenant_id = current_user.tenant_id
     raw = provider_failover.get_all_status()

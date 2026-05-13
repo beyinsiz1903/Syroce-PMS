@@ -109,7 +109,7 @@ def production_guard(
         return False
 
     allowed = frozenset(
-        (e.lower() for e in (allowed_envs or _NON_PROD_ENVS))
+        e.lower() for e in (allowed_envs or _NON_PROD_ENVS)
     )
     env = (
         os.environ.get("APP_ENV")

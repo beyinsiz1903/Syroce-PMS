@@ -43,8 +43,8 @@ from .validators import extract_credentials, validate_ari_payload, validate_cred
 logger = logging.getLogger("exely.provider")
 
 # Reuse the same ProviderResult from hotelrunner for consistency
-from domains.channel_manager.providers.hotelrunner.schemas import ProviderResult
 from domains.channel_manager.provider_failover import provider_failover
+from domains.channel_manager.providers.hotelrunner.schemas import ProviderResult
 
 
 def _exely_circuit_key(connection_id: str) -> str:

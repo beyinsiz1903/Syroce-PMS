@@ -156,6 +156,7 @@ class ReadinessValidator:
         # leave this process via readiness output (Sentry/CI/log sinks).
         try:
             import os as _os
+
             from scripts.verify_exely_whitelist import verify as _verify_exely
             _env_label = (
                 _os.environ.get("ENVIRONMENT")

@@ -343,7 +343,7 @@ async def bulk_resolve_pending_bookings(
     failed: list[dict[str, Any]] = []
 
     # Pre-load tenant's valid rooms in one round-trip to avoid N+1 lookups.
-    requested_room_ids = list({rid for rid in dedup.values()})
+    requested_room_ids = list(set(dedup.values()))
     valid_room_ids = set()
     if requested_room_ids:
         async for r in db.rooms.find(

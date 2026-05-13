@@ -19,6 +19,8 @@ import logging
 import time
 from typing import Any
 
+from domains.channel_manager.provider_failover import provider_failover
+
 from . import endpoints as ep
 from . import observability as obs
 from .auth import extract_credentials, validate_credentials
@@ -43,7 +45,6 @@ from .schemas import ProviderResult
 from .validators import (
     validate_inventory_payload,
 )
-from domains.channel_manager.provider_failover import provider_failover
 
 logger = logging.getLogger("hotelrunner.provider")
 
