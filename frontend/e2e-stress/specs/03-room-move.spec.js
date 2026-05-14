@@ -1,27 +1,134 @@
 // F8A § 03 — Room move: positive (hedef boş), negative (hedef occupied / OOO), race.
 //
 // Stress dataset 500/500 occupied başlıyor. Pozitif move için önce hedefi boşaltmak gerekir.
-// Bu spec 02-day-turnover'dan SONRA çalışırsa pozitif move başarısı yüksek olur (forced
-// checkout sonrası boş odalar). Sırayla koştuğu için fixture order garanti.
+// Spec'in kendi Setup'ı her room_type için yeterli boş oda yaratır (force-checkout) — bu
+// sayede 02-day-turnover'dan bağımsız (ör. izole D/E chunk) çalışsa da positive_room_move
+// 30/30 PASS verir. Sırayla koşumda da idempotent: zaten boşalmış odalar etkilenmez.
+// Ref: task #162 (P2 finding — drill report 20260514 §11).
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import { fetchAllByPrefix, callTimed, recPerf, recFinding, pilotBookingsCount, assertNoExternalCallsPostBatch } from '../fixtures/stress-helpers.js';
 
 const MOD = 'room-move';
 
+// Positive room-move target sample size (A testi).
+const POSITIVE_MOVE_N = 50;
+// Setup'ta tutturulması ZORUNLU minimum same-category eligible target sayısı.
+// Task #162 acceptance: "30/30 positive room-move PASS". 30 → hard precondition.
+const MIN_ELIGIBLE_TARGETS = 30;
+// free-until-threshold loop iterasyon limiti (sonsuz döngü güvenlik kapısı).
+const SETUP_FREE_ROUNDS = 4;
+
 test.describe.configure({ mode: 'serial' });
+
+// ── Pure helpers (setup + A için ortak hesap) ────────────────────────────────
+function _computeVacantByType(bookingsList, roomsList) {
+    const checkedIn = bookingsList.filter((b) => b.status === 'checked_in');
+    const occupied = new Set(checkedIn.map((b) => b.room_id).filter(Boolean));
+    const m = new Map();
+    for (const r of roomsList) {
+        if (occupied.has(r.id)) continue;
+        const t = r.room_type || r.category || '__unknown__';
+        m.set(t, (m.get(t) || 0) + 1);
+    }
+    return m;
+}
+function _computeDemand(bookingsList, n) {
+    const target = bookingsList.filter((b) => b.status === 'checked_in').slice(0, n);
+    const demand = new Map();
+    for (const b of target) {
+        const t = b.room_type || b.category || '__unknown__';
+        demand.set(t, (demand.get(t) || 0) + 1);
+    }
+    return { demand, targetIds: new Set(target.map((b) => b.id)), total: target.length };
+}
+function _eligibleCount(demand, vacant) {
+    let n = 0;
+    for (const [t, d] of demand) n += Math.min(d, vacant.get(t) || 0);
+    return n;
+}
 
 test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
     let bookings = [];
     let rooms = [];
     let pilotBefore = null;
 
-    test('Setup: stress bookings + rooms snapshot', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('Setup: stress bookings + rooms snapshot + guarantee vacant pool', async ({ request, stressTokens, stressState }, testInfo) => {
         const prefix = stressState.data_prefix;
         bookings = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/bookings', 'stress_prefix', prefix);
         rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms', 'stress_prefix', prefix);
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
-        rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
-            note: `bookings=${bookings.length} rooms=${rooms.length} pilot_before=${pilotBefore?.count}` });
+
+        // ── Vacant-pool garantisi (task #162) ────────────────────────────────
+        // Free-until-threshold: A testinin demand profilini (ilk 50 checked_in,
+        // her birinin room_type'ı) çıkar; her tip için (demand − vacant_supply)
+        // kadar EK booking force-checkout et — target sample havuzu kendisi
+        // boşaltılmaz (`targetIds` muaf). Re-fetch & yeniden hesapla.
+        // Birden fazla round: re-fetch sonrası order ufak kayabilir (status
+        // değişen bookings dropladı), bu yüzden iteratif yakınsama gerekir.
+        let totalFreedOk = 0;
+        let totalFreedFail = 0;
+        const failModes = {};
+        let lastEligible = 0;
+        let lastDemandTotal = 0;
+        for (let round = 0; round < SETUP_FREE_ROUNDS; round++) {
+            const { demand, targetIds, total } = _computeDemand(bookings, POSITIVE_MOVE_N);
+            lastDemandTotal = total;
+            const vacant = _computeVacantByType(bookings, rooms);
+            lastEligible = _eligibleCount(demand, vacant);
+            if (lastEligible >= Math.min(MIN_ELIGIBLE_TARGETS, total)) break;
+
+            const checkedInByType = new Map();
+            for (const b of bookings.filter((b) => b.status === 'checked_in' && !targetIds.has(b.id))) {
+                const t = b.room_type || b.category || '__unknown__';
+                if (!checkedInByType.has(t)) checkedInByType.set(t, []);
+                checkedInByType.get(t).push(b);
+            }
+            const toFree = [];
+            for (const [t, dem] of demand) {
+                const have = vacant.get(t) || 0;
+                const need = Math.max(0, dem - have);
+                if (need <= 0) continue;
+                const pool = checkedInByType.get(t) || [];
+                const take = Math.min(need, pool.length);
+                for (const b of pool.slice(-take)) toFree.push(b);
+            }
+            if (toFree.length === 0) break; // hiçbir tip için ek boşaltma kaynağı yok
+
+            for (const b of toFree) {
+                const r = await callTimed(request, 'post', '/api/pms-core/checkout',
+                    { booking_id: b.id, force: true }, stressTokens.stress_token);
+                if (r.ok) totalFreedOk++;
+                else { totalFreedFail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
+            }
+            bookings = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/bookings', 'stress_prefix', prefix);
+        }
+
+        // Final eligible recount after loop exit.
+        const { demand: demandFinal, total: totalFinal } = _computeDemand(bookings, POSITIVE_MOVE_N);
+        const vacantFinal = _computeVacantByType(bookings, rooms);
+        const eligibleFinal = _eligibleCount(demandFinal, vacantFinal);
+        const requiredEligible = Math.min(MIN_ELIGIBLE_TARGETS, totalFinal);
+        const setupStatus = eligibleFinal >= requiredEligible ? 'PASS' : 'FAIL';
+
+        rec(testInfo, { module: MOD, step: 'setup', status: setupStatus,
+            note: `bookings=${bookings.length} rooms=${rooms.length} pilot_before=${pilotBefore?.count} `
+                + `vacant_pool_setup={freed_ok=${totalFreedOk} freed_fail=${totalFreedFail} `
+                + `fail_modes=${JSON.stringify(failModes)} target_total=${totalFinal} `
+                + `eligible_after=${eligibleFinal} required_min=${requiredEligible} `
+                + `eligible_first_round=${lastEligible}/${lastDemandTotal} rounds=${SETUP_FREE_ROUNDS}}` });
+
+        if (setupStatus === 'FAIL') {
+            recFinding(testInfo, 'P1', MOD,
+                'Setup vacant pool yetersiz — positive_room_move deterministic değil',
+                `eligible=${eligibleFinal}/${requiredEligible}, freed_ok=${totalFreedOk} freed_fail=${totalFreedFail}, `
+                + `fail_modes=${JSON.stringify(failModes)}. force-checkout endpoint reddediyor olabilir veya `
+                + `dataset çok küçük (room_count<${MIN_ELIGIBLE_TARGETS}).`);
+        }
+        // Hard precondition (architect feedback task #162 review): setup
+        // garantili miktarda eligible target sağlamadan A testine geçilmez.
+        expect(eligibleFinal,
+            `setup vacant pool yetersiz: eligible=${eligibleFinal} target_total=${totalFinal} required_min=${requiredEligible}`,
+        ).toBeGreaterThanOrEqual(requiredEligible);
     });
 
     test('A) Positive room-move: 50 (booking → vacant + same-category target) + post-move state transfer', async ({ request, stressTokens, stressState }, testInfo) => {
@@ -70,16 +177,25 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
             }
         }
         const attempted = target.length - skippedNoTarget;
-        const moveStatus = (attempted >= 5 && ok === 0) ? 'FAIL' : (ok > 0 ? 'PASS' : 'REVIEW');
+        // Deterministic pass criteria (architect feedback task #162 review):
+        // Setup precondition zaten ≥30 eligible target garantiliyor, dolayısıyla
+        // burada PASS = ok === attempted. Kısmi başarı (ok < attempted) FAIL —
+        // room-move endpoint reddediyor demektir (race, RNL kilit, occupancy).
+        const moveStatus = attempted === 0 ? 'SKIP'
+            : (ok === attempted ? 'PASS' : (ok > 0 ? 'FAIL' : 'FAIL'));
         rec(testInfo, { module: MOD, step: 'positive_room_move', status: moveStatus,
             endpoint: '/api/pms-core/room-move',
-            note: `n=${target.length} attempted=${attempted} skipped_no_target=${skippedNoTarget} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} target_contract=vacant+same_category (architect tur-5)` });
+            note: `n=${target.length} attempted=${attempted} skipped_no_target=${skippedNoTarget} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} target_contract=vacant+same_category (architect tur-5) pass_contract=ok_eq_attempted (task #162)` });
         recPerf(testInfo, MOD, 'room_move', samples, true);
-        expect(moveStatus, `positive_room_move FAIL: n=${target.length} ok=${ok} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
-        if (ok === 0 && checkedIn.length >= 50) {
-            recFinding(testInfo, 'P2', MOD, 'Hiçbir room-move başarılı değil',
-                `${target.length} move denendi, hepsi reject. Tüm hedef odalar dolu olabilir (500/500 seed) — pozitif test için 02-spec'in checkout sonrası boş room override gerekli.`);
+        if (moveStatus === 'FAIL') {
+            recFinding(testInfo, ok === 0 ? 'P1' : 'P2', MOD,
+                'positive_room_move kısmi/tamamen başarısız',
+                `${attempted} same-category vacant target denendi, ${ok} başarılı (${fail} reject). `
+                + `Modes: ${JSON.stringify(failModes)}. Setup ≥${MIN_ELIGIBLE_TARGETS} eligible garantiliyor; `
+                + `burada FAIL backend room-move reject anlamına gelir (RNL conflict, occupancy guard, race).`);
         }
+        expect(ok, `positive_room_move pass_contract: ok=${ok} attempted=${attempted} fail_modes=${JSON.stringify(failModes)}`)
+            .toBe(attempted);
         // Post-move STATE transfer assertion (architect tur-3 feedback): RNL transfer
         // doğrulaması — başarılı move'lardan sonra booking.room_id GET ile yeni oda
         // olmalı. Bu, room_night_lock + booking pointer'ın atomik transfer edildiğinin
