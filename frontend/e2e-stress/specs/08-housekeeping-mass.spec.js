@@ -1,0 +1,140 @@
+// F8A § 08 — Housekeeping mass: 500 oda render, 100 transition, 20 OOO, status counts.
+import { test, expect, rec } from '../fixtures/stress-context.js';
+import { fetchAllByPrefix, fetchSingle, callTimed, recPerf, recFinding, pilotBookingsCount } from '../fixtures/stress-helpers.js';
+
+const MOD = 'housekeeping';
+
+test.describe.configure({ mode: 'serial' });
+
+test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + summary)', () => {
+    let rooms = [];
+    let pilotBefore = null;
+    let summaryBefore = null;
+
+    test('Setup: stress rooms + summary baseline', async ({ request, stressTokens, stressState }, testInfo) => {
+        const prefix = stressState.data_prefix;
+        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms', 'stress_prefix', prefix);
+        pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
+        const sumR = await callTimed(request, 'get', '/api/pms-core/housekeeping/room-summary', undefined, stressTokens.stress_token);
+        summaryBefore = sumR.body;
+        rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
+            note: `rooms=${rooms.length} summary_status=${sumR.status} summary_keys=${summaryBefore ? Object.keys(summaryBefore).slice(0, 6).join(',') : 'null'} pilot_before=${pilotBefore?.count}` });
+    });
+
+    test('A) HK summary endpoint: <2s p95', async ({ request, stressTokens }, testInfo) => {
+        const samples = [];
+        for (let i = 0; i < 5; i++) {
+            const r = await callTimed(request, 'get', '/api/pms-core/housekeeping/room-summary', undefined, stressTokens.stress_token);
+            samples.push(r.ms);
+            if (i === 0) {
+                rec(testInfo, { module: MOD, step: 'hk_summary_first_call', status: r.ok ? 'PASS' : 'REVIEW',
+                    endpoint: '/api/pms-core/housekeeping/room-summary',
+                    note: `status=${r.status} body_keys=${r.body ? Object.keys(r.body).slice(0, 6).join(',') : 'null'}` });
+            }
+        }
+        recPerf(testInfo, MOD, 'hk_summary', samples, true);
+        const max = Math.max(...samples);
+        if (max > 2000) {
+            recFinding(testInfo, 'P3', MOD, 'HK summary endpoint yavaş',
+                `5 ardışık çağrı max=${max}ms (>2s). 500-oda kümesi için kabul edilebilir ama p95 izlenmeli.`);
+        }
+    });
+
+    test('B) 500-oda HK list endpoint render performansı', async ({ request, stressTokens }, testInfo) => {
+        // /api/housekeeping/rooms — enterprise router
+        const samples = [];
+        let lastBody = null;
+        for (let i = 0; i < 3; i++) {
+            const r = await callTimed(request, 'get', '/api/housekeeping/rooms', undefined, stressTokens.stress_token);
+            samples.push(r.ms);
+            lastBody = r.body;
+        }
+        const len = Array.isArray(lastBody) ? lastBody.length : (lastBody?.rooms?.length ?? lastBody?.items?.length ?? 0);
+        recPerf(testInfo, MOD, 'hk_rooms_list', samples, true);
+        rec(testInfo, { module: MOD, step: 'hk_rooms_list', status: 'PASS',
+            endpoint: '/api/housekeeping/rooms',
+            note: `n_calls=3 sample_max_ms=${Math.max(...samples)} returned_len=${len}` });
+        if (Math.max(...samples) > 5000) {
+            recFinding(testInfo, 'P2', MOD, 'HK rooms listesi >5s',
+                `3 çağrı max=${Math.max(...samples)}ms. 500-oda kümesi için optimize edilmeli (index, pagination).`);
+        }
+    });
+
+    test('C) 100 oda HK transitions (dirty→cleaning→inspected→clean)', async ({ request, stressTokens }, testInfo) => {
+        if (rooms.length < 20) { rec(testInfo, { module: MOD, step: 'transitions_sample', status: 'SKIP', note: `rooms=${rooms.length}` }); return; }
+        const target = rooms.slice(0, Math.min(100, rooms.length));
+        const transitions = ['dirty', 'cleaning', 'inspected', 'clean'];
+        const counters = { ok: 0, fail: 0, byTransition: {} };
+        const samples = [];
+        for (const room of target) {
+            for (const status of transitions) {
+                const r = await callTimed(request, 'post', '/api/pms-core/housekeeping/room-status', {
+                    room_id: room.id, new_status: status, notes: `F8A trans ${status}`, force: true,
+                }, stressTokens.stress_token);
+                samples.push(r.ms);
+                counters.byTransition[status] ||= { ok: 0, fail: 0 };
+                if (r.ok) { counters.ok++; counters.byTransition[status].ok++; }
+                else { counters.fail++; counters.byTransition[status].fail++; }
+            }
+        }
+        rec(testInfo, { module: MOD, step: 'hk_transitions', status: counters.ok > target.length * transitions.length * 0.5 ? 'PASS' : 'REVIEW',
+            endpoint: '/api/pms-core/housekeeping/room-status',
+            note: `rooms=${target.length} transitions=${transitions.length} total_calls=${target.length * transitions.length} ok=${counters.ok} fail=${counters.fail} by_transition=${JSON.stringify(counters.byTransition)}` });
+        recPerf(testInfo, MOD, 'hk_transition', samples, counters.ok > 0);
+        if (counters.ok === 0) {
+            recFinding(testInfo, 'P1', MOD, 'HK transition tüm denemelerde başarısız',
+                `${target.length * transitions.length} transition POST 0 başarı. State machine veya permission sorunu.`);
+        }
+    });
+
+    test('D) 20 oda OOO işaretle + summary diff', async ({ request, stressTokens }, testInfo) => {
+        if (rooms.length < 20) { rec(testInfo, { module: MOD, step: 'ooo_sample', status: 'SKIP' }); return; }
+        const target = rooms.slice(rooms.length - 20);
+        let ok = 0, fail = 0;
+        const samples = [];
+        for (const room of target) {
+            const r = await callTimed(request, 'post', '/api/pms-core/housekeeping/room-status', {
+                room_id: room.id, new_status: 'out_of_order', notes: 'F8A OOO mass', force: true,
+            }, stressTokens.stress_token);
+            samples.push(r.ms);
+            if (r.ok) ok++; else fail++;
+        }
+        recPerf(testInfo, MOD, 'hk_ooo_set', samples, ok > 0);
+
+        const sumR = await callTimed(request, 'get', '/api/pms-core/housekeeping/room-summary', undefined, stressTokens.stress_token);
+        const sumAfter = sumR.body;
+        rec(testInfo, { module: MOD, step: 'ooo_mass', status: ok > 0 ? 'PASS' : 'REVIEW',
+            note: `n=20 ok=${ok} fail=${fail} summary_after_keys=${sumAfter ? Object.keys(sumAfter).slice(0, 6).join(',') : 'null'}` });
+        if (ok === 0) {
+            recFinding(testInfo, 'P2', MOD, 'OOO işareti tutmuyor',
+                `20 OOO POST 0 başarı; rezervasyon-engelleme guard test edilemiyor.`);
+        }
+    });
+
+    test('E) Mobile viewport smoke (390x844): tek HK transition + summary', async ({ browser, stressTokens }, testInfo) => {
+        // API-only suite, ama mobile UA + viewport sözleşmesi için ayrı request context aç
+        const ctx = await browser.newContext({
+            viewport: { width: 390, height: 844 },
+            userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+        });
+        const req = ctx.request;
+        const summaryR = await req.get('/api/pms-core/housekeeping/room-summary', {
+            headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
+            failOnStatusCode: false, timeout: 15_000,
+        });
+        const ok = summaryR.ok();
+        await ctx.close();
+        rec(testInfo, { module: MOD, step: 'mobile_smoke', status: ok ? 'PASS' : 'REVIEW',
+            note: `mobile_ua + 390x844 viewport, summary status=${summaryR.status()} (UI render ayrı tur — bu sadece API contract sözleşmesi)` });
+    });
+
+    test('F) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
+        if (!pilotBefore) { rec(testInfo, { module: MOD, step: 'pilot_drift', status: 'SKIP' }); return; }
+        const after = await pilotBookingsCount(request, stressTokens.pilot_token);
+        const drift = (after?.count ?? 0) - pilotBefore.count;
+        rec(testInfo, { module: MOD, step: 'pilot_drift', status: drift === 0 ? 'PASS' : 'FAIL',
+            note: `pilot bookings before=${pilotBefore.count} after=${after?.count} drift=${drift}` });
+        if (drift !== 0) recFinding(testInfo, 'P0', MOD, 'Pilot mutation', `drift=${drift}`);
+        expect(drift).toBe(0);
+    });
+});

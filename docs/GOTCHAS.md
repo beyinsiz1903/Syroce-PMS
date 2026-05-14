@@ -30,6 +30,20 @@ Her route için: navigate → boş ekran/404/500/Error UI tespit (`inspectPageCo
 
 **Çıktı**: HTML report `frontend/playwright-smoke-report/` + custom Markdown reporter `docs/drill_reports/YYYYMMDD_ui_e2e_smoke.md` (özet + failed steps + tüm route matrisı + safe-click özeti + artifact path'leri) + trace/video/screenshot `frontend/test-results-smoke/`. Catalog: `frontend/e2e-smoke/routes.js` (`ROUTES` + `CONSOLE_ERROR_ALLOWLIST` + `NETWORK_ERROR_ALLOWLIST`).
 
+### F8A Stress Suite — Front Office + Folio + Housekeeping (May 2026)
+
+`frontend/playwright.stress.config.js` + `frontend/e2e-stress/` (smoke/business ile çakışmaz, ayrı project=`stress`). 4 spec (`02-day-turnover`, `03-room-move`, `04-folio-mass`, `08-housekeeping-mass`) × Setup+A..F = 26 test toplamda. F7 fixture/helper'larını reuse eder: `fixtures/stress-helpers.js`, `global-setup.js` (500-oda seed + 5-gate kontrolü), `global-teardown.js` (cleanup#1 + idempotent cleanup#2 + pilot drift diff). Custom `markdown-reporter.mjs` → `docs/drill_reports/YYYYMMDD_stress_<TAG>.md` (`STRESS_REPORT_TAG` env).
+
+**Defans invariant'ları (her run'da doğrulanır)**: (a) `gates`: 5/5 true (`env_stress_tid_present`, `target_matches_stress_tid`, `pilot_tid_not_targeted`, `destructive_stress_allowed`, `external_dry_run`), (b) `external_calls_made: []` (OTA/SMS/email/payment GW dispatch=0; `E2E_EXTERNAL_DRY_RUN=true` zorunlu), (c) `cleanup#1.deleted_total ≈ 5500` + `cleanup#2.idempotent=true`, (d) `pilot_diff.drift=0` (PILOT_TENANT_ID baseline=after).
+
+**Backend workflow override**: `Backend API` workflow command'ı stress için ENV pass-through ile başlar — `E2E_ALLOW_DESTRUCTIVE_STRESS=true E2E_EXTERNAL_DRY_RUN=true E2E_STRESS_TENANT_ID=23377306-... PILOT_TENANT_ID=5bad4a34-... bash backend/start.sh`. Bootstrap ~60s sürer; restart sonrası seed gates all-true bekleyin.
+
+**Replit sandbox 110s tool budget gotcha**: agent bash tool çağrı süresi ~110s ile sınırlı; setsid/nohup detached playwright süreçleri tool çağrısı bittikten ~3-5dk sonra reaper tarafından öldürülüyor. Çözüm: chunked sync runs (`--workers=4 -g <pattern>` ile Setup+drift / A+B / C / D+E gibi ≤8-15 test'lik gruplar; her grup ≤90s). Her chunk kendi `STRESS_REPORT_TAG` ile bağımsız raporlanır; canonical aggregate report (`f8a_frontoffice_folio_hk`) chunk'ları cross-reference eder. F8A ilk koşum: 26/26 test PASS (FAIL=0), defans katmanı 5/5 chunk yeşil; aggregate finding **P1=1 (folio-mass A/B/C batch s400) + P2=1 (room-move pozitif yol target dolu)** → ⚠️ **GO WITH WATCH** (`docs/drill_reports/20260514_stress_f8a_frontoffice_folio_hk.md` §10 chunk tablosu + §11 finding detayı + §12 verdict).
+
+**Stress credentials**: `E2E_STRESS_ADMIN_EMAIL` / `E2E_STRESS_ADMIN_PASSWORD` (`playwright.stress.config.js` requires bunları, `.local/stress_tenant_credentials.txt` gitignored dosyada). Password'da `&@` gibi shell-meta karakter olabilir → `source` ile yüklenmez; python `open().read()` parse + `subprocess.run(env=...)` zorunlu (bkz. `/tmp/run_f8a.py` pattern). Pilot creds (`E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`) replit secrets'ten gelir; setup hem stress hem pilot login'i (super_admin) yapar.
+
+**Defense invariants — runtime-enforced (May 2026 hardening)**: `global-setup.js` seedResp'den 5 backend gate'i de hard-assert eder (failed → throw); `global-teardown.js` cleanup#1 fail / cleanup#2 non-idempotent / pilot drift!=0 durumlarında throw atar (process exit non-zero). Helper-level `fetchAllByPrefix` artık `stress_seed===true` fallback'ini KULLANMAZ — yalnız aktif round prefix'i geçen item'lar döner (cross-round leak defansı, `stress-helpers.js:22-30`).
+
 ---
 
 ## Conventions (always-on rules)

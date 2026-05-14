@@ -72,4 +72,15 @@ export default async function globalTeardown() {
     log.finished_at = new Date().toISOString();
     fs.writeFileSync(TEARDOWN_LOG, JSON.stringify(log, null, 2));
     await api.dispose();
+
+    // Hard-fail (non-zero exit via thrown error) on defense invariant violations.
+    // Architect feedback: invariants must be enforced, not just reported.
+    const violations = [];
+    if (!c1.ok()) violations.push(`cleanup#1 status=${c1.status()}`);
+    if (!idempotent) violations.push(`cleanup#2 NOT idempotent (deleted_counts=${JSON.stringify(c2body?.deleted_counts ?? {})})`);
+    const driftStep = log.steps.find((s) => s.name === 'pilot_diff');
+    if (driftStep && driftStep.drift !== 0) violations.push(`pilot_drift=${driftStep.drift} (must be 0)`);
+    if (violations.length) {
+        throw new Error(`[stress-teardown] ❌ Defense invariant violation(s): ${violations.join('; ')}`);
+    }
 }

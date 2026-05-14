@@ -64,6 +64,7 @@ Detaylı gotcha kayıtları, dosya/satır referansları ve tarihçe → **`docs/
 - **CM-Hardening Series (DONE)** → `docs/adr/2026-05-cm-hardening.md` — Conflict Queue + Bulk Resolve, No-Show OTA Outbox Parity, Stop-Sale Circuit Breaker (per-connection); Exely no-show parity #3c DEFERRED.
 - **Production Hardening Series (DONE)** → `docs/adr/2026-05-production-hardening.md` — No-show terminal-state guard, no-show inventory lock release, closed-folio refund/void guard.
 - **Production Safety Pack (8/8 DONE)** → `docs/PRODUCTION_SAFETY_PLAN.md`, operatör entry: `docs/REPLIT_OPS_CHEATSHEET.md`, prova: `docs/PRODUCTION_LAUNCH_REHEARSAL.md`. Paketler: rollback · Atlas-managed backup · CM observability single-source · Sentry alert+PII scrub · Admin pilot section · feature-flag std · 24h monitoring runbook · OPS cheat-sheet.
+- **F8A Stress (DONE, GO)** — `frontend/e2e-stress/` 4 spec × Setup+A..F = 26 test (day-turnover/room-move/folio-mass/housekeeping-mass) 500-oda stress tenant'ta; defans: 5 gate, `external_calls_made:[]`, cleanup#1+idempotent#2, pilot drift=0. Replit 110s sandbox → chunked `-g <pattern>` runs. Detay: `docs/GOTCHAS.md` "F8A Stress Suite", rapor: `docs/drill_reports/20260514_stress_f8a_frontoffice_folio_hk.md`.
 
 ## Pointers
 

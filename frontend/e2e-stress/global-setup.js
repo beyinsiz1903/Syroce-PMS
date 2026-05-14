@@ -101,6 +101,14 @@ export default async function globalSetup() {
     if (!Array.isArray(seedBody.external_calls_made) || seedBody.external_calls_made.length !== 0) {
         throw new Error(`[stress-setup] NO-GO: external_calls_made not empty: ${JSON.stringify(seedBody.external_calls_made)}`);
     }
+    // Backend gates müşterek kontratını da burada hard-assert et (architect feedback):
+    // env-only flag'a güvenmek yerine sunucudan dönen 5 gate de true olmalı.
+    const backendGates = seedBody.gates || {};
+    const requiredGates = ['env_stress_tid_present','target_matches_stress_tid','pilot_tid_not_targeted','destructive_stress_allowed','external_dry_run'];
+    const failedGates = requiredGates.filter((g) => backendGates[g] !== true);
+    if (failedGates.length) {
+        throw new Error(`[stress-setup] NO-GO: backend gates not all-true: failed=${failedGates.join(',')} gates=${JSON.stringify(backendGates)}`);
+    }
     console.log(`[stress-setup] ✅ Seed OK n=${ROOM_COUNT} prefix=${dataPrefix} timing_ms=${JSON.stringify(seedBody.timing_ms)}`);
     console.log(`[stress-setup]    counts: ${JSON.stringify(seedBody.seeded_counts)}`);
 

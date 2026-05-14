@@ -1,10 +1,14 @@
-// F7 stress markdown-reporter — docs/drill_reports/YYYYMMDD_stress_f7_scaffold.md
+// Stress markdown-reporter — F7 (default) + F8A (STRESS_REPORT_TAG=f8a_frontoffice_folio_hk).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
+
+const REPORT_TAG = process.env.STRESS_REPORT_TAG || 'f7_scaffold';
+const REPORT_TITLE = process.env.STRESS_REPORT_TITLE
+    || (REPORT_TAG === 'f7_scaffold' ? 'F7 — Stress E2E Scaffold' : `Stress E2E (${REPORT_TAG})`);
 
 function fmtDate(d = new Date()) {
     const y = d.getFullYear();
@@ -21,8 +25,17 @@ class StressReporter {
         this.teardownFile = path.join(__dirname, '.auth', 'teardown.json');
     }
     onTestEnd(test, result) {
-        const recs = (result.annotations || [])
+        const annotations = result.annotations || [];
+        const recs = annotations
             .filter((a) => a.type === 'rec')
+            .map((a) => { try { return JSON.parse(a.description); } catch { return null; } })
+            .filter(Boolean);
+        const perfs = annotations
+            .filter((a) => a.type === 'perf')
+            .map((a) => { try { return JSON.parse(a.description); } catch { return null; } })
+            .filter(Boolean);
+        const findings = annotations
+            .filter((a) => a.type === 'finding')
             .map((a) => { try { return JSON.parse(a.description); } catch { return null; } })
             .filter(Boolean);
         this.results.push({
@@ -32,16 +45,18 @@ class StressReporter {
             outcome: result.status,
             durationMs: result.duration,
             error: result.error?.message || null,
-            recs,
+            recs, perfs, findings,
         });
     }
     async onEnd(runResult) {
         const date = fmtDate(this.startedAt);
         const outDir = path.join(REPO_ROOT, 'docs', 'drill_reports');
         fs.mkdirSync(outDir, { recursive: true });
-        const outPath = path.join(outDir, `${date}_stress_f7_scaffold.md`);
+        const outPath = path.join(outDir, `${date}_stress_${REPORT_TAG}.md`);
 
         const allRecs = this.results.flatMap((r) => r.recs.map((x) => ({ ...x, _test: r.title, _outcome: r.outcome })));
+        const allPerfs = this.results.flatMap((r) => r.perfs.map((x) => ({ ...x, _test: r.title })));
+        const allFindings = this.results.flatMap((r) => r.findings.map((x) => ({ ...x, _test: r.title })));
         const counters = { PASS: 0, FAIL: 0, REVIEW: 0, SKIP: 0 };
         for (const rec of allRecs) counters[rec.status] = (counters[rec.status] || 0) + 1;
 
@@ -53,22 +68,26 @@ class StressReporter {
             moduleAgg[m].total++;
         }
 
+        const sevAgg = { P0: 0, P1: 0, P2: 0, P3: 0 };
+        for (const f of allFindings) sevAgg[f.severity] = (sevAgg[f.severity] || 0) + 1;
+
         let state = null, teardown = null;
         try { state = JSON.parse(fs.readFileSync(this.stateFile, 'utf-8')); } catch {}
         try { teardown = JSON.parse(fs.readFileSync(this.teardownFile, 'utf-8')); } catch {}
 
         const failedTests = this.results.filter((r) => r.outcome === 'failed' || r.outcome === 'timedOut');
-        const verdict = decideVerdict({ counters, failedTests, runResult, state, teardown });
+        const verdict = decideVerdict({ counters, failedTests, runResult, state, teardown, sevAgg });
 
         let md = '';
-        md += `# F7 — Stress E2E Scaffold — ${date}\n\n`;
-        md += `> Suite: \`frontend/e2e-stress/\` (Playwright config: \`playwright.stress.config.js\`). Üretildi: ${this.startedAt.toISOString()}\n\n`;
+        md += `# ${REPORT_TITLE} — ${date}\n\n`;
+        md += `> Suite: \`frontend/e2e-stress/\` (Playwright config: \`playwright.stress.config.js\`). Üretildi: ${this.startedAt.toISOString()} · Tag: \`${REPORT_TAG}\`\n\n`;
 
         md += `## 1) Yönetici özeti\n\n`;
         md += `| Metrik | Değer |\n|---|---|\n`;
         md += `| Toplam test | ${this.results.length} |\n`;
         md += `| Başarısız test | ${failedTests.length} |\n`;
         md += `| Adım PASS / FAIL / REVIEW / SKIP | ${counters.PASS} / ${counters.FAIL} / ${counters.REVIEW} / ${counters.SKIP} |\n`;
+        md += `| P0 / P1 / P2 / P3 finding | ${sevAgg.P0} / ${sevAgg.P1} / ${sevAgg.P2} / ${sevAgg.P3} |\n`;
         md += `| Süre | ${(runResult.duration / 1000).toFixed(1)}s |\n`;
         md += `| Final verdict | **${verdict.label}** — ${verdict.reason} |\n\n`;
 
@@ -109,12 +128,39 @@ class StressReporter {
         }
         md += '\n';
 
-        md += `## 5) Bulgular\n\n`;
+        md += `## 5) P0/P1/P2/P3 Severity Triage\n\n`;
+        if (allFindings.length === 0) {
+            md += `**Hiç finding yok.** Tüm spec'ler kritik bulgu üretmedi (pilot drift=0, business-rule guard'lar tutuyor, veri kaybı/leak yok).\n\n`;
+        } else {
+            for (const sev of ['P0', 'P1', 'P2', 'P3']) {
+                const list = allFindings.filter((f) => f.severity === sev);
+                if (list.length === 0) continue;
+                md += `### ${sev} (${list.length})\n`;
+                for (const f of list) {
+                    md += `- **[${f.module}]** ${f.title}\n  - Test: \`${f._test}\`\n  - Detay: ${f.detail}\n`;
+                }
+                md += '\n';
+            }
+        }
+
+        md += `## 6) Performance Hotspots (top 10 slowest ops, p95)\n\n`;
+        if (allPerfs.length === 0) {
+            md += `_Performans örneği yok._\n\n`;
+        } else {
+            const sortedPerf = [...allPerfs].sort((a, b) => (b.p95 ?? 0) - (a.p95 ?? 0)).slice(0, 10);
+            md += `| Modül | Op | n | p50 (ms) | p95 (ms) | max (ms) | avg (ms) |\n|---|---|---:|---:|---:|---:|---:|\n`;
+            for (const p of sortedPerf) {
+                md += `| ${p.module} | ${p.op} | ${p.count} | ${p.p50} | ${p.p95} | ${p.max} | ${p.avg} |\n`;
+            }
+            md += '\n';
+        }
+
+        md += `## 7) Bulgular (REVIEW + SKIP detail)\n\n`;
         const failRecs = allRecs.filter((r) => r.status === 'FAIL');
         const reviewRecs = allRecs.filter((r) => r.status === 'REVIEW');
         const skipRecs = allRecs.filter((r) => r.status === 'SKIP');
         if (failRecs.length === 0 && failedTests.length === 0) {
-            md += `**P0/P1: yok.** Tüm testler ve adımlar PASS / REVIEW / SKIP olarak işaretli.\n\n`;
+            md += `**FAIL adım yok.** PASS / REVIEW / SKIP sınıflandırması üstteki tabloda.\n\n`;
         } else {
             for (const r of failRecs) {
                 md += `### ❌ FAIL [${r.module}] ${r.step}\n- Test: \`${r._test}\`\n- Endpoint: \`${r.endpoint || '-'}\` HTTP=\`${r.http ?? '-'}\`\n- Not: ${r.note || '-'}\n\n`;
@@ -134,7 +180,7 @@ class StressReporter {
             md += '\n';
         }
 
-        md += `## 6) Test inventory\n\n`;
+        md += `## 8) Test inventory\n\n`;
         md += `| # | Test | Outcome | Süre |\n|---:|---|---|---:|\n`;
         this.results.forEach((r, i) => {
             const icon = r.outcome === 'passed' ? '✅' : r.outcome === 'skipped' ? '⏭️' : '❌';
@@ -142,40 +188,45 @@ class StressReporter {
         });
         md += '\n';
 
-        md += `## 7) Artifact path'leri\n\n`;
+        md += `## 9) Artifact path'leri\n\n`;
         md += `- HTML report: \`frontend/playwright-stress-report/\`\n`;
         md += `- Trace/video/screenshot: \`frontend/test-results-stress/\`\n`;
         md += `- State: \`frontend/e2e-stress/.auth/stress-state.json\` (gitignored)\n`;
         md += `- Teardown log: \`frontend/e2e-stress/.auth/teardown.json\` (gitignored)\n\n`;
 
-        md += `## 8) F8'e geçilebilir mi?\n\n`;
-        md += `${verdict.f8}\n`;
+        md += `## 10) Sonraki tur\n\n`;
+        md += `${verdict.next}\n`;
 
         fs.writeFileSync(outPath, md);
         console.log(`\n[stress-md-reporter] Report yazıldı: ${outPath}`);
     }
 }
 
-function decideVerdict({ counters, failedTests, runResult, state, teardown }) {
+function decideVerdict({ counters, failedTests, runResult, state, teardown, sevAgg }) {
+    const isF8A = REPORT_TAG.startsWith('f8a');
+    const nextStep = isF8A ? 'F8B (Channel Manager / outbox / circuit breaker stress)' : 'F8 (operasyonel stress senaryoları)';
+    if (sevAgg.P0 > 0) {
+        return { label: 'NO-GO', reason: `P0 finding=${sevAgg.P0}`,
+            next: `❌ **NO-GO** — ${nextStep} öncesi P0 düzeltilmeli.` };
+    }
     if (runResult.status === 'failed' || failedTests.length > 0 || counters.FAIL > 0) {
         return { label: 'NO-GO', reason: `failedTests=${failedTests.length}, FAIL adım=${counters.FAIL}`,
-            f8: '❌ **NO-GO** — F8 öncesi P0/P1 düzeltilmeli.' };
+            next: `❌ **NO-GO** — ${nextStep} öncesi P0/P1 düzeltilmeli.` };
     }
-    // Cleanup başarısız ise P1
     if (teardown) {
         const c1 = (teardown.steps || []).find((s) => s.name === 'cleanup#1');
         const c2 = (teardown.steps || []).find((s) => s.name === 'cleanup#2_idempotent');
         const pd = (teardown.steps || []).find((s) => s.name === 'pilot_diff');
-        if (c1 && c1.status !== 200) return { label: 'NO-GO', reason: 'cleanup#1 failed', f8: '❌ NO-GO — cleanup başarısız.' };
-        if (c2 && !c2.idempotent) return { label: 'NO-GO', reason: 'cleanup not idempotent', f8: '❌ NO-GO — cleanup idempotent değil.' };
-        if (pd && pd.drift !== 0) return { label: 'NO-GO', reason: `pilot drift=${pd.drift}`, f8: '❌ NO-GO — pilot mutation tespit edildi.' };
+        if (c1 && c1.status !== 200) return { label: 'NO-GO', reason: 'cleanup#1 failed', next: '❌ NO-GO — cleanup başarısız.' };
+        if (c2 && !c2.idempotent) return { label: 'NO-GO', reason: 'cleanup not idempotent', next: '❌ NO-GO — cleanup idempotent değil.' };
+        if (pd && pd.drift !== 0) return { label: 'NO-GO', reason: `pilot drift=${pd.drift}`, next: '❌ NO-GO — pilot mutation tespit edildi.' };
     }
-    if (counters.REVIEW > 5) {
-        return { label: 'GO WITH WATCH', reason: `REVIEW=${counters.REVIEW}`,
-            f8: '⚠️  **GO WITH WATCH** — F8\'e geçilebilir, REVIEW adımları F8 boyunca takip edilmeli.' };
+    if (sevAgg.P1 > 0 || counters.REVIEW > 5) {
+        return { label: 'GO WITH WATCH', reason: `P1=${sevAgg.P1} REVIEW=${counters.REVIEW}`,
+            next: `⚠️  **GO WITH WATCH → ${nextStep}** — REVIEW/P1 maddeleri sonraki turda izlenecek.` };
     }
-    return { label: 'GO', reason: `Tüm gate + bulk-seed adımları PASS, cleanup idempotent, pilot mutation=0`,
-        f8: '✅ **GO → F8** — Stress E2E motoru senaryolar için hazır.' };
+    return { label: 'GO', reason: `Tüm gate + spec adımları PASS, cleanup idempotent, pilot mutation=0, P0/P1=0`,
+        next: `✅ **GO → ${nextStep}**` };
 }
 
 export default StressReporter;
