@@ -225,6 +225,12 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
         bookings_docs.append({
             "id": bid, "tenant_id": stress_tid,
             "guest_id": gid, "room_id": rid,
+            # F8A #161: bookings list responses must carry folio_id so stress
+            # specs that fall back through `/api/pms/bookings` can target the
+            # real folio. Without this, tests sent `folio_id=booking.id` and
+            # FolioHardeningService.post_charge returned `{success:false,
+            # error:"Folio not found"}` → 100% s400 (drill_reports/20260514_*).
+            "folio_id": fid,
             "check_in": check_in.isoformat(),
             "check_out": check_out.isoformat(),
             "nights": stay_nights,
