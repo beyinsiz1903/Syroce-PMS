@@ -88,5 +88,16 @@ if [ -f "$(dirname "$0")/../.local/.stress_env" ]; then
 fi
 
 cd "$(dirname "$0")"
-PORT="${PORT:-8000}"
-exec python -m uvicorn server:app --host 0.0.0.0 --port "$PORT"
+# Production deployment expects port 5000 (mapped to external 80).
+# Local dev keeps 8000 (the Backend API workflow's waitForPort).
+if [ -n "$REPLIT_DEPLOYMENT" ]; then
+  PORT="${PORT:-5000}"
+else
+  PORT="${PORT:-8000}"
+fi
+# Use explicit .pythonlibs python to avoid PATH ambiguity in deployment.
+PYTHON_BIN="${PYTHON_BIN:-/home/runner/workspace/.pythonlibs/bin/python}"
+if [ ! -x "$PYTHON_BIN" ]; then
+  PYTHON_BIN="python"
+fi
+exec "$PYTHON_BIN" -m uvicorn server:app --host 0.0.0.0 --port "$PORT"
