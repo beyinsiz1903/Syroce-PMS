@@ -92,6 +92,10 @@ cd "$(dirname "$0")"
 # Local dev keeps 8000 (the Backend API workflow's waitForPort).
 if [ -n "$REPLIT_DEPLOYMENT" ]; then
   PORT="${PORT:-5000}"
+  # Replit autoscale port-open timeout (~60s) is shorter than our heavy
+  # bootstrap (control plane + outbox + event bus + CM indexes). Defer
+  # bootstrap to a background task so uvicorn opens the port immediately.
+  export DEFER_STARTUP_BOOTSTRAP="${DEFER_STARTUP_BOOTSTRAP:-1}"
 else
   PORT="${PORT:-8000}"
 fi

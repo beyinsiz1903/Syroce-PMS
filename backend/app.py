@@ -39,13 +39,34 @@ def register_shutdown(fn):
 async def _lifespan(application: FastAPI):
     import logging as _logging
     _log = _logging.getLogger(__name__)
-    for cb in list(_startup_callbacks):
-        try:
-            await cb()
-        except Exception as _e:
-            _log.exception("startup callback %s failed: %s", getattr(cb, "__name__", cb), _e)
-            raise
+
+    # Replit autoscale (and similar PaaS) wait ~60s for the listening port
+    # to open. Our bootstrap (control plane indexes, channel manager init,
+    # outbox workers, event bus, etc.) takes longer than that, so when
+    # DEFER_STARTUP_BOOTSTRAP=1 we fire the callbacks in a background task
+    # and yield immediately — the HTTP port opens right away while heavy
+    # init continues asynchronously. Endpoints that depend on a specific
+    # subsystem already check readiness/raise on uninitialised state, so
+    # early requests fail-closed rather than serve partial results.
+    defer = os.getenv("DEFER_STARTUP_BOOTSTRAP", "").lower() in ("1", "true", "yes")
+
+    async def _run_startup_callbacks():
+        for cb in list(_startup_callbacks):
+            try:
+                await cb()
+            except Exception as _e:
+                _log.exception("startup callback %s failed: %s", getattr(cb, "__name__", cb), _e)
+                if not defer:
+                    raise
+
+    if defer:
+        application.state._bootstrap_task = asyncio.create_task(_run_startup_callbacks())
+        _log.warning("DEFER_STARTUP_BOOTSTRAP=1 — bootstrap running in background; port will open immediately")
+    else:
+        await _run_startup_callbacks()
+
     yield
+
     for cb in list(_shutdown_callbacks):
         try:
             await cb()
