@@ -350,7 +350,7 @@ async def stress_seed(
     )
     factory_ms = round((time.perf_counter() - t_factory_start) * 1000, 1)
 
-    counts = {c: 0 for c in STRESS_COLLECTIONS}
+    counts = dict.fromkeys(STRESS_COLLECTIONS, 0)
 
     t_insert_start = time.perf_counter()
     with tenant_context(stress_tid):
@@ -411,8 +411,8 @@ async def stress_external_calls_status(
       (a) `dry_run_enforced`: backend dispatcher env doğrulaması (env yoksa false),
       (b) `external_calls_made`: stress_tid-scoped outbox satırları (gerçek runtime).
     """
-    import os
     from core.database import db, sysdb
+
     stress_tid = _stress_tid()
     gates = _gates(stress_tid)
     calls: list[dict] = []
