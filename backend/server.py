@@ -403,11 +403,20 @@ except Exception as _sm_err:
 
 # GraphQL
 try:
+    from fastapi import Depends
     from strawberry.fastapi import GraphQLRouter
 
     from graphql_api.schema import schema
 
-    graphql_app = GraphQLRouter(schema, context_getter=lambda: {"db": db, "cache": None, "materialized_views": None})
+    async def _graphql_context_getter(
+        _current_user=Depends(get_current_user),
+    ) -> dict:
+        # get_current_user enforces: access-token-only (rejects refresh tokens),
+        # JTI revocation, tokens_invalid_before, user existence, and tenant
+        # consistency. Any failure raises HTTP 401 before a resolver runs.
+        return {"db": db, "cache": None, "materialized_views": None}
+
+    graphql_app = GraphQLRouter(schema, context_getter=_graphql_context_getter)
     app.include_router(graphql_app, prefix="/api/graphql", tags=["graphql"])
 except Exception as _gql_err:
     logger.warning("GraphQL router skipped: %s", _gql_err)
