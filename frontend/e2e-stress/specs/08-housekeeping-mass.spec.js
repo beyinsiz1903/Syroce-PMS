@@ -146,7 +146,8 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
                 `${accepted}/${oooTargets.length} OOO odaya walk-in başarılı oldu. front_desk_service.walk_in OOO room status guard kırık. Detay: ${JSON.stringify(acceptedDetail)}`);
         }
         expect(guardStatus, `ooo_booking_guard FAIL: accepted=${accepted}/${oooTargets.length} samples=${JSON.stringify(acceptedDetail)}`).not.toBe('FAIL');
-        await assertNoExternalCallsPostBatch(testInfo, MOD, 'ooo_booking_guard_5', stressState, request, stressTokens.pilot_token);
+        const extOk1 = await assertNoExternalCallsPostBatch(testInfo, MOD, 'ooo_booking_guard_5', stressState, request, stressTokens.pilot_token);
+        expect(extOk1, 'ooo_booking_guard_5 sonrası external_calls invariant ihlal').toBe(true);
     });
 
     test('E) Mobile viewport smoke (390x844): tek HK transition + summary', async ({ browser, stressTokens }, testInfo) => {
@@ -317,7 +318,8 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         // browser context ayrı request worker fixture'ından bağımsız; helper tek GET atar.
         // request fixture'ı bu test scope'unda yok → browser.newContext().request kullan.
         const checkCtx = await browser.newContext({ baseURL: process.env.E2E_BASE_URL });
-        await assertNoExternalCallsPostBatch(testInfo, MOD, 'fe_render_tti', stressState, checkCtx.request, stressTokens.pilot_token);
+        const extOk2 = await assertNoExternalCallsPostBatch(testInfo, MOD, 'fe_render_tti', stressState, checkCtx.request, stressTokens.pilot_token);
+        expect(extOk2, 'fe_render_tti sonrası external_calls invariant ihlal').toBe(true);
         await checkCtx.close();
     });
 

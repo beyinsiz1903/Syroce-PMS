@@ -139,8 +139,9 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
                 'Same-day turnover walk-in akışı başarısız',
                 `${target.length} walk-in denemesi 0 başarı. Modes: ${JSON.stringify(failModes)}. Olası sebep: oda hala occupied state'te (checkout RNL release etmemiş).`);
         }
-        // Post-batch external-call invariant re-assert via runtime endpoint (architect tur-3).
-        await assertNoExternalCallsPostBatch(testInfo, MOD, 'walk_in_50', stressState, request, stressTokens.pilot_token);
+        // Post-batch external-call invariant re-assert via runtime endpoint (architect tur-3+5: hard expect).
+        const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'walk_in_50', stressState, request, stressTokens.pilot_token);
+        expect(extOk, 'walk_in_50 sonrası external_calls invariant ihlal').toBe(true);
     });
 
     test('D) Pilot drift: spec sonu pilot bookings sayımı = baseline', async ({ request, stressTokens }, testInfo) => {

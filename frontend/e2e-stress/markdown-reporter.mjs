@@ -41,6 +41,7 @@ class StressReporter {
         this.results.push({
             title: test.titlePath().slice(1).join(' › '),
             file: test.location?.file ? path.relative(REPO_ROOT, test.location.file) : '',
+            line: test.location?.line ?? null,
             project: test.parent?.project?.()?.name || '',
             outcome: result.status,
             durationMs: result.duration,
@@ -191,7 +192,7 @@ class StressReporter {
                 md += `### ⚖️ Wrong Business Rule (${businessRuleFindings.length})\n`;
                 for (const f of businessRuleFindings) {
                     const testRow = this.results.find((r) => r.title === f._test);
-                    const fileRef = testRow?.file ? `\`${testRow.file}\`` : '_(test ref yok)_';
+                    const fileRef = testRow?.file ? `\`${testRow.file}${testRow.line ? `:${testRow.line}` : ''}\`` : '_(test ref yok)_';
                     md += `- **[${f.severity}] [${f.module}] ${f.title}** — ${fileRef}\n  - Test: \`${f._test}\`\n  - Repro: ${f.detail || '-'}\n`;
                 }
                 md += '\n';
@@ -200,7 +201,7 @@ class StressReporter {
                 md += `### 🖱️ Broken Buttons / UI (${buttonFindings.length})\n`;
                 for (const f of buttonFindings) {
                     const testRow = this.results.find((r) => r.title === f._test);
-                    const fileRef = testRow?.file ? `\`${testRow.file}\`` : '_(test ref yok)_';
+                    const fileRef = testRow?.file ? `\`${testRow.file}${testRow.line ? `:${testRow.line}` : ''}\`` : '_(test ref yok)_';
                     md += `- **[${f.severity}] [${f.module}] ${f.title}** — ${fileRef}\n  - Test: \`${f._test}\`\n  - Repro: ${f.detail || '-'}\n`;
                 }
                 md += '\n';

@@ -108,8 +108,9 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
             }
             expect(transferStatus, 'post_move_state_transfer FAIL — RNL transfer kırık').not.toBe('FAIL');
         }
-        // Post-batch external-call invariant re-assert (runtime endpoint).
-        await assertNoExternalCallsPostBatch(testInfo, MOD, 'positive_room_move_50', stressState, request, stressTokens.pilot_token);
+        // Post-batch external-call invariant re-assert (runtime endpoint, hard expect — architect tur-5).
+        const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'positive_room_move_50', stressState, request, stressTokens.pilot_token);
+        expect(extOk, 'positive_room_move_50 sonrası external_calls invariant ihlal').toBe(true);
     });
 
     test('B) Negative — occupied target reject', async ({ request, stressTokens }, testInfo) => {
@@ -179,8 +180,12 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
         const checkedIn = bookings.filter((b) => b.status === 'checked_in');
         if (checkedIn.length < 2) { rec(testInfo, { module: MOD, step: 'race', status: 'SKIP' }); return; }
         const a = checkedIn[0], b = checkedIn[1];
-        const candidate = rooms.find((r) => r.id !== a.room_id && r.id !== b.room_id);
-        if (!candidate) { rec(testInfo, { module: MOD, step: 'race', status: 'SKIP', note: 'no free target' }); return; }
+        // Architect tur-5: race target ZORUNLU vacant + a/b dışı olmalı; aksi halde
+        // 1 başarı/1 reject kontratı doğal occupancy reject ile karışır → REVIEW maskelenir.
+        const occupiedRoomIds = new Set(checkedIn.map((bk) => bk.room_id).filter(Boolean));
+        const candidate = rooms.find((r) => !occupiedRoomIds.has(r.id) && r.id !== a.room_id && r.id !== b.room_id);
+        if (!candidate) { rec(testInfo, { module: MOD, step: 'race', status: 'SKIP',
+            note: `no guaranteed-vacant target (occupied=${occupiedRoomIds.size}/${rooms.length}) — race kontratı deterministic değil` }); return; }
         const [r1, r2] = await Promise.all([
             callTimed(request, 'post', '/api/pms-core/room-move',
                 { booking_id: a.id, new_room_id: candidate.id, reason: 'F8A race A' }, stressTokens.stress_token),
