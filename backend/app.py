@@ -246,9 +246,22 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
     # second and later calls are served from memory.
     from fastapi.openapi.utils import get_openapi as _get_openapi
 
+    # Task-170 (Bug AZ) — paths that must not appear in the public schema when
+    # setup/debug endpoints are disabled.  The routes themselves return 404 via
+    # _enforce_setup_enabled(), but they were still listed in the OpenAPI schema,
+    # giving attackers a ready inventory of super-admin elevation and cross-tenant
+    # user-listing endpoints.  Filter them out of the generated schema whenever
+    # ENABLE_SETUP_ENDPOINTS != "1" so their existence is not disclosed.
+    _SETUP_HIDDEN_PATHS = (
+        "/api/setup/make-super-admin",
+        "/api/setup/make-me-super-admin",
+        "/api/admin/quick-super-admin",
+        "/api/admin/list-all-users-debug",
+    )
+
     def _cached_openapi():
         if application.openapi_schema is None:
-            application.openapi_schema = _get_openapi(
+            schema = _get_openapi(
                 title=application.title,
                 version=application.version,
                 description=application.description,
@@ -256,6 +269,13 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
                 tags=application.openapi_tags,
                 servers=application.servers,
             )
+            if os.environ.get("ENABLE_SETUP_ENDPOINTS", "").strip() != "1":
+                schema["paths"] = {
+                    path: ops
+                    for path, ops in schema.get("paths", {}).items()
+                    if path not in _SETUP_HIDDEN_PATHS
+                }
+            application.openapi_schema = schema
         return application.openapi_schema
 
     application.openapi = _cached_openapi  # type: ignore[assignment]

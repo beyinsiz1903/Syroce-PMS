@@ -1773,17 +1773,38 @@ async def reset_password_by_token(payload: dict, request: Request):
     return {"success": True, "message": "Şifreniz başarıyla güncellendi."}
 
 @router.post("/auth/reset-password")
-async def reset_password(data: ResetPasswordRequest):
+async def reset_password(data: ResetPasswordRequest, request: Request):
     """Şifre sıfırlama kodunu doğrula ve yeni şifre belirle"""
+    # Task-170 (Bug AY) — apply per-IP and per-email throttles before any DB
+    # work.  The 6-digit numeric code has only 900 000 possibilities; without
+    # these guards an attacker can sweep the full space within the 30-minute
+    # expiry window using parallel requests.
+    from security.auth_throttle import (
+        RESET_CODE_EMAIL,
+        RESET_CODE_IP,
+        client_ip,
+        enforce,
+        normalize_identity,
+    )
+    await enforce(RESET_CODE_IP, f"ip:{client_ip(request)}", "sıfırlama denemesi")
+    await enforce(RESET_CODE_EMAIL, f"rset:{normalize_identity(data.email)}", "sıfırlama denemesi")
+
     if not data.new_password or len(data.new_password) < 6:
         raise HTTPException(status_code=400, detail="Şifre en az 6 karakter olmalı")
 
-    # Sıfırlama kodunu bul
-    reset = await db.password_reset_codes.find_one({
-        'email': data.email,
-        'code': data.code,
-        'used': False
-    })
+    # Task-170 (Bug AY) — look up by email only (NOT by code) so that wrong
+    # guesses can be counted against the stored record.  Looking up by code
+    # directly would return no-match on wrong guesses and never increment the
+    # counter, leaving a gap for multi-IP distributed brute-force.
+    # Sort by created_at descending so that in the rare concurrent race where
+    # multiple un-used reset records exist for the same email (e.g. user hit
+    # forgot-password twice in quick succession), we always operate on the
+    # most recently issued code — matching what was sent in the last email.
+    _MAX_RESET_ATTEMPTS = 5
+    reset = await db.password_reset_codes.find_one(
+        {'email': data.email, 'used': False},
+        sort=[('created_at', -1)],
+    )
 
     if not reset:
         raise HTTPException(status_code=400, detail="Geçersiz veya kullanılmış sıfırlama kodu")
@@ -1795,6 +1816,39 @@ async def reset_password(data: ResetPasswordRequest):
     if datetime.now(UTC) > expires_at:
         await db.password_reset_codes.delete_one({'_id': reset['_id']})
         raise HTTPException(status_code=400, detail="Sıfırlama kodu süresi dolmuş. Lütfen yeni kod isteyin")
+
+    # Task-170 (Bug AY) — per-record attempt counter.  After _MAX_RESET_ATTEMPTS
+    # wrong guesses the record is marked used so it cannot be retried even from
+    # a fresh IP that has not yet hit the sliding-window throttle above.
+    failed_attempts = reset.get('failed_attempts', 0)
+    if failed_attempts >= _MAX_RESET_ATTEMPTS:
+        await db.password_reset_codes.update_one(
+            {'_id': reset['_id']},
+            {'$set': {'used': True, 'used_at': datetime.now(UTC)}}
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Çok fazla hatalı deneme. Lütfen yeni sıfırlama kodu isteyin."
+        )
+
+    # Constant-time comparison to avoid timing oracle on the code value.
+    import secrets as _secrets_mod
+    if not _secrets_mod.compare_digest(str(reset.get('code', '')), str(data.code)):
+        new_count = failed_attempts + 1
+        if new_count >= _MAX_RESET_ATTEMPTS:
+            await db.password_reset_codes.update_one(
+                {'_id': reset['_id']},
+                {'$set': {'used': True, 'used_at': datetime.now(UTC), 'failed_attempts': new_count}}
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="Çok fazla hatalı deneme. Lütfen yeni sıfırlama kodu isteyin."
+            )
+        await db.password_reset_codes.update_one(
+            {'_id': reset['_id']},
+            {'$inc': {'failed_attempts': 1}}
+        )
+        raise HTTPException(status_code=400, detail="Geçersiz veya kullanılmış sıfırlama kodu")
 
     # Kullanıcıyı bul
     user = await db.users.find_one(build_user_email_query(data.email))

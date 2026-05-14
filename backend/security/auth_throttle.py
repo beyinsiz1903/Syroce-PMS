@@ -145,6 +145,18 @@ REGISTER_EMAIL = SlidingWindowThrottle(max_requests=1, window_seconds=600)
 # centuries.
 VERIFY_CODE_EMAIL = SlidingWindowThrottle(max_requests=5, window_seconds=900)
 
+# Task-170 (Bug AY) — `/auth/reset-password` (code-based legacy path) had NO
+# throttle, making the 6-digit numeric code (900 000 possibilities) trivially
+# brute-forceable within the 30-minute expiry window via online spraying.
+# Two sliding-window layers here plus a per-record attempt counter enforced
+# inside the router (max 5 wrong guesses → record invalidated) combine to
+# make full-space enumeration infeasible even across distributed attackers:
+#   - RESET_CODE_IP:    10 attempts / 60 s  — kills per-IP parallel spray.
+#   - RESET_CODE_EMAIL: 10 attempts / 30 min — matches the code expiry window,
+#                       caps total guesses per issued code to ≤10 across all IPs.
+RESET_CODE_IP = SlidingWindowThrottle(max_requests=10, window_seconds=60)
+RESET_CODE_EMAIL = SlidingWindowThrottle(max_requests=10, window_seconds=1800)
+
 
 async def enforce(throttle: SlidingWindowThrottle, key: str, label: str = "istek") -> None:
     """Raise 429 with a Turkish, non-technical message and Retry-After header.
