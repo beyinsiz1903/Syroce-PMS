@@ -49,7 +49,10 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             if (r.ok) ok++;
             else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
         }
-        rec(testInfo, { module: MOD, step: 'charge_post_batch', status: ok > sample.length * 0.5 ? 'PASS' : 'REVIEW',
+        // Hard-fail when destructive batch is fully broken (architect feedback): a 100/100 s400
+        // means folio contract is broken, must not be hidden as REVIEW. Partial = REVIEW.
+        const chargeStatus = ok === 0 ? 'FAIL' : (ok > sample.length * 0.5 ? 'PASS' : 'REVIEW');
+        rec(testInfo, { module: MOD, step: 'charge_post_batch', status: chargeStatus,
             endpoint: '/api/pms-core/folio/charge',
             note: `n=${sample.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)}` });
         recPerf(testInfo, MOD, 'folio_charge', samples, ok > sample.length * 0.5);
@@ -78,7 +81,8 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             if (r.ok) ok++;
             else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
         }
-        rec(testInfo, { module: MOD, step: 'payment_post_batch', status: ok > sample.length * 0.5 ? 'PASS' : 'REVIEW',
+        const paymentStatus = ok === 0 ? 'FAIL' : (ok > sample.length * 0.5 ? 'PASS' : 'REVIEW');
+        rec(testInfo, { module: MOD, step: 'payment_post_batch', status: paymentStatus,
             endpoint: '/api/pms-core/folio/payment',
             note: `n=${sample.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} method=cash (DRY-RUN, no Stripe)` });
         recPerf(testInfo, MOD, 'folio_payment', samples, ok > sample.length * 0.5);
@@ -98,7 +102,7 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             if (r.ok) ok++;
             else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
         }
-        rec(testInfo, { module: MOD, step: 'folio_split_batch', status: ok > 0 ? 'PASS' : 'REVIEW',
+        rec(testInfo, { module: MOD, step: 'folio_split_batch', status: ok > 0 ? 'PASS' : 'FAIL',
             endpoint: '/api/pms-core/folio/split-by-amount',
             note: `n=${sample.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)}` });
         recPerf(testInfo, MOD, 'folio_split', samples, ok > 0);

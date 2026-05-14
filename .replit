@@ -50,7 +50,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "E2E_ALLOW_DESTRUCTIVE_STRESS=true E2E_EXTERNAL_DRY_RUN=true E2E_STRESS_TENANT_ID=23377306-a501-4232-adc8-8aea50e243c0 PILOT_TENANT_ID=5bad4a34-6ee3-4566-9053-741b7375a9cf bash backend/start.sh"
+args = "bash backend/start.sh"
 waitForPort = 8000
 
 [[workflows.workflow]]

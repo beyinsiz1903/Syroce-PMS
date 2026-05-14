@@ -45,7 +45,11 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
             if (r.ok) ok++;
             else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
         }
-        rec(testInfo, { module: MOD, step: 'positive_room_move', status: ok > 0 ? 'PASS' : 'REVIEW',
+        // Hard-fail when no positive move succeeds AND we had ≥5 in-flight bookings to attempt
+        // (architect feedback: business outcome must be enforced, not just observed). Below 5
+        // attempts → SKIP/REVIEW (insufficient seed). Otherwise 0/N FAIL = real bug.
+        const moveStatus = (sample.length >= 5 && ok === 0) ? 'FAIL' : (ok > 0 ? 'PASS' : 'REVIEW');
+        rec(testInfo, { module: MOD, step: 'positive_room_move', status: moveStatus,
             endpoint: '/api/pms-core/room-move',
             note: `n=${target.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} (hedef oda dolu/OOO ise reject normal)` });
         recPerf(testInfo, MOD, 'room_move', samples, true);
