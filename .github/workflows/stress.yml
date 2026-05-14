@@ -73,6 +73,7 @@ jobs:
             - uses: actions/checkout@v5
 
             - name: Pre-flight — required secrets present
+              id: preflight
               # Hard-fail before we install anything if any required secret is
               # missing. Cheaper to fail here than after a 5-min install.
               run: |
@@ -100,18 +101,22 @@ jobs:
                   cache-dependency-path: frontend/yarn.lock
 
             - name: Install frontend deps
+              id: install_deps
               run: cd frontend && yarn install --ignore-engines --frozen-lockfile
 
             - name: Install Playwright browsers
+              id: install_browsers
               run: cd frontend && yarn e2e:install
 
             - name: Run F8A stress suite (full one-shot)
+              id: run_stress
               # No `-g` filter, no chunking — entire suite (00..08, 26 tests)
               # runs sequentially in a single Playwright process. workers=1 is
               # already enforced by playwright.stress.config.js.
               run: cd frontend && yarn test:e2e:stress
 
             - name: Verify drill report verdict (hard-fail on NO-GO)
+              id: verdict_check
               # Belt-and-suspenders: the markdown reporter writes a verdict row
               # based on counters + teardown snapshot + sevAgg. We grep for it
               # and abort if NO-GO somehow slipped past Playwright's exit code
@@ -122,22 +127,120 @@ jobs:
               run: |
                   set -euo pipefail
                   report=$(ls -1t docs/drill_reports/*_stress_${STRESS_REPORT_TAG}.md 2>/dev/null | head -n1 || true)
+                  verdict="UNKNOWN"
+                  verdict_line=""
+                  if [ -n "$report" ]; then
+                      echo "Drill report: $report"
+                      verdict_line=$(grep -E '^\| Final verdict \|' "$report" | head -n1 || true)
+                      echo "Verdict line: $verdict_line"
+                      if echo "$verdict_line" | grep -q 'NO-GO'; then
+                          verdict="NO-GO"
+                      elif echo "$verdict_line" | grep -q 'GO WITH WATCH'; then
+                          verdict="GO WITH WATCH"
+                      elif echo "$verdict_line" | grep -qE '\bGO\b'; then
+                          verdict="GO"
+                      fi
+                  fi
+                  # Persist for downstream notify step (runs even on failure).
+                  {
+                      echo "verdict=$verdict"
+                      echo "report_path=${report:-}"
+                      echo "verdict_line<<VERDICT_EOF"
+                      echo "${verdict_line}"
+                      echo "VERDICT_EOF"
+                  } >> "$GITHUB_OUTPUT"
                   if [ -z "$report" ]; then
                       echo "::error::No stress drill report found for tag=${STRESS_REPORT_TAG}"
                       exit 1
                   fi
-                  echo "Drill report: $report"
-                  verdict_line=$(grep -E '^\| Final verdict \|' "$report" || true)
-                  echo "Verdict line: $verdict_line"
-                  if echo "$verdict_line" | grep -q 'NO-GO'; then
+                  if [ "$verdict" = "NO-GO" ]; then
                       echo "::error::Stress verdict is NO-GO — see $report"
                       exit 1
                   fi
-                  if ! echo "$verdict_line" | grep -qE 'GO( WITH WATCH)?'; then
+                  if [ "$verdict" != "GO" ] && [ "$verdict" != "GO WITH WATCH" ]; then
                       echo "::error::Verdict line missing or unparseable in $report"
                       exit 1
                   fi
-                  echo "✓ Verdict gate passed"
+                  echo "✓ Verdict gate passed ($verdict)"
+
+            - name: Notify Slack on failure / NO-GO
+              # Task #164 — gece cron'unda fail olduğunda commit author'ına atılan
+              # GH Actions varsayılan e-postası anlamsız (cron run'da author=last
+              # pusher); pilot ekibi sabaha kadar uyarısız kalmasın diye Slack'e
+              # explicit POST atıyoruz. `if: failure()` hem Playwright exit≠0
+              # hem `verdict_check` step'inin NO-GO abort'unu hem de
+              # pre-flight/install fail'lerini kapsar. SLACK_WEBHOOK_URL secret'i
+              # set edilmemişse step skip olur (notify yokluğu job'ı battırmaz).
+              if: failure() && env.SLACK_WEBHOOK_URL != ''
+              env:
+                  SLACK_WEBHOOK_URL: ${{ secrets.STRESS_SLACK_WEBHOOK_URL }}
+                  PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
+                  INSTALL_DEPS_OUTCOME: ${{ steps.install_deps.outcome }}
+                  INSTALL_BROWSERS_OUTCOME: ${{ steps.install_browsers.outcome }}
+                  RUN_STRESS_OUTCOME: ${{ steps.run_stress.outcome }}
+                  VERDICT_CHECK_OUTCOME: ${{ steps.verdict_check.outcome }}
+                  VERDICT: ${{ steps.verdict_check.outputs.verdict || 'UNKNOWN' }}
+                  VERDICT_LINE: ${{ steps.verdict_check.outputs.verdict_line }}
+                  REPORT_PATH: ${{ steps.verdict_check.outputs.report_path }}
+                  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                  TRIGGER: ${{ github.event_name }}
+              continue-on-error: true
+              run: |
+                  set -euo pipefail
+                  failed_steps=""
+                  for entry in \
+                      "Pre-flight=${PREFLIGHT_OUTCOME}" \
+                      "Install deps=${INSTALL_DEPS_OUTCOME}" \
+                      "Install Playwright browsers=${INSTALL_BROWSERS_OUTCOME}" \
+                      "Run F8A stress suite=${RUN_STRESS_OUTCOME}" \
+                      "Verify drill report verdict=${VERDICT_CHECK_OUTCOME}"; do
+                      name="${entry%%=*}"
+                      outcome="${entry#*=}"
+                      if [ "$outcome" = "failure" ]; then
+                          failed_steps="${failed_steps}• ${name}\n"
+                      fi
+                  done
+                  if [ -z "$failed_steps" ]; then
+                      failed_steps="• (unknown — see run log)\n"
+                  fi
+                  report_display="${REPORT_PATH:-(no drill report produced)}"
+                  verdict_display="${VERDICT_LINE:-(verdict line not captured)}"
+                  text=$(printf ':rotating_light: *F8A Stress NIGHTLY FAILED* (%s)\n*Verdict:* %s\n*Failed step(s):*\n%b*Verdict line:* `%s`\n*Drill report:* %s\n*Run:* %s\nOpen the run, download the *stress-drill-report* artifact for the full markdown.' \
+                      "$TRIGGER" "$VERDICT" "$failed_steps" "$verdict_display" "$report_display" "$RUN_URL")
+                  payload=$(jq -nc --arg t "$text" '{text:$t}')
+                  http_code=$(curl -sS -o /tmp/slack_resp -w '%{http_code}' \
+                      -X POST -H 'Content-Type: application/json' \
+                      --data "$payload" \
+                      "$SLACK_WEBHOOK_URL" || true)
+                  echo "Slack response: HTTP $http_code"
+                  cat /tmp/slack_resp || true
+                  echo
+
+            - name: Notify Slack on GO WITH WATCH (low priority)
+              # Opsiyonel düşük-öncelik uyarı: job geçti ama verdict GO WITH WATCH;
+              # ekip "yeşil ama izlemeli" kalemleri gözden kaçırmasın diye aynı
+              # webhook'a daha yumuşak bir mesaj atıyoruz. Tamamen optional —
+              # webhook secret yoksa skip; istenmezse webhook'u boş bırak.
+              if: success() && steps.verdict_check.outputs.verdict == 'GO WITH WATCH' && env.SLACK_WEBHOOK_URL != ''
+              env:
+                  SLACK_WEBHOOK_URL: ${{ secrets.STRESS_SLACK_WEBHOOK_URL }}
+                  VERDICT_LINE: ${{ steps.verdict_check.outputs.verdict_line }}
+                  REPORT_PATH: ${{ steps.verdict_check.outputs.report_path }}
+                  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                  TRIGGER: ${{ github.event_name }}
+              continue-on-error: true
+              run: |
+                  set -euo pipefail
+                  text=$(printf ':warning: *F8A Stress nightly: GO WITH WATCH* (%s)\n*Verdict line:* `%s`\n*Drill report:* %s\n*Run:* %s\nJob geçti — fakat watch-list kalemleri için drill report'"'"'un Findings bölümünü kontrol edin.' \
+                      "$TRIGGER" "${VERDICT_LINE:-(missing)}" "${REPORT_PATH:-(missing)}" "$RUN_URL")
+                  payload=$(jq -nc --arg t "$text" '{text:$t}')
+                  http_code=$(curl -sS -o /tmp/slack_resp -w '%{http_code}' \
+                      -X POST -H 'Content-Type: application/json' \
+                      --data "$payload" \
+                      "$SLACK_WEBHOOK_URL" || true)
+                  echo "Slack response: HTTP $http_code"
+                  cat /tmp/slack_resp || true
+                  echo
 
             - name: Upload Playwright HTML report
               if: always()
