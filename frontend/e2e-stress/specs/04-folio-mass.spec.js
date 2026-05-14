@@ -1,6 +1,6 @@
 // F8A § 04 — Folio mass: charge, dry-run payment, split, audit, closed-folio guard.
 import { test, expect, rec } from '../fixtures/stress-context.js';
-import { fetchAllByPrefix, callTimed, recPerf, recFinding, pilotBookingsCount } from '../fixtures/stress-helpers.js';
+import { fetchAllByPrefix, callTimed, recPerf, recFinding, pilotBookingsCount, assertNoExternalCallsPostBatch } from '../fixtures/stress-helpers.js';
 
 const MOD = 'folio-mass';
 
@@ -111,6 +111,61 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             note: `n=${sample.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)}` });
         recPerf(testInfo, MOD, 'folio_split', samples, ok > 0);
         expect(splitStatus, `folio_split_batch FAIL: n=${sample.length} ok=${ok} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
+    });
+
+    test('C2) Total mismatch detector: sum(charges) == folio.total (10 folio)', async ({ request, stressTokens, stressState }, testInfo) => {
+        // Architect tur-3 feedback: brief'in "folio total reconciliation" gereksinimi.
+        // Her folio için audit endpoint'inden veya direkt folio GET'inden charges
+        // listesini al, sum hesapla, folio.total ile karşılaştır. ≤0.01 TL fark tolere.
+        if (folios.length < 1 && bookings.length < 1) { rec(testInfo, { module: MOD, step: 'reconcile_sample', status: 'SKIP' }); return; }
+        const sample = (folios.length > 0 ? folios : bookings).slice(0, 10);
+        let checked = 0, ok = 0, mismatch = 0, fetchFail = 0;
+        const mismatchDetail = [];
+        for (const it of sample) {
+            const fid = it.folio_id || it.id;
+            // Try canonical folio detail endpoint first, then audit fallback.
+            let folioBody = null;
+            const detailR = await callTimed(request, 'get', `/api/pms-core/folio/${fid}`, undefined, stressTokens.stress_token);
+            if (detailR.ok) folioBody = detailR.body;
+            else {
+                const auditR = await callTimed(request, 'get', `/api/pms-core/folio/audit/${fid}`, undefined, stressTokens.stress_token);
+                if (auditR.ok) folioBody = auditR.body;
+            }
+            if (!folioBody) { fetchFail++; continue; }
+            checked++;
+            const charges = folioBody.charges || folioBody.line_items || folioBody.items || [];
+            const payments = folioBody.payments || [];
+            const total = Number(folioBody.total ?? folioBody.balance_total ?? folioBody.total_amount ?? 0);
+            const sumCharges = Array.isArray(charges)
+                ? charges.reduce((acc, c) => acc + Number(c.amount ?? c.total ?? c.gross_amount ?? 0), 0)
+                : 0;
+            const sumPayments = Array.isArray(payments)
+                ? payments.reduce((acc, p) => acc + Number(p.amount ?? 0), 0)
+                : 0;
+            // total convention: backend may store gross-charges OR net (charges-payments).
+            // Accept either; mismatch only if neither matches within 0.01 tolerance.
+            const matchGross = Math.abs(sumCharges - total) <= 0.01;
+            const matchNet = Math.abs((sumCharges - sumPayments) - total) <= 0.01;
+            if (matchGross || matchNet) ok++;
+            else {
+                mismatch++;
+                if (mismatchDetail.length < 5) {
+                    mismatchDetail.push({ folio_id: fid, sum_charges: sumCharges, sum_payments: sumPayments, total, delta_gross: +(sumCharges - total).toFixed(2) });
+                }
+            }
+        }
+        const reconcileStatus = checked === 0 ? 'REVIEW' : (mismatch === 0 ? 'PASS' : 'FAIL');
+        rec(testInfo, { module: MOD, step: 'folio_total_reconcile', status: reconcileStatus,
+            endpoint: '/api/pms-core/folio/{id}',
+            note: `n=${sample.length} fetched=${checked} ok=${ok} mismatch=${mismatch} fetch_fail=${fetchFail} ${mismatch > 0 ? `samples=${JSON.stringify(mismatchDetail)}` : ''}` });
+        if (mismatch > 0) {
+            recFinding(testInfo, 'P1', MOD,
+                'Folio total mismatch — sum(charges) ≠ folio.total',
+                `${mismatch}/${checked} folio'da gross-veya-net reconciliation 0.01 toleransı aştı. Folio aggregate update transaction'ı kırık olabilir. Detay: ${JSON.stringify(mismatchDetail)}`);
+        }
+        expect(reconcileStatus, `folio_total_reconcile FAIL: mismatch=${mismatch}/${checked} samples=${JSON.stringify(mismatchDetail)}`).not.toBe('FAIL');
+        // Post-batch external-call invariant re-assert.
+        assertNoExternalCallsPostBatch(testInfo, MOD, 'folio_reconcile_10', stressState);
     });
 
     test('D) Folio audit GET (5 folio)', async ({ request, stressTokens }, testInfo) => {

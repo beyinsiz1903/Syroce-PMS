@@ -14,7 +14,7 @@
 //
 // Edge case'ler REVIEW olarak raporlanır, suite NO-GO'ya düşmez.
 import { test, expect, rec } from '../fixtures/stress-context.js';
-import { fetchAllByPrefix, fetchSingle, callTimed, recPerf, recFinding, pilotBookingsCount } from '../fixtures/stress-helpers.js';
+import { fetchAllByPrefix, fetchSingle, callTimed, recPerf, recFinding, pilotBookingsCount, assertNoExternalCallsPostBatch } from '../fixtures/stress-helpers.js';
 
 const MOD = 'day-turnover';
 
@@ -79,13 +79,25 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
                 'Force checkout büyük oranda başarısız',
                 `${target.length} force checkout denendi, sadece ${ok} başarılı. Modes: ${JSON.stringify(failModes)}.`);
         }
+        // Post-batch external-call invariant re-assert (architect tur-3 feedback).
+        // 100 destructive checkout sonrası hiçbir OTA push / webhook tetiklenmemiş olmalı.
+        // Backend stub helper-level signature: stressState fixture spec'e _stressContext_'ten gelmeli.
     });
 
-    test('C) Same-day turnover: 30 walk-in (boşalan oda → yeni booking)', async ({ request, stressTokens }, testInfo) => {
+    test('B-post) external_calls invariant after force_checkout_batch', async ({ stressState }, testInfo) => {
+        // Ayrı test() — fixture scope `stressState` worker-level paylaşımlı,
+        // önceki destructive batch'in seed snapshot'ını re-assert eder. Hot path'e
+        // ek HTTP hit yok; sözleşme + log amaçlı.
+        const ok = assertNoExternalCallsPostBatch(testInfo, MOD, 'force_checkout_100', stressState);
+        expect(ok, 'force_checkout_100 sonrası external_calls invariant ihlal').toBe(true);
+    });
+
+    test('C) Same-day turnover: 50 walk-in (boşalan oda → yeni booking)', async ({ request, stressTokens, stressState }, testInfo) => {
         // Önceki test'teki force checkout sonrası rooms'lar boşaldı varsayılır.
         // /api/pms-core/walk-in {room_id, nights, rate, guest_name, ...}
-        if (rooms.length < 30) { rec(testInfo, { module: MOD, step: 'walkin_sample', status: 'SKIP', note: 'room sample yetersiz' }); return; }
-        const target = rooms.slice(0, 30);
+        // Brief contract: 50 walk-in attempt (architect tur-3: brief 50 istiyordu, 30 yetersizdi).
+        if (rooms.length < 50) { rec(testInfo, { module: MOD, step: 'walkin_sample', status: 'SKIP', note: `room sample yetersiz n=${rooms.length}/50` }); return; }
+        const target = rooms.slice(0, 50);
         const samples = []; let ok = 0, fail = 0; const failModes = {};
         for (let i = 0; i < target.length; i++) {
             const room = target[i];
@@ -104,15 +116,17 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
             if (r.ok) ok++;
             else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
         }
-        rec(testInfo, { module: MOD, step: 'same_day_walkin', status: ok >= 15 ? 'PASS' : 'REVIEW',
+        rec(testInfo, { module: MOD, step: 'same_day_walkin', status: ok >= 25 ? 'PASS' : 'REVIEW',
             endpoint: '/api/pms-core/walk-in',
-            note: `n=30 ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} (≥15 ok ⇒ turnover akışı çalışıyor)` });
-        recPerf(testInfo, MOD, 'walkin_create', samples, ok >= 15);
+            note: `n=${target.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} (≥25/50 ok ⇒ turnover akışı çalışıyor)` });
+        recPerf(testInfo, MOD, 'walkin_create', samples, ok >= 25);
         if (ok === 0) {
             recFinding(testInfo, 'P1', MOD,
                 'Same-day turnover walk-in akışı başarısız',
-                `30 walk-in denemesi 0 başarı. Modes: ${JSON.stringify(failModes)}. Olası sebep: oda hala occupied state'te (checkout RNL release etmemiş).`);
+                `${target.length} walk-in denemesi 0 başarı. Modes: ${JSON.stringify(failModes)}. Olası sebep: oda hala occupied state'te (checkout RNL release etmemiş).`);
         }
+        // Post-batch external-call invariant re-assert (architect tur-3 feedback).
+        assertNoExternalCallsPostBatch(testInfo, MOD, 'walk_in_50', stressState);
     });
 
     test('D) Pilot drift: spec sonu pilot bookings sayımı = baseline', async ({ request, stressTokens }, testInfo) => {

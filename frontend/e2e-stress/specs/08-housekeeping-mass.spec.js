@@ -1,6 +1,6 @@
 // F8A § 08 — Housekeeping mass: 500 oda render, 100 transition, 20 OOO, status counts.
 import { test, expect, rec } from '../fixtures/stress-context.js';
-import { fetchAllByPrefix, fetchSingle, callTimed, recPerf, recFinding, pilotBookingsCount } from '../fixtures/stress-helpers.js';
+import { fetchAllByPrefix, fetchSingle, callTimed, recPerf, recFinding, pilotBookingsCount, assertNoExternalCallsPostBatch } from '../fixtures/stress-helpers.js';
 
 const MOD = 'housekeeping';
 
@@ -109,6 +109,44 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
             recFinding(testInfo, 'P2', MOD, 'OOO işareti tutmuyor',
                 `20 OOO POST 0 başarı; rezervasyon-engelleme guard test edilemiyor.`);
         }
+    });
+
+    test('D2) OOO booking-guard: OOO odaya walk-in / new-booking attempt → reject', async ({ request, stressTokens, stressState }, testInfo) => {
+        // Architect tur-3 feedback: OOO işareti tutmuyorsa booking layer reject etmeli.
+        // D)'de işaretlenen OOO odalara walk-in dene → 4xx bekle. Kabul edilirse P0 finding.
+        if (rooms.length < 20) { rec(testInfo, { module: MOD, step: 'ooo_booking_guard', status: 'SKIP' }); return; }
+        const oooTargets = rooms.slice(rooms.length - 20).slice(0, 5); // D)'deki ilk 5 OOO odayı kullan
+        let rejected = 0, accepted = 0, other = 0;
+        const acceptedDetail = [];
+        for (let i = 0; i < oooTargets.length; i++) {
+            const room = oooTargets[i];
+            const ts = Date.now();
+            const r = await callTimed(request, 'post', '/api/pms-core/walk-in', {
+                room_id: room.id,
+                nights: 1, rate: 1000,
+                guest_name: `E2E_STRESS_F8A_OOOGuard_${ts}_${i}`,
+                guest_phone: `+9055500${String(i).padStart(5, '0')}`,
+                guest_email: `f8a-ooo-guard-${ts}-${i}@e2e-stress.example.com`,
+                guest_id_number: `E2EOG${ts}${i}`,
+                adults: 1,
+            }, stressTokens.stress_token);
+            if (r.status === 400 || r.status === 409 || r.status === 422 || r.status === 403) rejected++;
+            else if (r.ok) {
+                accepted++;
+                acceptedDetail.push({ room_id: room.id, status: r.status, body_excerpt: JSON.stringify(r.body).slice(0, 120) });
+            } else other++;
+        }
+        const guardStatus = oooTargets.length === 0 ? 'SKIP' : (accepted === 0 && rejected > 0 ? 'PASS' : (accepted > 0 ? 'FAIL' : 'REVIEW'));
+        rec(testInfo, { module: MOD, step: 'ooo_booking_guard', status: guardStatus,
+            endpoint: '/api/pms-core/walk-in (OOO target)',
+            note: `n=${oooTargets.length} rejected=${rejected} accepted=${accepted} other=${other} ${accepted > 0 ? `accepted_samples=${JSON.stringify(acceptedDetail)}` : ''}` });
+        if (accepted > 0) {
+            recFinding(testInfo, 'P0', MOD,
+                'OOO odaya yeni booking kabul edildi — overbook + maintenance risk',
+                `${accepted}/${oooTargets.length} OOO odaya walk-in başarılı oldu. front_desk_service.walk_in OOO room status guard kırık. Detay: ${JSON.stringify(acceptedDetail)}`);
+        }
+        expect(guardStatus, `ooo_booking_guard FAIL: accepted=${accepted}/${oooTargets.length} samples=${JSON.stringify(acceptedDetail)}`).not.toBe('FAIL');
+        assertNoExternalCallsPostBatch(testInfo, MOD, 'ooo_booking_guard_5', stressState);
     });
 
     test('E) Mobile viewport smoke (390x844): tek HK transition + summary', async ({ browser, stressTokens }, testInfo) => {

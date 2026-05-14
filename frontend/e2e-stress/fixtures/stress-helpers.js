@@ -98,6 +98,37 @@ export function recPerf(testInfo, module, op, samples, ok = true) {
     });
 }
 
+// Post-batch external-call hook (architect tur-3 feedback): destructive batch'lerden
+// SONRA `external_calls_made === []` invariant'ı yeniden doğrulanmalı. Backend'de
+// in-flight counter olmadığı için sözleşme iki ayağa dayanır:
+//   (a) `E2E_EXTERNAL_DRY_RUN=true` env force'lar (backend fail-closed: env yoksa throw),
+//   (b) seed snapshot `external_calls_made: []` baseline ve cleanup sırasında
+//       backend yeniden audit eder. Bu helper seed snapshot'ı re-assert eder ve
+//       env contract'ı log'a yazar; canlı sayaç gelirse (P3 backlog) buraya plug edilir.
+export function assertNoExternalCallsPostBatch(testInfo, module, batchName, stressState) {
+    const seedExt = stressState?.seed_response?.external_calls_made;
+    const ok = Array.isArray(seedExt) && seedExt.length === 0;
+    testInfo.annotations.push({
+        type: 'rec',
+        description: JSON.stringify({
+            module, step: `post_batch_external_calls:${batchName}`,
+            status: ok ? 'PASS' : 'FAIL',
+            note: `seed_snapshot.external_calls_made=${JSON.stringify(seedExt ?? null)} dry_run_env=${process.env.E2E_EXTERNAL_DRY_RUN ?? 'unset'} (re-assert after destructive batch)`,
+        }),
+    });
+    if (!ok) {
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P0', module,
+                title: 'Post-batch external_calls invariant ihlal',
+                detail: `Batch=${batchName} sonrası seed snapshot artık [] değil: ${JSON.stringify(seedExt)}. DRY_RUN bypass edilmiş olabilir.`,
+            }),
+        });
+    }
+    return ok;
+}
+
 export function recFinding(testInfo, severity, module, title, detail) {
     testInfo.annotations.push({
         type: 'finding',

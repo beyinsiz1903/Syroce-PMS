@@ -10,7 +10,7 @@
 | Başarısız test (canonical run) | 0 |
 | Aggregate uniq scope coverage | 26/26 test (100%, 5 chunked run, bkz. §10) |
 | Aggregate FAIL | 0 / 26 |
-| Aggregate finding (P0/P1/P2/P3) | **0 / 1 / 1 / 0** (tümü `f8a_heavy_DE` chunk'ından, bkz. §11) |
+| Aggregate finding (P0/P1/P2/P3) | **0 / 1 / 1 / 0** (tümü `f8a_heavy_DE` chunk'ından, bkz. §11) — *not: tur-3 hardening sonrası eklenen ek coverage testleri (post-move state transfer, folio total reconcile, OOO booking guard) yeniden koşum sonrası ek finding üretebilir; `docs/GOTCHAS.md` § F8A Stress Suite ek-coverage notuna bkz.* |
 | Aggregate REVIEW / SKIP | 9 / 3 (çoğu folio-mass batch ok=0 + room-move target dolu) |
 | Süre (canonical run) | 35.5s |
 | Final verdict | ❌ **NO-GO** (post-architect-hardening) — Defans invariant'ları (5 gate, external_calls=[], cleanup idempotent, pilot drift=0) tüm chunk'larda PASS, fakat acceptance contract `P0=P1=0` ihlal edildi: `04-folio-mass A/B/C` batch'lerinde 100/50/10 stres POST tamamı `s400` (P1=1, gerçek folio kontrat hatası). Architect tur-2 hardening sonrası bu durum spec'lerde `expect().not.toBe('FAIL')` ile hard-asserted ve reporter `P1>0 → NO-GO` mantığıyla doğru sınıflandırılır → **F8B önce follow-up #161 (folio contract fix) tamamlanmalı**. Görev briefi "en az GO WITH WATCH" demişti; ilk koşumda annotation-only verdict GO WITH WATCH tutmuştu, fakat dürüst hard-assert sonrası gerçek verdict NO-GO. P2=1 (room-move target dolu) ayrı follow-up #162. |

@@ -4,7 +4,7 @@
 // Bu spec 02-day-turnover'dan SONRA çalışırsa pozitif move başarısı yüksek olur (forced
 // checkout sonrası boş odalar). Sırayla koştuğu için fixture order garanti.
 import { test, expect, rec } from '../fixtures/stress-context.js';
-import { fetchAllByPrefix, callTimed, recPerf, recFinding, pilotBookingsCount } from '../fixtures/stress-helpers.js';
+import { fetchAllByPrefix, callTimed, recPerf, recFinding, pilotBookingsCount, assertNoExternalCallsPostBatch } from '../fixtures/stress-helpers.js';
 
 const MOD = 'room-move';
 
@@ -24,41 +24,73 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
             note: `bookings=${bookings.length} rooms=${rooms.length} pilot_before=${pilotBefore?.count}` });
     });
 
-    test('A) Positive room-move: 30 (booking → farklı room)', async ({ request, stressTokens }, testInfo) => {
+    test('A) Positive room-move: 50 (booking → farklı room) + post-move state transfer', async ({ request, stressTokens, stressState }, testInfo) => {
+        // Brief contract: 50 positive move attempts (architect tur-3: 30 yetersiz).
         const checkedIn = bookings.filter((b) => b.status === 'checked_in');
         if (checkedIn.length < 5) {
             rec(testInfo, { module: MOD, step: 'positive_move_sample', status: 'SKIP',
                 note: `checked_in=${checkedIn.length} (önceki spec hepsini checkout etmiş olabilir)` });
             return;
         }
-        const target = checkedIn.slice(0, 30);
+        const target = checkedIn.slice(0, 50);
         const samples = []; let ok = 0, fail = 0; const failModes = {};
+        // Track first 5 successful moves for post-move state assertion (RNL transfer).
+        const moveLog = []; // { booking_id, old_room_id, new_room_id }
         for (let i = 0; i < target.length; i++) {
             const b = target[i];
-            // pick a different room as target
             const candidate = rooms.find((r) => r.id !== b.room_id);
             if (!candidate) continue;
             const r = await callTimed(request, 'post', '/api/pms-core/room-move', {
                 booking_id: b.id, new_room_id: candidate.id, reason: `F8A positive move ${i}`,
             }, stressTokens.stress_token);
             samples.push(r.ms);
-            if (r.ok) ok++;
-            else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
+            if (r.ok) {
+                ok++;
+                if (moveLog.length < 5) moveLog.push({ booking_id: b.id, old_room_id: b.room_id, new_room_id: candidate.id });
+            } else {
+                fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1;
+            }
         }
-        // Hard-fail when no positive move succeeds AND we had ≥5 in-flight bookings to attempt
-        // (architect feedback: business outcome must be enforced, not just observed). Below 5
-        // attempts → SKIP/REVIEW (insufficient seed). Otherwise 0/N FAIL = real bug.
         const moveStatus = (target.length >= 5 && ok === 0) ? 'FAIL' : (ok > 0 ? 'PASS' : 'REVIEW');
         rec(testInfo, { module: MOD, step: 'positive_room_move', status: moveStatus,
             endpoint: '/api/pms-core/room-move',
             note: `n=${target.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} (hedef oda dolu/OOO ise reject normal)` });
         recPerf(testInfo, MOD, 'room_move', samples, true);
-        // Hard-fail Playwright test as well — annotation alone is not enough (architect feedback).
         expect(moveStatus, `positive_room_move FAIL: n=${target.length} ok=${ok} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
-        if (ok === 0 && checkedIn.length >= 30) {
+        if (ok === 0 && checkedIn.length >= 50) {
             recFinding(testInfo, 'P2', MOD, 'Hiçbir room-move başarılı değil',
                 `${target.length} move denendi, hepsi reject. Tüm hedef odalar dolu olabilir (500/500 seed) — pozitif test için 02-spec'in checkout sonrası boş room override gerekli.`);
         }
+        // Post-move STATE transfer assertion (architect tur-3 feedback): RNL transfer
+        // doğrulaması — başarılı move'lardan sonra booking.room_id GET ile yeni oda
+        // olmalı. Bu, room_night_lock + booking pointer'ın atomik transfer edildiğinin
+        // direkt kanıtı. fetchAllByPrefix ile bookings'i yeniden listele.
+        if (moveLog.length > 0) {
+            const after = await fetchAllByPrefix(request, stressTokens.stress_token,
+                '/api/pms/bookings', 'stress_prefix', stressState.data_prefix);
+            const byId = new Map(after.map((b) => [b.id, b]));
+            let transferOk = 0, transferFail = 0; const failDetail = [];
+            for (const m of moveLog) {
+                const b = byId.get(m.booking_id);
+                if (b && b.room_id === m.new_room_id) transferOk++;
+                else {
+                    transferFail++;
+                    failDetail.push({ id: m.booking_id, expected: m.new_room_id, actual: b?.room_id ?? 'missing' });
+                }
+            }
+            const transferStatus = transferFail === 0 ? 'PASS' : 'FAIL';
+            rec(testInfo, { module: MOD, step: 'post_move_state_transfer', status: transferStatus,
+                endpoint: '/api/pms/bookings (re-fetch)',
+                note: `verified=${moveLog.length} transfer_ok=${transferOk} transfer_fail=${transferFail} ${transferFail > 0 ? `mismatch=${JSON.stringify(failDetail)}` : ''}` });
+            if (transferFail > 0) {
+                recFinding(testInfo, 'P0', MOD,
+                    'Room move sonrası booking.room_id transfer edilmedi (RNL inconsistency)',
+                    `${moveLog.length} başarılı move'dan ${transferFail}'inde booking.room_id eski odada kaldı. Atomicity / room_night_lock transfer kırık. Detay: ${JSON.stringify(failDetail)}`);
+            }
+            expect(transferStatus, 'post_move_state_transfer FAIL — RNL transfer kırık').not.toBe('FAIL');
+        }
+        // Post-batch external-call invariant re-assert.
+        assertNoExternalCallsPostBatch(testInfo, MOD, 'positive_room_move_50', stressState);
     });
 
     test('B) Negative — occupied target reject', async ({ request, stressTokens }, testInfo) => {
