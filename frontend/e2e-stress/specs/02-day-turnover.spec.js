@@ -84,11 +84,10 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
         // Backend stub helper-level signature: stressState fixture spec'e _stressContext_'ten gelmeli.
     });
 
-    test('B-post) external_calls invariant after force_checkout_batch', async ({ stressState }, testInfo) => {
-        // Ayrı test() — fixture scope `stressState` worker-level paylaşımlı,
-        // önceki destructive batch'in seed snapshot'ını re-assert eder. Hot path'e
-        // ek HTTP hit yok; sözleşme + log amaçlı.
-        const ok = assertNoExternalCallsPostBatch(testInfo, MOD, 'force_checkout_100', stressState);
+    test('B-post) external_calls invariant after force_checkout_batch (runtime endpoint)', async ({ request, stressTokens, stressState }, testInfo) => {
+        // Architect tur-3: artık /admin/stress/external-calls endpoint'inden runtime
+        // okuma yapıyor (snapshot fallback REVIEW). Hot path'e tek GET; idempotent.
+        const ok = await assertNoExternalCallsPostBatch(testInfo, MOD, 'force_checkout_100', stressState, request, stressTokens.stress_token);
         expect(ok, 'force_checkout_100 sonrası external_calls invariant ihlal').toBe(true);
     });
 
@@ -125,8 +124,8 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
                 'Same-day turnover walk-in akışı başarısız',
                 `${target.length} walk-in denemesi 0 başarı. Modes: ${JSON.stringify(failModes)}. Olası sebep: oda hala occupied state'te (checkout RNL release etmemiş).`);
         }
-        // Post-batch external-call invariant re-assert (architect tur-3 feedback).
-        assertNoExternalCallsPostBatch(testInfo, MOD, 'walk_in_50', stressState);
+        // Post-batch external-call invariant re-assert via runtime endpoint (architect tur-3).
+        await assertNoExternalCallsPostBatch(testInfo, MOD, 'walk_in_50', stressState, request, stressTokens.stress_token);
     });
 
     test('D) Pilot drift: spec sonu pilot bookings sayımı = baseline', async ({ request, stressTokens }, testInfo) => {

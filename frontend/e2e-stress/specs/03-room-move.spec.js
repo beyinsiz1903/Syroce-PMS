@@ -89,8 +89,8 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
             }
             expect(transferStatus, 'post_move_state_transfer FAIL — RNL transfer kırık').not.toBe('FAIL');
         }
-        // Post-batch external-call invariant re-assert.
-        assertNoExternalCallsPostBatch(testInfo, MOD, 'positive_room_move_50', stressState);
+        // Post-batch external-call invariant re-assert (runtime endpoint).
+        await assertNoExternalCallsPostBatch(testInfo, MOD, 'positive_room_move_50', stressState, request, stressTokens.stress_token);
     });
 
     test('B) Negative — occupied target reject', async ({ request, stressTokens }, testInfo) => {

@@ -164,8 +164,8 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
                 `${mismatch}/${checked} folio'da gross-veya-net reconciliation 0.01 toleransı aştı. Folio aggregate update transaction'ı kırık olabilir. Detay: ${JSON.stringify(mismatchDetail)}`);
         }
         expect(reconcileStatus, `folio_total_reconcile FAIL: mismatch=${mismatch}/${checked} samples=${JSON.stringify(mismatchDetail)}`).not.toBe('FAIL');
-        // Post-batch external-call invariant re-assert.
-        assertNoExternalCallsPostBatch(testInfo, MOD, 'folio_reconcile_10', stressState);
+        // Post-batch external-call invariant re-assert (runtime endpoint).
+        await assertNoExternalCallsPostBatch(testInfo, MOD, 'folio_reconcile_10', stressState, request, stressTokens.stress_token);
     });
 
     test('D) Folio audit GET (5 folio)', async ({ request, stressTokens }, testInfo) => {

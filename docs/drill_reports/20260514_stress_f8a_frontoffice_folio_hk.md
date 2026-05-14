@@ -40,9 +40,16 @@
 | housekeeping | 2 | 0 | 0 | 0 | 2 |
 | room-move | 2 | 0 | 0 | 0 | 2 |
 
-## 5) P0/P1/P2/P3 Severity Triage
+## 5) P0/P1/P2/P3 Severity Triage (canonical chunk header — aggregate için bkz. §11)
 
-**Hiç finding yok.** Tüm spec'ler kritik bulgu üretmedi (pilot drift=0, business-rule guard'lar tutuyor, veri kaybı/leak yok).
+**Canonical chunk (Setup+Pilot drift, 8 test) için finding yok** — defans katmanı yeşil, pilot drift=0, business-rule guard'lar tutuyor, veri kaybı/leak yok.
+
+> ⚠️ **Aggregate kapsamda P1=1 + P2=1 mevcut** (`f8a_heavy_DE` chunk'ından, §11 detay).
+> Verdict header (§1) ve sonraki tur (§12) bu aggregate finding'lere göre `❌ NO-GO`
+> verir; bu §5 sadece canonical run kapsamı için "yok" demek anlamına gelir, aggregate
+> ile çelişki yoktur. Tur-3 hardening sonrası `expect().not.toBe('FAIL')` enforcement
+> ile yeniden koşum P1 tespit ederse Playwright test'i de FAIL olur (eskiden sadece
+> annotation'da görünüyordu).
 
 ## 6) Performance Hotspots (top 10 slowest ops, p95)
 

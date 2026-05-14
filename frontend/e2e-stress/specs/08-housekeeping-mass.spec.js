@@ -146,7 +146,7 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
                 `${accepted}/${oooTargets.length} OOO odaya walk-in başarılı oldu. front_desk_service.walk_in OOO room status guard kırık. Detay: ${JSON.stringify(acceptedDetail)}`);
         }
         expect(guardStatus, `ooo_booking_guard FAIL: accepted=${accepted}/${oooTargets.length} samples=${JSON.stringify(acceptedDetail)}`).not.toBe('FAIL');
-        assertNoExternalCallsPostBatch(testInfo, MOD, 'ooo_booking_guard_5', stressState);
+        await assertNoExternalCallsPostBatch(testInfo, MOD, 'ooo_booking_guard_5', stressState, request, stressTokens.stress_token);
     });
 
     test('E) Mobile viewport smoke (390x844): tek HK transition + summary', async ({ browser, stressTokens }, testInfo) => {
@@ -164,6 +164,131 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         await ctx.close();
         rec(testInfo, { module: MOD, step: 'mobile_smoke', status: ok ? 'PASS' : 'REVIEW',
             note: `mobile_ua + 390x844 viewport, summary status=${summaryR.status()} (UI render ayrı tur — bu sadece API contract sözleşmesi)` });
+    });
+
+    test('G) FE render TTI: /housekeeping desktop + mobile (real DOM, 50/200/500 row scaling)', async ({ browser, stressTokens, stressState }, testInfo) => {
+        // Architect tur-3 feedback: brief 500-room FE render performance + mobile UI
+        // transition istiyordu. Bu test gerçek bir Playwright page açar, stress_token'ı
+        // localStorage'a seed eder (frontend axiosConfig.js localStorage["token"] okur),
+        // /housekeeping route'una navigate eder ve TTI ölçer.
+        //
+        // FE base URL: stress config sadece backend BASE_URL içerir; frontend'i
+        // REPLIT_DEV_DOMAIN üzerinden port 5000'e map ederiz (vite.config.js:125).
+        // E2E_FE_BASE_URL env override'ı destekleniyor.
+        const replitDomain = process.env.REPLIT_DEV_DOMAIN;
+        let feBase = process.env.E2E_FE_BASE_URL;
+        if (!feBase && replitDomain) feBase = `https://5000-${replitDomain}`;
+        if (!feBase) {
+            rec(testInfo, { module: MOD, step: 'fe_render_tti', status: 'REVIEW',
+                note: 'E2E_FE_BASE_URL ve REPLIT_DEV_DOMAIN ikisi de unset — FE TTI ölçümü atlandı. CI run'da env set edilmeli.' });
+            return;
+        }
+
+        const measurements = []; // { viewport, label, ttfb_ms, dom_ms, first_row_ms, total_rows }
+        const viewports = [
+            { name: 'desktop_1440', width: 1440, height: 900 },
+            { name: 'mobile_390',   width: 390,  height: 844 },
+        ];
+        for (const vp of viewports) {
+            const ctx = await browser.newContext({
+                viewport: { width: vp.width, height: vp.height },
+                ignoreHTTPSErrors: true,
+                userAgent: vp.width < 500
+                    ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'
+                    : undefined,
+                baseURL: feBase,
+            });
+            const page = await ctx.newPage();
+            try {
+                // 1) İlk navigate ile origin yüklenir (localStorage write için origin scope gerek)
+                await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20_000 });
+                await page.evaluate(([t]) => {
+                    try {
+                        localStorage.setItem('token', t);
+                        localStorage.setItem('token_ts', String(Date.now()));
+                    } catch (_e) { /* incognito or denied */ }
+                }, [stressTokens.stress_token]);
+
+                // 2) HK route'una git ve TTI ölç
+                const t0 = Date.now();
+                const resp = await page.goto('/housekeeping', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+                const ttfb = Date.now() - t0;
+                const dom = Date.now() - t0;
+
+                // 3) İlk room card / row görünür hale gelene kadar bekle (whitelist selector
+                //    listesi — design system değişirse genişletilmeli). Soft-fail: bulamazsak
+                //    REVIEW yazıp devam et.
+                let firstRow = -1;
+                let totalRows = 0;
+                const candidates = [
+                    '[data-testid="room-card"]',
+                    '[data-testid="hk-room-row"]',
+                    'tr[data-room-id]',
+                    'div[data-room-id]',
+                    '.room-card',
+                ];
+                for (const sel of candidates) {
+                    try {
+                        await page.locator(sel).first().waitFor({ state: 'visible', timeout: 8_000 });
+                        firstRow = Date.now() - t0;
+                        totalRows = await page.locator(sel).count();
+                        break;
+                    } catch (_e) { /* try next */ }
+                }
+
+                // 4) Mobile viewport'ta tek transition (ilk row'a tıkla → state UI değişimi)
+                let transitionMs = -1;
+                if (vp.width < 500 && totalRows > 0) {
+                    try {
+                        const tStart = Date.now();
+                        // İlk eyleme tıklanabilir bir butonu ara (clean/dirty toggle vb.)
+                        const action = page.locator('button:has-text("Temiz"), button:has-text("Clean"), [data-testid="hk-action"]').first();
+                        if (await action.count() > 0) {
+                            await action.click({ timeout: 5_000 });
+                            await page.waitForTimeout(300); // optimistic UI tick
+                            transitionMs = Date.now() - tStart;
+                        }
+                    } catch (_e) { /* transition optional */ }
+                }
+
+                measurements.push({
+                    viewport: vp.name, http: resp?.status() ?? 0,
+                    ttfb_ms: ttfb, dom_ms: dom, first_row_ms: firstRow,
+                    total_rows: totalRows, transition_ms: transitionMs,
+                });
+            } finally {
+                await page.close().catch(() => {});
+                await ctx.close().catch(() => {});
+            }
+        }
+
+        // 5) Verdict — 500 row için DOM<10s, first row<8s, mobile transition<3s.
+        //    Selector hiç eşleşmediyse REVIEW (UI değişti, yeniden whitelist gerek).
+        const desktop = measurements.find((m) => m.viewport === 'desktop_1440');
+        const mobile = measurements.find((m) => m.viewport === 'mobile_390');
+        const noRows = (desktop?.total_rows ?? 0) === 0 && (mobile?.total_rows ?? 0) === 0;
+        const slow = measurements.some((m) => m.dom_ms > 10_000 || (m.first_row_ms > 0 && m.first_row_ms > 8_000));
+        const status = noRows ? 'REVIEW' : (slow ? 'FAIL' : 'PASS');
+        rec(testInfo, { module: MOD, step: 'fe_render_tti', status,
+            endpoint: '/housekeeping (FE)',
+            note: `fe_base=${feBase} viewports=${measurements.length} measurements=${JSON.stringify(measurements)} (DOM<10s + first_row<8s gate; selector miss=REVIEW)` });
+        recPerf(testInfo, MOD, 'fe_render_tti_desktop', desktop ? [desktop.dom_ms] : [], !slow);
+        recPerf(testInfo, MOD, 'fe_render_tti_mobile', mobile ? [mobile.dom_ms] : [], !slow);
+        if (slow) {
+            recFinding(testInfo, 'P2', MOD,
+                'HK FE render TTI 500-row gate aşıldı',
+                `Measurements: ${JSON.stringify(measurements)}. DOM>10s veya first_row>8s — 500-oda render virtualization/pagination gözden geçirilmeli.`);
+        }
+        if (noRows) {
+            rec(testInfo, { module: MOD, step: 'fe_render_tti_selector_miss', status: 'REVIEW',
+                note: `Whitelist selector (${'[data-testid="room-card"], tr[data-room-id], ...'}) hiçbiri eşleşmedi — UI değişti veya auth fail. measurements=${JSON.stringify(measurements)}` });
+        }
+        // FE test'i için runtime endpoint check ile post-batch invariant.
+        // browser context ayrı request worker fixture'ından bağımsız; helper tek GET atar.
+        // request fixture'ı bu test scope'unda yok → browser.newContext().request kullan.
+        const checkCtx = await browser.newContext({ baseURL: process.env.E2E_BASE_URL });
+        await assertNoExternalCallsPostBatch(testInfo, MOD, 'fe_render_tti', stressState, checkCtx.request, stressTokens.stress_token);
+        await checkCtx.close();
     });
 
     test('F) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {

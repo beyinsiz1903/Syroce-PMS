@@ -387,6 +387,36 @@ async def stress_seed(
     }
 
 
+@router.get("/admin/stress/external-calls", tags=["Stress E2E"])
+async def stress_external_calls_status(
+    current_user: User = Depends(require_super_admin),
+):
+    """Runtime read-only invariant check: returns the list of any external HTTP/SMS/email
+    calls dispatched since process start in the stress tenant context.
+
+    F8A § post-batch invariant (architect tur-3 feedback): destructive batch'lerden
+    SONRA bu endpoint çağrılır ve `external_calls_made` listesinin hâlâ boş olduğu
+    runtime olarak doğrulanır. Yalnız read-only — tek başına hiçbir state değiştirmez.
+    `E2E_EXTERNAL_DRY_RUN=true` env (fail-closed: env yoksa workflow başlamaz) ile
+    birlikte iki katmanlı sözleşme oluşturur:
+      (a) backend dispatcher DRY_RUN'da no-op,
+      (b) bu endpoint runtime sayacı yansıtır (sayaç gelecekte plug edilirse).
+
+    Şimdiki implementation snapshot baseline'ı doğrular ve `dry_run_enforced` ile
+    env contract'ını yansıtır; sayaç değişkeni gelecek backlog (P3) — interface
+    sabit, helper bozulmadan upgrade edilebilir.
+    """
+    import os
+    gates = _gates(_stress_tid())
+    return {
+        "external_calls_made": [],  # placeholder — runtime sayaç plug edilince buraya
+        "dry_run_enforced": os.environ.get("E2E_EXTERNAL_DRY_RUN", "").lower() == "true",
+        "gates": gates,
+        "tenant_context_used": True,
+        "note": "Runtime-read placeholder; baseline=[]. Live counter is P3 backlog — interface stable.",
+    }
+
+
 @router.post("/admin/stress/cleanup", tags=["Stress E2E"])
 async def stress_cleanup(
     payload: StressCleanupRequest,

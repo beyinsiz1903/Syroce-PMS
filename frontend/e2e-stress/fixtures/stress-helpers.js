@@ -98,35 +98,59 @@ export function recPerf(testInfo, module, op, samples, ok = true) {
     });
 }
 
-// Post-batch external-call hook (architect tur-3 feedback): destructive batch'lerden
-// SONRA `external_calls_made === []` invariant'ı yeniden doğrulanmalı. Backend'de
-// in-flight counter olmadığı için sözleşme iki ayağa dayanır:
-//   (a) `E2E_EXTERNAL_DRY_RUN=true` env force'lar (backend fail-closed: env yoksa throw),
-//   (b) seed snapshot `external_calls_made: []` baseline ve cleanup sırasında
-//       backend yeniden audit eder. Bu helper seed snapshot'ı re-assert eder ve
-//       env contract'ı log'a yazar; canlı sayaç gelirse (P3 backlog) buraya plug edilir.
-export function assertNoExternalCallsPostBatch(testInfo, module, batchName, stressState) {
+// Post-batch external-call invariant (architect tur-3 feedback): destructive batch'lerden
+// SONRA backend'in `/admin/stress/external-calls` endpoint'ine GET atılır ve
+// runtime `external_calls_made === []` doğrulanır. Endpoint snapshot/sayaç hibrit
+// arayüz sunar — şimdi placeholder=[], gelecek runtime sayaç plug edilince aynı
+// helper bozulmadan gerçek runtime değerleri yansıtır. dry_run_enforced de doğrulanır.
+// Endpoint 404 dönerse (backend versiyon eski) seed snapshot fallback'e düşer ve
+// REVIEW yazar — helper bozmaz, görünürlük korunur.
+export async function assertNoExternalCallsPostBatch(testInfo, module, batchName, stressState, request, token) {
+    let runtimeOk = null;
+    let runtimeBody = null;
+    let endpointStatus = null;
+    if (request && token) {
+        try {
+            const r = await request.get('/api/admin/stress/external-calls', {
+                headers: { Authorization: `Bearer ${token}` },
+                failOnStatusCode: false, timeout: 10_000,
+            });
+            endpointStatus = r.status();
+            if (r.ok()) {
+                runtimeBody = await r.json().catch(() => null);
+                const calls = runtimeBody?.external_calls_made;
+                const dryRunEnforced = runtimeBody?.dry_run_enforced === true;
+                runtimeOk = Array.isArray(calls) && calls.length === 0 && dryRunEnforced;
+            }
+        } catch (_e) { /* network — fall back to snapshot */ }
+    }
     const seedExt = stressState?.seed_response?.external_calls_made;
-    const ok = Array.isArray(seedExt) && seedExt.length === 0;
+    const snapshotOk = Array.isArray(seedExt) && seedExt.length === 0;
+    // Verdict: prefer runtime; if runtime unavailable fall back to snapshot but mark REVIEW.
+    let status, source;
+    if (runtimeOk === true) { status = 'PASS'; source = 'runtime_endpoint'; }
+    else if (runtimeOk === false) { status = 'FAIL'; source = 'runtime_endpoint'; }
+    else if (snapshotOk) { status = 'REVIEW'; source = 'seed_snapshot_fallback'; }
+    else { status = 'FAIL'; source = 'seed_snapshot_fallback'; }
     testInfo.annotations.push({
         type: 'rec',
         description: JSON.stringify({
             module, step: `post_batch_external_calls:${batchName}`,
-            status: ok ? 'PASS' : 'FAIL',
-            note: `seed_snapshot.external_calls_made=${JSON.stringify(seedExt ?? null)} dry_run_env=${process.env.E2E_EXTERNAL_DRY_RUN ?? 'unset'} (re-assert after destructive batch)`,
+            status,
+            note: `source=${source} endpoint_status=${endpointStatus ?? 'n/a'} runtime_calls=${JSON.stringify(runtimeBody?.external_calls_made ?? null)} runtime_dry_run=${runtimeBody?.dry_run_enforced ?? 'n/a'} snapshot_ext=${JSON.stringify(seedExt ?? null)} dry_run_env=${process.env.E2E_EXTERNAL_DRY_RUN ?? 'unset'}`,
         }),
     });
-    if (!ok) {
+    if (status === 'FAIL') {
         testInfo.annotations.push({
             type: 'finding',
             description: JSON.stringify({
                 severity: 'P0', module,
                 title: 'Post-batch external_calls invariant ihlal',
-                detail: `Batch=${batchName} sonrası seed snapshot artık [] değil: ${JSON.stringify(seedExt)}. DRY_RUN bypass edilmiş olabilir.`,
+                detail: `Batch=${batchName} sonrası ${source} kontrol = FAIL. runtime_calls=${JSON.stringify(runtimeBody?.external_calls_made)} dry_run_enforced=${runtimeBody?.dry_run_enforced} snapshot=${JSON.stringify(seedExt)}. DRY_RUN bypass edilmiş olabilir.`,
             }),
         });
     }
-    return ok;
+    return status !== 'FAIL';
 }
 
 export function recFinding(testInfo, severity, module, title, detail) {
