@@ -16,7 +16,6 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from core.cache import cached
 from core.database import db
 from core.security import get_current_user
 from models.enums import UserRole
@@ -26,6 +25,7 @@ from models.schemas import (
 from modules.pms_core.role_permission_service import require_role
 
 from .room_service_realtime import emit_order_event, order_stream
+
 
 # ── Booking ownership helper ──────────────────────────────────────────────────
 async def _assert_guest_owns_booking(booking: dict, current_user: User) -> None:
