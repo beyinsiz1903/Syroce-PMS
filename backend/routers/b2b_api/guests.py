@@ -144,6 +144,29 @@ async def _agency_owns_guest(tenant_id: str, agency_id: str, guest_id: str) -> b
     return n > 0
 
 
+async def _agency_has_current_booking_for_guest(tenant_id: str, agency_id: str, guest_id: str) -> bool:
+    """B2B Agency Isolation: stricter check for shared mutable resources.
+
+    Requires the agency to have a non-cancelled booking for this guest with a
+    check_out date within the last 30 days (covers in-house + recent stays).
+    This prevents agencies from retaining write access to shared loyalty
+    balances based solely on an arbitrarily old historical booking, while still
+    allowing legitimate post-stay loyalty credit submissions.
+    """
+    from datetime import date, timedelta
+    cutoff = (date.today() - timedelta(days=30)).isoformat()
+    n = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "agency_id": agency_id,
+            "guest_id": guest_id,
+            "status": {"$ne": "cancelled"},
+            "check_out": {"$gte": cutoff},
+        },
+    )
+    return n > 0
+
+
 async def _agency_owns_block(tenant_id: str, agency_id: str, block_id: str) -> dict | None:
     """Acentenin bu grup blok'una sahip olup olmadigini dogrular (v65)."""
     return await db.room_blocks.find_one(
@@ -524,14 +547,35 @@ async def b2b_search_guests(
 ):
     """Misafir arama — isim, e-posta veya telefon ile."""
     tenant_id = agency["tenant_id"]
+    agency_id = agency["agency_id"]
+
+    # B2B Agency Isolation: scope enumeration strictly to guests with at least one
+    # booking from this agency — prevents cross-agency guest directory enumeration.
+    agency_guest_ids = await db.bookings.distinct(
+        "guest_id",
+        {"tenant_id": tenant_id, "agency_id": agency_id},
+    )
+    if not agency_guest_ids:
+        return {"guests": [], "count": 0}
+
     from security.query_safety import safe_search_term
     _s = safe_search_term(q)
     if not _s:
         return {"guests": [], "count": 0}
     regex = {"$regex": _s, "$options": "i"}
     docs = await db.guests.find(
-        {"tenant_id": tenant_id, "$or": [{"name": regex}, {"email": regex}, {"phone": regex}]},
-        {"_id": 0, "tenant_id": 0},
+        {
+            "tenant_id": tenant_id,
+            "id": {"$in": agency_guest_ids},
+            "$or": [{"name": regex}, {"email": regex}, {"phone": regex}],
+        },
+        # Exclude PII identity fields — these may have been written by other agencies
+        # or by hotel staff and must not leak across agency boundaries.
+        {
+            "_id": 0, "tenant_id": 0,
+            "id_number": 0, "passport_number": 0,
+            "birth_date": 0, "gender": 0, "nationality": 0,
+        },
     ).sort("name", 1).to_list(limit)
     return {"guests": docs, "count": len(docs)}
 # ── GET /guests/{guest_id} ──
@@ -543,7 +587,14 @@ async def b2b_get_guest(guest_id: str, agency: dict = Depends(get_b2b_agency)):
     if not await _agency_owns_guest(tenant_id, agency["agency_id"], guest_id):
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
     doc = await db.guests.find_one(
-        {"tenant_id": tenant_id, "id": guest_id}, {"_id": 0, "tenant_id": 0}
+        {"tenant_id": tenant_id, "id": guest_id},
+        # B2B Agency Isolation: exclude PII identity fields that may have been
+        # written by hotel staff or other agencies — prevents cross-agency PII leakage.
+        {
+            "_id": 0, "tenant_id": 0,
+            "id_number": 0, "passport_number": 0,
+            "birth_date": 0, "gender": 0, "nationality": 0,
+        },
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
@@ -553,8 +604,9 @@ async def b2b_get_guest(guest_id: str, agency: dict = Depends(get_b2b_agency)):
 async def b2b_get_guest_loyalty(guest_id: str, agency: dict = Depends(get_b2b_agency)):
     """Misafir sadakat bilgisi — puan, tier, toplam konaklama."""
     tenant_id = agency["tenant_id"]
-    # v64 Bug DA: cross-agency IDOR guard
-    if not await _agency_owns_guest(tenant_id, agency["agency_id"], guest_id):
+    # B2B Agency Isolation: require a current (non-cancelled, recent) booking —
+    # tighter than historical check to prevent cross-agency loyalty enumeration.
+    if not await _agency_has_current_booking_for_guest(tenant_id, agency["agency_id"], guest_id):
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
     guest = await db.guests.find_one(
         {"tenant_id": tenant_id, "id": guest_id},
@@ -595,8 +647,10 @@ async def b2b_update_loyalty_points(
     """Sadakat puani ekle veya cikar."""
     tenant_id = agency["tenant_id"]
 
-    # v64 Bug DA: cross-agency IDOR guard — kritik (yazma + mali sahtekarlik)
-    if not await _agency_owns_guest(tenant_id, agency["agency_id"], guest_id):
+    # B2B Agency Isolation: require a current (non-cancelled, recent) booking for
+    # loyalty mutation — historical booking check is insufficient for shared write
+    # access; a stale relationship must not allow balance tampering.
+    if not await _agency_has_current_booking_for_guest(tenant_id, agency["agency_id"], guest_id):
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
 
     guest = await db.guests.find_one({"tenant_id": tenant_id, "id": guest_id})

@@ -144,6 +144,27 @@ async def _agency_owns_guest(tenant_id: str, agency_id: str, guest_id: str) -> b
     return n > 0
 
 
+async def _agency_has_current_booking_for_guest(tenant_id: str, agency_id: str, guest_id: str) -> bool:
+    """B2B Agency Isolation: stricter check for shared mutable resources.
+
+    Requires a non-cancelled booking for this guest with check_out >= 30 days ago.
+    Prevents agencies from creating new identity artifacts based on stale historical
+    relationships. Mirrors the same helper in guests.py.
+    """
+    from datetime import date, timedelta
+    cutoff = (date.today() - timedelta(days=30)).isoformat()
+    n = await db.bookings.count_documents(
+        {
+            "tenant_id": tenant_id,
+            "agency_id": agency_id,
+            "guest_id": guest_id,
+            "status": {"$ne": "cancelled"},
+            "check_out": {"$gte": cutoff},
+        },
+    )
+    return n > 0
+
+
 async def _agency_owns_block(tenant_id: str, agency_id: str, block_id: str) -> dict | None:
     """Acentenin bu grup blok'una sahip olup olmadigini dogrular (v65)."""
     return await db.room_blocks.find_one(
@@ -524,8 +545,9 @@ async def b2b_identity_scan(
     """Kimlik/pasaport tarama verisini kaydet — OCR sonuclari buraya gonderilir."""
     tenant_id = agency["tenant_id"]
 
-    # v65 Bug DB: cross-agency IDOR guard — PII yazma (pasaport/TC contamination)
-    if not await _agency_owns_guest(tenant_id, agency["agency_id"], data.guest_id):
+    # B2B Agency Isolation: require current/recent non-cancelled booking —
+    # stale historical relationships must not allow creation of new identity artifacts.
+    if not await _agency_has_current_booking_for_guest(tenant_id, agency["agency_id"], data.guest_id):
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
 
     guest = await db.guests.find_one({"tenant_id": tenant_id, "id": data.guest_id})
@@ -536,6 +558,7 @@ async def b2b_identity_scan(
     scan_doc = {
         "id": scan_id,
         "tenant_id": tenant_id,
+        "agency_id": agency["agency_id"],  # B2B Agency Isolation: explicit field for per-agency filtering
         "guest_id": data.guest_id,
         "scan_type": data.scan_type,
         "document_number": data.document_number,
@@ -557,21 +580,13 @@ async def b2b_identity_scan(
     await db.identity_scans.insert_one(scan_doc)
     scan_doc.pop("_id", None)
 
-    guest_update = {}
-    if data.nationality:
-        guest_update["nationality"] = data.nationality
-    if data.birth_date:
-        guest_update["birth_date"] = data.birth_date
-    if data.gender:
-        guest_update["gender"] = data.gender
-    if data.scan_type == "passport" and data.document_number:
-        guest_update["passport_number"] = data.document_number
-    elif data.scan_type == "id_card" and data.document_number:
-        guest_update["id_number"] = data.document_number
-
-    if guest_update:
-        guest_update["updated_at"] = _now_iso()
-        await db.guests.update_one({"_id": guest["_id"]}, {"$set": guest_update})
+    # B2B Agency Isolation: do NOT write PII identity fields from external agency scans
+    # to the shared tenant-wide guest profile.  The shared profile fields
+    # (passport_number, id_number, birth_date, gender, nationality) are managed by hotel
+    # staff only; allowing any B2B agency to overwrite them would enable cross-agency
+    # PII contamination and data tampering on records owned by other partners or direct
+    # hotel business.  The scan record in identity_scans is sufficient for the agency's
+    # own use and is filtered per-agency on retrieval.
 
     return {"ok": True, "scan": scan_doc}
 # ── GET /identity/guest/{guest_id} ──
@@ -585,15 +600,33 @@ async def b2b_identity_get(guest_id: str, agency: dict = Depends(get_b2b_agency)
 
     guest = await db.guests.find_one(
         {"tenant_id": tenant_id, "id": guest_id},
-        {"_id": 0, "id": 1, "name": 1, "nationality": 1, "id_number": 1,
-         "passport_number": 1, "birth_date": 1, "gender": 1},
+        # B2B Agency Isolation: return only non-PII profile fields.
+        # id_number, passport_number, birth_date, gender, nationality are shared
+        # profile fields managed by hotel staff; exposing them here would leak data
+        # written by other agencies or the hotel's own identity flow.
+        # Agency-submitted identity data is available via the scans list below,
+        # filtered strictly to this agency's own submissions.
+        {"_id": 0, "id": 1, "name": 1},
     )
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
 
+    agency_id = agency["agency_id"]
+    # B2B Agency Isolation: filter scans to those submitted by this agency only —
+    # prevents cross-agency identity scan exposure.
+    # Backward-compatible: legacy scan records created before this patch lack an
+    # agency_id field; those are identified by the "source" string written at
+    # scan-creation time, so we include them via $or to avoid a functional regression.
     scans = await db.identity_scans.find(
-        {"tenant_id": tenant_id, "guest_id": guest_id},
-        {"_id": 0, "tenant_id": 0, "raw_ocr_data": 0},
+        {
+            "tenant_id": tenant_id,
+            "guest_id": guest_id,
+            "$or": [
+                {"agency_id": agency_id},
+                {"agency_id": {"$exists": False}, "source": f"b2b_api:{agency_id}"},
+            ],
+        },
+        {"_id": 0, "tenant_id": 0, "agency_id": 0, "raw_ocr_data": 0},
     ).sort("created_at", -1).to_list(10)
 
     return {"guest": guest, "scans": scans}
