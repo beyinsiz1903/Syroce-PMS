@@ -24,37 +24,56 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
             note: `bookings=${bookings.length} rooms=${rooms.length} pilot_before=${pilotBefore?.count}` });
     });
 
-    test('A) Positive room-move: 50 (booking → farklı room) + post-move state transfer', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('A) Positive room-move: 50 (booking → vacant + same-category target) + post-move state transfer', async ({ request, stressTokens, stressState }, testInfo) => {
         // Brief contract: 50 positive move attempts (architect tur-3: 30 yetersiz).
+        // Architect tur-5: hedef oda ZORUNLU olarak (a) boş ve (b) aynı kategori olmalı.
+        // Eskiden `rooms.find(r.id !== b.room_id)` herhangi farklı oda alıyordu →
+        // dolu/farklı-kategori hedeflere reject normalleşiyordu, gerçek pozitif test değildi.
         const checkedIn = bookings.filter((b) => b.status === 'checked_in');
         if (checkedIn.length < 5) {
             rec(testInfo, { module: MOD, step: 'positive_move_sample', status: 'SKIP',
                 note: `checked_in=${checkedIn.length} (önceki spec hepsini checkout etmiş olabilir)` });
             return;
         }
+        // Vacant set: room id'leri ki HİÇBİR checked_in booking onları işgal etmiyor.
+        const occupiedRoomIds = new Set(checkedIn.map((b) => b.room_id).filter(Boolean));
+        const vacantRooms = rooms.filter((r) => !occupiedRoomIds.has(r.id));
+        // Same-category map: room_type → vacant rooms list.
+        const vacantByType = new Map();
+        for (const vr of vacantRooms) {
+            const t = vr.room_type || vr.category || '__unknown__';
+            if (!vacantByType.has(t)) vacantByType.set(t, []);
+            vacantByType.get(t).push(vr);
+        }
         const target = checkedIn.slice(0, 50);
         const samples = []; let ok = 0, fail = 0; const failModes = {};
-        // Track first 5 successful moves for post-move state assertion (RNL transfer).
-        const moveLog = []; // { booking_id, old_room_id, new_room_id }
+        let skippedNoTarget = 0;
+        const moveLog = []; // { booking_id, old_room_id, new_room_id, target_room_type }
         for (let i = 0; i < target.length; i++) {
             const b = target[i];
-            const candidate = rooms.find((r) => r.id !== b.room_id);
-            if (!candidate) continue;
+            const bType = b.room_type || b.category || '__unknown__';
+            const pool = vacantByType.get(bType);
+            const candidate = (pool && pool.length > 0) ? pool.shift() : null;
+            if (!candidate) { skippedNoTarget++; continue; }
             const r = await callTimed(request, 'post', '/api/pms-core/room-move', {
                 booking_id: b.id, new_room_id: candidate.id, reason: `F8A positive move ${i}`,
             }, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.ok) {
                 ok++;
-                if (moveLog.length < 5) moveLog.push({ booking_id: b.id, old_room_id: b.room_id, new_room_id: candidate.id });
+                if (moveLog.length < 5) moveLog.push({
+                    booking_id: b.id, old_room_id: b.room_id, new_room_id: candidate.id,
+                    target_room_type: candidate.room_type || candidate.category || '__unknown__',
+                });
             } else {
                 fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1;
             }
         }
-        const moveStatus = (target.length >= 5 && ok === 0) ? 'FAIL' : (ok > 0 ? 'PASS' : 'REVIEW');
+        const attempted = target.length - skippedNoTarget;
+        const moveStatus = (attempted >= 5 && ok === 0) ? 'FAIL' : (ok > 0 ? 'PASS' : 'REVIEW');
         rec(testInfo, { module: MOD, step: 'positive_room_move', status: moveStatus,
             endpoint: '/api/pms-core/room-move',
-            note: `n=${target.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} (hedef oda dolu/OOO ise reject normal)` });
+            note: `n=${target.length} attempted=${attempted} skipped_no_target=${skippedNoTarget} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} target_contract=vacant+same_category (architect tur-5)` });
         recPerf(testInfo, MOD, 'room_move', samples, true);
         expect(moveStatus, `positive_room_move FAIL: n=${target.length} ok=${ok} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
         if (ok === 0 && checkedIn.length >= 50) {
@@ -90,7 +109,7 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
             expect(transferStatus, 'post_move_state_transfer FAIL — RNL transfer kırık').not.toBe('FAIL');
         }
         // Post-batch external-call invariant re-assert (runtime endpoint).
-        await assertNoExternalCallsPostBatch(testInfo, MOD, 'positive_room_move_50', stressState, request, stressTokens.stress_token);
+        await assertNoExternalCallsPostBatch(testInfo, MOD, 'positive_room_move_50', stressState, request, stressTokens.pilot_token);
     });
 
     test('B) Negative — occupied target reject', async ({ request, stressTokens }, testInfo) => {

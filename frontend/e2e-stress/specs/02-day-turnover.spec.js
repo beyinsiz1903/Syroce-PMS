@@ -24,6 +24,8 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
     let bookings = []; // stress bookings cached for the suite
     let rooms = [];
     let pilotBefore = null;
+    let roomsFreed = []; // architect tur-5: B'de force-checkout BAŞARILI olan booking.room_id'leri;
+                         // C same-day turnover bu odaları kullanır (boşalan odaya re-check-in).
 
     test('Setup: stress bookings + rooms listele, pilot drift baseline', async ({ request, stressTokens, stressState }, testInfo) => {
         const prefix = stressState.data_prefix;
@@ -67,7 +69,11 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
             const r = await callTimed(request, 'post', '/api/pms-core/checkout',
                 { booking_id: b.id, force: true }, stressTokens.stress_token);
             samples.push(r.ms);
-            if (r.ok) ok++;
+            if (r.ok) {
+                ok++;
+                // Architect tur-5: aynı-oda turnover sözleşmesi — boşalan room_id'yi kaydet.
+                if (b.room_id) roomsFreed.push(b.room_id);
+            }
             else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
         }
         rec(testInfo, { module: MOD, step: 'force_checkout_batch', status: ok >= target.length * 0.9 ? 'PASS' : 'REVIEW',
@@ -87,16 +93,25 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
     test('B-post) external_calls invariant after force_checkout_batch (runtime endpoint)', async ({ request, stressTokens, stressState }, testInfo) => {
         // Architect tur-3: artık /admin/stress/external-calls endpoint'inden runtime
         // okuma yapıyor (snapshot fallback REVIEW). Hot path'e tek GET; idempotent.
-        const ok = await assertNoExternalCallsPostBatch(testInfo, MOD, 'force_checkout_100', stressState, request, stressTokens.stress_token);
+        const ok = await assertNoExternalCallsPostBatch(testInfo, MOD, 'force_checkout_100', stressState, request, stressTokens.pilot_token);
         expect(ok, 'force_checkout_100 sonrası external_calls invariant ihlal').toBe(true);
     });
 
     test('C) Same-day turnover: 50 walk-in (boşalan oda → yeni booking)', async ({ request, stressTokens, stressState }, testInfo) => {
-        // Önceki test'teki force checkout sonrası rooms'lar boşaldı varsayılır.
-        // /api/pms-core/walk-in {room_id, nights, rate, guest_name, ...}
-        // Brief contract: 50 walk-in attempt (architect tur-3: brief 50 istiyordu, 30 yetersizdi).
-        if (rooms.length < 50) { rec(testInfo, { module: MOD, step: 'walkin_sample', status: 'SKIP', note: `room sample yetersiz n=${rooms.length}/50` }); return; }
-        const target = rooms.slice(0, 50);
+        // Architect tur-5: aynı-oda turnover sözleşmesi — B'de force-checkout BAŞARILI olan
+        // bookings'in room_id'leri (`roomsFreed`) bu test'in target'ı olur. Bu, "checkout →
+        // RNL release → same-day re-check-in" akışını DOĞRU şekilde validate eder
+        // (eskiden `rooms.slice(0, 50)` rastgele oda alıyordu — turnover semantiği yoktu).
+        // Fallback: roomsFreed boşsa rooms.slice(0, 50) (eski davranış) ile REVIEW yazılır.
+        const usingTurnover = roomsFreed.length >= 25;
+        const targetRoomIds = usingTurnover ? roomsFreed.slice(0, 50) : rooms.slice(0, 50).map((r) => r.id);
+        const targetSource = usingTurnover ? 'rooms_freed_by_force_checkout' : 'fallback_rooms_slice';
+        if (targetRoomIds.length < 25) {
+            rec(testInfo, { module: MOD, step: 'walkin_sample', status: 'SKIP',
+                note: `target sample yetersiz n=${targetRoomIds.length}/25 (rooms_freed=${roomsFreed.length} rooms_total=${rooms.length})` });
+            return;
+        }
+        const target = targetRoomIds.map((id) => rooms.find((r) => r.id === id) || { id });
         const samples = []; let ok = 0, fail = 0; const failModes = {};
         for (let i = 0; i < target.length; i++) {
             const room = target[i];
@@ -115,9 +130,9 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
             if (r.ok) ok++;
             else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
         }
-        rec(testInfo, { module: MOD, step: 'same_day_walkin', status: ok >= 25 ? 'PASS' : 'REVIEW',
+        rec(testInfo, { module: MOD, step: 'same_day_walkin', status: usingTurnover && ok >= 25 ? 'PASS' : 'REVIEW',
             endpoint: '/api/pms-core/walk-in',
-            note: `n=${target.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} (≥25/50 ok ⇒ turnover akışı çalışıyor)` });
+            note: `target_source=${targetSource} n=${target.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} (≥25/50 ok + same-room contract ⇒ turnover akışı çalışıyor)` });
         recPerf(testInfo, MOD, 'walkin_create', samples, ok >= 25);
         if (ok === 0) {
             recFinding(testInfo, 'P1', MOD,
@@ -125,7 +140,7 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
                 `${target.length} walk-in denemesi 0 başarı. Modes: ${JSON.stringify(failModes)}. Olası sebep: oda hala occupied state'te (checkout RNL release etmemiş).`);
         }
         // Post-batch external-call invariant re-assert via runtime endpoint (architect tur-3).
-        await assertNoExternalCallsPostBatch(testInfo, MOD, 'walk_in_50', stressState, request, stressTokens.stress_token);
+        await assertNoExternalCallsPostBatch(testInfo, MOD, 'walk_in_50', stressState, request, stressTokens.pilot_token);
     });
 
     test('D) Pilot drift: spec sonu pilot bookings sayımı = baseline', async ({ request, stressTokens }, testInfo) => {

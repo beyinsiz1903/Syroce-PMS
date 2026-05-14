@@ -98,21 +98,23 @@ export function recPerf(testInfo, module, op, samples, ok = true) {
     });
 }
 
-// Post-batch external-call invariant (architect tur-3 feedback): destructive batch'lerden
-// SONRA backend'in `/admin/stress/external-calls` endpoint'ine GET atılır ve
-// runtime `external_calls_made === []` doğrulanır. Endpoint snapshot/sayaç hibrit
-// arayüz sunar — şimdi placeholder=[], gelecek runtime sayaç plug edilince aynı
-// helper bozulmadan gerçek runtime değerleri yansıtır. dry_run_enforced de doğrulanır.
-// Endpoint 404 dönerse (backend versiyon eski) seed snapshot fallback'e düşer ve
-// REVIEW yazar — helper bozmaz, görünürlük korunur.
-export async function assertNoExternalCallsPostBatch(testInfo, module, batchName, stressState, request, token) {
+// Post-batch external-call invariant (architect tur-3+tur-4+tur-5 feedback):
+// destructive batch'lerden SONRA backend'in `/admin/stress/external-calls`
+// endpoint'ine GET atılır (PILOT super_admin token ile — endpoint require_super_admin'a
+// tabi). Endpoint sysdb.outbox_events + db.integration_afsadakat_outbox koleksiyonlarını
+// stress_tid scope'lu sorgular; non-empty = dispatcher DRY_RUN bypass etmiş (P0 FAIL).
+// Tur-5: 401/403 / network down artık FAIL (hard) — REVIEW fallback "silently passing"
+// riskini önler. Sadece 404 (endpoint deploy edilmemiş eski backend) snapshot fallback'e
+// düşer ve REVIEW olur.
+export async function assertNoExternalCallsPostBatch(testInfo, module, batchName, stressState, request, pilotToken) {
     let runtimeOk = null;
     let runtimeBody = null;
     let endpointStatus = null;
-    if (request && token) {
+    let endpointError = null;
+    if (request && pilotToken) {
         try {
             const r = await request.get('/api/admin/stress/external-calls', {
-                headers: { Authorization: `Bearer ${token}` },
+                headers: { Authorization: `Bearer ${pilotToken}` },
                 failOnStatusCode: false, timeout: 10_000,
             });
             endpointStatus = r.status();
@@ -122,16 +124,22 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
                 const dryRunEnforced = runtimeBody?.dry_run_enforced === true;
                 runtimeOk = Array.isArray(calls) && calls.length === 0 && dryRunEnforced;
             }
-        } catch (_e) { /* network — fall back to snapshot */ }
+        } catch (e) { endpointError = String(e?.message || e); }
     }
     const seedExt = stressState?.seed_response?.external_calls_made;
     const snapshotOk = Array.isArray(seedExt) && seedExt.length === 0;
-    // Verdict: prefer runtime; if runtime unavailable fall back to snapshot but mark REVIEW.
+    // Verdict (architect tur-5):
+    //   runtime PASS  → status PASS
+    //   runtime FAIL  → status FAIL (P0)
+    //   401/403/5xx/network → status FAIL (auth/health regression — hard fail)
+    //   404 → snapshot fallback REVIEW (endpoint deploy edilmemiş, plumbing tur-3+)
+    //   No request/token → status FAIL (caller forgot to pass pilotToken)
     let status, source;
-    if (runtimeOk === true) { status = 'PASS'; source = 'runtime_endpoint'; }
+    if (!request || !pilotToken) { status = 'FAIL'; source = 'caller_missing_pilot_token'; }
+    else if (runtimeOk === true) { status = 'PASS'; source = 'runtime_endpoint'; }
     else if (runtimeOk === false) { status = 'FAIL'; source = 'runtime_endpoint'; }
-    else if (snapshotOk) { status = 'REVIEW'; source = 'seed_snapshot_fallback'; }
-    else { status = 'FAIL'; source = 'seed_snapshot_fallback'; }
+    else if (endpointStatus === 404) { status = snapshotOk ? 'REVIEW' : 'FAIL'; source = 'seed_snapshot_fallback_404'; }
+    else { status = 'FAIL'; source = `runtime_unreachable_status_${endpointStatus ?? 'network'}${endpointError ? `_${endpointError.slice(0, 40)}` : ''}`; }
     testInfo.annotations.push({
         type: 'rec',
         description: JSON.stringify({
@@ -141,12 +149,16 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
         }),
     });
     if (status === 'FAIL') {
+        const isAuthOrUnreach = source.startsWith('runtime_unreachable') || source === 'caller_missing_pilot_token';
         testInfo.annotations.push({
             type: 'finding',
             description: JSON.stringify({
-                severity: 'P0', module,
-                title: 'Post-batch external_calls invariant ihlal',
-                detail: `Batch=${batchName} sonrası ${source} kontrol = FAIL. runtime_calls=${JSON.stringify(runtimeBody?.external_calls_made)} dry_run_enforced=${runtimeBody?.dry_run_enforced} snapshot=${JSON.stringify(seedExt)}. DRY_RUN bypass edilmiş olabilir.`,
+                severity: isAuthOrUnreach ? 'P1' : 'P0',
+                module,
+                title: isAuthOrUnreach
+                    ? 'External-calls endpoint reachable/auth fail — invariant doğrulanamadı'
+                    : 'Post-batch external_calls invariant ihlal',
+                detail: `Batch=${batchName} sonrası ${source} kontrol = FAIL. runtime_calls=${JSON.stringify(runtimeBody?.external_calls_made)} dry_run_enforced=${runtimeBody?.dry_run_enforced} snapshot=${JSON.stringify(seedExt)} endpoint_status=${endpointStatus ?? 'n/a'} endpoint_error=${endpointError ?? 'n/a'}.`,
             }),
         });
     }

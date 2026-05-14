@@ -180,6 +180,47 @@ class StressReporter {
             md += '\n';
         }
 
+        // Architect tur-5: dedicated "Broken Buttons / Wrong Business Rule" + "Cleanup Integrity" sections.
+        const businessRuleFindings = allFindings.filter((f) => /folio|guard|reject|booking|move|state|RNL|reconcile|transfer|OOO|overbook|turnover|invariant/i.test(f.title || ''));
+        const buttonFindings = allFindings.filter((f) => /button|click|UI|render|TTI|DOM|first_row|gate|frontend/i.test(f.title || ''));
+        md += `## 7a) Broken Buttons / Wrong Business Rule (file:line + repro)\n\n`;
+        if (businessRuleFindings.length === 0 && buttonFindings.length === 0) {
+            md += `_Yok._ Tüm business-rule guard'lar ve UI etkileşimleri çalışıyor.\n\n`;
+        } else {
+            if (businessRuleFindings.length > 0) {
+                md += `### ⚖️ Wrong Business Rule (${businessRuleFindings.length})\n`;
+                for (const f of businessRuleFindings) {
+                    const testRow = this.results.find((r) => r.title === f._test);
+                    const fileRef = testRow?.file ? `\`${testRow.file}\`` : '_(test ref yok)_';
+                    md += `- **[${f.severity}] [${f.module}] ${f.title}** — ${fileRef}\n  - Test: \`${f._test}\`\n  - Repro: ${f.detail || '-'}\n`;
+                }
+                md += '\n';
+            }
+            if (buttonFindings.length > 0) {
+                md += `### 🖱️ Broken Buttons / UI (${buttonFindings.length})\n`;
+                for (const f of buttonFindings) {
+                    const testRow = this.results.find((r) => r.title === f._test);
+                    const fileRef = testRow?.file ? `\`${testRow.file}\`` : '_(test ref yok)_';
+                    md += `- **[${f.severity}] [${f.module}] ${f.title}** — ${fileRef}\n  - Test: \`${f._test}\`\n  - Repro: ${f.detail || '-'}\n`;
+                }
+                md += '\n';
+            }
+        }
+
+        md += `## 7b) Cleanup Integrity\n\n`;
+        if (teardown) {
+            const c1 = (teardown.steps || []).find((s) => s.name === 'cleanup#1');
+            const c2 = (teardown.steps || []).find((s) => s.name === 'cleanup#2_idempotent');
+            const pd = (teardown.steps || []).find((s) => s.name === 'pilot_diff');
+            md += `| Adım | Durum | Detay |\n|---|---|---|\n`;
+            md += `| cleanup#1 (deletion) | ${c1?.status === 200 ? '✅ OK' : '❌ FAIL'} | deleted_total=${c1?.deleted_total ?? c1?.deleted ?? 'n/a'} |\n`;
+            md += `| cleanup#2 (idempotency) | ${c2?.idempotent ? '✅ idempotent' : '❌ NOT idempotent'} | re-run deleted=${c2?.deleted_total ?? c2?.deleted ?? 'n/a'} |\n`;
+            md += `| pilot drift | ${pd?.drift === 0 ? '✅ drift=0' : `❌ drift=${pd?.drift ?? 'n/a'}`} | baseline=${pd?.baseline ?? 'n/a'} after=${pd?.after ?? 'n/a'} |\n\n`;
+            md += `_Audit logs are NEVER deleted (KVKK retention) — bu liste sadece stress-seeded business data'yı kapsar._\n\n`;
+        } else {
+            md += `_Teardown log bulunamadı (\`.auth/teardown.json\` yok). globalTeardown çalışmamış olabilir._\n\n`;
+        }
+
         md += `## 8) Test inventory\n\n`;
         md += `| # | Test | Outcome | Süre |\n|---:|---|---|---:|\n`;
         this.results.forEach((r, i) => {
