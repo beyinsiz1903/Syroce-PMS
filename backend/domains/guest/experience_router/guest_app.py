@@ -27,6 +27,40 @@ from modules.pms_core.role_permission_service import require_role
 
 from .room_service_realtime import emit_order_event, order_stream
 
+# ── Booking ownership helper ──────────────────────────────────────────────────
+async def _assert_guest_owns_booking(booking: dict, current_user: User) -> None:
+    """Enforce booking ownership for guest_app principals.
+
+    Staff roles may access any booking within their tenant without restriction.
+    Callers with the ``guest_app`` role must own the booking — the tenant-scoped
+    guest record associated with their e-mail address must match
+    ``booking.guest_id``.  Raises HTTP 403 otherwise.
+
+    This mirrors the authorization logic already applied by
+    ``_user_can_subscribe_to_booking()`` (WebSocket path) and
+    ``_assert_booking_accessible()`` (checkin_router), ensuring a single
+    consistent ownership contract across all booking-scoped guest endpoints.
+    """
+    role = getattr(current_user.role, "value", str(current_user.role))
+    if role != "guest_app":
+        return  # Staff / admin callers are not restricted to their own bookings.
+
+    # Collect *all* tenant-scoped guest records for this e-mail address (mirrors
+    # the multi-record lookup in _user_can_subscribe_to_booking) so that a guest
+    # with duplicate records is not incorrectly denied access.
+    guest_ids: list[str] = []
+    async for g in db.guests.find(
+        {"email": current_user.email, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "id": 1},
+    ):
+        gid = g.get("id")
+        if gid:
+            guest_ids.append(gid)
+
+    if not guest_ids or booking.get("guest_id") not in guest_ids:
+        raise HTTPException(status_code=403, detail="Bu rezervasyon size ait değil")
+
+
 # Staff-only allow-list for PATCH /room-service-orders/{id}/status.
 # Module-level so tests can pin it.
 _ROOM_SERVICE_STAFF_ROLES = (
@@ -264,7 +298,6 @@ router = APIRouter(prefix="/api", tags=["guest-experience"])
 
 # ── GET /guest/bookings ──
 @router.get("/guest/bookings")
-@cached(ttl=300, key_prefix="guest_bookings_history")  # Cache for 5 min
 async def get_guest_bookings(
     current_user: User = Depends(get_current_user)
 ):
@@ -639,6 +672,8 @@ async def create_room_service_order(
     if not booking:
         raise HTTPException(status_code=404, detail="Active booking not found")
 
+    await _assert_guest_owns_booking(booking, current_user)
+
     # Calculate total
     total_amount = sum(item.get('price', 0) * item.get('quantity', 1) for item in items)
 
@@ -707,6 +742,14 @@ async def get_room_service_orders(
     current_user: User = Depends(get_current_user)
 ):
     """Get room service orders for a booking"""
+    booking = await db.bookings.find_one(
+        {'id': booking_id, 'tenant_id': current_user.tenant_id},
+        {'_id': 0, 'id': 1, 'guest_id': 1},
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    await _assert_guest_owns_booking(booking, current_user)
+
     orders = []
     async for order in db.room_service_orders.find({
         'tenant_id': current_user.tenant_id,
@@ -1116,6 +1159,8 @@ async def create_guest_request(
     if not booking:
         raise HTTPException(status_code=404, detail="Active booking not found")
 
+    await _assert_guest_owns_booking(booking, current_user)
+
     request = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -1167,6 +1212,14 @@ async def get_guest_requests(
     current_user: User = Depends(get_current_user)
 ):
     """Get guest requests for a booking"""
+    booking = await db.bookings.find_one(
+        {'id': booking_id, 'tenant_id': current_user.tenant_id},
+        {'_id': 0, 'id': 1, 'guest_id': 1},
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    await _assert_guest_owns_booking(booking, current_user)
+
     requests = []
     async for req in db.guest_requests.find({
         'tenant_id': current_user.tenant_id,
@@ -1266,6 +1319,8 @@ async def web_checkin(
 
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found or already checked in")
+
+    await _assert_guest_owns_booking(booking, current_user)
 
     # Check if check-in date is today or past
     check_in_date = datetime.fromisoformat(booking['check_in'])

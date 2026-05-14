@@ -466,6 +466,7 @@ async def get_online_checkin_status(
     booking_id: str, current_user: User = Depends(get_current_user)
 ):
     """Online check-in durumunu getir"""
+    await _assert_booking_accessible(booking_id, current_user)
     checkin = await db.online_checkins.find_one(
         {"booking_id": booking_id, "tenant_id": current_user.tenant_id}, {"_id": 0}
     )
