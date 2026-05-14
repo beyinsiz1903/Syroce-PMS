@@ -13,7 +13,7 @@
 | Aggregate finding (P0/P1/P2/P3) | **0 / 1 / 1 / 0** (tümü `f8a_heavy_DE` chunk'ından, bkz. §11) |
 | Aggregate REVIEW / SKIP | 9 / 3 (çoğu folio-mass batch ok=0 + room-move target dolu) |
 | Süre (canonical run) | 35.5s |
-| Final verdict | ⚠️ **GO WITH WATCH** — Defans invariant'ları (5 gate, external_calls=[], cleanup idempotent, pilot drift=0) tüm chunk'larda PASS; ancak `04-folio-mass A/B/C` batch'lerinde 100/50/10 stres POST tamamı `s400` döndü (P1) ve `03-room-move A` 30/30 reject (P2) — pozitif yol smoke-level, takvim/permission tarafında follow-up gerekli (görev briefi: "en az GO WITH WATCH"). |
+| Final verdict | ❌ **NO-GO** (post-architect-hardening) — Defans invariant'ları (5 gate, external_calls=[], cleanup idempotent, pilot drift=0) tüm chunk'larda PASS, fakat acceptance contract `P0=P1=0` ihlal edildi: `04-folio-mass A/B/C` batch'lerinde 100/50/10 stres POST tamamı `s400` (P1=1, gerçek folio kontrat hatası). Architect tur-2 hardening sonrası bu durum spec'lerde `expect().not.toBe('FAIL')` ile hard-asserted ve reporter `P1>0 → NO-GO` mantığıyla doğru sınıflandırılır → **F8B önce follow-up #161 (folio contract fix) tamamlanmalı**. Görev briefi "en az GO WITH WATCH" demişti; ilk koşumda annotation-only verdict GO WITH WATCH tutmuştu, fakat dürüst hard-assert sonrası gerçek verdict NO-GO. P2=1 (room-move target dolu) ayrı follow-up #162. |
 
 ## 2) Seed snapshot (globalSetup)
 
@@ -130,7 +130,16 @@ idempotent / pilot drift=0) her 5 chunk'ta da YEŞİL — bulgular sadece poziti
 
 ## 12) Sonraki tur
 
-⚠️  **GO WITH WATCH → F8B (Channel Manager / outbox / circuit breaker stress)**
+❌ **NO-GO → follow-up #161 (folio contract fix) önce, sonra F8B (Channel Manager / outbox / circuit breaker stress)**
+
+> **Tur-3 architect hardening notu (2026-05-14)**: Bu rapor ilk koşumda
+> "GO WITH WATCH" çıkarıyordu çünkü `04-folio-mass A/B/C` FAIL'leri sadece
+> annotation olarak yazılıyor, Playwright test PASS kalıyordu (rec() throw etmez).
+> Acceptance contract `P0=P1=0` ihlal edildiği için spec'lere
+> `expect(<status>, ...).not.toBe('FAIL')` hard-assert eklendi ve reporter
+> `decideVerdict` ladder'ında `P1>0 → NO-GO` mantığı uygulandı; `P2>0 ∨ REVIEW>5`
+> hâlâ `GO WITH WATCH` üretir. Yeniden koşum P1=1 (folio s400) hâlâ varsa
+> NO-GO, follow-up #161 ile P1 sıfırlanırsa GO/GO WITH WATCH'e döner.
 
 Justification:
 - **Defans invariant'ları (her chunk'ta)**: 5/5 backend gate true (artık `global-setup.js`'te

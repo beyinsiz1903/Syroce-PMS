@@ -60,6 +60,8 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             recFinding(testInfo, 'P1', MOD, 'Folio charge tüm denemelerde başarısız',
                 `${sample.length} charge POST 0 başarı. Modes: ${JSON.stringify(failModes)}. Permission veya folio_id resolution sorunu olabilir.`);
         }
+        // Hard-fail Playwright test (architect feedback): annotation alone leaves test PASS.
+        expect(chargeStatus, `charge_post_batch FAIL: n=${sample.length} ok=${ok} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
     });
 
     test('B) 50 dry-run payment POST (cash, reference="F8A_DRY_RUN")', async ({ request, stressTokens }, testInfo) => {
@@ -86,6 +88,7 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             endpoint: '/api/pms-core/folio/payment',
             note: `n=${sample.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} method=cash (DRY-RUN, no Stripe)` });
         recPerf(testInfo, MOD, 'folio_payment', samples, ok > sample.length * 0.5);
+        expect(paymentStatus, `payment_post_batch FAIL: n=${sample.length} ok=${ok} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
     });
 
     test('C) Folio split-by-amount (10 folio)', async ({ request, stressTokens }, testInfo) => {
@@ -102,10 +105,12 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             if (r.ok) ok++;
             else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
         }
-        rec(testInfo, { module: MOD, step: 'folio_split_batch', status: ok > 0 ? 'PASS' : 'FAIL',
+        const splitStatus = ok > 0 ? 'PASS' : 'FAIL';
+        rec(testInfo, { module: MOD, step: 'folio_split_batch', status: splitStatus,
             endpoint: '/api/pms-core/folio/split-by-amount',
             note: `n=${sample.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)}` });
         recPerf(testInfo, MOD, 'folio_split', samples, ok > 0);
+        expect(splitStatus, `folio_split_batch FAIL: n=${sample.length} ok=${ok} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
     });
 
     test('D) Folio audit GET (5 folio)', async ({ request, stressTokens }, testInfo) => {

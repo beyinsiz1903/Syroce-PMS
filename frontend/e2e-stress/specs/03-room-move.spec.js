@@ -48,11 +48,13 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
         // Hard-fail when no positive move succeeds AND we had ≥5 in-flight bookings to attempt
         // (architect feedback: business outcome must be enforced, not just observed). Below 5
         // attempts → SKIP/REVIEW (insufficient seed). Otherwise 0/N FAIL = real bug.
-        const moveStatus = (sample.length >= 5 && ok === 0) ? 'FAIL' : (ok > 0 ? 'PASS' : 'REVIEW');
+        const moveStatus = (target.length >= 5 && ok === 0) ? 'FAIL' : (ok > 0 ? 'PASS' : 'REVIEW');
         rec(testInfo, { module: MOD, step: 'positive_room_move', status: moveStatus,
             endpoint: '/api/pms-core/room-move',
             note: `n=${target.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} (hedef oda dolu/OOO ise reject normal)` });
         recPerf(testInfo, MOD, 'room_move', samples, true);
+        // Hard-fail Playwright test as well — annotation alone is not enough (architect feedback).
+        expect(moveStatus, `positive_room_move FAIL: n=${target.length} ok=${ok} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
         if (ok === 0 && checkedIn.length >= 30) {
             recFinding(testInfo, 'P2', MOD, 'Hiçbir room-move başarılı değil',
                 `${target.length} move denendi, hepsi reject. Tüm hedef odalar dolu olabilir (500/500 seed) — pozitif test için 02-spec'in checkout sonrası boş room override gerekli.`);

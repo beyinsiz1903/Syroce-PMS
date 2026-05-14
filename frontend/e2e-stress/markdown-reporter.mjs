@@ -221,9 +221,15 @@ function decideVerdict({ counters, failedTests, runResult, state, teardown, sevA
         if (c2 && !c2.idempotent) return { label: 'NO-GO', reason: 'cleanup not idempotent', next: '❌ NO-GO — cleanup idempotent değil.' };
         if (pd && pd.drift !== 0) return { label: 'NO-GO', reason: `pilot drift=${pd.drift}`, next: '❌ NO-GO — pilot mutation tespit edildi.' };
     }
-    if (sevAgg.P1 > 0 || counters.REVIEW > 5) {
-        return { label: 'GO WITH WATCH', reason: `P1=${sevAgg.P1} REVIEW=${counters.REVIEW}`,
-            next: `⚠️  **GO WITH WATCH → ${nextStep}** — REVIEW/P1 maddeleri sonraki turda izlenecek.` };
+    // F8A acceptance contract (architect feedback): P0=P1=0 required, otherwise NO-GO.
+    // P2-only or REVIEW-heavy → GO WITH WATCH.
+    if (sevAgg.P1 > 0) {
+        return { label: 'NO-GO', reason: `P1 finding=${sevAgg.P1}`,
+            next: `❌ **NO-GO** — ${nextStep} öncesi P1 düzeltilmeli (acceptance contract: P0=P1=0).` };
+    }
+    if (sevAgg.P2 > 0 || counters.REVIEW > 5) {
+        return { label: 'GO WITH WATCH', reason: `P2=${sevAgg.P2} REVIEW=${counters.REVIEW}`,
+            next: `⚠️  **GO WITH WATCH → ${nextStep}** — REVIEW/P2 maddeleri sonraki turda izlenecek.` };
     }
     return { label: 'GO', reason: `Tüm gate + spec adımları PASS, cleanup idempotent, pilot mutation=0, P0/P1=0`,
         next: `✅ **GO → ${nextStep}**` };
