@@ -217,9 +217,10 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
 
                 // 3) İlk room card / row görünür hale gelene kadar bekle (whitelist selector
                 //    listesi — design system değişirse genişletilmeli). Soft-fail: bulamazsak
-                //    REVIEW yazıp devam et.
+                //    REVIEW yazıp devam et. Architect tur-4: 50/200/500 row checkpoint timing.
                 let firstRow = -1;
                 let totalRows = 0;
+                let activeSel = null;
                 const candidates = [
                     '[data-testid="room-card"]',
                     '[data-testid="hk-room-row"]',
@@ -232,8 +233,26 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
                         await page.locator(sel).first().waitFor({ state: 'visible', timeout: 8_000 });
                         firstRow = Date.now() - t0;
                         totalRows = await page.locator(sel).count();
+                        activeSel = sel;
                         break;
                     } catch (_e) { /* try next */ }
+                }
+                // 3b) Architect tur-4: explicit 50/200/500 row checkpoint timing.
+                // Polling-based — DOM render incremental olduğu için count zaman içinde artar.
+                // Her threshold için ilk geçiş anını yakalar. Bulunamazsa -1 kalır (REVIEW).
+                const checkpoints = { 50: -1, 200: -1, 500: -1 };
+                if (activeSel) {
+                    const deadline = t0 + 25_000; // total scaling budget
+                    while (Date.now() < deadline) {
+                        const c = await page.locator(activeSel).count().catch(() => 0);
+                        const elapsed = Date.now() - t0;
+                        if (checkpoints[50]  === -1 && c >= 50)  checkpoints[50]  = elapsed;
+                        if (checkpoints[200] === -1 && c >= 200) checkpoints[200] = elapsed;
+                        if (checkpoints[500] === -1 && c >= 500) checkpoints[500] = elapsed;
+                        totalRows = Math.max(totalRows, c);
+                        if (checkpoints[500] !== -1) break;
+                        await page.waitForTimeout(200);
+                    }
                 }
 
                 // 4) Mobile viewport'ta tek transition (ilk row'a tıkla → state UI değişimi)
@@ -254,6 +273,7 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
                 measurements.push({
                     viewport: vp.name, http: resp?.status() ?? 0,
                     ttfb_ms: ttfb, dom_ms: dom, first_row_ms: firstRow,
+                    rows_50_ms: checkpoints[50], rows_200_ms: checkpoints[200], rows_500_ms: checkpoints[500],
                     total_rows: totalRows, transition_ms: transitionMs,
                 });
             } finally {
@@ -262,22 +282,32 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
             }
         }
 
-        // 5) Verdict — 500 row için DOM<10s, first row<8s, mobile transition<3s.
-        //    Selector hiç eşleşmediyse REVIEW (UI değişti, yeniden whitelist gerek).
+        // 5) Verdict (architect tur-4): 50 rows<3s, 200 rows<6s, 500 rows<10s gate.
+        //    Ek: DOM<10s, first row<8s. Selector hiç eşleşmediyse REVIEW.
         const desktop = measurements.find((m) => m.viewport === 'desktop_1440');
         const mobile = measurements.find((m) => m.viewport === 'mobile_390');
         const noRows = (desktop?.total_rows ?? 0) === 0 && (mobile?.total_rows ?? 0) === 0;
-        const slow = measurements.some((m) => m.dom_ms > 10_000 || (m.first_row_ms > 0 && m.first_row_ms > 8_000));
+        const ROW_GATES = { 50: 3_000, 200: 6_000, 500: 10_000 };
+        const gateBreaches = [];
+        for (const m of measurements) {
+            for (const k of [50, 200, 500]) {
+                const v = m[`rows_${k}_ms`];
+                if (v > 0 && v > ROW_GATES[k]) gateBreaches.push({ viewport: m.viewport, threshold: k, ms: v, gate: ROW_GATES[k] });
+            }
+            if (m.dom_ms > 10_000) gateBreaches.push({ viewport: m.viewport, kind: 'dom_ms', ms: m.dom_ms, gate: 10_000 });
+            if (m.first_row_ms > 0 && m.first_row_ms > 8_000) gateBreaches.push({ viewport: m.viewport, kind: 'first_row_ms', ms: m.first_row_ms, gate: 8_000 });
+        }
+        const slow = gateBreaches.length > 0;
         const status = noRows ? 'REVIEW' : (slow ? 'FAIL' : 'PASS');
         rec(testInfo, { module: MOD, step: 'fe_render_tti', status,
             endpoint: '/housekeeping (FE)',
-            note: `fe_base=${feBase} viewports=${measurements.length} measurements=${JSON.stringify(measurements)} (DOM<10s + first_row<8s gate; selector miss=REVIEW)` });
+            note: `fe_base=${feBase} viewports=${measurements.length} measurements=${JSON.stringify(measurements)} gates(rows_50<3s,200<6s,500<10s,dom<10s,first_row<8s) breaches=${JSON.stringify(gateBreaches)}` });
         recPerf(testInfo, MOD, 'fe_render_tti_desktop', desktop ? [desktop.dom_ms] : [], !slow);
         recPerf(testInfo, MOD, 'fe_render_tti_mobile', mobile ? [mobile.dom_ms] : [], !slow);
         if (slow) {
             recFinding(testInfo, 'P2', MOD,
-                'HK FE render TTI 500-row gate aşıldı',
-                `Measurements: ${JSON.stringify(measurements)}. DOM>10s veya first_row>8s — 500-oda render virtualization/pagination gözden geçirilmeli.`);
+                'HK FE render TTI gate aşıldı (50/200/500 row checkpoint)',
+                `Breaches: ${JSON.stringify(gateBreaches)}. 500-oda render için virtualization/pagination gerekli olabilir. Measurements: ${JSON.stringify(measurements)}`);
         }
         if (noRows) {
             rec(testInfo, { module: MOD, step: 'fe_render_tti_selector_miss', status: 'REVIEW',

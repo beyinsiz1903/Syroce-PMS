@@ -391,29 +391,64 @@ async def stress_seed(
 async def stress_external_calls_status(
     current_user: User = Depends(require_super_admin),
 ):
-    """Runtime read-only invariant check: returns the list of any external HTTP/SMS/email
-    calls dispatched since process start in the stress tenant context.
+    """Runtime read-only invariant check: queries the actual outbox collections
+    (`outbox_events` SXI bus + `integration_afsadakat_outbox`) for any rows scoped
+    to the stress tenant. Under `E2E_EXTERNAL_DRY_RUN=true`, dispatcher writes
+    nothing → an empty list is the expected post-batch invariant.
 
-    F8A § post-batch invariant (architect tur-3 feedback): destructive batch'lerden
-    SONRA bu endpoint çağrılır ve `external_calls_made` listesinin hâlâ boş olduğu
-    runtime olarak doğrulanır. Yalnız read-only — tek başına hiçbir state değiştirmez.
-    `E2E_EXTERNAL_DRY_RUN=true` env (fail-closed: env yoksa workflow başlamaz) ile
-    birlikte iki katmanlı sözleşme oluşturur:
-      (a) backend dispatcher DRY_RUN'da no-op,
-      (b) bu endpoint runtime sayacı yansıtır (sayaç gelecekte plug edilirse).
+    F8A § post-batch invariant (architect tur-3/tur-4 feedback): destructive
+    batch'lerden SONRA bu endpoint çağrılır; eğer dispatcher DRY_RUN bayrağını
+    bypass eder ve outbox'a yazarsa, runtime burada görünür. Tüm match'ler
+    identifier+target+status ile döner (payload exclude — log volume kontrolü).
 
-    Şimdiki implementation snapshot baseline'ı doğrular ve `dry_run_enforced` ile
-    env contract'ını yansıtır; sayaç değişkeni gelecek backlog (P3) — interface
-    sabit, helper bozulmadan upgrade edilebilir.
+    Two-layer contract:
+      (a) `dry_run_enforced`: backend dispatcher env doğrulaması (env yoksa false),
+      (b) `external_calls_made`: stress_tid-scoped outbox satırları (gerçek runtime).
     """
     import os
-    gates = _gates(_stress_tid())
+    from core.database import db, sysdb
+    stress_tid = _stress_tid()
+    gates = _gates(stress_tid)
+    calls: list[dict] = []
+    query_errors: list[str] = []
+
+    # 1) SXI bus outbox (sysdb-scoped)
+    try:
+        cursor = sysdb.outbox_events.find(
+            {"tenant_id": stress_tid},
+            projection={"_id": 0, "event_type": 1, "target": 1, "status": 1, "created_at": 1, "attempts": 1},
+        ).sort("created_at", -1).limit(50)
+        async for doc in cursor:
+            doc["source"] = "outbox_events"
+            if "created_at" in doc and hasattr(doc["created_at"], "isoformat"):
+                doc["created_at"] = doc["created_at"].isoformat()
+            calls.append(doc)
+    except Exception as e:  # noqa: BLE001
+        query_errors.append(f"outbox_events:{type(e).__name__}")
+
+    # 2) Afsadakat outbox (tenant-scoped db)
+    try:
+        with tenant_context(stress_tid):
+            cursor = db.integration_afsadakat_outbox.find(
+                {},
+                projection={"_id": 0, "event_type": 1, "status": 1, "created_at": 1, "attempts": 1},
+            ).sort("created_at", -1).limit(50)
+            async for doc in cursor:
+                doc["source"] = "integration_afsadakat_outbox"
+                if "created_at" in doc and hasattr(doc["created_at"], "isoformat"):
+                    doc["created_at"] = doc["created_at"].isoformat()
+                calls.append(doc)
+    except Exception as e:  # noqa: BLE001
+        query_errors.append(f"afsadakat_outbox:{type(e).__name__}")
+
     return {
-        "external_calls_made": [],  # placeholder — runtime sayaç plug edilince buraya
+        "external_calls_made": calls,  # boş = invariant tutuyor; non-empty = dispatcher bypass
+        "external_calls_count": len(calls),
         "dry_run_enforced": os.environ.get("E2E_EXTERNAL_DRY_RUN", "").lower() == "true",
+        "query_errors": query_errors,  # collection erişilemezse REVIEW olarak değerlendir
+        "sources_checked": ["outbox_events", "integration_afsadakat_outbox"],
         "gates": gates,
         "tenant_context_used": True,
-        "note": "Runtime-read placeholder; baseline=[]. Live counter is P3 backlog — interface stable.",
     }
 
 
