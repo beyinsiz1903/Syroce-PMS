@@ -88,4 +88,5 @@ if [ -f "$(dirname "$0")/../.local/.stress_env" ]; then
 fi
 
 cd "$(dirname "$0")"
-exec python -m uvicorn server:app --host 0.0.0.0 --port 8000
+PORT="${PORT:-8000}"
+exec python -m uvicorn server:app --host 0.0.0.0 --port "$PORT"

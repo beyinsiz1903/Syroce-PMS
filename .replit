@@ -103,9 +103,10 @@ localPort = 8099
 externalPort = 8099
 
 [deployment]
-deploymentTarget = "static"
-build = ["bash", "-c", "cd frontend && yarn install && yarn build"]
+deploymentTarget = "autoscale"
+build = ["bash", "-c", "cd frontend && yarn install --ignore-engines --frozen-lockfile && yarn build"]
 publicDir = "frontend/build"
+run = ["bash", "backend/start.sh"]
 
 [userenv]
 

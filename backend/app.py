@@ -189,6 +189,36 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         import logging
         logging.getLogger(__name__).warning("Upload static mount failed (%s): %s", upload_dir, e)
 
+    # ── Frontend SPA static serving (combined deployment) ───────────
+    # Replit autoscale: serve built frontend through FastAPI so one URL
+    # hosts both API (/api/*, /ws, /docs) and SPA. Skipped when build dir
+    # is absent (dev mode uses Vite on a separate port).
+    # Uses a 404 exception handler instead of a catch-all GET route so we
+    # don't shadow trailing-slash redirects or other framework routes.
+    frontend_build = Path(os.environ.get("FRONTEND_BUILD_DIR", str(_backend_dir.parent / "frontend" / "build")))
+    if frontend_build.is_dir() and (frontend_build / "index.html").is_file():
+        from starlette.exceptions import HTTPException as _StarletteHTTPException
+        from starlette.requests import Request as _Request
+        from starlette.responses import FileResponse as _FR
+        from starlette.responses import JSONResponse as _JR
+
+        for _sub in ("assets", "js", "logos"):
+            _d = frontend_build / _sub
+            if _d.is_dir():
+                application.mount(f"/{_sub}", StaticFiles(directory=str(_d)), name=f"spa_{_sub}")
+
+        _SPA_PROTECTED_PREFIXES = ("/api", "/ws", "/docs", "/redoc", "/openapi", "/graphql")
+
+        @application.exception_handler(404)
+        async def _spa_404_handler(request: _Request, exc: _StarletteHTTPException):
+            path = request.url.path
+            if path.startswith(_SPA_PROTECTED_PREFIXES):
+                return _JR({"detail": "Not Found"}, status_code=404)
+            candidate = frontend_build / path.lstrip("/")
+            if path != "/" and candidate.is_file():
+                return _FR(str(candidate))
+            return _FR(str(frontend_build / "index.html"))
+
     # ── OpenAPI schema cache ────────────────────────────────────────
     # With ~2435 paths, FastAPI's default openapi() rebuild costs ~1.5s per request
     # (called by /docs, /redoc, /api/openapi.json). Cache the generated dict so the
