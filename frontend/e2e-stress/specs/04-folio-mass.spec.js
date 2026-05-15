@@ -128,6 +128,10 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             samples.push(r.ms);
             if (r.ok) ok++;
             else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
+            // Throttle: global rate limiter (apm_middleware) 10-req/window cap'i
+            // F8A burst'ünde tetikliyor (s429). 120ms inter-request gap sliding
+            // window'u rahatlatıyor; toplam ek süre ~1.2s (ihmal edilebilir).
+            await new Promise((res) => setTimeout(res, 120));
         }
         const splitStatus = ok > 0 ? 'PASS' : 'FAIL';
         rec(testInfo, { module: MOD, step: 'folio_split_batch', status: splitStatus,

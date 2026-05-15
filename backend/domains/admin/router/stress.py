@@ -411,7 +411,9 @@ async def stress_external_calls_status(
       (a) `dry_run_enforced`: backend dispatcher env doğrulaması (env yoksa false),
       (b) `external_calls_made`: stress_tid-scoped outbox satırları (gerçek runtime).
     """
-    from core.database import db, sysdb
+    from core.database import db
+    from core.tenant_db import get_system_db
+    sysdb = get_system_db()
 
     stress_tid = _stress_tid()
     gates = _gates(stress_tid)
