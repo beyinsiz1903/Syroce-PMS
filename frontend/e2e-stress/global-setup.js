@@ -12,13 +12,34 @@ const STRESS_TID = process.env.E2E_STRESS_TENANT_ID;
 const PILOT_TID = process.env.PILOT_TENANT_ID || '';
 
 async function login(api, email, password) {
-    const resp = await api.post('/api/auth/login', { data: { email, password }, failOnStatusCode: false });
+    const resp = await api.post('/api/auth/login', { data: { email, password }, failOnStatusCode: false, timeout: 120_000 });
     if (!resp.ok()) {
         const txt = await resp.text().catch(() => '');
         throw new Error(`[stress-setup] login failed (${resp.status()}): ${txt.slice(0, 200)}`);
     }
     const body = await resp.json();
     return body?.access_token || body?.token;
+}
+
+// Replit Autoscale (1 Max instance) idle olunca soğuk başlar; CI'dan ilk POST
+// 60s timeout'a takılabiliyor (Mongo Atlas + Redis init). Login öncesi GET ile
+// instance'ı uyandır, 5 retry × 5s backoff. Her retry kendi 30s timeout'u.
+async function warmup(api) {
+    const started = Date.now();
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+            const r = await api.get('/api/health', { failOnStatusCode: false, timeout: 30_000 });
+            const ms = Date.now() - started;
+            console.log(`[stress-setup] warmup attempt=${attempt} status=${r.status()} elapsed=${ms}ms`);
+            if (r.status() < 500) return;
+        } catch (e) {
+            lastErr = e;
+            console.log(`[stress-setup] warmup attempt=${attempt} err=${e.message}`);
+        }
+        if (attempt < 5) await new Promise((res) => setTimeout(res, 5000));
+    }
+    console.log(`[stress-setup] warmup gave up after 5 attempts (lastErr=${lastErr?.message}) — login deneyecek`);
 }
 
 async function safeJson(p) { try { return await p; } catch { return null; } }
@@ -48,7 +69,10 @@ async function snapshot(api, token, tag) {
 export default async function globalSetup() {
     fs.mkdirSync(AUTH_DIR, { recursive: true });
     const baseURL = process.env.E2E_BASE_URL;
-    const api = await request.newContext({ baseURL, ignoreHTTPSErrors: true, timeout: 60_000 });
+    const api = await request.newContext({ baseURL, ignoreHTTPSErrors: true, timeout: 120_000 });
+
+    // 0) Warmup — Replit Autoscale cold-start guard (idle instance ilk POST'ta 60s'yi aşabiliyor)
+    await warmup(api);
 
     // 1) Stress admin login
     const stressEmail = process.env.E2E_STRESS_ADMIN_EMAIL;
