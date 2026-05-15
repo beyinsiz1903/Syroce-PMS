@@ -1,5 +1,7 @@
 # F8A — Front Office + Folio + Housekeeping Operational Stress — 20260514
 
+> **STATUS UPDATE 2026-05-15**: Bu rapor #161 fix'inden ÖNCEKİ NO-GO snapshot'ıdır. Aşağıdaki `04 folio-mass A/B/C s400` P1 finding'i, `5587e010 fix(stress): seed bookings with folio_id` commit'i ile root-cause düzeyinde çözüldü (`backend/domains/admin/router/stress.py:233`). Sonraki F8A workflow run'ı verdict'i GO/GO WITH WATCH'e döndürmeli. Detay: `replit.md` Gotchas → "F8A Stress (DONE — #161 RESOLVED)".
+
 > Suite: `frontend/e2e-stress/` (Playwright config: `playwright.stress.config.js`). Üretildi: 2026-05-14T02:17:56.835Z · Tag: `f8a_frontoffice_folio_hk`
 
 ## 1) Yönetici özeti
