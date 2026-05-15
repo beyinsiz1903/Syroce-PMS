@@ -122,7 +122,11 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
                 runtimeBody = await r.json().catch(() => null);
                 const calls = runtimeBody?.external_calls_made;
                 const dryRunEnforced = runtimeBody?.dry_run_enforced === true;
-                runtimeOk = Array.isArray(calls) && calls.length === 0 && dryRunEnforced;
+                // Architect tur-6 review: backend query_errors[] dolu ise invariant
+                // doğrulanamamış sayılır (DB sorgusu fail oldu → outbox boşluğunu
+                // garanti edemiyoruz). False-PASS önlemek için bunu da kontrol et.
+                const queryErrors = Array.isArray(runtimeBody?.query_errors) ? runtimeBody.query_errors : [];
+                runtimeOk = Array.isArray(calls) && calls.length === 0 && dryRunEnforced && queryErrors.length === 0;
             }
         } catch (e) { endpointError = String(e?.message || e); }
     }

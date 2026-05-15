@@ -364,6 +364,24 @@ async def stress_seed(
         counts["housekeeping_tasks"] = await _chunked_insert(db.housekeeping_tasks, hk_docs, INSERT_CHUNK_SIZE)
     insert_ms = round((time.perf_counter() - t_insert_start) * 1000, 1)
 
+    # Cache bust (architect tur-6 fix): rooms endpoint Redis cache'i seed öncesi
+    # döküman setiyle (eski projection, eksik stress_prefix) doluysa fetchAllByPrefix
+    # filter'ı 0 döner → room-move setup FAIL. Stress tenant'ın rooms cache'lerini
+    # invalidate ederek temiz başla. cache_warmer pre-warm pattern'i de aynı prefix.
+    try:
+        from redis_cache import redis_cache
+        if redis_cache:
+            redis_cache.clear_pattern(f"rooms:{stress_tid}:*")
+    except Exception:
+        pass
+    try:
+        from cache_warmer import cache_warmer
+        if cache_warmer:
+            for k in [f"rooms:{stress_tid}", f"bookings:{stress_tid}", f"frontdesk:{stress_tid}"]:
+                cache_warmer.cache.pop(k, None)
+    except Exception:
+        pass
+
     return {
         "success": True,
         "target_tenant_id": stress_tid,
@@ -411,43 +429,60 @@ async def stress_external_calls_status(
       (a) `dry_run_enforced`: backend dispatcher env doğrulaması (env yoksa false),
       (b) `external_calls_made`: stress_tid-scoped outbox satırları (gerçek runtime).
     """
-    from core.database import db
-    from core.tenant_db import get_system_db
-    sysdb = get_system_db()
-
-    stress_tid = _stress_tid()
-    gates = _gates(stress_tid)
+    import logging as _logging
+    _log = _logging.getLogger("stress.external_calls")
     calls: list[dict] = []
     query_errors: list[str] = []
+    stress_tid = ""
+    gates: dict[str, Any] = {}
 
-    # 1) SXI bus outbox (sysdb-scoped)
+    # Top-level guard (architect tur-6 fix): bu endpoint asla 500 dönmemeli.
+    # CI'da gizli traceback'leri yakalamak için her hata `query_errors`'a yazılır
+    # ve Sentry'ye logger.exception ile gönderilir. Helper status=200 + boş calls
+    # gördüğünde PASS verir; non-empty calls FAIL → gerçek invariant ihlali.
     try:
-        cursor = sysdb.outbox_events.find(
-            {"tenant_id": stress_tid},
-            projection={"_id": 0, "event_type": 1, "target": 1, "status": 1, "created_at": 1, "attempts": 1},
-        ).sort("created_at", -1).limit(50)
-        async for doc in cursor:
-            doc["source"] = "outbox_events"
-            if "created_at" in doc and hasattr(doc["created_at"], "isoformat"):
-                doc["created_at"] = doc["created_at"].isoformat()
-            calls.append(doc)
-    except Exception as e:  # noqa: BLE001
-        query_errors.append(f"outbox_events:{type(e).__name__}")
+        from core.database import db
+        from core.tenant_db import get_system_db
+        sysdb = get_system_db()
 
-    # 2) Afsadakat outbox (tenant-scoped db)
-    try:
-        with tenant_context(stress_tid):
-            cursor = db.integration_afsadakat_outbox.find(
-                {},
-                projection={"_id": 0, "event_type": 1, "status": 1, "created_at": 1, "attempts": 1},
+        stress_tid = _stress_tid()
+        gates = _gates(stress_tid)
+
+        # 1) SXI bus outbox (sysdb-scoped)
+        try:
+            cursor = sysdb.outbox_events.find(
+                {"tenant_id": stress_tid},
+                projection={"_id": 0, "event_type": 1, "target": 1, "status": 1, "created_at": 1, "attempts": 1},
             ).sort("created_at", -1).limit(50)
             async for doc in cursor:
-                doc["source"] = "integration_afsadakat_outbox"
+                doc["source"] = "outbox_events"
                 if "created_at" in doc and hasattr(doc["created_at"], "isoformat"):
                     doc["created_at"] = doc["created_at"].isoformat()
                 calls.append(doc)
+        except Exception as e:  # noqa: BLE001
+            _log.exception("outbox_events query failed for stress_tid=%s", stress_tid)
+            query_errors.append(f"outbox_events:{type(e).__name__}:{str(e)[:200]}")
+
+        # 2) Afsadakat outbox (tenant-scoped db)
+        try:
+            with tenant_context(stress_tid):
+                cursor = db.integration_afsadakat_outbox.find(
+                    {},
+                    projection={"_id": 0, "event_type": 1, "status": 1, "created_at": 1, "attempts": 1},
+                ).sort("created_at", -1).limit(50)
+                async for doc in cursor:
+                    doc["source"] = "integration_afsadakat_outbox"
+                    if "created_at" in doc and hasattr(doc["created_at"], "isoformat"):
+                        doc["created_at"] = doc["created_at"].isoformat()
+                    calls.append(doc)
+        except Exception as e:  # noqa: BLE001
+            _log.exception("afsadakat_outbox query failed for stress_tid=%s", stress_tid)
+            query_errors.append(f"afsadakat_outbox:{type(e).__name__}:{str(e)[:200]}")
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
-        query_errors.append(f"afsadakat_outbox:{type(e).__name__}")
+        _log.exception("stress_external_calls_status top-level failure")
+        query_errors.append(f"top_level:{type(e).__name__}:{str(e)[:200]}")
 
     return {
         "external_calls_made": calls,  # boş = invariant tutuyor; non-empty = dispatcher bypass
