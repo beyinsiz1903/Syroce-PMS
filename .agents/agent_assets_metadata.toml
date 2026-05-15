@@ -30,3 +30,9 @@ id = "4dbLAw7iiXZ9NFf166c0Q"
 uri = "file://UCTAN_UCA_AUDIT_RAPORU.md"
 type = "text"
 title = "Syroce PMS — Uçtan Uca Audit + Opera Cloud Karşılaştırması"
+
+[[outputs]]
+id = "Oao2p96ZkLte1f-QRmZTB"
+uri = "file://docs/drill_reports/20260514_stress_f8a_frontoffice_folio_hk.md"
+type = "text"
+title = "F8A Stress Drill Report — Front Office + Folio + Housekeeping (2026-05-14)"
