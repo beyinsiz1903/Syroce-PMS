@@ -181,7 +181,7 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         if (!feBase && replitDomain) feBase = `https://5000-${replitDomain}`;
         if (!feBase) {
             rec(testInfo, { module: MOD, step: 'fe_render_tti', status: 'REVIEW',
-                note: 'E2E_FE_BASE_URL ve REPLIT_DEV_DOMAIN ikisi de unset — FE TTI ölçümü atlandı. CI run'da env set edilmeli.' });
+                note: "E2E_FE_BASE_URL ve REPLIT_DEV_DOMAIN ikisi de unset — FE TTI ölçümü atlandı. CI run'da env set edilmeli." });
             return;
         }
 
