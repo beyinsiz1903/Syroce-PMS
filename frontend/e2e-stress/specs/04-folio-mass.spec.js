@@ -17,14 +17,38 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
         // Folio listesi için doğrudan endpoint olmayabilir → checkout-preview üzerinden de erişebiliriz.
         // İlk attempt: /api/pms/folios
         folios = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/folios', 'stress_prefix', prefix, { maxPages: 8 });
+        let fallbackUsed = false;
+        let bookingsWithFolioId = 0;
         if (folios.length === 0 && bookings.length > 0) {
             // Booking üzerinden folio_id bulmaya çalış (booking objesinde folio_id varsa)
+            bookingsWithFolioId = bookings.filter((b) => b.folio_id).length;
             const fromBookings = bookings.filter((b) => b.folio_id).map((b) => ({ id: b.folio_id, booking_id: b.id }));
             folios = fromBookings;
+            fallbackUsed = true;
         }
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
-        rec(testInfo, { module: MOD, step: 'setup', status: folios.length > 0 ? 'PASS' : 'REVIEW',
-            note: `bookings=${bookings.length} folios=${folios.length} pilot_before=${pilotBefore?.count}` });
+        // Seed-contract regression guard (Task #174 / #161): if bookings exist
+        // but the seed factory forgot to write folio_id (or the bookings
+        // serializer started dropping it), the A/B/C batches would otherwise
+        // burn ~160 POSTs and report 100% s400. Fail fast at setup instead so
+        // operators see a single P0 finding pointing at the seed contract.
+        const contractBroken = bookings.length > 0 && folios.length === 0;
+        const setupStatus = contractBroken
+            ? 'FAIL'
+            : (folios.length > 0 ? 'PASS' : 'REVIEW');
+        rec(testInfo, { module: MOD, step: 'setup', status: setupStatus,
+            note: `bookings=${bookings.length} folios=${folios.length} pilot_before=${pilotBefore?.count} fallback=${fallbackUsed} bookings_with_folio_id=${bookingsWithFolioId}` });
+        if (contractBroken) {
+            recFinding(testInfo, 'P0', MOD,
+                'Folio target resolution kırık — seed contract regression',
+                `bookings=${bookings.length} ama hem /api/pms/folios=[] hem de bookings.folio_id boş (with_folio_id=${bookingsWithFolioId}). ` +
+                'Stress seed bookings_docs[].folio_id alanını yazmamış olabilir (backend/domains/admin/router/stress.py:233) ' +
+                'VEYA /api/pms/bookings serializer folio_id alanını dropluyor (modules/reservations/repository.py projection). ' +
+                'A/B/C batch\'leri tüm POST\'larda s400 dönecek — ileri çalıştırma anlamsız.');
+        }
+        expect(contractBroken,
+            `Folio target resolution broken: bookings=${bookings.length} folios=${folios.length} bookings_with_folio_id=${bookingsWithFolioId}. ` +
+            'Stress seed must write folio_id onto bookings (#161 fix commit 5587e010).').toBe(false);
     });
 
     test('A) 100 folio charge POST (mini-bar, restaurant, other)', async ({ request, stressTokens }, testInfo) => {
