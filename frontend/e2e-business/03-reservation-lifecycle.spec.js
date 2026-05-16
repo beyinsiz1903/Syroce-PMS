@@ -5,7 +5,7 @@ import { makeApi, safeGet } from './fixtures/api.js';
 import { factory, trackEntity } from './fixtures/data-factory.js';
 import {
     pickAvailableRoom, createTestBooking, cancelBooking,
-    fetchCalendarBookings, farFutureDates,
+    fetchCalendarBookings, farFutureDates, noShowBooking,
 } from './fixtures/pms-flow.js';
 
 const M = 'reservation';
@@ -124,11 +124,68 @@ test.describe('Scope 3 — Rezervasyon yaşam döngüsü', () => {
         await api.dispose();
     });
 
-    test('Terminal-state guard (no-show double) — endpoint discovery', async ({ baseURL }, testInfo) => {
+    // ── E2E (regression-catching): Terminal-state guard for no-show double-mark ──
+    // Hard-fails:
+    //   1. Booking create 2xx + id (confirmed)
+    //   2. İlk no-show POST 2xx + success
+    //   3. İkinci no-show POST 400 + "Cannot mark ... in 'no_show' state"
+    // No_show booking terminal'dir, recap cancel deneyemez → trackEntity completed.
+    // Bu test üretim-hardening fix'ini (NON_NOSHOWABLE_STATES guard,
+    // reservation_state_machine.py:31) regresyondan korur.
+    test('E2E: No-show terminal-state guard (double-mark 400)', async ({ baseURL }, testInfo) => {
         const api = await makeApi(baseURL);
-        const r = await safeGet(api, '/api/pms/bookings?status=no_show&limit=1');
-        rec(testInfo, { module: M, scope: 3, step: 'No-show liste endpoint mevcut', status: r.status < 500 ? PASS : REVIEW, endpoint: '/api/pms/bookings?status=no_show', http: r.status });
-        rec(testInfo, { module: M, scope: 3, step: 'İkinci no-show guard testi', status: SKIP, note: 'Pilot dataset üzerinde destructive sıralı state değişimi tetiklenmedi; canlı doğrulama T+0 sonrası önerilir.' });
+        const dates = farFutureDates();
+        const pick = await pickAvailableRoom(api, dates);
+        if (!pick.ok) {
+            rec(testInfo, { module: M, scope: 3, step: 'Müsait oda seçimi (no-show)', status: SKIP, note: pick.reason });
+            await api.dispose();
+            test.skip(true, `Pilot pre-condition eksik: ${pick.reason}`);
+            return;
+        }
+        rec(testInfo, { module: M, scope: 3, step: 'Müsait oda seçimi (no-show)', status: PASS, note: `room=${pick.room.room_number || pick.room.id}` });
+
+        const guestName = factory.guestName();
+        const created = await createTestBooking(api, {
+            roomId: pick.room.id, guestName,
+            check_in: dates.check_in, check_out: dates.check_out,
+            totalAmount: 1,
+        });
+        rec(testInfo, { module: M, scope: 3, step: 'POST /api/pms/quick-booking (no-show src)', status: created.ok ? PASS : FAIL, endpoint: '/api/pms/quick-booking', http: created.status, note: created.ok ? `id=${created.bookingId}` : (created.reason || '') });
+        expect(created.ok, `Booking create FAILED: ${created.reason || created.status}`).toBe(true);
+        expect(created.bookingId, 'Booking create returned no id').toBeTruthy();
+        trackEntity({
+            kind: 'booking', id: created.bookingId, label: guestName,
+            cleanup: 'pending', endpoint: '/api/pms-core/cancel',
+        });
+
+        // Hard-assert #1: İlk no-show 2xx + success.
+        const ns1 = await noShowBooking(api, created.bookingId);
+        const ns1Ok = ns1.ok && ns1.json?.success !== false;
+        rec(testInfo, {
+            module: M, scope: 3, step: 'POST /api/pms-core/no-show (1st)',
+            status: ns1Ok ? PASS : FAIL,
+            endpoint: '/api/pms-core/no-show', http: ns1.status,
+            note: ns1Ok ? 'no_show_marked' : (ns1.body?.slice(0, 200) || ''),
+        });
+        expect(ns1Ok, `First no-show FAILED: HTTP ${ns1.status} ${ns1.body?.slice(0, 200) || ''}`).toBe(true);
+        // Terminal → cancel mümkün değil; recap'i bilgilendir.
+        trackEntity({
+            kind: 'booking', id: created.bookingId, label: `${guestName} (no_show)`,
+            cleanup: 'completed', endpoint: '/api/pms-core/no-show',
+        });
+
+        // Hard-assert #2: İkinci no-show 400 (terminal-state guard).
+        // Recorder PASS/FAIL ile expect kontratı senkron: ikisi de yalnız status 400'e bakar
+        // (mesaj formatı ileride değişebilir; status guard'ın kararlı sinyalidir).
+        const ns2 = await noShowBooking(api, created.bookingId);
+        const blocked = ns2.status === 400;
+        rec(testInfo, {
+            module: M, scope: 3, step: 'POST /api/pms-core/no-show (2nd, beklenen 400)',
+            status: blocked ? PASS : FAIL,
+            endpoint: '/api/pms-core/no-show', http: ns2.status,
+            note: blocked ? `guard_enforced body="${(ns2.body || '').slice(0, 120)}"` : (ns2.body?.slice(0, 200) || `unexpected_status=${ns2.status}`),
+        });
+        expect(ns2.status, `Second no-show should return 400, got ${ns2.status}: ${ns2.body?.slice(0, 200) || ''}`).toBe(400);
         await api.dispose();
     });
 });

@@ -4,8 +4,8 @@ import { attachObservers, inspectPageContent } from './fixtures/observers.js';
 import { makeApi } from './fixtures/api.js';
 import { factory, trackEntity } from './fixtures/data-factory.js';
 import {
-    pickNAvailableRooms, createTestBooking, checkInBooking, checkoutBooking,
-    roomMove, todayDates,
+    pickAvailableRoom, pickNAvailableRooms, createTestBooking, checkInBooking, checkoutBooking,
+    roomMove, todayDates, walkIn, getBookingDetail,
 } from './fixtures/pms-flow.js';
 
 const M = 'checkin-checkout';
@@ -87,6 +87,21 @@ test.describe('Scope 4 — Check-in / Check-out', () => {
         });
         expect(mvOk, `Room-move (assign) FAILED: HTTP ${mv.status} ${mv.body?.slice(0, 200) || ''}`).toBe(true);
 
+        // Hard-assert: post-move state — booking.room_id artık roomB.id olmalı.
+        // Bu, room-move endpoint'inin 200 dönüp aslında DB'yi güncellemediği regresyonu
+        // (lock release/availability fix'leri sessizce kırıldığında oluşabilecek false-PASS)
+        // erken yakalar.
+        const detail = await getBookingDetail(api, created.bookingId);
+        const movedRoomId = detail.json?.booking?.room_id;
+        const movedOk = detail.ok && movedRoomId === roomB.id;
+        rec(testInfo, {
+            module: M, scope: 4, step: 'GET /api/pms/reservations/:id/full-detail (post-move state)',
+            status: movedOk ? PASS : FAIL,
+            endpoint: '/api/pms/reservations/:id/full-detail', http: detail.status,
+            note: movedOk ? `booking.room_id=${roomB.id}` : `expected=${roomB.id} got=${movedRoomId}`,
+        });
+        expect(movedRoomId, `Post-move booking.room_id mismatch: expected ${roomB.id}, got ${movedRoomId}`).toBe(roomB.id);
+
         // Hard-assert: checkout
         const co = await checkoutBooking(api, created.bookingId, true);
         const coOk = co.ok && co.json?.success !== false;
@@ -99,6 +114,57 @@ test.describe('Scope 4 — Check-in / Check-out', () => {
         expect(coOk, `Checkout FAILED: HTTP ${co.status} ${co.body?.slice(0, 200) || ''}`).toBe(true);
         trackEntity({
             kind: 'booking', id: created.bookingId, label: `${guestName} (checked_out)`,
+            cleanup: 'completed', endpoint: '/api/pms-core/checkout',
+        });
+        await api.dispose();
+    });
+
+    // ── E2E (regression-catching): Walk-in (create + immediate check-in) → checkout ──
+    // Hard-fails:
+    //   1. /api/pms-core/walk-in 2xx + success + booking_id (atomic guest+booking+check-in)
+    //   2. Force checkout 2xx + success (cleanup; doğrular ki walk-in checked_in state üretmiş)
+    // Pilot pre-condition (1 müsait oda) yoksa SKIP. trackEntity ile recap'e
+    // güvenlik ağı bırakılır; çıkış başarılı ise terminal-state → cleanup gerekmez.
+    test('E2E: Walk-in (atomic create + check-in) → checkout', async ({ baseURL }, testInfo) => {
+        const api = await makeApi(baseURL);
+        const dates = todayDates(1);
+        const pick = await pickAvailableRoom(api, dates);
+        if (!pick.ok) {
+            rec(testInfo, { module: M, scope: 4, step: 'Walk-in müsait oda', status: SKIP, note: pick.reason });
+            await api.dispose();
+            test.skip(true, `Pilot pre-condition eksik: ${pick.reason}`);
+            return;
+        }
+        rec(testInfo, { module: M, scope: 4, step: 'Walk-in müsait oda', status: PASS, note: `room=${pick.room.room_number || pick.room.id}` });
+
+        const guestName = factory.guestName();
+        const wi = await walkIn(api, { roomId: pick.room.id, guestName, nights: 1, rate: 1 });
+        rec(testInfo, {
+            module: M, scope: 4, step: 'POST /api/pms-core/walk-in',
+            status: wi.ok ? PASS : FAIL,
+            endpoint: '/api/pms-core/walk-in', http: wi.status,
+            note: wi.ok ? `id=${wi.bookingId}` : (wi.reason || ''),
+        });
+        expect(wi.ok, `Walk-in FAILED: ${wi.reason || wi.status}`).toBe(true);
+        expect(wi.bookingId, 'Walk-in returned no booking_id').toBeTruthy();
+        // Walk-in sonrası booking checked_in; recap cancel deneyemez → checkout sonrası completed.
+        trackEntity({
+            kind: 'booking', id: wi.bookingId, label: guestName,
+            cleanup: 'pending', endpoint: '/api/pms-core/checkout',
+        });
+
+        // Hard-assert: walk-in gerçekten checked_in state üretti mi → force checkout başarılı olmalı.
+        const co = await checkoutBooking(api, wi.bookingId, true);
+        const coOk = co.ok && co.json?.success !== false;
+        rec(testInfo, {
+            module: M, scope: 4, step: 'POST /api/pms-core/checkout (walk-in cleanup)',
+            status: coOk ? PASS : FAIL,
+            endpoint: '/api/pms-core/checkout', http: co.status,
+            note: coOk ? 'checked_out' : (co.body?.slice(0, 200) || ''),
+        });
+        expect(coOk, `Walk-in checkout FAILED: HTTP ${co.status} ${co.body?.slice(0, 200) || ''}`).toBe(true);
+        trackEntity({
+            kind: 'booking', id: wi.bookingId, label: `${guestName} (checked_out)`,
             cleanup: 'completed', endpoint: '/api/pms-core/checkout',
         });
         await api.dispose();

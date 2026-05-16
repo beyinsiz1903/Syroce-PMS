@@ -113,3 +113,32 @@ export async function getBookingDetail(api, bookingId) {
     return safeGetJson(api, `/api/pms/reservations/${bookingId}/full-detail`);
 }
 
+/**
+ * Walk-in: tek POST ile guest + booking + atomic check-in.
+ * Backend: /api/pms-core/walk-in (front_desk.walk_in).
+ * Başarılı dönüş: { success:true, booking_id, folio_id, room_number, guest_id }.
+ */
+export async function walkIn(api, { roomId, guestName, nights = 1, rate = 1, guestPhone = '', guestEmail = '' }) {
+    const r = await safePost(api, '/api/pms-core/walk-in', {
+        room_id: roomId,
+        nights,
+        rate,
+        guest_name: guestName,
+        guest_phone: guestPhone,
+        guest_email: guestEmail,
+    });
+    if (!r.ok || !r.json) return { ok: false, status: r.status, reason: r.body?.slice(0, 200) || `HTTP ${r.status}` };
+    const bookingId = r.json.booking_id || r.json.id;
+    if (!bookingId) return { ok: false, status: r.status, reason: 'no_booking_id_in_response' };
+    return { ok: true, bookingId, status: r.status, raw: r.json };
+}
+
+/**
+ * No-show: terminal-state işaretler. Pre: booking confirmed/guaranteed.
+ * Backend: /api/pms-core/no-show (rsm.handle_no_show).
+ * İkinci çağrı 400 + "Cannot mark reservation as no_show in 'no_show' state".
+ */
+export async function noShowBooking(api, bookingId) {
+    return safePost(api, '/api/pms-core/no-show', { booking_id: bookingId });
+}
+
