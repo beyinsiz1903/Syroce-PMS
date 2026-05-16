@@ -1,13 +1,13 @@
 # Full UI + Business E2E — 20260516
 
-> Suite: `frontend/e2e-business/` (Playwright). Üretildi: 2026-05-16T12:41:01.919Z
+> Suite: `frontend/e2e-business/` (Playwright). Üretildi: 2026-05-16T12:48:43.270Z
 
 ## 1. Yönetici özeti
 
 - Toplam test: **0**
 - Başarısız test: **0**
 - Adım sayaçları: PASS=0 | FAIL=0 | REVIEW=0 | SKIP=0
-- Süre: 0.4s
+- Süre: 0.2s
 - Son karar: **NO-GO** — Hiç test çalışmadı (muhtemel --list veya boş koşu) — rapor yanıltıcı sayılmamalıdır.
 
 ## 2. Modül bazlı tablo
