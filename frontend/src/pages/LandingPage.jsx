@@ -273,13 +273,13 @@ const LandingPage = () => {
       {/* ---------- HERO ---------- */}
       <section
         ref={heroRef}
-        className="relative flex items-center pt-28 sm:pt-32 lg:min-h-[90vh] lg:pt-36"
+        className="relative flex flex-col justify-center pt-28 sm:pt-32 lg:min-h-[90vh] lg:pt-36"
       >
         <NeonBlob className="left-[-10%] top-[5%] h-[420px] w-[420px] bg-cyan-500/30" />
         <NeonBlob className="right-[-8%] top-[20%] h-[520px] w-[520px] bg-indigo-500/35" />
         <NeonBlob className="right-[15%] bottom-[5%] h-[380px] w-[380px] bg-teal-400/25" />
 
-        <div className="mx-auto grid w-full max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:gap-10 lg:px-10">
+        <div className="mx-auto grid w-full max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:gap-10 lg:px-10">
           {/* Left copy */}
           <motion.div
             initial={{ opacity: 0, y: reduce ? 0 : 18 }}
@@ -349,96 +349,26 @@ const LandingPage = () => {
             transition={{ duration: 0.9, ease: 'easeOut' }}
             className="relative"
           >
-            <div className="relative mx-auto w-full max-w-[600px]" style={{ minHeight: 560 }}>
+            <div className="relative mx-auto w-full max-w-[720px]" style={{ minHeight: 600 }}>
               {/* Ambient glow */}
               <div className="absolute -inset-10 rounded-[3rem] bg-gradient-to-br from-cyan-500/30 via-transparent to-indigo-500/35 blur-3xl" aria-hidden />
 
-              {/* Merkez sahne: 3D otel illüstrasyonu (CSS render) — full visual area */}
+              {/* Merkez sahne: gerçek 3D render otel görseli + alt bilgi balonu */}
               <div className="absolute inset-0 overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-b from-[#0a1828] via-[#0b1a2e] to-[#06101e] shadow-[inset_0_0_120px_rgba(34,211,238,0.22),0_40px_120px_-30px_rgba(34,211,238,0.4)]">
-                {/* Gökyüzü ışıması */}
+                {/* Gökyüzü tonu (görsel arkası yumuşaklığı için) */}
                 <div className="absolute inset-x-0 top-0 h-2/3 bg-[radial-gradient(ellipse_at_center_top,_rgba(34,211,238,0.22),_transparent_60%)]" />
-                {/* Yer / refleksiyon */}
-                <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#040810] to-transparent" />
-                {/* Grid zemin */}
-                <div
-                  className="absolute inset-0 opacity-30"
-                  style={{
-                    backgroundImage:
-                      'linear-gradient(rgba(56,189,248,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(56,189,248,0.18) 1px, transparent 1px)',
-                    backgroundSize: '32px 32px',
-                    maskImage: 'radial-gradient(ellipse at center, black 30%, transparent 75%)',
-                    WebkitMaskImage: 'radial-gradient(ellipse at center, black 30%, transparent 75%)',
-                  }}
+                {/* Rendered hotel image — dominant focal element */}
+                <img
+                  src={HERO_IMG}
+                  alt="Syroce Hotel 3D görünüm"
+                  className="absolute inset-0 h-full w-full object-cover object-center"
+                  loading="eager"
+                  decoding="async"
                 />
-                {/* Yıldız parıltıları */}
-                {Array.from({ length: 18 }).map((_, i) => (
-                  <span
-                    key={`star-${i}`}
-                    className="absolute h-0.5 w-0.5 rounded-full bg-cyan-200"
-                    style={{
-                      top: `${(i * 53) % 60}%`,
-                      left: `${(i * 71) % 100}%`,
-                      opacity: 0.35 + ((i * 17) % 65) / 150,
-                      boxShadow: '0 0 4px rgba(34,211,238,0.7)',
-                    }}
-                  />
-                ))}
-                {/* Otel binası — büyük, perspektifli kule */}
-                <div className="absolute left-1/2 top-[58%] -translate-x-1/2 -translate-y-1/2">
-                  <div className="mb-3 flex justify-center">
-                    <span className="rounded-md bg-cyan-400/15 px-4 py-1.5 text-[11px] font-bold tracking-[0.25em] text-cyan-200 ring-1 ring-cyan-400/40 shadow-[0_0_20px_rgba(34,211,238,0.3)]">
-                      SYROCE HOTEL
-                    </span>
-                  </div>
-                  <div className="relative" style={{ perspective: '1400px' }}>
-                    {/* Bina gövdesi */}
-                    <div
-                      className="relative h-[280px] w-[200px] rounded-lg bg-gradient-to-b from-[#15273f] via-[#0e1c30] to-[#060c18] ring-1 ring-cyan-400/30 shadow-[0_50px_100px_-30px_rgba(34,211,238,0.55)]"
-                      style={{ transform: 'rotateX(10deg) rotateY(-14deg)', transformStyle: 'preserve-3d' }}
-                    >
-                      {/* Sol yan duvar (perspektif) */}
-                      <div
-                        className="absolute left-0 top-0 h-full w-6 origin-right bg-gradient-to-b from-[#0a1424] via-[#08111f] to-[#03060c] ring-1 ring-cyan-400/15"
-                        style={{ transform: 'rotateY(-65deg) translateX(-100%)' }}
-                      />
-                      {/* Çatı */}
-                      <div
-                        className="absolute -top-2 left-0 h-4 w-full origin-bottom bg-gradient-to-r from-[#0a1424] via-[#15273f] to-[#0a1424] ring-1 ring-cyan-400/20"
-                        style={{ transform: 'rotateX(55deg)' }}
-                      />
-                      {/* Pencere ızgarası — 9 kat × 6 pencere */}
-                      <div className="absolute inset-x-3 top-5 grid grid-cols-5 gap-[5px]">
-                        {Array.from({ length: 45 }).map((_, i) => {
-                          const lit = (i * 31) % 100;
-                          const amber = lit > 70;
-                          const off = lit < 18;
-                          return (
-                            <span
-                              key={i}
-                              className={
-                                'h-5 rounded-[2px] ring-1 ring-black/50 ' +
-                                (off
-                                  ? 'bg-slate-800/60'
-                                  : amber
-                                  ? 'bg-amber-300/90 shadow-[0_0_10px_rgba(252,211,77,0.7)]'
-                                  : 'bg-cyan-300/85 shadow-[0_0_10px_rgba(34,211,238,0.7)]')
-                              }
-                            />
-                          );
-                        })}
-                      </div>
-                      {/* Giriş kapısı */}
-                      <div className="absolute bottom-0 left-1/2 h-10 w-16 -translate-x-1/2 rounded-t-lg bg-gradient-to-b from-amber-300/80 via-amber-400/40 to-amber-600/20 shadow-[0_0_24px_rgba(252,211,77,0.6)]">
-                        <div className="absolute left-1/2 top-2.5 h-6 w-8 -translate-x-1/2 rounded-t-md bg-amber-100/40 ring-1 ring-amber-200/40" />
-                      </div>
-                    </div>
-                    {/* Yer refleksiyonu */}
-                    <div className="mx-auto mt-2 h-5 w-56 rounded-full bg-cyan-400/25 blur-lg" />
-                    <div className="mx-auto -mt-3 h-2 w-40 rounded-full bg-cyan-400/40 blur-sm" />
-                  </div>
-                </div>
+                {/* Soft bottom vignette so the info bubble reads */}
+                <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#040810]/80 via-[#040810]/30 to-transparent" />
                 {/* Alt-orta bilgi balonu */}
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-400/40 bg-[#0a1424]/95 px-4 py-2 text-xs text-cyan-100 shadow-[0_12px_40px_-6px_rgba(34,211,238,0.6)] backdrop-blur-xl">
+                <div className="absolute bottom-5 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-400/40 bg-[#0a1424]/95 px-4 py-2 text-xs text-cyan-100 shadow-[0_12px_40px_-6px_rgba(34,211,238,0.6)] backdrop-blur-xl">
                   <Sparkles className="mr-1.5 inline h-3.5 w-3.5 text-cyan-300" />
                   Oteliniz için akıllı, güvenli ve etkili bir yönetim platformu.
                 </div>
