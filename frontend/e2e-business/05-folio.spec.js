@@ -5,7 +5,7 @@ import { makeApi, safeGet } from './fixtures/api.js';
 import { factory, trackEntity } from './fixtures/data-factory.js';
 import {
     pickAvailableRoom, createTestBooking, addExtraCharge, voidCharge,
-    recordPayment, voidPayment,
+    recordPayment, voidPayment, postRefund,
     getBookingDetail, cancelBooking, farFutureDates,
 } from './fixtures/pms-flow.js';
 
@@ -271,6 +271,117 @@ test.describe('Scope 5 — Folio', () => {
         });
         expect(cleanOk, `Cleanup cancel FAILED: HTTP ${cleanup.status}`).toBe(true);
         trackEntity({ kind: 'booking', id: created.bookingId, label: `${guestName} (cancelled)`, cleanup: 'completed', endpoint: '/api/pms-core/cancel' });
+
+        await api.dispose();
+    });
+
+    // ── E2E (regression-catching): Booking → record-payment → /folio/refund (partial) → balance ↑ ──
+    // Hard-fails:
+    //   1. Booking create 2xx
+    //   2. record-payment 2xx (cash → no gateway) + payment.id döner
+    //   3. full-detail folios[0].id resolve edilebilir (refund hedef folio)
+    //   4. /folio/refund 2xx + refund.id döner, response.refund.amount negatif
+    //   5. balance refund tutarı kadar geri yükselir (delta ≈ +refundAmount)
+    //   6. Booking cancel cleanup 2xx
+    // Refund void-payment'tan farklı: ayrı kayıt — closed-folio refund guard'ı
+    // tetiklenmemeli (folio status='open' aşamasında, partial amount). baseline
+    // balance okunamazsa delta-check'ler SKIP olur; ana akış hard-fail kalır.
+    test('E2E: Folio /folio/refund partial (cash) → verify balance restored', async ({ baseURL }, testInfo) => {
+        const api = await makeApi(baseURL);
+        const dates = farFutureDates();
+        const pick = await pickAvailableRoom(api, dates);
+        if (!pick.ok) {
+            rec(testInfo, { module: M, scope: 5, step: 'Müsait oda (refund)', status: SKIP, note: pick.reason });
+            await api.dispose();
+            test.skip(true, `Pilot pre-condition eksik: ${pick.reason}`);
+            return;
+        }
+
+        const guestName = factory.guestName();
+        const created = await createTestBooking(api, {
+            roomId: pick.room.id, guestName,
+            check_in: dates.check_in, check_out: dates.check_out,
+            totalAmount: 300,
+        });
+        rec(testInfo, { module: M, scope: 5, step: 'Setup: booking yarat (refund)', status: created.ok ? PASS : FAIL, http: created.status, note: created.ok ? `id=${created.bookingId}` : created.reason });
+        expect(created.ok, `Booking create FAILED: ${created.reason}`).toBe(true);
+        trackEntity({ kind: 'booking', id: created.bookingId, label: guestName, cleanup: 'pending', endpoint: '/api/pms-core/cancel' });
+
+        // Ödeme bas — refund öncesi balance düşmüş olmalı ki refund anlamlı bir delta üretsin.
+        const payAmount = 100;
+        const payLabel = factory.folioLabel();
+        const paid = await recordPayment(api, created.bookingId, {
+            amount: payAmount, method: 'cash', payment_type: 'interim', reference: payLabel, notes: 'E2E pre-refund cash payment',
+        });
+        const paymentId = paid.json?.payment?.id;
+        const payOk = paid.ok && paid.json?.success !== false && !!paymentId;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'POST record-payment (pre-refund)',
+            status: payOk ? PASS : FAIL,
+            endpoint: `/api/pms/reservations/${created.bookingId}/record-payment`, http: paid.status,
+            note: payOk ? `payment_id=${paymentId}` : (paid.body?.slice(0, 200) || ''),
+        });
+        expect(payOk, `record-payment FAILED: HTTP ${paid.status} ${paid.body?.slice(0, 200) || ''}`).toBe(true);
+        trackEntity({ kind: 'payment', id: paymentId, label: payLabel, cleanup: 'pending', endpoint: '/api/pms-core/folio/void-payment' });
+
+        // Refund hedef folio_id full-detail.folios[0].id'dan çözümlenir.
+        // reservation_detail.get_reservation_full_detail booking_id + tenant_id filtreli folios listesi döner.
+        const beforeRefund = await getBookingDetail(api, created.bookingId);
+        const folios = Array.isArray(beforeRefund.json?.folios) ? beforeRefund.json.folios : [];
+        const folioId = folios.find((f) => f && (f.status === 'open' || !f.status))?.id || folios[0]?.id;
+        const balPreRefund = beforeRefund.ok ? readBalance(beforeRefund.json) : null;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'Resolve folio_id (full-detail.folios[])',
+            status: folioId ? PASS : FAIL, http: beforeRefund.status,
+            note: folioId ? `folio_id=${folioId} balance=${balPreRefund}` : `folios.length=${folios.length}`,
+        });
+        expect(folioId, 'full-detail did not expose folios[].id for refund').toBeTruthy();
+
+        // Hard-assert: /folio/refund (cash, partial)
+        const refundAmount = 40;
+        const refunded = await postRefund(api, {
+            folioId, bookingId: created.bookingId, amount: refundAmount, reason: 'E2E partial cash refund', method: 'cash',
+        });
+        const refundId = refunded.json?.refund?.id;
+        const refundDocAmount = refunded.json?.refund?.amount;
+        const refOk = refunded.ok && refunded.json?.success !== false && !!refundId && typeof refundDocAmount === 'number' && refundDocAmount < 0;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'POST folio/refund (cash, partial)',
+            status: refOk ? PASS : FAIL,
+            endpoint: '/api/pms-core/folio/refund', http: refunded.status,
+            note: refOk ? `refund_id=${refundId} amount=${refundDocAmount}` : (refunded.body?.slice(0, 200) || ''),
+        });
+        expect(refOk, `/folio/refund FAILED: HTTP ${refunded.status} ${refunded.body?.slice(0, 200) || ''}`).toBe(true);
+        // Refund kaydı ayrı bir payments rec'i; void-payment endpoint'i ile geri alınmaz.
+        // Booking cancel cleanup yetiyor (folio kapanır), trackEntity sadece audit/recap için.
+        trackEntity({ kind: 'refund', id: refundId, label: `refund ${refundAmount} (${created.bookingId})`, cleanup: 'completed', endpoint: '/api/pms-core/folio/refund' });
+
+        // Hard-assert: balance refund kadar yükseldi
+        const post = await getBookingDetail(api, created.bookingId);
+        const balPost = post.ok ? readBalance(post.json) : null;
+        if (balPreRefund != null && balPost != null) {
+            rec(testInfo, {
+                module: M, scope: 5, step: 'Refund sonrası balance yükseldi',
+                status: balPost >= balPreRefund + refundAmount - 0.01 ? PASS : FAIL,
+                http: post.status, note: `pre_refund=${balPreRefund} post_refund=${balPost} expected_delta=+${refundAmount}`,
+            });
+            expect(balPost).toBeGreaterThanOrEqual(balPreRefund + refundAmount - 0.01);
+        } else {
+            rec(testInfo, { module: M, scope: 5, step: 'Refund sonrası balance yükseldi', status: SKIP, note: `balance shape okunamadı pre=${balPreRefund} post=${balPost}` });
+        }
+
+        // Cleanup — cancel booking (hard-assert)
+        const cleanup = await cancelBooking(api, created.bookingId, 'E2E folio refund cleanup');
+        const cleanOk = cleanup.ok && cleanup.json?.success !== false;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'Cleanup cancel booking (refund)',
+            status: cleanOk ? PASS : FAIL,
+            endpoint: '/api/pms-core/cancel', http: cleanup.status,
+            note: cleanOk ? 'cancelled' : (cleanup.body?.slice(0, 160) || ''),
+        });
+        expect(cleanOk, `Cleanup cancel FAILED: HTTP ${cleanup.status}`).toBe(true);
+        trackEntity({ kind: 'booking', id: created.bookingId, label: `${guestName} (cancelled)`, cleanup: 'completed', endpoint: '/api/pms-core/cancel' });
+        trackEntity({ kind: 'payment', id: paymentId, label: `${payLabel} (folio cancelled)`, cleanup: 'completed', endpoint: '/api/pms-core/cancel' });
 
         await api.dispose();
     });

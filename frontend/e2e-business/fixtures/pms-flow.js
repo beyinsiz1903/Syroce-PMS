@@ -127,6 +127,20 @@ export async function voidPayment(api, paymentId, reason = 'E2E payment reversal
     return safePost(api, '/api/pms-core/folio/void-payment', { payment_id: paymentId, reason });
 }
 
+/**
+ * Folio'ya kısmi refund yaz — void-payment'tan farklı semantik: ayrı bir
+ * negatif tutarlı payment kaydı (`payment_type='refund'`) oluşturur ve
+ * folio.balance refund miktarı kadar geri yükselir. Gateway tetiklenmesin
+ * diye method='cash' (PCI sınırı dışı) ya da 'internal' default tutulur.
+ * Backend: /api/pms-core/folio/refund (pms_hardening.api_post_refund).
+ * Response: { success:true, refund:{ id, amount:-X, payment_type:'refund', ... } }.
+ */
+export async function postRefund(api, { folioId, bookingId, amount, reason = 'E2E partial refund', method = 'cash' }) {
+    return safePost(api, '/api/pms-core/folio/refund', {
+        folio_id: folioId, booking_id: bookingId, amount, reason, method,
+    });
+}
+
 export async function getBookingDetail(api, bookingId) {
     return safeGetJson(api, `/api/pms/reservations/${bookingId}/full-detail`);
 }
