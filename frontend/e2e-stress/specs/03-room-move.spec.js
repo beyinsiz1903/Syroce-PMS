@@ -26,7 +26,7 @@ test.describe.configure({ mode: 'serial' });
 // vs legacy `category`/`type`) cannot silently zero out the eligible count.
 function normalizeRoomType(x) {
     if (!x || typeof x !== 'object') return '__unknown__';
-    return x.room_type || x.roomType || x.category || x.type || '__unknown__';
+    return x.room_type || x.roomType || x.category || x.type || x.room_type_code || '__unknown__';
 }
 function _computeVacantByType(bookingsList, roomsList) {
     const checkedIn = bookingsList.filter((b) => b.status === 'checked_in');
@@ -337,23 +337,41 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
         // Vacant set: room id'leri ki HİÇBİR checked_in booking onları işgal etmiyor.
         const occupiedRoomIds = new Set(checkedIn.map((b) => b.room_id).filter(Boolean));
         const vacantRooms = rooms.filter((r) => !occupiedRoomIds.has(r.id));
-        // Same-category map: room_type → vacant rooms list.
-        const vacantByType = new Map();
+        // F8A tur-12 (Kapsam E user-mandated): dedicated extra pool MUST be
+        // preferred over incidentally-vacant base rooms. Splitting vacantByType
+        // into two buckets — extras first, base second — guarantees the
+        // factory's per-type 3-extras supply is consumed before any base room.
+        const extrasByType = new Map();
+        const baseVacantByType = new Map();
         for (const vr of vacantRooms) {
-            const t = vr.room_type || vr.category || '__unknown__';
-            if (!vacantByType.has(t)) vacantByType.set(t, []);
-            vacantByType.get(t).push(vr);
+            const t = normalizeRoomType(vr);
+            if (vr.room_move_target === true) {
+                if (!extrasByType.has(t)) extrasByType.set(t, []);
+                extrasByType.get(t).push(vr);
+            } else {
+                if (!baseVacantByType.has(t)) baseVacantByType.set(t, []);
+                baseVacantByType.get(t).push(vr);
+            }
         }
+        const pickCandidate = (t) => {
+            const ex = extrasByType.get(t);
+            if (ex && ex.length > 0) return ex.shift();
+            const bs = baseVacantByType.get(t);
+            return bs && bs.length > 0 ? bs.shift() : null;
+        };
         const target = checkedIn.slice(0, 50);
         const samples = []; let ok = 0, fail = 0; const failModes = {};
         let skippedNoTarget = 0;
+        let candidateFromExtras = 0, candidateFromBase = 0;
         const moveLog = []; // { booking_id, old_room_id, new_room_id, target_room_type }
         for (let i = 0; i < target.length; i++) {
             const b = target[i];
-            const bType = b.room_type || b.category || '__unknown__';
-            const pool = vacantByType.get(bType);
-            const candidate = (pool && pool.length > 0) ? pool.shift() : null;
+            const bType = normalizeRoomType(b);
+            // Track source before pickCandidate consumes the pool.
+            const fromExtras = (extrasByType.get(bType)?.length ?? 0) > 0;
+            const candidate = pickCandidate(bType);
             if (!candidate) { skippedNoTarget++; continue; }
+            if (fromExtras) candidateFromExtras++; else candidateFromBase++;
             const r = await callTimed(request, 'post', '/api/pms-core/room-move', {
                 booking_id: b.id, new_room_id: candidate.id, reason: `F8A positive move ${i}`,
             }, stressTokens.stress_token);
@@ -362,12 +380,26 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
                 ok++;
                 if (moveLog.length < 5) moveLog.push({
                     booking_id: b.id, old_room_id: b.room_id, new_room_id: candidate.id,
-                    target_room_type: candidate.room_type || candidate.category || '__unknown__',
+                    target_room_type: normalizeRoomType(candidate),
+                    target_is_extra: candidate.room_move_target === true,
                 });
             } else {
                 fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1;
             }
         }
+        // F8A tur-12 debug: extras-vs-base attribution surfaced in attachment.
+        try {
+            await testInfo.attach('positive-move-candidate-source.json', {
+                body: Buffer.from(JSON.stringify({
+                    attempted: target.length - skippedNoTarget,
+                    skipped_no_target: skippedNoTarget,
+                    candidate_from_extras: candidateFromExtras,
+                    candidate_from_base: candidateFromBase,
+                    extras_priority_invariant: candidateFromExtras >= candidateFromBase,
+                }, null, 2)),
+                contentType: 'application/json',
+            });
+        } catch (_) { /* attach best-effort */ }
         const attempted = target.length - skippedNoTarget;
         // Deterministic pass criteria (architect feedback task #162 review):
         // Setup precondition zaten ≥30 eligible target garantiliyor, dolayısıyla

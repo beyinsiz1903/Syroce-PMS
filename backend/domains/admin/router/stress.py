@@ -436,6 +436,10 @@ async def stress_seed(
         # tenant-isolation contract testing; extras are an internal stress-only
         # pool that doesn't represent real PMS inventory.
         counts["rooms"] = base_count
+        # User-mandated explicit alias (CI run #24 follow-up): consumers that
+        # read `base_rooms` get the same value as `rooms`; eliminates last
+        # remnant of contract ambiguity.
+        counts["base_rooms"] = base_count
         counts["extra_room_move_targets"] = extras_count
         counts["total_rooms"] = total_rooms_inserted
         counts["guests"] = await _chunked_insert(db.guests, guests_docs, INSERT_CHUNK_SIZE)

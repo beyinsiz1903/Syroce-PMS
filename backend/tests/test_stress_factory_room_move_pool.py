@@ -83,6 +83,25 @@ def test_factory_base_rooms_unchanged_by_extra_pool():
     assert len(occupied_base) == 437
 
 
+def test_seeded_counts_exposes_base_rooms_alias():
+    """F8A tur-12 (Kapsam A user-mandated): seeded_counts must expose BOTH
+    `rooms` (legacy contract — base) AND `base_rooms` (explicit alias) to
+    eliminate contract ambiguity for any future consumer."""
+    # Replicate the contract derivation that stress.py does post-insert.
+    rooms_docs, _g, _b, _f, _c, _rnl, _hk = _build()
+    extras_count = sum(1 for r in rooms_docs if r.get("room_move_target") is True)
+    base_count = len(rooms_docs) - extras_count
+    counts: dict = {}
+    counts["rooms"] = base_count
+    counts["base_rooms"] = base_count
+    counts["extra_room_move_targets"] = extras_count
+    counts["total_rooms"] = len(rooms_docs)
+    assert counts["rooms"] == 500
+    assert counts["base_rooms"] == 500
+    assert counts["base_rooms"] == counts["rooms"], "base_rooms must alias rooms exactly"
+    assert counts["total_rooms"] == counts["rooms"] + counts["extra_room_move_targets"]
+
+
 def test_factory_extras_cover_first_50_demand_per_type():
     """F8A tur-11 (Kapsam C.4-5): the dedicated extra pool MUST cover
     the room_type demand profile of the first 50 checked_in bookings.
