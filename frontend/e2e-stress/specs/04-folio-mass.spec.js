@@ -151,40 +151,33 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
         const mismatchDetail = [];
         for (const it of sample) {
             const fid = it.folio_id || it.id;
-            // Try canonical folio detail endpoint first, then audit fallback.
-            let folioBody = null;
-            const detailR = await callTimed(request, 'get', `/api/pms-core/folio/${fid}`, undefined, stressTokens.stress_token);
-            if (detailR.ok) folioBody = detailR.body;
-            else {
-                const auditR = await callTimed(request, 'get', `/api/pms-core/folio/audit/${fid}`, undefined, stressTokens.stress_token);
-                if (auditR.ok) folioBody = auditR.body;
-            }
-            if (!folioBody) { fetchFail++; continue; }
+            // Architect tur-6 round 2 review: kullan canonical detail endpoint
+            // `/api/pms-core/folio/detail/{id}` (FolioDetailService) — audit
+            // endpoint financial source-of-truth değil (yalnız trail array döner)
+            // o yüzden fallback kullanma (false-pass riski). Response şekli:
+            // { success, folio:{...}, summary:{total_charges, total_payments, balance}, charges:[], payments:[] }
+            const detailR = await callTimed(request, 'get', `/api/pms-core/folio/detail/${fid}`, undefined, stressTokens.stress_token);
+            if (!detailR.ok || !detailR.body || detailR.body.success === false) { fetchFail++; continue; }
+            const folioBody = detailR.body;
             checked++;
-            const charges = folioBody.charges || folioBody.line_items || folioBody.items || [];
-            const payments = folioBody.payments || [];
-            const total = Number(folioBody.total ?? folioBody.balance_total ?? folioBody.total_amount ?? 0);
-            const sumCharges = Array.isArray(charges)
-                ? charges.reduce((acc, c) => acc + Number(c.amount ?? c.total ?? c.gross_amount ?? 0), 0)
-                : 0;
-            const sumPayments = Array.isArray(payments)
-                ? payments.reduce((acc, p) => acc + Number(p.amount ?? 0), 0)
-                : 0;
-            // total convention: backend may store gross-charges OR net (charges-payments).
-            // Accept either; mismatch only if neither matches within 0.01 tolerance.
-            const matchGross = Math.abs(sumCharges - total) <= 0.01;
-            const matchNet = Math.abs((sumCharges - sumPayments) - total) <= 0.01;
-            if (matchGross || matchNet) ok++;
+            const summary = folioBody.summary || {};
+            const sumCharges = Number(summary.total_charges ?? 0);
+            const sumPayments = Number(summary.total_payments ?? 0);
+            const balance = Number(summary.balance ?? (sumCharges - sumPayments));
+            // Service contract: balance = total_charges - total_payments (gross-net invariant).
+            // Tolerance 0.01 TL float drift; >0.01 = aggregate transaction broken.
+            const matchNet = Math.abs((sumCharges - sumPayments) - balance) <= 0.01;
+            if (matchNet) ok++;
             else {
                 mismatch++;
                 if (mismatchDetail.length < 5) {
-                    mismatchDetail.push({ folio_id: fid, sum_charges: sumCharges, sum_payments: sumPayments, total, delta_gross: +(sumCharges - total).toFixed(2) });
+                    mismatchDetail.push({ folio_id: fid, sum_charges: sumCharges, sum_payments: sumPayments, balance, delta: +((sumCharges - sumPayments) - balance).toFixed(2) });
                 }
             }
         }
         const reconcileStatus = checked === 0 ? 'REVIEW' : (mismatch === 0 ? 'PASS' : 'FAIL');
         rec(testInfo, { module: MOD, step: 'folio_total_reconcile', status: reconcileStatus,
-            endpoint: '/api/pms-core/folio/{id}',
+            endpoint: '/api/pms-core/folio/detail/{id}',
             note: `n=${sample.length} fetched=${checked} ok=${ok} mismatch=${mismatch} fetch_fail=${fetchFail} ${mismatch > 0 ? `samples=${JSON.stringify(mismatchDetail)}` : ''}` });
         if (mismatch > 0) {
             recFinding(testInfo, 'P1', MOD,

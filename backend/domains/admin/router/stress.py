@@ -183,6 +183,16 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
         base_price = 800.0 + (i % 20) * 50.0  # 800..1750
         total_amount = base_price * stay_nights
 
+        # Architect tur-6 (round 2) fix: 03-room-move setup'ının vacant pool
+        # garantilemek için 30+ force-checkout yapması 108s sandbox timeout'unu
+        # aşıyordu. Her 8. booking'i (i % 8 == 0 → ~62 oda) baştan checked_out
+        # + room vacant olarak seed et → setup loop'u zaten yeterli eligible
+        # görür ve hiç force-checkout etmez (instant PASS).
+        pre_vacant = (i % 8 == 0)
+        room_status = "available" if pre_vacant else "occupied"
+        room_current_bid = None if pre_vacant else bid
+        booking_status = "checked_out" if pre_vacant else "checked_in"
+
         rooms_docs.append({
             "id": rid, "tenant_id": stress_tid,
             "room_number": f"{prefix}{block}{floor:02d}{(i + 1):03d}",
@@ -190,11 +200,11 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
             "block": block, "floor": floor,
             "capacity": 2 + (i % 3),  # 2..4
             "base_price": base_price, "price_per_night": base_price,
-            "status": "occupied",
+            "status": room_status,
             "amenities": ["wifi", "tv"] + (["jacuzzi"] if is_vip else []),
             "is_active": True, "is_virtual": False,
             "accessible": accessibility_needed,
-            "current_booking_id": bid,
+            "current_booking_id": room_current_bid,
             "created_at": now,
             "stress_seed": True, "stress_prefix": prefix,
         })
@@ -236,7 +246,7 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
             "nights": stay_nights,
             "adults": 2, "children": (i % 3), "guests_count": 2 + (i % 3),
             "total_amount": total_amount, "base_rate": base_price,
-            "paid_amount": 0.0, "status": "checked_in",
+            "paid_amount": 0.0, "status": booking_status,
             "channel": "direct", "rate_plan": "Standard",
             "source_channel": "direct", "origin": "stress_seed",
             "hold_status": "none", "allocation_source": "manual",
@@ -246,12 +256,20 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
             "stress_seed": True, "stress_prefix": prefix,
         })
 
+        # Architect tur-6 (round 2) fix: 04-folio-mass C2 (sum(charges)==total)
+        # reconciliation testi `folio.total`'ı 0 olarak okuyup mismatch raporluyordu.
+        # Seed'de gerçek charges toplamını folio'ya da yaz (room*nights + tax*nights).
+        folio_total = (base_price * stay_nights) + (7.50 * stay_nights)
         folios_docs.append({
             "id": fid, "tenant_id": stress_tid,
             "booking_id": bid, "guest_id": gid,
             "folio_number": f"{prefix}F{i + 1:04d}",
-            "folio_type": "guest", "status": "open",
-            "balance": 0.0,
+            "folio_type": "guest",
+            "status": "open",
+            "balance": folio_total,
+            "total": folio_total,
+            "total_amount": folio_total,
+            "balance_total": folio_total,
             "created_at": now,
             "stress_seed": True, "stress_prefix": prefix,
         })
@@ -449,10 +467,25 @@ async def stress_external_calls_status(
         gates = _gates(stress_tid)
 
         # 1) SXI bus outbox (sysdb-scoped)
+        # Architect tur-6 (round 2) fix: outbox `status="pending"` + `attempts=0`
+        # satırları normal queue durumudur — checkin/checkout her zaman bir
+        # outbox event yazar. "External call MADE" = dispatcher worker'ın
+        # gerçekten dispatch denediği row (attempts>0 veya non-pending status).
+        # Pending+attempts=0 = sıraya yazıldı ama henüz dispatch edilmedi → DRY_RUN
+        # ortamında worker'lar bunları dispatch etmediği için sayılmamalı.
+        dispatched_filter = {
+            "tenant_id": stress_tid,
+            "$or": [
+                {"attempts": {"$gt": 0}},
+                {"attempt_count": {"$gt": 0}},
+                {"retry_count": {"$gt": 0}},
+                {"status": {"$nin": ["pending", None]}},
+            ],
+        }
         try:
             cursor = sysdb.outbox_events.find(
-                {"tenant_id": stress_tid},
-                projection={"_id": 0, "event_type": 1, "target": 1, "status": 1, "created_at": 1, "attempts": 1},
+                dispatched_filter,
+                projection={"_id": 0, "event_type": 1, "target": 1, "status": 1, "created_at": 1, "attempts": 1, "retry_count": 1},
             ).sort("created_at", -1).limit(50)
             async for doc in cursor:
                 doc["source"] = "outbox_events"
@@ -463,12 +496,20 @@ async def stress_external_calls_status(
             _log.exception("outbox_events query failed for stress_tid=%s", stress_tid)
             query_errors.append(f"outbox_events:{type(e).__name__}:{str(e)[:200]}")
 
-        # 2) Afsadakat outbox (tenant-scoped db)
+        # 2) Afsadakat outbox (tenant-scoped db) — aynı dispatched-only filter.
+        afsadakat_filter = {
+            "$or": [
+                {"attempts": {"$gt": 0}},
+                {"attempt_count": {"$gt": 0}},
+                {"retry_count": {"$gt": 0}},
+                {"status": {"$nin": ["pending", None]}},
+            ],
+        }
         try:
             with tenant_context(stress_tid):
                 cursor = db.integration_afsadakat_outbox.find(
-                    {},
-                    projection={"_id": 0, "event_type": 1, "status": 1, "created_at": 1, "attempts": 1},
+                    afsadakat_filter,
+                    projection={"_id": 0, "event_type": 1, "status": 1, "created_at": 1, "attempts": 1, "retry_count": 1},
                 ).sort("created_at", -1).limit(50)
                 async for doc in cursor:
                     doc["source"] = "integration_afsadakat_outbox"
