@@ -138,6 +138,12 @@ export default async function globalSetup() {
     if (seedBody.post_insert_verification) {
         console.log(`[stress-setup]    post_insert_verification: ${JSON.stringify(seedBody.post_insert_verification)}`);
     }
+    if (seedBody.orphan_cleanup) {
+        const totalOrphans = Object.values(seedBody.orphan_cleanup)
+            .filter((v) => typeof v === 'number')
+            .reduce((a, b) => a + b, 0);
+        console.log(`[stress-setup]    orphan_cleanup: total=${totalOrphans} ${JSON.stringify(seedBody.orphan_cleanup)}`);
+    }
 
     // 7) Stress snapshot after seed
     const stressAfterSeed = await snapshot(api, stressToken, 'stress-after-seed');

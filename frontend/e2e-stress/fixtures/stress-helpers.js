@@ -2,7 +2,13 @@
 import { request as plRequest } from '@playwright/test';
 
 export async function fetchAllByPrefix(request, token, listPath, prefixField, prefixValue, opts = {}) {
-    const maxPages = opts.maxPages ?? 8;
+    // F8A tur-15 safety net: bumped maxPages 8→60 so pagination can survive a
+    // ~12,000 doc tenant even if backend orphan-cleanup misses (e.g. legacy
+    // residue without `stress_seed:true` marker). Primary fix is server-side
+    // (stress_seed orphan delete pre-insert); this is defense-in-depth so a
+    // bloated tenant fails LOUDLY (hits maxPages) instead of SILENTLY losing
+    // current-round docs at the tail of an ascending _id sort.
+    const maxPages = opts.maxPages ?? 60;
     const pageSize = opts.pageSize ?? 200;
     const out = [];
     const seenIds = new Set();

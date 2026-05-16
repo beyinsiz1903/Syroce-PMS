@@ -429,8 +429,32 @@ async def stress_seed(
     base_count = len(rooms_docs) - extras_count
 
     t_insert_start = time.perf_counter()
+    orphan_cleanup: dict[str, int] = {}
     with tenant_context(stress_tid):
         from core.database import db
+        # F8A tur-15 fix: residue from previous ABORTED runs (CI killed mid-spec,
+        # network drop, OOM, etc.) accumulates in the stress tenant — teardown
+        # only deletes the current-round prefix. Tur-14 verification surfaced
+        # actual_rooms_total=9060 vs 560 with current prefix → 8500 orphans.
+        # With sort('_id',1) on /api/pms/rooms, current-round extras (highest
+        # _ids, inserted last) land at the END of the sorted result; with
+        # fetchAllByPrefix maxPages=8 × pageSize=200 = 1600 capacity, pages
+        # cover only the OLDEST 1600 docs → extras never reached → fetchedExtras=0.
+        # Fix: scrub `stress_seed=True` docs with `stress_prefix != current`
+        # across all stress collections BEFORE this round's inserts. Scoped
+        # to the stress tenant + stress_seed marker → never touches real data.
+        # Idempotent: also safe if no orphans exist (delete_count=0).
+        for col_name in ("rooms", "bookings", "guests", "folios", "folio_charges",
+                         "room_night_locks", "housekeeping_tasks"):
+            try:
+                res = await db[col_name].delete_many({
+                    "tenant_id": stress_tid,
+                    "stress_seed": True,
+                    "stress_prefix": {"$ne": prefix},
+                })
+                orphan_cleanup[col_name] = res.deleted_count
+            except Exception as e:
+                orphan_cleanup[f"{col_name}_error"] = str(e)[:120]
         total_rooms_inserted = await _chunked_insert(db.rooms, rooms_docs, INSERT_CHUNK_SIZE)
         # Authoritative split — `counts["rooms"]` MUST equal base (500) for
         # tenant-isolation contract testing; extras are an internal stress-only
@@ -540,6 +564,7 @@ async def stress_seed(
         "seeded_counts": counts,
         "rooms_breakdown": rooms_breakdown,
         "post_insert_verification": verification,
+        "orphan_cleanup": orphan_cleanup,
         "timing_ms": {
             "factory": factory_ms,
             "insert": insert_ms,
