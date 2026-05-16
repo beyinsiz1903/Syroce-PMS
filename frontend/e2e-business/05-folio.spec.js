@@ -5,6 +5,7 @@ import { makeApi, safeGet } from './fixtures/api.js';
 import { factory, trackEntity } from './fixtures/data-factory.js';
 import {
     pickAvailableRoom, createTestBooking, addExtraCharge, voidCharge,
+    recordPayment, voidPayment,
     getBookingDetail, cancelBooking, farFutureDates,
 } from './fixtures/pms-flow.js';
 
@@ -155,6 +156,115 @@ test.describe('Scope 5 — Folio', () => {
         const cleanOk = cleanup.ok && cleanup.json?.success !== false;
         rec(testInfo, {
             module: M, scope: 5, step: 'Cleanup cancel booking',
+            status: cleanOk ? PASS : FAIL,
+            endpoint: '/api/pms-core/cancel', http: cleanup.status,
+            note: cleanOk ? 'cancelled' : (cleanup.body?.slice(0, 160) || ''),
+        });
+        expect(cleanOk, `Cleanup cancel FAILED: HTTP ${cleanup.status}`).toBe(true);
+        trackEntity({ kind: 'booking', id: created.bookingId, label: `${guestName} (cancelled)`, cleanup: 'completed', endpoint: '/api/pms-core/cancel' });
+
+        await api.dispose();
+    });
+
+    // ── E2E (regression-catching): Booking → record-payment (cash) → balance ↓ → void-payment → balance ↑ ──
+    // Hard-fails:
+    //   1. Booking create 2xx
+    //   2. record-payment 2xx + payment.id döner
+    //   3. full-detail balance, ödeme miktarı kadar düşer (delta)
+    //   4. void-payment 2xx success
+    //   5. void sonrası balance geri yükselir (delta geri biner)
+    //   6. Booking cancel cleanup 2xx
+    // Real gateway tetiklenmez — method='cash' (PCI sınırı dışı, internal ledger only).
+    // baseline balance okunamazsa delta-check'ler SKIP olur; ana akış hard-fail kalır.
+    test('E2E: Folio record-payment (cash) → verify balance → reverse (void-payment)', async ({ baseURL }, testInfo) => {
+        const api = await makeApi(baseURL);
+        const dates = farFutureDates();
+        const pick = await pickAvailableRoom(api, dates);
+        if (!pick.ok) {
+            rec(testInfo, { module: M, scope: 5, step: 'Müsait oda (payment)', status: SKIP, note: pick.reason });
+            await api.dispose();
+            test.skip(true, `Pilot pre-condition eksik: ${pick.reason}`);
+            return;
+        }
+
+        const guestName = factory.guestName();
+        const created = await createTestBooking(api, {
+            roomId: pick.room.id, guestName,
+            check_in: dates.check_in, check_out: dates.check_out,
+            totalAmount: 200,
+        });
+        rec(testInfo, { module: M, scope: 5, step: 'Setup: booking yarat (payment)', status: created.ok ? PASS : FAIL, http: created.status, note: created.ok ? `id=${created.bookingId}` : created.reason });
+        expect(created.ok, `Booking create FAILED: ${created.reason}`).toBe(true);
+        trackEntity({ kind: 'booking', id: created.bookingId, label: guestName, cleanup: 'pending', endpoint: '/api/pms-core/cancel' });
+
+        // Baseline balance
+        const before = await getBookingDetail(api, created.bookingId);
+        const balBefore = before.ok ? readBalance(before.json) : null;
+        rec(testInfo, { module: M, scope: 5, step: 'Baseline full-detail (payment)', status: before.ok ? PASS : REVIEW, http: before.status, note: `balance=${balBefore}` });
+
+        // Hard-assert: record-payment (cash → no gateway)
+        const payAmount = 55.25;
+        const payLabel = factory.folioLabel();
+        const paid = await recordPayment(api, created.bookingId, {
+            amount: payAmount, method: 'cash', payment_type: 'interim', reference: payLabel, notes: 'E2E cash payment',
+        });
+        const paymentId = paid.json?.payment?.id;
+        const payOk = paid.ok && paid.json?.success !== false && !!paymentId;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'POST record-payment (cash)',
+            status: payOk ? PASS : FAIL,
+            endpoint: `/api/pms/reservations/${created.bookingId}/record-payment`, http: paid.status,
+            note: payOk ? `payment_id=${paymentId} method=cash` : (paid.body?.slice(0, 200) || ''),
+        });
+        expect(payOk, `record-payment FAILED: HTTP ${paid.status} ${paid.body?.slice(0, 200) || ''}`).toBe(true);
+        expect(paymentId, 'record-payment response missing payment.id').toBeTruthy();
+        trackEntity({ kind: 'payment', id: paymentId, label: payLabel, cleanup: 'pending', endpoint: '/api/pms-core/folio/void-payment' });
+
+        // Hard-assert: balance düştü (payment shape okunabildiyse delta − ≈ payAmount)
+        const after = await getBookingDetail(api, created.bookingId);
+        const balAfter = after.ok ? readBalance(after.json) : null;
+        if (balBefore != null && balAfter != null) {
+            rec(testInfo, {
+                module: M, scope: 5, step: 'Balance ödeme sonrası düştü',
+                status: balAfter <= balBefore - payAmount + 0.01 ? PASS : FAIL,
+                http: after.status, note: `before=${balBefore} after=${balAfter} expected_delta=-${payAmount}`,
+            });
+            expect(balAfter).toBeLessThanOrEqual(balBefore - payAmount + 0.01);
+        } else {
+            rec(testInfo, { module: M, scope: 5, step: 'Balance ödeme sonrası düştü', status: SKIP, note: `balance shape okunamadı before=${balBefore} after=${balAfter}` });
+        }
+
+        // Hard-assert: void-payment
+        const voided = await voidPayment(api, paymentId, 'E2E payment reverse');
+        const vOk = voided.ok && voided.json?.success !== false;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'POST folio/void-payment',
+            status: vOk ? PASS : FAIL,
+            endpoint: '/api/pms-core/folio/void-payment', http: voided.status,
+            note: vOk ? 'payment voided' : (voided.body?.slice(0, 200) || ''),
+        });
+        expect(vOk, `void-payment FAILED: HTTP ${voided.status} ${voided.body?.slice(0, 200) || ''}`).toBe(true);
+        trackEntity({ kind: 'payment', id: paymentId, label: `${payLabel} (voided)`, cleanup: 'completed', endpoint: '/api/pms-core/folio/void-payment' });
+
+        // Hard-assert: void sonrası balance geri yükseldi
+        const post = await getBookingDetail(api, created.bookingId);
+        const balPost = post.ok ? readBalance(post.json) : null;
+        if (balPost != null && balAfter != null) {
+            rec(testInfo, {
+                module: M, scope: 5, step: 'Void-payment sonrası balance geri yükseldi',
+                status: balPost >= balAfter + payAmount - 0.01 ? PASS : FAIL,
+                http: post.status, note: `after=${balAfter} post_void=${balPost}`,
+            });
+            expect(balPost).toBeGreaterThanOrEqual(balAfter + payAmount - 0.01);
+        } else {
+            rec(testInfo, { module: M, scope: 5, step: 'Void-payment sonrası balance geri yükseldi', status: SKIP, note: `balance shape okunamadı after=${balAfter} post=${balPost}` });
+        }
+
+        // Cleanup — cancel booking (hard-assert)
+        const cleanup = await cancelBooking(api, created.bookingId, 'E2E folio payment cleanup');
+        const cleanOk = cleanup.ok && cleanup.json?.success !== false;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'Cleanup cancel booking (payment)',
             status: cleanOk ? PASS : FAIL,
             endpoint: '/api/pms-core/cancel', http: cleanup.status,
             note: cleanOk ? 'cancelled' : (cleanup.body?.slice(0, 160) || ''),

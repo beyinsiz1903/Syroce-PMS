@@ -109,6 +109,24 @@ export async function voidCharge(api, chargeId, reason = 'E2E test reversal') {
     return safePost(api, '/api/pms-core/folio/void-charge', { charge_id: chargeId, reason });
 }
 
+/**
+ * Booking'in folio'suna ödeme yaz. Test mock/sandbox değil — gerçek `record-payment`
+ * endpoint'i çağrılır; gateway tetiklenmesin diye method='cash' (PCI-DSS sınırı
+ * dışı) ya da 'internal' default tutulur.
+ */
+export async function recordPayment(api, bookingId, { amount, method = 'cash', payment_type = 'interim', reference, notes }) {
+    return safePost(api, `/api/pms/reservations/${bookingId}/record-payment`, {
+        amount, method, payment_type, reference, notes,
+    });
+}
+
+/**
+ * Ödeme geri al — folio.balance kaydedilen ödeme kadar geri yükselmeli.
+ */
+export async function voidPayment(api, paymentId, reason = 'E2E payment reversal') {
+    return safePost(api, '/api/pms-core/folio/void-payment', { payment_id: paymentId, reason });
+}
+
 export async function getBookingDetail(api, bookingId) {
     return safeGetJson(api, `/api/pms/reservations/${bookingId}/full-detail`);
 }
