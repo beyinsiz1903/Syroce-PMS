@@ -130,6 +130,29 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
             }
         } catch (e) { endpointError = String(e?.message || e); }
     }
+    // Tur-8 debug surface: when dry_run_enforced=false the response now carries
+    // dry_run_source / dry_run_env_flag / dry_run_structural / active_connectors_count
+    // (backend stress.py tur-8 fix). Attach FULL response body + endpoint path so
+    // any future regression has root-cause data without re-running the suite.
+    if (request && pilotToken && runtimeBody && runtimeBody.dry_run_enforced !== true) {
+        try {
+            testInfo.attach(`external-calls-debug-${batchName}.json`, {
+                body: Buffer.from(JSON.stringify({
+                    endpoint: '/api/admin/stress/external-calls',
+                    endpoint_status: endpointStatus,
+                    response_body: runtimeBody,
+                    env_in_runner: {
+                        E2E_EXTERNAL_DRY_RUN: process.env.E2E_EXTERNAL_DRY_RUN ?? 'unset',
+                        E2E_ALLOW_DESTRUCTIVE_STRESS: process.env.E2E_ALLOW_DESTRUCTIVE_STRESS ?? 'unset',
+                        E2E_STRESS_TENANT_ID: process.env.E2E_STRESS_TENANT_ID ?? 'unset',
+                        PILOT_TENANT_ID: process.env.PILOT_TENANT_ID ? '[set]' : 'unset',
+                    },
+                    note: 'dry_run_enforced=false → backend env not set AND no structural dry-run (active connectors > 0). Inspect active_connectors_count and dry_run_source fields.',
+                }, null, 2)),
+                contentType: 'application/json',
+            });
+        } catch (_) { /* attach is best-effort */ }
+    }
     const seedExt = stressState?.seed_response?.external_calls_made;
     const snapshotOk = Array.isArray(seedExt) && seedExt.length === 0;
     // Verdict (architect tur-5):

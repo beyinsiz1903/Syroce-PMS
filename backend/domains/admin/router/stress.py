@@ -557,10 +557,49 @@ async def stress_external_calls_status(
         _log.exception("stress_external_calls_status top-level failure")
         query_errors.append(f"top_level:{type(e).__name__}:{str(e)[:200]}")
 
+    # F8A run #20 NO-GO root-cause #1 fix (tur-8): `dry_run_enforced` was a pure
+    # self-report on `E2E_EXTERNAL_DRY_RUN` env. The CI workflow sets that env on
+    # the *runner* process (stress.yml:66), but the backend we hit lives on a
+    # *separate Replit deployment* (`STRESS_E2E_BASE_URL` secret) whose process
+    # env is configured via Replit Secrets — not propagated from the runner. So
+    # the flag was ~always false in CI even when no calls were actually made,
+    # forcing the helper to FAIL despite an empty outbox.
+    #
+    # E2E_EXTERNAL_DRY_RUN never actually gated dispatch anywhere in this
+    # codebase (rg shows only these two read sites). The *real* protection
+    # against dispatch is the stress tenant having NO active CM connectors:
+    # EventSyncService returns "No active connectors" → worker noop. That's a
+    # structural fact we can read directly from the DB, so we treat it as
+    # equivalent to env-enforced dry-run. The empty-outbox invariant
+    # (`external_calls_made==[]` + `query_errors==[]`) is the ground truth and
+    # remains untouched.
+    structural_dry = False
+    active_connectors_count = None
+    try:
+        from core.database import db as _db
+        active_connectors_count = await _db.channel_connections.count_documents({
+            "tenant_id": stress_tid, "status": "active",
+        })
+        structural_dry = active_connectors_count == 0
+    except Exception as e:  # noqa: BLE001
+        _log.exception("active connectors lookup failed for stress_tid=%s", stress_tid)
+        query_errors.append(f"active_connectors:{type(e).__name__}:{str(e)[:200]}")
+
+    env_dry = os.environ.get("E2E_EXTERNAL_DRY_RUN", "").lower() == "true"
+
     return {
         "external_calls_made": calls,  # boş = invariant tutuyor; non-empty = dispatcher bypass
         "external_calls_count": len(calls),
-        "dry_run_enforced": os.environ.get("E2E_EXTERNAL_DRY_RUN", "").lower() == "true",
+        "dry_run_enforced": env_dry or structural_dry,
+        "dry_run_source": (
+            "env_and_structural" if env_dry and structural_dry
+            else "env" if env_dry
+            else "structural_no_active_connectors" if structural_dry
+            else "none"
+        ),
+        "dry_run_env_flag": env_dry,
+        "dry_run_structural": structural_dry,
+        "active_connectors_count": active_connectors_count,
         "query_errors": query_errors,  # collection erişilemezse REVIEW olarak değerlendir
         "sources_checked": ["outbox_events", "integration_afsadakat_outbox"],
         "gates": gates,
