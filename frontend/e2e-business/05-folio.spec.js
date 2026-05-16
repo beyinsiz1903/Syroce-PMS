@@ -385,4 +385,197 @@ test.describe('Scope 5 — Folio', () => {
 
         await api.dispose();
     });
+
+    // ── E2E (regression-catching): Payment idempotency — same record-payment payload twice + double-void ──
+    // Risk: PCI-DSS adjacent. If retry / double-submit creates two payment rows for the same intent,
+    //       guest is effectively double-credited (balance drifts silently).
+    // Hard-fails:
+    //   1. Booking create 2xx
+    //   2. record-payment #1 2xx + payment.id döner
+    //   3. record-payment #2 (same reference, same amount, same method) MUST be idempotent:
+    //        (a) HTTP 409 (idempotent reject), OR
+    //        (b) same payment.id döner (server dedup).
+    //      Aksi halde FAIL — duplicate row count + balance delta delil olarak loglanır.
+    //   4. void-payment #1 2xx success
+    //   5. void-payment #2 (same payment_id) çift kredilemez:
+    //        - rejected (success=false / HTTP 4xx) AND (if balance readable) balance stable.
+    //      Aksi halde FAIL — ikinci void balance'ı tekrar arttırır (refund double-credit).
+    //   6. try/finally cleanup: duplicate payment void + primary payment void + booking cancel.
+    test('E2E: Payment idempotency — duplicate record-payment + double void must not double-credit', async ({ baseURL }, testInfo) => {
+        const api = await makeApi(baseURL);
+        const dates = farFutureDates();
+        const pick = await pickAvailableRoom(api, dates);
+        if (!pick.ok) {
+            rec(testInfo, { module: M, scope: 5, step: 'Müsait oda (idempotency)', status: SKIP, note: pick.reason });
+            await api.dispose();
+            test.skip(true, `Pilot pre-condition eksik: ${pick.reason}`);
+            return;
+        }
+
+        const guestName = factory.guestName();
+        const payAmount = 47.75;
+        const dupRef = `IDEMP-${factory.folioLabel()}`;
+        let bookingId = null;
+        let id1 = null;
+        let id2 = null;
+        let isSameId = false;
+
+        try {
+            const created = await createTestBooking(api, {
+                roomId: pick.room.id, guestName,
+                check_in: dates.check_in, check_out: dates.check_out,
+                totalAmount: 300,
+            });
+            rec(testInfo, { module: M, scope: 5, step: 'Setup: booking yarat (idempotency)', status: created.ok ? PASS : FAIL, http: created.status, note: created.ok ? `id=${created.bookingId}` : created.reason });
+            expect(created.ok, `Booking create FAILED: ${created.reason}`).toBe(true);
+            bookingId = created.bookingId;
+            trackEntity({ kind: 'booking', id: bookingId, label: guestName, cleanup: 'pending', endpoint: '/api/pms-core/cancel' });
+
+            const before = await getBookingDetail(api, bookingId);
+            const balBefore = before.ok ? readBalance(before.json) : null;
+            rec(testInfo, { module: M, scope: 5, step: 'Baseline full-detail (idempotency)', status: before.ok ? PASS : REVIEW, http: before.status, note: `balance=${balBefore}` });
+
+            // ── Duplicate record-payment with identical reference ──
+            const payload = { amount: payAmount, method: 'cash', payment_type: 'interim', reference: dupRef, notes: 'E2E idempotency probe' };
+
+            const pay1 = await recordPayment(api, bookingId, payload);
+            id1 = pay1.json?.payment?.id;
+            const pay1Ok = pay1.ok && pay1.json?.success !== false && !!id1;
+            rec(testInfo, {
+                module: M, scope: 5, step: 'POST record-payment #1 (idempotency)',
+                status: pay1Ok ? PASS : FAIL,
+                endpoint: `/api/pms/reservations/${bookingId}/record-payment`, http: pay1.status,
+                note: pay1Ok ? `payment_id=${id1} ref=${dupRef}` : (pay1.body?.slice(0, 200) || ''),
+            });
+            expect(pay1Ok, `record-payment #1 FAILED: HTTP ${pay1.status} ${pay1.body?.slice(0, 200) || ''}`).toBe(true);
+            trackEntity({ kind: 'payment', id: id1, label: `${dupRef} (#1)`, cleanup: 'pending', endpoint: '/api/pms-core/folio/void-payment' });
+
+            // Fire #2 immediately — same reference, same amount, same method
+            const pay2 = await recordPayment(api, bookingId, payload);
+            id2 = pay2.json?.payment?.id;
+            const status2 = pay2.status;
+
+            // Strict contract per task #180: server MUST deduplicate via
+            //   (a) HTTP 409 conflict, OR
+            //   (b) same payment.id returned on #2.
+            // Anything else is a double-charge regression.
+            const isConflict = status2 === 409;
+            isSameId = !!id2 && id2 === id1;
+            const idempotentByContract = isConflict || isSameId;
+
+            // If #2 returned a fresh payment.id, track it so cleanup voids it even if the assertion fails.
+            if (id2 && !isSameId) {
+                trackEntity({ kind: 'payment', id: id2, label: `${dupRef} (#2 duplicate)`, cleanup: 'pending', endpoint: '/api/pms-core/folio/void-payment' });
+            }
+
+            // Evidence-only signals (logged, not part of pass criteria): duplicate row count + balance drop.
+            const mid = await getBookingDetail(api, bookingId);
+            const balMid = mid.ok ? readBalance(mid.json) : null;
+            const paymentsArr = Array.isArray(mid.json?.payments) ? mid.json.payments
+                : (Array.isArray(mid.json?.folio?.payments) ? mid.json.folio.payments
+                    : (Array.isArray(mid.json?.summary?.payments) ? mid.json.summary.payments : null));
+            const dupRows = paymentsArr ? paymentsArr.filter(p => p?.reference === dupRef && p?.voided !== true) : null;
+            const dupRowCount = dupRows ? dupRows.length : null;
+            const observedDrop = (balBefore != null && balMid != null) ? +(balBefore - balMid).toFixed(2) : null;
+
+            rec(testInfo, {
+                module: M, scope: 5, step: 'Idempotency evidence (rows + balance delta)',
+                status: REVIEW,
+                note: `dup_rows=${dupRowCount} balance_drop=${observedDrop} expected_per_payment=${payAmount}`,
+            });
+
+            rec(testInfo, {
+                module: M, scope: 5, step: 'POST record-payment #2 (duplicate) idempotent olmalı',
+                status: idempotentByContract ? PASS : FAIL,
+                endpoint: `/api/pms/reservations/${bookingId}/record-payment`, http: status2,
+                note: `id1=${id1} id2=${id2} same_id=${isSameId} http409=${isConflict} dup_rows=${dupRowCount} balance_drop=${observedDrop}`,
+            });
+            expect(
+                idempotentByContract,
+                `DOUBLE-CHARGE DETECTED: record-payment #2 (ref=${dupRef}) was not deduplicated. ` +
+                `Expected HTTP 409 or same payment.id; got http#2=${status2} id1=${id1} id2=${id2}. ` +
+                `Evidence — dup_rows=${dupRowCount} balance_drop=${observedDrop} (single-credit expected ≈ ${payAmount}). ` +
+                `Guest would be credited twice for one intent.`,
+            ).toBe(true);
+
+            // ── Double void on the SAME payment_id must not double-credit ──
+            const v1 = await voidPayment(api, id1, 'E2E idempotency void #1');
+            const v1Ok = v1.ok && v1.json?.success !== false;
+            rec(testInfo, {
+                module: M, scope: 5, step: 'POST void-payment #1 (idempotency)',
+                status: v1Ok ? PASS : FAIL,
+                endpoint: '/api/pms-core/folio/void-payment', http: v1.status,
+                note: v1Ok ? `voided=${id1}` : (v1.body?.slice(0, 200) || ''),
+            });
+            expect(v1Ok, `void-payment #1 FAILED: HTTP ${v1.status} ${v1.body?.slice(0, 200) || ''}`).toBe(true);
+            trackEntity({ kind: 'payment', id: id1, label: `${dupRef} (#1 voided)`, cleanup: 'completed', endpoint: '/api/pms-core/folio/void-payment' });
+
+            const afterV1 = await getBookingDetail(api, bookingId);
+            const balAfterV1 = afterV1.ok ? readBalance(afterV1.json) : null;
+
+            // Second void on the same already-voided payment
+            const v2 = await voidPayment(api, id1, 'E2E idempotency void #2 (should be rejected)');
+            const v2Rejected = (v2.status >= 400 && v2.status < 500) || v2.json?.success === false;
+
+            const afterV2 = await getBookingDetail(api, bookingId);
+            const balAfterV2 = afterV2.ok ? readBalance(afterV2.json) : null;
+
+            let balanceStable = null;
+            if (balAfterV1 != null && balAfterV2 != null) {
+                balanceStable = Math.abs(balAfterV2 - balAfterV1) <= 0.01;
+            }
+            // Void contract: rejection signal is sufficient; balance stability is a hard guard whenever readable.
+            const voidIdempotent = v2Rejected && (balanceStable === null || balanceStable === true);
+
+            rec(testInfo, {
+                module: M, scope: 5, step: 'POST void-payment #2 (already voided) çift kredilemez',
+                status: voidIdempotent ? PASS : FAIL,
+                endpoint: '/api/pms-core/folio/void-payment', http: v2.status,
+                note: `rejected=${v2Rejected} bal_after_v1=${balAfterV1} bal_after_v2=${balAfterV2} balance_stable=${balanceStable}`,
+            });
+            expect(
+                voidIdempotent,
+                `DOUBLE-REFUND DETECTED: void-payment #2 on already-voided id=${id1} was not rejected or balance shifted. ` +
+                `http#2=${v2.status} rejected=${v2Rejected} bal_after_v1=${balAfterV1} bal_after_v2=${balAfterV2} balance_stable=${balanceStable}. ` +
+                `Guest would be refunded twice.`,
+            ).toBe(true);
+        } finally {
+            // ── Cleanup runs even if any assertion above failed mid-test ──
+            // Best-effort void of duplicate payment row (if backend created one).
+            if (id2 && !isSameId) {
+                const vDup = await voidPayment(api, id2, 'E2E idempotency cleanup — duplicate row');
+                const vDupOk = (vDup.ok && vDup.json?.success !== false) || vDup.json?.error === 'Payment already voided';
+                rec(testInfo, {
+                    module: M, scope: 5, step: 'Cleanup void duplicate payment',
+                    status: vDupOk ? PASS : REVIEW,
+                    endpoint: '/api/pms-core/folio/void-payment', http: vDup.status,
+                    note: vDupOk ? `voided dup=${id2}` : (vDup.body?.slice(0, 200) || ''),
+                });
+                trackEntity({ kind: 'payment', id: id2, label: `${dupRef} (#2 cleaned)`, cleanup: vDupOk ? 'completed' : 'failed', endpoint: '/api/pms-core/folio/void-payment' });
+            }
+            // Best-effort void of #1 in case the test failed before its void ran.
+            if (id1) {
+                const vSafe = await voidPayment(api, id1, 'E2E idempotency cleanup — primary');
+                const vSafeOk = (vSafe.ok && vSafe.json?.success !== false) || vSafe.json?.error === 'Payment already voided';
+                rec(testInfo, {
+                    module: M, scope: 5, step: 'Cleanup ensure primary voided',
+                    status: vSafeOk ? PASS : REVIEW,
+                    endpoint: '/api/pms-core/folio/void-payment', http: vSafe.status,
+                    note: vSafeOk ? `voided id1=${id1}` : (vSafe.body?.slice(0, 200) || ''),
+                });
+            }
+            if (bookingId) {
+                const cleanup = await cancelBooking(api, bookingId, 'E2E folio idempotency cleanup');
+                const cleanOk = cleanup.ok && cleanup.json?.success !== false;
+                rec(testInfo, {
+                    module: M, scope: 5, step: 'Cleanup cancel booking (idempotency)',
+                    status: cleanOk ? PASS : REVIEW,
+                    endpoint: '/api/pms-core/cancel', http: cleanup.status,
+                    note: cleanOk ? 'cancelled' : (cleanup.body?.slice(0, 160) || ''),
+                });
+                trackEntity({ kind: 'booking', id: bookingId, label: `${guestName} (cancelled)`, cleanup: cleanOk ? 'completed' : 'failed', endpoint: '/api/pms-core/cancel' });
+            }
+            await api.dispose();
+        }
+    });
 });
