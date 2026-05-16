@@ -354,7 +354,7 @@ async def get_rooms(
 
     # Fallback: Ultra-minimal projection with pagination
     # cleaning_started_at/current_task_id/assigned_cleaner: HK enrichment için
-    projection = {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1, 'status': 1, 'floor': 1, 'capacity': 1, 'max_occupancy': 1, 'base_price': 1, 'tenant_id': 1, 'amenities': 1, 'view': 1, 'bed_type': 1, 'images': 1, 'is_virtual': 1, 'cleaning_started_at': 1, 'current_task_id': 1, 'assigned_cleaner': 1, 'stress_seed': 1, 'stress_prefix': 1}
+    projection = {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1, 'status': 1, 'floor': 1, 'capacity': 1, 'max_occupancy': 1, 'base_price': 1, 'tenant_id': 1, 'amenities': 1, 'view': 1, 'bed_type': 1, 'images': 1, 'is_virtual': 1, 'cleaning_started_at': 1, 'current_task_id': 1, 'assigned_cleaner': 1, 'stress_seed': 1, 'stress_prefix': 1, 'room_move_target': 1}
     rooms_raw = await db.rooms.find(query, projection).skip(offset).limit(limit).to_list(limit)
 
     # Fix field mapping

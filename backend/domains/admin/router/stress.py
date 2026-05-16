@@ -448,6 +448,17 @@ async def stress_seed(
     except Exception:
         pass
 
+    # F8A tur-10b: split base_rooms vs extra_room_move_targets for transparency.
+    # `counts["rooms"]` is the TOTAL inserted (base 500 + 60 extra in default config).
+    # The spec debug attachment + user CI report can now verify both layers exist.
+    extra_targets_count = sum(1 for r in rooms_docs if r.get("room_move_target") is True)
+    base_rooms_count = counts["rooms"] - extra_targets_count
+    rooms_breakdown = {
+        "base_rooms": base_rooms_count,
+        "extra_room_move_targets": extra_targets_count,
+        "total_rooms": counts["rooms"],
+    }
+
     return {
         "success": True,
         "target_tenant_id": stress_tid,
@@ -456,6 +467,7 @@ async def stress_seed(
         "max_allowed_this_round": MAX_ROOMS_THIS_ROUND,
         "insert_chunk_size": INSERT_CHUNK_SIZE,
         "seeded_counts": counts,
+        "rooms_breakdown": rooms_breakdown,
         "timing_ms": {
             "factory": factory_ms,
             "insert": insert_ms,
