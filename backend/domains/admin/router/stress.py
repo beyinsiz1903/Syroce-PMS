@@ -448,6 +448,52 @@ async def stress_seed(
         counts["folio_charges"] = await _chunked_insert(db.folio_charges, folio_charges_docs, INSERT_CHUNK_SIZE)
         counts["room_night_locks"] = await _chunked_insert(db.room_night_locks, rnl_docs, INSERT_CHUNK_SIZE)
         counts["housekeeping_tasks"] = await _chunked_insert(db.housekeeping_tasks, hk_docs, INSERT_CHUNK_SIZE)
+
+        # F8A tur-14 diagnostic: post-insert DB ground-truth verification.
+        # CI run #26 still reports `fetchedExtras=0` despite tur-13 sort fix
+        # being deployed and local repro of insert+projection round-trip
+        # passing. We've exhausted hypothesis-driven debugging; this block
+        # surfaces the ACTUAL state of `db.rooms` immediately after
+        # `_chunked_insert` returns, so the next CI run tells us
+        # definitively which step is dropping data:
+        #   - actual_total == 560 + actual_extras == 60   → DB is correct,
+        #     bug is in /api/pms/rooms fetch path (despite sort fix).
+        #   - actual_total == 560 + actual_extras == 0   → insert wrote
+        #     docs but stripped `room_move_target` (factory/serializer bug).
+        #   - actual_total < 560                          → `_chunked_insert`
+        #     silently dropped docs despite returning 560 (insert_many
+        #     ordered=False BulkWriteError handling).
+        # Counts only, no PII / no document dumps — kept lightweight.
+        verification: dict[str, Any] = {}
+        try:
+            verification["actual_rooms_total"] = await db.rooms.count_documents(
+                {"tenant_id": stress_tid},
+            )
+            verification["actual_rooms_with_prefix"] = await db.rooms.count_documents(
+                {"tenant_id": stress_tid, "stress_prefix": prefix},
+            )
+            verification["actual_extras_total"] = await db.rooms.count_documents(
+                {"tenant_id": stress_tid, "room_move_target": True},
+            )
+            verification["actual_extras_with_prefix"] = await db.rooms.count_documents(
+                {"tenant_id": stress_tid, "stress_prefix": prefix, "room_move_target": True},
+            )
+            # Round-trip a single extras doc to check field-name drift through
+            # the same projection used by /api/pms/rooms.
+            extras_sample = await db.rooms.find_one(
+                {"tenant_id": stress_tid, "room_move_target": True},
+                {"_id": 0, "id": 1, "room_number": 1, "stress_prefix": 1,
+                 "room_move_target": 1, "is_active": 1, "is_virtual": 1,
+                 "status": 1},
+            )
+            verification["extras_sample_keys"] = sorted(extras_sample.keys()) if extras_sample else None
+            verification["extras_sample_prefix_match"] = (
+                isinstance(extras_sample, dict)
+                and isinstance(extras_sample.get("stress_prefix"), str)
+                and extras_sample["stress_prefix"].startswith(prefix)
+            ) if extras_sample else False
+        except Exception as e:
+            verification["error"] = str(e)[:200]
     insert_ms = round((time.perf_counter() - t_insert_start) * 1000, 1)
 
     # Cache bust (architect tur-6 fix): rooms endpoint Redis cache'i seed öncesi
@@ -493,6 +539,7 @@ async def stress_seed(
         "insert_chunk_size": INSERT_CHUNK_SIZE,
         "seeded_counts": counts,
         "rooms_breakdown": rooms_breakdown,
+        "post_insert_verification": verification,
         "timing_ms": {
             "factory": factory_ms,
             "insert": insert_ms,

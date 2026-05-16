@@ -259,6 +259,7 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
                         rooms_with_stress_prefix_filter: rooms.length,
                     },
                     seed_contract: seedBreakdown,
+                    post_insert_verification: stressState?.seed_response?.post_insert_verification ?? null,
                     distribution: {
                         demand_first_n: Object.fromEntries(demandFinal),
                         vacant_by_type: Object.fromEntries(vacantFinal),

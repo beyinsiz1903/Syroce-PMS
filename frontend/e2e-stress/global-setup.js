@@ -135,6 +135,9 @@ export default async function globalSetup() {
     }
     console.log(`[stress-setup] ✅ Seed OK n=${ROOM_COUNT} prefix=${dataPrefix} timing_ms=${JSON.stringify(seedBody.timing_ms)}`);
     console.log(`[stress-setup]    counts: ${JSON.stringify(seedBody.seeded_counts)}`);
+    if (seedBody.post_insert_verification) {
+        console.log(`[stress-setup]    post_insert_verification: ${JSON.stringify(seedBody.post_insert_verification)}`);
+    }
 
     // 7) Stress snapshot after seed
     const stressAfterSeed = await snapshot(api, stressToken, 'stress-after-seed');
