@@ -209,32 +209,37 @@ const LandingPage = () => {
             <span className="text-lg font-bold tracking-tight text-white">Syroce</span>
           </a>
 
-          <nav className="hidden items-center gap-7 lg:flex">
+          <nav className="hidden items-center gap-1 lg:flex">
             {navLinks.map((l) => (
               <a
                 key={l.href}
                 href={l.href}
-                className="text-sm text-slate-300 transition hover:text-white"
+                className="group relative rounded-full px-3 py-1.5 text-[13px] text-slate-300 transition hover:text-white"
               >
                 {l.label}
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-x-3 -bottom-0.5 h-px scale-x-0 bg-gradient-to-r from-transparent via-cyan-300/80 to-transparent transition-transform duration-300 group-hover:scale-x-100"
+                />
               </a>
             ))}
           </nav>
 
-          <div className="hidden items-center gap-3 md:flex">
+          <div className="hidden items-center gap-2.5 md:flex">
             <button
               onClick={goLogin}
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-medium text-white transition hover:bg-white/[0.08]"
+              className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.03] px-3.5 py-1.5 text-[13px] font-medium text-slate-200 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
             >
-              <LogIn className="h-4 w-4" />
+              <LogIn className="h-3.5 w-3.5" />
               Giriş Yap
             </button>
             <button
               onClick={goSupplier}
-              className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-teal-300 px-4 py-2 text-sm font-semibold text-[#05070f] shadow-[0_8px_30px_-8px_rgba(34,211,238,0.7)] transition hover:shadow-[0_10px_40px_-6px_rgba(34,211,238,0.9)]"
+              className="group relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-cyan-300/40 bg-gradient-to-r from-cyan-400/15 via-teal-300/10 to-indigo-400/15 px-3.5 py-1.5 text-[13px] font-semibold text-cyan-100 shadow-[0_0_22px_-6px_rgba(34,211,238,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-cyan-200/70 hover:text-white hover:shadow-[0_0_30px_-4px_rgba(34,211,238,0.85),inset_0_1px_0_rgba(255,255,255,0.12)]"
             >
-              <Users className="h-4 w-4" />
-              Tedarikçi Girişi
+              <span aria-hidden className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+              <Users className="relative h-3.5 w-3.5" />
+              <span className="relative">Tedarikçi Girişi</span>
             </button>
           </div>
 
@@ -276,9 +281,25 @@ const LandingPage = () => {
         ref={heroRef}
         className="relative flex flex-col justify-center pt-28 sm:pt-32 lg:min-h-[90vh] lg:pt-36"
       >
-        <NeonBlob className="left-[-10%] top-[5%] h-[420px] w-[420px] bg-cyan-500/30" />
-        <NeonBlob className="right-[-8%] top-[20%] h-[520px] w-[520px] bg-indigo-500/35" />
-        <NeonBlob className="right-[15%] bottom-[5%] h-[380px] w-[380px] bg-teal-400/25" />
+        {/* Breathing ambient blobs — sürekli scale/opacity döngüsü ile hero canlı hisset */}
+        <motion.div
+          aria-hidden
+          className="pointer-events-none absolute left-[-10%] top-[5%] h-[420px] w-[420px] rounded-full bg-cyan-500/30 blur-3xl"
+          animate={reduce ? {} : { scale: [1, 1.08, 1], opacity: [0.7, 1, 0.7] }}
+          transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.div
+          aria-hidden
+          className="pointer-events-none absolute right-[-8%] top-[20%] h-[520px] w-[520px] rounded-full bg-indigo-500/35 blur-3xl"
+          animate={reduce ? {} : { scale: [1, 1.06, 1], opacity: [0.75, 1, 0.75] }}
+          transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+        />
+        <motion.div
+          aria-hidden
+          className="pointer-events-none absolute right-[15%] bottom-[5%] h-[380px] w-[380px] rounded-full bg-teal-400/25 blur-3xl"
+          animate={reduce ? {} : { scale: [1, 1.1, 1], opacity: [0.65, 0.95, 0.65] }}
+          transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+        />
 
         <div className="mx-auto grid w-full max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-[0.78fr_1.22fr] lg:gap-8 lg:px-10">
           {/* Left copy */}
@@ -290,20 +311,22 @@ const LandingPage = () => {
           >
             <span className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-medium tracking-wider text-cyan-300">
               <Sparkles className="h-3.5 w-3.5" />
-              TÜM OTEL YÖNETİMİ TEK BİR PLATFORMDA
+              MODERN HOSPITALITY OPERATING SYSTEM
             </span>
 
-            <h1 className="mt-6 text-4xl font-semibold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-[2.75rem] xl:text-[3rem]">
-              Otelinizi Daha Kolay{' '}
+            <h1 className="mt-6 text-4xl font-semibold leading-[1.06] tracking-tight text-white sm:text-5xl lg:text-[2.85rem] xl:text-[3.15rem]">
+              Konaklama{' '}
               <span className="bg-gradient-to-r from-cyan-300 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
-                Yönetin, İşinizi Büyütün
+                Operasyonunun
               </span>
+              <br className="hidden sm:block" />
+              {' '}Yeni Merkezi
             </h1>
 
             <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-300/90 sm:text-lg">
-              Rezervasyonlardan misafir deneyimine, tedarik süreçlerinden gelire kadar
-              her şeyi tek ekrandan yönetin. Zamandan tasarruf edin, memnuniyeti ve
-              kârlılığı artırın.
+              Rezervasyondan gelire kadar tüm otel operasyonlarını tek akıllı platformda
+              birleştirin. PMS, misafir deneyimi, tedarik ağı ve raporlama —
+              <span className="text-cyan-200/90"> tek işletim sistemi.</span>
             </p>
 
             <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -386,6 +409,45 @@ const LandingPage = () => {
                 loading="eager"
                 decoding="async"
               />
+
+              {/* Connection lines — otel merkezinden floating kartlara doğru ince
+                  neon yollar + akan data dot'ları. SVG viewBox 100×100; pos %
+                  ile kartların yaklaşık merkez koordinatlarına denk gelir. */}
+              <svg
+                aria-hidden
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                className="pointer-events-none absolute inset-0 z-[2] hidden h-full w-full lg:block"
+              >
+                <defs>
+                  <linearGradient id="syroceLine" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%"  stopColor="rgba(94,234,212,0.0)" />
+                    <stop offset="40%" stopColor="rgba(94,234,212,0.55)" />
+                    <stop offset="100%" stopColor="rgba(99,102,241,0.0)" />
+                  </linearGradient>
+                </defs>
+                {/* Hotel merkez ~ (50, 55). Kart merkezleri yaklaşık. */}
+                {[
+                  { x: 18, y: 16 }, { x: 14, y: 42 }, { x: 19, y: 80 },
+                  { x: 82, y: 18 }, { x: 84, y: 48 }, { x: 80, y: 78 },
+                ].map((p, i) => (
+                  <g key={i}>
+                    <line
+                      x1="50" y1="55" x2={p.x} y2={p.y}
+                      stroke="url(#syroceLine)" strokeWidth="0.18" strokeLinecap="round"
+                    />
+                    {!reduce && (
+                      <motion.circle
+                        r="0.5"
+                        fill="rgba(125,255,240,0.95)"
+                        initial={{ cx: 50, cy: 55, opacity: 0 }}
+                        animate={{ cx: [50, p.x], cy: [55, p.y], opacity: [0, 1, 0] }}
+                        transition={{ duration: 3.2 + (i * 0.4), repeat: Infinity, delay: i * 0.55, ease: 'easeInOut' }}
+                      />
+                    )}
+                  </g>
+                ))}
+              </svg>
 
               {/* Alt orta neon pill — görselin altında */}
               <div className="absolute bottom-1 left-1/2 z-[2] -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-400/45 bg-[#0a1424]/90 px-4 py-2 text-[11px] text-cyan-100 shadow-[0_12px_40px_-6px_rgba(34,211,238,0.65)] backdrop-blur-xl sm:text-xs">
@@ -488,6 +550,45 @@ const LandingPage = () => {
               </div>
             ))}
           </GlassCard>
+
+          {/* Trust strip — enterprise/SaaS güven sinyalleri (uptime / multi-property /
+              KVKK / API / channel integrations). Hero altı boşluğu kapatır ve
+              hospitality OS hissi verir. */}
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 rounded-2xl border border-white/10 bg-white/[0.025] px-5 py-4 text-[12px] text-slate-300 backdrop-blur-xl sm:gap-x-8 sm:text-[13px]">
+            <div className="inline-flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.85)]" />
+              </span>
+              <span className="font-semibold text-emerald-300">%99,9 Uptime</span>
+              <span className="text-slate-400">SLA</span>
+            </div>
+            <div className="hidden h-4 w-px bg-white/10 sm:block" />
+            <div className="inline-flex items-center gap-2">
+              <Layers className="h-4 w-4 text-cyan-300" />
+              <span>Çoklu Tesis Yönetimi</span>
+            </div>
+            <div className="hidden h-4 w-px bg-white/10 sm:block" />
+            <div className="inline-flex items-center gap-2">
+              <Globe className="h-4 w-4 text-cyan-300" />
+              <span>Kanal & OTA Entegrasyonları</span>
+            </div>
+            <div className="hidden h-4 w-px bg-white/10 sm:block" />
+            <div className="inline-flex items-center gap-2">
+              <Zap className="h-4 w-4 text-cyan-300" />
+              <span>API & Webhook</span>
+            </div>
+            <div className="hidden h-4 w-px bg-white/10 sm:block" />
+            <div className="inline-flex items-center gap-2">
+              <Lock className="h-4 w-4 text-cyan-300" />
+              <span>KVKK / GDPR Ready</span>
+            </div>
+            <div className="hidden h-4 w-px bg-white/10 sm:block" />
+            <div className="inline-flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-cyan-300" />
+              <span>Audit & 2FA</span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1121,35 +1222,61 @@ const LandingPage = () => {
           <div className="grid gap-10 lg:grid-cols-12">
             <div className="lg:col-span-4">
               <a href="#top" className="flex items-center gap-2.5">
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 to-indigo-500 text-[#05070f]">
-                  <span className="text-sm font-bold">S</span>
+                <span className="relative grid h-10 w-10 place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-cyan-300 via-teal-400 to-indigo-500 text-[#05070f] shadow-[0_0_28px_rgba(34,211,238,0.45),inset_0_1px_0_rgba(255,255,255,0.4)] ring-1 ring-white/15">
+                  <span aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.5),transparent_55%)]" />
+                  <span className="relative text-base font-extrabold tracking-tight">S</span>
                 </span>
-                <span className="text-lg font-semibold text-white">Syroce</span>
+                <div>
+                  <div className="text-lg font-bold tracking-tight text-white">Syroce</div>
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-cyan-300/70">Hospitality OS</div>
+                </div>
               </a>
               <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate-400">
                 Otelinizi, operasyonlarınızı ve misafir deneyiminizi tek merkezden yönetin.
-                Sadece bir yazılım değil — işinizi büyüten dijital bir işletim sistemi.
+                Sadece bir yazılım değil — konaklama operasyonu için modern bir işletim sistemi.
               </p>
-              <div className="mt-6 flex items-center gap-2 text-xs text-slate-500">
-                <Lock className="h-3.5 w-3.5" /> KVKK & güvenli altyapı
+              {/* Status / uptime live badge */}
+              <a
+                href="#iletisim"
+                className="mt-5 inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition hover:border-emerald-300/50 hover:bg-emerald-400/15"
+              >
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                </span>
+                Tüm sistemler aktif · %99,9 uptime
+              </a>
+              <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500">
+                <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> KVKK / GDPR</span>
+                <span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> 2FA / Audit log</span>
+                <span className="inline-flex items-center gap-1.5"><Globe className="h-3.5 w-3.5" /> TR · EN · DE · RU</span>
               </div>
             </div>
 
-            <FooterCol title="Kurumsal" items={[
-              { label: 'Hakkımızda',           href: '#hakkimizda' },
-              { label: 'Kullanım Alanları',    href: '#kimler' },
-              { label: 'Referanslar',          href: '#hakkimizda' },
-              { label: 'Gizlilik Politikası',  href: '/privacy-policy' },
-              { label: 'Kullanım Şartları',    href: '/privacy-policy' },
-            ]} />
-            <FooterCol title="Çözümler" items={[
-              { label: 'Otel Yönetimi',        href: '#cozumler' },
+            <FooterCol title="Ürün" items={[
+              { label: 'Modüller',             href: '#moduller' },
+              { label: 'Çözümler',             href: '#cozumler' },
               { label: 'Misafir Deneyimi',     href: '#deneyim' },
               { label: 'Tedarik ve Satın Alma',href: '#tedarikci' },
-              { label: 'Raporlama',            href: '#cozumler' },
-              { label: 'Çoklu İşletme',        href: '#cozumler' },
+              { label: 'Çoklu Tesis',          href: '#cozumler' },
+              { label: 'Yol Haritası',         href: '#iletisim' },
             ]} />
-            <FooterCol title="Destek" items={[
+            <FooterCol title="Geliştiriciler" items={[
+              { label: 'API & Webhook',        href: '#iletisim' },
+              { label: 'Entegrasyonlar',       href: '#cozumler' },
+              { label: 'Channel Manager',      href: '#cozumler' },
+              { label: 'OTA Bağlantıları',     href: '#cozumler' },
+              { label: 'Dokümantasyon',        href: '#iletisim' },
+            ]} />
+            <FooterCol title="Güven" items={[
+              { label: 'Güvenlik',             href: '/privacy-policy' },
+              { label: 'KVKK / GDPR',          href: '/privacy-policy' },
+              { label: 'Uptime Status',        href: '#iletisim' },
+              { label: 'Gizlilik',             href: '/privacy-policy' },
+              { label: 'Kullanım Şartları',    href: '/privacy-policy' },
+            ]} />
+            <FooterCol title="Şirket" items={[
+              { label: 'Hakkımızda',           href: '#hakkimizda' },
               { label: 'İletişim',             href: '#iletisim' },
               { label: 'SSS',                  href: '#sss' },
               { label: 'Demo Talep',           href: '#iletisim' },
