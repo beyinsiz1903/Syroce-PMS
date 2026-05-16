@@ -396,6 +396,31 @@ async def record_payment(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
+    # Task #184 — Idempotency: aynı (tenant_id, booking_id, reference) ile gelen
+    # retry/double-click/network-replay isteği misafiri çift kreditlememeli.
+    # Bu kontrol folio create'ten ÖNCE yapılır; aksi halde idempotent retry
+    # boş bir folio yaratır (yan-etki). Reference verilmişse önce mevcut
+    # non-voided satırı ara; payload uyuşuyorsa orijinali döndür, farklıysa
+    # 409 at. Race fast-path kaybederse insert sırasındaki DuplicateKeyError
+    # partial-unique index garantisiyle yakalanır
+    # (bkz. bootstrap/phases/perf_indexes.py uniq_payment_reference_active).
+    ref_key = (data.reference or "").strip()
+    if ref_key:
+        existing = await db.payments.find_one(
+            {"tenant_id": tid, "booking_id": booking_id,
+             "reference": ref_key, "voided": False},
+            {"_id": 0},
+        )
+        if existing:
+            if (round(float(existing.get("amount") or 0), 2) != round(float(data.amount), 2)
+                    or (existing.get("method") or "") != data.method
+                    or (existing.get("payment_type") or "") != data.payment_type):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Duplicate payment reference with different payload",
+                )
+            return {"success": True, "payment": existing, "idempotent": True}
+
     # Find or create folio
     folio = await db.folios.find_one({"booking_id": booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0})
     if not folio:
@@ -423,13 +448,26 @@ async def record_payment(
         "method": data.method,
         "payment_type": data.payment_type,
         "status": "paid",
-        "reference": data.reference,
+        "reference": ref_key or None,
         "notes": data.notes,
         "processed_by": current_user.name,
         "processed_at": datetime.now(UTC).isoformat(),
         "voided": False,
     }
-    await db.payments.insert_one({**payment})
+    try:
+        await db.payments.insert_one({**payment})
+    except Exception as exc:
+        from pymongo.errors import DuplicateKeyError
+        if isinstance(exc, DuplicateKeyError) and ref_key:
+            existing = await db.payments.find_one(
+                {"tenant_id": tid, "booking_id": booking_id,
+                 "reference": ref_key, "voided": False},
+                {"_id": 0},
+            )
+            if existing:
+                return {"success": True, "payment": existing, "idempotent": True}
+            raise HTTPException(status_code=409, detail="Duplicate payment reference") from exc
+        raise
 
     # Update booking paid_amount
     new_paid = (booking.get("paid_amount", 0) or 0) + data.amount

@@ -100,6 +100,23 @@ async def ensure_performance_indexes():
         ("messaging_provider_configs",
          [("provider_type", 1), ("credentials_encrypted.phone_number_id", 1)],
          "idx_msg_provider_phone_lookup", {}),
+        # Task #184 — record-payment idempotency: bir misafir tekrar tıkladığında
+        # ya da frontend/network retry yaptığında aynı (tenant_id, booking_id,
+        # reference) anahtarıyla iki kez yazılan ödeme satırı misafiri çift
+        # kreditler ve folio bakiyesini sessizce kaydırır. Partial unique index
+        # `reference` string olduğunda ve `voided=false` iken benzersizlik
+        # zorlar; void edilen satırlar index dışında kalır → aynı reference
+        # void sonrası yeniden kullanılabilir. Application-level fast-path
+        # (find_one + DuplicateKeyError yakala) bu index'in race-free
+        # garantisine dayanır.
+        ("payments",
+         [("tenant_id", 1), ("booking_id", 1), ("reference", 1)],
+         "uniq_payment_reference_active",
+         {"unique": True,
+          "partialFilterExpression": {
+              "reference": {"$type": "string"},
+              "voided": False,
+          }}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:
