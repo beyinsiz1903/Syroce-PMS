@@ -146,6 +146,16 @@ export async function getBookingDetail(api, bookingId) {
 }
 
 /**
+ * Folio'yu kapat. Backend: POST /api/folio/{folio_id}/close
+ * (routers/finance/folio.py::close_folio). Bakiye ≤ 0.01 ise folio.status
+ * 'closed' olur; aksi halde 400 "outstanding balance" döner. Closed-folio
+ * refund/void guard regression testleri için ön koşul.
+ */
+export async function closeFolio(api, folioId) {
+    return safePost(api, `/api/folio/${folioId}/close`, {});
+}
+
+/**
  * Walk-in: tek POST ile guest + booking + atomic check-in.
  * Backend: /api/pms-core/walk-in (front_desk.walk_in).
  * Başarılı dönüş: { success:true, booking_id, folio_id, room_number, guest_id }.

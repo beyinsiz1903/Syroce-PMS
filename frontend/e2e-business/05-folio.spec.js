@@ -6,7 +6,7 @@ import { factory, trackEntity } from './fixtures/data-factory.js';
 import {
     pickAvailableRoom, createTestBooking, addExtraCharge, voidCharge,
     recordPayment, voidPayment, postRefund,
-    getBookingDetail, cancelBooking, farFutureDates,
+    getBookingDetail, cancelBooking, farFutureDates, closeFolio,
 } from './fixtures/pms-flow.js';
 
 const M = 'folio';
@@ -577,5 +577,128 @@ test.describe('Scope 5 — Folio', () => {
             }
             await api.dispose();
         }
+    });
+
+    // ── E2E (regression-catching): Closed-folio refund/void-payment guard ──
+    // Production Hardening Series'in "closed-folio refund/void guard"ı:
+    //   FolioHardeningService.post_refund/void_payment, folio.status != 'open'
+    //   ise {success:false, error:"Folio is <status>, cannot ..."} döner ve
+    //   pms_hardening.api_post_refund/api_void_payment 400 raise eder.
+    // Hard-fails:
+    //   1. Booking create 2xx
+    //   2. record-payment (cash) 2xx + payment.id (folio bakiyesini sıfırlar)
+    //   3. full-detail folios[0].id çözümlenir
+    //   4. POST /api/folio/{id}/close 2xx → folio.status='closed'
+    //   5. POST /api/pms-core/folio/refund (cash) → 400 + body "closed" içermeli
+    //   6. POST /api/pms-core/folio/void-payment → 400 + body "closed" içermeli
+    // Cleanup: folio kapalıyken cancel terminal-guard'a takılabilir → best-effort
+    // (cleanup tracker'da skipped). Real gateway tetiklenmez — method='cash'.
+    test('E2E: Closed-folio refund/void-payment guard rejects with 400', async ({ baseURL }, testInfo) => {
+        const api = await makeApi(baseURL);
+        const dates = farFutureDates();
+        const pick = await pickAvailableRoom(api, dates);
+        if (!pick.ok) {
+            rec(testInfo, { module: M, scope: 5, step: 'Müsait oda (closed-guard)', status: SKIP, note: pick.reason });
+            await api.dispose();
+            test.skip(true, `Pilot pre-condition eksik: ${pick.reason}`);
+            return;
+        }
+
+        const guestName = factory.guestName();
+        const bookingTotal = 75;
+        const created = await createTestBooking(api, {
+            roomId: pick.room.id, guestName,
+            check_in: dates.check_in, check_out: dates.check_out,
+            totalAmount: bookingTotal,
+        });
+        rec(testInfo, { module: M, scope: 5, step: 'Setup: booking yarat (closed-guard)', status: created.ok ? PASS : FAIL, http: created.status, note: created.ok ? `id=${created.bookingId}` : created.reason });
+        expect(created.ok, `Booking create FAILED: ${created.reason}`).toBe(true);
+        trackEntity({ kind: 'booking', id: created.bookingId, label: guestName, cleanup: 'pending', endpoint: '/api/pms-core/cancel' });
+
+        // Folio'yu kapatabilmek için bakiyenin ≤0.01 olması gerekir.
+        // Önce baseline balance'ı oku → tam o tutarda cash ödeme bas.
+        const before = await getBookingDetail(api, created.bookingId);
+        const balBefore = before.ok ? readBalance(before.json) : null;
+        const folios = Array.isArray(before.json?.folios) ? before.json.folios : [];
+        const folioId = folios.find((f) => f && (f.status === 'open' || !f.status))?.id || folios[0]?.id;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'Resolve folio_id (closed-guard setup)',
+            status: folioId ? PASS : FAIL, http: before.status,
+            note: folioId ? `folio_id=${folioId} balance=${balBefore}` : `folios.length=${folios.length}`,
+        });
+        expect(folioId, 'full-detail did not expose folios[].id').toBeTruthy();
+
+        const payAmount = balBefore && balBefore > 0 ? balBefore : bookingTotal;
+        const payLabel = factory.folioLabel();
+        const paid = await recordPayment(api, created.bookingId, {
+            amount: payAmount, method: 'cash', payment_type: 'final', reference: payLabel, notes: 'E2E zero-out balance for close',
+        });
+        const paymentId = paid.json?.payment?.id;
+        const payOk = paid.ok && paid.json?.success !== false && !!paymentId;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'POST record-payment (zero-out)',
+            status: payOk ? PASS : FAIL,
+            endpoint: `/api/pms/reservations/${created.bookingId}/record-payment`, http: paid.status,
+            note: payOk ? `payment_id=${paymentId} amount=${payAmount}` : (paid.body?.slice(0, 200) || ''),
+        });
+        expect(payOk, `record-payment FAILED: HTTP ${paid.status} ${paid.body?.slice(0, 200) || ''}`).toBe(true);
+        trackEntity({ kind: 'payment', id: paymentId, label: payLabel, cleanup: 'pending', endpoint: '/api/pms-core/folio/void-payment' });
+
+        // Folio'yu kapat → status='closed'.
+        const closed = await closeFolio(api, folioId);
+        const closeOk = closed.ok || closed.status === 200;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'POST /api/folio/{id}/close',
+            status: closeOk ? PASS : FAIL,
+            endpoint: `/api/folio/${folioId}/close`, http: closed.status,
+            note: closeOk ? 'folio closed' : (closed.body?.slice(0, 200) || ''),
+        });
+        expect(closeOk, `close folio FAILED: HTTP ${closed.status} ${closed.body?.slice(0, 200) || ''}`).toBe(true);
+
+        // Guard #1: /folio/refund closed folio'da 400 + "closed" mesajı.
+        const refundAttempt = await postRefund(api, {
+            folioId, bookingId: created.bookingId, amount: 10, reason: 'E2E closed-folio refund guard', method: 'cash',
+        });
+        const refundBlocked = refundAttempt.status === 400 && /closed/i.test(refundAttempt.body || '');
+        rec(testInfo, {
+            module: M, scope: 5, step: 'GUARD: /folio/refund closed → 400',
+            status: refundBlocked ? PASS : FAIL,
+            endpoint: '/api/pms-core/folio/refund', http: refundAttempt.status,
+            note: refundBlocked ? 'rejected as expected' : (refundAttempt.body?.slice(0, 200) || ''),
+        });
+        expect(refundAttempt.status, `refund on closed folio should be 400 but got ${refundAttempt.status}`).toBe(400);
+        expect((refundAttempt.body || '').toLowerCase()).toContain('closed');
+
+        // Guard #2: /folio/void-payment closed folio'da 400 + "closed" mesajı.
+        const voidAttempt = await voidPayment(api, paymentId, 'E2E closed-folio void guard');
+        const voidBlocked = voidAttempt.status === 400 && /closed/i.test(voidAttempt.body || '');
+        rec(testInfo, {
+            module: M, scope: 5, step: 'GUARD: /folio/void-payment closed → 400',
+            status: voidBlocked ? PASS : FAIL,
+            endpoint: '/api/pms-core/folio/void-payment', http: voidAttempt.status,
+            note: voidBlocked ? 'rejected as expected' : (voidAttempt.body?.slice(0, 200) || ''),
+        });
+        expect(voidAttempt.status, `void-payment on closed folio should be 400 but got ${voidAttempt.status}`).toBe(400);
+        expect((voidAttempt.body || '').toLowerCase()).toContain('closed');
+
+        // Cleanup — folio kapalı, payment terminal: cancel best-effort.
+        // Terminal-state guard cancel'i reddederse SKIP olarak işaretle, hard-fail değil.
+        const cleanup = await cancelBooking(api, created.bookingId, 'E2E closed-folio guard cleanup');
+        const cleanOk = cleanup.ok && cleanup.json?.success !== false;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'Cleanup cancel booking (closed-guard, best-effort)',
+            status: cleanOk ? PASS : SKIP,
+            endpoint: '/api/pms-core/cancel', http: cleanup.status,
+            note: cleanOk ? 'cancelled' : `terminal/closed — cleanup skipped (HTTP ${cleanup.status})`,
+        });
+        trackEntity({
+            kind: 'booking', id: created.bookingId,
+            label: cleanOk ? `${guestName} (cancelled)` : `${guestName} (folio closed, terminal)`,
+            cleanup: cleanOk ? 'completed' : 'skipped',
+            endpoint: '/api/pms-core/cancel',
+        });
+        trackEntity({ kind: 'payment', id: paymentId, label: `${payLabel} (folio closed)`, cleanup: 'completed', endpoint: '/api/pms-core/folio/void-payment' });
+
+        await api.dispose();
     });
 });
