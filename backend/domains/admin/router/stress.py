@@ -235,6 +235,14 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
         bookings_docs.append({
             "id": bid, "tenant_id": stress_tid,
             "guest_id": gid, "room_id": rid,
+            # F8A #163 fix (run #20 NO-GO): 03-room-move setup'ı bookings.room_type
+            # üzerinden _computeDemand çağırıyor; seed bookings'inde alan yoktu →
+            # tüm demand `__unknown__` bucket'ına düşüyor, rooms gerçek tipte
+            # gruplanıyor → eligible=0 (target_total=50 required_min=30). Booking
+            # listesi enrichment'i (pms_bookings.py:440-441) yalnız cache-warm
+            # branch'inde çalışıyor; fallback path room_type doldurmuyor. Seed'de
+            # direkt yazmak deterministik fix.
+            "room_type": room_type,
             # F8A #161: bookings list responses must carry folio_id so stress
             # specs that fall back through `/api/pms/bookings` can target the
             # real folio. Without this, tests sent `folio_id=booking.id` and
@@ -473,13 +481,22 @@ async def stress_external_calls_status(
         # gerçekten dispatch denediği row (attempts>0 veya non-pending status).
         # Pending+attempts=0 = sıraya yazıldı ama henüz dispatch edilmedi → DRY_RUN
         # ortamında worker'lar bunları dispatch etmediği için sayılmamalı.
+        # F8A run #20 fix: previous filter included `status NOT IN [pending, None]`
+        # as an OR branch — but worker'lar event'i noop olarak işaretlerken
+        # (no active connectors / dry_run) status="processed" yazıp attempts=0
+        # bırakıyor. Bu satırlar GERÇEK external HTTP dispatch DEĞİL, sadece
+        # worker bookkeeping. "External call MADE" tanımı: dispatcher gerçekten
+        # bir HTTP attempt yaptı → attempts/attempt_count/retry_count > 0.
+        # Inert message filter (aşağıda) zaten safety-net; ama bazı worker'lar
+        # delivery_message yazmadan status update'liyor → message-only filter
+        # yetmiyor. Bu yüzden status branch'ini kaldırıyoruz; attempt counter'lı
+        # row'lar zaten "tried to dispatch" semantiğini taşıyor.
         dispatched_filter = {
             "tenant_id": stress_tid,
             "$or": [
                 {"attempts": {"$gt": 0}},
                 {"attempt_count": {"$gt": 0}},
                 {"retry_count": {"$gt": 0}},
-                {"status": {"$nin": ["pending", None]}},
             ],
         }
         try:
@@ -508,12 +525,13 @@ async def stress_external_calls_status(
             query_errors.append(f"outbox_events:{type(e).__name__}:{str(e)[:200]}")
 
         # 2) Afsadakat outbox (tenant-scoped db) — aynı dispatched-only filter.
+        # F8A run #20 fix: aynı gerekçe ile status branch kaldırıldı (yukarıdaki
+        # outbox_events dispatched_filter yorumuna bkz.).
         afsadakat_filter = {
             "$or": [
                 {"attempts": {"$gt": 0}},
                 {"attempt_count": {"$gt": 0}},
                 {"retry_count": {"$gt": 0}},
-                {"status": {"$nin": ["pending", None]}},
             ],
         }
         try:
