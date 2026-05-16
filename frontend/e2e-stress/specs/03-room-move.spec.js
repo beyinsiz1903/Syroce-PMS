@@ -196,6 +196,64 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
         const requiredEligible = Math.min(MIN_ELIGIBLE_TARGETS, totalFinal);
         const setupStatus = eligibleFinal >= requiredEligible ? 'PASS' : 'FAIL';
 
+        // Tur-10 debug (Kapsam A.2 + architect tur-10 review öneri #1): demand/vacant/
+        // checked-in dağılımını her round attach et. Regression olduğunda hangi tipte
+        // demand>supply olduğu tek dosyada görünür. PASS durumunda da yazılır (baseline).
+        try {
+            const checkedInByType = {};
+            for (const b of bookings.filter((b) => b.status === 'checked_in')) {
+                const t = b.room_type || b.category || '__unknown__';
+                checkedInByType[t] = (checkedInByType[t] || 0) + 1;
+            }
+            const roomsByType = {};
+            for (const r of rooms) {
+                const t = r.room_type || r.category || '__unknown__';
+                roomsByType[t] = (roomsByType[t] || 0) + 1;
+            }
+            const extraVacantRooms = rooms.filter((r) => r.room_move_target === true);
+            const perTypeBreakdown = {};
+            for (const t of new Set([...demandFinal.keys(), ...vacantFinal.keys()])) {
+                const d = demandFinal.get(t) || 0;
+                const v = vacantFinal.get(t) || 0;
+                perTypeBreakdown[t] = {
+                    demand: d, vacant_supply: v,
+                    eligible_contrib: Math.min(d, v),
+                    shortfall: Math.max(0, d - v),
+                };
+            }
+            testInfo.attach('room-move-setup-debug.json', {
+                body: Buffer.from(JSON.stringify({
+                    verdict: setupStatus,
+                    eligible_final: eligibleFinal,
+                    required_min: requiredEligible,
+                    target_total: totalFinal,
+                    free_rounds_used: SETUP_FREE_ROUNDS,
+                    freed_ok: totalFreedOk,
+                    freed_fail: totalFreedFail,
+                    fail_modes: failModes,
+                    snapshot_sizes: {
+                        bookings_total: bookings.length,
+                        rooms_total: rooms.length,
+                        extra_vacant_pool: extraVacantRooms.length,
+                        rooms_with_stress_prefix_filter: rooms.length,
+                    },
+                    distribution: {
+                        demand_first_n: Object.fromEntries(demandFinal),
+                        vacant_by_type: Object.fromEntries(vacantFinal),
+                        checked_in_by_type: checkedInByType,
+                        rooms_by_type: roomsByType,
+                        per_type_breakdown: perTypeBreakdown,
+                    },
+                    diagnosis_hints: [
+                        'shortfall>0 olan tipler eligible<required_min sebebidir',
+                        'extra_vacant_pool=0 ise seed factory tur-10 fix deploy edilmemiş',
+                        'rooms_total<560 ise fetchAllByPrefix offset bug regression',
+                    ],
+                }, null, 2)),
+                contentType: 'application/json',
+            });
+        } catch (_) { /* attach best-effort */ }
+
         rec(testInfo, { module: MOD, step: 'setup', status: setupStatus,
             note: `bookings=${bookings.length} rooms=${rooms.length} pilot_before=${pilotBefore?.count} `
                 + `vacant_pool_setup={freed_ok=${totalFreedOk} freed_fail=${totalFreedFail} `

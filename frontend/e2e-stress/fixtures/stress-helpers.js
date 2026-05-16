@@ -5,8 +5,19 @@ export async function fetchAllByPrefix(request, token, listPath, prefixField, pr
     const maxPages = opts.maxPages ?? 8;
     const pageSize = opts.pageSize ?? 200;
     const out = [];
+    const seenIds = new Set();
     for (let page = 1; page <= maxPages; page++) {
-        const url = `${listPath}${listPath.includes('?') ? '&' : '?'}page=${page}&page_size=${pageSize}&limit=${pageSize}`;
+        // F8A tur-10 fix (run #22 NO-GO root cause): önceki revizyon URL'e
+        // `page=X` gönderiyordu ama backend list endpoint'leri (`/api/pms/rooms`,
+        // `/api/pms/bookings` vb.) `core/pagination.py` `paginate()` dependency'sini
+        // kullanıyor — sadece `limit` ve `offset` Query param'larını okur, `page`
+        // ı sessizce yok sayar. Sonuç: her sayfa offset=0'dan başlıyor → aynı 200
+        // satır 8 kere dönüyor → rooms=200 (snapshot ilk 200 ID'ye sınırlı kalıyor,
+        // 500 odanın diğer 300'ü ASLA görünmüyor) → 03-room-move setup eligible
+        // <30 (vacant havuzu yalnız ilk 200 oda üzerinden hesaplanıyor). Fix:
+        // `offset=(page-1)*pageSize` ekleyip duplicate ID koruması koy.
+        const offset = (page - 1) * pageSize;
+        const url = `${listPath}${listPath.includes('?') ? '&' : '?'}page=${page}&page_size=${pageSize}&limit=${pageSize}&offset=${offset}`;
         const r = await request.get(url, {
             headers: { Authorization: `Bearer ${token}` },
             failOnStatusCode: false, timeout: 30_000,
@@ -16,7 +27,15 @@ export async function fetchAllByPrefix(request, token, listPath, prefixField, pr
         const list = Array.isArray(j) ? j
             : (j?.bookings || j?.rooms || j?.guests || j?.folios || j?.items || j?.data || []);
         if (!Array.isArray(list) || list.length === 0) break;
+        let newOnThisPage = 0;
         for (const item of list) {
+            // Defansif dedupe — backend ya da bir middleware `offset`'i yok saymaya
+            // dönerse aynı doc'u iki kere saymayız. ID yoksa pass-through.
+            if (item?.id != null) {
+                if (seenIds.has(item.id)) continue;
+                seenIds.add(item.id);
+            }
+            newOnThisPage++;
             if (prefixField && prefixValue) {
                 // Strict prefix match — `stress_seed:true` alone is NOT enough,
                 // çünkü önceki round'lardan kalan stress_seed item'lar (cleanup öncesi
@@ -29,6 +48,8 @@ export async function fetchAllByPrefix(request, token, listPath, prefixField, pr
             }
         }
         if (list.length < pageSize) break;
+        // Backend offset'i de yok sayıyorsa newOnThisPage=0 olur → sonsuz loop'tan kaç.
+        if (newOnThisPage === 0) break;
     }
     return out;
 }

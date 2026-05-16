@@ -338,6 +338,46 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
             "stress_seed": True, "stress_prefix": prefix,
         })
 
+    # F8A tur-10 fix (run #22 NO-GO): 03-room-move setup eligible<30 root cause
+    # iki katmanlı: (1) fetchAllByPrefix offset bug → rooms snapshot ilk 200'e
+    # sınırlı (helper'da düzeltildi), (2) snapshot tam 500 olsa bile demand
+    # profili (ilk 50 checked_in booking, ROOM_TYPES[i%20] dağılımı) ile vacant
+    # supply (i%8==0 → ~62 pre_vacant, ROOM_TYPES'a uniform serpilmiş) tam
+    # eşleşmeyebilir → eligible target_total'ın altına düşer. Deterministik fix:
+    # her ROOM_TYPE için 3 ek vacant target oda yarat (3 × 20 = 60 ek). Bu havuz:
+    #   - status="available", booking yok (saf vacant)
+    #   - room_move_target=True işareti (cleanup ve raporlama için)
+    #   - stress_seed=True + stress_prefix=<prefix> → cleanup pass'i tarafından
+    #     prefix-scoped silinir (ekstra cleanup kodu gerekmez)
+    # Sonuç: A testinin demand profili max 50 olduğu için (POSITIVE_MOVE_N=50),
+    # her tipte en az 3 ekstra hedef garantili → eligible ≥ min(demand, supply)
+    # toplamı ≥ 50 (her tip için demand ≤ 3 supply ≥ 3 ya da fazla).
+    EXTRA_VACANT_PER_TYPE = 3
+    base_rooms_count = len(rooms_docs)
+    for type_idx, rtype in enumerate(ROOM_TYPES):
+        for k in range(EXTRA_VACANT_PER_TYPE):
+            extra_rid = str(uuid.uuid4())
+            extra_idx = base_rooms_count + type_idx * EXTRA_VACANT_PER_TYPE + k
+            block = BLOCKS[extra_idx % len(BLOCKS)]
+            floor = FLOORS[extra_idx % len(FLOORS)]
+            rooms_docs.append({
+                "id": extra_rid, "tenant_id": stress_tid,
+                "room_number": f"{prefix}MV{block}{floor:02d}{(extra_idx + 1):03d}",
+                "room_type": rtype,
+                "block": block, "floor": floor,
+                "capacity": 2,
+                "base_price": 900.0, "price_per_night": 900.0,
+                "status": "available",
+                "amenities": ["wifi", "tv"],
+                "is_active": True, "is_virtual": False,
+                "accessible": (rtype == "accessible"),
+                "current_booking_id": None,
+                "created_at": now,
+                "stress_seed": True, "stress_prefix": prefix,
+                # Marker: explicit vacant target for room-move setup (Kapsam B).
+                "room_move_target": True,
+            })
+
     return (rooms_docs, guests_docs, bookings_docs,
             folios_docs, folio_charges_docs, rnl_docs, hk_docs)
 
