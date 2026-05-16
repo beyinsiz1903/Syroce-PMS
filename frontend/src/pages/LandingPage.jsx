@@ -201,11 +201,12 @@ const LandingPage = () => {
         }
       >
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-10">
-          <a href="#top" className="flex items-center gap-2.5">
-            <span className="relative grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 to-indigo-500 text-[#05070f] shadow-[0_0_24px_rgba(34,211,238,0.45)]">
-              <span className="text-sm font-bold tracking-tight">S</span>
+          <a href="#top" className="group flex items-center gap-2.5">
+            <span className="relative grid h-10 w-10 place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-cyan-300 via-teal-400 to-indigo-500 text-[#05070f] shadow-[0_0_32px_rgba(34,211,238,0.55),inset_0_1px_0_rgba(255,255,255,0.4)] ring-1 ring-white/20 transition group-hover:shadow-[0_0_44px_rgba(34,211,238,0.75)]">
+              <span aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.55),transparent_55%)]" />
+              <span className="relative text-base font-extrabold tracking-tight">S</span>
             </span>
-            <span className="text-lg font-semibold tracking-tight text-white">Syroce</span>
+            <span className="text-lg font-bold tracking-tight text-white">Syroce</span>
           </a>
 
           <nav className="hidden items-center gap-7 lg:flex">
@@ -279,7 +280,7 @@ const LandingPage = () => {
         <NeonBlob className="right-[-8%] top-[20%] h-[520px] w-[520px] bg-indigo-500/35" />
         <NeonBlob className="right-[15%] bottom-[5%] h-[380px] w-[380px] bg-teal-400/25" />
 
-        <div className="mx-auto grid w-full max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:gap-10 lg:px-10">
+        <div className="mx-auto grid w-full max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-[0.78fr_1.22fr] lg:gap-8 lg:px-10">
           {/* Left copy */}
           <motion.div
             initial={{ opacity: 0, y: reduce ? 0 : 18 }}
@@ -357,61 +358,72 @@ const LandingPage = () => {
               - Floating glass kartlar görselin etrafında dengeli pozisyonda.
             */}
             <div
-              className="relative mx-auto flex w-full max-w-[760px] items-center justify-center"
-              style={{ minHeight: 620 }}
+              className="relative mx-auto flex w-full max-w-[860px] items-center justify-center lg:-translate-y-4 lg:translate-x-3"
+              style={{ minHeight: 680 }}
             >
-              {/* Yumuşak ambient glow — frame değil, sadece arka aydınlatma */}
+              {/* Arka katman 1 — geniş cyan/teal ambient halo (otelin arka aydınlatması) */}
               <div
-                className="pointer-events-none absolute inset-x-8 top-12 bottom-12 rounded-[3rem] bg-[radial-gradient(ellipse_at_center,_rgba(34,211,238,0.28),_transparent_65%)] blur-3xl"
                 aria-hidden
+                className="pointer-events-none absolute inset-x-4 top-6 bottom-10 rounded-[3rem] bg-[radial-gradient(ellipse_at_center,_rgba(45,232,222,0.42),_rgba(34,211,238,0.18)_38%,_transparent_70%)] blur-3xl"
+              />
+              {/* Arka katman 2 — derin mavi/mor atmosfer (üst kısım) */}
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-12 top-0 h-[55%] rounded-full bg-[radial-gradient(ellipse_at_top,_rgba(99,102,241,0.32),_transparent_70%)] blur-3xl"
+              />
+              {/* Arka katman 3 — alt neon zemin parıltısı (otelin altı) */}
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-20 bottom-2 h-24 rounded-[100%] bg-[radial-gradient(ellipse_at_center,_rgba(56,242,232,0.55),_transparent_75%)] blur-2xl"
               />
 
-              {/* 3D otel görseli — bağımsız asset (frame YOK) */}
+              {/* 3D otel görseli — bağımsız asset (frame YOK), büyütüldü */}
               <img
                 src={HERO_IMG}
                 alt="Syroce 3D Otel Görünümü"
-                className="relative z-[1] block h-auto w-full max-h-[620px] object-contain"
-                style={{ filter: 'drop-shadow(0 40px 80px rgba(0, 220, 220, 0.22))' }}
+                className="relative z-[1] block h-auto w-full max-h-[680px] object-contain"
+                style={{ filter: 'drop-shadow(0 45px 90px rgba(0, 220, 220, 0.32)) drop-shadow(0 12px 28px rgba(99, 102, 241, 0.22))' }}
                 loading="eager"
                 decoding="async"
               />
 
               {/* Alt orta neon pill — görselin altında */}
-              <div className="absolute bottom-2 left-1/2 z-[2] -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-400/40 bg-[#0a1424]/85 px-4 py-2 text-[11px] text-cyan-100 shadow-[0_12px_40px_-6px_rgba(34,211,238,0.55)] backdrop-blur-xl sm:text-xs">
+              <div className="absolute bottom-1 left-1/2 z-[2] -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-400/45 bg-[#0a1424]/90 px-4 py-2 text-[11px] text-cyan-100 shadow-[0_12px_40px_-6px_rgba(34,211,238,0.65)] backdrop-blur-xl sm:text-xs">
                 <Sparkles className="mr-1.5 inline h-3.5 w-3.5 text-cyan-300" />
                 Oteliniz için akıllı, güvenli ve etkili bir yönetim platformu.
               </div>
 
               {/*
-                Floating cards — pozisyonlar referans görsele göre kalibre:
-                - Sol: 3 kart (top 8% / top 38% / bottom 18%)
-                - Sağ: 3 kart (top 10% / top 40% / bottom 16%)
-                - Hiçbiri ana başlığı kapatmaz, hiçbiri birbirinin üstüne binmez.
-                - lg breakpoint'ten itibaren görünür; mobilde aşağıdaki grid'e düşer.
+                Floating cards — referans premium görsele göre kalibre:
+                - Sol: top 8% / top 34% / bottom 18%
+                - Sağ: top 10% / top 40% / bottom 16%
+                - Genişlik 230px (başlıklar artık kırpılmaz: "Rezervasyonlar",
+                  "Gelir ve Raporlama" tek satırda sığar).
+                - Glassmorphism + cyan border + hover glow güçlendirildi.
               */}
               {[
-                { pos: { top: '8%',     left: '-2%'  }, icon: Calendar,  title: 'Rezervasyonlar',   desc: 'Tüm kanalları tek yerden yönetin',                  pct: '18%', side: 'L', i: 0 },
-                { pos: { top: '38%',    left: '-6%'  }, icon: Users,     title: 'Misafir Deneyimi', desc: 'Daha mutlu misafirler, daha güçlü sadakat',          pct: '24%', side: 'L', i: 1 },
-                { pos: { bottom: '18%', left: '-1%'  }, icon: Handshake, title: 'Tedarikçi Ağı',    desc: 'Güvenilir tedarikçilerle kolay ve hızlı iş birliği', pct: '22%', side: 'L', i: 2 },
-                { pos: { top: '10%',    right: '-2%' }, icon: BarChart3, title: 'Gelir ve Raporlama', desc: 'Performansınızı görün',                            pct: '23%', side: 'R', i: 0 },
-                { pos: { top: '40%',    right: '-6%' }, icon: Boxes,     title: 'Tek Platform',       desc: 'Tüm modüller tek ekranda',                          pct: '15%', side: 'R', i: 1 },
-                { pos: { bottom: '16%', right: '-1%' }, icon: Headphones,title: 'Canlı Destek',       desc: '7/24 yanınızdayız',                                 online: true, side: 'R', i: 2 },
+                { pos: { top: '8%',     left: '7%'  }, icon: Calendar,  title: 'Rezervasyonlar',   desc: 'Tüm kanalları tek yerden yönetin',                  pct: '18%', side: 'L', i: 0 },
+                { pos: { top: '34%',    left: '3%'  }, icon: Users,     title: 'Misafir Deneyimi', desc: 'Daha mutlu misafirler, daha güçlü sadakat',          pct: '24%', side: 'L', i: 1 },
+                { pos: { bottom: '18%', left: '8%'  }, icon: Handshake, title: 'Tedarikçi Ağı',    desc: 'Güvenilir tedarikçilerle hızlı iş birliği',          pct: '22%', side: 'L', i: 2 },
+                { pos: { top: '10%',    right: '4%' }, icon: BarChart3, title: 'Gelir ve Raporlama', desc: 'Performansınızı anlık görün',                      pct: '23%', side: 'R', i: 0 },
+                { pos: { top: '40%',    right: '2%' }, icon: Boxes,     title: 'Tek Platform',       desc: 'Tüm modüller tek ekranda',                          pct: '15%', side: 'R', i: 1 },
+                { pos: { bottom: '16%', right: '6%' }, icon: Headphones,title: 'Canlı Destek',       desc: '7/24 yanınızdayız',                                 online: true, side: 'R', i: 2 },
               ].map((c) => (
                 <motion.div
                   key={`${c.side}${c.i}`}
                   animate={reduce ? {} : { y: [0, (c.i % 2 ? 6 : -6), 0] }}
                   transition={{ duration: 5 + c.i, repeat: Infinity, ease: 'easeInOut' }}
                   style={c.pos}
-                  className="absolute z-[3] hidden w-[210px] lg:block"
+                  className="group/card absolute z-[3] hidden w-[230px] lg:block"
                 >
-                  <div className="rounded-[20px] border border-[rgba(75,235,230,0.25)] bg-[rgba(8,26,42,0.62)] p-[18px] text-white shadow-[0_20px_60px_rgba(0,220,220,0.13)] backdrop-blur-[18px]">
+                  <div className="rounded-[20px] border border-[rgba(75,235,230,0.4)] bg-[rgba(8,26,42,0.58)] p-[18px] text-white shadow-[0_24px_70px_rgba(0,220,220,0.18),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-[22px] transition duration-300 group-hover/card:border-[rgba(94,234,212,0.7)] group-hover/card:shadow-[0_30px_90px_rgba(45,232,222,0.32),inset_0_1px_0_rgba(255,255,255,0.12)]">
                     <div className="flex items-start gap-2.5">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/25">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cyan-400/20 text-cyan-200 ring-1 ring-cyan-400/35 shadow-[inset_0_0_12px_rgba(34,211,238,0.25)]">
                         <c.icon className="h-4 w-4" />
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-1.5">
-                          <div className="truncate text-[13px] font-semibold text-white">{c.title}</div>
+                          <div className="text-[13px] font-semibold leading-tight text-white">{c.title}</div>
                           {c.pct && (
                             <span className="shrink-0 rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">↑ {c.pct}</span>
                           )}
