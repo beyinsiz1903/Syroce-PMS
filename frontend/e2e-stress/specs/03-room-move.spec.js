@@ -61,6 +61,87 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
         // endpoint'in `use_cache` koşulunu false yapar (pms_rooms.py:289) →
         // DB query path zorlanır, stress_prefix dahil fresh data döner.
         rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms?include_virtual=true', 'stress_prefix', prefix);
+
+        // Tur-9 debug: rooms=0 case'inde direkt endpoint probe + raw response
+        // attach et. fetchAllByPrefix sessizce 0 döndürdüğünde root cause görünmez:
+        //  (a) endpoint 401/403/5xx — auth/health regression
+        //  (b) endpoint 200 fakat response shape farklı (j.rooms / j.items / j.data
+        //      beklentisi tutmuyor) → list parse 0
+        //  (c) shape doğru fakat `stress_prefix` field'ı item'larda yok
+        //      (cache_warmer projection drop veya backend serializer dropu)
+        //  (d) prefix gerçekten match etmiyor (round prefix mismatch)
+        if (!Array.isArray(rooms) || rooms.length === 0) {
+            const probeUrl = '/api/pms/rooms?include_virtual=true&page=1&page_size=200&limit=200';
+            let probeStatus = null, probeBody = null, probeKeys = null, probeListLen = null, probeFirst3 = null;
+            try {
+                const r = await request.get(probeUrl, {
+                    headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
+                    failOnStatusCode: false, timeout: 30_000,
+                });
+                probeStatus = r.status();
+                probeBody = await r.json().catch(() => null);
+                if (probeBody && typeof probeBody === 'object') {
+                    probeKeys = Array.isArray(probeBody) ? ['<array>'] : Object.keys(probeBody);
+                    const list = Array.isArray(probeBody) ? probeBody
+                        : (probeBody.rooms || probeBody.items || probeBody.data || []);
+                    probeListLen = Array.isArray(list) ? list.length : null;
+                    if (Array.isArray(list)) {
+                        probeFirst3 = list.slice(0, 3).map((it) => ({
+                            id: it?.id, room_number: it?.room_number, room_type: it?.room_type,
+                            tenant_id: it?.tenant_id, stress_seed: it?.stress_seed,
+                            stress_prefix: it?.stress_prefix,
+                            // prefix match indicator
+                            prefix_match: typeof it?.stress_prefix === 'string' && it.stress_prefix.startsWith(prefix),
+                            keys: it && typeof it === 'object' ? Object.keys(it).slice(0, 30) : null,
+                        }));
+                    }
+                }
+            } catch (e) {
+                probeBody = { _probe_error: String(e?.message || e) };
+            }
+            try {
+                testInfo.attach('rooms-zero-debug.json', {
+                    body: Buffer.from(JSON.stringify({
+                        active_round_prefix: prefix,
+                        seed_rooms_count: stressState?.seed_response?.counts?.rooms ?? null,
+                        bookings_fetched: bookings.length,
+                        rooms_fetched: rooms.length,
+                        probe: {
+                            url: probeUrl,
+                            status: probeStatus,
+                            response_keys: probeKeys,
+                            parsed_list_length: probeListLen,
+                            first_3_items: probeFirst3,
+                            raw_body_truncated: probeBody && typeof probeBody === 'object'
+                                ? JSON.stringify(probeBody).slice(0, 4000)
+                                : String(probeBody).slice(0, 4000),
+                        },
+                        diagnosis_hints: [
+                            'status != 200 → backend regression (auth/health)',
+                            'parsed_list_length === 0 → endpoint döndü ama liste boş (cache_warmer/projection sorunu)',
+                            'parsed_list_length > 0 fakat rooms_fetched === 0 → stress_prefix field item\'larda yok veya prefix mismatch',
+                            'first_3_items[].prefix_match=false → backend serializer stress_prefix\'i drop ediyor',
+                        ],
+                    }, null, 2)),
+                    contentType: 'application/json',
+                });
+            } catch (_) { /* attach is best-effort */ }
+            // Eğer endpoint 200 + items mevcut ama prefix mismatch (cache_warmer
+            // projection drop) → fallback: stress_seed=true filter'ı ile tekrar dene.
+            // Bu cross-round leak risk taşır ama setup'ı kurtarmak için son çare.
+            if (probeStatus && probeStatus >= 200 && probeStatus < 300 && probeListLen > 0) {
+                const fallbackList = Array.isArray(probeBody) ? probeBody
+                    : (probeBody.rooms || probeBody.items || probeBody.data || []);
+                const fallbackRooms = fallbackList.filter((r) => r?.stress_seed === true);
+                if (fallbackRooms.length > 0) {
+                    rooms = fallbackRooms;
+                    recFinding(testInfo, 'P2', MOD,
+                        'Rooms fetch stress_prefix mismatch — stress_seed:true fallback\'e düşüldü',
+                        `prefix_match=0 fakat stress_seed:true ile ${fallbackRooms.length} room recovered. Backend serializer stress_prefix\'i drop ediyor olabilir; root cause: pms_rooms.py response model.`);
+                }
+            }
+        }
+
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
         // ── Vacant-pool garantisi (task #162) ────────────────────────────────
