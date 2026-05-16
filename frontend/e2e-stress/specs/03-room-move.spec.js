@@ -26,7 +26,7 @@ test.describe.configure({ mode: 'serial' });
 // vs legacy `category`/`type`) cannot silently zero out the eligible count.
 function normalizeRoomType(x) {
     if (!x || typeof x !== 'object') return '__unknown__';
-    return x.room_type || x.roomType || x.category || x.type || x.room_type_code || '__unknown__';
+    return x.room_type || x.roomType || x.category || x.type || x.room_type_code || x.roomTypeCode || '__unknown__';
 }
 function _computeVacantByType(bookingsList, roomsList) {
     const checkedIn = bookingsList.filter((b) => b.status === 'checked_in');
