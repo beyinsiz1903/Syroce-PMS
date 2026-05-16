@@ -55,7 +55,12 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
     test('Setup: stress bookings + rooms snapshot + guarantee vacant pool', async ({ request, stressTokens, stressState }, testInfo) => {
         const prefix = stressState.data_prefix;
         bookings = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/bookings', 'stress_prefix', prefix);
-        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms', 'stress_prefix', prefix);
+        // Architect tur-7 fix: /api/pms/rooms cache (redis + cache_warmer)
+        // stale projection (stress_prefix eksik) ile dolmuş olabilir → filter
+        // 0 döner → eligible=0 → setup FAIL. `include_virtual=true` query param'ı
+        // endpoint'in `use_cache` koşulunu false yapar (pms_rooms.py:289) →
+        // DB query path zorlanır, stress_prefix dahil fresh data döner.
+        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms?include_virtual=true', 'stress_prefix', prefix);
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
         // ── Vacant-pool garantisi (task #162) ────────────────────────────────

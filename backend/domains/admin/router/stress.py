@@ -485,9 +485,20 @@ async def stress_external_calls_status(
         try:
             cursor = sysdb.outbox_events.find(
                 dispatched_filter,
-                projection={"_id": 0, "event_type": 1, "target": 1, "status": 1, "created_at": 1, "attempts": 1, "retry_count": 1},
+                projection={"_id": 0, "event_type": 1, "target": 1, "status": 1, "created_at": 1, "attempts": 1, "attempt_count": 1, "retry_count": 1, "delivery_message": 1, "last_error": 1},
             ).sort("created_at", -1).limit(50)
             async for doc in cursor:
+                # Architect tur-7 fix: outbox worker stress tenant'ında CM connector
+                # olmadığı için EventSyncService "No active connectors" döner ve
+                # worker event'i status=processed işaretler. Bu inert sonuç GERÇEK
+                # external HTTP çağrısı DEĞİL — sadece dispatcher worker'ın boş
+                # çalışmasıdır. Aynı şekilde DRY_RUN bayrağıyla short-circuit eden
+                # delivery_message'ler de external call sayılmaz.
+                msg = (doc.get("delivery_message") or "") + " " + (doc.get("last_error") or "")
+                msg_lower = msg.lower()
+                inert_patterns = ("no active connectors", "dry_run", "dry run", "unsupported event_type")
+                if any(p in msg_lower for p in inert_patterns):
+                    continue
                 doc["source"] = "outbox_events"
                 if "created_at" in doc and hasattr(doc["created_at"], "isoformat"):
                     doc["created_at"] = doc["created_at"].isoformat()
@@ -509,9 +520,12 @@ async def stress_external_calls_status(
             with tenant_context(stress_tid):
                 cursor = db.integration_afsadakat_outbox.find(
                     afsadakat_filter,
-                    projection={"_id": 0, "event_type": 1, "status": 1, "created_at": 1, "attempts": 1, "retry_count": 1},
+                    projection={"_id": 0, "event_type": 1, "status": 1, "created_at": 1, "attempts": 1, "attempt_count": 1, "retry_count": 1, "delivery_message": 1, "last_error": 1},
                 ).sort("created_at", -1).limit(50)
                 async for doc in cursor:
+                    msg = (doc.get("delivery_message") or "") + " " + (doc.get("last_error") or "")
+                    if any(p in msg.lower() for p in ("no active connectors", "dry_run", "dry run", "unsupported event_type")):
+                        continue
                     doc["source"] = "integration_afsadakat_outbox"
                     if "created_at" in doc and hasattr(doc["created_at"], "isoformat"):
                         doc["created_at"] = doc["created_at"].isoformat()
