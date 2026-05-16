@@ -355,7 +355,16 @@ async def get_rooms(
     # Fallback: Ultra-minimal projection with pagination
     # cleaning_started_at/current_task_id/assigned_cleaner: HK enrichment için
     projection = {'_id': 0, 'id': 1, 'room_number': 1, 'room_type': 1, 'status': 1, 'floor': 1, 'capacity': 1, 'max_occupancy': 1, 'base_price': 1, 'tenant_id': 1, 'amenities': 1, 'view': 1, 'bed_type': 1, 'images': 1, 'is_virtual': 1, 'cleaning_started_at': 1, 'current_task_id': 1, 'assigned_cleaner': 1, 'stress_seed': 1, 'stress_prefix': 1, 'room_move_target': 1}
-    rooms_raw = await db.rooms.find(query, projection).skip(offset).limit(limit).to_list(limit)
+    # F8A tur-13 fix: stable sort by `_id` is REQUIRED for deterministic
+    # pagination. Without it, MongoDB's `skip(offset).limit(limit)` can return
+    # non-stable ordering after delete+insert cycles (storage engine recycles
+    # slots) — paginated callers (e.g. e2e stress `fetchAllByPrefix` with 3
+    # pages × 200 to cover 560 rooms) can MISS docs that landed in the last
+    # batch (extras with `room_move_target=True`), even when no concurrent
+    # writes occur. Symptom in CI: seed inserts 60 extras → fetch returns 0
+    # extras → setup precondition `fetchedExtras>=50` FAIL. `_id` is the only
+    # collection-wide unique index always present, so it's the safest sort key.
+    rooms_raw = await db.rooms.find(query, projection).sort('_id', 1).skip(offset).limit(limit).to_list(limit)
 
     # Fix field mapping
     rooms = []
