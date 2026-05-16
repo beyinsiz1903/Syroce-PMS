@@ -349,91 +349,113 @@ const LandingPage = () => {
             transition={{ duration: 0.9, ease: 'easeOut' }}
             className="relative"
           >
-            <div className="relative mx-auto w-full max-w-[720px]" style={{ minHeight: 600 }}>
-              {/* Ambient glow */}
-              <div className="absolute -inset-10 rounded-[3rem] bg-gradient-to-br from-cyan-500/30 via-transparent to-indigo-500/35 blur-3xl" aria-hidden />
+            {/*
+              HERO VISUAL (redesign 2026-05-16):
+              - Hotel görseli artık çerçeve/border/inset-shadow içinde DEĞİL.
+              - object-contain + drop-shadow ile hero içinde bağımsız 3D asset gibi durur.
+              - Hiçbir frame "screenshot/mockup" izlenimi vermez.
+              - Floating glass kartlar görselin etrafında dengeli pozisyonda.
+            */}
+            <div
+              className="relative mx-auto flex w-full max-w-[760px] items-center justify-center"
+              style={{ minHeight: 620 }}
+            >
+              {/* Yumuşak ambient glow — frame değil, sadece arka aydınlatma */}
+              <div
+                className="pointer-events-none absolute inset-x-8 top-12 bottom-12 rounded-[3rem] bg-[radial-gradient(ellipse_at_center,_rgba(34,211,238,0.28),_transparent_65%)] blur-3xl"
+                aria-hidden
+              />
 
-              {/* Merkez sahne: gerçek 3D render otel görseli + alt bilgi balonu */}
-              <div className="absolute inset-0 overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-b from-[#0a1828] via-[#0b1a2e] to-[#06101e] shadow-[inset_0_0_120px_rgba(34,211,238,0.22),0_40px_120px_-30px_rgba(34,211,238,0.4)]">
-                {/* Gökyüzü tonu (görsel arkası yumuşaklığı için) */}
-                <div className="absolute inset-x-0 top-0 h-2/3 bg-[radial-gradient(ellipse_at_center_top,_rgba(34,211,238,0.22),_transparent_60%)]" />
-                {/* Rendered hotel image — dominant focal element */}
-                <img
-                  src={HERO_IMG}
-                  alt="Syroce Hotel 3D görünüm"
-                  className="absolute inset-0 h-full w-full object-cover object-center"
-                  loading="eager"
-                  decoding="async"
-                />
-                {/* Soft bottom vignette so the info bubble reads */}
-                <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#040810]/80 via-[#040810]/30 to-transparent" />
-                {/* Alt-orta bilgi balonu */}
-                <div className="absolute bottom-5 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-400/40 bg-[#0a1424]/95 px-4 py-2 text-xs text-cyan-100 shadow-[0_12px_40px_-6px_rgba(34,211,238,0.6)] backdrop-blur-xl">
-                  <Sparkles className="mr-1.5 inline h-3.5 w-3.5 text-cyan-300" />
-                  Oteliniz için akıllı, güvenli ve etkili bir yönetim platformu.
-                </div>
+              {/* 3D otel görseli — bağımsız asset (frame YOK) */}
+              <img
+                src={HERO_IMG}
+                alt="Syroce 3D Otel Görünümü"
+                className="relative z-[1] block h-auto w-full max-h-[620px] object-contain"
+                style={{ filter: 'drop-shadow(0 40px 80px rgba(0, 220, 220, 0.22))' }}
+                loading="eager"
+                decoding="async"
+              />
+
+              {/* Alt orta neon pill — görselin altında */}
+              <div className="absolute bottom-2 left-1/2 z-[2] -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-400/40 bg-[#0a1424]/85 px-4 py-2 text-[11px] text-cyan-100 shadow-[0_12px_40px_-6px_rgba(34,211,238,0.55)] backdrop-blur-xl sm:text-xs">
+                <Sparkles className="mr-1.5 inline h-3.5 w-3.5 text-cyan-300" />
+                Oteliniz için akıllı, güvenli ve etkili bir yönetim platformu.
               </div>
 
-              {/* ===== Sol sütun: 3 floating card (görselin sol kenarına bindirilmiş) ===== */}
+              {/*
+                Floating cards — pozisyonlar referans görsele göre kalibre:
+                - Sol: 3 kart (top 8% / top 38% / bottom 18%)
+                - Sağ: 3 kart (top 10% / top 40% / bottom 16%)
+                - Hiçbiri ana başlığı kapatmaz, hiçbiri birbirinin üstüne binmez.
+                - lg breakpoint'ten itibaren görünür; mobilde aşağıdaki grid'e düşer.
+              */}
               {[
-                { top: '4%',  icon: Calendar,  title: 'Rezervasyonlar',   desc: 'Tüm kanalları tek yerden yönetin',                  pct: '18%' },
-                { top: '40%', icon: Users,     title: 'Misafir Deneyimi', desc: 'Daha mutlu misafirler, daha güçlü sadakat',          pct: '24%' },
-                { top: '76%', icon: Handshake, title: 'Tedarikçi Ağı',    desc: 'Güvenilir tedarikçilerle kolay ve hızlı iş birliği', pct: '22%' },
-              ].map((c, i) => (
+                { pos: { top: '8%',     left: '-2%'  }, icon: Calendar,  title: 'Rezervasyonlar',   desc: 'Tüm kanalları tek yerden yönetin',                  pct: '18%', side: 'L', i: 0 },
+                { pos: { top: '38%',    left: '-6%'  }, icon: Users,     title: 'Misafir Deneyimi', desc: 'Daha mutlu misafirler, daha güçlü sadakat',          pct: '24%', side: 'L', i: 1 },
+                { pos: { bottom: '18%', left: '-1%'  }, icon: Handshake, title: 'Tedarikçi Ağı',    desc: 'Güvenilir tedarikçilerle kolay ve hızlı iş birliği', pct: '22%', side: 'L', i: 2 },
+                { pos: { top: '10%',    right: '-2%' }, icon: BarChart3, title: 'Gelir ve Raporlama', desc: 'Performansınızı görün',                            pct: '23%', side: 'R', i: 0 },
+                { pos: { top: '40%',    right: '-6%' }, icon: Boxes,     title: 'Tek Platform',       desc: 'Tüm modüller tek ekranda',                          pct: '15%', side: 'R', i: 1 },
+                { pos: { bottom: '16%', right: '-1%' }, icon: Headphones,title: 'Canlı Destek',       desc: '7/24 yanınızdayız',                                 online: true, side: 'R', i: 2 },
+              ].map((c) => (
                 <motion.div
-                  key={'L'+i}
-                  animate={reduce ? {} : { y: [0, i % 2 ? 8 : -8, 0] }}
-                  transition={{ duration: 5 + i, repeat: Infinity, ease: 'easeInOut' }}
-                  style={{ top: c.top }}
-                  className="absolute left-0 z-10 hidden w-[200px] md:block lg:-left-10 xl:-left-20"
+                  key={`${c.side}${c.i}`}
+                  animate={reduce ? {} : { y: [0, (c.i % 2 ? 6 : -6), 0] }}
+                  transition={{ duration: 5 + c.i, repeat: Infinity, ease: 'easeInOut' }}
+                  style={c.pos}
+                  className="absolute z-[3] hidden w-[210px] lg:block"
                 >
-                  <GlassCard className="flex items-start gap-2.5 p-2.5">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/25">
-                      <c.icon className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1.5">
-                        <div className="truncate text-[13px] font-semibold text-white">{c.title}</div>
-                        <span className="shrink-0 rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">↑ {c.pct}</span>
+                  <div className="rounded-[20px] border border-[rgba(75,235,230,0.25)] bg-[rgba(8,26,42,0.62)] p-[18px] text-white shadow-[0_20px_60px_rgba(0,220,220,0.13)] backdrop-blur-[18px]">
+                    <div className="flex items-start gap-2.5">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/25">
+                        <c.icon className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <div className="truncate text-[13px] font-semibold text-white">{c.title}</div>
+                          {c.pct && (
+                            <span className="shrink-0 rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">↑ {c.pct}</span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-[11px] leading-snug text-slate-300/85">{c.desc}</p>
+                        {c.online && (
+                          <div className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-medium text-emerald-300">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                            Çevrimiçi
+                          </div>
+                        )}
                       </div>
-                      <p className="mt-0.5 text-[11px] leading-snug text-slate-400">{c.desc}</p>
                     </div>
-                  </GlassCard>
+                  </div>
                 </motion.div>
               ))}
+            </div>
 
-              {/* ===== Sağ sütun: 3 floating card (görselin sağ kenarına bindirilmiş) ===== */}
+            {/*
+              Mobile/tablet fallback: lg altında floating kartlar görünmez,
+              görsel altında düzenli 2 kolon grid olarak listelenir.
+              Üst üste binme riski yok; tek liste, okunaklı.
+            */}
+            <div className="mt-6 grid grid-cols-2 gap-3 lg:hidden">
               {[
-                { top: '4%',  icon: BarChart3,  title: 'Gelir ve Raporlama', desc: 'Gelirinizi ve performansınızı görün', pct: '23%' },
-                { top: '40%', icon: Boxes,      title: 'Tek Platform',       desc: 'Tüm modüller tek ekranda',            pct: '15%' },
-                { top: '76%', icon: Headphones, title: 'Canlı Destek',       desc: '7/24 yanınızdayız',                   online: true },
-              ].map((c, i) => (
-                <motion.div
-                  key={'R'+i}
-                  animate={reduce ? {} : { y: [0, i % 2 ? -8 : 8, 0] }}
-                  transition={{ duration: 5 + i, repeat: Infinity, ease: 'easeInOut' }}
-                  style={{ top: c.top }}
-                  className="absolute right-0 z-10 hidden w-[200px] md:block lg:-right-10 xl:-right-20"
+                { icon: Calendar,  title: 'Rezervasyonlar',   desc: 'Tüm kanalları tek yerden' },
+                { icon: Users,     title: 'Misafir Deneyimi', desc: 'Daha mutlu misafirler' },
+                { icon: Handshake, title: 'Tedarikçi Ağı',    desc: 'Hızlı iş birliği' },
+                { icon: BarChart3, title: 'Gelir & Rapor',    desc: 'Performansı görün' },
+                { icon: Boxes,     title: 'Tek Platform',     desc: 'Tüm modüller tek ekran' },
+                { icon: Headphones,title: 'Canlı Destek',     desc: '7/24 yanınızda' },
+              ].map((c) => (
+                <div
+                  key={c.title}
+                  className="rounded-[16px] border border-[rgba(75,235,230,0.22)] bg-[rgba(8,26,42,0.5)] p-3 backdrop-blur-md"
                 >
-                  <GlassCard className="flex items-start gap-2.5 p-2.5">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/25">
-                      <c.icon className="h-4 w-4" />
+                  <div className="flex items-center gap-2">
+                    <span className="grid h-7 w-7 place-items-center rounded-md bg-cyan-400/15 text-cyan-300">
+                      <c.icon className="h-3.5 w-3.5" />
                     </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1.5">
-                        <div className="truncate text-[13px] font-semibold text-white">{c.title}</div>
-                        {c.pct && <span className="shrink-0 rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">↑ {c.pct}</span>}
-                      </div>
-                      <p className="mt-0.5 text-[11px] leading-snug text-slate-400">{c.desc}</p>
-                      {c.online && (
-                        <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-emerald-300">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                          Çevrimiçi
-                        </div>
-                      )}
-                    </div>
-                  </GlassCard>
-                </motion.div>
+                    <div className="text-[12px] font-semibold text-white">{c.title}</div>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-300/85">{c.desc}</p>
+                </div>
               ))}
             </div>
           </motion.div>
@@ -702,6 +724,14 @@ const LandingPage = () => {
             ))}
           </div>
 
+          {/*
+            Panel önizleme (redesign 2026-05-16):
+            Önceden HERO_IMG buraya "Panel önizleme" olarak basılıyordu —
+            sayfanın kendi 3D otel hero görselini bir mockup gibi tekrar
+            göstermek istenmiyor. Bunun yerine DOM-render mock dashboard
+            (sticky topbar + KPI cards + bar chart + son aktiviteler)
+            kullanılıyor. Sekme değiştikçe KPI değerleri/etiketler değişir.
+          */}
           <motion.div
             key={activeTab}
             initial={{ opacity: 0, y: reduce ? 0 : 14 }}
@@ -710,15 +740,98 @@ const LandingPage = () => {
             className="mt-8"
           >
             <GlassCard className="overflow-hidden p-2 sm:p-3">
-              <div className="relative">
-                <img
-                  src={HERO_IMG}
-                  alt="Panel önizleme"
-                  className="block h-auto w-full rounded-[1.4rem]"
-                  loading="lazy"
-                />
-                <div className="pointer-events-none absolute inset-0 rounded-[1.4rem] ring-1 ring-inset ring-white/10" />
+              <div className="overflow-hidden rounded-[1.4rem] border border-white/10 bg-gradient-to-b from-[#0a1828] via-[#0b1a2e] to-[#070f1c]">
+                {/* Mock topbar */}
+                <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-4 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="grid h-7 w-7 place-items-center rounded-md bg-gradient-to-br from-cyan-400 to-teal-300 text-[11px] font-bold text-[#05070f]">S</span>
+                    <span className="text-sm font-semibold text-white">Syroce · {dashboardTabs.find((t) => t.key === activeTab)?.label}</span>
+                  </div>
+                  <div className="hidden items-center gap-2 sm:flex">
+                    <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[10px] text-cyan-300">Canlı</span>
+                    <span className="grid h-7 w-7 place-items-center rounded-full bg-white/[0.06] text-slate-300"><Users className="h-3.5 w-3.5" /></span>
+                  </div>
+                </div>
+
+                {/* Mock KPI row — sekme bazlı */}
+                <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4 sm:gap-3 sm:p-4">
+                  {(() => {
+                    const kpiByTab = {
+                      rez: [
+                        { label: 'Bugün Giriş',     value: '24',   trend: '+12%', icon: Calendar },
+                        { label: 'Bugün Çıkış',     value: '18',   trend: '+8%',  icon: ArrowUpRight },
+                        { label: 'Açık Rezervasyon',value: '142',  trend: '+5%',  icon: Layers },
+                        { label: 'Doluluk',         value: '%83',  trend: '+3%',  icon: BarChart3 },
+                      ],
+                      occ: [
+                        { label: 'Doluluk',         value: '%83',  trend: '+3%',  icon: BarChart3 },
+                        { label: 'Müsait Oda',      value: '17',   trend: '-2',   icon: LayoutGrid },
+                        { label: 'Geç Çıkış',       value: '4',    trend: '0',    icon: RefreshCw },
+                        { label: 'No-Show Risk',    value: '%6',   trend: '-1%',  icon: ShieldCheck },
+                      ],
+                      req: [
+                        { label: 'Açık Talep',      value: '11',   trend: '+2',   icon: Headphones },
+                        { label: 'SLA İçinde',      value: '%94',  trend: '+2%',  icon: ShieldCheck },
+                        { label: 'Ortalama Süre',   value: '12 dk',trend: '-3 dk',icon: Zap },
+                        { label: 'VIP',             value: '3',    trend: '+1',   icon: Star },
+                      ],
+                      rev: [
+                        { label: 'Günlük Gelir',    value: '₺184k',trend: '+9%',  icon: BarChart3 },
+                        { label: 'ADR',             value: '₺3.2k',trend: '+5%',  icon: ArrowUpRight },
+                        { label: 'RevPAR',          value: '₺2.6k',trend: '+7%',  icon: Sparkles },
+                        { label: 'Upsell',          value: '%18',  trend: '+4%',  icon: Layers },
+                      ],
+                      sup: [
+                        { label: 'Açık Sipariş',    value: '37',   trend: '+5',   icon: Boxes },
+                        { label: 'Bekleyen Teklif', value: '12',   trend: '+2',   icon: Handshake },
+                        { label: 'Tedarikçi',       value: '128',  trend: '+3',   icon: Truck },
+                        { label: 'Bu Ay Tasarruf',  value: '%11',  trend: '+2%',  icon: BarChart3 },
+                      ],
+                    };
+                    const k = kpiByTab[activeTab] || kpiByTab.rez;
+                    return k.map((kpi) => (
+                      <div key={kpi.label} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="grid h-7 w-7 place-items-center rounded-md bg-cyan-400/15 text-cyan-300">
+                            <kpi.icon className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300">{kpi.trend}</span>
+                        </div>
+                        <div className="mt-2 text-lg font-semibold text-white">{kpi.value}</div>
+                        <div className="text-[10px] text-slate-400">{kpi.label}</div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+
+                {/* Mock chart strip */}
+                <div className="border-t border-white/10 bg-white/[0.02] px-4 py-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-[11px] font-medium uppercase tracking-wider text-slate-400">Son 7 Gün</span>
+                    <span className="text-[11px] text-cyan-300">Detay ↗</span>
+                  </div>
+                  <div className="flex items-end gap-1.5 sm:gap-2">
+                    {[
+                      { day: 'Pzt', h: 42 },
+                      { day: 'Sal', h: 58 },
+                      { day: 'Çar', h: 71 },
+                      { day: 'Per', h: 55 },
+                      { day: 'Cum', h: 83 },
+                      { day: 'Cmt', h: 68 },
+                      { day: 'Paz', h: 91 },
+                    ].map((b) => (
+                      <div key={b.day} className="flex flex-1 flex-col items-center gap-1">
+                        <div
+                          className="w-full rounded-t-md bg-gradient-to-t from-cyan-500/80 to-teal-300"
+                          style={{ height: `${b.h * 0.7}px` }}
+                        />
+                        <span className="text-[9px] text-slate-500">{b.day}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
+
               <div className="mt-3 flex items-center justify-between gap-3 px-3 pb-3">
                 <p className="text-sm text-slate-300">
                   {dashboardTabs.find((t) => t.key === activeTab)?.desc}
