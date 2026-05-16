@@ -701,4 +701,133 @@ test.describe('Scope 5 — Folio', () => {
 
         await api.dispose();
     });
+
+    // ── E2E (regression-catching): Closed-folio void-charge guard ──
+    // FolioHardeningService.void_charge (folio_hardening_service.py ~167-169):
+    //   folio.status != 'open' → {success:false, error:"Folio is <status>, cannot void charge"}
+    //   pms_hardening.api_void_charge wrapper bunu 400 HTTPException'a çevirir.
+    // Sibling test'ler /folio/refund ve /folio/void-payment için aynı guard'ı kapsıyor;
+    // bu test eksik üçüncü branch'i (void-charge) regression altına alır.
+    // Hard-fails:
+    //   1. Booking create 2xx
+    //   2. add-extra-charge 2xx + charge.id döner (close sonrası void hedefi)
+    //   3. full-detail balance okunur + folio_id çözümlenir
+    //   4. record-payment (cash) 2xx → bakiyeyi sıfırlar (close ön koşulu)
+    //   5. POST /api/folio/{id}/close 2xx → folio.status='closed'
+    //   6. POST /api/pms-core/folio/void-charge → 400 + body "closed" içermeli
+    // Cleanup: folio kapalıyken cancel terminal-guard'a takılabilir → best-effort
+    // (cleanup tracker'da skipped). Real gateway tetiklenmez — method='cash'.
+    test('E2E: Closed-folio void-charge guard rejects with 400', async ({ baseURL }, testInfo) => {
+        const api = await makeApi(baseURL);
+        const dates = farFutureDates();
+        const pick = await pickAvailableRoom(api, dates);
+        if (!pick.ok) {
+            rec(testInfo, { module: M, scope: 5, step: 'Müsait oda (closed void-charge guard)', status: SKIP, note: pick.reason });
+            await api.dispose();
+            test.skip(true, `Pilot pre-condition eksik: ${pick.reason}`);
+            return;
+        }
+
+        const guestName = factory.guestName();
+        const bookingTotal = 80;
+        const created = await createTestBooking(api, {
+            roomId: pick.room.id, guestName,
+            check_in: dates.check_in, check_out: dates.check_out,
+            totalAmount: bookingTotal,
+        });
+        rec(testInfo, { module: M, scope: 5, step: 'Setup: booking yarat (closed void-charge guard)', status: created.ok ? PASS : FAIL, http: created.status, note: created.ok ? `id=${created.bookingId}` : created.reason });
+        expect(created.ok, `Booking create FAILED: ${created.reason}`).toBe(true);
+        trackEntity({ kind: 'booking', id: created.bookingId, label: guestName, cleanup: 'pending', endpoint: '/api/pms-core/cancel' });
+
+        // Extra charge ekle — close sonrası void hedefi.
+        const chargeAmount = 25;
+        const chargeLabel = factory.folioLabel();
+        const add = await addExtraCharge(api, created.bookingId, {
+            description: chargeLabel, amount: chargeAmount, category: 'other', quantity: 1,
+        });
+        const chargeId = add.json?.charge?.id;
+        const addOk = add.ok && add.json?.success !== false && !!chargeId;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'POST add-extra-charge (closed-guard target)',
+            status: addOk ? PASS : FAIL,
+            endpoint: `/api/pms/reservations/${created.bookingId}/add-extra-charge`, http: add.status,
+            note: addOk ? `charge_id=${chargeId} amount=${chargeAmount}` : (add.body?.slice(0, 200) || ''),
+        });
+        expect(addOk, `add-extra-charge FAILED: HTTP ${add.status} ${add.body?.slice(0, 200) || ''}`).toBe(true);
+        expect(chargeId, 'add-extra-charge response missing charge.id').toBeTruthy();
+        trackEntity({ kind: 'extra_charge', id: chargeId, label: chargeLabel, cleanup: 'pending', endpoint: '/api/pms-core/folio/void-charge' });
+
+        // Balance + folio_id çözümlemesi.
+        const before = await getBookingDetail(api, created.bookingId);
+        const balBefore = before.ok ? readBalance(before.json) : null;
+        const folios = Array.isArray(before.json?.folios) ? before.json.folios : [];
+        const folioId = folios.find((f) => f && (f.status === 'open' || !f.status))?.id || folios[0]?.id;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'Resolve folio_id (closed void-charge setup)',
+            status: folioId ? PASS : FAIL, http: before.status,
+            note: folioId ? `folio_id=${folioId} balance=${balBefore}` : `folios.length=${folios.length}`,
+        });
+        expect(folioId, 'full-detail did not expose folios[].id').toBeTruthy();
+
+        // Bakiyeyi sıfırla (close ön koşulu: balance ≤ 0.01).
+        const payAmount = balBefore && balBefore > 0 ? balBefore : bookingTotal + chargeAmount;
+        const payLabel = factory.folioLabel();
+        const paid = await recordPayment(api, created.bookingId, {
+            amount: payAmount, method: 'cash', payment_type: 'final', reference: payLabel, notes: 'E2E zero-out balance for close (void-charge guard)',
+        });
+        const paymentId = paid.json?.payment?.id;
+        const payOk = paid.ok && paid.json?.success !== false && !!paymentId;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'POST record-payment (zero-out, void-charge guard)',
+            status: payOk ? PASS : FAIL,
+            endpoint: `/api/pms/reservations/${created.bookingId}/record-payment`, http: paid.status,
+            note: payOk ? `payment_id=${paymentId} amount=${payAmount}` : (paid.body?.slice(0, 200) || ''),
+        });
+        expect(payOk, `record-payment FAILED: HTTP ${paid.status} ${paid.body?.slice(0, 200) || ''}`).toBe(true);
+        trackEntity({ kind: 'payment', id: paymentId, label: payLabel, cleanup: 'pending', endpoint: '/api/pms-core/folio/void-payment' });
+
+        // Folio'yu kapat → status='closed'.
+        const closed = await closeFolio(api, folioId);
+        const closeOk = closed.ok || closed.status === 200;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'POST /api/folio/{id}/close (void-charge guard)',
+            status: closeOk ? PASS : FAIL,
+            endpoint: `/api/folio/${folioId}/close`, http: closed.status,
+            note: closeOk ? 'folio closed' : (closed.body?.slice(0, 200) || ''),
+        });
+        expect(closeOk, `close folio FAILED: HTTP ${closed.status} ${closed.body?.slice(0, 200) || ''}`).toBe(true);
+
+        // GUARD: /folio/void-charge closed folio'da 400 + "closed" mesajı.
+        const voidAttempt = await voidCharge(api, chargeId, 'E2E closed-folio void-charge guard');
+        const voidBlocked = voidAttempt.status === 400 && /closed/i.test(voidAttempt.body || '');
+        rec(testInfo, {
+            module: M, scope: 5, step: 'GUARD: /folio/void-charge closed → 400',
+            status: voidBlocked ? PASS : FAIL,
+            endpoint: '/api/pms-core/folio/void-charge', http: voidAttempt.status,
+            note: voidBlocked ? 'rejected as expected' : (voidAttempt.body?.slice(0, 200) || ''),
+        });
+        expect(voidAttempt.status, `void-charge on closed folio should be 400 but got ${voidAttempt.status}`).toBe(400);
+        expect((voidAttempt.body || '').toLowerCase()).toContain('closed');
+
+        // Cleanup — folio kapalı, charge halen voided=false: cancel best-effort.
+        // Terminal-state guard cancel'i reddederse SKIP olarak işaretle, hard-fail değil.
+        const cleanup = await cancelBooking(api, created.bookingId, 'E2E closed-folio void-charge guard cleanup');
+        const cleanOk = cleanup.ok && cleanup.json?.success !== false;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'Cleanup cancel booking (closed void-charge guard, best-effort)',
+            status: cleanOk ? PASS : SKIP,
+            endpoint: '/api/pms-core/cancel', http: cleanup.status,
+            note: cleanOk ? 'cancelled' : `terminal/closed — cleanup skipped (HTTP ${cleanup.status})`,
+        });
+        trackEntity({
+            kind: 'booking', id: created.bookingId,
+            label: cleanOk ? `${guestName} (cancelled)` : `${guestName} (folio closed, terminal)`,
+            cleanup: cleanOk ? 'completed' : 'skipped',
+            endpoint: '/api/pms-core/cancel',
+        });
+        trackEntity({ kind: 'extra_charge', id: chargeId, label: `${chargeLabel} (folio closed, void blocked)`, cleanup: 'skipped', endpoint: '/api/pms-core/folio/void-charge' });
+        trackEntity({ kind: 'payment', id: paymentId, label: `${payLabel} (folio closed)`, cleanup: 'completed', endpoint: '/api/pms-core/folio/void-payment' });
+
+        await api.dispose();
+    });
 });
