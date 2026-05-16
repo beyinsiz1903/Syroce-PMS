@@ -25,6 +25,7 @@ import { prefetchHeavyModules } from "@/lib/prefetch";
 // Misafir akışı için lazy yüklenen sayfa wrapper'ları
 const SelfCheckinPage = lazy(() => import("@/pages/SelfCheckin"));
 const DigitalKeyPage = lazy(() => import("@/pages/DigitalKey"));
+const SupplierAuthPage = lazy(() => import("@/pages/SupplierAuthPage"));
 
 function SelfCheckinRoute() {
   const { bookingId } = useParams();
@@ -309,6 +310,7 @@ function App() {
                   {/* Auth */}
                   <Route path="/login" element={<Navigate to="/auth" replace />} />
                   <Route path="/auth" element={!isAuthenticated ? <AuthPage onLogin={handleLogin} /> : <PostAuthRedirect />} />
+                  <Route path="/tedarikci/giris" element={<SupplierAuthPage />} />
                   <Route path="/" element={isAuthenticated ? <Navigate to="/app/dashboard" replace /> : <LandingPage />} />
 
                   {/* Dynamic routes from config */}

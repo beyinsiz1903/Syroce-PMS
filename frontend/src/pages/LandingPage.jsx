@@ -172,7 +172,7 @@ const LandingPage = () => {
   }, []);
 
   const goLogin = () => navigate('/auth');
-  const goSupplier = () => navigate('/auth?role=supplier');
+  const goSupplier = () => navigate('/tedarikci/giris');
 
   return (
     <div id="top" className="relative min-h-screen overflow-x-hidden bg-[#05070f] text-slate-100 antialiased">
@@ -275,20 +275,20 @@ const LandingPage = () => {
         <NeonBlob className="left-[-10%] top-[5%] h-[420px] w-[420px] bg-cyan-500/30" />
         <NeonBlob className="right-[-8%] top-[20%] h-[480px] w-[480px] bg-indigo-500/30" />
 
-        <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-12 lg:gap-8 lg:px-10">
+        <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-12 lg:gap-6 lg:px-10">
           {/* Left copy */}
           <motion.div
             initial={{ opacity: 0, y: reduce ? 0 : 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7 }}
-            className="lg:col-span-6"
+            className="lg:col-span-5"
           >
             <span className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-medium tracking-wider text-cyan-300">
               <Sparkles className="h-3.5 w-3.5" />
               TÜM OTEL YÖNETİMİ TEK BİR PLATFORMDA
             </span>
 
-            <h1 className="mt-6 text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
+            <h1 className="mt-6 text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-[3.25rem]">
               Otelinizi Daha Kolay{' '}
               <span className="bg-gradient-to-r from-cyan-300 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
                 Yönetin, İşinizi Büyütün
@@ -336,48 +336,148 @@ const LandingPage = () => {
             initial={{ opacity: 0, scale: reduce ? 1 : 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.9, ease: 'easeOut' }}
-            className="relative lg:col-span-6"
+            className="relative lg:col-span-7"
           >
-            <div className="relative">
-              <div className="absolute -inset-6 rounded-[2.5rem] bg-gradient-to-br from-cyan-500/20 via-transparent to-indigo-500/25 blur-2xl" aria-hidden />
-              <GlassCard className="relative overflow-hidden rounded-[2rem] p-2 sm:p-3">
-                <img
-                  src={HERO_IMG}
-                  alt="Syroce platform önizleme"
-                  className="block h-auto w-full select-none rounded-[1.6rem]"
-                  draggable={false}
-                  loading="eager"
+            <div className="relative mx-auto aspect-[4/3] w-full max-w-[640px]">
+              {/* Ambient glow */}
+              <div className="absolute -inset-6 rounded-[2.5rem] bg-gradient-to-br from-cyan-500/25 via-transparent to-indigo-500/30 blur-3xl" aria-hidden />
+
+              {/* Merkez sahne: 3D otel illüstrasyonu (CSS render) */}
+              <div className="absolute inset-x-[18%] inset-y-[10%] overflow-hidden rounded-[1.8rem] border border-white/10 bg-gradient-to-b from-[#0a1828] via-[#0b1a2e] to-[#091122] shadow-[inset_0_0_60px_rgba(34,211,238,0.18)]">
+                {/* Gökyüzü ışıması */}
+                <div className="absolute inset-x-0 top-0 h-2/3 bg-[radial-gradient(ellipse_at_center_top,_rgba(34,211,238,0.22),_transparent_60%)]" />
+                {/* Yer / refleksiyon */}
+                <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#040810] to-transparent" />
+                {/* Grid zemin */}
+                <div
+                  className="absolute inset-0 opacity-30"
+                  style={{
+                    backgroundImage:
+                      'linear-gradient(rgba(56,189,248,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(56,189,248,0.18) 1px, transparent 1px)',
+                    backgroundSize: '32px 32px',
+                    maskImage: 'radial-gradient(ellipse at center, black 30%, transparent 75%)',
+                    WebkitMaskImage: 'radial-gradient(ellipse at center, black 30%, transparent 75%)',
+                  }}
                 />
-                <div className="pointer-events-none absolute inset-0 rounded-[1.6rem] ring-1 ring-inset ring-white/10" />
-              </GlassCard>
+                {/* Otel binası — perspektifli kule */}
+                <div className="absolute left-1/2 top-[52%] -translate-x-1/2 -translate-y-1/2">
+                  <div className="mb-2 flex justify-center">
+                    <span className="rounded-md bg-cyan-400/15 px-3 py-1 text-[10px] font-semibold tracking-widest text-cyan-200 ring-1 ring-cyan-400/30">
+                      SYROCE HOTEL
+                    </span>
+                  </div>
+                  <div className="relative" style={{ perspective: '900px' }}>
+                    {/* Bina gövdesi */}
+                    <div
+                      className="relative h-[180px] w-[200px] rounded-md bg-gradient-to-b from-[#13243d] via-[#0e1c30] to-[#070d18] ring-1 ring-cyan-400/25 shadow-[0_30px_60px_-30px_rgba(34,211,238,0.5)]"
+                      style={{ transform: 'rotateX(8deg) rotateY(-12deg)', transformStyle: 'preserve-3d' }}
+                    >
+                      {/* Sol yan duvar */}
+                      <div
+                        className="absolute left-0 top-0 h-full w-3 origin-right bg-gradient-to-b from-[#0a1424] to-[#04080f]"
+                        style={{ transform: 'rotateY(-60deg) translateX(-100%)' }}
+                      />
+                      {/* Çatı */}
+                      <div
+                        className="absolute -top-1 left-0 h-2 w-full origin-bottom bg-gradient-to-r from-[#0a1424] via-[#13243d] to-[#0a1424]"
+                        style={{ transform: 'rotateX(60deg)' }}
+                      />
+                      {/* Pencere ızgarası — 9 kat × 6 pencere */}
+                      <div className="absolute inset-x-2 top-3 grid grid-cols-6 gap-[3px]">
+                        {Array.from({ length: 54 }).map((_, i) => {
+                          const lit = (i * 31) % 100;
+                          const amber = lit > 70;
+                          const off = lit < 18;
+                          return (
+                            <span
+                              key={i}
+                              className={
+                                'h-3 rounded-[1.5px] ring-1 ring-black/40 ' +
+                                (off
+                                  ? 'bg-slate-800/60'
+                                  : amber
+                                  ? 'bg-amber-300/85 shadow-[0_0_6px_rgba(252,211,77,0.65)]'
+                                  : 'bg-cyan-300/80 shadow-[0_0_6px_rgba(34,211,238,0.65)]')
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                      {/* Giriş */}
+                      <div className="absolute bottom-0 left-1/2 h-5 w-10 -translate-x-1/2 rounded-t-md bg-gradient-to-b from-amber-300/70 to-amber-500/30 shadow-[0_0_14px_rgba(252,211,77,0.5)]" />
+                    </div>
+                    {/* Yer refleksiyonu */}
+                    <div className="mx-auto mt-1 h-3 w-44 rounded-full bg-cyan-400/20 blur-md" />
+                  </div>
+                </div>
+                {/* Alt-orta bilgi balonu */}
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-400/30 bg-[#0a1424]/90 px-3 py-1.5 text-[10px] text-cyan-100 shadow-[0_8px_30px_-6px_rgba(34,211,238,0.5)] backdrop-blur-xl">
+                  <Sparkles className="mr-1 inline h-3 w-3 text-cyan-300" />
+                  Oteliniz için akıllı, güvenli ve etkili bir yönetim platformu.
+                </div>
+              </div>
 
-              {/* Floating accent chip — top */}
-              <motion.div
-                animate={reduce ? {} : { y: [0, -8, 0] }}
-                transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-                className="absolute -top-4 left-6 hidden sm:block"
-              >
-                <GlassCard className="flex items-center gap-2 px-3 py-2 text-xs text-white">
-                  <span className="grid h-7 w-7 place-items-center rounded-lg bg-cyan-400/20 text-cyan-300">
-                    <BarChart3 className="h-3.5 w-3.5" />
-                  </span>
-                  Anlık Performans
-                  <span className="rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">+23%</span>
-                </GlassCard>
-              </motion.div>
+              {/* ===== Sol sütun: 3 floating card ===== */}
+              {[
+                { top: '6%',  icon: Calendar,  title: 'Rezervasyonlar',   desc: 'Tüm kanalları tek yerden yönetin',                  pct: '18%' },
+                { top: '40%', icon: Users,     title: 'Misafir Deneyimi', desc: 'Daha mutlu misafirler, daha güçlü sadakat',          pct: '24%' },
+                { top: '72%', icon: Handshake, title: 'Tedarikçi Ağı',    desc: 'Güvenilir tedarikçilerle kolay ve hızlı iş birliği', pct: '22%' },
+              ].map((c, i) => (
+                <motion.div
+                  key={'L'+i}
+                  animate={reduce ? {} : { y: [0, i % 2 ? 6 : -6, 0] }}
+                  transition={{ duration: 5 + i, repeat: Infinity, ease: 'easeInOut' }}
+                  style={{ top: c.top }}
+                  className="absolute left-0 z-10 w-[210px] sm:w-[235px]"
+                >
+                  <GlassCard className="flex items-start gap-2.5 p-2.5">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/25">
+                      <c.icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="truncate text-[13px] font-semibold text-white">{c.title}</div>
+                        <span className="shrink-0 rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">↑ {c.pct}</span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] leading-snug text-slate-400">{c.desc}</p>
+                    </div>
+                  </GlassCard>
+                </motion.div>
+              ))}
 
-              <motion.div
-                animate={reduce ? {} : { y: [0, 10, 0] }}
-                transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-                className="absolute -bottom-4 right-6 hidden sm:block"
-              >
-                <GlassCard className="flex items-center gap-2 px-3 py-2 text-xs text-white">
-                  <span className="grid h-7 w-7 place-items-center rounded-lg bg-indigo-400/20 text-indigo-300">
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                  </span>
-                  Güvenli ve Hızlı Altyapı
-                </GlassCard>
-              </motion.div>
+              {/* ===== Sağ sütun: 3 floating card ===== */}
+              {[
+                { top: '6%',  icon: BarChart3,  title: 'Gelir ve Raporlama', desc: 'Gelirinizi ve performansınızı görün', pct: '23%' },
+                { top: '40%', icon: Boxes,      title: 'Tek Platform',       desc: 'Tüm modüller tek ekranda',            pct: '15%' },
+                { top: '72%', icon: Headphones, title: 'Canlı Destek',       desc: '7/24 yanınızdayız',                   online: true },
+              ].map((c, i) => (
+                <motion.div
+                  key={'R'+i}
+                  animate={reduce ? {} : { y: [0, i % 2 ? -6 : 6, 0] }}
+                  transition={{ duration: 5 + i, repeat: Infinity, ease: 'easeInOut' }}
+                  style={{ top: c.top }}
+                  className="absolute right-0 z-10 w-[210px] sm:w-[235px]"
+                >
+                  <GlassCard className="flex items-start gap-2.5 p-2.5">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/25">
+                      <c.icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="truncate text-[13px] font-semibold text-white">{c.title}</div>
+                        {c.pct && <span className="shrink-0 rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">↑ {c.pct}</span>}
+                      </div>
+                      <p className="mt-0.5 text-[11px] leading-snug text-slate-400">{c.desc}</p>
+                      {c.online && (
+                        <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-emerald-300">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                          Çevrimiçi
+                        </div>
+                      )}
+                    </div>
+                  </GlassCard>
+                </motion.div>
+              ))}
             </div>
           </motion.div>
         </div>
@@ -972,7 +1072,7 @@ const LandingPage = () => {
               { label: 'SSS',                  href: '#sss' },
               { label: 'Demo Talep',           href: '#iletisim' },
               { label: 'Müşteri Girişi',       href: '/auth' },
-              { label: 'Tedarikçi Girişi',     href: '/auth?role=supplier' },
+              { label: 'Tedarikçi Girişi',     href: '/tedarikci/giris' },
             ]} />
           </div>
 
