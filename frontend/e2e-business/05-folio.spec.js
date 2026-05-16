@@ -1,9 +1,24 @@
-import { test } from '@playwright/test';
-import { rec, PASS, REVIEW, SKIP } from './fixtures/recorder.js';
+import { test, expect } from '@playwright/test';
+import { rec, PASS, FAIL, REVIEW, SKIP } from './fixtures/recorder.js';
 import { attachObservers, inspectPageContent } from './fixtures/observers.js';
 import { makeApi, safeGet } from './fixtures/api.js';
+import { factory, trackEntity } from './fixtures/data-factory.js';
+import {
+    pickAvailableRoom, createTestBooking, addExtraCharge, voidCharge,
+    getBookingDetail, cancelBooking, farFutureDates,
+} from './fixtures/pms-flow.js';
 
 const M = 'folio';
+
+function readBalance(detail) {
+    const summary = detail?.summary || detail?.totals || detail || {};
+    const cand = [summary.balance, summary.total_balance, summary.balance_total, summary.total_charges, summary.total];
+    for (const v of cand) {
+        const n = typeof v === 'number' ? v : parseFloat(v);
+        if (!Number.isNaN(n)) return n;
+    }
+    return null;
+}
 
 test.describe('Scope 5 — Folio', () => {
     test('Folio ana sayfa + masraf/ödeme/refund/void buton keşfi', async ({ page }, testInfo) => {
@@ -26,14 +41,10 @@ test.describe('Scope 5 — Folio', () => {
             const c = await page.locator(`text=/${text}/i`).count();
             rec(testInfo, { module: M, scope: 5, step: `${label} mevcut`, status: c > 0 ? PASS : REVIEW, note: `count=${c}` });
         }
-
-        // data-testid'li sekmeler (FolioDetailView)
         for (const tab of ['folio-tab-timeline', 'folio-tab-tax', 'folio-tab-splits', 'folio-tab-voids']) {
             const c = await page.locator(`[data-testid="${tab}"]`).count();
             rec(testInfo, { module: M, scope: 5, step: `Tab ${tab}`, status: c > 0 ? PASS : REVIEW, note: `count=${c}` });
         }
-
-        rec(testInfo, { module: M, scope: 5, step: 'Gerçek refund/void tetikleme', status: SKIP, note: 'Pilot canlı veri üzerinde finansal işlem tetiklenmedi; sandbox\'ta üretilmiş test folio gereklidir (üretim adımı bu suite kapsamı dışı).' });
         rec(testInfo, { module: M, scope: 5, step: 'Console errors', status: obs.consoleErrors.length === 0 ? PASS : REVIEW, note: `count=${obs.consoleErrors.length}` });
     });
 
@@ -43,6 +54,114 @@ test.describe('Scope 5 — Folio', () => {
             const r = await safeGet(api, ep);
             rec(testInfo, { module: M, scope: 5, step: `GET ${ep}`, status: r.status < 500 ? PASS : REVIEW, endpoint: ep, http: r.status });
         }
+        await api.dispose();
+    });
+
+    // ── E2E (regression-catching): Booking → add charge → verify total ↑ → void → total ↓ ──
+    // Hard-fails:
+    //   1. Booking create 2xx
+    //   2. add-extra-charge 2xx + charge.id döner
+    //   3. full-detail balance, eklenen tutardan en az charge kadar büyür (delta)
+    //   4. void-charge 2xx success
+    //   5. void sonrası balance düşer (delta geri çıkar)
+    //   6. Booking cancel cleanup 2xx
+    // baseline balance okunamazsa delta-check SKIP olur; ana akış hard-fail kalır.
+    test('E2E: Folio charge add → verify total → reverse (void)', async ({ baseURL }, testInfo) => {
+        const api = await makeApi(baseURL);
+        const dates = farFutureDates();
+        const pick = await pickAvailableRoom(api, dates);
+        if (!pick.ok) {
+            rec(testInfo, { module: M, scope: 5, step: 'Müsait oda', status: SKIP, note: pick.reason });
+            await api.dispose();
+            test.skip(true, `Pilot pre-condition eksik: ${pick.reason}`);
+            return;
+        }
+
+        const guestName = factory.guestName();
+        const created = await createTestBooking(api, {
+            roomId: pick.room.id, guestName,
+            check_in: dates.check_in, check_out: dates.check_out,
+            totalAmount: 100,
+        });
+        rec(testInfo, { module: M, scope: 5, step: 'Setup: booking yarat', status: created.ok ? PASS : FAIL, http: created.status, note: created.ok ? `id=${created.bookingId}` : created.reason });
+        expect(created.ok, `Booking create FAILED: ${created.reason}`).toBe(true);
+        trackEntity({ kind: 'booking', id: created.bookingId, label: guestName, cleanup: 'pending', endpoint: '/api/pms-core/cancel' });
+
+        // Baseline balance (best-effort; bazı pilot tenant'larda summary shape farklı → null tolere)
+        const before = await getBookingDetail(api, created.bookingId);
+        const balBefore = before.ok ? readBalance(before.json) : null;
+        rec(testInfo, { module: M, scope: 5, step: 'Baseline full-detail', status: before.ok ? PASS : REVIEW, http: before.status, note: `balance=${balBefore}` });
+
+        // Hard-assert: add-extra-charge
+        const chargeAmount = 42.5;
+        const chargeLabel = factory.folioLabel();
+        const add = await addExtraCharge(api, created.bookingId, {
+            description: chargeLabel, amount: chargeAmount, category: 'other', quantity: 1,
+        });
+        const chargeId = add.json?.charge?.id;
+        const addOk = add.ok && add.json?.success !== false && !!chargeId;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'POST add-extra-charge',
+            status: addOk ? PASS : FAIL,
+            endpoint: `/api/pms/reservations/${created.bookingId}/add-extra-charge`, http: add.status,
+            note: addOk ? `charge_id=${chargeId}` : (add.body?.slice(0, 200) || ''),
+        });
+        expect(addOk, `add-extra-charge FAILED: HTTP ${add.status} ${add.body?.slice(0, 200) || ''}`).toBe(true);
+        expect(chargeId, 'add-extra-charge response missing charge.id').toBeTruthy();
+        trackEntity({ kind: 'extra_charge', id: chargeId, label: chargeLabel, cleanup: 'pending', endpoint: '/api/pms-core/folio/void-charge' });
+
+        // Hard-assert: total arttı (balance shape okunabildiyse delta + ≥ chargeAmount)
+        const after = await getBookingDetail(api, created.bookingId);
+        const balAfter = after.ok ? readBalance(after.json) : null;
+        if (balBefore != null && balAfter != null) {
+            rec(testInfo, {
+                module: M, scope: 5, step: 'Total arttı doğrulaması',
+                status: balAfter >= balBefore + chargeAmount - 0.01 ? PASS : FAIL,
+                http: after.status, note: `before=${balBefore} after=${balAfter} expected_delta=${chargeAmount}`,
+            });
+            expect(balAfter).toBeGreaterThanOrEqual(balBefore + chargeAmount - 0.01);
+        } else {
+            rec(testInfo, { module: M, scope: 5, step: 'Total arttı doğrulaması', status: SKIP, note: `balance shape okunamadı before=${balBefore} after=${balAfter}` });
+        }
+
+        // Hard-assert: void
+        const voided = await voidCharge(api, chargeId, 'E2E reverse');
+        const vOk = voided.ok && voided.json?.success !== false;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'POST folio/void-charge',
+            status: vOk ? PASS : FAIL,
+            endpoint: '/api/pms-core/folio/void-charge', http: voided.status,
+            note: vOk ? 'voided' : (voided.body?.slice(0, 200) || ''),
+        });
+        expect(vOk, `void-charge FAILED: HTTP ${voided.status} ${voided.body?.slice(0, 200) || ''}`).toBe(true);
+        trackEntity({ kind: 'extra_charge', id: chargeId, label: `${chargeLabel} (voided)`, cleanup: 'completed', endpoint: '/api/pms-core/folio/void-charge' });
+
+        // Hard-assert: void sonrası total düştü (yine balance shape varsa)
+        const post = await getBookingDetail(api, created.bookingId);
+        const balPost = post.ok ? readBalance(post.json) : null;
+        if (balPost != null && balAfter != null) {
+            rec(testInfo, {
+                module: M, scope: 5, step: 'Void sonrası total düştü',
+                status: balPost <= balAfter - chargeAmount + 0.01 ? PASS : FAIL,
+                http: post.status, note: `after=${balAfter} post_void=${balPost}`,
+            });
+            expect(balPost).toBeLessThanOrEqual(balAfter - chargeAmount + 0.01);
+        } else {
+            rec(testInfo, { module: M, scope: 5, step: 'Void sonrası total düştü', status: SKIP, note: `balance shape okunamadı after=${balAfter} post=${balPost}` });
+        }
+
+        // Cleanup — cancel booking (hard-assert)
+        const cleanup = await cancelBooking(api, created.bookingId, 'E2E folio cleanup');
+        const cleanOk = cleanup.ok && cleanup.json?.success !== false;
+        rec(testInfo, {
+            module: M, scope: 5, step: 'Cleanup cancel booking',
+            status: cleanOk ? PASS : FAIL,
+            endpoint: '/api/pms-core/cancel', http: cleanup.status,
+            note: cleanOk ? 'cancelled' : (cleanup.body?.slice(0, 160) || ''),
+        });
+        expect(cleanOk, `Cleanup cancel FAILED: HTTP ${cleanup.status}`).toBe(true);
+        trackEntity({ kind: 'booking', id: created.bookingId, label: `${guestName} (cancelled)`, cleanup: 'completed', endpoint: '/api/pms-core/cancel' });
+
         await api.dispose();
     });
 });

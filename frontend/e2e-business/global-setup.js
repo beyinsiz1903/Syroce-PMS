@@ -7,6 +7,10 @@ const AUTH_FILE = path.join(AUTH_DIR, 'admin.json');
 
 export default async function globalSetup() {
     fs.mkdirSync(AUTH_DIR, { recursive: true });
+    // Data-registry reset: her run'da temiz başlasın; cleanup ledger'ı geçmiş
+    // run'lardan kirlenmesin (önceki turda 20-recap çalışsa bile).
+    try { fs.writeFileSync(path.join(AUTH_DIR, 'data-registry.json'), JSON.stringify({ entities: [] }, null, 2)); }
+    catch (e) { console.warn('[global-setup] data-registry reset başarısız:', e.message); }
     const baseURL = process.env.E2E_BASE_URL;
     const email = process.env.E2E_ADMIN_EMAIL;
     const password = process.env.E2E_ADMIN_PASSWORD;
