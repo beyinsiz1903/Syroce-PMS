@@ -60,7 +60,7 @@ class BusinessReporter {
         let dataEntities = [];
         try { dataEntities = JSON.parse(fs.readFileSync(this.dataRegistry, 'utf-8')).entities || []; } catch {}
 
-        const verdict = decideVerdict({ counters, failedTests, runResult });
+        const verdict = decideVerdict({ counters, failedTests, runResult, totalTests: this.results.length });
 
         let md = '';
         md += `# Full UI + Business E2E — ${date}\n\n`;
@@ -154,7 +154,12 @@ class BusinessReporter {
     }
 }
 
-function decideVerdict({ counters, failedTests, runResult }) {
+function decideVerdict({ counters, failedTests, runResult, totalTests }) {
+    // Architect bulgu #3: --list / dry-run sonrası 0 test ile GO yazılıyor, önceki
+    // gerçek raporu eziyor. Boş koşu raporu yanıltıcı → NO-GO işaretle.
+    if (!totalTests || totalTests === 0) {
+        return { label: 'NO-GO', reason: 'Hiç test çalışmadı (muhtemel --list veya boş koşu) — rapor yanıltıcı sayılmamalıdır.' };
+    }
     if (runResult.status === 'failed' || failedTests.length > 0 || counters.FAIL > 0) {
         return { label: 'NO-GO', reason: `failedTests=${failedTests.length}, FAIL adım=${counters.FAIL}` };
     }

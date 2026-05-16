@@ -10,8 +10,11 @@ test.describe('Scope 18 — Güvenlik / izolasyon', () => {
         for (const ep of targets) {
             const r = await ctx.get(ep, { failOnStatusCode: false });
             const status = r.status();
+            // Architect bulgu #2: önceki kod "herhangi 4xx" → PASS yapıyordu;
+            // 404 (eksik endpoint) auth bypass'ı maskeleyebilirdi. Şimdi katı:
+            // sadece 401/403 → PASS, geri kalan her şey FAIL.
             const ok = status === 401 || status === 403;
-            rec(testInfo, { module: M, scope: 18, step: `Token-less ${ep}`, status: ok ? PASS : (status >= 400 && status < 500 ? PASS : FAIL), endpoint: ep, http: status, note: ok ? '' : 'Beklenen 401/403' });
+            rec(testInfo, { module: M, scope: 18, step: `Token-less ${ep}`, status: ok ? PASS : FAIL, endpoint: ep, http: status, note: ok ? '' : `Beklenen 401/403, alınan ${status}` });
         }
         await ctx.dispose();
     });
