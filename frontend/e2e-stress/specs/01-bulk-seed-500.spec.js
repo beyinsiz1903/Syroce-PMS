@@ -17,14 +17,21 @@ async function fetchListLen(request, token, p) {
 
 test.describe('F7 § Bulk Seed 500 — entity counts', () => {
 
-    test('Seed response counts: rooms=guests=bookings=folios=500', async ({ stressState }, testInfo) => {
+    test('Seed response counts: rooms=guests=bookings=folios=500 + extra room-move pool', async ({ stressState }, testInfo) => {
+        // F8A tur-11 contract:
+        //   seeded_counts.rooms = base PMS inventory (500) — must match ROOM_COUNT strictly
+        //   seeded_counts.extra_room_move_targets ≥ 50 — dedicated vacant pool for room-move spec
+        //   seeded_counts.total_rooms = rooms + extra_room_move_targets (DB physical count)
+        // Bookings/guests/folios still equal ROOM_COUNT (extras have no booking/guest/folio).
         const c = stressState.seed_response.seeded_counts;
-        expect(c.rooms).toBe(ROOM_COUNT);
+        expect(c.rooms, 'base rooms must equal ROOM_COUNT (PMS inventory)').toBe(ROOM_COUNT);
         expect(c.guests).toBe(ROOM_COUNT);
         expect(c.bookings).toBe(ROOM_COUNT);
         expect(c.folios).toBe(ROOM_COUNT);
+        expect(c.extra_room_move_targets, 'dedicated vacant pool for room-move').toBeGreaterThanOrEqual(50);
+        expect(c.total_rooms, 'total_rooms = base + extras').toBe(c.rooms + c.extra_room_move_targets);
         rec(testInfo, { module: 'bulk-seed-500', step: 'core_counts_rooms_guests_bookings_folios', status: 'PASS',
-            note: `rooms=${c.rooms} guests=${c.guests} bookings=${c.bookings} folios=${c.folios}` });
+            note: `rooms=${c.rooms} extras=${c.extra_room_move_targets} total=${c.total_rooms} guests=${c.guests} bookings=${c.bookings} folios=${c.folios}` });
     });
 
     test('Seed response counts: housekeeping_tasks=500', async ({ stressState }, testInfo) => {

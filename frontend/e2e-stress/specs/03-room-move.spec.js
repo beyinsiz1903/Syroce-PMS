@@ -21,13 +21,20 @@ const SETUP_FREE_ROUNDS = 4;
 test.describe.configure({ mode: 'serial' });
 
 // ── Pure helpers (setup + A için ortak hesap) ────────────────────────────────
+// F8A tur-11 (Kapsam D.3-4 user-mandated): single normalizer used for BOTH
+// rooms and bookings so room_type field-name drift (snake_case vs camelCase
+// vs legacy `category`/`type`) cannot silently zero out the eligible count.
+function normalizeRoomType(x) {
+    if (!x || typeof x !== 'object') return '__unknown__';
+    return x.room_type || x.roomType || x.category || x.type || '__unknown__';
+}
 function _computeVacantByType(bookingsList, roomsList) {
     const checkedIn = bookingsList.filter((b) => b.status === 'checked_in');
     const occupied = new Set(checkedIn.map((b) => b.room_id).filter(Boolean));
     const m = new Map();
     for (const r of roomsList) {
         if (occupied.has(r.id)) continue;
-        const t = r.room_type || r.category || '__unknown__';
+        const t = normalizeRoomType(r);
         m.set(t, (m.get(t) || 0) + 1);
     }
     return m;
@@ -36,7 +43,7 @@ function _computeDemand(bookingsList, n) {
     const target = bookingsList.filter((b) => b.status === 'checked_in').slice(0, n);
     const demand = new Map();
     for (const b of target) {
-        const t = b.room_type || b.category || '__unknown__';
+        const t = normalizeRoomType(b);
         demand.set(t, (demand.get(t) || 0) + 1);
     }
     return { demand, targetIds: new Set(target.map((b) => b.id)), total: target.length };
@@ -165,7 +172,10 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
 
             const checkedInByType = new Map();
             for (const b of bookings.filter((b) => b.status === 'checked_in' && !targetIds.has(b.id))) {
-                const t = b.room_type || b.category || '__unknown__';
+                // F8A tur-11 (architect review): MUST use the same normalizer here too.
+                // If raw field is bucketed to '__unknown__' while demand uses normalized
+                // key, the free-loop cannot match types → can never close the shortfall.
+                const t = normalizeRoomType(b);
                 if (!checkedInByType.has(t)) checkedInByType.set(t, []);
                 checkedInByType.get(t).push(b);
             }
@@ -202,15 +212,26 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
         try {
             const checkedInByType = {};
             for (const b of bookings.filter((b) => b.status === 'checked_in')) {
-                const t = b.room_type || b.category || '__unknown__';
+                const t = normalizeRoomType(b);
                 checkedInByType[t] = (checkedInByType[t] || 0) + 1;
             }
             const roomsByType = {};
             for (const r of rooms) {
-                const t = r.room_type || r.category || '__unknown__';
+                const t = normalizeRoomType(r);
                 roomsByType[t] = (roomsByType[t] || 0) + 1;
             }
             const extraVacantRooms = rooms.filter((r) => r.room_move_target === true);
+            // F8A tur-11 (Kapsam D.2): extras per-type so debug surfaces
+            // whether the dedicated pool covers demand room-by-room.
+            const extrasByType = {};
+            for (const r of extraVacantRooms) {
+                const t = normalizeRoomType(r);
+                extrasByType[t] = (extrasByType[t] || 0) + 1;
+            }
+            // Sample first 3 raw item keys for field-name drift diagnosis.
+            const sampleBookingKeys = bookings[0] ? Object.keys(bookings[0]).slice(0, 30) : null;
+            const sampleRoomKeys = rooms[0] ? Object.keys(rooms[0]).slice(0, 30) : null;
+            const seedBreakdown = stressState?.seed_response?.rooms_breakdown ?? null;
             const perTypeBreakdown = {};
             for (const t of new Set([...demandFinal.keys(), ...vacantFinal.keys()])) {
                 const d = demandFinal.get(t) || 0;
@@ -237,17 +258,31 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
                         extra_vacant_pool: extraVacantRooms.length,
                         rooms_with_stress_prefix_filter: rooms.length,
                     },
+                    seed_contract: seedBreakdown,
                     distribution: {
                         demand_first_n: Object.fromEntries(demandFinal),
                         vacant_by_type: Object.fromEntries(vacantFinal),
                         checked_in_by_type: checkedInByType,
                         rooms_by_type: roomsByType,
+                        room_move_target_by_type: extrasByType,
                         per_type_breakdown: perTypeBreakdown,
+                    },
+                    field_name_drift_check: {
+                        sample_booking_keys: sampleBookingKeys,
+                        sample_room_keys: sampleRoomKeys,
+                        bookings_with_room_type: bookings.filter((b) => b.room_type).length,
+                        bookings_with_camel_roomType: bookings.filter((b) => b.roomType).length,
+                        bookings_with_category: bookings.filter((b) => b.category).length,
+                        rooms_with_room_type: rooms.filter((r) => r.room_type).length,
+                        rooms_with_camel_roomType: rooms.filter((r) => r.roomType).length,
+                        rooms_with_category: rooms.filter((r) => r.category).length,
+                        rooms_with_move_target_flag: extraVacantRooms.length,
                     },
                     diagnosis_hints: [
                         'shortfall>0 olan tipler eligible<required_min sebebidir',
-                        'extra_vacant_pool=0 ise seed factory tur-10 fix deploy edilmemiş',
-                        'rooms_total<560 ise fetchAllByPrefix offset bug regression',
+                        'extra_vacant_pool=0 + seed_contract.extra_room_move_targets>0 → /api/pms/rooms projection room_move_target drop ediyor',
+                        'rooms_total<seed_contract.total_rooms → fetchAllByPrefix snapshot eksik (pagination/prefix-mismatch)',
+                        'bookings_with_room_type=0 + bookings_with_camel_roomType>0 → field-name drift, normalizeRoomType yetmedi',
                     ],
                 }, null, 2)),
                 contentType: 'application/json',
@@ -267,6 +302,19 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
                 `eligible=${eligibleFinal}/${requiredEligible}, freed_ok=${totalFreedOk} freed_fail=${totalFreedFail}, `
                 + `fail_modes=${JSON.stringify(failModes)}. force-checkout endpoint reddediyor olabilir veya `
                 + `dataset çok küçük (room_count<${MIN_ELIGIBLE_TARGETS}).`);
+        }
+        // F8A tur-11 (architect review action #2): if seed contract reports
+        // ≥50 extra room-move targets but the fetched pool is <50, we have a
+        // fetch/projection/prefix-mismatch problem (not normalize logic).
+        // Fail fast with explicit diagnosis BEFORE generic eligible assertion.
+        const expectedExtras = stressState?.seed_response?.seeded_counts?.extra_room_move_targets ?? 0;
+        if (expectedExtras >= 50) {
+            const fetchedExtras = rooms.filter((r) => r.room_move_target === true).length;
+            expect(fetchedExtras,
+                `seed reported ${expectedExtras} extra room_move_target rooms but only ${fetchedExtras} fetched — `
+                + `likely /api/pms/rooms projection drop or fetchAllByPrefix pagination/prefix-mismatch. `
+                + `Check room-move-setup-debug.json field_name_drift_check + seed_contract.`
+            ).toBeGreaterThanOrEqual(50);
         }
         // Hard precondition (architect feedback task #162 review): setup
         // garantili miktarda eligible target sağlamadan A testine geçilmez.

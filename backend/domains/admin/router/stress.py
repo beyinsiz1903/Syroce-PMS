@@ -418,10 +418,26 @@ async def stress_seed(
 
     counts = dict.fromkeys(STRESS_COLLECTIONS, 0)
 
+    # F8A tur-11 (CI run #24 NO-GO follow-up): contract split BEFORE insert so
+    # `counts["rooms"]` reports BASE rooms (500), with extras tracked separately.
+    # Previous tur-10b shape put TOTAL (560) in counts["rooms"] → bulk-seed-500 spec
+    # assertion `expect(c.rooms).toBe(500)` failed. User-mandated contract:
+    #   seeded_counts.rooms = base (500)
+    #   seeded_counts.extra_room_move_targets = extras (60)
+    #   seeded_counts.total_rooms = base + extras (560)
+    extras_count = sum(1 for r in rooms_docs if r.get("room_move_target") is True)
+    base_count = len(rooms_docs) - extras_count
+
     t_insert_start = time.perf_counter()
     with tenant_context(stress_tid):
         from core.database import db
-        counts["rooms"] = await _chunked_insert(db.rooms, rooms_docs, INSERT_CHUNK_SIZE)
+        total_rooms_inserted = await _chunked_insert(db.rooms, rooms_docs, INSERT_CHUNK_SIZE)
+        # Authoritative split — `counts["rooms"]` MUST equal base (500) for
+        # tenant-isolation contract testing; extras are an internal stress-only
+        # pool that doesn't represent real PMS inventory.
+        counts["rooms"] = base_count
+        counts["extra_room_move_targets"] = extras_count
+        counts["total_rooms"] = total_rooms_inserted
         counts["guests"] = await _chunked_insert(db.guests, guests_docs, INSERT_CHUNK_SIZE)
         counts["bookings"] = await _chunked_insert(db.bookings, bookings_docs, INSERT_CHUNK_SIZE)
         counts["folios"] = await _chunked_insert(db.folios, folios_docs, INSERT_CHUNK_SIZE)
@@ -448,15 +464,20 @@ async def stress_seed(
     except Exception:
         pass
 
-    # F8A tur-10b: split base_rooms vs extra_room_move_targets for transparency.
-    # `counts["rooms"]` is the TOTAL inserted (base 500 + 60 extra in default config).
-    # The spec debug attachment + user CI report can now verify both layers exist.
-    extra_targets_count = sum(1 for r in rooms_docs if r.get("room_move_target") is True)
-    base_rooms_count = counts["rooms"] - extra_targets_count
+    # F8A tur-11: rooms_breakdown is a denormalized convenience view; same data
+    # lives in seeded_counts.{rooms, extra_room_move_targets, total_rooms}.
+    # Also expose per-type distribution of extras so 03-room-move spec setup
+    # can verify the pool covers demand (room_type-by-room_type).
+    extra_per_type: dict = {}
+    for r in rooms_docs:
+        if r.get("room_move_target") is True:
+            t = r.get("room_type") or "__unknown__"
+            extra_per_type[t] = extra_per_type.get(t, 0) + 1
     rooms_breakdown = {
-        "base_rooms": base_rooms_count,
-        "extra_room_move_targets": extra_targets_count,
-        "total_rooms": counts["rooms"],
+        "base_rooms": counts["rooms"],
+        "extra_room_move_targets": counts.get("extra_room_move_targets", 0),
+        "total_rooms": counts.get("total_rooms", counts["rooms"]),
+        "room_move_target_by_type": extra_per_type,
     }
 
     return {

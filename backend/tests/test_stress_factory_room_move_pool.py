@@ -81,3 +81,31 @@ def test_factory_base_rooms_unchanged_by_extra_pool():
     # i%8==0 → pre_vacant: indices 0,8,16,...,496 = 63 pre_vacant in [0..499]
     assert len(available_base) == 63
     assert len(occupied_base) == 437
+
+
+def test_factory_extras_cover_first_50_demand_per_type():
+    """F8A tur-11 (Kapsam C.4-5): the dedicated extra pool MUST cover
+    the room_type demand profile of the first 50 checked_in bookings.
+
+    With deterministic seed (ROOM_TYPES[i%20] dağılımı) and pre_vacant
+    skip (i%8==0), max demand per type across the first 50 checked_in
+    bookings is ≤ 3 → 3-per-type extras (EXTRA_VACANT_PER_TYPE=3) satisfies
+    demand for every type. This locks in the contract.
+    """
+    rooms, _g, bookings, _f, _c, _rnl, _hk = _build()
+    extras = [r for r in rooms if r.get("room_move_target") is True]
+    extras_by_type: dict = {}
+    for r in extras:
+        extras_by_type[r["room_type"]] = extras_by_type.get(r["room_type"], 0) + 1
+
+    checked_in = [b for b in bookings if b["status"] == "checked_in"][:50]
+    demand_by_type: dict = {}
+    for b in checked_in:
+        demand_by_type[b["room_type"]] = demand_by_type.get(b["room_type"], 0) + 1
+
+    for rtype, demand in demand_by_type.items():
+        supply = extras_by_type.get(rtype, 0)
+        assert supply >= demand, (
+            f"room_type={rtype} demand={demand} > extras_supply={supply}; "
+            f"first-50 demand profile exceeds extra pool per-type cap"
+        )
