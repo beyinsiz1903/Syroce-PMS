@@ -173,15 +173,11 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
             return JSONResponse({"status": "db_unavailable", "error": str(e)[:120]}, status_code=503)
         return {"status": "ready"}
 
-    # ── Cosmetic root + favicon (kill noisy 404s in logs) ───────────
-    # Browsers and uptime checks request `/` and `/favicon.ico` even though
-    # the SPA is served by the frontend. Returning a quiet response keeps
-    # access logs clean without affecting the API.
-    from fastapi.responses import RedirectResponse, Response
-
-    @application.get("/", include_in_schema=False)
-    async def _root_redirect():
-        return RedirectResponse(url="/api/docs", status_code=307)
+    # ── Cosmetic favicon (kill noisy 404s in logs) ──────────────────
+    # `/` is intentionally NOT registered here: when frontend/build exists
+    # the SPA 404-handler below serves index.html. When it doesn't exist
+    # (pure backend dev mode), a 404 is the honest response.
+    from fastapi.responses import Response
 
     @application.get("/favicon.ico", include_in_schema=False)
     async def _favicon_noop():
