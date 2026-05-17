@@ -346,7 +346,12 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
         // target için status ∈ {available, inspected, clean} zorunlu → 10/40
         // attempt s400 ROOM_NOT_AVAILABLE ile reject. Fix: spec'i backend
         // kontratıyla hizala — room.status'u da kontrol et.
-        const MOVE_ELIGIBLE_STATUSES = new Set(['available', 'inspected', 'clean']);
+        // F8A CI #34 fix: V1 backend `front_desk.room_move` (front_desk_service.py:158)
+        // sadece {available, inspected} kabul ediyor — 'clean' yok. Spec eskiden
+        // 'clean'i de eligible sayıyordu; 02-C HK pre-step 'clean' status set ediyordu;
+        // 50 base oda 'clean' kalıyordu (walk-in da kabul etmiyor) → 03 vacantRooms
+        // havuzuna sızıyor → V1 reddediyor (10/40 s400). Spec'i V1 kontratıyla hizala.
+        const MOVE_ELIGIBLE_STATUSES = new Set(['available', 'inspected']);
         const vacantRooms = rooms.filter((r) =>
             !occupiedRoomIds.has(r.id) && MOVE_ELIGIBLE_STATUSES.has(r.status));
         // F8A tur-12 (Kapsam E user-mandated): dedicated extra pool MUST be
