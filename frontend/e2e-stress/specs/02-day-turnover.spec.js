@@ -111,6 +111,20 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
                 note: `target sample yetersiz n=${targetRoomIds.length}/25 (rooms_freed=${roomsFreed.length} rooms_total=${rooms.length})` });
             return;
         }
+        // F8A tur-19: Real-world turnover akışı = checkout (room→dirty) → HK clean
+        // (room→clean) → walk-in. Önceki spec dirty odalara direkt walk-in deniyordu
+        // → backend doğru biçimde ROOM_NOT_AVAILABLE (s400) reddi. Şimdi HK
+        // /housekeeping/room-status endpoint'i ile odaları clean state'e getirip
+        // sonra walk-in deniyoruz (production-correct pre-condition).
+        let cleanedOk = 0, cleanedFail = 0;
+        for (const id of targetRoomIds) {
+            const cr = await callTimed(request, 'post', '/api/housekeeping/room-status',
+                { room_id: id, new_status: 'clean', force: true, notes: 'F8A turnover pre-walkin' },
+                stressTokens.stress_token);
+            if (cr.ok) cleanedOk++; else cleanedFail++;
+        }
+        rec(testInfo, { module: MOD, step: 'walkin_precond_hk_clean', status: cleanedOk >= 25 ? 'PASS' : 'REVIEW',
+            note: `hk_cleaned ok=${cleanedOk}/${targetRoomIds.length} fail=${cleanedFail} (≥25 = turnover pre-cond ok)` });
         const target = targetRoomIds.map((id) => rooms.find((r) => r.id === id) || { id });
         const samples = []; let ok = 0, fail = 0; const failModes = {};
         for (let i = 0; i < target.length; i++) {

@@ -479,6 +479,29 @@ class FrontdeskServiceV2:
                     "ROOM_NOT_AVAILABLE",
                 )
 
+            # F8A tur-19: Atomic CAS claim — pre-check is informational only;
+            # actual claim must be conditional on status still eligible to
+            # prevent parallel-move race (two booking_ids racing same target).
+            # Lock above is keyed on booking_id, so different booking_ids
+            # racing same new_room_id both pass the lock. The find_one above
+            # and the blind update below create a TOCTOU window. Atomic CAS
+            # closes it: only one of the racing updates will match the filter
+            # (status ∈ eligible_set), the other gets modified_count=0 and
+            # returns ROOM_NOT_AVAILABLE (race lost). Production-correct.
+            claim = await self._db.rooms.update_one(
+                {
+                    "id": new_room_id,
+                    "tenant_id": ctx.tenant_id,
+                    "status": {"$in": ["available", "inspected", "clean"]},
+                },
+                {"$set": {"status": "occupied", "current_booking_id": booking_id}},
+            )
+            if claim.modified_count == 0:
+                return ServiceResult.fail(
+                    "Target room not available (claimed by concurrent operation)",
+                    "ROOM_NOT_AVAILABLE",
+                )
+
             # Release old room
             if old_room_id:
                 await self._db.rooms.update_one(
@@ -499,11 +522,7 @@ class FrontdeskServiceV2:
                     }
                 )
 
-            # Assign new room
-            await self._db.rooms.update_one(
-                {"id": new_room_id},
-                {"$set": {"status": "occupied", "current_booking_id": booking_id}},
-            )
+            # (New room already claimed atomically above — tur-19 CAS.)
             await self._db.bookings.update_one(
                 {"id": booking_id},
                 {
