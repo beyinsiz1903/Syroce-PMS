@@ -18,7 +18,7 @@
 | Cleanup#2 idempotent | true |
 | Pilot drift | 0 |
 | Baseline `external_calls_made` | `[]` |
-| Final verdict (run #20) | ❌ **NO-GO** — 3 fail (2 external_calls invariant + 1 setup vacant pool) |
+| Final verdict | ❌ **NO-GO** — run #20 snapshot: 3 fail (2 external_calls invariant + 1 setup vacant pool); fixes tur-7+tur-8 merged, re-run pending |
 | Verdict after fixes (pending re-run) | ⏳ **PENDING CI RE-RUN** — root-cause fixes (tur-7 + tur-8) merged, beklenen GO / GO WITH WATCH |
 | Tur-8 ek fix | `dry_run_enforced` artık env VEYA "active CM connector=0" yapısal gerçeğinden türetiliyor (deployed backend env propagasyonu bağımlılığı kaldırıldı) |
 
