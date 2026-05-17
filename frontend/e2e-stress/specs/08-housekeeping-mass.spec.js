@@ -66,15 +66,36 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         const transitions = ['dirty', 'cleaning', 'inspected', 'clean'];
         const counters = { ok: 0, fail: 0, byTransition: {} };
         const samples = [];
-        for (const room of target) {
+        // F8A tur-17 fix (CI run #29 root cause): bu test eskiden 4ms'de
+        // bitiyordu çünkü tur-15 öncesi fetchAllByPrefix kırıktı → rooms=0 →
+        // erken SKIP (line 64 guard). Tur-15 fix sonrası 560 oda fetch edilince
+        // gerçekten çalışmaya başladı: 100 oda × 4 transition = 400 SIRALI
+        // HTTP call → 180s timeout aşılıyor (CI→dev latency ~500ms/call).
+        // Fix: farklı odalar bağımsız (state machine sadece intra-room sıralı),
+        // o yüzden BATCH paralel — her batch'te 10 oda eşzamanlı, her odanın
+        // 4 transition'ı kendi içinde sıralı. 10 batch × ~4s = ~40s, 180s
+        // limitinin çok altında. Backend yükü kontrollü (max 10 concurrent).
+        const BATCH_SIZE = 10;
+        const runRoom = async (room) => {
+            const results = [];
             for (const status of transitions) {
                 const r = await callTimed(request, 'post', '/api/pms-core/housekeeping/room-status', {
                     room_id: room.id, new_status: status, notes: `F8A trans ${status}`, force: true,
                 }, stressTokens.stress_token);
-                samples.push(r.ms);
-                counters.byTransition[status] ||= { ok: 0, fail: 0 };
-                if (r.ok) { counters.ok++; counters.byTransition[status].ok++; }
-                else { counters.fail++; counters.byTransition[status].fail++; }
+                results.push({ status, ok: r.ok, ms: r.ms });
+            }
+            return results;
+        };
+        for (let i = 0; i < target.length; i += BATCH_SIZE) {
+            const batch = target.slice(i, i + BATCH_SIZE);
+            const batchResults = await Promise.all(batch.map(runRoom));
+            for (const roomResults of batchResults) {
+                for (const tr of roomResults) {
+                    samples.push(tr.ms);
+                    counters.byTransition[tr.status] ||= { ok: 0, fail: 0 };
+                    if (tr.ok) { counters.ok++; counters.byTransition[tr.status].ok++; }
+                    else { counters.fail++; counters.byTransition[tr.status].fail++; }
+                }
             }
         }
         rec(testInfo, { module: MOD, step: 'hk_transitions', status: counters.ok > target.length * transitions.length * 0.5 ? 'PASS' : 'REVIEW',
