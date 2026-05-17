@@ -118,7 +118,7 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
         // sonra walk-in deniyoruz (production-correct pre-condition).
         let cleanedOk = 0, cleanedFail = 0;
         for (const id of targetRoomIds) {
-            const cr = await callTimed(request, 'post', '/api/housekeeping/room-status',
+            const cr = await callTimed(request, 'post', '/api/pms-core/housekeeping/room-status',
                 { room_id: id, new_status: 'clean', force: true, notes: 'F8A turnover pre-walkin' },
                 stressTokens.stress_token);
             if (cr.ok) cleanedOk++; else cleanedFail++;
