@@ -346,6 +346,18 @@ async def check_out_booking_atomic(
                 session=session,
             )
 
+            # ── 5b. Release room_night_locks (F8A tur-21 perf: inline single
+            #        round-trip inside transaction; replaces post-commit
+            #        release_booking_nights helper which did 3 RTs and
+            #        regressed force-checkout latency from ~700ms to ~2000ms,
+            #        causing CI #36 02-B 180s timeout. Atomic with state
+            #        transition; audit captured in step-7 metadata below).
+            locks_release_result = await db.room_night_locks.delete_many(
+                {"tenant_id": tenant_id, "booking_id": booking_id},
+                session=session,
+            )
+            released_locks_count = locks_release_result.deleted_count
+
             # ── 6. Create housekeeping task (deduplicated) ──
             if room_id:
                 existing_hk = await db.housekeeping_tasks.find_one(
@@ -384,6 +396,7 @@ async def check_out_booking_atomic(
                 "metadata": {
                     "room_id": room_id,
                     "forced": force,
+                    "released_locks_count": released_locks_count,
                 },
                 "timestamp": now_iso,
             }
@@ -406,24 +419,6 @@ async def check_out_booking_atomic(
                 "retry_count": 0,
             }
             await db.outbox_events.insert_one(outbox_doc, session=session)
-
-    # F8A CI #35 (tur-20) fix: release room_night_locks on checkout. Without this,
-    # the room cannot be re-occupied for the same date range (walk-in, room-move
-    # target) because create_booking_atomic / apply_room_block unique-index inserts
-    # collide with the stale locks. Mirrors the cancellation flow pattern in
-    # reservation_state_machine.handle_cancellation (release_booking_nights call
-    # after the status mutation). Post-transaction call is safe: the booking is
-    # already in 'checked_out' state at this point so re-occupancy callers will
-    # not see ACTIVE_BOOKING_STATES conflicts; only the night-lock garbage remains.
-    try:
-        from core.atomic_booking import release_booking_nights
-        await release_booking_nights(
-            tenant_id, booking_id,
-            reason=f"checkout{'_forced' if force else ''}",
-            correlation_id=booking.get("correlation_id"),
-        )
-    except Exception as e:
-        logger.warning("Failed to release night locks on checkout %s: %s", booking_id, e)
 
     # Af-sadakat marketplace integration: outbound olay (transaction sonrası)
     try:
