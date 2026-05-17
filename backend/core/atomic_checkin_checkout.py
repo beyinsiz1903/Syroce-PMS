@@ -25,7 +25,7 @@ from core.database import client, db
 logger = logging.getLogger("core.atomic_checkin_checkout")
 
 CHECKIN_ELIGIBLE_STATUSES = ["confirmed", "guaranteed", "pending"]
-ROOM_BLOCKED_STATUSES = ["out_of_order", "maintenance"]
+ROOM_BLOCKED_STATUSES = ["out_of_order", "out_of_service", "maintenance"]
 
 
 class CheckInError(Exception):
@@ -157,12 +157,35 @@ async def check_in_booking_atomic(
                 session=session,
             )
 
-            # ── 5. Update room → occupied ──
-            await db.rooms.update_one(
-                {"id": room_id, "tenant_id": tenant_id},
+            # ── 5. Update room → occupied (atomic CAS — F8A tur-22 / CI #37
+            #        P0 fix: line-104 pre-check is TOCTOU vs the unconditional
+            #        update_one that used to live here; concurrent OOO/maintenance
+            #        marks could change room.status between find_one and
+            #        update_one, leading to walk-in/check-in succeeding on a
+            #        blocked room and returning success=true with a fresh booking
+            #        — overbook + maintenance-risk. CAS filter requires status
+            #        to STILL be in the allowed set at write time; if not,
+            #        modified_count==0 → raise CheckInError → transaction
+            #        rollback → no booking persisted, no audit, no outbox).
+            if override_reason:
+                # Override path: any non-blocked status is acceptable.
+                cas_status_filter = {"$nin": ROOM_BLOCKED_STATUSES}
+            else:
+                cas_status_filter = {"$in": list(allowed_room_statuses)}
+            room_update_result = await db.rooms.update_one(
+                {
+                    "id": room_id,
+                    "tenant_id": tenant_id,
+                    "status": cas_status_filter,
+                },
                 {"$set": {"status": "occupied", "current_booking_id": booking_id}},
                 session=session,
             )
+            if room_update_result.modified_count == 0:
+                raise CheckInError(
+                    f"Room {room.get('room_number')} status changed during check-in "
+                    f"(concurrent state mutation; check-in aborted to prevent overbook)"
+                )
 
             # ── 6. Audit log ──
             audit_doc = {

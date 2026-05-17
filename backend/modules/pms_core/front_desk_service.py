@@ -166,7 +166,27 @@ class FrontDeskService:
 
         now = datetime.now(UTC)
 
-        # Update booking
+        # F8A tur-22 / CI #37 P1 race fix: target room → occupied via atomic CAS
+        # FIRST (before booking/old-room mutations). Pre-check at line 158 is
+        # TOCTOU vs the unconditional update_one that used to follow; two
+        # parallel room-moves targeting the same vacant room both read
+        # status="available" and both succeed under the old write pattern
+        # (CI #37 03-D: r1=200 r2=200, double-occupancy). With CAS, the
+        # second writer's filter does not match (status is already
+        # "occupied"), modified_count==0 → return error before any other
+        # mutation. Mirrors V2 frontdesk_service_v2 fix from tur-19.
+        new_room_cas = await db.rooms.update_one(
+            {
+                "id": new_room_id,
+                "tenant_id": tenant_id,
+                "status": {"$in": ["available", "inspected"]},
+            },
+            {"$set": {"status": "occupied", "current_booking_id": booking_id}},
+        )
+        if new_room_cas.modified_count == 0:
+            return {"success": False, "error": "New room is not available (concurrent state mutation)"}
+
+        # Update booking (target now atomically claimed)
         await db.bookings.update_one(
             {"id": booking_id, "tenant_id": tenant_id},
             {"$set": {"room_id": new_room_id, "updated_at": now.isoformat()}}
@@ -178,12 +198,6 @@ class FrontDeskService:
                 {"id": old_room_id, "tenant_id": tenant_id},
                 {"$set": {"status": "dirty", "current_booking_id": None}}
             )
-
-        # New room becomes occupied
-        await db.rooms.update_one(
-            {"id": new_room_id, "tenant_id": tenant_id},
-            {"$set": {"status": "occupied", "current_booking_id": booking_id}}
-        )
 
         # Log room move history
         old_room = await db.rooms.find_one({"id": old_room_id, "tenant_id": tenant_id}, {"_id": 0}) if old_room_id else None
