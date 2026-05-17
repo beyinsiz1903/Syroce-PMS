@@ -376,6 +376,10 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
         let skippedNoTarget = 0;
         let candidateFromExtras = 0, candidateFromBase = 0;
         const moveLog = []; // { booking_id, old_room_id, new_room_id, target_room_type }
+        // F8A tur-19 (CI #32 03-A s429×15/30 fix): room-move endpoint heavy
+        // rate-limit class (folio mutation + RNL transfer + audit). 30 sequential
+        // POST sliding window'u aşıyor. 04-B (tur-18) ile aynı pattern: ardışık
+        // call'lar arasına 400ms gap → window yenileniyor, ~12s ek süre kabul.
         for (let i = 0; i < target.length; i++) {
             const b = target[i];
             const bType = normalizeRoomType(b);
@@ -384,6 +388,7 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
             const candidate = pickCandidate(bType);
             if (!candidate) { skippedNoTarget++; continue; }
             if (fromExtras) candidateFromExtras++; else candidateFromBase++;
+            if (i > 0) await new Promise((res) => setTimeout(res, 400));
             const r = await callTimed(request, 'post', '/api/pms-core/room-move', {
                 booking_id: b.id, new_room_id: candidate.id, reason: `F8A positive move ${i}`,
             }, stressTokens.stress_token);
