@@ -337,7 +337,18 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
         }
         // Vacant set: room id'leri ki HİÇBİR checked_in booking onları işgal etmiyor.
         const occupiedRoomIds = new Set(checkedIn.map((b) => b.room_id).filter(Boolean));
-        const vacantRooms = rooms.filter((r) => !occupiedRoomIds.has(r.id));
+        // F8A tur-16 fix (CI run #28 root cause): spec 02 test 28 "walk-in" 50
+        // yeni booking yarattı; bunlar stress_prefix taşımıyor (walk-in endpoint
+        // stress flag eklemiyor) → fetchAllByPrefix snapshot'unda YOK → bu
+        // spec'in occupiedRoomIds set'inde görünmüyorlar → walk-in tarafından
+        // 'occupied' yapılmış odalar SPEC'TE vacant sayılıyor ama backend
+        // tarafında status='occupied'. Backend kontratı (frontdesk_service_v2:476)
+        // target için status ∈ {available, inspected, clean} zorunlu → 10/40
+        // attempt s400 ROOM_NOT_AVAILABLE ile reject. Fix: spec'i backend
+        // kontratıyla hizala — room.status'u da kontrol et.
+        const MOVE_ELIGIBLE_STATUSES = new Set(['available', 'inspected', 'clean']);
+        const vacantRooms = rooms.filter((r) =>
+            !occupiedRoomIds.has(r.id) && MOVE_ELIGIBLE_STATUSES.has(r.status));
         // F8A tur-12 (Kapsam E user-mandated): dedicated extra pool MUST be
         // preferred over incidentally-vacant base rooms. Splitting vacantByType
         // into two buckets — extras first, base second — guarantees the
@@ -361,7 +372,7 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
             return bs && bs.length > 0 ? bs.shift() : null;
         };
         const target = checkedIn.slice(0, 50);
-        const samples = []; let ok = 0, fail = 0; const failModes = {};
+        const samples = []; let ok = 0, fail = 0; const failModes = {}; const failBodies = [];
         let skippedNoTarget = 0;
         let candidateFromExtras = 0, candidateFromBase = 0;
         const moveLog = []; // { booking_id, old_room_id, new_room_id, target_room_type }
@@ -386,6 +397,19 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
                 });
             } else {
                 fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1;
+                // F8A tur-16: capture failure body (tur-14 ölç-tahmin-etme
+                // disiplini) — gelecekte ROOM_NOT_AVAILABLE / CONCURRENT_OPERATION
+                // / INVALID_STATUS gibi reject kodlarını doğrudan görelim.
+                if (failBodies.length < 10) {
+                    failBodies.push({
+                        status: r.status,
+                        booking_id: b.id,
+                        candidate_id: candidate.id,
+                        candidate_status: candidate.status,
+                        candidate_is_extra: candidate.room_move_target === true,
+                        body: r.body,
+                    });
+                }
             }
         }
         // F8A tur-12 debug: extras-vs-base attribution surfaced in attachment.
@@ -397,6 +421,7 @@ test.describe('F8A § 03 — Room move (positive + negative + race)', () => {
                     candidate_from_extras: candidateFromExtras,
                     candidate_from_base: candidateFromBase,
                     extras_priority_invariant: candidateFromExtras >= candidateFromBase,
+                    fail_bodies: failBodies,
                 }, null, 2)),
                 contentType: 'application/json',
             });
