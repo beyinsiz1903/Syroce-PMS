@@ -407,6 +407,24 @@ async def check_out_booking_atomic(
             }
             await db.outbox_events.insert_one(outbox_doc, session=session)
 
+    # F8A CI #35 (tur-20) fix: release room_night_locks on checkout. Without this,
+    # the room cannot be re-occupied for the same date range (walk-in, room-move
+    # target) because create_booking_atomic / apply_room_block unique-index inserts
+    # collide with the stale locks. Mirrors the cancellation flow pattern in
+    # reservation_state_machine.handle_cancellation (release_booking_nights call
+    # after the status mutation). Post-transaction call is safe: the booking is
+    # already in 'checked_out' state at this point so re-occupancy callers will
+    # not see ACTIVE_BOOKING_STATES conflicts; only the night-lock garbage remains.
+    try:
+        from core.atomic_booking import release_booking_nights
+        await release_booking_nights(
+            tenant_id, booking_id,
+            reason=f"checkout{'_forced' if force else ''}",
+            correlation_id=booking.get("correlation_id"),
+        )
+    except Exception as e:
+        logger.warning("Failed to release night locks on checkout %s: %s", booking_id, e)
+
     # Af-sadakat marketplace integration: outbound olay (transaction sonrası)
     try:
         from core.afsadakat_outbound import EV_GUEST_CHECKED_OUT, emit_event
