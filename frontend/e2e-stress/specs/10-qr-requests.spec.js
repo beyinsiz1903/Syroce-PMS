@@ -14,7 +14,7 @@
 // - Pilot drift = 0: tüm yazma stress tenant'a, pilot bookings sayısı sabit.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    fetchAllByPrefix, fetchSingle, callTimed, recPerf, recFinding,
+    fetchAllByPrefix, fetchSingle, callTimed, callTimedWithBackoff, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -146,16 +146,20 @@ test.describe('F8B § 10 — Room QR requests', () => {
         const samples = [];
         // CI #47 throttle: prod write rate-limit = 120/min/token (apm_middleware.py:366).
         // F8B cumulative writes by stress_token: 10-B(90) + 11-B(20) + 12-A(30) + 13-A(50) = 190
-        // tek 60s window'da budget aşıyor. 700ms gap → 60s/700ms = 85 writes/min ceiling < 120.
-        // F8A tur-18 (CI #30) ile aynı pattern (400ms idi orada 50 write; F8B daha geniş bucket).
+        // tek 60s window'da budget aşıyor. tur-24 700ms gap yetersizdi (CI: ok=83/90,
+        // 7×429 retry'sız fail). tur-25: callTimedWithBackoff + 1500ms gap, 11-B/12-A
+        // ile aynı pattern. 60s/1500ms = 40 writes/min ceiling, 429 yakalarsa retry-after
+        // ile 1 kez retry (cap 65s).
+        let throttled = 0;
         for (const req of open) {
             for (const next of steps) {
-                const r = await callTimed(request, 'patch', `/api/room-requests/${req.id}`, {
+                const r = await callTimedWithBackoff(request, 'patch', `/api/room-requests/${req.id}`, {
                     status: next, note: `F8B transition → ${next}`,
                 }, stressTokens.stress_token);
                 samples.push(r.ms);
+                if (r.throttled) throttled++;
                 if (r.ok) ok++; else fail++;
-                await new Promise((res) => setTimeout(res, 700));
+                await new Promise((res) => setTimeout(res, 1500));
             }
         }
         const expectedCalls = open.length * steps.length;
@@ -163,7 +167,7 @@ test.describe('F8B § 10 — Room QR requests', () => {
         recPerf(testInfo, MOD, 'staff_transition', samples, ok >= floor);
         rec(testInfo, { module: MOD, step: 'staff_transitions', status: ok >= floor ? 'PASS' : 'FAIL',
             endpoint: 'PATCH /api/room-requests/{id}',
-            note: `n=${open.length} steps=${steps.length} total=${expectedCalls} ok=${ok} fail=${fail} floor>=${floor}` });
+            note: `n=${open.length} steps=${steps.length} total=${expectedCalls} ok=${ok} fail=${fail} throttled_429=${throttled} floor>=${floor}` });
         if (ok < floor) {
             recFinding(testInfo, 'P1', MOD, 'QR staff transition floor (>=95%) ihlal',
                 `${expectedCalls} PATCH attempted; ok=${ok} (<${floor}).`);
