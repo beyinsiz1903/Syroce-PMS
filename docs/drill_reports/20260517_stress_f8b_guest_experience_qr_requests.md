@@ -3,7 +3,7 @@
 **Tarih:** 2026-05-17
 **Tenant:** stress (E2E_STRESS_TENANT_ID)
 **Pilot etki:** 0 (drift gate her spec'in son test'i)
-**Verdict (ön-rerun):** PRE-RERUN — CI #47 push beklemede
+**Verdict (ön-rerun):** PRE-RERUN — CI #49 push beklemede (tur-24 fixes applied)
 
 ---
 
@@ -97,3 +97,42 @@ Push sırasında smoke + business + stress GO/NO-GO bileşik raporu CI
 
 CI sonucu bu raporun "POST-RERUN" bölümüne işlenecek; gerekirse
 tur-numarası ile fix iterasyonu eklenecek (F8A tur-19..tur-22 pattern'i).
+
+---
+
+## POST-RERUN tur-24 (CI #48 NO-GO → fix → CI #49 push beklemede)
+
+**CI #48 sonucu**: 13-A PASS (50/50 send, tur-23 700ms gap effective).
+3 spec FAIL (serial mode → 8 SKIP zincir):
+
+| Spec | Sonuç | Root cause |
+|------|-------|------------|
+| 10-A | 0/50 (4.3s, fast 403) | `stressState.target_tenant_id` → `undefined`; URL = `/api/public/room-qr/undefined/{rid}/submit` → 403 |
+| 11-B | 7/20 (then 13×429 cascade) | Prod `apm_middleware` write rate-limit 120/min/token; 700ms gap (~85/min ceiling) yetersiz, bucket setup writes ile dolu |
+| 12-A | 19/30 (11×429 cascade) | Aynı 429 cascade. Resolve ~1100ms server work (folio + history + audit) → daha geniş gap gerek |
+
+**Deployment log evidence** (`fetch_deployment_logs`):
+- 10-A: `POST /api/public/room-qr/undefined/<rid>/submit?t=... 403 Forbidden` × 50
+- 11-B: 7 PATCH 200 → `PATCH /api/room-requests/<id> 429 Too Many Requests` cascade
+- 12-A: aynı 429 pattern; recovery sonrası SLOW REQUEST 1100ms × N (folio path live)
+
+**tur-24 fix**:
+
+1. **Spec 10-A + 10-D**: `stressState.target_tenant_id` → `stressState.stress_tid || stressState.seed_response?.target_tenant_id`. `global-setup.js:159` state file'a `stress_tid` key'i yazıyor (`target_tenant_id` yok), spec yanlış key okuyordu. `.auth/stress-state.json` doğrulandı. Dosyalar: `frontend/e2e-stress/specs/10-qr-requests.spec.js:59,199`.
+
+2. **Helper `callTimedWithBackoff`** (`fixtures/stress-helpers.js:104-126`): 429-aware wrapper. 429 alırsa `retry-after` header'ı parse eder (apm_middleware:516), sleep edip 1 kez retry yapar (default 65s cap → bir tam 60s sliding window). Returns `{...timed, throttled, attempts}`. callTimed'a da `retryAfter` field eklendi.
+
+3. **Spec 11-B + 12-A**: `callTimed` → `callTimedWithBackoff`, inter-call gap 700ms → 1500ms. Throttled count rec note'a eklendi (`throttled_429=N`). Bu, prod-realistik throttle senaryosunda spec'in unfair fail vermesini önler (429 retry sonrası 200 → ok counted).
+
+**Net etki**:
+- 10-A 0/50 → 50/50 beklenir (URL artık geçerli tid içerir, public endpoint per-room 20/10min limit altında).
+- 11-B 7/20 → 20/20 (retry cycle 1× = ~65s ekstra worst-case; nominal case retry tetiklenmez).
+- 12-A 19/30 → 30/30 (aynı backoff).
+- 13-A zaten PASS, davranışı değişmez (gap 700ms aynı kaldı; 50 send <120 limit).
+
+**Yeni P2 watch (NO-GO etmiyor)**:
+- `stress.external_calls active connectors lookup failed: TenantViolationError` her external_calls çekiminde tetikleniyor. Ground truth (`calls=[]`) PASS; cross-tenant query log noise. CI #48'de de mevcut, CI #47'den taşındı; F8B suite scope'unda DEĞİL (F8A operasyonel paketin findings'i).
+
+**Sandbox doğrulama**: `npx playwright test --config=playwright.stress.config.js --list` 75 test load oluyor (10 spec, F8A 53 + F8B 22). Syntax temiz, import hatası yok.
+
+**Push gate**: User CI'yi `yarn test:e2e:stress` ile manuel tetikler. CI #49 sonucu bu raporun POST-RERUN bölümünün altına işlenecek; gerekirse tur-25 iterasyonu eklenecek.

@@ -87,7 +87,39 @@ export async function callTimed(request, method, path, body, token) {
     const status = r.status?.() ?? 0;
     let bodyJson = null;
     try { bodyJson = r.json ? await r.json() : null; } catch { /* ignore */ }
-    return { status, ms, body: bodyJson, ok: status >= 200 && status < 300 };
+    let retryAfter = 0;
+    if (status === 429) {
+        try {
+            const h = r.headers?.() ?? {};
+            const ra = parseInt(h['retry-after'] || h['Retry-After'] || '0', 10);
+            if (!Number.isNaN(ra) && ra > 0) retryAfter = ra;
+        } catch { /* ignore */ }
+    }
+    return { status, ms, body: bodyJson, ok: status >= 200 && status < 300, retryAfter };
+}
+
+// tur-24: 429-aware wrapper. On 429, sleep `retry_after` seconds (capped at
+// 65s — apm_middleware uses 60s sliding window so one cycle is enough) and
+// retry once. Prod write rate-limit (120/min/token) cascade observed in
+// CI #48 11-B (7 OK → 12 of next 13 → 429); deterministic 1500ms inter-call
+// gap alone isn't enough because globalSetup/seed leaves residual writes in
+// the bucket. Returns {status, ms, body, ok, throttled, attempts}.
+export async function callTimedWithBackoff(request, method, path, body, token, opts = {}) {
+    const maxRetries = opts.maxRetries ?? 1;
+    const fallbackSleepMs = opts.fallbackSleepMs ?? 65_000;
+    let attempts = 0;
+    let throttled = false;
+    let last = null;
+    for (let i = 0; i <= maxRetries; i++) {
+        attempts++;
+        last = await callTimed(request, method, path, body, token);
+        if (last.status !== 429) return { ...last, throttled, attempts };
+        throttled = true;
+        if (i === maxRetries) break;
+        const sleepMs = last.retryAfter > 0 ? Math.min(last.retryAfter * 1000, fallbackSleepMs) : fallbackSleepMs;
+        await new Promise((res) => setTimeout(res, sleepMs));
+    }
+    return { ...last, throttled, attempts };
 }
 
 export function summarize(samples) {

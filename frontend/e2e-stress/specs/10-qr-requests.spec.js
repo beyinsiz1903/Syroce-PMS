@@ -48,7 +48,15 @@ test.describe('F8B § 10 — Room QR requests', () => {
         // endpoint URL içine HMAC token gömüyor (`?t=TOKEN` param) ve PNG
         // üretmeden 500 oda için tek istek döner. URL'den token parse edip
         // direkt submit'e geç.
-        const stressTid = stressState.target_tenant_id;
+        // tur-24 fix: state file actually persists `stress_tid` (see
+        // global-setup.js:159); `target_tenant_id` was undefined → URL
+        // built as `/api/public/room-qr/undefined/...` → 403 across the
+        // board (CI #48 0/50). seed_response.target_tenant_id is the
+        // server-side echo and remains as a defensive fallback.
+        const stressTid = stressState.stress_tid || stressState.seed_response?.target_tenant_id;
+        // tur-24 hard precondition: fail fast if state shape regresses
+        // (CI #48 silently built `/undefined/...` URLs → 50× 403).
+        expect(stressTid, 'stress tenant id present in state file').toBeTruthy();
         const target = rooms.slice(0, 50);
         if (target.length < 50) {
             rec(testInfo, { module: MOD, step: 'public_submit', status: 'SKIP',
@@ -188,7 +196,8 @@ test.describe('F8B § 10 — Room QR requests', () => {
 
     test('D) Token guard: invalid token → 403; cross-tenant token → 403', async ({ request, stressState }, testInfo) => {
         if (rooms.length === 0) { rec(testInfo, { module: MOD, step: 'token_guard', status: 'SKIP' }); return; }
-        const stressTid = stressState.target_tenant_id;
+        const stressTid = stressState.stress_tid || stressState.seed_response?.target_tenant_id;
+        expect(stressTid, 'stress tenant id present in state file').toBeTruthy();
         const room = rooms[0];
         // Bad token
         const badUrl = `/api/public/room-qr/${stressTid}/${room.id}?t=deadbeefxxxx`;

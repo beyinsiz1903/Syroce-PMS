@@ -15,7 +15,7 @@
 // kapsanır; gerçek escalate API'sı production-only akış olarak bırakıldı.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    fetchSingle, callTimed, recPerf, recFinding,
+    fetchSingle, callTimed, callTimedWithBackoff, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -48,19 +48,23 @@ test.describe('F8B § 12 — Service complaints', () => {
             rec(testInfo, { module: MOD, step: 'resolve', status: 'SKIP', note: `owned=${owned.length}` });
             return;
         }
-        let ok = 0, fail = 0, folioAdjusted = 0;
+        let ok = 0, fail = 0, folioAdjusted = 0, throttled = 0;
         const samples = [];
         const errs = [];
-        // CI #47 throttle: prod write rate-limit 120/min/token shared with
-        // 10-B(90) + 11-B(20) + 13-A(50). 700ms gap → ≤85/min ceiling.
+        // tur-24: same CI #48 cascade observed (19/30 → 11 of 30 429).
+        // Uses callTimedWithBackoff (retry-after sleep + retry once) plus
+        // 1500ms inter-call gap. resolve does ~1100ms server work
+        // (folio compensation + history $push + audit) so wider gap also
+        // reduces concurrent DB pressure.
         for (let i = 0; i < target.length; i++) {
             const c = target[i];
-            const r = await callTimed(request, 'post', `/api/service/complaints/${c.id}/resolve`, {
+            const r = await callTimedWithBackoff(request, 'post', `/api/service/complaints/${c.id}/resolve`, {
                 resolution_notes: `F8B resolve #${i}`,
                 compensation_offered: 'credit',
                 compensation_amount: 100,
             }, stressTokens.stress_token);
             samples.push(r.ms);
+            if (r.throttled) throttled++;
             if (r.ok) {
                 ok++;
                 if (r.body?.folio?.folio_adjusted === true) folioAdjusted++;
@@ -68,13 +72,13 @@ test.describe('F8B § 12 — Service complaints', () => {
                 fail++;
                 if (errs.length < 3) errs.push({ status: r.status, body: JSON.stringify(r.body).slice(0, 120) });
             }
-            await new Promise((res) => setTimeout(res, 700));
+            await new Promise((res) => setTimeout(res, 1500));
         }
         const floor = Math.ceil(target.length * 0.95);
         recPerf(testInfo, MOD, 'resolve', samples, ok >= floor);
         rec(testInfo, { module: MOD, step: 'resolve', status: ok >= floor ? 'PASS' : 'FAIL',
             endpoint: 'POST /api/service/complaints/{id}/resolve',
-            note: `n=${target.length} ok=${ok} fail=${fail} folio_adjusted=${folioAdjusted} floor>=${floor} max_ms=${Math.max(...samples)} errs=${JSON.stringify(errs)}` });
+            note: `n=${target.length} ok=${ok} fail=${fail} throttled_429=${throttled} folio_adjusted=${folioAdjusted} floor>=${floor} max_ms=${Math.max(...samples)} errs=${JSON.stringify(errs)}` });
         if (ok < floor) {
             recFinding(testInfo, 'P1', MOD, 'Complaint resolve floor (>=95%) ihlal',
                 `${target.length} resolve attempted, ok=${ok} (<${floor}). errs=${JSON.stringify(errs)}`);

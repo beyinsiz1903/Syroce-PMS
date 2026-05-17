@@ -6,7 +6,7 @@
 // dashboard ve filtre semantiğine bakar.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    fetchSingle, callTimed, recPerf, recFinding,
+    fetchSingle, callTimed, callTimedWithBackoff, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -59,28 +59,34 @@ test.describe('F8B § 11 — Service requests staff view', () => {
                 note: `owned_open=${owned.length}` });
             return;
         }
-        let ok = 0, fail = 0;
+        let ok = 0, fail = 0, throttled = 0;
         const samples = [];
         const errs = [];
-        // CI #47 throttle: prod write rate-limit 120/min/token shared with
-        // 10-B(90) + 12-A(30) + 13-A(50). 700ms gap → 60s/700ms ≈ 85/min.
+        // tur-24 (CI #48 root cause): observed 7 OK → 12/13 429 cascade
+        // even with 700ms gap. Prod apm_middleware write bucket is
+        // 120/min/token but the bucket is shared with globalSetup writes
+        // and per-instance state under autoscale isn't guaranteed empty
+        // entering 11-B. Switched to callTimedWithBackoff which retries
+        // once after `retry_after` seconds (max 65s, one full sliding
+        // window). 1500ms inter-call gap also added to slow the burst.
         for (const item of target) {
-            const r = await callTimed(request, 'patch', `/api/room-requests/${item.id}`, {
+            const r = await callTimedWithBackoff(request, 'patch', `/api/room-requests/${item.id}`, {
                 priority: 'urgent', note: 'F8B bulk priority bump',
             }, stressTokens.stress_token);
             samples.push(r.ms);
+            if (r.throttled) throttled++;
             if (r.ok) ok++;
             else {
                 fail++;
                 if (errs.length < 3) errs.push({ status: r.status, body: JSON.stringify(r.body).slice(0, 100) });
             }
-            await new Promise((res) => setTimeout(res, 700));
+            await new Promise((res) => setTimeout(res, 1500));
         }
         const floor = Math.ceil(target.length * 0.95);
         recPerf(testInfo, MOD, 'bulk_patch_priority', samples, ok >= floor);
         rec(testInfo, { module: MOD, step: 'bulk_patch_priority', status: ok >= floor ? 'PASS' : 'FAIL',
             endpoint: 'PATCH /api/room-requests/{id}',
-            note: `n=${target.length} ok=${ok} fail=${fail} floor>=${floor} max_ms=${Math.max(...samples)} errs=${JSON.stringify(errs)}` });
+            note: `n=${target.length} ok=${ok} fail=${fail} throttled_429=${throttled} floor>=${floor} max_ms=${Math.max(...samples)} errs=${JSON.stringify(errs)}` });
         if (ok < floor) {
             recFinding(testInfo, 'P1', MOD, 'Bulk PATCH floor (>=95%) ihlal',
                 `n=${target.length} ok=${ok} (<${floor}). errs=${JSON.stringify(errs)}`);
