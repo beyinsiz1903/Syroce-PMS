@@ -43,6 +43,11 @@ test.describe('F8B § 10 — Room QR requests', () => {
     test('A) 50 public QR submit (different rooms — under per-room RL)', async ({ request, stressTokens, stressState }, testInfo) => {
         // Aynı oda için 20/10min limit → 50 farklı oda kullanılır (rate-limit
         // saf IP+room key olduğundan oda başına 1 submit güvenli kalır).
+        // CI #47 fix: per-room `/api/rooms/{id}/qr-code` endpoint PNG üretiyor
+        // (slow + bilinmeyen deploy hatasıyla 0/50 token returned). BULK
+        // endpoint URL içine HMAC token gömüyor (`?t=TOKEN` param) ve PNG
+        // üretmeden 500 oda için tek istek döner. URL'den token parse edip
+        // direkt submit'e geç.
         const stressTid = stressState.target_tenant_id;
         const target = rooms.slice(0, 50);
         if (target.length < 50) {
@@ -50,31 +55,39 @@ test.describe('F8B § 10 — Room QR requests', () => {
                 note: `not enough rooms (${target.length})` });
             return;
         }
+        // Bulk token map (1 GET → tüm odalar)
+        const bulkR = await request.get('/api/rooms/qr-codes/bulk', {
+            headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
+            failOnStatusCode: false, timeout: 60_000,
+        });
+        const tokenByRoom = {};
+        let bulkErr = null;
+        if (bulkR.ok()) {
+            const j = await bulkR.json().catch(() => null);
+            for (const it of (j?.items || [])) {
+                const m = typeof it?.url === 'string' ? it.url.match(/[?&]t=([^&]+)/) : null;
+                if (m && it.room_id) tokenByRoom[it.room_id] = decodeURIComponent(m[1]);
+            }
+        } else {
+            bulkErr = `bulk_status=${bulkR.status()}`;
+        }
+        if (Object.keys(tokenByRoom).length === 0) {
+            rec(testInfo, { module: MOD, step: 'public_submit', status: 'FAIL',
+                endpoint: '/api/rooms/qr-codes/bulk',
+                note: `bulk token map boş — ${bulkErr || 'parse failed'}` });
+            recFinding(testInfo, 'P1', MOD, 'QR bulk endpoint token map boş',
+                `bulk_status=${bulkR.status()} items_with_token=0 — URL'den token parse edilemedi.`);
+            expect(Object.keys(tokenByRoom).length, 'bulk token map > 0').toBeGreaterThan(0);
+            return;
+        }
+
         let ok = 0, fail = 0, throttled = 0;
         const samples = [];
         const errors = [];
         for (let i = 0; i < target.length; i++) {
             const room = target[i];
-            // Token tek tek değil bulk endpoint'ten al — 500 oda 1 istek.
-            // İlk submit öncesi bir kez doldururuz.
-            if (i === 0) {
-                // bulk token map
-                const tokRes = await request.get('/api/rooms/qr-codes/bulk', {
-                    headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
-                    failOnStatusCode: false, timeout: 30_000,
-                });
-                if (!tokRes.ok()) {
-                    // qr-codes/bulk URL döner ama token döndürmez; per-room endpoint kullan
-                }
-            }
-            const tokR = await request.get(`/api/rooms/${room.id}/qr-code`, {
-                headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
-                failOnStatusCode: false, timeout: 15_000,
-            });
-            if (!tokR.ok()) { fail++; continue; }
-            const tokJ = await tokR.json().catch(() => ({}));
-            const token = tokJ.token;
-            if (!token) { fail++; continue; }
+            const token = tokenByRoom[room.id];
+            if (!token) { fail++; if (errors.length < 3) errors.push({ status: 0, room: room.id, why: 'no_token_in_map' }); continue; }
             const subUrl = `/api/public/room-qr/${stressTid}/${room.id}/submit?t=${encodeURIComponent(token)}`;
             const t0 = Date.now();
             const r = await request.post(subUrl, {
@@ -90,7 +103,14 @@ test.describe('F8B § 10 — Room QR requests', () => {
             const status = r.status();
             if (status === 200 || status === 201) ok++;
             else if (status === 429) { throttled++; fail++; }
-            else { fail++; if (errors.length < 3) errors.push({ status, room: room.id }); }
+            else {
+                fail++;
+                if (errors.length < 3) {
+                    let bodySnip = '';
+                    try { bodySnip = JSON.stringify(await r.json()).slice(0, 100); } catch { /* ignore */ }
+                    errors.push({ status, room: room.id, body: bodySnip });
+                }
+            }
         }
         recPerf(testInfo, MOD, 'public_submit', samples, ok >= 45);
         const passLine = ok >= 45;
@@ -116,6 +136,10 @@ test.describe('F8B § 10 — Room QR requests', () => {
         const steps = ['assigned', 'in_progress', 'completed'];
         let ok = 0, fail = 0;
         const samples = [];
+        // CI #47 throttle: prod write rate-limit = 120/min/token (apm_middleware.py:366).
+        // F8B cumulative writes by stress_token: 10-B(90) + 11-B(20) + 12-A(30) + 13-A(50) = 190
+        // tek 60s window'da budget aşıyor. 700ms gap → 60s/700ms = 85 writes/min ceiling < 120.
+        // F8A tur-18 (CI #30) ile aynı pattern (400ms idi orada 50 write; F8B daha geniş bucket).
         for (const req of open) {
             for (const next of steps) {
                 const r = await callTimed(request, 'patch', `/api/room-requests/${req.id}`, {
@@ -123,6 +147,7 @@ test.describe('F8B § 10 — Room QR requests', () => {
                 }, stressTokens.stress_token);
                 samples.push(r.ms);
                 if (r.ok) ok++; else fail++;
+                await new Promise((res) => setTimeout(res, 700));
             }
         }
         const expectedCalls = open.length * steps.length;

@@ -51,6 +51,8 @@ test.describe('F8B § 12 — Service complaints', () => {
         let ok = 0, fail = 0, folioAdjusted = 0;
         const samples = [];
         const errs = [];
+        // CI #47 throttle: prod write rate-limit 120/min/token shared with
+        // 10-B(90) + 11-B(20) + 13-A(50). 700ms gap → ≤85/min ceiling.
         for (let i = 0; i < target.length; i++) {
             const c = target[i];
             const r = await callTimed(request, 'post', `/api/service/complaints/${c.id}/resolve`, {
@@ -66,6 +68,7 @@ test.describe('F8B § 12 — Service complaints', () => {
                 fail++;
                 if (errs.length < 3) errs.push({ status: r.status, body: JSON.stringify(r.body).slice(0, 120) });
             }
+            await new Promise((res) => setTimeout(res, 700));
         }
         const floor = Math.ceil(target.length * 0.95);
         recPerf(testInfo, MOD, 'resolve', samples, ok >= floor);

@@ -63,9 +63,12 @@ test.describe('F8B § 13 — Messaging dry-run', () => {
             }
         };
 
-        for (let i = 0; i < 20; i++) await send('email', i);
-        for (let i = 0; i < 15; i++) await send('sms', i);
-        for (let i = 0; i < 15; i++) await send('whatsapp', i);
+        // CI #47 throttle: prod write rate-limit 120/min/token shared with
+        // 10-B(90) + 11-B(20) + 12-A(30). 700ms gap → ≤85/min ceiling.
+        const gap = () => new Promise((r) => setTimeout(r, 700));
+        for (let i = 0; i < 20; i++) { await send('email', i); await gap(); }
+        for (let i = 0; i < 15; i++) { await send('sms', i); await gap(); }
+        for (let i = 0; i < 15; i++) { await send('whatsapp', i); await gap(); }
 
         const totalOk = counters.email.ok + counters.sms.ok + counters.whatsapp.ok;
         const floor = 48; // 96% of 50 — DB-only insert path; failure indicates router regression
