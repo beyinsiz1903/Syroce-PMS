@@ -106,6 +106,14 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             samples.push(r.ms);
             if (r.ok) ok++;
             else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
+            // F8A tur-18 fix (CI run #30: s429×49/50): payment endpoint heavy
+            // rate-limit class (PCI-DSS audit trail + folio mutation + tax
+            // recalc). Aynı sınıftaki C testi 1500ms gap kullanıyor; B testinde
+            // throttle yoktu → 50 ardışık POST → rate limit sliding window
+            // dolup hemen 429 dönüyor. 400ms gap: 50×400=20s + 50×~200ms call
+            // = ~30s toplam (180s test budget'ın çok altı), rate-limit window'u
+            // (~1000ms) yenilemek için yeterli.
+            await new Promise((res) => setTimeout(res, 400));
         }
         const paymentStatus = ok === 0 ? 'FAIL' : (ok > sample.length * 0.5 ? 'PASS' : 'REVIEW');
         rec(testInfo, { module: MOD, step: 'payment_post_batch', status: paymentStatus,
