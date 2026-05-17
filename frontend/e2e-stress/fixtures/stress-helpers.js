@@ -69,7 +69,9 @@ export async function fetchSingle(request, token, listPath) {
     if (!r || !r.ok()) return { http: r?.status() ?? 0, list: [] };
     const j = await r.json().catch(() => ({}));
     const list = Array.isArray(j) ? j
-        : (j?.bookings || j?.rooms || j?.guests || j?.folios || j?.items || j?.data || []);
+        : (j?.bookings || j?.rooms || j?.guests || j?.folios || j?.complaints
+            || j?.messages || j?.conversations || j?.notifications
+            || j?.items || j?.data || []);
     return { http: r.status(), list: Array.isArray(list) ? list : [], raw: j };
 }
 

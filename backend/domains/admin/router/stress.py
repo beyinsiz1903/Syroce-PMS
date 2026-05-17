@@ -71,6 +71,14 @@ STRESS_COLLECTIONS = [
     "folios",
     "room_night_locks",
     "housekeeping_tasks",
+    # F8B (2026-05-17): Guest Experience surface — QR requests, complaints,
+    # messaging dry-run buckets, notifications. All rows tagged with the same
+    # `stress_seed=True` + `stress_prefix` so the unified cleanup loop already
+    # handles them (no extra code needed beyond inclusion here).
+    "room_qr_requests",
+    "service_complaints",
+    "messages",
+    "notifications",
     "bookings",
     "guests",
     "rooms",
@@ -382,6 +390,190 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
             folios_docs, folio_charges_docs, rnl_docs, hk_docs)
 
 
+# F8B (2026-05-17): Guest Experience seed — QR requests, complaints, messages,
+# notifications. Kept as a separate factory so the F6 baseline (rooms/bookings/
+# folios/RNL/HK) factory stays small and any future Guest Experience drift
+# (new category, new severity) lands in one place. Derives entirely from
+# rooms/bookings/guests already produced by _build_factory_docs so it never
+# re-implements pricing or VIP logic.
+#
+# Strict invariants:
+# - All docs tagged stress_seed=True + stress_prefix=<prefix>
+# - Complaints intentionally seeded with guest_id=None so the resolve flow's
+#   `_notify_guest_resolved` short-circuits at the "no guest_id" guard. The
+#   alternative path would call `core.email.send_email` → Resend HTTP call →
+#   external_calls invariant violation (RESEND_API_KEY is set in the stress
+#   environment). booking_id is preserved so folio compensation adjustment
+#   stays local and exercises real code.
+# - Messages are db.messages rows only. The /api/messaging/send-{email,sms,
+#   whatsapp} endpoints write to db.messages with status='sent' but do NOT
+#   invoke any provider in the current backend, so seed + write tests stay
+#   purely local. (The legacy /api/whatsapp/send-confirmation path DOES call
+#   whatsapp_service — F8B does not seed/test that path.)
+def _build_f8b_docs(
+    rooms_docs: list[dict],
+    bookings_docs: list[dict],
+    guests_docs: list[dict],
+    stress_tid: str,
+    prefix: str,
+    now: datetime,
+):
+    qr_docs: list[dict] = []
+    complaint_docs: list[dict] = []
+    message_docs: list[dict] = []
+    notif_docs: list[dict] = []
+
+    QR_CATEGORIES = [
+        "cleaning", "towels", "amenities", "maintenance", "wifi",
+        "food_order", "minibar", "laundry", "transport",
+    ]
+    QR_PRIORITIES = ["low", "normal", "high", "urgent"]
+    DEPT_BY_CAT = {
+        "cleaning": "rooms", "towels": "rooms", "amenities": "rooms",
+        "maintenance": "technical", "wifi": "technical",
+        "food_order": "fnb", "minibar": "minibar",
+        "laundry": "laundry", "transport": "transportation",
+    }
+
+    bookings_by_room = {b["room_id"]: b for b in bookings_docs}
+    guests_by_id = {g["id"]: g for g in guests_docs}
+    severities = ["low", "medium", "high", "critical"]
+    channels = ["email", "sms", "whatsapp"]
+
+    for i, room in enumerate(rooms_docs):
+        # Extras (room_move_target=True) skip Guest Experience seeding — they
+        # have no booking/guest, are not part of the real PMS inventory, and
+        # would otherwise inflate counts in ways that break drift assertions.
+        if room.get("room_move_target") is True:
+            continue
+        rid = room["id"]
+        rnumber = room["room_number"]
+        booking = bookings_by_room.get(rid)
+        guest = guests_by_id.get(booking["guest_id"]) if booking else None
+
+        # 1) ROOM QR REQUEST — 1 open request per real room.
+        # 1/4 of requests aged 25h (overdue for normal/low SLA) so the
+        # SLA/overdue dashboard surfaces a non-trivial distribution; rest
+        # are fresh (10 min).
+        cat = QR_CATEGORIES[i % len(QR_CATEGORIES)]
+        prio = QR_PRIORITIES[i % len(QR_PRIORITIES)]
+        age_minutes = 25 * 60 if (i % 4 == 0) else 10
+        qr_created = now - timedelta(minutes=age_minutes)
+        qr_docs.append({
+            # router uses `_id` (string uuid) and serializes to `id` on read.
+            "_id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "room_id": rid,
+            "room_number": rnumber,
+            "category": cat,
+            "department": DEPT_BY_CAT[cat],
+            "title": f"{prefix}QR_{cat}_{i + 1}",
+            "description": f"{prefix}QR seed request {i + 1}",
+            "priority": prio,
+            "status": "new",
+            "language": "tr",
+            "guest_name": None,
+            "guest_phone": None,
+            "booking_id": booking["id"] if booking else None,
+            "assigned_to": None,
+            "created_at": qr_created,
+            "updated_at": qr_created,
+            "completed_at": None,
+            "source": "qr",
+            "status_history": [
+                {"status": "new", "by": "guest", "at": qr_created, "note": "F8B seed"},
+            ],
+            "stress_seed": True,
+            "stress_prefix": prefix,
+        })
+
+        # 2) SERVICE COMPLAINT — 1 per 5 rooms (100 for 500 base rooms).
+        # Resolve test targets 30, escalate 10, leaves 60 for summary read.
+        if i % 5 == 0:
+            sev = severities[(i // 5) % len(severities)]
+            age_hours = 30 if (i % 10 == 0) else 1
+            c_created = (now - timedelta(hours=age_hours)).isoformat()
+            complaint_docs.append({
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "source": "staff",
+                "category": "service_recovery",
+                "severity": sev,
+                "subject": f"{prefix}Complaint_{i + 1}",
+                "description": f"{prefix}F8B seeded complaint #{i + 1}",
+                "guest_name": None,
+                "guest_phone": None,
+                # CRITICAL — keeps resolve flow's _notify_guest_resolved silent.
+                "guest_id": None,
+                "room_id": rid,
+                "room_number": rnumber,
+                "booking_id": booking["id"] if booking else None,
+                "assigned_department": "front_office",
+                "status": "open",
+                "compensation_offered": None,
+                "compensation_amount": 0,
+                "created_by": None,
+                "created_at": c_created,
+                "updated_at": c_created,
+                "history": [{
+                    "action": "created", "actor_id": None,
+                    "actor_name": "F8B seed", "at": c_created,
+                }],
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            })
+
+        # 3) MESSAGES — 1 inbound + 1 outbound per real room. Provides
+        #    read-load surface for /api/messaging/conversations without
+        #    invoking any external provider.
+        ch = channels[i % len(channels)]
+        contact = None
+        if guest:
+            contact = guest.get("email") if ch == "email" else guest.get("phone")
+        if not contact:
+            contact = f"{prefix.lower()}m{i}@e2e-stress.example.com"
+        sent_at = now.isoformat()
+        for direction in ("inbound", "outbound"):
+            message_docs.append({
+                "id": str(uuid.uuid4()),
+                "tenant_id": stress_tid,
+                "channel": ch,
+                "direction": direction,
+                "to": contact if direction == "outbound" else f"{prefix}INBOX",
+                "from": f"{prefix}INBOX" if direction == "outbound" else contact,
+                "subject": f"{prefix}Subj_{i}_{direction}" if ch == "email" else None,
+                "message": f"{prefix} F8B seed {direction} #{i}",
+                "booking_id": booking["id"] if booking else None,
+                "status": "sent" if direction == "outbound" else "received",
+                "sent_at": sent_at,
+                "sent_by": None,
+                "stress_seed": True,
+                "stress_prefix": prefix,
+            })
+
+        # 4) NOTIFICATIONS — 1 per real room (broadcast: user_id=None). 1/7
+        #    high-priority escalation type so unread-by-priority queries
+        #    return a non-trivial distribution.
+        is_escalation = (i % 7 == 0)
+        notif_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "user_id": None,
+            "type": "complaint_escalated" if is_escalation else "guest_request",
+            "title": f"{prefix}Notif_{i + 1}",
+            "message": f"{prefix} F8B seed notification {i + 1}",
+            "priority": "high" if is_escalation else "normal",
+            "read": (i % 3 == 0),
+            "action_url": f"/room-requests?room={rid}",
+            "context": {"room_id": rid, "seed": "f8b"},
+            "created_at": sent_at,
+            "stress_seed": True,
+            "stress_prefix": prefix,
+        })
+
+    return qr_docs, complaint_docs, message_docs, notif_docs
+
+
 async def _chunked_insert(collection, docs: list[dict], chunk_size: int) -> int:
     """Insert docs in chunks of `chunk_size`. Returns total insert count."""
     if not docs:
@@ -414,6 +606,10 @@ async def stress_seed(
      folios_docs, folio_charges_docs, rnl_docs, hk_docs) = _build_factory_docs(
         rc, stress_tid, prefix, now,
     )
+    # F8B: Guest Experience surface derived from baseline rooms/bookings/guests.
+    qr_docs, complaint_docs, message_docs, notif_docs = _build_f8b_docs(
+        rooms_docs, bookings_docs, guests_docs, stress_tid, prefix, now,
+    )
     factory_ms = round((time.perf_counter() - t_factory_start) * 1000, 1)
 
     counts = dict.fromkeys(STRESS_COLLECTIONS, 0)
@@ -445,7 +641,9 @@ async def stress_seed(
         # to the stress tenant + stress_seed marker → never touches real data.
         # Idempotent: also safe if no orphans exist (delete_count=0).
         for col_name in ("rooms", "bookings", "guests", "folios", "folio_charges",
-                         "room_night_locks", "housekeeping_tasks"):
+                         "room_night_locks", "housekeeping_tasks",
+                         "room_qr_requests", "service_complaints",
+                         "messages", "notifications"):
             try:
                 res = await db[col_name].delete_many({
                     "tenant_id": stress_tid,
@@ -472,6 +670,11 @@ async def stress_seed(
         counts["folio_charges"] = await _chunked_insert(db.folio_charges, folio_charges_docs, INSERT_CHUNK_SIZE)
         counts["room_night_locks"] = await _chunked_insert(db.room_night_locks, rnl_docs, INSERT_CHUNK_SIZE)
         counts["housekeeping_tasks"] = await _chunked_insert(db.housekeeping_tasks, hk_docs, INSERT_CHUNK_SIZE)
+        # F8B Guest Experience surface
+        counts["room_qr_requests"] = await _chunked_insert(db.room_qr_requests, qr_docs, INSERT_CHUNK_SIZE)
+        counts["service_complaints"] = await _chunked_insert(db.service_complaints, complaint_docs, INSERT_CHUNK_SIZE)
+        counts["messages"] = await _chunked_insert(db.messages, message_docs, INSERT_CHUNK_SIZE)
+        counts["notifications"] = await _chunked_insert(db.notifications, notif_docs, INSERT_CHUNK_SIZE)
 
         # F8A tur-14 diagnostic: post-insert DB ground-truth verification.
         # CI run #26 still reports `fetchedExtras=0` despite tur-13 sort fix
