@@ -112,6 +112,28 @@ STRESS_COLLECTIONS = [
     "shift_swap_requests",
     "performance_reviews",
     "payroll_records",
+    # F8E (2026-05-18): Finance / Cashier / Accounting surface.
+    # All rows tagged `stress_seed=True` + `stress_prefix` → unified cleanup
+    # loop reaches them. No external service risk: Iyzico is logic-embedded
+    # (not router-tripped), email/SMS not invoked from these endpoints,
+    # `E2E_EXTERNAL_DRY_RUN=true` is the global gate. Stress admin is
+    # `super_admin` → `require_op("post_payment" | "view_finance_reports" |
+    # "manage_city_ledger" | "post_charge")` all pass; module-blocked +
+    # RBAC short-circuit is the spec-side fallback (F8C/D mirror).
+    # Folio/folio_charges/payments already covered by F8A § 04 — F8E avoids
+    # double-seeding those and instead targets cashier_shifts/_transactions,
+    # expenses/suppliers/invoices, bank/inventory/stock_movement, city ledger.
+    "cashier_shifts",
+    "cashier_transactions",
+    "expenses",
+    "suppliers",
+    "accounting_invoices",
+    "bank_accounts",
+    "inventory_items",
+    "stock_movements",
+    "cash_flow",
+    "city_ledger_accounts",
+    "city_ledger_transactions",
     "bookings",
     "guests",
     "rooms",
@@ -1181,6 +1203,296 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
             leave_request_docs, shift_swap_docs, performance_docs)
 
 
+def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
+    """F8E — Finance / Cashier / Accounting seed factory.
+
+    Self-contained surface: cashier shift lifecycle, manual cash transactions,
+    suppliers, expenses, accounting invoices, bank accounts, inventory items
+    + stock movements, cash_flow audit trail, city ledger accounts.
+
+    All rows tagged `stress_seed=True` + `stress_prefix=<prefix>` so the
+    unified cleanup loop reaches them. No `_id` clash with live tenant data:
+    every doc is stress-tenant-scoped (`tenant_id=stress_tid`).
+    """
+    cashier_shifts_docs: list[dict] = []
+    cashier_txn_docs: list[dict] = []
+    suppliers_docs: list[dict] = []
+    expenses_docs: list[dict] = []
+    invoices_docs: list[dict] = []
+    bank_accounts_docs: list[dict] = []
+    inventory_items_docs: list[dict] = []
+    stock_movements_docs: list[dict] = []
+    cash_flow_docs: list[dict] = []
+    city_ledger_accounts_docs: list[dict] = []
+
+    now_iso = now.isoformat()
+
+    # 1) CASHIER SHIFTS (3) — ALL closed. Spec 24 opens its own shift so
+    # the `uniq_tenant_open_shift` partial index doesn't 400 on open-shift.
+    # If a leftover open shift exists from a prior aborted run, spec 24
+    # Setup closes it first (defensive). Seed status="closed" everywhere.
+    shift_ids: list[str] = []
+    for i in range(3):
+        status = "closed"
+        opened_dt = now - timedelta(hours=8 * (3 - i))
+        closed_dt = opened_dt + timedelta(hours=8)
+        sid = str(uuid.uuid4())
+        shift_ids.append(sid)
+        opening = 1000.0 + i * 100
+        cashier_shifts_docs.append({
+            "_id": sid,
+            "tenant_id": stress_tid,
+            "cashier_name": f"{prefix}Cashier{i + 1}",
+            "cashier_email": f"{prefix.lower()}cashier{i + 1}@e2e-stress.example.com",
+            "opening_amount": opening,
+            "cash_in": 250.0,
+            "cash_out": 50.0,
+            "status": status,
+            "opened_at": opened_dt.isoformat(),
+            "opened_by": f"{prefix.lower()}cashier{i + 1}@e2e-stress.example.com",
+            "opened_by_name": f"{prefix}Cashier{i + 1}",
+            "closed_at": closed_dt.isoformat(),
+            "closing_amount": opening + 200.0,
+            "expected_amount": opening + 200.0,
+            "difference": 0.0,
+            "denominations": {},
+            "transactions": [],
+            "created_at": opened_dt.isoformat(),
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 2) CASHIER TRANSACTIONS (30) — varied direction/method, attached to
+    # the 3 closed seed shifts (standalone docs, not embedded; spec 24
+    # operates on its own freshly-opened shift for clean lifecycle).
+    methods = ["cash", "credit_card", "debit_card", "transfer"]
+    directions = ["in", "out"]
+    for i in range(30):
+        shift_id = shift_ids[i % 3]  # round-robin across the 3 closed shifts
+        direction = directions[i % 2]
+        method = methods[i % len(methods)]
+        amount = 50.0 + (i * 7.5)
+        cashier_txn_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "shift_id": shift_id,
+            "amount": amount,
+            "original_amount": amount,
+            "currency": "TRY",
+            "fx_rate": 1.0,
+            "method": method,
+            "direction": direction,
+            "type": "manual_in" if direction == "in" else "paid_out",
+            "description": f"{prefix} F8E seed manual transaction {i + 1}",
+            "ref_type": "manual",
+            "ref_id": None,
+            "created_by": f"{prefix.lower()}cashier1@e2e-stress.example.com",
+            "created_by_name": f"{prefix}Cashier1",
+            "created_at": (now - timedelta(hours=24 - i)).isoformat(),
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 3) SUPPLIERS (10)
+    supplier_ids: list[str] = []
+    supplier_categories = ["food", "beverage", "linen", "amenity", "maintenance",
+                            "stationery", "cleaning", "electronics", "general", "uniform"]
+    for i in range(10):
+        sup_id = str(uuid.uuid4())
+        supplier_ids.append(sup_id)
+        suppliers_docs.append({
+            "id": sup_id,
+            "tenant_id": stress_tid,
+            "name": f"{prefix}Supplier_{i + 1:02d}",
+            "tax_office": f"{prefix}TaxOff",
+            "tax_number": f"{prefix}TXN{i + 1:08d}",
+            "email": f"{prefix.lower()}supplier{i + 1}@e2e-stress.example.com",
+            "phone": f"+90555600{i + 1:04d}",
+            "address": f"{prefix} Address line {i + 1}",
+            "category": supplier_categories[i],
+            "account_balance": 0.0,
+            "active": True,
+            "is_active": True,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 4) EXPENSES (20) — varied category & VAT rate
+    expense_categories = ["food", "beverage", "utilities", "maintenance",
+                           "marketing", "salary", "cleaning", "stationery"]
+    vat_rates = [0.0, 8.0, 18.0, 20.0]
+    for i in range(20):
+        cat = expense_categories[i % len(expense_categories)]
+        vat = vat_rates[i % len(vat_rates)]
+        gross = 100.0 + (i * 12.5)
+        vat_amount = round(gross * vat / (100.0 + vat), 2) if vat > 0 else 0.0
+        net = round(gross - vat_amount, 2)
+        expenses_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "expense_number": f"{prefix}EXP{i + 1:05d}",
+            "category": cat,
+            "description": f"{prefix} F8E seed expense {i + 1}",
+            "amount": net,
+            "vat_rate": vat,
+            "vat_amount": vat_amount,
+            "total_amount": gross,
+            "date": (now - timedelta(days=i)).date().isoformat(),
+            "supplier_id": supplier_ids[i % len(supplier_ids)],
+            "payment_method": methods[i % len(methods)],
+            "receipt_url": None,
+            "notes": f"{prefix} F8E seed",
+            "status": "recorded",
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 5) ACCOUNTING INVOICES (10) — mix of sales / purchase types
+    invoice_types = ["sales", "purchase", "proforma", "credit_note", "debit_note"]
+    for i in range(10):
+        itype = invoice_types[i % len(invoice_types)]
+        subtotal = 500.0 + (i * 75.0)
+        total_vat = round(subtotal * 0.20, 2)
+        total = round(subtotal + total_vat, 2)
+        invoices_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "invoice_number": f"{prefix}INV{i + 1:05d}",
+            "invoice_type": itype,
+            "customer_name": f"{prefix}Customer_{i + 1:02d}",
+            "customer_email": f"{prefix.lower()}customer{i + 1}@e2e-stress.example.com",
+            "customer_tax_office": f"{prefix}TaxOff",
+            "customer_tax_number": f"{prefix}CTX{i + 1:08d}",
+            "customer_address": f"{prefix} Customer addr {i + 1}",
+            "items": [{
+                "description": f"{prefix} item {i + 1}",
+                "quantity": 1,
+                "unit_price": subtotal,
+                "vat_rate": 20.0,
+                "total": total,
+            }],
+            "subtotal": subtotal,
+            "total_vat": total_vat,
+            "total": total,
+            "issue_date": (now - timedelta(days=i)).date().isoformat(),
+            "due_date": (now + timedelta(days=30 - i)).date().isoformat(),
+            "booking_id": None,
+            "notes": f"{prefix} F8E seed invoice",
+            "status": "issued",
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 6) BANK ACCOUNTS (5) — multi-currency
+    bank_seeds = [
+        ("Main TRY", "Garanti", "TR0001", "TRY", 50000.0),
+        ("Operations TRY", "Yapi Kredi", "TR0002", "TRY", 25000.0),
+        ("USD Reserve", "Garanti", "TR0003", "USD", 5000.0),
+        ("EUR Reserve", "ING", "TR0004", "EUR", 3000.0),
+        ("Petty Cash", "Akbank", "TR0005", "TRY", 2000.0),
+    ]
+    for i, (name, bank, iban_suffix, ccy, bal) in enumerate(bank_seeds):
+        bank_accounts_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "name": f"{prefix}{name}",
+            "bank_name": bank,
+            "account_number": f"{prefix}ACC{i + 1:08d}",
+            "iban": f"{prefix}TR99{iban_suffix}{i + 1:016d}",
+            "currency": ccy,
+            "balance": bal,
+            "is_active": True,
+            "active": True,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 7) INVENTORY ITEMS (15) — linked to suppliers
+    item_categories = ["food", "beverage", "amenity", "linen", "cleaning"]
+    item_ids: list[str] = []
+    for i in range(15):
+        iid = str(uuid.uuid4())
+        item_ids.append(iid)
+        unit_cost = 5.0 + (i * 2.5)
+        inventory_items_docs.append({
+            "id": iid,
+            "tenant_id": stress_tid,
+            "name": f"{prefix}Item_{i + 1:02d}",
+            "sku": f"{prefix}SKU{i + 1:05d}",
+            "category": item_categories[i % len(item_categories)],
+            "supplier_id": supplier_ids[i % len(supplier_ids)],
+            "unit": "piece",
+            "unit_cost": unit_cost,
+            "stock_quantity": 100 + (i * 10),
+            "reorder_level": 20,
+            "active": True,
+            "is_active": True,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 8) STOCK MOVEMENTS (10) — initial intake history
+    for i in range(10):
+        item_id = item_ids[i]
+        qty = 50 + (i * 5)
+        movements_unit_cost = inventory_items_docs[i]["unit_cost"]
+        stock_movements_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "item_id": item_id,
+            "movement_type": "in",
+            "quantity": qty,
+            "unit_cost": movements_unit_cost,
+            "total_value": round(qty * movements_unit_cost, 2),
+            "reference": f"{prefix}MOV{i + 1:05d}",
+            "notes": f"{prefix} F8E seed stock movement",
+            "date": (now - timedelta(days=i)).date().isoformat(),
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 9) CASH FLOW (20) — synthetic audit trail entries
+    for i in range(20):
+        is_inflow = i % 2 == 0
+        cash_flow_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "type": "inflow" if is_inflow else "outflow",
+            "category": "operating",
+            "amount": 250.0 + (i * 15.0),
+            "currency": "TRY",
+            "description": f"{prefix} F8E seed cash_flow entry {i + 1}",
+            "reference_type": "expense" if not is_inflow else "invoice",
+            "reference_id": None,
+            "date": (now - timedelta(days=i)).date().isoformat(),
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 10) CITY LEDGER ACCOUNTS (5) — corporate accounts with credit limits
+    for i in range(5):
+        city_ledger_accounts_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "account_name": f"{prefix}CityLedger_{i + 1:02d}",
+            "company_name": f"{prefix}Company {i + 1}",
+            "contact_person": f"{prefix}Contact {i + 1}",
+            "email": f"{prefix.lower()}cl{i + 1}@e2e-stress.example.com",
+            "phone": f"+90555700{i + 1:04d}",
+            "address": f"{prefix} City Ledger addr {i + 1}",
+            "credit_limit": 10000.0 + (i * 2500.0),
+            "current_balance": 0.0,
+            "payment_terms": 30,
+            "active": True,
+            "is_active": True,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    return (cashier_shifts_docs, cashier_txn_docs, suppliers_docs,
+            expenses_docs, invoices_docs, bank_accounts_docs,
+            inventory_items_docs, stock_movements_docs,
+            cash_flow_docs, city_ledger_accounts_docs)
+
+
 async def _chunked_insert(collection, docs: list[dict], chunk_size: int) -> int:
     """Insert docs in chunks of `chunk_size`. Returns total insert count."""
     if not docs:
@@ -1229,6 +1541,15 @@ async def stress_seed(
      hr_leave_balance_docs, hr_attendance_docs, hr_shift_sched_docs,
      hr_leave_req_docs, hr_shift_swap_docs,
      hr_perf_docs) = _build_f8d_docs(stress_tid, prefix, now)
+    # F8E: Finance / Cashier / Accounting surface (standalone —
+    # cashier shift lifecycle + suppliers/expenses/invoices + bank
+    # accounts + inventory + stock movements + cash_flow + city ledger).
+    (cashier_shifts_docs, cashier_txn_docs, suppliers_docs,
+     expenses_docs, invoices_docs, bank_accounts_docs,
+     inventory_items_docs, stock_movements_docs,
+     cash_flow_docs, city_ledger_accounts_docs) = _build_f8e_docs(
+        stress_tid, prefix, now,
+    )
     factory_ms = round((time.perf_counter() - t_factory_start) * 1000, 1)
 
     counts = dict.fromkeys(STRESS_COLLECTIONS, 0)
@@ -1273,7 +1594,14 @@ async def stress_seed(
                          "attendance_records", "leave_requests",
                          "leave_balances", "shift_schedules",
                          "shift_swap_requests", "performance_reviews",
-                         "payroll_records"):
+                         "payroll_records",
+                         # F8E Finance / Cashier / Accounting surface —
+                         # orphan scrub mirror.
+                         "cashier_shifts", "cashier_transactions",
+                         "expenses", "suppliers", "accounting_invoices",
+                         "bank_accounts", "inventory_items",
+                         "stock_movements", "cash_flow",
+                         "city_ledger_accounts", "city_ledger_transactions"):
             try:
                 res = await db[col_name].delete_many({
                     "tenant_id": stress_tid,
@@ -1325,6 +1653,20 @@ async def stress_seed(
         counts["leave_requests"] = await _chunked_insert(db.leave_requests, hr_leave_req_docs, INSERT_CHUNK_SIZE)
         counts["shift_swap_requests"] = await _chunked_insert(db.shift_swap_requests, hr_shift_swap_docs, INSERT_CHUNK_SIZE)
         counts["performance_reviews"] = await _chunked_insert(db.performance_reviews, hr_perf_docs, INSERT_CHUNK_SIZE)
+        # F8E Finance / Cashier / Accounting surface
+        counts["cashier_shifts"] = await _chunked_insert(db.cashier_shifts, cashier_shifts_docs, INSERT_CHUNK_SIZE)
+        counts["cashier_transactions"] = await _chunked_insert(db.cashier_transactions, cashier_txn_docs, INSERT_CHUNK_SIZE)
+        counts["suppliers"] = await _chunked_insert(db.suppliers, suppliers_docs, INSERT_CHUNK_SIZE)
+        counts["expenses"] = await _chunked_insert(db.expenses, expenses_docs, INSERT_CHUNK_SIZE)
+        counts["accounting_invoices"] = await _chunked_insert(db.accounting_invoices, invoices_docs, INSERT_CHUNK_SIZE)
+        counts["bank_accounts"] = await _chunked_insert(db.bank_accounts, bank_accounts_docs, INSERT_CHUNK_SIZE)
+        counts["inventory_items"] = await _chunked_insert(db.inventory_items, inventory_items_docs, INSERT_CHUNK_SIZE)
+        counts["stock_movements"] = await _chunked_insert(db.stock_movements, stock_movements_docs, INSERT_CHUNK_SIZE)
+        counts["cash_flow"] = await _chunked_insert(db.cash_flow, cash_flow_docs, INSERT_CHUNK_SIZE)
+        counts["city_ledger_accounts"] = await _chunked_insert(db.city_ledger_accounts, city_ledger_accounts_docs, INSERT_CHUNK_SIZE)
+        # city_ledger_transactions is NOT seeded — specs write transactions
+        # against the seeded city_ledger_accounts; cleanup loop still scrubs
+        # the collection via the unified STRESS_COLLECTIONS sweep.
         # payroll_records is NOT seeded — specs are read-only on payroll
         # (`/api/hr/payroll/finalize` MUST NOT be called in stress; it writes
         # live workflow rows). Cleanup loop still reaches it via orphan scrub
