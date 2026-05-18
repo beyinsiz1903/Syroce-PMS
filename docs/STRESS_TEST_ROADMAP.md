@@ -28,15 +28,245 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 | F8A  | Front Office / Folio / Housekeeping (day-turnover, room-move, mass)     | 02 / 03 / 04 / 05         | **DONE** — GO WITH WATCH (CI #38 / #55 PASS, tur-6..22)      | `docs/adr/2026-05-f8a-stress-evolution.md`                |
 | F8B  | Guest Experience (QR / complaints / messaging / notifications)          | 10 / 11 / 12 / 13         | **DONE** — GO WITH WATCH (CI #55 PASS, tur-23..26)           | `docs/adr/2026-05-f8b-stress-evolution.md`                |
 | F8C  | MICE / Event / Banquet / Group Operations                               | 14 / 15 / 16 / 17         | **DONE** — GO WITH WATCH (tur-5 CI YEŞİL, 2026-05-18)        | `docs/adr/2026-05-f8c-stress-evolution.md`                |
-| F8D  | HR / İK / Staff / Shift / Leave / Department                            | 20 / 21 / 22 / 23         | **DONE** — GO WITH WATCH (CI yeşil, 2026-05-18)              | `docs/adr/2026-05-f8d-hr-staff-shift-evolution.md`        |
-| F8E  | Finance / Cashier / Accounting / Invoice / City Ledger                  | 24 / 25 / 26 / 27         | **IN PROGRESS** — tur-1 push (seed + 4 spec, 16 test), CI #1 bekleniyor | `docs/adr/2026-05-f8e-finance-stress-evolution.md`        |
+| F8D  | HR / İK / Staff / Shift / Leave / Department                            | 20 / 21 / 22 / 23         | **DONE (v1)** — GO WITH WATCH (CI yeşil, 2026-05-18); v2 backlog aşağıda | `docs/adr/2026-05-f8d-hr-staff-shift-evolution.md`        |
+| F8E  | Finance / Cashier / Accounting / Invoice / City Ledger                  | 24 / 25 / 26 / 27         | **IN PROGRESS** — tur-5 push (precondition-aware spec 23 fix), CI #41 bekleniyor | `docs/adr/2026-05-f8e-finance-stress-evolution.md`        |
 | F8F  | Inventory / Stock / Purchasing / Supplier                               | 30 / 31 / 32 / 33 (TBD)   | Planlandı                                                    | TBD                                                       |
 | F8G  | Sales / CRM / Offers / Contracts (F8C MICE-sales üstünde devam)         | 34 / 35 / 36 / 37 (TBD)   | Planlandı                                                    | TBD                                                       |
 | F8H  | Reports / Analytics / Export                                            | 40 / 41 / 42 / 43 (TBD)   | Planlandı                                                    | TBD                                                       |
 | F8I  | Admin / RBAC / Settings / Audit                                         | 44 / 45 / 46 / 47 (TBD)   | Planlandı                                                    | TBD                                                       |
 | F8J  | **Full 24h Hotel Simulation** — tüm modüller birlikte                   | 50+ (chained scenario)    | Final — F8D-I yeşilden sonra                                 | TBD                                                       |
+| F8K  | **Guest-facing public flows** (online check-in / NPS / digital key)     | 60 / 61 / 62 / 63 (TBD)   | Planlandı (yeni)                                             | TBD                                                       |
+| F8L  | **Channel Manager + Webhooks** (Exely / HotelRunner / SXI bus)          | 64 / 65 / 66 / 67 (TBD)   | Planlandı (yeni)                                             | TBD                                                       |
+| F8M  | **GraphQL + B2B API** (resolver isolation / API key scope)              | 68 / 69 / 70 / 71 (TBD)   | Planlandı (yeni)                                             | TBD                                                       |
+| F8N  | **Reservation lifecycle deep** (create/modify/cancel/no-show/group)     | 72 / 73 / 74 / 75 (TBD)   | Planlandı (yeni)                                             | TBD                                                       |
 
-## F8D — sonraki başlatma için pre-flight notları
+---
+
+## Coverage Gaps / Added Phases
+
+Bu bölüm, mevcut F8A-F8D fazlarında **tamamlanmış olmasına rağmen kapsam
+dışı kalmış yüzeyleri** ve **roadmap'e eklenen yeni fazları** kayıt altına
+alır. Her madde takip eden tur ya da yeni faz'a backlog olarak girer.
+
+### F8A backlog — Front Office + Folio + Housekeeping (v2 turu)
+
+Mevcut: day-turnover (checkout/walk-in), room-move (positive/negative/race),
+folio mass (charge/payment/split/audit), housekeeping (transitions/OOO).
+
+**Eksik (backlog):**
+- **Reservation create / modify / cancel batch** — sadece walk-in test
+  ediliyor; classic lifecycle (create → modify dates → cancel) yok.
+- **No-show conversion** — terminal-state guard var ama explicit no-show
+  → cancelled / no-show → checkout-virtual conversion path test edilmedi.
+- **Overbooking guard** — aynı oda + çakışan tarih booking attempt → reject.
+- **Open-folio refund / void flow** — closed-folio guard var ama açık-folio
+  refund/void path'leri yok.
+- **Group bookings / multi-room reservation** — 1 misafir N oda senaryosu.
+- **CM outbox event consistency** — booking değişikliklerinin SXI bus
+  event'lerine yansıması (CM-Hardening serisi var; stress'te yok).
+- **Explicit night audit batch** — day-turnover'a implicit; explicit
+  night-audit endpoint stress yok.
+
+### F8B backlog — Guest Experience (v2 turu)
+
+Mevcut: room QR (public submit / staff transitions / token guard), service
+requests (filter/bulk PATCH), complaints (resolve/compensation), messaging
+dry-run (email/sms/whatsapp).
+
+**Eksik (backlog):**
+- **Guest reviews / NPS submit + aggregation** — F8B kapsamında yok.
+- **Online check-in public flow** — public guest surface, yüksek riskli;
+  form submit + state machine test edilmedi.
+- **KVKK consent** — online check-in akışının parçası, ayrı stress yok.
+- **ID upload dry-run / metadata-only** — gerçek dosya yüklemesi YOK,
+  sadece metadata + size limit + MIME guard.
+- **Digital key issue/revoke dry-run** — mobile app digital key flow.
+- **Push notification batch dry-run** — `DISABLE_EXPO_PUSH=true` gate
+  altında smoke.
+- **QR token expiry / rotation** — invalid token testi var; expired
+  token + secret rotation testi yok.
+
+### F8C backlog — MICE / Sales / Banquet (v2 turu)
+
+Mevcut: events (lead→tentative→definite + payment schedule), opportunities
+(stage transitions), leads (funnel), competitor (rates).
+
+**Eksik (backlog):**
+- **Event-day banquet execution** — BEO print/export, F&B order send,
+  day-of resource booking — execution layer yok.
+- **BEO print/export dry-run** — PDF/document gen yüzeyi.
+- **F&B order send dry-run** — restoran/mutfak entegrasyon yüzeyi.
+- **Cross-event resource conflict** — aynı space + aynı saat 2 event
+  → conflict reject.
+- **Same space + same time reject** — yukarının deterministik testi.
+- **MICE package apply flow** — 3 package seed var, apply path yok.
+- **Opportunity won/lost terminal state** — won/lost explicit test
+  edilmedi (ADR'da "yok" not'u var).
+
+### F8D backlog — HR / İK / Staff / Shift / Leave (v2 turu — genişletildi)
+
+Mevcut (v1): staff org (list/bulk create), attendance (clock-in/out),
+leave (request/decision), shift swap (consent/decision lifecycle).
+
+**Eksik (backlog — F8D'nin v2 turunda tam kapanış için):**
+- **Performance review lifecycle** — initiate → manager feedback →
+  employee acknowledge. (3 perf_review seed var; lifecycle yok.)
+- **Payroll smoke** — calculate dry-run → finalize blocked/dry-run →
+  export preview. **`/finalize` ASLA tetiklenmeyecek**, sadece preview
+  + dry-run hesap path.
+- **Department hierarchy / org chart traversal** — flat list var; parent-
+  child traversal, ancestry, role mapping derinliği yok.
+- **Shift conflict reject** — aynı staff + overlapping shift create → 409.
+- **Shift coverage** — department minimum coverage check (örn. her
+  vardiyada ≥ 2 housekeeping personeli).
+- **Leave balance accrual / carry-over smoke** — balance probe var;
+  monthly accrual + year-end carry-over hesap path yok.
+- **HR audit log** — staff create/update + leave decision audit trail.
+  KVKK PII change-log için kritik.
+- **RBAC** — staff user başka departmanın restricted record'larına
+  erişemez (cross-department leak negative test).
+- **PII guard** — phone / identity / payroll fields response'larda
+  masked; log/report exportlarında ham PII olmamalı.
+
+### Genel (cross-cutting) backlog
+- **Rate-limit boundary**: 429 backoff var; explicit per-endpoint RL
+  boundary push testi yok.
+- **Tenant isolation cross-check**: bookings count spot-check seviyesinde;
+  guests / folios / charges / messages / hr_staff için ayrı pen-test yok.
+- **GraphQL surface** (threat-model yüksek risk): yok → F8M.
+- **B2B API** (API key auth): yok → F8M.
+- **Webhook endpoints** (Exely / HotelRunner IP allowlist): yok → F8L.
+- **AI integration paths** (upsell / dynamic pricing / no-show risk): yok.
+
+---
+
+## Yeni fazlar (detay specs)
+
+Yeni faz şablonları aşağıda. Her faz için 4-5 spec, F8A-D'deki defans
+baseline (cleanup × 1, idempotent × 2, external_calls re-assert,
+pilot_drift) **zorunlu** ve `module-blocked pattern` fallback olarak hep
+açık.
+
+### F8K — Guest-facing public flows
+
+**Spec'ler:**
+- **60 — Online check-in submit**: 30 booking için public check-in form
+  POST (PII validation, state machine: pending → submitted → verified).
+- **60 — KVKK consent**: explicit consent flag set/unset audit trail,
+  consent withdrawal flow.
+- **60 — ID metadata dry-run**: ID upload sadece metadata
+  (filename / size / MIME / hash); gerçek binary upload YOK; AES-256-GCM
+  encryption stub.
+- **61 — Review/NPS submit + aggregation**: 50 public review POST
+  (rate-limited), aggregation endpoint (average / breakdown).
+- **62 — QR token expiry/rotation**: expired token → 403, rotated
+  `ROOM_QR_SECRET` ile eski token reject.
+- **62 — Digital key issue/revoke dry-run**: mobile app key issue
+  request → token gen (real BLE broadcast YOK), revoke → invalidation.
+- **63 — Public rate-limit boundary**: explicit 429 boundary test per
+  public endpoint (online check-in / review / QR submit).
+- **Pilot drift = 0** + **external_calls = []** (her spec son testleri).
+
+**Risk notu:** Public surface = en geniş saldırı yüzeyi; KVKK + PII
+guard'ları F8K'nın özünde.
+
+### F8L — Channel Manager + Webhooks
+
+**Spec'ler:**
+- **64 — Exely webhook IP allowlist**: positive (whitelisted IP →
+  accepted) + negative (non-whitelisted → 403). `EXELY_IP_WHITELIST`
+  literal list (CIDR DEĞİL, gotcha).
+- **64 — HotelRunner webhook payload validation**: signature verification,
+  invalid signature → 401, malformed payload → 422.
+- **65 — Booking created/modified/cancelled/no-show event outbox**:
+  her event tipinin outbox'a yazıldığını + payload schema'nın doğru
+  olduğunu doğrula.
+- **65 — SXI bus event distribution**: event publish → subscriber'lar
+  invoke edildi (DRY_RUN mode: gerçek HTTP YOK, sadece dispatcher attempt
+  log'u).
+- **66 — OTA sync dry-run**: full inventory push + rate push, gerçek
+  Exely/HotelRunner endpoint'ine isabet YOK (CM circuit breaker per-
+  connection açık).
+- **66 — Duplicate webhook idempotency**: aynı event_id × 2 → tek kez
+  apply edildi (unique compound index).
+- **67 — Invalid signature reject**: bypass attempt (forged HMAC) → 401.
+- **Pilot drift = 0** + **external_calls = []** (unless explicitly
+  mocked under DRY_RUN with `mock_dispatcher=True`).
+
+**Risk notu:** SXI bus + outbox = production hardening serisi
+(CM-Hardening) test surface'inin tamamı; gotcha doc `verify_exely_whitelist.py`
+referansı.
+
+### F8M — GraphQL + B2B API
+
+**Spec'ler:**
+- **68 — GraphQL tenant isolation**: cross-tenant query attempt → boş
+  result veya 403; resolver-level `tenant_id` filter zorunluluğu.
+- **68 — GraphQL resolver RBAC**: privileged resolver (örn. finance
+  reports) non-admin token ile → 403.
+- **68 — N+1 / pagination safety**: deep nested query → query depth
+  limit + cost analysis; cursor pagination boundaries.
+- **69 — B2B API key scope**: API key sadece kendi scope'undaki
+  endpoint'lere erişebilir.
+- **69 — Invalid API key reject**: malformed / revoked key → 401.
+- **70 — Cross-tenant API key reject**: tenant A'nın key'i tenant B'nin
+  resource'una erişemez.
+- **70 — Rate-limit boundary**: B2B API per-key rate-limit explicit 429
+  boundary.
+- **71 — Audit log**: B2B API her call audit trail'e yazıldı.
+- **Pilot drift = 0** + **external_calls = []**.
+
+**Risk notu:** Threat-model'de "Highest-risk areas" listesinde
+`backend/graphql_api/` ve `backend/routers/b2b_api/` var → F8M kritik.
+
+### F8N — Reservation lifecycle deep
+
+**Spec'ler:**
+- **72 — Batch reservation create**: 100 reservation POST, çeşitli
+  oda tipleri / tarih aralıkları.
+- **72 — Modify dates**: 50 reservation tarih güncelleme, inventory
+  lock release + re-acquire atomicity.
+- **72 — Modify room type**: 30 reservation room type upgrade/downgrade,
+  rate recalculation.
+- **73 — Cancel**: 50 reservation cancel, folio close + lock release.
+- **73 — No-show conversion**: 30 reservation `mark_no_show` → cancelled
+  veya checkout-virtual, terminal-state guard.
+- **74 — Group booking**: 5 group × 10 oda, group_id ortak, master
+  folio + sub-folios.
+- **74 — Multi-room reservation**: 1 misafir N oda (block booking).
+- **75 — Overbooking reject**: occupancy > capacity attempt → 409.
+- **75 — Waitlist / pending assignment**: full occupancy iken yeni
+  request → waitlist; opening varsa auto-assign.
+- **75 — CM outbox event consistency**: her lifecycle event'i outbox'a
+  yansıdı (F8L ile overlap'lı; integration smoke).
+- **Pilot drift = 0** + **external_calls = []**.
+
+**Risk notu:** F8A walk-in/checkout test ediyor ama reservation
+**lifecycle**'ın bütünü test edilmiyor → F8N en yüksek operational risk
+kapatma fazı.
+
+---
+
+## Öncelik önerisi (sıralı)
+
+1. **F8E Finance** — devam eden, tur-5 CI #41 bekleniyor, bitirilmeli.
+2. **F8N Reservation lifecycle deep** — operasyonel risk en yüksek, F8A
+   üzerine deep dive.
+3. **F8L Channel Manager + Webhooks** — production hardening surface'i,
+   outbox + IP allowlist + idempotency.
+4. **F8D-HR extension (v2)** — payroll/perf-review/PII guard tamamlanması,
+   KVKK compliance.
+5. **F8K Guest-facing public flows** — KVKK + public surface güvenliği.
+6. **F8I Admin/RBAC** — threat-model EoP kategorisi kapatması.
+7. **F8J Full 24h Simulation** — tüm fazlar yeşilden sonra final
+   integration drill.
+
+(F8F Inventory / F8G Sales-CRM / F8H Reports / F8M GraphQL-B2B sırası
+yukarıdaki yedi ana hat tamamlandıktan sonra planlanır.)
+
+---
+
+## F8D — sonraki başlatma için pre-flight notları (legacy v1, korunuyor)
 
 Aday yüzeyler (backend route taraması gerekecek, F8D session'ında):
 
@@ -53,17 +283,17 @@ Dış servis riski: KVKK ID-photo entegrasyonu yoksa düşük; payroll
 e-mail ve provider bildirim varsa `E2E_EXTERNAL_DRY_RUN` gate'i
 zorunlu. `module-blocked pattern` her zaman fallback.
 
-## Yapılış sırası
+## Yapılış sırası (her faz için)
 
-1. **Backend route taraması** (rg ile staff/shift/leave/department).
+1. **Backend route taraması** (rg ile ilgili namespace).
 2. **Seed extension** (`backend/domains/admin/router/stress.py`):
-   `STRESS_COLLECTIONS` += yeni koleksiyonlar, `_build_f8d_docs`
+   `STRESS_COLLECTIONS` += yeni koleksiyonlar, `_build_<phase>_docs`
    factory.
-3. **4 spec** (frontend/e2e-stress/specs/): Setup → A/B/C/D → external
+3. **4-5 spec** (frontend/e2e-stress/specs/): Setup → A/B/C/D → external
    re-assert → pilot drift; serial mode, 1500ms gap,
    `callTimedWithBackoff` (429 retry).
-4. **Drill report** (`docs/drill_reports/<date>_stress_f8d_*.md`).
-5. **ADR** (`docs/adr/<yyyy-mm>-f8d-*.md`).
+4. **Drill report** (`docs/drill_reports/<date>_stress_<phase>_*.md`).
+5. **ADR** (`docs/adr/<yyyy-mm>-<phase>-*.md`).
 6. **replit.md** "Gotchas" → tek-satırlık pointer.
 
 ## Acceptance contract (her faz)
@@ -75,4 +305,5 @@ zorunlu. `module-blocked pattern` her zaman fallback.
 - final verdict ≥ GO WITH WATCH
 
 Bu dosya stress test serisi için tek doğruluk kaynağıdır. Faz
-tamamlandıkça status sütunu güncellenir.
+tamamlandıkça status sütunu güncellenir; backlog maddesi yeni v2 turunda
+veya yeni faz'a taşınır.
