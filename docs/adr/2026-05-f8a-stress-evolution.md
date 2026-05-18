@@ -170,3 +170,86 @@ Stress seed `bookings_docs[].folio_id = fid` ekledi (`stress.py:233`); spec'in `
 - ❌ Pilot tenant'a mutation yapma.
 - ❌ Gerçek OTA/payment/SMS/email/KVKK çağrısı yapma.
 - ❌ Global STRICT_TENANT_MODE açma.
+
+---
+
+## Tur-13 → Tur-17 — (önceki notlar / önceki ADR commit'lerinde)
+
+Detaylar git history'de; commit `8d1ad1a` öncesi. Ana hedefler: pagination, projection optimizasyonları, extras pool genişletme, contract split (base vs total).
+
+---
+
+## Tur-18 (CI #30) — 04-B payment rate-limit class
+
+- **Surface**: 04-B `s429×49/50` — payment endpoint heavy rate-limit class (PCI-DSS audit + folio mutation).
+- **Spec fix**: 50 ardışık POST arasına 400ms gap → sliding window yenileniyor, ~30s toplam test süresi.
+- **CI #30**: 50/53 PASS.
+
+---
+
+## Tur-19 (CI #31 NO-GO, 2 P1 finding)
+
+### Finding 1: 02-C walk-in 50/50 s400
+- **Root cause**: Spec dirty odalara walk-in deniyordu (checkout sonrası room→dirty), backend `walk_in` `available/inspected/clean` zorunlu.
+- **Spec fix**: walk-in loop öncesi `/api/housekeeping/room-status` ile target odaları `clean`'e taşı (production-correct turnover akışı).
+
+### Finding 2: 03-D race aynı hedefe paralel iki move ikisi de 200
+- **Root cause**: `room_move` lock booking_id üzerinde (farklı booking → farklı lock → yarış pass), `find_one→update_one` TOCTOU.
+- **Backend fix**: atomic CAS `rooms.update_one({status:{$in:eligible}}, {$set:occupied})` modified_count==0 ise race lost ROOM_NOT_AVAILABLE; blind assign update silindi.
+- **Dosyalar**: `backend/domains/pms/frontdesk_service_v2.py:485-506,528`, `frontend/e2e-stress/specs/02-day-turnover.spec.js:117-130`.
+
+### Yeni surface: 03-A `s429×15/30`
+- Room-move endpoint heavy rate-limit class (folio mutation + RNL transfer + audit), 04-B ile aynı pattern.
+- **Spec fix**: 03-A loop'a ardışık call'lar arası 400ms gap (`frontend/e2e-stress/specs/03-room-move.spec.js:386-394`), ~12s ek süre.
+
+### CI #32 doğrulama
+02-C ✓ PASS 17.9s (walk-in fix tuttu). Race fix CI #32'de SKIP'te kaldı (03-A FAIL → D SKIP zincir).
+
+---
+
+## Tur-19b (CI #33 NO-GO, P1=1, P2=5)
+
+- **Walk-in HK-clean pre-step 0/50 fail**: spec `/api/housekeeping/room-status` çağırıyordu ama router prefix `/api/pms-core` (mount: `routers/pms_hardening.py:30`); 50/50 404 → odalar dirty kaldı → walk-in s400×44.
+- **Spec fix**: endpoint path `/api/pms-core/housekeeping/room-status`'a düzeltildi (`02-day-turnover.spec.js:124`).
+- **P2×5**: `active_connectors:TenantViolationError` query_errors (stress endpoint cross-tenant connector lookup); ground truth `calls=[]` PASS, izleme önerisi, NO-GO etmiyor.
+
+---
+
+## Tur-19c (CI #34 NO-GO, P1=1) — V1 vs V2 status set mismatch
+
+- **Walk-in 28 PASS** (HK path fix tuttu) ama `03-A positive_room_move` `ok=30 attempted=40 s400×10`.
+- **Root cause**: V1 `front_desk.room_move` (`backend/modules/pms_core/front_desk_service.py:158`) sadece `{available, inspected}` kabul ediyor — `'clean'` yok. V2 `frontdesk_service_v2.py:476` kabul ediyor ama endpoint `/api/pms-core/room-move` V1'i çağırıyor (`routers/pms_hardening.py:201`). 02-C HK pre-step `new_status:'clean'` set ediyordu → V1 walk-in da `'clean'` reddediyor → 50 base oda 'clean' kalıyordu → 03 vacantRooms havuzuna sızıp V1 room-move tarafından s400 reject.
+- **Spec fix** (backend kontratıyla hizalama, mutasyon yok):
+  - (a) 02-C HK pre-step `new_status:'inspected'` (HK state-machine'in normal terminal hali, walk-in V1 kabul ediyor).
+  - (b) 03 `MOVE_ELIGIBLE_STATUSES={available,inspected}` ('clean' düşürüldü).
+- **Dosyalar**: `02-day-turnover.spec.js:125`, `03-room-move.spec.js:357`.
+
+---
+
+## Tur-20 (CI #35 NO-GO, P1=1, P2=5) — RNL leak (gerçek production bug)
+
+- **03-A room-move** 32 PASS (V1 status alignment fix tuttu) ama 02-C walk-in `ok=0/50 s400×50` (test 28 playwright PASS, rec step REVIEW → reporter P1 escalation).
+- **Root cause** (production bug): `backend/core/atomic_checkin_checkout.py:check_out_booking_atomic` transaction'da booking→checked_out + room→dirty + folio→closed yapıyor ama `room_night_locks` koleksiyonunu **release etmiyor**. Cancellation flow (`reservation_state_machine.py:97-106`) doğru pattern'i kullanıyor (`release_booking_nights` çağrısı). Sonuç: force-checkout sonrası 100 oda dirty + 100 booking checked_out, ama RNL hala tutuyor. Walk-in `create_booking_atomic` aynı room_id+night_date için unique-index INSERT denerken collision → `BookingConflictError` → V1 walk_in `{success:false}` → router 400. Spec'in `MOVE_ELIGIBLE_STATUSES` filter'ı vs V1 `walk_in` status set'i (`{available,inspected}`) DOĞRU; HK pre-step `inspected` set ediyor; ama RNL leak nedeniyle ne walk-in ne room-move re-occupancy çalışmıyor (room-move 03-A pass çünkü extras kullanıldı — base rooms RNL leak'ten etkilenmiyor).
+- **Backend fix**: `check_out_booking_atomic` transaction sonrası `release_booking_nights(reason="checkout{_forced}")` çağrısı eklendi (cancellation pattern mirror). Booking artık `checked_out` state'inde olduğu için ACTIVE_BOOKING_STATES conflict yok, sadece night-lock garbage temizleniyor.
+- **Dosya**: `backend/core/atomic_checkin_checkout.py:413-429`.
+- V2 `frontdesk_service_v2.py:_do_checkout` aynı bug'a sahip ama `/api/pms-core/checkout` V1 kullanıyor — V2 fix follow-up.
+
+---
+
+## Tur-21 (CI #36 NO-GO, failedTests=1) — Perf regression fix
+
+- **02-B force-checkout timeout 180s** — perf regression. tur-20 fix `release_booking_nights` helper'ı post-transaction çağırıyordu (3 RT: find+delete+timeline_event) → checkout latency ~700ms→~2000ms → 100 ardışık × 2s = 200s test budget'i aşıyor (`force_checkout_batch ok=89 fail=11 s0×11` mid-loop timeout).
+- **Fix**: release call transaction içine taşındı (`db.room_night_locks.delete_many({tenant_id,booking_id}, session=session)`, step 5b), post-transaction helper kaldırıldı; audit step-7 metadata'ya `released_locks_count` eklendi. Net: 3 RT → 1 RT (atomicity bonus: lock release artık checkout commit ile aynı transaction'da).
+- **Dosya**: `backend/core/atomic_checkin_checkout.py:352-362,402`.
+
+---
+
+## Tur-22 (CI #37 NO-GO, P0=1, P1=1) — OOO TOCTOU + V1 room-move atomic CAS
+
+- **02-B PASS** (tur-21 perf fix tuttu, `checkout_force_true p50=1620ms` vs `1987ms` önceki).
+- **YENİ P0 surface**: `08-D2 ooo_booking_guard accepted=2/5` — walk-in OOO odaya başarıyla yeni booking yarattı (overbook + maintenance risk).
+- **Root cause**: `check_in_booking_atomic` line-104 pre-check (`ROOM_BLOCKED_STATUSES`) vs line-161 unconditional `rooms.update_one` arasında TOCTOU; HK D testi 20 odayı OOO yapıyor, D2 walk-in 5 oda deniyor — find_one→update_one yarış penceresinde 2 oda blocked-status check'ini geçip occupied'a yazılıyor (write filter `{id, tenant_id}` only, status'a bakmıyor). Aynı pattern V1 `room_move` (`/api/pms-core/room-move`) için 03-D race finding'inde de mevcut (CI #37 r1=200 r2=200): line-158 pre-check + line-183 unconditional update.
+- **Backend fix**:
+  - (a) `atomic_checkin_checkout.py:163-191` — room→occupied write atomik CAS'a çevrildi (`status: {$in: allowed_room_statuses}` filter, override path için `{$nin: ROOM_BLOCKED_STATUSES}`); `modified_count==0` → `CheckInError` → transaction rollback (no booking, no audit, no outbox). `ROOM_BLOCKED_STATUSES` listesine `out_of_service` eklendi (eski liste sadece `out_of_order`+`maintenance`).
+  - (b) `front_desk_service.py:172-190` — V1 `room_move` target write reordering: yeni-oda CAS önce yapılıyor (`status: {$in:[available,inspected]}`, modified_count==0 → return error), booking/old-room mutasyonları yarış kaybedilirse hiç tetiklenmiyor. V2 frontdesk_service_v2 fix'i (tur-19) ile aynı pattern; ama production endpoint `/api/pms-core/room-move` V1 çağırıyordu, bu yüzden 03-D fix'i tur-19'da SKIP'te kalmıştı.
+- CI #38 doğrulama bekleniyor.
