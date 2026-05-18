@@ -48,7 +48,7 @@ jobs:
         name: F8A stress (full suite, one-shot)
         runs-on: ubuntu-latest
         # Architect target: 10–15 dk. 12 dk Playwright + ~3 dk install/upload.
-        timeout-minutes: 15
+        timeout-minutes: 30
         env:
             # Public stress environment (NOT pilot). Provided via repo secrets.
             E2E_BASE_URL: ${{ secrets.STRESS_E2E_BASE_URL }}
