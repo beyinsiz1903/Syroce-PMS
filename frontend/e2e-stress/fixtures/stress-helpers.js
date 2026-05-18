@@ -106,7 +106,12 @@ export async function callTimed(request, method, path, body, token) {
 // the bucket. Returns {status, ms, body, ok, throttled, attempts}.
 export async function callTimedWithBackoff(request, method, path, body, token, opts = {}) {
     const maxRetries = opts.maxRetries ?? 1;
-    const fallbackSleepMs = opts.fallbackSleepMs ?? 65_000;
+    // tur-26: cap reduced from 65s → 15s. 65s burned full test budget on
+    // 90-iter loops (10-B timeout); 15s is enough for a partial window
+    // refresh and lets the inter-call gap absorb the rest. apm_middleware
+    // sliding window is 60s but heavily-loaded buckets typically free a
+    // slot within ~10-15s as older requests age out.
+    const fallbackSleepMs = opts.fallbackSleepMs ?? 15_000;
     let attempts = 0;
     let throttled = false;
     let last = null;

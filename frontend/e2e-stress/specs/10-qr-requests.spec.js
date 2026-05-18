@@ -135,6 +135,9 @@ test.describe('F8B § 10 — Room QR requests', () => {
     });
 
     test('B) 30 staff status transitions (new→assigned→in_progress→completed)', async ({ request, stressTokens, stressState }, testInfo) => {
+        // tur-26: 90 PATCH × (latency + gap) baseline ~180s @ 1500ms gap;
+        // backoff retries push over default 180s timeout. Bump to 300s.
+        test.setTimeout(300_000);
         const open = qrSeed.filter((r) => r.status === 'new').slice(0, 30);
         if (open.length < 5) {
             rec(testInfo, { module: MOD, step: 'transitions', status: 'SKIP',
@@ -146,10 +149,11 @@ test.describe('F8B § 10 — Room QR requests', () => {
         const samples = [];
         // CI #47 throttle: prod write rate-limit = 120/min/token (apm_middleware.py:366).
         // F8B cumulative writes by stress_token: 10-B(90) + 11-B(20) + 12-A(30) + 13-A(50) = 190
-        // tek 60s window'da budget aşıyor. tur-24 700ms gap yetersizdi (CI: ok=83/90,
-        // 7×429 retry'sız fail). tur-25: callTimedWithBackoff + 1500ms gap, 11-B/12-A
-        // ile aynı pattern. 60s/1500ms = 40 writes/min ceiling, 429 yakalarsa retry-after
-        // ile 1 kez retry (cap 65s).
+        // tek 60s window'da budget aşıyor. tur-24 700ms→ok=83/90, 7×429 retry'sız fail.
+        // tur-25 1500ms→test timeout 180s aşıldı (90×(500+1500)=180s baseline + retries).
+        // tur-26: 1000ms gap + 300s test budget + callTimedWithBackoff (cap 15s).
+        // 60s/1000ms = 60 writes/min ceiling vs 120 prod limit = %50 marj; baseline
+        // 90×(500+1000)=135s, retry'lerle worst ~200s, 300s budget güvenli.
         let throttled = 0;
         for (const req of open) {
             for (const next of steps) {
@@ -159,7 +163,7 @@ test.describe('F8B § 10 — Room QR requests', () => {
                 samples.push(r.ms);
                 if (r.throttled) throttled++;
                 if (r.ok) ok++; else fail++;
-                await new Promise((res) => setTimeout(res, 1500));
+                await new Promise((res) => setTimeout(res, 1000));
             }
         }
         const expectedCalls = open.length * steps.length;
