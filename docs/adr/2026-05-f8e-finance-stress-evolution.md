@@ -133,3 +133,13 @@ else if (!allOk)           recFinding('P2', 'secondary step fail (hard-floor PAS
     - Spec 17 (rates_push): `expect(ok).toBeGreaterThanOrEqual(floor)` hard guard.
     - Spec 23 (consent_decision): `expect(pass).toBe(true)` hard guard.
     - Pre-existing pattern bug — F8C/F8D'de tek tek koşulduğunda PASS, ama F8A nightly full-suite + F8E seed yan etkisiyle intermittent fail tetiklendi. Bu fix tüm specs'i tutarlı hale getirir (rec FAIL ↔ expect throw bağı).
+- T006 ✅ tur-4 hot-fix (CI #40 sonrası): Spec 23 C hard guard tetiklendi (`consent_ok=0/1 decision_ok=2/4`). Root cause: consent endpoint kasıtlı olarak target_email match istiyor (`caller.email == target_staff.email`); stress admin için %100 403 beklenir. Mevcut module-blocked threshold `>= total` çok katı — 4/5 RBAC fail bile blocked saymıyor, kalan 1 reachable call'da herhangi bir 422/500 false-FAIL üretiyor.
+    - Düzeltme: Ayrı consent/decision RBAC tolerance (`RBAC_BLOCK_RATIO = 0.8`). Eğer consentPermFail >= ceil(total * 0.8) → consent kısmı RBAC-blocked, sadece decision part kontrol edilir (super_admin require_op geçer). Tersi de aynı. İkisi de blocked ise eski SKIP path korunur.
+    - P2 finding'ler ayrı yazılır (consent veya decision blocked olduğunda informational), pass evaluation only on reachable parts. Hard guard korundu.
+- T007 ✅ tur-5 hot-fix (architect FAIL sonrası): tur-4 ratio tolerance yeterli değil. Architect kritik bulgu: backend `decision approve` için `consent_status=approved` precondition'ı zorunlu (409 döner aksi halde). Spec alternates approve/reject → consent RBAC-blocked iken approve'lar deterministik 409 → decisionOk ≈ %50 → 80% floor false-FAIL.
+    - Düzeltme — **precondition-aware decision evaluation**:
+      - `decisionApproveOk/Total/Conflict` + `decisionRejectOk/Total/Conflict` ayrı sayaçlar.
+      - 409 status'ları artık ayrı kategoride (fail değil, precondition violation).
+      - Consent RBAC-blocked iken decision evaluation **sadece reject decisions** üzerinde (`decisionEffectiveTotal = decisionRejectTotal`, `decisionEffectiveOk = decisionRejectOk`). Approve path bilinçli olarak hariç tutulur.
+      - **Anomaly guard** (architect requested): `consentAnomalies`/`decisionAnomalies` = non-401/403/409 errors. Sıfır olmazsa P1 finding + `pass=false` (anomalyClean &&).
+    - rec note + hard guard message tüm yeni metric'leri içerir (debug trace için kritik).

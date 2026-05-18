@@ -156,6 +156,13 @@ test.describe('F8D § 23 — HR Shift', () => {
         }
         const samples = [];
         let consentOk = 0, decisionOk = 0, consentPermFail = 0, decisionPermFail = 0, fail = 0, throttled = 0;
+        // tur-5 fix: track decision action so we can evaluate precondition-aware
+        // (approve requires consent_status=approved per backend; alternating approve/
+        // reject pattern means approves deterministically 409 when consent blocked).
+        let decisionApproveOk = 0, decisionApproveTotal = 0, decisionApproveConflict = 0;
+        let decisionRejectOk = 0, decisionRejectTotal = 0, decisionRejectConflict = 0;
+        // Anomaly guard: non-RBAC errors in the blocked part (must not be hidden).
+        let consentAnomalies = 0, decisionAnomalies = 0;
         const errs = [];
         for (let i = 0; i < createdSwapIds.length; i++) {
             const sid = createdSwapIds[i];
@@ -169,25 +176,40 @@ test.describe('F8D § 23 — HR Shift', () => {
             if (cR.throttled) throttled++;
             if (cR.ok) { consentOk++; consentedSwapIds.push(sid); }
             else if (cR.status === 401 || cR.status === 403) consentPermFail++;
-            else { fail++; if (errs.length < 3) errs.push({ phase: 'consent', status: cR.status, body: JSON.stringify(cR.body).slice(0, 120) }); }
+            else { fail++; consentAnomalies++; if (errs.length < 3) errs.push({ phase: 'consent', status: cR.status, body: JSON.stringify(cR.body).slice(0, 120) }); }
             await new Promise((res) => setTimeout(res, 1500));
             // final decision — ShiftSwapDecisionPayload: { action, note }
+            const decisionAction = i % 2 === 0 ? 'approve' : 'reject';
+            if (decisionAction === 'approve') decisionApproveTotal++; else decisionRejectTotal++;
             const dR = await callTimedWithBackoff(request, 'post',
                 `/api/hr/shift-swap-request/${sid}/decision`,
-                { action: i % 2 === 0 ? 'approve' : 'reject', note: `${prefix} F8D 23-C decision` },
+                { action: decisionAction, note: `${prefix} F8D 23-C decision` },
                 stressTokens.stress_token);
             samples.push(dR.ms);
             if (dR.throttled) throttled++;
-            if (dR.ok) decisionOk++;
-            else if (dR.status === 401 || dR.status === 403) decisionPermFail++;
-            else { fail++; if (errs.length < 3) errs.push({ phase: 'decision', status: dR.status, body: JSON.stringify(dR.body).slice(0, 120) }); }
+            if (dR.ok) {
+                decisionOk++;
+                if (decisionAction === 'approve') decisionApproveOk++; else decisionRejectOk++;
+            } else if (dR.status === 401 || dR.status === 403) decisionPermFail++;
+            else if (dR.status === 409) {
+                // backend precondition (consent not approved) — expected when consent RBAC-blocked.
+                if (decisionAction === 'approve') decisionApproveConflict++; else decisionRejectConflict++;
+            } else { fail++; decisionAnomalies++; if (errs.length < 3) errs.push({ phase: 'decision', action: decisionAction, status: dR.status, body: JSON.stringify(dR.body).slice(0, 120) }); }
             await new Promise((res) => setTimeout(res, 1500));
         }
         const total = createdSwapIds.length;
-        // RBAC tolerance: consent endpoint demands target_email match — for
-        // stress admin always 403. Decision needs require_op which super_admin
-        // passes; if both are RBAC-dominated treat as informational.
-        if (consentPermFail >= total && decisionPermFail >= total) {
+        // RBAC tolerance — independent consent/decision evaluation (CI #40 fix):
+        //   consent endpoint demands caller.email == target_staff.email (no role bypass).
+        //   For stress admin this is intentionally 403 the overwhelming majority of the
+        //   time; even a single non-403 (e.g. routing race that produces a 422 or 500)
+        //   leaves consentReachable=1 and an unattainable floor=1 → false-FAIL.
+        //   Treat consent as RBAC-blocked when ≥80% of calls return 401/403 and only
+        //   evaluate the part(s) actually reachable.
+        const RBAC_BLOCK_RATIO = 0.8;
+        const rbacBlockThreshold = Math.ceil(total * RBAC_BLOCK_RATIO);
+        const consentRBACBlocked = consentPermFail >= rbacBlockThreshold;
+        const decisionRBACBlocked = decisionPermFail >= rbacBlockThreshold;
+        if (consentRBACBlocked && decisionRBACBlocked) {
             recFinding(testInfo, 'P2', MOD, 'Swap consent+decision RBAC blocked',
                 `n=${total} consent_perm_fail=${consentPermFail} decision_perm_fail=${decisionPermFail} — consent requires target email match (intentional).`);
             rec(testInfo, { module: MOD, step: 'consent_decision', status: 'SKIP',
@@ -197,22 +219,46 @@ test.describe('F8D § 23 — HR Shift', () => {
             expect(extOk).toBe(true);
             return;
         }
-        const floor = Math.ceil(total * 0.8);
         const consentReachable = total - consentPermFail;
-        const decisionReachable = total - decisionPermFail;
         const consentFloor = Math.ceil(Math.max(1, consentReachable) * 0.8);
-        const decisionFloor = Math.ceil(Math.max(1, decisionReachable) * 0.8);
-        const pass = consentOk >= consentFloor && decisionOk >= decisionFloor;
+        // tur-5 precondition-aware decision floor: backend requires consent_status=approved
+        // before approve decisions; when consent is RBAC-blocked, approve decisions
+        // deterministically 409 (NOT a failure). Evaluate only reachable+possible decisions.
+        const decisionReachable = total - decisionPermFail;
+        let decisionEffectiveTotal, decisionEffectiveOk, decisionFloorLabel;
+        if (consentRBACBlocked) {
+            decisionEffectiveTotal = decisionRejectTotal - 0; // approve path impossible without consent
+            decisionEffectiveOk = decisionRejectOk;
+            decisionFloorLabel = `reject-only(${decisionRejectOk}/${decisionRejectTotal})`;
+        } else {
+            decisionEffectiveTotal = decisionReachable;
+            decisionEffectiveOk = decisionOk;
+            decisionFloorLabel = `all(${decisionOk}/${decisionReachable})`;
+        }
+        const decisionFloor = Math.ceil(Math.max(1, decisionEffectiveTotal) * 0.8);
+        const consentPart = consentRBACBlocked ? true : (consentOk >= consentFloor);
+        const decisionPart = decisionRBACBlocked ? true : (decisionEffectiveOk >= decisionFloor);
+        // Anomaly guard: non-401/403/409 errors must surface even when RBAC-blocked.
+        const anomalyClean = consentAnomalies === 0 && decisionAnomalies === 0;
+        const pass = consentPart && decisionPart && anomalyClean;
         recPerf(testInfo, MOD, 'consent_decision', samples, pass);
         rec(testInfo, { module: MOD, step: 'consent_decision', status: pass ? 'PASS' : 'FAIL',
             endpoint: 'POST /api/hr/shift-swap-request/{id}/{consent,decision}',
-            note: `n=${total} consent_ok=${consentOk}/${consentReachable} decision_ok=${decisionOk}/${decisionReachable} fail=${fail} perm_fail(c/d)=${consentPermFail}/${decisionPermFail} throttled_429=${throttled} floor>=${floor} errs=${JSON.stringify(errs)}` });
-        if (!pass) recFinding(testInfo, 'P1', MOD, 'Shift swap consent/decision floor ihlal',
-            `n=${total} consent_ok=${consentOk}/${consentReachable} decision_ok=${decisionOk}/${decisionReachable} errs=${JSON.stringify(errs)}`);
+            note: `n=${total} consent_ok=${consentOk}/${consentReachable} decision_eff=${decisionFloorLabel} approve_conflict=${decisionApproveConflict}/${decisionApproveTotal} reject_conflict=${decisionRejectConflict}/${decisionRejectTotal} perm_fail(c/d)=${consentPermFail}/${decisionPermFail} consent_rbac=${consentRBACBlocked} decision_rbac=${decisionRBACBlocked} anomalies(c/d)=${consentAnomalies}/${decisionAnomalies} throttled_429=${throttled} errs=${JSON.stringify(errs)}` });
+        if (consentRBACBlocked) recFinding(testInfo, 'P2', MOD, 'Swap consent RBAC-blocked (informational)',
+            `consent_perm_fail=${consentPermFail}/${total} — caller != target_staff email (intentional). Decision evaluated reject-only (approve requires consent precondition).`);
+        if (decisionRBACBlocked) recFinding(testInfo, 'P2', MOD, 'Swap decision RBAC-blocked (informational)',
+            `decision_perm_fail=${decisionPermFail}/${total} — require_op gate (super_admin normalde bypass eder; drift signal). Consent part only evaluated.`);
+        if (consentAnomalies > 0) recFinding(testInfo, 'P1', MOD, 'Swap consent non-RBAC anomaly',
+            `consent_anomalies=${consentAnomalies}/${total} (non-401/403/409). errs=${JSON.stringify(errs.filter(e => e.phase === 'consent'))}`);
+        if (decisionAnomalies > 0) recFinding(testInfo, 'P1', MOD, 'Swap decision non-RBAC/precondition anomaly',
+            `decision_anomalies=${decisionAnomalies}/${total} (non-401/403/409). errs=${JSON.stringify(errs.filter(e => e.phase === 'decision'))}`);
+        if (!consentPart || !decisionPart) recFinding(testInfo, 'P1', MOD, 'Shift swap consent/decision floor ihlal',
+            `consent_part=${consentPart} (ok=${consentOk}/${consentFloor}) decision_part=${decisionPart} (eff_ok=${decisionEffectiveOk}/${decisionFloor} ${decisionFloorLabel}) errs=${JSON.stringify(errs)}`);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'consent_decision', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
-        // CI #39 NO-GO follow-up: hard guard — rec FAIL'i expect throw'a bağlar (failedTests++).
-        expect(pass, `consent_decision floor: consent_ok=${consentOk}/${consentFloor} decision_ok=${decisionOk}/${decisionFloor}`).toBe(true);
+        // CI #39 NO-GO follow-up + tur-5 precondition fix: hard guard — rec FAIL'i expect throw'a bağlar.
+        expect(pass, `consent_decision: consent_part=${consentPart} (rbac=${consentRBACBlocked} ok=${consentOk}/${consentFloor}) decision_part=${decisionPart} (rbac=${decisionRBACBlocked} eff=${decisionEffectiveOk}/${decisionFloor} ${decisionFloorLabel}) anomalies(c/d)=${consentAnomalies}/${decisionAnomalies}`).toBe(true);
     });
 
     test('D) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
