@@ -29,8 +29,9 @@ test.describe('F8E § 27 — Accounting Bank + Inventory', () => {
         prefix = stressState.data_prefix;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
         const bankR = await callTimed(request, 'get', '/api/accounting/bank-accounts', undefined, stressTokens.stress_token);
-        const itemR = await callTimed(request, 'get', '/api/accounting/inventory-items', undefined, stressTokens.stress_token);
-        const items = itemR.body?.items || itemR.body?.inventory_items || (Array.isArray(itemR.body) ? itemR.body : []);
+        // Backend route is /api/accounting/inventory (returns {items, low_stock_count, total_value}).
+        const itemR = await callTimed(request, 'get', '/api/accounting/inventory', undefined, stressTokens.stress_token);
+        const items = itemR.body?.items || (Array.isArray(itemR.body) ? itemR.body : []);
         const seededItem = items.find((it) => typeof it?.sku === 'string' && it.sku.startsWith(prefix));
         seededItemId = seededItem?.id || items[0]?.id || null;
         const reachable = bankR.ok && itemR.ok;
@@ -54,12 +55,12 @@ test.describe('F8E § 27 — Accounting Bank + Inventory', () => {
         const samples = [];
         const bankR = await callTimed(request, 'get', '/api/accounting/bank-accounts', undefined, stressTokens.stress_token);
         samples.push(bankR.ms);
-        const itemR = await callTimed(request, 'get', '/api/accounting/inventory-items', undefined, stressTokens.stress_token);
+        const itemR = await callTimed(request, 'get', '/api/accounting/inventory', undefined, stressTokens.stress_token);
         samples.push(itemR.ms);
         const ok = bankR.ok && itemR.ok;
         recPerf(testInfo, MOD, 'list_bank_inv', samples, ok);
         rec(testInfo, { module: MOD, step: 'list_bank_inv', status: ok ? 'PASS' : 'REVIEW',
-            endpoint: '/api/accounting/{bank-accounts,inventory-items}',
+            endpoint: '/api/accounting/{bank-accounts,inventory}',
             note: `bank=${bankR.status} item=${itemR.status} max_ms=${Math.max(...samples)}` });
         if (!ok) recFinding(testInfo, 'P2', MOD, 'Bank/Inventory list non-2xx',
             `bank=${bankR.status} item=${itemR.status}`);
@@ -100,19 +101,21 @@ test.describe('F8E § 27 — Accounting Bank + Inventory', () => {
             await new Promise((res) => setTimeout(res, 1500));
         }
 
-        // 2) Inventory movements (against seeded item)
+        // 2) Inventory movements (against seeded item).
+        // Backend reads item_id/movement_type/quantity/unit_cost/reference/notes
+        // as QUERY PARAMETERS (function args, not Pydantic body) — pass via URL.
         const movementTypes = ['in', 'out'];
         for (let i = 0; i < N_MOVEMENT; i++) {
-            const payload = {
+            const params = new URLSearchParams({
                 item_id: seededItemId,
                 movement_type: movementTypes[i % 2],
-                quantity: 2 + (i % 5),
-                unit_cost: 10 + i,
+                quantity: String(2 + (i % 5)),
+                unit_cost: String(10 + i),
                 reference: `${prefix}MOVB${i + 1}`,
                 notes: `${prefix} F8E spec27 movement ${i + 1}`,
-            };
-            const r = await callTimedWithBackoff(request, 'post', '/api/accounting/inventory/movement',
-                payload, stressTokens.stress_token);
+            }).toString();
+            const r = await callTimedWithBackoff(request, 'post', `/api/accounting/inventory/movement?${params}`,
+                undefined, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
             if (r.ok && (r.body?.id || r.body?.success === true)) okMov++;

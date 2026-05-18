@@ -102,8 +102,9 @@ test.describe('F8E § 26 — Accounting Expenses', () => {
             await new Promise((res) => setTimeout(res, 1500));
         }
 
-        // 2) Expenses
-        const categories = ['food', 'beverage', 'utilities', 'maintenance', 'marketing'];
+        // 2) Expenses — backend ExpenseCategory enum strict:
+        // salaries/utilities/supplies/maintenance/marketing/rent/insurance/taxes/other.
+        const categories = ['supplies', 'utilities', 'maintenance', 'marketing', 'other'];
         const vatRates = [0, 8, 18, 20];
         for (let i = 0; i < N_EXPENSE; i++) {
             const gross = 80 + (i * 11);

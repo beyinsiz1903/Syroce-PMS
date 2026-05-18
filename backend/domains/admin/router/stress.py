@@ -1315,9 +1315,12 @@ def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
             "stress_seed": True, "stress_prefix": prefix,
         })
 
-    # 4) EXPENSES (20) — varied category & VAT rate
-    expense_categories = ["food", "beverage", "utilities", "maintenance",
-                           "marketing", "salary", "cleaning", "stationery"]
+    # 4) EXPENSES (20) — varied category & VAT rate.
+    # Backend `ExpenseCategory` enum strict: salaries/utilities/supplies/
+    # maintenance/marketing/rent/insurance/taxes/other. Stay enum-compliant
+    # so re-seed never 422s if the seeder ever switches to the API path.
+    expense_categories = ["salaries", "utilities", "supplies", "maintenance",
+                           "marketing", "rent", "insurance", "taxes", "other"]
     vat_rates = [0.0, 8.0, 18.0, 20.0]
     for i in range(20):
         cat = expense_categories[i % len(expense_categories)]
@@ -1405,7 +1408,10 @@ def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
             "stress_seed": True, "stress_prefix": prefix,
         })
 
-    # 7) INVENTORY ITEMS (15) — linked to suppliers
+    # 7) INVENTORY ITEMS (15) — linked to suppliers.
+    # Backend `InventoryItem` model uses `quantity` (NOT `stock_quantity`);
+    # GET /api/accounting/inventory reads `item['quantity']` for total_value
+    # and low_stock calc. Field name MUST match the model contract.
     item_categories = ["food", "beverage", "amenity", "linen", "cleaning"]
     item_ids: list[str] = []
     for i in range(15):
@@ -1421,10 +1427,9 @@ def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
             "supplier_id": supplier_ids[i % len(supplier_ids)],
             "unit": "piece",
             "unit_cost": unit_cost,
-            "stock_quantity": 100 + (i * 10),
-            "reorder_level": 20,
-            "active": True,
-            "is_active": True,
+            "quantity": float(100 + (i * 10)),
+            "reorder_level": 20.0,
+            "is_consumable": True,
             "created_at": now_iso,
             "stress_seed": True, "stress_prefix": prefix,
         })
