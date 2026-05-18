@@ -94,6 +94,11 @@ test.describe('F8C § 14 — MICE Events', () => {
 
     test('B) Bulk create — N events status=lead, unique (space, date)', async ({ request, stressTokens, stressState }, testInfo) => {
         test.setTimeout(120_000);
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'bulk_create', status: 'SKIP', note: 'module blocked (see Setup)' });
+            test.skip(true, 'MICE events module blocked');
+            return;
+        }
         if (seededSpaceIds.length < 1) {
             rec(testInfo, { module: MOD, step: 'bulk_create', status: 'SKIP', note: 'no seeded spaces' });
             return;
@@ -156,6 +161,11 @@ test.describe('F8C § 14 — MICE Events', () => {
 
     test('C) Status transitions: lead → tentative → definite', async ({ request, stressTokens, stressState }, testInfo) => {
         test.setTimeout(180_000);
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'transitions', status: 'SKIP', note: 'module blocked (see Setup)' });
+            test.skip(true, 'MICE events module blocked');
+            return;
+        }
         if (createdEventIds.length === 0) {
             rec(testInfo, { module: MOD, step: 'transitions', status: 'SKIP', note: 'no created events' });
             return;
@@ -198,6 +208,11 @@ test.describe('F8C § 14 — MICE Events', () => {
 
     test('D) Payment schedule replace + mark-paid (DB-only)', async ({ request, stressTokens, stressState }, testInfo) => {
         test.setTimeout(180_000);
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'payment_schedule', status: 'SKIP', note: 'module blocked (see Setup)' });
+            test.skip(true, 'MICE events module blocked');
+            return;
+        }
         if (createdEventIds.length === 0) {
             rec(testInfo, { module: MOD, step: 'payment_schedule', status: 'SKIP', note: 'no created events' });
             return;

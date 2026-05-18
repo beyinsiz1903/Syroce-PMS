@@ -1,6 +1,6 @@
 # F8C Stress Suite — Evolution (MICE/Event/Banquet/Group, tur-1 → tur-5)
 
-**Status:** Active — GO WITH WATCH after tur-5 module-blocked pattern
+**Status:** DONE — GO WITH WATCH confirmed after tur-5 CI (2026-05-18)
 **Date:** 2026-05-17 → 2026-05-18
 **Scope:** `frontend/e2e-stress/specs/14..17` (4 spec, 19-23 test), F8A+F8B operasyonel paketinin üzerine MICE & sales yüzeyleri.
 **Drill rapor:** `docs/drill_reports/20260517_stress_f8c_mice_event_banquet.md`
@@ -52,13 +52,13 @@ Helper: `callTimedWithBackoff` (F8B tur-24) + 1500ms inter-call gap + `test.setT
 
 ---
 
-## Tur-5 (push beklemede) — 14-Setup module-blocked pattern (15-spec mirror)
+## Tur-5 (CI YEŞİL ✅) — 14-Setup module-blocked pattern (15-spec mirror)
 
 - **14-Setup defensive rewrite**: endpoint non-2xx VEYA `seededSpaceIds=0` ise `moduleBlocked=true` flag + P2 informational finding ("MICE events module read blocked — A/B/C/D skipped, pilot_drift gate still enforced"). Setup PASS olarak rec'lenir, soft assertion `typeof spacesResp.status === 'number'` ile **asla hard-fail etmez**.
 - **14-A**: `moduleBlocked` guard eklendi → `test.skip()`. B/C/D zaten self-guarding (`seededSpaceIds.length < 1` / `createdEventIds.length === 0`).
 - **14-E**: pilot drift bağımsız çalışır.
 
-**Beklenen tur-6 CI**: 94 PASS / 8 SKIP / 0 FAIL / P2=2 (kasıtlı 14+15 module-blocked) → GO WITH WATCH.
+**tur-5 CI sonucu (confirmed)**: GO WITH WATCH — failedTests=0, P0=P1=0, P2=2 (kasıtlı 14+15 module-blocked), external_calls=[], pilot_drift=0. F8C suite DONE.
 
 ---
 

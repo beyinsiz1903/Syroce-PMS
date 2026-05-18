@@ -1,7 +1,7 @@
-# F8A Stress Suite — Evolution (tur-6 → tur-12)
+# F8A Stress Suite — Evolution (tur-6 → tur-22)
 
-**Status:** Active — CI re-run pending after tur-12 (commit `8d1ad1a`)
-**Date:** 2026-05-14 → 2026-05-16
+**Status:** DONE pending CI #38 — last code change tur-22 (OOO TOCTOU + V1 room-move atomic CAS, `out_of_service` ROOM_BLOCKED_STATUSES'a eklendi)
+**Date:** 2026-05-14 → 2026-05-17
 **Scope:** `frontend/e2e-stress/` (4 spec × Setup+A..F+ek-coverage = ~30 test), 500-oda stress tenant'ta day-turnover / room-move / folio-mass / housekeeping-mass.
 **Defans baseline:** 5 gate, `external_calls_made:[]` (post-batch re-assert hook'u dahil), cleanup#1 + idempotent#2, pilot drift=0.
 **Acceptance contract:** `P0=P1=0`, `failedTests=0`, `FAIL adım=0`, final verdict ≥ GO-WITH-WATCH.
