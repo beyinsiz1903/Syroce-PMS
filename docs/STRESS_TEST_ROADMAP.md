@@ -25,7 +25,7 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 
 | Faz  | Kapsam                                                                  | Spec aralığı              | Status                                                       | ADR                                                       |
 | ---- | ----------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------ | --------------------------------------------------------- |
-| F8A  | Front Office / Folio / Housekeeping (day-turnover, room-move, mass)     | 02 / 03 / 04 / 05         | **DONE** — GO WITH WATCH (CI #38 / #55 PASS, tur-6..22)      | `docs/adr/2026-05-f8a-stress-evolution.md`                |
+| F8A  | Front Office / Folio / Housekeeping (day-turnover, room-move, mass, **lifecycle, night-audit**) | 02 / 03 / 04 / 05 / 06    | **DONE** — GO WITH WATCH (CI #38 / #55 PASS, tur-6..22) + **v2 push 2026-05-18** (spec 05 reservation lifecycle + spec 06 night-audit + spec 04 refund/void extension) | `docs/adr/2026-05-f8a-stress-evolution.md`                |
 | F8B  | Guest Experience (QR / complaints / messaging / notifications)          | 10 / 11 / 12 / 13         | **DONE** — GO WITH WATCH (CI #55 PASS, tur-23..26)           | `docs/adr/2026-05-f8b-stress-evolution.md`                |
 | F8C  | MICE / Event / Banquet / Group Operations                               | 14 / 15 / 16 / 17         | **DONE** — GO WITH WATCH (tur-5 CI YEŞİL, 2026-05-18)        | `docs/adr/2026-05-f8c-stress-evolution.md`                |
 | F8D  | HR / İK / Staff / Shift / Leave / Department                            | 20 / 21 / 22 / 23         | **DONE (v1)** — GO WITH WATCH (CI yeşil, 2026-05-18); v2 backlog aşağıda | `docs/adr/2026-05-f8d-hr-staff-shift-evolution.md`        |
@@ -54,18 +54,14 @@ Mevcut: day-turnover (checkout/walk-in), room-move (positive/negative/race),
 folio mass (charge/payment/split/audit), housekeeping (transitions/OOO).
 
 **Eksik (backlog):**
-- **Reservation create / modify / cancel batch** — sadece walk-in test
-  ediliyor; classic lifecycle (create → modify dates → cancel) yok.
-- **No-show conversion** — terminal-state guard var ama explicit no-show
-  → cancelled / no-show → checkout-virtual conversion path test edilmedi.
-- **Overbooking guard** — aynı oda + çakışan tarih booking attempt → reject.
-- **Open-folio refund / void flow** — closed-folio guard var ama açık-folio
-  refund/void path'leri yok.
-- **Group bookings / multi-room reservation** — 1 misafir N oda senaryosu.
+- ✅ **Reservation create / modify / cancel batch** — `specs/05-reservation-lifecycle.spec.js` A/B/C (2026-05-18).
+- ✅ **No-show conversion** — `specs/05-reservation-lifecycle.spec.js` D (pre-create confirmed bookings → no-show, 2026-05-18).
+- ✅ **Overbooking guard** — `specs/05-reservation-lifecycle.spec.js` E (positive overbooking-check + duplicate POST reject, P0 finding emit if double-booking created, 2026-05-18).
+- ✅ **Open-folio refund / void flow** — `specs/04-folio-mass.spec.js` C3/C4/C5 (refund + void-charge + void-payment with RBAC short-circuit handling, 2026-05-18).
+- ✅ **Group bookings / multi-room reservation** — `specs/05-reservation-lifecycle.spec.js` F/G (group-reservations POST + multi-room POST with 3 rooms, 2026-05-18).
 - **CM outbox event consistency** — booking değişikliklerinin SXI bus
-  event'lerine yansıması (CM-Hardening serisi var; stress'te yok).
-- **Explicit night audit batch** — day-turnover'a implicit; explicit
-  night-audit endpoint stress yok.
+  event'lerine yansıması (CM-Hardening serisi var; stress'te yok). **→ F8L'e devredildi.**
+- ✅ **Explicit night audit batch** — `specs/06-night-audit.spec.js` (business-date GET + run + re-run idempotency + exceptions list, 2026-05-18).
 
 ### F8B backlog — Guest Experience (v2 turu)
 

@@ -199,6 +199,135 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
         expect(extOk, 'folio_reconcile_10 sonrası external_calls invariant ihlal').toBe(true);
     });
 
+    // ── F8A v2 backlog: open-folio refund/void path coverage (roadmap madde
+    // "Open-folio refund/void flow"). Sample size küçük (10/5/5) — bu testler
+    // smoke, mass değil; yine de hard-FAIL kapısı production hardening regression
+    // (closed-folio guard zaten E test'inde, burada açık-folio mutasyonları
+    // doğru çalışıyor mu kanıtı).
+    test('C3) Open-folio refund dry-run (10 folio)', async ({ request, stressTokens }, testInfo) => {
+        if (folios.length < 5 && bookings.length < 5) { rec(testInfo, { module: MOD, step: 'refund_sample', status: 'SKIP' }); return; }
+        const sample = (folios.length > 0 ? folios : bookings).slice(0, 10);
+        const samples = []; let ok = 0, fail = 0; const failModes = {};
+        for (const it of sample) {
+            const r = await callTimed(request, 'post', '/api/pms-core/folio/refund', {
+                folio_id: it.folio_id || it.id,
+                booking_id: it.booking_id || it.id,
+                amount: 10,
+                reason: 'F8A § 04 C3 dry-run refund test',
+                method: 'cash',
+            }, stressTokens.stress_token);
+            samples.push(r.ms);
+            if (r.ok) ok++;
+            else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
+            // Refund = audit trail + tax recalc + folio mutation → heavy class.
+            // 1200ms gap (payment 400ms ile split 1500ms arasında).
+            await new Promise((res) => setTimeout(res, 1200));
+        }
+        // Refund permission = void_charge (router.py:366). Stress token cashier
+        // perms taşımıyorsa 403 dönebilir → REVIEW seviye, hard-FAIL değil.
+        const all403 = fail > 0 && ok === 0 && failModes.s403 === fail;
+        const status = all403 ? 'REVIEW' : (ok === 0 ? 'FAIL' : (ok >= sample.length * 0.5 ? 'PASS' : 'REVIEW'));
+        rec(testInfo, { module: MOD, step: 'folio_refund_batch', status,
+            endpoint: '/api/pms-core/folio/refund',
+            note: `n=${sample.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} all_403_perm_skip=${all403}` });
+        recPerf(testInfo, MOD, 'folio_refund', samples, ok > 0);
+        if (all403) {
+            recFinding(testInfo, 'P2', MOD,
+                'Folio refund RBAC short-circuit (void_charge perm yok)',
+                'Stress automation token void_charge yetkisine sahip değil → refund path informational kalır. ' +
+                'Production cashier rolü test için ayrıca koşulmalı.');
+        }
+        if (ok === 0 && !all403) {
+            recFinding(testInfo, 'P1', MOD, 'Folio refund tüm denemelerde başarısız',
+                `${sample.length} refund POST 0 başarı. Modes: ${JSON.stringify(failModes)}.`);
+        }
+        expect(status, `folio_refund_batch FAIL: ok=${ok} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
+    });
+
+    test('C4) Void charge (5 folio — fetch charge_id via detail)', async ({ request, stressTokens }, testInfo) => {
+        if (folios.length < 5 && bookings.length < 5) { rec(testInfo, { module: MOD, step: 'void_charge_sample', status: 'SKIP' }); return; }
+        const sample = (folios.length > 0 ? folios : bookings).slice(0, 5);
+        let voided = 0, fail = 0; const failModes = {};
+        const samples = [];
+        for (const it of sample) {
+            const fid = it.folio_id || it.id;
+            // 1. Folio detail'den son charge'u al.
+            const detailR = await callTimed(request, 'get', `/api/pms-core/folio/detail/${fid}`,
+                undefined, stressTokens.stress_token);
+            const charges = detailR.body?.charges || [];
+            const chargeId = charges.find((c) => !c.voided && c.id)?.id;
+            if (!chargeId) {
+                fail++;
+                failModes['no_charge_found'] = (failModes['no_charge_found'] || 0) + 1;
+                continue;
+            }
+            // 2. Void et.
+            const r = await callTimed(request, 'post', '/api/pms-core/folio/void-charge', {
+                charge_id: chargeId,
+                reason: 'F8A § 04 C4 dry-run void test',
+            }, stressTokens.stress_token);
+            samples.push(r.ms);
+            if (r.ok) voided++;
+            else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
+            await new Promise((res) => setTimeout(res, 1200));
+        }
+        const all403 = fail > 0 && voided === 0 && failModes.s403 === sample.length;
+        const status = all403 ? 'REVIEW' : (voided === 0 ? 'FAIL' : (voided >= 1 ? 'PASS' : 'REVIEW'));
+        rec(testInfo, { module: MOD, step: 'folio_void_charge_batch', status,
+            endpoint: '/api/pms-core/folio/void-charge',
+            note: `n=${sample.length} voided=${voided} fail=${fail} fail_modes=${JSON.stringify(failModes)} all_403=${all403}` });
+        recPerf(testInfo, MOD, 'folio_void_charge', samples, voided > 0);
+        if (all403) {
+            recFinding(testInfo, 'P2', MOD, 'Folio void-charge RBAC short-circuit',
+                'Stress automation token void_charge yetkisine sahip değil.');
+        }
+        expect(status, `folio_void_charge_batch FAIL: voided=${voided} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
+    });
+
+    test('C5) Void payment (5 folio — fetch payment_id via detail)', async ({ request, stressTokens }, testInfo) => {
+        if (folios.length < 5 && bookings.length < 5) { rec(testInfo, { module: MOD, step: 'void_payment_sample', status: 'SKIP' }); return; }
+        const sample = (folios.length > 0 ? folios : bookings).slice(0, 5);
+        let voided = 0, fail = 0; const failModes = {};
+        const samples = [];
+        for (const it of sample) {
+            const fid = it.folio_id || it.id;
+            const detailR = await callTimed(request, 'get', `/api/pms-core/folio/detail/${fid}`,
+                undefined, stressTokens.stress_token);
+            const payments = detailR.body?.payments || [];
+            const paymentId = payments.find((p) => !p.voided && p.id)?.id;
+            if (!paymentId) {
+                fail++;
+                failModes['no_payment_found'] = (failModes['no_payment_found'] || 0) + 1;
+                continue;
+            }
+            const r = await callTimed(request, 'post', '/api/pms-core/folio/void-payment', {
+                payment_id: paymentId,
+                reason: 'F8A § 04 C5 dry-run void test',
+            }, stressTokens.stress_token);
+            samples.push(r.ms);
+            if (r.ok) voided++;
+            else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
+            await new Promise((res) => setTimeout(res, 1200));
+        }
+        const all403 = fail > 0 && voided === 0 && failModes.s403 === sample.length;
+        const allNoPay = fail === sample.length && failModes['no_payment_found'] === sample.length;
+        const status = (all403 || allNoPay) ? 'REVIEW' : (voided === 0 ? 'FAIL' : 'PASS');
+        rec(testInfo, { module: MOD, step: 'folio_void_payment_batch', status,
+            endpoint: '/api/pms-core/folio/void-payment',
+            note: `n=${sample.length} voided=${voided} fail=${fail} fail_modes=${JSON.stringify(failModes)} no_payment_seed=${allNoPay}` });
+        recPerf(testInfo, MOD, 'folio_void_payment', samples, voided > 0);
+        if (allNoPay) {
+            recFinding(testInfo, 'P3', MOD,
+                'Stress seed folio\'larda payment yok — void-payment path test edilemedi',
+                'Seed _build_f8a_docs() folio için payment seed etmiyor; B test\'inde dry-run payment yapılsa da sample folio kümesi farklı olabilir.');
+        }
+        if (all403) {
+            recFinding(testInfo, 'P2', MOD, 'Folio void-payment RBAC short-circuit',
+                'Stress token void_payment yetkisine sahip değil.');
+        }
+        expect(status, `folio_void_payment_batch FAIL: voided=${voided} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
+    });
+
     test('D) Folio audit GET (5 folio)', async ({ request, stressTokens }, testInfo) => {
         if (folios.length < 1 && bookings.length < 1) { rec(testInfo, { module: MOD, step: 'audit_sample', status: 'SKIP' }); return; }
         const sample = (folios.length > 0 ? folios : bookings).slice(0, 5);
