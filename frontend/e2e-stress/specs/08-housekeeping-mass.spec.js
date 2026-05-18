@@ -136,7 +136,28 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         // Architect tur-3 feedback: OOO işareti tutmuyorsa booking layer reject etmeli.
         // D)'de işaretlenen OOO odalara walk-in dene → 4xx bekle. Kabul edilirse P0 finding.
         if (rooms.length < 20) { rec(testInfo, { module: MOD, step: 'ooo_booking_guard', status: 'SKIP' }); return; }
-        const oooTargets = rooms.slice(rooms.length - 20).slice(0, 5); // D)'deki ilk 5 OOO odayı kullan
+        // Tur-23 fix: D)'de housekeeping-status set 200 dönse de bazı odalar
+        // (occupied/dirty) status transition rejection nedeniyle out_of_order'a
+        // geçmemiş olabiliyor. D2'nin guard'ı test edebilmesi için ROOM'un
+        // gerçekten out_of_order/out_of_service durumunda olması GEREK. Aksi
+        // halde "available" odaya walk-in başarısı = beklenen davranış (false P0).
+        // Fix: D'den sonra fresh GET ile status'ları yenile, sadece BLOCKED
+        // durumdaki ilk 5 odayı al.
+        const candidateIds = new Set(rooms.slice(rooms.length - 20).map((r) => r.id));
+        const prefix = stressState.data_prefix;
+        const freshR = await callTimed(request, 'get', '/api/pms/rooms', undefined, stressTokens.stress_token);
+        const freshAll = freshR.body?.rooms || freshR.body?.items || (Array.isArray(freshR.body) ? freshR.body : []);
+        const BLOCKED = new Set(['out_of_order', 'out_of_service', 'maintenance']);
+        const oooTargets = freshAll
+            .filter((r) => candidateIds.has(r.id) && BLOCKED.has(r.status))
+            .slice(0, 5);
+        if (oooTargets.length === 0) {
+            rec(testInfo, { module: MOD, step: 'ooo_booking_guard', status: 'SKIP',
+                note: `no rooms in BLOCKED status after D) — HK transition guard rejected all 20 (likely occupied/dirty preconditions). Guard test inconclusive.` });
+            recFinding(testInfo, 'P2', MOD, 'OOO guard test inconclusive',
+                `D) housekeeping-status set sonrası 0 oda BLOCKED durumunda; D2 guard test skipped (pre-existing HK transition constraints).`);
+            return;
+        }
         let rejected = 0, accepted = 0, other = 0;
         const acceptedDetail = [];
         for (let i = 0; i < oooTargets.length; i++) {
