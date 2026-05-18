@@ -95,6 +95,23 @@ STRESS_COLLECTIONS = [
     "mice_opportunities",
     "mice_opportunity_activities",
     "mice_packages",
+    # F8D (2026-05-18): HR / Staff / Shift / Leave / Department surface.
+    # All rows tagged `stress_seed=True` + `stress_prefix` → unified cleanup
+    # loop reaches them with no additional logic. No external service risk:
+    # HR notifications are in-app only (`notifications` collection), payroll
+    # computation is backend-only (no provider integration). Stress admin
+    # is `super_admin` → `require_op` gates pass; module-blocked pattern is
+    # the spec-side fallback if any endpoint enforces manual role lists.
+    "staff_members",
+    "hr_departments",
+    "hr_positions",
+    "attendance_records",
+    "leave_requests",
+    "leave_balances",
+    "shift_schedules",
+    "shift_swap_requests",
+    "performance_reviews",
+    "payroll_records",
     "bookings",
     "guests",
     "rooms",
@@ -894,6 +911,276 @@ def _build_f8c_docs(stress_tid: str, prefix: str, now: datetime):
             packages_docs)
 
 
+# F8D (2026-05-18) — HR / Staff / Shift / Leave / Department surface.
+# Standalone factory: does not depend on rooms/bookings/guests; produces a
+# self-contained org structure + attendance/leave/shift seed.
+#
+# Dry-run guarantees:
+#   - HR notifications are in-app only (`_notify_hr_managers`/`_notify_user`
+#     write to `notifications` collection; no Resend/SMS). Already covered
+#     by F8B `notifications` cleanup.
+#   - Payroll computation is backend-only (`_compute_payroll_for_month`);
+#     no external provider. Specs MUST NOT call `/api/hr/payroll/finalize`
+#     against stress tenant — it writes `payroll_records` for live workflow.
+#   - Leave-balance recalc on approval is in-memory + DB update; no side
+#     effects beyond the collection.
+#   - Departments use unique `code` (`{prefix}DEPT_<id>`) to avoid app-level
+#     uniqueness collisions on re-seed within the same prefix.
+#   - Attendance records use `(staff_id, date, clock_out)` shape; all seeded
+#     rows are CLOSED (clock_out set) so spec clock-in can create new OPEN
+#     rows for fresh staff without collision.
+#   - All rows tagged `stress_seed=True` + `stress_prefix=<prefix>` for
+#     idempotent cleanup; tenant_context(stress_tid) wrap prevents leak.
+def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
+    departments_docs: list[dict] = []
+    positions_docs: list[dict] = []
+    staff_docs: list[dict] = []
+    leave_balance_docs: list[dict] = []
+    attendance_docs: list[dict] = []
+    shift_schedule_docs: list[dict] = []
+    leave_request_docs: list[dict] = []
+    shift_swap_docs: list[dict] = []
+    performance_docs: list[dict] = []
+
+    now_iso = now.isoformat()
+
+    # 1) DEPARTMENTS (5)
+    dept_seeds = [
+        ("Front Office", "FO"),
+        ("Housekeeping", "HK"),
+        ("F&B Operations", "FNB"),
+        ("Maintenance", "MAINT"),
+        ("Administration", "ADMIN"),
+    ]
+    dept_ids: list[str] = []
+    for i, (name, code) in enumerate(dept_seeds):
+        did = str(uuid.uuid4())
+        dept_ids.append(did)
+        departments_docs.append({
+            "id": did, "tenant_id": stress_tid,
+            "name": f"{prefix}Dept_{name}",
+            "code": f"{prefix}DEPT_{code}",
+            "description": f"{prefix} F8D seed department",
+            "manager_user_id": None,
+            "parent_id": None,
+            "active": True,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 2) POSITIONS (8) — bound to departments
+    position_seeds = [
+        ("Front Desk Agent", 0, 18000.0),
+        ("Front Desk Supervisor", 0, 24000.0),
+        ("Housekeeper", 1, 16000.0),
+        ("HK Supervisor", 1, 22000.0),
+        ("Waiter", 2, 17000.0),
+        ("F&B Manager", 2, 30000.0),
+        ("Maintenance Tech", 3, 19000.0),
+        ("HR Officer", 4, 25000.0),
+    ]
+    position_ids: list[str] = []
+    for i, (title, dept_idx, base) in enumerate(position_seeds):
+        pid = str(uuid.uuid4())
+        position_ids.append(pid)
+        positions_docs.append({
+            "id": pid, "tenant_id": stress_tid,
+            "title": f"{prefix}Position_{title}",
+            "code": f"{prefix}POS_{i + 1:02d}",
+            "department_id": dept_ids[dept_idx],
+            "base_salary": base,
+            "currency": "TRY",
+            "description": f"{prefix} F8D seed position",
+            "active": True,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 3) STAFF MEMBERS (30) — role distribution: 10 HK, 8 FO, 6 F&B, 4 MAINT, 2 ADMIN
+    role_distribution = (
+        [(1, 2)] * 10 +   # HK dept, Housekeeper position
+        [(0, 0)] * 8 +    # FO dept, Front Desk Agent position
+        [(2, 4)] * 6 +    # F&B dept, Waiter position
+        [(3, 6)] * 4 +    # MAINT dept, Maintenance Tech position
+        [(4, 7)] * 2      # ADMIN dept, HR Officer position
+    )
+    # Router fields (active filter + name/department/position strings) — these are
+    # required by GET /hr/staff (filters on `active: True`) and downstream HR endpoints.
+    # Extra fields (full_name/first_name/department_id/position_id) retained for
+    # forward-compat with admin/UI surfaces; ignored by HR router.
+    staff_ids: list[str] = []
+    dept_names = [d[0] for d in dept_seeds]   # "Front Office", "Housekeeping", ...
+    pos_titles = [p[0] for p in position_seeds]  # "Front Desk Agent", ...
+    for i, (dept_idx, pos_idx) in enumerate(role_distribution):
+        sid = str(uuid.uuid4())
+        staff_ids.append(sid)
+        full = f"{prefix}Staff{i + 1:02d} Test"
+        staff_docs.append({
+            "id": sid, "tenant_id": stress_tid,
+            "name": full,
+            "first_name": f"{prefix}Staff{i + 1:02d}",
+            "last_name": "Test",
+            "full_name": full,
+            "email": f"{prefix.lower()}staff{i + 1}@e2e-stress.example.com",
+            "phone": f"+90555500{i + 1:04d}",
+            "national_id": f"{prefix}NID{i + 1:08d}",
+            "department": dept_names[dept_idx],
+            "position": pos_titles[pos_idx],
+            "department_id": dept_ids[dept_idx],
+            "position_id": position_ids[pos_idx],
+            "employment_type": "full_time",
+            "hire_date": (now - timedelta(days=365 + (i * 7))).date().isoformat(),
+            "base_salary": positions_docs[pos_idx]["base_salary"],
+            "hourly_rate": round(positions_docs[pos_idx]["base_salary"] / 160, 2),
+            "monthly_hours": 160,
+            "annual_leave_entitlement": 14,
+            "currency": "TRY",
+            "active": True,
+            "status": "active",
+            "is_active": True,
+            "manager_id": None,
+            "skills": [],
+            "certifications": [],
+            "notes": f"{prefix} F8D seed staff",
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 4) LEAVE BALANCES (30) — default 14 days for each staff
+    for i, sid in enumerate(staff_ids):
+        leave_balance_docs.append({
+            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+            "staff_id": sid,
+            "year": now.year,
+            "annual_entitled_days": 14,
+            "used_days": 0,
+            "pending_days": 0,
+            "remaining_days": 14,
+            "carryover_days": 0,
+            "updated_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 5) ATTENDANCE RECORDS (60) — last 7 days × 10 staff sample
+    # All records CLOSED (clock_out set) so spec clock-in can write OPEN rows.
+    sample_staff = staff_ids[:10]
+    for d in range(6):
+        record_date = (now - timedelta(days=d + 1)).date()
+        for sid in sample_staff:
+            clock_in_dt = datetime(record_date.year, record_date.month, record_date.day, 9, 0, 0, tzinfo=UTC)
+            clock_out_dt = datetime(record_date.year, record_date.month, record_date.day, 17, 30, 0, tzinfo=UTC)
+            attendance_docs.append({
+                "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+                "staff_id": sid,
+                "date": record_date.isoformat(),
+                "clock_in": clock_in_dt.isoformat(),
+                "clock_out": clock_out_dt.isoformat(),
+                "worked_minutes": 510,
+                "overtime_minutes": 0,
+                "break_minutes": 30,
+                "source": "manual",
+                "notes": f"{prefix} F8D seed attendance",
+                "created_at": now_iso,
+                "stress_seed": True, "stress_prefix": prefix,
+            })
+
+    # 6) SHIFT SCHEDULES (20) — next 7 days × 3 staff samples
+    shift_types = ["morning", "evening", "night"]
+    sched_count = 0
+    for d in range(7):
+        shift_date = (now + timedelta(days=d + 1)).date()
+        for j in range(3):
+            if sched_count >= 20:
+                break
+            sid = staff_ids[(d + j) % len(staff_ids)]
+            shift = shift_types[j % len(shift_types)]
+            start_hour = {"morning": 8, "evening": 16, "night": 0}[shift]
+            shift_schedule_docs.append({
+                "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+                "staff_id": sid,
+                "staff_name": staff_docs[(d + j) % len(staff_docs)]["name"],
+                "shift_date": shift_date.isoformat(),
+                "date": shift_date.isoformat(),
+                "shift_type": shift,
+                "start_time": f"{start_hour:02d}:00",
+                "end_time": f"{(start_hour + 8) % 24:02d}:00",
+                "duration_minutes": 480,
+                "status": "scheduled",
+                "department_id": staff_docs[(d + j) % len(staff_docs)]["department_id"],
+                "notes": f"{prefix} F8D seed shift",
+                "created_at": now_iso,
+                "stress_seed": True, "stress_prefix": prefix,
+            })
+            sched_count += 1
+
+    # 7) LEAVE REQUESTS (5) — status=pending, ready for decision testing
+    for i in range(5):
+        sid = staff_ids[i]
+        start_d = (now + timedelta(days=14 + i)).date()
+        end_d = (now + timedelta(days=14 + i + 2)).date()
+        leave_request_docs.append({
+            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+            "staff_id": sid,
+            "leave_type": "annual",
+            "start_date": start_d.isoformat(),
+            "end_date": end_d.isoformat(),
+            "days_requested": 3,
+            "reason": f"{prefix} F8D seed leave request",
+            "status": "pending",
+            "decision_by": None,
+            "decision_at": None,
+            "decision_note": None,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 8) SHIFT SWAP REQUESTS (5) — status=pending, ready for consent + decision
+    for i in range(5):
+        requester = staff_ids[i]
+        target = staff_ids[(i + 10) % len(staff_ids)]
+        swap_date = (now + timedelta(days=7 + i)).date()
+        # Router writes target_consent_status (not target_consent); mirror that
+        # shape for forward-compat with list endpoint enrichers.
+        shift_swap_docs.append({
+            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+            "shift_id": None,
+            "shift_date": swap_date.isoformat(),
+            "shift_type": "morning",
+            "from_staff_id": requester,
+            "requester_staff_id": requester,
+            "target_staff_id": target,
+            "target_consent_status": "pending",
+            "target_consent_at": None,
+            "target_consent_note": None,
+            "reason": f"{prefix} F8D seed swap request",
+            "status": "pending",
+            "requested_by": None,
+            "requested_at": now_iso,
+            "decision_by": None,
+            "decision_at": None,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 9) PERFORMANCE REVIEWS (3)
+    for i in range(3):
+        performance_docs.append({
+            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+            "staff_id": staff_ids[i],
+            "period": f"{now.year}-Q{((now.month - 1) // 3) + 1}",
+            "rating": 4,
+            "comments": f"{prefix} F8D seed performance review",
+            "reviewer_user_id": None,
+            "status": "draft",
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    return (departments_docs, positions_docs, staff_docs,
+            leave_balance_docs, attendance_docs, shift_schedule_docs,
+            leave_request_docs, shift_swap_docs, performance_docs)
+
+
 async def _chunked_insert(collection, docs: list[dict], chunk_size: int) -> int:
     """Insert docs in chunks of `chunk_size`. Returns total insert count."""
     if not docs:
@@ -936,6 +1223,12 @@ async def stress_seed(
      resources_docs, events_docs, opportunities_docs,
      opp_activities_docs, leads_docs, competitors_docs,
      packages_docs) = _build_f8c_docs(stress_tid, prefix, now)
+    # F8D: HR / Staff / Shift / Leave / Department surface (standalone —
+    # self-contained org structure with attendance/leave/shift seed).
+    (hr_dept_docs, hr_pos_docs, hr_staff_docs,
+     hr_leave_balance_docs, hr_attendance_docs, hr_shift_sched_docs,
+     hr_leave_req_docs, hr_shift_swap_docs,
+     hr_perf_docs) = _build_f8d_docs(stress_tid, prefix, now)
     factory_ms = round((time.perf_counter() - t_factory_start) * 1000, 1)
 
     counts = dict.fromkeys(STRESS_COLLECTIONS, 0)
@@ -974,7 +1267,13 @@ async def stress_seed(
                          "mice_spaces", "mice_menus", "mice_accounts",
                          "mice_contacts", "mice_resources", "mice_events",
                          "mice_opportunities", "mice_opportunity_activities",
-                         "mice_packages"):
+                         "mice_packages",
+                         # F8D HR surface — orphan scrub mirror.
+                         "staff_members", "hr_departments", "hr_positions",
+                         "attendance_records", "leave_requests",
+                         "leave_balances", "shift_schedules",
+                         "shift_swap_requests", "performance_reviews",
+                         "payroll_records"):
             try:
                 res = await db[col_name].delete_many({
                     "tenant_id": stress_tid,
@@ -1016,6 +1315,20 @@ async def stress_seed(
         counts["mice_opportunities"] = await _chunked_insert(db.mice_opportunities, opportunities_docs + leads_docs, INSERT_CHUNK_SIZE)
         counts["mice_opportunity_activities"] = await _chunked_insert(db.mice_opportunity_activities, opp_activities_docs, INSERT_CHUNK_SIZE)
         counts["mice_packages"] = await _chunked_insert(db.mice_packages, packages_docs, INSERT_CHUNK_SIZE)
+        # F8D HR / Staff / Shift / Leave / Department surface
+        counts["hr_departments"] = await _chunked_insert(db.hr_departments, hr_dept_docs, INSERT_CHUNK_SIZE)
+        counts["hr_positions"] = await _chunked_insert(db.hr_positions, hr_pos_docs, INSERT_CHUNK_SIZE)
+        counts["staff_members"] = await _chunked_insert(db.staff_members, hr_staff_docs, INSERT_CHUNK_SIZE)
+        counts["leave_balances"] = await _chunked_insert(db.leave_balances, hr_leave_balance_docs, INSERT_CHUNK_SIZE)
+        counts["attendance_records"] = await _chunked_insert(db.attendance_records, hr_attendance_docs, INSERT_CHUNK_SIZE)
+        counts["shift_schedules"] = await _chunked_insert(db.shift_schedules, hr_shift_sched_docs, INSERT_CHUNK_SIZE)
+        counts["leave_requests"] = await _chunked_insert(db.leave_requests, hr_leave_req_docs, INSERT_CHUNK_SIZE)
+        counts["shift_swap_requests"] = await _chunked_insert(db.shift_swap_requests, hr_shift_swap_docs, INSERT_CHUNK_SIZE)
+        counts["performance_reviews"] = await _chunked_insert(db.performance_reviews, hr_perf_docs, INSERT_CHUNK_SIZE)
+        # payroll_records is NOT seeded — specs are read-only on payroll
+        # (`/api/hr/payroll/finalize` MUST NOT be called in stress; it writes
+        # live workflow rows). Cleanup loop still reaches it via orphan scrub
+        # in case future specs add seed rows.
 
         # F8A tur-14 diagnostic: post-insert DB ground-truth verification.
         # CI run #26 still reports `fetchedExtras=0` despite tur-13 sort fix
