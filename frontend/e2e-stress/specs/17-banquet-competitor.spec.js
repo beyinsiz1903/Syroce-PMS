@@ -121,6 +121,8 @@ test.describe('F8C § 17 — Banquet Competitor', () => {
             `n=${total} ok=${ok} (<${floor}). errs=${JSON.stringify(errs)}`);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'rates_push', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
+        // CI #39 NO-GO follow-up: hard guard — rec FAIL'i expect throw'a bağlar (failedTests++).
+        expect(ok, `rates_push floor>=${floor}; got ok=${ok}`).toBeGreaterThanOrEqual(floor);
     });
 
     test('D) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {

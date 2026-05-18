@@ -128,3 +128,8 @@ else if (!allOk)           recFinding('P2', 'secondary step fail (hard-floor PAS
 - T002 ✅ 4 spec yazıldı, kontrat-uyumlu (Node `--check` parse OK, 16 test toplam).
 - T003 ✅ Docs + ADR + drill rapor + roadmap + replit.md pointer.
 - T004 ✅ tur-2 hot-fix: soft-fail tiered pattern (CI #38 NO-GO → CI #39 GO WITH WATCH bekleniyor).
+- T005 ✅ tur-3 hot-fix (CI #39 hâlâ NO-GO sonrası): spec 14/17/23'te de aynı pattern eksikti (rec FAIL var ama expect hard-guard yok → failedTests=0, FAIL=1). Düzeltme:
+    - Spec 14 (payment_schedule): soft-fail tiered + `expect(okReplace).toBeGreaterThanOrEqual(replaceFloor)` hard guard.
+    - Spec 17 (rates_push): `expect(ok).toBeGreaterThanOrEqual(floor)` hard guard.
+    - Spec 23 (consent_decision): `expect(pass).toBe(true)` hard guard.
+    - Pre-existing pattern bug — F8C/F8D'de tek tek koşulduğunda PASS, ama F8A nightly full-suite + F8E seed yan etkisiyle intermittent fail tetiklendi. Bu fix tüm specs'i tutarlı hale getirir (rec FAIL ↔ expect throw bağı).

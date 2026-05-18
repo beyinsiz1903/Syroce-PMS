@@ -211,6 +211,8 @@ test.describe('F8D § 23 — HR Shift', () => {
             `n=${total} consent_ok=${consentOk}/${consentReachable} decision_ok=${decisionOk}/${decisionReachable} errs=${JSON.stringify(errs)}`);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'consent_decision', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
+        // CI #39 NO-GO follow-up: hard guard — rec FAIL'i expect throw'a bağlar (failedTests++).
+        expect(pass, `consent_decision floor: consent_ok=${consentOk}/${consentFloor} decision_ok=${decisionOk}/${decisionFloor}`).toBe(true);
     });
 
     test('D) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
