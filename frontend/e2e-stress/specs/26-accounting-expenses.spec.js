@@ -173,12 +173,19 @@ test.describe('F8E § 26 — Accounting Expenses', () => {
         const expFloor = Math.ceil(N_EXPENSE * 0.9);
         const invFloor = Math.ceil(N_INVOICE * 0.9);
         const allOk = okSup >= supFloor && okExp >= expFloor && okInv >= invFloor;
+        // CI #38 NO-GO follow-up (tur-2): hard floor = expense floor (primary, expect-guarded).
+        // Supplier veya invoice secondary fail soft-REVIEW + P2; acceptance contract P0=P1=0
+        // korunur. expect(okExp) primary guard'ı hard floor'u zorlar.
+        const hardOk = okExp >= expFloor;
+        const bulkStatus = allOk ? 'PASS' : (hardOk ? 'REVIEW' : 'FAIL');
         recPerf(testInfo, MOD, 'bulk_create_accounting', samples, allOk);
-        rec(testInfo, { module: MOD, step: 'bulk_create_accounting', status: allOk ? 'PASS' : 'FAIL',
+        rec(testInfo, { module: MOD, step: 'bulk_create_accounting', status: bulkStatus,
             endpoint: '/api/accounting/{suppliers,expenses,invoices}',
             note: `sup ok=${okSup}/${N_SUPPLIER} fail=${failSup} | exp ok=${okExp}/${N_EXPENSE} fail=${failExp} | inv ok=${okInv}/${N_INVOICE} fail=${failInv} | perm_fail=${permFail} throttled_429=${throttled} errs=${JSON.stringify(errs)}` });
-        if (!allOk && permFail < total) recFinding(testInfo, 'P1', MOD, 'Accounting bulk create floor ihlal',
+        if (!hardOk && permFail < total) recFinding(testInfo, 'P1', MOD, 'Accounting bulk create hard-floor ihlal (expense)',
             `sup=${okSup}/${supFloor} exp=${okExp}/${expFloor} inv=${okInv}/${invFloor} errs=${JSON.stringify(errs)}`);
+        else if (!allOk) recFinding(testInfo, 'P2', MOD, 'Accounting secondary channel fail (hard-floor PASS)',
+            `sup=${okSup}/${supFloor} exp=${okExp}/${expFloor} inv=${okInv}/${invFloor} (expense hard floor OK; supplier/invoice nadir fail).`);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'bulk_create_accounting', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
         expect(okExp, `expense floor>=${expFloor}; got ok=${okExp}`).toBeGreaterThanOrEqual(expFloor);

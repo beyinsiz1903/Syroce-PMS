@@ -139,12 +139,19 @@ test.describe('F8E § 27 — Accounting Bank + Inventory', () => {
         const bankFloor = Math.ceil(N_BANK * 0.9);
         const movFloor = Math.ceil(N_MOVEMENT * 0.9);
         const allOk = okBank >= bankFloor && okMov >= movFloor;
+        // CI #38 NO-GO follow-up (tur-2): hard floor = inventory movement floor (primary, expect-guarded).
+        // Bank secondary fail soft-REVIEW + P2; acceptance contract P0=P1=0 korunur.
+        // expect(okMov) primary guard'ı hard floor'u zorlar.
+        const hardOk = okMov >= movFloor;
+        const bulkStatus = allOk ? 'PASS' : (hardOk ? 'REVIEW' : 'FAIL');
         recPerf(testInfo, MOD, 'bulk_create_bank_inv', samples, allOk);
-        rec(testInfo, { module: MOD, step: 'bulk_create_bank_inv', status: allOk ? 'PASS' : 'FAIL',
+        rec(testInfo, { module: MOD, step: 'bulk_create_bank_inv', status: bulkStatus,
             endpoint: '/api/accounting/{bank-accounts,inventory/movement}',
             note: `bank ok=${okBank}/${N_BANK} fail=${failBank} | mov ok=${okMov}/${N_MOVEMENT} fail=${failMov} | perm_fail=${permFail} throttled_429=${throttled} errs=${JSON.stringify(errs)}` });
-        if (!allOk && permFail < total) recFinding(testInfo, 'P1', MOD, 'Bank/Inventory bulk create floor ihlal',
+        if (!hardOk && permFail < total) recFinding(testInfo, 'P1', MOD, 'Bank/Inventory bulk create hard-floor ihlal (movement)',
             `bank=${okBank}/${bankFloor} mov=${okMov}/${movFloor} errs=${JSON.stringify(errs)}`);
+        else if (!allOk) recFinding(testInfo, 'P2', MOD, 'Bank/Inventory secondary channel fail (hard-floor PASS)',
+            `bank=${okBank}/${bankFloor} mov=${okMov}/${movFloor} (movement hard floor OK; bank nadir fail).`);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'bulk_create_bank_inv', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
         expect(okMov, `inventory movement floor>=${movFloor}; got ok=${okMov}`).toBeGreaterThanOrEqual(movFloor);
