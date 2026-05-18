@@ -79,6 +79,22 @@ STRESS_COLLECTIONS = [
     "service_complaints",
     "messages",
     "notifications",
+    # F8C (2026-05-17): MICE / Event / Banquet / Group Operations surface.
+    # `mice_accounts` taşıyıcı: hem client account'ları (event organizatörü)
+    # hem `account_type=banquet_competitor` rakipleri tek koleksiyonda; her
+    # ikisi `stress_seed=True` etiketli → cleanup ikisini de doğru toplar.
+    # `mice_opportunities` aynı şekilde sales_catering opportunity (_kind=
+    # opportunity) + sales/router leads (_kind=lead) için ortak; cleanup
+    # `stress_seed=True` filter ile her ikisini de tarar.
+    "mice_spaces",
+    "mice_menus",
+    "mice_accounts",
+    "mice_contacts",
+    "mice_resources",
+    "mice_events",
+    "mice_opportunities",
+    "mice_opportunity_activities",
+    "mice_packages",
     "bookings",
     "guests",
     "rooms",
@@ -574,6 +590,310 @@ def _build_f8b_docs(
     return qr_docs, complaint_docs, message_docs, notif_docs
 
 
+# F8C — MICE / Event / Banquet / Group Operations surface factory.
+#
+# Dry-run safety invariants (must hold to keep external_calls=[] PASS):
+#   - mice_events seed-status: ALL "lead". `_post_event_to_folio` runs only
+#     when transition target is `completed` AND `reservation_id` is set;
+#     F8C events have reservation_id=None so even if a spec accidentally
+#     transitions to completed, posting + xchange bus.publish short-circuit
+#     in `_post_event_to_folio` (total<=0 or no reservation_id → return).
+#     Spec 14 explicitly skips the `completed` transition anyway.
+#   - opportunities seed-stage: lead/qualified/proposal/contract — never
+#     won/lost so specs can transition forward without colliding with
+#     `closed_at` semantics. Pipeline aggregation read returns non-trivial
+#     distribution.
+#   - sales_leads (mice_opportunities + _kind=lead): all seeded status=new
+#     so funnel aggregation surfaces non-trivial; specs transition forward.
+#   - Banquet competitors (mice_accounts + account_type=banquet_competitor)
+#     pre-seeded with 5 rates each → positioning read returns data.
+#   - All collections tagged stress_seed=True + stress_prefix=<prefix> for
+#     idempotent cleanup; tenant_context(stress_tid) wrap prevents leak.
+#   - Spaces: each event uses a UNIQUE (space_id, date) tuple to avoid
+#     conflict on transitions (lead→tentative triggers _check_space_conflict).
+def _build_f8c_docs(stress_tid: str, prefix: str, now: datetime):
+    spaces_docs: list[dict] = []
+    menus_docs: list[dict] = []
+    accounts_docs: list[dict] = []
+    contacts_docs: list[dict] = []
+    resources_docs: list[dict] = []
+    events_docs: list[dict] = []
+    opportunities_docs: list[dict] = []
+    opp_activities_docs: list[dict] = []
+    leads_docs: list[dict] = []
+    competitors_docs: list[dict] = []
+    packages_docs: list[dict] = []
+
+    now_iso = now.isoformat()
+
+    # 1) FUNCTION SPACES (8)
+    space_seeds = [
+        ("Grand Balo Salonu", "Bodrum kat", 480, 500, 280, 320, 450, 0, 0, 8000, 35000),
+        ("Bosphorus Toplantı Salonu", "1. kat", 120, 120, 70, 80, 100, 50, 40, 2500, 12000),
+        ("Marmara Boardroom", "1. kat", 35, 0, 0, 0, 0, 0, 14, 1500, 6000),
+        ("Teras Etkinlik Alanı", "Çatı", 220, 0, 0, 150, 250, 0, 0, 3500, 18000),
+        ("Anadolu Konferans", "2. kat", 200, 220, 120, 0, 180, 80, 0, 3000, 15000),
+        ("Lale Düğün Salonu", "Bodrum kat", 300, 0, 0, 220, 350, 0, 0, 6000, 28000),
+        ("Çırağan VIP", "3. kat", 60, 0, 30, 0, 60, 28, 20, 2000, 9500),
+        ("Galata Atölye", "2. kat", 80, 60, 40, 0, 0, 30, 24, 1800, 8500),
+    ]
+    space_ids = []
+    for i, (n, loc, area, th, cl, bq, ck, us, br, hr, dr) in enumerate(space_seeds):
+        sid = str(uuid.uuid4())
+        space_ids.append(sid)
+        spaces_docs.append({
+            "id": sid, "tenant_id": stress_tid,
+            "name": f"{prefix}Space_{n}", "location": loc, "area_m2": area,
+            "capacity_theatre": th, "capacity_classroom": cl,
+            "capacity_banquet": bq, "capacity_cocktail": ck,
+            "capacity_u_shape": us, "capacity_boardroom": br,
+            "hourly_rate": hr, "daily_rate": dr, "currency": "TRY",
+            "amenities": ["wifi", "projector", "ses-sistemi"],
+            "active": True,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 2) MENUS (8) — F&B + AV/decor
+    menu_seeds = [
+        ("Coffee Break Klasik", "fb", 120.0, 0.0),
+        ("Coffee Break Premium", "fb", 180.0, 0.0),
+        ("Açık Büfe Öğle", "fb", 450.0, 0.0),
+        ("Düğün Gala Menüsü", "fb", 1200.0, 0.0),
+        ("Set Menü 3 Kap", "fb", 650.0, 0.0),
+        ("Projeksiyon + Ses Paketi", "av", 0.0, 4500.0),
+        ("Sahne + Işık Tasarım", "av", 0.0, 8500.0),
+        ("Çiçek + Masa Dekoru", "decor", 0.0, 5500.0),
+    ]
+    menu_ids = []
+    for i, (n, t, ppp, fp) in enumerate(menu_seeds):
+        mid = str(uuid.uuid4())
+        menu_ids.append(mid)
+        menus_docs.append({
+            "id": mid, "tenant_id": stress_tid,
+            "name": f"{prefix}Menu_{n}", "type": t,
+            "price_per_person": ppp, "flat_price": fp, "currency": "TRY",
+            "description": f"{prefix} F8C seed menu",
+            "active": True, "courses": [], "allergens": [],
+            "dietary_tags": [], "min_guests": 0, "prep_lead_minutes": 60,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 3) ACCOUNTS (10) + CONTACTS (1 per account)
+    account_ids = []
+    for i in range(10):
+        aid = str(uuid.uuid4())
+        account_ids.append(aid)
+        accounts_docs.append({
+            "id": aid, "tenant_id": stress_tid,
+            "name": f"{prefix}Account_Kurumsal_{i + 1:02d}",
+            # `/api/mice/accounts` filters on account_type=client (or missing).
+            # Use "client" to keep seeded rows visible in spec 14-A catalog read.
+            "account_type": "client",
+            "tax_no": f"{prefix}TAX{i + 1:08d}",
+            "email": f"{prefix.lower()}acct{i + 1}@e2e-stress.example.com",
+            "phone": f"+90555100{i + 1:04d}",
+            "industry": "tourism" if i % 2 == 0 else "finance",
+            "notes": f"{prefix} F8C seed account",
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+        cid = str(uuid.uuid4())
+        contacts_docs.append({
+            "id": cid, "tenant_id": stress_tid, "account_id": aid,
+            "name": f"{prefix}Contact_{i + 1}",
+            "title": "Etkinlik Yöneticisi",
+            "email": f"{prefix.lower()}ctc{i + 1}@e2e-stress.example.com",
+            "phone": f"+90555200{i + 1:04d}",
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 4) RESOURCES (5) — AV/decor stocked inventory
+    for i in range(5):
+        rid = str(uuid.uuid4())
+        resources_docs.append({
+            "id": rid, "tenant_id": stress_tid,
+            "name": f"{prefix}Resource_AV_{i + 1}",
+            "type": "av", "unit": "unit",
+            "unit_price": 1500.0 + (i * 250),
+            "total_stock": 10 + (i * 5),
+            "active": True,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 5) EVENTS (30) — UNIQUE (space, date) tuples → conflict-free transitions
+    # Date offset: starts 30 days from now, each event +1 day later.
+    # Each event uses spaces[i % 8] — so events 0,8,16,24 share Grand Balo
+    # Salonu but with different dates (i, i+8, i+16, i+24 days apart) →
+    # no date overlap on same space.
+    event_ids = []
+    for i in range(30):
+        eid = str(uuid.uuid4())
+        event_ids.append(eid)
+        start_day = now.date() + timedelta(days=30 + i)
+        # Single-day events; starts 10:00, ends 18:00 same day.
+        starts_at = datetime(start_day.year, start_day.month, start_day.day, 10, 0, 0, tzinfo=UTC)
+        ends_at = datetime(start_day.year, start_day.month, start_day.day, 18, 0, 0, tzinfo=UTC)
+        events_docs.append({
+            "id": eid, "tenant_id": stress_tid,
+            "name": f"{prefix}Event_{i + 1:02d}",
+            "client_name": f"{prefix}Client_{i + 1:02d}",
+            "client_email": f"{prefix.lower()}ev{i + 1}@e2e-stress.example.com",
+            "client_phone": f"+90555300{i + 1:04d}",
+            "client_account_id": account_ids[i % len(account_ids)],
+            "client_contact_id": None,
+            "organizer_user": None,
+            "event_type": ["meeting", "conference", "wedding", "gala", "training"][i % 5],
+            "status": "lead",  # safe — no folio impact, no conflict checks
+            "expected_pax": 50 + (i * 5),
+            "start_date": start_day.isoformat(),
+            "end_date": start_day.isoformat(),
+            "space_bookings": [{
+                "space_id": space_ids[i % len(space_ids)],
+                "starts_at": starts_at.isoformat(),
+                "ends_at": ends_at.isoformat(),
+                "setup_style": "theatre",
+                "expected_pax": 50 + (i * 5),
+            }],
+            "resources": [],
+            "agenda": [],
+            "payment_schedule": [],
+            "notes": f"{prefix} F8C seed event",
+            "reservation_id": None,  # CRITICAL — no folio posting on completed
+            "lost_reason": None,
+            "totals": {"grand_total": 0, "space_total": 0, "resource_total": 0},
+            "created_at": now_iso,
+            "created_by": "f8c-seed",
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 6) OPPORTUNITIES (30) — _kind=opportunity, stages lead/qualified/proposal/contract.
+    # NEVER won/lost — keeps `closed_at` field unset so spec C can transition forward.
+    open_stages = ["lead", "qualified", "proposal", "contract"]
+    stage_prob = {"lead": 10, "qualified": 25, "proposal": 50, "contract": 80}
+    for i in range(30):
+        oid = str(uuid.uuid4())
+        stage = open_stages[i % len(open_stages)]
+        opportunities_docs.append({
+            "_kind": "opportunity",
+            "id": oid, "tenant_id": stress_tid,
+            "title": f"{prefix}Opp_{i + 1:02d}",
+            "account_id": account_ids[i % len(account_ids)],
+            "contact_id": None,
+            "event_type": ["wedding", "conference", "corporate", "social", "incentive"][i % 5],
+            "pax": 80 + (i * 5),
+            "estimated_value": 25000.0 + (i * 1500),
+            "currency": "TRY",
+            "probability": stage_prob[stage],
+            "stage": stage,
+            "stage_history": [{"stage": stage, "at": now_iso, "by": "f8c-seed"}],
+            "source": "referral" if i % 2 == 0 else "website",
+            "owner": None,
+            "notes": f"{prefix} F8C seed opportunity",
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "created_by": "f8c-seed",
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+        # 1 activity per opportunity for read surface
+        opp_activities_docs.append({
+            "_kind": "opportunity_activity",
+            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+            "opportunity_id": oid,
+            "type": "note",
+            "subject": f"{prefix}OppNote_{i + 1}",
+            "body": f"{prefix} F8C seeded note #{i + 1}",
+            "happened_at": now_iso, "duration_min": 15,
+            "outcome": "positive" if i % 3 == 0 else "neutral",
+            "created_at": now_iso, "created_by": "f8c-seed",
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 7) SALES LEADS (20) — _kind=lead, status=new (mice_opportunities collection).
+    lead_status_seed = ["new", "contacted", "qualified", "proposal_sent"]
+    for i in range(20):
+        leads_docs.append({
+            "_kind": "lead",
+            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+            "company_name": f"{prefix}LeadCo_{i + 1:02d}",
+            "contact_name": f"{prefix}LeadContact_{i + 1}",
+            "contact_email": f"{prefix.lower()}lead{i + 1}@e2e-stress.example.com",
+            "contact_phone": f"+90555400{i + 1:04d}",
+            "source": "website" if i % 2 == 0 else "referral",
+            "status": lead_status_seed[i % len(lead_status_seed)],
+            "priority": "medium",
+            "estimated_value": 50000.0 + (i * 2000),
+            "estimated_rooms": 10 + (i % 20),
+            "target_checkin": (now + timedelta(days=60 + i)).date().isoformat(),
+            "assigned_to": None,
+            "lead_score": 50 + (i % 30),
+            "notes": f"{prefix} F8C seed lead",
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 8) BANQUET COMPETITORS (10) — mice_accounts + account_type=banquet_competitor
+    # Each pre-seeded with 5 rates embedded.
+    for i in range(10):
+        cid = str(uuid.uuid4())
+        rates_embedded = []
+        for r in range(5):
+            rates_embedded.append({
+                "id": str(uuid.uuid4()),
+                "event_type": ["meeting", "conference", "wedding", "gala", "training"][r % 5],
+                "season": ["all", "high", "shoulder", "low", "high"][r % 5],
+                "per_pax_price": 800.0 + (i * 100) + (r * 50),
+                "currency": "TRY",
+                "min_pax": 30 + (r * 10),
+                "max_pax": 200 + (r * 50),
+                "package_includes": ["coffee", "lunch"],
+                "source": "web",
+                "note": f"{prefix} F8C seed rate {r + 1}",
+                "recorded_at": now_iso,
+                "recorded_by": "f8c-seed",
+            })
+        competitors_docs.append({
+            "id": cid, "tenant_id": stress_tid,
+            "account_type": "banquet_competitor",
+            "name": f"{prefix}Competitor_Hotel_{i + 1:02d}",
+            "hotel_class": 4 + (i % 2),
+            "capacity_max": 300 + (i * 50),
+            "venues": [f"{prefix}Venue_{i}_{v}" for v in range(2)],
+            "notes": f"{prefix} F8C seed competitor",
+            "active": True,
+            "competitor_rates": rates_embedded,
+            "created_at": now_iso, "created_by": "f8c-seed",
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 9) PACKAGES (3)
+    pkg_types = ["wedding", "conference", "corporate"]
+    for i, pt in enumerate(pkg_types):
+        packages_docs.append({
+            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+            "name": f"{prefix}Package_{pt}_{i + 1}",
+            "type": pt,
+            "description": f"{prefix} F8C seed package",
+            "min_pax": 50, "max_pax": 300,
+            "base_price": 25000.0 + (i * 5000),
+            "per_pax_price": 450.0 + (i * 50),
+            "currency": "TRY",
+            "items": [],
+            "active": True,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    return (spaces_docs, menus_docs, accounts_docs, contacts_docs,
+            resources_docs, events_docs, opportunities_docs,
+            opp_activities_docs, leads_docs, competitors_docs,
+            packages_docs)
+
+
 async def _chunked_insert(collection, docs: list[dict], chunk_size: int) -> int:
     """Insert docs in chunks of `chunk_size`. Returns total insert count."""
     if not docs:
@@ -610,6 +930,12 @@ async def stress_seed(
     qr_docs, complaint_docs, message_docs, notif_docs = _build_f8b_docs(
         rooms_docs, bookings_docs, guests_docs, stress_tid, prefix, now,
     )
+    # F8C: MICE / Event / Banquet / Group Operations surface (standalone —
+    # does not depend on rooms/bookings/guests; catalogs + events + opps).
+    (spaces_docs, menus_docs, accounts_docs, contacts_docs,
+     resources_docs, events_docs, opportunities_docs,
+     opp_activities_docs, leads_docs, competitors_docs,
+     packages_docs) = _build_f8c_docs(stress_tid, prefix, now)
     factory_ms = round((time.perf_counter() - t_factory_start) * 1000, 1)
 
     counts = dict.fromkeys(STRESS_COLLECTIONS, 0)
@@ -643,7 +969,12 @@ async def stress_seed(
         for col_name in ("rooms", "bookings", "guests", "folios", "folio_charges",
                          "room_night_locks", "housekeeping_tasks",
                          "room_qr_requests", "service_complaints",
-                         "messages", "notifications"):
+                         "messages", "notifications",
+                         # F8C MICE surface — orphan scrub mirror.
+                         "mice_spaces", "mice_menus", "mice_accounts",
+                         "mice_contacts", "mice_resources", "mice_events",
+                         "mice_opportunities", "mice_opportunity_activities",
+                         "mice_packages"):
             try:
                 res = await db[col_name].delete_many({
                     "tenant_id": stress_tid,
@@ -675,6 +1006,16 @@ async def stress_seed(
         counts["service_complaints"] = await _chunked_insert(db.service_complaints, complaint_docs, INSERT_CHUNK_SIZE)
         counts["messages"] = await _chunked_insert(db.messages, message_docs, INSERT_CHUNK_SIZE)
         counts["notifications"] = await _chunked_insert(db.notifications, notif_docs, INSERT_CHUNK_SIZE)
+        # F8C MICE / Event / Banquet / Group Operations surface
+        counts["mice_spaces"] = await _chunked_insert(db.mice_spaces, spaces_docs, INSERT_CHUNK_SIZE)
+        counts["mice_menus"] = await _chunked_insert(db.mice_menus, menus_docs, INSERT_CHUNK_SIZE)
+        counts["mice_accounts"] = await _chunked_insert(db.mice_accounts, accounts_docs + competitors_docs, INSERT_CHUNK_SIZE)
+        counts["mice_contacts"] = await _chunked_insert(db.mice_contacts, contacts_docs, INSERT_CHUNK_SIZE)
+        counts["mice_resources"] = await _chunked_insert(db.mice_resources, resources_docs, INSERT_CHUNK_SIZE)
+        counts["mice_events"] = await _chunked_insert(db.mice_events, events_docs, INSERT_CHUNK_SIZE)
+        counts["mice_opportunities"] = await _chunked_insert(db.mice_opportunities, opportunities_docs + leads_docs, INSERT_CHUNK_SIZE)
+        counts["mice_opportunity_activities"] = await _chunked_insert(db.mice_opportunity_activities, opp_activities_docs, INSERT_CHUNK_SIZE)
+        counts["mice_packages"] = await _chunked_insert(db.mice_packages, packages_docs, INSERT_CHUNK_SIZE)
 
         # F8A tur-14 diagnostic: post-insert DB ground-truth verification.
         # CI run #26 still reports `fetchedExtras=0` despite tur-13 sort fix
