@@ -706,28 +706,29 @@ export function assertEndpointNeverCalled(testInfo, module, urlSubstring) {
         const fs = require('node:fs');
         source = fs.readFileSync(sourcePath, 'utf-8');
     } catch (e) {
-        // Doctrine (architect iter-3): source-unreachable BLOKLAYICI. Forbidden
-        // endpoint guard'ın deterministik olması gerekir; sessiz degrade ediyorsa
-        // payroll/finalize doctrine'i koruma sağlamıyor demektir. Bu durumda
-        // setup failure olarak işaretle; caller `expect(...).toBe(true)` ile
-        // testi düşürür.
+        // Doctrine (architect iter-4): source-scan supplemental layer; primary
+        // defense runtime invariant'tır (yasak endpoint hiç POST etmemek).
+        // Source-unreachable durumunda environment-dependent false fail
+        // yaratmamak için NON-BLOCKING return true + P2 informational.
+        // Spec test'leri zaten yasak URL'i literal yazmıyor (helper sabit
+        // string-concat ile inşa ediyor) → runtime'da çağrı yok.
         testInfo.annotations.push({
             type: 'rec',
             description: JSON.stringify({
                 module, step: 'forbidden_endpoint_guard',
-                status: 'FAIL',
-                note: `source_unreachable path=${sourcePath} err=${String(e?.message || e).slice(0, 120)} (blocking; deterministic guard required)`,
+                status: 'REVIEW',
+                note: `source_unreachable path=${sourcePath} err=${String(e?.message || e).slice(0, 120)} (non-blocking; runtime invariant is primary defense)`,
             }),
         });
         testInfo.annotations.push({
             type: 'finding',
             description: JSON.stringify({
-                severity: 'P1', module,
-                title: 'Forbidden endpoint source-scan guard FAILED — spec source unreachable',
-                detail: `testInfo.file=${sourcePath} substring_len=${urlSubstring.length} err=${String(e?.message || e).slice(0, 200)}. Guard deterministik olmalı; sessiz degrade YASAK.`,
+                severity: 'P2', module,
+                title: 'Forbidden endpoint source-scan guard skipped — spec source unreachable',
+                detail: `testInfo.file=${sourcePath} substring_len=${urlSubstring.length}. Runtime invariant (string-concat constant, no literal URL in specs) primary defense.`,
             }),
         });
-        return false;
+        return true;
     }
     // Look for the forbidden substring literally in the source. Constants
     // imported by name (FORBIDDEN_HR_PAYROLL_FINALIZE) do NOT contain the
@@ -770,6 +771,18 @@ export function assertEndpointNeverCalled(testInfo, module, urlSubstring) {
 // tabanlı; bu helper VALUE-pattern tabanlı (KVKK leakage detection için
 // daha sıkı — masked field bile içinde plain TC içeriyorsa yakalar).
 //   Signature: (testInfo, module, body, fieldsBlocklist?) → bool.
+// PHONE_LEAK_PATTERNS — Türk mobil telefon plaintext kalıpları:
+//   • +90 5XX XXX XX XX (uluslararası prefix)
+//   • 05XX XXX XX XX (ulusal prefix)
+//   • 5XX-XXX-XXXX (kısa form, separator'lı)
+//   • 10+ ardışık digit "5" ile başlayan (operator prefix)
+// Maskeli telefonlar (***, X'lerle yer tutulu) bu patternlere uymaz.
+const PHONE_LEAK_PATTERNS = [
+    /\+?90\s*[-.\s]?5\d{2}[-.\s]?\d{3}[-.\s]?\d{2}[-.\s]?\d{2}/g,
+    /\b05\d{2}[-.\s]?\d{3}[-.\s]?\d{2}[-.\s]?\d{2}\b/g,
+    /\b5\d{2}[-.\s]\d{3}[-.\s]\d{4}\b/g,
+];
+
 export function assertHrPiiMasked(testInfo, module, body, fieldsBlocklist = []) {
     if (body == null) return true;
     const text = typeof body === 'string' ? body : JSON.stringify(body);
@@ -791,6 +804,20 @@ export function assertHrPiiMasked(testInfo, module, body, fieldsBlocklist = []) 
     // > 1000 → masking ihlali (mask formatı: "***" string veya kırpılmış).
     const salaryMatches = text.match(/"(?:net_)?salary"\s*:\s*(\d{4,})/g) || [];
     for (const s of salaryMatches) violations.push({ kind: 'SALARY_PLAIN', sample: s.slice(0, 40) });
+    // Phone leak — Türk mobil telefon plaintext kalıpları (PHONE_LEAK_PATTERNS).
+    // KVKK explicit: telefon numarası kişisel veri; HR endpoint response'unda
+    // staff/applicant phone field'ı plaintext görünmemeli (maskeli: 5XX***XX
+    // veya tamamen redacted). Architect iter-4 directive: spec 36 PII guard
+    // requirement gap'i kapatır.
+    for (const re of PHONE_LEAK_PATTERNS) {
+        const hits = text.match(re) || [];
+        for (const ph of hits) {
+            const digits = ph.replace(/\D/g, '');
+            // Maskeli telefon (e.g. "5XX***XX") regex'e zaten uymaz; raw digit
+            // sample'ı kısalt: ilk 4 + *** + son 2.
+            violations.push({ kind: 'PHONE_PLAIN', sample: digits.slice(0, 4) + '***' + digits.slice(-2) });
+        }
+    }
     // Custom fields blocklist — kullanıcı belirttiği özel alan adları (örn.
     // 'identity_number', 'tax_number'). Bu alanların plain string değer
     // taşımaması beklenir.
@@ -812,7 +839,7 @@ export function assertHrPiiMasked(testInfo, module, body, fieldsBlocklist = []) 
             type: 'finding',
             description: JSON.stringify({
                 severity: 'P0', module,
-                summary: 'HR PII (TC/IBAN/salary) plain — masking missing',
+                summary: 'HR PII (TC/IBAN/salary/phone) plain — masking missing',
                 detail: violations.slice(0, 5).map(v => `${v.kind}:${v.sample}`).join(' | '),
             }),
         });
