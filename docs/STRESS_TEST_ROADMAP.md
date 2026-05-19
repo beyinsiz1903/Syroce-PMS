@@ -262,22 +262,73 @@ yukarıdaki yedi ana hat tamamlandıktan sonra planlanır.)
 
 ---
 
-## F8D — sonraki başlatma için pre-flight notları (legacy v1, korunuyor)
+## F8D — sonraki başlatma için pre-flight notları (legacy v1, korunuyor) + v2 scope (AÇIK)
 
-Aday yüzeyler (backend route taraması gerekecek, F8D session'ında):
+Bu bölüm F8D v1 done olmasına rağmen **v2 turu için kullanıcı tarafından
+açık tutulan** scope listesini içerir. Her madde F8D v2 spec'lerine
+girer (planlanan spec dosyaları: `frontend/e2e-stress/specs/29-32`).
+F8D v2 başlatılana kadar bu liste değiştirilmez.
 
-- **Staff / Personel**: `/api/hr/staff*`, `/api/hr/employees*`, bulk
-  create + role assignment + activation flow.
-- **Shift**: `/api/hr/shifts*`, shift schedule generation, swap, conflict.
-- **Task**: `/api/operations/tasks*` (eğer hr modülü altında değilse
-  operasyon modülünden), assignment + completion + escalation.
-- **Leave / İzin**: `/api/hr/leaves*`, request → approve/reject → balance
-  decrement.
-- **Department**: `/api/hr/departments*`, hierarchy, role mapping.
+### Kapsam (kullanıcı 2026-05-19 direktifi, kesin)
 
-Dış servis riski: KVKK ID-photo entegrasyonu yoksa düşük; payroll
-e-mail ve provider bildirim varsa `E2E_EXTERNAL_DRY_RUN` gate'i
-zorunlu. `module-blocked pattern` her zaman fallback.
+1. **Personel (Staff)** — `/api/hr/staff*`, `/api/hr/employees*`. Bulk
+   create + role assignment + activation/deactivation + termination
+   lifecycle. PII fields (TC kimlik, telefon) masked response.
+2. **Departman** — `/api/hr/departments*`. Hierarchy create
+   (parent_id), org chart traversal (ancestry), role mapping, code
+   prefix isolation. Department delete cascade smoke.
+3. **Vardiya (Shift)** — `/api/hr/shifts*`. Schedule generation
+   (weekly/monthly), swap request lifecycle (request → approve/reject),
+   conflict reject (aynı staff + overlapping window → 409), department
+   minimum coverage check.
+4. **İzin (Leave)** — `/api/hr/leaves*`. Request → approve/reject →
+   balance decrement, monthly accrual smoke, year-end carry-over,
+   pending vs active queue separation.
+5. **Görev (Task)** — `/api/operations/tasks*` veya `/api/hr/tasks*`.
+   Assignment + status transition (pending → in_progress → completed),
+   escalation (overdue → manager notify, in-app only), bulk-close.
+6. **Housekeeping-Personel ilişkisi** — Department coverage minimum
+   check (örn. her vardiyada ≥ 2 housekeeping personeli), room
+   assignment by staff role, housekeeping task → staff_id binding,
+   on-duty filter doğru staff'ı çekiyor.
+7. **Yetki izolasyonu (RBAC)** — Cross-department record access reject
+   (staff A başka department'ın staff/leave/shift kayıtlarını
+   okuyamaz/değiştiremez). Manager scope = sadece kendi department'ı.
+   Negative test: HR-only endpoint'lere ops staff token ile erişim →
+   403.
+8. **Audit** — Staff create/update/terminate, leave decision (approve/
+   reject), shift swap decision tüm aksiyonlar `audit_logs` koleksiyonuna
+   actor_id + before/after snapshot ile yazılıyor. KVKK PII change-log
+   için kritik (örn. telefon güncelleme → eski/yeni masked log).
+9. **Cleanup** — HR koleksiyonları (`staff_members`,
+   `hr_departments`, `hr_positions`, `attendance_records`,
+   `leave_requests`, `leave_balances`, `shift_schedules`,
+   `shift_swap_requests`, `performance_reviews`, `payroll_records`)
+   prefix-scoped scrub idempotent. Orphan scrub run × 2 = no-op
+   (delta=0 ikinci runda).
+
+### Dış servis riski
+
+- **KVKK ID-photo**: Quick-ID integration var (`/api/quickid/*`), ama
+  HR staff create flow bu yola dokunmuyor (guest-only). `module-blocked
+  pattern` her durumda fallback.
+- **Payroll**: `/finalize` ASLA tetiklenmeyecek, sadece dry-run hesap
+  path + export preview. `E2E_EXTERNAL_DRY_RUN=true` global gate
+  zorunlu (payroll provider entegrasyonu varsa engellenir).
+- **Notifications**: In-app only (`db.notifications`), Resend/SMS
+  provider call yok (F8B cleanup zaten kapsar).
+
+### Backend route taraması (F8D v2 session'ında yapılacak)
+
+- `backend/routers/hr/*` veya `backend/domains/hr/router/*` — staff /
+  department / position / leave / shift / attendance / performance
+  endpoint envanteri.
+- `backend/routers/operations/*` veya `backend/domains/operations/*` —
+  task endpoint envanteri.
+- `audit_logs` koleksiyonuna yazan trigger noktaları (`core/audit.py`
+  helper) — hangi HR aksiyonların audit'lendiği listesi.
+- `backend/core/rbac.py` — manager scope (department-bound)
+  enforcement detayları.
 
 ## Yapılış sırası (her faz için)
 

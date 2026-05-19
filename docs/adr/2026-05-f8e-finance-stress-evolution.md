@@ -122,6 +122,28 @@ else if (!allOk)           recFinding('P2', 'secondary step fail (hard-floor PAS
 
 `expect()` koruması hard floor'u zorlamaya devam eder — gerçek regression (primary endpoint çökmesi) hala NO-GO trigger eder. Bu fix sadece intermittent secondary-step failure'ı GO WITH WATCH'a düşürür (acceptance contract: P0=P1=0 + counters.FAIL=0).
 
+## tur-6 — v2 push (Reports + Currency, 2026-05-19)
+
+Task #189 kapsamında F8E v2 push (kapatma turu). Mevcut spec 24-27 üzerine **yeni spec 28** eklendi.
+
+**Coverage gap analizi (backend route taraması):**
+- F8E tur-1 erişmediği yüzeyler: VAT report, P&L, balance-sheet, accounting dashboard, cash-flow read, currencies meta, currency rate CRUD, convert-currency.
+- **Bilinçli dışarıda bırakıldı (external dispatch riski)**: `/efatura/send-to-gib`, `/efatura/generate/{id}`, `/accounting/invoices/{id}/generate-efatura` — bu route'lar production'da gerçek GİB API'sine HTTP POST yapar; F8E hiçbir koşulda tetiklemez.
+- Folio dashboard-stats / pending-AR / revenue-by-category zaten F8A § 04 (folio) yüzeyine yakın → çift kapsama olur, eklenmedi.
+
+**Spec 28 — finance reports + currency (4 test):**
+- Setup: prefix + pilot baseline + `/api/accounting/currencies` reachability probe (no-perm endpoint → safest).
+- A) Reports read: VAT (no-perm) + P&L + balance-sheet + dashboard + cash-flow + currencies (6 GET). Hard floor = VAT + currencies + cash-flow (no-perm yüzeyler); P&L/BS/dashboard `view_finance_reports` gate → RBAC-tolerant (perm_gated_fails ayrıca raporlanır).
+- B) Currency lifecycle: 3 rate POST (TRY→USD, TRY→EUR, USD→EUR; her biri ayrı `effective_date`) + list GET + 2 convert POST. Floor: 90%. Tüm permFail === total ise RBAC-blocked SKIP. Hard guard `okRate >= rateFloor`.
+- C) Pilot drift = 0.
+
+**Seed değişikliği:** Yeni koleksiyon yok (currency_rates spec runtime'da yaratılır), ama `STRESS_COLLECTIONS`'a `currency_rates` eklendi → orphan scrub forward-compat. Spec'in spec mid-run abort olursa cleanup `stress_seed` filter olmadan `tenant_id` scoped scrub yapar (currency_rates rows `stress_seed` taşımıyor, sadece tenant_id).
+
+**Dry-run guarantees (ek):**
+- (g) **E-fatura dispatch yok**: Spec 28 hiçbir e-fatura endpoint'ine isabet etmez. Backend e-fatura modülü GİB için gerçek HTTP yapar — bilinçli dışarıda.
+- (h) **Currency rates lokal**: POST `/api/accounting/currency-rates` sadece `db.currency_rates` insert; dış kur servisi (e.g. TCMB / ECB) çağrısı YOK. `effective_date` window prefix-tagged değil ama tenant-scoped (stress tenant cleanup'ı kapsıyor).
+- (i) **Cache invalidation**: P&L/balance-sheet/dashboard `@cached(ttl=...)` — spec aynı tenant'ta read-only, cache hit/miss timing'i etkilemez.
+
 ## Acceptance
 
 - T001 ✅ Seed extension applied (`stress.py` syntax OK; kontrat doğrulanmış; runtime test CI'da).
@@ -143,3 +165,7 @@ else if (!allOk)           recFinding('P2', 'secondary step fail (hard-floor PAS
       - Consent RBAC-blocked iken decision evaluation **sadece reject decisions** üzerinde (`decisionEffectiveTotal = decisionRejectTotal`, `decisionEffectiveOk = decisionRejectOk`). Approve path bilinçli olarak hariç tutulur.
       - **Anomaly guard** (architect requested): `consentAnomalies`/`decisionAnomalies` = non-401/403/409 errors. Sıfır olmazsa P1 finding + `pass=false` (anomalyClean &&).
     - rec note + hard guard message tüm yeni metric'leri içerir (debug trace için kritik).
+- T008 ✅ tur-6 v2 push (2026-05-19, Task #189): spec 28 (finance reports + currency) eklendi. 4 yeni test. STRESS_COLLECTIONS += `currency_rates`. E-fatura paths bilinçli dışarıda. RBAC-tolerant pattern (F8E tur-2..5 mirror). Roadmap F8D v2 scope 9-madde açıkça enümere edildi. Toplam F8E test sayısı: 16 → 20.
+- T009 ✅ tur-6 architect review fix-up (2 kritik bulgu):
+    1. **Cleanup contract**: `currency_rates` rows backend POST tarafından `stress_seed` flag almıyor (Pydantic strict). Cleanup endpoint'i `stress_seed=True` filter ile bu rows'ı atlardı → tenant residue across runs. Fix: `CURRENCY_RATES_TENANT_SCOPED` exception branch — cleanup endpoint + orphan scrub her ikisinde de `currency_rates` için `tenant_id` scoped full-wipe (gates zaten stress tenant izolasyonunu garanti eder; pilot blocked + destructive flag required). Idempotent: re-run delta=0. Audit_logs etkilenmez.
+    2. **Hard floor mismatch**: Spec 28 A `hardOk = vat && cur && cf` ama `expect` sadece vat+cur'ı bekliyor → cf fail ederse `rec(status:FAIL)` yazıldı ama `failedTests=0` (test passed) → `counters.FAIL=1` → NO-GO (F8E tur-2 dersi, `markdown-reporter.mjs:254-256 decideVerdict`). Fix: `expect(cfR.ok)` eklendi → hard floor enforce ediliyor.

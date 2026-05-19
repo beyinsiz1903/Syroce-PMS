@@ -134,6 +134,12 @@ STRESS_COLLECTIONS = [
     "cash_flow",
     "city_ledger_accounts",
     "city_ledger_transactions",
+    # F8E v2 (2026-05-19, tur-6): currency_rates collection — spec 28
+    # creates 3 prefix-tagged rates via POST /api/accounting/currency-rates.
+    # No seed (spec 28 creates on demand); orphan scrub here covers tenant
+    # cleanup if spec aborts mid-run. Forward-compat with future currency
+    # report extensions (e.g. multi-currency invoice from-folio).
+    "currency_rates",
     "bookings",
     "guests",
     "rooms",
@@ -1616,6 +1622,17 @@ async def stress_seed(
                 orphan_cleanup[col_name] = res.deleted_count
             except Exception as e:
                 orphan_cleanup[f"{col_name}_error"] = str(e)[:120]
+        # F8E v2 tur-6 (2026-05-19) — currency_rates orphan scrub:
+        # Backend POST does not write stress_seed; rows are tenant-only.
+        # Wipe ALL currency_rates for the stress tenant BEFORE this round
+        # so prior-run residue cannot pollute spec 28 list/convert reads.
+        # Safe: same gates as the cleanup endpoint above (stress tenant
+        # only, pilot blocked, destructive flag required).
+        try:
+            res = await db.currency_rates.delete_many({"tenant_id": stress_tid})
+            orphan_cleanup["currency_rates"] = res.deleted_count
+        except Exception as e:
+            orphan_cleanup["currency_rates_error"] = str(e)[:120]
         total_rooms_inserted = await _chunked_insert(db.rooms, rooms_docs, INSERT_CHUNK_SIZE)
         # Authoritative split — `counts["rooms"]` MUST equal base (500) for
         # tenant-isolation contract testing; extras are an internal stress-only
@@ -1989,11 +2006,31 @@ async def stress_cleanup(
 
     deleted_counts: dict[str, int] = {}
     t_start = time.perf_counter()
+    # F8E v2 tur-6 (2026-05-19) — currency_rates exception:
+    # Backend POST /api/accounting/currency-rates writes only
+    # {tenant_id, from_currency, to_currency, rate, effective_date, ...} —
+    # spec 28 cannot inject `stress_seed`/`stress_prefix` because the route
+    # is a strict Pydantic POST (no passthrough). Without a dedicated branch
+    # the stress_seed-filtered loop below would skip these rows, leaving
+    # tenant residue across runs. The stress tenant is the only place these
+    # rows can exist (gates above enforce `target_tenant_id == stress_tid`
+    # AND pilot_tid blocked AND E2E_ALLOW_DESTRUCTIVE_STRESS=true), so
+    # tenant-scoped delete is safe here. Audit_logs are never touched.
+    CURRENCY_RATES_TENANT_SCOPED = {"currency_rates"}
     with tenant_context(stress_tid):
         from core.database import db
         for col_name in STRESS_COLLECTIONS:
             col = getattr(db, col_name)
-            res = await col.delete_many(flt)
+            if col_name in CURRENCY_RATES_TENANT_SCOPED:
+                # Tenant-scoped delete: rows do not carry stress_seed flag.
+                # Cleanup is full-wipe per collection regardless of prefix,
+                # because there is no per-round marker. This is acceptable:
+                # F8E spec 28 currency rates exist only in stress tenant
+                # and only across F8E runs; full collection wipe is the
+                # intent (idempotent across runs, no real-data exposure).
+                res = await col.delete_many({"tenant_id": stress_tid})
+            else:
+                res = await col.delete_many(flt)
             deleted_counts[col_name] = res.deleted_count
     cleanup_ms = round((time.perf_counter() - t_start) * 1000, 1)
 
