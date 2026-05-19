@@ -220,6 +220,119 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
         if (!r.ok) recFinding(testInfo, 'P2', MOD, 'Per-staff perf summary non-2xx', `status=${r.status}`);
     });
 
+    test('F) Full lifecycle: create new review + terminal-state guard (duplicate-period)', async ({ request, stressTokens, stressState }, testInfo) => {
+        test.setTimeout(60_000);
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'create_review_lifecycle', status: 'SKIP', note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        // Identify a fresh staff_id (not already in reviewPool) for clean create.
+        // Pull from /hr/staff list.
+        const staffR = await callTimed(request, 'get', '/api/hr/staff', undefined, stressTokens.stress_token);
+        const allStaff = staffR.body?.staff || staffR.body?.staff_members || staffR.body?.items
+            || (Array.isArray(staffR.body) ? staffR.body : []);
+        const seedStaffIds = new Set(reviewPool.map((r) => r.staff_id));
+        const candidate = allStaff.find((s) => s.id && !seedStaffIds.has(s.id)
+            && typeof (s.name || s.full_name) === 'string'
+            && (s.name || s.full_name).startsWith(prefix));
+        if (!candidate) {
+            rec(testInfo, { module: MOD, step: 'create_review_lifecycle', status: 'SKIP',
+                note: `no_candidate_staff (all_staff=${allStaff.length} seed_used=${seedStaffIds.size})` });
+            test.skip(true, 'no candidate staff');
+            return;
+        }
+        const samples = [];
+        const newPeriod = `${new Date().getUTCFullYear() + 1}-Q4`; // future-year unique period
+        let createdId = null;
+        // 1) CREATE — POST /api/hr/performance
+        const createR = await callTimedWithBackoff(request, 'post', '/api/hr/performance', {
+            staff_id: candidate.id,
+            period: newPeriod,
+            rating: 4,
+            comments: `${prefix} F8D-v2 32-F lifecycle create`,
+        }, stressTokens.stress_token);
+        samples.push(createR.ms);
+        if (createR.ok) {
+            createdId = createR.body?.review?.id || createR.body?.id || createR.body?.review_id;
+        } else if (createR.status === 401 || createR.status === 403) {
+            recFinding(testInfo, 'P2', MOD, 'Perf create RBAC blocked',
+                `status=${createR.status} — view_executive_reports gate; super_admin normalde bypass eder.`);
+            rec(testInfo, { module: MOD, step: 'create_review_lifecycle', status: 'SKIP',
+                note: `perm_fail status=${createR.status}` });
+            const extOkSkip = await assertNoExternalCallsPostBatch(testInfo, MOD, 'create_review_lifecycle_skip', stressState, request, stressTokens.pilot_token);
+            expect(extOkSkip).toBe(true);
+            test.skip(true, 'RBAC blocked');
+            return;
+        }
+        // 2) ACK ANALOG — check-in (per-goal acknowledgement, mirrors employee ack flow).
+        let ackOk = false;
+        if (createdId) {
+            const ackR = await callTimedWithBackoff(request, 'post',
+                `/api/hr/performance/${createdId}/checkin`, {
+                    goal_text: `${prefix} F8D-v2 32-F ack analog`,
+                    progress_pct: 50,
+                    status: 'on_track',
+                    note: `${prefix} F8D-v2 32-F acknowledged`,
+                }, stressTokens.stress_token);
+            samples.push(ackR.ms);
+            ackOk = ackR.ok;
+            if (ackR.ok && ackR.body?.checkin?.id) {
+                createdCheckinIds.push({ review_id: createdId, checkin_id: ackR.body.checkin.id });
+            }
+        }
+        // 3) TERMINAL-STATE GUARD — duplicate-period create. Backend may or may
+        // not enforce uniqueness (router.py:726 POST /hr/performance lacks
+        // explicit unique compound index). Either response (PASS=409/422 OR
+        // PASS=200 with separate id) is acceptable as long as no 500. P2
+        // informational rec captures actual behavior for future hardening.
+        let terminalBehavior = 'unknown';
+        let terminalStatus = null;
+        if (createdId) {
+            const dupR = await callTimedWithBackoff(request, 'post', '/api/hr/performance', {
+                staff_id: candidate.id,
+                period: newPeriod, // same staff_id + period → terminal-state probe
+                rating: 3,
+                comments: `${prefix} F8D-v2 32-F TERMINAL duplicate probe`,
+            }, stressTokens.stress_token);
+            samples.push(dupR.ms);
+            terminalStatus = dupR.status;
+            if (dupR.status === 409 || dupR.status === 422) {
+                terminalBehavior = 'enforced_unique';
+            } else if (dupR.ok) {
+                terminalBehavior = 'not_enforced_allows_duplicate';
+                recFinding(testInfo, 'P2', MOD,
+                    'Perf review terminal-state not enforced — duplicate-period create allowed',
+                    `staff_id=${candidate.id.slice(0,8)}… period=${newPeriod} dup_status=${dupR.status}. Backend uniqueness yok; finalize/state-machine'i ileride sıkılaştırmak için işaret.`);
+            } else if (dupR.status >= 500) {
+                terminalBehavior = 'server_error';
+                recFinding(testInfo, 'P1', MOD, 'Duplicate-period probe 5xx',
+                    `status=${dupR.status} body=${JSON.stringify(dupR.body).slice(0, 120)}`);
+            } else {
+                terminalBehavior = `other_${dupR.status}`;
+            }
+            // Cleanup: if duplicate was allowed, DELETE the duplicate row to
+            // avoid residue. Backend route DELETE /hr/performance/{id} may not
+            // exist; ignore failures.
+            if (dupR.ok && (dupR.body?.review?.id || dupR.body?.id)) {
+                const dupId = dupR.body.review?.id || dupR.body.id;
+                await callTimed(request, 'delete', `/api/hr/performance/${dupId}`, undefined, stressTokens.stress_token);
+            }
+            // Cleanup the lifecycle-created review too.
+            await callTimed(request, 'delete', `/api/hr/performance/${createdId}`, undefined, stressTokens.stress_token);
+        }
+        const pass = !!createdId;
+        recPerf(testInfo, MOD, 'create_review_lifecycle', samples, pass);
+        rec(testInfo, { module: MOD, step: 'create_review_lifecycle',
+            status: pass ? 'PASS' : 'FAIL',
+            endpoint: 'POST /api/hr/performance (+checkin +terminal-state probe)',
+            note: `staff=${candidate.id.slice(0,8)}… period=${newPeriod} created=${!!createdId} ack_ok=${ackOk} terminal_status=${terminalStatus} terminal_behavior=${terminalBehavior}` });
+        if (!pass) recFinding(testInfo, 'P1', MOD, 'Perf review create failed',
+            `status=${createR.status} body=${JSON.stringify(createR.body).slice(0, 120)}`);
+        const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'create_review_lifecycle', stressState, request, stressTokens.pilot_token);
+        expect(extOk).toBe(true);
+    });
+
     test('E) external_calls invariant + pilot_drift=0', async ({ request, stressTokens, stressState }, testInfo) => {
         await assertPilotDriftZero(testInfo, MOD, request, stressTokens.pilot_token, pilotBefore);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'hr_perf_done', stressState, request, stressTokens.pilot_token);

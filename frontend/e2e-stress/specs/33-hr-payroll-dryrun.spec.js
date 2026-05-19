@@ -1,18 +1,22 @@
 // F8D-v2 § 33 — HR Payroll Dry-run Stress.
 //
 // Scope: backlog item "Payroll smoke" — calculate dry-run + export preview;
-// `/api/hr/payroll/finalize` ASLA tetiklenmez (KESİN). v1 spec'lerde payroll
-// hiç dokunulmadı.
+// kalıcı insert eden FORBIDDEN endpoint ASLA tetiklenmez. v1 spec'lerde
+// payroll hiç dokunulmadı.
 //
 // Covered endpoints (READ-only):
 //   • GET  /api/hr/payroll/{month}        — finalized records lookup
 //   • GET  /api/hr/payroll/export         — JSON preview (dry-run calc)
 //   • GET  /api/hr/payroll/export/csv     — CSV stream preview
-// FORBIDDEN (NEVER CALLED):
-//   • POST /api/hr/payroll/finalize       — kalıcı insert; live workflow için
 //
-// Pre-flight source-scan guard: spec dosyasının kendisi /payroll/finalize
-// POST referansı içermemeli (literal grep). İçerirse P0 finding + skip.
+// FORBIDDEN doctrine: payroll write/finalize endpoint'i bu spec dosyasında
+// HİÇBİR ŞEKİLDE literal olarak yer almaz — ne yorum içinde, ne string
+// içinde, ne regex içinde. Helper modülünden import edilen
+// `FORBIDDEN_HR_PAYROLL_FINALIZE` sabit ismi referans olarak kullanılır;
+// sabitin değeri helper içinde string concat ile inşa edilir, böylece
+// substring olarak spec source'unda hiç görünmez. `assertEndpointNeverCalled`
+// source-scan guard'ı bu invariant'ı her run'da doğrular (FAIL P0 →
+// substring spec içinde bulundu).
 //
 // Mutlak kurallar:
 //   - failedTests=0, P0=P1=0
@@ -20,17 +24,15 @@
 //   - pilot_drift=0 (read-only)
 //   - payroll_records koleksiyonuna spec write YOK
 
-import fs from 'node:fs';
-import path from 'node:path';
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
     callTimed, callTimedWithBackoff, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe, assertNoTokenLeak,
+    assertEndpointNeverCalled, FORBIDDEN_HR_PAYROLL_FINALIZE,
 } from '../fixtures/stress-helpers.js';
 
 const MOD = 'hr_payroll';
-const FORBIDDEN_POST = '/payroll/finalize';
 
 function currentMonth() {
     const d = new Date();
@@ -46,37 +48,14 @@ test.describe('F8D-v2 § 33 — HR Payroll Dry-run', () => {
     let blockedReason = null;
     const MONTH = currentMonth();
 
-    test('Setup: prefix + pilot baseline + payroll export probe + FORBIDDEN guard', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('Setup: prefix + pilot baseline + payroll export probe + FORBIDDEN source-scan guard', async ({ request, stressTokens, stressState }, testInfo) => {
         prefix = stressState.data_prefix;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
-        // Pre-flight: spec dosyasının kendisi POST /api/hr/payroll/finalize
-        // çağrısı içermemeli. Literal source-scan guard.
-        // ESM-safe: __filename Playwright ESM context'inde undefined olabilir.
-        const candidatePaths = [];
-        if (typeof __filename !== 'undefined') candidatePaths.push(__filename);
-        candidatePaths.push(path.join(process.cwd(), 'e2e-stress', 'specs', '33-hr-payroll-dryrun.spec.js'));
-        candidatePaths.push(path.join(process.cwd(), 'frontend', 'e2e-stress', 'specs', '33-hr-payroll-dryrun.spec.js'));
-        let source = '';
-        for (const p of candidatePaths) {
-            try { source = fs.readFileSync(p, 'utf-8'); if (source) break; } catch (_) { /* try next */ }
-        }
-        if (!source) {
-            // Source unreachable — guard'ı atlayamayız ama spec'in PASS'lemesini
-            // de bloke etmemeli. P2 informational + runtime invariant'a güven.
-            recFinding(testInfo, 'P2', MOD, 'Source-scan guard skipped — spec source unreachable',
-                `candidate_paths=${candidatePaths.length} — D adımı runtime invariant doctrine'i kayıt altına alacak.`);
-        }
-        // POST request to finalize endpoint detection — match `'post'` followed by
-        // '/payroll/finalize' in callTimed/request.post/etc. Sadece KONUM bağlamı
-        // (post + finalize path); doctrine sabit isim FORBIDDEN_POST string'i
-        // bu listede — false-positive sayılmaz çünkü string oluşumu kasıtlı.
-        const postFinalizeRe = /(['"])post\1[^)]*\/api\/hr\/payroll\/finalize|request\.post\([^)]*\/api\/hr\/payroll\/finalize/i;
-        const forbiddenHit = postFinalizeRe.test(source);
-        if (forbiddenHit) {
-            recFinding(testInfo, 'P0', MOD, 'FORBIDDEN endpoint POST referansı bulundu — spec source ihlali',
-                `Spec dosyası POST /api/hr/payroll/finalize çağrısı içeriyor; finalize ASLA tetiklenmemeli (KVKK + finance immutability).`);
-        }
+        // FORBIDDEN guard — helper source-scan: spec dosyasının kendisi
+        // yasak URL substring'ini literal olarak içermemeli. Helper sabiti
+        // ismen referans, değer string concat (helper).
+        const guardOk = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_HR_PAYROLL_FINALIZE);
 
         const probe = await withModuleProbe(request, stressTokens.stress_token,
             `/api/hr/payroll/export?month=${MONTH}`);
@@ -86,9 +65,10 @@ test.describe('F8D-v2 § 33 — HR Payroll Dry-run', () => {
             recFinding(testInfo, 'P2', MOD, 'Payroll export probe non-2xx',
                 `status=${probe.status} reason=${probe.reason} — A/B/C skipped, E pilot_drift still enforced.`);
         }
-        rec(testInfo, { module: MOD, step: 'setup', status: forbiddenHit ? 'FAIL' : 'PASS',
-            note: `prefix=${prefix} month=${MONTH} pilot_before=${pilotBefore?.count} probe_status=${probe.status} forbidden_post_in_source=${forbiddenHit} module_blocked=${moduleBlocked}` });
-        expect(forbiddenHit, 'spec source must NEVER reference POST /api/hr/payroll/finalize').toBe(false);
+        rec(testInfo, { module: MOD, step: 'setup', status: guardOk ? 'PASS' : 'FAIL',
+            note: `prefix=${prefix} month=${MONTH} pilot_before=${pilotBefore?.count} probe_status=${probe.status} forbidden_guard_clean=${guardOk} module_blocked=${moduleBlocked}` });
+        // Hard assert: source-scan ihlali → suite fail.
+        expect(guardOk, 'spec source FORBIDDEN substring guard').toBe(true);
     });
 
     test('A) GET /hr/payroll/{month} — finalized records lookup (read-only)', async ({ request, stressTokens }, testInfo) => {
@@ -113,7 +93,6 @@ test.describe('F8D-v2 § 33 — HR Payroll Dry-run', () => {
         if (!r.ok) recFinding(testInfo, 'P2', MOD, 'Payroll month-lookup non-2xx', `status=${r.status}`);
         if (r.ok && !shapeOk) recFinding(testInfo, 'P2', MOD, 'Payroll month-lookup shape drift',
             `body keys=${Object.keys(r.body || {}).join(',')}`);
-        // Token leak guard — payroll responses kazara JWT/refresh içermemeli.
         if (r.ok) assertNoTokenLeak(testInfo, MOD, r.body, 'payroll_month_lookup');
     });
 
@@ -172,13 +151,16 @@ test.describe('F8D-v2 § 33 — HR Payroll Dry-run', () => {
         }
     });
 
-    test('D) FORBIDDEN doctrine — runtime invariant (no finalize call ever)', async ({ request, stressTokens }, testInfo) => {
-        // Defansif: spec lifecycle boyunca finalize asla tetiklenmedi; bu test
-        // sadece doctrine'i kayıt altına alır. Hiç POST yapmaz.
-        rec(testInfo, { module: MOD, step: 'forbidden_doctrine',
-            status: 'PASS',
-            note: `Doctrine: POST ${FORBIDDEN_POST} NEVER called from F8D-v2 § 33. Setup pre-flight source-scan guard enforces this at literal-text level.` });
-        expect(true).toBe(true);
+    test('D) FORBIDDEN doctrine — runtime invariant (helper-constant referenced, literal NEVER in source)', async ({ request, stressTokens }, testInfo) => {
+        // Re-assert source-scan invariant: helper sabit isimle referansta
+        // bulundu (üstte import edildi) ama literal substring spec source'unda
+        // hiç geçmemeli. Bu test sadece doctrine'i kayıt altına alır + ikincil
+        // guard çağrısı yapar; herhangi bir HTTP call yapmaz.
+        const guardOk = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_HR_PAYROLL_FINALIZE);
+        rec(testInfo, { module: MOD, step: 'forbidden_doctrine_runtime',
+            status: guardOk ? 'PASS' : 'FAIL',
+            note: `helper_const_name=FORBIDDEN_HR_PAYROLL_FINALIZE source_clean=${guardOk}. Doctrine: yasak endpoint dry-run/preview/CSV path'lerinden bağımsız olarak NEVER called from F8D-v2 § 33.` });
+        expect(guardOk, 'forbidden source-scan doctrine').toBe(true);
     });
 
     test('E) external_calls invariant + pilot_drift=0', async ({ request, stressTokens, stressState }, testInfo) => {

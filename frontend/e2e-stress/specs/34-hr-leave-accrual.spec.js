@@ -259,6 +259,63 @@ test.describe('F8D-v2 § 34 — HR Leave Balance Accrual + Carryover', () => {
         expect(pass, `carryover lifecycle contract`).toBe(true);
     });
 
+    test('C2) Negative annual_entitlement reject — 422 validation guard', async ({ request, stressTokens, stressState }, testInfo) => {
+        // Backend Pydantic LeaveBalancePayload: annual_entitlement: int = Field(ge=0)
+        // → -5 input 422 dönmeli. POST kabul ediyorsa P1 (validation drift; negatif
+        // bakiye yıllık izin hesabını bozar, finance reporting'e leak eder).
+        if (moduleBlocked || savedBalances.length === 0) {
+            rec(testInfo, { module: MOD, step: 'negative_balance_reject', status: 'SKIP', note: 'module blocked' });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        const samples = [];
+        const target = savedBalances[0];
+        const r = await callTimedWithBackoff(request, 'post', '/api/hr/leave-balance', {
+            staff_id: target.staff_id,
+            year: target.year,
+            annual_entitlement: -5, // KASITLI invalid
+            carry_over: 0,
+            sick_entitlement: target.sick_entitlement,
+        }, stressTokens.stress_token);
+        samples.push(r.ms);
+        // PASS: 422 (Pydantic) veya 400 (custom validator).
+        // REVIEW: 401/403 (RBAC short-circuit'e takıldı, gerçek validation
+        //   path'i hiç değerlendirilmedi — guard testini doğrulayamadık).
+        // FAIL P1: 2xx (negative kabul edildi).
+        let verdict;
+        if (r.status === 422 || r.status === 400) {
+            verdict = 'PASS';
+        } else if (r.status === 401 || r.status === 403) {
+            verdict = 'REVIEW';
+            recFinding(testInfo, 'P2', MOD, 'Negative-balance reject test RBAC blocked',
+                `status=${r.status} — validation path doğrulanamadı; super_admin normalde bypass eder.`);
+        } else if (r.ok) {
+            verdict = 'FAIL';
+            recFinding(testInfo, 'P1', MOD,
+                'Negative annual_entitlement KABUL EDİLDİ — Pydantic ge=0 validation drift',
+                `status=${r.status} body=${JSON.stringify(r.body).slice(0, 160)}. Negatif bakiye yıllık izin hesabını bozar, finance reporting'e leak eder.`);
+            // Eğer kabul edildiyse derhal restore — residue bırakma.
+            await callTimedWithBackoff(request, 'post', '/api/hr/leave-balance', {
+                staff_id: target.staff_id,
+                year: target.year,
+                annual_entitlement: target.annual_entitlement,
+                carry_over: target.carry_over || 0,
+                sick_entitlement: target.sick_entitlement,
+            }, stressTokens.stress_token);
+        } else {
+            verdict = 'REVIEW';
+            recFinding(testInfo, 'P2', MOD, 'Negative-balance reject — unexpected status',
+                `status=${r.status} body=${JSON.stringify(r.body).slice(0, 160)}`);
+        }
+        recPerf(testInfo, MOD, 'negative_balance_reject', samples, verdict === 'PASS');
+        rec(testInfo, { module: MOD, step: 'negative_balance_reject',
+            status: verdict,
+            endpoint: 'POST /api/hr/leave-balance (annual_entitlement=-5)',
+            note: `status=${r.status} verdict=${verdict}` });
+        const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'negative_balance_reject', stressState, request, stressTokens.pilot_token);
+        expect(extOk).toBe(true);
+    });
+
     test('D) Future-year accrual probe — READ-only default behavior (no upsert)', async ({ request, stressTokens }, testInfo) => {
         // Architect-iter-1 fix: D adımı RESIDUE bırakmamak için artık POST upsert
         // YAPMAZ; backend router default behavior'ı (line 1571 — annual=14 fallback

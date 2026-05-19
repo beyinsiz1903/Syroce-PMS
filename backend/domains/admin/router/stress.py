@@ -111,6 +111,11 @@ STRESS_COLLECTIONS = [
     "shift_schedules",
     "shift_swap_requests",
     "performance_reviews",
+    "performance_checkins",  # F8D-v2 (Task #205): goal check-in lifecycle (POST /hr/performance/{id}/checkin)
+    "performance_templates",  # F8D-v2 (Task #205): perf review templates (GET/POST /hr/performance-templates)
+    "leave_balance_adjustments",  # F8D-v2 forward-compat: leave-balance adjustment audit collection (no backend yet; orphan scrub)
+    "shift_conflicts",  # F8D-v2 forward-compat: shift overlap conflict audit collection (no backend yet; orphan scrub)
+    "leave_accrual_policies",  # F8D-v2: per-tenant accrual policy seed (HR İş K. m.53 carryover rules)
     "payroll_records",
     # F8E (2026-05-18): Finance / Cashier / Accounting surface.
     # All rows tagged `stress_seed=True` + `stress_prefix` → unified cleanup
@@ -1190,7 +1195,8 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
             "stress_seed": True, "stress_prefix": prefix,
         })
 
-    # 9) PERFORMANCE REVIEWS (3)
+    # 9) PERFORMANCE REVIEWS (3) — base v1 seed (draft status, ready for v2
+    # check-in append + summary read in spec 32).
     for i in range(3):
         performance_docs.append({
             "id": str(uuid.uuid4()), "tenant_id": stress_tid,
@@ -1204,9 +1210,45 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
             "stress_seed": True, "stress_prefix": prefix,
         })
 
+    # 10) PERFORMANCE REVIEW TEMPLATES (3) — F8D-v2 extension (Task #205).
+    # Spec 32 reads /hr/performance-templates; baseline templates ensure
+    # the endpoint returns non-empty pool even on fresh stress tenant.
+    perf_template_docs = []
+    template_types = [
+        ("annual_overall", "Yıllık Genel Performans", ["communication", "teamwork", "leadership"]),
+        ("quarterly_goals", "Çeyreklik Hedef Değerlendirme", ["target_achievement", "initiative"]),
+        ("probation_30day", "30 Gün Deneme Süresi", ["attendance", "learning_curve"]),
+    ]
+    for tpl_code, tpl_name, competencies in template_types:
+        perf_template_docs.append({
+            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+            "code": f"{prefix}TPL_{tpl_code}",
+            "name": f"{prefix} {tpl_name}",
+            "competencies": competencies,
+            "active": True,
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+
+    # 11) LEAVE ACCRUAL POLICIES (1) — F8D-v2 extension (Task #205).
+    # İş K. m.53 default policy: 14 gün/yıl entitlement + max 7 gün carryover.
+    # Spec 34 carryover dry-run bu policy üzerinden hesap doğrular.
+    leave_accrual_policy_docs = [{
+        "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+        "code": f"{prefix}POL_DEFAULT",
+        "name": f"{prefix} İş K. m.53 Default Accrual",
+        "annual_entitlement_days": 14,
+        "max_carryover_days": 7,
+        "carryover_expires_after_months": 12,
+        "active": True,
+        "created_at": now_iso,
+        "stress_seed": True, "stress_prefix": prefix,
+    }]
+
     return (departments_docs, positions_docs, staff_docs,
             leave_balance_docs, attendance_docs, shift_schedule_docs,
-            leave_request_docs, shift_swap_docs, performance_docs)
+            leave_request_docs, shift_swap_docs, performance_docs,
+            perf_template_docs, leave_accrual_policy_docs)
 
 
 def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
@@ -1561,7 +1603,10 @@ async def stress_seed(
     (hr_dept_docs, hr_pos_docs, hr_staff_docs,
      hr_leave_balance_docs, hr_attendance_docs, hr_shift_sched_docs,
      hr_leave_req_docs, hr_shift_swap_docs,
-     hr_perf_docs) = _build_f8d_docs(stress_tid, prefix, now)
+     hr_perf_docs,
+     # F8D-v2 (Task #205) extension — perf templates + leave accrual policies.
+     hr_perf_template_docs, hr_leave_accrual_policy_docs
+     ) = _build_f8d_docs(stress_tid, prefix, now)
     # F8E: Finance / Cashier / Accounting surface (standalone —
     # cashier shift lifecycle + suppliers/expenses/invoices + bank
     # accounts + inventory + stock movements + cash_flow + city ledger).
@@ -1615,6 +1660,10 @@ async def stress_seed(
                          "attendance_records", "leave_requests",
                          "leave_balances", "shift_schedules",
                          "shift_swap_requests", "performance_reviews",
+                         # F8D-v2 (Task #205) orphan scrub mirror.
+                         "performance_checkins", "performance_templates",
+                         "leave_balance_adjustments", "shift_conflicts",
+                         "leave_accrual_policies",
                          "payroll_records",
                          # F8E Finance / Cashier / Accounting surface —
                          # orphan scrub mirror.
@@ -1685,6 +1734,12 @@ async def stress_seed(
         counts["leave_requests"] = await _chunked_insert(db.leave_requests, hr_leave_req_docs, INSERT_CHUNK_SIZE)
         counts["shift_swap_requests"] = await _chunked_insert(db.shift_swap_requests, hr_shift_swap_docs, INSERT_CHUNK_SIZE)
         counts["performance_reviews"] = await _chunked_insert(db.performance_reviews, hr_perf_docs, INSERT_CHUNK_SIZE)
+        # F8D-v2 (Task #205) — perf templates + leave accrual policies.
+        counts["performance_templates"] = await _chunked_insert(db.performance_templates, hr_perf_template_docs, INSERT_CHUNK_SIZE)
+        counts["leave_accrual_policies"] = await _chunked_insert(db.leave_accrual_policies, hr_leave_accrual_policy_docs, INSERT_CHUNK_SIZE)
+        # performance_checkins + leave_balance_adjustments + shift_conflicts:
+        # NOT seeded — specs 32/34/35 write their own rows (cleanup via unified
+        # STRESS_COLLECTIONS sweep tagged stress_seed=True+stress_prefix).
         # F8E Finance / Cashier / Accounting surface
         counts["cashier_shifts"] = await _chunked_insert(db.cashier_shifts, cashier_shifts_docs, INSERT_CHUNK_SIZE)
         counts["cashier_transactions"] = await _chunked_insert(db.cashier_transactions, cashier_txn_docs, INSERT_CHUNK_SIZE)
