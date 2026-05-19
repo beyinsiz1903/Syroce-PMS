@@ -40,10 +40,11 @@ qrcode==7.4.2
 redis==5.0.1
 reportlab==4.4.10
 requests==2.33.0
+idna==3.15  # CVE-2026-45409 fix (transitive via requests); 3.11 vulnerable to DoS via valid_contexto pre length-check
 resend==2.29.0
 scikit-learn==1.8.0
 sentry-sdk==2.58.0
-strawberry-graphql==0.312.3
+strawberry-graphql==0.315.4
 tenacity==9.1.4
 uvicorn[standard]==0.25.0
 websockets==15.0.1
