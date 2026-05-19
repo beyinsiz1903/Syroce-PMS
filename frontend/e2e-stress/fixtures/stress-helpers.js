@@ -1125,7 +1125,11 @@ export function assertAiDryRunEnvGuards(testInfo, module, llmStateBody, processE
 // short-circuits to PASS in that case.
 export async function snapshotPilotBookingFields(request, pilotToken, sampleSize = 10) {
     try {
-        const r = await request.get('/api/bookings?limit=200', {
+        // Task #206 finding (re-review #5) — correct route is
+        // /api/pms/bookings (backend/routers/pms_bookings.py @ line 312).
+        // Response shape: {bookings: [...], total: int}. Bookings expose
+        // {id, status, no_show_at, ...} top-level. limit max=500.
+        const r = await request.get('/api/pms/bookings?limit=200', {
             headers: { Authorization: `Bearer ${pilotToken}` },
             failOnStatusCode: false, timeout: 15_000,
         });
