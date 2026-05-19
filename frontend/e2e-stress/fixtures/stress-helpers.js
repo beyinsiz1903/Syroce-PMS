@@ -191,30 +191,64 @@ export function recPerf(testInfo, module, op, samples, ok = true) {
 // Tur-5: 401/403 / network down artık FAIL (hard) — REVIEW fallback "silently passing"
 // riskini önler. Sadece 404 (endpoint deploy edilmemiş eski backend) snapshot fallback'e
 // düşer ve REVIEW olur.
+// tur-28 (2026-05-19) per-batch delta state — module-scoped, reset on import
+// (i.e. once per Playwright worker process). CI #44 NO-GO root cause: tur-9
+// doctrine compared `runtime_calls_len` to the SEED snapshot (= []), so once
+// the first mutation batch leaked a single non-inert outbox row, every
+// subsequent batch in every downstream spec saw `len > 0` and FAIL-cascaded
+// (16 P0 in CI #44). Per-batch delta assigns leakage to the batch that
+// caused it: snapshot = list AFTER current batch; next batch's verdict is
+// (current ⊖ snapshot). Cumulative residue from prior batches is downgraded
+// to REVIEW/P2 (informational), not FAIL.
+const _externalCallsLastSnapshot = { calls: [], initialized: false };
+
+function _callSignature(c) {
+    // tur-28 (architect-review fix): use the immutable outbox row `id` as
+    // the PRIMARY identity component. Backend projection now includes `id`
+    // (see backend/domains/admin/router/stress.py:1873-1882). The attempt
+    // counter is appended so a same-row retry (same id, attempts went 1→2)
+    // is treated as NEW dispatcher activity within the same batch window.
+    // Fallback fields (event_type|created_at|source) cover the corner case
+    // where an older backend deploy hasn't yet shipped the projection
+    // change — never collide-prone in isolation but collectively bound
+    // the false-PASS surface to "same row, same retry count, same minute".
+    return [
+        c?.id ?? '',
+        c?.event_type ?? '',
+        c?.created_at ?? '',
+        c?.source ?? '',
+        c?.attempts ?? c?.attempt_count ?? c?.retry_count ?? 0,
+    ].join('|');
+}
+
 export async function assertNoExternalCallsPostBatch(testInfo, module, batchName, stressState, request, pilotToken) {
-    // Tur-9 ground-truth refactor (CI run #21 NO-GO follow-up):
-    //   Önceki revizyonda PASS koşulu `calls.length===0 && dry_run_enforced===true && query_errors==[]`
-    //   şeklindeydi. CI'da rapor edilen tipik fail body:
-    //     { external_calls_made: [], dry_run_enforced: true, query_errors: [], status: 200 }
-    //   Yani gerçek dış çağrı YOK, dry-run AÇIK, hata YOK — fakat helper false dönmüş
-    //   görünüyor. Sebep: bazı path'lerde `dry_run_enforced` field'ı response'tan
-    //   düşüyor (deploy stale veya schema drift) → koşul false kalıyor → false-FAIL.
+    // Tur-9 ground-truth doctrine (CI run #21 NO-GO follow-up):
+    //   GROUND TRUTH = "outbox dispatcher made a real HTTP attempt for THIS
+    //   batch". Backend `/admin/stress/external-calls` already filters out
+    //   inert rows (`no active connectors` / `dry_run` / `unsupported
+    //   event_type`) AND requires `attempts > 0`. What survives is a row
+    //   the dispatcher tried with a non-inert outcome.
     //
-    //   Yeni doktrin (kullanıcı direktifi):
-    //     - GROUND TRUTH = "external_calls_made.length === 0".
-    //       Bu SISTEM-LEVEL kanıtıdır: outbox dispatcher gerçekten HTTP attempt
-    //       yapmadı. Gerçek bir dış çağrı varsa burada listelenir.
-    //     - dry_run_enforced INFORMATIONAL: backend self-report olduğu için stale
-    //       deploy / env propagation'dan etkilenir; PASS/FAIL kapısı OLAMAZ.
-    //     - query_errors[] dolu ise INFORMATIONAL (REVIEW finding) — DB sorgusu
-    //       fail oldu, ama snapshot_ext=[] hala yokluğun ek kanıtı.
-    //     - Gerçek FAIL: calls.length > 0 (sahici dispatcher attempt'i).
-    //   Sahte PASS riski açık değil: ground truth değişmedi, sadece kapı tek
-    //   doğrudan (dispatcher) sinyale sıkıştırıldı.
+    //   Tur-28 evolution (CI #44 NO-GO follow-up): the verdict gate is the
+    //   PER-BATCH DELTA, not the cumulative count. Pre-tur-28, a single
+    //   leaked row in 05-H made 06/10/11/12/13/16/17/20-27 all fail with
+    //   the SAME residue — 1 real finding masqueraded as 16 P0s. Now the
+    //   helper tracks the previous snapshot in a module-scoped map and
+    //   only flags batches whose own activity produced new rows.
+    //
+    //   FAIL/PASS axes (unchanged severity model, new scope):
+    //     - PASS if deltaCalls.length === 0 (this batch added no real attempts).
+    //     - FAIL P0 if deltaCalls.length > 0 (this batch tried HTTP for real).
+    //     - REVIEW P2 if cumulative residue exists from prior batches but
+    //       delta === 0 (informational — points the operator at the prior
+    //       culprit batch, doesn't fail the current one).
+    //     - dry_run_enforced INFORMATIONAL (self-report, stale env-prop safe).
+    //     - query_errors[] INFORMATIONAL (REVIEW finding).
     let runtimeBody = null;
     let endpointStatus = null;
     let endpointError = null;
     let runtimeCallsLen = null;
+    let runtimeCalls = [];
     let runtimeQueryErrors = [];
     if (request && pilotToken) {
         try {
@@ -226,7 +260,8 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
             if (r.ok()) {
                 runtimeBody = await r.json().catch(() => null);
                 if (Array.isArray(runtimeBody?.external_calls_made)) {
-                    runtimeCallsLen = runtimeBody.external_calls_made.length;
+                    runtimeCalls = runtimeBody.external_calls_made;
+                    runtimeCallsLen = runtimeCalls.length;
                 }
                 if (Array.isArray(runtimeBody?.query_errors)) {
                     runtimeQueryErrors = runtimeBody.query_errors;
@@ -237,21 +272,61 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
     const seedExt = stressState?.seed_response?.external_calls_made;
     const snapshotOk = Array.isArray(seedExt) && seedExt.length === 0;
 
-    // Verdict tablosu (tur-9):
-    //   1. Runtime endpoint reachable + calls=[] + snapshot=[]    → PASS (ground truth)
-    //   2. Runtime endpoint reachable + calls.length > 0          → FAIL P0 (gerçek dış çağrı)
-    //   3. Runtime endpoint reachable + parsed calls=null         → FAIL P1 (response shape regression)
+    // tur-28 per-batch delta computation. `_externalCallsLastSnapshot.calls`
+    // is the prior batch's full runtime list (or [] on first call). Delta =
+    // signatures present in current but not in prior. The snapshot is
+    // updated AFTER verdict so a single helper call always isolates "what
+    // happened during THIS batch".
+    let deltaCalls = [];
+    let deltaLen = 0;
+    let residueLen = 0;
+    if (runtimeCallsLen != null) {
+        // tur-28 (architect-review fix): multiset/count-based diff. If two
+        // current rows happen to share a signature (e.g. older backend
+        // without `id` in projection, identical timestamps), set-only diff
+        // would count the second occurrence as residue → false PASS.
+        // Multiset approach: build a count Map of prior signatures, and
+        // for each current row, if priorCount[sig] > 0 → carryover
+        // (decrement), else → new (delta). Strictly handles duplicates.
+        const priorCounts = new Map();
+        for (const c of (_externalCallsLastSnapshot.calls || [])) {
+            const s = _callSignature(c);
+            priorCounts.set(s, (priorCounts.get(s) || 0) + 1);
+        }
+        for (const c of runtimeCalls) {
+            const s = _callSignature(c);
+            const have = priorCounts.get(s) || 0;
+            if (have > 0) {
+                priorCounts.set(s, have - 1);  // consume one carryover
+                residueLen += 1;
+            } else {
+                deltaCalls.push(c);
+            }
+        }
+        deltaLen = deltaCalls.length;
+        // Sanity: deltaLen + residueLen === runtimeCallsLen by construction.
+        // Snapshot updated unconditionally so the next call's delta is
+        // measured against "everything seen up to and including this batch".
+        // Updating only on PASS would reintroduce cascade failures.
+        _externalCallsLastSnapshot.calls = runtimeCalls;
+        _externalCallsLastSnapshot.initialized = true;
+    }
+
+    // Verdict tablosu (tur-28, per-batch delta doctrine):
+    //   1. Runtime reachable + deltaLen===0                       → PASS (this batch added nothing)
+    //   2. Runtime reachable + deltaLen>0                         → FAIL P0 (this batch made real attempts)
+    //   3. Runtime reachable + parsed calls=null                  → FAIL P1 (response shape regression)
     //   4. Runtime 404                                            → snapshot fallback (PASS if snapshot=[], else FAIL)
-    //   5. Runtime 401/403/5xx/network                            → snapshot fallback REVIEW (auth/health note)
+    //   5. Runtime 401/403/5xx/network                            → snapshot fallback REVIEW
     //                                                              (PASS if snapshot=[] çünkü pre-batch ground truth)
     //   6. caller_missing_pilot_token                             → FAIL P1 (helper misuse)
     let status, source, severity = null;
     if (!request || !pilotToken) { status = 'FAIL'; source = 'caller_missing_pilot_token'; severity = 'P1'; }
-    else if (endpointStatus && endpointStatus >= 200 && endpointStatus < 300 && runtimeCallsLen === 0) {
-        status = 'PASS'; source = 'runtime_endpoint_calls_empty';
+    else if (endpointStatus && endpointStatus >= 200 && endpointStatus < 300 && runtimeCallsLen != null && deltaLen === 0) {
+        status = 'PASS'; source = residueLen > 0 ? 'runtime_endpoint_delta_zero_with_residue' : 'runtime_endpoint_delta_zero';
     }
-    else if (runtimeCallsLen != null && runtimeCallsLen > 0) {
-        status = 'FAIL'; source = 'runtime_endpoint_calls_nonempty'; severity = 'P0';
+    else if (deltaLen > 0) {
+        status = 'FAIL'; source = 'runtime_endpoint_batch_delta_nonempty'; severity = 'P0';
     }
     else if (endpointStatus && endpointStatus >= 200 && endpointStatus < 300 && runtimeCallsLen === null) {
         // 200 OK fakat external_calls_made array değil → response shape regression.
@@ -275,7 +350,10 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
     }
 
     // Her FAIL/REVIEW durumunda comprehensive debug attachment (kullanıcı tur-9 madde 4).
+    // tur-28: residueLen > 0 (PASS-with-carryover) durumunda da debug eklenir
+    // çünkü prior batch'in leakage'ini operatörün görebilmesi gerekiyor.
     const wantDebug = status === 'FAIL'
+        || residueLen > 0
         || (runtimeBody && runtimeBody.dry_run_enforced !== true)
         || runtimeQueryErrors.length > 0
         || (endpointStatus && endpointStatus !== 200);
@@ -291,6 +369,9 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
                     parsed: {
                         runtime_calls_length: runtimeCallsLen,
                         runtime_calls: runtimeBody?.external_calls_made ?? null,
+                        delta_calls_length: deltaLen,
+                        delta_calls: deltaCalls,
+                        residue_length: residueLen,
                         snapshot_ext: seedExt ?? null,
                         snapshot_ext_length: Array.isArray(seedExt) ? seedExt.length : null,
                         dry_run_enforced: runtimeBody?.dry_run_enforced ?? null,
@@ -301,8 +382,8 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
                         query_errors: runtimeQueryErrors,
                     },
                     return_reason: status === 'PASS'
-                        ? 'calls_empty_ground_truth_satisfied'
-                        : (severity === 'P0' ? 'real_external_call_detected' : 'invariant_unverifiable_no_snapshot'),
+                        ? (residueLen > 0 ? 'delta_zero_residue_from_prior_batch' : 'delta_zero_ground_truth_satisfied')
+                        : (severity === 'P0' ? 'this_batch_produced_real_external_attempt' : 'invariant_unverifiable_no_snapshot'),
                     response_body: runtimeBody,
                     env_in_runner: {
                         E2E_EXTERNAL_DRY_RUN: process.env.E2E_EXTERNAL_DRY_RUN ?? 'unset',
@@ -310,7 +391,7 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
                         E2E_STRESS_TENANT_ID: process.env.E2E_STRESS_TENANT_ID ?? 'unset',
                         PILOT_TENANT_ID: process.env.PILOT_TENANT_ID ? '[set]' : 'unset',
                     },
-                    note: 'Tur-9 ground-truth: PASS gates only on calls.length===0; dry_run_enforced metadata only.',
+                    note: 'Tur-28 per-batch delta: PASS gates on delta===0 (carryover from prior batches downgraded to REVIEW).',
                 }, null, 2)),
                 contentType: 'application/json',
             });
@@ -322,7 +403,7 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
         description: JSON.stringify({
             module, step: `post_batch_external_calls:${batchName}`,
             status,
-            note: `source=${source} endpoint_status=${endpointStatus ?? 'n/a'} runtime_calls_len=${runtimeCallsLen} dry_run_enforced=${runtimeBody?.dry_run_enforced ?? 'n/a'} snapshot_ext_len=${Array.isArray(seedExt) ? seedExt.length : 'n/a'} query_errors=${runtimeQueryErrors.length}`,
+            note: `source=${source} endpoint_status=${endpointStatus ?? 'n/a'} runtime_calls_len=${runtimeCallsLen} delta=${deltaLen} residue=${residueLen} dry_run_enforced=${runtimeBody?.dry_run_enforced ?? 'n/a'} snapshot_ext_len=${Array.isArray(seedExt) ? seedExt.length : 'n/a'} query_errors=${runtimeQueryErrors.length}`,
         }),
     });
     if (status === 'FAIL') {
@@ -332,9 +413,23 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
                 severity: severity || 'P1',
                 module,
                 title: severity === 'P0'
-                    ? 'Post-batch external_calls invariant ihlal — gerçek dispatcher attempt'
+                    ? 'Per-batch external_calls invariant ihlal — bu batch gerçek dispatcher attempt yaptı'
                     : 'External-calls invariant doğrulanamadı (helper/endpoint) ve snapshot fallback yok',
-                detail: `Batch=${batchName} source=${source} runtime_calls_len=${runtimeCallsLen} runtime_calls=${JSON.stringify(runtimeBody?.external_calls_made)} dry_run_enforced=${runtimeBody?.dry_run_enforced} snapshot=${JSON.stringify(seedExt)} endpoint_status=${endpointStatus ?? 'n/a'} endpoint_error=${endpointError ?? 'n/a'} query_errors=${JSON.stringify(runtimeQueryErrors)}.`,
+                detail: `Batch=${batchName} source=${source} delta_len=${deltaLen} runtime_calls_len=${runtimeCallsLen} delta_calls=${JSON.stringify(deltaCalls)} dry_run_enforced=${runtimeBody?.dry_run_enforced} snapshot=${JSON.stringify(seedExt)} endpoint_status=${endpointStatus ?? 'n/a'} endpoint_error=${endpointError ?? 'n/a'} query_errors=${JSON.stringify(runtimeQueryErrors)}.`,
+            }),
+        });
+    } else if (residueLen > 0) {
+        // PASS ama prior batch'lerden carryover var → REVIEW (informational).
+        // Bu run'da daha önceki bir batch leakage yaptı; tur-28 doctrine
+        // gereği bu batch onun günahını üstlenmiyor, ama operatöre sinyal
+        // verilir ki kök sebep ÖNCEKİ batch'te aransın.
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P2',
+                module,
+                title: 'External-calls residue carryover — prior batch leakage tespit edildi',
+                detail: `Batch=${batchName} delta=0 (bu batch nötr) ama residue=${residueLen} prior carryover var. Kök sebep önceki batch'lerin debug attachment'larında. Bu batch PASS, prior FAIL ayrı bulgu.`,
             }),
         });
     } else if (runtimeQueryErrors.length > 0) {
@@ -346,7 +441,7 @@ export async function assertNoExternalCallsPostBatch(testInfo, module, batchName
                 severity: 'P2',
                 module,
                 title: 'External-calls endpoint query_errors[] dolu — backend DB sorgusu kısmen başarısız',
-                detail: `Batch=${batchName} ground truth (calls=[]) tutuldu fakat backend ${runtimeQueryErrors.length} query error raporladı: ${JSON.stringify(runtimeQueryErrors)}. Ground truth PASS, ama izleme önerilir.`,
+                detail: `Batch=${batchName} delta=0 ground truth tutuldu fakat backend ${runtimeQueryErrors.length} query error raporladı: ${JSON.stringify(runtimeQueryErrors)}. Ground truth PASS, ama izleme önerilir.`,
             }),
         });
     }

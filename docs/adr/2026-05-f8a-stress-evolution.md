@@ -324,3 +324,66 @@ CI #43'te `28-A` "cash-flow hard floor" da fail oldu ama bu F8E v2 push (task #1
 
 - `frontend/e2e-stress/fixtures/stress-helpers.js:81-101` (+`opts.headers` callTimed), `:128-142` (+propagate callTimedWithBackoff).
 - `frontend/e2e-stress/specs/05-reservation-lifecycle.spec.js:23` (import), `:85,152,178,205,227,269,294,326` (7 mutation noktası).
+
+---
+
+## Tur-28 (CI #44 NO-GO follow-up → CI #45 hedefi) — 2026-05-19
+
+CI #44 sonuçları (tur-27b idempotency fix sonrası):
+- ✅ **05-A/B/C/D/E/F/G** PASS (idempotency header fix çalıştı, 7 mutation noktası).
+- ✅ **04-C4**, **06-A/B/C** PASS.
+- ❌ **17 yeni FAIL** — suite-wide cascade. 16'sı `external_calls invariant` P0, 1'i `28-A cash-flow hard floor` (F8E scope).
+  - F8A: 05-H, 06-D
+  - F8B: 10-A, 11-B, 12-A, 13-A
+  - F8C: 16-B, 17-B
+  - F8D: 20-B, 21-B, 22-B, 23-B
+  - F8E: 24-B, 25-B, 26-B, 27-B + 28-A
+
+### Root cause
+
+**16 P0 cascade root cause**: tur-9 doctrine `runtime_calls_len === 0` (kümülatif, seed snapshot=[] vs current) idi. CI #44'te 05 spec'in mutation'ları ilk kez gerçekten çalıştı (önceden A FAIL → B-G SKIP) → backend `outbox_events` koleksiyonuna bir adet veya birden fazla non-inert dispatcher row düştü (`attempts > 0` + `delivery_message` `inert_patterns`'a uymuyor, muhtemelen `permanent:`/`retryable:` prefix). Bu satır(lar) suite süresince OUTBOX'TA KALDIĞI İÇİN sonraki TÜM `assertNoExternalCallsPostBatch` çağrılarında `current_calls.length > 0` → her batch FAIL → 16 P0. Tek bir gerçek leakage (05) 16 sahte P0'a maskelendi.
+
+**28-A cash-flow root cause** (basit seed shape bug): `_build_f8e_docs` cash_flow seed `{"type": "inflow"/"outflow"}` yazıyordu; `GET /api/accounting/cash-flow` handler `transaction_type` IN ('income','expense') okuyup `sum(f['amount'] for f in flows if f['transaction_type'] == 'income')` yapıyor → KeyError → 500 → `cfR.ok === false` → hard floor FAIL.
+
+### Fix #1 — Helper per-batch delta doctrine (`fixtures/stress-helpers.js`)
+
+- **Yeni module-scoped state**: `_externalCallsLastSnapshot = {calls: [], initialized: false}` — Playwright worker process'i süresince persist eder, harness restart'ta reset.
+- **`_callSignature(c)` helper** (architect-review fix): birincil identity outbox row'un immutable `id` field'ı, fallback olarak `event_type|created_at|source|attempts`. Backend projection'a `id: 1` eklendi (Fix #1b) → unique kimlik garantili.
+- **Multiset/count-based diff** (architect-review fix): set-only diff aynı signature'lı iki current row'u "second occurrence = residue" sayıp false-PASS riski yaratıyordu. Yeni: `priorCounts: Map<sig, count>`, her current row için `count>0 → carryover (decrement)` else `delta`. Duplicate signature'lar matematik olarak doğru sayılır.
+- **Yeni verdict**:
+  - `endpoint 2xx + deltaLen === 0` → **PASS** (`runtime_endpoint_delta_zero` veya `..._with_residue`).
+  - `deltaLen > 0` → **FAIL P0** `runtime_endpoint_batch_delta_nonempty` — sadece BU batch'in ürettiği row'lar suçlanır.
+  - `residueLen > 0 + delta === 0` → **PASS + REVIEW P2** ("prior batch leakage tespit edildi — kök sebep önceki batch'in debug attachment'larında").
+  - Diğer branch'lar (404/network/shape regression) korundu.
+- **Debug attachment'a yeni alanlar**: `delta_calls_length`, `delta_calls` (full row payload), `residue_length`. Operatör 05-H gibi gerçek FAIL'de hangi `event_type`'ın leak ettiğini direkt görür.
+- **`return status !== 'FAIL'` semantiği aynı kaldı** (back-compat) — spec'lere dokunmadan tüm 16 cascade FAIL otomatik PASS olur, sadece gerçek culprit (05-H veya benzeri) izole olarak FAIL'da kalır.
+
+### Fix #2 — cash_flow seed shape (`backend/domains/admin/router/stress.py:1466-1492`)
+
+- Seed her doc'a hem yeni shape (`transaction_type: "income"|"expense"`) hem legacy alias (`type: "inflow"|"outflow"`) yazıyor → endpoint sum'ı KeyError vermez, legacy reader'lar da regress etmez.
+- 28-A `cash-flow hard floor` PASS bekleniyor.
+
+### Beklenen sonuç (CI #45+)
+
+- **16 cascade FAIL → PASS** (per-batch delta isolation).
+- **05-H** (gerçek culprit) ya PASS (delta sıfır kalırsa — backend hızlı dispatch + post-batch'te outbox boş olursa) ya da FAIL P0 ama bu sefer `delta_calls` payload'unda gerçek `event_type` görünür (örn `booking_confirmed` / `booking_cancelled`) — gerçek finding, gerçek root cause.
+- **28-A** PASS (seed shape uyumlu).
+- failedTests ≤ 1 (sadece 05-H gerçek leakage varsa), P0 ≤ 1, P1 ≤ 1, verdict ≥ GO WITH WATCH (1 gerçek P0 varsa NO-GO — ama bu sefer hangi event_type'ın dispatch denediği debug payload'ta net görünür → tur-29 hedefli fix).
+
+### Out-of-scope (potential next round)
+
+Eğer CI #45'te 05-H gerçekten FAIL kalırsa (delta>0), iki yol:
+- (a) Backend `outbox_worker`'da stress tenant guard (`tenant_id == STRESS_TENANT_ID → skip dispatch attempt`) → dispatcher'ın `permanent:` yazmaması.
+- (b) Backend `inert_patterns` filter'ı genişletmek (örn. `permanent: ` prefix de inert sayılır eğer `active_connectors_count == 0` ise — bunu endpoint kararına gömmek lazım).
+- Karar payload'a göre tur-29'da verilir.
+
+### Fix #1b — Backend projection unique key (`backend/domains/admin/router/stress.py`)
+
+- `/admin/stress/external-calls` endpoint outbox row projection'larına `id: 1` eklendi (hem `outbox_events` hem `integration_afsadakat_outbox`) — helper'ın `_callSignature` için unique anchor sağlar. Aksi halde millisecond-collision riski.
+
+### Dosyalar
+
+- `frontend/e2e-stress/fixtures/stress-helpers.js:206-225` (module-scoped state + `_callSignature` id-primary).
+- `frontend/e2e-stress/fixtures/stress-helpers.js:227-440` (assertNoExternalCallsPostBatch per-batch delta refactor + multiset diff).
+- `backend/domains/admin/router/stress.py:1466-1492` (cash_flow seed transaction_type+type).
+- `backend/domains/admin/router/stress.py:1886-1893, 1925-1930` (outbox projections + id: 1).

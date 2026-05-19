@@ -1460,18 +1460,28 @@ def _build_f8e_docs(stress_tid: str, prefix: str, now: datetime):
             "stress_seed": True, "stress_prefix": prefix,
         })
 
-    # 9) CASH FLOW (20) — synthetic audit trail entries
+    # 9) CASH FLOW (20) — synthetic audit trail entries.
+    # tur-28 (2026-05-19) fix: GET /api/accounting/cash-flow handler reads
+    # `transaction_type` IN ('income','expense') and computes
+    # `sum(f['amount'] for f in flows if f['transaction_type'] == 'income')`.
+    # The previous seed used legacy field names `type` ('inflow'/'outflow')
+    # without `transaction_type`, so the handler raised KeyError →
+    # 500 → spec 28-A `cash-flow hard floor` FAIL (CI #44 NO-GO).
+    # Both legacy ("type"/"category") and current
+    # ("transaction_type"/"category") are written so downstream readers
+    # that still expect the old shape don't regress.
     for i in range(20):
-        is_inflow = i % 2 == 0
+        is_income = i % 2 == 0
         cash_flow_docs.append({
             "id": str(uuid.uuid4()),
             "tenant_id": stress_tid,
-            "type": "inflow" if is_inflow else "outflow",
+            "transaction_type": "income" if is_income else "expense",
+            "type": "inflow" if is_income else "outflow",  # legacy alias
             "category": "operating",
             "amount": 250.0 + (i * 15.0),
             "currency": "TRY",
             "description": f"{prefix} F8E seed cash_flow entry {i + 1}",
-            "reference_type": "expense" if not is_inflow else "invoice",
+            "reference_type": "expense" if not is_income else "invoice",
             "reference_id": None,
             "date": (now - timedelta(days=i)).date().isoformat(),
             "created_at": now_iso,
@@ -1872,7 +1882,12 @@ async def stress_external_calls_status(
         try:
             cursor = sysdb.outbox_events.find(
                 dispatched_filter,
-                projection={"_id": 0, "event_type": 1, "target": 1, "status": 1, "created_at": 1, "attempts": 1, "attempt_count": 1, "retry_count": 1, "delivery_message": 1, "last_error": 1},
+                # tur-28: `id` added to projection so the helper has a stable
+                # unique identity for per-batch delta diffing. Previously
+                # event_type|created_at|source|attempts could collide across
+                # rows (millisecond timestamps + same event/source/attempt)
+                # → set-diff false-PASS risk.
+                projection={"_id": 0, "id": 1, "event_type": 1, "target": 1, "status": 1, "created_at": 1, "attempts": 1, "attempt_count": 1, "retry_count": 1, "delivery_message": 1, "last_error": 1},
             ).sort("created_at", -1).limit(50)
             async for doc in cursor:
                 # Architect tur-7 fix: outbox worker stress tenant'ında CM connector
@@ -1908,7 +1923,8 @@ async def stress_external_calls_status(
             with tenant_context(stress_tid):
                 cursor = db.integration_afsadakat_outbox.find(
                     afsadakat_filter,
-                    projection={"_id": 0, "event_type": 1, "status": 1, "created_at": 1, "attempts": 1, "attempt_count": 1, "retry_count": 1, "delivery_message": 1, "last_error": 1},
+                    # tur-28: `id` added to projection (see outbox_events note above).
+                    projection={"_id": 0, "id": 1, "event_type": 1, "status": 1, "created_at": 1, "attempts": 1, "attempt_count": 1, "retry_count": 1, "delivery_message": 1, "last_error": 1},
                 ).sort("created_at", -1).limit(50)
                 async for doc in cursor:
                     msg = (doc.get("delivery_message") or "") + " " + (doc.get("last_error") or "")
