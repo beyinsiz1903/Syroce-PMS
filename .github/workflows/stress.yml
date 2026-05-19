@@ -1,30 +1,41 @@
-name: F8A Stress Suite (full one-shot)
+name: Full Stress Suite (one-shot)
 
-# Task #163 — runs the entire F8A stress suite (`yarn test:e2e:stress`) in a
-# single deterministic shot (seed → all 26 tests in order → cleanup), instead of
-# the chunked `-g <pattern>` runs we use locally on the Replit agent sandbox
-# (110s tool-budget gotcha — see docs/GOTCHAS.md "F8A Stress Suite"). One-shot
-# coverage catches ordering / state-sharing regressions that chunked runs miss.
+# Task #163 + #192 review fix — TÜM stress suite'ini (`yarn test:e2e:stress`)
+# tek deterministik koşuda çalıştırır: seed → F8A+F8B+F8C+F8D+F8E specs (00..28,
+# ~140 test) sırayla → cleanup. Local Replit sandbox'taki chunked `-g <pattern>`
+# koşularının (110s tool-budget gotcha — bkz `docs/GOTCHAS.md` "F8A Stress
+# Suite") yakalayamadığı ordering / state-sharing regression'larını burada
+# yakalıyoruz.
+#
+# Kapsam (her tur eklendikçe güncellenir, tek doğruluk kaynağı:
+# `docs/STRESS_TEST_ROADMAP.md`):
+#   - F8A  (00..06, 08)   — Front Office + Folio + Housekeeping
+#   - F8B  (10..13)       — Guest Experience (QR/complaints/messaging)
+#   - F8C  (14..17)       — MICE / Event / Banquet / Group / Sales
+#   - F8D  (20..23)       — HR / Staff / Shift / Leave
+#   - F8E  (24..28)       — Finance / Cashier / Accounting / Reports / Currency
 #
 # Schedule:
-#   - Nightly cron at 02:30 UTC.
-#   - Manual `workflow_dispatch` for ad-hoc verification (optional report tag).
+#   - Nightly cron at 02:30 UTC (stress tenant — pilot DEĞİL).
+#   - Manual `workflow_dispatch` ad-hoc doğrulama için.
 #
-# Hard-fail gates (any one → job fails):
+# Hard-fail gates (herhangi biri → job fail):
 #   1. Playwright exit code != 0
-#       (covers: test failures, FAIL adımlar via `expect().not.toBe('FAIL')`,
-#        globalSetup throws — 5 backend gates, `external_calls_made:[]`,
-#        STRESS_TENANT_ID != PILOT_TENANT_ID, destructive flag, dry-run flag).
+#       (test fail'leri, FAIL adımlar `expect().not.toBe('FAIL')`, globalSetup
+#        throw — 5 backend gate, `external_calls_made:[]`, STRESS_TENANT_ID !=
+#        PILOT_TENANT_ID, destructive flag, dry-run flag).
 #   2. globalTeardown invariants — cleanup#1 ok, cleanup#2 idempotent, pilot
-#      drift=0 (throws inside teardown → process exits non-zero).
-#   3. Verdict scrape: drill report `Final verdict` row must be `GO` or
-#      `GO WITH WATCH`; `NO-GO` aborts the workflow even if Playwright somehow
-#      exited 0. This is the belt-and-suspenders check the chunked-run setup
-#      cannot give us.
+#      drift=0 (teardown throw → process exit non-zero).
+#   3. Verdict scrape: drill report `Final verdict` satırı `GO` veya
+#      `GO WITH WATCH` olmalı; `NO-GO` Playwright exit=0 olsa bile workflow'u
+#      kırar. Chunked koşunun veremediği belt-and-suspenders kontrol.
 #
-# Outputs: one consolidated drill report
-#   `docs/drill_reports/YYYYMMDD_stress_<TAG>.md` (single TAG per run, no chunk
-#   sidecars), plus the Playwright HTML report and traces uploaded as artifacts.
+# Concurrency: aynı stress tenant üzerinde paralel seed/cleanup çakışmasını
+# engellemek için tek slot — ikinci run sıraya girer, iptal edilmez.
+#
+# Outputs: tek konsolide drill report
+#   `docs/drill_reports/YYYYMMDD_stress_<TAG>.md` (chunk sidecar YOK), plus
+#   Playwright HTML report ve trace'ler artifact olarak yüklenir.
 
 on:
     schedule:
@@ -32,63 +43,110 @@ on:
     workflow_dispatch:
         inputs:
             report_tag:
-                description: 'STRESS_REPORT_TAG (drill report filename suffix). Default: f8a_frontoffice_folio_hk'
+                description: 'STRESS_REPORT_TAG (drill report filename suffix). Default: full_stress_suite'
                 required: false
-                default: 'f8a_frontoffice_folio_hk'
+                default: 'full_stress_suite'
             room_count:
                 description: 'E2E_ROOM_COUNT (seed size). Default: 500'
                 required: false
                 default: '500'
+
+# Murat review #C2: aynı stress tenant üzerinde nightly cron + manuel dispatch +
+# push trigger çakışırsa biri seed yaparken diğeri cleanup yapabilir → sahte
+# kırmızı / veri karışması. Tek slot, ikinci run sıraya girer (cancel-in-progress
+# false — koşan run'ı yarıda kesip orphan data bırakmıyoruz).
+concurrency:
+    group: stress-suite-one-shot
+    cancel-in-progress: false
 
 env:
     NODE_VERSION: '22'
 
 jobs:
     stress:
-        name: F8A stress (full suite, one-shot)
+        name: Full stress suite (one-shot)
         runs-on: ubuntu-latest
-        # Architect target: 10–15 dk. 12 dk Playwright + ~3 dk install/upload.
-        timeout-minutes: 30
+        # Murat review #E: suite F8A→F8E büyüdü (~140 test). 30dk artık dar;
+        # 60dk hem mevcut kapsam hem F8F/G/H/I/J planlı eklemeler için tampon.
+        timeout-minutes: 60
         env:
-            # Public stress environment (NOT pilot). Provided via repo secrets.
+            # Public stress environment (pilot DEĞİL). Repo secret üzerinden.
             E2E_BASE_URL: ${{ secrets.STRESS_E2E_BASE_URL }}
-            # Pilot super_admin — required by /api/admin/stress/* (require_super_admin).
+            # Murat review #D: FE render / TTI ölçen spec'ler için ayrı FE
+            # base URL desteği. Secret yoksa Playwright tarafı E2E_BASE_URL'e
+            # fallback yapar (mevcut davranış korunur — SKIP yerine API URL'i
+            # FE olarak kullanılır, BE+FE aynı origin'de döndüğü pilot'lar için).
+            E2E_FE_BASE_URL: ${{ secrets.STRESS_FE_BASE_URL }}
+            # Pilot super_admin — /api/admin/stress/* (require_super_admin) için.
             E2E_ADMIN_EMAIL: ${{ secrets.STRESS_PILOT_ADMIN_EMAIL }}
             E2E_ADMIN_PASSWORD: ${{ secrets.STRESS_PILOT_ADMIN_PASSWORD }}
-            # Stress tenant admin (login + post-seed snapshots).
+            # Stress tenant admin (login + post-seed snapshot'lar).
             E2E_STRESS_ADMIN_EMAIL: ${{ secrets.STRESS_TENANT_ADMIN_EMAIL }}
             E2E_STRESS_ADMIN_PASSWORD: ${{ secrets.STRESS_TENANT_ADMIN_PASSWORD }}
-            # Tenant isolation gates — must NOT be equal.
+            # Tenant isolation gates — EŞİT OLMAMALI (pre-flight enforce).
             E2E_STRESS_TENANT_ID: ${{ secrets.STRESS_TENANT_ID }}
             PILOT_TENANT_ID: ${{ secrets.PILOT_TENANT_ID }}
-            # Fail-closed flags — globalSetup throws if either is not exactly "true".
+            # Fail-closed flags — globalSetup tam "true" yoksa throw.
             E2E_ALLOW_DESTRUCTIVE_STRESS: 'true'
             E2E_EXTERNAL_DRY_RUN: 'true'
-            # Single consolidated report (overrides per-chunk tagging used locally).
-            STRESS_REPORT_TAG: ${{ github.event.inputs.report_tag || 'f8a_frontoffice_folio_hk' }}
-            STRESS_REPORT_TITLE: 'F8A Stress (CI one-shot) — Front Office + Folio + Housekeeping'
+            # Tek konsolide rapor (lokal per-chunk tag'leme override edilir).
+            STRESS_REPORT_TAG: ${{ github.event.inputs.report_tag || 'full_stress_suite' }}
+            STRESS_REPORT_TITLE: 'Full Operational Stress Suite (CI one-shot) — F8A+F8B+F8C+F8D+F8E'
             E2E_ROOM_COUNT: ${{ github.event.inputs.room_count || '500' }}
             CI: 'true'
+            # Murat review #C1: Slack webhook job-level env'e taşındı. Step-level
+            # `env:` GitHub Actions'ta `if:` koşulundan SONRA bağlanır → mevcut
+            # step-level kullanımda `if: ... && env.SLACK_WEBHOOK_URL != ''`
+            # her zaman false döner, fail durumunda Slack'e hiç POST atılmaz.
+            # Job-level env önce bağlanır, condition güvenli çalışır.
+            SLACK_WEBHOOK_URL: ${{ secrets.STRESS_SLACK_WEBHOOK_URL }}
         steps:
             - uses: actions/checkout@v5
 
-            - name: Pre-flight — required secrets present
+            - name: Pre-flight — required secrets + base URL health
               id: preflight
-              # Hard-fail before we install anything if any required secret is
-              # missing. Cheaper to fail here than after a 5-min install.
+              # Murat review #F: secret presence + tenant-id eşitlik kontrolü
+              # halihazırda vardı; üstüne `E2E_BASE_URL` format kontrolü ve
+              # `/api/health` 2-3 retry'lı erişilebilirlik testi eklendi. Yanlış
+              # domain / down ortam → 5dk install öncesi hızlı fail.
               run: |
+                  set -euo pipefail
                   missing=()
                   for v in E2E_BASE_URL E2E_ADMIN_EMAIL E2E_ADMIN_PASSWORD \
                            E2E_STRESS_ADMIN_EMAIL E2E_STRESS_ADMIN_PASSWORD \
                            E2E_STRESS_TENANT_ID PILOT_TENANT_ID; do
                       if [ -z "${!v}" ]; then missing+=("$v"); fi
                   done
+                  if [ ${#missing[@]} -ne 0 ]; then
+                      echo "::error::Missing required secrets: ${missing[*]}"
+                      exit 1
+                  fi
                   if [ "$E2E_STRESS_TENANT_ID" = "$PILOT_TENANT_ID" ]; then
                       echo "::error::E2E_STRESS_TENANT_ID == PILOT_TENANT_ID — fail-closed."
                       exit 1
                   fi
-                  if [ ${#missing[@]} -ne 0 ]; then
-                      echo "::error::Missing required secrets: ${missing[*]}"
+                  # URL format guard (boş değil + http/https şeması).
+                  if ! echo "$E2E_BASE_URL" | grep -qE '^https?://[^[:space:]]+'; then
+                      echo "::error::E2E_BASE_URL formatı geçersiz: '$E2E_BASE_URL'"
+                      exit 1
+                  fi
+                  # Health endpoint retry (3 deneme, exponential backoff 2/4/8s).
+                  # Endpoint yoksa /docs fallback — sadece reachability bakıyoruz,
+                  # 2xx/3xx/4xx hepsi OK (DNS/network'ün ayakta olduğunu kanıtlar).
+                  reachable=0
+                  for attempt in 1 2 3; do
+                      code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                          --max-time 10 "${E2E_BASE_URL%/}/api/health" || echo "000")
+                      if [ "$code" != "000" ] && [ "$code" -lt 500 ]; then
+                          reachable=1
+                          echo "✓ Health check OK (HTTP $code, attempt $attempt)"
+                          break
+                      fi
+                      echo "Health check attempt $attempt: HTTP $code"
+                      sleep $((attempt * 2))
+                  done
+                  if [ "$reachable" -eq 0 ]; then
+                      echo "::error::E2E_BASE_URL erişilemez (3 retry sonrası HTTP 5xx veya bağlantı yok)"
                       exit 1
                   fi
                   echo "✓ Pre-flight gates OK"
@@ -108,21 +166,21 @@ jobs:
               id: install_browsers
               run: cd frontend && yarn e2e:install
 
-            - name: Run F8A stress suite (full one-shot)
+            - name: Run full stress suite (one-shot)
               id: run_stress
-              # No `-g` filter, no chunking — entire suite (00..08, 26 tests)
-              # runs sequentially in a single Playwright process. workers=1 is
-              # already enforced by playwright.stress.config.js.
+              # `-g` filtre YOK, chunking YOK — tüm spec'ler (F8A+F8B+F8C+F8D+F8E,
+              # 00..28, ~140 test) tek Playwright process'inde sıralı koşar.
+              # workers=1 zaten playwright.stress.config.js'de zorunlu.
               run: cd frontend && yarn test:e2e:stress
 
             - name: Verify drill report verdict (hard-fail on NO-GO)
               id: verdict_check
-              # Belt-and-suspenders: the markdown reporter writes a verdict row
-              # based on counters + teardown snapshot + sevAgg. We grep for it
-              # and abort if NO-GO somehow slipped past Playwright's exit code
-              # (e.g. counters.FAIL>0 recorded via annotation but no test
-              # assertion failed). Runs unconditionally so the artifact upload
-              # below still gets the report even when this gate trips.
+              # Belt-and-suspenders: markdown reporter counters + teardown
+              # snapshot + sevAgg'a göre verdict satırı yazar. Grep'liyoruz ve
+              # Playwright exit code'a takılmadan NO-GO geçtiyse abort ediyoruz
+              # (örn. counters.FAIL>0 annotation üzerinden işaretlendi ama test
+              # assertion fail olmadı). Bu step her zaman koşar; aşağıdaki
+              # artifact upload'lar bu gate tripped olsa da raporu alır.
               if: always()
               run: |
                   set -euo pipefail
@@ -141,7 +199,7 @@ jobs:
                           verdict="GO"
                       fi
                   fi
-                  # Persist for downstream notify step (runs even on failure).
+                  # Downstream notify step için persist (fail durumunda da koşar).
                   {
                       echo "verdict=$verdict"
                       echo "report_path=${report:-}"
@@ -164,16 +222,15 @@ jobs:
                   echo "✓ Verdict gate passed ($verdict)"
 
             - name: Notify Slack on failure / NO-GO
-              # Task #164 — gece cron'unda fail olduğunda commit author'ına atılan
-              # GH Actions varsayılan e-postası anlamsız (cron run'da author=last
-              # pusher); pilot ekibi sabaha kadar uyarısız kalmasın diye Slack'e
-              # explicit POST atıyoruz. `if: failure()` hem Playwright exit≠0
-              # hem `verdict_check` step'inin NO-GO abort'unu hem de
-              # pre-flight/install fail'lerini kapsar. SLACK_WEBHOOK_URL secret'i
-              # set edilmemişse step skip olur (notify yokluğu job'ı battırmaz).
+              # Task #164 — gece cron fail'inde GH Actions varsayılan author
+              # e-postası anlamsız (cron run'da author=last pusher); pilot ekibi
+              # sabaha kadar uyarısız kalmasın diye Slack'e explicit POST.
+              # `if: failure()` Playwright exit≠0 + verdict_check NO-GO abort +
+              # pre-flight/install fail'lerini kapsar. SLACK_WEBHOOK_URL job-level
+              # env'de bağlı (Murat review #C1) → condition güvenli çalışır.
+              # Webhook secret yoksa step skip (notify yokluğu job'ı battırmaz).
               if: failure() && env.SLACK_WEBHOOK_URL != ''
               env:
-                  SLACK_WEBHOOK_URL: ${{ secrets.STRESS_SLACK_WEBHOOK_URL }}
                   PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
                   INSTALL_DEPS_OUTCOME: ${{ steps.install_deps.outcome }}
                   INSTALL_BROWSERS_OUTCOME: ${{ steps.install_browsers.outcome }}
@@ -192,7 +249,7 @@ jobs:
                       "Pre-flight=${PREFLIGHT_OUTCOME}" \
                       "Install deps=${INSTALL_DEPS_OUTCOME}" \
                       "Install Playwright browsers=${INSTALL_BROWSERS_OUTCOME}" \
-                      "Run F8A stress suite=${RUN_STRESS_OUTCOME}" \
+                      "Run full stress suite=${RUN_STRESS_OUTCOME}" \
                       "Verify drill report verdict=${VERDICT_CHECK_OUTCOME}"; do
                       name="${entry%%=*}"
                       outcome="${entry#*=}"
@@ -205,7 +262,7 @@ jobs:
                   fi
                   report_display="${REPORT_PATH:-(no drill report produced)}"
                   verdict_display="${VERDICT_LINE:-(verdict line not captured)}"
-                  text=$(printf ':rotating_light: *F8A Stress NIGHTLY FAILED* (%s)\n*Verdict:* %s\n*Failed step(s):*\n%b*Verdict line:* `%s`\n*Drill report:* %s\n*Run:* %s\nOpen the run, download the *stress-drill-report* artifact for the full markdown.' \
+                  text=$(printf ':rotating_light: *Full Stress Suite NIGHTLY FAILED* (%s)\n*Verdict:* %s\n*Failed step(s):*\n%b*Verdict line:* `%s`\n*Drill report:* %s\n*Run:* %s\nOpen the run, download the *stress-drill-report* artifact for the full markdown.' \
                       "$TRIGGER" "$VERDICT" "$failed_steps" "$verdict_display" "$report_display" "$RUN_URL")
                   payload=$(jq -nc --arg t "$text" '{text:$t}')
                   http_code=$(curl -sS -o /tmp/slack_resp -w '%{http_code}' \
@@ -223,7 +280,6 @@ jobs:
               # webhook secret yoksa skip; istenmezse webhook'u boş bırak.
               if: success() && steps.verdict_check.outputs.verdict == 'GO WITH WATCH' && env.SLACK_WEBHOOK_URL != ''
               env:
-                  SLACK_WEBHOOK_URL: ${{ secrets.STRESS_SLACK_WEBHOOK_URL }}
                   VERDICT_LINE: ${{ steps.verdict_check.outputs.verdict_line }}
                   REPORT_PATH: ${{ steps.verdict_check.outputs.report_path }}
                   RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -231,7 +287,7 @@ jobs:
               continue-on-error: true
               run: |
                   set -euo pipefail
-                  text=$(printf ':warning: *F8A Stress nightly: GO WITH WATCH* (%s)\n*Verdict line:* `%s`\n*Drill report:* %s\n*Run:* %s\nJob geçti — fakat watch-list kalemleri için drill report'"'"'un Findings bölümünü kontrol edin.' \
+                  text=$(printf ':warning: *Full Stress Suite nightly: GO WITH WATCH* (%s)\n*Verdict line:* `%s`\n*Drill report:* %s\n*Run:* %s\nJob geçti — fakat watch-list kalemleri için drill report'"'"'un Findings bölümünü kontrol edin.' \
                       "$TRIGGER" "${VERDICT_LINE:-(missing)}" "${REPORT_PATH:-(missing)}" "$RUN_URL")
                   payload=$(jq -nc --arg t "$text" '{text:$t}')
                   http_code=$(curl -sS -o /tmp/slack_resp -w '%{http_code}' \
@@ -251,11 +307,16 @@ jobs:
                   retention-days: 30
 
             - name: Upload drill report (markdown)
+              # Murat review #G: artifact path tek kaynaktan (`STRESS_REPORT_TAG`
+              # env var) okusun. Önceki versiyon `github.event.inputs.report_tag
+              # || 'f8a_frontoffice_folio_hk'` hardcode kullanıyordu — job env'de
+              # tag güncellenince path geride kalıyordu. Job env zaten doğru
+              # değeri tutuyor, artifact da onu kullanıyor.
               if: always()
               uses: actions/upload-artifact@v5
               with:
                   name: stress-drill-report
-                  path: docs/drill_reports/*_stress_${{ github.event.inputs.report_tag || 'f8a_frontoffice_folio_hk' }}.md
+                  path: docs/drill_reports/*_stress_${{ env.STRESS_REPORT_TAG }}.md
                   retention-days: 90
                   if-no-files-found: warn
 
