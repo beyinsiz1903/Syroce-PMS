@@ -152,25 +152,86 @@ class NightAuditEngine:
         return {"candidates": len(to_process), "processed": processed}
 
     async def _post_room_charges(self, tenant_id: str, business_date: str, user_id: str) -> dict:
-        """Post nightly room charges for all checked-in guests."""
+        """Post nightly room charges for all checked-in guests.
+
+        tur-33 (CI #51 P2 perf finding fix): 500-oda stress tenant'ta bu
+        fonksiyon 180s+ sürüyordu. Kök neden: klasik N+1 query — her
+        booking için 4 sıralı DB query (folios.find_one + folio_charges
+        duplicate-check + rooms.find_one + folio_charges insert_one).
+        500 booking × 4 query × ~30ms Atlas latency = ~60s minimum, 120s+
+        kolayca. Fix: bulk pre-fetch (folios + rooms + existing charges)
+        tek query'lere indirildi, loop in-memory dict lookup + insert_many.
+        Beklenen perf: 4 query + 1 insert_many → < 5 saniye 500-oda için.
+        """
         checked_in = await db.bookings.find({
             "tenant_id": tenant_id,
             "status": "checked_in",
-        }, {"_id": 0}).to_list(1000)
+        }, {"_id": 0}).to_list(2000)  # 1000 → 2000 (büyük tenant kapasitesi)
 
+        if not checked_in:
+            return {"posted": 0, "failed": 0, "total_revenue": 0.0, "total_tax": 0.0, "exceptions": []}
+
+        booking_ids = [b["id"] for b in checked_in]
+        room_ids = [b["room_id"] for b in checked_in if b.get("room_id")]
+
+        # Bulk pre-fetch #1: tüm açık folio'lar tek query'de
+        folio_cursor = db.folios.find({
+            "tenant_id": tenant_id,
+            "booking_id": {"$in": booking_ids},
+            "status": "open",
+        }, {"_id": 0})
+        folios_by_booking = {}
+        async for f in folio_cursor:
+            folios_by_booking[f["booking_id"]] = f
+
+        # Bulk pre-fetch #2: tüm room number'lar tek query'de
+        rooms_by_id = {}
+        if room_ids:
+            room_cursor = db.rooms.find({
+                "tenant_id": tenant_id,
+                "id": {"$in": room_ids},
+            }, {"_id": 0, "id": 1, "room_number": 1})
+            async for r in room_cursor:
+                rooms_by_id[r["id"]] = r.get("room_number", "N/A")
+
+        # Bulk pre-fetch #3: bu business_date için zaten posted charge'lar
+        # (duplicate guard) — tek query, folio_id set'i.
+        folio_ids = [f["id"] for f in folios_by_booking.values()]
+        already_posted_folio_ids: set[str] = set()
+        if folio_ids:
+            existing_cursor = db.folio_charges.find({
+                "tenant_id": tenant_id,
+                "folio_id": {"$in": folio_ids},
+                "charge_category": "room",
+                "voided": False,
+                "night_audit_date": business_date,
+            }, {"_id": 0, "folio_id": 1})
+            async for c in existing_cursor:
+                already_posted_folio_ids.add(c["folio_id"])
+
+        # Loop artık in-memory — DB hit YOK.
         posted = 0
         failed = 0
-        total_revenue = 0
-        total_tax = 0
-        exceptions = []
+        total_revenue = 0.0
+        total_tax = 0.0
+        exceptions: list[dict] = []
+        charges_to_insert: list[dict] = []
+        now_iso = datetime.now(UTC).isoformat()
+        tax_rate = 10  # default tax rate
+
+        # Architect review fix #1: intra-run duplicate guard. Eski kod
+        # per-booking find_one ile aynı folio'ya iki booking map'lendiğinde
+        # ikinci insert sırasında zaten posted'i görebiliyordu. Yeni bulk
+        # kodda snapshot başta alındığı için aynı run içinde iki kez
+        # enqueue olabilir. `scheduled_folio_ids` set'iyle in-loop dedupe.
+        scheduled_folio_ids: set[str] = set()
+        # Charge meta'sını da sakla → bulk insert partial failure halinde
+        # reconcile için (architect fix #2).
+        charge_meta: list[dict] = []  # [{folio_id, amount, tax_amount}]
 
         for booking in checked_in:
             try:
-                # Find open folio
-                folio = await db.folios.find_one({
-                    "booking_id": booking["id"], "tenant_id": tenant_id, "status": "open"
-                }, {"_id": 0})
-
+                folio = folios_by_booking.get(booking["id"])
                 if not folio:
                     exceptions.append({
                         "type": "no_open_folio",
@@ -180,36 +241,25 @@ class NightAuditEngine:
                     failed += 1
                     continue
 
+                fid = folio["id"]
+                if fid in already_posted_folio_ids or fid in scheduled_folio_ids:
+                    continue  # idempotency (DB-level OR intra-run dedupe)
+
                 # Calculate nightly rate
                 check_in_dt = datetime.fromisoformat(booking["check_in"].replace("Z", "+00:00"))
                 check_out_dt = datetime.fromisoformat(booking["check_out"].replace("Z", "+00:00"))
                 total_nights = max((check_out_dt - check_in_dt).days, 1)
                 nightly_rate = round(booking.get("total_amount", 0) / total_nights, 2)
 
-                # Check if already posted for this date
-                existing = await db.folio_charges.find_one({
-                    "folio_id": folio["id"], "tenant_id": tenant_id,
-                    "charge_category": "room", "voided": False,
-                    "night_audit_date": business_date,
-                })
-                if existing:
-                    continue  # Already posted, skip
-
-                tax_rate = 10  # default tax rate
                 tax_amount = round(nightly_rate * tax_rate / 100, 2)
                 total = round(nightly_rate + tax_amount, 2)
-
-                # Get room number
-                room = await db.rooms.find_one({"id": booking["room_id"], "tenant_id": tenant_id}, {"_id": 0, "room_number": 1})
-                room_number = room.get("room_number", "N/A") if room else "N/A"
+                room_number = rooms_by_id.get(booking.get("room_id"), "N/A")
 
                 charge_id = str(uuid.uuid4())
-                now = datetime.now(UTC)
-
-                await db.folio_charges.insert_one({
+                charges_to_insert.append({
                     "id": charge_id,
                     "tenant_id": tenant_id,
-                    "folio_id": folio["id"],
+                    "folio_id": fid,
                     "booking_id": booking["id"],
                     "charge_category": "room",
                     "description": f"Room {room_number} - Night {business_date}",
@@ -220,22 +270,85 @@ class NightAuditEngine:
                     "tax_amount": tax_amount,
                     "total": total,
                     "posted_by": "night_audit",
-                    "date": now.isoformat(),
+                    "date": now_iso,
                     "night_audit_date": business_date,
                     "voided": False,
                 })
-
-                posted += 1
-                total_revenue += nightly_rate
-                total_tax += tax_amount
+                charge_meta.append({
+                    "id": charge_id,
+                    "folio_id": fid,
+                    "booking_id": booking["id"],
+                    "amount": nightly_rate,
+                    "tax_amount": tax_amount,
+                })
+                scheduled_folio_ids.add(fid)
 
             except Exception as e:
                 failed += 1
                 exceptions.append({
                     "type": "room_charge_failure",
-                    "description": f"Failed to post charge for booking {booking['id']}: {str(e)}",
+                    "description": f"Failed to prepare charge for booking {booking['id']}: {str(e)}",
                     "entity_type": "booking", "entity_id": booking["id"],
                 })
+
+        # Architect review fix #2: BulkWriteError reconcile. Counts'u sadece
+        # gerçekten persist edilmiş charge'lardan hesapla; partial failure'da
+        # snapshot abartmasın.
+        if charges_to_insert:
+            inserted_ids: set[str] = set()
+            try:
+                await db.folio_charges.insert_many(charges_to_insert, ordered=False)
+                # Success path: exception yok → hepsi insert edildi
+                inserted_ids = {m["id"] for m in charge_meta}
+            except Exception as e:
+                # Architect review #2 fix v2: BulkWriteError ile generic
+                # exception ayrı muamele. Sadece BulkWriteError'da
+                # nInserted/writeErrors güvenilir.
+                try:
+                    from pymongo.errors import BulkWriteError as _BWE
+                    is_bulk_err = isinstance(e, _BWE)
+                except Exception:
+                    is_bulk_err = False
+
+                if is_bulk_err:
+                    details = getattr(e, "details", None) or {}
+                    write_errors = details.get("writeErrors", []) or []
+                    n_inserted = int(details.get("nInserted", 0) or 0)
+                    failed_indices = {we.get("index") for we in write_errors if we.get("index") is not None}
+                    # Index'e dayalı inferred set
+                    inferred_inserted = [
+                        meta for idx, meta in enumerate(charge_meta)
+                        if idx not in failed_indices
+                    ]
+                    # nInserted cap — eğer driver daha az insert raporladıysa
+                    # konservatif şekilde set'i kıs (atipik write-concern
+                    # senaryolarında overstate olmasın).
+                    if n_inserted < len(inferred_inserted):
+                        inferred_inserted = inferred_inserted[:n_inserted]
+                    inserted_ids = {m["id"] for m in inferred_inserted}
+                else:
+                    # BulkWriteError olmayan exception (örn. network, timeout,
+                    # write-concern fail) — insertion evidence yok, hepsini
+                    # fail say.
+                    inserted_ids = set()
+
+                exceptions.append({
+                    "type": "bulk_insert_partial_failure",
+                    "description": (f"insert_many failure ({'bulk' if is_bulk_err else 'generic'}): "
+                                    f"attempted={len(charges_to_insert)} "
+                                    f"inserted={len(inserted_ids)} "
+                                    f"err={str(e)[:200]}"),
+                    "entity_type": "folio_charge", "entity_id": None,
+                })
+
+            # Counts'u sadece gerçekten insert edilen charge'lardan hesapla
+            for meta in charge_meta:
+                if meta["id"] in inserted_ids:
+                    posted += 1
+                    total_revenue += meta["amount"]
+                    total_tax += meta["tax_amount"]
+                else:
+                    failed += 1
 
         return {
             "posted": posted,
@@ -246,20 +359,47 @@ class NightAuditEngine:
         }
 
     async def _detect_unbalanced_folios(self, tenant_id: str) -> dict:
-        """Find open folios with unusual balances."""
-        open_folios = await db.folios.find({"tenant_id": tenant_id, "status": "open"}, {"_id": 0}).to_list(1000)
-        warnings = []
+        """Find open folios with unusual balances.
+
+        tur-33 (perf fix): aynı N+1 darboğazı — 1000 folio × 2 query =
+        2000 sıralı roundtrip. Bulk pre-fetch + in-memory aggregation'a
+        çevrildi. MongoDB aggregate kullanmak yerine basit pre-fetch
+        yeterli (folio sayısı tipik tenant'ta 1000'in çok altında).
+        """
+        open_folios = await db.folios.find({"tenant_id": tenant_id, "status": "open"}, {"_id": 0}).to_list(2000)
+        warnings: list = []
+        if not open_folios:
+            return {"checked": 0, "warnings": warnings}
+
+        folio_ids = [f["id"] for f in open_folios]
+
+        # Bulk pre-fetch: tüm charges + tüm payments tek query'de, folio_id'ye göre grupla
+        charges_by_folio: dict[str, float] = {}
+        payments_by_folio: dict[str, float] = {}
+
+        charges_cursor = db.folio_charges.find({
+            "tenant_id": tenant_id,
+            "folio_id": {"$in": folio_ids},
+            "voided": False,
+        }, {"_id": 0, "folio_id": 1, "total": 1, "amount": 1})
+        async for c in charges_cursor:
+            fid = c.get("folio_id")
+            if fid:
+                charges_by_folio[fid] = charges_by_folio.get(fid, 0) + (c.get("total") or c.get("amount") or 0)
+
+        payments_cursor = db.payments.find({
+            "tenant_id": tenant_id,
+            "folio_id": {"$in": folio_ids},
+            "voided": False,
+        }, {"_id": 0, "folio_id": 1, "amount": 1})
+        async for p in payments_cursor:
+            fid = p.get("folio_id")
+            if fid:
+                payments_by_folio[fid] = payments_by_folio.get(fid, 0) + (p.get("amount") or 0)
 
         for folio in open_folios:
-            charges = await db.folio_charges.find(
-                {"folio_id": folio["id"], "tenant_id": tenant_id, "voided": False}, {"_id": 0}
-            ).to_list(500)
-            payments = await db.payments.find(
-                {"folio_id": folio["id"], "tenant_id": tenant_id, "voided": False}, {"_id": 0}
-            ).to_list(500)
-
-            total_charges = sum(c.get("total", c.get("amount", 0)) for c in charges)
-            total_payments = sum(p.get("amount", 0) for p in payments)
+            total_charges = charges_by_folio.get(folio["id"], 0)
+            total_payments = payments_by_folio.get(folio["id"], 0)
             balance = round(total_charges - total_payments, 2)
 
             if total_payments > total_charges + 0.01:
