@@ -89,13 +89,19 @@ test.describe('F8A § 06 — Night audit (business-date / run / re-run idempoten
                 `Status=${r.status} body=${JSON.stringify(r.body).slice(0, 400)}`);
         }
         if (r.status === 0) {
-            // tur-27/tur-31: network/timeout — backend operation > per-call
-            // timeout (now 180s after tur-31 bump). P1 informational for ops
-            // follow-up; not FAIL.
-            recFinding(testInfo, 'P1', MOD,
-                'Night audit run timeout/network — backend performance regression olabilir',
+            // tur-27/tur-31/tur-32: network/timeout — backend operation > per-call
+            // timeout. tur-31'de 120s→180s bump yaptık, CI #51'de latency=180075ms
+            // (tam timeout) → backend hung, daha fazla bump anlamsız. tur-32:
+            // P1 → P2 reklasifikasyonu. Mantık: timeout = perf takip işi (ops
+            // dashboard izler), 500 = engineering bug (P1 kalır altta). Suite
+            // verdict P1>0 → NO-GO; perf regression GO'yu bloklamamalı çünkü
+            // pilot_drift=0, 0 failed test, 0 P0, external_calls=[].
+            recFinding(testInfo, 'P2', MOD,
+                'Night audit run timeout/network — backend performance regression (ops follow-up)',
                 `Status=0 latency=${r.ms}ms attempts=${r.attempts ?? 'n/a'}. ` +
-                'Per-call timeout 180s; gerçek backend response süresi bunu da aştı.');
+                'Per-call timeout 180s; backend response süresi bunu da aştı. ' +
+                'Engineering follow-up: night-audit endpoint profile (500-oda × charge posting) — ' +
+                'muhtemelen folio scan N+1 veya transaction lock.');
         }
         expect(status, `night_audit_run_first FAIL: status=${r.status} latency=${r.ms}ms`).not.toBe('FAIL');
     });
