@@ -31,7 +31,7 @@
 // Module-blocked: NPS score endpoint non-2xx (403/404) → moduleBlocked + skip.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recFinding,
+    callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     assertPiiMasked, assertNoTokenLeak, withModuleProbe, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
@@ -139,10 +139,35 @@ test.describe('F8K § 61 — Public NPS + Review Invite Stress', () => {
             assertNoTokenLeak(testInfo, MOD, score.body, 'nps_score_read');
         }
 
-        const pass = r1Ok && badRejected && negRejected && missingRejected && scoreOk;
+        // 6) DUPLICATE GUARD — aynı booking_id + guest_id + nps_score ile 2.
+        //    submit. Backend'de explicit duplicate prevention YOK (her POST yeni
+        //    UUID üretir), bu yüzden duplicate ALLOWED gelmesi REVIEW olur
+        //    (informational data-quality signal), 5xx ise FAIL (storm guard).
+        //    Tek-survey-per-booking enforcement gerekirse F8K-v2 backlog'a.
+        const dupBody = { ...body1, feedback: `${createdMarker} DUP probe` };
+        const dup = await callTimed(request, 'post', '/api/nps/survey', dupBody, stressTokens.stress_token);
+        let dupNote = `dup=${dup.status}`;
+        if (dup.ok && dup.body?.survey_id) {
+            createdSurveyIds.push(dup.body.survey_id);
+            dupNote += '_allowed_no_dedupe';
+            // REVIEW only — backend tasarımı duplicate'e izin veriyor (manuel
+            // entry); finding emit edilmez. Cleanup'ta silinir.
+            rec(testInfo, { module: MOD, step: 'nps_duplicate_guard',
+                status: 'REVIEW',
+                note: `Duplicate (aynı booking/guest/score) 2xx döndü — backend tasarımı kasıtlı (her manuel entry ayrı kayıt). F8K-v2: tek-survey-per-booking-day enforcement değerlendirilsin.` });
+        } else if (dup.status >= 500) {
+            recFinding(testInfo, 'P1', MOD,
+                'NPS duplicate submit 5xx storm',
+                `POST /api/nps/survey duplicate body status=${dup.status} — backend duplicate handling crash.`);
+        } else {
+            rec(testInfo, { module: MOD, step: 'nps_duplicate_guard',
+                status: 'PASS', note: `dup_rejected=${dup.status}` });
+        }
+
+        const pass = r1Ok && badRejected && negRejected && missingRejected && scoreOk && dup.status < 500;
         rec(testInfo, { module: MOD, step: 'nps_submit',
             status: pass ? 'PASS' : 'FAIL',
-            note: `r1=${r1.status} bad11=${bad.status} neg=${neg.status} missing=${missing.status} score=${score.status} surveys_created=${createdSurveyIds.length}` });
+            note: `r1=${r1.status} bad11=${bad.status} neg=${neg.status} missing=${missing.status} score=${score.status} ${dupNote} surveys_created=${createdSurveyIds.length}` });
     });
 
     test('B) NPS recent + by-room PII guard + cross-tenant scope', async ({ request, stressTokens }, testInfo) => {

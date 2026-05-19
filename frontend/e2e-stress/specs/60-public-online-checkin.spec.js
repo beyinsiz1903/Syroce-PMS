@@ -39,7 +39,7 @@ import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
     callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
-    assertPiiMasked, assertNoTokenLeak, withModuleProbe, pilotBookingsCount,
+    assertPiiMasked, assertNoTokenLeak, pilotBookingsCount,
     fetchSingle,
 } from '../fixtures/stress-helpers.js';
 
@@ -47,8 +47,16 @@ const MOD = 'public_checkin';
 
 // Anonymous / custom-bearer call wrapper. callTimed otomatik Bearer ekler;
 // burada başlığı manuel kontrol etmeliyiz (no-token, garbage, tampered).
+// DİKKAT: multipart kullanıldığında Content-Type'ı Playwright'ın multipart
+// boundary ile set etmesine izin ver — manuel application/json YAZMA (yoksa
+// upload validator request'i transport düzeyinde reddeder ve magic-bytes/
+// size guard'a hiç ulaşmaz = false-pass).
 async function callRaw(request, method, urlPath, opts = {}) {
-    const headers = { 'Content-Type': opts.contentType || 'application/json', ...(opts.headers || {}) };
+    const isMultipart = !!opts.multipart;
+    const headers = { ...(opts.headers || {}) };
+    if (!isMultipart && !headers['Content-Type'] && !headers['content-type']) {
+        headers['Content-Type'] = opts.contentType || 'application/json';
+    }
     const t0 = Date.now();
     const r = await request[method](urlPath, {
         headers, data: opts.body, multipart: opts.multipart, failOnStatusCode: false,
