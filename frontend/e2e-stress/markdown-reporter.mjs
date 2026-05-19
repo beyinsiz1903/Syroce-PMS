@@ -182,7 +182,12 @@ class StressReporter {
         }
 
         // Architect tur-5: dedicated "Broken Buttons / Wrong Business Rule" + "Cleanup Integrity" sections.
-        const businessRuleFindings = allFindings.filter((f) => /folio|guard|reject|booking|move|state|RNL|reconcile|transfer|OOO|overbook|turnover|invariant/i.test(f.title || ''));
+        // Task #192: businessRuleFindings regex extended for F8F–F8N module
+        // labels (RBAC, KVKK, PII, webhook, GraphQL, B2B, outbox, drift,
+        // inventory, supplier, report/dashboard/export — these are backend
+        // business signals, not UI). buttonFindings stays UI-only to avoid
+        // false "Broken Buttons" classification of backend RBAC findings.
+        const businessRuleFindings = allFindings.filter((f) => /folio|guard|reject|booking|move|state|RNL|reconcile|transfer|OOO|overbook|turnover|invariant|rbac|kvkk|pii|tenant|isolation|outbox|webhook|graphql|b2b|api[_-]?key|drift|inventory|supplier|purchase|consent|signature|allowlist|idempoten|scope|report|dashboard|export|perm[_-]?gated|hard floor/i.test(f.title || ''));
         const buttonFindings = allFindings.filter((f) => /button|click|UI|render|TTI|DOM|first_row|gate|frontend/i.test(f.title || ''));
         md += `## 7a) Broken Buttons / Wrong Business Rule (file:line + repro)\n\n`;
         if (businessRuleFindings.length === 0 && buttonFindings.length === 0) {

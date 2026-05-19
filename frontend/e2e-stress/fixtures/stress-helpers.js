@@ -454,3 +454,142 @@ export function recFinding(testInfo, severity, module, title, detail) {
         description: JSON.stringify({ severity, module, title, detail }),
     });
 }
+
+// Task #192 Foundation (F8F–F8N enablement) — additive helpers below.
+// Mevcut imzalar değişmez; yeni spec'lerin paylaşacağı ortak primitive'ler.
+
+// assertPilotDriftZero — pilot tenant'a leak olup olmadığını read-only doğrular.
+// Stress suite'in mutlak kuralı: pilot tenant'a hiçbir mutation yapılmaz.
+// Baseline (genelde stressTokens.pilot_baseline veya seed snapshot)
+// vs şimdiki count karşılaştırılır. Drift > 0 → P0 finding emit.
+// Pilot token yoksa SKIP (no-op informational).
+export async function assertPilotDriftZero(testInfo, module, request, pilotToken, baseline) {
+    if (!request || !pilotToken) {
+        testInfo.annotations.push({
+            type: 'rec',
+            description: JSON.stringify({
+                module, step: 'pilot_drift_zero', status: 'SKIP',
+                note: 'pilot_token yok — drift doğrulanamadı (informational).',
+            }),
+        });
+        return true;
+    }
+    const snap = await pilotBookingsCount(request, pilotToken);
+    const baselineCount = (typeof baseline === 'number') ? baseline : (baseline?.count ?? null);
+    const afterCount = snap?.count ?? null;
+    const drift = (baselineCount != null && afterCount != null) ? (afterCount - baselineCount) : null;
+    const pass = drift === 0;
+    testInfo.annotations.push({
+        type: 'rec',
+        description: JSON.stringify({
+            module, step: 'pilot_drift_zero',
+            status: pass ? 'PASS' : (drift == null ? 'REVIEW' : 'FAIL'),
+            note: `baseline=${baselineCount} after=${afterCount} drift=${drift} http=${snap?.http ?? 'n/a'}`,
+        }),
+    });
+    if (drift != null && drift !== 0) {
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P0', module,
+                title: 'Pilot tenant drift tespit edildi — stress suite pilot mutation üretti',
+                detail: `Baseline bookings=${baselineCount}, after=${afterCount}, drift=${drift}. Mutlak kural ihlali (pilot read-only).`,
+            }),
+        });
+    }
+    return pass;
+}
+
+// assertPiiMasked — KVKK/PII guard: response body'de hassas alanlar masked mı?
+// Telefon/email/TC/passport/IBAN gibi alanlar full plaintext dönmemeli;
+// expected pattern: kısmen masked (***, son 4 hane) veya hash. Plain match
+// (örn. tam telefon numarası regex'i) bulunursa P0 finding.
+// `fields`: kontrol edilecek alan adları (örn. ['phone', 'identity_number', 'email']).
+// `responseBody`: API JSON response (Array veya Object kabul eder).
+// Pattern dedektörleri konservatif: TC (11 ardışık digit), telefon (10+ digit),
+// email (RFC-light), passport (alfanümerik 7-12). Mask işaretleri: '*', 'x' (3+),
+// 'masked' substring veya hash-like ([a-f0-9]{16+}).
+export function assertPiiMasked(testInfo, module, responseBody, fields = ['phone', 'email', 'identity_number', 'passport_no', 'iban']) {
+    const items = Array.isArray(responseBody) ? responseBody
+        : Array.isArray(responseBody?.items) ? responseBody.items
+        : Array.isArray(responseBody?.data) ? responseBody.data
+        : Array.isArray(responseBody?.guests) ? responseBody.guests
+        : responseBody && typeof responseBody === 'object' ? [responseBody] : [];
+    const violations = [];
+    const isMasked = (v) => {
+        if (v == null || v === '') return true;
+        const s = String(v);
+        if (/[*x]{3,}/i.test(s)) return true;
+        if (/masked/i.test(s)) return true;
+        if (/^[a-f0-9]{16,}$/i.test(s)) return true;
+        return false;
+    };
+    const looksLikePlainPii = (field, v) => {
+        if (v == null || v === '') return false;
+        const s = String(v);
+        if (field === 'identity_number' && /^\d{11}$/.test(s)) return true;
+        if (field === 'phone' && /^\+?\d[\d\s().-]{8,}\d$/.test(s) && /\d{10,}/.test(s.replace(/\D/g, ''))) return true;
+        if (field === 'email' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)) return true;
+        if (field === 'passport_no' && /^[A-Z0-9]{7,12}$/i.test(s)) return true;
+        if (field === 'iban' && /^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/i.test(s)) return true;
+        return false;
+    };
+    for (let i = 0; i < Math.min(items.length, 50); i++) {
+        const it = items[i];
+        if (!it || typeof it !== 'object') continue;
+        for (const f of fields) {
+            const v = it[f];
+            if (v == null) continue;
+            if (!isMasked(v) && looksLikePlainPii(f, v)) {
+                violations.push({ index: i, field: f, sample: String(v).slice(0, 4) + '…' });
+            }
+        }
+    }
+    const pass = violations.length === 0;
+    testInfo.annotations.push({
+        type: 'rec',
+        description: JSON.stringify({
+            module, step: 'pii_masked',
+            status: pass ? 'PASS' : 'FAIL',
+            note: `checked_fields=${fields.join(',')} sampled_items=${Math.min(items.length, 50)} violations=${violations.length}`,
+        }),
+    });
+    if (!pass) {
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P0', module,
+                title: 'PII guard ihlal — hassas alan masked değil',
+                detail: `Violations: ${JSON.stringify(violations.slice(0, 10))}. KVKK retention/PII guard rejimi response shape'de uygulanmamış.`,
+            }),
+        });
+    }
+    return pass;
+}
+
+// withModuleProbe — endpoint reachability + RBAC probe. 403/404/cache-stale
+// durumunda spec'in A/B/C/D step'lerini güvenle skip etmek için kullanılır.
+// Returns: `{moduleBlocked: bool, status: int, body: any, reason: string}`.
+// F8C/D/E module-blocked pattern doctrine'in tek-noktada helper'ı.
+export async function withModuleProbe(request, token, endpoint, opts = {}) {
+    const method = (opts.method || 'get').toLowerCase();
+    const timeout = opts.timeout ?? 10_000;
+    let status = 0, body = null, err = null;
+    try {
+        const r = await request[method](endpoint, {
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            data: opts.body,
+            failOnStatusCode: false,
+            timeout,
+        });
+        status = r.status();
+        try { body = await r.json(); } catch { body = null; }
+    } catch (e) { err = String(e?.message || e); }
+    const moduleBlocked = status === 403 || status === 404 || status === 0;
+    let reason = 'reachable';
+    if (status === 403) reason = 'rbac_denied';
+    else if (status === 404) reason = 'endpoint_not_deployed';
+    else if (status === 0) reason = `network_error_${err?.slice(0, 40) ?? 'unknown'}`;
+    else if (status >= 500) reason = `server_error_${status}`;
+    return { moduleBlocked, status, body, reason, error: err };
+}

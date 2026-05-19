@@ -29,16 +29,42 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 | F8B  | Guest Experience (QR / complaints / messaging / notifications)          | 10 / 11 / 12 / 13         | **DONE** — GO WITH WATCH (CI #55 PASS, tur-23..26)           | `docs/adr/2026-05-f8b-stress-evolution.md`                |
 | F8C  | MICE / Event / Banquet / Group Operations                               | 14 / 15 / 16 / 17         | **DONE** — GO WITH WATCH (tur-5 CI YEŞİL, 2026-05-18)        | `docs/adr/2026-05-f8c-stress-evolution.md`                |
 | F8D  | HR / İK / Staff / Shift / Leave / Department                            | 20 / 21 / 22 / 23         | **DONE (v1)** — GO WITH WATCH (CI yeşil, 2026-05-18); v2 backlog aşağıda | `docs/adr/2026-05-f8d-hr-staff-shift-evolution.md`        |
-| F8E  | Finance / Cashier / Accounting / Invoice / City Ledger                  | 24 / 25 / 26 / 27         | **IN PROGRESS** — tur-5 push (precondition-aware spec 23 fix), CI #41 bekleniyor | `docs/adr/2026-05-f8e-finance-stress-evolution.md`        |
-| F8F  | Inventory / Stock / Purchasing / Supplier                               | 30 / 31 / 32 / 33 (TBD)   | Planlandı                                                    | TBD                                                       |
-| F8G  | Sales / CRM / Offers / Contracts (F8C MICE-sales üstünde devam)         | 34 / 35 / 36 / 37 (TBD)   | Planlandı                                                    | TBD                                                       |
-| F8H  | Reports / Analytics / Export                                            | 40 / 41 / 42 / 43 (TBD)   | Planlandı                                                    | TBD                                                       |
-| F8I  | Admin / RBAC / Settings / Audit                                         | 44 / 45 / 46 / 47 (TBD)   | Planlandı                                                    | TBD                                                       |
-| F8J  | **Full 24h Hotel Simulation** — tüm modüller birlikte                   | 50+ (chained scenario)    | Final — F8D-I yeşilden sonra                                 | TBD                                                       |
-| F8K  | **Guest-facing public flows** (online check-in / NPS / digital key)     | 60 / 61 / 62 / 63 (TBD)   | Planlandı (yeni)                                             | TBD                                                       |
-| F8L  | **Channel Manager + Webhooks** (Exely / HotelRunner / SXI bus)          | 64 / 65 / 66 / 67 (TBD)   | Planlandı (yeni)                                             | TBD                                                       |
-| F8M  | **GraphQL + B2B API** (resolver isolation / API key scope)              | 68 / 69 / 70 / 71 (TBD)   | Planlandı (yeni)                                             | TBD                                                       |
-| F8N  | **Reservation lifecycle deep** (create/modify/cancel/no-show/group)     | 72 / 73 / 74 / 75 (TBD)   | Planlandı (yeni)                                             | TBD                                                       |
+| F8E  | Finance / Cashier / Accounting / Invoice / City Ledger                  | 24 / 25 / 26 / 27 / 28    | **DONE v2** — GO WITH WATCH (CI #42+, 2026-05-19)            | `docs/adr/2026-05-f8e-finance-stress-evolution.md`        |
+| F8F  | Inventory / Stock / Purchasing / Supplier                               | 30 / 31 / 32 / 33         | Planlandı (Task #197)                                        | TBD                                                       |
+| F8G  | Sales / CRM / Offers / Contracts (F8C MICE-sales üstünde devam)         | 34 / 35 / 36              | Planlandı (Task #198)                                        | TBD                                                       |
+| F8H  | Reports / Analytics / Export                                            | 40 / 41 / 42              | Planlandı (Task #199)                                        | TBD                                                       |
+| F8I  | Admin / RBAC / Settings / Audit                                         | 44 / 45 / 46 / 47         | Planlandı (Task #193, ilk sıra)                              | TBD                                                       |
+| F8J  | **Full 24h Hotel Simulation** — tüm modüller birlikte                   | 50 (chained scenario)     | Final — F8F-N yeşilden sonra (Task #201)                     | TBD                                                       |
+| F8K  | **Guest-facing public flows** (online check-in / NPS / digital key)     | 60 / 61 / 62 / 63         | Planlandı (Task #196)                                        | TBD                                                       |
+| F8L  | **Channel Manager + Webhooks** (Exely / HotelRunner / SXI bus)          | 64 / 65 / 66 / 67         | Planlandı (Task #195)                                        | TBD                                                       |
+| F8M  | **GraphQL + B2B API** (resolver isolation / API key scope)              | 68 / 69 / 70 / 71         | Planlandı (Task #194)                                        | TBD                                                       |
+| F8N  | **Reservation lifecycle deep** (create/modify/cancel/no-show/group)     | 72 / 73 / 74 / 75         | Planlandı (Task #200)                                        | TBD                                                       |
+
+### F8F–F8N expansion contract (Task #192 Foundation)
+
+Her yeni faz için aşağıdaki sözleşme zorunludur (F8A–F8E baseline'ı bozmadan ek olarak):
+
+| Faz  | Spec dosyaları                          | Test sayısı | Risk     | Dry-run kuralı                                                                                                              | Cleanup kapsamı                                                                       | Pilot drift | external_calls |
+| ---- | --------------------------------------- | ----------- | -------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------- | -------------- |
+| F8F  | 30-inventory · 31-stock · 32-purchasing · 33-supplier | 4–6 | MEDIUM   | Procurement PO `approve` lokal; supplier portal push YOK (`E2E_EXTERNAL_DRY_RUN=true`)                                      | `inventory_items`, `stock_movements`, `suppliers`, `purchase_orders` (stress_prefix)  | =0          | []             |
+| F8G  | 34-crm-leads · 35-offers · 36-contracts | 3–5         | MEDIUM   | CRM offer email send dry-run (Resend silent); contract e-signature provider call YOK                                        | `crm_leads`, `offers`, `contracts` (stress_prefix)                                    | =0          | []             |
+| F8H  | 40-reports-finance · 41-reports-ops · 42-export | 3–5 | LOW      | Report run read-only; export PDF/XLSX in-memory, dosya yazımı yok                                                           | Yok (read-only); cache invalidation idempotent                                        | =0          | []             |
+| F8I  | 44-admin-rbac · 45-settings · 46-audit · 47-user-mgmt | 5–7 | **HIGH** | RBAC negative test (403 expect); audit log read; user create/disable lokal                                                  | `users` (stress_prefix), `audit_logs` ASLA silinmez (KVKK retention)                  | =0          | []             |
+| F8J  | 50-24h-full                             | 1 (chained) | HIGH     | Tüm F8 path'lerinin chained dry-run koşusu; tek spec, çok step                                                              | Önceki fazların cleanup helper'larını çağırır (composite)                             | =0          | []             |
+| F8K  | 60-online-checkin · 61-nps-reviews · 62-qr-token-expiry · 63-public-ratelimit | 5–7 | **CRITICAL** | KVKK consent, ID metadata-only (binary upload YOK), digital-key issue/revoke dry-run, public RL 429 boundary | `online_checkin_submissions`, `guest_reviews`, `nps_responses`, `digital_keys`        | =0          | []             |
+| F8L  | 64-cm-exely · 65-cm-hotelrunner · 66-sxi-bus-outbox · 67-webhook-signature | 5–7 | **CRITICAL** | Exely IP allowlist (literal, CIDR YOK); HMAC sig verify; OTA push CB açık, gerçek HTTP YOK         | `outbox_events` (stress_prefix), `webhook_logs`                                       | =0          | []             |
+| F8M  | 68-graphql-isolation · 69-b2b-api-key · 70-b2b-rbac · 71-b2b-audit | 5–7 | **CRITICAL** | GraphQL cross-tenant query, B2B API key scope/rate-limit, n+1 + depth limit                | `b2b_api_keys` (stress_prefix), `b2b_api_audit`                                       | =0          | []             |
+| F8N  | 72-reservation-batch · 73-cancel-noshow · 74-group-multiroom · 75-overbooking-waitlist | 6–8 | HIGH | F8A lifecycle deep dive; CM outbox event consistency F8L ile overlap            | `bookings`, `group_bookings`, `folios` (stress_prefix)                                | =0          | []             |
+
+**GO/NO-GO eşiği (tüm fazlar)**: `failedTests=0`, `P0=0`, `P1=0`, `cleanup#2 idempotent`, `pilot_drift=0`, verdict ≥ `GO WITH WATCH`.
+
+**module-blocked pattern fallback**: Her spec'te endpoint 403 / 404 / RBAC fail → `moduleBlocked=true` flag + P2 informational + A/B/C/D `test.skip()`, pilot_drift bağımsız çalışır (F8C/D/E doctrine, `withModuleProbe` helper).
+
+**Foundation helpers (Task #192 ekledi)** — `frontend/e2e-stress/fixtures/stress-helpers.js`:
+- `assertPilotDriftZero(request, stressTokens, baseline)` — pilot bookings count read-only diff, leak tespit eder.
+- `assertNoExternalCallsPostBatch(...)` — tur-28 per-batch delta doctrine (mevcut, korunuyor).
+- `assertPiiMasked(responseBody, fields)` — telefon/email/TC/passport gibi PII alanları masked olduğunu doğrular (KVKK / F8I / F8K / F8M kritik).
+- `withModuleProbe(request, token, endpoint)` — endpoint 403/404 → `{moduleBlocked: true}` döner, spec'ler A/B/C/D step'lerini güvenle skip eder.
 
 ---
 
@@ -370,6 +396,7 @@ sıralı:
 - F8C specs 14..17 — MICE / Event / Banquet / Sales
 - F8D specs 20..23 — HR / Staff / Shift / Leave
 - F8E specs 24..28 — Finance / Cashier / Accounting / Reports / Currency
+- F8F–F8N specs 30..75 — Inventory/Purchasing/Reports/RBAC/Public/CM/GraphQL/Reservation-deep/24h (Task #192-#201 sırasıyla eklendi)
 
 **Trigger:**
 - Nightly cron `30 2 * * *` (UTC).
