@@ -333,6 +333,118 @@ test.describe('F8L § 50 — Exely Webhook Stress', () => {
         }
     });
 
+    test('F) EXELY readiness gate — env contract semantics (configured PASS / HR-only N/A / prod-like unset P1)', async ({ }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'exely_readiness_gate', status: 'SKIP', note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        // Architect-iter-3 talebi: EXELY_IP_WHITELIST için açık readiness
+        // sinyal gate'i. Kontratlar (env-based, prod-config-aware):
+        //   - EXELY_IP_WHITELIST set + ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK!=1
+        //     → CONFIGURED (PASS) — production'a hazır.
+        //   - HOTELRUNNER-only kurulum (Exely yok, AFSADAKAT_BASE_URL set
+        //     ama EXELY env yok) → HR-only N/A (REVIEW, informational).
+        //   - Prod-like unset (EXELY_IP_WHITELIST yok + ALLOW_UNAUTH yok)
+        //     → P1 — fail-closed 503 contract honored ama prod readiness
+        //     bozuk; CI'da explicit sinyal gerekli.
+        //   - Bypass aktif (ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1) → P1
+        //     (dev/staging only, prod'da SAKINCALI).
+        const wl = (process.env.EXELY_IP_WHITELIST || '').trim();
+        const bypass = process.env.ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK === '1';
+        const hrOnly = !!process.env.HOTELRUNNER_WEBHOOK_SECRET && !wl && !bypass;
+        let gate, severity;
+        if (wl && !bypass) {
+            gate = 'configured'; severity = null;
+        } else if (bypass) {
+            gate = 'bypass_active_dev_only'; severity = 'P1';
+        } else if (hrOnly) {
+            gate = 'hr_only_na'; severity = null;
+        } else {
+            gate = 'prod_like_unset'; severity = 'P1';
+        }
+        const pass = severity === null;
+        rec(testInfo, { module: MOD, step: 'exely_readiness_gate',
+            status: pass ? 'PASS' : (severity === 'P1' ? 'FAIL' : 'REVIEW'),
+            note: `gate=${gate} wl_set=${!!wl} bypass=${bypass} hr_only=${hrOnly} auth_mode=${authMode}` });
+        if (severity === 'P1') {
+            const detail = (gate === 'bypass_active_dev_only')
+                ? `ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1 — production'da SAKINCALI; sadece dev/staging için geçerli.`
+                : `EXELY_IP_WHITELIST set değil + bypass yok — fail-closed 503 contract honored ama production readiness bozuk. CI/CD env'inde whitelist seed'i gerekli.`;
+            recFinding(testInfo, 'P1', MOD,
+                `Exely readiness gate ${gate}`, detail);
+        }
+        if (gate === 'hr_only_na') {
+            recFinding(testInfo, 'P2', MOD,
+                'Exely readiness: HR-only kurulum (Exely entegrasyonu kullanılmıyor)',
+                `HOTELRUNNER_WEBHOOK_SECRET var, EXELY_IP_WHITELIST yok. Exely path'leri prod'da kullanılmıyor varsayılır; N/A.`);
+        }
+    });
+
+    test('G) Conditional valid payload + duplicate ingest idempotency (auth-mode=open_for_testing veya EXELY_IP_WHITELIST set)', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'valid_payload_idemp', status: 'SKIP', note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        // Architect-iter-3 talebi: Exely valid parse + duplicate reservation
+        // idempotency. Conditional on:
+        //   - auth_mode=open_for_testing (bypass aktif, body kabul ediliyor) VE
+        //   - stres ortamında Exely kullanıma uygun (env config).
+        // Aksi halde REVIEW + P2 informational.
+        if (authMode !== 'open_for_testing') {
+            rec(testInfo, { module: MOD, step: 'valid_payload_idemp',
+                status: 'REVIEW',
+                note: `auth_mode=${authMode} — valid-payload path açık değil (fail_closed/ip_gated)` });
+            recFinding(testInfo, 'P2', MOD,
+                'Exely valid-payload + idempotency coverage gap',
+                `auth_mode=${authMode}. Bu koşuda valid parse path test edilemedi; production-like ortamda (whitelist + caller IP) test sürdürülmeli.`);
+            return;
+        }
+        // Open mode'da minimum valid SOAP payload + aynı reservation_id 2x ingest.
+        const stableId = `${prefix || 'STRESS'}_EXELY_IDEMP_FIXED`;
+        const validPayload = `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><Reservation><TenantId>${stressTid}</TenantId><Id>${stableId}</Id><Status>new</Status><Guest><Name>STRESS_VALID</Name></Guest></Reservation></soap:Body></soap:Envelope>`;
+        let r1, r2;
+        try {
+            r1 = await request.post(`${BASE}/reservations`, {
+                headers: { 'Content-Type': 'application/xml' },
+                data: validPayload, failOnStatusCode: false, timeout: 30_000,
+            });
+        } catch (e) {
+            rec(testInfo, { module: MOD, step: 'valid_payload_idemp',
+                status: 'FAIL', note: `r1 network: ${e?.message}` });
+            recFinding(testInfo, 'P1', MOD, 'Exely valid-payload r1 network error', `${e?.message}`);
+            throw e;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+        try {
+            r2 = await request.post(`${BASE}/reservations`, {
+                headers: { 'Content-Type': 'application/xml' },
+                data: validPayload, failOnStatusCode: false, timeout: 30_000,
+            });
+        } catch (e) {
+            rec(testInfo, { module: MOD, step: 'valid_payload_idemp',
+                status: 'FAIL', note: `r2 network: ${e?.message}` });
+            recFinding(testInfo, 'P1', MOD, 'Exely valid-payload r2 network error', `${e?.message}`);
+            throw e;
+        }
+        const s1 = r1.status();
+        const s2 = r2.status();
+        const both2xx = (s1 >= 200 && s1 < 300) && (s2 >= 200 && s2 < 300);
+        // Idempotency contract: aynı stableId ile 2 ingest → r2 status sınıfı r1
+        // ile aynı (her ikisi 2xx kabul, dedupe sessizce çalışır) VEYA r2 conflict
+        // (409). r2 5xx veya farklı bir 4xx → idempotency tutarsız.
+        const idempotencyOk = both2xx || (s1 === s2);
+        rec(testInfo, { module: MOD, step: 'valid_payload_idemp',
+            status: idempotencyOk ? 'PASS' : 'FAIL',
+            note: `r1=${s1} r2=${s2} both2xx=${both2xx} stable_id=${stableId}` });
+        if (!idempotencyOk) {
+            recFinding(testInfo, 'P0', MOD,
+                'Exely valid-payload duplicate ingest idempotency kırık',
+                `r1=${s1} r2=${s2}. Aynı reservation_id=${stableId} 2x ingest farklı sonuçlar üretti.`);
+        }
+    });
+
     test('E) external_calls invariant + pilot_drift=0', async ({ request, stressTokens }, testInfo) => {
         await assertPilotDriftZero(testInfo, MOD, request, stressTokens.pilot_token, pilotBefore);
         const stateBlob = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'e2e-stress', '.auth', 'stress-state.json'), 'utf-8'));

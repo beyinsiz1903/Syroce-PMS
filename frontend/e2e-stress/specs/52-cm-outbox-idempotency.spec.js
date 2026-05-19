@@ -291,31 +291,87 @@ test.describe('F8L § 52 — Outbox Idempotency + Conflict Queue', () => {
         const s1 = await callTimed(request, 'get', '/api/outbox/status', undefined, stressTokens.pilot_token);
         const pending1 = (s1.body?.pending || 0) + (s1.body?.processing || 0);
 
-        const r1 = await fetch(`${process.env.E2E_BASE_URL || ''}/api/channel-manager/hotelrunner/callback`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: raw,
-        }).catch(() => null);
+        // Architect-iter-3 fix: global fetch + swallowed catch test integrity
+        // bozuyordu (E2E_BASE_URL unset/invalid ise silently fail → false-green).
+        // Playwright request client kullan (relative URL, base'i context'ten alır)
+        // ve r1/r2 yanıt almazsa HARD FAIL.
+        let r1, r2;
+        try {
+            r1 = await request.post(`${BASE}/callback`, {
+                headers: { 'Content-Type': 'application/json', ...headers },
+                data: raw,
+                failOnStatusCode: false,
+                timeout: 30_000,
+            });
+        } catch (e) {
+            rec(testInfo, { module: MOD, step: 'active_idempotency',
+                status: 'FAIL', note: `r1 ingest network error: ${e?.message}` });
+            recFinding(testInfo, 'P1', MOD,
+                'Outbox idempotency testi r1 ingest network error — test integrity bozuk',
+                `Playwright request.post threw: ${e?.message}. Duplicate-dispatch assert edilemedi.`);
+            throw e;
+        }
         await new Promise((r) => setTimeout(r, 800));
-        const r2 = await fetch(`${process.env.E2E_BASE_URL || ''}/api/channel-manager/hotelrunner/callback`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: raw,
-        }).catch(() => null);
+        try {
+            r2 = await request.post(`${BASE}/callback`, {
+                headers: { 'Content-Type': 'application/json', ...headers },
+                data: raw,
+                failOnStatusCode: false,
+                timeout: 30_000,
+            });
+        } catch (e) {
+            rec(testInfo, { module: MOD, step: 'active_idempotency',
+                status: 'FAIL', note: `r2 ingest network error: ${e?.message}` });
+            recFinding(testInfo, 'P1', MOD,
+                'Outbox idempotency testi r2 ingest network error — test integrity bozuk',
+                `Playwright request.post threw: ${e?.message}. Duplicate-dispatch assert edilemedi.`);
+            throw e;
+        }
+        const r1Status = r1.status();
+        const r2Status = r2.status();
+        // Test integrity guard: r1/r2 hem 5xx ise backend down → integrity fail.
+        // 2xx beklerdik (signed valid path); 4xx (tenant resolve fail vs.) test
+        // edilebilir ama dedupe contract'ı sadece BOTH 2xx halinde anlamlı.
+        const bothAccepted = (r1Status >= 200 && r1Status < 300) && (r2Status >= 200 && r2Status < 300);
+        if (!bothAccepted) {
+            rec(testInfo, { module: MOD, step: 'active_idempotency',
+                status: 'REVIEW',
+                note: `r1=${r1Status} r2=${r2Status} — both 2xx olmadan dedupe assert edilemez (signed-path 51-F'nin başarısı önkoşul)` });
+            recFinding(testInfo, 'P2', MOD,
+                'Outbox active idempotency dedupe assert atlandı — ingest 2xx olmadı',
+                `r1_status=${r1Status} r2_status=${r2Status}. Signed payload accept edilmedikçe (sig algo/secret drift veya tenant resolve fail) duplicate-dispatch dedupe ölçülemez. Detay 51-F bulgusunda.`);
+            return;
+        }
+        // Retry/backoff/DLQ noise guard: pre- vs post-window arasında failed
+        // counter monotonik artmamalı (duplicate signed payload retry storm
+        // tetiklerse failed bucket dolar).
         await new Promise((r) => setTimeout(r, 1500));
-
         const s2 = await callTimed(request, 'get', '/api/outbox/status', undefined, stressTokens.pilot_token);
         const pending2 = (s2.body?.pending || 0) + (s2.body?.processing || 0);
+        const failed1 = s1.body?.failed || 0;
+        const failed2 = s2.body?.failed || 0;
+        const failedDelta = failed2 - failed1;
         const delta = pending2 - pending1;
 
         // Dedupe contract: 2 ingest → en fazla 1 yeni outbox row.
         // Sıkı kural: delta ≤ 1. delta ≥ 2 → idempotency kırık (P0).
-        // Not: delta=0 OK (event tipine göre outbox publish opsiyonel
-        // olabilir veya cache TTL nedeniyle status henüz refresh olmamış).
-        const pass = delta <= 1;
+        // Failed bucket: dedupe sırasında retry storm tetiklenmemeli;
+        // failedDelta > 0 → DLQ noise (P1).
+        const dedupeOk = delta <= 1;
+        const dlqNoiseOk = failedDelta <= 0;
+        const pass = dedupeOk && dlqNoiseOk;
         rec(testInfo, { module: MOD, step: 'active_idempotency',
             status: pass ? 'PASS' : 'FAIL',
-            note: `pending_before=${pending1} pending_after=${pending2} delta=${delta} r1_status=${r1?.status} r2_status=${r2?.status} stable_id=${stableId}` });
-        if (!pass) {
+            note: `pending_before=${pending1} pending_after=${pending2} delta=${delta} failed_delta=${failedDelta} r1=${r1Status} r2=${r2Status} stable_id=${stableId}` });
+        if (!dedupeOk) {
             recFinding(testInfo, 'P0', MOD,
                 'Outbox idempotency kırık — duplicate webhook 2 outbox event üretti',
                 `Aynı (tenant=${stressTid?.slice(0, 8)}, hr_number=${stableId}) 2x ingest → outbox pending delta=${delta}. Dedupe key (tenant:event:entity:payload_hash) düşmüş olabilir.`);
+        }
+        if (!dlqNoiseOk) {
+            recFinding(testInfo, 'P1', MOD,
+                'Outbox duplicate ingest DLQ noise — failed bucket büyüdü',
+                `failed_delta=${failedDelta} pending_delta=${delta}. Duplicate signed payload retry/backoff storm'a yol açıyor olabilir.`);
         }
     });
 
