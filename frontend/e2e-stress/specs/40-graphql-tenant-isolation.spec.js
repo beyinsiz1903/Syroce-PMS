@@ -42,8 +42,13 @@ async function gql(request, token, query, variables) {
 // tetiklenemez (mutationType undefined olur). queryType + mutationType +
 // types birlikte sorgulanır.
 const Q_INTROSPECTION = '{ __schema { queryType { name } mutationType { name } types { name kind } } }';
-const Q_BOOKINGS = `query($f:BookingFilter){bookings(filter:$f){id guest_id room_id status check_in check_out adults children total_amount channel}}`;
-const Q_ROOMS = `query($f:RoomFilter){rooms(filter:$f){id room_number room_type floor capacity base_price status amenities}}`;
+// Tur-5 architect fix: Strawberry default `auto_camel_case=True` — Python
+// snake_case alanları GraphQL'de camelCase olarak expose edilir
+// (guestId/roomId/checkIn/checkOut/totalAmount, roomNumber/roomType/basePrice).
+// snake_case sorgular schema validation error döner ve test'ler boş array
+// alıp false PASS verir. Tüm alanlar camelCase.
+const Q_BOOKINGS = `query($f:BookingFilter){bookings(filter:$f){id guestId roomId status checkIn checkOut adults children totalAmount channel}}`;
+const Q_ROOMS = `query($f:RoomFilter){rooms(filter:$f){id roomNumber roomType floor capacity basePrice status amenities}}`;
 const Q_DASHBOARD = `{dashboardMetrics{occupancyRate occupiedRooms totalRooms availableRooms todayArrivals todayDepartures todayRevenue adr revpar}}`;
 const Q_NESTED = `query($f:BookingFilter){bookings(filter:$f){id guest{id name email phone idNumber} room{id roomNumber roomType floor}}}`;
 
@@ -167,10 +172,19 @@ test.describe('F8M § 40 — GraphQL Tenant Isolation', () => {
         // listesi pilot tenant booking ID'sini İÇERMEMELİ. Hard floor:
         // pilotSampleBookingId varsa bu ID dönen sette olmamalı (P0 leak).
         const b = await gql(request, stressTokens.stress_token, Q_BOOKINGS, { f: { limit: 200, skip: 0 } });
+        // Tur-5 fix: hard error assertion. Bookings probe schema valid
+        // olmalı; errors array doluysa false-PASS riski + coverage gap →
+        // P1 finding emit, status FAIL.
+        const bErrors = Array.isArray(b.body?.errors) ? b.body.errors : [];
+        if (bErrors.length > 0 || !b.ok) {
+            recFinding(testInfo, 'P1', MOD,
+                'GraphQL bookings resolver schema/transport error — isolation kanıtı yok',
+                `status=${b.status} errors=${JSON.stringify(bErrors).slice(0, 240)}. Cross-tenant leak detection imkânsız; query field-name veya schema drift olabilir.`);
+        }
         const bookings = b.body?.data?.bookings || [];
         const bookingIds = new Set(bookings.map(x => x.id));
-        const guestIds = new Set(bookings.map(x => x.guest_id).filter(Boolean));
-        const roomIds = new Set(bookings.map(x => x.room_id).filter(Boolean));
+        const guestIds = new Set(bookings.map(x => x.guestId).filter(Boolean));
+        const roomIds = new Set(bookings.map(x => x.roomId).filter(Boolean));
 
         const pilotBookingLeak = pilotSampleBookingId && bookingIds.has(pilotSampleBookingId);
         const pilotGuestLeak = pilotSampleGuestId && guestIds.has(pilotSampleGuestId);
@@ -189,6 +203,12 @@ test.describe('F8M § 40 — GraphQL Tenant Isolation', () => {
 
         // Q2 — Rooms: aynı doktrin.
         const r = await gql(request, stressTokens.stress_token, Q_ROOMS, { f: { limit: 200, skip: 0 } });
+        const rErrors = Array.isArray(r.body?.errors) ? r.body.errors : [];
+        if (rErrors.length > 0 || !r.ok) {
+            recFinding(testInfo, 'P1', MOD,
+                'GraphQL rooms resolver schema/transport error — isolation kanıtı yok',
+                `status=${r.status} errors=${JSON.stringify(rErrors).slice(0, 240)}.`);
+        }
         const rooms = r.body?.data?.rooms || [];
         const returnedRoomIds = new Set(rooms.map(x => x.id));
         const pilotRoomLeak = pilotSampleRoomId && returnedRoomIds.has(pilotSampleRoomId);
@@ -254,9 +274,11 @@ test.describe('F8M § 40 — GraphQL Tenant Isolation', () => {
 
         // P1 — Filter spoof: pilot guest_id ile sorgu. Beklenti: boş liste
         // (stress tenant'ta o guest_id yok). 1+ row dönerse cross-tenant leak.
+        // Tur-5: BookingFilter input field `guest_id` → GraphQL'de `guestId`
+        // (Strawberry auto_camel_case=True).
         if (pilotSampleGuestId) {
             const r = await gql(request, stressTokens.stress_token, Q_BOOKINGS,
-                { f: { guest_id: pilotSampleGuestId, limit: 50 } });
+                { f: { guestId: pilotSampleGuestId, limit: 50 } });
             const rows = r.body?.data?.bookings || [];
             probes.push({ kind: 'guest_id_spoof', http: r.status, returned: rows.length });
             if (rows.length > 0) {
@@ -267,7 +289,7 @@ test.describe('F8M § 40 — GraphQL Tenant Isolation', () => {
         // P2 — Room ID spoof: pilot room_id ile booking sorgusu. Aynı doktrin.
         if (pilotSampleRoomId) {
             const r = await gql(request, stressTokens.stress_token, Q_BOOKINGS,
-                { f: { room_id: pilotSampleRoomId, limit: 50 } });
+                { f: { roomId: pilotSampleRoomId, limit: 50 } });
             const rows = r.body?.data?.bookings || [];
             probes.push({ kind: 'room_id_spoof', http: r.status, returned: rows.length });
             if (rows.length > 0) {
