@@ -297,8 +297,15 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
         // explicit unique compound index). Either response (PASS=409/422 OR
         // PASS=200 with separate id) is acceptable as long as no 500. P2
         // informational rec captures actual behavior for future hardening.
+        // Terminal-state contract HARD-ASSERT: aynı staff+period için 2.
+        // manager-feedback POST → 409 veya 422 BEKLENİR. 2xx kabul edilemez
+        // (privilege/finance immutability + audit trail integrity). Backend
+        // şu anda uniqueness enforce etmiyorsa BU TEST FAIL — follow-up
+        // task #208 backend hardening için açıldı; o tamamlanmadan F8D-v2
+        // doctrine'i hard fail vermeli (architect iter-3 directive).
         let terminalBehavior = 'unknown';
         let terminalStatus = null;
+        let dupCreatedId = null;
         if (createdId) {
             const dupR = await callTimedWithBackoff(request, 'post', '/api/hr/performance', {
                 staff_id: candidate.id,
@@ -312,9 +319,10 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
                 terminalBehavior = 'enforced_unique';
             } else if (dupR.ok) {
                 terminalBehavior = 'not_enforced_allows_duplicate';
-                recFinding(testInfo, 'P2', MOD,
-                    'Perf review terminal-state not enforced — duplicate-period create allowed',
-                    `staff_id=${candidate.id.slice(0,8)}… period=${newPeriod} dup_status=${dupR.status}. Backend uniqueness yok; finalize/state-machine'i ileride sıkılaştırmak için işaret.`);
+                dupCreatedId = dupR.body?.review?.id || dupR.body?.id || null;
+                recFinding(testInfo, 'P0', MOD,
+                    'Perf review terminal-state CONTRACT VIOLATION — duplicate-period create allowed',
+                    `staff_id=${candidate.id.slice(0,8)}… period=${newPeriod} dup_status=${dupR.status}. Backend uniqueness gate eksik; aynı çalışan-dönem için iki manager-feedback kayıt oldu. Audit/finance immutability ihlali.`);
             } else if (dupR.status >= 500) {
                 terminalBehavior = 'server_error';
                 recFinding(testInfo, 'P1', MOD, 'Duplicate-period probe 5xx',
@@ -325,14 +333,17 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
             // Cleanup: if duplicate was allowed, DELETE the duplicate row to
             // avoid residue. Backend route DELETE /hr/performance/{id} may not
             // exist; ignore failures.
-            if (dupR.ok && (dupR.body?.review?.id || dupR.body?.id)) {
-                const dupId = dupR.body.review?.id || dupR.body.id;
-                await callTimed(request, 'delete', `/api/hr/performance/${dupId}`, undefined, stressTokens.stress_token);
+            if (dupCreatedId) {
+                await callTimed(request, 'delete', `/api/hr/performance/${dupCreatedId}`, undefined, stressTokens.stress_token);
             }
             // Cleanup the lifecycle-created review too.
             await callTimed(request, 'delete', `/api/hr/performance/${createdId}`, undefined, stressTokens.stress_token);
         }
-        const pass = !!createdId;
+        // HARD ENFORCEMENT: terminal-state contract violation → test FAIL.
+        // Acceptable: enforced_unique. Soft-acceptable (env): unknown
+        // (createdId yoktu — A/lifecycle başarısız zaten failedTests=1 yapar).
+        const terminalContractOk = terminalBehavior === 'enforced_unique' || terminalBehavior === 'unknown';
+        const pass = !!createdId && terminalContractOk;
         recPerf(testInfo, MOD, 'create_review_lifecycle', samples, pass);
         rec(testInfo, { module: MOD, step: 'create_review_lifecycle',
             status: pass ? 'PASS' : 'FAIL',
@@ -342,6 +353,10 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
             `status=${createR.status} body=${JSON.stringify(createR.body).slice(0, 120)}`);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'create_review_lifecycle', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
+        // HARD-ASSERT terminal-state contract (architect iter-3 directive).
+        expect(terminalContractOk,
+            `terminal-state contract: 2. manager-feedback POST için status 409/422 BEKLENIR. behavior=${terminalBehavior} status=${terminalStatus}`).toBe(true);
+        expect(pass, `create_review_lifecycle (create+ack+terminal-state)`).toBe(true);
     });
 
     test('E) external_calls invariant + pilot_drift=0', async ({ request, stressTokens, stressState }, testInfo) => {

@@ -705,28 +705,29 @@ export function assertEndpointNeverCalled(testInfo, module, urlSubstring) {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const fs = require('node:fs');
         source = fs.readFileSync(sourcePath, 'utf-8');
-    } catch (_) {
-        // Doctrine: source-unreachable → P2 informational REVIEW, NON-BLOCKING.
-        // Caller hard-assert eder; runtime invariant (yasak endpoint'in
-        // HİÇBİR test'te POST yapılmaması) defense-in-depth olarak kalır.
-        // Sadece literal-substring DETECTION → P0 + return false bloklayıcı.
+    } catch (e) {
+        // Doctrine (architect iter-3): source-unreachable BLOKLAYICI. Forbidden
+        // endpoint guard'ın deterministik olması gerekir; sessiz degrade ediyorsa
+        // payroll/finalize doctrine'i koruma sağlamıyor demektir. Bu durumda
+        // setup failure olarak işaretle; caller `expect(...).toBe(true)` ile
+        // testi düşürür.
         testInfo.annotations.push({
             type: 'rec',
             description: JSON.stringify({
                 module, step: 'forbidden_endpoint_guard',
-                status: 'REVIEW',
-                note: `source_unreachable path=${sourcePath} substring_len=${urlSubstring.length} (non-blocking; runtime invariant still enforced)`,
+                status: 'FAIL',
+                note: `source_unreachable path=${sourcePath} err=${String(e?.message || e).slice(0, 120)} (blocking; deterministic guard required)`,
             }),
         });
         testInfo.annotations.push({
             type: 'finding',
             description: JSON.stringify({
-                severity: 'P2', module,
-                title: 'Forbidden endpoint source-scan guard skipped — spec source unreachable',
-                detail: `testInfo.file=${sourcePath} substring_len=${urlSubstring.length} — runtime invariant defense-in-depth korunur.`,
+                severity: 'P1', module,
+                title: 'Forbidden endpoint source-scan guard FAILED — spec source unreachable',
+                detail: `testInfo.file=${sourcePath} substring_len=${urlSubstring.length} err=${String(e?.message || e).slice(0, 200)}. Guard deterministik olmalı; sessiz degrade YASAK.`,
             }),
         });
-        return true;
+        return false;
     }
     // Look for the forbidden substring literally in the source. Constants
     // imported by name (FORBIDDEN_HR_PAYROLL_FINALIZE) do NOT contain the

@@ -140,29 +140,43 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
 
         recPerf(testInfo, MOD, 'overlap_s2', samples, true); // perf çağrı başarısı (status-bağımsız)
 
-        if (r.status === 409) {
+        // Overlap conflict contract HARD-ASSERT: aynı staff+date için
+        // çakışan time-window POST → 409 veya 422 BEKLENIR. 2xx kabul
+        // edilemez (production double-booking riski). Architect iter-3
+        // directive: contract checks must hard-fail when violated.
+        let overlapBehavior = 'unknown';
+        if (r.status === 409 || r.status === 422) {
+            overlapBehavior = 'enforced_reject';
             rec(testInfo, { module: MOD, step: 'overlap_s2', status: 'PASS',
                 endpoint: 'POST /api/hr/shifts (overlap)',
-                note: `status=409 — backend correctly rejects overlapping shift for same staff/date.` });
+                note: `status=${r.status} — backend correctly rejects overlapping shift for same staff/date.` });
         } else if (r.ok && s2Id) {
-            // Backend allowed overlap → gap finding (P1: business rule gap).
-            rec(testInfo, { module: MOD, step: 'overlap_s2', status: 'REVIEW',
+            overlapBehavior = 'allowed_overlap';
+            rec(testInfo, { module: MOD, step: 'overlap_s2', status: 'FAIL',
                 endpoint: 'POST /api/hr/shifts (overlap)',
-                note: `status=${r.status} s2_id=${s2Id} — backend ALLOWED overlapping shift (no 409). Business-rule gap; D step cleanup edecek.` });
-            recFinding(testInfo, 'P1', MOD,
+                note: `status=${r.status} s2_id=${s2Id} — backend ALLOWED overlapping shift (no 409/422). CONTRACT VIOLATION; D step cleanup edecek.` });
+            recFinding(testInfo, 'P0', MOD,
                 'Shift overlap guard MISSING — backend aynı staff+date için overlapping shift kabul etti',
-                `S1=09:00-13:00 S2=10:00-14:00 staff=${staffA.id} → her ikisi de kayıt oldu (s1_id=${s1Id} s2_id=${s2Id}). POST /hr/shifts route'unda overlap check yok; production'da double-booking riski.`);
+                `S1=09:00-13:00 S2=10:00-14:00 staff=${staffA.id} → her ikisi de kayıt oldu (s1_id=${s1Id} s2_id=${s2Id}). POST /hr/shifts route'unda overlap check yok; production'da double-booking riski. CONTRACT VIOLATION.`);
         } else if (r.status === 401 || r.status === 403) {
+            overlapBehavior = 'perm_fail';
             recFinding(testInfo, 'P2', MOD, 'S2 overlap probe RBAC blocked',
                 `status=${r.status} — A1 başarılı ama A2 perm fail; tutarsız gate beklenmedik.`);
             rec(testInfo, { module: MOD, step: 'overlap_s2', status: 'SKIP',
                 note: `perm_fail status=${r.status}` });
+            test.skip(true, 'perm_fail mid-flight (inconsistent gate)');
+            return;
         } else {
-            recFinding(testInfo, 'P2', MOD, 'S2 overlap unexpected status',
+            overlapBehavior = `unexpected_${r.status}`;
+            recFinding(testInfo, 'P1', MOD, 'S2 overlap unexpected status',
                 `status=${r.status} body=${JSON.stringify(r.body).slice(0, 160)}`);
-            rec(testInfo, { module: MOD, step: 'overlap_s2', status: 'REVIEW',
+            rec(testInfo, { module: MOD, step: 'overlap_s2', status: 'FAIL',
                 note: `status=${r.status}` });
         }
+        // HARD-ASSERT (architect iter-3): overlap must be rejected by backend.
+        expect(overlapBehavior,
+            `overlap contract: aynı staff+date çakışan shift için 409/422 BEKLENIR. behavior=${overlapBehavior} status=${r.status}`)
+            .toBe('enforced_reject');
     });
 
     test('C) Coverage check — HK dept ≥ MIN_COVERAGE_HK scheduled staff', async ({ request, stressTokens }, testInfo) => {

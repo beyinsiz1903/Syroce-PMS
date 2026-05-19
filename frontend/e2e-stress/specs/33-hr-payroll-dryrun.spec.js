@@ -86,14 +86,25 @@ test.describe('F8D-v2 § 33 — HR Payroll Dry-run', () => {
         const shapeOk = r.ok && typeof r.body === 'object'
             && Array.isArray(payrollList)
             && 'count' in r.body && 'total_gross' in r.body;
+        // HARD-ASSERT numeric typing (architect iter-3): count + total_gross
+        // + total_net response'da MUTLAKA number (financial response shape
+        // contract). String/null/undefined → P1 + FAIL.
+        const numericFields = r.ok ? ['count', 'total_gross', 'total_net'] : [];
+        const numericDrift = numericFields.filter((f) => typeof r.body?.[f] !== 'number');
+        const numericOk = r.ok ? numericDrift.length === 0 : true;
         rec(testInfo, { module: MOD, step: 'lookup_month',
-            status: shapeOk ? 'PASS' : 'REVIEW',
+            status: (shapeOk && numericOk) ? 'PASS' : 'REVIEW',
             endpoint: `/api/hr/payroll/{month}`, http: r.status,
-            note: `status=${r.status} count=${r.body?.count} total_gross=${r.body?.total_gross} total_net=${r.body?.total_net}` });
+            note: `status=${r.status} count=${r.body?.count} total_gross=${r.body?.total_gross} total_net=${r.body?.total_net} numeric_drift=${numericDrift.join('|') || 'none'}` });
         if (!r.ok) recFinding(testInfo, 'P2', MOD, 'Payroll month-lookup non-2xx', `status=${r.status}`);
         if (r.ok && !shapeOk) recFinding(testInfo, 'P2', MOD, 'Payroll month-lookup shape drift',
             `body keys=${Object.keys(r.body || {}).join(',')}`);
+        if (r.ok && !numericOk) recFinding(testInfo, 'P1', MOD,
+            'Payroll month-lookup numeric type drift',
+            `non-numeric fields=${numericDrift.join('|')} body=${JSON.stringify({c: r.body?.count, tg: r.body?.total_gross, tn: r.body?.total_net})}`);
         if (r.ok) assertNoTokenLeak(testInfo, MOD, r.body, 'payroll_month_lookup');
+        expect(numericOk,
+            `payroll numeric contract: count/total_gross/total_net typeof === 'number'. drift=${numericDrift.join('|')}`).toBe(true);
     });
 
     test('B) GET /hr/payroll/export — JSON dry-run preview', async ({ request, stressTokens }, testInfo) => {
@@ -110,14 +121,24 @@ test.describe('F8D-v2 § 33 — HR Payroll Dry-run', () => {
         const payrollList = r.body?.payroll || [];
         const shapeOk = r.ok && Array.isArray(payrollList)
             && 'staff_count' in r.body && 'total_gross_pay' in r.body && 'total_net_pay' in r.body;
+        // HARD-ASSERT numeric typing (architect iter-3): export response
+        // staff_count + total_gross_pay + total_net_pay number olmalı.
+        const numericFieldsX = r.ok ? ['staff_count', 'total_gross_pay', 'total_net_pay'] : [];
+        const numericDriftX = numericFieldsX.filter((f) => typeof r.body?.[f] !== 'number');
+        const numericOkX = r.ok ? numericDriftX.length === 0 : true;
         rec(testInfo, { module: MOD, step: 'export_json',
-            status: shapeOk ? 'PASS' : 'REVIEW',
+            status: (shapeOk && numericOkX) ? 'PASS' : 'REVIEW',
             endpoint: '/api/hr/payroll/export', http: r.status,
-            note: `status=${r.status} staff_count=${r.body?.staff_count} total_gross=${r.body?.total_gross_pay} rows=${payrollList.length} period=${r.body?.period}` });
+            note: `status=${r.status} staff_count=${r.body?.staff_count} total_gross=${r.body?.total_gross_pay} rows=${payrollList.length} period=${r.body?.period} numeric_drift=${numericDriftX.join('|') || 'none'}` });
         if (!r.ok) recFinding(testInfo, 'P2', MOD, 'Payroll export non-2xx', `status=${r.status}`);
         if (r.ok && !shapeOk) recFinding(testInfo, 'P2', MOD, 'Payroll export shape drift',
             `body keys=${Object.keys(r.body || {}).join(',')}`);
+        if (r.ok && !numericOkX) recFinding(testInfo, 'P1', MOD,
+            'Payroll export numeric type drift',
+            `non-numeric fields=${numericDriftX.join('|')}`);
         if (r.ok) assertNoTokenLeak(testInfo, MOD, r.body, 'payroll_export_json');
+        expect(numericOkX,
+            `payroll export numeric contract: staff_count/total_gross_pay/total_net_pay typeof === 'number'. drift=${numericDriftX.join('|')}`).toBe(true);
     });
 
     test('C) GET /hr/payroll/export/csv — CSV stream preview', async ({ request, stressTokens }, testInfo) => {
