@@ -449,6 +449,22 @@ Fix: `afsadakat_dispatch_impossible = afsadakat_tenants_lookup_ok && active_tena
 
 Her iki source'ta da: lookup exception → `lookup_ok=False` → gate False → false-PASS riski sıfır.
 
+**tur-29e — CI #46 root-cause fix (2026-05-19)**: tur-29d structural-collapse koduyla CI #46 koşuldu, hâlâ 20 P0. Gerçek root cause yapısal kapı değil **message-pattern eksikliği**:
+
+`backend/channel_manager/application/event_sync_service.py:73-74` — connector yokken `handle_event` `{handled: True, sync_jobs_created: 0, reason: "No active connectors"}` döner (handled=True, sync_jobs_created=0).
+
+`backend/core/outbox_dispatcher.py:73-100` — `if not result.get("handled"):` False → "no active connectors" string-match dalı ATLANIR. Kontrol line 100'e düşer: `return True, f"Dispatched: {jobs_created} sync jobs created"` → `delivery_message="Dispatched: 0 sync jobs created"`.
+
+Mevcut `inert_patterns` ("no active connectors", "dry_run", "dry run", "unsupported event_type") bu spesifik string'i YAKALAYAMIYORDU → her stress mutation outbox row üretiyor → helper "real external call" olarak okuyor → 20 P0.
+
+Fix: `inert_patterns` genişletildi (hem CM hem Afsadakat bloğunda):
+- `"dispatched: 0"` → EventSyncService 0-jobs success
+- `"no webhook url configured"` → `_fallback_dispatch` line 142
+- `"missing creds"` → `core/afsadakat_outbound.py:156` short-circuit
+- Plus existing patterns korundu
+
+Bu pattern-katmanı **env'den bağımsız** (tur-29a-d structural gates'in temel kırılganlığı): `os.environ.get` ne döndürürse döndürsün, dispatcher'ın kendi delivery_message'ı "real HTTP attempted vs. not" ground truth'unu taşıyor. Structural-collapse layer hâlâ defense-in-depth olarak korundu — pattern match ön safhada, structural collapse arka safhada.
+
 ### Mimari gerekçe (defansif tasarım)
 
 Bu fix iki garanti veriyor:

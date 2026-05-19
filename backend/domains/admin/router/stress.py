@@ -1902,7 +1902,44 @@ async def stress_external_calls_status(
                 # delivery_message'ler de external call sayılmaz.
                 msg = (doc.get("delivery_message") or "") + " " + (doc.get("last_error") or "")
                 msg_lower = msg.lower()
-                inert_patterns = ("no active connectors", "dry_run", "dry run", "unsupported event_type")
+                # tur-29e (CI #46 root-cause fix): `EventSyncService.handle_event`
+                # (backend/channel_manager/application/event_sync_service.py:73-74)
+                # returns `{handled: True, sync_jobs_created: 0, reason: "No active
+                # connectors"}` when the tenant has no connectors. Dispatcher
+                # (`core/outbox_dispatcher.py:73-100`) checks `if not handled`
+                # first, so the "no active connectors" string-match branch is
+                # SKIPPED for the handled=True/0-jobs case; control falls through
+                # to line 100 returning `(True, "Dispatched: 0 sync jobs created")`.
+                # The previous inert_patterns missed this exact string → every
+                # stress mutation produced a row that helper read as a real
+                # external call (CI #46 P0 cascade).
+                #
+                # Extended patterns cover all dispatcher/worker "no real HTTP
+                # attempt" outcomes:
+                # - "dispatched: 0"           → EventSyncService 0-jobs success
+                # - "no active connectors"    → legacy handled=False reason
+                # - "no webhook url configured" → _fallback_dispatch line 142
+                # - "missing creds"           → Afsadakat outbound line 156
+                # - "dry_run"/"dry run"       → env-gated short-circuit
+                # - "unsupported event_type"  → permanent SKU mismatch
+                # tur-29e architect-review hardening: narrow "missing creds" to the
+                # exact Afsadakat short-circuit phrase to prevent accidental
+                # masking of real HTTP-error bodies that happen to contain
+                # "missing creds". Add "unsupported event:" to cover the
+                # outbox_dispatcher.py:78-79 reformatted reason path
+                # (`f"permanent: {reason}"` where reason starts with "Unsupported
+                # event:"), which the original "unsupported event_type" token
+                # missed via substring mismatch.
+                inert_patterns = (
+                    "no active connectors",
+                    "dispatched: 0",
+                    "no webhook url configured",
+                    "missing creds or afsadakat_base_url",
+                    "dry_run",
+                    "dry run",
+                    "unsupported event_type",
+                    "unsupported event:",
+                )
                 if any(p in msg_lower for p in inert_patterns):
                     continue
                 doc["source"] = "outbox_events"
@@ -1932,7 +1969,20 @@ async def stress_external_calls_status(
                 ).sort("created_at", -1).limit(50)
                 async for doc in cursor:
                     msg = (doc.get("delivery_message") or "") + " " + (doc.get("last_error") or "")
-                    if any(p in msg.lower() for p in ("no active connectors", "dry_run", "dry run", "unsupported event_type")):
+                    # tur-29e: same extended inert pattern set as CM block above
+                    # (kept inline for source-locality; both blocks must stay in
+                    # sync). Afsadakat-specific: "missing creds" matches
+                    # `core/afsadakat_outbound.py:156` short-circuit.
+                    if any(p in msg.lower() for p in (
+                        "no active connectors",
+                        "dispatched: 0",
+                        "no webhook url configured",
+                        "missing creds or afsadakat_base_url",
+                        "dry_run",
+                        "dry run",
+                        "unsupported event_type",
+                        "unsupported event:",
+                    )):
                         continue
                     doc["source"] = "integration_afsadakat_outbox"
                     if "created_at" in doc and hasattr(doc["created_at"], "isoformat"):
