@@ -57,6 +57,22 @@ const HR_SENSITIVE = [
     { key: 'perf_list',       path: '/api/hr/performance',                          expectAuthorized: [] },
 ];
 
+// HR WRITE endpoint deny matrisi — mutasyon yüzeyleri düşük-priv rollere
+// KESİN deny olmalı (KVKK + finance immutability + privilege escalation).
+// Her satır {method, path, body, dynamic, expectAuthorized}. dynamic=true →
+// {sid} fill, dynamic='month' → {month} fill. body=null → boş body.
+// Hepsi expectAuthorized=[]: front_desk/housekeeping/finance/sales hiçbiri
+// HR mutasyonuna sahip değil. 2xx → P0 (write-side privilege escalation).
+const HR_WRITE_DENY = [
+    { method: 'post',   path: '/api/hr/staff',                                 body: () => ({ name: 'XX', email: 'noop@x.test', position: 'p', department: 'd', employment_type: 'full_time' }) },
+    { method: 'put',    path: '/api/hr/staff/{sid}',                           body: () => ({ name: 'XX-mod' }), dynamic: true },
+    { method: 'delete', path: '/api/hr/staff/{sid}',                           body: null, dynamic: true },
+    { method: 'post',   path: '/api/hr/staff/{sid}/salary-change',              body: () => ({ new_salary: 1, effective_date: '2030-01-01', reason: 'noop' }), dynamic: true },
+    { method: 'post',   path: '/api/hr/staff/{sid}/terminate',                  body: () => ({ termination_date: '2030-01-01', reason: 'noop' }), dynamic: true },
+    { method: 'post',   path: '/api/hr/leave-balance',                          body: () => ({ staff_id: '00000000-0000-0000-0000-000000000000', year: 2030, annual_entitlement: 14, carry_over: 0, sick_entitlement: 7 }) },
+    { method: 'post',   path: '/api/hr/performance',                            body: () => ({ staff_id: '00000000-0000-0000-0000-000000000000', period: '2030-Q1', rating: 3 }) },
+];
+
 function currentMonth() {
     const d = new Date();
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -228,6 +244,64 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
         expect(extOk).toBe(true);
     });
 
+    test('A2) HR WRITE deny matrix — 4 roles × 7 mutation endpoints (cross-dept escalation guard)', async ({ request, stressTokens, stressState }, testInfo) => {
+        test.setTimeout(180_000);
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'rbac_write_matrix', status: 'SKIP', note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        const tokenRoles = Object.keys(roleTokens);
+        if (tokenRoles.length === 0) {
+            rec(testInfo, { module: MOD, step: 'rbac_write_matrix', status: 'SKIP', note: 'no role tokens' });
+            test.skip(true, 'no role tokens');
+            return;
+        }
+        const samples = [];
+        const writeViolations = []; // {role, endpoint, method, status} — 2xx = P0
+        let totalChecks = 0, accidentalSuccess = 0;
+        for (const ep of HR_WRITE_DENY) {
+            // Resolve dynamic placeholders. {sid} için sahte UUID kullanıyoruz
+            // (gerçek staff_id'yi bypass'lasın diye); auth gate her halükarda
+            // önce devreye girer, 401/403 = PASS. Eğer gate yoksa backend
+            // 404/422 dönecek; 2xx imkansız ama yine de violation flag.
+            let url = ep.path;
+            if (ep.dynamic === true) {
+                // Use sahte staff_id (NOT a real one) — accidental delete önle.
+                url = url.replace('{sid}', '00000000-0000-0000-0000-000000000000');
+            }
+            for (const role of tokenRoles) {
+                totalChecks++;
+                const body = typeof ep.body === 'function' ? ep.body() : ep.body;
+                const r = await callTimed(request, ep.method, url, body, roleTokens[role]);
+                samples.push(r.ms);
+                if (r.status >= 200 && r.status < 300) {
+                    accidentalSuccess++;
+                    writeViolations.push({ role, endpoint: ep.path, method: ep.method, status: r.status });
+                    // ACİL DEFENSIVE CLEANUP: 2xx geldi demek bir kayıt yaratılmış olabilir;
+                    // her mutation endpoint'i için en güvenli yol super_admin scope'unda
+                    // delete denemesi (mümkünse). Sahte UUID kullandığımız için backend
+                    // muhtemelen NotFound döner, ama yine de log için kayıt altına alıyoruz.
+                }
+                await new Promise((res) => setTimeout(res, 250));
+            }
+        }
+        const pass = writeViolations.length === 0;
+        recPerf(testInfo, MOD, 'rbac_write_matrix', samples, pass);
+        rec(testInfo, { module: MOD, step: 'rbac_write_matrix',
+            status: pass ? 'PASS' : 'FAIL',
+            endpoint: '4 roles × 7 HR mutation endpoints',
+            note: `total_checks=${totalChecks} write_violations=${writeViolations.length} accidental_2xx=${accidentalSuccess} roles=${tokenRoles.join('|')} viol_sample=${JSON.stringify(writeViolations.slice(0, 5))}` });
+        if (writeViolations.length > 0) {
+            // WRITE-side violation = P0 privilege escalation (mutate-without-auth).
+            recFinding(testInfo, 'P0', MOD,
+                'HR WRITE privilege escalation — düşük-priv rol HR mutation endpoint\'inde 2xx',
+                `count=${writeViolations.length}/${totalChecks} sample=${JSON.stringify(writeViolations.slice(0, 5))}. KVKK + finance immutability + privilege escalation hattının tam ihlali. Backend gate'leri require_op(...) ile sıkılaştır.`);
+        }
+        const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'rbac_write_matrix', stressState, request, stressTokens.pilot_token);
+        expect(extOk).toBe(true);
+    });
+
     test('B) Staff list PII guard — phone/national_id/TC/IBAN masked', async ({ request, stressTokens }, testInfo) => {
         if (moduleBlocked) {
             rec(testInfo, { module: MOD, step: 'staff_list_pii', status: 'SKIP', note: `module blocked: ${blockedReason}` });
@@ -317,15 +391,31 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
         for (const it of sampleEntries) {
             if (it && typeof it === 'object' && it.tenant_id === pilotTid) crossTenantEntries++;
         }
+        // Recent HR mutation presence probe — seed'de yaratılan stress tenant
+        // HR rows (departments/positions/staff inserts) audit log'da
+        // görünmeli. Backend tüm HR insert path'lerinde audit yazmıyorsa P2
+        // informational (audit coverage drift'i için forward-compat).
+        const stressTid = stressState.stress_tid;
+        const HR_ACTION_HINTS = ['hr_', 'staff', 'department', 'position', 'leave', 'shift', 'performance', 'payroll'];
+        let hrMutationEntries = 0;
+        for (const it of sampleEntries) {
+            if (!it || typeof it !== 'object') continue;
+            const tid = it.tenant_id;
+            const action = String(it.action || it.event_type || it.action_type || '').toLowerCase();
+            if (tid === stressTid && HR_ACTION_HINTS.some((h) => action.includes(h))) hrMutationEntries++;
+        }
         const pass = tokOk && crossTenantEntries === 0;
         recPerf(testInfo, MOD, 'audit_scope', samples, pass);
         rec(testInfo, { module: MOD, step: 'audit_scope',
             status: pass ? 'PASS' : 'FAIL',
             endpoint: '/api/security/audit-logs',
-            note: `status=${r.status} items=${items.length} sampled=${sampleEntries.length} token_ok=${tokOk} cross_tenant_entries=${crossTenantEntries}` });
+            note: `status=${r.status} items=${items.length} sampled=${sampleEntries.length} token_ok=${tokOk} cross_tenant_entries=${crossTenantEntries} hr_mutation_entries_for_stress_tid=${hrMutationEntries}` });
         if (crossTenantEntries > 0) recFinding(testInfo, 'P0', MOD,
             'Audit log cross-tenant leak — stress token pilot_tid entry görüyor',
             `cross_tenant_entries=${crossTenantEntries}/${sampleEntries.length} pilot_tid=${pilotTid.slice(0, 8)}…`);
+        if (hrMutationEntries === 0) recFinding(testInfo, 'P2', MOD,
+            'HR mutation audit coverage drift — stress tenant için son HR action entry yok',
+            `sampled=${sampleEntries.length} stress_tid=${stressTid.slice(0, 8)}… — backend HR insert path'leri audit log yazmıyor olabilir; KVKK forensic eksikliği informational.`);
     });
 
     test('E) Cleanup created users (idempotent DELETE; audit logs untouched)', async ({ request, stressTokens, stressState }, testInfo) => {

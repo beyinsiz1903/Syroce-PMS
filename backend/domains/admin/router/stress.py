@@ -112,6 +112,7 @@ STRESS_COLLECTIONS = [
     "shift_swap_requests",
     "performance_reviews",
     "performance_checkins",  # F8D-v2 (Task #205): goal check-in lifecycle (POST /hr/performance/{id}/checkin)
+    "performance_review_checkins",  # F8D-v2 forward-compat alias: task spec naming (backend kullanmıyor; orphan scrub still cleans if collection later created)
     "performance_templates",  # F8D-v2 (Task #205): perf review templates (GET/POST /hr/performance-templates)
     "leave_balance_adjustments",  # F8D-v2 forward-compat: leave-balance adjustment audit collection (no backend yet; orphan scrub)
     "shift_conflicts",  # F8D-v2 forward-compat: shift overlap conflict audit collection (no backend yet; orphan scrub)
@@ -1661,7 +1662,8 @@ async def stress_seed(
                          "leave_balances", "shift_schedules",
                          "shift_swap_requests", "performance_reviews",
                          # F8D-v2 (Task #205) orphan scrub mirror.
-                         "performance_checkins", "performance_templates",
+                         "performance_checkins", "performance_review_checkins",
+                         "performance_templates",
                          "leave_balance_adjustments", "shift_conflicts",
                          "leave_accrual_policies",
                          "payroll_records",

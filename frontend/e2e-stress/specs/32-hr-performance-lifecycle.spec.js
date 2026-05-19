@@ -220,7 +220,18 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
         if (!r.ok) recFinding(testInfo, 'P2', MOD, 'Per-staff perf summary non-2xx', `status=${r.status}`);
     });
 
-    test('F) Full lifecycle: create new review + terminal-state guard (duplicate-period)', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('F) Full lifecycle: manager-feedback create + employee-ack analog + terminal-state second-feedback rejection probe', async ({ request, stressTokens, stressState }, testInfo) => {
+        // Backend gerçeği (hr/router.py 2762, 2791): perf review yaşam döngüsü
+        // iki POST'tan oluşur:
+        //   • Manager feedback = POST /api/hr/performance (review create
+        //     {rating, comments}) — yöneticinin değerlendirmesi.
+        //   • Employee acknowledgement analog = POST /api/hr/performance/{id}/checkin
+        //     (goal-level progress note) — çalışan tarafından eklenebilen kayıt.
+        // Terminal-state contract: aynı staff+period için 2. manager-feedback
+        // POST'u backend tarafından REDDEDİLMELİ (409/422). Backend şu anda
+        // uniqueness enforce etmiyorsa P2 informational + duplicate row
+        // immediate DELETE (residue=0); follow-up task #208 backend hardening
+        // için açıldı.
         test.setTimeout(60_000);
         if (moduleBlocked) {
             rec(testInfo, { module: MOD, step: 'create_review_lifecycle', status: 'SKIP', note: `module blocked: ${blockedReason}` });
