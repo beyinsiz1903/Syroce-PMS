@@ -62,7 +62,7 @@ test.describe('F8O § 42 — AI Upsell Dry-run', () => {
 
         // LLM diagnostics — vendor surface state (no vendor call). Also
         // doubles as the authoritative call-ledger baseline snapshot.
-        const snap = await snapshotAiCallCount(request, stressTokens.stress_token);
+        const snap = await snapshotAiCallCount(request, stressTokens.pilot_token);
         if (!snap.ok) {
             // F8O mutlak kuralı: ledger baseline olmadan dry-run guarantee
             // verilmez. Setup fail-closed P0 + test failure.
@@ -195,7 +195,7 @@ test.describe('F8O § 42 — AI Upsell Dry-run', () => {
         test.setTimeout(60_000);
         // Bu test module-blocked durumda da çalışır — vendor isolation
         // her koşulda doğrulanmalı. Ledger baseline setup'tan gelir.
-        const pass = await assertNoVendorHttpCall(testInfo, MOD, request, stressTokens.stress_token, aiCallBaseline, 'spec42_post_batch');
+        const pass = await assertNoVendorHttpCall(testInfo, MOD, request, stressTokens.pilot_token, aiCallBaseline, 'spec42_post_batch');
         expect(pass).toBe(true);
     });
 

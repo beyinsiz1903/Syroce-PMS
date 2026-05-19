@@ -69,7 +69,7 @@ test.describe('F8O § 44 — AI No-Show Risk Dry-run', () => {
         prefix = stressState.data_prefix;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
         // LLM ledger baseline + env/key guards.
-        const snap = await snapshotAiCallCount(request, stressTokens.stress_token);
+        const snap = await snapshotAiCallCount(request, stressTokens.pilot_token);
         if (!snap.ok) {
             recFinding(testInfo, 'P0', MOD, 'LLM diagnostics endpoint non-2xx — ledger baseline alınamadı',
                 `status=${snap.status} — F8O mutlak kuralı: authoritative ledger zorunlu.`);
@@ -232,7 +232,7 @@ test.describe('F8O § 44 — AI No-Show Risk Dry-run', () => {
 
     test('E) Vendor-call guard — authoritative ledger delta + briefing.ai_powered=false', async ({ request, stressTokens }, testInfo) => {
         test.setTimeout(60_000);
-        const pass = await assertNoVendorHttpCall(testInfo, MOD, request, stressTokens.stress_token, aiCallBaseline, 'spec44_post_batch');
+        const pass = await assertNoVendorHttpCall(testInfo, MOD, request, stressTokens.pilot_token, aiCallBaseline, 'spec44_post_batch');
         expect(pass).toBe(true);
     });
 
