@@ -327,9 +327,32 @@ except ImportError:
     pass
 
 # ── External routers (via bootstrap registry) ───────────────────────
+# This is the slow step: register_routers() imports ~189 router modules
+# synchronously (~17-34s). On Replit autoscale the port-open window is
+# ~30s, so when DEFER_STARTUP_BOOTSTRAP=1 we defer the call into a
+# startup callback. The app.py warm-up middleware returns 503 for
+# non-health requests until app.state.routes_ready flips to True.
 from bootstrap.router_registry import register_routers  # noqa: E402
 
-register_routers(app, api_router, require_super_admin_dep=require_super_admin)
+_DEFER_ROUTER_MOUNT = os.getenv("DEFER_STARTUP_BOOTSTRAP", "").lower() in ("1", "true", "yes")
+
+if _DEFER_ROUTER_MOUNT:
+    # Warm-up gate stays closed until ALL startup callbacks finish (app.py
+    # _run_startup_callbacks flips routes_ready=True on full success, or
+    # startup_failed=True on any error — fail-closed).
+    app.state.routes_ready = False
+    app.state.startup_failed = False
+
+    @register_startup
+    async def _deferred_router_mount():
+        import time as _t
+        _t0 = _t.time()
+        logger.warning("DEFER_STARTUP_BOOTSTRAP=1 — deferred router registration starting (port already open)")
+        register_routers(app, api_router, require_super_admin_dep=require_super_admin)
+        logger.warning("Deferred router registration complete in %.2fs", _t.time() - _t0)
+else:
+    app.state.routes_ready = True
+    register_routers(app, api_router, require_super_admin_dep=require_super_admin)
 
 # ── Compatibility / stub endpoints (UI-required modules not yet
 # (re)implemented — see backend/routers/missing_endpoints_compat.py) ──

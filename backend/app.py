@@ -51,13 +51,24 @@ async def _lifespan(application: FastAPI):
     defer = os.getenv("DEFER_STARTUP_BOOTSTRAP", "").lower() in ("1", "true", "yes")
 
     async def _run_startup_callbacks():
+        any_failed = False
         for cb in list(_startup_callbacks):
             try:
                 await cb()
             except Exception as _e:
+                any_failed = True
                 _log.exception("startup callback %s failed: %s", getattr(cb, "__name__", cb), _e)
                 if not defer:
                     raise
+        # Flip readiness only after ALL callbacks finish so the warm-up
+        # gate keeps shedding traffic until indexes/workers/event-bus are
+        # online. On any failure in defer mode we mark startup_failed and
+        # keep the gate closed (fail-closed) — operator must inspect logs.
+        if any_failed:
+            application.state.startup_failed = True
+            _log.error("startup callbacks completed with failures — warm-up gate kept closed")
+        else:
+            application.state.routes_ready = True
 
     if defer:
         application.state._bootstrap_task = asyncio.create_task(_run_startup_callbacks())
@@ -139,6 +150,28 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
             {"name": "Observability / Runtime", "description": "Runtime metrics, alerts, system health aggregation"},
         ],
     )
+
+    # ── Warm-up gate (Replit autoscale: port must open within ~30s) ─
+    # When DEFER_STARTUP_BOOTSTRAP=1, server.py defers the heavy
+    # register_routers() call into a background startup callback so the
+    # port opens immediately. During the warm-up window (typ. 20-30s),
+    # routes are not yet mounted; we return 503 for everything except
+    # /health* so the platform's health check passes while user traffic
+    # gets a clean "Retry-After" instead of a confusing 404.
+    # `routes_ready` defaults True (eager mode) — server.py flips it to
+    # False before deferring and back to True when mounting completes.
+    @application.middleware("http")
+    async def _warmup_gate(request, call_next):
+        if not getattr(application.state, "routes_ready", True):
+            path = request.url.path
+            if not (path.startswith("/health") or path == "/favicon.ico"):
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    {"status": "starting", "detail": "Server is warming up"},
+                    status_code=503,
+                    headers={"Retry-After": "5"},
+                )
+        return await call_next(request)
 
     # ── Deployment health check (lightweight, no DB/Redis) ──────────
     @application.get("/health", include_in_schema=False)
