@@ -140,13 +140,11 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
 
         recPerf(testInfo, MOD, 'overlap_s2', samples, true); // perf çağrı başarısı (status-bağımsız)
 
-        // Overlap conflict OBSERVATION (architect iter-4 directive): backend
-        // `POST /hr/shifts` (router.py create_shift_v2) şu anda overlap
-        // guard'a sahip değil — direkt insert. Spec backend reality ile
-        // uyumlu: 409/422 PASS, 2xx → P1 gap finding (hard fail değil).
-        // Backend hardening follow-up'la takip edilir; o tamamlanınca bu
-        // observation hard-assert'a yükseltilecek. Residue D step cleanup'da
-        // DELETE edilir; S2 ID createdShiftIds'e push edildi.
+        // Overlap conflict HARD-ASSERT (architect iter-5 majority directive
+        // after thrash iter-3→4→5): aynı staff+date için çakışan time-window
+        // POST → 409 veya 422 BEKLENIR. 2xx → P0 + test FAIL. Backend
+        // overlap guard yoksa fail eder ve follow-up backend hardening
+        // task'i ile gate eklenir. Residue D step cleanup'da DELETE edilir.
         let overlapBehavior = 'unknown';
         if (r.status === 409 || r.status === 422) {
             overlapBehavior = 'enforced_reject';
@@ -155,12 +153,12 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
                 note: `status=${r.status} — backend correctly rejects overlapping shift for same staff/date.` });
         } else if (r.ok && s2Id) {
             overlapBehavior = 'allowed_overlap';
-            rec(testInfo, { module: MOD, step: 'overlap_s2', status: 'REVIEW',
+            rec(testInfo, { module: MOD, step: 'overlap_s2', status: 'FAIL',
                 endpoint: 'POST /api/hr/shifts (overlap)',
-                note: `status=${r.status} s2_id=${s2Id} — backend ALLOWED overlapping shift (no 409/422). Known gap; D step cleanup edecek.` });
-            recFinding(testInfo, 'P1', MOD,
+                note: `status=${r.status} s2_id=${s2Id} — backend ALLOWED overlapping shift (no 409/422). CONTRACT VIOLATION; D step cleanup edecek.` });
+            recFinding(testInfo, 'P0', MOD,
                 'Shift overlap guard MISSING — backend aynı staff+date için overlapping shift kabul etti',
-                `S1=09:00-13:00 S2=10:00-14:00 staff=${staffA.id} → her ikisi de kayıt oldu (s1_id=${s1Id} s2_id=${s2Id}). POST /hr/shifts route'unda overlap check yok; production'da double-booking riski. Gap finding (backend hardening follow-up).`);
+                `S1=09:00-13:00 S2=10:00-14:00 staff=${staffA.id} → her ikisi de kayıt oldu (s1_id=${s1Id} s2_id=${s2Id}). POST /hr/shifts route'unda overlap check yok; production'da double-booking riski. CONTRACT VIOLATION (follow-up backend hardening).`);
         } else if (r.status === 401 || r.status === 403) {
             overlapBehavior = 'perm_fail';
             recFinding(testInfo, 'P2', MOD, 'S2 overlap probe RBAC blocked',
@@ -171,15 +169,15 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
             return;
         } else {
             overlapBehavior = `unexpected_${r.status}`;
-            recFinding(testInfo, 'P2', MOD, 'S2 overlap unexpected status',
+            recFinding(testInfo, 'P1', MOD, 'S2 overlap unexpected status',
                 `status=${r.status} body=${JSON.stringify(r.body).slice(0, 160)}`);
-            rec(testInfo, { module: MOD, step: 'overlap_s2', status: 'REVIEW',
+            rec(testInfo, { module: MOD, step: 'overlap_s2', status: 'FAIL',
                 note: `status=${r.status}` });
         }
-        // Observation soft-assert (iter-4): only block on 5xx, never on
-        // allowed_overlap (backend reality has no guard yet).
-        expect(r.status < 500,
-            `overlap probe must not 5xx. behavior=${overlapBehavior} status=${r.status}`).toBe(true);
+        // HARD-ASSERT (iter-5): overlap must be rejected by backend.
+        expect(overlapBehavior,
+            `overlap contract: aynı staff+date çakışan shift için 409/422 BEKLENIR. behavior=${overlapBehavior} status=${r.status}`)
+            .toBe('enforced_reject');
     });
 
     test('C) Coverage check — HK dept ≥ MIN_COVERAGE_HK scheduled staff', async ({ request, stressTokens }, testInfo) => {

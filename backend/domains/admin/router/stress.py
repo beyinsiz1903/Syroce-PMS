@@ -1196,15 +1196,23 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
             "stress_seed": True, "stress_prefix": prefix,
         })
 
-    # 9) PERFORMANCE REVIEWS (3) — base v1 seed (draft status, ready for v2
-    # check-in append + summary read in spec 32).
-    for i in range(3):
+    # 9) PERFORMANCE REVIEWS (30) — F8D-v2 expansion (Task #205, architect
+    # iter-5 directive): one baseline review per staff member (30 staff)
+    # to enable spec 32 list/summary/per-staff probe with realistic volume.
+    # Previous quarter (PRIOR_PERIOD) used to avoid collision with spec
+    # 32-F lifecycle test (which creates a NEW period for terminal-state
+    # probe). status="draft" → spec 32 check-in/list reads still work.
+    quarter = ((now.month - 1) // 3) + 1
+    prior_quarter = quarter - 1 if quarter > 1 else 4
+    prior_year = now.year if quarter > 1 else now.year - 1
+    prior_period = f"{prior_year}-Q{prior_quarter}"
+    for i in range(len(staff_ids)):
         performance_docs.append({
             "id": str(uuid.uuid4()), "tenant_id": stress_tid,
             "staff_id": staff_ids[i],
-            "period": f"{now.year}-Q{((now.month - 1) // 3) + 1}",
-            "rating": 4,
-            "comments": f"{prefix} F8D seed performance review",
+            "period": prior_period,
+            "rating": 3 + (i % 3),  # 3..5 spread
+            "comments": f"{prefix} F8D seed performance review (baseline) staff#{i + 1:02d}",
             "reviewer_user_id": None,
             "status": "draft",
             "created_at": now_iso,

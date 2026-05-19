@@ -297,13 +297,13 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
         // explicit unique compound index). Either response (PASS=409/422 OR
         // PASS=200 with separate id) is acceptable as long as no 500. P2
         // informational rec captures actual behavior for future hardening.
-        // Terminal-state contract OBSERVATION (architect iter-4 directive):
-        // backend `POST /hr/performance` şu anda uniqueness/terminal-state
-        // ENFORCE ETMİYOR (router.py:726, no compound index, no state guard).
-        // Spec'in görevi backend reality ile uyumlu kalmak: 409/422 PASS,
-        // 2xx → P1 finding (gap, hard fail değil) + duplicate row SCRUB.
-        // Backend hardening follow-up #208 ile takip edilir; o tamamlanınca
-        // bu observation hard-assert'a yükseltilecek.
+        // Terminal-state contract HARD-ASSERT (architect iter-5 majority
+        // directive after thrash iter-3→4→5): aynı staff+period için 2.
+        // manager-feedback POST → 409 veya 422 BEKLENİR. 2xx → P0 + test
+        // FAIL. Backend uniqueness gate yoksa bu test fail eder ve
+        // follow-up #208 ile gate eklenmesi gerekir. F8D-v2 doctrine'i
+        // korumak için reality-ile-uyum ikincil; contract enforcement
+        // birincil. Residue STRESS_COLLECTIONS scrub ile temizlenir.
         let terminalBehavior = 'unknown';
         let terminalStatus = null;
         let dupCreatedId = null;
@@ -321,12 +321,9 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
             } else if (dupR.ok) {
                 terminalBehavior = 'not_enforced_allows_duplicate';
                 dupCreatedId = dupR.body?.review?.id || dupR.body?.id || null;
-                // P1 gap finding (NOT contract violation): backend known not to
-                // enforce; STRESS_COLLECTIONS scrub temizler (DELETE endpoint
-                // performance review için yok — sadece checkin için var).
-                recFinding(testInfo, 'P2', MOD,
-                    'Perf review terminal-state not enforced — duplicate-period create allowed',
-                    `staff_id=${candidate.id.slice(0,8)}… period=${newPeriod} dup_status=${dupR.status}. Backend uniqueness gate eksik (follow-up #208). Residue STRESS_COLLECTIONS scrub ile temizlenir (performance_reviews).`);
+                recFinding(testInfo, 'P0', MOD,
+                    'Perf review terminal-state CONTRACT VIOLATION — duplicate-period create allowed',
+                    `staff_id=${candidate.id.slice(0,8)}… period=${newPeriod} dup_status=${dupR.status}. Backend uniqueness gate eksik (follow-up #208). Aynı staff+period için iki manager-feedback kayıt oldu; audit/finance immutability ihlali. Residue STRESS_COLLECTIONS scrub ile temizlenir.`);
             } else if (dupR.status >= 500) {
                 terminalBehavior = 'server_error';
                 recFinding(testInfo, 'P1', MOD, 'Duplicate-period probe 5xx',
@@ -340,10 +337,9 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
             // STRESS_COLLECTIONS orphan scrub döngüsü tarafından temizlenir
             // (stress.py:113 → cleanup_stress mirror). Residue=0.
         }
-        // Observation (NOT hard-assert per iter-4): both enforced + duplicate
-        // allowed paths are acceptable; only server_error/perm_fail blocking.
+        // HARD-ASSERT (iter-5): only enforced_unique or unknown (no createdId
+        // means upstream A/lifecycle failed and pass=false already).
         const terminalContractOk = terminalBehavior === 'enforced_unique'
-            || terminalBehavior === 'not_enforced_allows_duplicate'
             || terminalBehavior === 'unknown';
         const pass = !!createdId && terminalContractOk;
         recPerf(testInfo, MOD, 'create_review_lifecycle', samples, pass);
@@ -355,10 +351,10 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
             `status=${createR.status} body=${JSON.stringify(createR.body).slice(0, 120)}`);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'create_review_lifecycle', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
-        // Observation soft-assert (iter-4): only block on server-error.
-        expect(terminalBehavior !== 'server_error',
-            `terminal-state probe must not 5xx. behavior=${terminalBehavior} status=${terminalStatus}`).toBe(true);
-        expect(pass, `create_review_lifecycle (create+ack+terminal-state observation)`).toBe(true);
+        // HARD-ASSERT terminal-state contract (iter-5).
+        expect(terminalContractOk,
+            `terminal-state contract: 2. manager-feedback POST için 409/422 BEKLENIR. behavior=${terminalBehavior} status=${terminalStatus}`).toBe(true);
+        expect(pass, `create_review_lifecycle (create+ack+terminal-state hard-assert)`).toBe(true);
     });
 
     test('E) external_calls invariant + pilot_drift=0', async ({ request, stressTokens, stressState }, testInfo) => {

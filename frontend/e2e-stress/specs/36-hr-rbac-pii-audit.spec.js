@@ -259,29 +259,52 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
         }
         const samples = [];
         const writeViolations = []; // {role, endpoint, method, status} — 2xx = P0
+        const authzAmbiguous = []; // {role, endpoint, status} — non-401/403/2xx ambiguous
         let totalChecks = 0, accidentalSuccess = 0;
+        // Resolve gerçek seed staff_id (architect iter-5 directive): sahte
+        // UUID payload validation/not-found ile maskelenebiliyor; gerçek
+        // staff_id ile authorization gate'i bypass denenir, böylece 401/403
+        // yanıtı explicit auth-denied olur, 404/422 değil. Seed staff'lar
+        // pilot_token'la listelenebilir (super_admin scope), stress tenant'ta.
+        let realStaffId = '00000000-0000-0000-0000-000000000000';
+        try {
+            const sl = await callTimed(request, 'get', '/api/hr/staff', undefined, stressTokens.stress_token);
+            if (sl.ok) {
+                const list = sl.body?.staff || sl.body?.items || sl.body || [];
+                if (Array.isArray(list) && list.length > 0 && (list[0].id || list[0]._id)) {
+                    realStaffId = list[0].id || list[0]._id;
+                }
+            }
+        } catch (_) { /* fallback to fake UUID */ }
         for (const ep of HR_WRITE_DENY) {
-            // Resolve dynamic placeholders. {sid} için sahte UUID kullanıyoruz
-            // (gerçek staff_id'yi bypass'lasın diye); auth gate her halükarda
-            // önce devreye girer, 401/403 = PASS. Eğer gate yoksa backend
-            // 404/422 dönecek; 2xx imkansız ama yine de violation flag.
             let url = ep.path;
             if (ep.dynamic === true) {
-                // Use sahte staff_id (NOT a real one) — accidental delete önle.
-                url = url.replace('{sid}', '00000000-0000-0000-0000-000000000000');
+                // GERÇEK staff_id (iter-5): authorization gate'i bypass için
+                // valid resource gerekir; aksi takdirde 404 auth ambiguity
+                // yaratır. Delete payload'ları için bu kaynak hedef alınır
+                // ancak düşük-priv token kullanıldığı için 401/403 BEKLENIR
+                // ve gerçek delete asla olmaz.
+                url = url.replace('{sid}', realStaffId);
             }
             for (const role of tokenRoles) {
                 totalChecks++;
                 const body = typeof ep.body === 'function' ? ep.body() : ep.body;
+                // Real-resource payload: staff_id'yi de gerçek olanla doldur.
+                if (body && body.staff_id === '00000000-0000-0000-0000-000000000000') {
+                    body.staff_id = realStaffId;
+                }
                 const r = await callTimed(request, ep.method, url, body, roleTokens[role]);
                 samples.push(r.ms);
                 if (r.status >= 200 && r.status < 300) {
                     accidentalSuccess++;
                     writeViolations.push({ role, endpoint: ep.path, method: ep.method, status: r.status });
-                    // ACİL DEFENSIVE CLEANUP: 2xx geldi demek bir kayıt yaratılmış olabilir;
-                    // her mutation endpoint'i için en güvenli yol super_admin scope'unda
-                    // delete denemesi (mümkünse). Sahte UUID kullandığımız için backend
-                    // muhtemelen NotFound döner, ama yine de log için kayıt altına alıyoruz.
+                } else if (r.status === 401 || r.status === 403) {
+                    // Expected: explicit auth denial → PASS for this check.
+                } else {
+                    // Non-2xx but also non-401/403 (404/422/500) → ambiguous.
+                    // Spec 36 RBAC matrisi explicit auth denial bekler;
+                    // bu ambiguity authz defect'i maskeleyebilir → P2 review.
+                    authzAmbiguous.push({ role, endpoint: ep.path, method: ep.method, status: r.status });
                 }
                 await new Promise((res) => setTimeout(res, 250));
             }
@@ -291,12 +314,19 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
         rec(testInfo, { module: MOD, step: 'rbac_write_matrix',
             status: pass ? 'PASS' : 'FAIL',
             endpoint: '4 roles × 7 HR mutation endpoints',
-            note: `total_checks=${totalChecks} write_violations=${writeViolations.length} accidental_2xx=${accidentalSuccess} roles=${tokenRoles.join('|')} viol_sample=${JSON.stringify(writeViolations.slice(0, 5))}` });
+            note: `total_checks=${totalChecks} write_violations=${writeViolations.length} accidental_2xx=${accidentalSuccess} authz_ambiguous=${authzAmbiguous.length} real_sid_resolved=${realStaffId !== '00000000-0000-0000-0000-000000000000'} roles=${tokenRoles.join('|')} viol_sample=${JSON.stringify(writeViolations.slice(0, 5))}` });
         if (writeViolations.length > 0) {
             // WRITE-side violation = P0 privilege escalation (mutate-without-auth).
             recFinding(testInfo, 'P0', MOD,
                 'HR WRITE privilege escalation — düşük-priv rol HR mutation endpoint\'inde 2xx',
                 `count=${writeViolations.length}/${totalChecks} sample=${JSON.stringify(writeViolations.slice(0, 5))}. KVKK + finance immutability + privilege escalation hattının tam ihlali. Backend gate'leri require_op(...) ile sıkılaştır.`);
+        }
+        if (authzAmbiguous.length > 0) {
+            // Non-401/403 non-2xx → authz vs validation/not-found ambiguity.
+            // Architect iter-5 directive: explicit auth denial bekleniyor.
+            recFinding(testInfo, 'P2', MOD,
+                'HR WRITE authz ambiguity — non-401/403 non-2xx response',
+                `count=${authzAmbiguous.length}/${totalChecks} sample=${JSON.stringify(authzAmbiguous.slice(0, 5))}. Validation/not-found defect'i authz gap'i maskeleyebilir; gerçek-resource payload'la tekrar denenmeli.`);
         }
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'rbac_write_matrix', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
