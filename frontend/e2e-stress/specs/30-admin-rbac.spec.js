@@ -147,6 +147,16 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
             blockedReason = `login_all_fail (${createOk} created, 0 logged in)`;
         }
 
+        // Validation review (2026-05-19): RBAC matrix coverage hard floor.
+        // moduleBlocked yoksa MINIMUM rol sayısına ulaşmak ŞART; aksi halde
+        // matrix silently collapse eder. Eşik: en az 3/4 rol (≥75%).
+        const MIN_ROLES_REQUIRED = 3;
+        if (!moduleBlocked && tokenRoles.length < MIN_ROLES_REQUIRED) {
+            recFinding(testInfo, 'P1', MOD,
+                'RBAC matrix coverage eksik — minimum rol sayısı altında',
+                `logged_in=${tokenRoles.length}/${ROLES.length} (min=${MIN_ROLES_REQUIRED}). Matrix kapsamı silently collapse oldu; per-role create/login chain hatasını düzelt veya tier override et.`);
+        }
+
         rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
             note: `prefix=${prefix} pre_cleaned=${preCleaned} pilot_before=${pilotBefore?.count} created=${createOk}/${ROLES.length} logged_in=${tokenRoles.join(',') || 'none'} module_blocked=${moduleBlocked}` });
         // Architect re-review #2: trivial hard expect kaldırıldı — setup
@@ -269,9 +279,20 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
             }
         }
 
+        // Validation review (2026-05-19): minimum total_checks hard floor.
+        // Beklenen: tokenRoles.length × SENSITIVE.length. Reel ölçüm bunun
+        // %75 altındaysa matrix collapse demektir → P1.
+        const expectedChecks = Object.keys(roleTokens).length * SENSITIVE.length;
+        const minChecks = Math.floor(expectedChecks * 0.75);
+        if (expectedChecks > 0 && totalChecks < minChecks) {
+            recFinding(testInfo, 'P1', MOD,
+                'RBAC matrix total_checks coverage floor altında',
+                `total_checks=${totalChecks} expected=${expectedChecks} min=${minChecks}. Loop erken kırıldı veya rol skip edildi.`);
+        }
+
         rec(testInfo, { module: MOD, step: 'negative_matrix',
             status: (violations.length === 0 && unreachable === 0) ? 'PASS' : 'REVIEW',
-            note: `total_checks=${totalChecks} denied=${denied} authorized_2xx=${perm_gated_ok} violations=${violations.length} unreachable=${unreachable} pii_violations=${piiViolations}` });
+            note: `total_checks=${totalChecks}/${expectedChecks} denied=${denied} authorized_2xx=${perm_gated_ok} violations=${violations.length} unreachable=${unreachable} pii_violations=${piiViolations}` });
 
         if (violations.length > 0) {
             recFinding(testInfo, 'P1', MOD,
@@ -290,45 +311,90 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
         // için. P0/P1 birikirse reporter NO-GO verdict üretir.
     });
 
-    test('D) Existence-disclosure contract — random/cross-tenant ID lookup payload leak etmemeli', async ({ request, stressTokens }, testInfo) => {
+    test('D) Existence-disclosure contract — bogus + real cross-tenant ID lookups 403/404 dönmeli (strict)', async ({ request, stressTokens, stressState }, testInfo) => {
         if (moduleBlocked) {
             rec(testInfo, { module: MOD, step: 'existence_disclosure', status: 'SKIP', note: `module blocked: ${blockedReason}` });
             test.skip(true, 'module blocked');
             return;
         }
-        // Yetkisiz token (varsa) ile random UUID lookup → 403/404, asla 200+payload.
         const sampleToken = Object.values(roleTokens)[0];
         if (!sampleToken) {
             rec(testInfo, { module: MOD, step: 'existence_disclosure', status: 'SKIP', note: 'no role token available' });
             return;
         }
+
+        // Validation review (2026-05-19): real cross-tenant ID probes EKLENDİ.
+        // Pilot tenant ID + pilot user (admin_super) ID üzerinden gerçek
+        // cross-tenant disclosure attempt'i yapılır. Aynı zamanda bogus UUID
+        // ile var-olmayan ID probe edilir. Beklenti: HER İKİ DURUMDA da
+        // status ∈ {403, 404} (status contract). Diğer her şey (2xx / 5xx /
+        // 400 / 401 / 409 / vb) ihlaldir → P1.
+        const pilotTid = stressState.pilot_tid;
         const bogusId = '00000000-0000-0000-0000-000000000000';
+        // Pilot tenant'a ait gerçek bir user ID öğrenebilmek için super_admin
+        // token ile sample alalım (best-effort).
+        let pilotUserId = null;
+        try {
+            const ul = await callTimed(request, 'get', `/api/admin/users?tenant_id_filter=${pilotTid}`, undefined, stressTokens.stress_token);
+            const list = Array.isArray(ul.body) ? ul.body : (ul.body?.users || ul.body?.items || []);
+            const u = list.find(x => x.tenant_id === pilotTid);
+            if (u) pilotUserId = u.id || u._id;
+        } catch (_) { /* swallow */ }
+
         const probes = [
-            `/api/admin/users/${bogusId}/granted-permissions`,
-            `/api/admin/tenants/${bogusId}/stats`,
-            `/api/admin/tenants/${bogusId}/team`,
+            // Bogus ID — should always 403/404 (existence-disclosure baseline).
+            { path: `/api/admin/users/${bogusId}/granted-permissions`, kind: 'bogus' },
+            { path: `/api/admin/tenants/${bogusId}/stats`, kind: 'bogus' },
+            { path: `/api/admin/tenants/${bogusId}/team`, kind: 'bogus' },
+            // Real cross-tenant — pilot tenant lookup attempts.
+            { path: `/api/admin/tenants/${pilotTid}/stats`, kind: 'cross_tenant_real' },
+            { path: `/api/admin/tenants/${pilotTid}/team`, kind: 'cross_tenant_real' },
         ];
-        let leaks = [];
+        if (pilotUserId) {
+            probes.push({ path: `/api/admin/users/${pilotUserId}/granted-permissions`, kind: 'cross_tenant_real' });
+        }
+
+        const ALLOWED = new Set([403, 404]);
+        const leaks = [];        // 2xx — actual disclosure (CRITICAL)
+        const contractViolations = []; // diğer ALLOWED dışı statuslar
+        const consistentStatuses = {}; // status frequency for consistency check
         for (const p of probes) {
-            const r = await callTimed(request, 'get', p, undefined, sampleToken);
+            const r = await callTimed(request, 'get', p.path, undefined, sampleToken);
+            consistentStatuses[r.status] = (consistentStatuses[r.status] || 0) + 1;
             const is2xx = r.status >= 200 && r.status < 300;
-            const looksLikePayload = r.body && typeof r.body === 'object' &&
-                (Array.isArray(r.body.users) || r.body.team || r.body.stats || r.body.user_id);
-            if (is2xx && looksLikePayload) {
-                leaks.push({ path: p, status: r.status, body_snippet: JSON.stringify(r.body).slice(0, 160) });
+            if (is2xx) {
+                leaks.push({ path: p.path, kind: p.kind, status: r.status, body_snippet: JSON.stringify(r.body).slice(0, 160) });
+            } else if (!ALLOWED.has(r.status)) {
+                contractViolations.push({ path: p.path, kind: p.kind, status: r.status });
             }
             await new Promise(res => setTimeout(res, 200));
         }
+        // Consistency: bogus vs real cross-tenant aynı statusu dönmeli
+        // (403 veya 404'ün karışık dönmesi mesaj-kanalı disclosure'a neden olur).
+        const distinctAllowedStatuses = Object.keys(consistentStatuses).filter(s => ALLOWED.has(parseInt(s, 10))).length;
+        const inconsistent = distinctAllowedStatuses > 1;
+
+        const pass = leaks.length === 0 && contractViolations.length === 0;
         rec(testInfo, { module: MOD, step: 'existence_disclosure',
-            status: leaks.length === 0 ? 'PASS' : 'FAIL',
-            note: `probed=${probes.length} leaks=${leaks.length}` });
+            status: pass && !inconsistent ? 'PASS' : 'FAIL',
+            note: `probed=${probes.length} leaks=${leaks.length} contract_violations=${contractViolations.length} inconsistent=${inconsistent} status_freq=${JSON.stringify(consistentStatuses)} pilot_user_probed=${!!pilotUserId}` });
+
         if (leaks.length > 0) {
             recFinding(testInfo, 'P1', MOD,
-                'Existence disclosure — yetkisiz rol bogus ID için payload aldı',
+                'Existence disclosure — yetkisiz rol bogus/cross-tenant ID için 2xx aldı',
                 `Leaks: ${JSON.stringify(leaks)}. 403/404 beklenirdi; payload döndü → IDOR/existence leak.`);
         }
-        // Architect review #1: hard expect KALDIRILDI — reporter findings
-        // aggregation NO-GO signal'i üretir, invariants/cleanup garanti çalışır.
+        if (contractViolations.length > 0) {
+            recFinding(testInfo, 'P1', MOD,
+                'Existence disclosure status contract ihlali — 403/404 dışı status',
+                `Beklenen: 403 veya 404. Alınan: ${JSON.stringify(contractViolations)}. 5xx/401/400/409 vb. existence-disclosure kanalı oluşturabilir.`);
+        }
+        if (inconsistent) {
+            recFinding(testInfo, 'P2', MOD,
+                'Existence disclosure status inconsistency — 403 ve 404 karışık dönüyor',
+                `Karışık statuslar bogus vs gerçek-yok ayırımı sağlar → message-channel disclosure. status_freq=${JSON.stringify(consistentStatuses)}.`);
+        }
+        // Architect review #1: hard expect yok — reporter findings sürer.
     });
 
     test('E) external_calls invariant + pilot_drift=0', async ({ request, stressTokens }, testInfo) => {

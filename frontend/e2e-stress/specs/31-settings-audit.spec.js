@@ -229,26 +229,34 @@ test.describe('F8I § 31 — Settings + Audit', () => {
             test.skip(true, 'module blocked');
             return;
         }
-        let ok2xx = 0, throttled = 0, server5xx = 0;
+        // Validation review (2026-05-19): contract = "yalnızca 200 (200-299)
+        // veya 429 kabul edilir". 5xx → P1, diğer statuslar (401/403/400/409
+        // vb.) → P1 contract violation (auth degrade veya unexpected fail).
+        let ok2xx = 0, throttled = 0, server5xx = 0, otherContractViolations = 0;
         const statuses = [];
+        const otherStatuses = [];
         for (let i = 0; i < 20; i++) {
             const r = await callTimed(request, 'get', '/api/admin/tenants', undefined, stressTokens.stress_token);
             statuses.push(r.status);
             if (r.status >= 200 && r.status < 300) ok2xx++;
             else if (r.status === 429) throttled++;
             else if (r.status >= 500) server5xx++;
-            // Tight loop; bilinçli throttle tetikleyebilir.
+            else { otherContractViolations++; otherStatuses.push(r.status); }
         }
-        const pass = server5xx === 0;
+        const pass = server5xx === 0 && otherContractViolations === 0;
         rec(testInfo, { module: MOD, step: 'rate_limit_boundary',
             status: pass ? 'PASS' : 'FAIL',
-            note: `2xx=${ok2xx} 429=${throttled} 5xx=${server5xx} statuses=${statuses.join(',')}` });
-        if (!pass) {
+            note: `2xx=${ok2xx} 429=${throttled} 5xx=${server5xx} other=${otherContractViolations} statuses=${statuses.join(',')}` });
+        if (server5xx > 0) {
             recFinding(testInfo, 'P1', MOD,
                 'Admin read endpoint 5xx altında stres',
                 `5xx_count=${server5xx} statuses=${statuses.join(',')} — backend admin read endpoint rate-limit altında çöküyor; 429 veya stabil 200 beklenir.`);
         }
-        // Architect review #1: hard expect KALDIRILDI — finding reporter signal.
+        if (otherContractViolations > 0) {
+            recFinding(testInfo, 'P1', MOD,
+                'Admin read rate-limit boundary status contract ihlali',
+                `Beklenen status sınıfı: 200 veya 429. Alınan diğer statuslar: ${otherStatuses.join(',')}. Tüm dağılım: ${statuses.join(',')}.`);
+        }
     });
 
     test('E) Restore: stress tenant description orijinaline geri al', async ({ request, stressTokens, stressState }, testInfo) => {
