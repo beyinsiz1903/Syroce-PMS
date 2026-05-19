@@ -131,8 +131,8 @@ test.describe('F8J § 99 — Full 24h hotel simulation', () => {
             moduleBlocked = true;
             moduleBlockedReason = `data scarcity bookings=${bookings.length} rooms=${rooms.length}`;
             recFinding(testInfo, 'P2', MOD,
-                '24h sim data scarcity — F8 seed minimum'a düşük',
-                `Bookings=${bookings.length}, rooms=${rooms.length}. F8 stres seed ≥500 bekler. Phase'ler skip; invariant'lar koşar.`);
+                '24h sim data scarcity — F8 seed minimumun altinda',
+                `Bookings=${bookings.length}, rooms=${rooms.length}. F8 stres seed >=500 bekler. Phase-ler skip; invariant-lar kosar.`);
         }
     });
 
