@@ -8,17 +8,21 @@ AI / ML Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
 import logging
+import os as _os
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from pydantic import Field as _PydField
 
 from core.database import db
 from core.security import (
+    _is_super_admin,
     get_current_user,
 )
+from domains.ai.service import AIService as _AIService
+from domains.ai.service import get_ai_llm_call_ledger as _get_ledger
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
 
@@ -766,12 +770,8 @@ async def get_ai_llm_state(
     # Strict super_admin gate (architect P1 review). require_op above also
     # permits admin role + explicit granted_permissions; this endpoint
     # exposes provider/env state and must be super_admin-only.
-    from core.security import _is_super_admin
-    from fastapi import HTTPException
     if not _is_super_admin(current_user):
         raise HTTPException(status_code=403, detail="Super admin only")
-    import os as _os
-    from domains.ai.service import AIService as _AIService, get_ai_llm_call_ledger as _get_ledger
     # Task #206 — diagnostics surface MUST be gated by E2E_AI_DRY_RUN=true.
     # Outside test mode the endpoint is fail-closed (503) so production
     # deployments cannot leak provider/env shape through this route.
