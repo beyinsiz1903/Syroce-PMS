@@ -2321,7 +2321,13 @@ async def stress_cleanup(
     # rows can exist (gates above enforce `target_tenant_id == stress_tid`
     # AND pilot_tid blocked AND E2E_ALLOW_DESTRUCTIVE_STRESS=true), so
     # tenant-scoped delete is safe here. Audit_logs are never touched.
-    CURRENCY_RATES_TENANT_SCOPED = {"currency_rates"}
+    # Architect iter-7 directive: spec 32 (F8D-v2) CREATE flow uses real
+    # backend POST /hr/performance which strips unknown Pydantic fields
+    # (no `stress_seed` flag persists). Stress tenant + DELETE endpoint
+    # absent → spec-created reviews would residue across runs without
+    # tenant-scoped wipe. Same rationale as currency_rates: only stress
+    # tenant has these rows, full-collection wipe is intended idempotency.
+    CURRENCY_RATES_TENANT_SCOPED = {"currency_rates", "performance_reviews"}
     with tenant_context(stress_tid):
         from core.database import db
         for col_name in STRESS_COLLECTIONS:

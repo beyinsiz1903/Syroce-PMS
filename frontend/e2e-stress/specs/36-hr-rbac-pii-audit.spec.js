@@ -67,10 +67,13 @@ const HR_WRITE_DENY = [
     { method: 'post',   path: '/api/hr/staff',                                 body: () => ({ name: 'XX', email: 'noop@x.test', position: 'p', department: 'd', employment_type: 'full_time' }) },
     { method: 'put',    path: '/api/hr/staff/{sid}',                           body: () => ({ name: 'XX-mod' }), dynamic: true },
     { method: 'delete', path: '/api/hr/staff/{sid}',                           body: null, dynamic: true },
-    { method: 'post',   path: '/api/hr/staff/{sid}/salary-change',              body: () => ({ new_salary: 1, effective_date: '2030-01-01', reason: 'noop' }), dynamic: true },
-    { method: 'post',   path: '/api/hr/staff/{sid}/terminate',                  body: () => ({ termination_date: '2030-01-01', reason: 'noop' }), dynamic: true },
+    // Architect iter-7 directive: `/salary-change` ve `/terminate` endpoint'leri
+    // out-of-scope (irreversible mutation risk). Eğer RBAC drift olursa
+    // gerçek personel kaydı bozulabilir → matrix'ten KALDIRILDI. Coverage
+    // diğer 5 safe/reversible mutation endpoint ile sürer (perf create/
+    // payroll period/shift create/delete/swap-decision).
     { method: 'post',   path: '/api/hr/leave-balance',                          body: () => ({ staff_id: '00000000-0000-0000-0000-000000000000', year: 2030, annual_entitlement: 14, carry_over: 0, sick_entitlement: 7 }) },
-    { method: 'post',   path: '/api/hr/performance',                            body: () => ({ staff_id: '00000000-0000-0000-0000-000000000000', period: '2030-Q1', rating: 3 }) },
+    { method: 'post',   path: '/api/hr/performance',                            body: () => ({ staff_id: '00000000-0000-0000-0000-000000000000', period: '2030-Q1', overall_score: 5.0 }) },
 ];
 
 function currentMonth() {
