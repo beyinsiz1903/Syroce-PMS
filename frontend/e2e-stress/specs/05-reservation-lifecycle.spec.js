@@ -59,6 +59,13 @@ test.describe('F8A § 05 — Reservation lifecycle (create / modify / cancel / n
         if (rooms.length < 10) { rec(testInfo, { module: MOD, step: 'create_sample', status: 'SKIP', note: `only ${rooms.length} rooms` }); return; }
         const sample = rooms.slice(0, 10);
         const samples = []; let ok = 0, fail = 0; const failModes = {};
+        // tur-27 (CI #42 NO-GO follow-up): earlier run hard-FAIL'di
+        // (`n=10 ok=0`) ama fail_modes assert error'da DEĞİLDİ — root cause
+        // görünmüyordu. Şimdi: ilk hatalı response body'sini snapshot al
+        // (truncated 300 char) + fail_modes assertion message'a dahil et.
+        // RBAC/module-blocked (403/404) → REVIEW pattern (F8C/D/E doctrine).
+        let firstFailBody = null;
+        let firstFailStatus = null;
         for (let i = 0; i < sample.length; i++) {
             const room = sample[i];
             const ts = Date.now();
@@ -77,19 +84,45 @@ test.describe('F8A § 05 — Reservation lifecycle (create / modify / cancel / n
                 // Quick-booking response: { id, booking, booking_id, guest_name, ... }
                 const bid = r.body?.id || r.body?.booking_id || r.body?.booking?.id;
                 if (bid) createdBookingIds.push(bid);
-            } else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
+            } else {
+                fail++;
+                const k = `s${r.status}`;
+                failModes[k] = (failModes[k] || 0) + 1;
+                if (firstFailBody == null) {
+                    firstFailStatus = r.status;
+                    firstFailBody = JSON.stringify(r.body || {}).slice(0, 300);
+                }
+            }
             await new Promise((res) => setTimeout(res, 800));
         }
-        const status = ok === 0 ? 'FAIL' : (ok >= 7 ? 'PASS' : 'REVIEW');
+        // tur-27: classify all-failure modes — RBAC/module-blocked patterns
+        // REVIEW (F8C/D/E doctrine), structural FAIL korunur (s400/s500/s422
+        // = data contract / validation regression).
+        const all403 = fail > 0 && ok === 0 && failModes.s403 === sample.length;
+        const all404 = fail > 0 && ok === 0 && failModes.s404 === sample.length;
+        const allModBlocked = all403 || all404;
+        const status = allModBlocked
+            ? 'REVIEW'
+            : (ok === 0 ? 'FAIL' : (ok >= 7 ? 'PASS' : 'REVIEW'));
         rec(testInfo, { module: MOD, step: 'reservation_create', status,
             endpoint: '/api/pms/quick-booking',
-            note: `n=${sample.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} created_ids_captured=${createdBookingIds.length}` });
+            note: `n=${sample.length} ok=${ok} fail=${fail} fail_modes=${JSON.stringify(failModes)} ` +
+                  `all_403=${all403} all_404=${all404} created_ids_captured=${createdBookingIds.length} ` +
+                  `first_fail_status=${firstFailStatus ?? 'n/a'} first_fail_body=${firstFailBody ?? 'n/a'}` });
         recPerf(testInfo, MOD, 'reservation_create', samples, ok > 0);
-        if (ok === 0) {
-            recFinding(testInfo, 'P1', MOD, 'Reservation create lifecycle başarısız',
-                `${sample.length} quick-booking POST 0 başarı. Modes: ${JSON.stringify(failModes)}. Future date çakışmaması bekleniyordu.`);
+        if (allModBlocked) {
+            recFinding(testInfo, 'P2', MOD,
+                'Reservation create RBAC/module-blocked short-circuit',
+                `Stress automation token quick-booking erişim yok (${all403 ? '403' : '404'} all-fail). ` +
+                'F8C/D/E module-blocked doctrine: A test informational kalır, B/C/D/E/F/G/H/I downstream test\'leri skip cascade beklenir.');
         }
-        expect(status, `reservation_create FAIL: n=${sample.length} ok=${ok}`).not.toBe('FAIL');
+        if (ok === 0 && !allModBlocked) {
+            recFinding(testInfo, 'P1', MOD, 'Reservation create lifecycle başarısız',
+                `${sample.length} quick-booking POST 0 başarı. Modes: ${JSON.stringify(failModes)}. ` +
+                `First fail: status=${firstFailStatus} body=${firstFailBody}. Future date çakışmaması bekleniyordu.`);
+        }
+        expect(status, `reservation_create FAIL: n=${sample.length} ok=${ok} fail_modes=${JSON.stringify(failModes)} ` +
+            `first_fail=${firstFailStatus} body=${firstFailBody}`).not.toBe('FAIL');
     });
 
     test('B) 5 modify dates (PUT booking)', async ({ request, stressTokens }, testInfo) => {

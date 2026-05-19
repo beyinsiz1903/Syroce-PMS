@@ -75,13 +75,17 @@ export async function fetchSingle(request, token, listPath) {
     return { http: r.status(), list: Array.isArray(list) ? list : [], raw: j };
 }
 
-export async function callTimed(request, method, path, body, token) {
+export async function callTimed(request, method, path, body, token, opts = {}) {
+    // tur-27 (CI #42 NO-GO follow-up): per-call timeout override.
+    // Default stays 30_000 (back-compat). Heavy endpoints (night-audit/run on
+    // 500-folio stress tenant) need 60–120s; pass opts.timeout to override.
+    const timeoutMs = opts.timeout ?? 30_000;
     const t0 = Date.now();
     const r = await request[method](path, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         data: body,
         failOnStatusCode: false,
-        timeout: 30_000,
+        timeout: timeoutMs,
     }).catch((e) => ({ status: () => 0, ok: () => false, _err: e?.message }));
     const ms = Date.now() - t0;
     const status = r.status?.() ?? 0;
@@ -112,12 +116,15 @@ export async function callTimedWithBackoff(request, method, path, body, token, o
     // sliding window is 60s but heavily-loaded buckets typically free a
     // slot within ~10-15s as older requests age out.
     const fallbackSleepMs = opts.fallbackSleepMs ?? 15_000;
+    // tur-27 (CI #42 NO-GO follow-up): propagate per-call timeout to callTimed.
+    // Default stays 30_000 (back-compat).
+    const callTimeoutMs = opts.timeout ?? 30_000;
     let attempts = 0;
     let throttled = false;
     let last = null;
     for (let i = 0; i <= maxRetries; i++) {
         attempts++;
-        last = await callTimed(request, method, path, body, token);
+        last = await callTimed(request, method, path, body, token, { timeout: callTimeoutMs });
         if (last.status !== 429) return { ...last, throttled, attempts };
         throttled = true;
         if (i === maxRetries) break;
