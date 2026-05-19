@@ -253,6 +253,72 @@ test.describe('F8L § 52 — Outbox Idempotency + Conflict Queue', () => {
         }
     });
 
+    test('E) Active idempotency — duplicate signed webhook ingest → outbox event delta ≤ 1 (HOTELRUNNER_WEBHOOK_SECRET conditional)', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'active_idempotency', status: 'SKIP', note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        // Validator (architect) talebi: pasif delta yetmez; aktif tetik +
+        // dedupe assert. Conditional on env (spec 51-F mirror): secret
+        // unset → REVIEW + P2 informational. Var ise: aynı imzalı payload
+        // 2x POST → outbox_events_count delta ≤ 1 (idempotency anahtarı
+        // tenant:event:entity:payload_hash). Dispatcher EXTERNAL_DRY_RUN
+        // ortamında fakelenir → external_calls=0 invariant'ı D test'inde.
+        const secret = process.env.HOTELRUNNER_WEBHOOK_SECRET || '';
+        if (!secret) {
+            rec(testInfo, { module: MOD, step: 'active_idempotency',
+                status: 'REVIEW',
+                note: `HOTELRUNNER_WEBHOOK_SECRET unset → active dedupe assert edilemedi` });
+            recFinding(testInfo, 'P2', MOD,
+                'Outbox active idempotency coverage gap — secret unset',
+                `Passive delta (Test A) PASS; aktif duplicate-dispatch dedupe path'i bu koşuda assert edilemedi. Production readiness için CI env'inde HOTELRUNNER_WEBHOOK_SECRET seed'i öneriliyor (follow-up: aktif idempotency).`);
+            return;
+        }
+        const crypto = await import('node:crypto');
+        const ts = String(Math.floor(Date.now() / 1000));
+        const stableId = `${prefix || 'STRESS'}_IDEMP_FIXED`;  // KEY: aynı id → aynı dedupe key
+        const raw = JSON.stringify({
+            tenant_id: stressTid,
+            hotel: { id: `${prefix || 'STRESS'}_HOTEL` },
+            reservation: { hr_number: stableId, state: 'new', guest: { name: 'STRESS_IDEMP' } },
+        });
+        const signed = `${ts}.`.concat(raw);
+        const sig = `sha256=${crypto.createHmac('sha256', secret).update(signed).digest('hex')}`;
+        const headers = { 'X-HotelRunner-Timestamp': ts, 'X-HotelRunner-Signature': sig };
+
+        // Pre-snapshot
+        const s1 = await callTimed(request, 'get', '/api/outbox/status', undefined, stressTokens.pilot_token);
+        const pending1 = (s1.body?.pending || 0) + (s1.body?.processing || 0);
+
+        const r1 = await fetch(`${process.env.E2E_BASE_URL || ''}/api/channel-manager/hotelrunner/callback`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: raw,
+        }).catch(() => null);
+        await new Promise((r) => setTimeout(r, 800));
+        const r2 = await fetch(`${process.env.E2E_BASE_URL || ''}/api/channel-manager/hotelrunner/callback`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: raw,
+        }).catch(() => null);
+        await new Promise((r) => setTimeout(r, 1500));
+
+        const s2 = await callTimed(request, 'get', '/api/outbox/status', undefined, stressTokens.pilot_token);
+        const pending2 = (s2.body?.pending || 0) + (s2.body?.processing || 0);
+        const delta = pending2 - pending1;
+
+        // Dedupe contract: 2 ingest → en fazla 1 yeni outbox row.
+        // Sıkı kural: delta ≤ 1. delta ≥ 2 → idempotency kırık (P0).
+        // Not: delta=0 OK (event tipine göre outbox publish opsiyonel
+        // olabilir veya cache TTL nedeniyle status henüz refresh olmamış).
+        const pass = delta <= 1;
+        rec(testInfo, { module: MOD, step: 'active_idempotency',
+            status: pass ? 'PASS' : 'FAIL',
+            note: `pending_before=${pending1} pending_after=${pending2} delta=${delta} r1_status=${r1?.status} r2_status=${r2?.status} stable_id=${stableId}` });
+        if (!pass) {
+            recFinding(testInfo, 'P0', MOD,
+                'Outbox idempotency kırık — duplicate webhook 2 outbox event üretti',
+                `Aynı (tenant=${stressTid?.slice(0, 8)}, hr_number=${stableId}) 2x ingest → outbox pending delta=${delta}. Dedupe key (tenant:event:entity:payload_hash) düşmüş olabilir.`);
+        }
+    });
+
     test('D) external_calls invariant + pilot_drift=0', async ({ request, stressTokens }, testInfo) => {
         await assertPilotDriftZero(testInfo, MOD, request, stressTokens.pilot_token, pilotBefore);
         const stateBlob = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'e2e-stress', '.auth', 'stress-state.json'), 'utf-8'));

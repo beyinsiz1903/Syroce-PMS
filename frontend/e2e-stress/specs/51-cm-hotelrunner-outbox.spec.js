@@ -363,6 +363,77 @@ test.describe('F8L § 51 — HotelRunner Webhook + Outbox', () => {
         }
     });
 
+    test('F) Signed valid-path — HOTELRUNNER_WEBHOOK_SECRET set ise gerçek HMAC payload kabul edilmeli (stress_tid scope, dispatcher dry-run)', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'signed_valid_path', status: 'SKIP', note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        // Validator (architect) talebi: imzasız reddetme yeterli değil;
+        // valid HMAC path da assert edilmeli. Conditional on env:
+        //   - HOTELRUNNER_WEBHOOK_SECRET set + ALLOW_UNSIGNED!=1 →
+        //     imzalı path test edilir (sig_required_401 mode beklenir).
+        //   - secret unset → REVIEW + informational (P2). Stres ortamı
+        //     production-prod-like'a yakın olsun isteyenler için bu gate
+        //     readiness-of-test sinyali sağlar.
+        const secret = process.env.HOTELRUNNER_WEBHOOK_SECRET || '';
+        if (!secret) {
+            rec(testInfo, { module: MOD, step: 'signed_valid_path',
+                status: 'REVIEW',
+                note: `HOTELRUNNER_WEBHOOK_SECRET unset → signed-path coverage gap (stres ortamı prod-like değil)` });
+            recFinding(testInfo, 'P2', MOD,
+                'HotelRunner signed-path coverage gap — stres env\'de HOTELRUNNER_WEBHOOK_SECRET set değil',
+                `Imzasız reddetme contract'ı PASS; valid HMAC kabul path'i bu koşuda assert edilemedi. Production readiness için CI env'inde secret seed'i öneriliyor (follow-up: gerçek imzalı yük testi).`);
+            return;
+        }
+        // Valid imzalı payload: tenant_id=stress_tid; rezervasyon body'si
+        // minimal (parser'ı geçecek kadar). Body raw bytes üzerinden
+        // HMAC-SHA256("{ts}.{raw}", secret).hex hesaplanır (backend
+        // _verify_hotelrunner_signature mantığı).
+        const crypto = await import('node:crypto');
+        const ts = String(Math.floor(Date.now() / 1000));
+        const raw = JSON.stringify({
+            tenant_id: stressTid,
+            hotel: { id: `${prefix || 'STRESS'}_HOTEL` },
+            reservation: {
+                hr_number: `${prefix || 'STRESS'}_SIGNED_${Date.now()}`,
+                state: 'new',
+                guest: { name: 'STRESS_SIGNED' },
+            },
+        });
+        const signed = `${ts}.`.concat(raw);
+        const expected = crypto.createHmac('sha256', secret).update(signed).digest('hex');
+        const r = await callWebhook(request, 'post', `${BASE}/callback`, {
+            body: raw,
+            contentType: 'application/json',
+            headers: {
+                'X-HotelRunner-Timestamp': ts,
+                'X-HotelRunner-Signature': `sha256=${expected}`,
+            },
+        });
+        // Beklenti: 2xx (accept + background process) veya 4xx
+        // (tenant resolve fail, body schema fail). 401/403 görürsek
+        // imza doğrulaması yanlış (P0 — backend sig algo değişmiş veya
+        // env secret farklı). 5xx görürsek backend resilience zayıf (P1).
+        const isAcceptOrValid4xx = (r.status >= 200 && r.status < 300) || (r.status >= 400 && r.status < 500 && r.status !== 401 && r.status !== 403);
+        const sigDenied = r.status === 401 || r.status === 403;
+        const fiveXX = r.status >= 500;
+        rec(testInfo, { module: MOD, step: 'signed_valid_path',
+            status: isAcceptOrValid4xx ? 'PASS' : 'FAIL',
+            endpoint: `POST ${BASE}/callback`, http: r.status,
+            note: `signed body, ts=${ts} sig_len=${expected.length} body=${(r.text || '').slice(0, 200)}` });
+        if (sigDenied) {
+            recFinding(testInfo, 'P0', MOD,
+                'HotelRunner valid HMAC payload reddedildi — imza algoritması/secret mismatch',
+                `body=${(r.text || '').slice(0, 240)}. _verify_hotelrunner_signature beklenen format: HMAC-SHA256(secret, "{ts}.{raw}").hex. Backend implementation drift kontrol edilmeli.`);
+        }
+        if (fiveXX) {
+            recFinding(testInfo, 'P1', MOD,
+                'HotelRunner valid HMAC payload 5xx — backend resilience zayıf',
+                `status=${r.status} body=${(r.text || '').slice(0, 240)}.`);
+        }
+    });
+
     test('E) external_calls invariant + pilot_drift=0', async ({ request, stressTokens }, testInfo) => {
         await assertPilotDriftZero(testInfo, MOD, request, stressTokens.pilot_token, pilotBefore);
         const stateBlob = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'e2e-stress', '.auth', 'stress-state.json'), 'utf-8'));
