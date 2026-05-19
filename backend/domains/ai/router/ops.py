@@ -794,6 +794,35 @@ async def get_ai_llm_state(
         )
 
     looks_like_real_key = any(_looks_real(k) for k in (openai_key, anthropic_key, gemini_key))
+
+    # Vendor base-URL guard (Task #206 finding #1). If any LLM key is set
+    # AND the corresponding base_url override either points to a known
+    # real vendor host OR is unset (SDK default = real vendor host), the
+    # process can egress to real OpenAI/Anthropic/Google endpoints. Stress
+    # dry-run requires base_url to be overridden to a mock/sentinel target.
+    openai_base = (_os.getenv('OPENAI_BASE_URL') or '').strip()
+    anthropic_base = (_os.getenv('ANTHROPIC_BASE_URL') or '').strip()
+    gemini_base = (_os.getenv('GEMINI_BASE_URL') or _os.getenv('GOOGLE_BASE_URL') or '').strip()
+    REAL_VENDOR_HOSTS = (
+        'api.openai.com',
+        'api.anthropic.com',
+        'generativelanguage.googleapis.com',
+    )
+
+    def _url_is_real(url: str | None) -> bool:
+        if not url:
+            return False
+        u = url.lower()
+        return any(h in u for h in REAL_VENDOR_HOSTS)
+
+    # Per-provider: if a key is configured for that provider, the base_url
+    # must be (a) explicitly set AND (b) not pointing at a real vendor host.
+    # Unset base_url with key set → SDK defaults to real host → P0.
+    openai_url_real = bool(openai_key) and (not openai_base or _url_is_real(openai_base))
+    anthropic_url_real = bool(anthropic_key) and (not anthropic_base or _url_is_real(anthropic_base))
+    gemini_url_real = bool(gemini_key) and (not gemini_base or _url_is_real(gemini_base))
+    looks_like_real_vendor_url = openai_url_real or anthropic_url_real or gemini_url_real
+
     ledger = _get_ledger()
     return {
         'llm_enabled': bool(getattr(svc, 'llm_enabled', False)),
@@ -803,10 +832,23 @@ async def get_ai_llm_state(
             'gemini_configured': bool(gemini_key),
         },
         'looks_like_real_key': looks_like_real_key,
+        'vendor_base_urls': {
+            # Only emit set/unset bool — never the raw URL value to avoid
+            # leaking deployment topology through diagnostics surface.
+            'openai_base_url_set': bool(openai_base),
+            'anthropic_base_url_set': bool(anthropic_base),
+            'gemini_base_url_set': bool(gemini_base),
+        },
+        'looks_like_real_vendor_url': looks_like_real_vendor_url,
+        'real_vendor_url_breakdown': {
+            'openai': openai_url_real,
+            'anthropic': anthropic_url_real,
+            'gemini': gemini_url_real,
+        },
         'e2e_ai_dry_run': e2e_dry_run,
         'e2e_external_dry_run': (_os.getenv('E2E_EXTERNAL_DRY_RUN') or '').lower() in ('1', 'true', 'yes', 'on'),
         'attempted_call_count': int(ledger.get('attempted_count', 0)),
         'recent_attempts': ledger.get('last_attempts') or [],
         'model_name_default': 'gpt-4o-mini',
-        'note': 'Read-only state probe; no vendor calls are issued. API key VALUES are never returned.',
+        'note': 'Read-only state probe; no vendor calls are issued. API key VALUES and base URLs are never returned.',
     }
