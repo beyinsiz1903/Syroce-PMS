@@ -114,7 +114,7 @@ test.describe('F8A § 06 — Night audit (business-date / run / re-run idempoten
         if (exList.length > 10) {
             recFinding(testInfo, 'P2', MOD,
                 `Açık night-audit exception sayısı yüksek (${exList.length})`,
-                'Stress tenant'da unresolved transaction birikmiş — operasyon dashboard takip etmeli.');
+                'Stress tenant icin unresolved transaction birikmis — operasyon dashboard takip etmeli.');
         }
     });
 
