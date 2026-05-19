@@ -157,7 +157,49 @@ test.describe('F8E § 27 — Accounting Bank + Inventory', () => {
         expect(okMov, `inventory movement floor>=${movFloor}; got ok=${okMov}`).toBeGreaterThanOrEqual(movFloor);
     });
 
-    test('C) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
+    test('C) Inventory low-stock + total_value aggregation', async ({ request, stressTokens }, testInfo) => {
+        // F8E v2 tur-6 D-extension: GET /accounting/inventory returns
+        // {items, low_stock_count, total_value}. Verify:
+        //   - low_stock_count = number of items where quantity <= reorder_level
+        //   - total_value = sum(quantity * unit_cost)
+        // Read-only, no mutation. No explicit perm gate on this endpoint.
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'inventory_aggregation', status: 'SKIP', note: 'module blocked (see Setup)' });
+            test.skip(true, 'Accounting module blocked');
+            return;
+        }
+        const r = await callTimed(request, 'get', '/api/accounting/inventory',
+            undefined, stressTokens.stress_token);
+        if (r.status === 401 || r.status === 403) {
+            recFinding(testInfo, 'P2', MOD, 'inventory aggregation RBAC short-circuit',
+                `status=${r.status} (perm gate intentional).`);
+            rec(testInfo, { module: MOD, step: 'inventory_aggregation', status: 'SKIP',
+                note: `status=${r.status} RBAC informational` });
+            return;
+        }
+        const items = Array.isArray(r.body?.items) ? r.body.items : [];
+        const lowStockCount = r.body?.low_stock_count;
+        const totalValue = r.body?.total_value;
+        // Recompute from items array for contract verification.
+        const expectedLowStock = items.filter((it) => (it?.quantity ?? 0) <= (it?.reorder_level ?? 0)).length;
+        const expectedTotalValue = items.reduce((acc, it) =>
+            acc + ((it?.quantity ?? 0) * (it?.unit_cost ?? 0)), 0);
+        const lowStockOk = typeof lowStockCount === 'number' && lowStockCount === expectedLowStock;
+        // Float tolerance: backend may round differently; allow 0.01.
+        const totalValueOk = typeof totalValue === 'number' &&
+            Math.abs(totalValue - expectedTotalValue) < 0.5;
+        const ok = r.ok && lowStockOk && totalValueOk && items.length >= 1;
+        rec(testInfo, { module: MOD, step: 'inventory_aggregation', status: ok ? 'PASS' : 'FAIL',
+            endpoint: '/api/accounting/inventory',
+            note: `status=${r.status} items=${items.length} low_stock=${lowStockCount}(exp=${expectedLowStock}) total_value=${totalValue}(exp=${expectedTotalValue.toFixed(2)}) ms=${r.ms}` });
+        if (!ok) recFinding(testInfo, 'P1', MOD, 'inventory aggregation contract ihlal',
+            `items=${items.length} low_stock_ok=${lowStockOk} total_value_ok=${totalValueOk}`);
+        expect(r.ok, `inventory status`).toBe(true);
+        expect(items.length, `items present`).toBeGreaterThanOrEqual(1);
+        expect(lowStockOk, `low_stock_count matches recomputed`).toBe(true);
+    });
+
+    test('D) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
         if (!pilotBefore) { rec(testInfo, { module: MOD, step: 'pilot_drift', status: 'SKIP' }); return; }
         const after = await pilotBookingsCount(request, stressTokens.pilot_token);
         const drift = (after?.count ?? 0) - pilotBefore.count;

@@ -118,7 +118,58 @@ test.describe('F8E § 25 — Finance City Ledger', () => {
         expect(ok, `bulk_create_cityledger floor>=${floor}; got ok=${ok}`).toBeGreaterThanOrEqual(floor);
     });
 
-    test('C) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
+    test('C) Read city-ledger account transactions (seeded account)', async ({ request, stressTokens }, testInfo) => {
+        // F8E v2 tur-6 D-extension: read transactions for first seeded
+        // city-ledger account via GET /cashiering/city-ledger/{id}/transactions.
+        // No mutation — verifies the read endpoint + summary aggregation
+        // (total_charges, total_payments, current_balance) shape. Seeded
+        // accounts have no transactions yet (transactions are spec 24/folio
+        // territory); empty transactions + zero summary is the expected
+        // baseline. Permission gate: `view_city_ledger_transactions`.
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'cl_transactions_read', status: 'SKIP', note: 'module blocked (see Setup)' });
+            test.skip(true, 'City-ledger module blocked');
+            return;
+        }
+        const listR = await callTimed(request, 'get', '/api/cashiering/city-ledger',
+            undefined, stressTokens.stress_token);
+        const accounts = Array.isArray(listR.body) ? listR.body : (listR.body?.accounts || []);
+        if (!listR.ok || accounts.length === 0) {
+            rec(testInfo, { module: MOD, step: 'cl_transactions_read', status: 'SKIP',
+                note: `no seeded account available list_status=${listR.status} accounts=${accounts.length}` });
+            recFinding(testInfo, 'P2', MOD, 'cl_transactions_read no account',
+                `cleanup race veya seed missing — informational.`);
+            return;
+        }
+        const acct = accounts[0];
+        const acctId = acct?.id || acct?._id || acct?.account_id;
+        if (!acctId) {
+            rec(testInfo, { module: MOD, step: 'cl_transactions_read', status: 'SKIP',
+                note: 'account id field shape unknown — informational' });
+            return;
+        }
+        const r = await callTimed(request, 'get',
+            `/api/cashiering/city-ledger/${encodeURIComponent(acctId)}/transactions?limit=50`,
+            undefined, stressTokens.stress_token);
+        if (r.status === 401 || r.status === 403) {
+            recFinding(testInfo, 'P2', MOD, 'cl_transactions_read RBAC short-circuit',
+                `status=${r.status} (view_city_ledger_transactions gate intentional).`);
+            rec(testInfo, { module: MOD, step: 'cl_transactions_read', status: 'SKIP',
+                note: `status=${r.status} RBAC informational` });
+            return;
+        }
+        const hasSummary = r.body?.summary && typeof r.body.summary.transaction_count === 'number';
+        const ok = r.ok && hasSummary;
+        rec(testInfo, { module: MOD, step: 'cl_transactions_read', status: ok ? 'PASS' : 'FAIL',
+            endpoint: '/api/cashiering/city-ledger/{id}/transactions',
+            note: `status=${r.status} account_id=${acctId} has_summary=${hasSummary} tx_count=${r.body?.summary?.transaction_count} ms=${r.ms}` });
+        if (!ok) recFinding(testInfo, 'P1', MOD, 'cl_transactions_read hard floor ihlal',
+            `status=${r.status} body=${JSON.stringify(r.body).slice(0, 120)}`);
+        expect(r.ok, `cl-transactions status`).toBe(true);
+        expect(hasSummary, `summary shape`).toBe(true);
+    });
+
+    test('D) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
         if (!pilotBefore) { rec(testInfo, { module: MOD, step: 'pilot_drift', status: 'SKIP' }); return; }
         const after = await pilotBookingsCount(request, stressTokens.pilot_token);
         const drift = (after?.count ?? 0) - pilotBefore.count;

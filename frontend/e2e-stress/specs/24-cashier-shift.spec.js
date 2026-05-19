@@ -163,7 +163,40 @@ test.describe('F8E § 24 — Cashier Shift Lifecycle', () => {
         expect(okTxn, `manual-transaction floor>=${floor}; got ok=${okTxn}`).toBeGreaterThanOrEqual(floor);
     });
 
-    test('C) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
+    test('C) Read shift-history (seeded + spec-created shifts)', async ({ request, stressTokens }, testInfo) => {
+        // F8E v2 tur-6 D-extension: shift-history reads `db.cashier_shifts`
+        // for the tenant (no per-document mutation), verifying that:
+        //   - Seeded 3 closed shifts are visible
+        //   - Spec-created shift from B (open + close in lifecycle) is added
+        //   - `view_finance_reports` gate (super_admin passes)
+        // RBAC short-circuit: if perm 401/403 → P2 informational SKIP.
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'shift_history', status: 'SKIP', note: 'module blocked (see Setup)' });
+            test.skip(true, 'Cashier module blocked');
+            return;
+        }
+        const r = await callTimed(request, 'get', '/api/cashier/shift-history?limit=20',
+            undefined, stressTokens.stress_token);
+        if (r.status === 401 || r.status === 403) {
+            recFinding(testInfo, 'P2', MOD, 'shift-history RBAC short-circuit',
+                `status=${r.status} (view_finance_reports gate intentional).`);
+            rec(testInfo, { module: MOD, step: 'shift_history', status: 'SKIP',
+                note: `status=${r.status} RBAC informational` });
+            return;
+        }
+        const total = r.body?.total ?? 0;
+        const shifts = Array.isArray(r.body?.shifts) ? r.body.shifts : [];
+        const ok = r.ok && total >= 3 && shifts.length >= 3;
+        rec(testInfo, { module: MOD, step: 'shift_history', status: ok ? 'PASS' : 'FAIL',
+            endpoint: '/api/cashier/shift-history',
+            note: `status=${r.status} total=${total} returned=${shifts.length} ms=${r.ms}` });
+        if (!ok) recFinding(testInfo, 'P1', MOD, 'shift-history hard floor ihlal',
+            `total=${total} returned=${shifts.length} (seeded 3 closed shifts beklenmedi).`);
+        expect(r.ok, `shift-history status`).toBe(true);
+        expect(total, `seeded shifts visible`).toBeGreaterThanOrEqual(3);
+    });
+
+    test('D) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
         if (!pilotBefore) { rec(testInfo, { module: MOD, step: 'pilot_drift', status: 'SKIP' }); return; }
         const after = await pilotBookingsCount(request, stressTokens.pilot_token);
         const drift = (after?.count ?? 0) - pilotBefore.count;

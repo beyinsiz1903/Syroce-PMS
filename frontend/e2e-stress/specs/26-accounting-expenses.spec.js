@@ -191,7 +191,39 @@ test.describe('F8E § 26 — Accounting Expenses', () => {
         expect(okExp, `expense floor>=${expFloor}; got ok=${okExp}`).toBeGreaterThanOrEqual(expFloor);
     });
 
-    test('C) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
+    test('C) Read expenses filtered by category (aggregation)', async ({ request, stressTokens }, testInfo) => {
+        // F8E v2 tur-6 D-extension: GET /accounting/expenses with category
+        // filter. Seed creates expenses across multiple categories
+        // (utilities/supplies/maintenance/...) — query for `utilities` and
+        // verify subset is returned. No mutation, no perm gate (auth-only).
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'expense_category_filter', status: 'SKIP', note: 'module blocked (see Setup)' });
+            test.skip(true, 'Accounting module blocked');
+            return;
+        }
+        const allR = await callTimed(request, 'get', '/api/accounting/expenses',
+            undefined, stressTokens.stress_token);
+        const filteredR = await callTimed(request, 'get', '/api/accounting/expenses?category=utilities',
+            undefined, stressTokens.stress_token);
+        const allCount = Array.isArray(allR.body) ? allR.body.length : 0;
+        const filteredCount = Array.isArray(filteredR.body) ? filteredR.body.length : 0;
+        // Filter contract: filtered <= all AND if filtered>0 all entries are 'utilities'.
+        const subsetOk = filteredCount <= allCount;
+        const categoryOk = filteredCount === 0 || (Array.isArray(filteredR.body) &&
+            filteredR.body.every((e) => e?.category === 'utilities'));
+        const ok = allR.ok && filteredR.ok && subsetOk && categoryOk;
+        rec(testInfo, { module: MOD, step: 'expense_category_filter', status: ok ? 'PASS' : 'FAIL',
+            endpoint: '/api/accounting/expenses?category=...',
+            note: `all_status=${allR.status}/${allCount} filtered_status=${filteredR.status}/${filteredCount} subset_ok=${subsetOk} category_ok=${categoryOk}` });
+        if (!ok) recFinding(testInfo, 'P1', MOD, 'expense category filter contract ihlal',
+            `all=${allCount} filtered=${filteredCount} subset_ok=${subsetOk} category_ok=${categoryOk}`);
+        expect(allR.ok, `expenses list status`).toBe(true);
+        expect(filteredR.ok, `filtered expenses status`).toBe(true);
+        expect(subsetOk, `filtered subset of all`).toBe(true);
+        expect(categoryOk, `category filter purity`).toBe(true);
+    });
+
+    test('D) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
         if (!pilotBefore) { rec(testInfo, { module: MOD, step: 'pilot_drift', status: 'SKIP' }); return; }
         const after = await pilotBookingsCount(request, stressTokens.pilot_token);
         const drift = (after?.count ?? 0) - pilotBefore.count;

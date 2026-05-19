@@ -65,15 +65,31 @@ F8E tur-1 (specs 24-27) operasyonel finance/cashier/accounting yüzeylerini kaps
 
 F8D v2 başlatma için backend route taraması notu da eklendi (`hr/*`, `operations/tasks*`, `audit_logs` triggers, `core/rbac.py` manager scope).
 
-## Acceptance kriterleri (CI #42+ beklentisi)
+## Implementation acceptance (push tamamlanma kriterleri — bu turda doğrulandı)
+
+Push tamamlandığında **yerel olarak** doğrulanan kontratlar:
+
+- ✅ Spec 28 + 4 D-extension Node `--check` parse OK (8 yeni test toplam).
+- ✅ `backend/domains/admin/router/stress.py` Python ast parse OK (currency_rates cleanup exception branch + orphan scrub eklendi).
+- ✅ Backend endpoint kontrat eşleşmesi (architect tur-6 review tarafından satır-satır doğrulandı):
+  - `CreateCurrencyRateRequest` payload shape match (`backend/models/schemas/requests.py:194-209`).
+  - `view_finance_reports` perm gate'i `require_op` super_admin bypass (`role_permission_service.py:120-123`).
+  - Spec 28 A no-perm/perm-gated kategorizasyonu backend kodu ile match.
+- ✅ Cleanup contract fix: `currency_rates` rows tenant-scoped delete branch hem cleanup endpoint hem orphan scrub'da. Stress tenant gate'leri (`PILOT_TENANT_ID` blocked + `E2E_ALLOW_DESTRUCTIVE_STRESS=true`) tenant izolasyonunu zorlar.
+- ✅ Spec 28 A hard floor: `expect(vatR.ok)` + `expect(curR.ok)` + `expect(cfR.ok)` (architect review sonrası eklenen) → `failedTests=0 + counters.FAIL=1` mismatch ihtimali kapatıldı.
+- ✅ Roadmap F8D v2 scope kullanıcının 9 maddesi (personel/departman/vardiya/izin/görev/housekeeping-personel/RBAC/audit/cleanup) açıkça enümere edildi.
+
+## CI runtime kriterleri (nightly stress CI #42+ — bu turda yerel olarak çalıştırılamadı)
+
+Stress tenant + 500-oda seed gerektirdiği için bu suite **CI'da nightly çalışır** (workflow: `.github/workflows/stress.yml`, MongoDB Atlas pilot tenant + stress tenant credentials gerektirir; geliştirme ortamında local execution yapılmaz, F8E tur-1..5 paterni mirror). Push sonrası CI run sonuçları **ayrı bir takip raporunda** ADR'a tur-7 entry olarak işlenecek. Gerekli CI acceptance kriterleri:
 
 - `failedTests = 0`
+- `counters.FAIL = 0` (decideVerdict NO-GO trigger'ı, `markdown-reporter.mjs:254-256`)
 - `P0 = P1 = 0` (P2 informational permitted)
 - `external_calls_made = []`
 - `pilot_drift = 0`
-- 20/20 test yeşil (4 yeni spec 28 + 16 mevcut spec 24-27; skip-by-RBAC pass-equivalent)
-- `currency_rates` koleksiyonu prefix-tagged değil ama tenant-scoped → cleanup test count = N_RATE (delta=3)
-- Re-run cleanup = no-op (idempotent)
+- 24/24 test yeşil (spec 24-27 her birine 1 D-extension eklendi: 4 D + 4 yeni spec 28 = 8 yeni test; mevcut 16 + 8 = 24)
+- `currency_rates` koleksiyonu tenant-scoped cleanup → delta=N_RATE (3) post-spec, re-run delta=0 (idempotent)
 
 ## NO-GO hipotezleri (CI doğrulaması bekliyor)
 
