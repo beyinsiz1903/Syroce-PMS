@@ -500,6 +500,99 @@ export async function assertPilotDriftZero(testInfo, module, request, pilotToken
     return pass;
 }
 
+// assertNoTokenLeak — credential/token leak guard. Audit/log/admin response
+// body'sinde JWT, bearer-like, API key, refresh token gibi credential
+// materyali bulunmamalı (KVKK + threat-model: tokens=spoofing primitive).
+// Recursive: response JSON tree'sini gezer, string değerlerde token pattern
+// arar. Bulunursa P0 finding (token-leak == cross-tenant spoofing primer).
+// `tokenKeys`: field-name allowlist; key adı ne olursa olsun *value* token
+// pattern eşliyorsa yakalanır (defense-in-depth). Pattern listesi:
+//   • JWT compact: 3 base64url segment . ile ayrılmış, length≥40
+//   • Bearer prefix: "Bearer xxx..."
+//   • Common token field names + non-masked value (>20 char, non-hex-hash)
+export function assertNoTokenLeak(testInfo, module, responseBody, contextLabel = 'response') {
+    const JWT_RE = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/;
+    const BEARER_RE = /\bBearer\s+[A-Za-z0-9._-]{20,}/i;
+    const TOKEN_KEYS = new Set([
+        'jwt', 'token', 'access_token', 'refresh_token', 'id_token',
+        'api_key', 'apikey', 'secret', 'client_secret', 'authorization',
+        'session_token', 'bearer', 'auth_token',
+    ]);
+    const MIN_OPAQUE_LEN = 24;
+    const isMaskedish = (s) => {
+        if (s == null) return true;
+        const v = String(s);
+        if (v.length < 8) return true;
+        if (/[*x]{3,}/i.test(v)) return true;
+        if (/^masked/i.test(v)) return true;
+        if (/^(redacted|hidden|null|none)$/i.test(v)) return true;
+        if (/^[a-f0-9]{16,}$/i.test(v)) return true; // hash-like
+        return false;
+    };
+    const leaks = [];
+    const walk = (node, pathParts) => {
+        if (node == null) return;
+        if (leaks.length >= 10) return; // cap output
+        if (typeof node === 'string') {
+            const path = pathParts.join('.') || '(root)';
+            if (JWT_RE.test(node)) {
+                leaks.push({ path, kind: 'jwt', sample: node.slice(0, 16) + '…' });
+                return;
+            }
+            if (BEARER_RE.test(node)) {
+                leaks.push({ path, kind: 'bearer', sample: node.slice(0, 20) + '…' });
+                return;
+            }
+            return;
+        }
+        if (Array.isArray(node)) {
+            for (let i = 0; i < Math.min(node.length, 100); i++) {
+                walk(node[i], pathParts.concat(`[${i}]`));
+            }
+            return;
+        }
+        if (typeof node === 'object') {
+            for (const k of Object.keys(node)) {
+                const lk = k.toLowerCase();
+                const v = node[k];
+                if (TOKEN_KEYS.has(lk) && typeof v === 'string'
+                    && v.length >= MIN_OPAQUE_LEN && !isMaskedish(v)) {
+                    leaks.push({
+                        path: pathParts.concat(k).join('.'),
+                        kind: 'token_field',
+                        field: k,
+                        sample: v.slice(0, 16) + '…',
+                    });
+                    if (leaks.length >= 10) return;
+                }
+                walk(v, pathParts.concat(k));
+            }
+        }
+    };
+    try { walk(responseBody, []); } catch (_) { /* swallow */ }
+
+    const pass = leaks.length === 0;
+    testInfo.annotations.push({
+        type: 'rec',
+        description: JSON.stringify({
+            module, step: 'token_leak_guard',
+            status: pass ? 'PASS' : 'FAIL',
+            note: `context=${contextLabel} leaks=${leaks.length}`,
+        }),
+    });
+    if (!pass) {
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P0', module,
+                title: `Token/JWT leak in ${contextLabel} response`,
+                detail: `${leaks.length} leak(s): ${JSON.stringify(leaks.slice(0, 5))}. Tokens = spoofing primitive (threat-model § Spoofing/Information Disclosure); audit/log/admin response'ları credential material taşımamalı.`,
+            }),
+        });
+    }
+    return pass;
+}
+
 // assertPiiMasked — KVKK/PII guard: response body'de hassas alanlar masked mı?
 // Telefon/email/TC/passport/IBAN gibi alanlar full plaintext dönmemeli;
 // expected pattern: kısmen masked (***, son 4 hane) veya hash. Plain match

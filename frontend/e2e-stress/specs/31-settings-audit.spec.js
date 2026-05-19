@@ -22,7 +22,7 @@ import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
     callTimed, callTimedWithBackoff, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
-    assertPiiMasked, withModuleProbe, pilotBookingsCount,
+    assertPiiMasked, assertNoTokenLeak, withModuleProbe, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -155,6 +155,16 @@ test.describe('F8I § 31 — Settings + Audit', () => {
         rec(testInfo, { module: MOD, step: 'audit_pii_guard',
             status: piiOk ? 'PASS' : 'FAIL',
             note: `timeline_ok=${r1?.ok} audit_ok=${r2?.ok} pii_ok=${piiOk}` });
+
+        // Validation review (2026-05-19): token/JWT/credential leak guard.
+        // Audit + log response'larında bearer / access_token / refresh_token /
+        // api_key / raw JWT material bulunmamalı (P0 spoofing primitive).
+        let tokOk = true;
+        if (r1?.ok) tokOk = assertNoTokenLeak(testInfo, MOD, r1.body, 'audit_timeline') && tokOk;
+        if (r2?.ok) tokOk = assertNoTokenLeak(testInfo, MOD, r2.body, 'security_audit_logs') && tokOk;
+        rec(testInfo, { module: MOD, step: 'audit_token_leak_guard',
+            status: tokOk ? 'PASS' : 'FAIL',
+            note: `timeline_ok=${r1?.ok} audit_ok=${r2?.ok} token_ok=${tokOk}` });
 
         if (!reachable) {
             recFinding(testInfo, 'P2', MOD, 'Audit endpoints unreachable',

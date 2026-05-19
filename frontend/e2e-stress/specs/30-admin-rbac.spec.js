@@ -22,7 +22,7 @@ import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
     callTimed, callTimedWithBackoff, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
-    assertPiiMasked, withModuleProbe, pilotBookingsCount,
+    assertPiiMasked, assertNoTokenLeak, withModuleProbe, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -188,6 +188,21 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
             recFinding(testInfo, 'P2', MOD, 'Super-admin baseline non-2xx on some endpoints',
                 `Non-2xx: ${details.join(', ')}. Deploy-spesifik veya rota değişikliği olabilir; matrix C step bu endpoint'leri yine de düşük-priv ile dener.`);
         }
+
+        // Validation review (2026-05-19): token/JWT leak guard for admin
+        // baseline responses (audit-logs + users + tenants + system/* + push
+        // metrics). Tokens=spoofing primitive (threat-model § Spoofing).
+        let baselineTokOk = true;
+        for (const ep of SENSITIVE) {
+            const r = await callTimed(request, 'get', ep.path, undefined, stressTokens.stress_token);
+            if (r.ok) {
+                baselineTokOk = assertNoTokenLeak(testInfo, MOD, r.body, `admin_baseline:${ep.path}`) && baselineTokOk;
+            }
+            await new Promise(res => setTimeout(res, 100));
+        }
+        rec(testInfo, { module: MOD, step: 'admin_baseline_token_leak_guard',
+            status: baselineTokOk ? 'PASS' : 'FAIL',
+            note: `endpoints_scanned=${SENSITIVE.length} token_ok=${baselineTokOk}` });
         // Architect re-review #2: trivial hard expect kaldırıldı.
     });
 
