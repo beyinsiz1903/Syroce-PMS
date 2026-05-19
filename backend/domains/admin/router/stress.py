@@ -1941,6 +1941,18 @@ async def stress_external_calls_status(
                 )
                 if any(p in msg_lower for p in inert_patterns):
                     continue
+                # tur-30 (CI #49 root-cause fix): outbox worker bazı event
+                # tiplerinde (reservation.modified.v1, vb.) `status=processed`
+                # + `attempt_count=1` yazıyor ama `delivery_message` /
+                # `last_error` alanlarını HİÇ yazmıyor (worker bookkeeping
+                # noop). Atlas gözlemi: 214 dispatched satırın 40'ı bu
+                # şekilde — tüm pattern-match'ler boş msg'de tutmuyor →
+                # `cm_calls` listesine düşüyor → helper P0 FAIL.
+                # Empty msg + attempt_count<=1 + processed = worker noop.
+                # Gerçek HTTP attempt yapılmış olsaydı dispatcher mutlaka
+                # success veya error string'i yazardı (`outbox_worker.py:268`).
+                if not msg.strip() and (doc.get("attempt_count") or 0) <= 1 and (doc.get("status") or "") == "processed":
+                    continue
                 doc["source"] = "outbox_events"
                 if "created_at" in doc and hasattr(doc["created_at"], "isoformat"):
                     doc["created_at"] = doc["created_at"].isoformat()
@@ -1983,6 +1995,10 @@ async def stress_external_calls_status(
                         "unsupported event_type",
                         "unsupported event:",
                     )):
+                        continue
+                    # tur-30: empty-msg worker-noop guard (outbox bloğundaki
+                    # ile aynı semantik — bkz. line 1947-1957 yorumu).
+                    if not msg.strip() and (doc.get("attempt_count") or 0) <= 1 and (doc.get("status") or "") == "processed":
                         continue
                     doc["source"] = "integration_afsadakat_outbox"
                     if "created_at" in doc and hasattr(doc["created_at"], "isoformat"):
@@ -2058,8 +2074,19 @@ async def stress_external_calls_status(
         # Right collection: dispatcher reads cm_connectors (verified via
         # backend/channel_manager/infrastructure/repository.py:14
         # `CONNECTORS = "cm_connectors"` + get_active_connectors()).
-        from core.database import db as _db
-        cm_active_connectors_count = await _db.cm_connectors.count_documents({
+        # tur-30 (CI #49 root-cause fix): `core.database.db` is the
+        # TenantAwareDBProxy which injects the request's tenant_id and
+        # raises TenantViolationError when the explicit filter targets a
+        # DIFFERENT tenant (here: pilot super_admin request scanning stress
+        # tenant). Production log evidence: "TENANT VIOLATION:
+        # collection=cm_connectors expected=5bad4a34 got=23377306".
+        # Use `get_system_db()` (cross-tenant raw motor handle — already
+        # imported at line 1856 for sysdb.outbox_events) so the structural
+        # collapse gate can actually evaluate. Without this, the gate was
+        # permanently disabled and structural defense-in-depth never fired.
+        from core.tenant_db import get_system_db as _gsd_cm
+        _sysdb_cm = _gsd_cm()
+        cm_active_connectors_count = await _sysdb_cm.cm_connectors.count_documents({
             "tenant_id": stress_tid, "status": "active",
         })
         cm_connectors_lookup_ok = True
@@ -2084,8 +2111,11 @@ async def stress_external_calls_status(
         # registry the worker uses via `core/afsadakat_outbound.py` lines
         # 55-62). If no active tenant cred AND env not set → no possible
         # HTTP target.
-        from core.database import db as _db2
-        afsadakat_active_tenants_count = await _db2.integration_afsadakat_tenants.count_documents({
+        # tur-30 (CI #49 root-cause fix): same TenantAwareDBProxy issue as
+        # cm_connectors above — use cross-tenant sysdb handle.
+        from core.tenant_db import get_system_db as _gsd_af
+        _sysdb_af = _gsd_af()
+        afsadakat_active_tenants_count = await _sysdb_af.integration_afsadakat_tenants.count_documents({
             "tenant_id": stress_tid, "status": "active",
         })
         afsadakat_tenants_lookup_ok = True
