@@ -569,7 +569,20 @@ export function assertNoTokenLeak(testInfo, module, responseBody, contextLabel =
             }
         }
     };
-    try { walk(responseBody, []); } catch (_) { /* swallow */ }
+    // Validation review #2 yorum #3: walker hatasını sessizce yutmak yerine
+    // REVIEW annotation üret (observability).
+    let walkError = null;
+    try { walk(responseBody, []); } catch (e) { walkError = e?.message || String(e); }
+    if (walkError) {
+        testInfo.annotations.push({
+            type: 'rec',
+            description: JSON.stringify({
+                module, step: 'token_leak_walker_error',
+                status: 'REVIEW',
+                note: `context=${contextLabel} error=${walkError.slice(0, 200)}`,
+            }),
+        });
+    }
 
     const pass = leaks.length === 0;
     testInfo.annotations.push({
