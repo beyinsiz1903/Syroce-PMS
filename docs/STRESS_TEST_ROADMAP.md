@@ -354,3 +354,53 @@ F8D v2 başlatılana kadar bu liste değiştirilmez.
 Bu dosya stress test serisi için tek doğruluk kaynağıdır. Faz
 tamamlandıkça status sütunu güncellenir; backlog maddesi yeni v2 turunda
 veya yeni faz'a taşınır.
+
+## CI / GitHub Actions
+
+**Dosya:** `.github/workflows/stress.yml` — adı: **Full Stress Suite
+(one-shot)** (Task #192 review fix; eski "F8A Stress Suite" adı kapsam
+F8A→F8E genişlediği için terk edildi).
+
+**Ne koşturur:** `cd frontend && yarn test:e2e:stress` — `-g` filter YOK,
+chunking YOK. Tüm spec'ler tek Playwright process'inde, `workers=1`,
+sıralı:
+
+- F8A specs 00..06, 08 — Front Office + Folio + Housekeeping
+- F8B specs 10..13 — Guest Experience (QR/complaints/messaging)
+- F8C specs 14..17 — MICE / Event / Banquet / Sales
+- F8D specs 20..23 — HR / Staff / Shift / Leave
+- F8E specs 24..28 — Finance / Cashier / Accounting / Reports / Currency
+
+**Trigger:**
+- Nightly cron `30 2 * * *` (UTC).
+- Manuel `workflow_dispatch` (opsiyonel `report_tag` + `room_count`
+  input'larıyla).
+
+**Hedef tenant:** `STRESS_TENANT_ID` (pilot DEĞİL). Pre-flight gate
+`STRESS_TENANT_ID == PILOT_TENANT_ID` ise fail-closed.
+
+**Concurrency:** `group: stress-suite-one-shot`,
+`cancel-in-progress: false` — aynı stress tenant'ta paralel seed/cleanup
+çakışmasını engeller; ikinci run sıraya girer, koşan run iptal edilmez
+(orphan data önleme).
+
+**Faz bazlı ayrı workflow yok** — full suite tek bir koşuda kapsamı
+veriyor. İleride F8F/G/H/I/J eklendiğinde de aynı dosya kullanılır
+(timeout 60dk tampon var). Faz-bazlı koşu lokal Replit sandbox'ta
+`-g <pattern>` ile yapılır (110s tool-budget gotcha — `docs/GOTCHAS.md`
+"F8A Stress Suite").
+
+**Hard-fail gates:** Playwright exit code, globalTeardown invariants
+(cleanup × 2 idempotent + pilot_drift), drill report `Final verdict`
+satırının `NO-GO` olmaması.
+
+**Outputs (artifact):**
+- `playwright-stress-report` — Playwright HTML report (30 gün).
+- `stress-drill-report` — `docs/drill_reports/*_stress_<TAG>.md` (90
+  gün); path tek kaynaktan (`STRESS_REPORT_TAG` job env).
+- `stress-test-results` — trace + video + screenshot (14 gün).
+
+**Slack:** `STRESS_SLACK_WEBHOOK_URL` secret set ise failure / NO-GO ve
+GO WITH WATCH bildirimleri gönderilir; webhook job-level env'de
+(`SLACK_WEBHOOK_URL`) bağlı olduğundan `if: failure() &&
+env.SLACK_WEBHOOK_URL != ''` condition güvenli çalışır.
