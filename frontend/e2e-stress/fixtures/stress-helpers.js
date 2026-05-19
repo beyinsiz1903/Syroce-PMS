@@ -80,9 +80,18 @@ export async function callTimed(request, method, path, body, token, opts = {}) {
     // Default stays 30_000 (back-compat). Heavy endpoints (night-audit/run on
     // 500-folio stress tenant) need 60–120s; pass opts.timeout to override.
     const timeoutMs = opts.timeout ?? 30_000;
+    // tur-27b (CI #43 NO-GO follow-up — 05-A Idempotency-Key): per-call extra
+    // header override. Default stays empty (back-compat). Mutation endpoints
+    // requiring Idempotency-Key (quick-booking, multi-room booking, kbs,
+    // upsell, cashier ops) için `opts.headers: {'Idempotency-Key': uuid}` geç.
+    const extraHeaders = opts.headers ?? {};
     const t0 = Date.now();
     const r = await request[method](path, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            ...extraHeaders,
+        },
         data: body,
         failOnStatusCode: false,
         timeout: timeoutMs,
@@ -119,12 +128,15 @@ export async function callTimedWithBackoff(request, method, path, body, token, o
     // tur-27 (CI #42 NO-GO follow-up): propagate per-call timeout to callTimed.
     // Default stays 30_000 (back-compat).
     const callTimeoutMs = opts.timeout ?? 30_000;
+    // tur-27b (CI #43 NO-GO follow-up): propagate per-call headers to callTimed.
+    const callHeaders = opts.headers ?? {};
     let attempts = 0;
     let throttled = false;
     let last = null;
     for (let i = 0; i <= maxRetries; i++) {
         attempts++;
-        last = await callTimed(request, method, path, body, token, { timeout: callTimeoutMs });
+        last = await callTimed(request, method, path, body, token,
+            { timeout: callTimeoutMs, headers: callHeaders });
         if (last.status !== 429) return { ...last, throttled, attempts };
         throttled = true;
         if (i === maxRetries) break;

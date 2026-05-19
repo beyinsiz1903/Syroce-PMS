@@ -1,6 +1,6 @@
-# F8A Stress Suite — Evolution (tur-6 → tur-27)
+# F8A Stress Suite — Evolution (tur-6 → tur-27b)
 
-**Status:** DONE pending CI #43 — last code change tur-27 (CI #42 NO-GO 3-fail fix: spec resilience + diagnostic enhancement; helper `opts.timeout` desteği + 06-A/B NA timeout 120s + 04-C4 `pickChargeId` field-name drift fallback + `shapeDrift`/`allEmpty` ayrımı + 05-A `first_fail_body` snapshot + module-blocked classifier)
+**Status:** DONE pending CI #44 — last code change tur-27b (CI #43 partial-pass follow-up: 04-C4 ✅ + 06-A/B/C/D/E ✅, sadece 05-A residual `400 Missing Idempotency-Key`; helper `opts.headers` desteği + 05 spec'in 7 mutation noktasına `Idempotency-Key: cryptoRandomUUID()` proactive eklendi)
 **Date:** 2026-05-14 → 2026-05-19
 **Scope:** `frontend/e2e-stress/` (4 spec × Setup+A..F+ek-coverage = ~30 test), 500-oda stress tenant'ta day-turnover / room-move / folio-mass / housekeeping-mass.
 **Defans baseline:** 5 gate, `external_calls_made:[]` (post-batch re-assert hook'u dahil), cleanup#1 + idempotent#2, pilot drift=0.
@@ -287,3 +287,40 @@ Detaylar git history'de; commit `8d1ad1a` öncesi. Ana hedefler: pagination, pro
   - 05-A: tenant RBAC eksikse REVIEW + P2; gerçek backend regression varsa FAIL ama bu kez root cause assert message'da.
   - failedTests=0, P0=0, P1≤1 (timeout informational), verdict ≥ GO WITH WATCH.
 - **Dosyalar**: `frontend/e2e-stress/fixtures/stress-helpers.js:78-130`, `specs/04-folio-mass.spec.js:250-330`, `specs/05-reservation-lifecycle.spec.js:59-130`, `specs/06-night-audit.spec.js:25-100`.
+
+---
+
+## Tur-27b (CI #43 partial-pass follow-up → CI #44 hedefi) — 2026-05-19
+
+CI #43 sonuçları (tur-27 fixes):
+- ✅ **04-C4** PASS (3.2s) — `pickChargeId` field-name fallback çalıştı, charges resolve edildi.
+- ✅ **06-A/B/C/D/E** PASS — NA timeout override (`{timeout: 120_000}`) + describe-level 180s budget yeterli.
+- ❌ **05-A** residual FAIL — diagnostic snapshot gerçek root cause'u expose etti: `400 Missing Idempotency-Key header` (10/10 s400). Module-blocked klasifier (403/404) match etmedi; first_fail_body sayesinde backend `create_reservation_service.create()`'in artık header'ı zorunlu kıldığı anlaşıldı.
+
+### Root cause
+
+Backend `/api/pms/quick-booking` line 170'te idem_key okunuyor, downstream `create_reservation_service.create(idempotency_key)` parametresini ZORUNLU enforce ediyor (HTTP 400 + `Missing Idempotency-Key header`). 05 spec'in tüm mutation POST/PUT'ları (A create + B modify + C cancel + D no-show seed/convert + E overbook attempt + F group + G multi-room) header'sız → 400 silsilesi.
+
+### Fix (helper-level opt-in + spec-level proactive header)
+
+- **Helper** (`fixtures/stress-helpers.js:81-145`): `callTimed(opts={timeout,headers})` ve `callTimedWithBackoff(opts={...,headers})` `opts.headers` desteği — default `{}` (back-compat). Mutation endpoint'leri için per-call `headers: {'Idempotency-Key': uuid}` override.
+- **Spec** (`specs/05-reservation-lifecycle.spec.js`):
+  - Import: `import { randomUUID as cryptoRandomUUID } from 'node:crypto';` (Node 14.17+ built-in).
+  - 7 mutation noktasının HER BİRİNE unique `Idempotency-Key: ${SUB_PREFIX}_${op}_${id}_${cryptoRandomUUID()}` header (A create / B modify / C cancel / D no-show seed / D no-show convert / E overbook duplicate / F group / G multi-room).
+  - Anahtar her iterasyonda unique → her POST yeni booking yaratır (idempotency duplicate dönmez), retry'da aynı key + aynı payload aynı booking'i deduplike eder.
+  - E overbook duplicate POST'u için header eklenmesi kritik: header eksikse backend 400 Missing-IK döner ve bizim conflict-guard testimiz (400/409/422 reject bekleniyor) yanlış sebeple PASS verirdi (assert.rejected=true ama nedeni overbooking değil header validation) → false-PASS riski elimine.
+
+### Beklenen sonuç (CI #44+)
+
+- 05-A: PASS (header artık var, backend duplicate-key dedup mantığı normal).
+- 05-B/C/D/E/F/G: serial mode'da A pass olunca çalışacak, hepsinde header var → backend kontratı sağlanmış.
+- failedTests=0, P0=0, P1≤1, verdict ≥ GO WITH WATCH.
+
+### Out-of-scope (F8E spec 28-A cash-flow)
+
+CI #43'te `28-A` "cash-flow hard floor" da fail oldu ama bu F8E v2 push (task #189 MERGED) scope'unda — separate ADR (`docs/adr/2026-05-f8e-finance-stress-evolution.md`). Bu task (F8A CI #42 NO-GO fix) kapsamında dokunulmadı; ayrı bir follow-up gerekirse user yeni task aç.
+
+### Dosyalar
+
+- `frontend/e2e-stress/fixtures/stress-helpers.js:81-101` (+`opts.headers` callTimed), `:128-142` (+propagate callTimedWithBackoff).
+- `frontend/e2e-stress/specs/05-reservation-lifecycle.spec.js:23` (import), `:85,152,178,205,227,269,294,326` (7 mutation noktası).
