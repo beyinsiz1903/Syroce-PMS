@@ -146,6 +146,15 @@ STRESS_COLLECTIONS = [
     # cleanup if spec aborts mid-run. Forward-compat with future currency
     # report extensions (e.g. multi-currency invoice from-folio).
     "currency_rates",
+    # F8O (2026-05-19, Task #206): AI/Automation dry-run forward-compat.
+    # Bu koleksiyonlar yalnız ai_audit logging path açıldığında
+    # populate olur (default: kapalı). Stress spec'leri vendor LLM
+    # çağrısı tetiklemediği için normalde 0 row yazılır; orphan scrub
+    # forward-compat — gelecekte ai_audit_logs/ai_prompt_logs prefix-
+    # tagged seed eklenirse cleanup zaten kapsar. `stress_seed=True` +
+    # `stress_prefix` etiketli rowlar unified cleanup loop'a düşer.
+    "ai_audit_logs",
+    "ai_prompt_logs",
     "bookings",
     "guests",
     "rooms",

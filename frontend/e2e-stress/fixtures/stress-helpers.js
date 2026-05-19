@@ -1058,7 +1058,11 @@ export function assertAiDryRunEnvGuards(testInfo, module, llmStateBody, processE
     const looksRealVendorUrl = !!(llmStateBody && llmStateBody.looks_like_real_vendor_url);
     const urlBreakdown = (llmStateBody && llmStateBody.real_vendor_url_breakdown) || {};
     const clientExternalDryRun = (String(env.E2E_EXTERNAL_DRY_RUN || '').toLowerCase()) === 'true';
-    const pass = serverAiDryRun && (serverExternalDryRun || clientExternalDryRun) && !looksReal && !looksRealVendorUrl;
+    // Task #206 finding #3 — mutlak kural: server-side E2E_EXTERNAL_DRY_RUN
+    // ZORUNLU. Client-only fallback kaldırıldı (backend external dispatch
+    // path'lerini sadece server env tutar; client env outbound HTTP'yi
+    // engelleyemez). Client env informational; pass için server-side şart.
+    const pass = serverAiDryRun && serverExternalDryRun && !looksReal && !looksRealVendorUrl;
     testInfo.annotations.push({
         type: 'rec',
         description: JSON.stringify({
@@ -1077,13 +1081,13 @@ export function assertAiDryRunEnvGuards(testInfo, module, llmStateBody, processE
             }),
         });
     }
-    if (!serverExternalDryRun && !clientExternalDryRun) {
+    if (!serverExternalDryRun) {
         testInfo.annotations.push({
             type: 'finding',
             description: JSON.stringify({
                 severity: 'P0', module,
-                title: 'E2E_EXTERNAL_DRY_RUN env flag set değil',
-                detail: 'Mutlak kural: external_calls için dry-run flag client ve/veya server-side zorunlu.',
+                title: 'E2E_EXTERNAL_DRY_RUN env flag server-side set değil',
+                detail: `Mutlak kural: external_calls için dry-run flag SERVER-side zorunlu (client_ext_dry_run=${clientExternalDryRun} informational). Backend outbound HTTP path'lerini sadece server env tutar.`,
             }),
         });
     }
@@ -1119,7 +1123,7 @@ export function assertAiDryRunEnvGuards(testInfo, module, llmStateBody, processE
 // no_show_at}. Returns { ok, samples: [{id,status,no_show_at}], total }.
 // `samples=[]` is acceptable (no pilot bookings yet); immutability check
 // short-circuits to PASS in that case.
-export async function snapshotPilotBookingFields(request, pilotToken, sampleSize = 5) {
+export async function snapshotPilotBookingFields(request, pilotToken, sampleSize = 10) {
     try {
         const r = await request.get('/api/bookings?limit=200', {
             headers: { Authorization: `Bearer ${pilotToken}` },
@@ -1146,13 +1150,47 @@ export async function snapshotPilotBookingFields(request, pilotToken, sampleSize
 // {status, no_show_at}. Any drift → P0 finding.
 // Signature: (testInfo, module, request, pilotToken, baselineSnapshot) → bool.
 export async function assertPilotBookingFieldsImmutable(testInfo, module, request, pilotToken, baselineSnapshot) {
-    if (!baselineSnapshot || !baselineSnapshot.ok || baselineSnapshot.samples.length === 0) {
+    // Task #206 finding #1 — FAIL-CLOSED. Önceki versiyonda baseline
+    // unavailable veya samples=0 ise PASS dönüyordu (fail-open). Şimdi
+    // baseline yoksa veya readback başarısızsa P0 + return false.
+    if (!baselineSnapshot || !baselineSnapshot.ok) {
         testInfo.annotations.push({
             type: 'rec',
             description: JSON.stringify({
                 module, step: 'pilot_booking_fields_immutable',
-                status: 'PASS',
-                note: `no_baseline=true samples=0 — short-circuit (no pilot bookings to monitor)`,
+                status: 'FAIL',
+                note: `baseline_unavailable ok=${baselineSnapshot?.ok} status=${baselineSnapshot?.status} — fail-closed`,
+            }),
+        });
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P0', module,
+                title: 'Pilot booking immutability baseline alınamadı — fail-closed',
+                detail: `baseline.ok=${baselineSnapshot?.ok} status=${baselineSnapshot?.status}. F8O § 44 mutlak kuralı: per-booking status+no_show_at immutability baseline olmadan kanıtlanamaz.`,
+            }),
+        });
+        return false;
+    }
+    if (baselineSnapshot.samples.length === 0) {
+        // Pilot tenant'ta booking yok — pilot mutation invariant boş set
+        // üzerinde otomatik sağlanır; ancak bu beklenmeyen bir durumdur
+        // (pilot demo seed normalde 10+ booking içerir). REVIEW kaydı +
+        // pass (drift-free) — silent fail-open değil, görünür informational.
+        testInfo.annotations.push({
+            type: 'rec',
+            description: JSON.stringify({
+                module, step: 'pilot_booking_fields_immutable',
+                status: 'REVIEW',
+                note: `samples=0 total=${baselineSnapshot.total} — pilot tenant has no bookings; immutability vacuously holds but baseline pool empty is unexpected.`,
+            }),
+        });
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P2', module,
+                title: 'Pilot booking pool empty — immutability vacuously holds',
+                detail: `total=${baselineSnapshot.total} — pilot tenant'ta hiç booking yok. Mutation invariant boş set üzerinde sağlanır; pool seed durumu gözden geçirilmeli.`,
             }),
         });
         return true;
@@ -1160,11 +1198,19 @@ export async function assertPilotBookingFieldsImmutable(testInfo, module, reques
     const after = await snapshotPilotBookingFields(request, pilotToken, baselineSnapshot.samples.length);
     if (!after.ok) {
         testInfo.annotations.push({
+            type: 'rec',
+            description: JSON.stringify({
+                module, step: 'pilot_booking_fields_immutable',
+                status: 'FAIL',
+                note: `readback_failed status=${after.status} — fail-closed`,
+            }),
+        });
+        testInfo.annotations.push({
             type: 'finding',
             description: JSON.stringify({
-                severity: 'P1', module,
+                severity: 'P0', module,
                 title: 'Pilot bookings re-read failed — immutability unverifiable',
-                detail: `status=${after.status} — fail-closed on per-booking immutability check.`,
+                detail: `status=${after.status} — F8O § 44 mutlak kuralı: readback olmadan immutability kanıtlanamaz, fail-closed P0.`,
             }),
         });
         return false;

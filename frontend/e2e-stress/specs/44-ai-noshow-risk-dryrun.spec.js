@@ -84,10 +84,19 @@ test.describe('F8O § 44 — AI No-Show Risk Dry-run', () => {
         expect(envOk, 'E2E_AI_DRY_RUN / E2E_EXTERNAL_DRY_RUN env guards must pass').toBe(true);
         expect(keyOk, 'API key shape must be sentinel').toBe(true);
         // Per-booking pilot immutability baseline (status + no_show_at).
-        pilotBookingSnapshot = await snapshotPilotBookingFields(request, stressTokens.pilot_token, 5);
+        // F8O § 44 — sample size 10 (task spec). Baseline ok=false → P0
+        // setup fail (assertPilotBookingFieldsImmutable will not be able
+        // to verify; fail-closed at baseline time).
+        pilotBookingSnapshot = await snapshotPilotBookingFields(request, stressTokens.pilot_token, 10);
         rec(testInfo, { module: MOD, step: 'pilot_booking_baseline',
-            status: pilotBookingSnapshot.ok ? 'PASS' : 'REVIEW',
-            note: `samples=${pilotBookingSnapshot.samples.length} total=${pilotBookingSnapshot.total} ok=${pilotBookingSnapshot.ok}` });
+            status: pilotBookingSnapshot.ok ? 'PASS' : 'FAIL',
+            note: `samples=${pilotBookingSnapshot.samples.length} total=${pilotBookingSnapshot.total} ok=${pilotBookingSnapshot.ok} status=${pilotBookingSnapshot.status}` });
+        if (!pilotBookingSnapshot.ok) {
+            recFinding(testInfo, 'P0', MOD, 'Pilot booking baseline alınamadı — F-step immutability unverifiable',
+                `status=${pilotBookingSnapshot.status} — fail-closed; pilot mutation invariant kanıtlanamaz.`);
+            expect(pilotBookingSnapshot.ok, 'Pilot booking baseline must be reachable').toBe(true);
+            return;
+        }
         const probe = await withModuleProbe(request, stressTokens.stress_token,
             `/api/predictions/no-shows?target_date=${targetDate(1)}`);
         if (probe.moduleBlocked) {
