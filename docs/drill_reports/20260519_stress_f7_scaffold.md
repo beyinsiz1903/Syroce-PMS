@@ -1,6 +1,6 @@
 # F7 — Stress E2E Scaffold — 20260519
 
-> Suite: `frontend/e2e-stress/` (Playwright config: `playwright.stress.config.js`). Üretildi: 2026-05-19T17:27:04.581Z · Tag: `f7_scaffold`
+> Suite: `frontend/e2e-stress/` (Playwright config: `playwright.stress.config.js`). Üretildi: 2026-05-19T17:41:17.453Z · Tag: `f7_scaffold`
 
 ## 1) Yönetici özeti
 
@@ -10,7 +10,7 @@
 | Başarısız test | 0 |
 | Adım PASS / FAIL / REVIEW / SKIP | 0 / 0 / 0 / 0 |
 | P0 / P1 / P2 / P3 finding | 0 / 0 / 0 / 0 |
-| Süre | 1.1s |
+| Süre | 2.3s |
 | Final verdict | **GO** — Tüm gate + spec adımları PASS, cleanup idempotent, pilot mutation=0, P0/P1=0 |
 
 ## 2) Seed snapshot (globalSetup)

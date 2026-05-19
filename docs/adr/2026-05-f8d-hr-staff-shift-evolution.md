@@ -82,3 +82,51 @@ NO-GO durumunda tipik root cause hipotezleri:
 - T001 ✅ Seed extension applied (`stress.py` syntax OK, Backend API restart edildi).
 - T002 ✅ 4 spec yazıldı, Playwright list 19 test yükledi.
 - T003 ⏳ CI #1 sonucu burada raporlanacak.
+
+---
+
+## F8D-v2 — HR deep stress (2026-05-19, Task #205)
+
+**Status:** PUSH HAZIR — CI bekleniyor (beklenti: GO WITH WATCH).
+**Date:** 2026-05-19
+**Scope:** `frontend/e2e-stress/specs/32..36` (5 yeni spec, ~24 yeni test). Mevcut seed (`_build_f8d_docs`) uzatılmadı — STRESS_COLLECTIONS zaten v1'de payroll_records dahil 10 koleksiyonu kapsadı.
+**Backlog source:** `docs/STRESS_TEST_ROADMAP.md` § "F8D backlog — HR / İK / Staff / Shift / Leave (v2)".
+
+### v2 spec set
+
+- **32 (hr_perf) — Performance review lifecycle.** v1'de hiç dokunulmamış `performance_reviews` + `performance_checkins` lifecycle: list reviews (GET /api/hr/performance) → per-review checkin CREATE (POST /api/hr/performance/{id}/checkin) → checkin LIST + DELETE cleanup (idempotent residue=0) → per-staff summary GET. Seeded 3 draft review üzerinde lifecycle; yeni perf_review yazımı yok (cleanup orphan riski sıfır).
+- **33 (hr_payroll) — Payroll dry-run smoke.** READ-only: GET /payroll/{month}, GET /payroll/export, GET /payroll/export/csv (CSV stream). **FORBIDDEN runtime invariant:** POST /api/hr/payroll/finalize ASLA çağrılmaz; Setup adımında literal regex (`/(['"])post\1[^)]*\/api\/hr\/payroll\/finalize|request\.post\([^)]*\/api\/hr\/payroll\/finalize/i`) ile spec source-scan guard, ihlal → P0 + spec FAIL. CSV body içinde JWT-shape leak guard (P0). payroll_records koleksiyonuna spec write yok.
+- **34 (hr_leave_accrual) — Leave balance accrual + carryover.** GET /leave-balance/{staff_id} baseline → POST /leave-request fresh + POST decision approve → re-read balance asserts `used` artar (decrement contract). POST /leave-balance ile carryover upsert + readback + restore-on-cleanup. Future-year accrual probe (POST balance year+1). RBAC short-circuit: require_op(view_executive_reports) eğer super_admin'i reddederse P2 SKIP.
+- **35 (hr_shift_conflict) — Shift conflict + coverage.** POST /api/hr/shifts S1 (09-13) → POST S2 OVERLAPPING (10-14) aynı staff/date. 409 beklenir; backend 200 verirse **P1 "Shift overlap guard MISSING"** finding (production double-booking riski). Coverage: GET /api/hr/shifts 7-gün penceresi → dept rollup, HK ≥ 2 unique staff (P2 finding aksi halde). D adımı DELETE her iki shift'i (idempotent re-DELETE = 404).
+- **36 (hr_rbac_pii) — RBAC + PII + audit.** GET /api/hr/staff response phone/national_id `assertPiiMasked` (P0/P1 KVKK). GET /api/hr/staff/{id}/salary-history `assertNoTokenLeak` per stress staff. GET /api/security/audit-logs token leak guard + cross-tenant entry leak guard (response items[].tenant_id === pilot_tid → P0). GET /api/hr/staff/{id}/profile PII walk.
+
+### Doktrin
+
+Her spec F8D v1 desenini birebir izler:
+- **Module-blocked**: Setup `withModuleProbe()` non-2xx → `moduleBlocked=true` + P2 informational + A/B/C/D `test.skip()`; E pilot_drift+external_calls invariants **bağımsız** çalışır.
+- **RBAC short-circuit**: permFail dominant (101/103) → P2 SKIP, FAIL ETMEZ (super_admin require_op gate'lerinde drift bekleniyor).
+- **callTimedWithBackoff** + 400-1500ms inter-call gap + `test.setTimeout(120-180s)` 3+ call loop'larda.
+- **Spec-created records cleanup**: sadece DELETE endpoint'i olan koleksiyonlarda yazma (perf_checkins, shift_schedules); endpoint olmayan koleksiyonlar (perf_reviews) için spec içinde write YOK → orphan riski 0.
+
+### Dry-run invariants
+
+- **External dispatch yok**: leave decision + perf checkin sadece `notifications` / `performance_checkins` koleksiyonlarına yazar; Resend/SMS/push provider çağrısı yok.
+- **Payroll write yok (KESİN)**: source-scan guard + runtime invariant (D step "forbidden_doctrine" rec).
+- **Pilot mutation yok**: E adımı `assertPilotDriftZero` + `assertNoExternalCallsPostBatch`.
+- **Audit log scope**: spec 36/C audit response içinde stress token tarafından pilot_tid entry görülürse P0.
+
+### Acceptance — F8D-v2
+
+- T101 ✅ 5 spec dosyası `frontend/e2e-stress/specs/32..36` oluşturuldu (`node --check` clean, tüm helper signature'ları doğrulandı).
+- **T101a (architect iter-1, 2026-05-19)** — Code review 4 kritik contract bulgusu çıkardı, tümü düzeltildi:
+  - **Spec 32 contract fix**: GoalCheckinPayload enum `'in_progress'` (yanlış) → `'on_track'|'at_risk'|'blocked'` (router line 2762). Aksi halde 422 + false P1 floor fail.
+  - **Spec 34 contract fix**: LeaveDecision body `{action: 'approve'}` (yanlış) → `{decision: 'approve'}` (router line 112-114). Aksi halde decision FAIL + decrement assertion yanlış sinyal.
+  - **Spec 33 ESM-safe source-scan**: `__filename` Playwright ESM context'inde `ReferenceError` atabilir → `typeof __filename !== 'undefined'` guard + `path.join(process.cwd(), …)` fallback chain + source unreachable durumunda P2 informational rec (runtime invariant defense-in-depth korunur).
+  - **Spec 34 D-step residue fix**: future-year leave-balance POST upsert kaldırıldı (cleanup yolu yoktu) → READ-only default behavior probe (router line 1571 `annual.entitlement=14` İş K. m.53 fallback) doğrulandı; stress-tenant residue 0.
+  - Not: Spec 34/B onaylanan leave_request terminal state'te kalır (DELETE endpoint yok); F8D v1 spec 22 ile aynı doctrine — STRESS_COLLECTIONS unified cleanup loop `leave_requests` koleksiyonunu tenant-scoped scrub eder.
+- T102 ⏳ CI bekleniyor (beklenti: failedTests=0, P0=P1=0, external_calls=[], pilot_drift=0).
+- T103 — NO-GO durumunda olası root cause:
+  - Spec 33 `__filename` ESM Playwright runtime'da undefined olabilir → fallback `path.join(process.cwd(), …)` zaten implemente.
+  - Spec 34 leave-balance upsert require_op gate stress admin'i reddediyorsa → SKIP+P2 (FAIL değil).
+  - Spec 35 backend overlap guard yoksa → P1 finding bekleniyor (kasıtlı; verdict GO WITH WATCH'a düşürür, NO-GO yapmaz).
+  - Spec 36 `/api/security/audit-logs` endpoint deploy-spesifik 404 → REVIEW + P2 (P0 değil).
