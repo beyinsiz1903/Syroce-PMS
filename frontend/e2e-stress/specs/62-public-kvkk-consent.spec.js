@@ -129,7 +129,7 @@ test.describe('F8K § 62 — KVKK Consent + Digital Key + PII Guard Stress', () 
             note: `prefix=${prefix} pilot_before=${pilotBefore?.count} stress_bk=${stressBookingId?.slice(0, 8)} stress_guest=${stressGuestId?.slice(0, 8) || 'none'} pilot_bk=${pilotBookingId ? pilotBookingId.slice(0, 8) : 'missing'} dk_probe=${dkProbe.status}` });
     });
 
-    test('A) KVKK consent guard — checkin submit missing signature_consent → reject', async ({ request, stressTokens }, testInfo) => {
+    test('A) KVKK consent contract — empty/garbage/cross-tenant booking_id rejection (probe-only)', async ({ request, stressTokens }, testInfo) => {
         if (moduleBlocked) {
             rec(testInfo, { module: MOD, step: 'kvkk_consent_guard', status: 'SKIP', note: `module blocked: ${blockedReason}` });
             test.skip(true, 'module blocked');
@@ -414,6 +414,30 @@ test.describe('F8K § 62 — KVKK Consent + Digital Key + PII Guard Stress', () 
 
         // Cross-tenant: stress admin /api/kvkk/requests body'sinde pilot_tid
         // hiçbir item içinde olmamalı (zaten 2. probe'da kontrol edildi).
+        // 7) REVOKE + EXPORT probes — backend explicit /api/kvkk/revoke veya
+        //    /api/kvkk/export endpoint'i yoktur (operations_router'da DELETE
+        //    /requests/{id} delete'i tek revoke proxy'si; consent storage
+        //    immutable audit modeli). Spec gap'i belgelemek için 404/405
+        //    bekleyen probe — 2xx → P2 (backend exposure beklenmiyordu).
+        const revokeProbe = await callTimed(request, 'post', '/api/kvkk/consents/revoke',
+            { consent_id: 'F8K_NONEXIST' }, stressTokens.stress_token);
+        const exportProbe = await callTimed(request, 'get', '/api/kvkk/export?format=json',
+            undefined, stressTokens.stress_token);
+        const expectAbsent = (r) => r.status === 404 || r.status === 405 || r.status === 403;
+        if (!expectAbsent(revokeProbe) && revokeProbe.status !== 0) {
+            recFinding(testInfo, 'P2', MOD,
+                'KVKK /consents/revoke endpoint beklenmedik şekilde mevcut',
+                `POST /api/kvkk/consents/revoke status=${revokeProbe.status} — backend revoke endpoint eklendiyse spec'e lifecycle eklensin.`);
+        }
+        if (!expectAbsent(exportProbe) && exportProbe.status !== 0) {
+            recFinding(testInfo, 'P2', MOD,
+                'KVKK /export endpoint beklenmedik şekilde mevcut',
+                `GET /api/kvkk/export status=${exportProbe.status} — backend export endpoint eklendiyse PII mask guard eklensin.`);
+        }
+        rec(testInfo, { module: MOD, step: 'kvkk_revoke_export_probe',
+            status: 'REVIEW',
+            note: `revoke=${revokeProbe.status} export=${exportProbe.status} (backend'de bu endpoint'ler yok; DELETE /requests/{id} tek revoke proxy. F8K-v2 backlog: dedicated revoke + export endpoint).` });
+
         const pass = (consents.ok || consents.status === 403)
                   && (audit.ok || audit.status === 403)
                   && lifecycleOk;

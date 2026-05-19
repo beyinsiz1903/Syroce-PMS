@@ -229,7 +229,7 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
             note: `anon=${anon.status} empty=${empty.status} garbage_bk=${garbage.status} cross_tenant=${crossStatus ?? 'no_pilot_bk'}` });
     });
 
-    test('C) ID-photo upload size/type guard — anonymous + oversized + invalid mime → reject', async ({ request, stressTokens }, testInfo) => {
+    test('C) ID-photo upload guard — anon/oversized/invalid mime → reject + metadata-only positive dry-run', async ({ request, stressTokens, stressState }, testInfo) => {
         if (moduleBlocked) {
             rec(testInfo, { module: MOD, step: 'id_photo_guard', status: 'SKIP', note: `module blocked: ${blockedReason}` });
             test.skip(true, 'module blocked');
@@ -290,10 +290,51 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
                 `POST ${url} bytes=${oversized.length} status=${big.status} — MAX_IMAGE_BYTES (256 KiB) guard çalışmıyor. DoS + storage exhaustion riski.`);
         }
 
-        const pass = ALLOWED_DENY.has(anon.status) && txtRejected && bigRejected;
+        // 4) POSITIVE DRY-RUN — metadata-only küçük geçerli JPEG (<256 KiB),
+        //    stress booking + stress prefix marker'lı field_label ile. Gerçek
+        //    OCR/KVKK vendor call'ı YOKTUR — backend yalnız blob + metadata
+        //    yazar (`real vendor call = 0` korunur). Cleanup: photo_id afterAll
+        //    sweep'inde stressPrefix marker üzerinden silinir.
+        const validJpeg = Buffer.concat([
+            Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46]),  // JFIF header
+            Buffer.alloc(2048, 0x00),                                                   // 2 KiB body
+            Buffer.from([0xFF, 0xD9]),                                                  // EOI
+        ]);
+        const stressPrefix = (typeof stressState !== 'undefined' && stressState?.data_prefix) || 'STRESS_';
+        const ok = await callRaw(request, 'post', url, {
+            headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
+            multipart: {
+                photo: { name: `${stressPrefix}_idphoto.jpg`, mimeType: 'image/jpeg', buffer: validJpeg },
+                field_label: `${stressPrefix}_F8K_DRYRUN`,
+            },
+        });
+        const positiveOk = ok.ok || ok.status === 403 || ok.status === 404;
+        if (ok.body) {
+            // PII / file-path leak guard pozitif yanıtta.
+            assertNoTokenLeak(testInfo, MOD, ok.body, 'id_photo_upload_ok');
+            const dump = JSON.stringify(ok.body);
+            // Raw file path leak guard: /tmp /var /home /uploads/raw mutlak path.
+            if (/(?:\/tmp\/|\/var\/|\/home\/|\\Users\\|\.\.\/)/.test(dump)) {
+                recFinding(testInfo, 'P0', MOD,
+                    'ID photo upload yanıtında raw file path leak',
+                    `POST ${url} response body raw filesystem path içeriyor — KVKK threat-model § PII guard ihlali.`);
+            }
+        }
+        // Inline cleanup pozitif yazma için (afterAll defansif olarak da çalışır).
+        if (ok.ok && ok.body?.photo_id) {
+            await callTimed(request, 'delete', `/api/checkin/online/id-photos/${ok.body.photo_id}`,
+                undefined, stressTokens.stress_token).catch(() => null);
+        }
+        if (ok.status >= 500) {
+            recFinding(testInfo, 'P1', MOD,
+                'ID photo positive dry-run 5xx',
+                `POST ${url} valid JPEG status=${ok.status} — backend upload pipeline crash.`);
+        }
+
+        const pass = ALLOWED_DENY.has(anon.status) && txtRejected && bigRejected && positiveOk;
         rec(testInfo, { module: MOD, step: 'id_photo_guard',
             status: pass ? 'PASS' : 'FAIL',
-            note: `anon=${anon.status} text_mime_jpeg=${txt.status} oversized_320kib=${big.status}` });
+            note: `anon=${anon.status} text_mime_jpeg=${txt.status} oversized_320kib=${big.status} positive_dryrun=${ok.status}` });
     });
 
     test('D) Public token guard — Quick-ID precheckin public surface', async ({ request }, testInfo) => {
