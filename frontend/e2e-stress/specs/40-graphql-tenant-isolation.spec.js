@@ -313,6 +313,46 @@ test.describe('F8M § 40 — GraphQL Tenant Isolation', () => {
         }
     });
 
+    test('C2) Folios + Reports surface contract — schema\'da YOK; query attempt schema error dönmeli, data DÖNMEMELİ', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'folios_reports_surface', status: 'SKIP', note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        // Validation review (tur-2): task acceptance "resolver isolation across
+        // bookings/guests/folios/rooms/reports" — backend GraphQL schema
+        // (`backend/graphql_api/schema.py`) yalnız bookings + rooms +
+        // dashboard_metrics + dashboard_trends + nested guest/room expose
+        // ediyor. folios + reports resolver\'ı YOK. Bu test surface contract\'ı
+        // doğrular — query atılırsa schema validation error dönmeli; data
+        // dönerse YENİ resolver eklenmiş demek + isolation kanıtlanmamış (P0).
+        const probes = [
+            { name: 'folios_query', query: 'query($f:BookingFilter){folios(filter:$f){id booking_id total_amount}}', variables: { f: { limit: 5 } } },
+            { name: 'folio_singleton', query: 'query{folio(id:"00000000-0000-0000-0000-000000000000"){id}}', variables: {} },
+            { name: 'reports_query', query: 'query{reports{vat profit_loss}}', variables: {} },
+            { name: 'vat_report', query: 'query{vatReport(from:"2026-01-01",to:"2026-12-31"){total}}', variables: {} },
+            { name: 'finance_dashboard', query: 'query{financeDashboard{revenue}}', variables: {} },
+        ];
+        const surfaceLeaks = [];
+        for (const p of probes) {
+            const r = await gql(request, stressTokens.stress_token, p.query, p.variables);
+            const hasErrors = Array.isArray(r.body?.errors) && r.body.errors.length > 0;
+            const hasData = r.body?.data && Object.values(r.body.data).some(v => v != null);
+            if (!hasErrors && hasData) {
+                surfaceLeaks.push({ probe: p.name, status: r.status, data_keys: Object.keys(r.body.data) });
+            }
+        }
+        const pass = surfaceLeaks.length === 0;
+        rec(testInfo, { module: MOD, step: 'folios_reports_surface_contract',
+            status: pass ? 'PASS' : 'FAIL',
+            note: `probes=${probes.length} surface_leaks=${surfaceLeaks.length} detail=${JSON.stringify(surfaceLeaks).slice(0, 200)}` });
+        if (!pass) {
+            recFinding(testInfo, 'P0', MOD,
+                'GraphQL folios/reports surface beklenmedik şekilde data döndü',
+                `Schema bu kadar yüzeyi expose etmiyor olmalıydı; ${JSON.stringify(surfaceLeaks)} — yeni resolver eklenmiş + tenant isolation kanıtı yok. Spec güncelleyip resolver isolation probe\'larını eklemeli.`);
+        }
+    });
+
     test('D) Auth boundary — unauthenticated + invalid token + wrong-tenant', async ({ request, stressTokens }, testInfo) => {
         if (moduleBlocked) {
             rec(testInfo, { module: MOD, step: 'auth_boundary', status: 'SKIP', note: `module blocked: ${blockedReason}` });

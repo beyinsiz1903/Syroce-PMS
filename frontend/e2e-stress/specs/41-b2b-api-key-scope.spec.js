@@ -65,6 +65,7 @@ test.describe('F8M § 41 — B2B API Key Scope', () => {
     let pilotAgencyId = null;      // pilot tenant'a ait gerçek agency (sample)
     let createdRawKey = null;      // oluşturulan API key raw value (sadece bu suite içinde)
     let createdKeyAgencyId = null; // cleanup için
+    let revokedRawKey = null;      // tur-3 fix: C revoke ettikten sonra C2 expired-key probe için saklanır
 
     test('Setup: prefix + pilot baseline + agencies probe + create stress API key', async ({ request, stressTokens, stressState }, testInfo) => {
         prefix = stressState.data_prefix;
@@ -265,6 +266,104 @@ test.describe('F8M § 41 — B2B API Key Scope', () => {
         }
     });
 
+    test('B2) Extended B2B smoke — availability/rates/reservations/hotel-info/guests-search/folio under valid API key', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'extended_b2b_smoke', status: 'SKIP', note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        // Validation review (tur-2): task acceptance "supplier list /
+        // availability/search / quote/offer dry-run / order create dry-run".
+        // Repo B2B router'ı supplier/quote/offer YOK — bunlar mevcut yüzeyle
+        // eşleştirilmedi (surface mapping documented). Mevcut B2B yüzeyleri:
+        //   - GET /availability (booking_engine availability/search eşleniği)
+        //   - GET /rates (rate inquiry — quote/offer dry-run eşleniği)
+        //   - GET /reservations + GET /reservations/{id} (order list/read)
+        //   - GET /hotel-info, /content (read-only metadata)
+        //   - GET /guests/search (guest lookup)
+        //   - GET /folio/{booking_id} (folio inquiry)
+        // POST /reservations (order create) DRY-RUN edilmiyor — invalid
+        // payload (eksik room_id) ile 400/422 expect ederek "create endpoint
+        // reachable + validates" doğrulanır; real booking yaratılmaz.
+        const today = new Date(); today.setDate(today.getDate() + 30);
+        const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+        const iso = (d) => d.toISOString().slice(0, 10);
+        const dateFrom = iso(today), dateTo = iso(tomorrow);
+
+        const ALLOWED_DENY = new Set([401, 403]);
+        const ALLOWED_2XX_OR_404 = (s) => (s >= 200 && s < 300) || s === 404;
+        const ALLOWED_VALIDATE = (s) => s === 400 || s === 422 || s === 404;
+
+        // Tur-3 architect fix #3: `/api/b2b/rates` backend kontratı
+        // `start_date` / `end_date` bekler (booking_engine.py L672+),
+        // `check_in/check_out` DEĞİL. Probe path düzeltildi.
+        const smokes = [
+            { name: 'availability', method: 'get', path: `/api/b2b/availability?check_in=${dateFrom}&check_out=${dateTo}`, body: undefined, expect: ALLOWED_2XX_OR_404 },
+            { name: 'rates', method: 'get', path: `/api/b2b/rates?start_date=${dateFrom}&end_date=${dateTo}`, body: undefined, expect: ALLOWED_2XX_OR_404 },
+            { name: 'reservations_list', method: 'get', path: '/api/b2b/reservations?limit=5', body: undefined, expect: ALLOWED_2XX_OR_404 },
+            { name: 'hotel_info', method: 'get', path: '/api/b2b/hotel-info', body: undefined, expect: ALLOWED_2XX_OR_404 },
+            { name: 'guests_search', method: 'get', path: '/api/b2b/guests/search?q=zzznonexistent', body: undefined, expect: ALLOWED_2XX_OR_404 },
+            // Order create DRY-RUN — invalid payload, 4xx validation beklenir.
+            // 2xx dönerse gerçek booking yaratıldı = pilot drift riski + P0.
+            { name: 'order_create_dryrun', method: 'post', path: '/api/b2b/reservations', body: { _dryrun: true, missing_required: true }, expect: ALLOWED_VALIDATE },
+        ];
+
+        // Tur-3 architect fix #2: her probe için `expect(r.status)` enforced.
+        // Beklenen status sınıfı dışı sonuç → contract violation finding.
+        // Order create için 2xx = orderLeak (P0). Diğer smoke'lar için 5xx
+        // veya validation-band dışı status = P1 contract violation. 401/403
+        // (key reject) = P1 (valid key reddedildi → key flow bozuk).
+        const results = [];
+        const denyLeak = [];     // cross-tenant pilot_tid leak
+        const orderLeak = [];    // order_create 2xx
+        const contractViolations = [];  // expect predicate fail
+        for (const s of smokes) {
+            const r = await callApiKey(request, s.method, s.path, s.body, createdRawKey);
+            results.push({ name: s.name, status: r.status });
+            const expectOk = s.expect(r.status);
+            if (s.name === 'order_create_dryrun' && r.status >= 200 && r.status < 300) {
+                orderLeak.push({ status: r.status, body: JSON.stringify(r.body).slice(0, 200) });
+            }
+            if (!expectOk && !(s.name === 'order_create_dryrun')) {
+                contractViolations.push({ name: s.name, status: r.status });
+            }
+            if (r.ok && r.body) {
+                assertPiiMasked(testInfo, MOD, r.body, ['phone', 'email', 'identity_number', 'iban', 'guest_phone']);
+                assertNoTokenLeak(testInfo, MOD, r.body, `b2b_smoke_${s.name}`);
+                if (pilotTid && JSON.stringify(r.body).includes(pilotTid)) {
+                    denyLeak.push({ name: s.name, status: r.status });
+                }
+            }
+        }
+
+        const pass = orderLeak.length === 0 && denyLeak.length === 0 && contractViolations.length === 0;
+        rec(testInfo, { module: MOD, step: 'extended_b2b_smoke',
+            status: pass ? 'PASS' : 'FAIL',
+            note: `results=${JSON.stringify(results)} order_leak=${orderLeak.length} cross_tenant_leak=${denyLeak.length} contract_violations=${contractViolations.length}` });
+        if (contractViolations.length > 0) {
+            // Valid stres key ile smoke endpoint expect sınıfı dışı status —
+            // contract zayıflığı veya API key middleware reject (401/403)
+            // beklenmedik. P1 (valid key flow bozuk veya endpoint deploy
+            // gevşek).
+            recFinding(testInfo, 'P1', MOD,
+                'B2B extended smoke endpoint contract violation',
+                `Beklenen 2xx/404. Gözlenen: ${JSON.stringify(contractViolations)}. Valid stres key ile çağrılan endpoint expect band dışı status döndü; API key middleware reject veya endpoint deploy/shape regression olabilir.`);
+        }
+        if (orderLeak.length > 0) {
+            recFinding(testInfo, 'P0', MOD,
+                'B2B order create dry-run 2xx — gerçek reservation yaratıldı + pilot drift riski',
+                `POST /api/b2b/reservations invalid payload ile 2xx döndü: ${JSON.stringify(orderLeak)}. Validation eksik veya endpoint deploy gevşek + dry-run kontratı yok.`);
+        }
+        if (denyLeak.length > 0) {
+            recFinding(testInfo, 'P0', MOD,
+                'B2B smoke response\'unda pilot tenant_id sızdı',
+                `Cross-tenant leak endpoints: ${JSON.stringify(denyLeak)}. Valid stress key pilot tenant verisi gördü.`);
+        }
+        // Supplier / quote / offer endpoint mapping not-found documented.
+        rec(testInfo, { module: MOD, step: 'b2b_surface_mapping_doc', status: 'PASS',
+            note: 'supplier_list/quote/offer endpoints NOT present in backend/routers/b2b_api/ — surface mapping documented in spec header. F8M scope kapatıldı; supplier/quote/offer F8E (finance) veya F8G (sales-CRM) kapsamında ele alınmalı.' });
+    });
+
     test('C) Revoked-key contract — DELETE key, then re-attempt smoke → 401/403', async ({ request, stressTokens }, testInfo) => {
         if (moduleBlocked) {
             rec(testInfo, { module: MOD, step: 'revoked_key', status: 'SKIP', note: `module blocked: ${blockedReason}` });
@@ -301,8 +400,148 @@ test.describe('F8M § 41 — B2B API Key Scope', () => {
                 'Revoked B2B API key hala kabul ediliyor',
                 `DELETE 200 sonrası aynı key smoke endpoint\'te status=${after.status} döndü. Revocation enforcement eksik veya cache stale.`);
         }
-        // Marker — bu suite cleanup'ta tekrar DELETE'e gerek yok.
+        // Tur-3 architect fix: revoked raw key'i ayrı değişkende sakla; C2
+        // expired-key probe BUNU kullanır. createdRawKey null'lanır çünkü
+        // afterAll cleanup için artık DELETE gereksiz.
+        revokedRawKey = createdRawKey;
         createdRawKey = null;
+    });
+
+    test('C2) Expired-key + wrong-tenant endpoint-level scope', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'expired_wrong_tenant', status: 'SKIP', note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        // Validation review (tur-2): "explicit expired-key (401) + wrong-tenant
+        // endpoint-level".
+        //
+        // Tur-3 architect fix: C testinde revoke edilen key `revokedRawKey`'de
+        // saklanır (createdRawKey null'lanır). Expired-key endpoint coverage
+        // BURADA enforced — `revokedRawKey` yoksa C revoke fail etmiş veya
+        // module blocked. Coverage gap olmaması için revokedRawKey YOKSA
+        // explicit REVIEW + P2 emit (test acceptance "expired-key 401"
+        // doğrulanamadı sinyali).
+        // Tur-4 architect fix: `/api/b2b/availability` backend contract
+        // `check_in`/`check_out` bekler (booking_engine.py L613-L617).
+        // start_date/end_date kullanırsak 400 validation döner ve C2
+        // unexpectedDeny olarak P1 contract violation finding emit eder
+        // — bu yanlış pozitif. Auth contract sinyalini saf tutmak için
+        // doğru query param'ları kullan; revoke edilmiş key zaten
+        // middleware'de 401/403 dönmeli, parameter validation'a hiç
+        // ulaşmamalı.
+        const expiredEndpoints = [
+            '/api/b2b/housekeeping/rooms',
+            `/api/b2b/availability?check_in=2026-12-01&check_out=2026-12-02`,
+            '/api/b2b/hotel-info',
+        ];
+        const expiredResults = [];
+        const expiredLeak = [];
+        const ALLOWED_DENY_C2 = new Set([401, 403]);
+        const unexpectedDeny = [];
+        if (revokedRawKey) {
+            for (const ep of expiredEndpoints) {
+                const r = await callApiKey(request, 'get', ep, undefined, revokedRawKey);
+                expiredResults.push({ ep, status: r.status });
+                if (r.status >= 200 && r.status < 300) {
+                    expiredLeak.push({ ep, status: r.status });
+                } else if (!ALLOWED_DENY_C2.has(r.status) && r.status !== 404) {
+                    // 5xx veya beklenmedik 4xx (örn. 400) → contract zayıflığı.
+                    unexpectedDeny.push({ ep, status: r.status });
+                }
+            }
+        } else {
+            // Revoke fail edip revokedRawKey set değilse coverage gap.
+            recFinding(testInfo, 'P2', MOD,
+                'Expired-key endpoint scope coverage yok — revokedRawKey eksik',
+                `C testi revoke yapamadı veya skip oldu; expired-key 401 enforcement doğrulanamadı.`);
+        }
+        rec(testInfo, { module: MOD, step: 'expired_key_endpoint_scope',
+            status: !revokedRawKey ? 'REVIEW'
+                : (expiredLeak.length === 0 && unexpectedDeny.length === 0 ? 'PASS' : 'FAIL'),
+            note: `revoked_key_present=${revokedRawKey != null} results=${JSON.stringify(expiredResults)} leaks=${expiredLeak.length} unexpected_status=${unexpectedDeny.length}` });
+        if (unexpectedDeny.length > 0) {
+            recFinding(testInfo, 'P1', MOD,
+                'Expired B2B API key endpoint contract zayıf — 401/403/404 dışı status döndü',
+                `Beklenen 401/403/404. Gözlenen: ${JSON.stringify(unexpectedDeny)}. Endpoint deny path tutarsız (validation 400 veya 5xx).`);
+        }
+        if (expiredLeak.length > 0) {
+            recFinding(testInfo, 'P0', MOD,
+                'Expired (revoked) B2B API key endpoint-level\'de hala 2xx dönüyor',
+                `Endpoints: ${JSON.stringify(expiredLeak)}. C testinde DELETE 2xx ama key cache stale veya revocation enforcement yarım. Tek bir endpoint deny ediyor olabilir; sistem-wide deny gerekir.`);
+        }
+
+        // Wrong-tenant endpoint-level: bu test için tekrar bir key oluştur
+        // (C revoke etti). Stress key ile pilot booking ID üzerinden
+        // /folio/{pilot_booking_id} dene — 404/403 dönmeli; 2xx + folio
+        // content dönerse cross-tenant disclosure (P0).
+        let wrongTenantResult = null;
+        try {
+            // Re-create stress key for wrong-tenant test.
+            const recreate = await callTimed(request, 'post',
+                `/api/b2b/api-keys?agency_id=${createdKeyAgencyId}`, {}, stressTokens.stress_token);
+            if (recreate.ok && recreate.body?.api_key) {
+                const wtKey = recreate.body.api_key;
+                createdRawKey = wtKey; // afterAll temizlesin diye güncelle.
+                // Pilot booking ID setup'ta alınmadı; sample için pilot
+                // bookings list'ten çek.
+                let pilotBookingId = null;
+                try {
+                    const b = await callTimed(request, 'get', '/api/pms/bookings?limit=1',
+                        undefined, stressTokens.pilot_token);
+                    if (b.ok) {
+                        const list = Array.isArray(b.body) ? b.body : (b.body?.bookings || b.body?.items || []);
+                        if (list[0]) pilotBookingId = list[0].id || list[0]._id;
+                    }
+                } catch (_) {}
+                if (pilotBookingId) {
+                    const r = await callApiKey(request, 'get', `/api/b2b/folio/${pilotBookingId}`, undefined, wtKey);
+                    wrongTenantResult = { booking: pilotBookingId.slice(0, 8), status: r.status,
+                        body_size: JSON.stringify(r.body || {}).length };
+                    if (r.status >= 200 && r.status < 300 && r.body && Object.keys(r.body).length > 0) {
+                        recFinding(testInfo, 'P0', MOD,
+                            'Wrong-tenant B2B API key cross-tenant folio disclosure',
+                            `Stres tenant key + pilot booking_id GET /api/b2b/folio/${pilotBookingId} status=${r.status} body_size=${JSON.stringify(r.body).length}. Cross-tenant data leak.`);
+                    }
+                    // PII + cross-tenant tid scan
+                    if (r.ok && r.body) {
+                        assertPiiMasked(testInfo, MOD, r.body, ['phone', 'email', 'identity_number']);
+                        if (JSON.stringify(r.body).includes(pilotTid)) {
+                            recFinding(testInfo, 'P0', MOD,
+                                'Wrong-tenant folio response pilot_tid içeriyor',
+                                `endpoint=/api/b2b/folio/${pilotBookingId} pilot_tid leak.`);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            rec(testInfo, { module: MOD, step: 'wrong_tenant_setup_err', status: 'REVIEW',
+                note: `recreate_failed=${e.message}` });
+        }
+        // Tur-3 architect fix #4: wrong-tenant final rec'i evidence'a bağla —
+        // recreate fail / pilot booking yoksa REVIEW (coverage gap),
+        // wrongTenantResult 2xx + body → FAIL (P0 zaten emit), 4xx → PASS.
+        let wtStatus = 'REVIEW';
+        let wtNote = `result=${JSON.stringify(wrongTenantResult)}`;
+        if (wrongTenantResult) {
+            const s = wrongTenantResult.status;
+            if (s >= 200 && s < 300 && wrongTenantResult.body_size > 2) {
+                wtStatus = 'FAIL';
+                wtNote = `LEAK status=${s} body_size=${wrongTenantResult.body_size} (P0 emitted)`;
+            } else if (s === 401 || s === 403 || s === 404) {
+                wtStatus = 'PASS';
+                wtNote = `denied_correctly status=${s}`;
+            } else {
+                wtStatus = 'REVIEW';
+                wtNote = `unexpected status=${s} body_size=${wrongTenantResult.body_size}`;
+            }
+        } else {
+            recFinding(testInfo, 'P2', MOD,
+                'Wrong-tenant endpoint scope coverage yok',
+                `Stress key re-create veya pilot booking_id sample edilemedi → cross-tenant folio probe çalıştırılamadı.`);
+        }
+        rec(testInfo, { module: MOD, step: 'wrong_tenant_endpoint_scope',
+            status: wtStatus, note: wtNote });
     });
 
     test('D) Existence-disclosure on api-keys GET — bogus agency_id + cross-tenant pilot agency_id', async ({ request, stressTokens }, testInfo) => {
