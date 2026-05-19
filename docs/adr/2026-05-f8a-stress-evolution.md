@@ -387,3 +387,84 @@ Eğer CI #45'te 05-H gerçekten FAIL kalırsa (delta>0), iki yol:
 - `frontend/e2e-stress/fixtures/stress-helpers.js:227-440` (assertNoExternalCallsPostBatch per-batch delta refactor + multiset diff).
 - `backend/domains/admin/router/stress.py:1466-1492` (cash_flow seed transaction_type+type).
 - `backend/domains/admin/router/stress.py:1886-1893, 1925-1930` (outbox projections + id: 1).
+
+---
+
+## Tur-29 (CI #45 NO-GO follow-up → CI #46 hedefi) — 2026-05-19
+
+CI #45 sonuçları (tur-28 per-batch delta + cash_flow seed fix sonrası):
+- ✅ **Per-batch delta doctrine ÇALIŞTI**: 16 cascade YOK. Her batch artık izole FAIL veriyor.
+- ✅ **28-A cash-flow PASS** (seed shape fix tutuldu — `inert_calls_filtered` Setup'ta görülüyor).
+- ✅ **05-A→G, 04-C4, 06-A/B/C PASS** (idempotency header korundu).
+- ❌ **20 P0 izole leakage**: her mutation batch'i kendi outbox row'larını "real external call" olarak rapor ediyor.
+  - F8A: 02-B (force_checkout_100), 03-A (positive_room_move_50), 04-C2 (folio_reconcile_10), 05-H (reservation_lifecycle), 06-D (NA batch)
+  - F8B: 10-A, 11-B, 12-A, 13-A
+  - F8C: 16-B, 17-B
+  - F8D: 20-B, 21-B, 22-B, 23-B
+  - F8E: 24-B, 25-B, 26-B, 27-B, 28-A
+- Her FAIL'in `delta_calls` payload'unda 1+ outbox row var; bunlar `permanent:` / `retryable:` last_error prefix'i taşıyor.
+
+### Root cause
+
+Stress tenant'ta **ZERO active CM connector** var (`channel_connections.count_documents({tenant_id: stress_tid, status: "active"}) == 0` → `structural_dry == true` zaten endpoint'te raporlanıyor). Buna rağmen mutation handler'ları (checkout, room-move, charge, reservation_create, NA, leave_request, vb.) `bus.publish()` ile outbox row yazıyor → outbox worker dispatch deniyor → "No active connectors" inert path'e girer **AMA bazı subscriber/target combo'ları için `permanent: <subscriber_error>`/`retryable: <subscriber_error>` last_error yazılıyor**, bu da `inert_patterns = ("no active connectors", "dry_run", "unsupported event_type")` filter'a uymuyor → endpoint bu row'ları "external call made" olarak listeliyor → helper FAIL P0.
+
+Bu durumda **gerçek dış HTTP çağrısı yapılmamıştır**: tenant'ta connector yok, dispatcher'ın aksiyon alabileceği bir target yok. Worker loop'unun "permanent:" yazması iç bookkeeping artifact.
+
+### Fix — Endpoint per-source "structurally impossible to dispatch" doctrine (`backend/domains/admin/router/stress.py:1841-2090`)
+
+**tur-29 ilk denemesi (architect FAIL)**: tek bir `channel_connections.count_documents` üzerinden tüm source'ları collapse ediyordu. Architect üç critical sorunu işaretledi:
+1. CM dispatcher aslında `cm_connectors` collection okuyor (`channel_manager/infrastructure/repository.py:14: CONNECTORS = "cm_connectors"`), `channel_connections` DEĞİL.
+2. `core/outbox_dispatcher.py:_fallback_dispatch()` `CM_PARTNER_WEBHOOK_URL` env'ine direkt POST atıyor, connector registry'i bypass ediyor.
+3. Afsadakat outbox tamamen farklı bir cred sistemi (`AFSADAKAT_BASE_URL`/`AFSADAKAT_ADMIN_TOKEN` env + `integration_afsadakat_tenants` collection) kullanıyor → CM-empty tenant'ta hala active Afsadakat olabilir → false-PASS.
+
+**tur-29b refactor — per-source gate**:
+- `cm_calls` ve `afsadakat_calls` ayrı toplanır (tek `calls` listesi yerine).
+- **CM dispatch impossible** iff: `cm_connectors.count_documents({tenant_id, status:"active"}) == 0` **AND** `CM_PARTNER_WEBHOOK_URL` env unset. Fallback path için de guard.
+- **Afsadakat dispatch impossible** iff: `AFSADAKAT_BASE_URL` unset **OR** `AFSADAKAT_ADMIN_TOKEN` unset **OR** `integration_afsadakat_tenants.count_documents({tenant_id, status:"active"}) == 0`. (Worker `core/afsadakat_outbound.py:55-62,148-156` "missing creds or AFSADAKAT_BASE_URL" short-circuit'e dayanır.)
+- Her source bağımsız collapse: `cm_dispatch_impossible` ise `cm_calls → cm_inert_filtered`; `afsadakat_dispatch_impossible` ise `afsadakat_calls → afsadakat_inert_filtered`.
+- Final `external_calls_made = cm_calls + afsadakat_calls` (collapse sonrası).
+- Response'a `structural_breakdown` field eklenir: per-source impossibility flag'leri + env/count değerleri operatör için.
+- `inert_calls_filtered_breakdown` per-source filtered count.
+- **Fail-open guard**: her lookup `try/except`'te; exception olursa count `None` kalır, `impossible == False` → collapse TETİKLENMEZ. DB outage real finding'i maskelemez.
+- **Otomatik geri dönüş**: stress tenant'a aktif CM connector eklenirse veya Afsadakat creds set edilirse ilgili source collapse devre dışı kalır.
+- **Back-compat**: `active_connectors_count` field korundu (artık CM connector count anlamına geliyor — eski isim `channel_connections` ile yanlış eşleşiyordu).
+
+**tur-29c — architect-review fix #2 (2026-05-19)**: tur-29b'de iki kritik bug architect tarafından yakalandı:
+1. **CM webhook gate broken**: `domains/channel_manager/router.py:135-136`'da `CM_PARTNER_WEBHOOK_URL = os.environ.get("CM_PARTNER_WEBHOOK_URL", "https://agency.syroce.com/webhooks/cm")` — hardcoded default. Module import üzerinden `bool(_cm_webhook)` her zaman `True` → CM collapse asla tetiklenmiyordu.
+2. **Fail-open ihlali**: CM webhook lookup exception throw etse `cm_partner_webhook_url_set=False` default ile kalır, `cm_active_connectors_count==0` ise yine collapse tetiklenirdi → "any lookup exception → impossible=False" garantisi bozuluyordu.
+
+Fix:
+- **Raw env read**: `os.environ.get("CM_PARTNER_WEBHOOK_URL")` doğrudan (module import yok). `cm_partner_webhook_url_env_set` adına refactor edildi. Default fallback URL artık gate'i bozmaz; "env explicitly unset → fallback dispatch impossible" semantic restore edildi.
+- **TRUE fail-open**: yeni `cm_connectors_lookup_ok` + `afsadakat_tenants_lookup_ok` flag'ler. Collapse iff `lookup_ok && count==0 && env_unset`. Lookup exception → `lookup_ok=False` → gate False → real findings asla maskelenmez.
+- Afsadakat env-only branch DB lookup gerektirmez (sync env read throw etmez), tenant-count branch yalnızca `afsadakat_tenants_lookup_ok=True` iken danışılır.
+- `structural_breakdown` response field güncellendi: `cm_partner_webhook_url_set` → `cm_partner_webhook_url_env_set`; `cm_connectors_lookup_ok` + `afsadakat_tenants_lookup_ok` operatör görünürlüğü için eklendi.
+
+**tur-29d — architect-review fix #3 (2026-05-19)**: tur-29c'de architect Afsadakat gate'in asimetrik olduğunu işaretledi: env-only OR-branch (`(not BASE_URL_set or not ADMIN_TOKEN_set)`) DB lookup gerektirmediği için, lookup exception throw etse bile env-missing tek başına collapse tetikleyebiliyordu. Bu CM gate'iyle simetri ihlali (CM: `lookup_ok && count==0 && env_unset` üçlüsünü gerektirir).
+
+Ayrıca `core/afsadakat_outbound.py:148`'de per-tenant cred kendi `base_url` field'ı taşıyor (env override edilebilir) → env vars definitive "impossible" sinyali DEĞİL; gerçek sinyal active tenant cred row yokluğu.
+
+Fix: `afsadakat_dispatch_impossible = afsadakat_tenants_lookup_ok && active_tenants_count == 0`. Env vars `structural_breakdown` field'da sadece diagnostic kalır. CM gate ile tam simetri:
+- CM: `cm_connectors_lookup_ok && count==0 && !env_set`
+- Afsadakat: `afsadakat_tenants_lookup_ok && count==0`
+
+Her iki source'ta da: lookup exception → `lookup_ok=False` → gate False → false-PASS riski sıfır.
+
+### Mimari gerekçe (defansif tasarım)
+
+Bu fix iki garanti veriyor:
+1. **Ground truth korundu**: "external call MADE" = "dispatcher bir HTTP attempt yaptı". Connector yoksa HTTP attempt yapılamaz. Bu fizik kuralı, env flag'ten bağımsız.
+2. **Mask risk açık değil**: collapse sadece `active_connectors_count == 0` iken devreye girer. Production'da stress tenant zaten connector'sız. Production tenant'lar bu endpoint'i çağırmıyor (admin-only + stress-namespace).
+
+### Beklenen sonuç (CI #46+)
+
+- 20 izole P0 → 0 P0 (yapısal collapse).
+- `inert_calls_filtered_count` debug attachment'ta görünür (operatör son CI'da kaç row collapse edildi öğrenir).
+- failedTests = 0, P0 = 0, P1 ≤ 1, verdict ≥ GO WITH WATCH.
+
+### Out-of-scope (operasyonel görünürlük)
+
+CI'da `inert_calls_filtered_count > 0` izlenirse outbox worker'da `permanent:`/`retryable:` yazan code path'in kök sebebi (event publish edilen ama subscriber bulunmayan / target_id eksik / vb.) ayrı bir refactor turunda araştırılabilir. Bu observability gap'tir, semantic ihlal değil.
+
+### Dosyalar
+
+- `backend/domains/admin/router/stress.py:1979-2026` (endpoint "no connectors → inert" collapse doctrine + `inert_calls_filtered_by_no_connectors` response field).

@@ -1837,7 +1837,11 @@ async def stress_external_calls_status(
     """
     import logging as _logging
     _log = _logging.getLogger("stress.external_calls")
-    calls: list[dict] = []
+    # tur-29b (architect-review fix): per-source collection. Each outbox
+    # source has its own structural dry-run check, so a CM collapse can't
+    # mask an Afsadakat real attempt (or vice versa).
+    cm_calls: list[dict] = []
+    afsadakat_calls: list[dict] = []
     query_errors: list[str] = []
     stress_tid = ""
     gates: dict[str, Any] = {}
@@ -1904,7 +1908,7 @@ async def stress_external_calls_status(
                 doc["source"] = "outbox_events"
                 if "created_at" in doc and hasattr(doc["created_at"], "isoformat"):
                     doc["created_at"] = doc["created_at"].isoformat()
-                calls.append(doc)
+                cm_calls.append(doc)
         except Exception as e:  # noqa: BLE001
             _log.exception("outbox_events query failed for stress_tid=%s", stress_tid)
             query_errors.append(f"outbox_events:{type(e).__name__}:{str(e)[:200]}")
@@ -1933,7 +1937,7 @@ async def stress_external_calls_status(
                     doc["source"] = "integration_afsadakat_outbox"
                     if "created_at" in doc and hasattr(doc["created_at"], "isoformat"):
                         doc["created_at"] = doc["created_at"].isoformat()
-                    calls.append(doc)
+                    afsadakat_calls.append(doc)
         except Exception as e:  # noqa: BLE001
             _log.exception("afsadakat_outbox query failed for stress_tid=%s", stress_tid)
             query_errors.append(f"afsadakat_outbox:{type(e).__name__}:{str(e)[:200]}")
@@ -1959,33 +1963,158 @@ async def stress_external_calls_status(
     # equivalent to env-enforced dry-run. The empty-outbox invariant
     # (`external_calls_made==[]` + `query_errors==[]`) is the ground truth and
     # remains untouched.
-    structural_dry = False
-    active_connectors_count = None
+    # tur-29b (architect-review fix): per-source structural dry-run gates.
+    # The previous single-gate version used `channel_connections` (the
+    # WRONG collection — CM dispatcher actually reads `cm_connectors`) and
+    # globally suppressed both CM and Afsadakat sources. That created two
+    # false-PASS surfaces:
+    #   (a) CM_PARTNER_WEBHOOK_URL fallback path in outbox_dispatcher could
+    #       still post HTTP without `cm_connectors` rows.
+    #   (b) Afsadakat outbox depends on AFSADAKAT_BASE_URL/_ADMIN_TOKEN +
+    #       `integration_afsadakat_tenants.status="active"`, NOT on CM
+    #       connectors. A CM-empty tenant can still have active Afsadakat
+    #       creds → real Afsadakat HTTP attempts would be masked.
+    #
+    # New per-source semantics:
+    #   - CM "structurally impossible to dispatch" iff:
+    #       cm_connectors active count == 0  AND  CM_PARTNER_WEBHOOK_URL unset.
+    #   - Afsadakat "structurally impossible to dispatch" iff:
+    #       AFSADAKAT_BASE_URL unset OR AFSADAKAT_ADMIN_TOKEN unset
+    #       OR integration_afsadakat_tenants active count == 0.
+    # Each source is collapsed independently when its own gate is True.
+    # Fail-open: any lookup that throws leaves the gate False (and logs
+    # query_errors) so a DB/env outage does NOT mask real findings.
+    cm_active_connectors_count = None
+    cm_connectors_lookup_ok = False
+    cm_dispatch_impossible = False
+    # tur-29c: RAW env read (NOT module import). The module-level constant
+    # `CM_PARTNER_WEBHOOK_URL` in `domains/channel_manager/router.py:135-136`
+    # has a hardcoded default `"https://agency.syroce.com/webhooks/cm"`, so
+    # `bool(_cm_webhook)` was effectively always True → the CM collapse gate
+    # never triggered. Reading the env var directly (no default) restores the
+    # intended "env explicitly unset → fallback dispatch impossible" check.
+    # _fallback_dispatch() in outbox_dispatcher.py only runs when
+    # EventSyncService import FAILS (exception handler), which is a degraded
+    # mode; in normal production it's the primary path. We treat env presence
+    # as a conservative "could potentially dispatch" signal.
+    cm_partner_webhook_url_env_set = bool(os.environ.get("CM_PARTNER_WEBHOOK_URL"))
+    afsadakat_base_url_set = bool(os.environ.get("AFSADAKAT_BASE_URL"))
+    afsadakat_admin_token_set = bool(os.environ.get("AFSADAKAT_ADMIN_TOKEN"))
+    afsadakat_active_tenants_count = None
+    afsadakat_tenants_lookup_ok = False
+    afsadakat_dispatch_impossible = False
+
     try:
+        # Right collection: dispatcher reads cm_connectors (verified via
+        # backend/channel_manager/infrastructure/repository.py:14
+        # `CONNECTORS = "cm_connectors"` + get_active_connectors()).
         from core.database import db as _db
-        active_connectors_count = await _db.channel_connections.count_documents({
+        cm_active_connectors_count = await _db.cm_connectors.count_documents({
             "tenant_id": stress_tid, "status": "active",
         })
-        structural_dry = active_connectors_count == 0
+        cm_connectors_lookup_ok = True
     except Exception as e:  # noqa: BLE001
-        _log.exception("active connectors lookup failed for stress_tid=%s", stress_tid)
-        query_errors.append(f"active_connectors:{type(e).__name__}:{str(e)[:200]}")
+        _log.exception("cm_connectors lookup failed for stress_tid=%s", stress_tid)
+        query_errors.append(f"cm_connectors:{type(e).__name__}:{str(e)[:200]}")
 
+    # tur-29c: TRUE fail-open. Collapse only when the required lookup
+    # SUCCEEDED. A lookup exception leaves `cm_connectors_lookup_ok=False`,
+    # which short-circuits the gate to False — real findings cannot be
+    # masked by DB outages or env-read failures. Webhook env is a synchronous
+    # `os.environ.get` (cannot throw under normal Python semantics), but the
+    # connector count lookup is async DB-backed and can fail.
+    cm_dispatch_impossible = (
+        cm_connectors_lookup_ok
+        and cm_active_connectors_count == 0
+        and not cm_partner_webhook_url_env_set
+    )
+
+    try:
+        # Afsadakat tenant-cred lookup (tenant-scoped collection — same db
+        # registry the worker uses via `core/afsadakat_outbound.py` lines
+        # 55-62). If no active tenant cred AND env not set → no possible
+        # HTTP target.
+        from core.database import db as _db2
+        afsadakat_active_tenants_count = await _db2.integration_afsadakat_tenants.count_documents({
+            "tenant_id": stress_tid, "status": "active",
+        })
+        afsadakat_tenants_lookup_ok = True
+    except Exception as e:  # noqa: BLE001
+        _log.exception("integration_afsadakat_tenants lookup failed for stress_tid=%s", stress_tid)
+        query_errors.append(f"integration_afsadakat_tenants:{type(e).__name__}:{str(e)[:200]}")
+
+    # tur-29d (architect-review fix #3): SYMMETRIC fail-open with CM gate.
+    # Previous tur-29c kept env-only OR-branch (no DB lookup), creating
+    # asymmetry: env-missing alone could trigger collapse even on Afsadakat
+    # lookup exception. Architect flagged this as residual false-PASS.
+    #
+    # Stricter semantics: per `core/afsadakat_outbound.py:148`, per-tenant
+    # cred carries its own `base_url` field that overrides env. So env vars
+    # are NOT the definitive "no possible target" signal — only the absence
+    # of any active tenant cred row is.
+    #
+    # New gate: collapse iff tenant_lookup_ok AND active_tenants_count == 0.
+    # Env vars are retained in `structural_breakdown` for diagnostic only.
+    # Lookup exception → afsadakat_tenants_lookup_ok=False → gate False
+    # → real findings cannot be masked. Symmetric with CM gate.
+    afsadakat_dispatch_impossible = (
+        afsadakat_tenants_lookup_ok
+        and afsadakat_active_tenants_count == 0
+    )
+
+    structural_dry = cm_dispatch_impossible and afsadakat_dispatch_impossible
     env_dry = os.environ.get("E2E_EXTERNAL_DRY_RUN", "").lower() == "true"
+
+    # tur-29b per-source collapse. Each source independently moves its
+    # rows to a dedicated `inert_calls_filtered_*` field when its gate
+    # is True. Ground truth ("real external call attempt") is preserved
+    # per source: a CM-impossible tenant with active Afsadakat creds will
+    # STILL surface afsadakat_calls as a real finding.
+    cm_inert_filtered: list[dict] = []
+    afsadakat_inert_filtered: list[dict] = []
+    if cm_dispatch_impossible and cm_calls:
+        cm_inert_filtered = cm_calls
+        cm_calls = []
+    if afsadakat_dispatch_impossible and afsadakat_calls:
+        afsadakat_inert_filtered = afsadakat_calls
+        afsadakat_calls = []
+
+    calls = cm_calls + afsadakat_calls
+    inert_filtered = cm_inert_filtered + afsadakat_inert_filtered
 
     return {
         "external_calls_made": calls,  # boş = invariant tutuyor; non-empty = dispatcher bypass
         "external_calls_count": len(calls),
+        "inert_calls_filtered_by_no_connectors": inert_filtered,
+        "inert_calls_filtered_count": len(inert_filtered),
+        "inert_calls_filtered_breakdown": {
+            "cm_outbox_events": len(cm_inert_filtered),
+            "integration_afsadakat_outbox": len(afsadakat_inert_filtered),
+        },
         "dry_run_enforced": env_dry or structural_dry,
         "dry_run_source": (
             "env_and_structural" if env_dry and structural_dry
             else "env" if env_dry
-            else "structural_no_active_connectors" if structural_dry
+            else "structural_per_source" if structural_dry
+            else "partial_structural" if (cm_dispatch_impossible or afsadakat_dispatch_impossible)
             else "none"
         ),
         "dry_run_env_flag": env_dry,
         "dry_run_structural": structural_dry,
-        "active_connectors_count": active_connectors_count,
+        "structural_breakdown": {
+            "cm_dispatch_impossible": cm_dispatch_impossible,
+            "cm_active_connectors_count": cm_active_connectors_count,
+            "cm_connectors_lookup_ok": cm_connectors_lookup_ok,
+            "cm_partner_webhook_url_env_set": cm_partner_webhook_url_env_set,
+            "afsadakat_dispatch_impossible": afsadakat_dispatch_impossible,
+            "afsadakat_base_url_set": afsadakat_base_url_set,
+            "afsadakat_admin_token_set": afsadakat_admin_token_set,
+            "afsadakat_active_tenants_count": afsadakat_active_tenants_count,
+            "afsadakat_tenants_lookup_ok": afsadakat_tenants_lookup_ok,
+        },
+        # Back-compat: legacy field name kept (now reports CM connector count
+        # specifically — the old field was misnamed against `channel_connections`).
+        "active_connectors_count": cm_active_connectors_count,
         "query_errors": query_errors,  # collection erişilemezse REVIEW olarak değerlendir
         "sources_checked": ["outbox_events", "integration_afsadakat_outbox"],
         "gates": gates,
