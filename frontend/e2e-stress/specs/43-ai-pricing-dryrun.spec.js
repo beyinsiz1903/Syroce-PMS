@@ -34,8 +34,12 @@ import {
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
     assertEndpointNeverCalled, assertNoVendorHttpCall,
+    assertAiKeyShapeIsSentinel, assertAiDryRunEnvGuards,
+    snapshotAiCallCount,
     FORBIDDEN_AI_AUTOPILOT_RUN, FORBIDDEN_AI_AUTOPILOT_SETMODE,
     FORBIDDEN_AI_ML_TRAIN_ALL, FORBIDDEN_AI_ML_TRAIN_FRAGMENT,
+    FORBIDDEN_AI_RATE_APPLY, FORBIDDEN_AI_AUTOPILOT_EXECUTE,
+    FORBIDDEN_AI_PRICING_PUBLISH,
 } from '../fixtures/stress-helpers.js';
 
 const MOD = 'ai_pricing';
@@ -57,11 +61,27 @@ test.describe('F8O § 43 — AI Dynamic Pricing Dry-run', () => {
     let moduleBlocked = false;
     let blockedReason = null;
     let stressRoomTypes = [];
+    let aiCallBaseline = null;
 
-    test('Setup: prefix + pilot baseline + recommend probe', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('Setup: prefix + pilot baseline + LLM diagnostics + env guards + recommend probe', async ({ request, stressTokens, stressState }, testInfo) => {
         test.setTimeout(120_000);
         prefix = stressState.data_prefix;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
+        // Snapshot authoritative ledger baseline + run env/key guards.
+        const snap = await snapshotAiCallCount(request, stressTokens.stress_token);
+        if (!snap.ok) {
+            recFinding(testInfo, 'P0', MOD, 'LLM diagnostics endpoint non-2xx — ledger baseline alınamadı',
+                `status=${snap.status} — F8O mutlak kuralı: authoritative ledger zorunlu.`);
+            rec(testInfo, { module: MOD, step: 'setup', status: 'FAIL',
+                note: `ledger_baseline_unavailable status=${snap.status}` });
+            expect(snap.ok, `LLM diagnostics endpoint must be reachable (got status=${snap.status})`).toBe(true);
+            return;
+        }
+        aiCallBaseline = snap.count;
+        const envOk = assertAiDryRunEnvGuards(testInfo, MOD, snap.body);
+        const keyOk = assertAiKeyShapeIsSentinel(testInfo, MOD, snap.body);
+        expect(envOk, 'E2E_AI_DRY_RUN / E2E_EXTERNAL_DRY_RUN env guards must pass').toBe(true);
+        expect(keyOk, 'API key shape must be sentinel').toBe(true);
         const win = pricingWindow(14);
         const probe = await withModuleProbe(request, stressTokens.stress_token,
             `/api/ai/recommend-rates?start_date=${win.start}&end_date=${win.end}`,
@@ -173,21 +193,25 @@ test.describe('F8O § 43 — AI Dynamic Pricing Dry-run', () => {
         }
     });
 
-    test('D) Forbidden endpoint source-scan — autopilot/ML train kapalı kapı', async ({}, testInfo) => {
+    test('D) Forbidden endpoint source-scan — autopilot/ML/pricing/rate kapalı kapı', async ({}, testInfo) => {
         const c1 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_AUTOPILOT_RUN);
         const c2 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_AUTOPILOT_SETMODE);
         const c3 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_ML_TRAIN_ALL);
         const c4 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_ML_TRAIN_FRAGMENT);
-        const pass = c1 && c2 && c3 && c4;
+        // Task #206 — rate/apply, autopilot/execute, pricing/publish ASLA.
+        const c5 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_RATE_APPLY);
+        const c6 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_AUTOPILOT_EXECUTE);
+        const c7 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_PRICING_PUBLISH);
+        const pass = c1 && c2 && c3 && c4 && c5 && c6 && c7;
         rec(testInfo, { module: MOD, step: 'forbidden_source_scan',
             status: pass ? 'PASS' : 'FAIL',
-            note: `autopilot_run=${c1} autopilot_setmode=${c2} ml_train_all=${c3} ml_train_fragment=${c4}` });
+            note: `autopilot_run=${c1} autopilot_setmode=${c2} ml_train_all=${c3} ml_train_fragment=${c4} rate_apply=${c5} autopilot_execute=${c6} pricing_publish=${c7}` });
         expect(pass).toBe(true);
     });
 
-    test('E) Vendor-call guard — briefing.ai_powered=false', async ({ request, stressTokens }, testInfo) => {
+    test('E) Vendor-call guard — authoritative ledger delta + briefing.ai_powered=false', async ({ request, stressTokens }, testInfo) => {
         test.setTimeout(60_000);
-        const pass = await assertNoVendorHttpCall(testInfo, MOD, request, stressTokens.stress_token, 'spec43_post_batch');
+        const pass = await assertNoVendorHttpCall(testInfo, MOD, request, stressTokens.stress_token, aiCallBaseline, 'spec43_post_batch');
         expect(pass).toBe(true);
     });
 

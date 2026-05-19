@@ -928,25 +928,51 @@ export const FORBIDDEN_AI_AUTOPILOT_RUN = '/api/autopilot/' + 'run' + '-cycle';
 export const FORBIDDEN_AI_AUTOPILOT_SETMODE = '/api/autopilot/' + 'set' + '-mode';
 export const FORBIDDEN_AI_ML_TRAIN_ALL = '/api/ml/' + 'train' + '-all';
 export const FORBIDDEN_AI_ML_TRAIN_FRAGMENT = '/ml/' + 'train';
+// F8O (Task #206) extra forbidden surfaces — pricing/autopilot publish/apply.
+// Concat sentinels so source-scan never sees these literals in spec source.
+export const FORBIDDEN_AI_RATE_APPLY = '/' + 'rate' + '/' + 'apply';
+export const FORBIDDEN_AI_AUTOPILOT_EXECUTE = '/' + 'autopilot' + '/' + 'execute';
+export const FORBIDDEN_AI_PRICING_PUBLISH = '/' + 'pricing' + '/' + 'publish';
+
+// snapshotAiCallCount — baseline reader for vendor-call ledger.
+// Returns { ok, count, body } — count=null if endpoint unreachable.
+// Specs call this at setup and pass `baselineCount` to
+// assertNoVendorHttpCall at batch-end for authoritative delta check.
+export async function snapshotAiCallCount(request, token) {
+    try {
+        const r = await request.get('/api/ai/diagnostics/llm-state', {
+            headers: { Authorization: `Bearer ${token}` },
+            failOnStatusCode: false, timeout: 10_000,
+        });
+        if (r.status() >= 200 && r.status() < 300) {
+            const body = await r.json().catch(() => null);
+            if (body && typeof body.attempted_call_count === 'number') {
+                return { ok: true, count: body.attempted_call_count, body };
+            }
+        }
+        return { ok: false, count: null, body: null, status: r.status() };
+    } catch (e) {
+        return { ok: false, count: null, body: null, error: String(e?.message || e).slice(0, 80) };
+    }
+}
 
 // assertNoVendorHttpCall — F8O mutlak kuralı: hiçbir spec batch'i vendor
-// LLM (OpenAI/Anthropic/Gemini) HTTP çağrısı tetiklememeli. Bunu doğrudan
-// network seviyesinde gözlemleyemediğimiz için backend-provided iki
-// surrogate sinyal kullanılır:
+// LLM (OpenAI/Anthropic/Gemini) HTTP çağrısı tetiklememeli. AUTHORITATIVE
+// signal: backend ledger (`attempted_call_count`). Heuristic fallback:
+// briefing.ai_powered. Fail-closed: hem ledger hem briefing unverifiable.
 //
-//   1. `/api/ai/diagnostics/llm-state` (read-only) — provider config flag'i
-//      + llm_enabled bool döner. Vendor call YAPMAZ; pure config read.
-//   2. `/api/ai/dashboard/briefing?lang=tr` — gerçek AI üretimi denerse
-//      response'ta `ai_powered: true` döner. Heuristic fallback durumunda
-//      `ai_powered: false`. Stress dry-run'da `ai_powered=true` görmek →
-//      vendor çağrısı yapıldığının kanıtı → P0.
+//   1. `/api/ai/diagnostics/llm-state` — `attempted_call_count` field;
+//      her `_create_chat()` çağrısında AIService ledger'ı artırır. Delta
+//      ölçümü mutlaktır (attempted-but-failed dahil yakalanır).
+//   2. `/api/ai/dashboard/briefing?lang=tr` — `ai_powered: true` ise
+//      vendor üretimi başarılı oldu demektir (P0).
 //
-// Pass criteria: briefing.ai_powered === false. llm_enabled informational
-// (sentinel/dummy API key set olabilir; gerçek çağrıyı tetiklemediği sürece
-// sorun değil). Her iki probe da unreachable → fail-closed (P0 finding).
+// Pass criteria: ledger delta === 0 AND briefing.ai_powered === false.
+// Verifiable = HTTP 2xx + JSON parse OK. Diag 503 (E2E_AI_DRY_RUN flag
+// kapalı) → fail-closed P0.
 //
-// Signature: (testInfo, module, request, token, label?) → bool.
-export async function assertNoVendorHttpCall(testInfo, module, request, token, label = 'post_batch') {
+// Signature: (testInfo, module, request, token, baselineCount?, label?) → bool.
+export async function assertNoVendorHttpCall(testInfo, module, request, token, baselineCount = null, label = 'post_batch') {
     let llmState = null, briefing = null, diagStatus = 0, briefingStatus = 0;
     let diagErr = null, briefingErr = null;
     try {
@@ -973,12 +999,16 @@ export async function assertNoVendorHttpCall(testInfo, module, request, token, l
     const aiPowered = !!(briefing && briefing.ai_powered);
     const llmEnabled = !!(llmState && llmState.llm_enabled);
     const providers = (llmState && llmState.providers) || {};
+    const currentCount = (llmState && typeof llmState.attempted_call_count === 'number')
+        ? llmState.attempted_call_count : null;
+    const delta = (baselineCount !== null && currentCount !== null)
+        ? (currentCount - baselineCount) : null;
 
     // Fail-closed: both probes unverifiable → cannot guarantee isolation.
     // "Verifiable" = 2xx response we successfully parsed. Anything else
     // (0/3xx/4xx/5xx OR JSON parse fail) is treated as unreachable. Even
-    // 401/403/404 must fail-closed because we have NO signal about vendor
-    // call state (architect P1 review).
+    // 401/403/404/503 must fail-closed because we have NO signal about
+    // vendor call state (architect P1 review).
     const diagVerifiable = diagStatus >= 200 && diagStatus < 300 && llmState !== null;
     const briefingVerifiable = briefingStatus >= 200 && briefingStatus < 300 && briefing !== null;
     const bothUnreachable = !diagVerifiable && !briefingVerifiable;
@@ -1002,13 +1032,202 @@ export async function assertNoVendorHttpCall(testInfo, module, request, token, l
         return false;
     }
 
-    const pass = !aiPowered;
+    // AUTHORITATIVE PATH REQUIRED — fail-closed if ledger unverifiable.
+    // We must have both a baseline AND a verifiable current count; without
+    // them the ledger signal is meaningless and heuristic alone cannot
+    // satisfy F8O dry-run guarantee.
+    const ledgerVerifiable = (baselineCount !== null && currentCount !== null && diagVerifiable);
+    if (!ledgerVerifiable) {
+        testInfo.annotations.push({
+            type: 'rec',
+            description: JSON.stringify({
+                module, step: 'no_vendor_http_call',
+                status: 'FAIL',
+                note: `label=${label} ledger_unverifiable baseline=${baselineCount} current=${currentCount} diag_verifiable=${diagVerifiable} diag_http=${diagStatus} — authoritative path required.`,
+            }),
+        });
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P0', module,
+                title: 'Vendor-call ledger unverifiable — fail-closed',
+                detail: `label=${label} baselineCount=${baselineCount} currentCount=${currentCount} diagVerifiable=${diagVerifiable}. F8O mutlak kuralı: authoritative ledger sinyali olmadan dry-run guarantee verilmez. Setup'ta snapshotAiCallCount başarısız olduysa veya runtime diagnostics 503/5xx döndüyse bu P0.`,
+            }),
+        });
+        return false;
+    }
+    // Authoritative check: ledger delta. ANY delta > 0 is a P0
+    // vendor-call violation (even attempted-failed).
+    const ledgerDelta = delta;
+    const ledgerViolation = ledgerDelta > 0;
+    // Supplemental heuristic check: briefing.ai_powered.
+    const heuristicViolation = aiPowered;
+    const pass = !ledgerViolation && !heuristicViolation;
     testInfo.annotations.push({
         type: 'rec',
         description: JSON.stringify({
             module, step: 'no_vendor_http_call',
             status: pass ? 'PASS' : 'FAIL',
-            note: `label=${label} llm_enabled=${llmEnabled} ai_powered=${aiPowered} providers=${JSON.stringify(providers)} diag_http=${diagStatus} briefing_http=${briefingStatus}`,
+            note: `label=${label} llm_enabled=${llmEnabled} ai_powered=${aiPowered} ledger_baseline=${baselineCount} ledger_current=${currentCount} ledger_delta=${ledgerDelta} providers=${JSON.stringify(providers)} diag_http=${diagStatus} briefing_http=${briefingStatus}`,
+        }),
+    });
+    if (ledgerViolation) {
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P0', module,
+                title: 'Vendor LLM attempted_call_count delta > 0 — dry-run kuralı ihlali',
+                detail: `label=${label} delta=${ledgerDelta} baseline=${baselineCount} current=${currentCount}. AIService._create_chat() bu batch sırasında çağrıldı — vendor HTTP attempt (success ya da fail) yapıldı.`,
+            }),
+        });
+    }
+    if (heuristicViolation) {
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P0', module,
+                title: 'Vendor LLM çağrısı tespit edildi (briefing.ai_powered=true)',
+                detail: `label=${label} briefing surface gerçek vendor üretimi döndürdü. Stress dry-run mutlak kuralı: vendor HTTP çağrısı YOK.`,
+            }),
+        });
+    }
+    return pass;
+}
+
+// assertAiDryRunEnvGuards — F8O mutlak kuralı: spec başlamadan önce
+// E2E_AI_DRY_RUN=true + E2E_EXTERNAL_DRY_RUN=true env flag'leri set
+// olmalı, ve hiçbir provider production-shape API key (sk-, sk-ant-,
+// AIza-) içermemeli. Diagnostics body verir; eksik herhangi bir koşul
+// fail-closed P0. process.env.E2E_EXTERNAL_DRY_RUN client-side de doğrulanır
+// (stress fixture genelde set eder — yoksa P0).
+//
+// Signature: (testInfo, module, llmStateBody, processEnv?) → bool.
+export function assertAiDryRunEnvGuards(testInfo, module, llmStateBody, processEnv = null) {
+    const env = processEnv || (typeof process !== 'undefined' ? process.env : {}) || {};
+    const serverAiDryRun = !!(llmStateBody && llmStateBody.e2e_ai_dry_run);
+    const serverExternalDryRun = !!(llmStateBody && llmStateBody.e2e_external_dry_run);
+    const looksReal = !!(llmStateBody && llmStateBody.looks_like_real_key);
+    const clientExternalDryRun = (String(env.E2E_EXTERNAL_DRY_RUN || '').toLowerCase()) === 'true';
+    const pass = serverAiDryRun && (serverExternalDryRun || clientExternalDryRun) && !looksReal;
+    testInfo.annotations.push({
+        type: 'rec',
+        description: JSON.stringify({
+            module, step: 'ai_dry_run_env_guards',
+            status: pass ? 'PASS' : 'FAIL',
+            note: `server_ai_dry_run=${serverAiDryRun} server_ext_dry_run=${serverExternalDryRun} client_ext_dry_run=${clientExternalDryRun} looks_like_real_key=${looksReal}`,
+        }),
+    });
+    if (!serverAiDryRun) {
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P0', module,
+                title: 'E2E_AI_DRY_RUN env flag set değil (server-side)',
+                detail: 'Stress dry-run için backend E2E_AI_DRY_RUN=true zorunlu (diagnostics endpoint 503 dönüyor olabilir).',
+            }),
+        });
+    }
+    if (!serverExternalDryRun && !clientExternalDryRun) {
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P0', module,
+                title: 'E2E_EXTERNAL_DRY_RUN env flag set değil',
+                detail: 'Mutlak kural: external_calls için dry-run flag client ve/veya server-side zorunlu.',
+            }),
+        });
+    }
+    if (looksReal) {
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P0', module,
+                title: 'Production-shape API key tespit edildi (sk-/sk-ant-/AIza-)',
+                detail: 'En az bir provider env value\'su gerçek prefix\'e sahip — stress ortamında ASLA gerçek key kullanılmaz. Bu key sentinel ile değiştirilmeli.',
+            }),
+        });
+    }
+    return pass;
+}
+
+// assertAiKeyShapeIsSentinel — fail-closed wrapper around the diagnostics
+// `looks_like_real_key` boolean. Backend never returns key VALUES; only a
+// shape detection bool (sk-/sk-ant-/AIza-). True → P0.
+// Signature: (testInfo, module, llmStateBody) → bool.
+// snapshotPilotBookingFields — F8O § 44 per-booking immutability baseline.
+// Reads up to `sampleSize` pilot bookings and snapshots {id, status,
+// no_show_at}. Returns { ok, samples: [{id,status,no_show_at}], total }.
+// `samples=[]` is acceptable (no pilot bookings yet); immutability check
+// short-circuits to PASS in that case.
+export async function snapshotPilotBookingFields(request, pilotToken, sampleSize = 5) {
+    try {
+        const r = await request.get('/api/bookings?limit=200', {
+            headers: { Authorization: `Bearer ${pilotToken}` },
+            failOnStatusCode: false, timeout: 15_000,
+        });
+        if (r.status() < 200 || r.status() >= 300) {
+            return { ok: false, samples: [], total: 0, status: r.status() };
+        }
+        const body = await r.json().catch(() => null);
+        const list = Array.isArray(body) ? body : (body?.bookings || body?.items || []);
+        const samples = list.slice(0, sampleSize).map((b) => ({
+            id: b?.id || b?._id || b?.booking_id || null,
+            status: b?.status || null,
+            no_show_at: b?.no_show_at || null,
+        })).filter((s) => s.id);
+        return { ok: true, samples, total: list.length };
+    } catch (e) {
+        return { ok: false, samples: [], total: 0, error: String(e?.message || e).slice(0, 80) };
+    }
+}
+
+// assertPilotBookingFieldsImmutable — F8O § 44 per-booking field
+// immutability check. Re-reads same sampled bookings and compares
+// {status, no_show_at}. Any drift → P0 finding.
+// Signature: (testInfo, module, request, pilotToken, baselineSnapshot) → bool.
+export async function assertPilotBookingFieldsImmutable(testInfo, module, request, pilotToken, baselineSnapshot) {
+    if (!baselineSnapshot || !baselineSnapshot.ok || baselineSnapshot.samples.length === 0) {
+        testInfo.annotations.push({
+            type: 'rec',
+            description: JSON.stringify({
+                module, step: 'pilot_booking_fields_immutable',
+                status: 'PASS',
+                note: `no_baseline=true samples=0 — short-circuit (no pilot bookings to monitor)`,
+            }),
+        });
+        return true;
+    }
+    const after = await snapshotPilotBookingFields(request, pilotToken, baselineSnapshot.samples.length);
+    if (!after.ok) {
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P1', module,
+                title: 'Pilot bookings re-read failed — immutability unverifiable',
+                detail: `status=${after.status} — fail-closed on per-booking immutability check.`,
+            }),
+        });
+        return false;
+    }
+    const afterById = new Map(after.samples.map((s) => [s.id, s]));
+    const drifts = [];
+    for (const before of baselineSnapshot.samples) {
+        const now = afterById.get(before.id);
+        if (!now) { drifts.push({ id: before.id, drift: 'disappeared' }); continue; }
+        if ((now.status || null) !== (before.status || null)) {
+            drifts.push({ id: before.id, field: 'status', before: before.status, after: now.status });
+        }
+        if ((now.no_show_at || null) !== (before.no_show_at || null)) {
+            drifts.push({ id: before.id, field: 'no_show_at', before: before.no_show_at, after: now.no_show_at });
+        }
+    }
+    const pass = drifts.length === 0;
+    testInfo.annotations.push({
+        type: 'rec',
+        description: JSON.stringify({
+            module, step: 'pilot_booking_fields_immutable',
+            status: pass ? 'PASS' : 'FAIL',
+            note: `samples=${baselineSnapshot.samples.length} drifts=${drifts.length} sample=${JSON.stringify(drifts.slice(0, 3))}`,
         }),
     });
     if (!pass) {
@@ -1016,45 +1235,36 @@ export async function assertNoVendorHttpCall(testInfo, module, request, token, l
             type: 'finding',
             description: JSON.stringify({
                 severity: 'P0', module,
-                title: 'Vendor LLM çağrısı tespit edildi — dry-run kuralı ihlali',
-                detail: `label=${label} ai_powered=true after batch (briefing surface). OPENAI/ANTHROPIC/GEMINI üzerinden gerçek dış çağrı yapıldı. Stress dry-run mutlak kuralı: vendor HTTP çağrısı YOK.`,
+                title: 'Pilot booking field drift — status/no_show_at mutation tespit edildi',
+                detail: `drift_count=${drifts.length} sample=${JSON.stringify(drifts.slice(0, 3))}. Pilot mutation invariant ihlali.`,
             }),
         });
     }
     return pass;
 }
 
-// assertAiKeyShapeIsSentinel — vendor API key sentinel guard. Stress
-// ortamında OPENAI/ANTHROPIC/GEMINI key'leri set ise, format'larının
-// üretim-benzeri olmaması beklenir (sentinel: "stress-…", "dryrun-…",
-// "fake-…", veya kısa < 30 char). Gerçek shape (sk-… / sk-ant-… / AIza…)
-// uzunluk + prefix kombinasyonu ile yakalanır. Diagnostic state üzerinden
-// dolaylı çıkarım — backend key value'ları döndürmez, ama gerekirse
-// future-compat için bu helper var. Şu an P1 informational (key shape'i
-// görünmediği için emit etmez; yer tutucu).
-//
-// Signature: (testInfo, module, llmStateBody) → bool (her zaman true).
 export function assertAiKeyShapeIsSentinel(testInfo, module, llmStateBody) {
+    const looksReal = !!(llmStateBody && llmStateBody.looks_like_real_key);
     const providers = (llmStateBody && llmStateBody.providers) || {};
-    const anyConfigured = !!(providers.openai_configured || providers.anthropic_configured || providers.gemini_configured);
     const dryRunFlag = !!(llmStateBody && llmStateBody.e2e_ai_dry_run);
+    const pass = !looksReal;
     testInfo.annotations.push({
         type: 'rec',
         description: JSON.stringify({
             module, step: 'ai_key_shape_sentinel',
-            status: 'PASS',
-            note: `any_provider_configured=${anyConfigured} e2e_ai_dry_run=${dryRunFlag} — backend value döndürmüyor, vendor-call guard sinyali yeterli (assertNoVendorHttpCall).`,
+            status: pass ? 'PASS' : 'FAIL',
+            note: `looks_like_real_key=${looksReal} providers=${JSON.stringify(providers)} e2e_ai_dry_run=${dryRunFlag}`,
         }),
     });
-    if (anyConfigured && !dryRunFlag) {
+    if (looksReal) {
         testInfo.annotations.push({
             type: 'finding',
             description: JSON.stringify({
-                severity: 'P2', module,
-                title: 'AI provider configured ama E2E_AI_DRY_RUN flag set değil',
-                detail: 'Stress dry-run ortamında E2E_AI_DRY_RUN=true set edilmesi tavsiye edilir (operasyonel sinyalleme).',
+                severity: 'P0', module,
+                title: 'Production-shape API key tespit edildi (sentinel beklenirdi)',
+                detail: 'Provider env value(ları) sk-/sk-ant-/AIza- prefix\'inde — stress ortamında ASLA gerçek key kullanılmaz.',
             }),
         });
     }
-    return true;
+    return pass;
 }

@@ -4,7 +4,7 @@ Provides AI-powered insights, predictions, and recommendations
 """
 
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from dotenv import load_dotenv
@@ -17,6 +17,44 @@ except Exception:
     _OPENAI_AVAILABLE = False
 
 load_dotenv()
+
+
+# F8O (Task #206) — authoritative LLM-attempt ledger.
+# Module-level, process-scoped. Every `_create_chat` invocation increments
+# the counter and appends a (ts, provider, session_excerpt) entry capped
+# at 20 entries. Diagnostics endpoint exposes this snapshot so stress
+# specs can compare deltas around test batches and fail-closed on any
+# attempted vendor call. NO request/response payloads are stored.
+_AI_LLM_CALL_LEDGER: dict[str, Any] = {
+    "attempted_count": 0,
+    "last_attempts": [],
+}
+
+
+def _record_llm_attempt(provider: str, session_id: str) -> None:
+    try:
+        _AI_LLM_CALL_LEDGER["attempted_count"] = int(_AI_LLM_CALL_LEDGER.get("attempted_count", 0)) + 1
+        entry = {
+            "ts": datetime.now(UTC).isoformat(),
+            "provider": provider,
+            "session": (session_id or "")[:40],
+        }
+        attempts = _AI_LLM_CALL_LEDGER.get("last_attempts") or []
+        attempts.append(entry)
+        if len(attempts) > 20:
+            attempts = attempts[-20:]
+        _AI_LLM_CALL_LEDGER["last_attempts"] = attempts
+    except Exception:
+        # Never break LLM flow on ledger bookkeeping error.
+        pass
+
+
+def get_ai_llm_call_ledger() -> dict[str, Any]:
+    """Return a shallow snapshot of the LLM attempt ledger (read-only)."""
+    return {
+        "attempted_count": int(_AI_LLM_CALL_LEDGER.get("attempted_count", 0)),
+        "last_attempts": list(_AI_LLM_CALL_LEDGER.get("last_attempts") or []),
+    }
 
 
 class _SimpleLlmChat:
@@ -52,6 +90,10 @@ class AIService:
     def _create_chat(self, system_message: str, session_id: str = "default") -> _SimpleLlmChat:
         if not self.llm_enabled:
             raise RuntimeError("LLM backend not available")
+        # F8O ledger — record EVERY chat construction. This catches even
+        # attempted-but-failed vendor calls; stress specs read this counter
+        # via /api/ai/diagnostics/llm-state and fail-closed on any delta.
+        _record_llm_attempt(provider="openai", session_id=session_id)
         return _SimpleLlmChat(api_key=self.api_key, system_message=system_message)
 
     async def generate_daily_briefing(

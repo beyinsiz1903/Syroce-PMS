@@ -771,20 +771,42 @@ async def get_ai_llm_state(
     if not _is_super_admin(current_user):
         raise HTTPException(status_code=403, detail="Super admin only")
     import os as _os
-    from domains.ai.service import AIService as _AIService
-    svc = _AIService()
-    has_openai = bool(_os.getenv('OPENAI_API_KEY'))
-    has_anthropic = bool(_os.getenv('ANTHROPIC_API_KEY'))
-    has_gemini = bool(_os.getenv('GEMINI_API_KEY') or _os.getenv('GOOGLE_API_KEY'))
+    from domains.ai.service import AIService as _AIService, get_ai_llm_call_ledger as _get_ledger
+    # Task #206 — diagnostics surface MUST be gated by E2E_AI_DRY_RUN=true.
+    # Outside test mode the endpoint is fail-closed (503) so production
+    # deployments cannot leak provider/env shape through this route.
     e2e_dry_run = (_os.getenv('E2E_AI_DRY_RUN') or '').lower() in ('1', 'true', 'yes', 'on')
+    if not e2e_dry_run:
+        raise HTTPException(status_code=503, detail="AI diagnostics disabled (E2E_AI_DRY_RUN not set)")
+    svc = _AIService()
+    openai_key = _os.getenv('OPENAI_API_KEY')
+    anthropic_key = _os.getenv('ANTHROPIC_API_KEY')
+    gemini_key = _os.getenv('GEMINI_API_KEY') or _os.getenv('GOOGLE_API_KEY')
+
+    def _looks_real(k: str | None) -> bool:
+        if not k or not isinstance(k, str):
+            return False
+        # Production-shape prefixes for OpenAI / Anthropic / Google.
+        return (
+            k.startswith('sk-ant-') or
+            (k.startswith('sk-') and len(k) >= 30) or
+            k.startswith('AIza')
+        )
+
+    looks_like_real_key = any(_looks_real(k) for k in (openai_key, anthropic_key, gemini_key))
+    ledger = _get_ledger()
     return {
         'llm_enabled': bool(getattr(svc, 'llm_enabled', False)),
         'providers': {
-            'openai_configured': has_openai,
-            'anthropic_configured': has_anthropic,
-            'gemini_configured': has_gemini,
+            'openai_configured': bool(openai_key),
+            'anthropic_configured': bool(anthropic_key),
+            'gemini_configured': bool(gemini_key),
         },
+        'looks_like_real_key': looks_like_real_key,
         'e2e_ai_dry_run': e2e_dry_run,
+        'e2e_external_dry_run': (_os.getenv('E2E_EXTERNAL_DRY_RUN') or '').lower() in ('1', 'true', 'yes', 'on'),
+        'attempted_call_count': int(ledger.get('attempted_count', 0)),
+        'recent_attempts': ledger.get('last_attempts') or [],
         'model_name_default': 'gpt-4o-mini',
-        'note': 'Read-only state probe; no vendor calls are issued.',
+        'note': 'Read-only state probe; no vendor calls are issued. API key VALUES are never returned.',
     }

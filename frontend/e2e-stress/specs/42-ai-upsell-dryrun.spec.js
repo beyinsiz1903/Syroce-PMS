@@ -34,9 +34,12 @@ import {
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe, assertPiiMasked,
     assertEndpointNeverCalled, assertNoVendorHttpCall,
-    assertAiKeyShapeIsSentinel,
+    assertAiKeyShapeIsSentinel, assertAiDryRunEnvGuards,
+    snapshotAiCallCount,
     FORBIDDEN_AI_AUTOPILOT_RUN, FORBIDDEN_AI_AUTOPILOT_SETMODE,
     FORBIDDEN_AI_ML_TRAIN_ALL, FORBIDDEN_AI_ML_TRAIN_FRAGMENT,
+    FORBIDDEN_AI_RATE_APPLY, FORBIDDEN_AI_AUTOPILOT_EXECUTE,
+    FORBIDDEN_AI_PRICING_PUBLISH,
 } from '../fixtures/stress-helpers.js';
 
 const MOD = 'ai_upsell';
@@ -50,21 +53,40 @@ test.describe('F8O § 42 — AI Upsell Dry-run', () => {
     let blockedReason = null;
     let stressGuestIds = []; // string[] — stress tenant'ta tanımlı guest id'leri
     let llmState = null;
+    let aiCallBaseline = null; // authoritative ledger baseline (count)
 
-    test('Setup: prefix + pilot baseline + LLM diagnostics + insights probe', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('Setup: prefix + pilot baseline + LLM diagnostics + env guards + insights probe', async ({ request, stressTokens, stressState }, testInfo) => {
         test.setTimeout(120_000);
         prefix = stressState.data_prefix;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
-        // LLM diagnostics — vendor surface state (no vendor call).
-        const diagR = await callTimed(request, 'get', '/api/ai/diagnostics/llm-state', undefined, stressTokens.stress_token);
-        if (diagR.ok) {
-            llmState = diagR.body;
-            assertAiKeyShapeIsSentinel(testInfo, MOD, llmState);
-        } else {
-            recFinding(testInfo, 'P2', MOD, 'LLM diagnostics endpoint non-2xx',
-                `status=${diagR.status} — vendor-call guard still uses briefing.ai_powered fallback (D step).`);
+        // LLM diagnostics — vendor surface state (no vendor call). Also
+        // doubles as the authoritative call-ledger baseline snapshot.
+        const snap = await snapshotAiCallCount(request, stressTokens.stress_token);
+        if (!snap.ok) {
+            // F8O mutlak kuralı: ledger baseline olmadan dry-run guarantee
+            // verilmez. Setup fail-closed P0 + test failure.
+            recFinding(testInfo, 'P0', MOD, 'LLM diagnostics endpoint non-2xx — ledger baseline alınamadı',
+                `status=${snap.status} — E2E_AI_DRY_RUN flag set olmayabilir (503) veya endpoint unreachable. Authoritative vendor-call guard zorunlu; setup fail-closed.`);
+            rec(testInfo, { module: MOD, step: 'setup', status: 'FAIL',
+                note: `ledger_baseline_unavailable status=${snap.status}` });
+            expect(snap.ok, `LLM diagnostics endpoint must be reachable (got status=${snap.status})`).toBe(true);
+            return;
         }
+        llmState = snap.body;
+        aiCallBaseline = snap.count;
+        // Fail-closed env + key shape guards (P0 if violated).
+        const envOk = assertAiDryRunEnvGuards(testInfo, MOD, llmState);
+        const keyOk = assertAiKeyShapeIsSentinel(testInfo, MOD, llmState);
+        expect(envOk, 'E2E_AI_DRY_RUN / E2E_EXTERNAL_DRY_RUN env guards must pass').toBe(true);
+        expect(keyOk, 'API key shape must be sentinel (not sk-/sk-ant-/AIza-)').toBe(true);
+
+        // Probe forbidden /api/upsell* surface — if reachable, module-blocked
+        // doctrine applies; either way no MUTATING upsell endpoint is hit.
+        const upsellProbe = await callTimed(request, 'get', '/api/upsell/offers', undefined, stressTokens.stress_token);
+        rec(testInfo, { module: MOD, step: 'upsell_surface_probe',
+            status: 'PASS',
+            note: `upsell_offers_status=${upsellProbe.status} reachable=${upsellProbe.ok} — read-only probe; no mutation issued.` });
 
         // Insights probe (super_admin) — pool baseline.
         const probe = await withModuleProbe(request, stressTokens.stress_token, '/api/ai/guest-persona/all-insights');
@@ -152,28 +174,28 @@ test.describe('F8O § 42 — AI Upsell Dry-run', () => {
         }
     });
 
-    test('C) Forbidden endpoint source-scan — autopilot/ML train kapalı kapı', async ({}, testInfo) => {
+    test('C) Forbidden endpoint source-scan — autopilot/ML/pricing kapalı kapı', async ({}, testInfo) => {
         // Bu test environment-bağımsız; module-blocked olsa bile çalışır.
         const c1 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_AUTOPILOT_RUN);
         const c2 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_AUTOPILOT_SETMODE);
         const c3 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_ML_TRAIN_ALL);
-        // ML training fragment guard: forbidden substring helper sabitinden
-        // import edilir (concat ile inşa); spec source'unda literal görünmez.
-        // Tüm /ml/* training endpoint'leri (rms/persona/maintenance/hk-sched)
-        // bu fragmenti içerir ve KAPALI KAPI.
         const c4 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_ML_TRAIN_FRAGMENT);
-        const pass = c1 && c2 && c3 && c4;
+        // Task #206 extra surfaces (pricing/autopilot publish/apply).
+        const c5 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_RATE_APPLY);
+        const c6 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_AUTOPILOT_EXECUTE);
+        const c7 = assertEndpointNeverCalled(testInfo, MOD, FORBIDDEN_AI_PRICING_PUBLISH);
+        const pass = c1 && c2 && c3 && c4 && c5 && c6 && c7;
         rec(testInfo, { module: MOD, step: 'forbidden_source_scan',
             status: pass ? 'PASS' : 'FAIL',
-            note: `autopilot_run=${c1} autopilot_setmode=${c2} ml_train_all=${c3} ml_train_fragment=${c4}` });
+            note: `autopilot_run=${c1} autopilot_setmode=${c2} ml_train_all=${c3} ml_train_fragment=${c4} rate_apply=${c5} autopilot_execute=${c6} pricing_publish=${c7}` });
         expect(pass).toBe(true);
     });
 
-    test('D) Vendor-call guard — briefing.ai_powered=false (heuristic only)', async ({ request, stressTokens }, testInfo) => {
+    test('D) Vendor-call guard — authoritative ledger delta + briefing.ai_powered=false', async ({ request, stressTokens }, testInfo) => {
         test.setTimeout(60_000);
         // Bu test module-blocked durumda da çalışır — vendor isolation
-        // her koşulda doğrulanmalı.
-        const pass = await assertNoVendorHttpCall(testInfo, MOD, request, stressTokens.stress_token, 'spec42_post_batch');
+        // her koşulda doğrulanmalı. Ledger baseline setup'tan gelir.
+        const pass = await assertNoVendorHttpCall(testInfo, MOD, request, stressTokens.stress_token, aiCallBaseline, 'spec42_post_batch');
         expect(pass).toBe(true);
     });
 
