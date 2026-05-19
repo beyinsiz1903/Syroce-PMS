@@ -750,3 +750,41 @@ async def auto_loyalty_tier_upgrade(
             'frequency_bonuses': sum(1 for u in upgrades if u['action'] == 'frequency_bonus')
         }
     }
+
+
+# ── GET /ai/diagnostics/llm-state ──
+# F8O (Task #206) — AI/Automation dry-run vendor-call read-only probe.
+# Returns whether the LLM provider surface is "enabled" (api key present in
+# env) and which providers are configured. **Does NOT** issue any vendor
+# HTTP call; pure config read so stress specs can verify isolation without
+# triggering external traffic. RBAC: view_system_diagnostics (super_admin).
+@router.get("/ai/diagnostics/llm-state")
+async def get_ai_llm_state(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
+):
+    # Strict super_admin gate (architect P1 review). require_op above also
+    # permits admin role + explicit granted_permissions; this endpoint
+    # exposes provider/env state and must be super_admin-only.
+    from core.security import _is_super_admin
+    from fastapi import HTTPException
+    if not _is_super_admin(current_user):
+        raise HTTPException(status_code=403, detail="Super admin only")
+    import os as _os
+    from domains.ai.service import AIService as _AIService
+    svc = _AIService()
+    has_openai = bool(_os.getenv('OPENAI_API_KEY'))
+    has_anthropic = bool(_os.getenv('ANTHROPIC_API_KEY'))
+    has_gemini = bool(_os.getenv('GEMINI_API_KEY') or _os.getenv('GOOGLE_API_KEY'))
+    e2e_dry_run = (_os.getenv('E2E_AI_DRY_RUN') or '').lower() in ('1', 'true', 'yes', 'on')
+    return {
+        'llm_enabled': bool(getattr(svc, 'llm_enabled', False)),
+        'providers': {
+            'openai_configured': has_openai,
+            'anthropic_configured': has_anthropic,
+            'gemini_configured': has_gemini,
+        },
+        'e2e_ai_dry_run': e2e_dry_run,
+        'model_name_default': 'gpt-4o-mini',
+        'note': 'Read-only state probe; no vendor calls are issued.',
+    }
