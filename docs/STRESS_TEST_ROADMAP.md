@@ -60,11 +60,13 @@ Her yeni faz için aşağıdaki sözleşme zorunludur (F8A–F8E baseline'ı boz
 
 **module-blocked pattern fallback**: Her spec'te endpoint 403 / 404 / RBAC fail → `moduleBlocked=true` flag + P2 informational + A/B/C/D `test.skip()`, pilot_drift bağımsız çalışır (F8C/D/E doctrine, `withModuleProbe` helper).
 
-**Foundation helpers (Task #192 ekledi)** — `frontend/e2e-stress/fixtures/stress-helpers.js`:
-- `assertPilotDriftZero(request, stressTokens, baseline)` — pilot bookings count read-only diff, leak tespit eder.
-- `assertNoExternalCallsPostBatch(...)` — tur-28 per-batch delta doctrine (mevcut, korunuyor).
-- `assertPiiMasked(responseBody, fields)` — telefon/email/TC/passport gibi PII alanları masked olduğunu doğrular (KVKK / F8I / F8K / F8M kritik).
-- `withModuleProbe(request, token, endpoint)` — endpoint 403/404 → `{moduleBlocked: true}` döner, spec'ler A/B/C/D step'lerini güvenle skip eder.
+**Foundation helpers (Task #192 ekledi)** — `frontend/e2e-stress/fixtures/stress-helpers.js`. Tüm helper'lar `testInfo` + `module` ilk argümanları alır (rec/finding annotation emit etmek için), mevcut `recPerf` / `assertNoExternalCallsPostBatch` ile aynı konvansiyon:
+- `assertPilotDriftZero(testInfo, module, request, pilotToken, baseline)` — pilot bookings count read-only diff, drift>0 → P0 finding emit.
+- `assertNoExternalCallsPostBatch(testInfo, module, batchName, stressState, request, pilotToken)` — tur-28 per-batch delta doctrine (mevcut, korunuyor).
+- `assertPiiMasked(testInfo, module, responseBody, fields=[...])` — telefon/email/TC/passport/IBAN gibi PII alanları masked olduğunu doğrular; plain match bulursa P0 finding emit (KVKK / F8I / F8K / F8M kritik).
+- `withModuleProbe(request, token, endpoint, opts={})` — endpoint 403/404/network → `{moduleBlocked: true, status, body, reason}` döner; spec'ler A/B/C/D step'lerini güvenle skip eder, pilot_drift bağımsız çalışır.
+
+**Reporter aggregation (Task #192 notu)** — `markdown-reporter.mjs` modül tablosu zaten **dinamik** çalışıyor (rec annotation'lardaki `module` field'ı serbest string, otomatik aggregate). Yeni faz etiketleri (admin_rbac, settings_audit, graphql_isolation, b2b_api, cm_exely, cm_hotelrunner, cm_outbox, public_checkin, public_nps, public_kvkk, inventory_stock, purchasing_supplier, crm_offers, reports_export, reservation_deep, full_24h) ek mapping gerekmeden tabloda görünür. Task kapsamında yalnız "Broken Buttons / Wrong Business Rule" triage regex'i F8F–F8N terminolojisine genişletildi (RBAC/KVKK/PII/outbox/webhook/graphql/b2b/report/dashboard/export → businessRule bucket; UI keyword'leri buttonFindings'de izole).
 
 ---
 
