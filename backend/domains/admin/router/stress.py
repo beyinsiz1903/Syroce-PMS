@@ -1196,12 +1196,26 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
             "stress_seed": True, "stress_prefix": prefix,
         })
 
-    # 9) PERFORMANCE REVIEWS (30) — F8D-v2 expansion (Task #205, architect
-    # iter-5 directive): one baseline review per staff member (30 staff)
-    # to enable spec 32 list/summary/per-staff probe with realistic volume.
-    # Previous quarter (PRIOR_PERIOD) used to avoid collision with spec
-    # 32-F lifecycle test (which creates a NEW period for terminal-state
-    # probe). status="draft" → spec 32 check-in/list reads still work.
+    # 9a) PERFORMANCE REVIEWS — V1 BASELINE (3, PRESERVED).
+    # Architect iter-6 directive: v1 seed count (3) korunmalı; v2 ek
+    # bunun üzerine eklenir. Mevcut quarter, status=draft (spec 32 lifecycle
+    # check-in append + summary read için ready).
+    for i in range(3):
+        performance_docs.append({
+            "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+            "staff_id": staff_ids[i],
+            "period": f"{now.year}-Q{((now.month - 1) // 3) + 1}",
+            "rating": 4,
+            "comments": f"{prefix} F8D seed performance review",
+            "reviewer_user_id": None,
+            "status": "draft",
+            "created_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+    # 9b) PERFORMANCE REVIEWS — V2 EXPANSION (+30, additive).
+    # Task #205 iter-5/6 directive: 30 staff için baseline review (prior
+    # quarter — current quarter v1 ile çakışmaz; spec 32-F yeni period
+    # üretir, hiçbir collision yok). Listenin gerçek volume'unu test eder.
     quarter = ((now.month - 1) // 3) + 1
     prior_quarter = quarter - 1 if quarter > 1 else 4
     prior_year = now.year if quarter > 1 else now.year - 1
@@ -1212,11 +1226,12 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
             "staff_id": staff_ids[i],
             "period": prior_period,
             "rating": 3 + (i % 3),  # 3..5 spread
-            "comments": f"{prefix} F8D seed performance review (baseline) staff#{i + 1:02d}",
+            "comments": f"{prefix} F8D-v2 seed performance review (baseline) staff#{i + 1:02d}",
             "reviewer_user_id": None,
             "status": "draft",
             "created_at": now_iso,
             "stress_seed": True, "stress_prefix": prefix,
+            "v2_expansion": True,
         })
 
     # 10) PERFORMANCE REVIEW TEMPLATES (3) — F8D-v2 extension (Task #205).

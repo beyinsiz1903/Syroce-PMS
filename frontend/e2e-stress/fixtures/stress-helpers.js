@@ -699,36 +699,56 @@ export const FORBIDDEN_HR_SALARY_CHANGE_FRAGMENT = '/sal' + 'ary-change';
 export function assertEndpointNeverCalled(testInfo, module, urlSubstring) {
     let source = '';
     let sourcePath = testInfo?.file;
-    try {
-        // Lazy fs/path import inside function to avoid top-level side effects.
-        // Helpers are imported by spec files that run under Playwright Node.js.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const fs = require('node:fs');
-        source = fs.readFileSync(sourcePath, 'utf-8');
-    } catch (e) {
-        // Doctrine (architect iter-4): source-scan supplemental layer; primary
-        // defense runtime invariant'tır (yasak endpoint hiç POST etmemek).
-        // Source-unreachable durumunda environment-dependent false fail
-        // yaratmamak için NON-BLOCKING return true + P2 informational.
-        // Spec test'leri zaten yasak URL'i literal yazmıyor (helper sabit
-        // string-concat ile inşa ediyor) → runtime'da çağrı yok.
+    // FAIL-CLOSED guard (architect iter-6 directive): source-scan supplemental
+    // layer'ın silently degrade etmesi yasak. Hem `testInfo.file` eksik hem
+    // de fs read başarısızlığı durumunda → FAIL + P0 finding + return false
+    // (caller expect(...).toBe(true) ile test FAIL eder). ESM-safe fs erişimi:
+    // önce dynamic createRequire fallback, sonra `node:fs` global require.
+    if (!sourcePath) {
         testInfo.annotations.push({
             type: 'rec',
             description: JSON.stringify({
                 module, step: 'forbidden_endpoint_guard',
-                status: 'REVIEW',
-                note: `source_unreachable path=${sourcePath} err=${String(e?.message || e).slice(0, 120)} (non-blocking; runtime invariant is primary defense)`,
+                status: 'FAIL',
+                note: 'testInfo.file missing — fail-closed (cannot verify forbidden literal absence)',
             }),
         });
         testInfo.annotations.push({
             type: 'finding',
             description: JSON.stringify({
-                severity: 'P2', module,
-                title: 'Forbidden endpoint source-scan guard skipped — spec source unreachable',
-                detail: `testInfo.file=${sourcePath} substring_len=${urlSubstring.length}. Runtime invariant (string-concat constant, no literal URL in specs) primary defense.`,
+                severity: 'P0', module,
+                title: 'Forbidden endpoint guard FAIL-CLOSED — testInfo.file unavailable',
+                detail: `substring_len=${urlSubstring.length}. Guard cannot verify spec source; treating as violation per iter-6 fail-closed doctrine.`,
             }),
         });
-        return true;
+        return false;
+    }
+    try {
+        // ESM-safe sync fs access: Playwright runs specs as CommonJS-compatible
+        // modules so `require` is defined; if not, surface error → fail-closed.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires, no-undef
+        const fs = require('node:fs');
+        source = fs.readFileSync(sourcePath, 'utf-8');
+    } catch (e) {
+        // Fail-closed (iter-6): runtime invariant primary olsa da source-scan
+        // supplemental layer'ın environment-dependent silent skip etmesi yasak.
+        testInfo.annotations.push({
+            type: 'rec',
+            description: JSON.stringify({
+                module, step: 'forbidden_endpoint_guard',
+                status: 'FAIL',
+                note: `source_unreachable path=${sourcePath} err=${String(e?.message || e).slice(0, 120)} — fail-closed`,
+            }),
+        });
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P0', module,
+                title: 'Forbidden endpoint source-scan guard FAIL-CLOSED — spec source unreachable',
+                detail: `testInfo.file=${sourcePath} substring_len=${urlSubstring.length} err=${String(e?.message || e).slice(0, 120)}. Iter-6 fail-closed doctrine: source-scan failure is treated as guard violation; primary runtime invariant (string-concat constant) tek başına yeterli sayılmaz.`,
+            }),
+        });
+        return false;
     }
     // Look for the forbidden substring literally in the source. Constants
     // imported by name (FORBIDDEN_HR_PAYROLL_FINALIZE) do NOT contain the
