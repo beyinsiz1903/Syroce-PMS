@@ -1904,32 +1904,31 @@ async def stress_external_calls_status(
                 msg_lower = msg.lower()
                 # tur-29e (CI #46 root-cause fix): `EventSyncService.handle_event`
                 # (backend/channel_manager/application/event_sync_service.py:73-74)
-                # returns `{handled: True, sync_jobs_created: 0, reason: "No active
-                # connectors"}` when the tenant has no connectors. Dispatcher
-                # (`core/outbox_dispatcher.py:73-100`) checks `if not handled`
-                # first, so the "no active connectors" string-match branch is
-                # SKIPPED for the handled=True/0-jobs case; control falls through
-                # to line 100 returning `(True, "Dispatched: 0 sync jobs created")`.
-                # The previous inert_patterns missed this exact string → every
-                # stress mutation produced a row that helper read as a real
-                # external call (CI #46 P0 cascade).
+                # tenant'ta connector yokken `{handled: True, sync_jobs_created: 0,
+                # reason: "No active connectors"}` döner. Dispatcher
+                # (`core/outbox_dispatcher.py:73-100`) ÖNCE `if not handled`
+                # kontrolünü yapıyor; handled=True/0-jobs durumunda "no active
+                # connectors" string-match dalı ATLANIR ve kontrol line 100'e
+                # düşerek `(True, "Dispatched: 0 sync jobs created")` döndürür.
+                # Önceki inert_patterns bu spesifik string'i yakalamıyordu →
+                # her stress mutation helper'ın "gerçek external call" olarak
+                # okuduğu bir row üretiyordu (CI #46 P0 cascade).
                 #
-                # Extended patterns cover all dispatcher/worker "no real HTTP
-                # attempt" outcomes:
-                # - "dispatched: 0"           → EventSyncService 0-jobs success
-                # - "no active connectors"    → legacy handled=False reason
+                # Genişletilmiş pattern seti tüm dispatcher/worker "gerçek HTTP
+                # attempt YAPILMADI" çıktılarını kapsar:
+                # - "dispatched: 0"            → EventSyncService 0-job success
+                # - "no active connectors"     → eski handled=False reason
                 # - "no webhook url configured" → _fallback_dispatch line 142
-                # - "missing creds"           → Afsadakat outbound line 156
-                # - "dry_run"/"dry run"       → env-gated short-circuit
-                # - "unsupported event_type"  → permanent SKU mismatch
-                # tur-29e architect-review hardening: narrow "missing creds" to the
-                # exact Afsadakat short-circuit phrase to prevent accidental
-                # masking of real HTTP-error bodies that happen to contain
-                # "missing creds". Add "unsupported event:" to cover the
-                # outbox_dispatcher.py:78-79 reformatted reason path
-                # (`f"permanent: {reason}"` where reason starts with "Unsupported
-                # event:"), which the original "unsupported event_type" token
-                # missed via substring mismatch.
+                # - "missing creds ..."        → Afsadakat outbound line 156
+                # - "dry_run"/"dry run"        → env-gated short-circuit
+                # - "unsupported event_type"   → permanent SKU mismatch
+                # tur-29e architect-review hardening: "missing creds" tam fraza
+                # daraltıldı — geniş tutulursa "missing creds" kelimesini içeren
+                # gerçek HTTP-error body'leri yanlışlıkla maskelenebilir.
+                # Ayrıca "unsupported event:" eklendi: outbox_dispatcher.py:78-79
+                # reformat dalı (`f"permanent: {reason}"` — reason "Unsupported
+                # event:" ile başlıyor) önceki "unsupported event_type" token'ı
+                # ile substring eşleşmiyordu.
                 inert_patterns = (
                     "no active connectors",
                     "dispatched: 0",
@@ -1969,10 +1968,11 @@ async def stress_external_calls_status(
                 ).sort("created_at", -1).limit(50)
                 async for doc in cursor:
                     msg = (doc.get("delivery_message") or "") + " " + (doc.get("last_error") or "")
-                    # tur-29e: same extended inert pattern set as CM block above
-                    # (kept inline for source-locality; both blocks must stay in
-                    # sync). Afsadakat-specific: "missing creds" matches
-                    # `core/afsadakat_outbound.py:156` short-circuit.
+                    # tur-29e: CM bloğundaki ile aynı genişletilmiş inert pattern
+                    # seti (source-locality için inline tutuldu; iki blok da
+                    # senkron kalmalı). Afsadakat'a özel: "missing creds or
+                    # afsadakat_base_url" `core/afsadakat_outbound.py:156`
+                    # short-circuit'iyle eşleşir.
                     if any(p in msg.lower() for p in (
                         "no active connectors",
                         "dispatched: 0",
