@@ -1,5 +1,10 @@
 uploads = []
-generated = []
+
+[[generated]]
+id = "rZW57zOezozw9UGiQE7km"
+uri = "file://frontend/public/landing/hero-hotel.png"
+type = "image"
+title = "syroce hotel night isometric"
 
 [[outputs]]
 id = "2DJEC12LxcHeKjW0aaTYZ"
