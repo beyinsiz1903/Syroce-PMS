@@ -296,7 +296,63 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
             note: `anon=${anon.status} text_mime_jpeg=${txt.status} oversized_320kib=${big.status}` });
     });
 
-    test('D) Pilot drift + external_calls invariant', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('D) Public token guard — Quick-ID precheckin public surface', async ({ request }, testInfo) => {
+        // Quick-ID precheckin public token endpoint:
+        //   GET /api/quick-id/precheckin/{token_id}/info  (no-auth, public)
+        // Contract: garbage/tampered/cross-tenant token → 4xx; non-existent
+        // valid-format token → upstream 404 → 400 "QR geçersiz" (404 da kabul).
+        // Service unconfigured → 503 (moduleBlocked sayılır ama spec D bağımsız).
+        // POST scan probe YAPILMAZ — gerçek QuickID vendor call'ı tetiklenir
+        // (`real vendor call = 0` ihlali). Sadece GET info probe.
+        const PUBLIC_BASE = '/api/quick-id/precheckin';
+        const ALLOWED_REJECT = new Set([400, 401, 403, 404, 410, 422]);
+
+        // 1) Garbage token (özel karakterler) → 4xx, no 5xx.
+        const garbage = await callRaw(request, 'get', `${PUBLIC_BASE}/${encodeURIComponent('!@#$%^&*()')}/info`);
+        const garbageOk = garbage.status === 503 || ALLOWED_REJECT.has(garbage.status);
+        if (garbage.status >= 500 && garbage.status !== 503) {
+            recFinding(testInfo, 'P1', MOD,
+                'Public token garbage input 5xx storm',
+                `GET ${PUBLIC_BASE}/<garbage>/info status=${garbage.status} — backend input sanitization eksik.`);
+        }
+        if (garbage.ok) {
+            recFinding(testInfo, 'P0', MOD,
+                'Public token garbage input 2xx',
+                `GET ${PUBLIC_BASE}/<garbage>/info status=${garbage.status} — token validation bypass.`);
+        }
+
+        // 2) Tampered (uzun rastgele) token → 404/400/503.
+        const tampered = await callRaw(request, 'get', `${PUBLIC_BASE}/F8K_TAMPERED_TOKEN_${'A'.repeat(64)}/info`);
+        const tamperedOk = tampered.status === 503 || ALLOWED_REJECT.has(tampered.status);
+        if (tampered.ok) {
+            recFinding(testInfo, 'P0', MOD,
+                'Public token tampered input 2xx',
+                `GET ${PUBLIC_BASE}/<tampered>/info status=${tampered.status} — token bypass.`);
+        }
+
+        // 3) Valid-format hex (32-char) ama DB'de yok → upstream 404 → 400/404.
+        //    Bu *expired/cross-tenant token* için en yakın güvenli probe;
+        //    gerçek expired token üretmek seed gerektirir (out-of-scope).
+        const ghostHex = 'abcdef0123456789abcdef0123456789';
+        const ghost = await callRaw(request, 'get', `${PUBLIC_BASE}/${ghostHex}/info`);
+        const ghostOk = ghost.status === 503 || ALLOWED_REJECT.has(ghost.status);
+        if (ghost.ok) {
+            recFinding(testInfo, 'P0', MOD,
+                'Public token ghost (var-olmayan) input 2xx',
+                `GET ${PUBLIC_BASE}/<ghost>/info status=${ghost.status} — existence-disclosure veya tenant filter zayıf.`);
+        }
+        // PII / token leak guard error body'de.
+        if (ghost.body) {
+            assertNoTokenLeak(testInfo, MOD, ghost.body, 'public_token_error_body');
+        }
+
+        const pass = garbageOk && tamperedOk && ghostOk;
+        rec(testInfo, { module: MOD, step: 'public_token_guard',
+            status: pass ? 'PASS' : 'FAIL',
+            note: `garbage=${garbage.status} tampered=${tampered.status} ghost=${ghost.status} (POST scan probe SKIPPED — vendor call yasak)` });
+    });
+
+    test('E) Pilot drift + external_calls invariant', async ({ request, stressTokens, stressState }, testInfo) => {
         // Bu testler probe-only; ama yine de doctrine'ı uygulayalım.
         await assertPilotDriftZero(testInfo, MOD, request, stressTokens.pilot_token, pilotBefore);
         await assertNoExternalCallsPostBatch(testInfo, MOD, 'public_checkin_probes',

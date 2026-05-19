@@ -328,14 +328,122 @@ test.describe('F8K § 62 — KVKK Consent + Digital Key + PII Guard Stress', () 
             note: `enhanced=${enhanced.status} complete=${complete.status} cross_tenant=${crossStatus ?? 'no_pilot_guest'}` });
     });
 
-    test('D) Pilot drift + external_calls invariant', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('D) KVKK lifecycle — consents/audit read + request create/update/delete + PII guard', async ({ request, stressTokens }, testInfo) => {
+        // KVKK lifecycle endpoint'leri (operations_router):
+        //   GET    /api/kvkk/consents       — tenant-scoped read
+        //   GET    /api/kvkk/audit-log      — tenant-scoped read
+        //   GET    /api/kvkk/requests       — tenant-scoped read
+        //   POST   /api/kvkk/requests       — create (view_system_diagnostics)
+        //   PATCH  /api/kvkk/requests/{id}  — update
+        //   DELETE /api/kvkk/requests/{id}  — delete (cleanup)
+        // Hepsi staff JWT auth; super_admin geçer. Stress admin RBAC eksikse
+        // create 403/404 → kalan probe'lar read-only PII guard'a daralır.
+        const reqMarker = `${prefix}_KVKK_REQ_${Date.now().toString(36)}`;
+
+        // 1) GET /consents — tenant filter + PII/tid leak.
+        const consents = await callTimed(request, 'get', '/api/kvkk/consents?limit=50',
+            undefined, stressTokens.stress_token);
+        if (consents.ok && consents.body) {
+            assertNoTokenLeak(testInfo, MOD, consents.body, 'kvkk_consents_read');
+            if (pilotTid && JSON.stringify(consents.body).includes(pilotTid)) {
+                recFinding(testInfo, 'P0', MOD,
+                    'KVKK consents response\'unda pilot tenant_id sızdı',
+                    `GET /api/kvkk/consents — cross-tenant leak.`);
+            }
+        }
+
+        // 2) GET /audit-log — tenant filter + PII/tid leak.
+        const audit = await callTimed(request, 'get', '/api/kvkk/audit-log?limit=50',
+            undefined, stressTokens.stress_token);
+        if (audit.ok && audit.body) {
+            assertNoTokenLeak(testInfo, MOD, audit.body, 'kvkk_audit_read');
+            if (pilotTid && JSON.stringify(audit.body).includes(pilotTid)) {
+                recFinding(testInfo, 'P0', MOD,
+                    'KVKK audit-log response\'unda pilot tenant_id sızdı',
+                    `GET /api/kvkk/audit-log — cross-tenant leak.`);
+            }
+        }
+
+        // 3) POST /requests — create + track for cleanup.
+        const createdReqIds = [];
+        const createBody = {
+            guest_name: `${prefix}_KVKK_GUEST`,
+            type: 'access',
+            details: reqMarker,
+        };
+        const created = await callTimed(request, 'post', '/api/kvkk/requests', createBody, stressTokens.stress_token);
+        let lifecycleOk = false;
+        if (created.ok && created.body?.id) {
+            createdReqIds.push(created.body.id);
+
+            // 4) PATCH /requests/{id} → status=completed.
+            const patched = await callTimed(request, 'patch', `/api/kvkk/requests/${created.body.id}`,
+                { status: 'completed', response_text: `${reqMarker}_done` }, stressTokens.stress_token);
+
+            // 5) GET /requests — created marker görünmeli + cross-tenant leak guard.
+            const list = await callTimed(request, 'get', '/api/kvkk/requests?limit=100',
+                undefined, stressTokens.stress_token);
+            let foundCreated = false;
+            if (list.ok && list.body) {
+                const dump = JSON.stringify(list.body);
+                foundCreated = dump.includes(reqMarker);
+                if (pilotTid && dump.includes(pilotTid)) {
+                    recFinding(testInfo, 'P0', MOD,
+                        'KVKK requests response\'unda pilot tenant_id sızdı',
+                        `GET /api/kvkk/requests — cross-tenant leak.`);
+                }
+                assertNoTokenLeak(testInfo, MOD, list.body, 'kvkk_requests_read');
+            }
+
+            // 6) DELETE /requests/{id} → cleanup inline.
+            const deleted = await callTimed(request, 'delete', `/api/kvkk/requests/${created.body.id}`,
+                undefined, stressTokens.stress_token);
+            if (deleted.ok) createdReqIds.pop();
+
+            lifecycleOk = patched.ok && list.ok && foundCreated && deleted.ok;
+        } else if (created.status === 403 || created.status === 404) {
+            rec(testInfo, { module: MOD, step: 'kvkk_lifecycle_create',
+                status: 'REVIEW',
+                note: `stress admin role'unda KVKK create yetkisi yok (status=${created.status}, view_system_diagnostics perm gerekli). Read+PII guard'lar çalıştı, write lifecycle skipped.` });
+            lifecycleOk = true; // RBAC short-circuit kabul.
+        } else if (created.status >= 500) {
+            recFinding(testInfo, 'P1', MOD,
+                'KVKK request create 5xx',
+                `POST /api/kvkk/requests status=${created.status}.`);
+        }
+
+        // Cross-tenant: stress admin /api/kvkk/requests body'sinde pilot_tid
+        // hiçbir item içinde olmamalı (zaten 2. probe'da kontrol edildi).
+        const pass = (consents.ok || consents.status === 403)
+                  && (audit.ok || audit.status === 403)
+                  && lifecycleOk;
+        rec(testInfo, { module: MOD, step: 'kvkk_lifecycle',
+            status: pass ? 'PASS' : 'FAIL',
+            note: `consents=${consents.status} audit=${audit.status} created=${created.status} marker_id=${createdReqIds[0]?.slice(0, 8) || (created.body?.id?.slice(0, 8)) || 'none'}` });
+
+        // Save createdReqIds for afterAll belt-and-suspenders cleanup.
+        if (createdReqIds.length) {
+            globalThis.__f8k_kvkk_residue = (globalThis.__f8k_kvkk_residue || []).concat(createdReqIds);
+        }
+    });
+
+    test('E) Pilot drift + external_calls invariant', async ({ request, stressTokens, stressState }, testInfo) => {
         await assertPilotDriftZero(testInfo, MOD, request, stressTokens.pilot_token, pilotBefore);
         await assertNoExternalCallsPostBatch(testInfo, MOD, 'public_kvkk_probes',
             stressState, request, stressTokens.pilot_token);
     });
 
-    // Probe-only spec — kalıcı yazma yok. afterAll defensive sweep yapmaz
-    // çünkü cross-tenant submit'lerin hepsi 404'e takıldığında DB'ye yazma
-    // gerçekleşmez. Eğer cross 2xx olduysa P0 finding zaten emit edilir +
-    // operatör manuel cleanup'a yönlendirilir.
+    test.afterAll(async ({ request, stressTokens }) => {
+        // Belt-and-suspenders: D step inline cleanup başarısız olduysa
+        // marker-tagged KVKK request'leri tekrar dene.
+        if (!stressTokens) return;
+        const residue = (globalThis.__f8k_kvkk_residue || []).slice();
+        globalThis.__f8k_kvkk_residue = [];
+        for (const rid of residue) {
+            await request.delete(`/api/kvkk/requests/${rid}`, {
+                headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
+                failOnStatusCode: false, timeout: 10_000,
+            }).catch(() => null);
+        }
+    });
 });
