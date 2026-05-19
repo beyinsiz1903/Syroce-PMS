@@ -54,6 +54,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const MOD = 'cm_outbox';
+const BASE = '/api/channel-manager/hotelrunner';
 
 test.describe.configure({ mode: 'serial' });
 

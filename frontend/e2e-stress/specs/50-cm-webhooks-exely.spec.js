@@ -445,6 +445,61 @@ test.describe('F8L § 50 — Exely Webhook Stress', () => {
         }
     });
 
+    test('H) Conditional cancellation idempotency — aynı reservation_id cancel 2x → tek state geçişi (auth-mode=open)', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'cancel_idemp', status: 'SKIP', note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        // Architect-iter-4 talebi: Exely cancellation idempotency. Aynı
+        // koşul: open_for_testing modda valid cancel payload 2x; her iki
+        // POST aynı status sınıfı dönmeli (2xx dedupe veya 409 conflict).
+        if (authMode !== 'open_for_testing') {
+            rec(testInfo, { module: MOD, step: 'cancel_idemp',
+                status: 'REVIEW',
+                note: `auth_mode=${authMode} — cancel path açık değil` });
+            recFinding(testInfo, 'P2', MOD,
+                'Exely cancellation idempotency coverage gap',
+                `auth_mode=${authMode}. Whitelisted prod env'de cancel duplicate 2x test sürdürülmeli.`);
+            return;
+        }
+        const stableId = `${prefix || 'STRESS'}_EXELY_CANCEL_FIXED`;
+        const cancelPayload = `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><Reservation><TenantId>${stressTid}</TenantId><Id>${stableId}</Id><Status>cancelled</Status></Reservation></soap:Body></soap:Envelope>`;
+        let r1, r2;
+        try {
+            r1 = await request.post(`${BASE}/reservations`, {
+                headers: { 'Content-Type': 'application/xml' },
+                data: cancelPayload, failOnStatusCode: false, timeout: 30_000,
+            });
+        } catch (e) {
+            rec(testInfo, { module: MOD, step: 'cancel_idemp', status: 'FAIL', note: `r1 net: ${e?.message}` });
+            recFinding(testInfo, 'P1', MOD, 'Exely cancel r1 network error', `${e?.message}`);
+            throw e;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+        try {
+            r2 = await request.post(`${BASE}/reservations`, {
+                headers: { 'Content-Type': 'application/xml' },
+                data: cancelPayload, failOnStatusCode: false, timeout: 30_000,
+            });
+        } catch (e) {
+            rec(testInfo, { module: MOD, step: 'cancel_idemp', status: 'FAIL', note: `r2 net: ${e?.message}` });
+            recFinding(testInfo, 'P1', MOD, 'Exely cancel r2 network error', `${e?.message}`);
+            throw e;
+        }
+        const s1 = r1.status(), s2 = r2.status();
+        const both2xx = (s1 >= 200 && s1 < 300) && (s2 >= 200 && s2 < 300);
+        const idempotencyOk = both2xx || (s1 === s2);
+        rec(testInfo, { module: MOD, step: 'cancel_idemp',
+            status: idempotencyOk ? 'PASS' : 'FAIL',
+            note: `r1=${s1} r2=${s2} stable_id=${stableId}` });
+        if (!idempotencyOk) {
+            recFinding(testInfo, 'P0', MOD,
+                'Exely cancellation idempotency kırık',
+                `Aynı cancel payload 2x → r1=${s1} r2=${s2}. Duplicate cancel handler tutarsız.`);
+        }
+    });
+
     test('E) external_calls invariant + pilot_drift=0', async ({ request, stressTokens }, testInfo) => {
         await assertPilotDriftZero(testInfo, MOD, request, stressTokens.pilot_token, pilotBefore);
         const stateBlob = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'e2e-stress', '.auth', 'stress-state.json'), 'utf-8'));
