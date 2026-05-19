@@ -197,6 +197,9 @@ test.describe('F8E § 27 — Accounting Bank + Inventory', () => {
         expect(r.ok, `inventory status`).toBe(true);
         expect(items.length, `items present`).toBeGreaterThanOrEqual(1);
         expect(lowStockOk, `low_stock_count matches recomputed`).toBe(true);
+        // Architect approval comment #3: explicit expect to align reporter
+        // counters.FAIL with failedTests (F8E tur-2 mismatch dersi).
+        expect(totalValueOk, `total_value matches recomputed (tol=0.5)`).toBe(true);
     });
 
     test('D) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
