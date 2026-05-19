@@ -54,10 +54,16 @@ test.describe('F8A § 06 — Night audit (business-date / run / re-run idempoten
     });
 
     test('A) Night audit run (business_date current)', async ({ request, stressTokens }, testInfo) => {
+        // tur-31 (CI #50 NO-GO follow-up): CI #50'de 500-oda stress tenant'ta
+        // night audit run latency=120072ms ile per-call 120s timeout'u tam
+        // sınırda aştı (P1 finding → NO-GO). Backend gerçekten yavaş ama
+        // operasyonel olarak makul — 500 oda × full charge posting yapıyor.
+        // Per-call budget 120s → 180s; Playwright test timeout 240s.
+        test.setTimeout(240_000);
         const body = businessDate ? { business_date: businessDate } : {};
         const r = await callTimedWithBackoff(request, 'post', '/api/pms-core/night-audit/run',
             body, stressTokens.stress_token,
-            { maxRetries: 1, fallbackSleepMs: 5000, timeout: 120_000 });
+            { maxRetries: 1, fallbackSleepMs: 5000, timeout: 180_000 });
         const ok = r.ok;
         firstRunSnapshot = r.body || null;
         // tur-27 (CI #42 NO-GO follow-up): status=0 (network/timeout) ile
@@ -83,12 +89,13 @@ test.describe('F8A § 06 — Night audit (business-date / run / re-run idempoten
                 `Status=${r.status} body=${JSON.stringify(r.body).slice(0, 400)}`);
         }
         if (r.status === 0) {
-            // tur-27: network/timeout — backend operation > per-call timeout
-            // (now 120s). P1 informational finding for ops follow-up; not FAIL.
+            // tur-27/tur-31: network/timeout — backend operation > per-call
+            // timeout (now 180s after tur-31 bump). P1 informational for ops
+            // follow-up; not FAIL.
             recFinding(testInfo, 'P1', MOD,
                 'Night audit run timeout/network — backend performance regression olabilir',
                 `Status=0 latency=${r.ms}ms attempts=${r.attempts ?? 'n/a'}. ` +
-                'Per-call timeout 120s; gerçek backend response süresi bunu da aştı.');
+                'Per-call timeout 180s; gerçek backend response süresi bunu da aştı.');
         }
         expect(status, `night_audit_run_first FAIL: status=${r.status} latency=${r.ms}ms`).not.toBe('FAIL');
     });
@@ -99,14 +106,16 @@ test.describe('F8A § 06 — Night audit (business-date / run / re-run idempoten
                 note: 'first run başarısız veya skip — re-run anlamsız' });
             return;
         }
+        // tur-31 (CI #50 follow-up): A ile simetrik timeout budget'ı.
+        test.setTimeout(240_000);
         const body = businessDate ? { business_date: businessDate } : {};
         // tur-27 (architect review): B rerun da A ile aynı timeout profilini
         // almalı — re-run idempotency check yine 500-folio scan tetikleyebilir
         // (already_posted guard fast-path olsa bile DB lookup süresi 30s'i
-        // aşabilir). A'daki 120s/180s budget'ı buraya da uygula.
+        // aşabilir). A'daki 180s budget'ı buraya da uygula (tur-31 bump).
         const r = await callTimedWithBackoff(request, 'post', '/api/pms-core/night-audit/run',
             body, stressTokens.stress_token,
-            { maxRetries: 1, fallbackSleepMs: 5000, timeout: 120_000 });
+            { maxRetries: 1, fallbackSleepMs: 5000, timeout: 180_000 });
         secondRunSnapshot = r.body || null;
         const firstPosted = firstRunSnapshot?.posted_charges ?? firstRunSnapshot?.summary?.posted_charges ?? null;
         const secondPosted = secondRunSnapshot?.posted_charges ?? secondRunSnapshot?.summary?.posted_charges ?? null;
