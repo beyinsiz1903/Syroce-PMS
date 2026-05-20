@@ -24,6 +24,7 @@ const LaundryTab = lazy(() => import('@/components/pms/LaundryTab'));
 const POSTab = lazy(() => import('@/components/pms/POSTab'));
 // Büyük dialog'lar (>500 satır) — açılmadığı sürece chunk indirilmez.
 const BookingDialog = lazy(() => import('@/components/pms/BookingDialog'));
+const BookingConflictDialog = lazy(() => import('@/components/pms/BookingConflictDialog'));
 const FolioViewDialog = lazy(() => import('@/components/pms/FolioViewDialog'));
 const Guest360Dialog = lazy(() => import('@/components/pms/Guest360Dialog'));
 // Modal flow — her zaman opt-in, ekstra split.
@@ -38,6 +39,7 @@ import AllotmentGrid from '@/components/AllotmentGrid';
 import GroupRevenueByCompany from '@/components/GroupRevenueByCompany';
 import PickupPaceReport from '@/components/PickupPaceReport';
 import BookingDetailDialog from '@/components/pms/BookingDetailDialog';
+import { parseBookingConflict } from '@/lib/bookingConflict';
 import BulkRoomsDialog from '@/components/pms/BulkRoomsDialog';
 import CompanyDialog from '@/components/pms/CompanyDialog';
 import FindRoomDialog from '@/components/pms/FindRoomDialog';
@@ -332,6 +334,8 @@ const PMSModule = ({ user, tenant, onLogout }) => {
   const [multiRoomBooking, setMultiRoomBooking] = useState([
     { room_id: '', adults: 1, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }
   ]);
+
+  const [bookingConflict, setBookingConflict] = useState(null);
 
   const [newCompany, setNewCompany] = useState({
     name: '', corporate_code: '', tax_number: '', billing_address: '',
@@ -675,7 +679,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       toast.success('Booking created successfully'); setOpenDialog(null); loadData(); setSelectedCompany(null);
       setNewBooking({ guest_id: '', room_id: '', check_in: '', check_out: '', adults: 1, children: 0, children_ages: [], guests_count: 1, total_amount: 0, base_rate: 0, channel: 'direct', company_id: '', contracted_rate: '', rate_type: '', market_segment: '', cancellation_policy: '', billing_address: '', billing_tax_number: '', billing_contact_person: '', override_reason: '' });
       setMultiRoomBooking([{ room_id: '', adults: 1, children: 0, children_ages: [], total_amount: 0, base_rate: 0, rate_plan: '', package_code: null }]);
-    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to create booking'); }
+    } catch (error) {
+      const conflict = parseBookingConflict(error);
+      if (conflict) { setBookingConflict(conflict); return; }
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Failed to create booking'));
+    }
   };
 
   const loadBookingFolios = async (bookingId) => {
@@ -971,6 +980,26 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             <ReservationDetailModal
               bookingId={reservationDetailId}
               onClose={() => setReservationDetailId(null)}
+            />
+          </Suspense>
+        )}
+
+        {bookingConflict && (
+          <Suspense fallback={null}>
+            <BookingConflictDialog
+              conflict={bookingConflict}
+              open={!!bookingConflict}
+              onClose={() => setBookingConflict(null)}
+              onPickAlternative={(room) => {
+                setMultiRoomBooking((prev) => {
+                  if (!prev || prev.length === 0) return prev;
+                  const copy = [...prev];
+                  copy[0] = { ...copy[0], room_id: room.id };
+                  return copy;
+                });
+                setBookingConflict(null);
+                toast.info(`Oda ${room.room_number} ilk satıra atandı. Lütfen rezervasyonu tekrar kaydedin.`);
+              }}
             />
           </Suspense>
         )}

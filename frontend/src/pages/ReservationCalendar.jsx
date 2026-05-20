@@ -30,9 +30,12 @@ import {
 } from './calendar';
 import { useTranslation } from 'react-i18next';
 
+import { parseBookingConflict } from '@/lib/bookingConflict';
+
 const ReservationSidebar = lazy(() => import('@/components/ReservationSidebar'));
 const FolioDetailView = lazy(() => import('@/pages/FolioDetailView'));
 const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal'));
+const BookingConflictDialog = lazy(() => import('@/components/pms/BookingConflictDialog'));
 
 const DEBUG_ROOMS = false;
 
@@ -62,6 +65,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [selectedBookingFolio, setSelectedBookingFolio] = useState(null);
+  const [bookingConflict, setBookingConflict] = useState(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const [showNewBookingDialog, setShowNewBookingDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
@@ -403,7 +407,13 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       setShowNewBookingDialog(false);
       loadCalendarData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Rezervasyon oluşturulamadı');
+      const conflict = parseBookingConflict(error);
+      if (conflict) {
+        setBookingConflict(conflict);
+        return;
+      }
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Rezervasyon oluşturulamadı'));
     }
   };
 
@@ -1199,6 +1209,21 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {bookingConflict && (
+        <Suspense fallback={null}>
+          <BookingConflictDialog
+            conflict={bookingConflict}
+            open={!!bookingConflict}
+            onClose={() => setBookingConflict(null)}
+            onPickAlternative={(room) => {
+              setNewBooking((prev) => ({ ...prev, room_id: room.id }));
+              setBookingConflict(null);
+              toast.info(`Oda ${room.room_number} seçildi. Lütfen kaydet butonuna tekrar basın.`);
+            }}
+          />
+        </Suspense>
+      )}
     </Layout>
   );
 };

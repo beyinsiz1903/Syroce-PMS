@@ -10,6 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { BedDouble, User, LogIn, LogOut, CreditCard, AlertTriangle, SprayCan, ExternalLink, Banknote, Building2, Wallet, Plus, CalendarPlus, Search, UserCheck, UserPlus, Calendar, Clock, AlertOctagon, UserCircle2 } from 'lucide-react';
+import BookingConflictDialog from '@/components/pms/BookingConflictDialog';
+import { parseBookingConflict } from '@/lib/bookingConflict';
 
 const RoomsTab = ({
   rooms,
@@ -38,6 +40,9 @@ const RoomsTab = ({
   // Quick payment dialog state
   const [paymentDialog, setPaymentDialog] = useState(false);
   const [paymentTarget, setPaymentTarget] = useState(null);
+
+  // Booking conflict (structured 409) dialog state
+  const [bookingConflict, setBookingConflict] = useState(null);
 
   // ── Canlı HK senkronizasyonu ──
   // Mobil HK uygulaması "Temizliğe Başla" / "Tamamla" çağırdığında oda
@@ -334,7 +339,13 @@ const RoomsTab = ({
       setQuickResRoom(null);
       onDataRefresh?.();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Rezervasyon oluşturulamadı');
+      const conflict = parseBookingConflict(error);
+      if (conflict) {
+        setBookingConflict(conflict);
+      } else {
+        const detail = error.response?.data?.detail;
+        toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Rezervasyon oluşturulamadı'));
+      }
     } finally {
       setQuickResLoading(false);
     }
@@ -982,6 +993,14 @@ const RoomsTab = ({
           )}
         </DialogContent>
       </Dialog>
+
+      {bookingConflict && (
+        <BookingConflictDialog
+          conflict={bookingConflict}
+          open={!!bookingConflict}
+          onClose={() => setBookingConflict(null)}
+        />
+      )}
     </div>
   );
 };
