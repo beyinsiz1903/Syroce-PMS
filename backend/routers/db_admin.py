@@ -25,6 +25,7 @@ from cache_manager import cached
 from core.atomic_booking import (
     ensure_booking_indexes,
     list_room_night_lock_duplicate_groups,
+    manual_resolve_room_night_lock_duplicate,
     resolve_room_night_lock_duplicates,
 )
 from core.database import _raw_db
@@ -295,4 +296,88 @@ async def resolve_rnl_duplicates(
 
     if index_rebuild is not None:
         result["index_rebuild"] = index_rebuild
+    return result
+
+
+class RnlManualResolveBody(BaseModel):
+    tenant_id: str
+    room_id: str
+    night_date: str
+    keep_booking_id: str
+    retire_booking_ids: list[str]
+    confirm: bool = False
+
+
+@router.post("/room-night-lock-duplicates/manual-resolve")
+async def manual_resolve_rnl_duplicate(
+    body: RnlManualResolveBody,
+    dry_run: bool = Query(True, description="True ise sadece doğrulama"),
+    current_user: User = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """Operator-driven resolve for a single `manual_required` lock group.
+
+    Counterpart to `/resolve`, used when two or more active bookings share
+    the same (tenant, room, night) and the operator must pick which one
+    keeps the lock. Strictly scoped — `delete_many` runs only on the
+    (tenant, room, night, booking_id $in retire) quadruple supplied here.
+
+    Real apply requires `?dry_run=false` AND `body.confirm=true`.
+    """
+    actor_id = getattr(current_user, "id", "?")
+    actor_name = getattr(current_user, "name", "super_admin")
+    actor_role = getattr(current_user, "role", "super_admin")
+
+    logger.info(
+        "db_admin.rnl_duplicates.manual_resolve.attempt actor=%s "
+        "tenant=%s room=%s night=%s keep=%s retire=%s dry_run=%s confirm=%s",
+        actor_id, body.tenant_id, body.room_id, body.night_date,
+        body.keep_booking_id, body.retire_booking_ids, dry_run, body.confirm,
+    )
+
+    if not body.retire_booking_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="retire_booking_ids boş olamaz",
+        )
+    if body.keep_booking_id in body.retire_booking_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="keep_booking_id retire listesinde olamaz",
+        )
+    if not dry_run and not body.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Gerçek silme için body.confirm=true zorunlu",
+        )
+
+    if dry_run:
+        return {
+            "applied": False,
+            "dry_run": True,
+            "tenant_id": body.tenant_id,
+            "room_id": body.room_id,
+            "night_date": body.night_date,
+            "keep_booking_id": body.keep_booking_id,
+            "retire_booking_ids": body.retire_booking_ids,
+            "hint": "Gerçek silme için ?dry_run=false + body.confirm=true",
+        }
+
+    result = await manual_resolve_room_night_lock_duplicate(
+        tenant_id=body.tenant_id,
+        room_id=body.room_id,
+        night_date=body.night_date,
+        keep_booking_id=body.keep_booking_id,
+        retire_booking_ids=body.retire_booking_ids,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        actor_role=actor_role,
+    )
+
+    logger.warning(
+        "db_admin.rnl_duplicates.manual_resolve.done actor=%s tenant=%s "
+        "room=%s night=%s applied=%s deleted=%s skip_reason=%s",
+        actor_id, body.tenant_id, body.room_id, body.night_date,
+        result.get("applied"), result.get("deleted_count"),
+        result.get("skip_reason"),
+    )
     return result

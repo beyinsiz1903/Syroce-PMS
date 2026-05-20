@@ -996,6 +996,159 @@ async def resolve_room_night_lock_duplicates(
     }
 
 
+async def manual_resolve_room_night_lock_duplicate(
+    *,
+    tenant_id: str,
+    room_id: str,
+    night_date: str,
+    keep_booking_id: str,
+    retire_booking_ids: list[str],
+    actor_id: str = "system",
+    actor_name: str = "system",
+    actor_role: str = "super_admin",
+) -> dict[str, Any]:
+    """Operator-driven resolve for a single duplicate room-night-lock group.
+
+    Counterpart to the safe-only `resolve_room_night_lock_duplicates` flow,
+    intended for the groups flagged `manual_required` (two or more active
+    bookings on the same night, or owner classification failures).
+
+    Guards:
+      * `keep_booking_id` and every entry in `retire_booking_ids` must
+        currently own a lock row on the exact (tenant, room, night) triple.
+      * `retire_booking_ids` must not contain the keeper.
+      * Delete is scoped strictly to (tenant_id, room_id, night_date,
+        booking_id $in retire_booking_ids) — never wider.
+      * Post-delete the remaining lock count for the triple must be == 1
+        (the keeper). Anything else → no audit/timeline + skip.
+
+    Writes an `audit_logs` row (`MANUAL_RESOLVE_RNL_DUPLICATE`) and a
+    timeline event (`lock_duplicate_resolved`, status=manual) on success.
+    """
+    if not (tenant_id and room_id and night_date and keep_booking_id):
+        return {
+            "applied": False,
+            "skip_reason": "tenant_id/room_id/night_date/keep_booking_id required",
+        }
+    retire_ids = [b for b in (retire_booking_ids or []) if b]
+    if not retire_ids:
+        return {"applied": False, "skip_reason": "retire_booking_ids empty"}
+    if keep_booking_id in retire_ids:
+        return {
+            "applied": False,
+            "skip_reason": "keep_booking_id cannot also be retired",
+        }
+
+    try:
+        existing_locks = await db.room_night_locks.find(
+            {"tenant_id": tenant_id, "room_id": room_id, "night_date": night_date},
+            {"_id": 0, "booking_id": 1, "lock_type": 1, "created_at": 1},
+        ).to_list(100)
+    except Exception as exc:
+        logger.warning(
+            "F8N manual-resolve lock fetch failed (%s/%s/%s): %s",
+            tenant_id, room_id, night_date, exc,
+        )
+        return {"applied": False, "skip_reason": f"lock fetch error: {exc}"}
+
+    existing_booking_ids = {lk.get("booking_id") for lk in existing_locks}
+    if keep_booking_id not in existing_booking_ids:
+        return {
+            "applied": False,
+            "skip_reason": "keep_booking_id has no lock on this triple",
+        }
+    missing = [b for b in retire_ids if b not in existing_booking_ids]
+    if missing:
+        return {
+            "applied": False,
+            "skip_reason": f"retire_booking_ids not present on triple: {missing}",
+        }
+
+    try:
+        del_res = await db.room_night_locks.delete_many({
+            "tenant_id": tenant_id,
+            "room_id": room_id,
+            "night_date": night_date,
+            "booking_id": {"$in": retire_ids},
+        })
+        remaining = await db.room_night_locks.count_documents({
+            "tenant_id": tenant_id,
+            "room_id": room_id,
+            "night_date": night_date,
+        })
+    except Exception as exc:
+        logger.warning(
+            "F8N manual-resolve delete failed (%s/%s/%s): %s",
+            tenant_id, room_id, night_date, exc,
+        )
+        return {"applied": False, "skip_reason": f"delete error: {exc}"}
+
+    if remaining != 1:
+        logger.warning(
+            "F8N manual-resolve post-check: %s rows remain on %s/%s/%s — "
+            "expected 1; skipping audit",
+            remaining, tenant_id, room_id, night_date,
+        )
+        return {
+            "applied": False,
+            "deleted_count": del_res.deleted_count,
+            "skip_reason": f"post_check rows={remaining}",
+        }
+
+    now_iso = datetime.now(UTC).isoformat()
+    try:
+        await db.audit_logs.insert_one({
+            "id": (
+                f"rnl-manual-{tenant_id}-{room_id}-{night_date}-"
+                f"{int(datetime.now(UTC).timestamp())}"
+            ),
+            "tenant_id": tenant_id,
+            "user_id": actor_id,
+            "user_name": actor_name,
+            "user_role": actor_role,
+            "action": "MANUAL_RESOLVE_RNL_DUPLICATE",
+            "entity_type": "room_night_lock",
+            "entity_id": f"{tenant_id}:{room_id}:{night_date}",
+            "changes": {
+                "keep_booking_id": keep_booking_id,
+                "retire_booking_ids": retire_ids,
+                "owners_before": existing_locks,
+                "deleted_count": del_res.deleted_count,
+                "decision": "manual",
+            },
+            "timestamp": now_iso,
+        })
+    except Exception as exc:
+        logger.warning("F8N manual-resolve audit_log insert failed: %s", exc)
+
+    await _timeline_event(
+        tenant_id=tenant_id,
+        stage="lock_duplicate_resolved",
+        status="manual",
+        booking_id=keep_booking_id,
+        room_id=room_id,
+        metadata={
+            "night_date": night_date,
+            "decision": "manual",
+            "keep_booking_id": keep_booking_id,
+            "retired_booking_ids": retire_ids,
+            "deleted_count": del_res.deleted_count,
+            "actor_id": actor_id,
+        },
+    )
+
+    return {
+        "applied": True,
+        "deleted_count": del_res.deleted_count,
+        "remaining": remaining,
+        "tenant_id": tenant_id,
+        "room_id": room_id,
+        "night_date": night_date,
+        "keep_booking_id": keep_booking_id,
+        "retire_booking_ids": retire_ids,
+    }
+
+
 async def ensure_booking_indexes() -> None:
     """Create indexes for room-night locking and fast overlap detection.
 

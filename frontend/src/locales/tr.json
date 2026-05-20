@@ -8425,6 +8425,14 @@
     "indexOk": "tamam",
     "indexFailed": "başarısız",
     "manualFollowUp": "{{count}} grup manuel takip gerektiriyor.",
-    "manualWarning": "{{count}} grup manuel karar gerektiriyor: aynı gecede iki veya daha fazla aktif rezervasyon var ya da sahip sınıflandırması başarısız."
+    "manualWarning": "{{count}} grup manuel karar gerektiriyor: aynı gecede iki veya daha fazla aktif rezervasyon var ya da sahip sınıflandırması başarısız.",
+    "manualKeep": "Tut",
+    "manualNothingToRetire": "Bu üçlü için emekliye ayrılacak başka rezervasyon yok",
+    "confirmManualResolve": "{{night}} gecesinde {{keeper}} rezervasyonu tutulup şunlar emekliye ayrılsın mı: {{retire}}? Bu, çakışan kilit satırlarını siler.",
+    "manualResolveDone": "Manuel çözüm tamam — {{deleted}} kilit silindi",
+    "manualResolveSkipped": "Manuel çözüm atlandı: {{reason}}",
+    "manualResolveError": "Manuel çözüm başarısız",
+    "manualResolveDoneInline": "{{keeper}} tutuldu, {{deleted}} kilit silindi.",
+    "manualResolveSkippedInline": "Atlandı: {{reason}}"
   }
 }

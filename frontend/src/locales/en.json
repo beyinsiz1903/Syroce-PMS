@@ -8425,6 +8425,14 @@
     "indexOk": "ok",
     "indexFailed": "failed",
     "manualFollowUp": "{{count}} group(s) require manual follow-up.",
-    "manualWarning": "{{count}} group(s) need manual adjudication: two or more active bookings share the same night, or owner classification failed."
+    "manualWarning": "{{count}} group(s) need manual adjudication: two or more active bookings share the same night, or owner classification failed.",
+    "manualKeep": "Keep",
+    "manualNothingToRetire": "No other bookings to retire on this triple",
+    "confirmManualResolve": "Keep booking {{keeper}} on night {{night}} and retire: {{retire}}? This deletes the conflicting lock rows.",
+    "manualResolveDone": "Manual resolve done — {{deleted}} lock(s) deleted",
+    "manualResolveSkipped": "Manual resolve skipped: {{reason}}",
+    "manualResolveError": "Manual resolve failed",
+    "manualResolveDoneInline": "Kept {{keeper}}, deleted {{deleted}} lock(s).",
+    "manualResolveSkippedInline": "Skipped: {{reason}}"
   }
 }

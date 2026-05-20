@@ -169,6 +169,98 @@ async def test_auto_safe_all_inactive_keeps_one(isolated_tenant):
     assert remaining == 1
 
 
+async def test_manual_resolve_keeps_chosen_booking(isolated_tenant):
+    """Operator-driven manual_resolve deletes only the retired locks,
+    leaves the keeper's lock intact, and writes an audit row."""
+    from core.atomic_booking import (
+        list_room_night_lock_duplicate_groups,
+        manual_resolve_room_night_lock_duplicate,
+    )
+    from core.database import db
+
+    tid = isolated_tenant
+    room_id = f"room_{uuid.uuid4().hex[:8]}"
+    night = "2030-10-01"
+    keep, retire = str(uuid.uuid4()), str(uuid.uuid4())
+
+    await _seed_booking(tid, keep, "confirmed")
+    await _seed_booking(tid, retire, "checked_in")
+    await _seed_lock(tid, room_id, night, keep)
+    await _seed_lock(tid, room_id, night, retire)
+
+    plan = await list_room_night_lock_duplicate_groups(limit=50)
+    mine = [g for g in plan if g["tenant_id"] == tid][0]
+    assert mine["recommendation"] == "manual_required"
+
+    res = await manual_resolve_room_night_lock_duplicate(
+        tenant_id=tid, room_id=room_id, night_date=night,
+        keep_booking_id=keep, retire_booking_ids=[retire],
+        actor_id="op1", actor_name="op1", actor_role="super_admin",
+    )
+    assert res["applied"] is True
+    assert res["deleted_count"] == 1
+    assert res["remaining"] == 1
+
+    remaining = await db.room_night_locks.find(
+        {"tenant_id": tid, "room_id": room_id, "night_date": night},
+        {"_id": 0, "booking_id": 1},
+    ).to_list(10)
+    assert len(remaining) == 1
+    assert remaining[0]["booking_id"] == keep
+
+    audit = await db.audit_logs.find_one(
+        {"tenant_id": tid, "action": "MANUAL_RESOLVE_RNL_DUPLICATE"}
+    )
+    assert audit is not None
+    assert audit["changes"]["keep_booking_id"] == keep
+    assert retire in audit["changes"]["retire_booking_ids"]
+
+
+async def test_manual_resolve_guards_reject_invalid_input(isolated_tenant):
+    """Guards: keeper in retire list, retire without matching lock, empty
+    retire list — all must skip cleanly without deleting anything."""
+    from core.atomic_booking import manual_resolve_room_night_lock_duplicate
+    from core.database import db
+
+    tid = isolated_tenant
+    room_id = f"room_{uuid.uuid4().hex[:8]}"
+    night = "2030-10-02"
+    keep, retire = str(uuid.uuid4()), str(uuid.uuid4())
+    bogus = str(uuid.uuid4())
+
+    await _seed_lock(tid, room_id, night, keep)
+    await _seed_lock(tid, room_id, night, retire)
+
+    # keeper cannot also be retired
+    r1 = await manual_resolve_room_night_lock_duplicate(
+        tenant_id=tid, room_id=room_id, night_date=night,
+        keep_booking_id=keep, retire_booking_ids=[keep],
+    )
+    assert r1["applied"] is False
+    assert "cannot also be retired" in r1["skip_reason"]
+
+    # retire booking_id without a lock on this triple
+    r2 = await manual_resolve_room_night_lock_duplicate(
+        tenant_id=tid, room_id=room_id, night_date=night,
+        keep_booking_id=keep, retire_booking_ids=[bogus],
+    )
+    assert r2["applied"] is False
+    assert "not present" in r2["skip_reason"]
+
+    # empty retire list
+    r3 = await manual_resolve_room_night_lock_duplicate(
+        tenant_id=tid, room_id=room_id, night_date=night,
+        keep_booking_id=keep, retire_booking_ids=[],
+    )
+    assert r3["applied"] is False
+
+    # nothing deleted
+    cnt = await db.room_night_locks.count_documents(
+        {"tenant_id": tid, "room_id": room_id, "night_date": night}
+    )
+    assert cnt == 2
+
+
 async def test_block_owner_treated_as_keeper(isolated_tenant):
     """OOO:/OOS:/MAINT: prefixed locks are always keepers."""
     from core.atomic_booking import list_room_night_lock_duplicate_groups

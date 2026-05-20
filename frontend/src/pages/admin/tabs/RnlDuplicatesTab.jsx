@@ -32,6 +32,8 @@ const RnlDuplicatesTab = () => {
   const [resolving, setResolving] = useState(false);
   const [plan, setPlan] = useState(null);
   const [lastApply, setLastApply] = useState(null);
+  const [manualBusyKey, setManualBusyKey] = useState(null);
+  const [lastManual, setLastManual] = useState(null);
 
   const fetchPlan = useCallback(async () => {
     setLoading(true);
@@ -74,6 +76,56 @@ const RnlDuplicatesTab = () => {
     }
     setResolving(false);
   }, [plan, fetchPlan, t]);
+
+  const handleManualResolve = useCallback(async (group, keeperBookingId) => {
+    const key = `${group.tenant_id}-${group.room_id}-${group.night_date}`;
+    const retireBookingIds = (group.owners || [])
+      .map((o) => o.booking_id)
+      .filter((b) => b && b !== keeperBookingId);
+    if (retireBookingIds.length === 0) {
+      toast.info(t('rnlDuplicates.manualNothingToRetire'));
+      return;
+    }
+    const msg = t('rnlDuplicates.confirmManualResolve', {
+      keeper: keeperBookingId,
+      retire: retireBookingIds.join(', '),
+      night: group.night_date,
+    });
+    if (typeof window !== 'undefined' && !window.confirm(msg)) return;
+    setManualBusyKey(key);
+    try {
+      const { data } = await axios.post(
+        `${BASE}/manual-resolve`,
+        {
+          tenant_id: group.tenant_id,
+          room_id: group.room_id,
+          night_date: group.night_date,
+          keep_booking_id: keeperBookingId,
+          retire_booking_ids: retireBookingIds,
+          confirm: true,
+        },
+        { params: { dry_run: false } }
+      );
+      setLastManual({ key, ...data });
+      if (data.applied) {
+        toast.success(
+          t('rnlDuplicates.manualResolveDone', {
+            deleted: data.deleted_count || 0,
+          })
+        );
+      } else {
+        toast.warning(
+          t('rnlDuplicates.manualResolveSkipped', {
+            reason: data.skip_reason || '-',
+          })
+        );
+      }
+      await fetchPlan();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || t('rnlDuplicates.manualResolveError'));
+    }
+    setManualBusyKey(null);
+  }, [fetchPlan, t]);
 
   if (loading) {
     return (
@@ -255,42 +307,77 @@ const RnlDuplicatesTab = () => {
                         {g.reason}
                       </div>
                       <div className="mt-3 space-y-1">
-                        {(g.owners || []).map((o, idx) => (
-                          <div
-                            key={`${key}-${idx}`}
-                            className="flex items-center gap-2 text-[11px]"
-                          >
-                            <Badge
-                              className={`border ${OWNER_TONE[o.kind] || OWNER_TONE.unknown}`}
+                        {(g.owners || []).map((o, idx) => {
+                          const ownerKey = `${key}-${idx}`;
+                          const canManual =
+                            isManual &&
+                            !!o.booking_id &&
+                            (g.owners || []).filter((x) => x.booking_id).length >= 2;
+                          return (
+                            <div
+                              key={ownerKey}
+                              className="flex items-center gap-2 text-[11px] flex-wrap"
                             >
-                              {o.kind}
-                            </Badge>
-                            <span className="font-mono text-slate-300 truncate">
-                              {o.booking_id || '(no booking_id)'}
-                            </span>
-                            {o.status && (
-                              <span className="text-slate-500">
-                                · {o.status}
-                              </span>
-                            )}
-                            {o.lock_type && (
-                              <span className="text-slate-500">
-                                · {o.lock_type}
-                              </span>
-                            )}
-                            {g.keep_booking_id === o.booking_id && (
-                              <Badge className="border bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
-                                {t('rnlDuplicates.keeper')}
+                              <Badge
+                                className={`border ${OWNER_TONE[o.kind] || OWNER_TONE.unknown}`}
+                              >
+                                {o.kind}
                               </Badge>
-                            )}
-                            {(g.retire_booking_ids || []).includes(o.booking_id) && (
-                              <Badge className="border bg-amber-500/15 text-amber-400 border-amber-500/30">
-                                {t('rnlDuplicates.retire')}
-                              </Badge>
-                            )}
-                          </div>
-                        ))}
+                              <span className="font-mono text-slate-300 truncate">
+                                {o.booking_id || '(no booking_id)'}
+                              </span>
+                              {o.status && (
+                                <span className="text-slate-500">
+                                  · {o.status}
+                                </span>
+                              )}
+                              {o.lock_type && (
+                                <span className="text-slate-500">
+                                  · {o.lock_type}
+                                </span>
+                              )}
+                              {g.keep_booking_id === o.booking_id && (
+                                <Badge className="border bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+                                  {t('rnlDuplicates.keeper')}
+                                </Badge>
+                              )}
+                              {(g.retire_booking_ids || []).includes(o.booking_id) && (
+                                <Badge className="border bg-amber-500/15 text-amber-400 border-amber-500/30">
+                                  {t('rnlDuplicates.retire')}
+                                </Badge>
+                              )}
+                              {canManual && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="ml-auto h-6 px-2 text-[11px] border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                                  onClick={() => handleManualResolve(g, o.booking_id)}
+                                  disabled={manualBusyKey === key}
+                                  data-testid={`rnl-manual-keep-${ownerKey}`}
+                                >
+                                  {manualBusyKey === key ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    t('rnlDuplicates.manualKeep')
+                                  )}
+                                </Button>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
+                      {lastManual && lastManual.key === key && (
+                        <div className="mt-2 text-[11px] text-slate-400" data-testid={`rnl-manual-result-${key}`}>
+                          {lastManual.applied
+                            ? t('rnlDuplicates.manualResolveDoneInline', {
+                                deleted: lastManual.deleted_count || 0,
+                                keeper: lastManual.keep_booking_id || '-',
+                              })
+                            : t('rnlDuplicates.manualResolveSkippedInline', {
+                                reason: lastManual.skip_reason || '-',
+                              })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </CardContent>
