@@ -27,6 +27,11 @@ async def _cleanup(tenant_id: str) -> None:
     await db.audit_logs.delete_many({"tenant_id": tenant_id})
 
 
+async def _reset_alert_state() -> None:
+    from core.database import db
+    await db.rnl_duplicate_alert_state.delete_many({"state_key": "manual_required"})
+
+
 @pytest.fixture
 async def isolated_tenant():
     tid = f"{TEST_TENANT_PREFIX}{_ts()}_{uuid.uuid4().hex[:8]}"
@@ -118,6 +123,154 @@ async def test_beat_task_counts_manual_required(isolated_tenant):
         {"tenant_id": tid, "room_id": room_id, "night_date": night}
     )
     assert remaining == 2  # nothing deleted
+
+
+async def test_beat_task_dispatches_alert_on_first_detection_then_suppresses(isolated_tenant):
+    """Task #228: first non-zero manual_required → alert sent; next run suppresses."""
+    from unittest.mock import AsyncMock, patch
+
+    from celery_tasks import _rnl_duplicate_auto_resolve_async
+    from core.database import db
+
+    tid = isolated_tenant
+    room_id = f"room_{uuid.uuid4().hex[:8]}"
+    night = "2030-10-03"
+    a, b = str(uuid.uuid4()), str(uuid.uuid4())
+    await _seed_booking(tid, a, "confirmed")
+    await _seed_booking(tid, b, "checked_in")
+    await _seed_lock(tid, room_id, night, a)
+    await _seed_lock(tid, room_id, night, b)
+
+    await _reset_alert_state()
+    try:
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True, "slack": False, "email": False}),
+        ) as mock_dispatch:
+            result1 = await _rnl_duplicate_auto_resolve_async(limit=50)
+            assert result1["manual_required_count"] >= 1
+            assert result1["alert_dispatched"]["sent"] is True
+            assert result1["alert_dispatched"]["reason"] == "first_detection"
+            assert mock_dispatch.await_count == 1
+            payload = mock_dispatch.await_args.args[0]
+            assert payload["severity"] == "high"
+            assert payload["alert_type"] == "rnl_duplicate_manual_required"
+            assert payload["context"]["sample_tenant_id"] == tid
+            assert payload["context"]["sample_room_id"] == room_id
+            assert payload["context"]["sample_night_date"] == night
+
+            result2 = await _rnl_duplicate_auto_resolve_async(limit=50)
+            assert result2["alert_dispatched"]["sent"] is False
+            assert result2["alert_dispatched"]["suppressed"] is True
+            assert result2["alert_dispatched"]["reason"] == "streak_active"
+            assert mock_dispatch.await_count == 1  # no new dispatch
+
+        state = await db.rnl_duplicate_alert_state.find_one(
+            {"state_key": "manual_required"}
+        )
+        assert state is not None
+        assert state["active"] is True
+        assert state["last_alert_count"] >= 1
+    finally:
+        await _reset_alert_state()
+
+
+async def test_beat_task_retries_when_dispatch_fails(isolated_tenant):
+    """Task #228 reliability: dispatch failure must NOT enter suppression
+    state — the next run must retry dispatch instead of silently being quiet."""
+    from unittest.mock import AsyncMock, patch
+
+    from celery_tasks import _rnl_duplicate_auto_resolve_async
+    from core.database import db
+
+    tid = isolated_tenant
+    room_id = f"room_{uuid.uuid4().hex[:8]}"
+    night = "2030-10-04"
+    a, b = str(uuid.uuid4()), str(uuid.uuid4())
+    await _seed_booking(tid, a, "confirmed")
+    await _seed_booking(tid, b, "checked_in")
+    await _seed_lock(tid, room_id, night, a)
+    await _seed_lock(tid, room_id, night, b)
+
+    await _reset_alert_state()
+    try:
+        # Run 1: dispatcher raises.
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(side_effect=RuntimeError("slack down")),
+        ) as mock_fail:
+            r1 = await _rnl_duplicate_auto_resolve_async(limit=50)
+            assert r1["alert_dispatched"]["sent"] is False
+            assert r1["alert_dispatched"]["reason"] == "dispatch_failed"
+            assert mock_fail.await_count == 1
+
+        state = await db.rnl_duplicate_alert_state.find_one(
+            {"state_key": "manual_required"}
+        )
+        # active must NOT be set — otherwise next run would be suppressed.
+        assert state is not None
+        assert state.get("active") is not True
+        assert "last_dispatch_failed_at" in state
+
+        # Run 2: dispatcher recovers — must actually dispatch again.
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True}),
+        ) as mock_ok:
+            r2 = await _rnl_duplicate_auto_resolve_async(limit=50)
+            assert r2["alert_dispatched"]["sent"] is True
+            assert r2["alert_dispatched"]["reason"] == "first_detection"
+            assert mock_ok.await_count == 1
+
+        state2 = await db.rnl_duplicate_alert_state.find_one(
+            {"state_key": "manual_required"}
+        )
+        assert state2["active"] is True
+        assert "last_dispatch_failed_at" not in state2
+    finally:
+        await _reset_alert_state()
+
+
+async def test_beat_task_clears_alert_state_when_count_drops_to_zero(isolated_tenant):
+    """Task #228: when manual_required returns to zero, state is cleared so a
+    subsequent re-occurrence re-alerts (no permanent suppression)."""
+    from unittest.mock import AsyncMock, patch
+
+    from celery_tasks import _rnl_duplicate_auto_resolve_async
+    from core.database import db
+
+    # Pre-seed an "active streak" state doc — emulates a previous run that
+    # already alerted; this run has zero duplicates and must clear it.
+    await db.rnl_duplicate_alert_state.update_one(
+        {"state_key": "manual_required"},
+        {"$set": {
+            "state_key": "manual_required",
+            "active": True,
+            "last_count": 3,
+            "last_alert_count": 3,
+        }},
+        upsert=True,
+    )
+    try:
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True}),
+        ) as mock_dispatch:
+            # No seeded duplicates → scan returns 0 manual_required.
+            result = await _rnl_duplicate_auto_resolve_async(limit=50)
+            assert result["manual_required_count"] == 0
+            assert result["alert_dispatched"]["sent"] is False
+            assert result["alert_dispatched"]["reason"] == "count_zero"
+            assert mock_dispatch.await_count == 0
+
+        state = await db.rnl_duplicate_alert_state.find_one(
+            {"state_key": "manual_required"}
+        )
+        assert state is not None
+        assert state["active"] is False
+        assert state["last_count"] == 0
+    finally:
+        await _reset_alert_state()
 
 
 async def test_beat_task_registered_in_beat_schedule():

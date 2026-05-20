@@ -1140,6 +1140,21 @@ async def _rnl_duplicate_auto_resolve_async(limit: int = 100):
         index_rebuild,
     )
 
+    # Task #228: actively notify operators when manual_required groups stick
+    # around. Suppress consecutive-day spam by tracking a tiny state doc; only
+    # re-alert when the previous run reported zero (i.e. the issue cleared and
+    # came back) or when the count escalates noticeably above the last alert.
+    alert_dispatched: dict[str, Any] = {'sent': False, 'suppressed': False}
+    try:
+        alert_dispatched = await _maybe_dispatch_rnl_manual_required_alert(
+            manual_required=manual_required,
+            scanned=result.get('scanned', 0),
+            resolved_count=resolved_count,
+        )
+    except Exception as exc:  # noqa: BLE001 — never let alerting break the beat job
+        logger.warning("F8N rnl auto-resolve alert dispatch failed: %s", exc)
+        alert_dispatched = {'sent': False, 'suppressed': False, 'error': str(exc)[:200]}
+
     return {
         'success': True,
         'started_at': started_at,
@@ -1149,6 +1164,189 @@ async def _rnl_duplicate_auto_resolve_async(limit: int = 100):
         'skipped_count': skipped_count,
         'manual_required_count': manual_required_count,
         'index_rebuild': index_rebuild,
+        'alert_dispatched': alert_dispatched,
+    }
+
+
+# State doc key: tracks the last manual_required alert so consecutive daily
+# runs don't spam operators. Single fixed doc — this is a system-wide signal.
+_RNL_ALERT_STATE_COLL = "rnl_duplicate_alert_state"
+_RNL_ALERT_STATE_KEY = "manual_required"
+# Re-alert when the manual_required count grows by at least this much above
+# the last alerted value (so escalation gets a fresh ping even mid-streak).
+_RNL_ALERT_ESCALATION_DELTA = 5
+
+
+async def _maybe_dispatch_rnl_manual_required_alert(
+    *,
+    manual_required: list[dict[str, Any]],
+    scanned: int,
+    resolved_count: int,
+) -> dict[str, Any]:
+    """Dispatch a high-severity alert when manual_required > 0, with suppression.
+
+    Suppression rules (Task #228 — "single alert rather than spamming every day"):
+      * count == 0 → clear state, no alert.
+      * count > 0 and previous state was zero/missing → first detection, alert.
+      * count > 0 and previous state was non-zero → suppress, unless the count
+        escalated by at least ``_RNL_ALERT_ESCALATION_DELTA`` above the last
+        alerted value (so operators get a fresh ping on a worsening backlog).
+
+    The payload includes a representative tenant/room/night triple so
+    operators can jump straight to
+    ``GET /api/db-admin/room-night-lock-duplicates`` and the matching
+    super-admin resolve endpoint.
+    """
+    from core.database import db
+
+    count = len(manual_required)
+    state_filter = {"state_key": _RNL_ALERT_STATE_KEY}
+    state_doc = await db[_RNL_ALERT_STATE_COLL].find_one(state_filter, {"_id": 0})
+    now_iso = datetime.now(UTC).isoformat()
+
+    if count == 0:
+        # Clear streak when the backlog drains so the next non-zero run re-alerts.
+        if state_doc and state_doc.get("active"):
+            await db[_RNL_ALERT_STATE_COLL].update_one(
+                state_filter,
+                {"$set": {
+                    "active": False,
+                    "last_count": 0,
+                    "cleared_at": now_iso,
+                    "updated_at": now_iso,
+                }},
+                upsert=True,
+            )
+        return {'sent': False, 'suppressed': False, 'reason': 'count_zero'}
+
+    last_alert_count = int((state_doc or {}).get("last_alert_count") or 0)
+    streak_active = bool((state_doc or {}).get("active"))
+    escalated = (count - last_alert_count) >= _RNL_ALERT_ESCALATION_DELTA
+
+    if streak_active and not escalated:
+        # Sustained non-zero, no meaningful escalation → keep quiet but bump
+        # last-seen so we can audit the streak.
+        await db[_RNL_ALERT_STATE_COLL].update_one(
+            state_filter,
+            {"$set": {
+                "active": True,
+                "last_count": count,
+                "updated_at": now_iso,
+            }},
+            upsert=True,
+        )
+        return {
+            'sent': False,
+            'suppressed': True,
+            'reason': 'streak_active',
+            'last_alert_count': last_alert_count,
+            'current_count': count,
+        }
+
+    sample = manual_required[0]
+    sample_ctx = {
+        "manual_required_count": count,
+        "scanned": scanned,
+        "resolved_in_run": resolved_count,
+        "sample_tenant_id": sample.get("tenant_id"),
+        "sample_room_id": sample.get("room_id"),
+        "sample_night_date": sample.get("night_date"),
+        "sample_reason": sample.get("reason"),
+        "endpoint": "/api/db-admin/room-night-lock-duplicates",
+    }
+    if escalated and streak_active:
+        sample_ctx["previous_alert_count"] = last_alert_count
+        sample_ctx["escalation_delta"] = count - last_alert_count
+
+    alert_payload = {
+        "title": (
+            f"RNL duplicate backlog: {count} manual_required group(s)"
+            + (" [escalated]" if (escalated and streak_active) else "")
+        ),
+        "severity": "high",
+        "alert_type": "rnl_duplicate_manual_required",
+        "provider": "system",
+        "message": (
+            "Daily room-night-lock auto-resolver left "
+            f"{count} duplicate group(s) needing manual review. "
+            "Use the super-admin duplicates endpoint to inspect."
+        ),
+        "runbook_hint": "docs/GOTCHAS.md → F8N RNL duplicate resolver",
+        "context": sample_ctx,
+    }
+
+    sent = False
+    dispatch_error: str | None = None
+    try:
+        from domains.channel_manager.monitoring.alert_dispatch import dispatch_alert
+        dispatch_result = await dispatch_alert(alert_payload, tenant_id="system")
+        sent = bool(
+            dispatch_result.get("slack") or dispatch_result.get("email")
+            or dispatch_result.get("dashboard")
+        )
+    except Exception as exc:  # noqa: BLE001
+        dispatch_error = str(exc)[:200]
+        logger.warning("F8N rnl manual_required dispatch_alert failed: %s", exc)
+
+    if not sent:
+        # Reliability guard: do NOT advance suppression state when delivery
+        # failed (exception OR all channels reported false). Otherwise a
+        # transient dispatcher outage on first detection would silence the
+        # next day's alert too. Record last_count for audit, but leave
+        # `active` / `last_alert_count` untouched so the next run retries.
+        await db[_RNL_ALERT_STATE_COLL].update_one(
+            state_filter,
+            {"$set": {
+                "state_key": _RNL_ALERT_STATE_KEY,
+                "last_count": count,
+                "last_dispatch_failed_at": now_iso,
+                "last_dispatch_error": dispatch_error or "no_channel_accepted",
+                "updated_at": now_iso,
+            }},
+            upsert=True,
+        )
+        # Structured log so monitoring can spot alerting-channel health issues.
+        logger.error(
+            "F8N rnl manual_required alert NOT delivered count=%d error=%s "
+            "(will retry on next run)",
+            count, dispatch_error or "no_channel_accepted",
+        )
+        return {
+            'sent': False,
+            'suppressed': False,
+            'reason': 'dispatch_failed',
+            'dispatch_error': dispatch_error or "no_channel_accepted",
+            'current_count': count,
+            'previous_alert_count': last_alert_count,
+        }
+
+    await db[_RNL_ALERT_STATE_COLL].update_one(
+        state_filter,
+        {"$set": {
+            "state_key": _RNL_ALERT_STATE_KEY,
+            "active": True,
+            "last_count": count,
+            "last_alert_count": count,
+            "last_alert_at": now_iso,
+            "last_sample": {
+                "tenant_id": sample.get("tenant_id"),
+                "room_id": sample.get("room_id"),
+                "night_date": sample.get("night_date"),
+            },
+            "updated_at": now_iso,
+        }, "$unset": {
+            "last_dispatch_failed_at": "",
+            "last_dispatch_error": "",
+        }},
+        upsert=True,
+    )
+
+    return {
+        'sent': True,
+        'suppressed': False,
+        'reason': 'escalated' if (escalated and streak_active) else 'first_detection',
+        'current_count': count,
+        'previous_alert_count': last_alert_count,
     }
 
 
