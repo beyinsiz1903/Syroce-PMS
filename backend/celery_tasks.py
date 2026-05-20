@@ -1308,7 +1308,7 @@ async def _maybe_dispatch_rnl_manual_required_alert(
                     "last_count": 0,
                     "cleared_at": now_iso,
                     "updated_at": now_iso,
-                }},
+                }, "$unset": {"active_since": ""}},
                 upsert=True,
             )
         return {'sent': False, 'suppressed': False, 'reason': 'count_zero'}
@@ -1414,21 +1414,29 @@ async def _maybe_dispatch_rnl_manual_required_alert(
             'previous_alert_count': last_alert_count,
         }
 
+    set_fields: dict[str, Any] = {
+        "state_key": _RNL_ALERT_STATE_KEY,
+        "active": True,
+        "last_count": count,
+        "last_alert_count": count,
+        "last_alert_at": now_iso,
+        "last_sample": {
+            "tenant_id": sample.get("tenant_id"),
+            "room_id": sample.get("room_id"),
+            "night_date": sample.get("night_date"),
+        },
+        "updated_at": now_iso,
+    }
+    # Task #233: `active_since` captures the start of the current non-zero
+    # streak so the operator dashboard can show how long a backlog has
+    # persisted. Only set on the first successful dispatch of the streak;
+    # leave untouched on escalation dispatches so the timestamp doesn't
+    # drift forward over time. Cleared in the count==0 branch above.
+    if not streak_active or not (state_doc or {}).get("active_since"):
+        set_fields["active_since"] = now_iso
     await db[_RNL_ALERT_STATE_COLL].update_one(
         state_filter,
-        {"$set": {
-            "state_key": _RNL_ALERT_STATE_KEY,
-            "active": True,
-            "last_count": count,
-            "last_alert_count": count,
-            "last_alert_at": now_iso,
-            "last_sample": {
-                "tenant_id": sample.get("tenant_id"),
-                "room_id": sample.get("room_id"),
-                "night_date": sample.get("night_date"),
-            },
-            "updated_at": now_iso,
-        }, "$unset": {
+        {"$set": set_fields, "$unset": {
             "last_dispatch_failed_at": "",
             "last_dispatch_error": "",
         }},

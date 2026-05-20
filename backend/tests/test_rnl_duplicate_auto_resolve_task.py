@@ -273,6 +273,77 @@ async def test_beat_task_clears_alert_state_when_count_drops_to_zero(isolated_te
         await _reset_alert_state()
 
 
+async def test_beat_task_sets_active_since_on_first_detection_preserves_on_escalation(isolated_tenant):
+    """Task #233: state doc tracks `active_since` for the operator dashboard
+    widget. Set on first dispatch; preserved across escalation dispatches;
+    cleared when count drops to zero."""
+    from unittest.mock import AsyncMock, patch
+
+    from celery_tasks import _rnl_duplicate_auto_resolve_async
+    from core.database import db
+
+    tid = isolated_tenant
+    room_id = f"room_{uuid.uuid4().hex[:8]}"
+    night = "2030-10-05"
+    a, b = str(uuid.uuid4()), str(uuid.uuid4())
+    await _seed_booking(tid, a, "confirmed")
+    await _seed_booking(tid, b, "checked_in")
+    await _seed_lock(tid, room_id, night, a)
+    await _seed_lock(tid, room_id, night, b)
+
+    await _reset_alert_state()
+    try:
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True}),
+        ):
+            r1 = await _rnl_duplicate_auto_resolve_async(limit=50)
+            assert r1["alert_dispatched"]["sent"] is True
+
+        state1 = await db.rnl_duplicate_alert_state.find_one(
+            {"state_key": "manual_required"}
+        )
+        assert state1 is not None
+        first_active_since = state1.get("active_since")
+        assert first_active_since, "active_since must be set on first dispatch"
+
+        # Force escalation: bump alert count threshold by simulating a higher
+        # current count via state, then re-dispatch — active_since must stay.
+        await db.rnl_duplicate_alert_state.update_one(
+            {"state_key": "manual_required"},
+            {"$set": {"last_alert_count": 0}},  # large delta forces escalation
+        )
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True}),
+        ):
+            r2 = await _rnl_duplicate_auto_resolve_async(limit=50)
+            assert r2["alert_dispatched"]["sent"] is True
+            assert r2["alert_dispatched"]["reason"] == "escalated"
+
+        state2 = await db.rnl_duplicate_alert_state.find_one(
+            {"state_key": "manual_required"}
+        )
+        assert state2["active_since"] == first_active_since, \
+            "active_since must not advance on escalation"
+
+        # Drain backlog → count_zero branch clears active_since.
+        await db.room_night_locks.delete_many({"tenant_id": tid})
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True}),
+        ):
+            await _rnl_duplicate_auto_resolve_async(limit=50)
+
+        state3 = await db.rnl_duplicate_alert_state.find_one(
+            {"state_key": "manual_required"}
+        )
+        assert state3["active"] is False
+        assert "active_since" not in state3
+    finally:
+        await _reset_alert_state()
+
+
 async def test_beat_task_registered_in_beat_schedule():
     """Beat schedule must include the daily rnl-duplicate-auto-resolve entry."""
     from celery_app import celery_app

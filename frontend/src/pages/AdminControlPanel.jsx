@@ -1,4 +1,4 @@
-import { useState, Suspense, lazy } from 'react';
+import { useState, Suspense, lazy, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Loader2, Activity, AlertTriangle, Clock, Key, AlertOctagon, BarChart3, Shield, Bell, TrendingUp, Boxes, Building2, FileText, PlayCircle, Heart, Send, Zap, Map, LineChart, Gauge, Wifi, Database } from 'lucide-react';
@@ -74,10 +74,43 @@ const TabContent = ({ tabId }) => {
   return map[tabId] || null;
 };
 
+const VALID_TAB_IDS = new Set(TAB_KEYS.map(t => t.id));
+
+const readTabFromHash = () => {
+  if (typeof window === 'undefined') return null;
+  const raw = (window.location.hash || '').replace(/^#/, '');
+  return VALID_TAB_IDS.has(raw) ? raw : null;
+};
+
 const AdminControlPanel = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState('sync-health');
+  const [activeTab, setActiveTab] = useState(() => readTabFromHash() || 'sync-health');
   const { connected, lastEvent } = useAdminWebSocket('default');
+
+  // Sync activeTab with the URL hash so deep links like
+  // `/app/admin-control-panel#rnl-duplicates` (used by the operator
+  // dashboard widget — Task #233) open the right tab on load and respond
+  // to back/forward navigation.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onHash = () => {
+      const next = readTabFromHash();
+      if (next) setActiveTab(next);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  const selectTab = (id) => {
+    setActiveTab(id);
+    if (typeof window !== 'undefined' && window.history?.replaceState) {
+      try {
+        window.history.replaceState(null, '', `#${id}`);
+      } catch {
+        // best-effort; keep state-only
+      }
+    }
+  };
 
   return (
     <>
@@ -113,7 +146,7 @@ const AdminControlPanel = ({ user, tenant, onLogout }) => {
               <button
                 key={tab.id}
                 data-testid={`tab-${tab.id}`}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => selectTab(tab.id)}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all duration-200 ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'

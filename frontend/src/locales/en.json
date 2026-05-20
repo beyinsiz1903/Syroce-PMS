@@ -8433,6 +8433,10 @@
     "manualResolveSkipped": "Manual resolve skipped: {{reason}}",
     "manualResolveError": "Manual resolve failed",
     "manualResolveDoneInline": "Kept {{keeper}}, deleted {{deleted}} lock(s).",
-    "manualResolveSkippedInline": "Skipped: {{reason}}"
+    "manualResolveSkippedInline": "Skipped: {{reason}}",
+    "widgetTitle": "{{count}} unresolved duplicate room-night lock(s)",
+    "widgetActiveSince": "Active since {{since}} (~{{duration}})",
+    "widgetNoAlertYet": "Detected — alert dispatch has not yet succeeded.",
+    "widgetInspect": "Open inspector"
   }
 }

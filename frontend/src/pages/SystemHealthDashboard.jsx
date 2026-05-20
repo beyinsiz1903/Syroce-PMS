@@ -13,6 +13,7 @@ import {
   Activity, Shield, Server, AlertTriangle, RefreshCw, CheckCircle2,
   XCircle, Clock, Wifi, WifiOff, Lock, Eye, Loader2,
   Database, Radio, Zap, TrendingUp, TrendingDown, Minus, Users, Building2, Layers, Network,
+  ShieldAlert,
 } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 
@@ -602,6 +603,7 @@ export default function SystemHealthDashboard({ user }) {
   const [liveEvents, setLiveEvents] = useState([]);
   const [auditMetrics, setAuditMetrics] = useState(null);
   const [pilotReadiness, setPilotReadiness] = useState(null);
+  const [rnlSummary, setRnlSummary] = useState(null);
   const socketRef = useRef(null);
   const pollTimerRef = useRef(null);
   const lastCriticalFetchRef = useRef(0);
@@ -615,7 +617,7 @@ export default function SystemHealthDashboard({ user }) {
     fetchInFlightRef.current = true;
     if (silent) setRefreshing(true);
     try {
-      const [cm, q, audit, rl, tg, ls, al, mt, st, norm, role, am, pr] = await Promise.allSettled([
+      const [cm, q, audit, rl, tg, ls, al, mt, st, norm, role, am, pr, rnl] = await Promise.allSettled([
         axios.get(`/channel-manager/runtime/status`),
         axios.get(`/workers/queues/health`),
         axios.get(`/security/audit/status`),
@@ -629,6 +631,9 @@ export default function SystemHealthDashboard({ user }) {
         axios.get(`/system-health/role-dashboard`),
         axios.get(`/system-health/audit/metrics`),
         axios.get(`/production-golive/readiness`),
+        // Task #233: super-admin only; non-super-admins get 403 and the
+        // widget is hidden — that's fine, Promise.allSettled swallows it.
+        axios.get(`/admin/db/room-night-lock-duplicates/summary`),
       ]);
       if (cm.status === "fulfilled") setCmStatus(cm.value.data);
       if (q.status === "fulfilled") setQueueHealth(q.value.data);
@@ -643,6 +648,8 @@ export default function SystemHealthDashboard({ user }) {
       if (role.status === "fulfilled") setRoleDashboard(role.value.data);
       if (am.status === "fulfilled") setAuditMetrics(am.value.data);
       if (pr.status === "fulfilled") setPilotReadiness(pr.value.data);
+      if (rnl.status === "fulfilled") setRnlSummary(rnl.value.data);
+      else if (rnl.status === "rejected") setRnlSummary(null);
 
       // Eğer hepsi reddedildiyse kullanıcıya bildir (sessizce yutmayalım).
       const anyOk = [cm, q, audit, rl, tg, ls, al, mt, st, norm, role, am, pr].some((r) => r.status === "fulfilled");
@@ -845,6 +852,51 @@ export default function SystemHealthDashboard({ user }) {
           <SeverityChip severity={normalizedOverview.overall_severity} />
         </div>
       )}
+
+      {/* Task #233: unresolved duplicate room-night locks (super-admin only).
+          Hidden when count == 0 or summary endpoint isn't reachable. */}
+      {!loading && rnlSummary && (rnlSummary.manual_required_count || 0) > 0 && (() => {
+        const count = rnlSummary.manual_required_count || 0;
+        const since = rnlSummary.active_since || rnlSummary.last_alert_at || null;
+        let activeForLabel = null;
+        if (since) {
+          const sinceMs = Date.parse(since);
+          if (!Number.isNaN(sinceMs)) {
+            const delta = Math.max(0, Date.now() - sinceMs);
+            const hours = Math.floor(delta / 3600000);
+            const mins = Math.floor((delta % 3600000) / 60000);
+            activeForLabel = hours > 0 ? `${hours}sa ${mins}dk` : `${mins}dk`;
+          }
+        }
+        const sinceLabel = since ? new Date(since).toLocaleString("tr-TR") : null;
+        return (
+          <a
+            data-testid="rnl-duplicates-widget"
+            href="/app/admin-control-panel#rnl-duplicates"
+            className="block p-3 rounded-lg border bg-rose-50 border-rose-200 hover:bg-rose-100/70 transition-colors"
+          >
+            <div className="flex items-center gap-3 flex-wrap">
+              <ShieldAlert className="w-5 h-5 text-rose-700 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-rose-800">
+                  {t('rnlDuplicates.widgetTitle', { count })}
+                </p>
+                <p className="text-[11px] text-rose-700 mt-0.5">
+                  {since
+                    ? t('rnlDuplicates.widgetActiveSince', {
+                        since: sinceLabel,
+                        duration: activeForLabel || '—',
+                      })
+                    : t('rnlDuplicates.widgetNoAlertYet')}
+                </p>
+              </div>
+              <StatusBadge intent="danger" icon={AlertTriangle}>
+                {t('rnlDuplicates.widgetInspect')}
+              </StatusBadge>
+            </div>
+          </a>
+        );
+      })()}
 
       {/* Pilot Production Safety — readiness + CM outbox + CB + backup + observability */}
       {!loading && pilotReadiness && (() => {

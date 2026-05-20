@@ -8340,6 +8340,10 @@
     "indexOk": "ok",
     "indexFailed": "failed",
     "manualFollowUp": "{{count}} group(s) require manual follow-up.",
-    "manualWarning": "{{count}} group(s) need manual adjudication: two or more active bookings share the same night, or owner classification failed."
+    "manualWarning": "{{count}} group(s) need manual adjudication: two or more active bookings share the same night, or owner classification failed.",
+    "widgetTitle": "{{count}} unresolved duplicate room-night lock(s)",
+    "widgetActiveSince": "Active since {{since}} (~{{duration}})",
+    "widgetNoAlertYet": "Detected — alert dispatch has not yet succeeded.",
+    "widgetInspect": "Open inspector"
   }
 }

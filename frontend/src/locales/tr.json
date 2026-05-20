@@ -8433,6 +8433,10 @@
     "manualResolveSkipped": "Manuel çözüm atlandı: {{reason}}",
     "manualResolveError": "Manuel çözüm başarısız",
     "manualResolveDoneInline": "{{keeper}} tutuldu, {{deleted}} kilit silindi.",
-    "manualResolveSkippedInline": "Atlandı: {{reason}}"
+    "manualResolveSkippedInline": "Atlandı: {{reason}}",
+    "widgetTitle": "{{count}} çözülmemiş tekrarlı oda-gece kilidi",
+    "widgetActiveSince": "{{since}} tarihinden beri aktif (~{{duration}})",
+    "widgetNoAlertYet": "Tespit edildi — uyarı dağıtımı henüz başarılı değil.",
+    "widgetInspect": "İnceleyiciyi aç"
   }
 }

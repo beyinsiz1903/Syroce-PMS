@@ -266,6 +266,52 @@ async def list_rnl_auto_resolve_runs(
     return {"total": len(runs), "runs": runs}
 
 
+@router.get("/room-night-lock-duplicates/summary")
+async def rnl_duplicates_summary(
+    current_user: User = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """Lightweight summary for the operator dashboard widget (Task #233).
+
+    Returns the current manual_required count and, if the backlog has been
+    actively alerting, the `active_since` timestamp from
+    `rnl_duplicate_alert_state`. The full inspector at
+    `GET /room-night-lock-duplicates` is intentionally heavier (per-group
+    owner classification) — this endpoint is cheap enough to poll.
+    """
+    from core.database import db
+
+    groups = await list_room_night_lock_duplicate_groups(limit=500)
+    manual_required = sum(
+        1 for g in groups if g.get("recommendation") == "manual_required"
+    )
+    auto_resolvable = sum(
+        1 for g in groups
+        if g.get("recommendation") in ("auto_safe", "auto_safe_all_inactive")
+    )
+
+    state_doc: dict[str, Any] = {}
+    try:
+        raw = await db["rnl_duplicate_alert_state"].find_one(
+            {"state_key": "manual_required"}, {"_id": 0},
+        )
+        state_doc = raw or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("db_admin.rnl_duplicates.summary state lookup failed: %s", exc)
+
+    return {
+        "manual_required_count": manual_required,
+        "auto_resolvable_count": auto_resolvable,
+        "total_groups": len(groups),
+        # Only meaningful while alert streak is active; null when count==0
+        # (cleared in `_maybe_dispatch_rnl_manual_required_alert`).
+        "active_since": state_doc.get("active_since") if state_doc.get("active") else None,
+        "alert_active": bool(state_doc.get("active")),
+        "last_alert_at": state_doc.get("last_alert_at"),
+        "last_alert_count": state_doc.get("last_alert_count"),
+        "last_dispatch_error": state_doc.get("last_dispatch_error"),
+    }
+
+
 @router.post("/room-night-lock-duplicates/resolve")
 async def resolve_rnl_duplicates(
     body: RnlResolveBody | None = None,
