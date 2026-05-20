@@ -87,12 +87,94 @@ def _scrub_event_inplace(event: Any) -> None:
         pass
 
 
-def _sentry_before_send(event: dict, hint: dict) -> dict | None:
-    """Sentry SDK ``before_send`` hook — final PII scrub.
+import time as _time
 
-    Returning ``None`` would drop the event; we always return the scrubbed
-    event so error tracking still works even if scrubbing logs a warning.
+# Process boot time — used to bound the restart-noise drop window.
+_PROCESS_BOOT_TS = _time.monotonic()
+
+# Only drop EADDRINUSE noise during the first N seconds after boot. A
+# persistent rogue process holding the port will keep raising after this
+# window and reach Sentry normally.
+_RESTART_DROP_WINDOW_SECONDS = 30
+
+# Managed ports: dev workflow (8000) and Replit deployment (5000).
+# Other ports (e.g. mock_server 9999) are NOT in scope.
+_MANAGED_BIND_PORTS = (8000, 5000)
+
+
+def _is_workflow_restart_port_bind(event: dict, hint: dict) -> bool:
+    """Detect transient port-bind failures during workflow restarts.
+
+    Drop predicate (all must hold):
+      1. ``hint['exc_info']`` exception is an ``OSError`` (or subclass).
+      2. ``exc.errno == 98`` (EADDRINUSE) — strict, not a substring match.
+      3. The exception message references one of the managed ports
+         (8000 dev workflow / 5000 deploy).
+      4. We are within ``_RESTART_DROP_WINDOW_SECONDS`` of process boot —
+         after that, persistent bind conflicts are real incidents.
+
+    Any other bind failure (different port, different errno, late-cycle
+    occurrence) still flows through to Sentry. No event-only fallback —
+    we refuse to drop solely on message text, to avoid collisions with
+    unrelated errors that happen to mention "8000".
     """
+    try:
+        # Boot-window guard first (cheapest, also bounds the blast radius).
+        if (_time.monotonic() - _PROCESS_BOOT_TS) > _RESTART_DROP_WINDOW_SECONDS:
+            return False
+        exc_info = (hint or {}).get("exc_info")
+        if not exc_info or len(exc_info) < 2:
+            return False
+        exc = exc_info[1]
+        if not isinstance(exc, OSError):
+            return False
+        if getattr(exc, "errno", None) != 98:
+            return False
+        msg = str(exc) if exc else ""
+        for p in _MANAGED_BIND_PORTS:
+            if f"', {p})" in msg or f":{p})" in msg or f"port {p}" in msg.lower():
+                return True
+    except Exception:
+        return False
+    return False
+
+
+# Counter for filtered restart-bind events. Exposed via
+# ``get_sentry_filter_stats()`` so ops can sanity-check noise volume
+# without paging the on-call channel.
+_RESTART_BIND_DROP_COUNT = 0
+
+
+def get_sentry_filter_stats() -> dict[str, int]:
+    """Return cumulative count of events dropped by the restart filter.
+
+    Useful for ops dashboards / smoke tests. Resets only on process
+    restart.
+    """
+    return {"restart_bind_drops": _RESTART_BIND_DROP_COUNT}
+
+
+def _sentry_before_send(event: dict, hint: dict) -> dict | None:
+    """Sentry SDK ``before_send`` hook — restart-noise filter + PII scrub.
+
+    Returns ``None`` only for transient workflow-restart port-bind noise
+    (see ``_is_workflow_restart_port_bind``). Dropped events are counted
+    and logged at INFO so persistent bind conflicts remain visible in
+    the workflow console even when they no longer page Sentry. All
+    other events go through after PII scrub — we never drop on scrubber
+    failure.
+    """
+    global _RESTART_BIND_DROP_COUNT
+    try:
+        if _is_workflow_restart_port_bind(event, hint):
+            _RESTART_BIND_DROP_COUNT += 1
+            logger.info(
+                "sentry before_send dropped restart-bind noise "
+                f"(cumulative={_RESTART_BIND_DROP_COUNT})"
+            )
+            return None
+    except Exception:
+        pass
     try:
         _scrub_event_inplace(event)
     except Exception as e:

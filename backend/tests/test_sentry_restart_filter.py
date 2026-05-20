@@ -1,0 +1,116 @@
+"""Tests for Sentry workflow-restart port-bind noise filter.
+
+Context: `.replit` previously tagged the local Replit workspace as
+``SENTRY_ENVIRONMENT=pilot``, so transient ``OSError: [Errno 98] address
+already in use`` raised during workflow restart (uvicorn SIGTERM → new
+bind race on port 8000) paged the pilot on-call channel.
+
+Fix layers:
+  1. Env split — local Replit dev → ``replit-dev``; deploy → ``pilot``
+     (handled by Replit env-vars, not asserted here).
+  2. ``_sentry_before_send`` drops the specific restart-race pattern
+     before it leaves the process. Other bind failures (different port,
+     different errno) still flow through.
+"""
+import time
+
+import pytest
+
+from infra import cloud_observability as obs
+from infra.cloud_observability import (
+    _is_workflow_restart_port_bind,
+    _sentry_before_send,
+    get_sentry_filter_stats,
+)
+
+
+def _hint(exc: Exception) -> dict:
+    return {"exc_info": (type(exc), exc, None)}
+
+
+@pytest.fixture(autouse=True)
+def _reset_boot_window(monkeypatch):
+    """Anchor boot timestamp to 'now' so each test runs inside the
+    drop window unless it explicitly advances the clock."""
+    monkeypatch.setattr(obs, "_PROCESS_BOOT_TS", time.monotonic())
+
+
+class TestPortBindDetection:
+    def test_port_8000_errno_98_detected(self):
+        exc = OSError(98, "[Errno 98] error while attempting to bind on "
+                          "address ('0.0.0.0', 8000): address already in use")
+        exc.errno = 98
+        assert _is_workflow_restart_port_bind({}, _hint(exc)) is True
+
+    def test_port_5000_deploy_detected(self):
+        exc = OSError(98, "bind ('0.0.0.0', 5000): address already in use")
+        exc.errno = 98
+        assert _is_workflow_restart_port_bind({}, _hint(exc)) is True
+
+    def test_non_managed_port_passes_through(self):
+        """Port 9999 (mock_server) bind failures must reach Sentry."""
+        exc = OSError(98, "bind ('0.0.0.0', 9999): address already in use")
+        exc.errno = 98
+        assert _is_workflow_restart_port_bind({}, _hint(exc)) is False
+
+    def test_unrelated_exception_passes_through(self):
+        exc = ValueError("totally unrelated mentions 8000")
+        assert _is_workflow_restart_port_bind({}, _hint(exc)) is False
+
+    def test_different_errno_passes_through(self):
+        """EACCES (13) on port 8000 is a real privilege error, not noise."""
+        exc = OSError(13, "Permission denied: ('0.0.0.0', 8000)")
+        exc.errno = 13
+        assert _is_workflow_restart_port_bind({}, _hint(exc)) is False
+
+    def test_message_only_event_no_longer_drops(self):
+        """We refuse to drop solely on event-message text — exc_info required."""
+        event = {"exception": {"values": [
+            {"value": "address already in use ('0.0.0.0', 8000)"}
+        ]}}
+        assert _is_workflow_restart_port_bind(event, {}) is False
+
+    def test_empty_inputs_safe(self):
+        assert _is_workflow_restart_port_bind({}, {}) is False
+        assert _is_workflow_restart_port_bind({}, None) is False
+
+    def test_after_boot_window_passes_through(self, monkeypatch):
+        """Persistent bind conflicts past the boot window must reach Sentry."""
+        monkeypatch.setattr(
+            obs, "_PROCESS_BOOT_TS",
+            time.monotonic() - (obs._RESTART_DROP_WINDOW_SECONDS + 1),
+        )
+        exc = OSError(98, "bind ('0.0.0.0', 8000): address already in use")
+        exc.errno = 98
+        assert _is_workflow_restart_port_bind({}, _hint(exc)) is False
+
+
+class TestBeforeSendIntegration:
+    def test_restart_noise_dropped_and_counted(self):
+        before = get_sentry_filter_stats()["restart_bind_drops"]
+        exc = OSError(98, "bind ('0.0.0.0', 8000): address already in use")
+        exc.errno = 98
+        assert _sentry_before_send({"message": "x"}, _hint(exc)) is None
+        after = get_sentry_filter_stats()["restart_bind_drops"]
+        assert after == before + 1
+
+    def test_real_error_passes_through_with_scrub(self):
+        """Real errors keep flowing; PII scrub still runs."""
+        exc = RuntimeError("boom: token=eyJabcdefg.aaaaaaa.bbbbbbb")
+        event = {"exception": {"values": [{"value": str(exc)}]}}
+        out = _sentry_before_send(event, _hint(exc))
+        assert out is not None
+        rendered = out["exception"]["values"][0]["value"]
+        assert "<JWT>" in rendered or "eyJ" not in rendered
+
+    def test_persistent_bind_after_window_reaches_scrub_path(self, monkeypatch):
+        monkeypatch.setattr(
+            obs, "_PROCESS_BOOT_TS",
+            time.monotonic() - (obs._RESTART_DROP_WINDOW_SECONDS + 1),
+        )
+        exc = OSError(98, "bind ('0.0.0.0', 8000): address already in use")
+        exc.errno = 98
+        out = _sentry_before_send(
+            {"exception": {"values": [{"value": str(exc)}]}}, _hint(exc)
+        )
+        assert out is not None
