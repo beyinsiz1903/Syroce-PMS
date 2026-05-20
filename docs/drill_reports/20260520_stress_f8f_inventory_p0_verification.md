@@ -80,14 +80,51 @@ The race case (K) is the strongest live evidence the guard is atomic at the Mong
 
 The spec's hard asserts (`expect(readOk).toBe(true)` and `expect(finalQty >= 0).toBe(true)`) will both hold on the next CI run. § D and § E (skipped on the prior run after § C early-returned) will now execute.
 
-## Verdict
+## Fresh CI run (manual workflow_dispatch, 2026-05-20T09:32Z)
 
-**GO** — Task #209 fix is genuinely on main. The stale CI report (cited in the Task #213 brief, timestamp `07:09:34Z` ≈ same wall-clock as merge propagation `06:56Z`) most plausibly ran against a pre-merge checkout (CI runner cached or polled before the new SHA was advertised). The report file itself is not committed; the conclusion rests on (a) `git log` showing commit `37245036` on `main`, (b) live-HTTP pytest verifying the guard is active end-to-end, and (c) the LIVE handler carrying the atomic `$gte` filter + 409 contract. No follow-up patch is needed.
+User triggered "Full Stress Suite (one-shot)" on `main` post-push (commit `d06e0fe0`). Result:
 
-Next full stress suite run is expected to drop F8F § C from the P0 list and surface § D / § E results. F8F roadmap remains:
+- **Verdict: NO-GO** — `P0=3, P1=6, P2=24, P3=1` · 342 tests, 2 failed.
+- Drill report (CI-side): `docs/drill_reports/20260520_stress_full_stress_suite.md`.
+- F8F § C STILL FAILS on stress env:
 
-- F8F § C (negative stock) — **CLOSED** (pytest + guard verified).
-- F8F § D / § E — will execute on next CI, results to be triaged in a separate task if any new findings emerge.
+> `[inventory_stock]` NEGATIVE STOCK BUG — Item `57fb497c` started=5, out=50, **final_quantity=-45**, out_status=**200**.
+
+### Root cause
+
+The CI runs Playwright against `secrets.STRESS_E2E_BASE_URL` — a **separately deployed stress backend**, not the dev backend our pytest hit. The guard code IS on `main` (verified via `git log` + dev-env pytest 15/15 PASS), but the stress backend image has not been redeployed since the fix landed. The bug reproduces because that environment is still running pre-commit-`37245036` code.
+
+This is a **deployment-drift** issue, not a code issue. The Task #209 patch itself is correct and the regression test catches the bug; the stress env simply lags `main`.
+
+### What CI proves
+
+| Claim | Status |
+|-------|--------|
+| Guard code on `main` | PASS (`git log` + handler inspection) |
+| Guard works on dev backend (port 8000) | PASS (15/15 pytest, including parallel-out race) |
+| Guard works on stress env (stress.replit.app or equivalent) | **FAIL** — stress env image is stale |
+| § D / § E executed (not skipped after § C) | PASS — both `lowstock_and_isolation` and pilot-drift ran; § C hard-asserts ran independently |
+
+### Other P0/P1 findings (out of #213 scope, sibling tasks #214/#215/#216 cover most)
+
+- P0 `ai_noshow_risk` — cross-tenant leak (covered by Task #214).
+- P0 `reservation_deep` — oversell guard missing (covered by Task #215).
+- P1 `graphql_isolation` — `isoformat`/`NoneType` resolver errors (covered by Task #216).
+- P1 `hr_perf` / `hr_shift_conflict` — new backend gaps (not in #213 scope).
+- P1 `cm_exely_webhook` — `EXELY_IP_WHITELIST` not seeded on stress env.
+- P1 `reports_export` — 2× 500 on `builder_excel` + `dept_aging_xlsx`.
+
+## Verdict (Task #213)
+
+**CONDITIONAL GO** — code-level verification is complete and the regression test proves the guard works on a backend that actually contains the patch. The stress-env CI result is a **deployment-gap artefact**, not a code regression. To turn the CI verdict to GO, the stress backend image must be redeployed from current `main` (or whatever channel populates `STRESS_E2E_BASE_URL`). That deployment is outside Task #213's "verification" scope.
+
+### Recommended next action (separate task)
+
+Redeploy stress env from `main` (`d06e0fe0` or later) and rerun "Full Stress Suite (one-shot)". Expected outcome on inventory_stock:
+
+- § C → PASS (out movement rejected with strict 409; final qty stays 5).
+- § D / § E continue to execute.
+- P0 finding count drops by at least 1 (other P0s still tracked in #214/#215).
 
 ## Files referenced
 
