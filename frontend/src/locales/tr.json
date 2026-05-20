@@ -1799,7 +1799,8 @@
     "sandboxValidation": "Sandbox Doğrulama",
     "multiProperty": "Çoklu Tesis",
     "wsConnected": "WebSocket Bağlı",
-    "wsDisconnected": "WebSocket Bağlantı Kesildi"
+    "wsDisconnected": "WebSocket Bağlantı Kesildi",
+    "rnlDuplicates": "Kilit Tekrarları"
   },
   "techDashboards": {
     "revenueEngine": "Gelir Motoru",
@@ -8401,5 +8402,29 @@
       "henuz_kural_tanimlanmamis": "Henüz kural tanimlanmamis.",
       "pasif": "Pasif"
     }
+  },
+  "rnlDuplicates": {
+    "title": "Tekrarlı Oda-Gece Kilitleri",
+    "subtitle": "UNIQUE indeks tekrar oluşturulmadan önce tekrarlı (tenant_id, room_id, night_date) kilitlerini gözden geçirin ve çözün.",
+    "refresh": "Yenile",
+    "resolveSafe": "Güvenli grupları çöz ({{count}})",
+    "confirmResolve": "{{count}} güvenli tekrar grubu çözülsün mü? manual_required olarak işaretlenenler atlanacak.",
+    "resolveDone": "Çözüldü {{resolved}} / atlandı {{skipped}}",
+    "resolveError": "Çözüm başarısız",
+    "fetchError": "Tekrar planı alınamadı",
+    "nothingAuto": "Otomatik çözülecek grup yok",
+    "kpiTotal": "Tekrar grubu",
+    "kpiAutoResolvable": "Otomatik çözülebilir",
+    "kpiManual": "Manuel inceleme",
+    "empty": "Tekrarlı oda-gece kilidi bulunamadı",
+    "keeper": "tutulan",
+    "retire": "silinecek",
+    "rowsLabel": "satır",
+    "lastApply": "Son uygulama: çözüldü {{resolved}} / atlandı {{skipped}} / taranan {{scanned}}",
+    "indexRebuild": "İndeks yeniden oluşturma",
+    "indexOk": "tamam",
+    "indexFailed": "başarısız",
+    "manualFollowUp": "{{count}} grup manuel takip gerektiriyor.",
+    "manualWarning": "{{count}} grup manuel karar gerektiriyor: aynı gecede iki veya daha fazla aktif rezervasyon var ya da sahip sınıflandırması başarısız."
   }
 }

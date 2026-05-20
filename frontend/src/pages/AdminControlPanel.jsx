@@ -1,7 +1,7 @@
 import { useState, Suspense, lazy } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Loader2, Activity, AlertTriangle, Clock, Key, AlertOctagon, BarChart3, Shield, Bell, TrendingUp, Boxes, Building2, FileText, PlayCircle, Heart, Send, Zap, Map, LineChart, Gauge, Wifi } from 'lucide-react';
+import { Loader2, Activity, AlertTriangle, Clock, Key, AlertOctagon, BarChart3, Shield, Bell, TrendingUp, Boxes, Building2, FileText, PlayCircle, Heart, Send, Zap, Map, LineChart, Gauge, Wifi, Database } from 'lucide-react';
 import { useAdminWebSocket } from '../hooks/useAdminWebSocket';
 
 const SyncHealthTab = lazy(() => import('./admin/tabs/SyncHealthTab'));
@@ -23,6 +23,7 @@ const BackgroundWorkerTab = lazy(() => import('./admin/tabs/BackgroundWorkerTab'
 const HealthTrendTab = lazy(() => import('./admin/tabs/HealthTrendTab'));
 const MappingCompletenessTab = lazy(() => import('./admin/tabs/MappingCompletenessTab'));
 const RatePushMetricsTab = lazy(() => import('./admin/tabs/RatePushMetricsTab'));
+const RnlDuplicatesTab = lazy(() => import('./admin/tabs/RnlDuplicatesTab'));
 
 const TAB_KEYS = [
   { id: 'sync-health', labelKey: 'adminPanel2.syncHealth', icon: Activity },
@@ -44,6 +45,7 @@ const TAB_KEYS = [
   { id: 'readiness', labelKey: 'adminPanel2.readiness', icon: Shield },
   { id: 'sandbox-validation', labelKey: 'adminPanel2.sandboxValidation', icon: Boxes },
   { id: 'multi-property', labelKey: 'adminPanel2.multiProperty', icon: Building2 },
+  { id: 'rnl-duplicates', labelKey: 'adminPanel2.rnlDuplicates', icon: Database },
 ];
 
 const TabContent = ({ tabId }) => {
@@ -67,6 +69,7 @@ const TabContent = ({ tabId }) => {
     'readiness': <ReadinessTab />,
     'sandbox-validation': <SandboxValidationTab />,
     'multi-property': <MultiPropertyTab />,
+    'rnl-duplicates': <RnlDuplicatesTab />,
   };
   return map[tabId] || null;
 };

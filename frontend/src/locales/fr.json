@@ -1795,7 +1795,8 @@
     "sandboxValidation": "Validation sandbox",
     "multiProperty": "Multi-propriété",
     "wsConnected": "WebSocket Connecté",
-    "wsDisconnected": "WebSocket Déconnecté"
+    "wsDisconnected": "WebSocket Déconnecté",
+    "rnlDuplicates": "Doublons de Verrou"
   },
   "techDashboards": {
     "revenueEngine": "Moteur de revenus",
@@ -8316,5 +8317,29 @@
       "henuz_kural_tanimlanmamis": "Henüz kural tanimlanmamis.",
       "pasif": "Pasif"
     }
+  },
+  "rnlDuplicates": {
+    "title": "Duplicate Room-Night Locks",
+    "subtitle": "Review and resolve duplicate (tenant_id, room_id, night_date) locks before re-creating the UNIQUE index.",
+    "refresh": "Refresh",
+    "resolveSafe": "Resolve safe groups ({{count}})",
+    "confirmResolve": "Resolve {{count}} safe duplicate group(s)? Locks flagged manual_required will be skipped.",
+    "resolveDone": "Resolved {{resolved}} / skipped {{skipped}}",
+    "resolveError": "Resolve failed",
+    "fetchError": "Failed to fetch duplicate plan",
+    "nothingAuto": "No auto-resolvable groups",
+    "kpiTotal": "Duplicate groups",
+    "kpiAutoResolvable": "Auto-resolvable",
+    "kpiManual": "Manual review",
+    "empty": "No duplicate room-night locks detected",
+    "keeper": "keeper",
+    "retire": "retire",
+    "rowsLabel": "rows",
+    "lastApply": "Last apply: resolved {{resolved}} / skipped {{skipped}} / scanned {{scanned}}",
+    "indexRebuild": "Index rebuild",
+    "indexOk": "ok",
+    "indexFailed": "failed",
+    "manualFollowUp": "{{count}} group(s) require manual follow-up.",
+    "manualWarning": "{{count}} group(s) need manual adjudication: two or more active bookings share the same night, or owner classification failed."
   }
 }
