@@ -488,3 +488,275 @@ async def test_beat_task_creates_started_at_index():
         spec == [("started_at", -1)]
         for spec in keys.values()
     ), f"started_at desc index missing; have={keys}"
+
+
+# ── Task #234 — Heartbeat monitor ─────────────────────────────────────
+
+async def _reset_heartbeat_state() -> None:
+    from core.database import db
+    await db.rnl_duplicate_heartbeat.delete_many({"state_key": "auto_resolve"})
+
+
+async def test_beat_task_records_heartbeat_on_success(isolated_tenant):
+    """Task #234: every successful run must stamp last_success_at so the
+    staleness monitor can tell the job is alive."""
+    from celery_tasks import _rnl_duplicate_auto_resolve_async
+    from core.database import db
+
+    tid = isolated_tenant
+    await _reset_heartbeat_state()
+    try:
+        result = await _rnl_duplicate_auto_resolve_async(limit=10)
+        assert result["success"] is True
+
+        hb = await db.rnl_duplicate_heartbeat.find_one(
+            {"state_key": "auto_resolve"}, {"_id": 0},
+        )
+        assert hb is not None
+        assert "last_success_at" in hb
+        # Parseable, recent.
+        from datetime import UTC, datetime, timedelta
+        ts = datetime.fromisoformat(hb["last_success_at"])
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+        assert (datetime.now(UTC) - ts) < timedelta(minutes=5)
+        # Bookkeeping fields present.
+        assert "last_scanned" in hb
+        assert "last_resolved_count" in hb
+        assert "last_manual_required_count" in hb
+        _ = tid  # silence unused; cleanup handled by fixture
+    finally:
+        await _reset_heartbeat_state()
+
+
+async def test_heartbeat_check_bootstrap_no_alert():
+    """Task #234: a missing heartbeat doc on first check stamps a baseline
+    and does NOT alert (fresh-deploy grace)."""
+    from unittest.mock import AsyncMock, patch
+
+    from celery_tasks import _rnl_duplicate_heartbeat_check_async
+    from core.database import db
+
+    await _reset_heartbeat_state()
+    try:
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True}),
+        ) as mock_dispatch:
+            r = await _rnl_duplicate_heartbeat_check_async()
+            assert r["stale"] is False
+            assert r["reason"] == "bootstrap"
+            assert mock_dispatch.await_count == 0
+
+        hb = await db.rnl_duplicate_heartbeat.find_one(
+            {"state_key": "auto_resolve"}, {"_id": 0},
+        )
+        assert hb is not None
+        assert "first_observed_at" in hb
+        assert "last_success_at" not in hb
+    finally:
+        await _reset_heartbeat_state()
+
+
+async def test_heartbeat_check_fresh_no_alert():
+    """Task #234: a recent last_success_at must NOT trigger an alert."""
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock, patch
+
+    from celery_tasks import _rnl_duplicate_heartbeat_check_async
+    from core.database import db
+
+    await _reset_heartbeat_state()
+    try:
+        await db.rnl_duplicate_heartbeat.update_one(
+            {"state_key": "auto_resolve"},
+            {"$set": {
+                "state_key": "auto_resolve",
+                "last_success_at": datetime.now(UTC).isoformat(),
+            }},
+            upsert=True,
+        )
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True}),
+        ) as mock_dispatch:
+            r = await _rnl_duplicate_heartbeat_check_async()
+            assert r["stale"] is False
+            assert r["reason"] == "fresh"
+            assert mock_dispatch.await_count == 0
+    finally:
+        await _reset_heartbeat_state()
+
+
+async def test_heartbeat_check_stale_dispatches_high_alert():
+    """Task #234: last_success_at older than 36h must dispatch a high-severity
+    alert through the same dispatch_alert channel."""
+    from datetime import UTC, datetime, timedelta
+    from unittest.mock import AsyncMock, patch
+
+    from celery_tasks import _rnl_duplicate_heartbeat_check_async
+    from core.database import db
+
+    await _reset_heartbeat_state()
+    try:
+        stale_ts = (datetime.now(UTC) - timedelta(hours=40)).isoformat()
+        await db.rnl_duplicate_heartbeat.update_one(
+            {"state_key": "auto_resolve"},
+            {"$set": {
+                "state_key": "auto_resolve",
+                "last_success_at": stale_ts,
+            }},
+            upsert=True,
+        )
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True, "slack": False, "email": False}),
+        ) as mock_dispatch:
+            r = await _rnl_duplicate_heartbeat_check_async()
+            assert r["stale"] is True
+            assert r["alert_sent"] is True
+            assert r["age_hours"] >= 36
+            assert mock_dispatch.await_count == 1
+            payload = mock_dispatch.await_args.args[0]
+            assert payload["severity"] == "high"
+            assert payload["alert_type"] == "rnl_duplicate_heartbeat_stale"
+            assert payload["context"]["stale_threshold_hours"] == 36
+            assert payload["context"]["baseline_field"] == "last_success_at"
+            assert (
+                payload["context"]["beat_task"]
+                == "celery_tasks.rnl_duplicate_auto_resolve_task"
+            )
+
+        hb = await db.rnl_duplicate_heartbeat.find_one(
+            {"state_key": "auto_resolve"}, {"_id": 0},
+        )
+        assert "last_stale_alert_at" in hb
+        assert "last_stale_alert_age_hours" in hb
+    finally:
+        await _reset_heartbeat_state()
+
+
+async def test_heartbeat_check_suppresses_repeat_alerts_within_24h():
+    """Task #234: an outstanding stale alert must not re-fire every hour."""
+    from datetime import UTC, datetime, timedelta
+    from unittest.mock import AsyncMock, patch
+
+    from celery_tasks import _rnl_duplicate_heartbeat_check_async
+    from core.database import db
+
+    await _reset_heartbeat_state()
+    try:
+        stale_ts = (datetime.now(UTC) - timedelta(hours=40)).isoformat()
+        recent_alert = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+        await db.rnl_duplicate_heartbeat.update_one(
+            {"state_key": "auto_resolve"},
+            {"$set": {
+                "state_key": "auto_resolve",
+                "last_success_at": stale_ts,
+                "last_stale_alert_at": recent_alert,
+                "last_stale_alert_age_hours": 38.0,
+            }},
+            upsert=True,
+        )
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True}),
+        ) as mock_dispatch:
+            r = await _rnl_duplicate_heartbeat_check_async()
+            assert r["stale"] is True
+            assert r["alert_sent"] is False
+            assert r["reason"] == "suppressed"
+            assert mock_dispatch.await_count == 0
+    finally:
+        await _reset_heartbeat_state()
+
+
+async def test_heartbeat_check_dispatch_failure_does_not_set_suppression():
+    """Task #234 reliability: a dispatch failure must NOT advance the
+    re-alert clock — the next check must retry."""
+    from datetime import UTC, datetime, timedelta
+    from unittest.mock import AsyncMock, patch
+
+    from celery_tasks import _rnl_duplicate_heartbeat_check_async
+    from core.database import db
+
+    await _reset_heartbeat_state()
+    try:
+        stale_ts = (datetime.now(UTC) - timedelta(hours=40)).isoformat()
+        await db.rnl_duplicate_heartbeat.update_one(
+            {"state_key": "auto_resolve"},
+            {"$set": {
+                "state_key": "auto_resolve",
+                "last_success_at": stale_ts,
+            }},
+            upsert=True,
+        )
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(side_effect=RuntimeError("slack down")),
+        ):
+            r = await _rnl_duplicate_heartbeat_check_async()
+            assert r["stale"] is True
+            assert r["alert_sent"] is False
+            assert r["reason"] == "dispatch_failed"
+
+        hb = await db.rnl_duplicate_heartbeat.find_one(
+            {"state_key": "auto_resolve"}, {"_id": 0},
+        )
+        assert "last_stale_alert_at" not in hb
+        assert "last_stale_dispatch_failed_at" in hb
+
+        # Retry on next check actually dispatches.
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True}),
+        ) as mock_ok:
+            r2 = await _rnl_duplicate_heartbeat_check_async()
+            assert r2["alert_sent"] is True
+            assert mock_ok.await_count == 1
+    finally:
+        await _reset_heartbeat_state()
+
+
+async def test_successful_run_clears_outstanding_stale_alert(isolated_tenant):
+    """Task #234: when the beat job recovers, the heartbeat write must clear
+    last_stale_alert_at so any future staleness re-alerts."""
+    from datetime import UTC, datetime, timedelta
+
+    from celery_tasks import _rnl_duplicate_auto_resolve_async
+    from core.database import db
+
+    await _reset_heartbeat_state()
+    try:
+        # Pre-seed an outstanding stale-alert marker.
+        await db.rnl_duplicate_heartbeat.update_one(
+            {"state_key": "auto_resolve"},
+            {"$set": {
+                "state_key": "auto_resolve",
+                "last_success_at": (datetime.now(UTC) - timedelta(hours=50)).isoformat(),
+                "last_stale_alert_at": (datetime.now(UTC) - timedelta(hours=10)).isoformat(),
+                "last_stale_alert_age_hours": 50.0,
+            }},
+            upsert=True,
+        )
+        r = await _rnl_duplicate_auto_resolve_async(limit=10)
+        assert r["success"] is True
+
+        hb = await db.rnl_duplicate_heartbeat.find_one(
+            {"state_key": "auto_resolve"}, {"_id": 0},
+        )
+        assert "last_stale_alert_at" not in hb
+        assert "last_stale_alert_age_hours" not in hb
+        _ = isolated_tenant
+    finally:
+        await _reset_heartbeat_state()
+
+
+async def test_heartbeat_check_task_registered_in_beat_schedule():
+    """Beat schedule must include the rnl-duplicate-heartbeat-check entry."""
+    from celery_app import celery_app
+
+    schedule = celery_app.conf.beat_schedule
+    assert "rnl-duplicate-heartbeat-check" in schedule
+    entry = schedule["rnl-duplicate-heartbeat-check"]
+    assert entry["task"] == "celery_tasks.rnl_duplicate_heartbeat_check_task"

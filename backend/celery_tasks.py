@@ -1210,6 +1210,30 @@ async def _rnl_duplicate_auto_resolve_async(limit: int = 100):
         index_rebuild,
     )
 
+    # Task #234: record a heartbeat so a separate monitor can alert if this
+    # beat job ever stops firing entirely (silent dead-scheduler failure mode
+    # that Task #228's outcome alert can't see — no run, no alert).
+    try:
+        from core.database import db as _hb_db
+        await _hb_db[_RNL_HEARTBEAT_COLL].update_one(
+            {"state_key": _RNL_HEARTBEAT_KEY},
+            {"$set": {
+                "state_key": _RNL_HEARTBEAT_KEY,
+                "last_success_at": datetime.now(UTC).isoformat(),
+                "last_scanned": result.get('scanned', 0),
+                "last_resolved_count": resolved_count,
+                "last_manual_required_count": manual_required_count,
+            }, "$unset": {
+                # Heartbeat-stale alert was outstanding; clear it so the next
+                # staleness event re-alerts (no permanent suppression).
+                "last_stale_alert_at": "",
+                "last_stale_alert_age_hours": "",
+            }},
+            upsert=True,
+        )
+    except Exception as exc:  # noqa: BLE001 — never let heartbeat break the job
+        logger.warning("F8N rnl auto-resolve heartbeat write failed: %s", exc)
+
     # Task #228: actively notify operators when manual_required groups stick
     # around. Suppress consecutive-day spam by tracking a tiny state doc; only
     # re-alert when the previous run reported zero (i.e. the issue cleared and
@@ -1269,6 +1293,17 @@ _RNL_ALERT_STATE_KEY = "manual_required"
 # Re-alert when the manual_required count grows by at least this much above
 # the last alerted value (so escalation gets a fresh ping even mid-streak).
 _RNL_ALERT_ESCALATION_DELTA = 5
+
+# Task #234: heartbeat doc — last successful run of the RNL duplicate beat
+# job. A separate monitor task alerts when this is stale, catching the case
+# where the beat scheduler itself stops firing the job entirely.
+_RNL_HEARTBEAT_COLL = "rnl_duplicate_heartbeat"
+_RNL_HEARTBEAT_KEY = "auto_resolve"
+# Daily beat job (03:30 UTC) is expected every ~24h. Allow one missed run
+# plus 12h grace before screaming.
+_RNL_HEARTBEAT_STALE_HOURS = 36
+# Re-alert at most once per day when the heartbeat stays stale.
+_RNL_HEARTBEAT_REALERT_HOURS = 24
 
 
 async def _maybe_dispatch_rnl_manual_required_alert(
@@ -1451,19 +1486,181 @@ async def _maybe_dispatch_rnl_manual_required_alert(
         'previous_alert_count': last_alert_count,
     }
 
-    # Persist run summary so the super-admin panel can show history without
-    # log-diving. Best-effort: a write failure must not fail the beat job.
-    try:
-        from core.database import db
-        await db.rnl_auto_resolve_runs.insert_one({
-            **summary,
-            'actor_id': 'celery_beat',
-            'limit': limit,
-        })
-    except Exception as exc:
-        logger.warning("F8N rnl auto-resolve run history write failed: %s", exc)
 
-    return summary
+# ============= F8N TASK #234 — RNL HEARTBEAT MONITOR =============
+
+@celery_app.task(name='celery_tasks.rnl_duplicate_heartbeat_check_task')
+def rnl_duplicate_heartbeat_check_task():
+    """Periodic check: alert when the daily RNL duplicate auto-resolve beat
+    job has not recorded a successful run in ~36h.
+
+    This catches the silent failure mode where the beat scheduler itself
+    stops firing (or every run throws before reaching the heartbeat write).
+    Task #228 only alerts on the *outcome* of a run; with no runs at all,
+    no alert would ever fire and duplicates would silently accumulate.
+    """
+    return asyncio.run(_rnl_duplicate_heartbeat_check_async())
+
+
+async def _rnl_duplicate_heartbeat_check_async() -> dict[str, Any]:
+    """Async body of the heartbeat staleness monitor."""
+    from core.database import db
+
+    now = datetime.now(UTC)
+    now_iso = now.isoformat()
+    state_filter = {"state_key": _RNL_HEARTBEAT_KEY}
+    doc = await db[_RNL_HEARTBEAT_COLL].find_one(state_filter, {"_id": 0})
+
+    # Bootstrap: if we've never seen a successful run, stamp an
+    # `first_observed_at` so we don't alert immediately on a fresh deploy
+    # but we *do* alert if no run lands within the staleness window after
+    # boot.
+    if not doc or not doc.get("last_success_at"):
+        first_observed = (doc or {}).get("first_observed_at")
+        if not first_observed:
+            await db[_RNL_HEARTBEAT_COLL].update_one(
+                state_filter,
+                {"$setOnInsert": {"state_key": _RNL_HEARTBEAT_KEY},
+                 "$set": {"first_observed_at": now_iso}},
+                upsert=True,
+            )
+            return {
+                "stale": False,
+                "reason": "bootstrap",
+                "first_observed_at": now_iso,
+            }
+        baseline_iso = first_observed
+        baseline_field = "first_observed_at"
+    else:
+        baseline_iso = doc["last_success_at"]
+        baseline_field = "last_success_at"
+
+    try:
+        baseline = datetime.fromisoformat(baseline_iso)
+    except Exception:
+        # Corrupt timestamp — treat as stale to surface the problem.
+        baseline = now - timedelta(hours=_RNL_HEARTBEAT_STALE_HOURS + 1)
+
+    if baseline.tzinfo is None:
+        baseline = baseline.replace(tzinfo=UTC)
+
+    age = now - baseline
+    age_hours = age.total_seconds() / 3600.0
+
+    if age_hours < _RNL_HEARTBEAT_STALE_HOURS:
+        return {
+            "stale": False,
+            "reason": "fresh",
+            "age_hours": round(age_hours, 2),
+            "baseline_field": baseline_field,
+            "baseline_at": baseline_iso,
+        }
+
+    # Stale — suppress repeat alerts so an outage doesn't ping every hour.
+    last_alert_iso = (doc or {}).get("last_stale_alert_at")
+    if last_alert_iso:
+        try:
+            last_alert = datetime.fromisoformat(last_alert_iso)
+            if last_alert.tzinfo is None:
+                last_alert = last_alert.replace(tzinfo=UTC)
+            since_last_alert = (now - last_alert).total_seconds() / 3600.0
+            if since_last_alert < _RNL_HEARTBEAT_REALERT_HOURS:
+                return {
+                    "stale": True,
+                    "alert_sent": False,
+                    "reason": "suppressed",
+                    "age_hours": round(age_hours, 2),
+                    "hours_since_last_alert": round(since_last_alert, 2),
+                }
+        except Exception:
+            pass
+
+    alert_payload = {
+        "title": (
+            f"RNL duplicate auto-resolve beat job stale ({int(age_hours)}h "
+            "since last success)"
+        ),
+        "severity": "high",
+        "alert_type": "rnl_duplicate_heartbeat_stale",
+        "provider": "system",
+        "message": (
+            "The daily room-night-lock duplicate auto-resolver "
+            "(celery_tasks.rnl_duplicate_auto_resolve_task) has not "
+            f"recorded a successful run for {int(age_hours)}h "
+            f"(threshold: {_RNL_HEARTBEAT_STALE_HOURS}h). The Celery beat "
+            "scheduler may be down or the job may be failing before it "
+            "reaches the heartbeat write. Duplicates can silently "
+            "accumulate until this is restored."
+        ),
+        "runbook_hint": "docs/GOTCHAS.md → F8N RNL duplicate resolver",
+        "context": {
+            "age_hours": round(age_hours, 2),
+            "stale_threshold_hours": _RNL_HEARTBEAT_STALE_HOURS,
+            "baseline_field": baseline_field,
+            "baseline_at": baseline_iso,
+            "beat_task": "celery_tasks.rnl_duplicate_auto_resolve_task",
+        },
+    }
+
+    sent = False
+    dispatch_error: str | None = None
+    try:
+        from domains.channel_manager.monitoring.alert_dispatch import dispatch_alert
+        dispatch_result = await dispatch_alert(alert_payload, tenant_id="system")
+        sent = bool(
+            dispatch_result.get("slack") or dispatch_result.get("email")
+            or dispatch_result.get("dashboard")
+        )
+    except Exception as exc:  # noqa: BLE001
+        dispatch_error = str(exc)[:200]
+        logger.warning("F8N rnl heartbeat dispatch_alert failed: %s", exc)
+
+    if not sent:
+        # Don't advance the re-alert suppression clock when delivery fails —
+        # next check should retry.
+        logger.error(
+            "F8N rnl heartbeat stale alert NOT delivered age_hours=%.2f error=%s",
+            age_hours, dispatch_error or "no_channel_accepted",
+        )
+        await db[_RNL_HEARTBEAT_COLL].update_one(
+            state_filter,
+            {"$set": {
+                "state_key": _RNL_HEARTBEAT_KEY,
+                "last_stale_dispatch_failed_at": now_iso,
+                "last_stale_dispatch_error": dispatch_error or "no_channel_accepted",
+            }},
+            upsert=True,
+        )
+        return {
+            "stale": True,
+            "alert_sent": False,
+            "reason": "dispatch_failed",
+            "age_hours": round(age_hours, 2),
+            "dispatch_error": dispatch_error or "no_channel_accepted",
+        }
+
+    await db[_RNL_HEARTBEAT_COLL].update_one(
+        state_filter,
+        {"$set": {
+            "state_key": _RNL_HEARTBEAT_KEY,
+            "last_stale_alert_at": now_iso,
+            "last_stale_alert_age_hours": round(age_hours, 2),
+        }, "$unset": {
+            "last_stale_dispatch_failed_at": "",
+            "last_stale_dispatch_error": "",
+        }},
+        upsert=True,
+    )
+    logger.warning(
+        "F8N rnl heartbeat stale alert dispatched age_hours=%.2f", age_hours,
+    )
+    return {
+        "stale": True,
+        "alert_sent": True,
+        "age_hours": round(age_hours, 2),
+        "baseline_field": baseline_field,
+        "baseline_at": baseline_iso,
+    }
 
 
 @celery_app.task(name='celery_tasks.hrv2_retention_cleanup_task')

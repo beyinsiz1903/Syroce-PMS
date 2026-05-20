@@ -134,6 +134,15 @@ celery_app.conf.update(
             'task': 'celery_tasks.rnl_duplicate_auto_resolve_task',
             'schedule': crontab(hour=3, minute=30),
         },
+
+        # F8N Task #234 — Heartbeat monitor for the daily RNL duplicate
+        # auto-resolve job. Alerts when no successful run has happened in
+        # ~36h (silent dead-scheduler failure mode that the outcome-based
+        # Task #228 alert can't see). Runs hourly at :15.
+        'rnl-duplicate-heartbeat-check': {
+            'task': 'celery_tasks.rnl_duplicate_heartbeat_check_task',
+            'schedule': crontab(minute=15),
+        },
     }
 )
 
