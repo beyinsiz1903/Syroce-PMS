@@ -1074,6 +1074,76 @@ async def _hrv2_daily_summary_async():
 
 # ============= F8N TASK #224 — RNL DUPLICATE AUTO-RESOLVE =============
 
+# Task #237: keep `rnl_auto_resolve_runs` from growing unbounded. The beat job
+# writes one summary row per day; without trimming, the super-admin panel's
+# `sort(started_at desc).limit(N)` query slows down and Atlas storage grows
+# forever. Retention defaults to one year (365 rows for the daily schedule);
+# operators can override via the `RNL_AUTO_RESOLVE_RUN_RETENTION_DAYS` env
+# var. A descending index on `started_at` keeps both the panel read and the
+# pruning delete O(log n).
+_RNL_RUN_HISTORY_COLL = "rnl_auto_resolve_runs"
+_RNL_RUN_HISTORY_RETENTION_DAYS_DEFAULT = 365
+_RNL_RUN_HISTORY_INDEX_READY = False
+
+
+def _rnl_run_history_retention_days() -> int:
+    raw = os.environ.get("RNL_AUTO_RESOLVE_RUN_RETENTION_DAYS")
+    if not raw:
+        return _RNL_RUN_HISTORY_RETENTION_DAYS_DEFAULT
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return _RNL_RUN_HISTORY_RETENTION_DAYS_DEFAULT
+    return v if v > 0 else _RNL_RUN_HISTORY_RETENTION_DAYS_DEFAULT
+
+
+async def _ensure_rnl_run_history_index(db) -> None:
+    """Best-effort create the `started_at desc` index used by the panel
+    query and the retention prune. Idempotent and process-cached."""
+    global _RNL_RUN_HISTORY_INDEX_READY
+    if _RNL_RUN_HISTORY_INDEX_READY:
+        return
+    try:
+        await db[_RNL_RUN_HISTORY_COLL].create_index(
+            [("started_at", -1)],
+            name="ix_started_at_desc",
+            background=True,
+        )
+        _RNL_RUN_HISTORY_INDEX_READY = True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("F8N rnl_auto_resolve_runs index create failed: %s", exc)
+
+
+async def _prune_rnl_run_history(db, retention_days: int) -> dict[str, Any]:
+    """Delete `rnl_auto_resolve_runs` rows older than `retention_days`.
+
+    `started_at` is persisted as an ISO-8601 UTC string (always with the
+    `+00:00` suffix produced by `datetime.now(UTC).isoformat()`), so a
+    lexicographic `$lt` comparison against another ISO-8601 UTC cutoff is
+    equivalent to a chronological comparison.
+    """
+    cutoff_dt = datetime.now(UTC) - timedelta(days=retention_days)
+    cutoff_iso = cutoff_dt.isoformat()
+    try:
+        res = await db[_RNL_RUN_HISTORY_COLL].delete_many(
+            {"started_at": {"$lt": cutoff_iso}}
+        )
+        return {
+            "ran": True,
+            "deleted": int(getattr(res, "deleted_count", 0) or 0),
+            "retention_days": retention_days,
+            "cutoff": cutoff_iso,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("F8N rnl_auto_resolve_runs prune failed: %s", exc)
+        return {
+            "ran": False,
+            "error": str(exc)[:200],
+            "retention_days": retention_days,
+            "cutoff": cutoff_iso,
+        }
+
+
 @celery_app.task(name='celery_tasks.rnl_duplicate_auto_resolve_task')
 def rnl_duplicate_auto_resolve_task(limit: int = 100):
     """Daily Celery beat job: auto-resolve safe duplicate room-night-lock groups.
@@ -1169,16 +1239,26 @@ async def _rnl_duplicate_auto_resolve_async(limit: int = 100):
 
     # Persist run summary so the super-admin panel can show history without
     # log-diving. Best-effort: a write failure must not fail the beat job.
+    # Task #237: also ensure the panel's sort/limit query has a `started_at`
+    # index, and prune rows past the retention window so neither Atlas
+    # storage nor the panel query grow without bound.
+    retention_info: dict[str, Any] = {'ran': False, 'reason': 'skipped'}
     try:
         from core.database import db
-        await db.rnl_auto_resolve_runs.insert_one({
+        await _ensure_rnl_run_history_index(db)
+        await db[_RNL_RUN_HISTORY_COLL].insert_one({
             **summary,
             'actor_id': 'celery_beat',
             'limit': limit,
         })
+        retention_info = await _prune_rnl_run_history(
+            db, _rnl_run_history_retention_days()
+        )
     except Exception as exc:
         logger.warning("F8N rnl auto-resolve run history write failed: %s", exc)
+        retention_info = {'ran': False, 'error': str(exc)[:200]}
 
+    summary['run_history_retention'] = retention_info
     return summary
 
 

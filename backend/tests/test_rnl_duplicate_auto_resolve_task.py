@@ -323,3 +323,97 @@ async def test_beat_task_persists_run_history(isolated_tenant):
         assert key in last, f"missing key in persisted run: {key}"
     assert last["limit"] == 50
     assert last["resolved_count"] == result["resolved_count"]
+
+
+async def test_beat_task_prunes_old_run_history(isolated_tenant, monkeypatch):
+    """Task #237: rows older than the retention window must be pruned.
+
+    Seeds rows with `started_at` well outside the (small) retention window
+    set via the env override; after one beat run, those rows must be gone
+    while a fresh in-window row remains.
+    """
+    from datetime import timedelta
+    from celery_tasks import (
+        _RNL_RUN_HISTORY_COLL,
+        _rnl_duplicate_auto_resolve_async,
+    )
+    from core.database import db
+
+    monkeypatch.setenv("RNL_AUTO_RESOLVE_RUN_RETENTION_DAYS", "1")
+
+    marker = f"f8n_retention_{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    old_iso = (now - timedelta(days=10)).isoformat()
+    recent_iso = (now - timedelta(hours=1)).isoformat()
+
+    await db[_RNL_RUN_HISTORY_COLL].insert_many([
+        {"actor_id": "celery_beat", "marker": marker,
+         "started_at": old_iso, "scanned": 0},
+        {"actor_id": "celery_beat", "marker": marker,
+         "started_at": recent_iso, "scanned": 0},
+    ])
+
+    try:
+        result = await _rnl_duplicate_auto_resolve_async(limit=10)
+        assert result["success"] is True
+
+        retention = result.get("run_history_retention") or {}
+        assert retention.get("ran") is True
+        assert retention.get("retention_days") == 1
+        assert retention.get("deleted", 0) >= 1
+
+        remaining_old = await db[_RNL_RUN_HISTORY_COLL].count_documents(
+            {"marker": marker, "started_at": old_iso}
+        )
+        remaining_recent = await db[_RNL_RUN_HISTORY_COLL].count_documents(
+            {"marker": marker, "started_at": recent_iso}
+        )
+        assert remaining_old == 0, "old row should have been pruned"
+        assert remaining_recent == 1, "in-window row must be kept"
+    finally:
+        await db[_RNL_RUN_HISTORY_COLL].delete_many({"marker": marker})
+
+
+async def test_rnl_run_history_retention_days_env_parsing(monkeypatch):
+    """Env override parser: invalid / non-positive values fall back to default."""
+    from celery_tasks import (
+        _RNL_RUN_HISTORY_RETENTION_DAYS_DEFAULT,
+        _rnl_run_history_retention_days,
+    )
+
+    monkeypatch.delenv("RNL_AUTO_RESOLVE_RUN_RETENTION_DAYS", raising=False)
+    assert _rnl_run_history_retention_days() == _RNL_RUN_HISTORY_RETENTION_DAYS_DEFAULT
+
+    monkeypatch.setenv("RNL_AUTO_RESOLVE_RUN_RETENTION_DAYS", "30")
+    assert _rnl_run_history_retention_days() == 30
+
+    monkeypatch.setenv("RNL_AUTO_RESOLVE_RUN_RETENTION_DAYS", "not-an-int")
+    assert _rnl_run_history_retention_days() == _RNL_RUN_HISTORY_RETENTION_DAYS_DEFAULT
+
+    monkeypatch.setenv("RNL_AUTO_RESOLVE_RUN_RETENTION_DAYS", "0")
+    assert _rnl_run_history_retention_days() == _RNL_RUN_HISTORY_RETENTION_DAYS_DEFAULT
+
+    monkeypatch.setenv("RNL_AUTO_RESOLVE_RUN_RETENTION_DAYS", "-7")
+    assert _rnl_run_history_retention_days() == _RNL_RUN_HISTORY_RETENTION_DAYS_DEFAULT
+
+
+async def test_beat_task_creates_started_at_index():
+    """The `started_at desc` index must exist after one beat run so the
+    panel query and the retention prune are both O(log n)."""
+    import celery_tasks
+    from celery_tasks import (
+        _RNL_RUN_HISTORY_COLL,
+        _ensure_rnl_run_history_index,
+    )
+    from core.database import db
+
+    # Reset cached flag so the helper actually issues create_index.
+    celery_tasks._RNL_RUN_HISTORY_INDEX_READY = False
+    await _ensure_rnl_run_history_index(db)
+
+    info = await db[_RNL_RUN_HISTORY_COLL].index_information()
+    keys = {name: spec.get("key") for name, spec in info.items()}
+    assert any(
+        spec == [("started_at", -1)]
+        for spec in keys.values()
+    ), f"started_at desc index missing; have={keys}"
