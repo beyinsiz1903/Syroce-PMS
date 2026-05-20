@@ -164,7 +164,13 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
     async def _warmup_gate(request, call_next):
         if not getattr(application.state, "routes_ready", True):
             path = request.url.path
-            if not (path.startswith("/health") or path == "/favicon.ico"):
+            # Allow lightweight probes during warm-up so platform health
+            # checks pass before bootstrap completes:
+            #   - /health* (explicit health endpoints)
+            #   - /favicon.ico (browser noise)
+            #   - "/" (Replit autoscale default HTTP probe path —
+            #     served by the deploy_root_probe handler below)
+            if not (path.startswith("/health") or path == "/favicon.ico" or path == "/"):
                 from fastapi.responses import JSONResponse
                 return JSONResponse(
                     {"status": "starting", "detail": "Server is warming up"},
@@ -178,6 +184,19 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
     @application.get("/health/", include_in_schema=False)
     async def deployment_health_check():
         return {"status": "healthy"}
+
+    # ── Root probe (Replit autoscale default health path) ───────────
+    # Replit autoscale's default HTTP health probe hits "/" — without
+    # this handler the request falls through to user routers (which
+    # are not yet mounted during warm-up) and returns 503, causing
+    # the deploy to be marked failed. This handler returns 200 cheaply
+    # whether bootstrap is done or still loading. Once the frontend
+    # static bundle is mounted by the deploy publicDir, that mount
+    # takes precedence at request time.
+    @application.get("/", include_in_schema=False)
+    @application.head("/", include_in_schema=False)
+    async def deploy_root_probe():
+        return {"status": "ok", "service": "syroce-pms"}
 
     # ── Liveness vs Readiness ayrımı (Kubernetes/Replit Deploy uyumlu) ──
     # /health/live  → süreç ayakta mı? (her zaman 200 — DB sorgulamaz)
