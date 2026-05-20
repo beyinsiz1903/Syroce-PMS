@@ -46,20 +46,41 @@ async function warmup(api) {
         }
         await new Promise((res) => setTimeout(res, 5000));
     }
-    // Phase 2: bootstrap-complete check via /health/ready (warm-up gate biter)
+    // Phase 2: bootstrap-complete check via /health/ready (BOOT_READY flag)
     for (let attempt = 1; attempt <= 60; attempt++) {
         try {
             const r = await api.get('/health/ready', { failOnStatusCode: false, timeout: 30_000 });
             const ms = Date.now() - started;
             console.log(`[stress-setup] warmup /health/ready attempt=${attempt} status=${r.status()} elapsed=${ms}ms`);
-            if (r.status() === 200) return;
+            if (r.status() === 200) break;
         } catch (e) {
             lastErr = e;
             console.log(`[stress-setup] warmup /health/ready attempt=${attempt} err=${e.message}`);
         }
-        if (attempt < 60) await new Promise((res) => setTimeout(res, 5000));
+        if (attempt === 60) {
+            console.log(`[stress-setup] warmup /health/ready gave up after 60 attempts (lastErr=${lastErr?.message})`);
+            return;
+        }
+        await new Promise((res) => setTimeout(res, 5000));
     }
-    console.log(`[stress-setup] warmup /health/ready gave up after 60 attempts (lastErr=${lastErr?.message}) — login deneyecek`);
+    // Phase 3: routes mounted check via /api/health (warm-up gate kapısı).
+    // BOOT_READY (phase D) ve routes_ready (tüm router'lar mount edildi) ayrı
+    // flag'ler — /health/ready 200 dönmesi /api/* path'lerinin 200 döneceği
+    // anlamına gelmez. Warm-up gate aktifken /api/health 503 döner; routes
+    // mount edilince 200 döner. 30 deneme × 5s = 2.5 dakika ekstra ceiling.
+    for (let attempt = 1; attempt <= 30; attempt++) {
+        try {
+            const r = await api.get('/api/health', { failOnStatusCode: false, timeout: 30_000 });
+            const ms = Date.now() - started;
+            console.log(`[stress-setup] warmup /api/health attempt=${attempt} status=${r.status()} elapsed=${ms}ms`);
+            if (r.status() === 200) return;
+        } catch (e) {
+            lastErr = e;
+            console.log(`[stress-setup] warmup /api/health attempt=${attempt} err=${e.message}`);
+        }
+        if (attempt < 30) await new Promise((res) => setTimeout(res, 5000));
+    }
+    console.log(`[stress-setup] warmup /api/health gave up after 30 attempts (lastErr=${lastErr?.message}) — login deneyecek`);
 }
 
 async function safeJson(p) { try { return await p; } catch { return null; } }
