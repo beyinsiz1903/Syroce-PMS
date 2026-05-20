@@ -186,9 +186,9 @@ class InventoryItemCreateRequest(BaseModel):
     name: str
     category: str
     unit: str
-    quantity: float = 0.0
-    unit_cost: float = 0.0
-    reorder_level: float = 0.0
+    quantity: float = Field(default=0.0, ge=0)
+    unit_cost: float = Field(default=0.0, ge=0)
+    reorder_level: float = Field(default=0.0, ge=0)
     sku: str | None = None
     supplier_id: str | None = None
     location: str | None = None

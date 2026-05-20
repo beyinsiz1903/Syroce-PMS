@@ -139,6 +139,62 @@ class TestNegativeStockGuard:
             f"unknown item must be 404; got {r.status_code}"
         )
 
+    def test_l_create_negative_quantity_rejected(self, demo_auth_headers):
+        """Task #210 — POST /api/accounting/inventory with quantity<0 must 422."""
+        sku = f"T210_{uuid.uuid4().hex[:10].upper()}"
+        payload = {
+            "name": f"T210 negative create {sku}",
+            "sku": sku,
+            "category": "amenity",
+            "unit": "piece",
+            "quantity": -50,
+            "unit_cost": 1.0,
+            "reorder_level": 1,
+        }
+        r = requests.post(
+            f"{BASE_URL}/api/accounting/inventory",
+            json=payload,
+            headers=demo_auth_headers,
+            timeout=15,
+        )
+        if r.status_code in (401, 403):
+            pytest.skip(f"demo user lacks inventory create perm (status={r.status_code})")
+        assert r.status_code == 422, (
+            f"create with negative qty must be 422; got {r.status_code} {r.text[:200]}"
+        )
+
+    def test_m_create_zero_quantity_allowed(self, demo_auth_headers):
+        item_id = _create_item(demo_auth_headers, 0)
+        assert _read_qty(demo_auth_headers, item_id) == 0
+
+    def test_n_create_positive_quantity_allowed(self, demo_auth_headers):
+        item_id = _create_item(demo_auth_headers, 25)
+        assert _read_qty(demo_auth_headers, item_id) == 25
+
+    def test_o_shadow_create_negative_quantity_rejected(self, demo_auth_headers):
+        """Task #210 — shadow handler (query-param form) must also 422 on neg qty."""
+        sku = f"T210S_{uuid.uuid4().hex[:10].upper()}"
+        params = {
+            "name": f"T210 shadow neg {sku}",
+            "sku": sku,
+            "category": "amenity",
+            "unit": "piece",
+            "quantity": -10,
+            "unit_cost": 1.0,
+            "reorder_level": 1,
+        }
+        r = requests.post(
+            f"{BASE_URL}/api/accounting/inventory",
+            params=params,
+            headers=demo_auth_headers,
+            timeout=15,
+        )
+        if r.status_code in (401, 403):
+            pytest.skip(f"demo user lacks inventory create perm (status={r.status_code})")
+        assert r.status_code == 422, (
+            f"shadow create with negative qty must be 422; got {r.status_code} {r.text[:200]}"
+        )
+
     def test_k_race_two_parallel_out_one_rejected(self, demo_auth_headers):
         """Concurrent out-movements totalling more than stock must reject one."""
         import concurrent.futures

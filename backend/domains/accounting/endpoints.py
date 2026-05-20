@@ -213,6 +213,12 @@ async def create_inventory_item(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
+    if quantity < 0:
+        raise HTTPException(status_code=422, detail="quantity must be >= 0")
+    if unit_cost < 0:
+        raise HTTPException(status_code=422, detail="unit_cost must be >= 0")
+    if reorder_level < 0:
+        raise HTTPException(status_code=422, detail="reorder_level must be >= 0")
     from accounting_models import InventoryItem
     item = InventoryItem(
         tenant_id=current_user.tenant_id,
