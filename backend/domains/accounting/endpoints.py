@@ -279,7 +279,56 @@ async def create_stock_movement(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
+    # Task #209 — Negative stock guard (P0 financial integrity).
+    # Atomic conditional update prevents qty < 0; tenant-scoped filter
+    # blocks cross-tenant IDOR; movement record only persisted after
+    # update succeeds (no orphan movements on reject).
     from accounting_models import StockMovement
+
+    if movement_type not in ('in', 'out', 'adjustment'):
+        raise HTTPException(
+            status_code=422,
+            detail="movement_type must be one of: in, out, adjustment",
+        )
+    if not isinstance(quantity, (int, float)) or quantity != quantity:  # NaN check
+        raise HTTPException(status_code=422, detail="quantity must be a number")
+    if movement_type in ('in', 'out') and quantity <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="quantity must be > 0 for in/out movements",
+        )
+    if movement_type == 'adjustment' and quantity < 0:
+        raise HTTPException(
+            status_code=422,
+            detail="adjustment quantity must be >= 0",
+        )
+
+    tenant_filter = {'id': item_id, 'tenant_id': current_user.tenant_id}
+    owned = await db.inventory_items.find_one(tenant_filter, {'_id': 0, 'id': 1, 'quantity': 1})
+    if not owned:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+
+    if movement_type == 'in':
+        await db.inventory_items.update_one(tenant_filter, {'$inc': {'quantity': quantity}})
+    elif movement_type == 'out':
+        # Atomic guard: only decrement if current quantity >= requested.
+        # modified_count == 0 means insufficient stock — reject with 409.
+        guard_filter = dict(tenant_filter)
+        guard_filter['quantity'] = {'$gte': quantity}
+        result = await db.inventory_items.update_one(
+            guard_filter, {'$inc': {'quantity': -quantity}}
+        )
+        if result.modified_count == 0:
+            current_qty = float(owned.get('quantity') or 0)
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Insufficient stock: requested={quantity}, "
+                    f"available={current_qty}"
+                ),
+            )
+    else:  # adjustment — quantity already validated >= 0 above
+        await db.inventory_items.update_one(tenant_filter, {'$set': {'quantity': quantity}})
 
     movement = StockMovement(
         tenant_id=current_user.tenant_id,
@@ -291,27 +340,9 @@ async def create_stock_movement(
         notes=notes,
         created_by=current_user.name
     )
-
     movement_dict = movement.model_dump()
     movement_dict['created_at'] = movement_dict['created_at'].isoformat()
     await db.stock_movements.insert_one(movement_dict)
-
-    # Update inventory quantity
-    if movement_type == 'in':
-        await db.inventory_items.update_one(
-            {'id': item_id},
-            {'$inc': {'quantity': quantity}}
-        )
-    elif movement_type == 'out':
-        await db.inventory_items.update_one(
-            {'id': item_id},
-            {'$inc': {'quantity': -quantity}}
-        )
-    else:  # adjustment
-        await db.inventory_items.update_one(
-            {'id': item_id},
-            {'$set': {'quantity': quantity}}
-        )
 
     return movement
 
