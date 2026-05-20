@@ -1154,6 +1154,9 @@
       "spa": "Spa",
       "concierge": "Concierge",
       "night_auditor": "Night Auditor",
+      "night_audit": "Night Auditor",
+      "manager": "Manager",
+      "gm": "General Manager",
       "staff": "Staff",
       "super_admin": "Super Admin"
     },

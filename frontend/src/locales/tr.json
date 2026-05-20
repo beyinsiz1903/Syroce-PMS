@@ -1154,6 +1154,9 @@
       "spa": "Spa",
       "concierge": "Danışma",
       "night_auditor": "Gece Denetçisi",
+      "night_audit": "Gece Denetçisi",
+      "manager": "Müdür",
+      "gm": "Genel Müdür",
       "staff": "Personel",
       "super_admin": "Süper Yönetici"
     },
