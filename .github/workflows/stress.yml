@@ -130,23 +130,24 @@ jobs:
                       echo "::error::E2E_BASE_URL formatı geçersiz: '$E2E_BASE_URL'"
                       exit 1
                   fi
-                  # Health endpoint retry (3 deneme, exponential backoff 2/4/8s).
-                  # Endpoint yoksa /docs fallback — sadece reachability bakıyoruz,
-                  # 2xx/3xx/4xx hepsi OK (DNS/network'ün ayakta olduğunu kanıtlar).
+                  # Health endpoint retry — /health (warm-up gate izin verir, hep 200).
+                  # /api/health warm-up sırasında 503 döner (fresh deploy bootstrap
+                  # 90-120s sürebilir); /health route bootstrap'tan bağımsız 200 verir.
+                  # 30 deneme × 5s = 2.5 dakika ceiling (cold-start guard).
                   reachable=0
-                  for attempt in 1 2 3; do
+                  for attempt in $(seq 1 30); do
                       code=$(curl -sS -o /dev/null -w '%{http_code}' \
-                          --max-time 10 "${E2E_BASE_URL%/}/api/health" || echo "000")
+                          --max-time 10 "${E2E_BASE_URL%/}/health" || echo "000")
                       if [ "$code" != "000" ] && [ "$code" -lt 500 ]; then
                           reachable=1
                           echo "✓ Health check OK (HTTP $code, attempt $attempt)"
                           break
                       fi
                       echo "Health check attempt $attempt: HTTP $code"
-                      sleep $((attempt * 2))
+                      sleep 5
                   done
                   if [ "$reachable" -eq 0 ]; then
-                      echo "::error::E2E_BASE_URL erişilemez (3 retry sonrası HTTP 5xx veya bağlantı yok)"
+                      echo "::error::E2E_BASE_URL erişilemez (30 retry × 5s sonrası HTTP 5xx veya bağlantı yok)"
                       exit 1
                   fi
                   echo "✓ Pre-flight gates OK"
