@@ -1346,6 +1346,13 @@ async def _maybe_dispatch_rnl_manual_required_alert(
                 }, "$unset": {"active_since": ""}},
                 upsert=True,
             )
+            # Task #243: notify the operator dashboard widget that the backlog
+            # cleared so it can hide without waiting for the next poll.
+            await _broadcast_rnl_alert_state_change(
+                transition="cleared",
+                current_count=0,
+                previous_count=int(state_doc.get("last_alert_count") or 0),
+            )
         return {'sent': False, 'suppressed': False, 'reason': 'count_zero'}
 
     last_alert_count = int((state_doc or {}).get("last_alert_count") or 0)
@@ -1478,14 +1485,59 @@ async def _maybe_dispatch_rnl_manual_required_alert(
         upsert=True,
     )
 
+    reason = 'escalated' if (escalated and streak_active) else 'first_detection'
+    # Task #243: push a live event to the operator dashboard so the duplicate-
+    # locks widget appears/escalates without waiting for the next poll.
+    await _broadcast_rnl_alert_state_change(
+        transition=reason,
+        current_count=count,
+        previous_count=last_alert_count,
+        active_since=set_fields.get("active_since") or (state_doc or {}).get("active_since"),
+        sample=set_fields["last_sample"],
+    )
+
     return {
         'sent': True,
         'suppressed': False,
-        'reason': 'escalated' if (escalated and streak_active) else 'first_detection',
+        'reason': reason,
         'current_count': count,
         'previous_alert_count': last_alert_count,
     }
 
+
+async def _broadcast_rnl_alert_state_change(
+    *,
+    transition: str,
+    current_count: int,
+    previous_count: int,
+    active_since: str | None = None,
+    sample: dict[str, Any] | None = None,
+) -> None:
+    """Emit a ``rnl_duplicate_alert_state_changed`` socket event so the
+    operator dashboard widget (Task #233) can re-render immediately on
+    transitions (count 0→N, escalations, and N→0). Best-effort: websocket
+    failures must not affect the resolver outcome.
+    """
+    try:
+        from websocket_server import broadcast_system_health_event
+        severity = "info" if transition == "cleared" else "high"
+        payload: dict[str, Any] = {
+            "transition": transition,
+            "manual_required_count": current_count,
+            "previous_alert_count": previous_count,
+        }
+        if active_since:
+            payload["active_since"] = active_since
+        if sample:
+            payload["sample"] = sample
+        await broadcast_system_health_event(
+            "rnl_duplicate_alert_state_changed",
+            payload,
+            tenant_id=None,
+            severity=severity,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("rnl_duplicate_alert_state_changed broadcast failed: %s", exc)
 
 # ============= F8N TASK #234 — RNL HEARTBEAT MONITOR =============
 

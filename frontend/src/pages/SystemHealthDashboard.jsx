@@ -695,8 +695,30 @@ export default function SystemHealthDashboard({ user }) {
     socket.on("connect_error", () => setWsConnected(false));
 
     socket.on("system_health_event", (data) => {
-      // Filtre: yalnız warning+critical canlı strip'e işlenir, infos sessizce atılır.
       const sev = (data?.severity || "").toLowerCase();
+      const eventType = data?.event_type;
+
+      // Task #243: live transitions for the RNL duplicate-locks widget
+      // (0→N first detection, escalations, and N→0 cleared). Handled
+      // regardless of severity (cleared is `info`), then re-fetched from
+      // the summary endpoint so escalation/sample metadata stays accurate.
+      if (eventType === "rnl_duplicate_alert_state_changed") {
+        // Auth-safe refresh: the summary endpoint is super-admin only and
+        // is the source of truth for what this user is allowed to see. We
+        // do NOT patch state from the socket payload optimistically — the
+        // socket room is shared and applying payload data directly would
+        // leak sample tenant/room/night triples to non-super-admin viewers.
+        // Instead, just re-fetch; on 403 (non-super-admin) clear the widget
+        // state so a previous authorized fetch can't be carried over.
+        axios
+          .get(`/admin/db/room-night-lock-duplicates/summary`)
+          .then((res) => setRnlSummary(res.data))
+          .catch(() => setRnlSummary(null));
+        // fall through so the live-events strip can also record high-severity
+        // transitions (first_detection / escalated).
+      }
+
+      // Filtre: yalnız warning+critical canlı strip'e işlenir, infos sessizce atılır.
       if (sev === "info") return;
       setLiveEvents((prev) => [data, ...prev].slice(0, 20));
       // Kritik olay fırtınasına karşı throttle: 10 sn'de bir fetchAll

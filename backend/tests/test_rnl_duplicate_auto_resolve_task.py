@@ -344,6 +344,76 @@ async def test_beat_task_sets_active_since_on_first_detection_preserves_on_escal
         await _reset_alert_state()
 
 
+async def test_beat_task_broadcasts_socket_event_on_transitions(isolated_tenant):
+    """Task #243: socket emit fires on 0→N first detection, escalation, and
+    N→0 cleared transitions so the operator dashboard widget can refresh
+    without waiting for the polling fallback."""
+    from unittest.mock import AsyncMock, patch
+
+    from celery_tasks import _rnl_duplicate_auto_resolve_async
+    from core.database import db
+
+    tid = isolated_tenant
+    room_id = f"room_{uuid.uuid4().hex[:8]}"
+    night = "2030-10-06"
+    a, b = str(uuid.uuid4()), str(uuid.uuid4())
+    await _seed_booking(tid, a, "confirmed")
+    await _seed_booking(tid, b, "checked_in")
+    await _seed_lock(tid, room_id, night, a)
+    await _seed_lock(tid, room_id, night, b)
+
+    await _reset_alert_state()
+    try:
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True}),
+        ), patch(
+            "websocket_server.broadcast_system_health_event",
+            new=AsyncMock(return_value=None),
+        ) as mock_emit:
+            await _rnl_duplicate_auto_resolve_async(limit=50)
+            assert mock_emit.await_count == 1
+            event_type, payload = mock_emit.await_args.args[0], mock_emit.await_args.args[1]
+            assert event_type == "rnl_duplicate_alert_state_changed"
+            assert payload["transition"] == "first_detection"
+            assert payload["manual_required_count"] >= 1
+            assert mock_emit.await_args.kwargs.get("severity") == "high"
+
+        # Force escalation: zero last_alert_count to push delta above threshold.
+        await db.rnl_duplicate_alert_state.update_one(
+            {"state_key": "manual_required"},
+            {"$set": {"last_alert_count": 0}},
+        )
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True}),
+        ), patch(
+            "websocket_server.broadcast_system_health_event",
+            new=AsyncMock(return_value=None),
+        ) as mock_emit_esc:
+            await _rnl_duplicate_auto_resolve_async(limit=50)
+            assert mock_emit_esc.await_count == 1
+            assert mock_emit_esc.await_args.args[1]["transition"] == "escalated"
+
+        # Drain backlog → cleared transition.
+        await db.room_night_locks.delete_many({"tenant_id": tid})
+        with patch(
+            "domains.channel_manager.monitoring.alert_dispatch.dispatch_alert",
+            new=AsyncMock(return_value={"dashboard": True}),
+        ), patch(
+            "websocket_server.broadcast_system_health_event",
+            new=AsyncMock(return_value=None),
+        ) as mock_emit_clr:
+            await _rnl_duplicate_auto_resolve_async(limit=50)
+            assert mock_emit_clr.await_count == 1
+            cleared_payload = mock_emit_clr.await_args.args[1]
+            assert cleared_payload["transition"] == "cleared"
+            assert cleared_payload["manual_required_count"] == 0
+            assert mock_emit_clr.await_args.kwargs.get("severity") == "info"
+    finally:
+        await _reset_alert_state()
+
+
 async def test_beat_task_registered_in_beat_schedule():
     """Beat schedule must include the daily rnl-duplicate-auto-resolve entry."""
     from celery_app import celery_app
