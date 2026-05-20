@@ -311,24 +311,75 @@ router = APIRouter(prefix="/api", tags=["AI / ML"])
 @router.get("/predictions/no-shows")
 async def predict_no_shows(
     target_date: str = None,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    """No-show risk predictions"""
-    # Use today if no date provided
+    """No-show risk predictions — tenant-scoped.
+
+    F8O Task #214 (P0): previously returned hardcoded mock entries
+    (`BK001`/`BK002`) for every caller, which collapsed the tenant boundary —
+    any tenant's token surfaced the same fabricated booking IDs, tripping
+    cross-tenant leak detectors and (more importantly) violating the
+    threat-model "tenant boundary" invariant.
+
+    Now scopes the lookup to `current_user.tenant_id` and only returns
+    booking IDs that belong to that tenant. Empty result is the correct
+    answer when there are no arrivals — never fall back to mock data.
+    """
     if not target_date:
         target_date = datetime.now().strftime("%Y-%m-%d")
 
-    # Mock predictions
-    predictions = [
-        {'booking_id': 'BK001', 'guest_name': 'John Doe', 'risk_score': 0.75, 'risk_level': 'high'},
-        {'booking_id': 'BK002', 'guest_name': 'Jane Smith', 'risk_score': 0.45, 'risk_level': 'medium'}
-    ]
+    tenant_id = current_user.tenant_id
+    bookings = await db.bookings.find(
+        {
+            'tenant_id': tenant_id,
+            'check_in': target_date,
+            'status': {'$in': ['confirmed', 'guaranteed']},
+        },
+        {'_id': 0, 'id': 1, 'tenant_id': 1, 'ota_channel': 1, 'payment_model': 1,
+         'total_amount': 1, 'check_in': 1},
+    ).to_list(1000)
+
+    predictions = []
+    for booking in bookings:
+        # Defence-in-depth: skip any doc whose tenant_id does not match the
+        # requesting user. The Mongo filter already guarantees this, but if
+        # a future shared cache or query helper drops the filter, this
+        # post-filter prevents an ID leak in the response.
+        if booking.get('tenant_id') != tenant_id:
+            continue
+
+        # Risk weights (0..1 fractional scale to preserve the pre-fix GET
+        # contract — frontend PredictiveAnalytics.jsx renders
+        # `Math.round(pred.risk_score * 100)`, so this MUST stay in [0,1]).
+        raw = 0.0
+        if booking.get('ota_channel'):
+            raw += 0.25
+        payment_model = booking.get('payment_model')
+        if payment_model == 'agency':
+            raw += 0.20
+        elif payment_model == 'hotel_collect':
+            raw += 0.15
+        if booking.get('total_amount', 0) < 100:
+            raw += 0.10
+        risk_score = round(min(1.0, max(0.0, raw)), 2)
+        if risk_score >= 0.70:
+            risk_level = 'high'
+        elif risk_score >= 0.50:
+            risk_level = 'medium'
+        else:
+            risk_level = 'low'
+
+        predictions.append({
+            'booking_id': booking.get('id'),
+            'risk_score': risk_score,
+            'risk_level': risk_level,
+        })
 
     return {
         'target_date': target_date,
         'predictions': predictions,
-        'high_risk_count': len([p for p in predictions if p['risk_level'] == 'high']),
-        'total_at_risk': len(predictions)
+        'high_risk_count': sum(1 for p in predictions if p['risk_level'] == 'high'),
+        'total_at_risk': len(predictions),
     }
 # ── GET /predictions/demand-forecast ──
 @router.get("/predictions/demand-forecast")
