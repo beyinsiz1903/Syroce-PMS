@@ -1072,6 +1072,86 @@ async def _hrv2_daily_summary_async():
         return {'success': False, 'error': str(e)}
 
 
+# ============= F8N TASK #224 — RNL DUPLICATE AUTO-RESOLVE =============
+
+@celery_app.task(name='celery_tasks.rnl_duplicate_auto_resolve_task')
+def rnl_duplicate_auto_resolve_task(limit: int = 100):
+    """Daily Celery beat job: auto-resolve safe duplicate room-night-lock groups.
+
+    Mirrors the super-admin endpoint (`/api/db-admin/room-night-lock-duplicates/resolve`):
+    only `auto_safe` / `auto_safe_all_inactive` groups are deleted; `manual_required`
+    groups are reported in the response and logged so monitoring can alert when they
+    accumulate. After a successful resolution we re-run `ensure_booking_indexes` to
+    rebuild the unique `ux_room_night` guard if it was previously blocked by the
+    duplicates.
+    """
+    return asyncio.run(_rnl_duplicate_auto_resolve_async(limit=limit))
+
+
+async def _rnl_duplicate_auto_resolve_async(limit: int = 100):
+    """Async implementation of the RNL duplicate auto-resolver beat job."""
+    try:
+        from core.atomic_booking import (
+            ensure_booking_indexes,
+            resolve_room_night_lock_duplicates,
+        )
+    except Exception as exc:
+        logger.error("F8N rnl auto-resolve import failed: %s", exc)
+        return {'success': False, 'error': f'import_failed: {exc}'}
+
+    started_at = datetime.now(UTC).isoformat()
+    try:
+        result = await resolve_room_night_lock_duplicates(
+            apply=True,
+            limit=limit,
+            actor_id="celery_beat",
+            actor_name="rnl_duplicate_auto_resolve",
+            actor_role="super_admin",
+        )
+    except Exception as exc:
+        logger.error("F8N rnl auto-resolve apply failed: %s", exc)
+        return {'success': False, 'error': str(exc), 'started_at': started_at}
+
+    resolved_count = result.get('resolved_count', 0)
+    skipped_count = result.get('skipped_count', 0)
+    manual_required = [
+        s for s in result.get('skipped', [])
+        if s.get('recommendation') == 'manual_required'
+    ]
+    manual_required_count = len(manual_required)
+
+    index_rebuild: dict[str, Any] = {'ran': False}
+    if resolved_count > 0:
+        try:
+            await ensure_booking_indexes()
+            index_rebuild = {'ran': True}
+        except Exception as exc:
+            logger.warning("F8N rnl auto-resolve index rebuild failed: %s", exc)
+            index_rebuild = {'ran': False, 'error': str(exc)[:200]}
+
+    # Metric / alert line: a non-zero manual_required count means a human still
+    # has to adjudicate. Monitoring should alert on sustained > 0 values.
+    logger.warning(
+        "F8N rnl_duplicate_auto_resolve scanned=%d resolved=%d skipped=%d manual_required=%d index_rebuild=%s",
+        result.get('scanned', 0),
+        resolved_count,
+        skipped_count,
+        manual_required_count,
+        index_rebuild,
+    )
+
+    return {
+        'success': True,
+        'started_at': started_at,
+        'finished_at': datetime.now(UTC).isoformat(),
+        'scanned': result.get('scanned', 0),
+        'resolved_count': resolved_count,
+        'skipped_count': skipped_count,
+        'manual_required_count': manual_required_count,
+        'index_rebuild': index_rebuild,
+    }
+
+
 @celery_app.task(name='celery_tasks.hrv2_retention_cleanup_task')
 def hrv2_retention_cleanup_task():
     """Clean up old shadow automation data per retention policy."""

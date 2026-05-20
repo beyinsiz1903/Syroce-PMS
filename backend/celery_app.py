@@ -123,6 +123,14 @@ celery_app.conf.update(
             'task': 'celery_tasks.hrv2_retention_cleanup_task',
             'schedule': crontab(day_of_week=0, hour=5, minute=0),
         },
+
+        # F8N Task #224 — Auto-resolve duplicate room-night locks (daily 03:30 UTC).
+        # Touches only auto_safe / auto_safe_all_inactive groups; manual_required
+        # groups are logged so monitoring can alert if they accumulate.
+        'rnl-duplicate-auto-resolve': {
+            'task': 'celery_tasks.rnl_duplicate_auto_resolve_task',
+            'schedule': crontab(hour=3, minute=30),
+        },
     }
 )
 
