@@ -22,6 +22,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from cache_manager import cached
+from core.atomic_booking import (
+    ensure_booking_indexes,
+    list_room_night_lock_duplicate_groups,
+    resolve_room_night_lock_duplicates,
+)
 from core.database import _raw_db
 from core.helpers import create_audit_log, require_super_admin_guard
 from models.schemas import User
@@ -185,3 +190,109 @@ async def drop_collection(
     except Exception:
         pass
     return {"dropped": True, "name": name, "reason": reason}
+
+
+# ─── F8N — Duplicate Room-Night Lock Auto-Resolver (Task #222) ────────
+#
+# `scan_room_night_lock_duplicates` / `ensure_booking_indexes` detect
+# duplicate `(tenant_id, room_id, night_date)` rows in `room_night_locks`
+# but never delete them automatically (per task guard rules). Until an
+# operator adjudicates each group, the UNIQUE `ux_room_night` index
+# cannot be created and the F8N CRITICAL post-create log stays hot.
+#
+# These endpoints give super-admin a sanctioned, audited path to:
+#   GET  /api/admin/db/room-night-lock-duplicates           → plan/list
+#   POST /api/admin/db/room-night-lock-duplicates/resolve   → apply (gated)
+#
+# Both routes are super-admin only. The destructive POST requires both
+# `dry_run=false` AND `confirm=true` in the body so a fat-finger curl
+# cannot delete rows. Only `auto_safe` / `auto_safe_all_inactive` groups
+# are touched — `manual_required` groups are reported back unchanged.
+
+class RnlResolveBody(BaseModel):
+    confirm: bool = False
+    limit: int = 100
+
+
+@router.get("/room-night-lock-duplicates")
+async def list_rnl_duplicates(
+    limit: int = Query(100, ge=1, le=500),
+    current_user: User = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """List duplicate room-night-lock groups with auto-resolution
+    recommendation. Read-only; never mutates."""
+    groups = await list_room_night_lock_duplicate_groups(limit=limit)
+    auto = sum(
+        1 for g in groups
+        if g["recommendation"] in ("auto_safe", "auto_safe_all_inactive")
+    )
+    manual = sum(1 for g in groups if g["recommendation"] == "manual_required")
+    logger.info(
+        "db_admin.rnl_duplicates.list actor=%s total=%d auto=%d manual=%d",
+        getattr(current_user, "id", "?"), len(groups), auto, manual,
+    )
+    return {
+        "total": len(groups),
+        "auto_resolvable": auto,
+        "manual_required": manual,
+        "groups": groups,
+    }
+
+
+@router.post("/room-night-lock-duplicates/resolve")
+async def resolve_rnl_duplicates(
+    body: RnlResolveBody | None = None,
+    dry_run: bool = Query(True, description="True ise plan döner, silmez"),
+    rebuild_index: bool = Query(
+        False,
+        description="Apply sonrası ensure_booking_indexes() çağır",
+    ),
+    current_user: User = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """Auto-resolve duplicate room-night locks. Dry-run by default.
+
+    Real apply requires `?dry_run=false` AND `body.confirm=true`. Only
+    `auto_safe` / `auto_safe_all_inactive` groups are touched; the rest
+    are reported back unchanged for manual review.
+    """
+    body = body or RnlResolveBody()
+    actor_id = getattr(current_user, "id", "?")
+    actor_name = getattr(current_user, "name", "super_admin")
+    actor_role = getattr(current_user, "role", "super_admin")
+
+    logger.info(
+        "db_admin.rnl_duplicates.resolve.attempt actor=%s dry_run=%s confirm=%s",
+        actor_id, dry_run, body.confirm,
+    )
+
+    if not dry_run and not body.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Gerçek silme için body.confirm=true zorunlu",
+        )
+
+    result = await resolve_room_night_lock_duplicates(
+        apply=not dry_run,
+        limit=body.limit,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        actor_role=actor_role,
+    )
+
+    index_rebuild: dict[str, Any] | None = None
+    if not dry_run and rebuild_index and result["resolved_count"] > 0:
+        try:
+            await ensure_booking_indexes()
+            index_rebuild = {"ran": True}
+        except Exception as exc:
+            logger.warning("db_admin.rnl_duplicates.resolve.index_rebuild_failed: %s", exc)
+            index_rebuild = {"ran": False, "error": str(exc)[:200]}
+
+    logger.warning(
+        "db_admin.rnl_duplicates.resolve.done actor=%s applied=%s resolved=%d skipped=%d",
+        actor_id, result["applied"], result["resolved_count"], result["skipped_count"],
+    )
+
+    if index_rebuild is not None:
+        result["index_rebuild"] = index_rebuild
+    return result

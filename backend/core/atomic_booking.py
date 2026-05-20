@@ -727,6 +727,275 @@ async def scan_room_night_lock_duplicates(limit: int = 100) -> list[dict[str, An
         return []
 
 
+async def _classify_lock_owner(tenant_id: str, booking_id: str) -> dict[str, Any]:
+    """Classify a lock owner (booking_id) for the auto-resolver.
+
+    Returns dict with keys:
+      kind:    "block" | "active" | "terminal" | "missing" | "unknown"
+      status:  bookings.status if applicable
+      created_at, check_in, check_out: when available
+    """
+    if not booking_id:
+        return {"kind": "missing", "status": None, "created_at": None}
+    if booking_id.startswith((OOO_PREFIX, OOS_PREFIX, MAINTENANCE_PREFIX)):
+        return {"kind": "block", "status": "block", "created_at": None}
+    try:
+        doc = await db.bookings.find_one(
+            {"tenant_id": tenant_id, "id": booking_id},
+            {"_id": 0, "id": 1, "status": 1, "created_at": 1,
+             "check_in": 1, "check_out": 1},
+        )
+    except Exception as exc:
+        logger.warning("F8N classify lookup failed for %s: %s", booking_id, exc)
+        return {"kind": "unknown", "status": None, "created_at": None}
+    if not doc:
+        return {"kind": "missing", "status": None, "created_at": None}
+    status_val = (doc.get("status") or "").lower()
+    if status_val in TERMINAL_BOOKING_STATUSES:
+        kind = "terminal"
+    elif status_val in ACTIVE_BOOKING_STATUSES:
+        kind = "active"
+    else:
+        # Anything else (pending_assignment, on_hold, etc.) — treat as
+        # non-terminal so we never auto-retire it.
+        kind = "active"
+    return {
+        "kind": kind,
+        "status": status_val,
+        "created_at": doc.get("created_at"),
+        "check_in": doc.get("check_in"),
+        "check_out": doc.get("check_out"),
+    }
+
+
+async def list_room_night_lock_duplicate_groups(
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Return duplicate (tenant, room, night) groups annotated with each
+    owner's classification and an auto-resolution recommendation.
+
+    Recommendation rules (read-only; never mutates):
+      * Exactly one owner classified as `block` or `active`, all others
+        `terminal` or `missing` → `auto_safe`. Keeper is the active/block
+        row; the others are listed for retire.
+      * Two or more `active`/`block` owners → `manual_required` (operator
+        must adjudicate which booking to cancel).
+      * All owners `terminal`/`missing` → `auto_safe_all_inactive`. Keeper
+        is the most recently created lock so the audit trail is preserved;
+        the remainder are listed for retire.
+      * `unknown` (lookup error) anywhere → `manual_required` to avoid
+        deleting data we could not classify.
+    """
+    groups = await scan_room_night_lock_duplicates(limit=limit)
+    annotated: list[dict[str, Any]] = []
+    for grp in groups:
+        gid = grp.get("_id", {}) or {}
+        tenant_id = gid.get("tenant_id")
+        room_id = gid.get("room_id")
+        night = gid.get("night_date")
+        booking_ids = grp.get("booking_ids") or []
+
+        try:
+            owner_locks = await db.room_night_locks.find(
+                {"tenant_id": tenant_id, "room_id": room_id, "night_date": night},
+                {"_id": 0, "booking_id": 1, "lock_type": 1, "created_at": 1},
+            ).to_list(100)
+        except Exception as exc:
+            logger.warning("F8N owner-lock fetch failed (%s/%s/%s): %s",
+                           tenant_id, room_id, night, exc)
+            owner_locks = []
+
+        owners: list[dict[str, Any]] = []
+        for lk in owner_locks:
+            bid = lk.get("booking_id")
+            cls = await _classify_lock_owner(tenant_id, bid)
+            owners.append({
+                "booking_id": bid,
+                "lock_type": lk.get("lock_type"),
+                "lock_created_at": lk.get("created_at"),
+                **cls,
+            })
+
+        keepers = [o for o in owners if o["kind"] in ("block", "active")]
+        unknowns = [o for o in owners if o["kind"] == "unknown"]
+        inactive = [o for o in owners if o["kind"] in ("terminal", "missing")]
+
+        if unknowns:
+            recommendation = "manual_required"
+            reason = "owner classification failed for one or more locks"
+            keep_booking_id = None
+            retire_booking_ids: list[str] = []
+        elif len(keepers) == 1 and inactive:
+            recommendation = "auto_safe"
+            reason = "single active keeper, remainder terminal/missing"
+            keep_booking_id = keepers[0]["booking_id"]
+            retire_booking_ids = [o["booking_id"] for o in inactive]
+        elif len(keepers) >= 2:
+            recommendation = "manual_required"
+            reason = "two or more active bookings on the same night"
+            keep_booking_id = None
+            retire_booking_ids = []
+        elif not keepers and inactive:
+            inactive_sorted = sorted(
+                inactive,
+                key=lambda o: (o.get("lock_created_at") or "", o.get("created_at") or ""),
+                reverse=True,
+            )
+            recommendation = "auto_safe_all_inactive"
+            reason = "all owners terminal/missing; keep most recent for audit"
+            keep_booking_id = inactive_sorted[0]["booking_id"]
+            retire_booking_ids = [o["booking_id"] for o in inactive_sorted[1:]]
+        else:
+            recommendation = "manual_required"
+            reason = "no resolvable pattern"
+            keep_booking_id = None
+            retire_booking_ids = []
+
+        annotated.append({
+            "tenant_id": tenant_id,
+            "room_id": room_id,
+            "night_date": night,
+            "count": grp.get("count"),
+            "booking_ids": booking_ids,
+            "owners": owners,
+            "recommendation": recommendation,
+            "reason": reason,
+            "keep_booking_id": keep_booking_id,
+            "retire_booking_ids": retire_booking_ids,
+        })
+    return annotated
+
+
+async def resolve_room_night_lock_duplicates(
+    *,
+    apply: bool = False,
+    limit: int = 100,
+    actor_id: str = "system",
+    actor_name: str = "system",
+    actor_role: str = "super_admin",
+) -> dict[str, Any]:
+    """Auto-resolve duplicate room-night locks when the resolution is safe.
+
+    Safe groups are the ones flagged `auto_safe` or `auto_safe_all_inactive`
+    by `list_room_night_lock_duplicate_groups`. `manual_required` groups are
+    always skipped (returned in the response so operators can review).
+
+    When `apply=False` this returns the plan only — nothing is deleted.
+
+    When `apply=True`:
+      * Deletes only the lock rows whose `booking_id` is in
+        `retire_booking_ids` for safe groups (and only on the matching
+        tenant/room/night triple — never wider).
+      * Re-checks the post-delete row count for that triple; if more than
+        one row remains (concurrent insert race) the action is rolled back
+        for that group and the group is flagged `skipped_post_check`.
+      * Writes an `audit_logs` row per resolved group with
+        `action=AUTO_RESOLVE_RNL_DUPLICATE`.
+      * Writes a timeline event (`lock_duplicate_resolved`).
+    """
+    plan = await list_room_night_lock_duplicate_groups(limit=limit)
+    now_iso = datetime.now(UTC).isoformat()
+    resolved: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for grp in plan:
+        if grp["recommendation"] not in ("auto_safe", "auto_safe_all_inactive"):
+            skipped.append({**grp, "skip_reason": grp["reason"]})
+            continue
+        if not grp["retire_booking_ids"]:
+            skipped.append({**grp, "skip_reason": "nothing to retire"})
+            continue
+        if not apply:
+            resolved.append({**grp, "applied": False})
+            continue
+
+        tenant_id = grp["tenant_id"]
+        room_id = grp["room_id"]
+        night = grp["night_date"]
+
+        try:
+            del_res = await db.room_night_locks.delete_many({
+                "tenant_id": tenant_id,
+                "room_id": room_id,
+                "night_date": night,
+                "booking_id": {"$in": grp["retire_booking_ids"]},
+            })
+            remaining = await db.room_night_locks.count_documents({
+                "tenant_id": tenant_id,
+                "room_id": room_id,
+                "night_date": night,
+            })
+        except Exception as exc:
+            logger.warning(
+                "F8N auto-resolve delete failed (%s/%s/%s): %s",
+                tenant_id, room_id, night, exc,
+            )
+            skipped.append({**grp, "skip_reason": f"delete error: {exc}"})
+            continue
+
+        if remaining != 1:
+            logger.warning(
+                "F8N auto-resolve post-check: %s rows remain on %s/%s/%s — "
+                "skipping audit (expected 1)",
+                remaining, tenant_id, room_id, night,
+            )
+            skipped.append({**grp, "skip_reason": f"post_check rows={remaining}"})
+            continue
+
+        try:
+            await db.audit_logs.insert_one({
+                "id": f"rnl-resolve-{tenant_id}-{room_id}-{night}-{int(datetime.now(UTC).timestamp())}",
+                "tenant_id": tenant_id,
+                "user_id": actor_id,
+                "user_name": actor_name,
+                "user_role": actor_role,
+                "action": "AUTO_RESOLVE_RNL_DUPLICATE",
+                "entity_type": "room_night_lock",
+                "entity_id": f"{tenant_id}:{room_id}:{night}",
+                "changes": {
+                    "recommendation": grp["recommendation"],
+                    "reason": grp["reason"],
+                    "keep_booking_id": grp["keep_booking_id"],
+                    "retire_booking_ids": grp["retire_booking_ids"],
+                    "owners": grp["owners"],
+                    "deleted_count": del_res.deleted_count,
+                },
+                "timestamp": now_iso,
+            })
+        except Exception as exc:
+            logger.warning("F8N auto-resolve audit_log insert failed: %s", exc)
+
+        await _timeline_event(
+            tenant_id=tenant_id,
+            stage="lock_duplicate_resolved",
+            status="success",
+            booking_id=grp["keep_booking_id"] or "",
+            room_id=room_id or "",
+            metadata={
+                "night_date": night,
+                "recommendation": grp["recommendation"],
+                "keep_booking_id": grp["keep_booking_id"],
+                "retired_booking_ids": grp["retire_booking_ids"],
+                "deleted_count": del_res.deleted_count,
+                "actor_id": actor_id,
+            },
+        )
+
+        resolved.append({
+            **grp,
+            "applied": True,
+            "deleted_count": del_res.deleted_count,
+        })
+
+    return {
+        "applied": apply,
+        "scanned": len(plan),
+        "resolved_count": len(resolved),
+        "skipped_count": len(skipped),
+        "resolved": resolved,
+        "skipped": skipped,
+    }
+
+
 async def ensure_booking_indexes() -> None:
     """Create indexes for room-night locking and fast overlap detection.
 

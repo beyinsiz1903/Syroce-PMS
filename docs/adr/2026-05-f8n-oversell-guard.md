@@ -156,4 +156,70 @@ auto-skip when MongoDB is not reachable (conftest session-loop fixture).
 - E-fatura / GIB integration paths (untouched).
 - Multi-room booking *order* heuristic — only the per-row failure now returns
   a structured 409; group rollback semantics unchanged.
-- Auto-deletion of duplicate RNL rows — explicit task guard.
+
+## Addendum — Task #222 (2026-05-20): sanctioned auto-resolver
+
+Per the original task guard, `ensure_booking_indexes` never deleted
+duplicate `room_night_locks` rows automatically. In long-lived
+environments this left the UNIQUE `ux_room_night` index permanently
+un-creatable and the F8N CRITICAL post-create log permanently hot until
+a human adjudicated each group. Task #222 adds a sanctioned, audited
+resolution path that production can drive itself for the common case.
+
+### New API (`backend/core/atomic_booking.py`)
+
+- `_classify_lock_owner(tenant_id, booking_id)` — classifies a lock
+  owner as `block` (OOO:/OOS:/MAINT: prefix), `active`
+  (`ACTIVE_BOOKING_STATUSES` + everything non-terminal), `terminal`
+  (`TERMINAL_BOOKING_STATUSES`), `missing` (no bookings doc), or
+  `unknown` (lookup error).
+- `list_room_night_lock_duplicate_groups(limit)` — wraps the existing
+  `scan_room_night_lock_duplicates` and annotates each group with each
+  owner's classification plus a recommendation:
+    * `auto_safe` — exactly one `active`/`block` keeper, all others
+      `terminal`/`missing`.
+    * `auto_safe_all_inactive` — all owners `terminal`/`missing`; keeper
+      is the most-recently-created lock (preserves audit trail).
+    * `manual_required` — two+ active owners, or any `unknown`.
+- `resolve_room_night_lock_duplicates(*, apply=False, limit, actor_*)`
+  — for safe groups, deletes the listed `retire_booking_ids` rows on
+  the exact (tenant, room, night) triple, then re-checks the row count.
+  If anything other than exactly one row remains (concurrent insert
+  race) the action is reported as `skipped_post_check` instead of
+  audited. Each successful resolution writes an `audit_logs` row
+  (`action=AUTO_RESOLVE_RNL_DUPLICATE`) and a `lock_duplicate_resolved`
+  timeline event.
+
+### New endpoints (`backend/routers/db_admin.py`)
+
+- `GET /api/admin/db/room-night-lock-duplicates?limit=100` — read-only
+  plan + recommendation. Super-admin only.
+- `POST /api/admin/db/room-night-lock-duplicates/resolve?dry_run=false&rebuild_index=true`
+  — destructive. Requires `dry_run=false` AND `body.confirm=true`;
+  super-admin only. After a successful apply with `rebuild_index=true`
+  the endpoint re-runs `ensure_booking_indexes()` so the UNIQUE
+  `ux_room_night` index becomes creatable and the CRITICAL log clears
+  in the same call.
+
+### Safety properties
+
+- `manual_required` groups are NEVER touched, even with `apply=True`.
+  Two-active-owner cases (the genuinely ambiguous overbookings) still
+  fall to a human operator.
+- Deletes are scoped to the exact `(tenant_id, room_id, night_date)`
+  triple AND `booking_id ∈ retire_booking_ids` — never a wider query.
+- Post-delete row-count guard catches concurrent inserts and rolls
+  back the audit entry for that group.
+- Endpoint is super-admin only and requires explicit `confirm=true` in
+  the request body in addition to `dry_run=false`.
+
+### Regression tests
+
+`backend/tests/test_rnl_duplicate_resolver.py` (direct DB, MongoDB-gated):
+
+| # | Case | Assertion |
+|---|------|-----------|
+| a | One active + one cancelled | `auto_safe`, keeper=active; dry-run preserves rows; apply leaves exactly the active lock + writes audit row |
+| b | Two active bookings | `manual_required`; apply does not touch rows |
+| c | All cancelled | `auto_safe_all_inactive`; apply keeps exactly one most-recent lock |
+| d | OOO block + cancelled | `auto_safe`, keeper=OOO block |
