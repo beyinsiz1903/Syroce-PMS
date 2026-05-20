@@ -22,24 +22,44 @@ async function login(api, email, password) {
 }
 
 // Replit Autoscale (1 Max instance) idle olunca soğuk başlar; CI'dan ilk POST
-// 60s timeout'a takılabiliyor (Mongo Atlas + Redis init). Login öncesi GET ile
-// instance'ı uyandır, 5 retry × 5s backoff. Her retry kendi 30s timeout'u.
+// 60s timeout'a takılabiliyor (Mongo Atlas + Redis init + bootstrap phases A-G).
+// Fresh deploy bootstrap'ı 90-120s'yi bulabiliyor; warm-up gate /api/* yollarına
+// 503 dönerken /health her zaman 200 verir, /health/ready ise bootstrap tamamen
+// bitince 200 döner (aksi halde 503). 60 deneme × 5s = 5 dakika ceiling.
 async function warmup(api) {
     const started = Date.now();
     let lastErr = null;
-    for (let attempt = 1; attempt <= 5; attempt++) {
+    // Phase 1: instance/port up check via /health (warm-up gate izin verir)
+    for (let attempt = 1; attempt <= 60; attempt++) {
         try {
-            const r = await api.get('/api/health', { failOnStatusCode: false, timeout: 30_000 });
+            const r = await api.get('/health', { failOnStatusCode: false, timeout: 30_000 });
             const ms = Date.now() - started;
-            console.log(`[stress-setup] warmup attempt=${attempt} status=${r.status()} elapsed=${ms}ms`);
-            if (r.status() < 500) return;
+            console.log(`[stress-setup] warmup /health attempt=${attempt} status=${r.status()} elapsed=${ms}ms`);
+            if (r.status() === 200) break;
         } catch (e) {
             lastErr = e;
-            console.log(`[stress-setup] warmup attempt=${attempt} err=${e.message}`);
+            console.log(`[stress-setup] warmup /health attempt=${attempt} err=${e.message}`);
         }
-        if (attempt < 5) await new Promise((res) => setTimeout(res, 5000));
+        if (attempt === 60) {
+            console.log(`[stress-setup] warmup /health gave up after 60 attempts (lastErr=${lastErr?.message})`);
+            return;
+        }
+        await new Promise((res) => setTimeout(res, 5000));
     }
-    console.log(`[stress-setup] warmup gave up after 5 attempts (lastErr=${lastErr?.message}) — login deneyecek`);
+    // Phase 2: bootstrap-complete check via /health/ready (warm-up gate biter)
+    for (let attempt = 1; attempt <= 60; attempt++) {
+        try {
+            const r = await api.get('/health/ready', { failOnStatusCode: false, timeout: 30_000 });
+            const ms = Date.now() - started;
+            console.log(`[stress-setup] warmup /health/ready attempt=${attempt} status=${r.status()} elapsed=${ms}ms`);
+            if (r.status() === 200) return;
+        } catch (e) {
+            lastErr = e;
+            console.log(`[stress-setup] warmup /health/ready attempt=${attempt} err=${e.message}`);
+        }
+        if (attempt < 60) await new Promise((res) => setTimeout(res, 5000));
+    }
+    console.log(`[stress-setup] warmup /health/ready gave up after 60 attempts (lastErr=${lastErr?.message}) — login deneyecek`);
 }
 
 async function safeJson(p) { try { return await p; } catch { return null; } }
