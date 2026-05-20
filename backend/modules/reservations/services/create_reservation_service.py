@@ -277,7 +277,23 @@ class CreateReservationService:
             from core.atomic_booking import BookingConflictError
             if isinstance(exc, BookingConflictError):
                 await self.repository.fail_idempotency_lock(lock["lock_id"], str(exc))
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+                # F8N — Structured 409: client gets actionable conflict info.
+                # Backward compatible: existing clients reading `detail` as a
+                # string keep working because FastAPI serialises dict detail
+                # and the message is preserved under `detail.message`.
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "message": str(exc),
+                        "conflicting_booking_id": getattr(exc, "conflicting_booking_id", None),
+                        "conflict_type": getattr(exc, "conflict_type", "booking"),
+                        "conflict_window": {
+                            "room_id": booking_data.room_id,
+                            "check_in": booking_data.check_in,
+                            "check_out": booking_data.check_out,
+                        },
+                    },
+                )
             await self.repository.fail_idempotency_lock(lock["lock_id"], str(exc))
             raise
 

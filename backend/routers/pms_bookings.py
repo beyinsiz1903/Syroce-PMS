@@ -852,7 +852,17 @@ async def create_multi_room_booking(
               await create_booking_atomic(booking_dict)
           except BookingConflictError as e:
               await _rollback_group(reason="group_conflict_rollback")
-              raise HTTPException(status_code=409, detail=str(e))
+              # F8N — structured detail (mirrors create_reservation_service).
+              raise HTTPException(status_code=409, detail={
+                  "message": str(e),
+                  "conflicting_booking_id": getattr(e, "conflicting_booking_id", None),
+                  "conflict_type": getattr(e, "conflict_type", "booking"),
+                  "conflict_window": {
+                      "room_id": room_id,
+                      "check_in": check_in_dt.isoformat(),
+                      "check_out": check_out_dt.isoformat(),
+                  },
+              })
           except Exception as e:
               await _rollback_group(reason="group_unknown_rollback")
               logger.exception("Multi-room booking atomic insert failed group=%s booking=%s: %s", group_id, booking_id, e)

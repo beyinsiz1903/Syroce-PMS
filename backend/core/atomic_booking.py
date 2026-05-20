@@ -38,6 +38,11 @@ logger = logging.getLogger("core.atomic_booking")
 
 ACTIVE_BOOKING_STATUSES = ["confirmed", "checked_in", "guaranteed"]
 
+# F8N (2026-05) — Statuses that do NOT participate in oversell conflict checks
+# (a cancelled / no-show / checked-out booking releases its room nights and
+# must not block a fresh reservation on the same room/dates).
+TERMINAL_BOOKING_STATUSES = ("cancelled", "no_show", "checked_out")
+
 # OOO/OOS lock prefixes — these participate in the same uniqueness constraint
 OOO_PREFIX = "OOO:"
 OOS_PREFIX = "OOS:"
@@ -224,6 +229,36 @@ def assert_pending_assignment(booking: dict[str, Any]) -> None:
         )
 
 
+async def _find_overlapping_active_booking(
+    *,
+    tenant_id: str,
+    room_id: str,
+    check_in: str,
+    check_out: str,
+    exclude_booking_id: str | None = None,
+) -> dict[str, Any] | None:
+    """F8N — Return one active booking on (tenant_id, room_id) whose date
+    window overlaps [check_in, check_out), or None.
+
+    Overlap rule (half-open intervals, mirrors `_night_dates`):
+        existing.check_in < new.check_out  AND  existing.check_out > new.check_in
+
+    Terminal-state bookings (cancelled / no_show / checked_out) are excluded.
+    """
+    query: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "room_id": room_id,
+        "status": {"$nin": list(TERMINAL_BOOKING_STATUSES)},
+        "check_in": {"$lt": check_out},
+        "check_out": {"$gt": check_in},
+    }
+    if exclude_booking_id:
+        query["id"] = {"$ne": exclude_booking_id}
+    return await db.bookings.find_one(
+        query, {"_id": 0, "id": 1, "room_id": 1, "check_in": 1, "check_out": 1, "status": 1}
+    )
+
+
 async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
     """
     Atomically create a booking with room-night locking.
@@ -264,6 +299,44 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
         await db.bookings.insert_one(booking_doc)
         booking_doc.pop("_id", None)
         return booking_doc
+
+    # F8N (2026-05) — Defense-in-depth oversell guard.
+    # The room-night-lock unique index (`ux_room_night`) is the PRIMARY atomic
+    # guarantee. This bookings-level overlap query is a safety net for cases
+    # where the lock table has stale/missing rows (legacy data, seed inserts
+    # that bypassed `create_booking_atomic`, or a partially-deployed unique
+    # index). It runs BEFORE we claim any locks so we fail fast without
+    # creating compensation churn. The query is tenant + room scoped and
+    # excludes terminal-state bookings.
+    if room_id and check_in and check_out:
+        overlap = await _find_overlapping_active_booking(
+            tenant_id=tenant_id,
+            room_id=room_id,
+            check_in=check_in,
+            check_out=check_out,
+            exclude_booking_id=booking_id,
+        )
+        if overlap is not None:
+            conflict_msg = (
+                f"Room {room_id} already booked for {check_in}..{check_out} "
+                f"by {overlap.get('id')}"
+            )
+            await _emit_overbooking_alert(
+                tenant_id=tenant_id,
+                booking_id=booking_id,
+                room_id=room_id,
+                conflict_type="booking",
+                conflict_msg=conflict_msg,
+                conflict_night=str(check_in)[:10],
+                conflicting_booking_id=overlap.get("id"),
+                correlation_id=correlation_id,
+            )
+            raise BookingConflictError(
+                conflict_msg,
+                conflicting_booking_id=overlap.get("id"),
+                conflict_type="booking",
+                conflicting_nights=[],
+            )
 
     # Unassigned bookings (no room_id) skip conflict check
     if not room_id or not check_in or not check_out:
@@ -632,8 +705,63 @@ async def get_room_blocks(tenant_id: str, room_id: str | None = None,
     return locks
 
 
+async def scan_room_night_lock_duplicates(limit: int = 100) -> list[dict[str, Any]]:
+    """F8N — Detect duplicate (tenant_id, room_id, night_date) groups in
+    `room_night_locks`. Returns up to `limit` duplicate groups for operator
+    reporting. Per task guard rules these rows are NEVER deleted by the
+    bootstrap pipeline — only logged so operators can adjudicate.
+    """
+    try:
+        pipeline = [
+            {"$group": {
+                "_id": {"tenant_id": "$tenant_id", "room_id": "$room_id", "night_date": "$night_date"},
+                "count": {"$sum": 1},
+                "booking_ids": {"$addToSet": "$booking_id"},
+            }},
+            {"$match": {"count": {"$gt": 1}}},
+            {"$limit": limit},
+        ]
+        return await db.room_night_locks.aggregate(pipeline, allowDiskUse=True).to_list(limit)
+    except Exception as exc:
+        logger.warning("F8N duplicate scan failed: %s", exc)
+        return []
+
+
 async def ensure_booking_indexes() -> None:
-    """Create indexes for room-night locking and fast overlap detection."""
+    """Create indexes for room-night locking and fast overlap detection.
+
+    F8N (2026-05) — Hardened:
+      * Pre-scans `room_night_locks` for duplicate (tenant, room, night)
+        groups and logs them at WARNING (operators must adjudicate; rows
+        are never deleted automatically per task guard rules).
+      * Drops any non-unique pre-existing `ux_room_night` (e.g. an older
+        deployment where the index was created without `unique=True`) so
+        the unique index can be re-created without `IndexOptionsConflict`.
+      * After creation, verifies the unique index actually exists with the
+        expected key set + `unique=True` flag. If verification fails the
+        function logs CRITICAL — production deployments rely on this index
+        as their primary oversell barrier.
+    """
+    # Pre-flight duplicate scan (informational; never mutates).
+    dupes = await scan_room_night_lock_duplicates(limit=50)
+    if dupes:
+        logger.warning(
+            "F8N: %d duplicate (tenant,room,night_date) groups in room_night_locks; "
+            "unique index creation may fail until operator resolves. Sample: %s",
+            len(dupes), dupes[:5],
+        )
+
+    # F8N: drop existing ux_room_night if it isn't unique — name collision
+    # with create_index() blocks recreating it as unique otherwise.
+    try:
+        info = await db.room_night_locks.index_information()
+        existing = info.get("ux_room_night")
+        if existing is not None and not existing.get("unique"):
+            logger.warning("F8N: dropping non-unique ux_room_night to re-create as UNIQUE")
+            await db.room_night_locks.drop_index("ux_room_night")
+    except Exception as exc:
+        logger.warning("F8N: ux_room_night pre-drop probe failed: %s", exc)
+
     indexes_to_create = [
         {
             "collection": "room_night_locks",
@@ -671,4 +799,22 @@ async def ensure_booking_indexes() -> None:
                 logger.info("Index %s already exists, skipping", idx_def["name"])
             else:
                 logger.warning("Index creation failed for %s: %s", idx_def["name"], e)
+
+    # F8N — Post-create verification: the unique room-night index IS the
+    # oversell barrier. If it is missing/non-unique after this phase, log
+    # CRITICAL so monitoring can alert. We deliberately do not raise — the
+    # bookings-level defense-in-depth overlap check in `create_booking_atomic`
+    # still protects new inserts; the CRITICAL log is the operator signal.
+    try:
+        info = await db.room_night_locks.index_information()
+        ux = info.get("ux_room_night")
+        if ux is None or not ux.get("unique"):
+            logger.critical(
+                "F8N: ux_room_night UNIQUE index missing on room_night_locks; "
+                "primary oversell barrier degraded. defense-in-depth bookings "
+                "overlap check is the only remaining guard. info=%s", ux,
+            )
+    except Exception as exc:
+        logger.warning("F8N: ux_room_night post-create verification failed: %s", exc)
+
     logger.info("Booking indexes ensured (room-night locking + OOO/OOS enabled)")

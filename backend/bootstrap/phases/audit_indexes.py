@@ -21,7 +21,12 @@ _AUDIT_INDEXES: list[tuple[str, list[tuple[str, int]], str, dict]] = [
     ("night_audit_runs", [("tenant_id", 1), ("run_date", -1)], "idx_night_audit_run_date", {}),
     ("cm_imported_reservations", [("tenant_id", 1), ("external_id", 1)], "idx_cm_imp_external", {}),
     ("accounting_invoices", [("tenant_id", 1)], "idx_acc_invoices_tenant", {}),
-    ("room_night_locks", [("tenant_id", 1), ("date", 1), ("room_id", 1)], "idx_rnl_tenant_date_room", {}),
+    # F8N (2026-05) — Field was "date" historically, but atomic_booking writes
+    # "night_date". Renamed key + index name so this read-cover index actually
+    # matches the documents. The unique guard lives in `ux_room_night`
+    # (see core.atomic_booking.ensure_booking_indexes); this entry is purely a
+    # secondary cover for time-window queries.
+    ("room_night_locks", [("tenant_id", 1), ("night_date", 1), ("room_id", 1)], "idx_rnl_tenant_night_room", {}),
     ("ops_events", [("tenant_id", 1), ("created_at", -1)], "idx_ops_events_tenant_created", {}),
     ("cp_failures", [("tenant_id", 1), ("created_at", -1)], "idx_cp_failures_tenant_created", {}),
     ("tenant_settings", [("tenant_id", 1)], "idx_tenant_settings_tenant", {}),
