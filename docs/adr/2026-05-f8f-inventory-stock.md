@@ -1,8 +1,8 @@
 # ADR — F8F Inventory: Negative Stock Guard
 
 **Date:** 2026-05-20
-**Status:** Accepted
-**Task:** #209
+**Status:** Accepted (verified 2026-05-20 by Task #213)
+**Task:** #209 (fix), #213 (verification)
 
 ## Context
 
@@ -37,8 +37,10 @@ runtime) as defense in depth, so the route remains safe if the mount
 order ever changes:
 
 1. **Input validation (422)** — `movement_type` must be one of
-   `in / out / adjustment`; `quantity` must be a number; `in / out`
-   require `quantity > 0`; `adjustment` requires `quantity >= 0`.
+   `in / out / adjustment`; `quantity` must be a number (NaN
+   rejected; non-finite values such as `inf` rely on FastAPI/Pydantic
+   coercion); `in / out` require `quantity > 0`; `adjustment`
+   requires `quantity >= 0`.
 2. **Tenant scope (404)** — `find_one({id, tenant_id})` rejects
    cross-tenant IDOR up front.
 3. **Atomic conditional update (409)** — for `out` the filter is
@@ -53,10 +55,12 @@ order ever changes:
 `in` and `adjustment` keep their existing semantics (tenant-scoped
 `$inc` / `$set`) but inherit the validation gate.
 
-The dead-code duplicate in `backend/routers/finance/accounting.py`
-(not mounted by `bootstrap/router_registry.py`) is left untouched
-to avoid scope drift; if it is ever revived it must adopt the same
-contract.
+Note: `backend/routers/finance/accounting.py` is the LIVE handler
+(first-match via `bootstrap/router_registry.py:56`); the shadow at
+`backend/domains/accounting/endpoints.py` is mounted later
+(`router_registry.py:130`) and is never reached for this route, but
+carries the identical guard so any future mount-order change stays
+safe.
 
 ## Contract
 
@@ -86,6 +90,34 @@ contract.
   excluded by environment guard (`E2E_PILOT_TENANT_ID` /
   `PILOT_TENANT_ID`). Dry-run is default; `--apply` writes one
   synthetic `stock_movements` adjustment row per clamp for audit.
+
+## Verification (Task #213, 2026-05-20)
+
+Re-verified post-merge that the guard actually shipped after the
+`20260520_stress_full_stress_suite.md` CI run still listed the P0:
+
+- `git log` confirms commit `37245036` "Task #209 — F8F inventory
+  negative-stock guard (P0)" landed on main.
+- Both handlers carry the identical guard:
+  `backend/routers/finance/accounting.py:414` (LIVE — first-match,
+  mounted at `bootstrap/router_registry.py:56` via `routers.finance`)
+  and `backend/domains/accounting/endpoints.py:277` (shadowed
+  defense-in-depth, mounted at `router_registry.py:130`).
+- `backend/tests/test_inventory_negative_stock_guard.py` — **15/15
+  PASS** against the running Backend API (live HTTP integration):
+  sufficient / insufficient / exact-boundary / zero / negative /
+  unknown-type / in / adjustment-zero / adjustment-negative /
+  unknown-id / create-negative-rejected / create-zero-allowed /
+  create-positive-allowed / shadow-create-negative-rejected /
+  parallel-out race (exactly one 200, one 409, final qty ≥ 0).
+- Drill report: `docs/drill_reports/20260520_stress_f8f_inventory_p0_verification.md`.
+
+Conclusion: the original `20260520_stress_full_stress_suite.md` CI run
+(timestamp `07:09:34Z`) executed against a stale checkout that
+pre-dated commit `37245036`'s effective propagation on the runner.
+The fix is genuinely on main; the next full stress suite run will
+clear F8F § C from the P0 list and § D / § E will execute instead of
+early-returning.
 
 ## Out of scope
 

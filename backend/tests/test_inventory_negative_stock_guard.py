@@ -84,8 +84,15 @@ class TestNegativeStockGuard:
     def test_b_insufficient_stock_out_rejected(self, demo_auth_headers):
         item_id = _create_item(demo_auth_headers, 5)
         r = _movement(demo_auth_headers, item_id, "out", 50)
-        assert r.status_code in (400, 409, 422), (
-            f"expected reject (4xx); got {r.status_code} {r.text[:200]}"
+        # ADR contract: insufficient stock MUST be 409 (not generic 4xx).
+        assert r.status_code == 409, (
+            f"insufficient stock must be 409 per ADR contract; got "
+            f"{r.status_code} {r.text[:200]}"
+        )
+        # Detail body must surface requested + available for client UX.
+        body_text = r.text.lower()
+        assert "requested" in body_text and "available" in body_text, (
+            f"409 body must mention requested+available; got {r.text[:200]}"
         )
         qty = _read_qty(demo_auth_headers, item_id)
         assert qty is not None and qty == 5, (
@@ -210,9 +217,11 @@ class TestNegativeStockGuard:
             r1, r2 = f1.result(), f2.result()
 
         oks = sum(1 for r in (r1, r2) if r.status_code in (200, 201))
-        rejects = sum(1 for r in (r1, r2) if r.status_code in (400, 409, 422))
+        # Race loser MUST be 409 (atomic-guard contract). Any other 4xx
+        # would indicate the loser bypassed the atomic update path.
+        rejects = sum(1 for r in (r1, r2) if r.status_code == 409)
         assert oks == 1 and rejects == 1, (
-            f"expected exactly one OK and one reject; got "
+            f"expected exactly one OK and one 409; got "
             f"r1={r1.status_code} r2={r2.status_code}"
         )
         qty = _read_qty(demo_auth_headers, item_id)
