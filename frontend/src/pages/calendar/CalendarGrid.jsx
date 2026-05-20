@@ -372,6 +372,7 @@ const CalendarGrid = ({
                                 onDragOver={(e) => onDragOver(e, room.id, date)}
                                 onDragLeave={onDragLeave}
                                 onDrop={(e) => onDrop(e, room.id, date)}
+                                data-testid={`calendar-cell-${room.room_number}-${toDateStringUTC(date)}`}
                                 title={roomBlock ? `${roomBlock.type.toUpperCase()}: ${roomBlock.reason}` : ''}
                               >
                                 {/* Room Block Indicator */}
