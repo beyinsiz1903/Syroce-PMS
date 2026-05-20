@@ -338,6 +338,17 @@ async def create_walk_in_booking(data: dict, current_user: User = Depends(get_cu
             'created_at': datetime.now(UTC).isoformat()
         })
     except BookingConflictError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        # Structured 409 detail so frontend conflict dialog can render
+        # (mirrors create_reservation_service / multi-room handler).
+        raise HTTPException(status_code=409, detail={
+            "message": str(e),
+            "conflicting_booking_id": getattr(e, "conflicting_booking_id", None),
+            "conflict_type": getattr(e, "conflict_type", "booking"),
+            "conflict_window": {
+                "room_id": available_room['id'],
+                "check_in": data['check_in'],
+                "check_out": data['check_out'],
+            },
+        })
 
     return {'booking_id': booking_id, 'room_number': available_room['room_number']}

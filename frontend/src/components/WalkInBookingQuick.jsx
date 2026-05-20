@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { UserPlus, Zap, ScanLine } from 'lucide-react';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
+import BookingConflictDialog from '@/components/pms/BookingConflictDialog';
+import { parseBookingConflict } from '@/lib/bookingConflict';
 import { useTranslation } from 'react-i18next';
 
 /**
@@ -28,6 +30,7 @@ const WalkInBookingQuick = ({ onSuccess }) => {
   });
   const [loading, setLoading] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [bookingConflict, setBookingConflict] = useState(null);
 
   const handleScanned = (doc) => {
     const fullName = [doc.first_name, doc.last_name].filter(Boolean).join(' ').trim();
@@ -72,7 +75,13 @@ const WalkInBookingQuick = ({ onSuccess }) => {
         adults: 1
       });
     } catch (error) {
-      toast.error('Walk-in rezervasyon başarısız');
+      const conflict = parseBookingConflict(error);
+      if (conflict) {
+        setBookingConflict(conflict);
+      } else {
+        const detail = error?.response?.data?.detail;
+        toast.error(typeof detail === 'string' ? detail : (detail?.message || 'Walk-in rezervasyon başarısız'));
+      }
     } finally {
       setLoading(false);
     }
@@ -212,6 +221,14 @@ const WalkInBookingQuick = ({ onSuccess }) => {
         onClose={() => setScanOpen(false)}
         onExtracted={handleScanned}
       />
+
+      {bookingConflict && (
+        <BookingConflictDialog
+          conflict={bookingConflict}
+          open={!!bookingConflict}
+          onClose={() => setBookingConflict(null)}
+        />
+      )}
     </Card>
   );
 };
