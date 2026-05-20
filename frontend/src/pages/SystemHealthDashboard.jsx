@@ -869,6 +869,14 @@ export default function SystemHealthDashboard({ user }) {
           }
         }
         const sinceLabel = since ? new Date(since).toLocaleString("tr-TR") : null;
+        const topTenants = Array.isArray(rnlSummary.top_tenants)
+          ? rnlSummary.top_tenants.slice(0, 2)
+          : [];
+        const topTenantsLabel = topTenants.length
+          ? topTenants
+              .map((tt) => `${tt.name || tt.tenant_id}: ${tt.manual_required_count}`)
+              .join(" · ")
+          : null;
         return (
           <a
             data-testid="rnl-duplicates-widget"
@@ -889,6 +897,14 @@ export default function SystemHealthDashboard({ user }) {
                       })
                     : t('rnlDuplicates.widgetNoAlertYet')}
                 </p>
+                {topTenantsLabel && (
+                  <p
+                    data-testid="rnl-duplicates-widget-top-tenants"
+                    className="text-[11px] text-rose-800 mt-0.5 font-medium truncate"
+                  >
+                    {t('rnlDuplicates.widgetTopTenants', { tenants: topTenantsLabel })}
+                  </p>
+                )}
               </div>
               <StatusBadge intent="danger" icon={AlertTriangle}>
                 {t('rnlDuplicates.widgetInspect')}

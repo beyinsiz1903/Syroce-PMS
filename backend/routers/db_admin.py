@@ -289,6 +289,51 @@ async def rnl_duplicates_summary(
         if g.get("recommendation") in ("auto_safe", "auto_safe_all_inactive")
     )
 
+    # Task #244: per-tenant breakdown of manual_required groups so operators
+    # can tell which property is bleeding the most before paging the GM.
+    tenant_counts: dict[str, int] = {}
+    for g in groups:
+        if g.get("recommendation") != "manual_required":
+            continue
+        gid = g.get("_id") or {}
+        tid = gid.get("tenant_id")
+        if not tid:
+            continue
+        tenant_counts[tid] = tenant_counts.get(tid, 0) + 1
+    top_tenant_ids = sorted(
+        tenant_counts.items(), key=lambda kv: (-kv[1], kv[0])
+    )[:5]
+    name_by_tid: dict[str, str] = {}
+    if top_tenant_ids:
+        try:
+            cursor = db["tenants"].find(
+                {"id": {"$in": [tid for tid, _ in top_tenant_ids]}},
+                {"_id": 0, "id": 1, "property_name": 1, "name": 1, "hotel_id": 1},
+            )
+            async for doc in cursor:
+                tid = doc.get("id")
+                if not tid:
+                    continue
+                name_by_tid[tid] = (
+                    doc.get("property_name")
+                    or doc.get("name")
+                    or doc.get("hotel_id")
+                    or tid
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "db_admin.rnl_duplicates.summary tenant name lookup failed: %s",
+                exc,
+            )
+    top_tenants = [
+        {
+            "tenant_id": tid,
+            "name": name_by_tid.get(tid) or tid,
+            "manual_required_count": cnt,
+        }
+        for tid, cnt in top_tenant_ids
+    ]
+
     state_doc: dict[str, Any] = {}
     try:
         raw = await db["rnl_duplicate_alert_state"].find_one(
@@ -302,6 +347,7 @@ async def rnl_duplicates_summary(
         "manual_required_count": manual_required,
         "auto_resolvable_count": auto_resolvable,
         "total_groups": len(groups),
+        "top_tenants": top_tenants,
         # Only meaningful while alert streak is active; null when count==0
         # (cleared in `_maybe_dispatch_rnl_manual_required_alert`).
         "active_since": state_doc.get("active_since") if state_doc.get("active") else None,

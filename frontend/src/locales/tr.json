@@ -8437,6 +8437,7 @@
     "widgetTitle": "{{count}} çözülmemiş tekrarlı oda-gece kilidi",
     "widgetActiveSince": "{{since}} tarihinden beri aktif (~{{duration}})",
     "widgetNoAlertYet": "Tespit edildi — uyarı dağıtımı henüz başarılı değil.",
+    "widgetTopTenants": "En çok etkilenen: {{tenants}}",
     "widgetInspect": "İnceleyiciyi aç"
   }
 }

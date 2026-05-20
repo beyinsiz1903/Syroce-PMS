@@ -8344,6 +8344,7 @@
     "widgetTitle": "{{count}} unresolved duplicate room-night lock(s)",
     "widgetActiveSince": "Active since {{since}} (~{{duration}})",
     "widgetNoAlertYet": "Detected — alert dispatch has not yet succeeded.",
+    "widgetTopTenants": "Am stärksten betroffen: {{tenants}}",
     "widgetInspect": "Open inspector"
   }
 }
