@@ -65,20 +65,22 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
       // Birincil veriler (4 endpoint): randevu listesi ve katalog (hizmet,
       // terapist, oda) — sayfa render'ı için kritik. Günlük özet (KPI rozeti)
       // ikincil; idle'da yüklensin → birincil render hızlanır.
-      const [s, t, r, a] = await Promise.allSettled([
+      // NOT: `t`'yi destructure etme — useTranslation()'dan gelen `t`'yi
+      // shadow eder. Promise sonuçlarını ayrı isimle aç.
+      const [sRes, thRes, rRes, aRes] = await Promise.allSettled([
         axios.get('/spa/services'),
         axios.get('/spa/therapists'),
         axios.get('/spa/rooms'),
         axios.get('/spa/appointments', { params: filter }),
       ]);
       const failed = [];
-      if (s.status === 'fulfilled') setServices(s.value.data.services || []);
+      if (sRes.status === 'fulfilled') setServices(sRes.value.data.services || []);
       else { setServices([]); failed.push('Hizmetler'); }
-      if (t.status === 'fulfilled') setTherapists(t.value.data.therapists || []);
+      if (thRes.status === 'fulfilled') setTherapists(thRes.value.data.therapists || []);
       else { setTherapists([]); failed.push('Terapistler'); }
-      if (r.status === 'fulfilled') setRooms(r.value.data.rooms || []);
+      if (rRes.status === 'fulfilled') setRooms(rRes.value.data.rooms || []);
       else { setRooms([]); failed.push('Odalar'); }
-      if (a.status === 'fulfilled') setAppointments(a.value.data.appointments || []);
+      if (aRes.status === 'fulfilled') setAppointments(aRes.value.data.appointments || []);
       else { setAppointments([]); failed.push('Randevular'); }
       if (failed.length) toast.error(`Yüklenemedi: ${failed.join(', ')}`);
 
@@ -304,16 +306,16 @@ const SpaWellness = ({ user, tenant, onLogout }) => {
             {therapists.length === 0 && (
               <p className="text-sm text-gray-500 col-span-full">{t('cm.pages_SpaWellness.henuz_terapist_yok')}</p>
             )}
-            {therapists.map((t) => (
-              <Card key={t.id}>
+            {therapists.map((th) => (
+              <Card key={th.id}>
                 <CardContent className="p-4 flex items-center justify-between gap-3">
                   <div>
                     <div className="font-semibold flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
-                      {t.name}
+                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: th.color }} />
+                      {th.name}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {t.work_start}–{t.work_end} {t('cm.pages_SpaWellness.uzmanlik')} {(t.specialties || []).join(', ') || '—'}
+                      {th.work_start}–{th.work_end} {t('cm.pages_SpaWellness.uzmanlik')} {(th.specialties || []).join(', ') || '—'}
                     </div>
                   </div>
                 </CardContent>
