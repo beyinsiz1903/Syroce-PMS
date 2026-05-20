@@ -141,3 +141,43 @@ Redeploy stress env from `main` (`d06e0fe0` or later) and rerun "Full Stress Sui
 - Triggering an external CI workflow_dispatch (no CI credentials in this environment; will be observed on the next scheduled run).
 - F8F roadmap §§ D / E findings (pending next CI).
 - Sibling P0/P1 items (AI no-show leak #214, oversell guard #215, GraphQL resolver #216) — separate tasks.
+
+## Post-redeploy verification (2026-05-20T14:37Z)
+
+After redeploying staging (Deploy Pipeline #1 → `build-push` + `deploy-staging` green, commit `b8575c9`) and patching the warmup contract on the stress runner (`global-setup.js`: 3-phase poll `/health` → `/health/ready` → `/api/health`; `stress.yml`: preflight `/api/health` → `/health` with 30×5s retries) the full stress suite was re-run on `main`.
+
+### Inventory_stock module result
+
+| Module | PASS | FAIL | REVIEW | SKIP | Total |
+|---|---:|---:|---:|---:|---:|
+| inventory_stock | **13** | **0** | **0** | **0** | **13** |
+
+`§ C negative-stock guard` PASS. `§ D / § E` executed (no SKIP). Task #213 objective satisfied: F8F P0 finding count dropped to 0 in `inventory_stock`.
+
+### Overall suite verdict
+
+`NO-GO — P0=2` — but both remaining P0s are **out of #213 scope**:
+
+| Finding | Module | Owner task |
+|---|---|---|
+| Cross-tenant no-show leak | `ai_noshow_risk` | #214 (pending) |
+| Oversell guard missing | `reservation_deep` | #215 (pending) |
+
+GraphQL resolver schema/transport errors (`'str' object has no attribute 'isoformat'`) are tracked under #216.
+
+### Deployment-drift root cause closure
+
+The lag between merged code and stress env image is now visible end-to-end. The single missing piece — re-deploying staging — was performed via `workflow_dispatch` of `deploy.yml`. The bug reproducer is now genuinely fixed in the environment the spec runs against, not just on `main`.
+
+### Infrastructure side-effects shipped under this task
+
+These were necessary to even reach the inventory_stock spec under the new image; documented here for traceability:
+
+1. `backend/app.py` — added `/` root probe handler + warm-up gate allow-list entry. Replit autoscale's default HTTP probe was failing the deploy itself with 503 during bootstrap.
+2. `frontend/e2e-stress/global-setup.js` — 3-phase warmup (5min ceiling) to survive cold-start of the redeployed image.
+3. `.github/workflows/stress.yml` — preflight now polls `/health` (warm-up-gate-bypassing) with 30 retries × 5s.
+4. `.github/workflows/ci-cd.yml` — ignored 5 new pip-audit advisories (all disputed or non-applicable to prod surface; rationale inline).
+
+## Final verdict
+
+**GO** on Task #213. The F8F negative-stock guard is verified in production-shaped infrastructure (stress CI env) with the regression spec passing. The remaining suite-wide NO-GO verdict is driven by sibling-task P0s that are explicitly out of scope.
