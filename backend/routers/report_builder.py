@@ -575,6 +575,75 @@ def _first_numeric_col_index(source_def: dict, columns: list[str]) -> int | None
     return None
 
 
+def _coerce_excel_value(val):
+    """Defensive value coercion for openpyxl cell writes (Task #246).
+
+    Stress tenants surface heterogeneous BSON values (Decimal, native
+    datetime/date, ObjectId, NaN/Inf floats, bytes) that crash
+    `xlsx_safe(str(val))` or `Cell.value =` silently. Normalizes to
+    (typed_value, is_numeric) where typed_value is safe to assign.
+
+    - None / missing → ""
+    - bool → "Evet"/"Hayır"
+    - int/float (finite, non-bool) → numeric, preserved for formatting
+    - int/float (NaN/Inf) → string fallback
+    - Decimal → float when finite, else string
+    - datetime → ISO string (avoids tz-aware/naive mix crashes)
+    - date → ISO string
+    - bytes → utf-8 string (errors='replace')
+    - list/tuple/set → comma-join of coerced items
+    - dict → str(dict) string
+    - other → str(val) string
+    """
+    import math
+    from decimal import Decimal
+    from datetime import date as _date
+
+    if val is None:
+        return ("", False)
+    if isinstance(val, bool):
+        return ("Evet" if val else "Hayır", False)
+    if isinstance(val, (int, float)):
+        if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+            return (str(val), False)
+        return (val, True)
+    if isinstance(val, Decimal):
+        try:
+            f = float(val)
+            if math.isnan(f) or math.isinf(f):
+                return (str(val), False)
+            return (f, True)
+        except Exception:
+            return (str(val), False)
+    if isinstance(val, datetime):
+        try:
+            return (val.isoformat(), False)
+        except Exception:
+            return (str(val), False)
+    if isinstance(val, _date):
+        try:
+            return (val.isoformat(), False)
+        except Exception:
+            return (str(val), False)
+    if isinstance(val, bytes):
+        try:
+            return (val.decode("utf-8", errors="replace"), False)
+        except Exception:
+            return ("", False)
+    if isinstance(val, (list, tuple, set)):
+        try:
+            return (", ".join(str(_coerce_excel_value(v)[0]) for v in val), False)
+        except Exception:
+            return (str(val), False)
+    if isinstance(val, dict):
+        return (str(val), False)
+    # Fallback: any other object (ObjectId, UUID, custom types) → str()
+    try:
+        return (str(val), False)
+    except Exception:
+        return ("", False)
+
+
 @router.post("/export/excel")
 async def export_report_excel(
     config: ReportConfig,
@@ -588,6 +657,19 @@ async def export_report_excel(
         raise HTTPException(status_code=400, detail="Tenant bilgisi bulunamadı")
     has_pii = _user_has_pii_access(current_user)
 
+    try:
+        return await _build_excel_response(config, tenant_id, has_pii)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception(
+            "report_builder excel export failed tenant=%s data_source=%s cols=%s",
+            tenant_id, config.data_source, config.columns,
+        )
+        raise HTTPException(status_code=500, detail="report_export_failed")
+
+
+async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii: bool):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -643,28 +725,28 @@ async def export_report_excel(
         cell.border = border
         ws.column_dimensions[get_column_letter(col_num)].width = max(len(header) + 4, 14)
 
-    # Data rows
+    # Data rows (Task #246: defensive coerce — heterogeneous BSON types in
+    # stress tenants would crash `str(val)` / `xlsx_safe()` / Cell.value
+    # assignment silently in CI).
+    from core.csv_safe import xlsx_safe
     light_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
     for row_num, row_data in enumerate(data, 4):
         for col_num, col_key in enumerate(config.columns, 1):
             cell = ws.cell(row=row_num, column=col_num)
-            val = row_data.get(col_key, "")
+            raw_val = row_data.get(col_key, "")
             col_type = source_def.get("columns", {}).get(col_key, {}).get("type")
+            coerced, is_numeric = _coerce_excel_value(raw_val)
 
-            if col_type == "currency" and isinstance(val, (int, float)) and not isinstance(val, bool):
-                cell.value = val
+            if col_type == "currency" and is_numeric:
+                cell.value = coerced
                 cell.number_format = '#,##0.00 ₺'
-            elif col_type == "number" and isinstance(val, (int, float)) and not isinstance(val, bool):
-                cell.value = val
+            elif col_type == "number" and is_numeric:
+                cell.value = coerced
                 cell.number_format = '#,##0'
-            elif isinstance(val, list):
-                from core.csv_safe import xlsx_safe
-                cell.value = xlsx_safe(", ".join(str(v) for v in val))
-            elif isinstance(val, bool):
-                cell.value = "Evet" if val else "Hayır"
             else:
-                from core.csv_safe import xlsx_safe
-                cell.value = xlsx_safe(str(val)) if val is not None else ""
+                # String path — apply xlsx_safe to defend against formula
+                # injection (Bug AN). xlsx_safe handles None internally.
+                cell.value = xlsx_safe(coerced) if coerced != "" else ""
 
             cell.border = border
             cell.alignment = Alignment(vertical="center")
@@ -690,10 +772,16 @@ async def export_report_excel(
         for col_num, col_key in enumerate(config.columns, 1):
             col_type = source_def.get("columns", {}).get(col_key, {}).get("type")
             if col_type in ("number", "currency"):
-                values = [r.get(col_key) for r in data if isinstance(r.get(col_key), (int, float)) and not isinstance(r.get(col_key), bool)]
-                if values:
+                # Task #246: also coerce summary-source values so Decimal/etc.
+                # don't silently exclude rows that should be summed.
+                numeric_values = []
+                for r in data:
+                    coerced_v, is_num = _coerce_excel_value(r.get(col_key))
+                    if is_num:
+                        numeric_values.append(coerced_v)
+                if numeric_values:
                     cell = ws.cell(row=summary_row, column=col_num)
-                    cell.value = sum(values)
+                    cell.value = sum(numeric_values)
                     cell.font = Font(bold=True, size=11)
                     cell.border = Border(top=Side(style='double'))
                     if col_type == "currency":

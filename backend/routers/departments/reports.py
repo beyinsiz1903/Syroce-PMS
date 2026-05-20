@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPBearer
 
 from core.database import db
@@ -271,76 +271,108 @@ async def export_market_segment_excel(
 
     filename = f"market_segment_report_{start_date}_to_{end_date}.xlsx"
     return excel_response(wb, filename)
-# ── GET /reports/company-aging ──
-@router.get("/reports/company-aging")
-@cached(ttl=900, key_prefix="report_company_aging")  # Cache for 15 min
-async def get_company_aging_report(current_user: User = Depends(get_current_user),
-    _perm: None = Depends(require_op("view_finance_reports")),
-):
-    """Company Accounts Receivable Aging Report"""
-    _enforce(current_user.role, "view_finance_reports")  # Bug CU
+# ── Helper: safe date coercion (Task #246) ──
+def _coerce_to_date(v):
+    """Coerce mixed-type `created_at` values to date. Stress env may store
+    `created_at` as native BSON datetime (motor returns datetime obj) rather
+    than ISO string — `datetime.fromisoformat()` raises TypeError in that
+    case. Returns None for unparseable/missing values so caller can skip.
+    """
+    from datetime import date as _date
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, _date):
+        return v
+    if isinstance(v, str):
+        try:
+            # Tolerate trailing 'Z' (UTC suffix); fromisoformat accepts it on 3.11+
+            return datetime.fromisoformat(v.replace('Z', '+00:00')).date()
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+# ── Pure helper: company-aging compute (Task #246) ──
+async def _compute_company_aging(tenant_id: str) -> dict:
+    """Pure async data builder for Company AR Aging Report.
+
+    Extracted from `get_company_aging_report` so the Excel export route can
+    re-use the computation without invoking another `@cached`+`@router.get`
+    decorated route handler directly (anti-pattern that broke under stress
+    when decorator semantics shifted, and obscured tracebacks).
+    """
     today = datetime.now(UTC).date()
 
-    # Get all company folios with outstanding balance
     folios = await db.folios.find({
-        'tenant_id': current_user.tenant_id,
+        'tenant_id': tenant_id,
         'folio_type': 'company',
         'status': 'open'
     }).to_list(10000)
 
-    company_balances = {}
+    company_balances: dict[str, dict] = {}
 
     for folio in folios:
-        balance = await calculate_folio_balance(folio['id'], current_user.tenant_id)
+        try:
+            balance = await calculate_folio_balance(folio['id'], tenant_id)
+        except Exception:
+            logger.exception("calculate_folio_balance failed for folio=%s tenant=%s", folio.get('id'), tenant_id)
+            continue
 
-        if balance > 0:
-            company_id = folio.get('company_id')
-            if not company_id:
-                continue
+        if balance <= 0:
+            continue
 
-            # Get company details
-            company = await db.companies.find_one({'id': company_id}, {'_id': 0})
-            if not company:
-                continue
+        company_id = folio.get('company_id')
+        if not company_id:
+            continue
 
-            # Calculate aging based on folio creation date
-            folio_created = datetime.fromisoformat(folio['created_at']).date()
+        # Task #246: tenant_id scope on company lookup (architect review #3) —
+        # company ID collisions across tenants would otherwise leak metadata.
+        company = await db.companies.find_one(
+            {'id': company_id, 'tenant_id': tenant_id}, {'_id': 0}
+        )
+        if not company:
+            continue
+
+        folio_created = _coerce_to_date(folio.get('created_at'))
+        if folio_created is None:
+            # Unparseable date → treat as oldest bucket; do not crash export.
+            age_days = 99999
+        else:
             age_days = (today - folio_created).days
 
-            # Determine aging bucket
-            if age_days <= 7:
-                aging_bucket = '0-7 days'
-            elif age_days <= 14:
-                aging_bucket = '8-14 days'
-            elif age_days <= 30:
-                aging_bucket = '15-30 days'
-            else:
-                aging_bucket = '30+ days'
+        if age_days <= 7:
+            aging_bucket = '0-7 days'
+        elif age_days <= 14:
+            aging_bucket = '8-14 days'
+        elif age_days <= 30:
+            aging_bucket = '15-30 days'
+        else:
+            aging_bucket = '30+ days'
 
-            # Aggregate by company
-            if company_id not in company_balances:
-                company_balances[company_id] = {
-                    'company_name': company['name'],
-                    'corporate_code': company.get('corporate_code', 'N/A'),
-                    'total_balance': 0,
-                    'aging': {
-                        '0-7 days': 0,
-                        '8-14 days': 0,
-                        '15-30 days': 0,
-                        '30+ days': 0
-                    },
-                    'folio_count': 0
-                }
+        if company_id not in company_balances:
+            company_balances[company_id] = {
+                'company_name': company.get('name', 'N/A'),
+                'corporate_code': company.get('corporate_code', 'N/A'),
+                'total_balance': 0,
+                'aging': {
+                    '0-7 days': 0,
+                    '8-14 days': 0,
+                    '15-30 days': 0,
+                    '30+ days': 0,
+                },
+                'folio_count': 0,
+            }
 
-            company_balances[company_id]['total_balance'] += balance
-            company_balances[company_id]['aging'][aging_bucket] += balance
-            company_balances[company_id]['folio_count'] += 1
+        company_balances[company_id]['total_balance'] += balance
+        company_balances[company_id]['aging'][aging_bucket] += balance
+        company_balances[company_id]['folio_count'] += 1
 
-    # Sort by total balance descending
     sorted_companies = sorted(
         company_balances.values(),
         key=lambda x: x['total_balance'],
-        reverse=True
+        reverse=True,
     )
 
     total_ar = sum(c['total_balance'] for c in sorted_companies)
@@ -349,55 +381,91 @@ async def get_company_aging_report(current_user: User = Depends(get_current_user
         'report_date': today.isoformat(),
         'total_ar': round(total_ar, 2),
         'company_count': len(sorted_companies),
-        'companies': sorted_companies
+        'companies': sorted_companies,
     }
+
+
+# ── GET /reports/company-aging ──
+@router.get("/reports/company-aging")
+@cached(ttl=900, key_prefix="report_company_aging")  # Cache for 15 min
+async def get_company_aging_report(current_user: User = Depends(get_current_user),
+    _perm: None = Depends(require_op("view_finance_reports")),
+):
+    """Company Accounts Receivable Aging Report"""
+    _enforce(current_user.role, "view_finance_reports")  # Bug CU
+    try:
+        return await _compute_company_aging(current_user.tenant_id)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("company_aging report failed for tenant=%s", current_user.tenant_id)
+        raise HTTPException(status_code=500, detail="report_failed")
+
+
 # ── GET /reports/company-aging/excel ──
+# Task #246: @cached REMOVED — decorator serializes the StreamingResponse
+# object via `repr()` ("<starlette.responses.StreamingResponse object at 0x…>")
+# so the second call within the TTL returned non-XLSX garbage with HTTP 200.
+# Excel-shape rendering is cheap enough to recompute; underlying data builder
+# (_compute_company_aging) is itself called by the cached JSON route and can
+# be wrapped separately if hot-path caching becomes necessary.
 @router.get("/reports/company-aging/excel")
-@cached(ttl=900, key_prefix="report_company_aging_excel")  # Cache for 15 min
 async def export_company_aging_excel(
     current_user: User = Depends(get_current_user),
     _perm: None = Depends(require_op("view_finance_reports")),
 ):
     """Export Company Aging Report to Excel"""
     _enforce(current_user.role, "view_finance_reports")  # Bug CU
-    report_data = await get_company_aging_report(current_user)
+    try:
+        # Use shared pure helper instead of calling cached route handler directly
+        # (Task #246 — `@cached` decorated route handler MUST NOT be invoked
+        # directly; cache key derivation + Depends sentinel handling are fragile).
+        report_data = await _compute_company_aging(current_user.tenant_id)
 
-    headers = ["Company", "Corporate Code", "Total Balance", "0-7 Days", "8-14 Days", "15-30 Days", "30+ Days", "Folios"]
-    data = []
+        headers = ["Company", "Corporate Code", "Total Balance", "0-7 Days", "8-14 Days", "15-30 Days", "30+ Days", "Folios"]
+        data = []
 
-    for company in report_data['companies']:
+        for company in report_data['companies']:
+            data.append([
+                company['company_name'],
+                company['corporate_code'],
+                f"${company['total_balance']:,.2f}",
+                f"${company['aging']['0-7 days']:,.2f}",
+                f"${company['aging']['8-14 days']:,.2f}",
+                f"${company['aging']['15-30 days']:,.2f}",
+                f"${company['aging']['30+ days']:,.2f}",
+                company['folio_count']
+            ])
+
+        # Add total row
         data.append([
-            company['company_name'],
-            company['corporate_code'],
-            f"${company['total_balance']:,.2f}",
-            f"${company['aging']['0-7 days']:,.2f}",
-            f"${company['aging']['8-14 days']:,.2f}",
-            f"${company['aging']['15-30 days']:,.2f}",
-            f"${company['aging']['30+ days']:,.2f}",
-            company['folio_count']
+            "TOTAL",
+            "",
+            f"${report_data['total_ar']:,.2f}",
+            "",
+            "",
+            "",
+            "",
+            ""
         ])
 
-    # Add total row
-    data.append([
-        "TOTAL",
-        "",
-        f"${report_data['total_ar']:,.2f}",
-        "",
-        "",
-        "",
-        "",
-        ""
-    ])
+        wb = create_excel_workbook(
+            title=f"Company Aging Report - {report_data['report_date']}",
+            headers=headers,
+            data=data,
+            sheet_name="Company Aging"
+        )
 
-    wb = create_excel_workbook(
-        title=f"Company Aging Report - {report_data['report_date']}",
-        headers=headers,
-        data=data,
-        sheet_name="Company Aging"
-    )
-
-    filename = f"company_aging_report_{report_data['report_date']}.xlsx"
-    return excel_response(wb, filename)
+        filename = f"company_aging_report_{report_data['report_date']}.xlsx"
+        return excel_response(wb, filename)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception(
+            "company_aging excel export failed for tenant=%s",
+            current_user.tenant_id,
+        )
+        raise HTTPException(status_code=500, detail="report_export_failed")
 # ── GET /reports/finance-snapshot ──
 @router.get("/reports/finance-snapshot")
 @cached(ttl=600, key_prefix="report_finance_snapshot")  # Cache for 10 min
