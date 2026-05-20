@@ -608,6 +608,15 @@ export default function SystemHealthDashboard({ user }) {
   const pollTimerRef = useRef(null);
   const lastCriticalFetchRef = useRef(0);
   const fetchInFlightRef = useRef(false);
+  // Task #247: track whether the RNL summary endpoint is reachable for this
+  // user (super_admin only). The duplicate-locks socket event is broadcast on
+  // a shared room, so we only surface toasts when the user actually has
+  // permission to see the underlying widget — mirroring the widget's own gate.
+  const rnlAccessAllowedRef = useRef(false);
+  // Task #247: avoid double-toasting the same transition when the socket
+  // re-emits or reconnects deliver buffered events. We keep the last
+  // transition+count we toasted and skip identical repeats.
+  const lastRnlToastRef = useRef({ transition: null, count: null });
 
   /* ── Fetch ────────────────────────────────────────────── */
   // Not: axios baseURL & Authorization interceptor App.jsx'de tanımlı —
@@ -648,8 +657,13 @@ export default function SystemHealthDashboard({ user }) {
       if (role.status === "fulfilled") setRoleDashboard(role.value.data);
       if (am.status === "fulfilled") setAuditMetrics(am.value.data);
       if (pr.status === "fulfilled") setPilotReadiness(pr.value.data);
-      if (rnl.status === "fulfilled") setRnlSummary(rnl.value.data);
-      else if (rnl.status === "rejected") setRnlSummary(null);
+      if (rnl.status === "fulfilled") {
+        setRnlSummary(rnl.value.data);
+        rnlAccessAllowedRef.current = true;
+      } else if (rnl.status === "rejected") {
+        setRnlSummary(null);
+        rnlAccessAllowedRef.current = false;
+      }
 
       // Eğer hepsi reddedildiyse kullanıcıya bildir (sessizce yutmayalım).
       const anyOk = [cm, q, audit, rl, tg, ls, al, mt, st, norm, role, am, pr].some((r) => r.status === "fulfilled");
@@ -712,8 +726,41 @@ export default function SystemHealthDashboard({ user }) {
         // state so a previous authorized fetch can't be carried over.
         axios
           .get(`/admin/db/room-night-lock-duplicates/summary`)
-          .then((res) => setRnlSummary(res.data))
-          .catch(() => setRnlSummary(null));
+          .then((res) => {
+            setRnlSummary(res.data);
+            rnlAccessAllowedRef.current = true;
+          })
+          .catch(() => {
+            setRnlSummary(null);
+            rnlAccessAllowedRef.current = false;
+          });
+
+        // Task #247: non-blocking toast so operators on a different panel
+        // notice the transition without leaving their workflow. Only shown
+        // for users who can actually see the underlying widget (super_admin
+        // — proven by a successful summary fetch). The toast text uses only
+        // the aggregate count from the payload, never the `sample` triples,
+        // so nothing tenant-identifying is surfaced to a non-super-admin
+        // even in the unlikely case the access ref is stale.
+        if (rnlAccessAllowedRef.current) {
+          const transition = data?.transition;
+          const count = Number(data?.manual_required_count ?? 0) || 0;
+          const last = lastRnlToastRef.current;
+          const isDuplicate = last.transition === transition && last.count === count;
+          if (!isDuplicate) {
+            if (transition === "first_detection" || transition === "escalated") {
+              toast.warning(`Çift kilit incelenmeli: ${count} grup`, {
+                id: "rnl-duplicate-alert",
+              });
+              lastRnlToastRef.current = { transition, count };
+            } else if (transition === "cleared") {
+              toast.info("Çift kilit birikimi temizlendi.", {
+                id: "rnl-duplicate-alert",
+              });
+              lastRnlToastRef.current = { transition, count };
+            }
+          }
+        }
         // fall through so the live-events strip can also record high-severity
         // transitions (first_detection / escalated).
       }
