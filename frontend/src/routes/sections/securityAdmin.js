@@ -5,6 +5,7 @@ import {
   AdminLeads, GovernancePanel, UserRoleManager, HousekeepingDashboard,
   POSDashboard, FeaturesShowcase, WebhookOutboxAdmin, EarlyWarningDashboard,
   ModuleDiscovery, IntegrationCredentials, IntegrationsOverview, CapXIntegration,
+  RnlAutoResolveRuns, RnlDuplicates,
 } from "./lazyPages";
 
 export function securityAdminRoutes({ p, pa }) {
@@ -38,6 +39,8 @@ export function securityAdminRoutes({ p, pa }) {
     { path: "/admin/integration-credentials", ...pa(IntegrationCredentials), wrapLayout: true, layoutModule: "integration-credentials" },
     { path: "/admin/integrations-overview", ...pa(IntegrationsOverview), wrapLayout: true, layoutModule: "integrations_overview" },
     { path: "/admin/capx-integration", ...pa(CapXIntegration), wrapLayout: true, layoutModule: "capx-integration" },
+    { path: "/admin/rnl-auto-resolve-runs", ...pa(RnlAutoResolveRuns), wrapLayout: true, layoutModule: "rnl-auto-resolve-runs" },
+    { path: "/admin/rnl-duplicates", ...pa(RnlDuplicates), wrapLayout: true, layoutModule: "rnl-duplicates" },
     { path: "/admin/cost", type: "redirect", to: "/app/raporlar?section=expenses" },
     { path: "/app/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },
     { path: "/cost-management", type: "redirect", to: "/app/raporlar?section=expenses" },

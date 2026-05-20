@@ -240,6 +240,32 @@ async def list_rnl_duplicates(
     }
 
 
+@router.get("/rnl-auto-resolve-runs")
+async def list_rnl_auto_resolve_runs(
+    limit: int = Query(20, ge=1, le=200),
+    current_user: User = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """List the most recent daily auto-resolver runs (Task #224 beat job).
+
+    Each entry is a summary persisted by `_rnl_duplicate_auto_resolve_async`
+    (scanned / resolved / skipped / manual_required / index_rebuild). The view
+    lets operators confirm the self-healing loop is running without having to
+    grep worker logs.
+    """
+    cursor = (
+        _raw_db["rnl_auto_resolve_runs"]
+        .find({}, {"_id": 0})
+        .sort("started_at", -1)
+        .limit(limit)
+    )
+    runs = await cursor.to_list(length=limit)
+    logger.info(
+        "db_admin.rnl_auto_resolve_runs.list actor=%s returned=%d",
+        getattr(current_user, "id", "?"), len(runs),
+    )
+    return {"total": len(runs), "runs": runs}
+
+
 @router.post("/room-night-lock-duplicates/resolve")
 async def resolve_rnl_duplicates(
     body: RnlResolveBody | None = None,

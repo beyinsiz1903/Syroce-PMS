@@ -109,6 +109,8 @@ export const RoomRequestPage = lazy(() => import("@/pages/guest/RoomRequestPage"
 export const PublicReviewPage = lazy(() => import("@/pages/PublicReviewPage"));
 export const ModuleReport = lazy(() => import("@/pages/ModuleReport"));
 export const UserRoleManager = lazy(() => import("@/pages/UserRoleManager"));
+export const RnlAutoResolveRuns = lazy(() => import("@/pages/admin/RnlAutoResolveRuns"));
+export const RnlDuplicates = lazy(() => import("@/pages/admin/RnlDuplicates"));
 
 // AI / Guest
 export const AIModule = lazy(() => import("@/pages/AIModule"));

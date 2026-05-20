@@ -20,6 +20,8 @@ import {
   Smartphone,
   QrCode,
   ChevronRight,
+  History,
+  AlertTriangle,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -66,9 +68,11 @@ const SECTIONS = [
     descKey: 'adminHub.sections.ops.desc',
     descFallback: 'Kat hizmetleri, POS, erken uyarı',
     items: [
-      { to: '/admin/housekeeping',   icon: Brush,    labelKey: 'adminHub.items.housekeeping',   labelFallback: 'Kat Hizmetleri' },
-      { to: '/admin/pos',            icon: Utensils, labelKey: 'adminHub.items.pos',            labelFallback: 'POS' },
-      { to: '/admin/early-warning',  icon: Bell,     labelKey: 'adminHub.items.earlyWarning',   labelFallback: 'Erken Uyarı' },
+      { to: '/admin/housekeeping',           icon: Brush,          labelKey: 'adminHub.items.housekeeping',         labelFallback: 'Kat Hizmetleri' },
+      { to: '/admin/pos',                    icon: Utensils,       labelKey: 'adminHub.items.pos',                  labelFallback: 'POS' },
+      { to: '/admin/early-warning',          icon: Bell,           labelKey: 'adminHub.items.earlyWarning',         labelFallback: 'Erken Uyarı' },
+      { to: '/admin/rnl-auto-resolve-runs',  icon: History,        labelKey: 'adminHub.items.rnlAutoResolveRuns',   labelFallback: 'RNL Otomatik Çözücü Geçmişi' },
+      { to: '/admin/rnl-duplicates',         icon: AlertTriangle,  labelKey: 'adminHub.items.rnlDuplicates',        labelFallback: 'RNL Duplikat Grupları' },
     ],
   },
   {

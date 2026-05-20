@@ -1155,7 +1155,7 @@ async def _rnl_duplicate_auto_resolve_async(limit: int = 100):
         logger.warning("F8N rnl auto-resolve alert dispatch failed: %s", exc)
         alert_dispatched = {'sent': False, 'suppressed': False, 'error': str(exc)[:200]}
 
-    return {
+    summary = {
         'success': True,
         'started_at': started_at,
         'finished_at': datetime.now(UTC).isoformat(),
@@ -1166,6 +1166,20 @@ async def _rnl_duplicate_auto_resolve_async(limit: int = 100):
         'index_rebuild': index_rebuild,
         'alert_dispatched': alert_dispatched,
     }
+
+    # Persist run summary so the super-admin panel can show history without
+    # log-diving. Best-effort: a write failure must not fail the beat job.
+    try:
+        from core.database import db
+        await db.rnl_auto_resolve_runs.insert_one({
+            **summary,
+            'actor_id': 'celery_beat',
+            'limit': limit,
+        })
+    except Exception as exc:
+        logger.warning("F8N rnl auto-resolve run history write failed: %s", exc)
+
+    return summary
 
 
 # State doc key: tracks the last manual_required alert so consecutive daily
@@ -1348,6 +1362,20 @@ async def _maybe_dispatch_rnl_manual_required_alert(
         'current_count': count,
         'previous_alert_count': last_alert_count,
     }
+
+    # Persist run summary so the super-admin panel can show history without
+    # log-diving. Best-effort: a write failure must not fail the beat job.
+    try:
+        from core.database import db
+        await db.rnl_auto_resolve_runs.insert_one({
+            **summary,
+            'actor_id': 'celery_beat',
+            'limit': limit,
+        })
+    except Exception as exc:
+        logger.warning("F8N rnl auto-resolve run history write failed: %s", exc)
+
+    return summary
 
 
 @celery_app.task(name='celery_tasks.hrv2_retention_cleanup_task')

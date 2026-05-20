@@ -281,3 +281,45 @@ async def test_beat_task_registered_in_beat_schedule():
     assert "rnl-duplicate-auto-resolve" in schedule
     entry = schedule["rnl-duplicate-auto-resolve"]
     assert entry["task"] == "celery_tasks.rnl_duplicate_auto_resolve_task"
+
+
+async def test_beat_task_persists_run_history(isolated_tenant):
+    """Each run must persist a summary row into rnl_auto_resolve_runs.
+
+    The super-admin panel reads this collection to surface scheduled-job
+    behaviour without log-diving (Task #229).
+    """
+    from celery_tasks import _rnl_duplicate_auto_resolve_async
+    from core.database import db
+
+    tid = isolated_tenant
+    room_id = f"room_{uuid.uuid4().hex[:8]}"
+    night = "2030-10-03"
+    active_id = str(uuid.uuid4())
+    cancelled_id = str(uuid.uuid4())
+
+    await _seed_booking(tid, active_id, "confirmed")
+    await _seed_booking(tid, cancelled_id, "cancelled")
+    await _seed_lock(tid, room_id, night, active_id)
+    await _seed_lock(tid, room_id, night, cancelled_id)
+
+    before = await db.rnl_auto_resolve_runs.count_documents({"actor_id": "celery_beat"})
+    result = await _rnl_duplicate_auto_resolve_async(limit=50)
+    after = await db.rnl_auto_resolve_runs.count_documents({"actor_id": "celery_beat"})
+
+    assert result["success"] is True
+    assert after == before + 1
+
+    last = await db.rnl_auto_resolve_runs.find_one(
+        {"actor_id": "celery_beat"},
+        sort=[("started_at", -1)],
+    )
+    assert last is not None
+    for key in (
+        "started_at", "finished_at", "scanned",
+        "resolved_count", "skipped_count", "manual_required_count",
+        "index_rebuild", "limit",
+    ):
+        assert key in last, f"missing key in persisted run: {key}"
+    assert last["limit"] == 50
+    assert last["resolved_count"] == result["resolved_count"]
