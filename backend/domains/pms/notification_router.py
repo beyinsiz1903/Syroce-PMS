@@ -365,20 +365,22 @@ async def get_push_subscriptions(current_user: User = Depends(get_current_user))
 
 @router.get("/notifications/push-status")
 async def get_push_status(current_user: User = Depends(get_current_user)):
-    devices = await db.push_device_tokens.find(
-        {'tenant_id': current_user.tenant_id, 'user_id': current_user.id},
-        {'_id': 0}
-    ).sort('updated_at', -1).to_list(20)
-
-    subscription = await db.push_subscriptions.find_one(
-        {'tenant_id': current_user.tenant_id, 'user_id': current_user.id},
-        {'_id': 0}
+    # Perf: 3 sıralı sorgu (~3 RTT) → asyncio.gather ile paralel.
+    import asyncio
+    devices, subscription, last_delivery = await asyncio.gather(
+        db.push_device_tokens.find(
+            {'tenant_id': current_user.tenant_id, 'user_id': current_user.id},
+            {'_id': 0}
+        ).sort('updated_at', -1).to_list(20),
+        db.push_subscriptions.find_one(
+            {'tenant_id': current_user.tenant_id, 'user_id': current_user.id},
+            {'_id': 0}
+        ),
+        db.push_delivery_logs.find(
+            {'tenant_id': current_user.tenant_id, 'target_user_ids': {'$in': [current_user.id]}},
+            {'_id': 0}
+        ).sort('created_at', -1).to_list(1),
     )
-
-    last_delivery = await db.push_delivery_logs.find(
-        {'tenant_id': current_user.tenant_id, 'target_user_ids': {'$in': [current_user.id]}},
-        {'_id': 0}
-    ).sort('created_at', -1).to_list(1)
 
     return {
         'enabled': len(devices) > 0,

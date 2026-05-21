@@ -92,24 +92,33 @@ async def get_concierge_requests(
         query["status"] = status
     safe_limit = max(1, min(int(limit or 50), 500))
     safe_skip = max(0, int(skip or 0))
-    docs = await db.concierge_requests.find(query).sort("created_at", -1).skip(safe_skip).limit(safe_limit).to_list(safe_limit)
-    for d in docs:
-        d["id"] = str(d.pop("_id"))
-    total = await db.concierge_requests.count_documents(query)
-    # Tenant-wide status counts (for KPI sayaçları paginatedde de doğru kalsın)
-    counts = {"total": total, "pending": 0, "in_progress": 0, "completed": 0, "cancelled": 0}
+    # Perf: find + count + aggregate sıralı (~3 RTT). Paralelize.
+    import asyncio
     pipeline = [
         {"$match": {"tenant_id": current_user.tenant_id}},
         {"$group": {"_id": "$status", "n": {"$sum": 1}}},
     ]
-    try:
-        async for row in db.concierge_requests.aggregate(pipeline):
+    _AGG_FAIL = object()
+    async def _agg():
+        try:
+            return [row async for row in db.concierge_requests.aggregate(pipeline)]
+        except Exception:
+            return _AGG_FAIL
+    docs, total, agg_rows = await asyncio.gather(
+        db.concierge_requests.find(query).sort("created_at", -1).skip(safe_skip).limit(safe_limit).to_list(safe_limit),
+        db.concierge_requests.count_documents(query),
+        _agg(),
+    )
+    for d in docs:
+        d["id"] = str(d.pop("_id"))
+    counts = {"total": total, "pending": 0, "in_progress": 0, "completed": 0, "cancelled": 0}
+    # Aggregate başarısızsa count_documents'tan gelen `total`'ı koru (regression guard).
+    if agg_rows is not _AGG_FAIL:
+        for row in agg_rows:
             key = row.get("_id") or "pending"
             if key in counts:
                 counts[key] = row.get("n", 0)
         counts["total"] = sum(v for k, v in counts.items() if k != "total")
-    except Exception:
-        pass
     return {"requests": docs, "total": total, "skip": safe_skip, "limit": safe_limit, "counts": counts}
 
 
@@ -418,10 +427,14 @@ async def get_kbs_history(skip: int = 0, limit: int = 100, current_user: User = 
 @router.get("/kvkk/requests")
 async def get_kvkk_requests(skip: int = 0, limit: int = 100, current_user: User = Depends(get_current_user)):
     query = {"tenant_id": current_user.tenant_id}
-    docs = await db.kvkk_requests.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    # Perf: find + count sıralı (~2 RTT) → asyncio.gather.
+    import asyncio
+    docs, total = await asyncio.gather(
+        db.kvkk_requests.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit),
+        db.kvkk_requests.count_documents(query),
+    )
     for d in docs:
         d["id"] = str(d.pop("_id"))
-    total = await db.kvkk_requests.count_documents(query)
     return {"requests": docs, "total": total}
 
 

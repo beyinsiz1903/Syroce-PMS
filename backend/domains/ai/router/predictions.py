@@ -536,19 +536,20 @@ async def get_occupancy_prediction(
 ):
     """Get AI-powered occupancy prediction for next N days"""
 
-    # Get total rooms
-    total_rooms = await db.rooms.count_documents({'tenant_id': current_user.tenant_id})
-
-    # Get bookings for next N days — single batch query, then count overlaps in Python
+    # Perf: rooms count + bookings find sıralı çalışıyordu (~2 RTT). Paralelize.
+    import asyncio
     start_date = datetime.now(UTC)
     window_end = start_date + timedelta(days=days)
 
-    booking_docs = await db.bookings.find({
-        'tenant_id': current_user.tenant_id,
-        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-        'check_in': {'$lte': window_end},
-        'check_out': {'$gt': start_date},
-    }, {'_id': 0, 'check_in': 1, 'check_out': 1}).to_list(10000)
+    total_rooms, booking_docs = await asyncio.gather(
+        db.rooms.count_documents({'tenant_id': current_user.tenant_id}),
+        db.bookings.find({
+            'tenant_id': current_user.tenant_id,
+            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+            'check_in': {'$lte': window_end},
+            'check_out': {'$gt': start_date},
+        }, {'_id': 0, 'check_in': 1, 'check_out': 1}).to_list(10000),
+    )
 
     parsed_bookings = []
     for b in booking_docs:
@@ -604,9 +605,13 @@ async def get_guest_patterns(
     # Get recent bookings (last 90 days)
     ninety_days_ago = datetime.now() - timedelta(days=90)
 
+    # Perf: projection eklendi — 5000 doc tam payload yerine yalnız ihtiyaç alanları.
     bookings = await db.bookings.find({
         'tenant_id': current_user.tenant_id,
         'check_in': {'$gte': ninety_days_ago.isoformat()}
+    }, {
+        '_id': 0, 'check_in': 1, 'check_out': 1, 'created_at': 1,
+        'room_id': 1, 'booking_channel': 1, 'status': 1,
     }).to_list(length=5000)
 
     # Pre-fetch all referenced rooms in one batch (was N+1 inside loop)
