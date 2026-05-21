@@ -2045,9 +2045,21 @@ async def list_shifts(
         datetime.fromisoformat(end).date() if end
         else today + timedelta(days=14)
     )
+    # Task #257: overnight (crosses_midnight) vardiyalar bitiş gününde de
+    # görünmeli. Frontend ertesi gün hücresinde "← 06:00 (önceki gün)"
+    # rozeti çizebilmek için, sorgu penceresinden bir gün önce başlayan
+    # gece vardiyalarını da dahil ediyoruz. Çift sayım yapılmaz: tek kayıt
+    # döner, sadece tarih penceresi genişletilir.
+    pre_start_dt = start_dt - timedelta(days=1)
     query: dict[str, Any] = {
         'tenant_id': current_user.tenant_id,
-        'shift_date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()},
+        '$or': [
+            {'shift_date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()}},
+            {
+                'shift_date': pre_start_dt.isoformat(),
+                'crosses_midnight': True,
+            },
+        ],
     }
     if staff_id:
         query['staff_id'] = staff_id

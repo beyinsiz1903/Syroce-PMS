@@ -156,6 +156,24 @@ const ShiftPlannerPage = () => {
     return map;
   }, [shifts]);
 
+  // Task #257: gece vardiyaları ertesi gün hücresinde de "← 06:00 (önceki gün)"
+  // şeklinde görünmeli. Ayrı bir overflow map tutuyoruz; ana liste değişmez
+  // (KPI sayımı çift sayım yapmaz, "Bu Hafta Vardiya" hâlâ shifts.length).
+  const overnightByStaffDay = useMemo(() => {
+    const map = {};
+    shifts.forEach((s) => {
+      if (!s.crosses_midnight || !s.shift_date) return;
+      const start = new Date(`${s.shift_date}T00:00:00`);
+      if (Number.isNaN(start.getTime())) return;
+      const next = new Date(start);
+      next.setDate(next.getDate() + 1);
+      const nextStr = fmtDate(next);
+      const key = `${s.staff_id}__${nextStr}`;
+      (map[key] = map[key] || []).push(s);
+    });
+    return map;
+  }, [shifts]);
+
   const allStaffShown = useMemo(() => {
     const merged = [...staff];
     const seen = new Set(staff.map((s) => s.id));
@@ -389,9 +407,25 @@ const ShiftPlannerPage = () => {
                     {days.map((d) => {
                       const ds = fmtDate(d);
                       const list = shiftsByStaffDay[`${p.id}__${ds}`] || [];
+                      const overflow = overnightByStaffDay[`${p.id}__${ds}`] || [];
                       return (
                         <td key={ds} className="align-top py-1 px-1 border-l border-slate-50">
                           <div className="space-y-1">
+                            {overflow.map((sh) => {
+                              const meta = SHIFT_TYPES[sh.shift_type] || SHIFT_TYPES.night;
+                              return (
+                                <div
+                                  key={`ovf-${sh.id}`}
+                                  className="flex items-center gap-1 rounded border border-dashed border-slate-200 bg-slate-50/60 px-1.5 py-1"
+                                  title={`Önceki günden devam: ${sh.shift_date} ${sh.start_time}–${sh.end_time}`}
+                                >
+                                  <StatusBadge intent={meta.intent}>{meta.label}</StatusBadge>
+                                  <span className="text-[10px] text-slate-500">
+                                    ← {sh.end_time} <span className="text-slate-400">(önceki gün)</span>
+                                  </span>
+                                </div>
+                              );
+                            })}
                             {list.map((sh) => {
                               const meta = SHIFT_TYPES[sh.shift_type] || SHIFT_TYPES.morning;
                               return (
