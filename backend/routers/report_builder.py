@@ -575,8 +575,34 @@ def _first_numeric_col_index(source_def: dict, columns: list[str]) -> int | None
     return None
 
 
+# Task #253 (tur-2 fix): openpyxl rejects C0 control chars (0x00-0x08,
+# 0x0B-0x0C, 0x0E-0x1F) anywhere in a cell value with `IllegalCharacterError`,
+# and any cell longer than 32767 chars also raises. Stress tenants accumulate
+# residue across rounds (F8B complaints, free-text descriptions, byte arrays
+# decoded with errors='replace') that can carry these characters even though
+# the canonical factory seeds clean ASCII. We sanitize at the coerce boundary
+# so every export path (builder + departments) inherits the guard.
+_XLSX_MAX_CELL_LEN = 32767
+
+
+def _xlsx_sanitize_str(s: str) -> str:
+    """Strip openpyxl-illegal control chars and cap cell length.
+
+    Idempotent. Returns "" for empty input. Length cap leaves an ellipsis
+    sentinel so truncated cells are visible during audits instead of silently
+    cut off mid-token.
+    """
+    if not s:
+        return s
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+    cleaned = ILLEGAL_CHARACTERS_RE.sub("", s)
+    if len(cleaned) > _XLSX_MAX_CELL_LEN:
+        cleaned = cleaned[: _XLSX_MAX_CELL_LEN - 1] + "…"
+    return cleaned
+
+
 def _coerce_excel_value(val):
-    """Defensive value coercion for openpyxl cell writes (Task #246).
+    """Defensive value coercion for openpyxl cell writes (Task #246, #253).
 
     Stress tenants surface heterogeneous BSON values (Decimal, native
     datetime/date, ObjectId, NaN/Inf floats, bytes) that crash
@@ -594,6 +620,11 @@ def _coerce_excel_value(val):
     - list/tuple/set → comma-join of coerced items
     - dict → str(dict) string
     - other → str(val) string
+
+    Task #253: every string-producing branch is run through
+    `_xlsx_sanitize_str` so openpyxl's `IllegalCharacterError` and the
+    32767-char hard limit can never escalate to a 500 on export. Numeric
+    returns are unchanged (number_format compatibility preserved).
     """
     import math
     from decimal import Decimal
@@ -605,41 +636,44 @@ def _coerce_excel_value(val):
         return ("Evet" if val else "Hayır", False)
     if isinstance(val, (int, float)):
         if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
-            return (str(val), False)
+            return (_xlsx_sanitize_str(str(val)), False)
         return (val, True)
     if isinstance(val, Decimal):
         try:
             f = float(val)
             if math.isnan(f) or math.isinf(f):
-                return (str(val), False)
+                return (_xlsx_sanitize_str(str(val)), False)
             return (f, True)
         except Exception:
-            return (str(val), False)
+            return (_xlsx_sanitize_str(str(val)), False)
     if isinstance(val, datetime):
         try:
-            return (val.isoformat(), False)
+            return (_xlsx_sanitize_str(val.isoformat()), False)
         except Exception:
-            return (str(val), False)
+            return (_xlsx_sanitize_str(str(val)), False)
     if isinstance(val, _date):
         try:
-            return (val.isoformat(), False)
+            return (_xlsx_sanitize_str(val.isoformat()), False)
         except Exception:
-            return (str(val), False)
+            return (_xlsx_sanitize_str(str(val)), False)
     if isinstance(val, bytes):
         try:
-            return (val.decode("utf-8", errors="replace"), False)
+            return (_xlsx_sanitize_str(val.decode("utf-8", errors="replace")), False)
         except Exception:
             return ("", False)
+    if isinstance(val, str):
+        return (_xlsx_sanitize_str(val), False)
     if isinstance(val, (list, tuple, set)):
         try:
-            return (", ".join(str(_coerce_excel_value(v)[0]) for v in val), False)
+            joined = ", ".join(str(_coerce_excel_value(v)[0]) for v in val)
+            return (_xlsx_sanitize_str(joined), False)
         except Exception:
-            return (str(val), False)
+            return (_xlsx_sanitize_str(str(val)), False)
     if isinstance(val, dict):
-        return (str(val), False)
+        return (_xlsx_sanitize_str(str(val)), False)
     # Fallback: any other object (ObjectId, UUID, custom types) → str()
     try:
-        return (str(val), False)
+        return (_xlsx_sanitize_str(str(val)), False)
     except Exception:
         return ("", False)
 
@@ -787,8 +821,27 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
                     if col_type == "currency":
                         cell.number_format = '#,##0.00 ₺'
 
+    # Task #253 (tur-2): belt-and-suspenders save retry. If, despite the
+    # _coerce_excel_value sanitization, openpyxl still raises (future seed
+    # surface, third-party data shape we didn't anticipate), scrub every
+    # string cell once more and retry. This must NEVER mask a real error
+    # silently — the second exception propagates and the outer try/except
+    # logs the traceback so the next stress run surfaces the true cause.
     output = io.BytesIO()
-    wb.save(output)
+    try:
+        wb.save(output)
+    except Exception:
+        from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+        logger.exception(
+            "report_builder excel save failed, retrying with full re-scrub tenant=%s data_source=%s rows=%s cols=%s",
+            tenant_id, config.data_source, len(data), len(config.columns),
+        )
+        for row in ws.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str):
+                    cell.value = ILLEGAL_CHARACTERS_RE.sub("", cell.value)[:_XLSX_MAX_CELL_LEN]
+        output = io.BytesIO()
+        wb.save(output)
     output.seek(0)
 
     filename = f"ozel_rapor_{config.data_source}_{datetime.now(UTC).strftime('%Y%m%d_%H%M')}.xlsx"

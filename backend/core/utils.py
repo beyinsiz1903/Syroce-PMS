@@ -48,6 +48,28 @@ async def calculate_folio_balance(folio_id: str, tenant_id: str) -> float:
 
 # ── Excel Helpers ──
 
+_XLSX_MAX_CELL_LEN = 32767
+
+
+def _xlsx_sanitize_str(s: str) -> str:
+    """Strip openpyxl-illegal control chars and cap cell length (Task #253).
+
+    openpyxl raises `IllegalCharacterError` for C0 control chars
+    (0x00-0x08, 0x0B-0x0C, 0x0E-0x1F) anywhere in a cell value, and a hard
+    32767-char per-cell limit. Stress tenants accumulate residue (free-text
+    descriptions, decoded byte arrays with errors='replace', user-typed
+    notes) that can carry these characters; without this guard, a single
+    bad row would 500 the entire export.
+    """
+    if not s:
+        return s
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+    cleaned = ILLEGAL_CHARACTERS_RE.sub("", s)
+    if len(cleaned) > _XLSX_MAX_CELL_LEN:
+        cleaned = cleaned[: _XLSX_MAX_CELL_LEN - 1] + "…"
+    return cleaned
+
+
 def create_excel_workbook(title: str, headers: list[str], data: list[list[Any]], sheet_name: str = "Report"):
     """Create a formatted Excel workbook with data"""
     from openpyxl import Workbook
@@ -64,7 +86,7 @@ def create_excel_workbook(title: str, headers: list[str], data: list[list[Any]],
 
     ws.merge_cells('A1:' + get_column_letter(len(headers)) + '1')
     title_cell = ws['A1']
-    title_cell.value = title
+    title_cell.value = _xlsx_sanitize_str(title) if isinstance(title, str) else title
     title_cell.font = Font(size=16, bold=True, color="FFFFFF")
     title_cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -79,7 +101,8 @@ def create_excel_workbook(title: str, headers: list[str], data: list[list[Any]],
 
     for col_num, header in enumerate(headers, 1):
         cell = ws.cell(row=2, column=col_num)
-        cell.value = xlsx_safe(header)
+        # Task #253: sanitize illegal chars + length cap before injection guard.
+        cell.value = _xlsx_sanitize_str(xlsx_safe(header))
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -91,7 +114,12 @@ def create_excel_workbook(title: str, headers: list[str], data: list[list[Any]],
             cell = ws.cell(row=row_num, column=col_num)
             # Preserve numeric types (Excel needs them for sums/formatting);
             # only sanitize string-typed cells, which is where injection lives.
-            cell.value = xlsx_safe(value) if isinstance(value, str) else value
+            # Task #253: also strip openpyxl-illegal control chars and cap at
+            # 32767 chars so a single bad seed string can't 500 the export.
+            if isinstance(value, str):
+                cell.value = _xlsx_sanitize_str(xlsx_safe(value))
+            else:
+                cell.value = value
             cell.border = border
             cell.alignment = Alignment(horizontal="left", vertical="center")
 

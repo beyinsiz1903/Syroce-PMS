@@ -456,8 +456,39 @@ async def export_company_aging_excel(
             sheet_name="Company Aging"
         )
 
+        # Task #253 (tur-2): belt-and-suspenders save retry. create_excel_workbook
+        # already sanitizes via _xlsx_sanitize_str, but if any future code path
+        # bypasses it (e.g. company.get('name') with a control char that lands
+        # post-sanitize, or any non-string field that openpyxl rejects), retry
+        # once with full re-scrub. Outer try/except logs the true traceback.
+        from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+        import io as _io
+        from core.utils import _XLSX_MAX_CELL_LEN
+        buf = _io.BytesIO()
+        try:
+            wb.save(buf)
+            buf.seek(0)
+        except Exception:
+            logger.exception(
+                "company_aging excel save failed, retrying with full re-scrub tenant=%s rows=%s",
+                current_user.tenant_id, len(report_data.get('companies', [])),
+            )
+            for ws in wb.worksheets:
+                for row in ws.iter_rows():
+                    for cell in row:
+                        if isinstance(cell.value, str):
+                            cell.value = ILLEGAL_CHARACTERS_RE.sub("", cell.value)[:_XLSX_MAX_CELL_LEN]
+            buf = _io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+
+        from fastapi.responses import StreamingResponse
         filename = f"company_aging_report_{report_data['report_date']}.xlsx"
-        return excel_response(wb, filename)
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
     except HTTPException:
         raise
     except Exception:

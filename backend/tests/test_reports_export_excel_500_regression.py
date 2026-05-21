@@ -44,6 +44,56 @@ class TestCoerceExcelValueUnit:
     def test_none_to_empty(self):
         assert self.fn(None) == ("", False)
 
+    # ── Task #253 (tur-2): openpyxl IllegalCharacterError repro guards ──
+
+    def test_control_chars_stripped(self):
+        """C0 control chars (0x01-0x08, 0x0B-0x0C, 0x0E-0x1F) MUST be stripped
+        so openpyxl `cell.value = ...` does not raise IllegalCharacterError.
+        """
+        v, is_num = self.fn("hello\x01world\x0Bvtab\x0Cff\x1Besc\x00null")
+        assert is_num is False
+        # All illegal chars removed; legible content preserved.
+        assert v == "helloworldvtabffescnull"
+
+    def test_control_chars_in_bytes_path_stripped(self):
+        v, is_num = self.fn(b"line1\x01line2\x0B")
+        assert is_num is False
+        assert "\x01" not in v and "\x0B" not in v
+        assert "line1" in v and "line2" in v
+
+    def test_control_chars_in_list_join_stripped(self):
+        v, is_num = self.fn(["a\x01b", "c\x0Bd"])
+        assert "\x01" not in v and "\x0B" not in v
+        assert "a" in v and "b" in v and "c" in v and "d" in v
+
+    def test_oversize_string_truncated_with_ellipsis(self):
+        big = "x" * 40000
+        v, is_num = self.fn(big)
+        assert is_num is False
+        # Capped to 32767; sentinel ellipsis means audit-visible truncation.
+        assert len(v) == 32767
+        assert v.endswith("…")
+
+    def test_normal_string_passes_through(self):
+        v, is_num = self.fn("Antalya - Lara Beach")
+        assert v == "Antalya - Lara Beach"
+        assert is_num is False
+
+    def test_openpyxl_accepts_coerced_control_char_string(self):
+        """End-to-end: write a coerced control-char string to a real openpyxl
+        cell and round-trip through wb.save() without raising.
+        """
+        import io as _io
+        from openpyxl import Workbook  # type: ignore
+        wb = Workbook()
+        ws = wb.active
+        v, _ = self.fn("toxic\x01\x0B\x0C\x1Estring")
+        ws.cell(row=1, column=1).value = v
+        buf = _io.BytesIO()
+        wb.save(buf)  # MUST NOT raise IllegalCharacterError
+        buf.seek(0)
+        assert buf.read(4) == b"PK\x03\x04"
+
     def test_bool_localized(self):
         assert self.fn(True) == ("Evet", False)
         assert self.fn(False) == ("Hayır", False)
