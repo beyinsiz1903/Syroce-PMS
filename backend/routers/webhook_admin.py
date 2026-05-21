@@ -10,6 +10,7 @@ Endpoints:
   - POST /api/webhooks/dlq/{id}/retry    → Manually retry a DLQ item
   - POST /api/webhooks/dlq/{id}/dismiss  → Mark a DLQ item as dismissed
 """
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -53,25 +54,30 @@ async def webhook_status():
     now = datetime.now(UTC)
     cutoff_24h = (now - timedelta(hours=24)).isoformat()
 
-    pending = await sysdb.webhook_deliveries.count_documents({"status": "pending"})
-    delivering = await sysdb.webhook_deliveries.count_documents({"status": "delivering"})
-    retrying = await sysdb.webhook_deliveries.count_documents({"status": "retrying"})
-    succeeded_24h = await sysdb.webhook_deliveries.count_documents({
-        "status": "succeeded",
-        "completed_at": {"$gte": cutoff_24h},
-    })
-    failed_24h = await sysdb.webhook_deliveries.count_documents({
-        "status": {"$in": ["failed", "dlq"]},
-        "completed_at": {"$gte": cutoff_24h},
-    })
-
-    dlq_pending = await sysdb.webhook_dlq.count_documents({"status": "pending"})
-    dlq_total = await sysdb.webhook_dlq.count_documents({})
-
-    last = await sysdb.webhook_deliveries.find_one(
-        {"completed_at": {"$ne": None}},
-        {"_id": 0, "completed_at": 1},
-        sort=[("completed_at", -1)],
+    # Perf: 8 count + 1 find_one sıralı çağrıydı → Atlas RTT ~110ms × 9 = ~1 sn
+    # sadece bu endpoint için. asyncio.gather ile paralel: tek RTT kadar.
+    (
+        pending, delivering, retrying, succeeded_24h, failed_24h,
+        dlq_pending, dlq_total, last,
+    ) = await asyncio.gather(
+        sysdb.webhook_deliveries.count_documents({"status": "pending"}),
+        sysdb.webhook_deliveries.count_documents({"status": "delivering"}),
+        sysdb.webhook_deliveries.count_documents({"status": "retrying"}),
+        sysdb.webhook_deliveries.count_documents({
+            "status": "succeeded",
+            "completed_at": {"$gte": cutoff_24h},
+        }),
+        sysdb.webhook_deliveries.count_documents({
+            "status": {"$in": ["failed", "dlq"]},
+            "completed_at": {"$gte": cutoff_24h},
+        }),
+        sysdb.webhook_dlq.count_documents({"status": "pending"}),
+        sysdb.webhook_dlq.count_documents({}),
+        sysdb.webhook_deliveries.find_one(
+            {"completed_at": {"$ne": None}},
+            {"_id": 0, "completed_at": 1},
+            sort=[("completed_at", -1)],
+        ),
     )
     last_at = last.get("completed_at") if last else None
 
@@ -105,11 +111,13 @@ async def list_deliveries(
     if tenant_id:
         query["tenant_id"] = tenant_id
 
-    items = await sysdb.webhook_deliveries.find(
-        query, {"_id": 0}
-    ).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
-
-    total = await sysdb.webhook_deliveries.count_documents(query)
+    # Perf: find + count_documents paralel — Atlas RTT'yi yarıya indirir.
+    items, total = await asyncio.gather(
+        sysdb.webhook_deliveries.find(
+            query, {"_id": 0}
+        ).sort("created_at", -1).skip(offset).limit(limit).to_list(limit),
+        sysdb.webhook_deliveries.count_documents(query),
+    )
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
@@ -128,11 +136,13 @@ async def list_dlq(
     if event:
         query["event"] = event
 
-    items = await sysdb.webhook_dlq.find(
-        query, {"_id": 0}
-    ).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
-
-    total = await sysdb.webhook_dlq.count_documents(query)
+    # Perf: find + count_documents paralel — Atlas RTT'yi yarıya indirir.
+    items, total = await asyncio.gather(
+        sysdb.webhook_dlq.find(
+            query, {"_id": 0}
+        ).sort("created_at", -1).skip(offset).limit(limit).to_list(limit),
+        sysdb.webhook_dlq.count_documents(query),
+    )
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 

@@ -9,6 +9,7 @@ Endpoints:
   - POST /api/outbox/{id}/requeue    → Requeue a single failed event
   - POST /api/outbox/replay          → Replay all failed events for a provider
 """
+import asyncio
 import logging
 from datetime import UTC, datetime
 
@@ -63,24 +64,46 @@ class OutboxStatusResponse(BaseModel):
 async def outbox_status():
     """Get outbox queue health and metrics."""
     now = datetime.now(UTC)
-
-    pending = await db.outbox_events.count_documents({"status": "pending"})
-    processing = await db.outbox_events.count_documents({"status": "processing"})
-    retry = await db.outbox_events.count_documents({"status": "retry"})
-    failed = await db.outbox_events.count_documents({"status": "failed"})
-
     cutoff_24h = (now - __import__("datetime").timedelta(hours=24)).isoformat()
-    processed_24h = await db.outbox_events.count_documents({
-        "status": "processed",
-        "processed_at": {"$gte": cutoff_24h},
-    })
 
-    # Oldest pending event age
-    oldest_pending = await db.outbox_events.find_one(
-        {"status": {"$in": ["pending", "retry"]}},
-        {"_id": 0, "created_at": 1},
-        sort=[("created_at", 1)],
+    # Perf: 5 count + 2 find_one + 1 aggregate sıralı çağrıydı → Atlas RTT
+    # ~110ms × 8 = ~0.9 sn. asyncio.gather ile paralel: tek RTT kadar.
+    async def _agg_provider_failures():
+        pipeline = [
+            {"$match": {"status": "failed"}},
+            {"$group": {"_id": "$provider", "count": {"$sum": 1}}},
+        ]
+        out = {}
+        async for doc in db.outbox_events.aggregate(pipeline):
+            provider = doc["_id"] or "fan-out"
+            out[provider] = doc["count"]
+        return out
+
+    (
+        pending, processing, retry, failed, processed_24h,
+        oldest_pending, last_processed, provider_failures,
+    ) = await asyncio.gather(
+        db.outbox_events.count_documents({"status": "pending"}),
+        db.outbox_events.count_documents({"status": "processing"}),
+        db.outbox_events.count_documents({"status": "retry"}),
+        db.outbox_events.count_documents({"status": "failed"}),
+        db.outbox_events.count_documents({
+            "status": "processed",
+            "processed_at": {"$gte": cutoff_24h},
+        }),
+        db.outbox_events.find_one(
+            {"status": {"$in": ["pending", "retry"]}},
+            {"_id": 0, "created_at": 1},
+            sort=[("created_at", 1)],
+        ),
+        db.outbox_events.find_one(
+            {"status": "processed"},
+            {"_id": 0, "processed_at": 1},
+            sort=[("processed_at", -1)],
+        ),
+        _agg_provider_failures(),
     )
+
     oldest_seconds = None
     if oldest_pending and oldest_pending.get("created_at"):
         try:
@@ -91,23 +114,7 @@ async def outbox_status():
         except Exception:
             pass
 
-    # Last processed timestamp
-    last_processed = await db.outbox_events.find_one(
-        {"status": "processed"},
-        {"_id": 0, "processed_at": 1},
-        sort=[("processed_at", -1)],
-    )
     last_processed_at = last_processed.get("processed_at") if last_processed else None
-
-    # Provider-level failure counts
-    pipeline = [
-        {"$match": {"status": "failed"}},
-        {"$group": {"_id": "$provider", "count": {"$sum": 1}}},
-    ]
-    provider_failures = {}
-    async for doc in db.outbox_events.aggregate(pipeline):
-        provider = doc["_id"] or "fan-out"
-        provider_failures[provider] = doc["count"]
 
     # Worker metrics
     try:
@@ -143,11 +150,13 @@ async def list_outbox_events(
     if provider:
         query["provider"] = provider
 
-    events = await db.outbox_events.find(
-        query, {"_id": 0}
-    ).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
-
-    total = await db.outbox_events.count_documents(query)
+    # Perf: find + count_documents paralel — Atlas RTT'yi yarıya indirir.
+    events, total = await asyncio.gather(
+        db.outbox_events.find(
+            query, {"_id": 0}
+        ).sort("created_at", -1).skip(offset).limit(limit).to_list(limit),
+        db.outbox_events.count_documents(query),
+    )
 
     return {
         "events": events,
