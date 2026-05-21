@@ -19,6 +19,7 @@ Classifications:
   - DEGRADED (score >= 60)
   - CRITICAL (score < 60)
 """
+import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -160,12 +161,17 @@ class ConnectorHealthService:
         }
 
     async def get_all_health(self, tenant_id: str) -> dict[str, Any]:
-        """Get health metrics for all connectors of a tenant."""
+        """Get health metrics for all connectors of a tenant.
+
+        Perf: N-connector seri await yerine asyncio.gather ile paralel
+        topla. Her get_connector_health çağrısı ~7 DB query yapıyor;
+        seri toplam = N × ~700ms, paralelde ≈ tek connector süresi.
+        """
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
-        results = []
-        for c in connectors:
-            h = await self.get_connector_health(tenant_id, c["id"])
-            results.append(h)
+        results = await asyncio.gather(
+            *[self.get_connector_health(tenant_id, c["id"]) for c in connectors],
+            return_exceptions=False,
+        ) if connectors else []
 
         total = len(results)
         healthy = sum(1 for r in results if r.get("classification") == "HEALTHY")
@@ -186,10 +192,10 @@ class ConnectorHealthService:
         """Get health for connectors of a specific property."""
         connectors = await self._repo.get_connectors_by_tenant(tenant_id)
         prop_connectors = [c for c in connectors if c.get("property_id") == property_id]
-        results = []
-        for c in prop_connectors:
-            h = await self.get_connector_health(tenant_id, c["id"])
-            results.append(h)
+        results = await asyncio.gather(
+            *[self.get_connector_health(tenant_id, c["id"]) for c in prop_connectors],
+            return_exceptions=False,
+        ) if prop_connectors else []
         return {"connectors": results, "property_id": property_id, "count": len(results)}
 
     # ─── Calculations ─────────────────────────────────────────────────

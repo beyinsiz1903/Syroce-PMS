@@ -1,10 +1,12 @@
 """Reconciliation, observability, audit-trail, webhook, error-queue, admin endpoints."""
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from core.cache import cached
 from core.security import get_current_user
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v90 DW
@@ -514,32 +516,44 @@ async def admin_disable_connector(
 # ─── Admin: Sync Health ──────────────────────────────────────────
 
 @router.get("/admin/sync-health")
+@cached(ttl=30, key_prefix="cm_admin_sync_health")
 async def admin_sync_health_dashboard(
     current_user: User = Depends(get_current_user),
 ):
+    # Perf: N-connector × (health + metrics) seri await + summary/trend
+    # toplam ≈ 2.3s ölçüldü (observability.middleware SLOW REQUEST).
+    # Per-connector iki çağrı bağımsız, ayrıca error_summary+trend
+    # bağımsız; tümünü asyncio.gather ile paralel topla. 30s tenant-
+    # scoped cache, admin paneli sekme değiştirme/refresh için yeterli.
     from ...infrastructure.repository import ChannelManagerRepository
     repo = ChannelManagerRepository()
     recon_svc = ReconciliationService()
     connectors = await repo.get_connectors_by_tenant(current_user.tenant_id)
 
-    connector_health = []
-    total_score = 0
-    for c in connectors:
+    async def _per_connector(c):
         cid = c.get("id", "")
-        health = await recon_svc.get_health_score(current_user.tenant_id, cid)
-        metrics = await repo.get_sync_metrics(current_user.tenant_id, cid)
-        connector_health.append({
+        health, metrics = await asyncio.gather(
+            recon_svc.get_health_score(current_user.tenant_id, cid),
+            repo.get_sync_metrics(current_user.tenant_id, cid),
+        )
+        return {
             **health,
             "display_name": c.get("display_name", ""),
             "provider": c.get("provider", ""),
             "connector_status": c.get("status", ""),
             "sync_metrics": metrics,
-        })
-        total_score += health.get("health_score", 0)
+        }
 
+    per_connector_task = asyncio.gather(*[_per_connector(c) for c in connectors]) \
+        if connectors else asyncio.sleep(0, result=[])
+    connector_health, error_summary, trend_data = await asyncio.gather(
+        per_connector_task,
+        repo.get_error_queue_summary(current_user.tenant_id),
+        repo.get_sync_trend_24h(current_user.tenant_id),
+    )
+
+    total_score = sum(h.get("health_score", 0) for h in connector_health)
     avg_score = round(total_score / max(len(connectors), 1))
-    error_summary = await repo.get_error_queue_summary(current_user.tenant_id)
-    trend_data = await repo.get_sync_trend_24h(current_user.tenant_id)
 
     return {
         "overall_health_score": avg_score,
