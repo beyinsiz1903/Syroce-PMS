@@ -28,30 +28,9 @@ import { NoShowSection, RoomStatusSection, HousekeepingSection, PaymentsSection,
 import { ChannelsSection, SourcesSection } from './reports/ChannelsSection';
 import { OfficialSection, PoliceSection } from './reports/OfficialSection';
 
-const BACKEND_URL = "";
+import { fetchJsonWithRetry } from '@/lib/fetchRetry';
 
-// Sentry browserTracingIntegration fetch wrapper + service-worker race
-// nadiren "Failed to execute 'clone' on 'Response': Response body is already
-// used" üretiyor. Hata transient — bir kez kısa gecikmeli retry yeterli.
-const TRANSIENT_FETCH_ERR = /clone|body is already used|body stream/i;
-async function fetchJsonWithRetry(url, opts) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const res = await fetch(url, opts);
-      if (!res.ok) {
-        const err = new Error('HTTP ' + res.status);
-        err.status = res.status;
-        throw err;
-      }
-      return await res.json();
-    } catch (err) {
-      const msg = err && err.message ? String(err.message) : '';
-      const isTransient = TRANSIENT_FETCH_ERR.test(msg);
-      if (!isTransient || attempt === 1) throw err;
-      await new Promise((r) => setTimeout(r, 150));
-    }
-  }
-}
+const BACKEND_URL = "";
 
 const REPORT_MENU = [
   { type: 'header', label: 'GENEL' },

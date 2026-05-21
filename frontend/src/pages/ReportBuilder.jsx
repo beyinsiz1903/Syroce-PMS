@@ -16,6 +16,7 @@ import {
 import { PageHeader } from '@/components/ui/page-header';
 import { toast } from 'sonner';
 import { confirmDialog } from '@/lib/dialogs';
+import { fetchJsonWithRetry, fetchWithRetry } from '@/lib/fetchRetry';
 import {
   Database, Columns, Filter, Play, FileSpreadsheet, FileText,
   Plus, X, Trash2, Save, FolderOpen, Loader2, ChevronDown, ChevronUp,
@@ -98,11 +99,9 @@ const ReportBuilder = () => {
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const res = await fetch(`/api/reports/builder/config`, {
+        const data = await fetchJsonWithRetry(`/api/reports/builder/config`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
-        if (!res.ok) throw new Error(t('reportBuilder.configError'));
-        const data = await res.json();
         setDataSources(data.data_sources || {});
         if (data.max_limit) setMaxLimit(data.max_limit);
       } catch {
@@ -118,16 +117,11 @@ const ReportBuilder = () => {
 
   const fetchTemplates = async () => {
     try {
-      const res = await fetch(`/api/reports/builder/templates`, {
+      const data = await fetchJsonWithRetry(`/api/reports/builder/templates`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      if (res.ok) {
-        const data = await res.json();
-        setTemplates(data.templates || []);
-        setTemplatesError(false);
-      } else {
-        setTemplatesError(true);
-      }
+      setTemplates(data.templates || []);
+      setTemplatesError(false);
     } catch {
       setTemplatesError(true);
     }
@@ -190,7 +184,7 @@ const ReportBuilder = () => {
     setSummary({});
     setPiiMasked(false);
     try {
-      const res = await fetch(`/api/reports/builder/generate`, {
+      const res = await fetchWithRetry(`/api/reports/builder/generate`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(buildConfig()),
@@ -217,7 +211,7 @@ const ReportBuilder = () => {
     if (!selectedSource || selectedColumns.length === 0) return;
     setExporting(true);
     try {
-      const res = await fetch(`/api/reports/builder/export/${format}`, {
+      const res = await fetchWithRetry(`/api/reports/builder/export/${format}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(buildConfig()),
@@ -245,6 +239,8 @@ const ReportBuilder = () => {
     if (!templateName.trim()) return toast.error(t('reportBuilder.enterTemplateName'));
     if (!selectedSource || selectedColumns.length === 0) return toast.error(t('reportBuilder.selectColumns'));
     try {
+      // Not idempotent — backend insert_one her seferinde yeni UUID üretir.
+      // Transient clone retry duplicate template oluşturabilir; plain fetch.
       const res = await fetch(`/api/reports/builder/templates`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -288,6 +284,8 @@ const ReportBuilder = () => {
     });
     if (!ok) return;
     try {
+      // Not idempotent — ilk DELETE başarılıysa retry 404 ile false-failure
+      // toast üretir; plain fetch.
       const res = await fetch(`/api/reports/builder/templates/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
