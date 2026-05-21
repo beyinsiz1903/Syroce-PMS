@@ -1415,8 +1415,14 @@ async def _payroll_collect_leaves(
 
 
 async def _payroll_collect_overtime(tenant_id: str, period_month: str) -> dict[str, dict]:
-    """`overtime_requests` status=approved + work_date in month → per-staff
-    aggregate. Read-only; finalize ASLA çağrılmaz."""
+    """Bordro modülünün onaylı mesai tüketimi — **GET /hr/overtime/ready-for-payroll**
+    kontratının iç-süreç eşdeğeri. Aynı sorgu/şema kullanılır
+    (`overtime_requests` status=approved + work_date in [month_start..end])
+    böylece HTTP endpoint ile parity sağlanır; HTTP self-call yapmaktan
+    kaçınılır (timeout/circular-dep önlemi). Read-only; finalize ASLA
+    çağrılmaz. Şema kontrat ile bağlı — değiştirilirse her iki yer birlikte
+    güncellenmeli (parity test'i CI'da yakalar).
+    """
     yyyy, mm = period_month.split('-')
     start_iso = f'{yyyy}-{mm}-01'
     nm = date(int(yyyy), int(mm), 28) + timedelta(days=4)
@@ -1480,26 +1486,34 @@ def _payroll_run_to_response(
 
 
 # ---------- Payroll v2 RBAC gate (Task #264, post-review P1) ----------
-# Contract: HR Admin (admin) + Finance + Super Admin = full lifecycle.
-# HR Manager / Supervisor = save + revision (NOT finalize).
-# Diğer roller 403.
-_PAYROLL_FULL_ROLES = frozenset({'admin', 'super_admin', 'finance'})
-_PAYROLL_DRAFT_ROLES = _PAYROLL_FULL_ROLES | frozenset({'supervisor', 'hr_manager'})
+# Contract (Task #264 — entitlement-based, KVKK least-privilege):
+#   • FINALIZE (locked, immutable): manage_hr permission (HR Admin) OR
+#     finance/super_admin role.
+#   • DRAFT / REVISION (mutable preview): yukarıdakiler + view_hr_payroll
+#     permission (HR Manager — finalize edemez ama hazırlayabilir).
+#   • Diğer herkes 403.
+# Ham `admin` rolü ARTIK YETMEZ — HR Admin yetkisi `manage_hr` perm'i ile
+# açıkça verilmelidir (role-literal gating kaldırıldı).
+_PAYROLL_PRIVILEGED_ROLES = frozenset({'finance', 'super_admin'})
 
 
 def _payroll_lifecycle_gate(user: User, *, allow_hr_manager: bool) -> None:
     role = (getattr(user, 'role', '') or '').lower()
-    allowed = _PAYROLL_DRAFT_ROLES if allow_hr_manager else _PAYROLL_FULL_ROLES
-    if role not in allowed:
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "Bordro yaşam döngüsü yetkiniz yok "
-                "(yalnızca HR Admin / Finance / Süper Admin"
-                + (" / HR Manager" if allow_hr_manager else "")
-                + ")."
-            ),
-        )
+    # Full-lifecycle gate (finalize dahil).
+    if _user_has_hr_op(user, 'manage_hr') or role in _PAYROLL_PRIVILEGED_ROLES:
+        return
+    # Draft/revision için ek olarak view_hr_payroll perm'i yeterli.
+    if allow_hr_manager and _user_has_hr_op(user, 'view_hr_payroll'):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "Bordro yaşam döngüsü yetkiniz yok "
+            "(yalnızca HR Admin (manage_hr) / Finance / Süper Admin"
+            + (" / HR Manager (view_hr_payroll)" if allow_hr_manager else "")
+            + ")."
+        ),
+    )
 
 
 # ---------- Payroll v2 endpoints (Task #264) ----------
