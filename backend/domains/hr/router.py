@@ -2029,20 +2029,59 @@ async def get_payroll(
         current_user.tenant_id, month, extras=[],
     )
 
-    # Dept-scope (Task #264 post-review): department-manager kullanıcısı
-    # (view_hr + assigned_department + view_hr_payroll YOK) yalnız kendi
-    # departman satırlarını görür. Aksi takdirde tüm satırlar (masked).
+    # Dept-scope (Task #264 post-review round 2): department-manager
+    # (view_hr + assigned_department + view_hr_payroll YOK + manage_hr YOK)
+    # için response degrade modu:
+    #   • rows yalnız kendi departman + monetary alanlar strip
+    #   • summary kendi scope üzerinden YENİDEN hesap, brüt/net yok
+    #   • runs özetlerindeki `summary.total_gross/net` strip
+    #   • legacy payroll_records hiç döndürülmez (no-amount doktrin)
     assigned = _user_assigned_department(current_user)
-    if (
+    is_dept_only = bool(
         assigned
         and not _user_has_hr_op(current_user, "view_hr_payroll")
         and not _user_has_hr_op(current_user, "manage_hr")
-    ):
-        a_lc = assigned.strip().lower()
+        and (getattr(current_user, "role", "") or "").lower() not in (
+            "admin", "super_admin", "finance",
+        )
+    )
+
+    if is_dept_only:
+        a_lc = assigned.strip().lower()  # type: ignore[union-attr]
         rows = [
             r for r in rows
             if (r.get('department') or '').strip().lower() == a_lc
         ]
+        # Monetary alanları strip — yalnız days/hours metrikleri kalsın.
+        _AMOUNT_FIELDS = (
+            'gross_pay', 'net_salary', 'sgk_employee', 'unemployment',
+            'income_tax', 'stamp_tax', 'total_deductions', 'tax_deductions',
+            'extra_deductions', 'extra_earnings', 'hourly_rate',
+            'overtime_rate', 'base_salary', 'line_items',
+        )
+        scoped_rows: list[dict] = []
+        for r in rows:
+            r2 = {k: v for k, v in r.items() if k not in _AMOUNT_FIELDS}
+            scoped_rows.append(r2)
+        rows = scoped_rows
+        # Summary'i scoped rows üzerinden yeniden hesapla — no-amount.
+        summary = {
+            'staff_count': len(rows),
+            'total_hours': round(sum(r.get('total_hours', 0) for r in rows), 2),
+            'overtime_hours': round(
+                sum(r.get('overtime_hours', 0) for r in rows), 2,
+            ),
+            'total_leave_days_paid': sum(
+                r.get('leave_days_paid', 0) for r in rows
+            ),
+            'total_leave_days_unpaid': sum(
+                r.get('leave_days_unpaid', 0) for r in rows
+            ),
+            'total_sgk_days': sum(r.get('sgk_days', 0) for r in rows),
+            'scope': 'department_only',
+            'department': assigned,
+        }
+
     # PII mask satırlar üzerinde
     self_id = str(getattr(current_user, 'id', '') or '')
     self_email = str(getattr(current_user, 'email', '') or '')
@@ -2056,23 +2095,34 @@ async def get_payroll(
         {'_id': 0, 'rows': 0},
     ).sort('created_at', -1)
     runs = await runs_cursor.to_list(50)
+    if is_dept_only:
+        # Run özetlerinden tutar bilgilerini strip.
+        for r in runs:
+            s = r.get('summary')
+            if isinstance(s, dict):
+                for k in (
+                    'total_gross', 'total_net', 'total_extra_earnings',
+                    'total_extra_deductions',
+                ):
+                    s.pop(k, None)
     latest_locked = next((r for r in runs if r.get('status') == 'locked'), None)
     latest_draft = next((r for r in runs if r.get('status') == 'draft'), None)
 
-    # Geri uyum: legacy finalize edilmiş `payroll_records`
-    legacy = await db.payroll_records.find(
-        {'tenant_id': current_user.tenant_id, 'period_month': month},
-        {'_id': 0},
-    ).to_list(500)
+    # Geri uyum: legacy finalize edilmiş `payroll_records` — dept-only için
+    # legacy satırlar gizlenir (no-amount doktrin).
+    legacy: list[dict] = []
+    if not is_dept_only:
+        legacy = await db.payroll_records.find(
+            {'tenant_id': current_user.tenant_id, 'period_month': month},
+            {'_id': 0},
+        ).to_list(500)
 
-    return {
+    payload: dict[str, Any] = {
         'is_dry_run': True,
         'period_month': period_month,
         'payroll': masked_rows,
         'summary': summary,
-        'staff_count': summary['staff_count'],
-        'total_gross_pay': summary['total_gross'],
-        'total_net_pay': summary['total_net'],
+        'staff_count': summary.get('staff_count'),
         'currency': TR_CURRENCY,
         'runs': runs,
         'latest_locked_run': latest_locked,
@@ -2080,6 +2130,13 @@ async def get_payroll(
         'legacy_payroll_records': legacy,
         'legacy_count': len(legacy),
     }
+    if not is_dept_only:
+        payload['total_gross_pay'] = summary.get('total_gross')
+        payload['total_net_pay'] = summary.get('total_net')
+    else:
+        payload['scope'] = 'department_only'
+        payload['department'] = assigned
+    return payload
 
 
 # ============= Performance =============
