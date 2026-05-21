@@ -1204,8 +1204,6 @@ async def finalize_payroll(
         'total_gross': round(sum(r['gross_pay'] for r in payroll), 2),
         'total_net': round(sum(r['net_salary'] for r in payroll), 2),
         'currency': TR_CURRENCY,
-        'deprecated': True,
-        'migration_hint': 'POST /hr/payroll/{month}/save → POST /hr/payroll/{run_id}/finalize',
     }
 
 
@@ -1937,7 +1935,14 @@ async def export_payroll_run_xlsx(
     return resp
 
 
-_PAYROLL_ME_BLOCKED_ROLES = frozenset({'guest', 'external', 'agency', 'b2b'})
+# Task #264 round 6: explicit allow-list (fail-closed). Sadece iç staff
+# rolleri kendi bordrosuna erişebilir; agency/guest/bilinmeyen rol 403.
+# UserRole enum tabanlı — yeni eklenen roller buraya bilinçli olarak
+# dahil edilmedikçe otomatik olarak reddedilir.
+_PAYROLL_ME_ALLOWED_ROLES = frozenset({
+    'super_admin', 'admin', 'supervisor', 'front_desk', 'housekeeping',
+    'sales', 'finance', 'procurement', 'staff',
+})
 
 
 @router.get("/hr/payroll/me")
@@ -1948,14 +1953,14 @@ async def get_my_payroll(
     """Self-service: kullanıcının kendi locked bordro satırı. Yalnız `locked`
     runlardan veri döner — taslak görünmez (KVKK + iş hukuku doktrin).
 
-    RBAC (Task #264 post-review round 5): yalnız iç staff (UserRole tipi)
-    erişebilir. Guest portal / B2B agency / harici roller 403 alır (raw
-    role allow-list; `_PAYROLL_ME_BLOCKED_ROLES` kontrol edilir + bilinmeyen
-    role enum'u da reddedilir → fail-closed). Erişim açılsa bile object-level
-    self-match (`staff_id`/e-posta) ile sadece kendi satırı döner.
+    RBAC (Task #264 post-review round 6, fail-closed allow-list):
+    `_PAYROLL_ME_ALLOWED_ROLES` setindeki iç staff rolleri erişebilir;
+    guest / agency_admin / agency_agent / bilinmeyen rol 403 alır. Erişim
+    açılsa bile object-level self-match (`staff_id`/e-posta) ile yalnız
+    kendi satırı döner.
     """
     role_lc = (getattr(current_user, 'role', '') or '').lower()
-    if not role_lc or role_lc in _PAYROLL_ME_BLOCKED_ROLES:
+    if role_lc not in _PAYROLL_ME_ALLOWED_ROLES:
         raise HTTPException(
             status_code=403,
             detail="Bordro self-service yalnız iç staff için açıktır.",
