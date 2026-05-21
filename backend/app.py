@@ -51,6 +51,16 @@ async def _lifespan(application: FastAPI):
     defer = os.getenv("DEFER_STARTUP_BOOTSTRAP", "").lower() in ("1", "true", "yes")
 
     async def _run_startup_callbacks():
+        # When defer=True, yield event-loop control briefly so uvicorn can
+        # finish its startup phase and BIND the listening socket BEFORE we
+        # start invoking heavy (and often synchronous) bootstrap callbacks
+        # like register_routers(). Without this, the scheduler can pick up
+        # this background task immediately after `yield` in _lifespan and
+        # the sync work blocks the loop for 20+s — uvicorn never gets the
+        # tick it needs to call socket.bind(), and Replit autoscale fails
+        # the deploy with "expected port 5000 never opened".
+        if defer:
+            await asyncio.sleep(0.5)
         any_failed = False
         for cb in list(_startup_callbacks):
             try:

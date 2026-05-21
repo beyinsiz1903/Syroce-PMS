@@ -19,6 +19,7 @@ MarkupSafe==3.0.3
 motor==3.3.1
 numpy==2.3.4
 orjson==3.11.7
+openpyxl==3.1.2
 pandas==3.0.1
 pillow==12.2.0
 prometheus-client>=0.20
