@@ -179,6 +179,118 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
             `overlap probe must not 5xx. behavior=${overlapBehavior} status=${r.status}`).toBe(true);
     });
 
+    test('B2) Overnight branch — crosses_midnight contract + next-day overlap (Task #255/#258)', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'overnight_overlap', status: 'SKIP',
+                note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        // Use staffB if available (avoid colliding with S1/S2 locks on staffA);
+        // fall back to staffA on dates 7 days ahead to stay clear of B's date.
+        const staffN = staffPool[1] || staffPool[0];
+        const base = new Date(Date.now() + 7 * 86_400_000);
+        const baseIso = `${base.getUTCFullYear()}-${String(base.getUTCMonth() + 1).padStart(2, '0')}-${String(base.getUTCDate()).padStart(2, '0')}`;
+        const next = new Date(base.getTime() + 86_400_000);
+        const nextIso = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(next.getUTCDate()).padStart(2, '0')}`;
+        const samples = [];
+        let nightId = null, conflictId = null, acceptedId = null;
+
+        // Step 1 — invalid: crosses_midnight=True with end>=start → expect 422.
+        const badPayload = {
+            staff_id: staffN.id, shift_date: baseIso, shift_type: 'night',
+            start_time: '09:00', end_time: '17:00', crosses_midnight: true,
+            notes: `${prefix} F8D-v2 35-B2 invalid-overnight`,
+        };
+        const rBad = await callTimedWithBackoff(request, 'post', '/api/hr/shifts',
+            badPayload, stressTokens.stress_token);
+        samples.push(rBad.ms);
+        if (rBad.status === 401 || rBad.status === 403) {
+            recFinding(testInfo, 'P2', MOD, 'Overnight probe RBAC blocked',
+                `status=${rBad.status} — overnight branch skipped`);
+            rec(testInfo, { module: MOD, step: 'overnight_overlap', status: 'SKIP',
+                note: `perm_fail status=${rBad.status}` });
+            test.skip(true, 'perm_fail on overnight probe');
+            return;
+        }
+        const badOk = rBad.status === 422;
+        if (!badOk) {
+            recFinding(testInfo, 'P1', MOD,
+                'Overnight contract guard MISSING — crosses_midnight=True + end>=start kabul edildi',
+                `status=${rBad.status} body=${JSON.stringify(rBad.body).slice(0, 160)}`);
+            const sid = rBad.body?.shift?.id || rBad.body?.id;
+            if (sid) createdShiftIds.push({ id: sid, label: 'B2-bad-overnight' });
+        }
+
+        // Step 2 — valid overnight 22:00→06:00 (crosses_midnight=True) → expect 2xx.
+        const nightPayload = {
+            staff_id: staffN.id, shift_date: baseIso, shift_type: 'night',
+            start_time: '22:00', end_time: '06:00', crosses_midnight: true,
+            notes: `${prefix} F8D-v2 35-B2 baseline-overnight`,
+        };
+        const rNight = await callTimedWithBackoff(request, 'post', '/api/hr/shifts',
+            nightPayload, stressTokens.stress_token);
+        samples.push(rNight.ms);
+        nightId = rNight.body?.shift?.id || rNight.body?.id;
+        if (nightId) createdShiftIds.push({ id: nightId, label: 'B2-night' });
+        const nightOk = rNight.ok && !!nightId;
+        if (!nightOk) {
+            recFinding(testInfo, 'P1', MOD,
+                'Overnight baseline create FAILED — Task #255 regresyonu olabilir',
+                `status=${rNight.status} body=${JSON.stringify(rNight.body).slice(0, 160)}`);
+            rec(testInfo, { module: MOD, step: 'overnight_overlap', status: 'FAIL',
+                note: `baseline overnight create failed status=${rNight.status}` });
+            expect(rNight.status < 500, `overnight baseline must not 5xx`).toBe(true);
+            return;
+        }
+
+        // Step 3 — next-morning 05:00-09:00 overlaps the [00:00,06:00) leg → expect 409.
+        const conflictPayload = {
+            staff_id: staffN.id, shift_date: nextIso, shift_type: 'morning',
+            start_time: '05:00', end_time: '09:00', crosses_midnight: false,
+            notes: `${prefix} F8D-v2 35-B2 next-day-overlap`,
+        };
+        const rConflict = await callTimedWithBackoff(request, 'post', '/api/hr/shifts',
+            conflictPayload, stressTokens.stress_token);
+        samples.push(rConflict.ms);
+        conflictId = rConflict.body?.shift?.id || rConflict.body?.id;
+        if (conflictId) createdShiftIds.push({ id: conflictId, label: 'B2-conflict' });
+        const conflictRejected = rConflict.status === 409;
+        if (!conflictRejected) {
+            recFinding(testInfo, 'P1', MOD,
+                'Overnight overlap guard MISSING — gece vardiyası + ertesi sabah 05-09 çakışması yakalanamadı',
+                `night=22:00-06:00 morning=05:00-09:00 staff=${staffN.id} → status=${rConflict.status}. Task #255 datetime-overlap guard regresyonu.`);
+        }
+
+        // Step 4 — next-morning 07:00-15:00 başlar gece bittiği için kabul edilmeli.
+        const acceptedPayload = {
+            staff_id: staffN.id, shift_date: nextIso, shift_type: 'morning',
+            start_time: '07:00', end_time: '15:00', crosses_midnight: false,
+            notes: `${prefix} F8D-v2 35-B2 next-day-accept`,
+        };
+        const rAccepted = await callTimedWithBackoff(request, 'post', '/api/hr/shifts',
+            acceptedPayload, stressTokens.stress_token);
+        samples.push(rAccepted.ms);
+        acceptedId = rAccepted.body?.shift?.id || rAccepted.body?.id;
+        if (acceptedId) createdShiftIds.push({ id: acceptedId, label: 'B2-accept' });
+        const acceptedOk = rAccepted.ok && !!acceptedId;
+        if (!acceptedOk) {
+            recFinding(testInfo, 'P2', MOD,
+                'Overnight non-overlap false-409 — gece bitti, 07-15 reddedildi',
+                `status=${rAccepted.status} body=${JSON.stringify(rAccepted.body).slice(0, 160)}`);
+        }
+
+        const allOk = badOk && nightOk && conflictRejected && acceptedOk;
+        recPerf(testInfo, MOD, 'overnight_overlap', samples, allOk);
+        rec(testInfo, { module: MOD, step: 'overnight_overlap',
+            status: allOk ? 'PASS' : 'REVIEW',
+            endpoint: 'POST /api/hr/shifts (overnight contract)',
+            note: `bad_422=${badOk} night_201=${nightOk} conflict_409=${conflictRejected} accept_201=${acceptedOk} staff=${staffN.id}` });
+        // SOFT-assert: yalnız 5xx hard fail. Contract gap'leri P1 finding olarak rapor edilir.
+        expect(rBad.status < 500 && rNight.status < 500 && rConflict.status < 500 && rAccepted.status < 500,
+            `overnight branch must not 5xx`).toBe(true);
+    });
+
     test('C) Coverage check — HK dept ≥ MIN_COVERAGE_HK scheduled staff', async ({ request, stressTokens }, testInfo) => {
         if (moduleBlocked) {
             rec(testInfo, { module: MOD, step: 'coverage', status: 'SKIP', note: `module blocked: ${blockedReason}` });
