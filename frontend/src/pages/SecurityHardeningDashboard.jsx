@@ -23,8 +23,10 @@ import { PageHeader } from "@/components/ui/page-header";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 
-const PIIStrictModeDashboard = lazy(() => import("@/pages/PIIStrictModeDashboard"));
-const InfraHardeningDashboard = lazy(() => import("@/pages/InfraHardeningDashboard"));
+const piiImport = () => import("@/pages/PIIStrictModeDashboard");
+const infraImport = () => import("@/pages/InfraHardeningDashboard");
+const PIIStrictModeDashboard = lazy(piiImport);
+const InfraHardeningDashboard = lazy(infraImport);
 
 function intentForScore(score) {
   if (score >= 0.9) return "success";
@@ -115,6 +117,19 @@ export default function SecurityHardeningDashboard({
   useTranslation();
   const [mainTab, setMainTab] = useState("security");
   const [secTab, setSecTab] = useState("isolation");
+  // Track which lazy tabs the user has visited so we can keep them mounted
+  // (via forceMount + display toggle) on subsequent switches. Without this,
+  // Radix Tabs unmounts inactive content → every re-visit pays the full cost
+  // of remounting + refetching all data (PII fires 5 axios calls, Infra 1).
+  const [visited, setVisited] = useState({ security: true });
+  const handleMainTab = (next) => {
+    setMainTab(next);
+    setVisited((v) => (v[next] ? v : { ...v, [next]: true }));
+  };
+  // Prefetch the lazy JS chunk on hover so the bundle is already in cache
+  // by the time the user actually clicks the tab.
+  const prefetchPii = useCallback(() => { piiImport(); }, []);
+  const prefetchInfra = useCallback(() => { infraImport(); }, []);
 
   const [isolation, setIsolation] = useState(null);
   const [permissions, setPermissions] = useState(null);
@@ -219,7 +234,7 @@ export default function SecurityHardeningDashboard({
       />
 
       {/* Main Tab Switch: Security | PII | Infrastructure */}
-      <Tabs value={mainTab} onValueChange={setMainTab}>
+      <Tabs value={mainTab} onValueChange={handleMainTab}>
         <TabsList className="bg-slate-100 grid w-full grid-cols-3 max-w-xl" data-testid="main-tabs">
           <TabsTrigger
             value="security"
@@ -232,6 +247,8 @@ export default function SecurityHardeningDashboard({
             value="pii"
             data-testid="main-tab-pii"
             className="flex items-center gap-2"
+            onMouseEnter={prefetchPii}
+            onFocus={prefetchPii}
           >
             <Eye className="w-4 h-4" /> PII Koruma
           </TabsTrigger>
@@ -239,6 +256,8 @@ export default function SecurityHardeningDashboard({
             value="infra"
             data-testid="main-tab-infra"
             className="flex items-center gap-2"
+            onMouseEnter={prefetchInfra}
+            onFocus={prefetchInfra}
           >
             <Server className="w-4 h-4" /> Altyapı
           </TabsTrigger>
@@ -516,18 +535,30 @@ export default function SecurityHardeningDashboard({
           </Tabs>
         </TabsContent>
 
-        {/* PII TAB - Lazy loaded */}
-        <TabsContent value="pii" className="mt-4">
-          <Suspense fallback={<TabLoader />}>
-            <PIIStrictModeDashboard user={user} tenant={tenant} onLogout={onLogout} embedded />
-          </Suspense>
+        {/* PII TAB - Lazy loaded, kept mounted after first visit */}
+        <TabsContent
+          value="pii"
+          forceMount
+          className={mainTab === "pii" ? "mt-4" : "mt-4 hidden"}
+        >
+          {visited.pii && (
+            <Suspense fallback={<TabLoader />}>
+              <PIIStrictModeDashboard user={user} tenant={tenant} onLogout={onLogout} embedded />
+            </Suspense>
+          )}
         </TabsContent>
 
-        {/* INFRA TAB - Lazy loaded */}
-        <TabsContent value="infra" className="mt-4">
-          <Suspense fallback={<TabLoader />}>
-            <InfraHardeningDashboard user={user} tenant={tenant} onLogout={onLogout} embedded />
-          </Suspense>
+        {/* INFRA TAB - Lazy loaded, kept mounted after first visit */}
+        <TabsContent
+          value="infra"
+          forceMount
+          className={mainTab === "infra" ? "mt-4" : "mt-4 hidden"}
+        >
+          {visited.infra && (
+            <Suspense fallback={<TabLoader />}>
+              <InfraHardeningDashboard user={user} tenant={tenant} onLogout={onLogout} embedded />
+            </Suspense>
+          )}
         </TabsContent>
       </Tabs>
     </div>
