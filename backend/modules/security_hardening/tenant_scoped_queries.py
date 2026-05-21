@@ -2,6 +2,7 @@
 Tenant-Scoped Queries - Query guards to enforce tenant data isolation.
 Every database query must pass through tenant context validation.
 """
+import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -68,12 +69,23 @@ class TenantQueryGuard:
         return query
 
     async def check_isolation(self, tenant_id: str) -> dict[str, Any]:
-        """Run isolation checks for a tenant. Uses raw DB to bypass tenant guard."""
-        results = []
+        """Run isolation checks for a tenant. Uses raw DB to bypass tenant guard.
+
+        Perf: 17 koleksiyon × 2 sıralı count_documents = 34 sıralı Atlas RTT
+        (~4.7 sn ölçüldü) → tek asyncio.gather ile ~1-2 RTT'ye iner.
+        """
+        coros: list = []
         for coll_name in TENANT_SCOPED_COLLECTIONS:
             coll = _raw_db[coll_name]
-            total = await coll.count_documents({"tenant_id": tenant_id})
-            unscoped = await coll.count_documents({"tenant_id": {"$exists": False}})
+            coros.append(coll.count_documents({"tenant_id": tenant_id}))
+            coros.append(coll.count_documents({"tenant_id": {"$exists": False}}))
+
+        counts = await asyncio.gather(*coros)
+
+        results = []
+        for idx, coll_name in enumerate(TENANT_SCOPED_COLLECTIONS):
+            total = counts[idx * 2]
+            unscoped = counts[idx * 2 + 1]
             results.append({
                 "collection": coll_name,
                 "tenant_documents": total,
