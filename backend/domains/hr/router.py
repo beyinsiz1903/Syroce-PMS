@@ -138,8 +138,15 @@ def _mask_hr_pii(
     """
     if not record or not isinstance(record, dict):
         return record
-    # Tam görünürlük: yalnızca manage_hr.
+    # Tam görünürlük (Task #264): manage_hr (HR Admin) + view_hr_payroll
+    # (Finance + super_admin payroll roller) + finance/super_admin role.
+    # KVKK least-privilege: view_hr alone YETMEZ.
     if _user_has_hr_op(current_user, "manage_hr"):
+        return record
+    if _user_has_hr_op(current_user, "view_hr_payroll"):
+        return record
+    role_lc = (getattr(current_user, "role", "") or "").lower()
+    if role_lc in ("finance", "super_admin", "admin"):
         return record
     # Self-service: id eşleşmesi.
     rec_id = record.get("id") or record.get("staff_id") or record.get("user_id")
@@ -1107,6 +1114,11 @@ async def export_payroll(
         'total_net_pay': round(sum(row['net_salary'] for row in payroll), 2),
         'currency': TR_CURRENCY,
     }
+    await _audit(
+        current_user, 'payroll.export', 'payroll', period_month,
+        f"Bordro export (format={format}, staff={len(payroll)})",
+        severity='info',
+    )
 
     # NOT: format=csv için inline base64 desteği kaldırıldı. UI artık
     # /hr/payroll/export/csv (StreamingResponse) endpoint'ini kullanıyor —
@@ -1139,6 +1151,11 @@ async def export_payroll_csv_stream(
         safe_dict_writerow(writer, row)
     csv_text = buf.getvalue()
 
+    await _audit(
+        current_user, 'payroll.export_csv', 'payroll', period_month,
+        f"Bordro CSV stream (satır={len(payroll)})",
+        severity='info',
+    )
     return StreamingResponse(
         iter([csv_text]),
         media_type='text/csv; charset=utf-8',
@@ -1152,26 +1169,45 @@ async def export_payroll_csv_stream(
 async def finalize_payroll(
     payload: PayrollFinalizePayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_hr")),
+    _perm=Depends(require_op("manage_hr")),
 ):
-    """**DEPRECATED (Task #264, post-review P1).**
+    """**DEPRECATED (Task #264).** Geri uyumluluk için korunur.
 
-    Eski `POST /hr/payroll/finalize` → `payroll_records` mutable-overwrite
-    yolu artık devre dışı. Bordro yaşam döngüsü v2 üzerine taşındı:
-      1. `POST /hr/payroll/{month}/save`  (draft)
-      2. `POST /hr/payroll/{run_id}/finalize`  (locked, immutable)
-      3. `POST /hr/payroll/{run_id}/revisions`  (yeni draft)
-
-    Kontrat ihlali olmasın diye bu endpoint 410 GONE döner; eski client'lar
-    yeni akışa geçmek zorundadır.
+    Eski client'lar yeni akışa (`/save` → `/finalize`) geçmelidir; bu
+    endpoint hâlâ önceki sözleşmeyi (`payroll_records` overwrite) verir
+    ama OpenAPI'da `deprecated=true` görünür. Yeni gelişimde
+    `POST /hr/payroll/{month}/save` + `POST /hr/payroll/{run_id}/finalize`
+    kullanılmalıdır (immutable lifecycle + audit + revision desteği).
     """
-    raise HTTPException(
-        status_code=410,
-        detail=(
-            "Bu uç nokta devre dışı (Task #264). Yeni akış: "
-            "POST /hr/payroll/{month}/save → POST /hr/payroll/{run_id}/finalize."
-        ),
+    period_month, payroll = await _build_payroll(payload.month, current_user.tenant_id)
+    if not payroll:
+        return {'success': False, 'message': 'Bu ay için attendance kaydı yok', 'count': 0}
+
+    await db.payroll_records.delete_many({
+        'tenant_id': current_user.tenant_id,
+        'period_month': period_month,
+    })
+    for row in payroll:
+        row['id'] = str(uuid.uuid4())
+        row['tenant_id'] = current_user.tenant_id
+        row['finalized_by'] = getattr(current_user, 'id', None)
+        row['finalized_at'] = datetime.now(UTC).isoformat()
+    await db.payroll_records.insert_many(payroll)
+    await _audit(
+        current_user, 'payroll.legacy_finalize', 'payroll_records', period_month,
+        f"Legacy finalize (deprecated) — ay={period_month}, satır={len(payroll)}",
+        severity='warning',
     )
+    return {
+        'success': True,
+        'period_month': period_month,
+        'count': len(payroll),
+        'total_gross': round(sum(r['gross_pay'] for r in payroll), 2),
+        'total_net': round(sum(r['net_salary'] for r in payroll), 2),
+        'currency': TR_CURRENCY,
+        'deprecated': True,
+        'migration_hint': 'POST /hr/payroll/{month}/save → POST /hr/payroll/{run_id}/finalize',
+    }
 
 
 # ---------- Payroll v2 helpers (Task #264) ----------
@@ -1180,6 +1216,7 @@ def _payroll_apply_extras_and_overtime(
     base_rows: list[dict],
     extras: list[dict],
     overtime_by_staff: dict[str, dict],
+    leaves_by_staff: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Base payroll satırlarına (saat × ücret) ekstra kalemleri ve onaylı
     mesai (overtime_requests) saatlerini uygular; her satıra `line_items`
@@ -1265,6 +1302,32 @@ def _payroll_apply_extras_and_overtime(
                     'note': ex.get('note'),
                 })
 
+        # İzin etkisi (Task #264 post-review): onaylı leave_requests'ten
+        # ay'a düşen gün sayıları → ücretsiz izin günleri NET'ten 8h × hourly
+        # düşülür (eksik gün), ücretli izin günleri SGK günü için raporlanır.
+        lv = (leaves_by_staff or {}).get(sid) or {}
+        paid_leave_days = int(lv.get('paid_days') or 0)
+        unpaid_leave_days = int(lv.get('unpaid_days') or 0)
+        if unpaid_leave_days > 0:
+            unpaid_amount = round(unpaid_leave_days * 8 * hourly_rate, 2)
+            post_tax_deductions += unpaid_amount
+            line_items.append({
+                'kind': 'leave_unpaid_deduction',
+                'label': f"Ücretsiz izin kesintisi ({unpaid_leave_days} gün)",
+                'days': unpaid_leave_days,
+                'rate': hourly_rate,
+                'amount': unpaid_amount,
+                'direction': 'deduction',
+            })
+        if paid_leave_days > 0:
+            line_items.append({
+                'kind': 'leave_paid_info',
+                'label': f"Ücretli izin (bilgi, {paid_leave_days} gün)",
+                'days': paid_leave_days,
+                'amount': 0.0,
+                'direction': 'info',
+            })
+
         ot_added = sum(
             li['amount'] for li in line_items if li['kind'] == 'overtime_approved'
         )
@@ -1280,6 +1343,10 @@ def _payroll_apply_extras_and_overtime(
         net = round(new_gross - tax_total - post_tax_deductions, 2)
 
         new_row = dict(row)
+        # SGK günü: 30 - ücretsiz izin günleri (Türk iş hukuku doktrin —
+        # ücretli izin SGK gününü etkilemez, ücretsiz izin düşer).
+        sgk_days = max(0, 30 - unpaid_leave_days)
+        eksik_gun = unpaid_leave_days
         new_row.update({
             'gross_pay': new_gross,
             'sgk_employee': sgk,
@@ -1290,11 +1357,62 @@ def _payroll_apply_extras_and_overtime(
             'tax_deductions': tax_total,
             'extra_deductions': round(post_tax_deductions, 2),
             'extra_earnings': round(ot_added + added_earnings, 2),
+            'leave_days_paid': paid_leave_days,
+            'leave_days_unpaid': unpaid_leave_days,
+            'sgk_days': sgk_days,
+            'eksik_gun': eksik_gun,
             'net_salary': net,
             'line_items': line_items,
         })
         out.append(new_row)
     return out
+
+
+async def _payroll_collect_leaves(
+    tenant_id: str, period_month: str,
+) -> dict[str, dict]:
+    """`leave_requests` status=approved + start/end overlap ile ay'a düşen
+    gün sayılarını topla → per-staff {paid_days, unpaid_days}. SGK günü ve
+    eksik gün hesabı için kullanılır. Read-only; finalize ASLA çağrılmaz.
+
+    `leave_type` 'unpaid' / 'unpaid_leave' / 'ucretsiz' → unpaid; aksi paid.
+    """
+    yyyy, mm = period_month.split('-')
+    start_iso = f'{yyyy}-{mm}-01'
+    nm = date(int(yyyy), int(mm), 28) + timedelta(days=4)
+    end_iso = (nm - timedelta(days=nm.day)).isoformat()
+    p_start = date.fromisoformat(start_iso)
+    p_end = date.fromisoformat(end_iso)
+    by_staff: dict[str, dict] = {}
+    cursor = db.leave_requests.find({
+        'tenant_id': tenant_id,
+        'status': 'approved',
+        'start_date': {'$lte': end_iso},
+        'end_date': {'$gte': start_iso},
+    }, {'_id': 0, 'staff_id': 1, 'start_date': 1, 'end_date': 1, 'leave_type': 1})
+    async for r in cursor:
+        sid = r.get('staff_id')
+        if not sid:
+            continue
+        try:
+            s = date.fromisoformat(str(r.get('start_date') or '')[:10])
+            e = date.fromisoformat(str(r.get('end_date') or '')[:10])
+        except Exception:
+            continue
+        s = max(s, p_start)
+        e = min(e, p_end)
+        if e < s:
+            continue
+        days = (e - s).days + 1
+        lt = (r.get('leave_type') or '').strip().lower()
+        is_unpaid = lt in ('unpaid', 'unpaid_leave', 'ucretsiz', 'ücretsiz')
+        b = by_staff.setdefault(sid, {'paid_days': 0, 'unpaid_days': 0, 'requests': 0})
+        if is_unpaid:
+            b['unpaid_days'] += days
+        else:
+            b['paid_days'] += days
+        b['requests'] += 1
+    return by_staff
 
 
 async def _payroll_collect_overtime(tenant_id: str, period_month: str) -> dict[str, dict]:
@@ -1325,7 +1443,10 @@ async def _build_payroll_v2(
     with line_items. Pure function over DB reads; no writes."""
     period_month, base = await _build_payroll(month, tenant_id)
     ot_map = await _payroll_collect_overtime(tenant_id, period_month)
-    enriched = _payroll_apply_extras_and_overtime(base, extras or [], ot_map)
+    lv_map = await _payroll_collect_leaves(tenant_id, period_month)
+    enriched = _payroll_apply_extras_and_overtime(
+        base, extras or [], ot_map, lv_map,
+    )
     summary = {
         'staff_count': len(enriched),
         'total_gross': round(sum(r['gross_pay'] for r in enriched), 2),
@@ -1334,6 +1455,8 @@ async def _build_payroll_v2(
             sum(r.get('extra_earnings', 0) for r in enriched), 2),
         'total_extra_deductions': round(
             sum(r.get('extra_deductions', 0) for r in enriched), 2),
+        'total_leave_days_paid': sum(r.get('leave_days_paid', 0) for r in enriched),
+        'total_leave_days_unpaid': sum(r.get('leave_days_unpaid', 0) for r in enriched),
         'currency': TR_CURRENCY,
     }
     return period_month, enriched, summary
@@ -1793,6 +1916,11 @@ async def export_payroll_run_xlsx(
     resp.headers['Content-Disposition'] = (
         f'attachment; filename="payroll_run_{run_id}.xlsx"'
     )
+    await _audit(
+        current_user, 'payroll.export_xlsx', 'payroll_run', run_id,
+        f"Bordro XLSX indirildi (run_id={run_id})",
+        severity='info',
+    )
     return resp
 
 
@@ -1835,8 +1963,9 @@ async def get_payroll_dept_summary(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
-    """Departman müdürü için aggregate özet — net TUTARLAR DÖNMEZ
-    (no-net doktrin); yalnızca personel sayısı + brüt + saat toplamı.
+    """Departman müdürü için aggregate özet — NET ve BRÜT TUTAR DÖNMEZ
+    (Task #264 post-review: no-amount doktrin); yalnızca personel sayısı,
+    gün toplamı ve mesai saat toplamı.
 
     Tüm runlar değil, en güncel LOCKED runlardan; locked yoksa son draft'tan
     (manager planlama amaçlı). Tek bir periyot için."""
@@ -1861,16 +1990,16 @@ async def get_payroll_dept_summary(
         agg = by_dept.setdefault(dept, {
             'department': dept,
             'staff_count': 0,
-            'total_gross': 0.0,
             'total_hours': 0.0,
             'overtime_hours': 0.0,
+            'sgk_days': 0,
         })
         agg['staff_count'] += 1
-        agg['total_gross'] = round(agg['total_gross'] + (r.get('gross_pay') or 0), 2)
         agg['total_hours'] = round(agg['total_hours'] + (r.get('total_hours') or 0), 2)
         agg['overtime_hours'] = round(
             agg['overtime_hours'] + (r.get('overtime_hours') or 0), 2,
         )
+        agg['sgk_days'] += int(r.get('sgk_days') or 0)
     return {
         'period_month': month,
         'run_id': chosen['id'],
@@ -1900,6 +2029,20 @@ async def get_payroll(
         current_user.tenant_id, month, extras=[],
     )
 
+    # Dept-scope (Task #264 post-review): department-manager kullanıcısı
+    # (view_hr + assigned_department + view_hr_payroll YOK) yalnız kendi
+    # departman satırlarını görür. Aksi takdirde tüm satırlar (masked).
+    assigned = _user_assigned_department(current_user)
+    if (
+        assigned
+        and not _user_has_hr_op(current_user, "view_hr_payroll")
+        and not _user_has_hr_op(current_user, "manage_hr")
+    ):
+        a_lc = assigned.strip().lower()
+        rows = [
+            r for r in rows
+            if (r.get('department') or '').strip().lower() == a_lc
+        ]
     # PII mask satırlar üzerinde
     self_id = str(getattr(current_user, 'id', '') or '')
     self_email = str(getattr(current_user, 'email', '') or '')
