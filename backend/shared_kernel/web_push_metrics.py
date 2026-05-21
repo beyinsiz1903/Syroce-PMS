@@ -170,9 +170,15 @@ async def get_metrics_summary(
     start_date = (now - timedelta(days=days - 1)).strftime("%Y-%m-%d")
     today = _today_utc(now)
 
+    # Tenant satırları tenant-scoped db üzerinden (TenantAwareDBProxy
+    # `$in` filtresinde tenant_id eşleşmesini sağlayamadığı için cross-tenant
+    # ihlal sayıp 403 üretiyordu — bkz. core/tenant_db._inject_filter).
+    # Bu nedenle tenant sorgusu ve `_system_` rollup sorgusu ayrılır;
+    # `_system_` cross-tenant bir altyapı sayacı olduğu için raw db ile
+    # okunur ve tenant_id="_system_" sabit filtresiyle scope dışı bırakılır.
     cursor = db[COLL_NAME].find(
         {
-            "tenant_id": {"$in": [tenant_id, SYSTEM_TENANT]},
+            "tenant_id": tenant_id,
             "date": {"$gte": start_date},
         },
         {"_id": 0},
@@ -186,13 +192,6 @@ async def get_metrics_summary(
 
     async for doc in cursor:
         d = doc.get("date") or ""
-        if doc.get("tenant_id") == SYSTEM_TENANT:
-            n = int(doc.get("scheduled_pruned") or 0)
-            system_scheduled += n
-            if d == today:
-                system_scheduled_today += n
-            continue
-
         bucket = daily_map.setdefault(
             d,
             {"attempted": 0, "sent": 0, "failed": 0, "pruned": 0},
@@ -203,6 +202,21 @@ async def get_metrics_summary(
             totals[k] += v
             if d == today:
                 today_counts[k] += v
+
+    try:
+        from core.tenant_db import get_system_db
+        sys_db = get_system_db()
+        sys_cursor = sys_db[COLL_NAME].find(
+            {"tenant_id": SYSTEM_TENANT, "date": {"$gte": start_date}},
+            {"_id": 0},
+        )
+        async for doc in sys_cursor:
+            n = int(doc.get("scheduled_pruned") or 0)
+            system_scheduled += n
+            if (doc.get("date") or "") == today:
+                system_scheduled_today += n
+    except Exception:
+        logger.exception("web_push_metrics: system rollup read failed")
 
     daily = [
         {"date": d, **counts} for d, counts in sorted(daily_map.items())

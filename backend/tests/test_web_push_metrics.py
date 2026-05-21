@@ -121,23 +121,32 @@ async def test_get_metrics_summary_aggregates_correctly():
     yesterday = "2026-04-26"
     older = "2026-04-20"
 
-    docs = [
+    tenant_docs = [
         {"tenant_id": "t1", "date": today,
          "attempted": 5, "sent": 4, "failed": 1, "pruned": 0},
         {"tenant_id": "t1", "date": yesterday,
          "attempted": 10, "sent": 8, "failed": 2, "pruned": 1},
         {"tenant_id": "t1", "date": older,
          "attempted": 3, "sent": 3, "failed": 0, "pruned": 0},
-        # System tenant — yaş tabanlı temizlik (cross-tenant; tenant
-        # totals'a karışmamalı, ayrı alanda dönmeli).
+    ]
+    system_docs = [
+        # System tenant — yaş tabanlı temizlik; tenant scope dışı
+        # raw db üzerinden ayrı sorgu ile okunur.
         {"tenant_id": SYSTEM_TENANT, "date": today,
          "scheduled_pruned": 7},
         {"tenant_id": SYSTEM_TENANT, "date": older,
          "scheduled_pruned": 12},
     ]
-    coll.find = MagicMock(return_value=_async_iter(docs))
+    coll.find = MagicMock(return_value=_async_iter(tenant_docs))
 
-    summary = await get_metrics_summary(db, tenant_id="t1", days=30, now=now)
+    sys_coll = MagicMock()
+    sys_coll.find = MagicMock(return_value=_async_iter(system_docs))
+    sys_db = MagicMock()
+    sys_db.__getitem__ = MagicMock(return_value=sys_coll)
+
+    from unittest.mock import patch
+    with patch("core.tenant_db.get_system_db", return_value=sys_db):
+        summary = await get_metrics_summary(db, tenant_id="t1", days=30, now=now)
 
     assert summary["tenant_id"] == "t1"
     assert summary["range_days"] == 30
