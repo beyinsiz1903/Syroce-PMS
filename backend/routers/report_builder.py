@@ -20,8 +20,11 @@ sağlar. P0/P1 düzeltmeleri:
 """
 import io
 import logging
+import math
 import uuid
 from datetime import UTC, date, datetime
+from datetime import date as _date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -626,10 +629,6 @@ def _coerce_excel_value(val):
     32767-char hard limit can never escalate to a 500 on export. Numeric
     returns are unchanged (number_format compatibility preserved).
     """
-    import math
-    from decimal import Decimal
-    from datetime import date as _date
-
     if val is None:
         return ("", False)
     if isinstance(val, bool):
@@ -827,11 +826,11 @@ async def _build_excel_response(config: "ReportConfig", tenant_id: str, has_pii:
     # string cell once more and retry. This must NEVER mask a real error
     # silently — the second exception propagates and the outer try/except
     # logs the traceback so the next stress run surfaces the true cause.
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
     output = io.BytesIO()
     try:
         wb.save(output)
     except Exception:
-        from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
         logger.exception(
             "report_builder excel save failed, retrying with full re-scrub tenant=%s data_source=%s rows=%s cols=%s",
             tenant_id, config.data_source, len(data), len(config.columns),

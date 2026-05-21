@@ -9,21 +9,24 @@ Front Office, Housekeeping Manager, Finance, Revenue, F&B, Maintenance,
 Sales, HR, IT/Security department dashboards.
 Extracted from server.py for modularity.
 """
+import io as _io
 import logging
-
-logger = logging.getLogger(__name__)
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 
 from core.database import db
 from core.helpers import require_module
 from core.security import get_current_user
-from core.utils import calculate_folio_balance, create_excel_workbook, excel_response
+from core.utils import _XLSX_MAX_CELL_LEN, calculate_folio_balance, create_excel_workbook, excel_response
 from models.schemas import User
 from modules.pms_core.role_permission_service import RolePermissionService, require_op
+
+logger = logging.getLogger(__name__)
 
 _role_perm = RolePermissionService()
 
@@ -461,9 +464,6 @@ async def export_company_aging_excel(
         # bypasses it (e.g. company.get('name') with a control char that lands
         # post-sanitize, or any non-string field that openpyxl rejects), retry
         # once with full re-scrub. Outer try/except logs the true traceback.
-        from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
-        import io as _io
-        from core.utils import _XLSX_MAX_CELL_LEN
         buf = _io.BytesIO()
         try:
             wb.save(buf)
@@ -482,7 +482,6 @@ async def export_company_aging_excel(
             wb.save(buf)
             buf.seek(0)
 
-        from fastapi.responses import StreamingResponse
         filename = f"company_aging_report_{report_data['report_date']}.xlsx"
         return StreamingResponse(
             buf,
