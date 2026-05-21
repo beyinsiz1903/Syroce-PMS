@@ -261,6 +261,80 @@ test.describe('F8D § 23 — HR Shift', () => {
         expect(pass, `consent_decision: consent_part=${consentPart} (rbac=${consentRBACBlocked} ok=${consentOk}/${consentFloor}) decision_part=${decisionPart} (rbac=${decisionRBACBlocked} eff=${decisionEffectiveOk}/${decisionFloor} ${decisionFloorLabel}) anomalies(c/d)=${consentAnomalies}/${decisionAnomalies}`).toBe(true);
     });
 
+    test('F) Bulk shift create probe (Task #263 v2)', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'bulk_shifts', status: 'SKIP', note: 'module blocked (see Setup)' });
+            test.skip(true, 'HR shift module blocked');
+            return;
+        }
+        // Pick first 2 stress staff, generate 2 far-future dates (no clash with seed/A).
+        const sub = staffPool.slice(0, 2);
+        if (sub.length < 2) {
+            rec(testInfo, { module: MOD, step: 'bulk_shifts', status: 'SKIP', note: `staff<2 (${sub.length})` });
+            recFinding(testInfo, 'P2', MOD, 'Bulk probe staff insufficient', `pool=${sub.length}`);
+            return;
+        }
+        const fmt = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        const d1 = new Date(Date.now() + 60 * 86_400_000);
+        const d2 = new Date(Date.now() + 61 * 86_400_000);
+        const payload = {
+            staff_ids: sub.map((s) => s.id),
+            dates: [fmt(d1), fmt(d2)],
+            shift_type: 'morning',
+            start_time: '09:00',
+            end_time: '17:00',
+            crosses_midnight: false,
+            notes: `${prefix} bulk-probe`,
+        };
+        const r = await callTimed(request, 'post', '/api/hr/shifts/bulk', payload, stressTokens.stress_token);
+        const samples = [r.ms];
+        const blockedRBAC = r.status === 401 || r.status === 403;
+        // module-blocked or not-implemented → 404 informational
+        const notImplemented = r.status === 404;
+        const okShape = r.ok && Array.isArray(r.body?.created) && typeof r.body?.created_count === 'number'
+            && typeof r.body?.skipped_count === 'number';
+        const pass = okShape || blockedRBAC || notImplemented;
+        recPerf(testInfo, MOD, 'bulk_shifts', samples, pass);
+        rec(testInfo, { module: MOD, step: 'bulk_shifts', status: pass ? 'PASS' : 'REVIEW',
+            endpoint: 'POST /api/hr/shifts/bulk',
+            note: `status=${r.status} created=${r.body?.created_count} skipped=${r.body?.skipped_count} rbac=${blockedRBAC} not_impl=${notImplemented}` });
+        if (notImplemented) recFinding(testInfo, 'P2', MOD, 'Bulk shifts endpoint not implemented (informational)', `status=404`);
+        if (blockedRBAC) recFinding(testInfo, 'P2', MOD, 'Bulk shifts RBAC-blocked (informational)', `status=${r.status}`);
+        // Cleanup created shifts (best-effort, idempotent 404 tolerated).
+        const createdIds = (r.body?.created || []).map((c) => c?.id).filter(Boolean);
+        for (const id of createdIds) {
+            await callTimed(request, 'delete', `/api/hr/shifts/${id}`, undefined, stressTokens.stress_token);
+        }
+        expect(pass).toBe(true);
+    });
+
+    test('G) Overtime ready-for-payroll contract (Task #263 v2)', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'overtime_payroll', status: 'SKIP', note: 'module blocked (see Setup)' });
+            test.skip(true, 'HR shift module blocked');
+            return;
+        }
+        const d = new Date();
+        const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+        const r = await callTimed(request, 'get', `/api/hr/overtime/ready-for-payroll?month=${month}`,
+            undefined, stressTokens.stress_token);
+        const samples = [r.ms];
+        const blockedRBAC = r.status === 401 || r.status === 403;
+        const notImplemented = r.status === 404;
+        const okShape = r.ok
+            && typeof r.body?.month === 'string'
+            && typeof r.body?.total_hours === 'number'
+            && Array.isArray(r.body?.items || r.body?.by_staff);
+        const pass = okShape || blockedRBAC || notImplemented;
+        recPerf(testInfo, MOD, 'overtime_payroll', samples, pass);
+        rec(testInfo, { module: MOD, step: 'overtime_payroll', status: pass ? 'PASS' : 'REVIEW',
+            endpoint: 'GET /api/hr/overtime/ready-for-payroll',
+            note: `status=${r.status} month=${r.body?.month} total_hours=${r.body?.total_hours} items=${(r.body?.items || []).length} rbac=${blockedRBAC} not_impl=${notImplemented}` });
+        if (notImplemented) recFinding(testInfo, 'P2', MOD, 'Payroll-ready endpoint not implemented (informational)', `status=404`);
+        if (blockedRBAC) recFinding(testInfo, 'P2', MOD, 'Payroll-ready RBAC-blocked (informational)', `status=${r.status}`);
+        expect(pass).toBe(true);
+    });
+
     test('D) Pilot drift = 0', async ({ request, stressTokens }, testInfo) => {
         if (!pilotBefore) { rec(testInfo, { module: MOD, step: 'pilot_drift', status: 'SKIP' }); return; }
         const after = await pilotBookingsCount(request, stressTokens.pilot_token);

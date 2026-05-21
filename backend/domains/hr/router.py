@@ -330,7 +330,10 @@ class LeaveRequestPayload(BaseModel):
 
 
 class LeaveDecision(BaseModel):
-    decision: Literal['approve', 'reject']
+    # Task #263: 2-aşamalı onay state machine.
+    #   pending → dept_approve → dept_approved → approve → approved
+    #   pending / dept_approved → reject → rejected (note ZORUNLU)
+    decision: Literal['dept_approve', 'approve', 'reject']
     note: str | None = Field(None, max_length=500)
 
 
@@ -634,6 +637,56 @@ async def list_leave_requests(
     return {'items': items, 'total': len(items), 'counts': counts}
 
 
+async def _apply_leave_to_shifts(
+    tenant_id: str, leave: dict,
+) -> int:
+    """Final onaylı izin → izin gününe `shift_schedules` üzerinde
+    status='on_leave' satırı upsert. Lock YARATMAZ (izin kapsayan gün
+    çakışma kontratının dışındadır; overlap guard sadece aktif vardiya
+    için anlamlıdır). Idempotent: aynı (staff,date,leave_id) için
+    yeniden çağrılırsa duplicate açmaz."""
+    start = date.fromisoformat(leave['start_date'])
+    end = date.fromisoformat(leave['end_date'])
+    cur = start
+    written = 0
+    while cur <= end:
+        d_iso = cur.isoformat()
+        res = await db.shift_schedules.update_one(
+            {
+                'tenant_id': tenant_id,
+                'staff_id': leave['staff_id'],
+                'shift_date': d_iso,
+                'status': 'on_leave',
+                'leave_id': leave['id'],
+            },
+            {
+                '$setOnInsert': {
+                    'id': str(uuid.uuid4()),
+                    'tenant_id': tenant_id,
+                    'staff_id': leave['staff_id'],
+                    'staff_name': leave.get('staff_name'),
+                    'shift_date': d_iso,
+                    'shift_type': 'off',
+                    'start_time': '00:00',
+                    'end_time': '23:59',
+                    'crosses_midnight': False,
+                    'end_date': d_iso,
+                    'status': 'on_leave',
+                    'leave_id': leave['id'],
+                    'leave_type': leave.get('leave_type'),
+                    'notes': f"İzin: {leave.get('leave_type')}",
+                    'created_at': datetime.now(UTC).isoformat(),
+                    'created_via': 'leave_approval',
+                },
+            },
+            upsert=True,
+        )
+        if res.upserted_id is not None:
+            written += 1
+        cur += timedelta(days=1)
+    return written
+
+
 @router.post("/hr/leave-request/{leave_id}/decision")
 async def decide_leave_request(
     leave_id: str,
@@ -646,25 +699,88 @@ async def decide_leave_request(
     })
     if not leave:
         raise HTTPException(status_code=404, detail="İzin talebi bulunamadı")
-    new_status = 'approved' if payload.decision == 'approve' else 'rejected'
+
+    current_status = leave.get('status', 'pending')
+    # Task #263: 2-aşamalı state machine.
+    if payload.decision == 'reject':
+        if current_status not in ('pending', 'dept_approved'):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bu talep zaten karara bağlanmış (status={current_status})",
+            )
+        if not (payload.note and payload.note.strip()):
+            raise HTTPException(
+                status_code=400,
+                detail="Red için gerekçe (note) zorunludur",
+            )
+        new_status = 'rejected'
+    elif payload.decision == 'dept_approve':
+        if current_status != 'pending':
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Departman onayı sadece pending durumdan verilebilir "
+                    f"(mevcut: {current_status})"
+                ),
+            )
+        new_status = 'dept_approved'
+    else:  # 'approve' (final HR)
+        if current_status not in ('pending', 'dept_approved'):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Final onay verilemez (status={current_status})",
+            )
+        new_status = 'approved'
+
+    update_set: dict[str, Any] = {
+        'status': new_status,
+        'decision_note': payload.note,
+        'decided_at': datetime.now(UTC).isoformat(),
+    }
+    decision_history = leave.get('decision_history') or []
+    decision_history.append({
+        'stage': payload.decision,
+        'status': new_status,
+        'by': getattr(current_user, 'id', None),
+        'at': datetime.now(UTC).isoformat(),
+        'note': payload.note,
+    })
+    update_set['decision_history'] = decision_history
+    if new_status == 'dept_approved':
+        update_set['dept_approved_by'] = getattr(current_user, 'id', None)
+        update_set['dept_approved_at'] = datetime.now(UTC).isoformat()
+    elif new_status == 'approved':
+        update_set['decided_by'] = getattr(current_user, 'id', None)
+        update_set['approved_by'] = getattr(current_user, 'id', None)
+        update_set['approved_at'] = datetime.now(UTC).isoformat()
+    else:
+        update_set['decided_by'] = getattr(current_user, 'id', None)
+
     await db.leave_requests.update_one(
         {'tenant_id': current_user.tenant_id, 'id': leave_id},
-        {'$set': {
-            'status': new_status,
-            'decision_note': payload.note,
-            'decided_by': getattr(current_user, 'id', None),
-            'decided_at': datetime.now(UTC).isoformat(),
-        }}
+        {'$set': update_set},
     )
+
+    on_leave_written = 0
+    if new_status == 'approved':
+        # Final onay: shift_schedules üstüne on_leave upsert.
+        on_leave_written = await _apply_leave_to_shifts(
+            current_user.tenant_id, {**leave, **update_set, 'id': leave_id},
+        )
+
     # Talep sahibine bildirim — kararı duyur
     requester_id = leave.get('requested_by') or leave.get('staff_id')
     if requester_id:
+        notif_title = {
+            'approved': 'İzin talebiniz onaylandı',
+            'dept_approved': 'İzin talebiniz departman onayı aldı (HR onayı bekleniyor)',
+            'rejected': 'İzin talebiniz reddedildi',
+        }[new_status]
         await _notify_user(
             current_user.tenant_id,
             user_id=requester_id,
             kind=f'leave_{new_status}',
-            title=('İzin talebiniz onaylandı' if new_status == 'approved'
-                   else 'İzin talebiniz reddedildi'),
+            title=notif_title,
             body=(
                 f"{leave.get('start_date')} → {leave.get('end_date')} • "
                 f"{leave.get('total_days', 0)} gün"
@@ -673,7 +789,75 @@ async def decide_leave_request(
             link=f'/hr?tab=leave&id={leave_id}',
             ref_id=leave_id,
         )
-    return {'success': True, 'status': new_status}
+    return {
+        'success': True,
+        'status': new_status,
+        'on_leave_shifts_created': on_leave_written,
+    }
+
+
+@router.get("/hr/leave/calendar")
+async def leave_calendar(
+    month: str = Query(..., pattern=r'^\d{4}-\d{2}$'),
+    department: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Ay görünümü: per-staff per-day matrix. Sadece status IN
+    (dept_approved, approved) izinler döner. Frontend takvim renkler."""
+    yyyy, mm = month.split('-')
+    start = date(int(yyyy), int(mm), 1)
+    next_month = start.replace(day=28) + timedelta(days=4)
+    end = next_month - timedelta(days=next_month.day)
+
+    query: dict[str, Any] = {
+        'tenant_id': current_user.tenant_id,
+        'status': {'$in': ['dept_approved', 'approved']},
+        'start_date': {'$lte': end.isoformat()},
+        'end_date': {'$gte': start.isoformat()},
+    }
+    leaves = await db.leave_requests.find(
+        query, {'_id': 0, 'id': 1, 'staff_id': 1, 'staff_name': 1,
+                'leave_type': 1, 'status': 1,
+                'start_date': 1, 'end_date': 1},
+    ).to_list(2000)
+
+    # Department filter (staff lookup)
+    if department:
+        staff_in_dept: set[str] = set()
+        async for s in db.staff_members.find(
+            {'tenant_id': current_user.tenant_id, 'department': department},
+            {'_id': 0, 'id': 1},
+        ):
+            staff_in_dept.add(s['id'])
+        leaves = [l for l in leaves if l['staff_id'] in staff_in_dept]
+
+    # Per-day occupancy: {day_iso: [staff_id, ...]}
+    by_day: dict[str, list[dict]] = {}
+    cur = start
+    while cur <= end:
+        by_day[cur.isoformat()] = []
+        cur += timedelta(days=1)
+    for l in leaves:
+        ls = max(date.fromisoformat(l['start_date']), start)
+        le = min(date.fromisoformat(l['end_date']), end)
+        c = ls
+        while c <= le:
+            by_day[c.isoformat()].append({
+                'leave_id': l['id'],
+                'staff_id': l['staff_id'],
+                'staff_name': l.get('staff_name'),
+                'leave_type': l.get('leave_type'),
+                'status': l.get('status'),
+            })
+            c += timedelta(days=1)
+    return {
+        'month': month,
+        'range': {'start': start.isoformat(), 'end': end.isoformat()},
+        'days': by_day,
+        'leaves': leaves,
+        'total': len(leaves),
+    }
 
 
 # ============= Notification helpers (HR akışı için) =============
@@ -2422,6 +2606,43 @@ class ShiftPayload(BaseModel):
     notes: str | None = Field(None, max_length=300)
 
 
+# Task #263 — leave↔shift bağı: onaylı (`approved` / `hr_approved`) izin
+# günlerinde personele vardiya atanamaz. `_apply_leave_to_shifts` final
+# onayda `shift_schedules` üstüne status='on_leave' satırı upsert eder;
+# bu helper o satırları (veya klasik leave_requests) tarama yapar.
+LEAVE_APPROVED_STATUSES = ('approved', 'hr_approved')
+
+
+async def _staff_has_approved_leave_on(
+    tenant_id: str, staff_id: str, date_iso: str,
+) -> dict | None:
+    """O gün için onaylı izin var mı? Varsa leave doc'unu döner, yoksa None."""
+    doc = await db.leave_requests.find_one(
+        {
+            'tenant_id': tenant_id,
+            'staff_id': staff_id,
+            'status': {'$in': list(LEAVE_APPROVED_STATUSES)},
+            'start_date': {'$lte': date_iso},
+            'end_date': {'$gte': date_iso},
+        },
+        {'_id': 0, 'id': 1, 'leave_type': 1, 'start_date': 1, 'end_date': 1},
+    )
+    return doc
+
+
+async def _staff_is_active(tenant_id: str, staff_id: str) -> bool:
+    """Pasif (active=False) staff_members'a vardiya atanmaz. Users-türevli
+    derived staff için is_active=True kabul edilir."""
+    sm = await db.staff_members.find_one(
+        {'id': staff_id, 'tenant_id': tenant_id},
+        {'_id': 0, 'active': 1},
+    )
+    if sm:
+        return sm.get('active', True) is not False
+    # users türevli kayıt → _verify_staff_in_tenant zaten is_active=True filtreler.
+    return True
+
+
 def _shift_datetimes(shift_date: str, start_time: str, end_time: str,
                      crosses_midnight: bool) -> tuple[datetime, datetime]:
     """Compute (start_dt, end_dt) for a shift record. Naive UTC datetimes;
@@ -2444,6 +2665,46 @@ async def create_shift_v2(
     staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
+
+    # Task #263: pasif personele vardiya atanamaz.
+    if not await _staff_is_active(current_user.tenant_id, payload.staff_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Pasif personele vardiya atanamaz",
+        )
+
+    # Task #263: onaylı izin günlerinde vardiya atanamaz (lock acquire
+    # öncesi, sahte 409 yaratmamak için).
+    leave = await _staff_has_approved_leave_on(
+        current_user.tenant_id, payload.staff_id, payload.shift_date,
+    )
+    if leave:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{payload.shift_date} tarihinde {staff.get('name')} "
+                f"onaylı izinde ({leave.get('leave_type')}, "
+                f"{leave.get('start_date')} → {leave.get('end_date')}). "
+                f"Vardiya atanamaz."
+            ),
+        )
+    if payload.crosses_midnight:
+        # Gece vardiyası ertesi güne sarktığı için sonraki günü de izinde
+        # geçiriyorsa engellenir.
+        next_iso = (
+            date.fromisoformat(payload.shift_date) + timedelta(days=1)
+        ).isoformat()
+        leave_next = await _staff_has_approved_leave_on(
+            current_user.tenant_id, payload.staff_id, next_iso,
+        )
+        if leave_next:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Gece vardiyası {next_iso} gününe sarkıyor ve o gün "
+                    f"personel onaylı izinde."
+                ),
+            )
 
     # Task #255: Gece vardiyaları artık tek kayıtta planlanabilir
     # (`crosses_midnight=True`). Aksi halde tek-gün kontratı korunur
@@ -2530,6 +2791,7 @@ async def list_shifts(
     start: str | None = None,
     end: str | None = None,
     staff_id: str | None = None,
+    department: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
     today = _today_local()
@@ -2559,6 +2821,44 @@ async def list_shifts(
     }
     if staff_id:
         query['staff_id'] = staff_id
+
+    # Task #263: department filter — staff_members.department üzerinden
+    # `staff_id $in` listesine indirgenir; users-türevli derived staff
+    # (role = department proxy) için role eşleşmesi de katılır.
+    if department:
+        dept_ids: set[str] = set()
+        sm_cursor = db.staff_members.find(
+            {'tenant_id': current_user.tenant_id, 'department': department},
+            {'_id': 0, 'id': 1},
+        )
+        async for s in sm_cursor:
+            dept_ids.add(s['id'])
+        usr_cursor = db.users.find(
+            {
+                'tenant_id': current_user.tenant_id,
+                'is_active': True,
+                'role': department,
+            },
+            {'_id': 0, 'id': 1},
+        )
+        async for u in usr_cursor:
+            dept_ids.add(u['id'])
+        if not dept_ids:
+            return {
+                'items': [], 'total': 0,
+                'range': {'start': start_dt.isoformat(), 'end': end_dt.isoformat()},
+                'department': department,
+            }
+        if 'staff_id' in query:
+            if query['staff_id'] not in dept_ids:
+                return {
+                    'items': [], 'total': 0,
+                    'range': {'start': start_dt.isoformat(), 'end': end_dt.isoformat()},
+                    'department': department,
+                }
+        else:
+            query['staff_id'] = {'$in': list(dept_ids)}
+
     items = await db.shift_schedules.find(
         query, {'_id': 0}
     ).sort('shift_date', 1).to_list(2000)
@@ -2617,6 +2917,180 @@ async def delete_shift(
         shift_id=shift_id,
     )
     return {'success': True}
+
+
+# ============= Bulk shift create (Task #263) =============
+
+class BulkShiftPayload(BaseModel):
+    """Toplu vardiya oluştur — (staff_ids × dates) × tek şablon."""
+    staff_ids: list[str] = Field(..., min_length=1, max_length=200)
+    dates: list[str] = Field(..., min_length=1, max_length=62)
+    shift_type: Literal['morning', 'afternoon', 'evening', 'night', 'split'] = 'morning'
+    start_time: str = Field(..., pattern=r'^\d{2}:\d{2}$')
+    end_time: str = Field(..., pattern=r'^\d{2}:\d{2}$')
+    crosses_midnight: bool = False
+    notes: str | None = Field(None, max_length=300)
+
+    @field_validator('dates')
+    @classmethod
+    def _valid_dates(cls, v: list[str]) -> list[str]:
+        for d in v:
+            try:
+                date.fromisoformat(d)
+            except Exception as exc:
+                raise ValueError(f"Geçersiz tarih: {d}") from exc
+        return v
+
+
+@router.post("/hr/shifts/bulk")
+async def create_shifts_bulk(
+    payload: BulkShiftPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """(staff × date) toplu vardiya oluşturma. Idempotent değildir; her
+    başarılı satır kendi `shift_id`'sini alır. Çakışan / pasif / izinli
+    satırlar atlanır ve `skipped` listesinde sebep ile döner. Her
+    iterasyon mevcut tekil `create_shift_v2` ile aynı invariant'ları
+    çalıştırır (active check → leave check → overnight contract → lock
+    acquire → insert). Lock entry başarılı olup insert başarısız olursa
+    aynı rollback uygulanır."""
+    # Aynı isteğin overnight + same-day kontratını payload seviyesinde doğrula:
+    if payload.crosses_midnight:
+        if payload.end_time >= payload.start_time:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Gece vardiyası işaretlendi ama bitiş saati "
+                    f"({payload.end_time}) başlangıç saatinden "
+                    f"({payload.start_time}) önce olmalı."
+                ),
+            )
+    else:
+        if payload.end_time <= payload.start_time:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Vardiya bitiş saati ({payload.end_time}) başlangıç "
+                    f"saatinden ({payload.start_time}) sonra olmalı."
+                ),
+            )
+
+    created: list[dict] = []
+    skipped: list[dict] = []
+    now_iso_base = datetime.now(UTC).isoformat()
+
+    for staff_id in payload.staff_ids:
+        staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+        if not staff:
+            for d_iso in payload.dates:
+                skipped.append({
+                    'staff_id': staff_id, 'shift_date': d_iso,
+                    'reason': 'staff_not_found',
+                })
+            continue
+        if not await _staff_is_active(current_user.tenant_id, staff_id):
+            for d_iso in payload.dates:
+                skipped.append({
+                    'staff_id': staff_id, 'shift_date': d_iso,
+                    'reason': 'staff_inactive',
+                })
+            continue
+
+        for d_iso in payload.dates:
+            # Leave check (start + opsiyonel next day).
+            leave = await _staff_has_approved_leave_on(
+                current_user.tenant_id, staff_id, d_iso,
+            )
+            if leave:
+                skipped.append({
+                    'staff_id': staff_id, 'shift_date': d_iso,
+                    'reason': 'on_approved_leave',
+                    'leave_type': leave.get('leave_type'),
+                })
+                continue
+            if payload.crosses_midnight:
+                next_iso = (
+                    date.fromisoformat(d_iso) + timedelta(days=1)
+                ).isoformat()
+                leave_n = await _staff_has_approved_leave_on(
+                    current_user.tenant_id, staff_id, next_iso,
+                )
+                if leave_n:
+                    skipped.append({
+                        'staff_id': staff_id, 'shift_date': d_iso,
+                        'reason': 'overnight_overlaps_leave',
+                    })
+                    continue
+
+            shift_id = str(uuid.uuid4())
+            try:
+                await _acquire_shift_lock_for_shift(
+                    tenant_id=current_user.tenant_id,
+                    staff_id=staff_id,
+                    shift_date=d_iso,
+                    start_time=payload.start_time,
+                    end_time=payload.end_time,
+                    crosses_midnight=payload.crosses_midnight,
+                    shift_id=shift_id,
+                    now_iso=now_iso_base,
+                )
+            except HTTPException as exc:
+                skipped.append({
+                    'staff_id': staff_id, 'shift_date': d_iso,
+                    'reason': 'conflict' if exc.status_code == 409 else 'lock_failed',
+                    'detail': str(exc.detail),
+                })
+                continue
+
+            d_obj = date.fromisoformat(d_iso)
+            end_date_iso = (
+                (d_obj + timedelta(days=1)).isoformat()
+                if payload.crosses_midnight else d_iso
+            )
+            item = {
+                'id': shift_id,
+                'tenant_id': current_user.tenant_id,
+                'staff_id': staff_id,
+                'staff_name': staff.get('name'),
+                'shift_date': d_iso,
+                'shift_type': payload.shift_type,
+                'start_time': payload.start_time,
+                'end_time': payload.end_time,
+                'crosses_midnight': payload.crosses_midnight,
+                'end_date': end_date_iso,
+                'notes': payload.notes,
+                'status': 'scheduled',
+                'created_at': datetime.now(UTC).isoformat(),
+                'created_via': 'bulk',
+            }
+            try:
+                await db.shift_schedules.insert_one(item)
+            except Exception:
+                await _release_shift_lock_for_shift(
+                    tenant_id=current_user.tenant_id,
+                    staff_id=staff_id,
+                    shift_date=d_iso,
+                    crosses_midnight=payload.crosses_midnight,
+                    shift_id=shift_id,
+                )
+                skipped.append({
+                    'staff_id': staff_id, 'shift_date': d_iso,
+                    'reason': 'insert_failed',
+                })
+                continue
+            item.pop('_id', None)
+            created.append({
+                'id': shift_id, 'staff_id': staff_id, 'shift_date': d_iso,
+            })
+
+    return {
+        'success': True,
+        'created_count': len(created),
+        'skipped_count': len(skipped),
+        'created': created,
+        'skipped': skipped,
+    }
 
 
 # ============= Recruitment Applicants =============
@@ -2802,7 +3276,9 @@ class OvertimeRequestPayload(BaseModel):
 
 
 class OvertimeDecisionPayload(BaseModel):
-    action: Literal['approve', 'reject']
+    # Task #263: 2-aşamalı onay. pending → dept_approve → dept_approved →
+    # approve → approved. Reject note ZORUNLU.
+    action: Literal['dept_approve', 'approve', 'reject']
     note: str | None = Field(None, max_length=500)
 
 
@@ -2889,11 +3365,39 @@ async def decide_overtime_request(
     })
     if not req:
         raise HTTPException(status_code=404, detail="Talep bulunamadı")
-    if req.get('status') != 'pending':
-        raise HTTPException(status_code=400, detail="Bu talep zaten karara bağlanmış")
 
-    if payload.action == 'approve':
-        # 270h/yıl kontrolü (İş K. m.41/3)
+    current_status = req.get('status', 'pending')
+
+    if payload.action == 'reject':
+        if current_status not in ('pending', 'dept_approved'):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Talep zaten karara bağlanmış (status={current_status})",
+            )
+        if not (payload.note and payload.note.strip()):
+            raise HTTPException(
+                status_code=400,
+                detail="Red için gerekçe (note) zorunludur",
+            )
+        new_status = 'rejected'
+        notify_kind = 'overtime_rejected'
+        notify_title = "Mesai talebiniz reddedildi"
+    elif payload.action == 'dept_approve':
+        if current_status != 'pending':
+            raise HTTPException(
+                status_code=400,
+                detail=f"Departman onayı sadece pending durumdan verilebilir (mevcut: {current_status})",
+            )
+        new_status = 'dept_approved'
+        notify_kind = 'overtime_dept_approved'
+        notify_title = "Mesai talebiniz departman onayı aldı (final onay bekleniyor)"
+    else:  # 'approve' (final HR/Finance)
+        if current_status not in ('pending', 'dept_approved'):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Final onay verilemez (status={current_status})",
+            )
+        # 270h/yıl kontrolü (İş K. m.41/3) — final aşamada
         year = int(req['work_date'][:4])
         already = await _yearly_overtime_hours(
             current_user.tenant_id, req['staff_id'], year,
@@ -2910,20 +3414,38 @@ async def decide_overtime_request(
         new_status = 'approved'
         notify_kind = 'overtime_approved'
         notify_title = "Mesai talebiniz onaylandı"
+
+    update_set: dict[str, Any] = {
+        'status': new_status,
+        'decision_note': payload.note,
+        'decided_at': datetime.now(UTC).isoformat(),
+    }
+    history = req.get('decision_history') or []
+    history.append({
+        'stage': payload.action,
+        'status': new_status,
+        'by': getattr(current_user, 'id', None),
+        'at': datetime.now(UTC).isoformat(),
+        'note': payload.note,
+    })
+    update_set['decision_history'] = history
+    if new_status == 'dept_approved':
+        update_set['dept_approved_by'] = getattr(current_user, 'id', None)
+        update_set['dept_approved_at'] = datetime.now(UTC).isoformat()
+    elif new_status == 'approved':
+        update_set['decided_by'] = getattr(current_user, 'id', None)
+        update_set['approved_by'] = getattr(current_user, 'id', None)
+        update_set['approved_at'] = datetime.now(UTC).isoformat()
+        # Bordro entegrasyon kontratı: payroll_ready=True (append-only)
+        update_set['payroll_ready'] = True
     else:
-        new_status = 'rejected'
-        notify_kind = 'overtime_rejected'
-        notify_title = "Mesai talebiniz reddedildi"
+        update_set['decided_by'] = getattr(current_user, 'id', None)
 
     await db.overtime_requests.update_one(
         {'tenant_id': current_user.tenant_id, 'id': req_id},
-        {'$set': {
-            'status': new_status,
-            'decision_note': payload.note,
-            'decided_by': getattr(current_user, 'id', None),
-            'decided_at': datetime.now(UTC).isoformat(),
-        }},
+        {'$set': update_set},
     )
+
     requester = req.get('requested_by')
     if requester:
         await _notify_user(
@@ -2933,6 +3455,62 @@ async def decide_overtime_request(
             ref_id=req_id,
         )
     return {'success': True, 'status': new_status}
+
+
+@router.get("/hr/overtime/ready-for-payroll")
+async def overtime_ready_for_payroll(
+    month: str = Query(..., pattern=r'^\d{4}-\d{2}$'),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Bordro modülü için onaylı mesai özetini döndüren read-only kontrat.
+    Append-only: bordro task'ı bu endpoint'i TÜKETIR, değiştirmez. Şema:
+        {month, total_hours, total_requests, by_staff: [...], items: [...]}
+    Her satır: {staff_id, staff_name, hours, work_date, request_id,
+    approved_at, multiplier=1.5 (TR varsayılan)}."""
+    yyyy, mm = month.split('-')
+    start_iso = f'{yyyy}-{mm}-01'
+    nm = date(int(yyyy), int(mm), 28) + timedelta(days=4)
+    end_iso = (nm - timedelta(days=nm.day)).isoformat()
+    cursor = db.overtime_requests.find({
+        'tenant_id': current_user.tenant_id,
+        'status': 'approved',
+        'work_date': {'$gte': start_iso, '$lte': end_iso},
+    }, {'_id': 0}).sort('work_date', 1)
+    items: list[dict] = []
+    by_staff: dict[str, dict] = {}
+    total_hours = 0.0
+    async for r in cursor:
+        hours = float(r.get('hours') or 0)
+        total_hours += hours
+        sid = r['staff_id']
+        by_staff.setdefault(sid, {
+            'staff_id': sid,
+            'staff_name': r.get('staff_name'),
+            'hours': 0.0,
+            'requests': 0,
+        })
+        by_staff[sid]['hours'] = round(by_staff[sid]['hours'] + hours, 2)
+        by_staff[sid]['requests'] += 1
+        items.append({
+            'request_id': r['id'],
+            'staff_id': sid,
+            'staff_name': r.get('staff_name'),
+            'work_date': r['work_date'],
+            'hours': hours,
+            'approved_at': r.get('approved_at') or r.get('decided_at'),
+            'multiplier': TR_DEFAULT_OVERTIME_MULTIPLIER,
+        })
+    return {
+        'month': month,
+        'range': {'start': start_iso, 'end': end_iso},
+        'total_hours': round(total_hours, 2),
+        'total_requests': len(items),
+        'overtime_multiplier': TR_DEFAULT_OVERTIME_MULTIPLIER,
+        'currency': TR_CURRENCY,
+        'by_staff': sorted(by_staff.values(), key=lambda x: x['staff_name'] or ''),
+        'items': items,
+    }
 
 
 # ============= 2. Vardiya Değişim Talebi =============
@@ -3781,3 +4359,543 @@ async def delete_goal_checkin(
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Check-in bulunamadı")
     return {'success': True}
+
+
+# ============= Coverage Rules + Weekly Hours (Task #263 / T002) =============
+
+class CoverageRulePayload(BaseModel):
+    """Departman-bazlı minimum kapasite kuralı.
+
+    weekday: 0-6 (Pzt-Pzr) veya -1 (her gün).
+    shift_type: 'morning'|'afternoon'|'evening'|'night'|'split'|'any'.
+    """
+    department: str = Field(..., min_length=1, max_length=100)
+    weekday: int = Field(..., ge=-1, le=6)
+    shift_type: Literal['morning', 'afternoon', 'evening', 'night', 'split', 'any'] = 'any'
+    min_staff: int = Field(..., ge=1, le=200)
+    note: str | None = Field(None, max_length=300)
+
+
+@router.post("/hr/coverage-rules")
+async def create_coverage_rule(
+    payload: CoverageRulePayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'department': payload.department,
+        'weekday': payload.weekday,
+        'shift_type': payload.shift_type,
+        'min_staff': payload.min_staff,
+        'note': payload.note,
+        'created_by': getattr(current_user, 'id', None),
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.hr_coverage_rules.insert_one(item)
+    item.pop('_id', None)
+    return {'success': True, 'rule': item}
+
+
+@router.get("/hr/coverage-rules")
+async def list_coverage_rules(
+    department: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    if department:
+        query['department'] = department
+    items = await db.hr_coverage_rules.find(
+        query, {'_id': 0}
+    ).sort([('department', 1), ('weekday', 1)]).to_list(500)
+    return {'items': items, 'total': len(items)}
+
+
+@router.delete("/hr/coverage-rules/{rule_id}")
+async def delete_coverage_rule(
+    rule_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    res = await db.hr_coverage_rules.delete_one({
+        'tenant_id': current_user.tenant_id, 'id': rule_id,
+    })
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Kural bulunamadı")
+    return {'success': True}
+
+
+async def _build_staff_department_map(tenant_id: str) -> dict[str, str]:
+    """staff_id → department lookup (staff_members + users.role fallback)."""
+    out: dict[str, str] = {}
+    async for s in db.staff_members.find(
+        {'tenant_id': tenant_id}, {'_id': 0, 'id': 1, 'department': 1},
+    ):
+        out[s['id']] = s.get('department') or 'unknown'
+    async for u in db.users.find(
+        {'tenant_id': tenant_id, 'is_active': True},
+        {'_id': 0, 'id': 1, 'role': 1},
+    ):
+        if u['id'] not in out:
+            out[u['id']] = u.get('role') or 'staff'
+    return out
+
+
+@router.get("/hr/coverage/check")
+async def coverage_check(
+    start: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    end: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Date×dept×shift_type matrisinde gerçekleşen sayım vs kural min_staff
+    kıyaslaması. `gaps` listesi coverage altındaki kombinasyonları döner."""
+    start_d = date.fromisoformat(start)
+    end_d = date.fromisoformat(end)
+    if end_d < start_d:
+        raise HTTPException(status_code=400, detail="end < start")
+    rules = await db.hr_coverage_rules.find(
+        {'tenant_id': current_user.tenant_id}, {'_id': 0}
+    ).to_list(500)
+    if not rules:
+        return {'rules_count': 0, 'gaps': [], 'days_checked': (end_d - start_d).days + 1}
+
+    shifts = await db.shift_schedules.find({
+        'tenant_id': current_user.tenant_id,
+        'shift_date': {'$gte': start, '$lte': end},
+        'status': {'$ne': 'on_leave'},
+    }, {'_id': 0, 'staff_id': 1, 'shift_date': 1, 'shift_type': 1, 'status': 1}).to_list(20000)
+    staff_dept = await _build_staff_department_map(current_user.tenant_id)
+
+    # bucket[(date,dept,shift_type)] = set(staff_ids)
+    bucket: dict[tuple[str, str, str], set[str]] = {}
+    for s in shifts:
+        dept = staff_dept.get(s['staff_id'], 'unknown')
+        key = (s['shift_date'], dept, s.get('shift_type') or 'any')
+        bucket.setdefault(key, set()).add(s['staff_id'])
+
+    gaps: list[dict] = []
+    cur = start_d
+    while cur <= end_d:
+        d_iso = cur.isoformat()
+        wd = cur.weekday()
+        for r in rules:
+            if r['weekday'] not in (-1, wd):
+                continue
+            # count = belirli shift_type ise tek bucket; 'any' ise tüm shift_type'lar
+            if r['shift_type'] == 'any':
+                staff_set: set[str] = set()
+                for k, v in bucket.items():
+                    if k[0] == d_iso and k[1] == r['department']:
+                        staff_set |= v
+                actual = len(staff_set)
+            else:
+                actual = len(bucket.get((d_iso, r['department'], r['shift_type']), set()))
+            if actual < r['min_staff']:
+                gaps.append({
+                    'date': d_iso,
+                    'weekday': wd,
+                    'department': r['department'],
+                    'shift_type': r['shift_type'],
+                    'min_staff': r['min_staff'],
+                    'actual': actual,
+                    'gap': r['min_staff'] - actual,
+                    'rule_id': r['id'],
+                })
+        cur += timedelta(days=1)
+    return {
+        'range': {'start': start, 'end': end},
+        'rules_count': len(rules),
+        'gaps': gaps,
+        'gaps_count': len(gaps),
+    }
+
+
+@router.get("/hr/shifts/weekly-hours")
+async def shifts_weekly_hours(
+    week_start: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Hafta başlangıcından 7 gün için per-staff toplam planlı saat ve
+    >45h üzeri 'overtime estimate' uyarı flag'i."""
+    start_d = date.fromisoformat(week_start)
+    end_d = start_d + timedelta(days=6)
+    items = await db.shift_schedules.find({
+        'tenant_id': current_user.tenant_id,
+        'shift_date': {'$gte': start_d.isoformat(), '$lte': end_d.isoformat()},
+        'status': {'$ne': 'on_leave'},
+    }, {'_id': 0, 'staff_id': 1, 'staff_name': 1, 'shift_date': 1,
+        'start_time': 1, 'end_time': 1, 'crosses_midnight': 1}).to_list(5000)
+
+    def _hours_of(sh: dict) -> float:
+        try:
+            sdt, edt = _shift_datetimes(
+                sh['shift_date'], sh['start_time'], sh['end_time'],
+                bool(sh.get('crosses_midnight', False)),
+            )
+            return round((edt - sdt).total_seconds() / 3600.0, 2)
+        except Exception:
+            return 0.0
+
+    agg: dict[str, dict] = {}
+    for sh in items:
+        sid = sh['staff_id']
+        agg.setdefault(sid, {
+            'staff_id': sid,
+            'staff_name': sh.get('staff_name'),
+            'total_hours': 0.0,
+            'shifts_count': 0,
+        })
+        agg[sid]['total_hours'] = round(agg[sid]['total_hours'] + _hours_of(sh), 2)
+        agg[sid]['shifts_count'] += 1
+    out: list[dict] = []
+    for v in agg.values():
+        v['overtime_estimate'] = round(max(0.0, v['total_hours'] - 45.0), 2)
+        v['exceeds_legal_week'] = v['total_hours'] > 45.0
+        out.append(v)
+    out.sort(key=lambda x: (-x['total_hours'], x['staff_name'] or ''))
+    return {
+        'week_start': start_d.isoformat(),
+        'week_end': end_d.isoformat(),
+        'legal_weekly_hours': 45,
+        'items': out,
+        'total_staff': len(out),
+    }
+
+
+# ============= Attendance v2 — Missing Clockout + Late/Early + Dept Summary (Task #263 / T005) =============
+
+@router.post("/hr/attendance/flag-missing")
+async def flag_missing_clockouts(
+    cutoff_date: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Cron tetikleyici: belirtilen tarihten (varsayılan: dün) önceki
+    `clock_out=null` kayıtlarını `missing_clockout=True` ile flag'ler.
+    Bugünün açık kayıtları (henüz mesai bitmedi) DOKUNULMAZ."""
+    cutoff = (
+        date.fromisoformat(cutoff_date) if cutoff_date
+        else _today_local() - timedelta(days=1)
+    )
+    res = await db.attendance_records.update_many(
+        {
+            'tenant_id': current_user.tenant_id,
+            'date': {'$lte': cutoff.isoformat()},
+            'clock_out': None,
+            '$or': [
+                {'missing_clockout': {'$exists': False}},
+                {'missing_clockout': False},
+            ],
+        },
+        {'$set': {
+            'missing_clockout': True,
+            'missing_clockout_flagged_at': datetime.now(UTC).isoformat(),
+        }},
+    )
+    return {
+        'success': True,
+        'flagged_count': res.modified_count,
+        'cutoff_date': cutoff.isoformat(),
+    }
+
+
+def _parse_hhmm_on_date(d_iso: str, hhmm: str) -> datetime:
+    sh, sm = (int(x) for x in hhmm.split(':'))
+    dd = date.fromisoformat(d_iso)
+    return datetime(dd.year, dd.month, dd.day, sh, sm, tzinfo=UTC)
+
+
+def _derive_late_early(record: dict, shift: dict | None) -> dict:
+    """Vardiya start/end ile karşılaştırarak late/early dakika hesabı."""
+    out = {'late_minutes': 0, 'early_minutes': 0, 'shift_matched': False}
+    if not shift:
+        return out
+    try:
+        sched_start = _parse_hhmm_on_date(shift['shift_date'], shift['start_time'])
+        end_dt = date.fromisoformat(shift['shift_date']) + (
+            timedelta(days=1) if shift.get('crosses_midnight') else timedelta()
+        )
+        sched_end = datetime(
+            end_dt.year, end_dt.month, end_dt.day,
+            int(shift['end_time'].split(':')[0]),
+            int(shift['end_time'].split(':')[1]),
+            tzinfo=UTC,
+        )
+    except Exception:
+        return out
+    out['shift_matched'] = True
+    ci = record.get('clock_in')
+    co = record.get('clock_out')
+    if ci:
+        try:
+            ci_dt = datetime.fromisoformat(ci.replace('Z', '+00:00'))
+            delta_min = int((ci_dt - sched_start).total_seconds() / 60)
+            if delta_min > 0:
+                out['late_minutes'] = delta_min
+        except Exception:
+            pass
+    if co:
+        try:
+            co_dt = datetime.fromisoformat(co.replace('Z', '+00:00'))
+            delta_min = int((sched_end - co_dt).total_seconds() / 60)
+            if delta_min > 0:
+                out['early_minutes'] = delta_min
+        except Exception:
+            pass
+    return out
+
+
+@router.get("/hr/attendance/department-summary")
+async def attendance_department_summary(
+    start: str | None = None,
+    end: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Departman bazlı çalışma saati özet kartları."""
+    start_dt, end_dt = _parse_date_range(start, end, days=30)
+    records = await db.attendance_records.find({
+        'tenant_id': current_user.tenant_id,
+        'date': {'$gte': start_dt.isoformat(), '$lte': end_dt.isoformat()},
+    }, {'_id': 0}).to_list(5000)
+    staff_dept = await _build_staff_department_map(current_user.tenant_id)
+    agg: dict[str, dict] = {}
+    for r in records:
+        dept = staff_dept.get(r['staff_id'], 'unknown')
+        agg.setdefault(dept, {
+            'department': dept,
+            'total_hours': 0.0,
+            'records_count': 0,
+            'staff_set': set(),
+            'missing_clockouts': 0,
+        })
+        agg[dept]['total_hours'] = round(
+            agg[dept]['total_hours'] + float(r.get('total_hours') or 0), 2,
+        )
+        agg[dept]['records_count'] += 1
+        agg[dept]['staff_set'].add(r['staff_id'])
+        if r.get('missing_clockout'):
+            agg[dept]['missing_clockouts'] += 1
+    out = []
+    for v in agg.values():
+        v['unique_staff'] = len(v['staff_set'])
+        del v['staff_set']
+        out.append(v)
+    out.sort(key=lambda x: -x['total_hours'])
+    return {
+        'range': {'start': start_dt.isoformat(), 'end': end_dt.isoformat()},
+        'departments': out,
+    }
+
+
+# ============= Excel Exports (Task #263 / T005) =============
+
+def _xlsx_stream(workbook) -> StreamingResponse:
+    """openpyxl Workbook → StreamingResponse helper. Filename caller'a ait."""
+    buf = io.BytesIO()
+    workbook.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@router.get("/hr/shifts/export/xlsx")
+async def export_shifts_xlsx(
+    start: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    end: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Vardiya planı Excel — departman başına ayrı sayfa."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    items = await db.shift_schedules.find({
+        'tenant_id': current_user.tenant_id,
+        'shift_date': {'$gte': start, '$lte': end},
+    }, {'_id': 0}).sort('shift_date', 1).to_list(20000)
+    staff_dept = await _build_staff_department_map(current_user.tenant_id)
+    wb = Workbook()
+    wb.remove(wb.active)
+    by_dept: dict[str, list[dict]] = {}
+    for it in items:
+        d = staff_dept.get(it['staff_id'], 'unknown')
+        by_dept.setdefault(d, []).append(it)
+    if not by_dept:
+        ws = wb.create_sheet('Boş')
+        ws['A1'] = 'Bu aralıkta vardiya yok'
+    else:
+        header_font = Font(bold=True, color='FFFFFF')
+        header_fill = PatternFill(start_color='1F2937', end_color='1F2937', fill_type='solid')
+        for dept, rows in sorted(by_dept.items()):
+            sheet_name = (dept or 'Bölüm')[:30]
+            ws = wb.create_sheet(sheet_name)
+            headers = ['Tarih', 'Personel', 'Vardiya', 'Başlangıç', 'Bitiş', 'Gece', 'Durum', 'Not']
+            for col, h in enumerate(headers, 1):
+                c = ws.cell(row=1, column=col, value=h)
+                c.font = header_font
+                c.fill = header_fill
+            for r_idx, it in enumerate(rows, 2):
+                ws.cell(row=r_idx, column=1, value=it.get('shift_date'))
+                ws.cell(row=r_idx, column=2, value=it.get('staff_name') or it.get('staff_id'))
+                ws.cell(row=r_idx, column=3, value=it.get('shift_type'))
+                ws.cell(row=r_idx, column=4, value=it.get('start_time'))
+                ws.cell(row=r_idx, column=5, value=it.get('end_time'))
+                ws.cell(row=r_idx, column=6, value='Evet' if it.get('crosses_midnight') else 'Hayır')
+                ws.cell(row=r_idx, column=7, value=it.get('status'))
+                ws.cell(row=r_idx, column=8, value=(it.get('notes') or '')[:200])
+            for col_idx in range(1, len(headers) + 1):
+                ws.column_dimensions[chr(64 + col_idx)].width = 16
+    resp = _xlsx_stream(wb)
+    resp.headers['Content-Disposition'] = f'attachment; filename="vardiyalar_{start}_{end}.xlsx"'
+    return resp
+
+
+@router.get("/hr/attendance/export/xlsx")
+async def export_attendance_xlsx(
+    month: str = Query(..., pattern=r'^\d{4}-\d{2}$'),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Puantaj aylık: personel × gün matrisi (saat değerleri)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    yyyy, mm = month.split('-')
+    start = date(int(yyyy), int(mm), 1)
+    nm = start.replace(day=28) + timedelta(days=4)
+    end = nm - timedelta(days=nm.day)
+    records = await db.attendance_records.find({
+        'tenant_id': current_user.tenant_id,
+        'date': {'$gte': start.isoformat(), '$lte': end.isoformat()},
+    }, {'_id': 0}).to_list(10000)
+    staff_map = await _get_staff_map(current_user.tenant_id)
+    days_in_month = (end - start).days + 1
+    # matrix[staff_id][day_num] = hours
+    matrix: dict[str, dict[int, float]] = {}
+    name_map: dict[str, str] = {}
+    for r in records:
+        sid = r['staff_id']
+        d_num = int(r['date'][-2:])
+        matrix.setdefault(sid, {})
+        matrix[sid][d_num] = round(matrix[sid].get(d_num, 0.0) + float(r.get('total_hours') or 0), 2)
+        if sid not in name_map:
+            sm = staff_map.get(sid)
+            name_map[sid] = (sm or {}).get('name') or r.get('staff_name') or sid
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f'Puantaj {month}'
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='1F2937', end_color='1F2937', fill_type='solid')
+    ws.cell(row=1, column=1, value='Personel').font = header_font
+    ws.cell(row=1, column=1).fill = header_fill
+    for d in range(1, days_in_month + 1):
+        c = ws.cell(row=1, column=1 + d, value=d)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = Alignment(horizontal='center')
+    total_col = days_in_month + 2
+    tc = ws.cell(row=1, column=total_col, value='Toplam')
+    tc.font = header_font
+    tc.fill = header_fill
+    row_idx = 2
+    for sid in sorted(matrix.keys(), key=lambda s: name_map.get(s, '')):
+        ws.cell(row=row_idx, column=1, value=name_map.get(sid, sid))
+        total = 0.0
+        for d in range(1, days_in_month + 1):
+            v = matrix[sid].get(d, 0)
+            if v:
+                ws.cell(row=row_idx, column=1 + d, value=v)
+                total += v
+        ws.cell(row=row_idx, column=total_col, value=round(total, 2)).font = Font(bold=True)
+        row_idx += 1
+    ws.column_dimensions['A'].width = 28
+    resp = _xlsx_stream(wb)
+    resp.headers['Content-Disposition'] = f'attachment; filename="puantaj_{month}.xlsx"'
+    return resp
+
+
+@router.get("/hr/leave/export/xlsx")
+async def export_leave_xlsx(
+    start: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    end: str = Query(..., pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """İzin geçmişi Excel."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    items = await db.leave_requests.find({
+        'tenant_id': current_user.tenant_id,
+        '$or': [
+            {'start_date': {'$gte': start, '$lte': end}},
+            {'end_date': {'$gte': start, '$lte': end}},
+        ],
+    }, {'_id': 0}).sort('start_date', -1).to_list(5000)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'İzin Geçmişi'
+    headers = ['Personel', 'Tip', 'Başlangıç', 'Bitiş', 'Gün', 'Durum', 'Sebep', 'Onay Notu']
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='1F2937', end_color='1F2937', fill_type='solid')
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=col, value=h)
+        c.font = header_font
+        c.fill = header_fill
+    for r_idx, it in enumerate(items, 2):
+        ws.cell(row=r_idx, column=1, value=it.get('staff_name') or it.get('staff_id'))
+        ws.cell(row=r_idx, column=2, value=it.get('leave_type'))
+        ws.cell(row=r_idx, column=3, value=it.get('start_date'))
+        ws.cell(row=r_idx, column=4, value=it.get('end_date'))
+        ws.cell(row=r_idx, column=5, value=it.get('total_days'))
+        ws.cell(row=r_idx, column=6, value=it.get('status'))
+        ws.cell(row=r_idx, column=7, value=(it.get('reason') or '')[:200])
+        ws.cell(row=r_idx, column=8, value=(it.get('decision_note') or '')[:200])
+    for col_idx in range(1, len(headers) + 1):
+        ws.column_dimensions[chr(64 + col_idx)].width = 18
+    resp = _xlsx_stream(wb)
+    resp.headers['Content-Disposition'] = f'attachment; filename="izinler_{start}_{end}.xlsx"'
+    return resp
+
+
+@router.get("/hr/overtime/export/xlsx")
+async def export_overtime_xlsx(
+    year: int = Query(..., ge=2020, le=2100),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Mesai geçmişi Excel — yıl bazlı."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    items = await db.overtime_requests.find({
+        'tenant_id': current_user.tenant_id,
+        'work_date': {'$gte': f'{year}-01-01', '$lte': f'{year}-12-31'},
+    }, {'_id': 0}).sort('work_date', -1).to_list(5000)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f'Mesai {year}'
+    headers = ['Personel', 'Tarih', 'Saat', 'Sebep', 'Durum', 'Onay Notu', 'Bordro Hazır']
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='1F2937', end_color='1F2937', fill_type='solid')
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=col, value=h)
+        c.font = header_font
+        c.fill = header_fill
+    for r_idx, it in enumerate(items, 2):
+        ws.cell(row=r_idx, column=1, value=it.get('staff_name') or it.get('staff_id'))
+        ws.cell(row=r_idx, column=2, value=it.get('work_date'))
+        ws.cell(row=r_idx, column=3, value=float(it.get('hours') or 0))
+        ws.cell(row=r_idx, column=4, value=(it.get('reason') or '')[:200])
+        ws.cell(row=r_idx, column=5, value=it.get('status'))
+        ws.cell(row=r_idx, column=6, value=(it.get('decision_note') or '')[:200])
+        ws.cell(row=r_idx, column=7, value='Evet' if it.get('payroll_ready') else 'Hayır')
+    for col_idx in range(1, len(headers) + 1):
+        ws.column_dimensions[chr(64 + col_idx)].width = 18
+    resp = _xlsx_stream(wb)
+    resp.headers['Content-Disposition'] = f'attachment; filename="mesai_{year}.xlsx"'
+    return resp

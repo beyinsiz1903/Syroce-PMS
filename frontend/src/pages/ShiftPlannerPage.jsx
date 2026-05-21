@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import {
   Calendar, ChevronLeft, ChevronRight, Plus, RefreshCw,
   Trash2, Users, ArrowLeft, Repeat, Check, X,
+  Copy, AlertTriangle, Download, Filter,
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,6 +48,18 @@ const ShiftPlannerPage = () => {
   const [swapDialog, setSwapDialog] = useState({ open: false, shift: null, target_staff_id: '', reason: '' });
   const [swapRequests, setSwapRequests] = useState([]);
   const [saving, setSaving] = useState(false);
+  // Task #263: department filter + coverage + bulk
+  const [deptFilter, setDeptFilter] = useState('');
+  const [coverage, setCoverage] = useState({ gaps: [], rules_count: 0 });
+  const [bulkDialog, setBulkDialog] = useState({ open: false });
+  const [bulkForm, setBulkForm] = useState({
+    staff_ids: [], dates: [],
+    shift_type: 'morning',
+    start_time: '07:00', end_time: '15:00',
+    crosses_midnight: false, notes: '',
+  });
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [weeklyHours, setWeeklyHours] = useState([]);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart); d.setDate(d.getDate() + i); return d;
@@ -58,20 +71,117 @@ const ShiftPlannerPage = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [shRes, stRes, swRes] = await Promise.all([
-        axios.get('/hr/shifts', { params: { start: startStr, end: endStr } }),
+      const shParams = { start: startStr, end: endStr };
+      if (deptFilter) shParams.department = deptFilter;
+      const [shRes, stRes, swRes, covRes, whRes] = await Promise.all([
+        axios.get('/hr/shifts', { params: shParams }),
         axios.get('/hr/staff'),
         axios.get('/hr/shift-swap-requests').catch(() => ({ data: { items: [] } })),
+        axios.get('/hr/coverage/check', { params: { start: startStr, end: endStr } })
+          .catch(() => ({ data: { gaps: [], rules_count: 0 } })),
+        axios.get('/hr/shifts/weekly-hours', { params: { week_start: startStr } })
+          .catch(() => ({ data: { items: [] } })),
       ]);
       setShifts(shRes.data?.items || []);
       setStaff(stRes.data?.staff || []);
       setSwapRequests(swRes.data?.items || []);
+      setCoverage({
+        gaps: covRes.data?.gaps || [],
+        rules_count: covRes.data?.rules_count || 0,
+      });
+      setWeeklyHours(whRes.data?.items || []);
     } catch (err) {
       toast.error('Vardiyalar yüklenemedi');
     } finally {
       setLoading(false);
     }
-  }, [startStr, endStr]);
+  }, [startStr, endStr, deptFilter]);
+
+  const departments = useMemo(() => {
+    const set = new Set();
+    staff.forEach((s) => { if (s.department) set.add(s.department); });
+    return Array.from(set).sort();
+  }, [staff]);
+
+  const hoursByStaff = useMemo(() => {
+    const m = {};
+    weeklyHours.forEach((w) => { m[w.staff_id] = w; });
+    return m;
+  }, [weeklyHours]);
+
+  const openBulk = () => {
+    setBulkForm({
+      staff_ids: [],
+      dates: days.map(fmtDate),
+      shift_type: 'morning',
+      start_time: '07:00', end_time: '15:00',
+      crosses_midnight: false, notes: '',
+    });
+    setBulkDialog({ open: true });
+  };
+
+  const onBulkTypeChange = (t) => {
+    const def = SHIFT_TYPES[t];
+    setBulkForm((f) => ({
+      ...f, shift_type: t,
+      start_time: def.times[0], end_time: def.times[1],
+      crosses_midnight: !!def.crossesMidnight,
+    }));
+  };
+
+  const toggleBulkStaff = (sid) => {
+    setBulkForm((f) => ({
+      ...f,
+      staff_ids: f.staff_ids.includes(sid)
+        ? f.staff_ids.filter((x) => x !== sid)
+        : [...f.staff_ids, sid],
+    }));
+  };
+
+  const toggleBulkDate = (d) => {
+    setBulkForm((f) => ({
+      ...f,
+      dates: f.dates.includes(d) ? f.dates.filter((x) => x !== d) : [...f.dates, d],
+    }));
+  };
+
+  const submitBulk = async (e) => {
+    e.preventDefault();
+    if (!bulkForm.staff_ids.length || !bulkForm.dates.length) {
+      toast.error('En az 1 personel ve 1 gün seçin');
+      return;
+    }
+    try {
+      setBulkSubmitting(true);
+      const res = await axios.post('/hr/shifts/bulk', bulkForm);
+      const created = res.data?.created_count || 0;
+      const skipped = res.data?.skipped_count || 0;
+      toast.success(`${created} vardiya planlandı${skipped ? ` • ${skipped} atlandı (izin/çakışma)` : ''}`);
+      setBulkDialog({ open: false });
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Toplu oluşturma başarısız');
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
+
+  const downloadShiftsXlsx = async () => {
+    try {
+      const res = await axios.get('/hr/shifts/export/xlsx', {
+        params: { start: startStr, end: endStr },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vardiyalar_${startStr}_${endStr}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error('Excel indirilemedi');
+    }
+  };
 
   const openSwap = (shift) => setSwapDialog({
     open: true, shift, target_staff_id: '', reason: '',
@@ -250,8 +360,14 @@ const ShiftPlannerPage = () => {
       <Button variant="outline" size="sm" onClick={() => navigate('/hr')}>
         <ArrowLeft className="w-4 h-4 mr-1.5" />İK Paneli
       </Button>
+      <Button variant="outline" size="sm" onClick={downloadShiftsXlsx}>
+        <Download className="w-4 h-4 mr-1.5" />Excel
+      </Button>
       <Button variant="outline" size="sm" onClick={load} disabled={loading}>
         <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />Yenile
+      </Button>
+      <Button variant="outline" size="sm" onClick={openBulk} data-testid="btn-bulk-shift">
+        <Copy className="w-4 h-4 mr-1.5" />Toplu Oluştur
       </Button>
       <Button size="sm" onClick={() => openAdd()}>
         <Plus className="w-4 h-4 mr-1.5" />Vardiya Ekle
@@ -282,6 +398,46 @@ const ShiftPlannerPage = () => {
           sub="planlanmamış" />
         <KpiCard intent="neutral" label="Hafta"
           value={`${days[0].toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })} – ${days[6].toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}`} />
+      </div>
+
+      {coverage.gaps.length > 0 && (
+        <Card className="mb-4 border-rose-200 bg-rose-50/50" data-testid="coverage-warning">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-rose-900 text-sm">
+              <AlertTriangle className="w-4 h-4" />
+              Kapsama Açığı ({coverage.gaps.length}) — {coverage.rules_count} kural
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xs grid gap-1 md:grid-cols-2 lg:grid-cols-3">
+              {coverage.gaps.slice(0, 12).map((g, i) => (
+                <div key={i} className="rounded border border-rose-200 bg-white px-2 py-1">
+                  <span className="font-medium">{g.date}</span> • <span className="capitalize">{g.department}</span> ({g.shift_type})
+                  <span className="ml-1 text-rose-700">{g.actual}/{g.min_staff}</span>
+                </div>
+              ))}
+              {coverage.gaps.length > 12 && (
+                <div className="text-rose-500">+{coverage.gaps.length - 12} daha…</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="flex items-center gap-2 mb-3 text-sm">
+        <Filter className="w-4 h-4 text-slate-500" />
+        <Label className="text-xs">Departman:</Label>
+        <select
+          value={deptFilter}
+          onChange={(e) => setDeptFilter(e.target.value)}
+          className="rounded-md border border-input px-2 py-1 text-xs"
+          data-testid="select-dept-filter"
+        >
+          <option value="">Tümü</option>
+          {departments.map((d) => (
+            <option key={d} value={d} className="capitalize">{d}</option>
+          ))}
+        </select>
       </div>
 
       {incomingConsentRequests.length > 0 && (
@@ -604,6 +760,99 @@ const ShiftPlannerPage = () => {
               </DialogFooter>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+      {/* Toplu Vardiya Oluştur (Task #263) */}
+      <Dialog open={bulkDialog.open} onOpenChange={(o) => !o && setBulkDialog({ open: false })}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader><DialogTitle className="flex items-center gap-2">
+            <Copy className="w-5 h-5" />Toplu Vardiya Oluştur
+          </DialogTitle></DialogHeader>
+          <form onSubmit={submitBulk} className="grid gap-3">
+            <div className="grid md:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Vardiya Tipi</Label>
+                <select value={bulkForm.shift_type} onChange={(e) => onBulkTypeChange(e.target.value)}
+                  className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                  {Object.entries(SHIFT_TYPES).map(([k, v]) => (
+                    <option key={k} value={k}>{v.label} ({v.times[0]}–{v.times[1]})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Label className="text-xs">Başlangıç</Label>
+                  <Input type="time" value={bulkForm.start_time}
+                    onChange={(e) => setBulkForm({ ...bulkForm, start_time: e.target.value })} />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-xs">Bitiş</Label>
+                  <Input type="time" value={bulkForm.end_time}
+                    onChange={(e) => setBulkForm({ ...bulkForm, end_time: e.target.value })} />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs flex items-center justify-between">
+                <span>Personel ({bulkForm.staff_ids.length} seçili)</span>
+                <button type="button" className="text-[11px] underline text-slate-600"
+                  onClick={() => setBulkForm({ ...bulkForm, staff_ids:
+                    bulkForm.staff_ids.length === allStaffShown.length ? [] : allStaffShown.map((p) => p.id) })}>
+                  {bulkForm.staff_ids.length === allStaffShown.length ? 'Hiçbiri' : 'Tümü'}
+                </button>
+              </Label>
+              <div className="max-h-44 overflow-y-auto rounded border border-slate-200 p-2 grid grid-cols-2 md:grid-cols-3 gap-1">
+                {allStaffShown.map((p) => (
+                  <label key={p.id} className="flex items-center gap-1 text-xs cursor-pointer hover:bg-slate-50 rounded px-1 py-0.5">
+                    <input type="checkbox" checked={bulkForm.staff_ids.includes(p.id)}
+                      onChange={() => toggleBulkStaff(p.id)} />
+                    <span>{p.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs flex items-center justify-between">
+                <span>Günler ({bulkForm.dates.length} seçili)</span>
+                <button type="button" className="text-[11px] underline text-slate-600"
+                  onClick={() => setBulkForm({ ...bulkForm, dates:
+                    bulkForm.dates.length === 7 ? [] : days.map(fmtDate) })}>
+                  {bulkForm.dates.length === 7 ? 'Hiçbiri' : 'Tüm Hafta'}
+                </button>
+              </Label>
+              <div className="flex gap-1 flex-wrap">
+                {days.map((d) => {
+                  const ds = fmtDate(d);
+                  const on = bulkForm.dates.includes(ds);
+                  return (
+                    <button key={ds} type="button" onClick={() => toggleBulkDate(ds)}
+                      className={`px-2 py-1 rounded text-[11px] border ${on ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200'}`}>
+                      {d.toLocaleDateString('tr-TR', { weekday: 'short', day: '2-digit' })}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs">Not</Label>
+              <Textarea rows={2} value={bulkForm.notes}
+                onChange={(e) => setBulkForm({ ...bulkForm, notes: e.target.value })} />
+            </div>
+
+            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+              Onaylı izinli/pasif personeller ve çakışan vardiyalar otomatik atlanır — sonuç toast'unda raporlanır.
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setBulkDialog({ open: false })}>Vazgeç</Button>
+              <Button type="submit" disabled={bulkSubmitting} data-testid="btn-bulk-submit">
+                {bulkSubmitting ? 'Oluşturuluyor...' : `${bulkForm.staff_ids.length * bulkForm.dates.length} Vardiya Oluştur`}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

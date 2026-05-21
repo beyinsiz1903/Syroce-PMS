@@ -106,7 +106,27 @@ async def phase_d_perf_and_marketplace(app):
             unique=True,
             name="uniq_tenant_staff_shift_date",
         )
-        logger.info("✅ Tenant uniqueness indexes ensured (hotel_id, username, performance_reviews, shift_schedule_locks)")
+        # Task #263: coverage rules per (tenant, department, weekday, shift_type).
+        # Aynı bucket için tek kural — duplicate hesap riskini önler. Filtre +
+        # gap hesabı index'le hızlanır.
+        await db.hr_coverage_rules.create_index(
+            [("tenant_id", 1), ("department", 1), ("weekday", 1), ("shift_type", 1)],
+            unique=True,
+            name="uniq_tenant_dept_weekday_shifttype",
+        )
+        # Task #263: leave_requests calendar + leave-check (start≤d≤end) hot
+        # path; staff+status+date scan'ı önler.
+        await db.leave_requests.create_index(
+            [("tenant_id", 1), ("staff_id", 1), ("status", 1), ("start_date", 1), ("end_date", 1)],
+            name="idx_leave_staff_status_range",
+        )
+        # Task #263: shift_schedules.on_leave upsert hızlandırıcı; aynı zamanda
+        # leave×shift cross-check sorgularını destekler.
+        await db.shift_schedules.create_index(
+            [("tenant_id", 1), ("status", 1), ("shift_date", 1)],
+            name="idx_shift_status_date",
+        )
+        logger.info("✅ Tenant uniqueness indexes ensured (hotel_id, username, performance_reviews, shift_schedule_locks, hr_coverage_rules)")
     except Exception as e:
         logger.warning(f"Tenant uniqueness index error: {e}")
 

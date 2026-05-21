@@ -36,7 +36,9 @@ const LEAVE_TYPE_LABEL = {
 
 const STATUS_INTENT = {
   pending: 'warning',
+  dept_approved: 'info',
   approved: 'success',
+  hr_approved: 'success',
   rejected: 'danger',
   active: 'success',
   closed: 'neutral',
@@ -44,7 +46,9 @@ const STATUS_INTENT = {
 
 const STATUS_LABEL = {
   pending: 'Beklemede',
+  dept_approved: 'Dept Onaylı (HR Bekliyor)',
   approved: 'Onaylandı',
+  hr_approved: 'Onaylandı',
   rejected: 'Reddedildi',
   active: 'Aktif',
   closed: 'Kapalı',
@@ -224,11 +228,25 @@ const HRComplete = () => {
     try {
       let note = '';
       if (action === 'reject') {
-        note = await promptDialog({ message: 'Red sebebi (opsiyonel):', defaultValue: '' });
+        note = await promptDialog({
+          message: 'Red sebebi (ZORUNLU):', defaultValue: '',
+        });
+        if (note === null) return;
+        if (!String(note || '').trim()) {
+          toast.error('Red sebebi zorunludur');
+          return;
+        }
+      } else if (action === 'dept_approve') {
+        note = await promptDialog({
+          message: 'Departman onayı notu (opsiyonel):', defaultValue: '',
+        });
         if (note === null) return;
       }
       await axios.post(`/hr/overtime-request/${req.id}/decision`, { action, note });
-      toast.success(action === 'approve' ? 'Mesai onaylandı' : 'Mesai reddedildi');
+      const msg = action === 'reject' ? 'Mesai reddedildi'
+        : action === 'dept_approve' ? 'Departman onayı verildi (HR final onayı bekleniyor)'
+        : 'Mesai onaylandı (bordroya hazır)';
+      toast.success(msg);
       loadOvertimeRequests();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'İşlem başarısız');
@@ -503,14 +521,34 @@ const HRComplete = () => {
 
   const decideLeave = async (id, decision) => {
     try {
-      await axios.post(`/hr/leave-request/${id}/decision`, { decision });
-      toast.success(decision === 'approve' ? 'İzin onaylandı' : 'İzin reddedildi');
+      let note = '';
+      if (decision === 'reject') {
+        note = await promptDialog({
+          message: 'Red sebebi (ZORUNLU):', defaultValue: '',
+        });
+        if (note === null) return;
+        if (!String(note || '').trim()) {
+          toast.error('Red sebebi zorunludur');
+          return;
+        }
+      } else if (decision === 'dept_approve') {
+        note = await promptDialog({
+          message: 'Departman onayı notu (opsiyonel):', defaultValue: '',
+        });
+        if (note === null) return;
+      }
+      const res = await axios.post(`/hr/leave-request/${id}/decision`, { decision, note });
+      const created = res.data?.on_leave_shifts_created || 0;
+      const msg = decision === 'reject' ? 'İzin reddedildi'
+        : decision === 'dept_approve' ? 'Departman onayı verildi (HR final onayı bekleniyor)'
+        : `İzin onaylandı${created ? ` • ${created} gün vardiyaya 'izinli' işlendi` : ''}`;
+      toast.success(msg);
       loadLeaves();
     } catch (error) {
       const msg = error.response?.status === 403
         ? 'Onay yetkiniz yok'
-        : 'İşlem başarısız';
-      toast.error(msg);
+        : (error.response?.data?.detail || 'İşlem başarısız');
+      toast.error(typeof msg === 'string' ? msg : 'İşlem başarısız');
     }
   };
 
@@ -1043,12 +1081,25 @@ const HRComplete = () => {
                           </td>
                           <td className="text-right">
                             {item.status === 'pending' && (
-                              <div className="flex justify-end gap-1">
+                              <div className="flex justify-end gap-1 flex-wrap">
+                                <Button size="sm" variant="outline" onClick={() => decideLeave(item.id, 'dept_approve')} data-testid={`btn-dept-approve-${item.id}`}>
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-sky-600" />Dept Onay
+                                </Button>
                                 <Button size="sm" variant="outline" onClick={() => decideLeave(item.id, 'approve')} data-testid={`btn-approve-${item.id}`}>
-                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />{t('cm.pages_HRComplete.onayla')}
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />HR Final
                                 </Button>
                                 <Button size="sm" variant="outline" onClick={() => decideLeave(item.id, 'reject')} data-testid={`btn-reject-${item.id}`}>
                                   <XCircle className="w-3.5 h-3.5 mr-1" />{t('cm.pages_HRComplete.reddet')}
+                                </Button>
+                              </div>
+                            )}
+                            {item.status === 'dept_approved' && (
+                              <div className="flex justify-end gap-1 flex-wrap">
+                                <Button size="sm" onClick={() => decideLeave(item.id, 'approve')} data-testid={`btn-hr-final-${item.id}`}>
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />HR Final Onay
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => decideLeave(item.id, 'reject')} data-testid={`btn-hr-reject-${item.id}`}>
+                                  <XCircle className="w-3.5 h-3.5 mr-1" />Reddet
                                 </Button>
                               </div>
                             )}
@@ -1281,11 +1332,24 @@ const HRComplete = () => {
                           <td className="text-xs text-slate-500">{(req.requested_at || '').slice(0, 10)}</td>
                           <td className="text-right">
                             {req.status === 'pending' && (
-                              <div className="flex justify-end gap-1">
-                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'approve')}>
-                                  <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" />Onayla
+                              <div className="flex justify-end gap-1 flex-wrap">
+                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'dept_approve')} data-testid={`ot-dept-${req.id}`}>
+                                  <Check className="w-3.5 h-3.5 mr-1 text-sky-600" />Dept Onay
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'reject')}>
+                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'approve')} data-testid={`ot-approve-${req.id}`}>
+                                  <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" />HR Final
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'reject')} data-testid={`ot-reject-${req.id}`}>
+                                  <X className="w-3.5 h-3.5 mr-1 text-rose-600" />Reddet
+                                </Button>
+                              </div>
+                            )}
+                            {req.status === 'dept_approved' && (
+                              <div className="flex justify-end gap-1 flex-wrap">
+                                <Button size="sm" onClick={() => decideOvertime(req, 'approve')} data-testid={`ot-hr-final-${req.id}`}>
+                                  <Check className="w-3.5 h-3.5 mr-1" />HR Final (Bordro)
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'reject')} data-testid={`ot-hr-reject-${req.id}`}>
                                   <X className="w-3.5 h-3.5 mr-1 text-rose-600" />Reddet
                                 </Button>
                               </div>

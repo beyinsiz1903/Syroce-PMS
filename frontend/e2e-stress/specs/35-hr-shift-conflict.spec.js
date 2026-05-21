@@ -363,6 +363,67 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
         expect(pass, `shift cleanup idempotent`).toBe(true);
     });
 
+    test('F) Coverage rules CRUD + coverage-check probe (Task #263 v2)', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'coverage_rules', status: 'SKIP',
+                note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'HR shifts module blocked');
+            return;
+        }
+        const samples = [];
+        // List existing rules (idempotent baseline).
+        const listR = await callTimed(request, 'get', '/api/hr/coverage-rules',
+            undefined, stressTokens.stress_token);
+        samples.push(listR.ms);
+        const listOk = listR.ok || listR.status === 404;
+        const notImplemented = listR.status === 404;
+        const blockedRBAC = listR.status === 401 || listR.status === 403;
+        let createdId = null;
+        let createStatus = null;
+        let checkStatus = null;
+        let checkShapeOk = false;
+        if (listR.ok) {
+            const tomorrow = new Date(Date.now() + 86_400_000);
+            const weekday = tomorrow.getUTCDay() === 0 ? 7 : tomorrow.getUTCDay();
+            const payload = {
+                department: 'housekeeping',
+                weekday,
+                shift_type: 'morning',
+                min_staff: 1,
+            };
+            const createR = await callTimed(request, 'post', '/api/hr/coverage-rules',
+                payload, stressTokens.stress_token);
+            samples.push(createR.ms);
+            createStatus = createR.status;
+            createdId = createR.body?.id || createR.body?.rule_id;
+            const start = tomorrow.toISOString().slice(0, 10);
+            const end = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+            const checkR = await callTimed(request, 'get',
+                `/api/hr/coverage/check?start=${start}&end=${end}`,
+                undefined, stressTokens.stress_token);
+            samples.push(checkR.ms);
+            checkStatus = checkR.status;
+            checkShapeOk = checkR.ok
+                && (Array.isArray(checkR.body?.gaps) || Array.isArray(checkR.body))
+                && (typeof checkR.body?.rules_count === 'number' || Array.isArray(checkR.body));
+            // Cleanup created rule (best-effort).
+            if (createdId) {
+                await callTimed(request, 'delete', `/api/hr/coverage-rules/${createdId}`,
+                    undefined, stressTokens.stress_token);
+            }
+        }
+        const pass = listOk && (notImplemented || blockedRBAC ||
+            ((createStatus === null || createStatus === 200 || createStatus === 201 || createStatus === 401 || createStatus === 403) &&
+             (checkStatus === null || checkShapeOk || checkStatus === 401 || checkStatus === 403)));
+        recPerf(testInfo, MOD, 'coverage_rules', samples, pass);
+        rec(testInfo, { module: MOD, step: 'coverage_rules', status: pass ? 'PASS' : 'REVIEW',
+            endpoint: 'GET/POST/DELETE /api/hr/coverage-rules + /coverage/check',
+            note: `list=${listR.status} create=${createStatus} check=${checkStatus} check_shape_ok=${checkShapeOk} created_id=${createdId} not_impl=${notImplemented} rbac=${blockedRBAC}` });
+        if (notImplemented) recFinding(testInfo, 'P2', MOD, 'Coverage-rules endpoint not implemented (informational)', `status=404`);
+        if (blockedRBAC) recFinding(testInfo, 'P2', MOD, 'Coverage-rules RBAC-blocked (informational)', `status=${listR.status}`);
+        expect(pass).toBe(true);
+    });
+
     test('E) external_calls invariant + pilot_drift=0', async ({ request, stressTokens, stressState }, testInfo) => {
         await assertPilotDriftZero(testInfo, MOD, request, stressTokens.pilot_token, pilotBefore);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'hr_shift_conflict_done', stressState, request, stressTokens.pilot_token);
