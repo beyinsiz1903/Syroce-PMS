@@ -35,6 +35,7 @@ Ops endpoints:
   GET  /dry-run/stats        → dry-run success rate & failure breakdown
   GET  /dry-run/write-criteria → write enable criteria check
 """
+import asyncio
 import logging
 from typing import Any
 
@@ -427,41 +428,75 @@ async def get_ops_dashboard(
 
     now_iso = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
 
-    # 1. Feature flags
-    flags = await get_flags(tenant_id)
-
-    # 2. Metrics summary (24h)
-    metrics = await get_summary(tenant_id, hours=24)
-
-    # 3. Last sync timestamp
-    last_sync = await get_last_sync(tenant_id)
-
-    # 4. DLQ count + recent entries
-    dlq_entries = await _db["connector_dlq"].find(
-        {"tenant_id": tenant_id, "provider": "hotelrunner"},
-        {"_id": 0},
-    ).sort("created_at", -1).to_list(10)
-    dlq_count = await _db["connector_dlq"].count_documents(
-        {"tenant_id": tenant_id, "provider": "hotelrunner"},
+    # Perf: 15 bağımsız alt-sistem çağrısı önceden sıralıydı (~RTT × 15).
+    # Tek asyncio.gather ile paralel — toplam latency en yavaş çağrıya iner.
+    from channel_manager.connectors.hotelrunner_v2.dry_run import (
+        check_write_enable_criteria,
+        get_dry_run_stats,
+    )
+    from channel_manager.connectors.hotelrunner_v2.shadow_automation import (
+        get_automation_status,
+        get_trend_data,
     )
 
-    # 5. Recent drifts + count
-    drifts = await get_recent_drifts(tenant_id, limit=10)
-    drift_count = await _db["connector_reconciliation_drifts"].count_documents(
-        {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
-    )
+    async def _dlq_entries():
+        return await _db["connector_dlq"].find(
+            {"tenant_id": tenant_id, "provider": "hotelrunner"},
+            {"_id": 0},
+        ).sort("created_at", -1).to_list(10)
 
-    # 6. Last reconciliation
-    recon_history = await get_reconciliation_history(tenant_id, limit=1)
+    async def _dlq_count():
+        return await _db["connector_dlq"].count_documents(
+            {"tenant_id": tenant_id, "provider": "hotelrunner"},
+        )
+
+    async def _drift_count():
+        return await _db["connector_reconciliation_drifts"].count_documents(
+            {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
+        )
+
+    async def _recent_events():
+        return await _db["connector_metrics"].find(
+            {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
+            {"_id": 0},
+        ).sort("recorded_at", -1).to_list(10)
+
+    (
+        flags,
+        metrics,
+        last_sync,
+        dlq_entries,
+        dlq_count,
+        drifts,
+        drift_count,
+        recon_history,
+        recent_events,
+        readiness,
+        phase_state,
+        dry_run_stats,
+        write_criteria,
+        automation_status,
+        automation_trends,
+    ) = await asyncio.gather(
+        get_flags(tenant_id),
+        get_summary(tenant_id, hours=24),
+        get_last_sync(tenant_id),
+        _dlq_entries(),
+        _dlq_count(),
+        get_recent_drifts(tenant_id, limit=10),
+        _drift_count(),
+        get_reconciliation_history(tenant_id, limit=1),
+        _recent_events(),
+        calculate_readiness_score(tenant_id),
+        get_current_phase(tenant_id),
+        get_dry_run_stats(tenant_id),
+        check_write_enable_criteria(tenant_id),
+        get_automation_status(tenant_id),
+        get_trend_data(tenant_id, hours=168),
+    )
     last_recon = recon_history[0] if recon_history else None
 
-    # 7. Recent connector events (last 10 metrics)
-    recent_events = await _db["connector_metrics"].find(
-        {"tenant_id": tenant_id, "provider": "hotelrunner_v2"},
-        {"_id": 0},
-    ).sort("recorded_at", -1).to_list(10)
-
-    # 8. Retry count (failed operations in last 24h)
+    # Retry count (failed operations in last 24h)
     retry_count = metrics.get("operations", {}).get("pull_reservations", {}).get("failed", 0)
     for op_data in metrics.get("operations", {}).values():
         retry_count = max(retry_count, op_data.get("failed", 0))
@@ -494,24 +529,6 @@ async def get_ops_dashboard(
                 return "degraded"
             return "error"
         return "unknown"
-
-    # 11. Write Readiness Score
-    readiness = await calculate_readiness_score(tenant_id)
-
-    # 12. Transition phase
-    phase_state = await get_current_phase(tenant_id)
-
-    # 13. Dry-run stats
-    from channel_manager.connectors.hotelrunner_v2.dry_run import check_write_enable_criteria, get_dry_run_stats
-    dry_run_stats = await get_dry_run_stats(tenant_id)
-
-    # 14. Write enable criteria
-    write_criteria = await check_write_enable_criteria(tenant_id)
-
-    # 15. Shadow Automation status + trends
-    from channel_manager.connectors.hotelrunner_v2.shadow_automation import get_automation_status, get_trend_data
-    automation_status = await get_automation_status(tenant_id)
-    automation_trends = await get_trend_data(tenant_id, hours=168)
 
     return {
         "generated_at": now_iso,

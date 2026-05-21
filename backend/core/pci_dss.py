@@ -55,23 +55,30 @@ async def _tenant_signals(tenant_id: str | None) -> dict[str, Any]:
     if not tenant_id:
         return {}
     try:
+        import asyncio as _asyncio
+
         from core.database import _raw_db
-        # Req 8: 2FA kullanım oranı + parolasız hesap kontrolü
-        users = await _raw_db.users.count_documents({"tenant_id": tenant_id})
-        users_2fa = await _raw_db.users.count_documents(
-            {"tenant_id": tenant_id, "totp_enabled": True}
-        ) if users else 0
-        users_no_password = await _raw_db.users.count_documents(
-            {"tenant_id": tenant_id, "$or": [
-                {"hashed_password": {"$in": [None, ""]}},
-                {"hashed_password": {"$exists": False}},
-            ]}
-        ) if users else 0
-        # Req 10: audit log retention
-        tenant = await _raw_db.tenants.find_one(
-            {"id": tenant_id},
-            {"_id": 0, "audit_log_retention_days": 1, "compliance_settings": 1},
-        ) or {}
+        # Perf: 3 bağımsız count + 1 find_one önceden sıralıydı; tek
+        # gather ile paralel. users==0 guard'ı eskiden 2/3. çağrıyı atlıyordu —
+        # cold-start'ta zaten 3'ünü de bekliyordu; paralel sürümde guard
+        # kaldırıldı (boş tenant'ta filter 0 döner, ölçülemez ek maliyet yok).
+        users, users_2fa, users_no_password, tenant = await _asyncio.gather(
+            _raw_db.users.count_documents({"tenant_id": tenant_id}),
+            _raw_db.users.count_documents(
+                {"tenant_id": tenant_id, "totp_enabled": True}
+            ),
+            _raw_db.users.count_documents(
+                {"tenant_id": tenant_id, "$or": [
+                    {"hashed_password": {"$in": [None, ""]}},
+                    {"hashed_password": {"$exists": False}},
+                ]}
+            ),
+            _raw_db.tenants.find_one(
+                {"id": tenant_id},
+                {"_id": 0, "audit_log_retention_days": 1, "compliance_settings": 1},
+            ),
+        )
+        tenant = tenant or {}
         retention = (
             tenant.get("audit_log_retention_days")
             or (tenant.get("compliance_settings") or {}).get("audit_log_retention_days")
