@@ -199,15 +199,16 @@ class RateElasticityModel:
         if not room_types:
             room_types = ["Standard"]
 
-        price_points = []
-        for rt in room_types:
-            elasticity = await self.analyze_elasticity(tenant_id, rt)
-            rooms = await db.rooms.find(
-                {"tenant_id": tenant_id, "room_type": rt},
-                {"_id": 0, "base_price": 1},
-            ).to_list(100)
+        import asyncio
+        async def _one(rt: str) -> dict[str, Any]:
+            elasticity, rooms = await asyncio.gather(
+                self.analyze_elasticity(tenant_id, rt),
+                db.rooms.find(
+                    {"tenant_id": tenant_id, "room_type": rt},
+                    {"_id": 0, "base_price": 1},
+                ).to_list(100),
+            )
             current_avg = sum(r.get("base_price", 0) for r in rooms) / max(len(rooms), 1)
-
             coeff = elasticity.get("elasticity_coefficient", -1.0)
             if coeff > -0.5:
                 suggested = round(current_avg * 1.10, 2)
@@ -218,15 +219,18 @@ class RateElasticityModel:
             else:
                 suggested = round(current_avg * 0.95, 2)
                 action = "decrease"
-
-            price_points.append({
+            return {
                 "room_type": rt,
                 "current_avg_price": round(current_avg, 2),
                 "suggested_price": suggested,
                 "action": action,
                 "elasticity": coeff,
-            })
+            }
 
+        # Tüm room_type'lar bağımsız → paralel. Tipik mülklerde 3-10 oda tipi olur,
+        # semaphore gerekmiyor. Exception olursa o satır skip edilir, kalanlar döner.
+        results = await asyncio.gather(*[_one(rt) for rt in room_types], return_exceptions=True)
+        price_points = [r for r in results if not isinstance(r, Exception)]
         return {"tenant_id": tenant_id, "price_points": price_points}
 
 
@@ -418,23 +422,87 @@ class CancellationPredictionModel:
 
     async def get_at_risk_bookings(self, tenant_id: str, min_risk: float = 0.3) -> dict[str, Any]:
         """Get all bookings with high cancellation risk."""
-        today = date.today().isoformat()
+        today_d = date.today()
+        today = today_d.isoformat()
+        # Önceden N+1 vardı: 500 booking × (1 find_one + 2 count_documents) = 1500
+        # seri Mongo çağrısı. predict_cancellation_risk içindeki tüm field'ları
+        # ilk projection'a dahil edip, guest_id history'sini tek bir aggregation
+        # ile bulk topluyoruz; risk skoru tamamen in-memory hesaplanıyor.
         upcoming = await db.bookings.find(
             {"tenant_id": tenant_id, "check_in": {"$gte": today},
              "status": {"$in": ["confirmed", "guaranteed"]}},
             {"_id": 0, "id": 1, "guest_name": 1, "check_in": 1, "check_out": 1,
-             "room_id": 1, "source": 1, "total_amount": 1},
+             "room_id": 1, "source": 1, "total_amount": 1, "guest_id": 1,
+             "payment_received": 1, "deposit_paid": 1, "group_id": 1},
         ).to_list(500)
+
+        guest_ids = list({b["guest_id"] for b in upcoming if b.get("guest_id")})
+        history: dict[str, dict[str, int]] = {}
+        if guest_ids:
+            cursor = db.bookings.aggregate([
+                {"$match": {"tenant_id": tenant_id, "guest_id": {"$in": guest_ids},
+                            "status": {"$in": ["checked_out", "cancelled"]}}},
+                {"$group": {"_id": {"gid": "$guest_id", "st": "$status"},
+                             "n": {"$sum": 1}}},
+            ])
+            async for row in cursor:
+                gid = row["_id"]["gid"]
+                st = row["_id"]["st"]
+                history.setdefault(gid, {"checked_out": 0, "cancelled": 0})
+                history[gid][st] = row["n"]
 
         at_risk = []
         for b in upcoming:
-            prediction = await self.predict_cancellation_risk(tenant_id, b["id"])
-            if prediction.get("cancellation_probability", 0) >= min_risk:
+            try:
+                ci = date.fromisoformat((b.get("check_in") or "")[:10])
+                lead_time = (ci - today_d).days
+            except Exception:
+                lead_time = 7
+
+            score = 0.0
+            factors: list[dict[str, Any]] = []
+
+            if lead_time > 60:
+                score += 0.25
+                factors.append({"factor": "long_lead_time", "impact": 0.25, "detail": f"{lead_time} gun onceden"})
+            elif lead_time > 30:
+                score += 0.15
+                factors.append({"factor": "medium_lead_time", "impact": 0.15, "detail": f"{lead_time} gun onceden"})
+
+            source = b.get("source", "direct")
+            if source in ("ota", "booking.com", "expedia"):
+                score += 0.15
+                factors.append({"factor": "ota_source", "impact": 0.15, "detail": f"OTA kaynakli: {source}"})
+
+            if not b.get("payment_received") and not b.get("deposit_paid"):
+                score += 0.20
+                factors.append({"factor": "no_payment", "impact": 0.20, "detail": "Odeme/depozito yok"})
+
+            gid = b.get("guest_id")
+            if gid:
+                h = history.get(gid, {"checked_out": 0, "cancelled": 0})
+                past_stays = h.get("checked_out", 0)
+                past_cancels = h.get("cancelled", 0)
+                if past_cancels > past_stays:
+                    score += 0.20
+                    factors.append({"factor": "cancel_history", "impact": 0.20, "detail": f"{past_cancels} onceki iptal"})
+                elif past_stays > 2:
+                    score -= 0.10
+                    factors.append({"factor": "loyal_guest", "impact": -0.10, "detail": f"{past_stays} onceki konaklama"})
+
+            if b.get("group_id"):
+                score -= 0.10
+                factors.append({"factor": "group_booking", "impact": -0.10, "detail": "Grup rezervasyonu"})
+
+            score = min(max(round(score, 3), 0.0), 1.0)
+            if score >= min_risk:
+                risk_level = "high" if score > 0.5 else ("medium" if score > 0.25 else "low")
                 at_risk.append({
-                    **b,
-                    "cancellation_probability": prediction["cancellation_probability"],
-                    "risk_level": prediction["risk_level"],
-                    "risk_factors": prediction.get("risk_factors", []),
+                    **{k: v for k, v in b.items()
+                       if k not in ("payment_received", "deposit_paid", "group_id", "guest_id")},
+                    "cancellation_probability": score,
+                    "risk_level": risk_level,
+                    "risk_factors": factors,
                 })
 
         at_risk.sort(key=lambda x: x["cancellation_probability"], reverse=True)
