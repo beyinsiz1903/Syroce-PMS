@@ -395,7 +395,7 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
                 payload, stressTokens.stress_token);
             samples.push(createR.ms);
             createStatus = createR.status;
-            createdId = createR.body?.id || createR.body?.rule_id;
+            createdId = createR.body?.rule?.id || createR.body?.id || createR.body?.rule_id;
             const start = tomorrow.toISOString().slice(0, 10);
             const end = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
             const checkR = await callTimed(request, 'get',

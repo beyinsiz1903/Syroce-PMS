@@ -1082,11 +1082,8 @@ const HRComplete = () => {
                           <td className="text-right">
                             {item.status === 'pending' && (
                               <div className="flex justify-end gap-1 flex-wrap">
-                                <Button size="sm" variant="outline" onClick={() => decideLeave(item.id, 'dept_approve')} data-testid={`btn-dept-approve-${item.id}`}>
-                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-sky-600" />Dept Onay
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => decideLeave(item.id, 'approve')} data-testid={`btn-approve-${item.id}`}>
-                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />HR Final
+                                <Button size="sm" onClick={() => decideLeave(item.id, 'dept_approve')} data-testid={`btn-dept-approve-${item.id}`}>
+                                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" />Dept Onay
                                 </Button>
                                 <Button size="sm" variant="outline" onClick={() => decideLeave(item.id, 'reject')} data-testid={`btn-reject-${item.id}`}>
                                   <XCircle className="w-3.5 h-3.5 mr-1" />{t('cm.pages_HRComplete.reddet')}
@@ -1333,11 +1330,8 @@ const HRComplete = () => {
                           <td className="text-right">
                             {req.status === 'pending' && (
                               <div className="flex justify-end gap-1 flex-wrap">
-                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'dept_approve')} data-testid={`ot-dept-${req.id}`}>
-                                  <Check className="w-3.5 h-3.5 mr-1 text-sky-600" />Dept Onay
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'approve')} data-testid={`ot-approve-${req.id}`}>
-                                  <Check className="w-3.5 h-3.5 mr-1 text-emerald-600" />HR Final
+                                <Button size="sm" onClick={() => decideOvertime(req, 'dept_approve')} data-testid={`ot-dept-${req.id}`}>
+                                  <Check className="w-3.5 h-3.5 mr-1" />Dept Onay
                                 </Button>
                                 <Button size="sm" variant="outline" onClick={() => decideOvertime(req, 'reject')} data-testid={`ot-reject-${req.id}`}>
                                   <X className="w-3.5 h-3.5 mr-1 text-rose-600" />Reddet

@@ -559,6 +559,21 @@ const ShiftPlannerPage = () => {
                       {p.department && (
                         <div className="text-[11px] text-slate-400 capitalize">{p.department}</div>
                       )}
+                      {hoursByStaff[p.id] && (() => {
+                        const h = hoursByStaff[p.id];
+                        const total = Number(h.total_hours ?? h.hours ?? 0);
+                        const over = Number(h.overtime_estimate ?? Math.max(0, total - 45));
+                        const exceeds = total > 45 || h.exceeds_legal_limit;
+                        return (
+                          <div
+                            className={`text-[11px] mt-0.5 ${exceeds ? 'text-rose-700 font-medium' : 'text-slate-500'}`}
+                            data-testid={`wk-hours-${p.id}`}
+                            title={exceeds ? `Yasal sınır (45h) aşıldı — tahmini fazla mesai ${over.toFixed(1)}h` : 'Haftalık toplam'}
+                          >
+                            {total.toFixed(1)}h{exceeds ? ` • +${over.toFixed(1)}h FM` : ''}
+                          </div>
+                        );
+                      })()}
                     </td>
                     {days.map((d) => {
                       const ds = fmtDate(d);

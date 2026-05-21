@@ -649,40 +649,69 @@ async def _apply_leave_to_shifts(
     end = date.fromisoformat(leave['end_date'])
     cur = start
     written = 0
+    leave_type = leave.get('leave_type')
+    leave_notes = f"İzin: {leave_type}" if leave_type else "İzin"
     while cur <= end:
         d_iso = cur.isoformat()
-        res = await db.shift_schedules.update_one(
-            {
-                'tenant_id': tenant_id,
-                'staff_id': leave['staff_id'],
-                'shift_date': d_iso,
-                'status': 'on_leave',
-                'leave_id': leave['id'],
-            },
-            {
-                '$setOnInsert': {
-                    'id': str(uuid.uuid4()),
-                    'tenant_id': tenant_id,
-                    'staff_id': leave['staff_id'],
-                    'staff_name': leave.get('staff_name'),
-                    'shift_date': d_iso,
-                    'shift_type': 'off',
-                    'start_time': '00:00',
-                    'end_time': '23:59',
-                    'crosses_midnight': False,
-                    'end_date': d_iso,
+        # Task #263: Mevcut shift'i `on_leave` olarak işaretle (eski davranış
+        # yeni satır eklerdi → planner çift kayıt görüyordu). Mevcut shift
+        # varsa status='on_leave' + leave_id setle; lock konvansiyonel olarak
+        # release edilmez çünkü on_leave kayıt çakışma kontratının dışında.
+        existing = await db.shift_schedules.find_one({
+            'tenant_id': tenant_id,
+            'staff_id': leave['staff_id'],
+            'shift_date': d_iso,
+            'status': {'$ne': 'cancelled'},
+        })
+        if existing is not None:
+            await db.shift_schedules.update_one(
+                {'id': existing['id'], 'tenant_id': tenant_id},
+                {'$set': {
                     'status': 'on_leave',
                     'leave_id': leave['id'],
-                    'leave_type': leave.get('leave_type'),
-                    'notes': f"İzin: {leave.get('leave_type')}",
-                    'created_at': datetime.now(UTC).isoformat(),
-                    'created_via': 'leave_approval',
+                    'leave_type': leave_type,
+                    'notes': leave_notes,
+                    'on_leave_applied_at': datetime.now(UTC).isoformat(),
+                    'on_leave_applied_via': 'leave_approval',
+                }},
+            )
+            if existing.get('status') != 'on_leave' or existing.get('leave_id') != leave['id']:
+                written += 1
+        else:
+            # Mevcut shift yoksa yeni on_leave kayıt aç (idempotent: aynı leave_id
+            # için tekrar çağrılırsa update_one match eder, insert YOK).
+            res = await db.shift_schedules.update_one(
+                {
+                    'tenant_id': tenant_id,
+                    'staff_id': leave['staff_id'],
+                    'shift_date': d_iso,
+                    'status': 'on_leave',
+                    'leave_id': leave['id'],
                 },
-            },
-            upsert=True,
-        )
-        if res.upserted_id is not None:
-            written += 1
+                {
+                    '$setOnInsert': {
+                        'id': str(uuid.uuid4()),
+                        'tenant_id': tenant_id,
+                        'staff_id': leave['staff_id'],
+                        'staff_name': leave.get('staff_name'),
+                        'shift_date': d_iso,
+                        'shift_type': 'off',
+                        'start_time': '00:00',
+                        'end_time': '23:59',
+                        'crosses_midnight': False,
+                        'end_date': d_iso,
+                        'status': 'on_leave',
+                        'leave_id': leave['id'],
+                        'leave_type': leave_type,
+                        'notes': leave_notes,
+                        'created_at': datetime.now(UTC).isoformat(),
+                        'created_via': 'leave_approval',
+                    },
+                },
+                upsert=True,
+            )
+            if res.upserted_id is not None:
+                written += 1
         cur += timedelta(days=1)
     return written
 
@@ -724,11 +753,14 @@ async def decide_leave_request(
                 ),
             )
         new_status = 'dept_approved'
-    else:  # 'approve' (final HR)
-        if current_status not in ('pending', 'dept_approved'):
+    else:  # 'approve' (final HR) — Task #263: strict chain enforcement
+        if current_status != 'dept_approved':
             raise HTTPException(
                 status_code=400,
-                detail=f"Final onay verilemez (status={current_status})",
+                detail=(
+                    f"Final onay sadece departman onayından sonra verilebilir "
+                    f"(mevcut: {current_status}). Önce 'dept_approve' aşaması gerekli."
+                ),
             )
         new_status = 'approved'
 
@@ -3391,11 +3423,14 @@ async def decide_overtime_request(
         new_status = 'dept_approved'
         notify_kind = 'overtime_dept_approved'
         notify_title = "Mesai talebiniz departman onayı aldı (final onay bekleniyor)"
-    else:  # 'approve' (final HR/Finance)
-        if current_status not in ('pending', 'dept_approved'):
+    else:  # 'approve' (final HR/Finance) — Task #263: strict chain enforcement
+        if current_status != 'dept_approved':
             raise HTTPException(
                 status_code=400,
-                detail=f"Final onay verilemez (status={current_status})",
+                detail=(
+                    f"Final onay sadece departman onayından sonra verilebilir "
+                    f"(mevcut: {current_status}). Önce 'dept_approve' aşaması gerekli."
+                ),
             )
         # 270h/yıl kontrolü (İş K. m.41/3) — final aşamada
         year = int(req['work_date'][:4])
