@@ -92,9 +92,35 @@ Her iki fix sonrası 23/23 test yine PASS. Architect performans uyarısı (`@cac
 
 **GO** — lokal test 23/23 PASS (architect fixes dahil). Stress CI rerun bekleniyor; bu rapor POST-RERUN bölümüyle güncellenecek.
 
-## POST-RERUN — (bekleniyor)
+## POST-RERUN tur-1 (CI 22:01 UTC) — NO-GO, gerçek root cause açığa çıktı
 
-CI tetiklendiğinde:
+CI fix sonrası ilk koşu hala 5xx=2 verdi (`statuses=[200,200,200,200,200,500,500]`). Bizim eklediğimiz `logger.exception` deployment loglarında gerçek traceback'i ortaya çıkardı:
+
+```
+2026-05-20T21:53:47 [ERROR] routers.report_builder: report_builder excel export failed
+  tenant=23377306-... data_source=folios cols=['folio_number','guest_name','room_number','status']
+  File "backend/routers/report_builder.py", line 673, in _build_excel_response
+    from openpyxl import Workbook
+ModuleNotFoundError: No module named 'openpyxl'
+
+2026-05-20T21:53:49 [ERROR] routers.departments.reports: company_aging excel export failed
+  for tenant=23377306-...
+  File "backend/core/utils.py", line 53, in create_excel_workbook
+    from openpyxl import Workbook
+ModuleNotFoundError: No module named 'openpyxl'
+```
+
+**Gerçek root cause**: `openpyxl` deployment ortamında kurulu değil. Local dev'de mevcut (yüzeysel test PASS verdi), `backend/requirements/reports.txt` içinde declared ama deploy `pyproject.toml`'dan kurulum yapıyor ve oraya hiç eklenmemiş.
+
+Bizim Task #246 kapsamındaki kod düzeltmeleri (datetime coerce, `@cached` kaldırma, value coerce) doğru ve gerekli savunma katmanları — ancak gerçek 500'lerin nedeni değildi. Tek faydaları: deploy logger.exception sayesinde gerçek traceback'i artık görünür kıldı.
+
+**Fix tur-2**: `openpyxl==3.1.2` `pyproject.toml` `[project].dependencies` listesine eklendi (`installLanguagePackages` üzerinden, uv.lock güncel). Pakage `backend/requirements/reports.txt` (== 3.1.2) ile sürüm uyumlu.
+
+**Gerekli adım**: Deployment redeploy — CI yeniden tetikleneceğinde fix etkili olacak.
+
+## POST-RERUN tur-2 (CI bekleniyor)
+
+Deploy publish + CI rerun sonrası:
 - F8H §90 § C `5xx=0` assertion PASS olmalı.
 - `builder_excel` ve `dept_aging_xlsx` 2xx + valid XLSX content-type dönmeli.
 - Hiçbir P0/P1 finding `reports_export` modülünden çıkmamalı.

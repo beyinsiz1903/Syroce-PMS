@@ -68,6 +68,20 @@ except Exception:
 - `backend/routers/report_builder.py` — `_coerce_excel_value`, `_build_excel_response`, try/except wrapping.
 - `backend/tests/test_reports_export_excel_500_regression.py` — 23 case regression.
 
+## POST-CI tur-1 (gerçek root cause)
+
+Fix sonrası ilk stress CI koşusunda iki endpoint hala 500 verdi. Eklenen `logger.exception` sayesinde deployment loglarında görünen gerçek hata: `ModuleNotFoundError: No module named 'openpyxl'`. `openpyxl` paketi `pyproject.toml` `[project].dependencies` listesinde tanımlı değildi; deployment kurulumu bu dosyadan yapıldığı için Excel render yapan tüm route'lar (rapor builder + company-aging + diğer `core.utils.create_excel_workbook` çağıranlar) deployment'ta 500 dönüyordu.
+
+**Lokal dev neden PASS verdi**: Dev workspace'inde openpyxl daha önce başka bir bağımlamı tarafından (veya manuel) kurulmuştu; `python -c "import openpyxl"` çalışıyordu. `backend/requirements/reports.txt` doğru sürümü (3.1.2) listeliyor ama deployment bu split-requirements dosyasını okumuyor.
+
+**Fix**: `openpyxl==3.1.2` `pyproject.toml` dependency listesine eklendi. Bu, Task #246 kod düzeltmelerinin **yanı sıra** deploy'a girmesi gereken kritik bir tamamlayıcı düzeltmedir.
+
+### Yeni kural (deployment dep parity)
+
+`backend/requirements/*.txt` ile `pyproject.toml` arasında **dependency parity** garantisi yok. Production'a giden bir route'a yeni runtime bağımlılığı eklendiğinde **her iki dosyaya da** eklenmeli. Aksi halde lokal dev'de çalışan kod deploy'da `ModuleNotFoundError` ile 500 döner.
+
+Önerilen takip: `backend/requirements/api.txt` + `reports.txt` + `worker.txt` zinciri içindeki tüm pin'leri `pyproject.toml` ile karşılaştıran bir CI check (`scripts/verify_pyproject_parity.py` gibi).
+
 ## Architect review notları
 
 İlk implementasyon turunda 2 issue düzeltildi:
