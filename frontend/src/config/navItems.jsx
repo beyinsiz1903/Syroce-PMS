@@ -103,7 +103,10 @@ export const NAV_ITEMS = [
     path: "/security",
     tier: "basic",
     group: "core",
-    navGroup: "admin",
+    // Sayfa route'u infrastructure.js'te ve Altyapı'da görünüyor; üst nav
+    // highlight'ı da Altyapı'da olmalı. Önceden "admin" idi → "Yönetim"
+    // grubu mavi kalıyordu (navGroups.admin = "Yönetim" i18n).
+    navGroup: "infrastructure",
   },
   {
     key: "channels_hub",
