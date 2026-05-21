@@ -138,15 +138,14 @@ def _mask_hr_pii(
     """
     if not record or not isinstance(record, dict):
         return record
-    # Tam görünürlük (Task #264): manage_hr (HR Admin) + view_hr_payroll
-    # (Finance + super_admin payroll roller) + finance/super_admin role.
-    # KVKK least-privilege: view_hr alone YETMEZ.
+    # Tam görünürlük (Task #264 — strict allowlist, KVKK least-privilege):
+    # yalnız HR Admin (manage_hr perm) + Finance role + super_admin role +
+    # self-service. view_hr_payroll TEK BAŞINA YETMEZ — payroll-view perm'i
+    # tutar görmek içindir, IBAN/TC için ayrı entitlement gerekir.
     if _user_has_hr_op(current_user, "manage_hr"):
         return record
-    if _user_has_hr_op(current_user, "view_hr_payroll"):
-        return record
     role_lc = (getattr(current_user, "role", "") or "").lower()
-    if role_lc in ("finance", "super_admin", "admin"):
+    if role_lc in ("finance", "super_admin"):
         return record
     # Self-service: id eşleşmesi.
     rec_id = record.get("id") or record.get("staff_id") or record.get("user_id")
