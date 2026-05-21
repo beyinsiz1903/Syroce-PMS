@@ -170,11 +170,16 @@ test.describe('F8L § 52 — Outbox Idempotency + Conflict Queue', () => {
         // 2xx + data dönerse RBAC bypass (P0).
         const stresRead = await callTimed(request, 'get', '/api/outbox/events?limit=5',
             undefined, stressTokens.stress_token);
-        const denyOk = stresRead.status === 401 || stresRead.status === 403;
+        // 404 de kabul: require_super_admin_guard(not_found=True) varsayılan
+        // davranışı endpoint'in varlığını ifşa etmemek için 404 döndürür
+        // (existence-disclosure defense-in-depth). Threat-model § Spoofing
+        // bölümüyle uyumlu — RBAC enforcement çalıştığı sürece 401/403/404
+        // hepsi geçerli deny sözleşmesi.
+        const denyOk = stresRead.status === 401 || stresRead.status === 403 || stresRead.status === 404;
         rec(testInfo, { module: MOD, step: 'outbox_events_rbac',
             status: denyOk ? 'PASS' : 'FAIL',
             endpoint: 'GET /api/outbox/events (stress_token)', http: stresRead.status,
-            note: `expected=401/403 got=${stresRead.status}` });
+            note: `expected=401/403/404 got=${stresRead.status}` });
         if (stresRead.status >= 200 && stresRead.status < 300) {
             recFinding(testInfo, 'P0', MOD,
                 'Outbox events endpoint super_admin guard bypass — stres token 2xx',

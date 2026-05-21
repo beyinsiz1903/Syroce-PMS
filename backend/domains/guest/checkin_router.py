@@ -156,9 +156,24 @@ async def submit_online_checkin(
     current_user: User = Depends(_allow_frontdesk_or_guest),
 ):
     """Online check-in submission"""
+    from pydantic import ValidationError
+
     from domains.guest.online_checkin_models import OnlineCheckinRequest
 
-    request = OnlineCheckinRequest(**checkin_data)
+    # Body raw dict olarak alınıyor (legacy kontrat); pydantic doğrulamasını
+    # burada elle çağırıyoruz. Eksik/yanlış alanlarda ValidationError'ı yakalayıp
+    # FastAPI'nin standart 422 sözleşmesine dönüştürüyoruz — aksi halde
+    # ValidationError handler'a düşmeden 500 üretir (F8K stres NO-GO P1).
+    if not isinstance(checkin_data, dict):
+        raise HTTPException(status_code=422, detail="Geçersiz istek gövdesi")
+    try:
+        request = OnlineCheckinRequest(**checkin_data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+    except TypeError as exc:
+        # Beklenmeyen kwarg / pozisyonel argüman uyuşmazlıkları da
+        # client-side hata olarak işaretlensin (500 değil).
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     booking = await _assert_booking_accessible(request.booking_id, current_user)
 

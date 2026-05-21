@@ -308,7 +308,13 @@ test.describe('F8K § 60 — Public Online Check-in Stress', () => {
                 field_label: `${stressPrefix}_F8K_DRYRUN`,
             },
         });
-        const positiveOk = ok.ok || ok.status === 403 || ok.status === 404;
+        // 400 da kabul: test buffer'ı yalnız JFIF magic + sıfır padding +
+        // EOI içerir — Pillow `Image.open().verify()` bu synthetic bytes'ı
+        // gerçek JPEG olarak decode edemez ve `validate_image_bytes` 400
+        // "gecerli bir gorsel degil" döner. Bu BEKLENEN sertleştirme:
+        // magic-byte spoof'a karşı tam decode kontrolü (KVKK § PII guard).
+        // Dry-run amacı: pipeline 5xx atmasın + size/format guard çalışsın.
+        const positiveOk = ok.ok || ok.status === 400 || ok.status === 403 || ok.status === 404;
         if (ok.body) {
             // PII / file-path leak guard pozitif yanıtta.
             assertNoTokenLeak(testInfo, MOD, ok.body, 'id_photo_upload_ok');
