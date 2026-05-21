@@ -19,17 +19,17 @@ import { toast } from "sonner";
 
 // ── Status badge styles ───────────────────────────────────────────
 const STATUS_STYLES = {
-  overdue: { label: "SÜRESI GEÇMIŞ", icon: AlertOctagon, cls: "text-red-400 border-red-500/40 bg-red-500/15" },
-  warning: { label: "UYARI", icon: AlertTriangle, cls: "text-amber-400 border-amber-500/40 bg-amber-500/15" },
-  healthy: { label: "SAĞLIKLI", icon: CheckCircle, cls: "text-emerald-400 border-emerald-500/40 bg-emerald-500/15" },
+  overdue: { label: "SÜRESI GEÇMIŞ", icon: AlertOctagon, cls: "text-red-600 border-red-500/40 bg-red-500/15" },
+  warning: { label: "UYARI", icon: AlertTriangle, cls: "text-amber-600 border-amber-500/40 bg-amber-500/15" },
+  healthy: { label: "SAĞLIKLI", icon: CheckCircle, cls: "text-emerald-600 border-emerald-500/40 bg-emerald-500/15" },
 };
 
 const ACTION_STYLES = {
-  rotation_initiated: { label: "Başlatıldı", icon: Play, cls: "text-blue-400" },
+  rotation_initiated: { label: "Başlatıldı", icon: Play, cls: "text-blue-600" },
   rotation_tested: { label: "Test Edildi", icon: Zap, cls: "text-cyan-400" },
-  rotation_activated: { label: "Aktifleştirildi", icon: CheckCircle, cls: "text-emerald-400" },
-  rotation_rolled_back: { label: "Geri Alındı", icon: Undo2, cls: "text-amber-400" },
-  rotation_activation_failed: { label: "Aktivasyon Başarısız", icon: XCircle, cls: "text-red-400" },
+  rotation_activated: { label: "Aktifleştirildi", icon: CheckCircle, cls: "text-emerald-600" },
+  rotation_rolled_back: { label: "Geri Alındı", icon: Undo2, cls: "text-amber-600" },
+  rotation_activation_failed: { label: "Aktivasyon Başarısız", icon: XCircle, cls: "text-red-600" },
 };
 
 // ── Risk Summary Cards ────────────────────────────────────────────
@@ -67,30 +67,30 @@ function RiskSummaryCards({ dashboard, audit }) {
       title: "Süresi Geçmiş",
       value: overdueCount,
       icon: AlertOctagon,
-      color: overdueCount > 0 ? "text-red-400" : "text-zinc-500",
-      bg: overdueCount > 0 ? "bg-red-500/10 border-red-500/20" : "bg-zinc-800/50 border-zinc-700/50",
+      color: overdueCount > 0 ? "text-red-600" : "text-gray-500",
+      bg: overdueCount > 0 ? "bg-red-500/10 border-red-500/20" : "bg-gray-100/50 border-gray-300/50",
       pulse: overdueCount > 0,
     },
     {
       title: "Uyarı",
       value: warningCount,
       icon: AlertTriangle,
-      color: warningCount > 0 ? "text-amber-400" : "text-zinc-500",
-      bg: warningCount > 0 ? "bg-amber-500/10 border-amber-500/20" : "bg-zinc-800/50 border-zinc-700/50",
+      color: warningCount > 0 ? "text-amber-600" : "text-gray-500",
+      bg: warningCount > 0 ? "bg-amber-500/10 border-amber-500/20" : "bg-gray-100/50 border-gray-300/50",
     },
     {
       title: "Son 7 Gün Rollback",
       value: rollbackCount,
       icon: Undo2,
-      color: rollbackCount > 0 ? "text-amber-400" : "text-zinc-500",
-      bg: rollbackCount > 0 ? "bg-amber-500/10 border-amber-500/20" : "bg-zinc-800/50 border-zinc-700/50",
+      color: rollbackCount > 0 ? "text-amber-600" : "text-gray-500",
+      bg: rollbackCount > 0 ? "bg-amber-500/10 border-amber-500/20" : "bg-gray-100/50 border-gray-300/50",
     },
     {
       title: "Test Başarısız",
       value: testFailCount,
       icon: XCircle,
-      color: testFailCount > 0 ? "text-red-400" : "text-zinc-500",
-      bg: testFailCount > 0 ? "bg-red-500/10 border-red-500/20" : "bg-zinc-800/50 border-zinc-700/50",
+      color: testFailCount > 0 ? "text-red-600" : "text-gray-500",
+      bg: testFailCount > 0 ? "bg-red-500/10 border-red-500/20" : "bg-gray-100/50 border-gray-300/50",
     },
   ];
 
@@ -106,7 +106,7 @@ function RiskSummaryCards({ dashboard, audit }) {
           >
             <div className="flex items-center gap-2 mb-1">
               <Icon className={`h-3.5 w-3.5 ${card.color} ${card.pulse ? "animate-pulse" : ""}`} />
-              <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">{card.title}</span>
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">{card.title}</span>
             </div>
             <span className={`text-xl font-bold font-mono ${card.color}`}>{card.value}</span>
           </div>
@@ -114,14 +114,14 @@ function RiskSummaryCards({ dashboard, audit }) {
       })}
       {/* Riskiest connector */}
       <div
-        className={`rounded-lg border px-3 py-2.5 ${riskiestConnector ? "bg-red-500/5 border-red-500/20" : "bg-zinc-800/50 border-zinc-700/50"} transition-all`}
+        className={`rounded-lg border px-3 py-2.5 ${riskiestConnector ? "bg-red-500/5 border-red-500/20" : "bg-gray-100/50 border-gray-300/50"} transition-all`}
         data-testid="risk-card-connector"
       >
         <div className="flex items-center gap-2 mb-1">
-          <ShieldAlert className={`h-3.5 w-3.5 ${riskiestConnector ? "text-red-400" : "text-zinc-500"}`} />
-          <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">En Riskli</span>
+          <ShieldAlert className={`h-3.5 w-3.5 ${riskiestConnector ? "text-red-600" : "text-gray-500"}`} />
+          <span className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">En Riskli</span>
         </div>
-        <span className={`text-sm font-bold font-mono ${riskiestConnector ? "text-red-300" : "text-zinc-600"}`}>
+        <span className={`text-sm font-bold font-mono ${riskiestConnector ? "text-red-700" : "text-gray-500"}`}>
           {riskiestConnector || "—"}
         </span>
       </div>
@@ -145,7 +145,7 @@ function RotationTable({ items, onViewDetail }) {
 
   if (items.length === 0) {
     return (
-      <div className="text-center py-8 text-zinc-600 text-xs" data-testid="rotation-table-empty">
+      <div className="text-center py-8 text-gray-500 text-xs" data-testid="rotation-table-empty">
         Henüz yönetilen secret yok
       </div>
     );
@@ -155,14 +155,14 @@ function RotationTable({ items, onViewDetail }) {
     <div className="overflow-x-auto" data-testid="rotation-table">
       <table className="w-full text-xs">
         <thead>
-          <tr className="border-b border-zinc-800 text-zinc-500">
+          <tr className="border-b border-gray-200 text-gray-500">
             <th className="text-left py-2 pr-3 font-medium">
-              <button onClick={() => setSortField("status")} className="hover:text-zinc-300 transition-colors flex items-center gap-1">
+              <button onClick={() => setSortField("status")} className="hover:text-gray-700 transition-colors flex items-center gap-1">
                 Durum {sortField === "status" && <ChevronDown className="h-3 w-3" />}
               </button>
             </th>
             <th className="text-left py-2 pr-3 font-medium">
-              <button onClick={() => setSortField("provider")} className="hover:text-zinc-300 transition-colors flex items-center gap-1">
+              <button onClick={() => setSortField("provider")} className="hover:text-gray-700 transition-colors flex items-center gap-1">
                 Connector {sortField === "provider" && <ChevronDown className="h-3 w-3" />}
               </button>
             </th>
@@ -171,7 +171,7 @@ function RotationTable({ items, onViewDetail }) {
             <th className="text-left py-2 pr-3 font-medium">Son Rotasyon</th>
             <th className="text-left py-2 pr-3 font-medium">Sonraki Due</th>
             <th className="text-left py-2 pr-3 font-medium">
-              <button onClick={() => setSortField("age")} className="hover:text-zinc-300 transition-colors flex items-center gap-1">
+              <button onClick={() => setSortField("age")} className="hover:text-gray-700 transition-colors flex items-center gap-1">
                 Yaş {sortField === "age" && <ChevronDown className="h-3 w-3" />}
               </button>
             </th>
@@ -186,7 +186,7 @@ function RotationTable({ items, onViewDetail }) {
             const barColor = item.is_overdue ? "bg-red-500" : item.is_warning ? "bg-amber-500" : "bg-emerald-500";
 
             return (
-              <tr key={i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
+              <tr key={i} className="border-b border-gray-200/50 hover:bg-gray-100/30 transition-colors">
                 <td className="py-2 pr-3">
                   <Badge variant="outline" className={`text-[9px] px-1.5 py-0 font-mono ${st.cls}`}>
                     <StIcon className="h-2.5 w-2.5 mr-1" />
@@ -194,42 +194,42 @@ function RotationTable({ items, onViewDetail }) {
                   </Badge>
                 </td>
                 <td className="py-2 pr-3">
-                  <span className="font-mono text-zinc-300">{item.provider}</span>
+                  <span className="font-mono text-gray-700">{item.provider}</span>
                 </td>
                 <td className="py-2 pr-3">
-                  <span className="font-mono text-zinc-500 text-[10px] truncate max-w-[200px] block" title={item.secret_path}>
+                  <span className="font-mono text-gray-500 text-[10px] truncate max-w-[200px] block" title={item.secret_path}>
                     {item.secret_path}
                   </span>
                 </td>
                 <td className="py-2 pr-3 text-center">
                   {item.active_version ? (
-                    <span className="font-mono text-emerald-400">v{item.active_version}</span>
+                    <span className="font-mono text-emerald-600">v{item.active_version}</span>
                   ) : (
-                    <span className="text-zinc-600">—</span>
+                    <span className="text-gray-500">—</span>
                   )}
                 </td>
                 <td className="py-2 pr-3">
-                  <span className="text-zinc-400 text-[10px]">
+                  <span className="text-gray-600 text-[10px]">
                     {item.last_rotated ? new Date(item.last_rotated).toLocaleDateString("tr-TR") : "—"}
                   </span>
                 </td>
                 <td className="py-2 pr-3">
-                  <span className={`text-[10px] ${item.is_overdue ? "text-red-400 font-semibold" : "text-zinc-400"}`}>
+                  <span className={`text-[10px] ${item.is_overdue ? "text-red-600 font-semibold" : "text-gray-600"}`}>
                     {item.next_rotation_due ? new Date(item.next_rotation_due).toLocaleDateString("tr-TR") : "—"}
                   </span>
                 </td>
                 <td className="py-2 pr-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-12 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                    <div className="w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                       <div className={`h-full rounded-full ${barColor}`} style={{ width: `${agePct}%` }} />
                     </div>
-                    <span className="text-zinc-500 font-mono text-[10px]">{item.age_days ?? "—"}g</span>
+                    <span className="text-gray-500 font-mono text-[10px]">{item.age_days ?? "—"}g</span>
                   </div>
                 </td>
                 <td className="py-2 text-center">
                   <button
                     onClick={() => onViewDetail(item)}
-                    className="text-zinc-500 hover:text-zinc-300 transition-colors p-1"
+                    className="text-gray-500 hover:text-gray-700 transition-colors p-1"
                     data-testid={`view-detail-${i}`}
                   >
                     <Eye className="h-3.5 w-3.5" />
@@ -250,49 +250,49 @@ function AuditTrail({ audit, loading }) {
   const items = audit?.items || [];
   const shown = expanded ? items : items.slice(0, 5);
 
-  if (loading) return <Skeleton className="h-32 bg-zinc-800" />;
+  if (loading) return <Skeleton className="h-32 bg-gray-100" />;
 
   return (
-    <Card className="bg-zinc-900 border-zinc-800" data-testid="rotation-audit-trail">
+    <Card className="bg-white border-gray-200" data-testid="rotation-audit-trail">
       <CardHeader className="pb-2 pt-4 px-4">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+          <CardTitle className="text-xs font-medium text-gray-600 uppercase tracking-wider flex items-center gap-2">
             <History className="h-3.5 w-3.5" /> Rotasyon Audit Trail
           </CardTitle>
-          <Badge variant="outline" className="text-[9px] text-zinc-500 border-zinc-700 font-mono">
+          <Badge variant="outline" className="text-[9px] text-gray-500 border-gray-300 font-mono">
             {audit?.total || 0} kayıt
           </Badge>
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-4">
         {items.length === 0 ? (
-          <div className="text-xs text-zinc-600 py-3">Henüz kayıt yok</div>
+          <div className="text-xs text-gray-500 py-3">Henüz kayıt yok</div>
         ) : (
           <div className="space-y-0">
             {shown.map((item, i) => {
-              const style = ACTION_STYLES[item.action] || { label: item.action, icon: Activity, cls: "text-zinc-400" };
+              const style = ACTION_STYLES[item.action] || { label: item.action, icon: Activity, cls: "text-gray-600" };
               const ActionIcon = style.icon;
               const failed = item.action === "rotation_tested" && item.details?.success === false;
 
               return (
-                <div key={i} className="flex items-center gap-3 py-1.5 border-b border-zinc-800/40 last:border-b-0">
-                  <ActionIcon className={`h-3 w-3 flex-shrink-0 ${failed ? "text-red-400" : style.cls}`} />
+                <div key={i} className="flex items-center gap-3 py-1.5 border-b border-gray-200/40 last:border-b-0">
+                  <ActionIcon className={`h-3 w-3 flex-shrink-0 ${failed ? "text-red-600" : style.cls}`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-medium ${failed ? "text-red-400" : style.cls}`}>
+                      <span className={`text-[10px] font-medium ${failed ? "text-red-600" : style.cls}`}>
                         {failed ? "Test BAŞARISIZ" : style.label}
                       </span>
-                      <span className="text-[10px] text-zinc-600 truncate" title={item.secret_path}>
+                      <span className="text-[10px] text-gray-500 truncate" title={item.secret_path}>
                         {item.secret_path?.split("/").slice(-2).join("/")}
                       </span>
                     </div>
                     {item.details && (
-                      <span className="text-[9px] text-zinc-600 block truncate">
+                      <span className="text-[9px] text-gray-500 block truncate">
                         {typeof item.details === "object" ? (item.details.details || item.details.reason || JSON.stringify(item.details)) : item.details}
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] text-zinc-600 flex-shrink-0">
+                  <div className="flex items-center gap-2 text-[10px] text-gray-500 flex-shrink-0">
                     <span className="font-mono">v{item.version}</span>
                     <span>{item.actor}</span>
                     <span>{new Date(item.timestamp).toLocaleString("tr-TR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
@@ -303,7 +303,7 @@ function AuditTrail({ audit, loading }) {
             {items.length > 5 && (
               <button
                 onClick={() => setExpanded(!expanded)}
-                className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-300 pt-2 transition-colors"
+                className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-700 pt-2 transition-colors"
                 data-testid="audit-expand-btn"
               >
                 {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -346,55 +346,55 @@ function SecretDetailSheet({ item, onClose, onAction }) {
   const StIcon = st.icon;
 
   const versionStatusStyles = {
-    active: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
-    pending_test: "text-blue-400 border-blue-500/30 bg-blue-500/10",
+    active: "text-emerald-600 border-emerald-500/30 bg-emerald-500/10",
+    pending_test: "text-blue-600 border-blue-500/30 bg-blue-500/10",
     test_passed: "text-cyan-400 border-cyan-500/30 bg-cyan-500/10",
-    test_failed: "text-red-400 border-red-500/30 bg-red-500/10",
-    archived: "text-zinc-500 border-zinc-600/30 bg-zinc-600/10",
-    rolled_back: "text-amber-400 border-amber-500/30 bg-amber-500/10",
+    test_failed: "text-red-600 border-red-500/30 bg-red-500/10",
+    archived: "text-gray-500 border-gray-300/30 bg-gray-200/10",
+    rolled_back: "text-amber-600 border-amber-500/30 bg-amber-500/10",
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end" data-testid="secret-detail-sheet">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg h-full bg-zinc-900 border-l border-zinc-800 overflow-y-auto shadow-2xl animate-in slide-in-from-right">
+      <div className="relative w-full max-w-lg h-full bg-white border-l border-gray-200 overflow-y-auto shadow-2xl animate-in slide-in-from-right">
         {/* Header */}
-        <div className="sticky top-0 bg-zinc-900/95 backdrop-blur-sm border-b border-zinc-800 px-5 py-4 z-10">
+        <div className="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-gray-200 px-5 py-4 z-10">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-                <Shield className="h-4 w-4 text-amber-400" />
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <Shield className="h-4 w-4 text-amber-600" />
                 Secret Detay
               </h3>
-              <p className="text-[10px] text-zinc-500 mt-0.5 font-mono truncate max-w-[300px]" title={item.secret_path}>
+              <p className="text-[10px] text-gray-500 mt-0.5 font-mono truncate max-w-[300px]" title={item.secret_path}>
                 {item.secret_path}
               </p>
             </div>
-            <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 text-lg leading-none">&times;</button>
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-lg leading-none">&times;</button>
           </div>
         </div>
 
         <div className="px-5 py-4 space-y-5">
           {/* Status overview */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg bg-zinc-800/50 border border-zinc-700/50 p-3">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1">Durum</span>
+            <div className="rounded-lg bg-gray-100/50 border border-gray-300/50 p-3">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Durum</span>
               <Badge variant="outline" className={`text-[10px] font-mono px-2 py-0.5 ${st.cls}`}>
                 <StIcon className="h-3 w-3 mr-1" />
                 {st.label}
               </Badge>
             </div>
-            <div className="rounded-lg bg-zinc-800/50 border border-zinc-700/50 p-3">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1">Connector</span>
-              <span className="text-sm font-mono text-zinc-200">{item.provider}</span>
+            <div className="rounded-lg bg-gray-100/50 border border-gray-300/50 p-3">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Connector</span>
+              <span className="text-sm font-mono text-gray-900">{item.provider}</span>
             </div>
-            <div className="rounded-lg bg-zinc-800/50 border border-zinc-700/50 p-3">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1">Aktif Versiyon</span>
-              <span className="text-sm font-mono text-emerald-400">{item.active_version ? `v${item.active_version}` : "—"}</span>
+            <div className="rounded-lg bg-gray-100/50 border border-gray-300/50 p-3">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Aktif Versiyon</span>
+              <span className="text-sm font-mono text-emerald-600">{item.active_version ? `v${item.active_version}` : "—"}</span>
             </div>
-            <div className="rounded-lg bg-zinc-800/50 border border-zinc-700/50 p-3">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1">Yaş</span>
-              <span className={`text-sm font-mono ${item.is_overdue ? "text-red-400" : item.is_warning ? "text-amber-400" : "text-zinc-300"}`}>
+            <div className="rounded-lg bg-gray-100/50 border border-gray-300/50 p-3">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider block mb-1">Yaş</span>
+              <span className={`text-sm font-mono ${item.is_overdue ? "text-red-600" : item.is_warning ? "text-amber-600" : "text-gray-700"}`}>
                 {item.age_days ?? "—"} gün
               </span>
             </div>
@@ -402,59 +402,59 @@ function SecretDetailSheet({ item, onClose, onAction }) {
 
           {/* Timeline */}
           <div>
-            <div className="flex items-center gap-2 text-[10px] text-zinc-500 uppercase tracking-wider mb-2">
+            <div className="flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-wider mb-2">
               <Timer className="h-3 w-3" /> Rotasyon Zamanlama
             </div>
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
-                <span className="text-zinc-600 block">Son Rotasyon</span>
-                <span className="text-zinc-300 font-mono">
+                <span className="text-gray-500 block">Son Rotasyon</span>
+                <span className="text-gray-700 font-mono">
                   {item.last_rotated ? new Date(item.last_rotated).toLocaleDateString("tr-TR") : "—"}
                 </span>
               </div>
               <div>
-                <span className="text-zinc-600 block">Sonraki Due Date</span>
-                <span className={`font-mono ${item.is_overdue ? "text-red-400" : "text-zinc-300"}`}>
+                <span className="text-gray-500 block">Sonraki Due Date</span>
+                <span className={`font-mono ${item.is_overdue ? "text-red-600" : "text-gray-700"}`}>
                   {item.next_rotation_due ? new Date(item.next_rotation_due).toLocaleDateString("tr-TR") : "—"}
                 </span>
               </div>
               <div>
-                <span className="text-zinc-600 block">Maks Rotasyon Süresi</span>
-                <span className="text-zinc-300 font-mono">{item.max_rotation_days} gün</span>
+                <span className="text-gray-500 block">Maks Rotasyon Süresi</span>
+                <span className="text-gray-700 font-mono">{item.max_rotation_days} gün</span>
               </div>
               <div>
-                <span className="text-zinc-600 block">Tip</span>
-                <span className="text-zinc-300 font-mono">{item.secret_type}</span>
+                <span className="text-gray-500 block">Tip</span>
+                <span className="text-gray-700 font-mono">{item.secret_type}</span>
               </div>
             </div>
           </div>
 
           {/* Version History */}
           <div>
-            <div className="flex items-center gap-2 text-[10px] text-zinc-500 uppercase tracking-wider mb-2">
+            <div className="flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-wider mb-2">
               <History className="h-3 w-3" /> Versiyon Geçmişi
             </div>
             {loadingVersions ? (
-              <Skeleton className="h-20 bg-zinc-800" />
+              <Skeleton className="h-20 bg-gray-100" />
             ) : versionList.length === 0 ? (
-              <div className="text-xs text-zinc-600 py-2">Versiyon geçmişi yok</div>
+              <div className="text-xs text-gray-500 py-2">Versiyon geçmişi yok</div>
             ) : (
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
                 {versionList.map((v, i) => (
-                  <div key={i} className="flex items-center justify-between text-[10px] border-b border-zinc-800/40 pb-1.5">
+                  <div key={i} className="flex items-center justify-between text-[10px] border-b border-gray-200/40 pb-1.5">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-zinc-300">v{v.version}</span>
-                      <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${versionStatusStyles[v.status] || "text-zinc-500 border-zinc-600"}`}>
+                      <span className="font-mono text-gray-700">v{v.version}</span>
+                      <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${versionStatusStyles[v.status] || "text-gray-500 border-gray-300"}`}>
                         {v.status?.replace(/_/g, " ").toUpperCase()}
                       </Badge>
                     </div>
-                    <div className="flex items-center gap-2 text-zinc-600">
+                    <div className="flex items-center gap-2 text-gray-500">
                       <span>{v.created_by}</span>
                       <span>{new Date(v.created_at).toLocaleDateString("tr-TR")}</span>
                       {v.test_result && (
                         v.test_result.success
-                          ? <CheckCircle className="h-3 w-3 text-emerald-400" />
-                          : <XCircle className="h-3 w-3 text-red-400" />
+                          ? <CheckCircle className="h-3 w-3 text-emerald-600" />
+                          : <XCircle className="h-3 w-3 text-red-600" />
                       )}
                     </div>
                   </div>
@@ -465,7 +465,7 @@ function SecretDetailSheet({ item, onClose, onAction }) {
 
           {/* Actions */}
           <div>
-            <div className="flex items-center gap-2 text-[10px] text-zinc-500 uppercase tracking-wider mb-2">
+            <div className="flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-wider mb-2">
               <Zap className="h-3 w-3" /> Aksiyonlar
             </div>
             <div className="flex flex-wrap gap-2">
@@ -474,7 +474,7 @@ function SecretDetailSheet({ item, onClose, onAction }) {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-[10px] border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                  className="h-7 text-[10px] border-blue-500/30 text-blue-600 hover:bg-blue-500/10"
                   onClick={() => {
                     const pendingV = versionList.find(v => v.status === "pending_test");
                     if (pendingV) onAction("test", item, pendingV.version);
@@ -488,7 +488,7 @@ function SecretDetailSheet({ item, onClose, onAction }) {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-[10px] border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                  className="h-7 text-[10px] border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10"
                   onClick={() => {
                     const passedV = versionList.find(v => v.status === "test_passed");
                     if (passedV) onAction("activate", item, passedV.version);
@@ -502,7 +502,7 @@ function SecretDetailSheet({ item, onClose, onAction }) {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-[10px] border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                  className="h-7 text-[10px] border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
                   onClick={() => onAction("rollback", item, null)}
                   data-testid="action-rollback-btn"
                 >
@@ -526,7 +526,7 @@ function ConfirmActionDialog({ open, action, item, version, onConfirm, onCancel,
       confirmText: "Evet, Aktifleştir",
       confirmCls: "bg-emerald-600 hover:bg-emerald-700 text-white",
       icon: CheckCircle,
-      iconCls: "text-emerald-400",
+      iconCls: "text-emerald-600",
     },
     rollback: {
       title: "Secret Rollback Onayla",
@@ -534,7 +534,7 @@ function ConfirmActionDialog({ open, action, item, version, onConfirm, onCancel,
       confirmText: "Evet, Geri Al",
       confirmCls: "bg-amber-600 hover:bg-amber-700 text-white",
       icon: Undo2,
-      iconCls: "text-amber-400",
+      iconCls: "text-amber-600",
     },
     test: {
       title: "Secret Test Onayla",
@@ -542,7 +542,7 @@ function ConfirmActionDialog({ open, action, item, version, onConfirm, onCancel,
       confirmText: "Evet, Test Et",
       confirmCls: "bg-blue-600 hover:bg-blue-700 text-white",
       icon: Zap,
-      iconCls: "text-blue-400",
+      iconCls: "text-blue-600",
     },
   };
 
@@ -551,23 +551,23 @@ function ConfirmActionDialog({ open, action, item, version, onConfirm, onCancel,
 
   return (
     <AlertDialog open={open} onOpenChange={(v) => !v && onCancel()}>
-      <AlertDialogContent className="bg-zinc-900 border-zinc-700 max-w-md" data-testid="confirm-action-dialog">
+      <AlertDialogContent className="bg-white border-gray-300 max-w-md" data-testid="confirm-action-dialog">
         <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2 text-zinc-200 text-sm">
+          <AlertDialogTitle className="flex items-center gap-2 text-gray-900 text-sm">
             <Icon className={`h-5 w-5 ${cfg.iconCls}`} />
             {cfg.title}
           </AlertDialogTitle>
-          <AlertDialogDescription className="text-zinc-400 text-xs leading-relaxed">
+          <AlertDialogDescription className="text-gray-600 text-xs leading-relaxed">
             {cfg.desc}
             {item && (
-              <span className="block mt-2 font-mono text-[10px] text-zinc-500 bg-zinc-800 rounded px-2 py-1">
+              <span className="block mt-2 font-mono text-[10px] text-gray-500 bg-gray-100 rounded px-2 py-1">
                 {item.secret_path}
               </span>
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel className="bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700 text-xs h-8" disabled={loading}>
+          <AlertDialogCancel className="bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-200 text-xs h-8" disabled={loading}>
             İptal
           </AlertDialogCancel>
           <AlertDialogAction
@@ -660,9 +660,9 @@ export function RotationOpsPanel() {
   if (loading && !dashboard) {
     return (
       <div className="space-y-3" data-testid="rotation-ops-loading">
-        <Skeleton className="h-20 bg-zinc-800" />
-        <Skeleton className="h-40 bg-zinc-800" />
-        <Skeleton className="h-32 bg-zinc-800" />
+        <Skeleton className="h-20 bg-gray-100" />
+        <Skeleton className="h-40 bg-gray-100" />
+        <Skeleton className="h-32 bg-gray-100" />
       </div>
     );
   }
@@ -674,18 +674,18 @@ export function RotationOpsPanel() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-            <RotateCcw className="h-4 w-4 text-amber-400" />
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <RotateCcw className="h-4 w-4 text-amber-600" />
             Secret Rotation Yönetimi
           </h3>
-          <p className="text-[10px] text-zinc-600 mt-0.5">
+          <p className="text-[10px] text-gray-500 mt-0.5">
             Aktif secret'lar, rotasyon durumu, overdue/warning bayrakları ve operasyonel aksiyonlar
           </p>
         </div>
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 text-xs text-zinc-500"
+          className="h-7 text-xs text-gray-500"
           onClick={fetchData}
           disabled={loading}
           data-testid="rotation-refresh-btn"
@@ -699,18 +699,18 @@ export function RotationOpsPanel() {
       <RiskSummaryCards dashboard={dashboard} audit={audit} />
 
       {/* Main Table */}
-      <Card className="bg-zinc-900 border-zinc-800" data-testid="rotation-dashboard-card">
+      <Card className="bg-white border-gray-200" data-testid="rotation-dashboard-card">
         <CardHeader className="pb-2 pt-4 px-4">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+            <CardTitle className="text-xs font-medium text-gray-600 uppercase tracking-wider flex items-center gap-2">
               <Shield className="h-3.5 w-3.5" /> Rotasyon Dashboard — {items.length} Secret
             </CardTitle>
             <div className="flex items-center gap-2 text-[10px]">
-              <span className="text-emerald-400">{dashboard?.summary?.healthy || 0} sağlıklı</span>
-              <span className="text-zinc-600">|</span>
-              <span className="text-amber-400">{dashboard?.summary?.warning || 0} uyarı</span>
-              <span className="text-zinc-600">|</span>
-              <span className="text-red-400">{dashboard?.summary?.overdue || 0} geçmiş</span>
+              <span className="text-emerald-600">{dashboard?.summary?.healthy || 0} sağlıklı</span>
+              <span className="text-gray-500">|</span>
+              <span className="text-amber-600">{dashboard?.summary?.warning || 0} uyarı</span>
+              <span className="text-gray-500">|</span>
+              <span className="text-red-600">{dashboard?.summary?.overdue || 0} geçmiş</span>
             </div>
           </div>
         </CardHeader>

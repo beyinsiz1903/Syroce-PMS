@@ -20,32 +20,32 @@ function CoverageBar({ collection, data }) {
   return (
     <div className="space-y-1" data-testid={`coverage-${collection}`}>
       <div className="flex items-center justify-between text-xs">
-        <span className="text-zinc-300 font-mono">{collection}</span>
+        <span className="text-gray-700 font-mono">{collection}</span>
         <div className="flex items-center gap-2">
-          <span className="text-zinc-500">
+          <span className="text-gray-500">
             {data.encrypted}/{data.total_documents}
           </span>
           <Badge
             variant="outline"
             className={`text-[9px] px-1.5 py-0 font-mono ${
               pct >= 100
-                ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+                ? "text-emerald-600 border-emerald-500/30 bg-emerald-500/10"
                 : pct > 0
-                ? "text-yellow-400 border-yellow-500/30 bg-yellow-500/10"
-                : "text-zinc-500 border-zinc-600/30"
+                ? "text-amber-600 border-yellow-500/30 bg-yellow-500/10"
+                : "text-gray-500 border-gray-300/30"
             }`}
           >
             {pct}%
           </Badge>
         </div>
       </div>
-      <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+      <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full transition-all duration-700 ${barColor}`}
           style={{ width: `${Math.min(pct, 100)}%` }}
         />
       </div>
-      <div className="flex gap-2 text-[10px] text-zinc-600 flex-wrap">
+      <div className="flex gap-2 text-[10px] text-gray-500 flex-wrap">
         {data.fields?.map((f) => (
           <span key={f} className="font-mono">{f}</span>
         ))}
@@ -123,7 +123,7 @@ export function FieldEncryptionPanel() {
   };
 
   if (loading && !status) {
-    return <Skeleton className="h-64 bg-zinc-800" data-testid="field-enc-loading" />;
+    return <Skeleton className="h-64 bg-gray-100" data-testid="field-enc-loading" />;
   }
 
   const collections = status?.collections || {};
@@ -132,10 +132,10 @@ export function FieldEncryptionPanel() {
   const overallPct = totalDocs > 0 ? Math.round((totalEnc / totalDocs) * 100 * 10) / 10 : 0;
 
   return (
-    <Card className="bg-zinc-900 border-zinc-800" data-testid="field-encryption-panel">
+    <Card className="bg-white border-gray-200" data-testid="field-encryption-panel">
       <CardHeader className="pb-2 pt-4 px-4">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+          <CardTitle className="text-xs font-medium text-gray-600 uppercase tracking-wider flex items-center gap-2">
             <Database className="h-3.5 w-3.5" />
             P2 At-Rest PII Sifreleme
           </CardTitle>
@@ -143,7 +143,7 @@ export function FieldEncryptionPanel() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 text-[10px] text-zinc-500"
+              className="h-6 text-[10px] text-gray-500"
               onClick={ensureIndexes}
               data-testid="ensure-indexes-btn"
             >
@@ -152,7 +152,7 @@ export function FieldEncryptionPanel() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 text-[10px] text-zinc-500"
+              className="h-6 text-[10px] text-gray-500"
               onClick={fetchData}
               disabled={loading}
               data-testid="field-enc-refresh-btn"
@@ -169,23 +169,23 @@ export function FieldEncryptionPanel() {
         <div className="flex items-center gap-4" data-testid="field-enc-summary">
           <div className="flex items-center gap-2">
             {overallPct >= 100 ? (
-              <CheckCircle className="h-4 w-4 text-emerald-400" />
+              <CheckCircle className="h-4 w-4 text-emerald-600" />
             ) : overallPct > 0 ? (
-              <Shield className="h-4 w-4 text-yellow-400" />
+              <Shield className="h-4 w-4 text-amber-600" />
             ) : (
-              <AlertTriangle className="h-4 w-4 text-red-400" />
+              <AlertTriangle className="h-4 w-4 text-red-600" />
             )}
-            <span className="text-xl font-bold font-mono text-zinc-100">{overallPct}%</span>
+            <span className="text-xl font-bold font-mono text-gray-900">{overallPct}%</span>
           </div>
-          <div className="text-xs text-zinc-500">
-            <span className="text-zinc-300 font-mono">{totalEnc}</span> / {totalDocs} dokuman sifrelendi
+          <div className="text-xs text-gray-500">
+            <span className="text-gray-700 font-mono">{totalEnc}</span> / {totalDocs} dokuman sifrelendi
           </div>
           <Badge
             variant="outline"
             className={`text-[9px] px-2 py-0 font-mono ${
               overallPct >= 100
-                ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
-                : "text-yellow-400 border-yellow-500/30 bg-yellow-500/10"
+                ? "text-emerald-600 border-emerald-500/30 bg-emerald-500/10"
+                : "text-amber-600 border-yellow-500/30 bg-yellow-500/10"
             }`}
           >
             {overallPct >= 100 ? "TAM KAPSAM" : "MIGRATION GEREKLI"}
@@ -203,7 +203,7 @@ export function FieldEncryptionPanel() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-6 text-[10px] border-zinc-700 text-zinc-400 hover:text-zinc-200 mt-0.5 shrink-0"
+                  className="h-6 text-[10px] border-gray-300 text-gray-600 hover:text-gray-900 mt-0.5 shrink-0"
                   onClick={() => triggerMigration(col)}
                   disabled={migrating[col]}
                   data-testid={`migrate-${col}-btn`}
@@ -226,18 +226,18 @@ export function FieldEncryptionPanel() {
 
         {/* Migration Progress */}
         {progress.length > 0 && (
-          <div className="border-t border-zinc-800 pt-3">
-            <h4 className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2">
+          <div className="border-t border-gray-200 pt-3">
+            <h4 className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">
               Son Migration Sonuclari
             </h4>
             <div className="space-y-1">
               {progress.map((p, i) => (
-                <div key={i} className="flex items-center justify-between text-[10px] text-zinc-400">
+                <div key={i} className="flex items-center justify-between text-[10px] text-gray-600">
                   <span className="font-mono">{p.collection}</span>
                   <div className="flex items-center gap-2">
                     <span>{p.processed} {t('cm.components_FieldEncryptionPanel.kayit')}</span>
                     {p.errors > 0 && (
-                      <Badge variant="outline" className="text-[8px] text-red-400 border-red-500/30 px-1 py-0">
+                      <Badge variant="outline" className="text-[8px] text-red-600 border-red-500/30 px-1 py-0">
                         {p.errors} hata
                       </Badge>
                     )}
@@ -245,8 +245,8 @@ export function FieldEncryptionPanel() {
                       variant="outline"
                       className={`text-[8px] px-1 py-0 ${
                         p.status === "completed"
-                          ? "text-emerald-400 border-emerald-500/30"
-                          : "text-yellow-400 border-yellow-500/30"
+                          ? "text-emerald-600 border-emerald-500/30"
+                          : "text-amber-600 border-yellow-500/30"
                       }`}
                     >
                       {p.status === "completed" ? "TAMAMLANDI" : p.status}
@@ -260,10 +260,10 @@ export function FieldEncryptionPanel() {
 
         {/* Audit Trail */}
         {audit.length > 0 && (
-          <div className="border-t border-zinc-800 pt-3">
+          <div className="border-t border-gray-200 pt-3">
             <button
               onClick={() => setAuditExpanded(!auditExpanded)}
-              className="flex items-center gap-2 text-[10px] text-zinc-500 uppercase tracking-wider hover:text-zinc-300 transition-colors w-full"
+              className="flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-wider hover:text-gray-700 transition-colors w-full"
               data-testid="field-enc-audit-toggle"
             >
               {auditExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -272,16 +272,16 @@ export function FieldEncryptionPanel() {
             {auditExpanded && (
               <div className="space-y-1 mt-2">
                 {audit.map((a, i) => (
-                  <div key={i} className="flex items-center justify-between text-[10px] text-zinc-500 border-b border-zinc-800/50 pb-1">
+                  <div key={i} className="flex items-center justify-between text-[10px] text-gray-500 border-b border-gray-200/50 pb-1">
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-[8px] px-1 py-0 text-blue-400 border-blue-500/30">
+                      <Badge variant="outline" className="text-[8px] px-1 py-0 text-blue-600 border-blue-500/30">
                         {a.action}
                       </Badge>
                       <span className="font-mono">{a.collection}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-zinc-600">{a.actor}</span>
-                      <span className="text-zinc-700">
+                      <span className="text-gray-500">{a.actor}</span>
+                      <span className="text-gray-700">
                         {a.timestamp ? new Date(a.timestamp).toLocaleString("tr-TR") : ""}
                       </span>
                     </div>

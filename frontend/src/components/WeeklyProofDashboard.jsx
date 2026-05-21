@@ -26,13 +26,13 @@ function CustomTooltip({ active, payload, label }) {
   const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 shadow-xl">
-      <p className="text-[10px] text-zinc-500 mb-1">{label}</p>
+    <div className="bg-white border border-gray-300 rounded-lg px-3 py-2 shadow-xl">
+      <p className="text-[10px] text-gray-500 mb-1">{label}</p>
       {payload.map((p, i) => (
         <div key={i} className="flex items-center gap-2 text-xs">
           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
-          <span className="text-zinc-400">{p.name}:</span>
-          <span className="text-zinc-100 font-mono font-medium">{p.value}</span>
+          <span className="text-gray-600">{p.name}:</span>
+          <span className="text-gray-900 font-mono font-medium">{p.value}</span>
         </div>
       ))}
     </div>
@@ -43,21 +43,21 @@ function ImprovementCard({ icon, label, delta, unit, invertGood, testId }) {
   const isPositive = invertGood ? delta < 0 : delta > 0;
   const isNegative = invertGood ? delta > 0 : delta < 0;
   const trendIcon = delta > 0 ? <ArrowUpRight className="h-4 w-4" /> : delta < 0 ? <ArrowDownRight className="h-4 w-4" /> : <Minus className="h-4 w-4" />;
-  const trendColor = isPositive ? "text-emerald-400" : isNegative ? "text-red-400" : "text-zinc-500";
-  const borderColor = isPositive ? "border-emerald-500/20" : isNegative ? "border-red-500/20" : "border-zinc-800";
+  const trendColor = isPositive ? "text-emerald-600" : isNegative ? "text-red-600" : "text-gray-500";
+  const borderColor = isPositive ? "border-emerald-500/20" : isNegative ? "border-red-500/20" : "border-gray-200";
   const sign = delta > 0 ? "+" : "";
 
   return (
-    <div className={`bg-zinc-900/80 border ${borderColor} rounded-xl p-5 transition-all hover:border-zinc-600`} data-testid={testId}>
+    <div className={`bg-white/80 border ${borderColor} rounded-xl p-5 transition-all hover:border-gray-300`} data-testid={testId}>
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-zinc-500">{icon}</span>
-        <span className="text-xs text-zinc-500 font-medium">{label}</span>
+        <span className="text-gray-500">{icon}</span>
+        <span className="text-xs text-gray-500 font-medium">{label}</span>
       </div>
       <div className={`flex items-center gap-2 text-2xl font-bold font-mono ${trendColor}`}>
         {trendIcon}
         <span>{sign}{delta}{unit}</span>
       </div>
-      <div className="text-[10px] text-zinc-600 mt-1.5">
+      <div className="text-[10px] text-gray-500 mt-1.5">
         {isPositive ? "Iyilesiyor" : isNegative ? "Kotulesme" : "Degisim yok"} (ilk hafta → son hafta)
       </div>
     </div>
@@ -91,16 +91,16 @@ export function WeeklyProof() {
     return (
       <div className="space-y-4" data-testid="weekly-proof-loading">
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 bg-zinc-800" />)}
+          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 bg-gray-100" />)}
         </div>
-        <Skeleton className="h-64 bg-zinc-800" />
+        <Skeleton className="h-64 bg-gray-100" />
       </div>
     );
   }
 
   if (!data || !data.weeks?.length) {
     return (
-      <div className="text-center py-16 text-zinc-500" data-testid="weekly-proof-empty">
+      <div className="text-center py-16 text-gray-500" data-testid="weekly-proof-empty">
         <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-30" />
         <p className="text-sm">{t('cm.components_WeeklyProofDashboard.haftalik_veri_bulunamadi')}</p>
       </div>
@@ -123,22 +123,22 @@ export function WeeklyProof() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <Award className="h-4 w-4 text-amber-400" />
-          <span className="text-xs text-zinc-400 font-mono">
+          <Award className="h-4 w-4 text-amber-600" />
+          <span className="text-xs text-gray-600 font-mono">
             {t('cm.components_WeeklyProofDashboard.deger_kaniti_hafta_hafta_iyilesme')}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex bg-zinc-900 border border-zinc-800 rounded-lg p-0.5" data-testid="weeks-selector">
+          <div className="flex bg-white border border-gray-200 rounded-lg p-0.5" data-testid="weeks-selector">
             {[4, 8, 12].map(w => (
               <button key={w} onClick={() => setWeeks(w)}
-                className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${weeks === w ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+                className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${weeks === w ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-700"}`}
                 data-testid={`weeks-${w}`}>
                 {w}h
               </button>
             ))}
           </div>
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-zinc-500" onClick={() => { setLoading(true); fetchData(true); }} data-testid="weekly-proof-refresh">
+          <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-500" onClick={() => { setLoading(true); fetchData(true); }} data-testid="weekly-proof-refresh">
             <RefreshCw className="h-3 w-3 mr-1" />{t('cm.components_WeeklyProofDashboard.yenile')}
           </Button>
         </div>
@@ -157,10 +157,10 @@ export function WeeklyProof() {
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="bg-zinc-900 border-zinc-800">
+        <Card className="bg-white border-gray-200">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-zinc-500" /> Sync & SLA Trendi
+            <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-gray-500" /> Sync & SLA Trendi
             </CardTitle>
           </CardHeader>
           <CardContent data-testid="chart-sync-sla-weekly">
@@ -178,10 +178,10 @@ export function WeeklyProof() {
           </CardContent>
         </Card>
 
-        <Card className="bg-zinc-900 border-zinc-800">
+        <Card className="bg-white border-gray-200">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
-              <TrendingDown className="h-4 w-4 text-zinc-500" /> Drift & MTTR Trendi
+            <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <TrendingDown className="h-4 w-4 text-gray-500" /> Drift & MTTR Trendi
             </CardTitle>
           </CardHeader>
           <CardContent data-testid="chart-drift-mttr-weekly">
@@ -201,10 +201,10 @@ export function WeeklyProof() {
       </div>
 
       {/* Push latency p95 weekly */}
-      <Card className="bg-zinc-900 border-zinc-800">
+      <Card className="bg-white border-gray-200">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-zinc-500" /> {t('cm.components_WeeklyProofDashboard.push_latency_p95_haftalik')}
+          <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-gray-500" /> {t('cm.components_WeeklyProofDashboard.push_latency_p95_haftalik')}
           </CardTitle>
         </CardHeader>
         <CardContent data-testid="chart-p95-weekly">

@@ -164,19 +164,19 @@ function TraceHeader({ trace, onCopy }) {
   );
 
   let statusLabel = "PROCESSING";
-  let statusColor = "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+  let statusColor = "bg-yellow-500/20 text-amber-700 border-yellow-500/30";
   if (hasFail) {
     statusLabel = "FAILED";
-    statusColor = "bg-red-500/20 text-red-400 border-red-500/30";
+    statusColor = "bg-red-500/20 text-red-600 border-red-500/30";
   } else if (isDuplicate) {
     statusLabel = "DUPLICATE";
-    statusColor = "bg-amber-500/20 text-amber-400 border-amber-500/30";
+    statusColor = "bg-amber-500/20 text-amber-700 border-amber-500/30";
   } else if (lastEvent?.stage === "confirmed") {
     statusLabel = "CONFIRMED";
-    statusColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+    statusColor = "bg-emerald-500/20 text-emerald-600 border-emerald-500/30";
   } else if (lastEvent?.stage === "stored" || lastEvent?.stage === "queued") {
     statusLabel = "STORED";
-    statusColor = "bg-blue-500/20 text-blue-400 border-blue-500/30";
+    statusColor = "bg-blue-500/20 text-blue-600 border-blue-500/30";
   }
 
   return (
@@ -259,22 +259,22 @@ function TraceTimeline({ events, onLoadRaw }) {
                 {/* Key metadata inline */}
                 <div className="flex-1 flex items-center gap-2 overflow-hidden">
                   {evt.metadata?.is_duplicate === true && (
-                    <Badge variant="outline" className="text-amber-400 border-amber-500/30 text-[10px] px-1.5 py-0">
+                    <Badge variant="outline" className="text-amber-700 border-amber-500/30 text-[10px] px-1.5 py-0">
                       DUPLICATE
                     </Badge>
                   )}
                   {evt.metadata?.is_new === true && (
-                    <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 text-[10px] px-1.5 py-0">
+                    <Badge variant="outline" className="text-emerald-600 border-emerald-500/30 text-[10px] px-1.5 py-0">
                       NEW
                     </Badge>
                   )}
                   {evt.metadata?.room_mapped === true && (
-                    <Badge variant="outline" className="text-blue-400 border-blue-500/30 text-[10px] px-1.5 py-0">
+                    <Badge variant="outline" className="text-blue-600 border-blue-500/30 text-[10px] px-1.5 py-0">
                       ROOM OK
                     </Badge>
                   )}
                   {evt.metadata?.room_mapped === false && (
-                    <Badge variant="outline" className="text-red-400 border-red-500/30 text-[10px] px-1.5 py-0">
+                    <Badge variant="outline" className="text-red-600 border-red-500/30 text-[10px] px-1.5 py-0">
                       ROOM FAIL
                     </Badge>
                   )}
@@ -334,7 +334,7 @@ function GapWarnings({ warnings }) {
     <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3" data-testid="gap-warnings">
       <div className="flex items-center gap-2 mb-2">
         <AlertTriangle className="h-4 w-4 text-yellow-500" />
-        <span className="text-xs font-medium text-yellow-400">{t('cm.pages_ControlPlane.gap_uyarilari')}</span>
+        <span className="text-xs font-medium text-amber-700">{t('cm.pages_ControlPlane.gap_uyarilari')}</span>
       </div>
       <ul className="space-y-1">
         {warnings.map((w, i) => (
@@ -412,11 +412,11 @@ function SystemHealth() {
   const grade = dashboard.health_grade;
 
   const gradeColor = {
-    A: "text-emerald-400 border-emerald-500/40 bg-emerald-500/10",
-    B: "text-blue-400 border-blue-500/40 bg-blue-500/10",
-    C: "text-yellow-400 border-yellow-500/40 bg-yellow-500/10",
-    D: "text-amber-400 border-amber-500/40 bg-amber-500/10",
-    F: "text-red-400 border-red-500/40 bg-red-500/10",
+    A: "text-emerald-600 border-emerald-500/40 bg-emerald-500/10",
+    B: "text-blue-600 border-blue-500/40 bg-blue-500/10",
+    C: "text-amber-700 border-yellow-500/40 bg-yellow-500/10",
+    D: "text-amber-700 border-amber-500/40 bg-amber-500/10",
+    F: "text-red-600 border-red-500/40 bg-red-500/10",
   }[grade] || "text-gray-600";
 
   return (
@@ -472,7 +472,7 @@ function SystemHealth() {
             {dashboard.pipeline.stages.map((s, i) => (
               <div key={i} className="flex items-center gap-2">
                 <span className="text-xs text-gray-600 font-mono">{s.name.replace(/_/g, " ")}</span>
-                <span className={`text-sm font-bold font-mono ${s.count > 0 ? "text-yellow-400" : "text-gray-600"}`}>
+                <span className={`text-sm font-bold font-mono ${s.count > 0 ? "text-amber-700" : "text-gray-600"}`}>
                   {s.count}
                 </span>
                 {i < dashboard.pipeline.stages.length - 1 && <ChevronRight className="h-3 w-3 text-gray-600" />}
@@ -508,7 +508,7 @@ function MetricCard({ label, value, sub, ok, testId }) {
   return (
     <div className={`bg-white border rounded-lg p-4 ${ok ? "border-gray-200" : "border-red-500/30"}`} data-testid={testId}>
       <div className="text-xs text-gray-600 mb-1">{label}</div>
-      <div className={`text-xl font-bold font-mono ${ok ? "text-gray-900" : "text-red-400"}`}>{value}</div>
+      <div className={`text-xl font-bold font-mono ${ok ? "text-gray-900" : "text-red-600"}`}>{value}</div>
       {sub && <div className="text-[10px] text-gray-600 mt-1">{sub}</div>}
     </div>
   );

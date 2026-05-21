@@ -27,13 +27,13 @@ function SandboxTooltip({ active, payload, label }) {
   const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 shadow-xl">
-      <p className="text-[10px] text-zinc-500 mb-1">{label}</p>
+    <div className="bg-white border border-gray-300 rounded-lg px-3 py-2 shadow-xl">
+      <p className="text-[10px] text-gray-500 mb-1">{label}</p>
       {payload.map((p, i) => (
         <div key={i} className="flex items-center gap-2 text-xs">
           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
-          <span className="text-zinc-400">{p.name}:</span>
-          <span className="text-zinc-100 font-mono font-medium">{p.value}%</span>
+          <span className="text-gray-600">{p.name}:</span>
+          <span className="text-gray-900 font-mono font-medium">{p.value}%</span>
         </div>
       ))}
     </div>
@@ -46,22 +46,22 @@ function ProviderCard({ card }) {
 
   return (
     <Card
-      className={`border ${allPassed ? "bg-zinc-900 border-emerald-500/20" : "bg-zinc-900 border-red-500/30"}`}
+      className={`border ${allPassed ? "bg-white border-emerald-500/20" : "bg-white border-red-500/30"}`}
       data-testid={`sandbox-provider-card-${card.provider}`}
     >
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Shield className={`h-4 w-4 ${allPassed ? "text-emerald-400" : "text-red-400"}`} />
-            <span className="text-sm font-semibold text-zinc-200">{card.display_name}</span>
+            <Shield className={`h-4 w-4 ${allPassed ? "text-emerald-600" : "text-red-600"}`} />
+            <span className="text-sm font-semibold text-gray-900">{card.display_name}</span>
           </div>
           <div className="flex items-center gap-2">
             <Badge
               variant="outline"
               className={`text-[10px] font-mono px-2 py-0 ${
                 allPassed
-                  ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
-                  : "text-red-400 border-red-500/30 bg-red-500/10"
+                  ? "text-emerald-600 border-emerald-500/30 bg-emerald-500/10"
+                  : "text-red-600 border-red-500/30 bg-red-500/10"
               }`}
               data-testid={`sandbox-pass-rate-${card.provider}`}
             >
@@ -69,7 +69,7 @@ function ProviderCard({ card }) {
             </Badge>
             <button
               onClick={() => setExpanded(!expanded)}
-              className="text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="text-gray-500 hover:text-gray-700 transition-colors"
               data-testid={`sandbox-expand-${card.provider}`}
             >
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -79,18 +79,18 @@ function ProviderCard({ card }) {
 
         <div className="flex items-center gap-4 text-xs">
           <div className="flex items-center gap-1">
-            <CheckCircle className="h-3 w-3 text-emerald-400" />
-            <span className="text-zinc-400">{card.passed}</span>
+            <CheckCircle className="h-3 w-3 text-emerald-600" />
+            <span className="text-gray-600">{card.passed}</span>
           </div>
           <div className="flex items-center gap-1">
-            <XCircle className="h-3 w-3 text-red-400" />
-            <span className="text-zinc-400">{card.failed}</span>
+            <XCircle className="h-3 w-3 text-red-600" />
+            <span className="text-gray-600">{card.failed}</span>
           </div>
-          <div className="text-zinc-600">/ {card.total} senaryo</div>
+          <div className="text-gray-500">/ {card.total} senaryo</div>
         </div>
 
         {/* Progress bar */}
-        <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+        <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-500 ${allPassed ? "bg-emerald-500" : "bg-red-500"}`}
             style={{ width: `${(card.passed / card.total) * 100}%` }}
@@ -103,11 +103,11 @@ function ProviderCard({ card }) {
               <div key={i} className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
                   {s.passed ? (
-                    <CheckCircle className="h-3 w-3 text-emerald-400" />
+                    <CheckCircle className="h-3 w-3 text-emerald-600" />
                   ) : (
-                    <XCircle className="h-3 w-3 text-red-400" />
+                    <XCircle className="h-3 w-3 text-red-600" />
                   )}
-                  <span className="text-zinc-300 font-mono text-[11px]">
+                  <span className="text-gray-700 font-mono text-[11px]">
                     {SCENARIO_LABELS[s.name] || s.name}
                   </span>
                 </div>
@@ -115,8 +115,8 @@ function ProviderCard({ card }) {
                   variant="outline"
                   className={`text-[9px] px-1.5 py-0 ${
                     s.passed
-                      ? "text-emerald-400 border-emerald-500/30"
-                      : "text-red-400 border-red-500/30"
+                      ? "text-emerald-600 border-emerald-500/30"
+                      : "text-red-600 border-red-500/30"
                   }`}
                 >
                   {s.passed ? "PASS" : "FAIL"}
@@ -136,28 +136,28 @@ function RegressionAlert({ regressions }) {
 
   return (
     <div
-      className="bg-red-950/40 border border-red-500/40 rounded-lg p-3 space-y-2"
+      className="bg-red-50 border border-red-500/40 rounded-lg p-3 space-y-2"
       data-testid="sandbox-regression-alert"
     >
       <div className="flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 text-red-400 animate-pulse" />
-        <span className="text-xs font-bold text-red-300 uppercase tracking-wider">
+        <AlertTriangle className="h-4 w-4 text-red-600 animate-pulse" />
+        <span className="text-xs font-bold text-red-700 uppercase tracking-wider">
           {t('cm.components_SandboxDashboard.sandbox_regression_algilandi')}
         </span>
       </div>
       {regressions.map((r, i) => (
         <div key={i} className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
-            <span className="text-zinc-400 font-mono">{r.provider}</span>
-            <span className="text-zinc-600">→</span>
-            <span className="text-red-300">{SCENARIO_LABELS[r.scenario] || r.scenario}</span>
+            <span className="text-gray-600 font-mono">{r.provider}</span>
+            <span className="text-gray-500">→</span>
+            <span className="text-red-700">{SCENARIO_LABELS[r.scenario] || r.scenario}</span>
           </div>
           <Badge
             variant="outline"
             className={`text-[9px] px-1.5 py-0 ${
               r.severity === "critical"
-                ? "text-red-400 border-red-500/30"
-                : "text-yellow-400 border-yellow-500/30"
+                ? "text-red-600 border-red-500/30"
+                : "text-amber-600 border-yellow-500/30"
             }`}
           >
             {r.severity}
@@ -172,7 +172,7 @@ function TrendChart({ data }) {
   const { t } = useTranslation();
   if (!data || data.length < 2) {
     return (
-      <div className="text-xs text-zinc-600 text-center py-4">
+      <div className="text-xs text-gray-500 text-center py-4">
         {t('cm.components_SandboxDashboard.trend_icin_en_az_2_calistirma_gerekli')}
       </div>
     );
@@ -260,12 +260,12 @@ export function SandboxDashboard() {
   if (loading) {
     return (
       <div className="space-y-4" data-testid="sandbox-dashboard-loading">
-        <Skeleton className="h-8 w-48 bg-zinc-800" />
+        <Skeleton className="h-8 w-48 bg-gray-100" />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Skeleton className="h-40 bg-zinc-800" />
-          <Skeleton className="h-40 bg-zinc-800" />
+          <Skeleton className="h-40 bg-gray-100" />
+          <Skeleton className="h-40 bg-gray-100" />
         </div>
-        <Skeleton className="h-32 bg-zinc-800" />
+        <Skeleton className="h-32 bg-gray-100" />
       </div>
     );
   }
@@ -283,11 +283,11 @@ export function SandboxDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-            <Activity className="h-4 w-4 text-cyan-400" />
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+            <Activity className="h-4 w-4 text-cyan-600" />
             Sandbox Resilience Dashboard
           </h3>
-          <p className="text-[10px] text-zinc-600 mt-0.5">
+          <p className="text-[10px] text-gray-500 mt-0.5">
             Provider dayaniklilik testi sonuclari — sandbox_pass / sandbox_regression / prod_health
           </p>
         </div>
@@ -295,7 +295,7 @@ export function SandboxDashboard() {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-zinc-500"
+            className="h-7 text-xs text-gray-500"
             onClick={fetchAll}
             disabled={loading}
             data-testid="sandbox-refresh-btn"
@@ -306,7 +306,7 @@ export function SandboxDashboard() {
           <Button
             variant="outline"
             size="sm"
-            className="h-7 text-xs text-cyan-400 border-cyan-500/30 bg-cyan-500/5 hover:bg-cyan-500/10"
+            className="h-7 text-xs text-cyan-600 border-cyan-500/30 bg-cyan-500/5 hover:bg-cyan-500/10"
             onClick={runSimulation}
             disabled={running}
             data-testid="sandbox-run-btn"
@@ -322,11 +322,11 @@ export function SandboxDashboard() {
       </div>
 
       {!hasData ? (
-        <Card className="bg-zinc-900 border-zinc-800">
+        <Card className="bg-white border-gray-200">
           <CardContent className="p-8 text-center">
-            <Shield className="h-8 w-8 text-zinc-600 mx-auto mb-3" />
-            <p className="text-sm text-zinc-400">{t('cm.components_SandboxDashboard.henuz_sandbox_simulasyonu_calistirilmadi')}</p>
-            <p className="text-xs text-zinc-600 mt-1">
+            <Shield className="h-8 w-8 text-gray-500 mx-auto mb-3" />
+            <p className="text-sm text-gray-600">{t('cm.components_SandboxDashboard.henuz_sandbox_simulasyonu_calistirilmadi')}</p>
+            <p className="text-xs text-gray-500 mt-1">
               Yukaridaki butonu kullanarak ilk simulasyonu baslatabilirsiniz
             </p>
           </CardContent>
@@ -338,11 +338,11 @@ export function SandboxDashboard() {
 
           {/* Last Run Info */}
           {lastRun && (
-            <div className="flex items-center gap-4 text-xs text-zinc-500">
+            <div className="flex items-center gap-4 text-xs text-gray-500">
               <div className="flex items-center gap-1">
                 <Clock className="h-3 w-3" />
                 <span>Son calistirma: </span>
-                <span className="text-zinc-300 font-mono">
+                <span className="text-gray-700 font-mono">
                   {new Date(lastRun.started_at).toLocaleString("tr-TR")}
                 </span>
               </div>
@@ -350,13 +350,13 @@ export function SandboxDashboard() {
                 variant="outline"
                 className={`text-[10px] px-2 py-0 font-mono ${
                   lastRun.summary?.all_passed
-                    ? "text-emerald-400 border-emerald-500/30"
-                    : "text-red-400 border-red-500/30"
+                    ? "text-emerald-600 border-emerald-500/30"
+                    : "text-red-600 border-red-500/30"
                 }`}
               >
                 {lastRun.summary?.pass_rate}
               </Badge>
-              <span className="text-zinc-600 font-mono text-[10px]">{lastRun.run_id}</span>
+              <span className="text-gray-500 font-mono text-[10px]">{lastRun.run_id}</span>
             </div>
           )}
 
@@ -368,9 +368,9 @@ export function SandboxDashboard() {
           </div>
 
           {/* Trend Chart */}
-          <Card className="bg-zinc-900 border-zinc-800" data-testid="sandbox-trend-card">
+          <Card className="bg-white border-gray-200" data-testid="sandbox-trend-card">
             <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+              <CardTitle className="text-xs font-medium text-gray-600 uppercase tracking-wider flex items-center gap-2">
                 <TrendingUp className="h-3.5 w-3.5" /> Basari Orani Trendi
               </CardTitle>
             </CardHeader>
@@ -382,15 +382,15 @@ export function SandboxDashboard() {
           {/* Bottom: Insights Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Most Failing Scenarios */}
-            <Card className="bg-zinc-900 border-zinc-800" data-testid="sandbox-most-failing">
+            <Card className="bg-white border-gray-200" data-testid="sandbox-most-failing">
               <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+                <CardTitle className="text-xs font-medium text-gray-600 uppercase tracking-wider flex items-center gap-2">
                   <TrendingDown className="h-3.5 w-3.5" /> {t('cm.components_SandboxDashboard.en_cok_kirilan_senaryolar')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4">
                 {mostFailing.length === 0 ? (
-                  <div className="text-xs text-emerald-400 flex items-center gap-2 py-2">
+                  <div className="text-xs text-emerald-600 flex items-center gap-2 py-2">
                     <CheckCircle className="h-3.5 w-3.5" />
                     Hic kirilma tespit edilmedi
                   </div>
@@ -401,12 +401,12 @@ export function SandboxDashboard() {
                       return (
                         <div key={i} className="flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
-                            <XCircle className="h-3 w-3 text-red-400" />
-                            <span className="text-zinc-400 font-mono">{prov}</span>
-                            <span className="text-zinc-600">→</span>
-                            <span className="text-zinc-300">{SCENARIO_LABELS[scenario] || scenario}</span>
+                            <XCircle className="h-3 w-3 text-red-600" />
+                            <span className="text-gray-600 font-mono">{prov}</span>
+                            <span className="text-gray-500">→</span>
+                            <span className="text-gray-700">{SCENARIO_LABELS[scenario] || scenario}</span>
                           </div>
-                          <span className="text-red-400 font-mono text-[10px]">{f.failure_count}x</span>
+                          <span className="text-red-600 font-mono text-[10px]">{f.failure_count}x</span>
                         </div>
                       );
                     })}
@@ -416,22 +416,22 @@ export function SandboxDashboard() {
             </Card>
 
             {/* Correlation Insight */}
-            <Card className="bg-zinc-900 border-zinc-800" data-testid="sandbox-correlation">
+            <Card className="bg-white border-gray-200" data-testid="sandbox-correlation">
               <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-xs font-medium text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+                <CardTitle className="text-xs font-medium text-gray-600 uppercase tracking-wider flex items-center gap-2">
                   <ExternalLink className="h-3.5 w-3.5" /> Deploy / Drift Korelasyonu
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4 space-y-2">
-                <p className="text-xs text-zinc-300">{corrInsight || "Veri bekleniyor..."}</p>
+                <p className="text-xs text-gray-700">{corrInsight || "Veri bekleniyor..."}</p>
                 {correlation?.drift_alerts_active > 0 && (
-                  <div className="flex items-center gap-2 text-xs text-yellow-400">
+                  <div className="flex items-center gap-2 text-xs text-amber-600">
                     <AlertTriangle className="h-3 w-3" />
                     <span>{correlation.drift_alerts_active} aktif drift alarmi</span>
                   </div>
                 )}
                 {correlation?.correlations?.length > 0 && (
-                  <div className="text-[10px] text-zinc-600 font-mono">
+                  <div className="text-[10px] text-gray-500 font-mono">
                     {correlation.correlations.length} run analiz edildi
                   </div>
                 )}

@@ -33,24 +33,24 @@ import { useTranslation } from 'react-i18next';
 function StatCard({ label, value, sub, icon: Icon, color, testId }) {
   const { t } = useTranslation();
   const colorMap = {
-    emerald: "border-emerald-500/30 text-emerald-400",
-    red: "border-red-500/30 text-red-400",
-    blue: "border-blue-500/30 text-blue-400",
-    amber: "border-amber-500/30 text-amber-400",
-    zinc: "border-zinc-700 text-zinc-400",
+    emerald: "border-emerald-500/30 text-emerald-600",
+    red: "border-red-500/30 text-red-600",
+    blue: "border-blue-500/30 text-blue-600",
+    amber: "border-amber-500/30 text-amber-600",
+    zinc: "border-gray-300 text-gray-600",
   };
 
   return (
     <div
-      className={`bg-zinc-900 border rounded-lg p-4 ${colorMap[color] || colorMap.zinc}`}
+      className={`bg-white border rounded-lg p-4 ${colorMap[color] || colorMap.zinc}`}
       data-testid={testId}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-zinc-500 uppercase tracking-wider">{label}</span>
+        <span className="text-xs text-gray-500 uppercase tracking-wider">{label}</span>
         {Icon && <Icon className="h-4 w-4 opacity-50" />}
       </div>
       <div className="text-2xl font-bold font-mono">{value}</div>
-      {sub && <div className="text-[10px] text-zinc-600 mt-1">{sub}</div>}
+      {sub && <div className="text-[10px] text-gray-500 mt-1">{sub}</div>}
     </div>
   );
 }
@@ -63,26 +63,26 @@ function DeployTrendChart({ trend }) {
     if (!active || !payload?.length) return null;
     const d = payload[0]?.payload;
     return (
-      <div className="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-xs font-mono shadow-lg">
-        <div className="text-zinc-300 mb-1">{label}</div>
-        <div className="text-emerald-400">{t('cm.components_DeployDashboard.basarili')} {d?.success || 0}</div>
-        <div className="text-red-400">Basarisiz: {d?.failure || 0}</div>
-        {d?.rollbacks > 0 && <div className="text-amber-400">Rollback: {d.rollbacks}</div>}
+      <div className="bg-gray-100 border border-gray-300 rounded px-3 py-2 text-xs font-mono shadow-lg">
+        <div className="text-gray-700 mb-1">{label}</div>
+        <div className="text-emerald-600">{t('cm.components_DeployDashboard.basarili')} {d?.success || 0}</div>
+        <div className="text-red-600">Basarisiz: {d?.failure || 0}</div>
+        {d?.rollbacks > 0 && <div className="text-amber-600">Rollback: {d.rollbacks}</div>}
       </div>
     );
   };
 
   return (
     <div
-      className="bg-zinc-900 border border-zinc-800 rounded-lg p-4"
+      className="bg-white border border-gray-200 rounded-lg p-4"
       data-testid="deploy-trend-chart"
     >
       <div className="flex items-center gap-2 mb-3">
-        <TrendingUp className="h-3.5 w-3.5 text-zinc-500" />
-        <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+        <TrendingUp className="h-3.5 w-3.5 text-gray-500" />
+        <span className="text-xs font-medium text-gray-600 uppercase tracking-wider">
           Deploy Trendi
         </span>
-        <span className="text-[10px] text-zinc-600">
+        <span className="text-[10px] text-gray-500">
           (son {trend.length} gun)
         </span>
       </div>
@@ -116,11 +116,11 @@ function DeployTrendChart({ trend }) {
         </BarChart>
       </ResponsiveContainer>
       <div className="flex items-center gap-4 mt-2 justify-center">
-        <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+        <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
           <div className="w-2.5 h-2.5 rounded-sm bg-emerald-400/70" />
           {t('cm.components_DeployDashboard.basarili_44280')}
         </div>
-        <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+        <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
           <div className="w-2.5 h-2.5 rounded-sm bg-red-400/70" />
           Basarisiz
         </div>
@@ -134,13 +134,13 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
   const statusConfig = {
     success: {
       icon: CheckCircle,
-      color: "text-emerald-400",
+      color: "text-emerald-600",
       bg: "bg-emerald-500/10 border-emerald-500/30",
       label: "BASARILI",
     },
     failure: {
       icon: XCircle,
-      color: "text-red-400",
+      color: "text-red-600",
       bg: "bg-red-500/10 border-red-500/30",
       label: "BASARISIZ",
     },
@@ -148,8 +148,8 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
 
   const cfg = statusConfig[deploy.status] || {
     icon: Clock,
-    color: "text-zinc-400",
-    bg: "bg-zinc-500/10 border-zinc-500/30",
+    color: "text-gray-600",
+    bg: "bg-gray-200/10 border-gray-300/30",
     label: deploy.status?.toUpperCase() || "BILINMIYOR",
   };
   const StatusIcon = cfg.icon;
@@ -176,30 +176,30 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
 
   return (
     <div
-      className={`border-b border-zinc-800/50 ${deploy.rollback ? "bg-red-500/5" : ""}`}
+      className={`border-b border-gray-200/50 ${deploy.rollback ? "bg-red-500/5" : ""}`}
       data-testid={`deploy-row-${deploy.short_sha}`}
     >
       <button
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-zinc-800/30 transition-colors"
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100/30 transition-colors"
         onClick={onToggle}
       >
         <StatusIcon className={`h-4 w-4 shrink-0 ${cfg.color}`} />
         <span className={`text-xs font-bold tracking-wide px-2 py-0.5 rounded border ${cfg.bg}`}>
           {cfg.label}
         </span>
-        <code className="text-sm text-zinc-200 font-mono">{deploy.short_sha || "--"}</code>
+        <code className="text-sm text-gray-900 font-mono">{deploy.short_sha || "--"}</code>
         <Badge
           variant="outline"
           className={`text-[10px] ${
             deploy.environment === "production"
-              ? "border-amber-500/40 text-amber-400"
-              : "border-blue-500/40 text-blue-400"
+              ? "border-amber-500/40 text-amber-600"
+              : "border-blue-500/40 text-blue-600"
           }`}
         >
           {deploy.environment}
         </Badge>
         {deploy.rollback && (
-          <Badge variant="outline" className="text-[10px] border-red-500/40 text-red-400">
+          <Badge variant="outline" className="text-[10px] border-red-500/40 text-red-600">
             <RotateCcw className="h-2.5 w-2.5 mr-1" />
             ROLLBACK
           </Badge>
@@ -209,8 +209,8 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
             variant="outline"
             className={`text-[10px] ${
               smokePassCount === smokeTotal
-                ? "border-emerald-500/30 text-emerald-400"
-                : "border-red-500/30 text-red-400"
+                ? "border-emerald-500/30 text-emerald-600"
+                : "border-red-500/30 text-red-600"
             }`}
           >
             <Activity className="h-2.5 w-2.5 mr-1" />
@@ -218,54 +218,54 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
           </Badge>
         )}
         <div className="flex-1" />
-        <span className="text-xs text-zinc-500 font-mono">{deploy.actor}</span>
-        <span className="text-xs text-zinc-600 font-mono">{formatTime(deploy.recorded_at)}</span>
+        <span className="text-xs text-gray-500 font-mono">{deploy.actor}</span>
+        <span className="text-xs text-gray-500 font-mono">{formatTime(deploy.recorded_at)}</span>
         {isExpanded ? (
-          <ChevronDown className="h-3.5 w-3.5 text-zinc-600" />
+          <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />
+          <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
         )}
       </button>
 
       {isExpanded && (
-        <div className="px-4 pb-3 bg-zinc-950/50">
+        <div className="px-4 pb-3 bg-gray-50/50">
           <div className="pl-7 space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
               <div>
-                <span className="text-zinc-500">branch: </span>
-                <span className="text-zinc-300">{deploy.branch || "--"}</span>
+                <span className="text-gray-500">branch: </span>
+                <span className="text-gray-700">{deploy.branch || "--"}</span>
               </div>
               <div>
-                <span className="text-zinc-500">sha: </span>
-                <span className="text-zinc-300">{deploy.sha || "--"}</span>
+                <span className="text-gray-500">sha: </span>
+                <span className="text-gray-700">{deploy.sha || "--"}</span>
               </div>
               <div>
-                <span className="text-zinc-500">sure: </span>
-                <span className="text-zinc-300">
+                <span className="text-gray-500">sure: </span>
+                <span className="text-gray-700">
                   {deploy.duration_seconds ? `${deploy.duration_seconds}s` : "--"}
                 </span>
               </div>
               <div>
-                <span className="text-zinc-500">zaman: </span>
-                <span className="text-zinc-300">{formatTime(deploy.recorded_at)}</span>
+                <span className="text-gray-500">zaman: </span>
+                <span className="text-gray-700">{formatTime(deploy.recorded_at)}</span>
               </div>
             </div>
 
             {deploy.rollback_reason && (
-              <div className="text-xs bg-red-500/10 border border-red-500/20 rounded p-2 text-red-300 font-mono">
+              <div className="text-xs bg-red-500/10 border border-red-500/20 rounded p-2 text-red-700 font-mono">
                 Rollback: {deploy.rollback_reason}
               </div>
             )}
 
             {smokeEndpoints.length > 0 && (
-              <div className="bg-zinc-900 border border-zinc-800 rounded overflow-hidden">
-                <div className="px-3 py-1.5 border-b border-zinc-800 text-[10px] text-zinc-500 uppercase tracking-wider font-medium flex items-center gap-1.5">
+              <div className="bg-white border border-gray-200 rounded overflow-hidden">
+                <div className="px-3 py-1.5 border-b border-gray-200 text-[10px] text-gray-500 uppercase tracking-wider font-medium flex items-center gap-1.5">
                   <Activity className="h-3 w-3" />
                   {t('cm.components_DeployDashboard.smoke_test_sonuclari')}
                 </div>
                 <table className="w-full text-xs font-mono">
                   <thead>
-                    <tr className="text-zinc-600 border-b border-zinc-800/50">
+                    <tr className="text-gray-500 border-b border-gray-200/50">
                       <th className="text-left px-3 py-1.5">Endpoint</th>
                       <th className="text-left px-3 py-1.5">Status</th>
                       <th className="text-left px-3 py-1.5">Latency</th>
@@ -276,20 +276,20 @@ function DeployRow({ deploy, isExpanded, onToggle }) {
                     {smokeEndpoints.map((ep, i) => (
                       <tr
                         key={i}
-                        className="border-b border-zinc-800/30"
+                        className="border-b border-gray-200/30"
                         data-testid={`smoke-endpoint-${i}`}
                       >
-                        <td className="px-3 py-1.5 text-zinc-300">{ep.path || ep.name}</td>
+                        <td className="px-3 py-1.5 text-gray-700">{ep.path || ep.name}</td>
                         <td className="px-3 py-1.5">
                           <span
                             className={
-                              ep.status === 200 ? "text-emerald-400" : "text-red-400"
+                              ep.status === 200 ? "text-emerald-600" : "text-red-600"
                             }
                           >
                             {ep.status}
                           </span>
                         </td>
-                        <td className="px-3 py-1.5 text-zinc-400">{ep.latency_ms}ms</td>
+                        <td className="px-3 py-1.5 text-gray-600">{ep.latency_ms}ms</td>
                         <td className="px-3 py-1.5">
                           {ep.result === "OK" ? (
                             <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
@@ -348,11 +348,11 @@ export function DeployDashboard() {
       <div className="space-y-3" data-testid="deploy-dashboard-loading">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-24 bg-zinc-800" />
+            <Skeleton key={i} className="h-24 bg-gray-100" />
           ))}
         </div>
-        <Skeleton className="h-40 bg-zinc-800" />
-        <Skeleton className="h-64 bg-zinc-800" />
+        <Skeleton className="h-40 bg-gray-100" />
+        <Skeleton className="h-64 bg-gray-100" />
       </div>
     );
   }
@@ -422,23 +422,23 @@ export function DeployDashboard() {
           {envStats.map((env) => (
             <Card
               key={env.environment}
-              className="bg-zinc-900 border-zinc-800"
+              className="bg-white border-gray-200"
               data-testid={`env-card-${env.environment}`}
             >
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <Server className="h-4 w-4 text-zinc-500" />
-                  <span className="text-sm font-medium text-zinc-200 uppercase tracking-wider">
+                  <Server className="h-4 w-4 text-gray-500" />
+                  <span className="text-sm font-medium text-gray-900 uppercase tracking-wider">
                     {env.environment}
                   </span>
                   <Badge
                     variant="outline"
                     className={`ml-auto text-[10px] ${
                       env.success_rate >= 95
-                        ? "border-emerald-500/40 text-emerald-400"
+                        ? "border-emerald-500/40 text-emerald-600"
                         : env.success_rate >= 80
-                          ? "border-amber-500/40 text-amber-400"
-                          : "border-red-500/40 text-red-400"
+                          ? "border-amber-500/40 text-amber-600"
+                          : "border-red-500/40 text-red-600"
                     }`}
                   >
                     {env.success_rate}%
@@ -446,22 +446,22 @@ export function DeployDashboard() {
                 </div>
                 <div className="grid grid-cols-4 gap-2 text-center">
                   <div>
-                    <div className="text-lg font-bold font-mono text-zinc-200">{env.total}</div>
-                    <div className="text-[10px] text-zinc-600">toplam</div>
+                    <div className="text-lg font-bold font-mono text-gray-900">{env.total}</div>
+                    <div className="text-[10px] text-gray-500">toplam</div>
                   </div>
                   <div>
-                    <div className="text-lg font-bold font-mono text-emerald-400">{env.success}</div>
-                    <div className="text-[10px] text-zinc-600">basarili</div>
+                    <div className="text-lg font-bold font-mono text-emerald-600">{env.success}</div>
+                    <div className="text-[10px] text-gray-500">basarili</div>
                   </div>
                   <div>
-                    <div className="text-lg font-bold font-mono text-red-400">{env.failure}</div>
-                    <div className="text-[10px] text-zinc-600">{t('cm.components_DeployDashboard.basarisiz')}</div>
+                    <div className="text-lg font-bold font-mono text-red-600">{env.failure}</div>
+                    <div className="text-[10px] text-gray-500">{t('cm.components_DeployDashboard.basarisiz')}</div>
                   </div>
                   <div>
-                    <div className="text-lg font-bold font-mono text-amber-400">
+                    <div className="text-lg font-bold font-mono text-amber-600">
                       {env.rollback_count}
                     </div>
-                    <div className="text-[10px] text-zinc-600">rollback</div>
+                    <div className="text-[10px] text-gray-500">rollback</div>
                   </div>
                 </div>
               </CardContent>
@@ -471,21 +471,21 @@ export function DeployDashboard() {
       )}
 
       {/* Deploy History */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-zinc-800 flex items-center justify-between">
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-gray-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <GitBranch className="h-3.5 w-3.5 text-zinc-500" />
-            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+            <GitBranch className="h-3.5 w-3.5 text-gray-500" />
+            <span className="text-xs font-medium text-gray-600 uppercase tracking-wider">
               {t('cm.components_DeployDashboard.deploy_gecmisi')}
             </span>
-            <span className="text-[10px] text-zinc-600">
+            <span className="text-[10px] text-gray-500">
               (son {history.length})
             </span>
           </div>
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-zinc-500"
+            className="h-7 text-xs text-gray-500"
             onClick={fetchData}
             data-testid="refresh-deploys-button"
           >
@@ -494,10 +494,10 @@ export function DeployDashboard() {
         </div>
 
         {history.length === 0 ? (
-          <div className="text-center py-12 text-zinc-500" data-testid="deploy-empty-state">
+          <div className="text-center py-12 text-gray-500" data-testid="deploy-empty-state">
             <Rocket className="h-10 w-10 mx-auto mb-3 opacity-20" />
             <p className="text-sm">{t('cm.components_DeployDashboard.henuz_deploy_kaydi_yok')}</p>
-            <p className="text-xs mt-1 text-zinc-600">
+            <p className="text-xs mt-1 text-gray-500">
               CI/CD pipeline deploy sonuclarini buraya raporlar
             </p>
           </div>
