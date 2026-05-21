@@ -1128,6 +1128,16 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
             })
 
     # 6) SHIFT SCHEDULES (20) — next 7 days × 3 staff samples
+    # Task #259: Reserve first 5 staff slots (Staff01..Staff05) for stress
+    # specs that POST new shifts (e.g. spec 35-A creates a tomorrow morning
+    # shift for staffPool[0]). `_backfill_shift_schedule_locks` (d_perf)
+    # mirrors every seeded shift_schedule into `shift_schedule_locks`, so a
+    # seeded tomorrow shift on staff_ids[0] would deterministically 409 the
+    # spec's POST via the overlap guard. Offset seed staff assignment by +5
+    # (using slots 5..29) so the test pool's first members are always free
+    # in the [today-7, today+14] default list window that spec 23 relies on.
+    SHIFT_SEED_STAFF_OFFSET = 5
+    shift_pool_size = len(staff_ids) - SHIFT_SEED_STAFF_OFFSET
     shift_types = ["morning", "evening", "night"]
     sched_count = 0
     for d in range(7):
@@ -1135,13 +1145,14 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
         for j in range(3):
             if sched_count >= 20:
                 break
-            sid = staff_ids[(d + j) % len(staff_ids)]
+            staff_idx = SHIFT_SEED_STAFF_OFFSET + ((d + j) % shift_pool_size)
+            sid = staff_ids[staff_idx]
             shift = shift_types[j % len(shift_types)]
             start_hour = {"morning": 8, "evening": 16, "night": 0}[shift]
             shift_schedule_docs.append({
                 "id": str(uuid.uuid4()), "tenant_id": stress_tid,
                 "staff_id": sid,
-                "staff_name": staff_docs[(d + j) % len(staff_docs)]["name"],
+                "staff_name": staff_docs[staff_idx]["name"],
                 "shift_date": shift_date.isoformat(),
                 "date": shift_date.isoformat(),
                 "shift_type": shift,
@@ -1149,7 +1160,7 @@ def _build_f8d_docs(stress_tid: str, prefix: str, now: datetime):
                 "end_time": f"{(start_hour + 8) % 24:02d}:00",
                 "duration_minutes": 480,
                 "status": "scheduled",
-                "department_id": staff_docs[(d + j) % len(staff_docs)]["department_id"],
+                "department_id": staff_docs[staff_idx]["department_id"],
                 "notes": f"{prefix} F8D seed shift",
                 "created_at": now_iso,
                 "stress_seed": True, "stress_prefix": prefix,
