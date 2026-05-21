@@ -24,8 +24,16 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
       setTables(response.data.tables || []);
       setStatusCounts(response.data.status_counts || {});
     } catch (error) {
-      console.error('Masalar yüklenemedi:', error);
-      toast.error('Masalar yüklenemedi');
+      // POS masa yönetimi backend'de henüz provizyonlanmamış olabilir
+      // (endpoint yok → 404). Bu durumda sessiz boş duruma düş; toast
+      // sadece gerçek hatalarda (auth, 5xx, network) çıkar.
+      if (error?.response?.status === 404) {
+        setTables([]);
+        setStatusCounts({});
+      } else {
+        console.error('Masalar yüklenemedi:', error);
+        toast.error('Masalar yüklenemedi');
+      }
     } finally {
       setLoading(false);
     }
@@ -38,7 +46,11 @@ const POSTableManagement = ({ outletId = 'main_restaurant' }) => {
       toast.success('Table status updated');
       loadTables();
     } catch (error) {
-      toast.error('Masa durumu güncellenemedi');
+      if (error?.response?.status === 404) {
+        toast.error('POS masa modülü henüz aktif değil');
+      } else {
+        toast.error('Masa durumu güncellenemedi');
+      }
     } finally {
       setUpdating(null);
     }
