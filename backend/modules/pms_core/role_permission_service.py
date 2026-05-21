@@ -62,6 +62,16 @@ OPERATION_PERMISSIONS = {
     # v71 Bug DH: reports/exec/HR/PII permission keys
     "view_reports": [Permission.VIEW_REPORTS],
     "view_executive_reports": [Permission.VIEW_FINANCIAL_REPORTS],
+    # v2 HR module (Task #262). `view_hr` = okuma (liste/profil/master data);
+    # `manage_hr` = CRUD (personel/departman/pozisyon). Geriye-uyumluluk:
+    # `view_executive_reports` op key'i hâlâ HR endpoint'lerinde kullanılır
+    # ve `VIEW_FINANCIAL_REPORTS` perm'i ile geçer (Finance + super_admin).
+    # `view_hr_payroll` bordro/maaş alanlarını görme yetkisi — VIEW_HR ile
+    # PII maskeleme bypass'ı için (HR + Finance).
+    "view_hr": [Permission.VIEW_HR],
+    "manage_hr": [Permission.MANAGE_HR],
+    "view_hr_payroll": [Permission.VIEW_HR],
+    "manage_hr_master_data": [Permission.MANAGE_HR],
     "view_guest_list": [Permission.VIEW_REPORTS],
     "view_it_system": [Permission.SYSTEM_SETTINGS],
     # v87 DR-FOLLOWUP-1: ops/devops diagnostics (production_golive, ops_events) — semantik ayrı key, ADMIN/SUPER_ADMIN only

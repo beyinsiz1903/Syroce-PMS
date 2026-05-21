@@ -66,6 +66,18 @@ class Permission(str, Enum):
     # Manager-only access to audit-derived reports (e.g. urgent message report).
     VIEW_AUDIT_LOG = "view_audit_log"
 
+    # HR module permissions (v2 Foundation, Task #262).
+    # VIEW_HR: personel listesi + profil + master data okuma (HR Admin, HR Manager,
+    #   Department Manager scope-filtered, super_admin/admin).
+    # MANAGE_HR: master data CRUD, personel CRUD, departman/pozisyon değişiklikleri,
+    #   PII tam görünürlük (TC/IBAN/maaş unmasked).
+    # Geriye-uyumluluk: `view_executive_reports` op key'i hâlâ HR yüzeylerine
+    # erişim sağlar (alias) — eski deploy'larda kayıtlı `view_financial_reports`
+    # perm'iyle bordro/maaş raporu açılır; bu yeni perm'ler üstüne kurulur,
+    # mevcut akışları bozmaz.
+    VIEW_HR = "view_hr"
+    MANAGE_HR = "manage_hr"
+
 class RoomStatus(str, Enum):
     AVAILABLE = "available"
     OCCUPIED = "occupied"
@@ -398,6 +410,8 @@ ROLE_PERMISSIONS = {
         Permission.VIEW_REPORTS, Permission.VIEW_FINANCIAL_REPORTS,
         Permission.SEND_URGENT_MESSAGE,
         Permission.VIEW_AUDIT_LOG,
+        # v2 HR: supervisor düzeyi HR okuma + master data yönetimi yapabilir.
+        Permission.VIEW_HR, Permission.MANAGE_HR,
     ],
     UserRole.FRONT_DESK: [
         Permission.VIEW_BOOKINGS, Permission.CREATE_BOOKING, Permission.EDIT_BOOKING,
@@ -421,7 +435,10 @@ ROLE_PERMISSIONS = {
         Permission.VIEW_FOLIO, Permission.POST_CHARGE, Permission.POST_PAYMENT,
         Permission.VOID_CHARGE, Permission.CLOSE_FOLIO,
         Permission.VIEW_COMPANIES,
-        Permission.VIEW_REPORTS, Permission.VIEW_FINANCIAL_REPORTS, Permission.EXPORT_DATA
+        Permission.VIEW_REPORTS, Permission.VIEW_FINANCIAL_REPORTS, Permission.EXPORT_DATA,
+        # v2 HR: Finance rolü bordro/maaş raporlarını görür (VIEW_HR), ama
+        # MANAGE_HR'a sahip değil — personel/dept master data CRUD kapalı.
+        Permission.VIEW_HR,
     ],
     UserRole.PROCUREMENT: [
         Permission.VIEW_COMPANIES, Permission.CREATE_COMPANY, Permission.EDIT_COMPANY,

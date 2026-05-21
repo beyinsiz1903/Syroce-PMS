@@ -28,8 +28,160 @@ from core.security import get_current_user
 # GridFS bucket — personel belgeleri için (5MB üstü destek + memory verimi).
 # Eski kayıtlar `data_b64` alanı üzerinden okunmaya devam eder (geriye uyum).
 _hr_docs_bucket = AsyncIOMotorGridFSBucket(_raw_db, bucket_name='staff_docs')
+from core.audit import log_audit_event  # v2 HR Foundation (Task #262)
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_op  # v96 DW
+from modules.pms_core.role_permission_service import (  # v96 DW
+    RolePermissionService,
+    require_op,
+)
+
+
+# ============= HR v2 Foundation helpers (Task #262) =============
+
+_HR_RPS = RolePermissionService()
+
+
+def _user_has_hr_op(user: User, op: str) -> bool:
+    """True iff `user` `op` izinine sahip (super_admin/admin bypass dahil).
+
+    PII maskeleme + dept scope kararlarında kullanılır; require_op dependency'sini
+    Depends dışında, response serializer içinde sorgulamamızı sağlar.
+    """
+    from core.security import _is_super_admin
+    try:
+        if _is_super_admin(user):
+            return True
+    except Exception:
+        pass
+    role = getattr(user, "role", None)
+    granted = getattr(user, "granted_permissions", None)
+    try:
+        return _HR_RPS.check_permission(role, op, granted_permissions=granted)
+    except Exception:
+        return False
+
+
+def _user_assigned_department(user: User) -> str | None:
+    """Department-Manager scope alanı. User şemasında opsiyonel; dict/attr both ok."""
+    val = getattr(user, "assigned_department", None)
+    if not val and hasattr(user, "model_dump"):
+        try:
+            val = user.model_dump().get("assigned_department")
+        except Exception:
+            val = None
+    return (val or None) if isinstance(val, str) else None
+
+
+_PII_PHONE_FIELDS = ("phone", "mobile", "emergency_phone")
+_PII_ID_FIELDS = ("national_id", "identity_number", "tc_kimlik", "tc")
+_PII_BANK_FIELDS = ("iban", "bank_iban", "bank_account")
+_PII_SALARY_FIELDS = (
+    "salary", "monthly_salary", "hourly_rate", "gross_salary",
+    "net_salary", "base_salary",
+)
+
+
+def _mask_phone(v: str | None) -> str | None:
+    if not v or not isinstance(v, str):
+        return v
+    if v.startswith("aes256gcm:"):
+        return ""
+    if len(v) <= 4:
+        return "***"
+    return f"***{v[-4:]}"
+
+
+def _mask_id(v: str | None) -> str | None:
+    if not v or not isinstance(v, str):
+        return v
+    if v.startswith("aes256gcm:"):
+        return ""
+    if len(v) <= 4:
+        return "***"
+    return f"***-**-{v[-4:]}"
+
+
+def _mask_iban(v: str | None) -> str | None:
+    if not v or not isinstance(v, str):
+        return v
+    if v.startswith("aes256gcm:"):
+        return ""
+    compact = v.replace(" ", "")
+    if len(compact) <= 4:
+        return "****"
+    return f"****{compact[-4:]}"
+
+
+def _mask_hr_pii(
+    record: dict | None,
+    current_user: User,
+    *,
+    self_id: str | None = None,
+) -> dict | None:
+    """Rol-bazlı PII maskeleme — staff/profile/salary serializer'larda kullanılır.
+
+    HR Admin + super_admin (`manage_hr` ya da `view_hr_payroll` perm'leri varsa)
+    tam görünürlük. Diğer roller için:
+      - phone/mobile/emergency_phone → son 4 hane
+      - national_id/tc → `***-**-1234`
+      - iban → son 4 hane
+      - salary/hourly_rate → maskelenir (`None`)
+    Self-service istisnası: kaydın `id` alanı current_user.id ile eşleşirse
+    kendi verisi → unmask.
+    """
+    if not record or not isinstance(record, dict):
+        return record
+    # Tam görünürlük: manage_hr veya view_hr_payroll varsa.
+    if _user_has_hr_op(current_user, "manage_hr") or _user_has_hr_op(current_user, "view_hr_payroll"):
+        return record
+    # Self-service: kendi kaydı için bypass (id eşleşmesi).
+    rec_id = record.get("id") or record.get("staff_id") or record.get("user_id")
+    if self_id and rec_id and str(rec_id) == str(self_id):
+        return record
+    rec = dict(record)
+    for f in _PII_PHONE_FIELDS:
+        if f in rec:
+            rec[f] = _mask_phone(rec.get(f))
+    for f in _PII_ID_FIELDS:
+        if f in rec:
+            rec[f] = _mask_id(rec.get(f))
+    for f in _PII_BANK_FIELDS:
+        if f in rec:
+            rec[f] = _mask_iban(rec.get(f))
+    for f in _PII_SALARY_FIELDS:
+        if f in rec:
+            rec[f] = None
+    return rec
+
+
+async def _audit(
+    user: User,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    details: str,
+    *,
+    before: dict | None = None,
+    after: dict | None = None,
+    severity: str = "info",
+) -> None:
+    """Best-effort audit logger — exception'lar HR mutation akışını bozmamalı."""
+    try:
+        await log_audit_event(
+            tenant_id=getattr(user, "tenant_id", None) or "",
+            user_id=str(getattr(user, "id", "") or ""),
+            action=action,
+            entity_type=entity_type,
+            entity_id=str(entity_id) if entity_id else "",
+            details=details,
+            before_value=before,
+            after_value=after,
+            db=db,
+            severity=severity,
+        )
+    except Exception:
+        # Audit yazımı best-effort; mutation akışını bloklamaz.
+        pass
 
 router = APIRouter(prefix="/api", tags=["hr-operations"])
 
@@ -1157,10 +1309,17 @@ class PositionPayload(BaseModel):
 
 
 @router.get("/hr/departments")
-async def list_departments(current_user: User = Depends(get_current_user)):
-    items = await db.hr_departments.find(
-        {'tenant_id': current_user.tenant_id}, {'_id': 0}
-    ).sort('name', 1).to_list(200)
+async def list_departments(
+    include_inactive: bool = False,
+    current_user: User = Depends(get_current_user),
+):
+    """Departman master data. Varsayılan: yalnızca aktif. `include_inactive=true`
+    pasif kayıtları da döner (settings ekranı için)."""
+    q: dict = {'tenant_id': current_user.tenant_id}
+    if not include_inactive:
+        # Eski kayıtlarda `active` alanı yok → varsayılan aktif say (yok ya da True).
+        q['$or'] = [{'active': {'$exists': False}}, {'active': True}]
+    items = await db.hr_departments.find(q, {'_id': 0}).sort('name', 1).to_list(200)
     return {'items': items, 'total': len(items)}
 
 
@@ -1181,10 +1340,16 @@ async def create_department(
         'name': payload.name,
         'code': code,
         'description': payload.description,
+        'active': True,
         'created_at': datetime.now(UTC).isoformat(),
     }
     await db.hr_departments.insert_one(item)
     item.pop('_id', None)
+    await _audit(
+        current_user, "hr.department.create", "hr_department", item['id'],
+        f"Departman oluşturuldu: {item['name']} (kod={code})",
+        after=item, severity="info",
+    )
     return {'success': True, 'department': item}
 
 
@@ -1194,19 +1359,124 @@ async def delete_department(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),
 ):
-    res = await db.hr_departments.delete_one(
-        {'tenant_id': current_user.tenant_id, 'id': dept_id}
-    )
-    if res.deleted_count == 0:
+    """Soft-delete (pasifleştirme). Aktif personeli olan departman silinemez.
+
+    v2 Foundation guard: dept_code/dept_name eşleşen aktif staff_members veya
+    role→dept eşlemesi ile uyumlu aktif kullanıcı varsa 409 atılır. Pasifleşme
+    sonrası kayıt listede görünmez (`include_inactive=true` ile geri gelir).
+    """
+    tid = current_user.tenant_id
+    existing = await db.hr_departments.find_one({'tenant_id': tid, 'id': dept_id}, {'_id': 0})
+    if not existing:
         raise HTTPException(status_code=404, detail="Departman bulunamadı")
-    return {'success': True}
+    dept_codes = {existing.get('code'), existing.get('name')}
+    dept_codes.discard(None)
+    active_count = await db.staff_members.count_documents({
+        'tenant_id': tid,
+        'department': {'$in': list(dept_codes)},
+        '$or': [{'active': {'$exists': False}}, {'active': True}],
+    }) if dept_codes else 0
+    if active_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Departmanda {active_count} aktif personel var. Önce personeli başka departmana taşıyın veya ayrılış işleyin.",
+        )
+    await db.hr_departments.update_one(
+        {'tenant_id': tid, 'id': dept_id},
+        {'$set': {'active': False, 'deactivated_at': datetime.now(UTC).isoformat()}},
+    )
+    await _audit(
+        current_user, "hr.department.deactivate", "hr_department", dept_id,
+        f"Departman pasifleştirildi: {existing.get('name')}",
+        before=existing, severity="warning",
+    )
+    return {'success': True, 'soft_deleted': True}
+
+
+@router.post("/hr/departments/sync-from-staff")
+async def sync_departments_from_staff(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    """Personelde geçen serbest departman string'lerinden master data oluştur.
+
+    Idempotent: mevcut `code` ile çakışan kayıtlar atlanır. `staff_members` +
+    `users` (role→dept eşlemesi) taranır. UI'daki "Personelden Senkronize Et"
+    aksiyonu bunu çağırır.
+    """
+    tid = current_user.tenant_id
+    # Mevcut master data code seti.
+    existing = await db.hr_departments.find(
+        {'tenant_id': tid}, {'_id': 0, 'code': 1, 'name': 1},
+    ).to_list(500)
+    existing_codes = {(d.get('code') or '').lower() for d in existing if d.get('code')}
+    existing_codes |= {(d.get('name') or '').lower() for d in existing if d.get('name')}
+    # Staff'tan benzersiz departmanlar.
+    pipeline = [
+        {'$match': {'tenant_id': tid, 'department': {'$type': 'string', '$ne': ''}}},
+        {'$group': {'_id': '$department', 'count': {'$sum': 1}}},
+    ]
+    seen: dict[str, int] = {}
+    async for row in db.staff_members.aggregate(pipeline):
+        key = (row.get('_id') or '').strip()
+        if key:
+            seen[key] = (seen.get(key, 0) + int(row.get('count', 0)))
+    # Users-derived role'lerden (rol→dept) ekle.
+    role_to_dept = {
+        'housekeeping': 'housekeeping',
+        'front_desk': 'front_desk',
+        'supervisor': 'management',
+        'finance': 'finance',
+        'sales': 'sales',
+        'admin': 'management',
+    }
+    async for u in db.users.find(
+        {'tenant_id': tid, 'is_active': True, 'role': {'$in': list(role_to_dept.keys())}},
+        {'_id': 0, 'role': 1},
+    ):
+        d = role_to_dept.get(u.get('role'))
+        if d:
+            seen[d] = seen.get(d, 0) + 1
+    created: list[dict] = []
+    now_iso = datetime.now(UTC).isoformat()
+    for code, count in seen.items():
+        if code.lower() in existing_codes:
+            continue
+        item = {
+            'id': str(uuid.uuid4()),
+            'tenant_id': tid,
+            'name': code,
+            'code': code.lower().replace(' ', '_')[:40],
+            'description': f"Personel verisinden senkronize edildi (sayı={count})",
+            'active': True,
+            'created_at': now_iso,
+            'source': 'staff_sync',
+        }
+        await db.hr_departments.insert_one(item)
+        item.pop('_id', None)
+        created.append(item)
+    if created:
+        await _audit(
+            current_user, "hr.department.sync_from_staff", "hr_department", "",
+            f"{len(created)} departman personelden senkronize edildi",
+            after={'created_codes': [c['code'] for c in created]},
+            severity="info",
+        )
+    return {'success': True, 'created_count': len(created), 'created': created, 'scanned_unique': len(seen)}
 
 
 @router.get("/hr/positions")
-async def list_positions(current_user: User = Depends(get_current_user)):
-    items = await db.hr_positions.find(
-        {'tenant_id': current_user.tenant_id}, {'_id': 0}
-    ).sort('title', 1).to_list(300)
+async def list_positions(
+    include_inactive: bool = False,
+    department: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    q: dict = {'tenant_id': current_user.tenant_id}
+    if not include_inactive:
+        q['$or'] = [{'active': {'$exists': False}}, {'active': True}]
+    if department:
+        q['department'] = department
+    items = await db.hr_positions.find(q, {'_id': 0}).sort('title', 1).to_list(300)
     return {'items': items, 'total': len(items)}
 
 
@@ -1216,16 +1486,34 @@ async def create_position(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),
 ):
+    # v2 Foundation: pozisyon departmana bağlanmalı (FK semantiği).
+    if payload.department:
+        dept = await db.hr_departments.find_one({
+            'tenant_id': current_user.tenant_id,
+            '$or': [{'code': payload.department}, {'name': payload.department}],
+            '$and': [{'$or': [{'active': {'$exists': False}}, {'active': True}]}],
+        })
+        if not dept:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Departman '{payload.department}' master data'da bulunamadı. Önce departmanı oluşturun veya 'Personelden Senkronize Et' aksiyonunu çalıştırın.",
+            )
     item = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
         'title': payload.title,
         'department': payload.department,
         'default_hourly_rate': payload.default_hourly_rate,
+        'active': True,
         'created_at': datetime.now(UTC).isoformat(),
     }
     await db.hr_positions.insert_one(item)
     item.pop('_id', None)
+    await _audit(
+        current_user, "hr.position.create", "hr_position", item['id'],
+        f"Pozisyon oluşturuldu: {item['title']} (dept={payload.department})",
+        after=item, severity="info",
+    )
     return {'success': True, 'position': item}
 
 
@@ -1235,12 +1523,31 @@ async def delete_position(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),
 ):
-    res = await db.hr_positions.delete_one(
-        {'tenant_id': current_user.tenant_id, 'id': pos_id}
-    )
-    if res.deleted_count == 0:
+    """Soft-delete (pasifleştirme). Aktif personeli olan pozisyon silinemez."""
+    tid = current_user.tenant_id
+    existing = await db.hr_positions.find_one({'tenant_id': tid, 'id': pos_id}, {'_id': 0})
+    if not existing:
         raise HTTPException(status_code=404, detail="Pozisyon bulunamadı")
-    return {'success': True}
+    active_count = await db.staff_members.count_documents({
+        'tenant_id': tid,
+        'position': existing.get('title'),
+        '$or': [{'active': {'$exists': False}}, {'active': True}],
+    })
+    if active_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Pozisyonda {active_count} aktif personel var. Önce personeli başka pozisyona taşıyın veya ayrılış işleyin.",
+        )
+    await db.hr_positions.update_one(
+        {'tenant_id': tid, 'id': pos_id},
+        {'$set': {'active': False, 'deactivated_at': datetime.now(UTC).isoformat()}},
+    )
+    await _audit(
+        current_user, "hr.position.deactivate", "hr_position", pos_id,
+        f"Pozisyon pasifleştirildi: {existing.get('title')}",
+        before=existing, severity="warning",
+    )
+    return {'success': True, 'soft_deleted': True}
 
 
 # ============= Staff CRUD (POST/GET/PUT/DELETE/profile) =============
@@ -1284,21 +1591,41 @@ async def add_staff_member(
         'created_at': datetime.now(UTC).isoformat(),
     }
     await db.staff_members.insert_one(staff)
+    await _audit(
+        current_user, "hr.staff.create", "staff_member", staff['id'],
+        f"Personel oluşturuldu: {staff['name']} (dept={staff.get('department')}, pozisyon={staff.get('position')})",
+        after={k: v for k, v in staff.items() if k not in _PII_SALARY_FIELDS},
+        severity="info",
+    )
     return {'success': True, 'staff_id': staff['id']}
 
 
 @router.get("/hr/staff")
 async def get_staff_list(
     department: str | None = None,
+    source: Literal['hr', 'users', 'all'] = 'hr',
+    include_inactive: bool = False,
+    employment_type: str | None = None,
+    hire_date_from: str | None = None,
+    hire_date_to: str | None = None,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),
 ):
-    """Personel listesi.
+    """Personel listesi — v2 Foundation (Task #262) refactor.
 
-    Önce `staff_members` koleksiyonundan açıkça eklenen kayıtları al; sonra
-    `users` tablosundan staff role'lerini (housekeeping, front_desk,
-    supervisor, finance, sales, admin) türeterek listeyi tamamla.
-    Email bazlı dedup + KVKK için yetki kısıtı + allow-list projection.
+    `source` parametresi UI sekme akışını kontrol eder:
+      - `hr` (varsayılan): yalnızca `staff_members` koleksiyonu — gerçek
+        HR-managed personel; sistem kullanıcıları DAHIL DEĞİL.
+      - `users`: yalnızca `users` koleksiyonundan role bazlı türetilmiş kayıt
+        (RBAC test login'leri / tenant admin'leri — "Sistem Kullanıcıları" tab).
+      - `all`: ikisinin birleşimi (geriye-uyum — v1 davranışı).
+
+    Department-Manager scope: kullanıcının `assigned_department` alanı varsa
+    ve `manage_hr` perm'i yoksa, listeleme bu departmana otomatik daraltılır.
+
+    PII maskeleme: response serializer rol-bazlı maskelemeyi uygular
+    (`view_hr_payroll`/`manage_hr` perm yoksa phone/IBAN/maaş/TC maskelenir).
+    Self-service: kendi kayıt id'siyle eşleşen satırlar unmask edilir.
     """
     tid = current_user.tenant_id
     role_to_dept = {
@@ -1310,56 +1637,103 @@ async def get_staff_list(
         'admin': 'management',
     }
 
-    explicit_query: dict = {'tenant_id': tid, 'active': True}
-    if department:
-        explicit_query['department'] = department
-    explicit = await db.staff_members.find(explicit_query, {'_id': 0}).to_list(200)
+    # Department-Manager scope override (kullanıcı manage_hr'a sahip değilse).
+    scope_dept = _user_assigned_department(current_user)
+    if scope_dept and not _user_has_hr_op(current_user, "manage_hr"):
+        department = scope_dept
+
+    explicit: list = []
+    if source in ('hr', 'all'):
+        explicit_query: dict = {'tenant_id': tid}
+        if not include_inactive:
+            explicit_query['active'] = True
+        if department:
+            explicit_query['department'] = department
+        if employment_type:
+            explicit_query['employment_type'] = employment_type
+        if hire_date_from or hire_date_to:
+            rng: dict = {}
+            if hire_date_from:
+                rng['$gte'] = hire_date_from
+            if hire_date_to:
+                rng['$lte'] = hire_date_to
+            explicit_query['hire_date'] = rng
+        explicit = await db.staff_members.find(explicit_query, {'_id': 0}).to_list(500)
+
     seen_emails = {(s.get('email') or '').lower() for s in explicit if s.get('email')}
 
-    user_query: dict = {
-        'tenant_id': tid,
-        'is_active': True,
-        'role': {'$in': list(role_to_dept.keys())},
-    }
-    if department:
-        roles_in_dept = [r for r, d in role_to_dept.items() if d == department or r == department]
-        user_query['role'] = {'$in': roles_in_dept or ['__none__']}
-
-    user_projection = {
-        '_id': 0,
-        'id': 1, 'name': 1, 'email': 1, 'phone': 1,
-        'role': 1, 'created_at': 1,
-    }
-
     derived: list = []
-    cursor = db.users.find(user_query, user_projection).limit(500)
-    async for u in cursor:
-        email_raw = (u.get('email') or '')
-        em = email_raw.lower()
-        if em and em in seen_emails:
-            continue
-        role = u.get('role')
-        email_clean = _scrub_encrypted(email_raw)
-        phone_clean = _scrub_encrypted(u.get('phone'))
-        derived.append({
-            'id': u.get('id'),
+    if source in ('users', 'all'):
+        user_query: dict = {
             'tenant_id': tid,
-            'name': u.get('name') or email_clean or 'Personel',
-            'email': email_clean,
-            'phone': phone_clean,
-            'department': role_to_dept.get(role, role or 'other'),
-            'position': role or 'staff',
-            'hire_date': (u.get('created_at') or '')[:10],
-            'employment_type': 'full_time',
-            'performance_score': 0.0,
-            'active': True,
-            'derived_from': 'users',
-        })
-        if em:
-            seen_emails.add(em)
+            'is_active': True,
+            'role': {'$in': list(role_to_dept.keys())},
+        }
+        if department:
+            roles_in_dept = [r for r, d in role_to_dept.items() if d == department or r == department]
+            user_query['role'] = {'$in': roles_in_dept or ['__none__']}
+
+        user_projection = {
+            '_id': 0,
+            'id': 1, 'name': 1, 'email': 1, 'phone': 1,
+            'role': 1, 'created_at': 1,
+        }
+        cursor = db.users.find(user_query, user_projection).limit(500)
+        async for u in cursor:
+            email_raw = (u.get('email') or '')
+            em = email_raw.lower()
+            # `all` modu için dedup; `users` modunda dedup yok (kasıtlı).
+            if source == 'all' and em and em in seen_emails:
+                continue
+            role = u.get('role')
+            email_clean = _scrub_encrypted(email_raw)
+            phone_clean = _scrub_encrypted(u.get('phone'))
+            derived.append({
+                'id': u.get('id'),
+                'tenant_id': tid,
+                'name': u.get('name') or email_clean or 'Personel',
+                'email': email_clean,
+                'phone': phone_clean,
+                'department': role_to_dept.get(role, role or 'other'),
+                'position': role or 'staff',
+                'hire_date': (u.get('created_at') or '')[:10],
+                'employment_type': 'full_time',
+                'performance_score': 0.0,
+                'active': True,
+                'derived_from': 'users',
+            })
+            if em:
+                seen_emails.add(em)
 
     combined = explicit + derived
-    return {'staff': combined, 'total': len(combined)}
+    # Rol-bazlı PII maskeleme (post-query, response serializer aşamasında).
+    self_id = str(getattr(current_user, 'id', '') or '')
+    masked = [_mask_hr_pii(s, current_user, self_id=self_id) for s in combined]
+    return {'staff': masked, 'total': len(masked), 'source': source}
+
+
+@router.get("/hr/system-users")
+async def get_system_users(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_executive_reports")),
+):
+    """Sistem kullanıcıları (RBAC test login'leri / tenant admin'leri).
+
+    UI'daki "Sistem Kullanıcıları" sekmesi bunu çağırır — `/hr/staff?source=users`
+    ile aynı veri ama semantik olarak ayrı endpoint (HR Manager yetkisi yetmez
+    daha kısıtlı yapmak istenirse buradan değiştirilebilir).
+    """
+    # Implementation: delegate to /hr/staff?source=users semantics.
+    return await get_staff_list(
+        department=None,
+        source='users',
+        include_inactive=False,
+        employment_type=None,
+        hire_date_from=None,
+        hire_date_to=None,
+        current_user=current_user,
+        _perm=None,
+    )
 
 
 @router.get("/hr/performance/{staff_id}")
@@ -1427,6 +1801,15 @@ async def update_staff_member(
             {'tenant_id': current_user.tenant_id, 'id': staff_id},
             {'$set': update}
         )
+        # Audit: salary alanı değiştiyse severity=warning, diğerleri info.
+        sev = "warning" if any(k in update for k in _PII_SALARY_FIELDS) else "info"
+        await _audit(
+            current_user, "hr.staff.update", "staff_member", staff_id,
+            f"Personel güncellendi (alan sayısı={len(update) - 1})",
+            before={k: existing.get(k) for k in update.keys() if k != 'updated_at'},
+            after={k: v for k, v in update.items() if k not in _PII_SALARY_FIELDS},
+            severity=sev,
+        )
         return {'success': True, 'updated_fields': len(update) - 1, 'source': 'staff'}
 
     # Users-derived path — sadece iletişim alanları
@@ -1473,6 +1856,11 @@ async def delete_staff_member(
         }}
     )
     if res.matched_count > 0:
+        await _audit(
+            current_user, "hr.staff.deactivate", "staff_member", staff_id,
+            "Personel pasifleştirildi (HR-managed)",
+            severity="warning",
+        )
         return {'success': True, 'source': 'staff', 'deactivated_at': now_iso}
 
     # Users-derived ayrılış
@@ -1485,6 +1873,11 @@ async def delete_staff_member(
     )
     if res2.matched_count == 0:
         raise HTTPException(status_code=404, detail="Personel bulunamadı veya zaten ayrılmış")
+    await _audit(
+        current_user, "hr.staff.deactivate", "user_account", staff_id,
+        "Kullanıcı hesabı pasifleştirildi (users-derived staff)",
+        severity="warning",
+    )
     return {'success': True, 'source': 'users', 'deactivated_at': now_iso}
 
 
@@ -1536,8 +1929,14 @@ async def get_staff_profile(
         'year': today.year,
     }, {'_id': 0})
 
+    # v2 Foundation: rol-bazlı PII maskeleme — staff kayıt + bordro satırları.
+    self_id = str(getattr(current_user, 'id', '') or '')
+    staff_masked = _mask_hr_pii(staff, current_user, self_id=self_id) or staff
+    payroll_masked = [
+        _mask_hr_pii(p, current_user, self_id=self_id) or p for p in payroll
+    ]
     return {
-        'staff': staff,
+        'staff': staff_masked,
         'attendance': {
             'records': attendance,
             'total_hours_30d': total_hours,
@@ -1555,7 +1954,7 @@ async def get_staff_profile(
             'total': len(reviews),
         },
         'payroll': {
-            'recent': payroll,
+            'recent': payroll_masked,
             'count': len(payroll),
         },
         'upcoming_shifts': shifts,
@@ -2778,7 +3177,10 @@ async def list_salary_history(
     items = await db.salary_history.find({
         'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
     }, {'_id': 0}).sort('effective_date', -1).to_list(500)
-    return {'items': items, 'total': len(items)}
+    # v2 Foundation: maaş alanları rol-bazlı maskelenir (view_hr_payroll yoksa).
+    self_id = str(getattr(current_user, 'id', '') or '')
+    masked = [_mask_hr_pii(it, current_user, self_id=self_id) or it for it in items]
+    return {'items': masked, 'total': len(masked)}
 
 
 # ============= 4. İşten Ayrılma Süreci =============

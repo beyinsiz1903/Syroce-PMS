@@ -472,6 +472,114 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
             `del_fail=${delFail}/${createdUsers.length} — next run pre-cleanup absorbs residue.`);
     });
 
+    test('G) v2 Foundation — source filter + /hr/system-users + dept soft-delete guard', async ({ request, stressTokens, stressState }, testInfo) => {
+        // HR v2 Foundation (Task #262) coverage:
+        //   - source=hr → only staff_members (no derived_from='users' rows)
+        //   - source=users → only users-derived
+        //   - /hr/system-users dedicated endpoint = source=users semantics
+        //   - dept DELETE with active staff = 409 (soft-delete guard)
+        // Pilot mutation YOK — sadece stress tenant'ta read + reversible probe.
+        test.setTimeout(90_000);
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'v2_foundation', status: 'SKIP', note: `module blocked: ${blockedReason}` });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        const samples = [];
+        const findings = [];
+
+        // 1) source=hr: returned rows should NOT have derived_from='users'.
+        const hrR = await callTimed(request, 'get', '/api/hr/staff?source=hr',
+            undefined, stressTokens.stress_token);
+        samples.push(hrR.ms);
+        const hrItems = hrR.body?.staff || [];
+        const hrDerived = hrItems.filter((s) => s?.derived_from === 'users').length;
+        if (hrR.ok && hrDerived > 0) {
+            findings.push(`source=hr returned ${hrDerived} users-derived rows (expected 0)`);
+            recFinding(testInfo, 'P2', MOD, 'source=hr filter leaked users-derived rows',
+                `count=${hrDerived}/${hrItems.length} — backend source filter regression.`);
+        }
+
+        // 2) source=users: ALL returned rows MUST have derived_from='users'.
+        const uR = await callTimed(request, 'get', '/api/hr/staff?source=users',
+            undefined, stressTokens.stress_token);
+        samples.push(uR.ms);
+        const uItems = uR.body?.staff || [];
+        const uMissingDerived = uItems.filter((s) => s?.derived_from !== 'users').length;
+        if (uR.ok && uMissingDerived > 0) {
+            findings.push(`source=users returned ${uMissingDerived} non-derived rows`);
+            recFinding(testInfo, 'P2', MOD, 'source=users filter leaked non-derived rows',
+                `count=${uMissingDerived}/${uItems.length} — backend source filter regression.`);
+        }
+
+        // 3) /hr/system-users dedicated endpoint reachability + parity.
+        const sysR = await callTimed(request, 'get', '/api/hr/system-users',
+            undefined, stressTokens.stress_token);
+        samples.push(sysR.ms);
+        let sysParity = 'n/a';
+        if (sysR.ok) {
+            const sysItems = sysR.body?.staff || [];
+            sysParity = `count=${sysItems.length} vs source=users=${uItems.length}`;
+            if (uR.ok && Math.abs(sysItems.length - uItems.length) > 0) {
+                recFinding(testInfo, 'P2', MOD,
+                    '/hr/system-users count diverges from /hr/staff?source=users',
+                    sysParity);
+            }
+        } else if (sysR.status === 404) {
+            recFinding(testInfo, 'P2', MOD, '/hr/system-users not deployed',
+                `status=404 — v2 Foundation endpoint missing in this build.`);
+        }
+
+        // 4) Dept soft-delete guard: pick a dept WITH active staff and try DELETE.
+        //    Expected: 409 (active-staff guard). Reversible (no mutation on success).
+        const dR = await callTimed(request, 'get', '/api/hr/departments',
+            undefined, stressTokens.stress_token);
+        samples.push(dR.ms);
+        let softDeleteProbed = false, softDeleteOk = null;
+        const depts = dR.body?.items || [];
+        const staffSample = hrItems[0];
+        const targetDeptCode = staffSample?.department;
+        const targetDept = targetDeptCode
+            ? depts.find((d) => (d.code === targetDeptCode) || (d.name === targetDeptCode))
+            : null;
+        if (targetDept?.id) {
+            softDeleteProbed = true;
+            const delR = await callTimed(request, 'delete',
+                `/api/hr/departments/${targetDept.id}`,
+                undefined, stressTokens.stress_token);
+            samples.push(delR.ms);
+            // 409 = guard fired (PASS). 2xx = active staff dept got pasifleştirildi
+            //   → P0 (soft-delete guard failure, restore needed). 404 = dept
+            //   not found in stress tenant (PASS-as-noop). Other → REVIEW.
+            if (delR.status === 409) {
+                softDeleteOk = 'guard_fired_409';
+            } else if (delR.ok) {
+                softDeleteOk = 'GUARD_FAILED_2xx';
+                recFinding(testInfo, 'P0', MOD,
+                    'Dept soft-delete active-staff guard bypassed',
+                    `dept_id=${targetDept.id.slice(0, 8)} dept_code=${targetDeptCode} active_staff_present status=${delR.status} — backend guard regression. Reactivate via include_inactive flow if needed.`);
+                // Best-effort restore: re-activate the dept we accidentally deactivated.
+                // (No dedicated reactivate endpoint exists; manual cleanup via DB.)
+            } else if (delR.status === 404) {
+                softDeleteOk = 'not_found_404';
+            } else {
+                softDeleteOk = `unexpected_${delR.status}`;
+                recFinding(testInfo, 'P2', MOD,
+                    'Dept DELETE returned unexpected status (expected 409 with active staff)',
+                    `status=${delR.status} body=${JSON.stringify(delR.body).slice(0, 120)}`);
+            }
+        }
+
+        const pass = findings.length === 0 && softDeleteOk !== 'GUARD_FAILED_2xx';
+        recPerf(testInfo, MOD, 'v2_foundation', samples, pass);
+        rec(testInfo, { module: MOD, step: 'v2_foundation',
+            status: pass ? 'PASS' : 'FAIL',
+            endpoint: 'source/system-users/dept-soft-delete-guard',
+            note: `source_hr=${hrItems.length}(derived=${hrDerived}) source_users=${uItems.length}(non_derived=${uMissingDerived}) system_users=${sysR.status} sys_parity=${sysParity} soft_delete_probed=${softDeleteProbed} soft_delete_outcome=${softDeleteOk}` });
+        const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'v2_foundation', stressState, request, stressTokens.pilot_token);
+        expect(extOk).toBe(true);
+    });
+
     test('F) external_calls invariant + pilot_drift=0', async ({ request, stressTokens, stressState }, testInfo) => {
         await assertPilotDriftZero(testInfo, MOD, request, stressTokens.pilot_token, pilotBefore);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'hr_rbac_pii_done', stressState, request, stressTokens.pilot_token);

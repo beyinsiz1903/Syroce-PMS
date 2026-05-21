@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import {
   Users, UserPlus, RefreshCw, Search, Pencil, UserMinus,
   ExternalLink, Building2, Briefcase, Calendar, Clock, Plus, X,
+  Filter, RotateCw,
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +19,10 @@ import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
+import {
+  deptLabel, positionLabel, employmentTypeLabel,
+  EMPLOYMENT_TYPE_OPTIONS,
+} from '@/lib/hrLabels';
 
 const EMPTY_STAFF = {
   name: '', email: '', phone: '', department: '', position: '',
@@ -41,13 +46,29 @@ const StaffManagement = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newDept, setNewDept] = useState({ name: '', code: '', description: '' });
   const [newPos, setNewPos] = useState({ title: '', department: '', default_hourly_rate: '' });
+  const [syncingDepts, setSyncingDepts] = useState(false);
+
+  // v2 Foundation: source tab + gelişmiş filtreler.
+  // source: 'hr' (gerçek personel) | 'users' (sistem kullanıcıları)
+  const [sourceTab, setSourceTab] = useState('hr');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterDept, setFilterDept] = useState('');
+  const [filterPosition, setFilterPosition] = useState('');
+  const [filterEmpType, setFilterEmpType] = useState('');
+  const [filterHireFrom, setFilterHireFrom] = useState('');
+  const [filterHireTo, setFilterHireTo] = useState('');
 
   const loadAll = useCallback(async () => {
     setRefreshing(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
+      const staffParams = { source: sourceTab };
+      if (filterDept) staffParams.department = filterDept;
+      if (filterEmpType) staffParams.employment_type = filterEmpType;
+      if (filterHireFrom) staffParams.hire_date_from = filterHireFrom;
+      if (filterHireTo) staffParams.hire_date_to = filterHireTo;
       const [stRes, dRes, pRes, lRes, shRes] = await Promise.all([
-        axios.get('/hr/staff'),
+        axios.get('/hr/staff', { params: staffParams }),
         axios.get('/hr/departments').catch(() => ({ data: { items: [] } })),
         axios.get('/hr/positions').catch(() => ({ data: { items: [] } })),
         axios.get('/hr/leave-requests').catch(() => ({ data: { counts: {} } })),
@@ -64,20 +85,35 @@ const StaffManagement = () => {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [sourceTab, filterDept, filterEmpType, filterHireFrom, filterHireTo]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return staff;
-    return staff.filter((s) =>
+    let rows = staff;
+    if (filterPosition) {
+      const pq = filterPosition.toLowerCase();
+      rows = rows.filter((s) => (s.position || '').toLowerCase().includes(pq));
+    }
+    if (!q) return rows;
+    return rows.filter((s) =>
       (s.name || '').toLowerCase().includes(q)
       || (s.email || '').toLowerCase().includes(q)
       || (s.department || '').toLowerCase().includes(q)
       || (s.position || '').toLowerCase().includes(q)
     );
-  }, [staff, search]);
+  }, [staff, search, filterPosition]);
+
+  const activeFilterCount = (
+    (filterDept ? 1 : 0) + (filterPosition ? 1 : 0) + (filterEmpType ? 1 : 0)
+    + (filterHireFrom ? 1 : 0) + (filterHireTo ? 1 : 0)
+  );
+
+  const resetFilters = () => {
+    setFilterDept(''); setFilterPosition(''); setFilterEmpType('');
+    setFilterHireFrom(''); setFilterHireTo('');
+  };
 
   const newHires30d = useMemo(() => {
     const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
@@ -185,13 +221,33 @@ const StaffManagement = () => {
   };
 
   const removeDepartment = async (id, name) => {
-    if (!await confirmDialog({ message: `"${name}" departmanı silinsin mi?` })) return;
+    // v2 Foundation: backend soft-delete (pasifleştirme); aktif personeli varsa 409 döner.
+    if (!await confirmDialog({
+      message: `"${name}" departmanı pasifleştirilecek (silinmez). Aktif personeli varsa işlem reddedilir. Devam edilsin mi?`,
+    })) return;
     try {
       await axios.delete(`/hr/departments/${id}`);
-      toast.success('Silindi');
+      toast.success('Departman pasifleştirildi');
       loadAll();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Silinemedi');
+      toast.error(err.response?.data?.detail || 'İşlem yapılamadı');
+    }
+  };
+
+  const syncDepartmentsFromStaff = async () => {
+    if (!await confirmDialog({
+      message: 'Personel verisinden eksik departman master kayıtları oluşturulsun mu?\n\nMevcut kayıtlar etkilenmez (idempotent).',
+    })) return;
+    try {
+      setSyncingDepts(true);
+      const r = await axios.post('/hr/departments/sync-from-staff');
+      const count = r.data?.created_count ?? 0;
+      toast.success(count > 0 ? `${count} yeni departman eklendi` : 'Eklenecek yeni departman yok');
+      loadAll();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Senkronizasyon başarısız');
+    } finally {
+      setSyncingDepts(false);
     }
   };
 
@@ -212,13 +268,16 @@ const StaffManagement = () => {
   };
 
   const removePosition = async (id, title) => {
-    if (!await confirmDialog({ message: `"${title}" pozisyonu silinsin mi?` })) return;
+    // v2 Foundation: backend soft-delete; aktif personeli varsa 409 döner.
+    if (!await confirmDialog({
+      message: `"${title}" pozisyonu pasifleştirilecek (silinmez). Aktif personeli varsa işlem reddedilir. Devam edilsin mi?`,
+    })) return;
     try {
       await axios.delete(`/hr/positions/${id}`);
-      toast.success('Silindi');
+      toast.success('Pozisyon pasifleştirildi');
       loadAll();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Silinemedi');
+      toast.error(err.response?.data?.detail || 'İşlem yapılamadı');
     }
   };
 
@@ -262,19 +321,125 @@ const StaffManagement = () => {
           sub="yeni eklenen" />
       </div>
 
+      {/* v2 Foundation: source tabs (Personel / Sistem Kullanıcıları). */}
+      <div className="flex gap-1 mb-3 border-b border-slate-200">
+        {[
+          { value: 'hr', label: 'Personel', testId: 'tab-source-hr' },
+          { value: 'users', label: 'Sistem Kullanıcıları', testId: 'tab-source-users' },
+        ].map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            data-testid={tab.testId}
+            onClick={() => setSourceTab(tab.value)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              sourceTab === tab.value
+                ? 'border-slate-900 text-slate-900'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       <Card>
         <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <CardTitle>Personel Listesi</CardTitle>
-          <div className="relative w-full md:w-72">
-            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-slate-400" />
-            <Input
-              placeholder="İsim, e-posta, departman ara..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
+          <CardTitle>
+            {sourceTab === 'users' ? 'Sistem Kullanıcıları' : 'Personel Listesi'}
+          </CardTitle>
+          <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-slate-400" />
+              <Input
+                placeholder="İsim, e-posta, departman ara..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFilterOpen((v) => !v)}
+              data-testid="btn-toggle-filters"
+            >
+              <Filter className="w-4 h-4 mr-1.5" />
+              Filtreler
+              {activeFilterCount > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center text-xs bg-slate-900 text-white rounded-full w-5 h-5">
+                  {activeFilterCount}
+                </span>
+              )}
+            </Button>
           </div>
         </CardHeader>
+
+        {filterOpen && (
+          <div className="px-6 pb-3 border-b border-slate-100">
+            <div className="grid gap-3 md:grid-cols-5">
+              <div>
+                <Label className="text-xs">Departman</Label>
+                <select
+                  value={filterDept}
+                  onChange={(e) => setFilterDept(e.target.value)}
+                  className="w-full rounded-md border border-input px-3 py-2 text-sm"
+                  data-testid="filter-department"
+                >
+                  <option value="">Tümü</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.code || d.name}>{deptLabel(d.code || d.name)}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">Pozisyon</Label>
+                <Input
+                  list="filter-positions"
+                  value={filterPosition}
+                  onChange={(e) => setFilterPosition(e.target.value)}
+                  placeholder="Tümü"
+                  data-testid="filter-position"
+                />
+                <datalist id="filter-positions">
+                  {positions.map((p) => <option key={p.id} value={p.title} />)}
+                </datalist>
+              </div>
+              <div>
+                <Label className="text-xs">Çalışma Şekli</Label>
+                <select
+                  value={filterEmpType}
+                  onChange={(e) => setFilterEmpType(e.target.value)}
+                  className="w-full rounded-md border border-input px-3 py-2 text-sm"
+                  data-testid="filter-employment-type"
+                >
+                  <option value="">Tümü</option>
+                  {EMPLOYMENT_TYPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">İşe Giriş (Başlangıç)</Label>
+                <Input type="date" value={filterHireFrom}
+                  onChange={(e) => setFilterHireFrom(e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs">İşe Giriş (Bitiş)</Label>
+                <div className="flex gap-1">
+                  <Input type="date" value={filterHireTo}
+                    onChange={(e) => setFilterHireTo(e.target.value)} />
+                  {activeFilterCount > 0 && (
+                    <Button variant="outline" size="sm" onClick={resetFilters} title="Filtreleri temizle">
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -302,14 +467,14 @@ const StaffManagement = () => {
                         {s.name}
                       </button>
                     </td>
-                    <td className="capitalize text-slate-600">{s.department || '—'}</td>
-                    <td className="capitalize text-slate-600">{s.position || '—'}</td>
+                    <td className="text-slate-600">{deptLabel(s.department)}</td>
+                    <td className="text-slate-600">{positionLabel(s.position)}</td>
                     <td className="text-slate-600">
                       <div className="text-xs">{s.email || '—'}</div>
                       {s.phone && <div className="text-xs text-slate-400">{s.phone}</div>}
                     </td>
                     <td className="text-slate-600 text-xs">{s.hire_date || '—'}</td>
-                    <td className="text-slate-600 text-xs">{s.employment_type || '—'}</td>
+                    <td className="text-slate-600 text-xs">{employmentTypeLabel(s.employment_type)}</td>
                     <td>
                       {s.derived_from === 'users'
                         ? <StatusBadge intent="neutral">Kullanıcı</StatusBadge>
@@ -409,11 +574,11 @@ const StaffManagement = () => {
                 {departments.map((d) => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
                 {departments.length === 0 && (
                   <>
-                    <option value="front_desk">Front Desk</option>
-                    <option value="housekeeping">Housekeeping</option>
-                    <option value="finance">Finans</option>
-                    <option value="management">Yönetim</option>
-                    <option value="sales">Satış</option>
+                    <option value="front_desk">{deptLabel('front_desk')}</option>
+                    <option value="housekeeping">{deptLabel('housekeeping')}</option>
+                    <option value="finance">{deptLabel('finance')}</option>
+                    <option value="management">{deptLabel('management')}</option>
+                    <option value="sales">{deptLabel('sales')}</option>
                   </>
                 )}
               </select>
@@ -488,7 +653,21 @@ const StaffManagement = () => {
           </DialogHeader>
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Building2 className="w-4 h-4" />Departmanlar</CardTitle></CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                <CardTitle className="flex items-center gap-2 text-base"><Building2 className="w-4 h-4" />Departmanlar</CardTitle>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={syncDepartmentsFromStaff}
+                  disabled={syncingDepts}
+                  data-testid="btn-sync-depts-from-staff"
+                  title="Personel verisindeki eksik departmanları master tabloya ekle (idempotent)"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 mr-1 ${syncingDepts ? 'animate-spin' : ''}`} />
+                  Personelden Senkronize Et
+                </Button>
+              </CardHeader>
               <CardContent>
                 <form onSubmit={addDepartment} className="grid gap-2 mb-3">
                   <Input placeholder="Ad (ör: Resepsiyon)" value={newDept.name}
