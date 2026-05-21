@@ -35,7 +35,6 @@ from modules.pms_core.role_permission_service import (  # v96 DW
     require_op,
 )
 
-
 # ============= HR v2 Foundation helpers (Task #262) =============
 
 _HR_RPS = RolePermissionService()
@@ -5836,7 +5835,7 @@ async def export_attendance_xlsx(
 ):
     """Puantaj aylık: personel × gün matrisi (saat değerleri)."""
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.styles import Alignment, Font, PatternFill
     yyyy, mm = month.split('-')
     start = date(int(yyyy), int(mm), 1)
     nm = start.replace(day=28) + timedelta(days=4)
