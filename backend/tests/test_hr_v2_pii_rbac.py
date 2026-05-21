@@ -17,12 +17,23 @@ import pytest
 
 from fastapi import HTTPException
 
-from backend.domains.hr.router import (  # type: ignore
+import os
+import sys
+
+# Existing backend tests are executed with `backend/` as the import root
+# (see `backend/tests/conftest.py` / pytest invocation `cd backend && pytest`).
+# Bu testin standalone `pytest backend/tests/...` invocation'da da çalışması için
+# `backend/` parent'ı sys.path'e ekleriz.
+_BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+from domains.hr.router import (  # type: ignore  # noqa: E402
     _authorize_staff_access,
     _mask_hr_pii,
     _user_has_hr_op,
 )
-from backend.models.enums import Permission, UserRole
+from models.enums import Permission, UserRole  # type: ignore  # noqa: E402
 
 
 def _user(role: UserRole, *, uid: str = "u-1", email: str = "u1@hotel.test",
@@ -227,13 +238,14 @@ class TestAuthorizeStaffAccess:
         # Caller will raise 404 separately.
         _authorize_staff_access(None, _user(UserRole.FRONT_DESK))
 
-    def test_finance_require_manage_self_bypass(self):
-        # Self-service should still bypass require_manage (own performance).
+    def test_self_bypasses_require_manage(self):
+        # Self-service: own performance/payroll visible even when
+        # require_manage=True. Mirrors profile endpoint's can_view_perf logic.
         u = _user(UserRole.FRONT_DESK, uid="s-1")
-        # require_manage=True but user is self → reviewer doctrine says self
-        # bypass for own data. Our helper currently denies require_manage
-        # before self-check; verify behavior matches code: self check happens
-        # AFTER require_manage so a non-manage_hr self-user is denied. Mirror
-        # current implementation deliberately (audit doctrine).
-        with pytest.raises(HTTPException):
-            _authorize_staff_access(self._staff(sid="s-1"), u, require_manage=True)
+        _authorize_staff_access(self._staff(sid="s-1"), u, require_manage=True)
+
+    def test_self_email_bypasses_require_manage(self):
+        u = _user(UserRole.HOUSEKEEPING, uid="other", email="ayse@hotel.test")
+        _authorize_staff_access(
+            self._staff(email="ayse@hotel.test"), u, require_manage=True,
+        )

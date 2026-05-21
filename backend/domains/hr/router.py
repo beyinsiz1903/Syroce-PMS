@@ -182,8 +182,10 @@ def _authorize_staff_access(
     Karar matrisi (sırayla):
       1. `staff` None ise → çağıran 404 yükseltsin (early-return).
       2. `manage_hr` perm'i varsa (HR Admin / SUPER_ADMIN / SUPERVISOR) → ALLOW.
-      3. `require_manage=True` ise (örn. performans notları) → 403.
-      4. Self-service: kaydın id'i veya e-postası current_user ile eşleşir → ALLOW.
+      3. Self-service: kaydın id'i veya e-postası current_user ile eşleşir →
+         ALLOW (require_manage olsa bile — kullanıcı kendi performansını/
+         maaşını görebilir; profil endpoint'iyle tutarlı).
+      4. `require_manage=True` ise (örn. performans notları, başka kullanıcı) → 403.
       5. `view_hr` perm'i + (assigned_department yok VEYA dept eşleşir) → ALLOW.
       6. Aksi → 403.
     """
@@ -191,17 +193,21 @@ def _authorize_staff_access(
         return
     if _user_has_hr_op(current_user, "manage_hr"):
         return
-    if require_manage:
-        raise HTTPException(status_code=403, detail="Yetkiniz yok (manage_hr gerekir).")
-    # Self-service (id veya e-posta eşleşmesi).
+    # Self-service (id veya e-posta eşleşmesi). `require_manage=True` olsa
+    # bile kullanıcı KENDİ kaydına bakıyorsa erişim ALLOW — performans/maaş
+    # gibi alanlarda da self bypass profil endpoint'iyle tutarlı.
     self_id = str(getattr(current_user, "id", "") or "")
     rec_id = str(staff.get("id") or "")
-    if self_id and rec_id and self_id == rec_id:
-        return
     self_email = (str(getattr(current_user, "email", "") or "")).strip().lower()
     rec_email = (str(staff.get("email") or "")).strip().lower()
-    if self_email and rec_email and self_email == rec_email:
+    is_self = bool(
+        (self_id and rec_id and self_id == rec_id)
+        or (self_email and rec_email and self_email == rec_email)
+    )
+    if is_self:
         return
+    if require_manage:
+        raise HTTPException(status_code=403, detail="Yetkiniz yok (manage_hr gerekir).")
     # Dept scope (Department-Manager).
     if not _user_has_hr_op(current_user, "view_hr"):
         raise HTTPException(status_code=403, detail="Yetkiniz yok (view_hr gerekir).")
