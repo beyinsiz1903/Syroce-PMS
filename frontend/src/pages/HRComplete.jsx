@@ -74,11 +74,17 @@ const HRComplete = () => {
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [recordsRange, setRecordsRange] = useState({ start: '', end: '' });
 
-  // Payroll
+  // Payroll v2 (Task #264) — dry-run + draft + locked + revisions
   const [exportMonth, setExportMonth] = useState(todayMonth);
   const [exporting, setExporting] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [payrollPreview, setPayrollPreview] = useState(null);
+  const [payrollRuns, setPayrollRuns] = useState([]);
+  const [selectedRun, setSelectedRun] = useState(null);
+  const [runRevisions, setRunRevisions] = useState([]);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [revising, setRevising] = useState(false);
+  const [loadingRun, setLoadingRun] = useState(false);
 
   // Leave
   const [leaveItems, setLeaveItems] = useState([]);
@@ -466,12 +472,27 @@ const HRComplete = () => {
     }
   };
 
+  const loadPayrollRuns = useCallback(async (month) => {
+    try {
+      const res = await axios.get('/hr/payroll/runs', { params: { month } });
+      setPayrollRuns(res.data?.items || []);
+    } catch (error) {
+      if (error.response?.status !== 403) {
+        toast.error('Bordro kayıt listesi alınamadı');
+      }
+      setPayrollRuns([]);
+    }
+  }, []);
+
   const handlePayrollPreview = async () => {
     try {
-      const res = await axios.get('/hr/payroll/export', {
-        params: { month: exportMonth, format: 'json' },
-      });
+      // Task #264: yeni endpoint daima dry-run + runs özetiyle döner.
+      const res = await axios.get(`/hr/payroll/${exportMonth}`);
       setPayrollPreview(res.data);
+      await loadPayrollRuns(exportMonth);
+      // Üst kayıt değişebileceği için seçimi sıfırla
+      setSelectedRun(null);
+      setRunRevisions([]);
     } catch (error) {
       const msg = error.response?.status === 403
         ? 'Bordro görüntüleme yetkiniz yok'
@@ -480,21 +501,132 @@ const HRComplete = () => {
     }
   };
 
-  const handlePayrollFinalize = async () => {
+  const handlePayrollSaveDraft = async () => {
+    const ok = await confirmDialog({
+      title: 'Bordroyu Taslak Olarak Kaydet',
+      message: (
+        `${exportMonth} ayı için TASLAK bordro kaydedilecek. Bu işlem ` +
+        'muhasebe etkisi yaratmaz; kilitleme ayrı bir adımdır. Devam edilsin mi?'
+      ),
+      confirmText: 'Taslağı Kaydet',
+      cancelText: 'Vazgeç',
+    });
+    if (!ok) return;
     try {
-      setFinalizing(true);
-      const res = await axios.post('/hr/payroll/finalize', { month: exportMonth });
+      setSavingDraft(true);
+      const res = await axios.post(`/hr/payroll/${exportMonth}/save`, { extras: [] });
       if (res.data?.success) {
-        toast.success(`${res.data.count} bordro kaydı oluşturuldu`);
-        handlePayrollPreview();
-      } else {
-        toast.warning(res.data?.message || 'Finalize edilecek veri yok');
+        toast.success(
+          res.data.is_idempotent_update
+            ? 'Mevcut taslak güncellendi'
+            : 'Taslak bordro oluşturuldu',
+        );
+        await loadPayrollRuns(exportMonth);
       }
     } catch (error) {
-      const msg = error.response?.data?.detail || 'Bordro kaydedilemedi';
+      const msg = error.response?.status === 409
+        ? (error.response?.data?.detail || 'Bu ay için kilitli bordro var')
+        : (error.response?.data?.detail || 'Taslak kaydedilemedi');
+      toast.error(msg);
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const loadRunDetail = async (runId) => {
+    try {
+      setLoadingRun(true);
+      const [detail, revs] = await Promise.all([
+        axios.get(`/hr/payroll/runs/${runId}`),
+        axios.get(`/hr/payroll/runs/${runId}/revisions`),
+      ]);
+      setSelectedRun(detail.data);
+      setRunRevisions(revs.data?.items || []);
+    } catch (error) {
+      toast.error('Bordro çalışması alınamadı');
+    } finally {
+      setLoadingRun(false);
+    }
+  };
+
+  const handlePayrollFinalize = async (runId) => {
+    const ok = await confirmDialog({
+      title: 'Bordroyu Kilitle',
+      message: (
+        'Kilitlenen bordro DEĞİŞTİRİLEMEZ. Sonraki düzeltmeler ancak ' +
+        'revizyon açarak yeni bir taslak üzerinden yapılabilir. Onaylıyor musunuz?'
+      ),
+      confirmText: 'Evet, Kilitle',
+      cancelText: 'Vazgeç',
+    });
+    if (!ok) return;
+    try {
+      setFinalizing(true);
+      const res = await axios.post(`/hr/payroll/${runId}/finalize`);
+      if (res.data?.success) {
+        toast.success('Bordro kilitlendi');
+        await Promise.all([loadPayrollRuns(exportMonth), loadRunDetail(runId)]);
+      }
+    } catch (error) {
+      const msg = error.response?.status === 403
+        ? 'Kilitleme yetkiniz yok (HR Admin / Finance gerekli)'
+        : (error.response?.data?.detail || 'Bordro kilitlenemedi');
       toast.error(msg);
     } finally {
       setFinalizing(false);
+    }
+  };
+
+  const handleRevisionOpen = async (runId) => {
+    const reason = await promptDialog({
+      title: 'Revizyon Aç',
+      message: 'Kilitli bordro değişmez. Bu işlem yeni bir TASLAK açacaktır. Sebep:',
+      placeholder: 'Örn: Onaylı mesai eklendi / avans düzeltildi.',
+      confirmText: 'Revizyon Aç',
+      cancelText: 'Vazgeç',
+    });
+    if (reason === null) return;
+    if (!reason.trim()) {
+      toast.error('Revizyon sebebi zorunludur');
+      return;
+    }
+    try {
+      setRevising(true);
+      const res = await axios.post(`/hr/payroll/${runId}/revisions`, {
+        reason: reason.trim(),
+        extras: [],
+      });
+      if (res.data?.success) {
+        toast.success('Revizyon açıldı — yeni taslak hazır');
+        await loadPayrollRuns(exportMonth);
+        await loadRunDetail(res.data.new_run_id);
+      }
+    } catch (error) {
+      const msg = error.response?.data?.detail || 'Revizyon açılamadı';
+      toast.error(msg);
+    } finally {
+      setRevising(false);
+    }
+  };
+
+  const handleRunXlsx = async (runId) => {
+    try {
+      const res = await axios.get(`/hr/payroll/runs/${runId}/export.xlsx`, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `payroll_${runId}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error('XLSX indirilemedi');
     }
   };
 
@@ -831,11 +963,11 @@ const HRComplete = () => {
                     data-testid="input-payroll-month"
                   />
                   <Button variant="outline" size="sm" onClick={handlePayrollPreview} data-testid="btn-payroll-preview">
-                    <FileSpreadsheet className="w-4 h-4 mr-1.5" />{t('cm.pages_HRComplete.onizle')}
+                    <RefreshCw className="w-4 h-4 mr-1.5" />{t('cm.pages_HRComplete.onizle')}
                   </Button>
-                  <Button size="sm" onClick={handlePayrollFinalize} disabled={finalizing} data-testid="btn-payroll-finalize">
-                    <CheckCircle2 className="w-4 h-4 mr-1.5" />
-                    {finalizing ? 'Kaydediliyor...' : 'Bordroyu Kaydet'}
+                  <Button size="sm" onClick={handlePayrollSaveDraft} disabled={savingDraft} data-testid="btn-payroll-save-draft" className="bg-slate-900 text-white hover:bg-slate-800">
+                    <FileText className="w-4 h-4 mr-1.5" />
+                    {savingDraft ? 'Kaydediliyor...' : 'Taslak Kaydet'}
                   </Button>
                   <Button variant="outline" size="sm" onClick={handlePayrollExport} disabled={exporting} data-testid="btn-payroll-csv">
                     <FileDown className="w-4 h-4 mr-1.5" />
@@ -844,27 +976,163 @@ const HRComplete = () => {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Nasıl Çalışır rehberi */}
+                {/* Task #264: Dry-run + draft/locked/revisions akış rehberi */}
                 <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm">
                   <div className="flex items-start gap-2">
                     <Info className="w-4 h-4 mt-0.5 text-sky-600 shrink-0" />
                     <div className="space-y-2">
-                      <p className="font-medium text-sky-900">Bordro nasıl doldurulur?</p>
+                      <p className="font-medium text-sky-900">Bordro yaşam döngüsü (önbordro / muhasebe ihracı)</p>
                       <ol className="list-decimal pl-5 space-y-1 text-slate-700 text-xs">
-                        <li><strong>Devam sekmesinde</strong> personel için clock-in / clock-out kayıtları girilir (hücre saatleri otomatik toplanır).</li>
-                        <li><strong>Personel kartından</strong> saatlik ücret ve aylık standart saat tanımlayın (boş ise: 140 TRY/saat ve 195 saat default kullanılır — düşük çıkar!).</li>
-                        <li>Ay seçip <strong>Önizle</strong> deyin — saatlik × süre + mesai (195 saatin üzeri %50 zamlı) hesabını görürsünüz.</li>
-                        <li>Doğruysa <strong>Bordroyu Kaydet</strong>: kalıcı kayıt (`payroll_records`) oluşur, ay tekrar finalize edilemez.</li>
-                        <li><strong>CSV İndir</strong>: muhasebe / SGK için satır bazlı brüt-net dökümü.</li>
+                        <li><strong>Önizle</strong>: Devam kayıtlarından dry-run hesap. Hiçbir muhasebe etkisi YOKTUR.</li>
+                        <li><strong>Taslak Kaydet</strong>: Bu ayın hesabı `payroll_runs` koleksiyonuna <em>draft</em> olarak kaydedilir; aynı gün tekrar bastığınızda mevcut taslak güncellenir.</li>
+                        <li><strong>Kilitle</strong>: Taslak satır bazında dondurulur (<em>locked</em>, immutable). Yalnızca HR Admin / Finance / Süper Admin.</li>
+                        <li><strong>Revizyon Aç</strong>: Kilitli bordro değişmez; yeni bir taslak ile düzeltme akışı başlar (audit zinciri korunur).</li>
+                        <li><strong>CSV / XLSX</strong>: Muhasebe ihracı; XLSX kalem (avans, prim, yemek, yol, kesinti, mesai) detayı içerir.</li>
                       </ol>
                       <p className="text-xs text-amber-700">
                         <AlertCircle className="w-3 h-3 inline mr-1" />
-                        Kesintiler: %14 SGK + %1 işsizlik + %15 gelir vergisi (matrah - SGK) + %0.759 damga.
-                        Asgari ücret muafiyeti, AGİ ve özel kesintiler için muhasebenizle doğrulayın.
+                        Kesintiler: %14 SGK + %1 işsizlik + %15 gelir vergisi (matrah − SGK) + %0.759 damga.
+                        Asgari ücret muafiyeti / AGİ / özel kesintiler için muhasebenizle doğrulayın.
                       </p>
                     </div>
                   </div>
                 </div>
+
+                {/* Runs listesi */}
+                {payrollRuns.length > 0 && (
+                  <div className="rounded-md border bg-white">
+                    <div className="px-3 py-2 border-b bg-slate-50 text-xs font-semibold text-slate-700">
+                      {exportMonth} ayı bordro çalışmaları ({payrollRuns.length})
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-slate-500 border-b text-xs">
+                            <th className="py-2 px-3">Durum</th>
+                            <th className="px-3">Run ID</th>
+                            <th className="px-3 text-right">Personel</th>
+                            <th className="px-3 text-right">Brüt</th>
+                            <th className="px-3 text-right">Net</th>
+                            <th className="px-3">Güncellendi</th>
+                            <th className="px-3 text-right">İşlem</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {payrollRuns.map((r) => (
+                            <tr key={r.id} className={`border-t border-slate-100 ${selectedRun?.id === r.id ? 'bg-slate-50' : ''}`}>
+                              <td className="py-2 px-3">
+                                <StatusBadge intent={r.status === 'locked' ? 'success' : 'warning'}>
+                                  {r.status === 'locked' ? 'Kilitli' : 'Taslak'}
+                                </StatusBadge>
+                              </td>
+                              <td className="px-3 font-mono text-xs text-slate-600">{r.id.slice(0, 8)}…</td>
+                              <td className="px-3 text-right">{r.summary?.staff_count ?? '—'}</td>
+                              <td className="px-3 text-right">{r.summary ? fmtCurrency(r.summary.total_gross) : '—'}</td>
+                              <td className="px-3 text-right">{r.summary ? fmtCurrency(r.summary.total_net) : '—'}</td>
+                              <td className="px-3 text-xs text-slate-500">{(r.updated_at || r.created_at || '').slice(0, 16).replace('T', ' ')}</td>
+                              <td className="px-3 text-right">
+                                <Button size="sm" variant="outline" onClick={() => loadRunDetail(r.id)} data-testid={`btn-run-detail-${r.id.slice(0, 8)}`}>
+                                  Aç
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Seçili run detayı */}
+                {selectedRun && (
+                  <div className="rounded-md border bg-white">
+                    <div className="px-3 py-2 border-b bg-slate-50 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs">
+                        <span className="font-semibold text-slate-700">Run </span>
+                        <span className="font-mono">{selectedRun.id.slice(0, 8)}…</span>
+                        <span className="ml-2">
+                          <StatusBadge intent={selectedRun.status === 'locked' ? 'success' : 'warning'}>
+                            {selectedRun.status === 'locked' ? 'Kilitli' : 'Taslak'}
+                          </StatusBadge>
+                        </span>
+                        {selectedRun.parent_run_id && (
+                          <span className="ml-2 text-slate-500">
+                            (revizyon — üst: <span className="font-mono">{selectedRun.parent_run_id.slice(0, 8)}…</span>)
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {selectedRun.status === 'draft' && (
+                          <Button size="sm" onClick={() => handlePayrollFinalize(selectedRun.id)} disabled={finalizing}
+                            className="bg-slate-900 text-white hover:bg-slate-800" data-testid="btn-payroll-finalize">
+                            <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                            {finalizing ? 'Kilitleniyor...' : 'Kilitle'}
+                          </Button>
+                        )}
+                        {selectedRun.status === 'locked' && (
+                          <Button size="sm" variant="outline" onClick={() => handleRevisionOpen(selectedRun.id)} disabled={revising} data-testid="btn-payroll-revision">
+                            <RefreshCw className="w-4 h-4 mr-1.5" />
+                            {revising ? 'Açılıyor...' : 'Revizyon Aç'}
+                          </Button>
+                        )}
+                        <Button size="sm" variant="outline" onClick={() => handleRunXlsx(selectedRun.id)} data-testid="btn-payroll-xlsx">
+                          <FileDown className="w-4 h-4 mr-1.5" />XLSX İndir
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-slate-500 border-b text-xs">
+                            <th className="py-2 px-3">Personel</th>
+                            <th className="px-3">Departman</th>
+                            <th className="px-3 text-right">Saat</th>
+                            <th className="px-3 text-right">Mesai</th>
+                            <th className="px-3 text-right">Brüt</th>
+                            <th className="px-3 text-right">Ek Kazanç</th>
+                            <th className="px-3 text-right">Ek Kesinti</th>
+                            <th className="px-3 text-right">Net</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(selectedRun.rows || []).map((row) => (
+                            <tr key={row.staff_id} className="border-t border-slate-100">
+                              <td className="py-2 px-3 font-medium">{row.staff_name}</td>
+                              <td className="px-3 capitalize text-slate-600">{row.department}</td>
+                              <td className="px-3 text-right">{Number(row.total_hours || 0).toFixed(1)}</td>
+                              <td className="px-3 text-right text-amber-700">{Number(row.overtime_hours || 0).toFixed(1)}</td>
+                              <td className="px-3 text-right">{fmtCurrency(row.gross_pay)}</td>
+                              <td className="px-3 text-right text-emerald-700">{fmtCurrency(row.extra_earnings || 0)}</td>
+                              <td className="px-3 text-right text-rose-700">{fmtCurrency(row.extra_deductions || 0)}</td>
+                              <td className="px-3 text-right font-semibold">{fmtCurrency(row.net_salary)}</td>
+                            </tr>
+                          ))}
+                          {(!selectedRun.rows || selectedRun.rows.length === 0) && (
+                            <tr><td colSpan={8} className="py-6 text-center text-slate-500">Bu run'da satır yok</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    {runRevisions.length > 0 && (
+                      <div className="border-t bg-slate-50 px-3 py-2 text-xs">
+                        <div className="font-semibold text-slate-700 mb-1">Revizyon geçmişi ({runRevisions.length})</div>
+                        <ul className="space-y-1">
+                          {runRevisions.map((rev) => (
+                            <li key={rev.id} className="flex flex-wrap items-center gap-2 text-slate-600">
+                              <span className="text-slate-400">{(rev.created_at || '').slice(0, 16).replace('T', ' ')}</span>
+                              <span className="font-mono">{rev.new_run_id?.slice(0, 8)}…</span>
+                              <span>—</span>
+                              <span>{rev.reason}</span>
+                              <span className="text-slate-400">
+                                (brüt {fmtCurrency(rev.diff?.gross_before)} → {fmtCurrency(rev.diff?.gross_after)})
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {payrollPreview ? (
                   <>

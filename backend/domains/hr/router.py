@@ -341,6 +341,56 @@ class PayrollFinalizePayload(BaseModel):
     month: str = Field(..., pattern=r'^\d{4}-\d{2}$')
 
 
+# ============= Payroll v2 (Task #264) =============
+# `payroll_runs` koleksiyonu: dry-run preview + draft + locked lifecycle.
+# `payroll_revisions` koleksiyonu: locked sonrası düzeltme audit zinciri.
+
+PAYROLL_EXTRA_KINDS = (
+    'bonus',          # prim
+    'meal',           # yemek
+    'transport',      # yol
+    'advance',        # avans (kesinti yönü)
+    'deduction',      # diğer kesinti
+)
+
+
+class PayrollExtraLine(BaseModel):
+    """Personel başına manuel ekleme/kesinti satırı.
+
+    `kind`:
+      - bonus    → brüte eklenir (prim)
+      - meal     → brüte eklenir (yemek yardımı, vergi-dışı varsayım yok)
+      - transport→ brüte eklenir (yol yardımı)
+      - advance  → nete kesinti (avans mahsup)
+      - deduction→ nete kesinti (diğer)
+    `amount` her zaman pozitif TRY; yönü `kind` belirler.
+    """
+    staff_id: str = Field(..., min_length=1, max_length=128)
+    kind: Literal['bonus', 'meal', 'transport', 'advance', 'deduction']
+    amount: float = Field(..., ge=0, le=1_000_000)
+    note: str | None = Field(None, max_length=200)
+
+
+class PayrollSavePayload(BaseModel):
+    """`POST /hr/payroll/{month}/save` — draft run upsert.
+
+    Idempotent: aynı (tenant, period_month) için açık draft varsa üzerine yazar.
+    `extras`: per-staff manuel kalemler (avans/prim/yemek/yol/kesinti).
+    """
+    extras: list[PayrollExtraLine] = Field(default_factory=list, max_length=2000)
+    note: str | None = Field(None, max_length=500)
+
+
+class PayrollRevisionPayload(BaseModel):
+    """`POST /hr/payroll/{run_id}/revisions` — locked run düzeltmesi.
+
+    Yeni bir draft run açar (parent_run_id link); locked run değişmez.
+    `reason` zorunlu (KVKK + iş hukuku audit).
+    """
+    reason: str = Field(..., min_length=3, max_length=500)
+    extras: list[PayrollExtraLine] = Field(default_factory=list, max_length=2000)
+
+
 class PerformanceReviewPayload(BaseModel):
     staff_id: str = Field(..., min_length=1, max_length=128)
     reviewer_name: str | None = Field(None, max_length=200)
@@ -1098,39 +1148,734 @@ async def export_payroll_csv_stream(
     )
 
 
-@router.post("/hr/payroll/finalize")
+@router.post("/hr/payroll/finalize", deprecated=True)
 async def finalize_payroll(
     payload: PayrollFinalizePayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("manage_hr")),
+    _perm=Depends(require_op("view_hr")),
 ):
-    """
-    Bordroyu hesapla ve payroll_records koleksiyonuna kalıcı olarak yaz.
-    Önceden bu koleksiyona insert YOKTU — GET /hr/payroll/{month} her zaman
-    boş dönüyordu (3-katmanlı dead code).
-    """
-    period_month, payroll = await _build_payroll(payload.month, current_user.tenant_id)
-    if not payroll:
-        return {'success': False, 'message': 'Bu ay için attendance kaydı yok', 'count': 0}
+    """**DEPRECATED (Task #264, post-review P1).**
 
-    # Önce eski kayıtları sil (idempotent finalize), sonra yeni satırları ekle
-    await db.payroll_records.delete_many({
+    Eski `POST /hr/payroll/finalize` → `payroll_records` mutable-overwrite
+    yolu artık devre dışı. Bordro yaşam döngüsü v2 üzerine taşındı:
+      1. `POST /hr/payroll/{month}/save`  (draft)
+      2. `POST /hr/payroll/{run_id}/finalize`  (locked, immutable)
+      3. `POST /hr/payroll/{run_id}/revisions`  (yeni draft)
+
+    Kontrat ihlali olmasın diye bu endpoint 410 GONE döner; eski client'lar
+    yeni akışa geçmek zorundadır.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "Bu uç nokta devre dışı (Task #264). Yeni akış: "
+            "POST /hr/payroll/{month}/save → POST /hr/payroll/{run_id}/finalize."
+        ),
+    )
+
+
+# ---------- Payroll v2 helpers (Task #264) ----------
+
+def _payroll_apply_extras_and_overtime(
+    base_rows: list[dict],
+    extras: list[dict],
+    overtime_by_staff: dict[str, dict],
+) -> list[dict]:
+    """Base payroll satırlarına (saat × ücret) ekstra kalemleri ve onaylı
+    mesai (overtime_requests) saatlerini uygular; her satıra `line_items`
+    listesi ve yeniden hesaplanmış brüt/net döner.
+
+    Hesap doktrin:
+      1. base satır brüt'ünü baz alır (saat × ücret + attendance-derived mesai)
+      2. + onaylı mesai (overtime_requests) → ek brüt (hours × hourly × 1.5)
+      3. + bonus / meal / transport → ek brüt
+      4. = yeni brüt → standart TR kesinti modeli (SGK/işsizlik/vergi/damga)
+      5. − advance / deduction → nete kesinti (post-tax)
+    """
+    extras_by_staff: dict[str, list[dict]] = {}
+    for ex in extras:
+        extras_by_staff.setdefault(ex['staff_id'], []).append(ex)
+
+    out: list[dict] = []
+    for row in base_rows:
+        sid = row['staff_id']
+        hourly_rate = float(row.get('hourly_rate') or TR_DEFAULT_HOURLY_RATE)
+        line_items: list[dict] = [
+            {
+                'kind': 'base',
+                'label': 'Esas ücret (saat × tarife)',
+                'hours': row.get('total_hours', 0) - row.get('overtime_hours', 0),
+                'rate': hourly_rate,
+                'amount': round(
+                    (row.get('total_hours', 0) - row.get('overtime_hours', 0)) * hourly_rate,
+                    2,
+                ),
+                'direction': 'earning',
+            },
+        ]
+        if row.get('overtime_hours', 0) > 0:
+            line_items.append({
+                'kind': 'overtime_attendance',
+                'label': 'Mesai (devam-türetilmiş, >195h)',
+                'hours': row['overtime_hours'],
+                'rate': row.get('overtime_rate', hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER),
+                'amount': round(
+                    row['overtime_hours']
+                    * (row.get('overtime_rate') or hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER),
+                    2,
+                ),
+                'direction': 'earning',
+            })
+
+        ot = overtime_by_staff.get(sid)
+        if ot and ot.get('hours', 0) > 0:
+            ot_amount = round(
+                ot['hours'] * hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER, 2,
+            )
+            line_items.append({
+                'kind': 'overtime_approved',
+                'label': f"Onaylı mesai ({ot['requests']} talep)",
+                'hours': round(ot['hours'], 2),
+                'rate': round(hourly_rate * TR_DEFAULT_OVERTIME_MULTIPLIER, 2),
+                'amount': ot_amount,
+                'direction': 'earning',
+            })
+
+        added_earnings = 0.0
+        post_tax_deductions = 0.0
+        for ex in extras_by_staff.get(sid, []):
+            amt = round(float(ex['amount']), 2)
+            kind = ex['kind']
+            if kind in ('bonus', 'meal', 'transport'):
+                added_earnings += amt
+                line_items.append({
+                    'kind': kind,
+                    'label': {'bonus': 'Prim', 'meal': 'Yemek', 'transport': 'Yol'}[kind],
+                    'amount': amt,
+                    'direction': 'earning',
+                    'note': ex.get('note'),
+                })
+            else:  # advance / deduction
+                post_tax_deductions += amt
+                line_items.append({
+                    'kind': kind,
+                    'label': {'advance': 'Avans mahsubu', 'deduction': 'Kesinti'}[kind],
+                    'amount': amt,
+                    'direction': 'deduction',
+                    'note': ex.get('note'),
+                })
+
+        ot_added = sum(
+            li['amount'] for li in line_items if li['kind'] == 'overtime_approved'
+        )
+        new_gross = round(
+            row['gross_pay'] + ot_added + added_earnings, 2,
+        )
+
+        sgk = round(new_gross * 0.14, 2)
+        unemp = round(new_gross * 0.01, 2)
+        income_tax = round(max(0.0, new_gross - sgk - unemp) * 0.15, 2)
+        stamp = round(new_gross * 0.00759, 2)
+        tax_total = round(sgk + unemp + income_tax + stamp, 2)
+        net = round(new_gross - tax_total - post_tax_deductions, 2)
+
+        new_row = dict(row)
+        new_row.update({
+            'gross_pay': new_gross,
+            'sgk_employee': sgk,
+            'unemployment': unemp,
+            'income_tax': income_tax,
+            'stamp_tax': stamp,
+            'total_deductions': round(tax_total + post_tax_deductions, 2),
+            'tax_deductions': tax_total,
+            'extra_deductions': round(post_tax_deductions, 2),
+            'extra_earnings': round(ot_added + added_earnings, 2),
+            'net_salary': net,
+            'line_items': line_items,
+        })
+        out.append(new_row)
+    return out
+
+
+async def _payroll_collect_overtime(tenant_id: str, period_month: str) -> dict[str, dict]:
+    """`overtime_requests` status=approved + work_date in month → per-staff
+    aggregate. Read-only; finalize ASLA çağrılmaz."""
+    yyyy, mm = period_month.split('-')
+    start_iso = f'{yyyy}-{mm}-01'
+    nm = date(int(yyyy), int(mm), 28) + timedelta(days=4)
+    end_iso = (nm - timedelta(days=nm.day)).isoformat()
+    by_staff: dict[str, dict] = {}
+    cursor = db.overtime_requests.find({
+        'tenant_id': tenant_id,
+        'status': 'approved',
+        'work_date': {'$gte': start_iso, '$lte': end_iso},
+    }, {'_id': 0, 'staff_id': 1, 'hours': 1})
+    async for r in cursor:
+        sid = r['staff_id']
+        b = by_staff.setdefault(sid, {'hours': 0.0, 'requests': 0})
+        b['hours'] += float(r.get('hours') or 0)
+        b['requests'] += 1
+    return by_staff
+
+
+async def _build_payroll_v2(
+    tenant_id: str, month: str, extras: list[dict] | None = None,
+) -> tuple[str, list[dict], dict[str, Any]]:
+    """Dry-run v2 compute — base + approved overtime + extras → enriched rows
+    with line_items. Pure function over DB reads; no writes."""
+    period_month, base = await _build_payroll(month, tenant_id)
+    ot_map = await _payroll_collect_overtime(tenant_id, period_month)
+    enriched = _payroll_apply_extras_and_overtime(base, extras or [], ot_map)
+    summary = {
+        'staff_count': len(enriched),
+        'total_gross': round(sum(r['gross_pay'] for r in enriched), 2),
+        'total_net': round(sum(r['net_salary'] for r in enriched), 2),
+        'total_extra_earnings': round(
+            sum(r.get('extra_earnings', 0) for r in enriched), 2),
+        'total_extra_deductions': round(
+            sum(r.get('extra_deductions', 0) for r in enriched), 2),
+        'currency': TR_CURRENCY,
+    }
+    return period_month, enriched, summary
+
+
+def _payroll_run_to_response(
+    run: dict, current_user: User,
+) -> dict:
+    """`payroll_runs` doc → API response; IBAN/TC PII mask per row unless
+    manage_hr OR self."""
+    out = dict(run)
+    out.pop('_id', None)
+    rows = out.get('rows') or []
+    masked: list[dict] = []
+    self_id = str(getattr(current_user, 'id', '') or '')
+    self_email = str(getattr(current_user, 'email', '') or '')
+    for r in rows:
+        m = _mask_hr_pii(r, current_user, self_id=self_id, self_email=self_email)
+        masked.append(m or r)
+    out['rows'] = masked
+    return out
+
+
+# ---------- Payroll v2 RBAC gate (Task #264, post-review P1) ----------
+# Contract: HR Admin (admin) + Finance + Super Admin = full lifecycle.
+# HR Manager / Supervisor = save + revision (NOT finalize).
+# Diğer roller 403.
+_PAYROLL_FULL_ROLES = frozenset({'admin', 'super_admin', 'finance'})
+_PAYROLL_DRAFT_ROLES = _PAYROLL_FULL_ROLES | frozenset({'supervisor', 'hr_manager'})
+
+
+def _payroll_lifecycle_gate(user: User, *, allow_hr_manager: bool) -> None:
+    role = (getattr(user, 'role', '') or '').lower()
+    allowed = _PAYROLL_DRAFT_ROLES if allow_hr_manager else _PAYROLL_FULL_ROLES
+    if role not in allowed:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Bordro yaşam döngüsü yetkiniz yok "
+                "(yalnızca HR Admin / Finance / Süper Admin"
+                + (" / HR Manager" if allow_hr_manager else "")
+                + ")."
+            ),
+        )
+
+
+# ---------- Payroll v2 endpoints (Task #264) ----------
+
+@router.get("/hr/payroll/runs")
+async def list_payroll_runs(
+    month: str | None = Query(None, pattern=r'^\d{4}-\d{2}$'),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr_payroll")),
+):
+    """Tenant'a ait payroll_runs listele — opsiyonel month filtresi."""
+    q: dict[str, Any] = {'tenant_id': current_user.tenant_id}
+    if month:
+        q['period_month'] = month
+    cursor = db.payroll_runs.find(q, {'_id': 0, 'rows': 0}).sort('created_at', -1)
+    items = await cursor.to_list(200)
+    return {'items': items, 'count': len(items)}
+
+
+@router.get("/hr/payroll/runs/{run_id}")
+async def get_payroll_run(
+    run_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr_payroll")),
+):
+    """Tek run + line_items detay (PII masked unless manage_hr/self)."""
+    run = await db.payroll_runs.find_one(
+        {'id': run_id, 'tenant_id': current_user.tenant_id}, {'_id': 0},
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="Bordro çalışması bulunamadı")
+    return _payroll_run_to_response(run, current_user)
+
+
+@router.get("/hr/payroll/runs/{run_id}/revisions")
+async def list_payroll_revisions(
+    run_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr_payroll")),
+):
+    """Bir run için açılmış tüm revizyonlar (zaman sıralı, audit trail)."""
+    run = await db.payroll_runs.find_one(
+        {'id': run_id, 'tenant_id': current_user.tenant_id}, {'_id': 0, 'id': 1},
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="Bordro çalışması bulunamadı")
+    items = await db.payroll_revisions.find(
+        {'tenant_id': current_user.tenant_id, 'parent_run_id': run_id}, {'_id': 0},
+    ).sort('created_at', -1).to_list(200)
+    return {'items': items, 'count': len(items)}
+
+
+@router.post("/hr/payroll/{month}/save")
+async def save_payroll_draft(
+    month: str,
+    payload: PayrollSavePayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Draft bordro kaydet — idempotent upsert (aynı ay için var olan
+    draft üstüne yazılır). LOCKED bir run varsa 409 → revizyon yolu açılmalı.
+
+    Bu endpoint HİÇBİR muhasebe kaydı oluşturmaz; sadece `payroll_runs`
+    koleksiyonuna draft snapshot yazar. Asıl muhasebe etkisi `finalize` ile.
+
+    RBAC: HR Admin / Finance / Süper Admin / HR Manager / Supervisor.
+    """
+    _payroll_lifecycle_gate(current_user, allow_hr_manager=True)
+
+    existing_locked = await db.payroll_runs.find_one(
+        {
+            'tenant_id': current_user.tenant_id,
+            'period_month': month,
+            'status': 'locked',
+        }, {'_id': 0, 'id': 1},
+    )
+    if existing_locked:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Bu ay ({month}) için kilitlenmiş bir bordro var "
+                f"(run_id={existing_locked['id']}). Değişiklik için revizyon açın."
+            ),
+        )
+
+    extras = [ex.model_dump() for ex in payload.extras]
+    period_month, rows, summary = await _build_payroll_v2(
+        current_user.tenant_id, month, extras=extras,
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=400,
+            detail="Bu ay için devam kaydı yok — draft oluşturulamaz.",
+        )
+
+    now_iso = datetime.now(UTC).isoformat()
+    uid = getattr(current_user, 'id', None)
+    filter_q = {
         'tenant_id': current_user.tenant_id,
         'period_month': period_month,
-    })
-    for row in payroll:
-        row['id'] = str(uuid.uuid4())
-        row['tenant_id'] = current_user.tenant_id
-        row['finalized_by'] = getattr(current_user, 'id', None)
-        row['finalized_at'] = datetime.now(UTC).isoformat()
-    await db.payroll_records.insert_many(payroll)
+        'status': 'draft',
+    }
+    update_q = {
+        '$setOnInsert': {
+            'id': str(uuid.uuid4()),
+            'created_at': now_iso,
+            'created_by': uid,
+            'parent_run_id': None,
+            'finalized_at': None,
+            'finalized_by': None,
+        },
+        '$set': {
+            'tenant_id': current_user.tenant_id,
+            'period_month': period_month,
+            'status': 'draft',
+            'rows': rows,
+            'summary': summary,
+            'extras': extras,
+            'note': payload.note,
+            'updated_at': now_iso,
+            'updated_by': uid,
+        },
+    }
+    try:
+        res = await db.payroll_runs.update_one(filter_q, update_q, upsert=True)
+        is_idempotent_update = res.upserted_id is None
+        upserted_id = res.upserted_id
+    except DuplicateKeyError:
+        # Post-review P1 (round 1): concurrent insert race; partial unique on
+        # (tenant_id, period_month) where status='draft' rejected the
+        # second insert. Re-apply update on the now-existing draft.
+        res = await db.payroll_runs.update_one(filter_q, {'$set': update_q['$set']})
+        is_idempotent_update = True
+        upserted_id = None
+    # Post-review P1 (round 2): save↔finalize TOCTOU. existing_locked
+    # kontrolü ile upsert arasında başka bir istek draft'ı locked'a
+    # çevirebilir. Bu durumda upsert filter (status='draft') eşleşmez ve
+    # AYNI ay için YENİ bir draft insert edilir → "locked + new draft"
+    # immutability ihlali. Çözüm: yazımdan sonra locked yeniden doğrula;
+    # eğer locked varsa ve biz az önce insert ettiysek, draft'ı geri al.
+    locked_after = await db.payroll_runs.find_one(
+        {
+            'tenant_id': current_user.tenant_id,
+            'period_month': period_month,
+            'status': 'locked',
+        }, {'_id': 0, 'id': 1},
+    )
+    if locked_after and upserted_id is not None:
+        # Bizim insert ettiğimiz draft satırını geri al (rollback).
+        try:
+            await db.payroll_runs.delete_one({
+                'tenant_id': current_user.tenant_id,
+                'period_month': period_month,
+                'status': 'draft',
+                '_id': upserted_id,
+            })
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Bu ay ({period_month}) için bordro arada kilitlendi "
+                f"(run_id={locked_after['id']}). Değişiklik için revizyon açın."
+            ),
+        )
+    doc = await db.payroll_runs.find_one(filter_q, {'_id': 0, 'id': 1})
+    run_id = (doc or {}).get('id')
+    await _audit(
+        current_user, 'payroll.save_draft', 'payroll_run', run_id or '?',
+        f"Draft bordro kaydedildi (ay={period_month}, satır={len(rows)})",
+        severity='info',
+    )
     return {
         'success': True,
+        'run_id': run_id,
         'period_month': period_month,
-        'count': len(payroll),
-        'total_gross': round(sum(r['gross_pay'] for r in payroll), 2),
-        'total_net': round(sum(r['net_salary'] for r in payroll), 2),
-        'currency': TR_CURRENCY,
+        'status': 'draft',
+        'summary': summary,
+        'is_idempotent_update': is_idempotent_update,
+    }
+
+
+@router.post("/hr/payroll/{run_id}/finalize")
+async def finalize_payroll_run(
+    run_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Draft → locked geçişi. Bir kere kilitlenince satırlar immutable.
+    Değişiklik için `revisions` yolu kullanılmalı.
+
+    RBAC: yalnızca HR Admin / Finance / Süper Admin (HR Manager finalize
+    edemez — iş kuralı, _payroll_lifecycle_gate ile zorlanır)."""
+    _payroll_lifecycle_gate(current_user, allow_hr_manager=False)
+
+    run = await db.payroll_runs.find_one(
+        {'id': run_id, 'tenant_id': current_user.tenant_id}, {'_id': 0},
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="Bordro çalışması bulunamadı")
+    if run.get('status') == 'locked':
+        return {
+            'success': True, 'run_id': run_id, 'status': 'locked',
+            'message': 'Zaten kilitli (idempotent).',
+        }
+    if run.get('status') != 'draft':
+        raise HTTPException(
+            status_code=409,
+            detail=f"Sadece draft durumdaki bordro kilitlenebilir (mevcut={run.get('status')}).",
+        )
+
+    now_iso = datetime.now(UTC).isoformat()
+    result = await db.payroll_runs.update_one(
+        {
+            'id': run_id,
+            'tenant_id': current_user.tenant_id,
+            'status': 'draft',  # CAS guard
+        },
+        {'$set': {
+            'status': 'locked',
+            'finalized_at': now_iso,
+            'finalized_by': getattr(current_user, 'id', None),
+            'updated_at': now_iso,
+            'updated_by': getattr(current_user, 'id', None),
+        }},
+    )
+    if result.modified_count == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Bordro kilitlenemedi (yarış durumu); tekrar deneyin.",
+        )
+
+    await _audit(
+        current_user, 'payroll.finalize', 'payroll_run', run_id,
+        f"Bordro kilitlendi (ay={run.get('period_month')})",
+        severity='warning',
+    )
+    return {
+        'success': True, 'run_id': run_id, 'status': 'locked',
+        'period_month': run.get('period_month'),
+        'finalized_at': now_iso,
+    }
+
+
+@router.post("/hr/payroll/{run_id}/revisions")
+async def revise_payroll_run(
+    run_id: str,
+    payload: PayrollRevisionPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Locked run için revizyon: parent IMMUTABLE kalır; yeni bir DRAFT
+    run açılır + `payroll_revisions` audit satırı yazılır. Reason zorunlu.
+
+    RBAC: HR Admin / Finance / Süper Admin / HR Manager / Supervisor.
+    Aynı ay için açık draft varsa partial unique index `DuplicateKeyError`
+    fırlatır — revizyon açılamaz (önce mevcut draft kilitlenmeli)."""
+    _payroll_lifecycle_gate(current_user, allow_hr_manager=True)
+    parent = await db.payroll_runs.find_one(
+        {'id': run_id, 'tenant_id': current_user.tenant_id}, {'_id': 0},
+    )
+    if not parent:
+        raise HTTPException(status_code=404, detail="Üst bordro bulunamadı")
+    if parent.get('status') != 'locked':
+        raise HTTPException(
+            status_code=409,
+            detail="Revizyon yalnızca kilitlenmiş bordro üzerinden açılabilir.",
+        )
+
+    extras = [ex.model_dump() for ex in payload.extras]
+    period_month, rows, summary = await _build_payroll_v2(
+        current_user.tenant_id, parent['period_month'], extras=extras,
+    )
+    now_iso = datetime.now(UTC).isoformat()
+    new_run_id = str(uuid.uuid4())
+    new_doc = {
+        'id': new_run_id,
+        'tenant_id': current_user.tenant_id,
+        'period_month': period_month,
+        'status': 'draft',
+        'rows': rows,
+        'summary': summary,
+        'extras': extras,
+        'note': f"Revizyon: {payload.reason}",
+        'created_at': now_iso,
+        'created_by': getattr(current_user, 'id', None),
+        'updated_at': now_iso,
+        'updated_by': getattr(current_user, 'id', None),
+        'finalized_at': None,
+        'finalized_by': None,
+        'parent_run_id': run_id,
+    }
+    try:
+        await db.payroll_runs.insert_one(new_doc)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Bu ay için açık bir taslak zaten var — yeni revizyon açabilmek "
+                "için önce mevcut taslağı kilitleyin (tek-aktif-draft kuralı)."
+            ),
+        )
+
+    diff = {
+        'gross_before': parent.get('summary', {}).get('total_gross'),
+        'gross_after': summary['total_gross'],
+        'net_before': parent.get('summary', {}).get('total_net'),
+        'net_after': summary['total_net'],
+        'staff_before': parent.get('summary', {}).get('staff_count'),
+        'staff_after': summary['staff_count'],
+    }
+    rev_doc = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'parent_run_id': run_id,
+        'new_run_id': new_run_id,
+        'period_month': period_month,
+        'reason': payload.reason,
+        'diff': diff,
+        'created_at': now_iso,
+        'created_by': getattr(current_user, 'id', None),
+    }
+    await db.payroll_revisions.insert_one(rev_doc)
+    await _audit(
+        current_user, 'payroll.revision_open', 'payroll_run', run_id,
+        (
+            f"Revizyon açıldı (ay={period_month}, yeni_draft={new_run_id}, "
+            f"sebep={payload.reason[:80]})"
+        ),
+        severity='warning',
+    )
+    return {
+        'success': True,
+        'parent_run_id': run_id,
+        'new_run_id': new_run_id,
+        'status': 'draft',
+        'diff': diff,
+    }
+
+
+@router.get("/hr/payroll/runs/{run_id}/export.xlsx")
+async def export_payroll_run_xlsx(
+    run_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr_payroll")),
+):
+    """Bir run'ı Excel olarak indir (line_items detay)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    run = await db.payroll_runs.find_one(
+        {'id': run_id, 'tenant_id': current_user.tenant_id}, {'_id': 0},
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="Bordro çalışması bulunamadı")
+    resp_run = _payroll_run_to_response(run, current_user)
+    rows = resp_run.get('rows') or []
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"Bordro {run.get('period_month', '')}"
+    headers = [
+        'Personel', 'Departman', 'Toplam Saat', 'Mesai Saat',
+        'Brüt', 'SGK+İşsizlik', 'Vergi+Damga',
+        'Ek Kazanç', 'Ek Kesinti', 'Net', 'Para Birimi',
+    ]
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='1F2937', end_color='1F2937', fill_type='solid')
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=col, value=h)
+        c.font = header_font
+        c.fill = header_fill
+    for r_idx, row in enumerate(rows, 2):
+        ws.cell(row=r_idx, column=1, value=row.get('staff_name') or row.get('staff_id'))
+        ws.cell(row=r_idx, column=2, value=row.get('department'))
+        ws.cell(row=r_idx, column=3, value=float(row.get('total_hours') or 0))
+        ws.cell(row=r_idx, column=4, value=float(row.get('overtime_hours') or 0))
+        ws.cell(row=r_idx, column=5, value=float(row.get('gross_pay') or 0))
+        ws.cell(row=r_idx, column=6, value=float(
+            (row.get('sgk_employee') or 0) + (row.get('unemployment') or 0)))
+        ws.cell(row=r_idx, column=7, value=float(
+            (row.get('income_tax') or 0) + (row.get('stamp_tax') or 0)))
+        ws.cell(row=r_idx, column=8, value=float(row.get('extra_earnings') or 0))
+        ws.cell(row=r_idx, column=9, value=float(row.get('extra_deductions') or 0))
+        ws.cell(row=r_idx, column=10, value=float(row.get('net_salary') or 0))
+        ws.cell(row=r_idx, column=11, value=row.get('currency') or TR_CURRENCY)
+    for col_idx in range(1, len(headers) + 1):
+        ws.column_dimensions[chr(64 + col_idx)].width = 16
+
+    # Detail sheet: line_items per staff
+    ws2 = wb.create_sheet('Kalemler')
+    ws2_headers = ['Personel', 'Kalem', 'Açıklama', 'Saat', 'Tarife', 'Tutar', 'Yön', 'Not']
+    for col, h in enumerate(ws2_headers, 1):
+        c = ws2.cell(row=1, column=col, value=h)
+        c.font = header_font
+        c.fill = header_fill
+    row_cursor = 2
+    for row in rows:
+        name = row.get('staff_name') or row.get('staff_id')
+        for li in row.get('line_items') or []:
+            ws2.cell(row=row_cursor, column=1, value=name)
+            ws2.cell(row=row_cursor, column=2, value=li.get('kind'))
+            ws2.cell(row=row_cursor, column=3, value=li.get('label'))
+            ws2.cell(row=row_cursor, column=4, value=li.get('hours'))
+            ws2.cell(row=row_cursor, column=5, value=li.get('rate'))
+            ws2.cell(row=row_cursor, column=6, value=li.get('amount'))
+            ws2.cell(row=row_cursor, column=7, value=li.get('direction'))
+            ws2.cell(row=row_cursor, column=8, value=li.get('note'))
+            row_cursor += 1
+    for col_idx in range(1, len(ws2_headers) + 1):
+        ws2.column_dimensions[chr(64 + col_idx)].width = 18
+
+    resp = _xlsx_stream(wb)
+    resp.headers['Content-Disposition'] = (
+        f'attachment; filename="payroll_run_{run_id}.xlsx"'
+    )
+    return resp
+
+
+@router.get("/hr/payroll/me")
+async def get_my_payroll(
+    month: str | None = Query(None, pattern=r'^\d{4}-\d{2}$'),
+    current_user: User = Depends(get_current_user),
+):
+    """Self-service: kullanıcının kendi locked bordro satırı. Yalnız `locked`
+    runlardan veri döner — taslak görünmez (KVKK + iş hukuku doktrin)."""
+    self_id = str(getattr(current_user, 'id', '') or '')
+    self_email = (str(getattr(current_user, 'email', '') or '')).strip().lower()
+    q: dict[str, Any] = {
+        'tenant_id': current_user.tenant_id,
+        'status': 'locked',
+    }
+    if month:
+        q['period_month'] = month
+    runs = await db.payroll_runs.find(q, {'_id': 0}).sort('period_month', -1).to_list(24)
+    my_rows: list[dict] = []
+    for run in runs:
+        for r in run.get('rows') or []:
+            rid = str(r.get('staff_id') or '')
+            remail = (str(r.get('email') or '')).strip().lower()
+            if (self_id and rid == self_id) or (
+                self_email and remail and remail == self_email
+            ):
+                my_rows.append({
+                    'period_month': run['period_month'],
+                    'run_id': run['id'],
+                    'finalized_at': run.get('finalized_at'),
+                    **r,
+                })
+    return {'items': my_rows, 'count': len(my_rows)}
+
+
+@router.get("/hr/payroll/{month}/dept-summary")
+async def get_payroll_dept_summary(
+    month: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Departman müdürü için aggregate özet — net TUTARLAR DÖNMEZ
+    (no-net doktrin); yalnızca personel sayısı + brüt + saat toplamı.
+
+    Tüm runlar değil, en güncel LOCKED runlardan; locked yoksa son draft'tan
+    (manager planlama amaçlı). Tek bir periyot için."""
+    runs = await db.payroll_runs.find(
+        {'tenant_id': current_user.tenant_id, 'period_month': month},
+        {'_id': 0},
+    ).sort('finalized_at', -1).to_list(20)
+    chosen = next((r for r in runs if r.get('status') == 'locked'), None)
+    if chosen is None:
+        chosen = next((r for r in runs if r.get('status') == 'draft'), None)
+    if chosen is None:
+        return {'period_month': month, 'departments': [], 'source': 'none'}
+
+    assigned = _user_assigned_department(current_user)
+    by_dept: dict[str, dict] = {}
+    for r in chosen.get('rows') or []:
+        dept = (r.get('department') or 'unknown').strip().lower() or 'unknown'
+        if assigned and dept != assigned.strip().lower() and not _user_has_hr_op(
+            current_user, 'view_hr_payroll',
+        ):
+            continue
+        agg = by_dept.setdefault(dept, {
+            'department': dept,
+            'staff_count': 0,
+            'total_gross': 0.0,
+            'total_hours': 0.0,
+            'overtime_hours': 0.0,
+        })
+        agg['staff_count'] += 1
+        agg['total_gross'] = round(agg['total_gross'] + (r.get('gross_pay') or 0), 2)
+        agg['total_hours'] = round(agg['total_hours'] + (r.get('total_hours') or 0), 2)
+        agg['overtime_hours'] = round(
+            agg['overtime_hours'] + (r.get('overtime_hours') or 0), 2,
+        )
+    return {
+        'period_month': month,
+        'run_id': chosen['id'],
+        'source': chosen.get('status'),
+        'departments': list(by_dept.values()),
     }
 
 
@@ -1140,20 +1885,57 @@ async def get_payroll(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_hr")),
 ):
-    """Per-month payroll lookup — finalize edilmiş kayıtları okur."""
-    payroll = await db.payroll_records.find(
+    """Per-month payroll preview — DAİMA dry-run (saf hesap, hiç yazma).
+
+    `runs`: bu aya ait `payroll_runs` (draft+locked) özet listesi.
+    `latest_locked` / `latest_draft`: en güncel ilgili run referansları.
+    `payroll`: dry-run hesap (legacy `payroll_records` kayıtları DA döner —
+    geri uyum; UI yeni `runs` listesini tercih etmelidir).
+
+    Task #264: tüm muhasebe etkili veriler `payroll_runs` üzerinden;
+    bu endpoint asla DB'ye yazmaz (`is_dry_run=true`).
+    """
+    # Dry-run compute (extras yok — pure baseline)
+    period_month, rows, summary = await _build_payroll_v2(
+        current_user.tenant_id, month, extras=[],
+    )
+
+    # PII mask satırlar üzerinde
+    self_id = str(getattr(current_user, 'id', '') or '')
+    self_email = str(getattr(current_user, 'email', '') or '')
+    masked_rows = [
+        _mask_hr_pii(r, current_user, self_id=self_id, self_email=self_email) or r
+        for r in rows
+    ]
+
+    runs_cursor = db.payroll_runs.find(
         {'tenant_id': current_user.tenant_id, 'period_month': month},
-        {'_id': 0}
+        {'_id': 0, 'rows': 0},
+    ).sort('created_at', -1)
+    runs = await runs_cursor.to_list(50)
+    latest_locked = next((r for r in runs if r.get('status') == 'locked'), None)
+    latest_draft = next((r for r in runs if r.get('status') == 'draft'), None)
+
+    # Geri uyum: legacy finalize edilmiş `payroll_records`
+    legacy = await db.payroll_records.find(
+        {'tenant_id': current_user.tenant_id, 'period_month': month},
+        {'_id': 0},
     ).to_list(500)
-    total_gross = round(sum(p.get('gross_pay', 0) for p in payroll), 2)
-    total_net = round(sum(p.get('net_salary', 0) for p in payroll), 2)
+
     return {
-        'payroll': payroll,
-        'period_month': month,
-        'count': len(payroll),
-        'total_gross': total_gross,
-        'total_net': total_net,
+        'is_dry_run': True,
+        'period_month': period_month,
+        'payroll': masked_rows,
+        'summary': summary,
+        'staff_count': summary['staff_count'],
+        'total_gross_pay': summary['total_gross'],
+        'total_net_pay': summary['total_net'],
         'currency': TR_CURRENCY,
+        'runs': runs,
+        'latest_locked_run': latest_locked,
+        'latest_draft_run': latest_draft,
+        'legacy_payroll_records': legacy,
+        'legacy_count': len(legacy),
     }
 
 
@@ -4865,12 +5647,13 @@ async def export_leave_xlsx(
     """İzin geçmişi Excel."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
+    # Task #263 review carryover: range overlap doctrini —
+    # `start_date<=end AND end_date>=start` (eski $or pencereyi tamamen
+    # kapsayan izinleri kaçırıyordu).
     items = await db.leave_requests.find({
         'tenant_id': current_user.tenant_id,
-        '$or': [
-            {'start_date': {'$gte': start, '$lte': end}},
-            {'end_date': {'$gte': start, '$lte': end}},
-        ],
+        'start_date': {'$lte': end},
+        'end_date': {'$gte': start},
     }, {'_id': 0}).sort('start_date', -1).to_list(5000)
     wb = Workbook()
     ws = wb.active

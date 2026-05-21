@@ -118,6 +118,12 @@ STRESS_COLLECTIONS = [
     "shift_conflicts",  # F8D-v2 forward-compat: shift overlap conflict audit collection (no backend yet; orphan scrub)
     "leave_accrual_policies",  # F8D-v2: per-tenant accrual policy seed (HR İş K. m.53 carryover rules)
     "payroll_records",
+    # Task #264 (HR v2 Payroll): payroll_runs + payroll_revisions — draft
+    # lifecycle. Stress test finalize ASLA çağırmaz (locked yaratma yasak);
+    # ancak draft kayıtları idempotent unified cleanup loop'a düşer
+    # (`stress_seed=True` + `stress_prefix` tag konvansiyonu).
+    "payroll_runs",
+    "payroll_revisions",
     # F8E (2026-05-18): Finance / Cashier / Accounting surface.
     # All rows tagged `stress_seed=True` + `stress_prefix` → unified cleanup
     # loop reaches them. No external service risk: Iyzico is logic-embedded
@@ -1737,6 +1743,23 @@ async def stress_seed(
             orphan_cleanup["currency_rates"] = res.deleted_count
         except Exception as e:
             orphan_cleanup["currency_rates_error"] = str(e)[:120]
+        # Task #264 (post-review P1): payroll_runs/payroll_revisions backend
+        # POST yolları `stress_seed` etiketi yazmaz (üretim yazım yolu).
+        # Stres tenant'ı içinde oluşmuş tüm draft/locked runlar + revizyonlar
+        # tenant-scoped olarak temizlenir (pilot blocked, destructive flag
+        # zaten üst gate'lerde doğrulanmış). LOCKED satır da silinir çünkü
+        # stres ortamında finalize ASLA çağrılmaz — locked görünmüşse
+        # önceki kontrat ihlali residue'sudur, scrub edilmelidir.
+        try:
+            res = await db.payroll_runs.delete_many({"tenant_id": stress_tid})
+            orphan_cleanup["payroll_runs"] = res.deleted_count
+        except Exception as e:
+            orphan_cleanup["payroll_runs_error"] = str(e)[:120]
+        try:
+            res = await db.payroll_revisions.delete_many({"tenant_id": stress_tid})
+            orphan_cleanup["payroll_revisions"] = res.deleted_count
+        except Exception as e:
+            orphan_cleanup["payroll_revisions_error"] = str(e)[:120]
         total_rooms_inserted = await _chunked_insert(db.rooms, rooms_docs, INSERT_CHUNK_SIZE)
         # Authoritative split — `counts["rooms"]` MUST equal base (500) for
         # tenant-isolation contract testing; extras are an internal stress-only

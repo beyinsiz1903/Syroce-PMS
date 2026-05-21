@@ -126,6 +126,39 @@ async def phase_d_perf_and_marketplace(app):
             [("tenant_id", 1), ("status", 1), ("shift_date", 1)],
             name="idx_shift_status_date",
         )
+        # Task #264: payroll_runs lifecycle hot path — list-by-month +
+        # status-filter; period_month/status üzerinden taraması sık.
+        await db.payroll_runs.create_index(
+            [("tenant_id", 1), ("period_month", 1), ("status", 1)],
+            name="idx_payroll_runs_period_status",
+        )
+        # Task #264 (post-review P1): tek-aktif-draft invariantını DB seviyesinde
+        # zorla — partial unique index. İki eşzamanlı save isteği aynı ay için
+        # yalnız bir draft satırı yaratabilir (ikinci DuplicateKey → endpoint
+        # idempotent update path'ine düşer).
+        #
+        # NOT: `payroll_runs` koleksiyonu Task #264 ile yeni geldi; legacy
+        # duplicate draft sıfır. İlk üretim deploy'unda hata fırlamaz. İleride
+        # legacy duplicate riski oluşursa pre-migration dedupe ile birlikte
+        # yeniden inşa edilmeli. Hata buraya gelirse phase-D yutmasın diye
+        # ayrı try ile sarıp net log mesajı bırakıyoruz.
+        try:
+            await db.payroll_runs.create_index(
+                [("tenant_id", 1), ("period_month", 1)],
+                name="uniq_payroll_runs_open_draft",
+                unique=True,
+                partialFilterExpression={"status": "draft"},
+            )
+        except Exception as e:
+            print(
+                "[phase-D] WARN: payroll_runs unique-partial draft index "
+                f"creation failed → idempotency/concurrency invariant NOT enforced: {e}"
+            )
+        # Task #264: payroll_revisions audit zinciri (parent_run_id desc).
+        await db.payroll_revisions.create_index(
+            [("tenant_id", 1), ("parent_run_id", 1), ("created_at", -1)],
+            name="idx_payroll_revisions_parent_created",
+        )
         logger.info("✅ Tenant uniqueness indexes ensured (hotel_id, username, performance_reviews, shift_schedule_locks, hr_coverage_rules)")
     except Exception as e:
         logger.warning(f"Tenant uniqueness index error: {e}")

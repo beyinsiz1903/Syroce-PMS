@@ -384,7 +384,10 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
         let checkShapeOk = false;
         if (listR.ok) {
             const tomorrow = new Date(Date.now() + 86_400_000);
-            const weekday = tomorrow.getUTCDay() === 0 ? 7 : tomorrow.getUTCDay();
+            // Task #263 carryover: backend coverage-rules validator -1..6
+            // bekler (0=Pazartesi, Python `date.weekday()`). JS getUTCDay()
+            // 0=Pazar..6=Cumartesi → Python weekday = (jsDay + 6) % 7.
+            const weekday = (tomorrow.getUTCDay() + 6) % 7;
             const payload = {
                 department: 'housekeeping',
                 weekday,
