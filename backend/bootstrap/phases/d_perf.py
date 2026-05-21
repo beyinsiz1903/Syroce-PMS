@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from core.database import _raw_db, db
 
@@ -404,7 +404,7 @@ async def _backfill_shift_schedule_locks() -> None:
                             'tenant_id': tid,
                             'staff_id': stf,
                             'shift_date': day,
-                            'created_at': datetime.now(timezone.utc).isoformat(),
+                            'created_at': datetime.now(UTC).isoformat(),
                         },
                         '$addToSet': {'intervals': {
                             'shift_id': sid,

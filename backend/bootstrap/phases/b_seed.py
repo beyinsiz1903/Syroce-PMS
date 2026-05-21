@@ -41,16 +41,16 @@ async def phase_b_seed_and_exely_conn(app):
         _strict = is_production_env() and _seed_override
 
         async def _supplies_ensure():
+            # EXPECTED_CATALOGUE_COUNT: önceki seed run'u timeout/cancel ile yarıda
+            # kesildiyse katalog `0 < count < expected` durumunda kalabilir; sadece
+            # `count == 0` kontrolü bu partial-seed durumunu "healthy" sayıp asla
+            # onarmaz. Eksik adetle gelirse yeniden idempotent seed tetikleniyor.
             from modules.supplies_market.repository import (
                 products_col as _mp_products,
             )
             from modules.supplies_market.repository import (
                 vendors_col as _mp_vendors,
             )
-            # EXPECTED_CATALOGUE_COUNT: önceki seed run'u timeout/cancel ile yarıda
-            # kesildiyse katalog `0 < count < expected` durumunda kalabilir; sadece
-            # `count == 0` kontrolü bu partial-seed durumunu "healthy" sayıp asla
-            # onarmaz. Eksik adetle gelirse yeniden idempotent seed tetikleniyor.
             from scripts.seed_supplies_market import EXPECTED_CATALOGUE_COUNT
             _need_seed = False
             _demo_vendor = await _mp_vendors.find_one(
@@ -78,7 +78,7 @@ async def phase_b_seed_and_exely_conn(app):
             # Strict modda (prod+override) timeout ya da hata → fail-closed.
             # Dev/CI modunda warning + devam, ensure best-effort.
             await asyncio.wait_for(_supplies_ensure(), timeout=_SUPPLIES_ENSURE_BUDGET_SEC)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 f"Supplies market ensure exceeded {_SUPPLIES_ENSURE_BUDGET_SEC}s budget — "
                 "skipping to keep boot moving (set SUPPLIES_ENSURE_BUDGET_SEC to tune)"
