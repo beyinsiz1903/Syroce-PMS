@@ -1811,7 +1811,6 @@ async def get_system_users(
 async def get_staff_performance_summary(
     staff_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_hr")),
 ):
     """Personel performans özeti (son 10 review + ortalama puan).
 
@@ -1966,7 +1965,6 @@ async def delete_staff_member(
 async def get_staff_profile(
     staff_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_hr")),
 ):
     """Aggregate profil: kişi + son 30g devam + izinler + performans + bordro + vardiya.
 
@@ -2074,7 +2072,6 @@ async def get_leave_balance(
     staff_id: str,
     year: int | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_hr")),
 ):
     yr = year or _today_local().year
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
@@ -3272,8 +3269,17 @@ async def create_salary_change(
 async def list_salary_history(
     staff_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_hr")),
 ):
+    """Maaş geçmişi — RBAC: tenant + dept scope + self-service (`_authorize_staff_access`).
+
+    Route-level `require_op` YOK — self-service kullanıcının kendi maaş
+    geçmişine erişebilmesi için. Authz tek noktada (`_authorize_staff_access`)
+    yapılır; o kullanıcıya manage_hr yoksa PII maskelenir (`_mask_hr_pii`).
+    """
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    _authorize_staff_access(staff, current_user)
     items = await db.salary_history.find({
         'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
     }, {'_id': 0}).sort('effective_date', -1).to_list(500)
@@ -3408,8 +3414,12 @@ async def terminate_staff(
 async def get_termination_record(
     staff_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_hr")),
 ):
+    """İşten ayrılma kaydı — RBAC: dept scope + self bypass (`_authorize_staff_access`)."""
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    _authorize_staff_access(staff, current_user)
     rec = await db.staff_terminations.find_one(
         {'tenant_id': current_user.tenant_id, 'staff_id': staff_id},
         {'_id': 0},
@@ -3463,7 +3473,6 @@ async def add_certification(
 async def list_staff_certifications(
     staff_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_hr")),
 ):
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
     if not staff:
@@ -3575,8 +3584,12 @@ async def upload_staff_document(
 async def list_staff_documents(
     staff_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_hr")),
 ):
+    """Personel belge listesi — RBAC: dept scope + self bypass."""
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    _authorize_staff_access(staff, current_user)
     items = await db.staff_documents.find(
         {'tenant_id': current_user.tenant_id, 'staff_id': staff_id},
         {'_id': 0, 'data_b64': 0},  # Legacy binary alanı liste yanıtında olmasın
@@ -3588,13 +3601,23 @@ async def list_staff_documents(
 async def download_staff_document(
     doc_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_hr")),
 ):
+    """Belge indir — tenant + dept scope + self bypass.
+
+    Route-level `require_op` YOK; authz `_authorize_staff_access` ile doc'un
+    bağlı olduğu staff üzerinden yapılır. Bu, kendi sözleşmesini/diplomasını
+    indirebilen self-service kullanıcı durumunu kapsar.
+    """
     doc = await db.staff_documents.find_one({
         'tenant_id': current_user.tenant_id, 'id': doc_id,
     })
     if not doc:
         raise HTTPException(status_code=404, detail="Belge bulunamadı")
+    # Doc'un sahibi olan staff'ı yükleyip per-record authz uygula.
+    doc_staff_id = doc.get('staff_id')
+    if doc_staff_id:
+        doc_staff = await _verify_staff_in_tenant(doc_staff_id, current_user.tenant_id)
+        _authorize_staff_access(doc_staff, current_user)
 
     # GridFS'ten oku; eski (data_b64) kayıtlar için geriye dönük destek.
     if doc.get('gridfs_id'):
