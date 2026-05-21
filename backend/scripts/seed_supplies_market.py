@@ -66,6 +66,11 @@ CATALOGUE = [
      "unit": "koli", "pack_size": 4, "moq": 1, "stock": 50},
 ]
 
+# Boot-time ensure (bkz. bootstrap/phases/b_seed.py) bu sayıya bakar: katalog
+# partial doluysa (örn. önceki seed run'u timeout/cancel ile yarıda kesildi)
+# `count == 0` false-negative'i tetiklenmesin — beklenen sayıdan azsa yeniden seed.
+EXPECTED_CATALOGUE_COUNT = len(CATALOGUE)
+
 
 async def main():
     await ensure_indexes()

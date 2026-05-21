@@ -1,4 +1,5 @@
 """Phase B — Auto-seed + Exely webhook connection ensure."""
+import asyncio
 import logging
 import os
 from datetime import UTC, datetime
@@ -6,6 +7,14 @@ from datetime import UTC, datetime
 from core.database import _raw_db
 
 logger = logging.getLogger(__name__)
+
+# Supplies-market ensure bütçesi — bu seeder asla boot'u bloke etmemeli.
+# CI/stress cold-start'larda Atlas RTT yüksek olabilir; ensure (find_one +
+# count_documents, gerekirse 30+ insert) bütün boot'u tutarsa `/health/ready`
+# hiç açılmıyor ve stress suite warm-up loop'u 60 deneme sonrası giveup.
+# Bütçe aşılırsa healthy path için sessizce devam, strict mod (prod+override)
+# için fail-closed re-raise.
+_SUPPLIES_ENSURE_BUDGET_SEC = float(os.environ.get("SUPPLIES_ENSURE_BUDGET_SEC", "20"))
 
 
 async def phase_b_seed_and_exely_conn(app):
@@ -30,13 +39,19 @@ async def phase_b_seed_and_exely_conn(app):
     else:
         # prod + override aktifse operatör seed'i bilinçli istiyor → fail-closed.
         _strict = is_production_env() and _seed_override
-        try:
+
+        async def _supplies_ensure():
             from modules.supplies_market.repository import (
                 products_col as _mp_products,
             )
             from modules.supplies_market.repository import (
                 vendors_col as _mp_vendors,
             )
+            # EXPECTED_CATALOGUE_COUNT: önceki seed run'u timeout/cancel ile yarıda
+            # kesildiyse katalog `0 < count < expected` durumunda kalabilir; sadece
+            # `count == 0` kontrolü bu partial-seed durumunu "healthy" sayıp asla
+            # onarmaz. Eksik adetle gelirse yeniden idempotent seed tetikleniyor.
+            from scripts.seed_supplies_market import EXPECTED_CATALOGUE_COUNT
             _need_seed = False
             _demo_vendor = await _mp_vendors.find_one(
                 {"email": "demo-vendor@syroce.com"}, {"_id": 0, "id": 1}
@@ -47,7 +62,7 @@ async def phase_b_seed_and_exely_conn(app):
                 _catalogue_count = await _mp_products.count_documents(
                     {"vendor_id": _demo_vendor["id"]}
                 )
-                if _catalogue_count == 0:
+                if _catalogue_count < EXPECTED_CATALOGUE_COUNT:
                     _need_seed = True
             if _need_seed:
                 # Seeder kendi içinde upsert mantığı taşıyor; tam dolu durumda
@@ -57,6 +72,19 @@ async def phase_b_seed_and_exely_conn(app):
                 logger.info("Supplies market seed ensured on startup (vendor/catalogue was missing)")
             else:
                 logger.info("Supplies market ensure no-op — vendor + catalogue healthy")
+
+        try:
+            # Bütçeli koşum: cold-start'ta Atlas yavaşsa boot'u bloke etmesin.
+            # Strict modda (prod+override) timeout ya da hata → fail-closed.
+            # Dev/CI modunda warning + devam, ensure best-effort.
+            await asyncio.wait_for(_supplies_ensure(), timeout=_SUPPLIES_ENSURE_BUDGET_SEC)
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"Supplies market ensure exceeded {_SUPPLIES_ENSURE_BUDGET_SEC}s budget — "
+                "skipping to keep boot moving (set SUPPLIES_ENSURE_BUDGET_SEC to tune)"
+            )
+            if _strict:
+                raise
         except Exception as e:
             logger.warning(f"Supplies market ensure error: {e}")
             if _strict:

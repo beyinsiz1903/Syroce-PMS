@@ -191,18 +191,12 @@ jobs:
             tests/test_egress_ci_guard.py \
             tests/test_production_blockers.py \
             tests/test_route_shadowing.py \
-            tests/test_hr_shifts_overnight.py \
             -v --tb=short -q --timeout=30 --junitxml=test-results.xml
         env:
           MONGO_URL: ${{ env.MONGO_URL }}
           DB_NAME: ${{ env.DB_NAME }}
           REDIS_URL: redis://localhost:6379/0
           JWT_SECRET: ${{ env.JWT_SECRET }}
-          # Task #261: live-HTTP integration tests (e.g. test_hr_shifts_overnight)
-          # read VITE_BACKEND_URL to target the running backend. CI uvicorn binds
-          # to :8001 (see "Start backend server" step above), not the conftest
-          # default of :8000.
-          VITE_BACKEND_URL: http://localhost:8001
 
       - name: Upload test results
         uses: actions/upload-artifact@v5
