@@ -13,6 +13,7 @@ Provides:
   - POST /api/ops-events/early-warnings/engine/stop — Stop background engine
   - GET /api/ops-events/early-warnings/engine/status — Engine status
 """
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -264,18 +265,45 @@ async def get_warning_trends(
             "label": f"{h}h ago",
         })
 
-    # Aggregate failure rates per bucket
-    failure_rate_series = []
-    for bucket in buckets:
-        total = await db.cm_rate_push_metrics.count_documents({
+    # Perf: 6 bucket × 2 count + 10 connector health + 2 trend = 24 sıralı
+    # Mongo çağrısı (~2.4 sn). asyncio.gather ile tek RTT'ye düşer.
+    bucket_total_tasks = [
+        db.cm_rate_push_metrics.count_documents({
             "tenant_id": tenant_id,
-            "recorded_at": {"$gte": bucket["start"], "$lt": bucket["end"]},
+            "recorded_at": {"$gte": b["start"], "$lt": b["end"]},
         })
-        failed = await db.cm_rate_push_metrics.count_documents({
+        for b in buckets
+    ]
+    bucket_failed_tasks = [
+        db.cm_rate_push_metrics.count_documents({
             "tenant_id": tenant_id,
             "success": False,
-            "recorded_at": {"$gte": bucket["start"], "$lt": bucket["end"]},
+            "recorded_at": {"$gte": b["start"], "$lt": b["end"]},
         })
+        for b in buckets
+    ]
+    top_connectors = connectors[:10]
+    health_tasks = [
+        get_health_score_trend(tenant_id, c["id"], c.get("provider", ""))
+        for c in top_connectors
+    ]
+
+    all_results = await asyncio.gather(
+        get_dlq_trend(tenant_id),
+        get_backlog_trend(tenant_id),
+        *bucket_total_tasks,
+        *bucket_failed_tasks,
+        *health_tasks,
+    )
+
+    dlq_trend = all_results[0]
+    backlog_trend = all_results[1]
+    bucket_totals = all_results[2:2 + len(buckets)]
+    bucket_faileds = all_results[2 + len(buckets):2 + 2 * len(buckets)]
+    health_results = all_results[2 + 2 * len(buckets):]
+
+    failure_rate_series = []
+    for bucket, total, failed in zip(buckets, bucket_totals, bucket_faileds):
         rate = round(failed / max(total, 1) * 100, 1)
         failure_rate_series.append({
             "label": bucket["label"],
@@ -284,14 +312,8 @@ async def get_warning_trends(
             "failed": failed,
         })
 
-    # Get current DLQ and backlog
-    dlq_trend = await get_dlq_trend(tenant_id)
-    backlog_trend = await get_backlog_trend(tenant_id)
-
-    # Get connector health scores
     connector_scores = []
-    for conn in connectors[:10]:  # Limit to 10 connectors
-        health = await get_health_score_trend(tenant_id, conn["id"], conn.get("provider", ""))
+    for conn, health in zip(top_connectors, health_results):
         connector_scores.append({
             "connector_id": conn["id"],
             "provider": conn.get("provider", "unknown"),
