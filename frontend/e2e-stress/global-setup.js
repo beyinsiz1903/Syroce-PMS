@@ -46,8 +46,14 @@ async function warmup(api) {
         }
         await new Promise((res) => setTimeout(res, 5000));
     }
-    // Phase 2: bootstrap-complete check via /health/ready (BOOT_READY flag)
-    for (let attempt = 1; attempt <= 60; attempt++) {
+    // Phase 2: bootstrap-complete check via /health/ready (BOOT_READY flag).
+    // CI #48 NO-GO root cause (20260521): Replit Autoscale fresh deploy'da
+    // bootstrap phase D (Mongo Atlas conn pool + Redis init + cache_warmer
+    // first cycle + index build) 6+ dakikayı bulabildi. Önceki ceiling
+    // 60×5s=5min idi → 503 "warming up" boyunca exhausted, login 503 patladı.
+    // Budget 120×5s=10min'a çıkarıldı (Mongo Atlas serverless cold-start
+    // worst-case + cache warmer + index init için marj).
+    for (let attempt = 1; attempt <= 120; attempt++) {
         try {
             const r = await api.get('/health/ready', { failOnStatusCode: false, timeout: 30_000 });
             const ms = Date.now() - started;
@@ -57,8 +63,8 @@ async function warmup(api) {
             lastErr = e;
             console.log(`[stress-setup] warmup /health/ready attempt=${attempt} err=${e.message}`);
         }
-        if (attempt === 60) {
-            console.log(`[stress-setup] warmup /health/ready gave up after 60 attempts (lastErr=${lastErr?.message})`);
+        if (attempt === 120) {
+            console.log(`[stress-setup] warmup /health/ready gave up after 120 attempts (lastErr=${lastErr?.message})`);
             return;
         }
         await new Promise((res) => setTimeout(res, 5000));
