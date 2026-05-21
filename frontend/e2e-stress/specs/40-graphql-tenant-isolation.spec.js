@@ -412,12 +412,24 @@ test.describe('F8M § 40 — GraphQL Tenant Isolation', () => {
         probes.push({ kind: 'pilot_self_query', http: pilotR.status, returned: pilotRows.length });
         // Stress tenant'ın prefix'li booking ID'lerini biz bilmiyoruz (random
         // UUID), ama stress tenant 500+ booking ile seed edildi; pilot tenant
-        // tek dijit booking taşımalı (gerçek küçük tenant). Pilot response'u
-        // 200'den fazla satır dönerse cross-tenant aggregation şüphesi.
-        if (pilotRows.length > Math.max(pilotBookingsLen * 3, 50)) {
+        // gerçek count'tan çok daha fazla satır dönerse cross-tenant aggregation
+        // şüphesi.
+        //
+        // CI #48 false-positive fix: önceki sürüm `pilotBookingsLen`'i
+        // `/api/pms/bookings?limit=5` çağrısından alıyordu (REST cap=5);
+        // bu eşik (5*3=15, max 50) pilot tenant 100+ booking taşıdığında
+        // determinik olarak P1 spam üretiyordu. `pilotBefore.count`
+        // `pilotBookingsCount` → `fetchSingle` üzerinden cap'siz gelir ve
+        // gerçek pilot booking sayısını temsil eder. Bir tarafta limit=100
+        // (GraphQL) diğerinde server default (REST) olduğu için kıyaslama
+        // yalnızca "GraphQL count ≫ REST count" rejimi anlamlı; aksi halde
+        // her iki taraf da limit'e dayanır ve sinyal değildir.
+        const pilotRestCount = pilotBefore?.count ?? pilotBookingsLen;
+        const restCapHit = pilotRestCount === pilotRows.length;
+        if (!restCapHit && pilotRows.length > Math.max(pilotRestCount * 3, 50)) {
             recFinding(testInfo, 'P1', MOD,
                 'Pilot GraphQL bookings cross-tenant aggregation şüphesi',
-                `Pilot REST=${pilotBookingsLen} bookings; GraphQL=${pilotRows.length}. ~3x oran üzerinde => stress tenant verisi karışmış olabilir.`);
+                `Pilot REST(uncapped)=${pilotRestCount} bookings; GraphQL=${pilotRows.length}. ~3x oran üzerinde => stress tenant verisi karışmış olabilir.`);
         }
 
         rec(testInfo, { module: MOD, step: 'auth_boundary',
