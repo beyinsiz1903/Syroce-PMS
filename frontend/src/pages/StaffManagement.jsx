@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   Users, UserPlus, RefreshCw, Search, Pencil, UserMinus,
   ExternalLink, Building2, Briefcase, Calendar, Clock, Plus, X,
-  Filter, RotateCw,
+  Filter, RotateCw, Package, AlertTriangle, GraduationCap,
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,6 +39,15 @@ const StaffManagement = () => {
   const [leaveCounts, setLeaveCounts] = useState({ pending: 0, approved: 0 });
   const [shifts, setShifts] = useState([]);
   const [search, setSearch] = useState('');
+  // Compliance rozetleri için per-staff agregasyon.
+  // equipmentByStaff: staff_id -> outstanding count
+  // warningsByStaff: staff_id -> { final: bool, written: count }
+  // trainingsByStaff: staff_id -> expiring count (60 gün)
+  const [equipmentByStaff, setEquipmentByStaff] = useState({});
+  const [warningsByStaff, setWarningsByStaff] = useState({});
+  const [trainingsByStaff, setTrainingsByStaff] = useState({});
+  const [outstandingEquipTotal, setOutstandingEquipTotal] = useState(0);
+  const [expiringTrainTotal, setExpiringTrainTotal] = useState(0);
 
   const [staffDialog, setStaffDialog] = useState({ open: false, mode: 'create', form: EMPTY_STAFF, id: null });
   const [savingStaff, setSavingStaff] = useState(false);
@@ -67,18 +76,48 @@ const StaffManagement = () => {
       if (filterEmpType) staffParams.employment_type = filterEmpType;
       if (filterHireFrom) staffParams.hire_date_from = filterHireFrom;
       if (filterHireTo) staffParams.hire_date_to = filterHireTo;
-      const [stRes, dRes, pRes, lRes, shRes] = await Promise.all([
+      const [stRes, dRes, pRes, lRes, shRes, eqRes, wnRes, trRes] = await Promise.all([
         axios.get('/hr/staff', { params: staffParams }),
         axios.get('/hr/departments').catch(() => ({ data: { items: [] } })),
         axios.get('/hr/positions').catch(() => ({ data: { items: [] } })),
         axios.get('/hr/leave-requests').catch(() => ({ data: { counts: {} } })),
         axios.get('/hr/shifts', { params: { start: today, end: today } }).catch(() => ({ data: { items: [] } })),
+        axios.get('/hr/equipment/outstanding').catch(() => ({ data: { items: [], total: 0 } })),
+        axios.get('/hr/warnings/active').catch(() => ({ data: { items: [] } })),
+        axios.get('/hr/trainings/expiring', { params: { days_ahead: 60 } })
+          .catch(() => ({ data: { items: [], total: 0 } })),
       ]);
       setStaff(stRes.data?.staff || []);
       setDepartments(dRes.data?.items || []);
       setPositions(pRes.data?.items || []);
       setLeaveCounts(lRes.data?.counts || {});
       setShifts(shRes.data?.items || []);
+
+      const eqMap = {};
+      (eqRes.data?.items || []).forEach((it) => {
+        if (!it.staff_id) return;
+        eqMap[it.staff_id] = (eqMap[it.staff_id] || 0) + 1;
+      });
+      setEquipmentByStaff(eqMap);
+      setOutstandingEquipTotal(eqRes.data?.total ?? (eqRes.data?.items || []).length);
+
+      const wnMap = {};
+      (wnRes.data?.items || []).forEach((it) => {
+        if (!it.staff_id) return;
+        const cur = wnMap[it.staff_id] || { final: false, written: 0 };
+        if (it.warning_type === 'final') cur.final = true;
+        if (it.warning_type === 'written') cur.written += 1;
+        wnMap[it.staff_id] = cur;
+      });
+      setWarningsByStaff(wnMap);
+
+      const trMap = {};
+      (trRes.data?.items || []).forEach((it) => {
+        if (!it.staff_id) return;
+        trMap[it.staff_id] = (trMap[it.staff_id] || 0) + 1;
+      });
+      setTrainingsByStaff(trMap);
+      setExpiringTrainTotal(trRes.data?.total ?? (trRes.data?.items || []).length);
     } catch (e) {
       console.error(e);
       toast.error('Personel verileri yüklenemedi');
@@ -310,7 +349,7 @@ const StaffManagement = () => {
         actions={headerActions}
       />
 
-      <div className="grid gap-3 md:grid-cols-4 mb-4">
+      <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6 mb-4">
         <KpiCard intent="info" icon={Users} label="Aktif Personel" value={staff.length}
           sub={departments.length ? `${departments.length} departman` : 'departman tanımı yok'} />
         <KpiCard intent="success" icon={Clock} label="Bugünkü Vardiya" value={shifts.length}
@@ -319,6 +358,10 @@ const StaffManagement = () => {
           sub="onay bekliyor" />
         <KpiCard intent="info" icon={UserPlus} label="Son 30g İşe Alım" value={newHires30d}
           sub="yeni eklenen" />
+        <KpiCard intent={outstandingEquipTotal > 0 ? 'warning' : 'neutral'} icon={Package}
+          label="Açık Zimmet" value={outstandingEquipTotal} sub="iade alınmamış" />
+        <KpiCard intent={expiringTrainTotal > 0 ? 'warning' : 'neutral'} icon={GraduationCap}
+          label="Süresi Dolan Eğitim" value={expiringTrainTotal} sub="önümüzdeki 60 gün" />
       </div>
 
       {/* v2 Foundation: source tabs (Personel / Sistem Kullanıcıları). */}
@@ -451,6 +494,7 @@ const StaffManagement = () => {
                   <th>İletişim</th>
                   <th>İşe Giriş</th>
                   <th>Tip</th>
+                  <th>Uyumluluk</th>
                   <th>Kaynak</th>
                   <th className="text-right">İşlem</th>
                 </tr>
@@ -475,6 +519,40 @@ const StaffManagement = () => {
                     </td>
                     <td className="text-slate-600 text-xs">{s.hire_date || '—'}</td>
                     <td className="text-slate-600 text-xs">{employmentTypeLabel(s.employment_type)}</td>
+                    <td>
+                      {(() => {
+                        const eqCount = equipmentByStaff[s.id] || 0;
+                        const wn = warningsByStaff[s.id] || { final: false, written: 0 };
+                        const trCount = trainingsByStaff[s.id] || 0;
+                        if (!eqCount && !wn.final && !wn.written && !trCount) {
+                          return <span className="text-slate-300 text-xs">—</span>;
+                        }
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {eqCount > 0 && (
+                              <StatusBadge intent="warning" title={`${eqCount} açık zimmet (iade alınmadı)`}>
+                                <Package className="w-3 h-3 mr-0.5 inline" />{eqCount}
+                              </StatusBadge>
+                            )}
+                            {wn.final && (
+                              <StatusBadge intent="danger" title="Son ihtar mevcut">
+                                <AlertTriangle className="w-3 h-3 mr-0.5 inline" />Son ihtar
+                              </StatusBadge>
+                            )}
+                            {!wn.final && wn.written > 0 && (
+                              <StatusBadge intent="warning" title={`${wn.written} yazılı uyarı`}>
+                                <AlertTriangle className="w-3 h-3 mr-0.5 inline" />{wn.written}
+                              </StatusBadge>
+                            )}
+                            {trCount > 0 && (
+                              <StatusBadge intent="warning" title={`${trCount} eğitim 60 gün içinde tazelenmeli`}>
+                                <GraduationCap className="w-3 h-3 mr-0.5 inline" />{trCount}
+                              </StatusBadge>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td>
                       {s.derived_from === 'users'
                         ? <StatusBadge intent="neutral">Kullanıcı</StatusBadge>
@@ -510,7 +588,7 @@ const StaffManagement = () => {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="py-10 text-center">
+                    <td colSpan={9} className="py-10 text-center">
                       <div className="space-y-2">
                         <p className="text-slate-500">{staff.length === 0 ? 'Henüz personel yok' : 'Arama sonucu yok'}</p>
                         {staff.length === 0 && (

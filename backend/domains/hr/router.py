@@ -6252,6 +6252,20 @@ async def acknowledge_warning(
     return {'success': True, 'acknowledged_at': now_iso}
 
 
+@router.get("/hr/warnings/active")
+async def list_active_warnings(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Aktif (yazılı/son ihtar) uyarılar — staff list rozetleri için kullanılır.
+    Sözlü uyarılar bilgi amaçlıdır, listeye dahil edilmez."""
+    items = await db.staff_warnings.find({
+        'tenant_id': current_user.tenant_id,
+        'warning_type': {'$in': ['written', 'final']},
+    }, {'_id': 0, 'staff_id': 1, 'warning_type': 1, 'issued_at': 1}).to_list(2000)
+    return {'items': items, 'total': len(items)}
+
+
 @router.delete("/hr/warnings/{warning_id}")
 async def delete_warning(
     warning_id: str,

@@ -7,7 +7,7 @@ import {
   Users, FileSpreadsheet, RefreshCw, Plus, CheckCircle2, XCircle,
   TrendingUp, ExternalLink, FileDown, Award, Info, AlertCircle,
   Bell, FileText, ClipboardList, Send, ThumbsUp, ThumbsDown,
-  Timer, Check, X,
+  Timer, Check, X, Package, GraduationCap,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { promptDialog, confirmDialog } from '@/lib/dialogs';
@@ -128,6 +128,10 @@ const HRComplete = () => {
   const [leaveBalances, setLeaveBalances] = useState({});
   const [balanceLoading, setBalanceLoading] = useState(false);
 
+  // Compliance KPI (Task #269): outstanding equipment + expiring trainings.
+  const [outstandingEquipTotal, setOutstandingEquipTotal] = useState(0);
+  const [expiringTrainTotal, setExpiringTrainTotal] = useState(0);
+
   // Loaders
   const loadStaff = useCallback(async () => {
     try {
@@ -193,6 +197,18 @@ const HRComplete = () => {
     try {
       const res = await axios.get('/hr/settings/severance-cap');
       setSeveranceCap(res.data || null);
+    } catch { /* yetki yoksa sessiz geç */ }
+  }, []);
+
+  const loadCompliance = useCallback(async () => {
+    try {
+      const [eqRes, trRes] = await Promise.all([
+        axios.get('/hr/equipment/outstanding').catch(() => ({ data: { items: [], total: 0 } })),
+        axios.get('/hr/trainings/expiring', { params: { days_ahead: 60 } })
+          .catch(() => ({ data: { items: [], total: 0 } })),
+      ]);
+      setOutstandingEquipTotal(eqRes.data?.total ?? (eqRes.data?.items || []).length);
+      setExpiringTrainTotal(trRes.data?.total ?? (trRes.data?.items || []).length);
     } catch { /* yetki yoksa sessiz geç */ }
   }, []);
 
@@ -385,11 +401,11 @@ const HRComplete = () => {
   const loadAll = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([loadStaff(), loadAttendance(), loadLeaves(), loadPerformance(), loadJobs(), loadPerfTemplates(), loadOvertimeRequests(), loadSeveranceCap()]);
+      await Promise.all([loadStaff(), loadAttendance(), loadLeaves(), loadPerformance(), loadJobs(), loadPerfTemplates(), loadOvertimeRequests(), loadSeveranceCap(), loadCompliance()]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadStaff, loadAttendance, loadLeaves, loadPerformance, loadJobs, loadPerfTemplates, loadOvertimeRequests, loadSeveranceCap]);
+  }, [loadStaff, loadAttendance, loadLeaves, loadPerformance, loadJobs, loadPerfTemplates, loadOvertimeRequests, loadSeveranceCap, loadCompliance]);
 
   useEffect(() => {
     loadAll();
@@ -831,7 +847,7 @@ const HRComplete = () => {
         {/* === ATTENDANCE === */}
         <TabsContent value="attendance" className="mt-4">
           <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
               <KpiCard intent="info" icon={Users} label={t('cm.pages_HRComplete.toplam_calisan')}
                 value={attendanceMetrics.total_active_staff ?? attendanceMetrics.staff_count}
                 sub={`aktif personel${attendanceMetrics.staff_count ? ` • ${attendanceMetrics.staff_count} devam kayıtlı` : ''}`} />
@@ -841,6 +857,10 @@ const HRComplete = () => {
               <KpiCard intent="warning" icon={TrendingUp} label={t('cm.pages_HRComplete.ortalama_saat')}
                 value={(attendanceMetrics.avg_hours_per_active_staff || attendanceMetrics.avg_hours_per_staff || 0).toFixed(1)}
                 sub="personel başı (son 30 gün)" />
+              <KpiCard intent={outstandingEquipTotal > 0 ? 'warning' : 'neutral'} icon={Package}
+                label="Açık Zimmet" value={outstandingEquipTotal} sub="iade alınmamış" />
+              <KpiCard intent={expiringTrainTotal > 0 ? 'warning' : 'neutral'} icon={GraduationCap}
+                label="Süresi Dolan Eğitim" value={expiringTrainTotal} sub="önümüzdeki 60 gün" />
             </div>
 
             <Card>
