@@ -42,8 +42,12 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
     let s1Id = null, s2Id = null;
     let s2Status = null;
 
+    // Seed shifts (`_build_f8d_docs`) only cover days +1..+7 with staff slots
+    // 5..29. Spec uses today+35 to stay clear of the seed window entirely so
+    // staffPool[0] never inherits a residual seeded shift, which would
+    // otherwise 409 the S1 create deterministically.
     function tomorrowIso() {
-        const d = new Date(Date.now() + 86_400_000);
+        const d = new Date(Date.now() + 35 * 86_400_000);
         return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     }
 
@@ -187,9 +191,10 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
             return;
         }
         // Use staffB if available (avoid colliding with S1/S2 locks on staffA);
-        // fall back to staffA on dates 7 days ahead to stay clear of B's date.
+        // base date today+42 → A/B uses today+35; B2 uses +42/+43, beyond seed
+        // window (+1..+7) so no residual collisions.
         const staffN = staffPool[1] || staffPool[0];
-        const base = new Date(Date.now() + 7 * 86_400_000);
+        const base = new Date(Date.now() + 42 * 86_400_000);
         const baseIso = `${base.getUTCFullYear()}-${String(base.getUTCMonth() + 1).padStart(2, '0')}-${String(base.getUTCDate()).padStart(2, '0')}`;
         const next = new Date(base.getTime() + 86_400_000);
         const nextIso = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(next.getUTCDate()).padStart(2, '0')}`;
