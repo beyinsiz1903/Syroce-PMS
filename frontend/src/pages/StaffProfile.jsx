@@ -74,7 +74,7 @@ const StaffProfile = () => {
   const [certDialog, setCertDialog] = useState({ open: false, form: null });
   const [docDialog, setDocDialog] = useState({ open: false, file: null, doc_type: 'contract', label: '' });
   const [salaryDialog, setSalaryDialog] = useState({ open: false, form: null });
-  const [termDialog, setTermDialog] = useState({ open: false, form: null });
+  const [termDialog, setTermDialog] = useState({ open: false, form: null, outstanding: [] });
   const [checkinDialog, setCheckinDialog] = useState({ open: false, reviewId: null, form: null });
   const [eqDialog, setEqDialog] = useState({ open: false, form: null });
   const [warnDialog, setWarnDialog] = useState({ open: false, form: null });
@@ -290,24 +290,52 @@ const StaffProfile = () => {
       severance_override: '',
       eligible_for_rehire: true,
     },
+    outstanding: (equipment.items || []).filter((it) => it.status === 'assigned'),
   });
-  const submitTerm = async (e) => {
-    e.preventDefault();
+  const submitTerm = async (e, { forceRelease = false } = {}) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (!await confirmDialog({
-      message: 'Personeli pasifleştirmek üzeresiniz. Kıdem tazminatı hesabı kaydedilecek. Devam edilsin mi?',
+      message: forceRelease
+        ? 'Personelin üzerinde iade alınmamış zimmet var. Yine de ayrılış kaydedilsin mi? (Zimmet kayıtları açık kalır.)'
+        : 'Personeli pasifleştirmek üzeresiniz. Kıdem tazminatı hesabı kaydedilecek. Devam edilsin mi?',
     })) return;
     setSaving(true);
     try {
       const payload = { ...termDialog.form };
       payload.severance_override = payload.severance_override === ''
         ? null : parseFloat(payload.severance_override);
-      const r = await axios.post(`/hr/staff/${id}/terminate`, payload);
+      const url = forceRelease
+        ? `/hr/staff/${id}/terminate?force_release=true`
+        : `/hr/staff/${id}/terminate`;
+      const r = await axios.post(url, payload);
       toast.success(`Ayrılış kaydedildi. Kıdem: ${formatCurrency(r.data.termination?.severance_paid || 0, 'TRY')}`);
-      setTermDialog({ open: false, form: null });
-      loadTermination(); load();
+      setTermDialog({ open: false, form: null, outstanding: [] });
+      loadTermination(); load(); loadEquipment();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'İşlem başarısız');
+      const detail = err.response?.data?.detail;
+      if (err.response?.status === 409 && detail && detail.code === 'outstanding_equipment') {
+        setTermDialog((s) => ({ ...s, outstanding: detail.outstanding_equipment || [] }));
+        toast.error(detail.message || 'İade alınmamış zimmet var');
+      } else {
+        toast.error(typeof detail === 'string' ? detail : (detail?.message || 'İşlem başarısız'));
+      }
     } finally { setSaving(false); }
+  };
+  const returnEqFromTerm = async (eq) => {
+    try {
+      await axios.post(`/hr/equipment/${eq.id}/return`, {
+        returned_at: new Date().toISOString().slice(0, 10),
+        condition_on_return: 'good',
+      });
+      toast.success(`"${eq.item_label}" iade alındı`);
+      setTermDialog((s) => ({
+        ...s,
+        outstanding: (s.outstanding || []).filter((x) => x.id !== eq.id),
+      }));
+      loadEquipment();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'İade alınamadı');
+    }
   };
 
   // ===== Performance check-ins =====
@@ -1218,7 +1246,7 @@ const StaffProfile = () => {
       </Dialog>
 
       {/* İşten ayrılma */}
-      <Dialog open={termDialog.open} onOpenChange={(o) => !o && setTermDialog({ open: false, form: null })}>
+      <Dialog open={termDialog.open} onOpenChange={(o) => !o && setTermDialog({ open: false, form: null, outstanding: [] })}>
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle className="flex items-center gap-2 text-rose-700">
             <UserMinus className="w-5 h-5" />İşten Ayrılma İşlemleri
@@ -1229,6 +1257,34 @@ const StaffProfile = () => {
                 Bu işlem personeli pasifleştirir, ayrılış kaydı oluşturur ve İş K. m.14'e göre <strong>kıdem tazminatı</strong> hesabını otomatik yapar
                 (30 gün × tam yıl × günlük brüt). 1 yıldan az kıdemde tazminat sıfırdır.
               </div>
+              {(termDialog.outstanding || []).length > 0 && (
+                <div className="rounded border border-rose-300 bg-rose-50 p-3 text-xs text-rose-900">
+                  <div className="font-semibold mb-2">
+                    İade alınmamış zimmet ({termDialog.outstanding.length})
+                  </div>
+                  <div className="text-rose-800 mb-2">
+                    Aşağıdaki kayıtlar açık. Önce iade alın ya da "Zimmetli olsa da kapat" ile devam edin
+                    (zimmet kayıtları açık kalır).
+                  </div>
+                  <ul className="divide-y divide-rose-200 mb-2">
+                    {termDialog.outstanding.map((eq) => (
+                      <li key={eq.id} className="flex items-center justify-between py-1.5 gap-2">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{eq.item_label}</div>
+                          <div className="text-[11px] text-rose-700">
+                            {eq.item_type}{eq.serial_no ? ` • ${eq.serial_no}` : ''} • Verildi: {eq.assigned_at}
+                          </div>
+                        </div>
+                        <Button type="button" size="sm" variant="outline"
+                          className="border-rose-300 text-rose-700 hover:bg-rose-100"
+                          onClick={() => returnEqFromTerm(eq)}>
+                          İade alındı olarak işaretle
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label>Ayrılış Sebebi *</Label>
@@ -1256,10 +1312,18 @@ const StaffProfile = () => {
                 Tekrar işe alınabilir
               </label>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setTermDialog({ open: false, form: null })}>Vazgeç</Button>
-                <Button type="submit" disabled={saving} className="bg-rose-600 hover:bg-rose-700 text-white">
-                  {saving ? 'İşleniyor...' : 'Ayrılışı Kaydet'}
-                </Button>
+                <Button type="button" variant="outline" onClick={() => setTermDialog({ open: false, form: null, outstanding: [] })}>Vazgeç</Button>
+                {(termDialog.outstanding || []).length > 0 ? (
+                  <Button type="button" disabled={saving}
+                    onClick={() => submitTerm(null, { forceRelease: true })}
+                    className="bg-rose-600 hover:bg-rose-700 text-white">
+                    {saving ? 'İşleniyor...' : 'Zimmetli olsa da kapat'}
+                  </Button>
+                ) : (
+                  <Button type="submit" disabled={saving} className="bg-rose-600 hover:bg-rose-700 text-white">
+                    {saving ? 'İşleniyor...' : 'Ayrılışı Kaydet'}
+                  </Button>
+                )}
               </DialogFooter>
             </form>
           )}

@@ -4981,6 +4981,7 @@ def _calc_severance_tr(
 async def terminate_staff(
     staff_id: str,
     payload: TerminationPayload,
+    force_release: bool = Query(False),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
@@ -4989,6 +4990,26 @@ async def terminate_staff(
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
     if staff.get('terminated_at'):
         raise HTTPException(status_code=400, detail="Personel zaten ayrılmış")
+
+    # Task #270: outstanding equipment soft-block. Returning all assigned items
+    # surfaces the list to the caller so the off-boarding dialog can offer a
+    # quick "iade alındı" action before forcing termination.
+    outstanding = await db.staff_equipment.find(
+        {'tenant_id': current_user.tenant_id, 'staff_id': staff_id, 'status': 'assigned'},
+        {'_id': 0},
+    ).sort('assigned_at', -1).to_list(500)
+    if outstanding and not force_release:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                'code': 'outstanding_equipment',
+                'message': (
+                    f"Personelin üzerinde {len(outstanding)} adet iade alınmamış zimmet var. "
+                    "Önce iade alın veya 'force_release=true' ile devam edin."
+                ),
+                'outstanding_equipment': outstanding,
+            },
+        )
 
     monthly_hours = float(staff.get('monthly_hours') or TR_DEFAULT_MONTHLY_HOURS)
     hourly_rate = float(staff.get('hourly_rate') or TR_DEFAULT_HOURLY_RATE)
