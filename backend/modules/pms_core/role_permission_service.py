@@ -68,9 +68,15 @@ OPERATION_PERMISSIONS = {
     # ve `VIEW_FINANCIAL_REPORTS` perm'i ile geçer (Finance + super_admin).
     # `view_hr_payroll` bordro/maaş alanlarını görme yetkisi — VIEW_HR ile
     # PII maskeleme bypass'ı için (HR + Finance).
-    "view_hr": [Permission.VIEW_HR],
+    # Geriye-uyumluluk: view_hr ayrıca legacy VIEW_FINANCIAL_REPORTS perm'iyle
+    # de geçer — eski super_admin / executive rolleri için non-breaking.
+    "view_hr": [Permission.VIEW_HR, Permission.VIEW_FINANCIAL_REPORTS],
+    # manage_hr STRICT — VIEW_FINANCIAL_REPORTS alias YOK (Finance HR'a yazma
+    # yapamasın). Sadece MANAGE_HR perm'i mutation'ı açar.
     "manage_hr": [Permission.MANAGE_HR],
-    "view_hr_payroll": [Permission.VIEW_HR],
+    # Payroll-spesifik okuma perm'i (bordro raporları). view_hr ile aynı
+    # tier; ancak PII unmask için manage_hr GEREKİR (least-privilege).
+    "view_hr_payroll": [Permission.VIEW_HR, Permission.VIEW_FINANCIAL_REPORTS],
     "manage_hr_master_data": [Permission.MANAGE_HR],
     "view_guest_list": [Permission.VIEW_REPORTS],
     "view_it_system": [Permission.SYSTEM_SETTINGS],

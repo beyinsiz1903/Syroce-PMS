@@ -117,26 +117,39 @@ def _mask_hr_pii(
     current_user: User,
     *,
     self_id: str | None = None,
+    self_email: str | None = None,
 ) -> dict | None:
     """Rol-bazlı PII maskeleme — staff/profile/salary serializer'larda kullanılır.
 
-    HR Admin + super_admin (`manage_hr` ya da `view_hr_payroll` perm'leri varsa)
-    tam görünürlük. Diğer roller için:
+    Tam görünürlük YALNIZCA `manage_hr` perm'iyle (HR Admin / HR Manager /
+    super_admin). `view_hr` (Finance/Supervisor) yeterli DEĞİL — payroll
+    raporları için ayrı `view_hr_payroll` perm'i var, ancak hassas PII
+    (TC/IBAN/telefon) için ÖZEL olarak `manage_hr` gerekir (KVKK least-privilege).
+
+    Diğer roller için:
       - phone/mobile/emergency_phone → son 4 hane
       - national_id/tc → `***-**-1234`
       - iban → son 4 hane
       - salary/hourly_rate → maskelenir (`None`)
-    Self-service istisnası: kaydın `id` alanı current_user.id ile eşleşirse
-    kendi verisi → unmask.
+
+    Self-service istisnası: kaydın id'i current_user.id ile eşleşir VEYA
+    e-posta normalize edilmiş halde eşleşirse (users-derived staff ve
+    user↔staff link table'sız ortamda determinist self-mapping) → unmask.
     """
     if not record or not isinstance(record, dict):
         return record
-    # Tam görünürlük: manage_hr veya view_hr_payroll varsa.
-    if _user_has_hr_op(current_user, "manage_hr") or _user_has_hr_op(current_user, "view_hr_payroll"):
+    # Tam görünürlük: yalnızca manage_hr.
+    if _user_has_hr_op(current_user, "manage_hr"):
         return record
-    # Self-service: kendi kaydı için bypass (id eşleşmesi).
+    # Self-service: id eşleşmesi.
     rec_id = record.get("id") or record.get("staff_id") or record.get("user_id")
     if self_id and rec_id and str(rec_id) == str(self_id):
+        return record
+    # Self-service: e-posta eşleşmesi (user↔staff link table yokken
+    # deterministic mapping). Boş/None e-posta eşleşmesi YASAK.
+    rec_email = (record.get("email") or "").strip().lower()
+    me_email = (self_email or "").strip().lower()
+    if rec_email and me_email and rec_email == me_email:
         return record
     rec = dict(record)
     for f in _PII_PHONE_FIELDS:
@@ -1711,7 +1724,8 @@ async def get_staff_list(
     combined = explicit + derived
     # Rol-bazlı PII maskeleme (post-query, response serializer aşamasında).
     self_id = str(getattr(current_user, 'id', '') or '')
-    masked = [_mask_hr_pii(s, current_user, self_id=self_id) for s in combined]
+    self_email = str(getattr(current_user, 'email', '') or '')
+    masked = [_mask_hr_pii(s, current_user, self_id=self_id, self_email=self_email) for s in combined]
     return {'staff': masked, 'total': len(masked), 'source': source}
 
 
@@ -1934,9 +1948,10 @@ async def get_staff_profile(
 
     # v2 Foundation: rol-bazlı PII maskeleme — staff kayıt + bordro satırları.
     self_id = str(getattr(current_user, 'id', '') or '')
-    staff_masked = _mask_hr_pii(staff, current_user, self_id=self_id) or staff
+    self_email = str(getattr(current_user, 'email', '') or '')
+    staff_masked = _mask_hr_pii(staff, current_user, self_id=self_id, self_email=self_email) or staff
     payroll_masked = [
-        _mask_hr_pii(p, current_user, self_id=self_id) or p for p in payroll
+        _mask_hr_pii(p, current_user, self_id=self_id, self_email=self_email) or p for p in payroll
     ]
     return {
         'staff': staff_masked,
@@ -3180,9 +3195,10 @@ async def list_salary_history(
     items = await db.salary_history.find({
         'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
     }, {'_id': 0}).sort('effective_date', -1).to_list(500)
-    # v2 Foundation: maaş alanları rol-bazlı maskelenir (view_hr_payroll yoksa).
+    # v2 Foundation: maaş alanları rol-bazlı maskelenir — sadece manage_hr unmask.
     self_id = str(getattr(current_user, 'id', '') or '')
-    masked = [_mask_hr_pii(it, current_user, self_id=self_id) or it for it in items]
+    self_email = str(getattr(current_user, 'email', '') or '')
+    masked = [_mask_hr_pii(it, current_user, self_id=self_id, self_email=self_email) or it for it in items]
     return {'items': masked, 'total': len(masked)}
 
 
