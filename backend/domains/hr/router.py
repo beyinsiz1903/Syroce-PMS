@@ -572,7 +572,7 @@ async def decide_leave_request(
     leave_id: str,
     payload: LeaveDecision,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),  # HR yönetici yetkisi
+    _perm=Depends(require_op("manage_hr")),  # HR yönetici yetkisi
 ):
     leave = await db.leave_requests.find_one({
         'tenant_id': current_user.tenant_id, 'id': leave_id
@@ -762,7 +762,7 @@ async def export_payroll(
     format: str = 'json',
     current_user: User = Depends(get_current_user),
     # Bug DAK round-7: Maaş PII'sı için yetki gate'i (KVKK + iş hukuku).
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("view_hr")),
 ):
     period_month, payroll = await _build_payroll(month, current_user.tenant_id)
 
@@ -785,7 +785,7 @@ async def export_payroll(
 async def export_payroll_csv_stream(
     month: str | None = Query(None),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("view_hr")),
 ):
     """Streaming CSV download — büyük dosyalar için data: URL limiti yok."""
     period_month, payroll = await _build_payroll(month, current_user.tenant_id)
@@ -819,7 +819,7 @@ async def export_payroll_csv_stream(
 async def finalize_payroll(
     payload: PayrollFinalizePayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     """
     Bordroyu hesapla ve payroll_records koleksiyonuna kalıcı olarak yaz.
@@ -855,7 +855,7 @@ async def finalize_payroll(
 async def get_payroll(
     month: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("view_hr")),
 ):
     """Per-month payroll lookup — finalize edilmiş kayıtları okur."""
     payroll = await db.payroll_records.find(
@@ -880,7 +880,7 @@ async def get_payroll(
 async def create_performance_review(
     payload: PerformanceReviewPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
     if not staff:
@@ -1006,7 +1006,7 @@ async def approve_job_posting(
     job_id: str,
     payload: JobDecisionPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     job = await db.job_postings.find_one({'tenant_id': current_user.tenant_id, 'id': job_id})
     if not job:
@@ -1042,7 +1042,7 @@ async def reject_job_posting(
     job_id: str,
     payload: JobDecisionPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     job = await db.job_postings.find_one({'tenant_id': current_user.tenant_id, 'id': job_id})
     if not job:
@@ -1085,7 +1085,7 @@ async def list_job_postings(
 async def close_job_posting(
     job_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     res = await db.job_postings.update_one(
         {'tenant_id': current_user.tenant_id, 'id': job_id},
@@ -1304,7 +1304,10 @@ class DepartmentPayload(BaseModel):
 
 class PositionPayload(BaseModel):
     title: str = Field(..., min_length=1, max_length=120)
-    department: str | None = Field(None, max_length=80)
+    # v2 HR (Task #262): department FK ZORUNLU. Pozisyon dept'siz yaratılırsa
+    # RBAC scope'u (Department Manager) ve raporlama tutarsız kalır; KVKK
+    # forensic için master-data referans bütünlüğü gerekli.
+    department: str = Field(..., min_length=1, max_length=80)
     default_hourly_rate: float | None = Field(None, ge=0, le=100000)
 
 
@@ -1327,7 +1330,7 @@ async def list_departments(
 async def create_department(
     payload: DepartmentPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     code = (payload.code or payload.name.lower().replace(' ', '_'))[:40]
     if await db.hr_departments.find_one(
@@ -1357,7 +1360,7 @@ async def create_department(
 async def delete_department(
     dept_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     """Soft-delete (pasifleştirme). Aktif personeli olan departman silinemez.
 
@@ -1396,7 +1399,7 @@ async def delete_department(
 @router.post("/hr/departments/sync-from-staff")
 async def sync_departments_from_staff(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     """Personelde geçen serbest departman string'lerinden master data oluştur.
 
@@ -1484,7 +1487,7 @@ async def list_positions(
 async def create_position(
     payload: PositionPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     # v2 Foundation: pozisyon departmana bağlanmalı (FK semantiği).
     if payload.department:
@@ -1521,7 +1524,7 @@ async def create_position(
 async def delete_position(
     pos_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     """Soft-delete (pasifleştirme). Aktif personeli olan pozisyon silinemez."""
     tid = current_user.tenant_id
@@ -1562,7 +1565,7 @@ def _scrub_encrypted(value):
 async def add_staff_member(
     staff_data: dict,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     """Yeni personel ekle.
 
@@ -1609,7 +1612,7 @@ async def get_staff_list(
     hire_date_from: str | None = None,
     hire_date_to: str | None = None,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("view_hr")),
 ):
     """Personel listesi — v2 Foundation (Task #262) refactor.
 
@@ -1715,7 +1718,7 @@ async def get_staff_list(
 @router.get("/hr/system-users")
 async def get_system_users(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("view_hr")),
 ):
     """Sistem kullanıcıları (RBAC test login'leri / tenant admin'leri).
 
@@ -1777,7 +1780,7 @@ async def update_staff_member(
     staff_id: str,
     payload: StaffUpdatePayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     """Personel güncelle.
 
@@ -1839,7 +1842,7 @@ async def update_staff_member(
 async def delete_staff_member(
     staff_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     """İşten ayrılış (soft deactivate). Personel ASLA hard-delete edilmez —
     bordro / devam / izin geçmişi korunur, listeden çıkar.
@@ -2030,7 +2033,7 @@ async def get_leave_balance(
 async def set_leave_balance(
     payload: LeaveBalancePayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
     if not staff:
@@ -2342,7 +2345,7 @@ def _shift_datetimes(shift_date: str, start_time: str, end_time: str,
 async def create_shift_v2(
     payload: ShiftPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
     if not staff:
@@ -2494,7 +2497,7 @@ async def list_shifts(
 async def delete_shift(
     shift_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     # Task #254 follow-up: önce shift'i okuyup (staff_id, shift_date)
     # parametrelerini al; sonra schedule sil, son olarak overlap lock
@@ -2542,7 +2545,7 @@ async def add_applicant(
     job_id: str,
     payload: ApplicantPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     job = await db.job_postings.find_one(
         {'tenant_id': current_user.tenant_id, 'id': job_id}
@@ -2580,7 +2583,7 @@ async def add_applicant(
 async def list_applicants(
     job_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("view_hr")),
 ):
     items = await db.job_applicants.find({
         'tenant_id': current_user.tenant_id,
@@ -2598,7 +2601,7 @@ async def update_applicant_status(
     applicant_id: str,
     payload: ApplicantStatusPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     res = await db.job_applicants.update_one(
         {'tenant_id': current_user.tenant_id, 'id': applicant_id},
@@ -2641,7 +2644,7 @@ async def list_performance_templates(
 async def create_performance_template(
     payload: PerformanceTemplatePayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     item = {
         'id': str(uuid.uuid4()),
@@ -2660,7 +2663,7 @@ async def create_performance_template(
 async def delete_performance_template(
     tpl_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     res = await db.performance_templates.delete_one({
         'tenant_id': current_user.tenant_id,
@@ -2785,7 +2788,7 @@ async def decide_overtime_request(
     req_id: str,
     payload: OvertimeDecisionPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     req = await db.overtime_requests.find_one({
         'tenant_id': current_user.tenant_id, 'id': req_id,
@@ -3002,7 +3005,7 @@ async def decide_shift_swap(
     req_id: str,
     payload: ShiftSwapDecisionPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     req = await db.shift_swap_requests.find_one({
         'tenant_id': current_user.tenant_id, 'id': req_id,
@@ -3133,7 +3136,7 @@ async def create_salary_change(
     staff_id: str,
     payload: SalaryChangePayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
     if not staff:
@@ -3172,7 +3175,7 @@ async def create_salary_change(
 async def list_salary_history(
     staff_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("view_hr")),
 ):
     items = await db.salary_history.find({
         'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
@@ -3246,7 +3249,7 @@ async def terminate_staff(
     staff_id: str,
     payload: TerminationPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
     if not staff:
@@ -3307,7 +3310,7 @@ async def terminate_staff(
 async def get_termination_record(
     staff_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("view_hr")),
 ):
     rec = await db.staff_terminations.find_one(
         {'tenant_id': current_user.tenant_id, 'staff_id': staff_id},
@@ -3334,7 +3337,7 @@ async def add_certification(
     staff_id: str,
     payload: CertificationPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
     if not staff:
@@ -3376,7 +3379,7 @@ async def list_staff_certifications(
 async def delete_certification(
     cert_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     res = await db.staff_certifications.delete_one({
         'tenant_id': current_user.tenant_id, 'id': cert_id,
@@ -3418,7 +3421,7 @@ async def upload_staff_document(
     doc_type: str = Query('other', max_length=20),
     label: str = Query('', max_length=200),
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
     if not staff:
@@ -3469,7 +3472,7 @@ async def upload_staff_document(
 async def list_staff_documents(
     staff_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("view_hr")),
 ):
     items = await db.staff_documents.find(
         {'tenant_id': current_user.tenant_id, 'staff_id': staff_id},
@@ -3482,7 +3485,7 @@ async def list_staff_documents(
 async def download_staff_document(
     doc_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("view_hr")),
 ):
     doc = await db.staff_documents.find_one({
         'tenant_id': current_user.tenant_id, 'id': doc_id,
@@ -3530,7 +3533,7 @@ async def download_staff_document(
 async def delete_staff_document(
     doc_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     doc = await db.staff_documents.find_one({
         'tenant_id': current_user.tenant_id, 'id': doc_id,
@@ -3558,7 +3561,7 @@ class SeveranceCapPayload(BaseModel):
 @router.get("/hr/settings/severance-cap")
 async def get_severance_cap(
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("view_hr")),
 ):
     s = await db.tenant_settings.find_one(
         {'tenant_id': current_user.tenant_id}, {'_id': 0, 'severance_daily_cap': 1, 'severance_cap_updated_at': 1},
@@ -3576,7 +3579,7 @@ async def get_severance_cap(
 async def set_severance_cap(
     payload: SeveranceCapPayload,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     await db.tenant_settings.update_one(
         {'tenant_id': current_user.tenant_id},
@@ -3644,7 +3647,7 @@ async def list_goal_checkins(
 async def delete_goal_checkin(
     checkin_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("view_executive_reports")),
+    _perm=Depends(require_op("manage_hr")),
 ):
     res = await db.performance_checkins.delete_one({
         'tenant_id': current_user.tenant_id, 'id': checkin_id,
