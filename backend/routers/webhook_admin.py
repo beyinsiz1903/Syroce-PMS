@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from cache_manager import cached
 from core.helpers import require_super_admin_guard
 from core.tenant_db import get_system_db
 
@@ -41,7 +42,11 @@ class WebhookStatusResponse(BaseModel):
     last_delivery_at: str | None
 
 
+# NOTE: Global admin/ops metric — counts across ALL tenants (no tenant_id filter).
+# Cache parity with /outbox/status (ttl=30s).
+# rbac-allow: cache-rbac — global ops admin endpoint (router-level admin guard)
 @webhook_admin_router.get("/status", response_model=WebhookStatusResponse)
+@cached(ttl=30, key_prefix="webhook_status_global")
 async def webhook_status():
     """Aggregate webhook delivery + DLQ health metrics."""
     sysdb = get_system_db()

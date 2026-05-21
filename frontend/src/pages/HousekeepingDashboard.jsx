@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
-import StaffAssignment from '../components/StaffAssignment';
-import HousekeepingDetailedReports from '../components/HousekeepingDetailedReports';
-import HousekeepingQualityPanel from '../components/HousekeepingQualityPanel';
+// Ağır alt-componentler lazy yüklenir — sayfa header + KPI kartları
+// API yanıtını beklemeden render olur; alt-paneller görünür hale geldikçe
+// kendi fetch'lerini başlatır. Eski sürümde 3 alt-component eager mount
+// olup ek API çağrılarını ilk paint'ten önce tetikliyordu.
+const StaffAssignment = lazy(() => import('../components/StaffAssignment'));
+const HousekeepingDetailedReports = lazy(() => import('../components/HousekeepingDetailedReports'));
+const HousekeepingQualityPanel = lazy(() => import('../components/HousekeepingQualityPanel'));
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
@@ -80,17 +84,23 @@ const HousekeepingDashboard = ({ user, tenant, onLogout }) => {
             <CardTitle>{t('hkDashboard.detailedReports')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <HousekeepingDetailedReports />
+            <Suspense fallback={<Skeleton className="h-32" />}>
+              <HousekeepingDetailedReports />
+            </Suspense>
           </CardContent>
         </Card>
 
         {/* Quality Control — yalnızca oda verisi varsa */}
         {roomStatus?.rooms?.length ? (
-          <HousekeepingQualityPanel rooms={roomStatus.rooms} />
+          <Suspense fallback={<Skeleton className="h-32" />}>
+            <HousekeepingQualityPanel rooms={roomStatus.rooms} />
+          </Suspense>
         ) : null}
 
         {/* Staff Assignment */}
-        <StaffAssignment />
+        <Suspense fallback={<Skeleton className="h-32" />}>
+          <StaffAssignment />
+        </Suspense>
 
         {/* Quick Actions — gerçek hedeflere yönlendiriyor */}
         <Card>

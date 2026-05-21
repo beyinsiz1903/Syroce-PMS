@@ -73,42 +73,72 @@ export default function WebhookOutboxAdmin({ user, tenant, onLogout }) {
   const [deliveryFilter, setDeliveryFilter] = useState("retrying");
   const [loading, setLoading] = useState(false);
 
+  // Status cards her zaman gerekli, sekme/filtre bağımlılığı yok.
+  // Tab listeleri ise sadece aktif sekmede + ilgili filtre değişiminde yüklenir.
+  // Eski loadAll() filtre değişiminde 5 endpoint'i birden tetikliyordu —
+  // 3'ü inaktif sekme için boşa gidiyordu.
+  const buildParams = (val) => (val === "all" ? { limit: 50 } : { status: val, limit: 50 });
+
+  const loadStatus = useCallback(async () => {
+    const results = await Promise.allSettled([
+      axios.get("/outbox/status"),
+      axios.get("/webhooks/status"),
+    ]);
+    const [oStatus, wStatus] = results;
+    if (oStatus.status === "fulfilled") setOutboxStatus(oStatus.value.data);
+    if (wStatus.status === "fulfilled") setWebhookStatus(wStatus.value.data);
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length > 0) {
+      const labels = ["Outbox status", "Webhook status"];
+      const failedLabels = results.map((r, i) => (r.status === "rejected" ? labels[i] : null)).filter(Boolean);
+      toast.warning(`Bazı durum bilgileri yüklenemedi: ${failedLabels.join(", ")}`);
+    }
+  }, []);
+
+  const loadOutboxEvents = useCallback(async () => {
+    try {
+      const r = await axios.get("/outbox/events", { params: buildParams(outboxFilter) });
+      setOutboxEvents(r.data.events || []);
+    } catch (e) {
+      toast.warning("Outbox olayları yüklenemedi: " + (e?.message || "bilinmeyen"));
+    }
+  }, [outboxFilter]);
+
+  const loadDlq = useCallback(async () => {
+    try {
+      const r = await axios.get("/webhooks/dlq", { params: buildParams(dlqFilter) });
+      setDlqItems(r.data.items || []);
+    } catch (e) {
+      toast.warning("DLQ yüklenemedi: " + (e?.message || "bilinmeyen"));
+    }
+  }, [dlqFilter]);
+
+  const loadDeliveries = useCallback(async () => {
+    try {
+      const r = await axios.get("/webhooks/deliveries", { params: buildParams(deliveryFilter) });
+      setDeliveries(r.data.items || []);
+    } catch (e) {
+      toast.warning("Teslimatlar yüklenemedi: " + (e?.message || "bilinmeyen"));
+    }
+  }, [deliveryFilter]);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const buildParams = (val) => (val === "all" ? { limit: 50 } : { status: val, limit: 50 });
-      const results = await Promise.allSettled([
-        axios.get("/outbox/status"),
-        axios.get("/webhooks/status"),
-        axios.get("/outbox/events", { params: buildParams(outboxFilter) }),
-        axios.get("/webhooks/dlq", { params: buildParams(dlqFilter) }),
-        axios.get("/webhooks/deliveries", { params: buildParams(deliveryFilter) }),
-      ]);
-      const [oStatus, wStatus, oEvents, dlq, dlv] = results;
-      if (oStatus.status === "fulfilled") setOutboxStatus(oStatus.value.data);
-      if (wStatus.status === "fulfilled") setWebhookStatus(wStatus.value.data);
-      if (oEvents.status === "fulfilled") setOutboxEvents(oEvents.value.data.events || []);
-      if (dlq.status === "fulfilled") setDlqItems(dlq.value.data.items || []);
-      if (dlv.status === "fulfilled") setDeliveries(dlv.value.data.items || []);
-
-      // Kısmi başarısızlıkları görünür kıl — sessizce yutmak operasyonel
-      // bir konsol için yanıltıcı (eski kod allSettled'i sessiz tüketiyordu).
-      const failed = results.filter((r) => r.status === "rejected");
-      if (failed.length > 0) {
-        const labels = ["Outbox status", "Webhook status", "Outbox events", "Webhook DLQ", "Webhook deliveries"];
-        const failedLabels = results
-          .map((r, i) => (r.status === "rejected" ? labels[i] : null))
-          .filter(Boolean);
-        toast.warning(`Bazı veriler yüklenemedi: ${failedLabels.join(", ")}`);
-      }
-    } catch (e) {
-      toast.error("Veriler yüklenirken hata: " + (e?.message || "bilinmeyen"));
+      // Aktif sekmenin verisi + status. Diğer sekmeler tıklandığında lazy yüklenir.
+      const tabLoader = tab === "dlq" ? loadDlq : tab === "deliveries" ? loadDeliveries : loadOutboxEvents;
+      await Promise.allSettled([loadStatus(), tabLoader()]);
     } finally {
       setLoading(false);
     }
-  }, [outboxFilter, dlqFilter, deliveryFilter]);
+  }, [tab, loadStatus, loadOutboxEvents, loadDlq, loadDeliveries]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  // İlk mount + manuel Yenile butonu için tek effect.
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+  // Aktif sekmeye özel: sekme veya o sekmenin filtresi değişince fetch.
+  useEffect(() => { if (tab === "outbox") loadOutboxEvents(); }, [tab, loadOutboxEvents]);
+  useEffect(() => { if (tab === "dlq") loadDlq(); }, [tab, loadDlq]);
+  useEffect(() => { if (tab === "deliveries") loadDeliveries(); }, [tab, loadDeliveries]);
 
   const handleRequeue = async (eventId) => {
     try {

@@ -27,7 +27,7 @@ export default function RnlAutoResolveRuns() {
     setLoading(true);
     setError(null);
     try {
-      const r = await axios.get("/admin/db/rnl-auto-resolve-runs", { params: { limit: 50 } });
+      const r = await axios.get("/admin/db/rnl-auto-resolve-runs", { params: { limit: 20 } });
       setRuns(r.data.runs || []);
     } catch (e) {
       const msg = e.response?.data?.detail || e.message;

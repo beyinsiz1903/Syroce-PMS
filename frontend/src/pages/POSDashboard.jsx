@@ -34,6 +34,8 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
   });
   const [loadingStats, setLoadingStats] = useState(true);
 
+  // Outlets sadece bir kez yüklenir (POSOutletManagement değişiklikte onChange tetikler).
+  // Eski kod selectedOutletId her değiştiğinde outlets'ı da yeniden çekiyordu.
   const loadOutlets = useCallback(async () => {
     try {
       const res = await axios.get('/pos/outlets');
@@ -51,28 +53,42 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
     try {
       setLoadingStats(true);
       const params = selectedOutletId !== 'all' ? { outlet_id: selectedOutletId } : {};
-      const [outletList, menuRes, zRes] = await Promise.all([
-        loadOutlets(),
+      const [menuRes, zRes] = await Promise.all([
         axios.get('/pos/menu-items', { params }).catch(() => ({ data: [] })),
         axios.get('/pos/z-report', { params }).catch(() => ({ data: { transaction_count: 0, gross_sales: 0 } })),
       ]);
       const menuList = Array.isArray(menuRes.data) ? menuRes.data : (menuRes.data.menu_items || []);
-      setStats({
-        outlet_count: outletList.length,
+      setStats(prev => ({
+        ...prev,
         menu_count: menuList.length,
         today_orders: zRes.data.transaction_count || 0,
         today_revenue: zRes.data.gross_sales || 0,
-      });
+      }));
     } catch (err) {
       console.error('Istatistikler yüklenemedi:', err);
     } finally {
       setLoadingStats(false);
     }
-  }, [selectedOutletId, loadOutlets]);
+  }, [selectedOutletId]);
 
+  // İlk mount: outlets bir kere; outlets değişince outlet_count güncelle.
+  useEffect(() => {
+    loadOutlets();
+  }, [loadOutlets]);
+  useEffect(() => {
+    setStats(prev => ({ ...prev, outlet_count: outlets.length }));
+  }, [outlets.length]);
   useEffect(() => {
     loadStats();
   }, [loadStats]);
+
+  // POSOutletManagement create/update/deactivate sonrası hem outlets listesini
+  // hem de stats'ı tazele (yoksa selector/outlet_count tam sayfa yenilemeye
+  // kadar stale kalır — architect review #2).
+  const handleOutletsChanged = useCallback(async () => {
+    await loadOutlets();
+    await loadStats();
+  }, [loadOutlets, loadStats]);
 
   const currentOutletId = selectedOutletId === 'all' ? null : selectedOutletId;
   const selectedOutlet = outlets.find(o => o.id === selectedOutletId);
@@ -200,7 +216,7 @@ const POSDashboard = ({ user, tenant, onLogout }) => {
           </TabsList>
 
           <TabsContent value="outlets" className="mt-6">
-            <POSOutletManagement onChange={loadStats} />
+            <POSOutletManagement onChange={handleOutletsChanged} />
           </TabsContent>
 
           <TabsContent value="menu" className="mt-6">
