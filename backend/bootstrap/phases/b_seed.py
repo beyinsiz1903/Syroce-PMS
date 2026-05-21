@@ -21,6 +21,49 @@ async def phase_b_seed_and_exely_conn(app):
         except Exception as e:
             logger.warning(f"Auto-seed error: {e}")
 
+    # Ensure supplies-market (Tedarik Pazarı) demo vendor + starter catalogue.
+    # Seeder idempotent — yalnız vendor veya katalog eksikse re-run; aksi halde no-op.
+    # Geçmiş gotcha: katalog elle temizlendiğinde sekme boş kaldı (Task #257),
+    # bu kanca aynı kaybın bir sonraki restart'ta otomatik kapatılmasını sağlar.
+    if is_production_env() and not _seed_override:
+        logger.info("Supplies market ensure skipped — production mode")
+    else:
+        # prod + override aktifse operatör seed'i bilinçli istiyor → fail-closed.
+        _strict = is_production_env() and _seed_override
+        try:
+            from modules.supplies_market.repository import (
+                products_col as _mp_products,
+            )
+            from modules.supplies_market.repository import (
+                vendors_col as _mp_vendors,
+            )
+            _need_seed = False
+            _demo_vendor = await _mp_vendors.find_one(
+                {"email": "demo-vendor@syroce.com"}, {"_id": 0, "id": 1}
+            )
+            if not _demo_vendor:
+                _need_seed = True
+            else:
+                _catalogue_count = await _mp_products.count_documents(
+                    {"vendor_id": _demo_vendor["id"]}
+                )
+                if _catalogue_count == 0:
+                    _need_seed = True
+            if _need_seed:
+                # Seeder kendi içinde upsert mantığı taşıyor; tam dolu durumda
+                # zaten tetiklemiyoruz, kısmen dolu / boş durumda güvenle koşar.
+                from scripts.seed_supplies_market import main as _seed_market
+                await _seed_market()
+                logger.info("Supplies market seed ensured on startup (vendor/catalogue was missing)")
+            else:
+                logger.info("Supplies market ensure no-op — vendor + catalogue healthy")
+        except Exception as e:
+            logger.warning(f"Supplies market ensure error: {e}")
+            if _strict:
+                # Operatör prod'da seed'i ALLOW_AUTO_SEED_IN_PROD=1 ile istedi;
+                # sessizce devam etmek yerine boot'u kapatıyoruz (fail-closed).
+                raise
+
     # Ensure Exely webhook test connection exists
     try:
         existing = await _raw_db.exely_connections.find_one({"hotel_code": "501694"}, {"_id": 1})
