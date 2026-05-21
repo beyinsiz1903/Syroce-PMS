@@ -167,6 +167,54 @@ def _mask_hr_pii(
     return rec
 
 
+def _authorize_staff_access(
+    staff: dict | None,
+    current_user: User,
+    *,
+    require_manage: bool = False,
+) -> None:
+    """Per-record authorization gate for staff detail endpoints.
+
+    Centralized RBAC + tenant + assigned_department + self-service kontrolü.
+    Mevcut auth zinciri (Depends(get_current_user) + per-route require_op)
+    üzerine eklenir; ID-known IDOR / cross-department leakage'ı engeller.
+
+    Karar matrisi (sırayla):
+      1. `staff` None ise → çağıran 404 yükseltsin (early-return).
+      2. `manage_hr` perm'i varsa (HR Admin / SUPER_ADMIN / SUPERVISOR) → ALLOW.
+      3. `require_manage=True` ise (örn. performans notları) → 403.
+      4. Self-service: kaydın id'i veya e-postası current_user ile eşleşir → ALLOW.
+      5. `view_hr` perm'i + (assigned_department yok VEYA dept eşleşir) → ALLOW.
+      6. Aksi → 403.
+    """
+    if not staff or not isinstance(staff, dict):
+        return
+    if _user_has_hr_op(current_user, "manage_hr"):
+        return
+    if require_manage:
+        raise HTTPException(status_code=403, detail="Yetkiniz yok (manage_hr gerekir).")
+    # Self-service (id veya e-posta eşleşmesi).
+    self_id = str(getattr(current_user, "id", "") or "")
+    rec_id = str(staff.get("id") or "")
+    if self_id and rec_id and self_id == rec_id:
+        return
+    self_email = (str(getattr(current_user, "email", "") or "")).strip().lower()
+    rec_email = (str(staff.get("email") or "")).strip().lower()
+    if self_email and rec_email and self_email == rec_email:
+        return
+    # Dept scope (Department-Manager).
+    if not _user_has_hr_op(current_user, "view_hr"):
+        raise HTTPException(status_code=403, detail="Yetkiniz yok (view_hr gerekir).")
+    assigned = _user_assigned_department(current_user)
+    if assigned:
+        staff_dept = (staff.get("department") or "").strip()
+        if staff_dept and staff_dept.lower() != assigned.strip().lower():
+            raise HTTPException(
+                status_code=403,
+                detail="Departman dışı personel kaydına erişim engellendi.",
+            )
+
+
 async def _audit(
     user: User,
     action: str,
@@ -1757,8 +1805,18 @@ async def get_system_users(
 async def get_staff_performance_summary(
     staff_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
 ):
-    """Personel performans özeti (son 10 review + ortalama puan)."""
+    """Personel performans özeti (son 10 review + ortalama puan).
+
+    RBAC: performans notları hassas → SADECE `manage_hr` perm'iyle (HR Admin /
+    Supervisor / super_admin) görüntülenebilir. Self-service istisnası
+    KORUNUR (kendi performansını görebilir). Finance (`view_hr`) erişemez.
+    """
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    _authorize_staff_access(staff, current_user, require_manage=True)
     reviews = await db.performance_reviews.find({
         'staff_id': staff_id,
         'tenant_id': current_user.tenant_id,
@@ -1902,11 +1960,18 @@ async def delete_staff_member(
 async def get_staff_profile(
     staff_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
 ):
-    """Aggregate profil: kişi + son 30g devam + izinler + performans + bordro + vardiya."""
+    """Aggregate profil: kişi + son 30g devam + izinler + performans + bordro + vardiya.
+
+    RBAC: tenant + assigned_department + self-service gate (`_authorize_staff_access`).
+    Performans bölümü SADECE `manage_hr` perm'iyle döner (Finance gizlenir).
+    PII alanları rol-bazlı maskelenir (`_mask_hr_pii`).
+    """
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    _authorize_staff_access(staff, current_user)
     today = _today_local()
     start_30 = today - timedelta(days=30)
 
@@ -1953,6 +2018,19 @@ async def get_staff_profile(
     payroll_masked = [
         _mask_hr_pii(p, current_user, self_id=self_id, self_email=self_email) or p for p in payroll
     ]
+    # Performans notları hassas — Finance (`view_hr`) gizlenir, sadece manage_hr
+    # veya kendi kaydı görebilir. Aksi halde içerik boşaltılır (UI tab gizler).
+    is_self = bool(
+        (self_id and str(staff.get('id') or '') == self_id) or
+        (self_email and (staff.get('email') or '').strip().lower() == self_email)
+    )
+    can_view_perf = _user_has_hr_op(current_user, "manage_hr") or is_self
+    perf_section = {
+        'items': reviews if can_view_perf else [],
+        'avg_score': avg_score if can_view_perf else 0,
+        'total': len(reviews) if can_view_perf else 0,
+        'redacted': not can_view_perf,
+    }
     return {
         'staff': staff_masked,
         'attendance': {
@@ -1966,11 +2044,7 @@ async def get_staff_profile(
             'pending': sum(1 for leave in leaves if leave.get('status') == 'pending'),
         },
         'leave_balance': balance,
-        'performance': {
-            'items': reviews,
-            'avg_score': avg_score,
-            'total': len(reviews),
-        },
+        'performance': perf_section,
         'payroll': {
             'recent': payroll_masked,
             'count': len(payroll),
@@ -1994,11 +2068,13 @@ async def get_leave_balance(
     staff_id: str,
     year: int | None = None,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
 ):
     yr = year or _today_local().year
     staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    _authorize_staff_access(staff, current_user)
     balance = await db.leave_balances.find_one({
         'tenant_id': current_user.tenant_id,
         'staff_id': staff_id,
@@ -3381,7 +3457,12 @@ async def add_certification(
 async def list_staff_certifications(
     staff_id: str,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
 ):
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    _authorize_staff_access(staff, current_user)
     items = await db.staff_certifications.find({
         'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
     }, {'_id': 0}).sort('issue_date', -1).to_list(500)
