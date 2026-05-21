@@ -71,32 +71,42 @@ async def is_rms_demo_mode(tenant_id: str) -> bool:
 
 async def _build_data_quality(tenant_id: str, period_days: int = 30) -> dict:
     """Inspect tenant's RMS-relevant data and report sufficiency."""
-    rooms_count = await db.rooms.count_documents({"tenant_id": tenant_id})
-    room_types_count = await db.room_types.count_documents(
-        {"tenant_id": tenant_id}
-    )
-    yield_rules_count = await db.yield_rules.count_documents(
-        {"tenant_id": tenant_id, "is_active": True}
-    )
-    seasons_count = await db.seasonal_calendar.count_documents(
-        {"tenant_id": tenant_id, "is_active": True}
-    )
-
     now = datetime.now(UTC)
     period_start_iso = (now - timedelta(days=period_days)).isoformat()
-    bookings_in_period = await db.bookings.count_documents({
-        "tenant_id": tenant_id,
-        "check_in": {"$gte": period_start_iso},
-        "status": {"$in": [
-            "confirmed", "guaranteed", "checked_in", "checked_out"
-        ]},
-    })
 
-    # How many days of history do we have? Use earliest booking date.
-    earliest = await db.bookings.find(
-        {"tenant_id": tenant_id},
-        {"_id": 0, "created_at": 1, "check_in": 1},
-    ).sort("created_at", 1).limit(1).to_list(1)
+    # Perf: 5 count + 1 find (earliest) önceden seri yapılıyordu (~6×RTT).
+    # Hepsi bağımsız — tek asyncio.gather ile paralel. Bu helper dashboard-kpis
+    # endpoint'inin dış gather'ı içinde de çalıştığından, içeride seri kalması
+    # dış gather'ın tail-latency'sini belirliyordu.
+    (
+        rooms_count,
+        room_types_count,
+        yield_rules_count,
+        seasons_count,
+        bookings_in_period,
+        earliest,
+    ) = await asyncio.gather(
+        db.rooms.count_documents({"tenant_id": tenant_id}),
+        db.room_types.count_documents({"tenant_id": tenant_id}),
+        db.yield_rules.count_documents(
+            {"tenant_id": tenant_id, "is_active": True}
+        ),
+        db.seasonal_calendar.count_documents(
+            {"tenant_id": tenant_id, "is_active": True}
+        ),
+        db.bookings.count_documents({
+            "tenant_id": tenant_id,
+            "check_in": {"$gte": period_start_iso},
+            "status": {"$in": [
+                "confirmed", "guaranteed", "checked_in", "checked_out"
+            ]},
+        }),
+        db.bookings.find(
+            {"tenant_id": tenant_id},
+            {"_id": 0, "created_at": 1, "check_in": 1},
+        ).sort("created_at", 1).limit(1).to_list(1),
+    )
+
     days_of_history = 0
     if earliest:
         try:
