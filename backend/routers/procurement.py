@@ -748,27 +748,42 @@ async def list_grns(po_id: str,
 async def procurement_summary(
     current_user: User = Depends(get_current_user),
 ):
+    # Perf: önceden 5 ardışık count_documents + cursor taraması ~1.2s
+    # alıyordu (Atlas RTT × 6). asyncio.gather ile paralelize + commitment
+    # için aggregation $sum (cursor + Python toplama yerine tek round-trip
+    # MongoDB tarafında) → tek yavaş round-trip kadar bekleniyor (~270ms).
+    import asyncio
+
     db = get_system_db()
     tid = current_user.tenant_id
-    pr_pending = await db.proc_purchase_requests.count_documents(
-        {"tenant_id": tid, "status": {"$in": ["draft", "submitted"]}})
-    pr_approved = await db.proc_purchase_requests.count_documents(
-        {"tenant_id": tid, "status": "approved"})
-    po_open = await db.proc_purchase_orders.count_documents(
-        {"tenant_id": tid,
-         "status": {"$in": ["draft", "sent", "partially_received"]}})
-    po_received = await db.proc_purchase_orders.count_documents(
-        {"tenant_id": tid, "status": "received"})
-    suppliers = await db.proc_suppliers.count_documents(
-        {"tenant_id": tid, "active": True})
-    # open commitments (sum of grand_totals for open POs)
-    cursor = db.proc_purchase_orders.find(
-        {"tenant_id": tid,
-         "status": {"$in": ["sent", "partially_received"]}},
-        {"grand_total": 1, "_id": 0})
-    commitment = 0.0
-    async for doc in cursor:
-        commitment += float(doc.get("grand_total", 0) or 0)
+
+    async def _commitment_sum() -> float:
+        pipeline = [
+            {"$match": {
+                "tenant_id": tid,
+                "status": {"$in": ["sent", "partially_received"]},
+            }},
+            {"$group": {"_id": None, "total": {"$sum": "$grand_total"}}},
+        ]
+        cursor = db.proc_purchase_orders.aggregate(pipeline)
+        async for doc in cursor:
+            return float(doc.get("total", 0) or 0)
+        return 0.0
+
+    pr_pending, pr_approved, po_open, po_received, suppliers, commitment = await asyncio.gather(
+        db.proc_purchase_requests.count_documents(
+            {"tenant_id": tid, "status": {"$in": ["draft", "submitted"]}}),
+        db.proc_purchase_requests.count_documents(
+            {"tenant_id": tid, "status": "approved"}),
+        db.proc_purchase_orders.count_documents(
+            {"tenant_id": tid,
+             "status": {"$in": ["draft", "sent", "partially_received"]}}),
+        db.proc_purchase_orders.count_documents(
+            {"tenant_id": tid, "status": "received"}),
+        db.proc_suppliers.count_documents(
+            {"tenant_id": tid, "active": True}),
+        _commitment_sum(),
+    )
     return {
         "suppliers_active": suppliers,
         "pr_pending": pr_pending,
