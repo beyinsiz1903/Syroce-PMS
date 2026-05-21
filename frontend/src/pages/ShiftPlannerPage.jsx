@@ -21,11 +21,11 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 
 const SHIFT_TYPES = {
-  morning:   { label: 'Sabah',     intent: 'info',    times: ['07:00', '15:00'] },
-  afternoon: { label: 'Öğle',      intent: 'warning', times: ['11:00', '19:00'] },
-  evening:   { label: 'Akşam',     intent: 'warning', times: ['15:00', '23:00'] },
-  night:     { label: 'Gece',      intent: 'neutral', times: ['23:00', '07:00'] },
-  split:     { label: 'Bölünmüş',  intent: 'info',    times: ['09:00', '17:00'] },
+  morning:   { label: 'Sabah',     intent: 'info',    times: ['07:00', '15:00'], crossesMidnight: false },
+  afternoon: { label: 'Öğle',      intent: 'warning', times: ['11:00', '19:00'], crossesMidnight: false },
+  evening:   { label: 'Akşam',     intent: 'warning', times: ['15:00', '23:00'], crossesMidnight: false },
+  night:     { label: 'Gece',      intent: 'neutral', times: ['22:00', '06:00'], crossesMidnight: true },
+  split:     { label: 'Bölünmüş',  intent: 'info',    times: ['09:00', '17:00'], crossesMidnight: false },
 };
 
 const fmtDate = (d) => d.toISOString().slice(0, 10);
@@ -177,6 +177,7 @@ const ShiftPlannerPage = () => {
         shift_type: 'morning',
         start_time: '07:00',
         end_time: '15:00',
+        crosses_midnight: false,
         notes: '',
       },
     });
@@ -185,7 +186,14 @@ const ShiftPlannerPage = () => {
   const onTypeChange = (t) => {
     const def = SHIFT_TYPES[t];
     setDialog((d) => ({
-      ...d, form: { ...d.form, shift_type: t, start_time: def.times[0], end_time: def.times[1] },
+      ...d,
+      form: {
+        ...d.form,
+        shift_type: t,
+        start_time: def.times[0],
+        end_time: def.times[1],
+        crosses_midnight: !!def.crossesMidnight,
+      },
     }));
   };
 
@@ -392,6 +400,9 @@ const ShiftPlannerPage = () => {
                                     <StatusBadge intent={meta.intent}>{meta.label}</StatusBadge>
                                     <span className="text-[10px] text-slate-500 mt-0.5">
                                       {sh.start_time}–{sh.end_time}
+                                      {sh.crosses_midnight && (
+                                        <span className="ml-1 text-slate-400" title="Ertesi güne sarkar">+1g</span>
+                                      )}
                                     </span>
                                   </div>
                                   <div className="opacity-0 group-hover:opacity-100 flex gap-0.5">
@@ -522,11 +533,31 @@ const ShiftPlannerPage = () => {
                     onChange={(e) => setDialog({ ...dialog, form: { ...dialog.form, start_time: e.target.value } })} />
                 </div>
                 <div>
-                  <Label className="text-xs">Bitiş</Label>
+                  <Label className="text-xs">
+                    Bitiş {dialog.form.crosses_midnight && <span className="text-slate-400">(ertesi gün)</span>}
+                  </Label>
                   <Input type="time" value={dialog.form.end_time}
                     onChange={(e) => setDialog({ ...dialog, form: { ...dialog.form, end_time: e.target.value } })} />
                 </div>
               </div>
+              <label className="flex items-start gap-2 text-xs text-slate-700 rounded border border-slate-200 bg-slate-50 p-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={!!dialog.form.crosses_midnight}
+                  onChange={(e) => setDialog({
+                    ...dialog,
+                    form: { ...dialog.form, crosses_midnight: e.target.checked },
+                  })}
+                />
+                <span>
+                  <span className="font-medium">Gece vardiyası (ertesi güne sarkar)</span>
+                  <span className="block text-slate-500 mt-0.5">
+                    Örn. 22:00 → 06:00. Bitiş saati başlangıçtan önce olmalı ve
+                    aynı kayıtta saklanır.
+                  </span>
+                </span>
+              </label>
               <div>
                 <Label className="text-xs">Not</Label>
                 <Input value={dialog.form.notes}

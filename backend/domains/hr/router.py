@@ -1788,6 +1788,107 @@ async def _acquire_shift_lock_interval(
     )
 
 
+async def _acquire_shift_lock_for_shift(
+    *,
+    tenant_id: str,
+    staff_id: str,
+    shift_date: str,
+    start_time: str,
+    end_time: str,
+    crosses_midnight: bool,
+    shift_id: str,
+    now_iso: str,
+) -> None:
+    """Night-shift aware wrapper over `_acquire_shift_lock_interval`.
+
+    Same-day shifts (crosses_midnight=False) acquire a single interval on
+    `shift_date`. Overnight shifts (crosses_midnight=True) acquire TWO
+    intervals atomically:
+        - `shift_date`           → [start_time, '24:00')
+        - `next_date`            → ['00:00', end_time)
+
+    String lex compare is exact within a single day's HH:MM domain, so the
+    existing `_acquire_shift_lock_interval` overlap math remains correct on
+    each per-day lock document. If the second leg fails (overlap on the
+    next day), the first leg is released to avoid orphan reservations.
+    """
+    if not crosses_midnight:
+        await _acquire_shift_lock_interval(
+            tenant_id=tenant_id,
+            staff_id=staff_id,
+            shift_date=shift_date,
+            start_time=start_time,
+            end_time=end_time,
+            shift_id=shift_id,
+            now_iso=now_iso,
+        )
+        return
+    next_date = (
+        date.fromisoformat(shift_date) + timedelta(days=1)
+    ).isoformat()
+    # Leg 1: günün geri kalanı (start_time → 24:00 sentinel).
+    await _acquire_shift_lock_interval(
+        tenant_id=tenant_id,
+        staff_id=staff_id,
+        shift_date=shift_date,
+        start_time=start_time,
+        end_time='24:00',
+        shift_id=shift_id,
+        now_iso=now_iso,
+    )
+    # Leg 2: ertesi günün başlangıcı (00:00 → end_time). Başarısız olursa
+    # birinci leg'i geri al → orphan lock kalmaz.
+    try:
+        await _acquire_shift_lock_interval(
+            tenant_id=tenant_id,
+            staff_id=staff_id,
+            shift_date=next_date,
+            start_time='00:00',
+            end_time=end_time,
+            shift_id=shift_id,
+            now_iso=now_iso,
+        )
+    except HTTPException:
+        await _release_shift_lock_interval(
+            tenant_id=tenant_id,
+            staff_id=staff_id,
+            shift_date=shift_date,
+            shift_id=shift_id,
+        )
+        raise
+
+
+async def _release_shift_lock_for_shift(
+    *,
+    tenant_id: str,
+    staff_id: str,
+    shift_date: str,
+    crosses_midnight: bool,
+    shift_id: str,
+) -> None:
+    """Release locks acquired by `_acquire_shift_lock_for_shift`.
+
+    Idempotent: releasing a missing entry is a no-op. For overnight
+    shifts, both the start-day and next-day lock entries are pulled.
+    """
+    await _release_shift_lock_interval(
+        tenant_id=tenant_id,
+        staff_id=staff_id,
+        shift_date=shift_date,
+        shift_id=shift_id,
+    )
+    if crosses_midnight:
+        next_date = (
+            date.fromisoformat(shift_date) + timedelta(days=1)
+        ).isoformat()
+        await _release_shift_lock_interval(
+            tenant_id=tenant_id,
+            staff_id=staff_id,
+            shift_date=next_date,
+            shift_id=shift_id,
+        )
+
+
 async def _release_shift_lock_interval(
     *,
     tenant_id: str,
@@ -1821,7 +1922,21 @@ class ShiftPayload(BaseModel):
     shift_type: Literal['morning', 'afternoon', 'evening', 'night', 'split'] = 'morning'
     start_time: str = Field(..., pattern=r'^\d{2}:\d{2}$')
     end_time: str = Field(..., pattern=r'^\d{2}:\d{2}$')
+    crosses_midnight: bool = False
     notes: str | None = Field(None, max_length=300)
+
+
+def _shift_datetimes(shift_date: str, start_time: str, end_time: str,
+                     crosses_midnight: bool) -> tuple[datetime, datetime]:
+    """Compute (start_dt, end_dt) for a shift record. Naive UTC datetimes;
+    only used for relative overlap math, not wall-clock conversions."""
+    d = date.fromisoformat(shift_date)
+    sh, sm = (int(x) for x in start_time.split(':'))
+    eh, em = (int(x) for x in end_time.split(':'))
+    start_dt = datetime(d.year, d.month, d.day, sh, sm)
+    end_d = d + timedelta(days=1) if crosses_midnight else d
+    end_dt = datetime(end_d.year, end_d.month, end_d.day, eh, em)
+    return start_dt, end_dt
 
 
 @router.post("/hr/shifts")
@@ -1834,43 +1949,55 @@ async def create_shift_v2(
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
 
-    # Task #254 (F8D-v2 § 35 architect-iter): overnight-shift contract.
-    # Mevcut overlap mantığı tek-gün lex "HH:MM" varsayar; gece vardiyası
-    # (örn. 22:00-06:00) burada false-negative üretirdi. Şimdilik tek-gün
-    # kontratı zorunlu tutuyoruz (end > start). Overnight desteklenmek
-    # istenirse iki ardışık shift_date olarak kayıt edilmelidir
-    # (22:00-23:59 + 00:00-06:00). Aksi halde 422 + Türkçe açıklama.
-    # Sınır eşitliği (start == end) sıfır-uzunluk vardiya → reddedilir.
-    if payload.end_time <= payload.start_time:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"Vardiya bitiş saati ({payload.end_time}) başlangıç saatinden "
-                f"({payload.start_time}) sonra olmalı. Gece vardiyaları iki "
-                f"ardışık tarihe bölünerek kaydedilmelidir."
-            ),
-        )
+    # Task #255: Gece vardiyaları artık tek kayıtta planlanabilir
+    # (`crosses_midnight=True`). Aksi halde tek-gün kontratı korunur
+    # (end > start). crosses_midnight=True iken end > start mantıksızdır
+    # (aynı gün biten vardiya overnight olamaz) → reddedilir.
+    if payload.crosses_midnight:
+        if payload.end_time >= payload.start_time:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Gece vardiyası işaretlendi ama bitiş saati ({payload.end_time}) "
+                    f"başlangıç saatinden ({payload.start_time}) önce olmalı "
+                    f"(ör. 22:00 → 06:00). Aynı gün biten vardiyalarda gece "
+                    f"vardiyası seçeneğini kapatın."
+                ),
+            )
+    else:
+        if payload.end_time <= payload.start_time:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Vardiya bitiş saati ({payload.end_time}) başlangıç saatinden "
+                    f"({payload.start_time}) sonra olmalı. Gece vardiyaları için "
+                    f"'gece vardiyası (ertesi güne sarkar)' seçeneğini işaretleyin."
+                ),
+            )
 
-    # Task #254 (F8D-v2 § 35 P1 + concurrency follow-up): overlap guard
-    # delegated to `_acquire_shift_lock_interval` helper which uses an
-    # atomic `find_one_and_update` + unique index on `shift_schedule_locks`
-    # to close the TOCTOU race. See helper docstring for details. The
-    # helper raises HTTPException(409) on overlap, so falling through here
-    # means the slot is reserved for `shift_id`.
-    new_start = payload.start_time
-    new_end = payload.end_time
+    # Task #254 (concurrency lock) + #255 (overnight contract): atomic
+    # overlap guard `_acquire_shift_lock_for_shift` helper'ına delege edildi.
+    # crosses_midnight=True iken helper iki ayrı (start_date, next_date)
+    # lock dokümanına yazar — string lex compare aynı gün içinde doğru
+    # kalır, ertesi güne sarkan kısım next_date dokümanında ayrı interval
+    # olarak kontrol edilir. Böylece TOCTOU race + datetime sınır geçişi
+    # birlikte kapatılır. Helper overlap'ta HTTPException(409) atar.
     shift_id = str(uuid.uuid4())
     now_iso = datetime.now(UTC).isoformat()
-    await _acquire_shift_lock_interval(
+    await _acquire_shift_lock_for_shift(
         tenant_id=current_user.tenant_id,
         staff_id=payload.staff_id,
         shift_date=payload.shift_date,
-        start_time=new_start,
-        end_time=new_end,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        crosses_midnight=payload.crosses_midnight,
         shift_id=shift_id,
         now_iso=now_iso,
     )
+    d = date.fromisoformat(payload.shift_date)
 
+    end_date = (d + timedelta(days=1)).isoformat() if payload.crosses_midnight \
+        else payload.shift_date
     item = {
         'id': shift_id,
         'tenant_id': current_user.tenant_id,
@@ -1880,6 +2007,8 @@ async def create_shift_v2(
         'shift_type': payload.shift_type,
         'start_time': payload.start_time,
         'end_time': payload.end_time,
+        'crosses_midnight': payload.crosses_midnight,
+        'end_date': end_date,
         'notes': payload.notes,
         'status': 'scheduled',
         'created_at': datetime.now(UTC).isoformat(),
@@ -1963,7 +2092,7 @@ async def delete_shift(
     # döner.
     existing = await db.shift_schedules.find_one(
         {'tenant_id': current_user.tenant_id, 'id': shift_id},
-        {'_id': 0, 'staff_id': 1, 'shift_date': 1},
+        {'_id': 0, 'staff_id': 1, 'shift_date': 1, 'crosses_midnight': 1},
     )
     if not existing:
         raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
@@ -1972,10 +2101,11 @@ async def delete_shift(
     )
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
-    await _release_shift_lock_interval(
+    await _release_shift_lock_for_shift(
         tenant_id=current_user.tenant_id,
         staff_id=existing.get('staff_id'),
         shift_date=existing.get('shift_date'),
+        crosses_midnight=bool(existing.get('crosses_midnight', False)),
         shift_id=shift_id,
     )
     return {'success': True}
@@ -2498,7 +2628,8 @@ async def decide_shift_swap(
                 'id': req['shift_id'],
                 'staff_id': req['from_staff_id'],
             },
-            {'_id': 0, 'shift_date': 1, 'start_time': 1, 'end_time': 1},
+            {'_id': 0, 'shift_date': 1, 'start_time': 1, 'end_time': 1,
+             'crosses_midnight': 1},
         )
         if not original_shift:
             raise HTTPException(
@@ -2506,12 +2637,14 @@ async def decide_shift_swap(
                 detail="Vardiya bu sürede değişti veya silindi — talebi yeniden değerlendirin",
             )
         swap_now_iso = datetime.now(UTC).isoformat()
-        await _acquire_shift_lock_interval(
+        orig_crosses = bool(original_shift.get('crosses_midnight', False))
+        await _acquire_shift_lock_for_shift(
             tenant_id=current_user.tenant_id,
             staff_id=req['target_staff_id'],
             shift_date=original_shift.get('shift_date'),
             start_time=original_shift.get('start_time'),
             end_time=original_shift.get('end_time'),
+            crosses_midnight=orig_crosses,
             shift_id=req['shift_id'],
             now_iso=swap_now_iso,
         )
@@ -2532,10 +2665,11 @@ async def decide_shift_swap(
         )
         if upd.matched_count == 0:
             # Rollback: target için almış olduğumuz lock'ı bırak.
-            await _release_shift_lock_interval(
+            await _release_shift_lock_for_shift(
                 tenant_id=current_user.tenant_id,
                 staff_id=req['target_staff_id'],
                 shift_date=original_shift.get('shift_date'),
+                crosses_midnight=orig_crosses,
                 shift_id=req['shift_id'],
             )
             raise HTTPException(
@@ -2543,10 +2677,11 @@ async def decide_shift_swap(
                 detail="Vardiya bu sürede değişti veya silindi — talebi yeniden değerlendirin",
             )
         # Sahiplik transferi başarılı: from_staff lock entry'sini bırak.
-        await _release_shift_lock_interval(
+        await _release_shift_lock_for_shift(
             tenant_id=current_user.tenant_id,
             staff_id=req['from_staff_id'],
             shift_date=original_shift.get('shift_date'),
+            crosses_midnight=orig_crosses,
             shift_id=req['shift_id'],
         )
         new_status = 'approved'

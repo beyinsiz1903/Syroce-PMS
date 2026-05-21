@@ -596,7 +596,13 @@ const StaffProfile = () => {
                       <tr key={sh.id} className="border-t border-slate-100">
                         <td className="py-2">{sh.shift_date}</td>
                         <td className="capitalize">{sh.shift_type}</td>
-                        <td>{sh.start_time}</td><td>{sh.end_time}</td>
+                        <td>{sh.start_time}</td>
+                        <td>
+                          {sh.end_time}
+                          {sh.crosses_midnight && (
+                            <span className="ml-1 text-[10px] text-slate-400" title="Ertesi güne sarkar">+1g</span>
+                          )}
+                        </td>
                         <td className="text-slate-600 text-xs">{sh.notes || '—'}</td>
                       </tr>
                     ))}
