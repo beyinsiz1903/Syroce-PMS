@@ -2,6 +2,7 @@
 System Health — Role-Based Data Shaping API (Enriched)
 Returns real system health data scoped by user role (GM, Admin, Superadmin).
 """
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -24,10 +25,16 @@ router = APIRouter(prefix="/api/system-health", tags=["System Health"])
 
 
 async def _get_queue_health(tenant_id: str) -> dict[str, Any]:
-    stuck = await db.task_queue.count_documents({"tenant_id": tenant_id, "status": "stuck"}) if hasattr(db, "task_queue") else 0
-    pending = await db.task_queue.count_documents({"tenant_id": tenant_id, "status": "pending"}) if hasattr(db, "task_queue") else 0
-    processing = await db.task_queue.count_documents({"tenant_id": tenant_id, "status": "processing"}) if hasattr(db, "task_queue") else 0
-    failed = await db.task_queue.count_documents({"tenant_id": tenant_id, "status": "failed"}) if hasattr(db, "task_queue") else 0
+    if not hasattr(db, "task_queue"):
+        stuck = pending = processing = failed = 0
+    else:
+        # Perf: 4 sıralı count → tek gather
+        stuck, pending, processing, failed = await asyncio.gather(
+            db.task_queue.count_documents({"tenant_id": tenant_id, "status": "stuck"}),
+            db.task_queue.count_documents({"tenant_id": tenant_id, "status": "pending"}),
+            db.task_queue.count_documents({"tenant_id": tenant_id, "status": "processing"}),
+            db.task_queue.count_documents({"tenant_id": tenant_id, "status": "failed"}),
+        )
     return {
         "stuck_tasks": stuck,
         "pending_tasks": pending,
@@ -39,13 +46,17 @@ async def _get_queue_health(tenant_id: str) -> dict[str, Any]:
 
 
 async def _get_security_summary(tenant_id: str) -> dict[str, Any]:
-    violations = await db.tenant_guard_violations.count_documents({
-        "expected_tenant_id": tenant_id
-    }) if hasattr(db, "tenant_guard_violations") else 0
-    recent = await db.tenant_guard_violations.count_documents({
-        "expected_tenant_id": tenant_id,
-        "timestamp": {"$gte": (datetime.now(UTC) - timedelta(hours=24)).isoformat()}
-    }) if hasattr(db, "tenant_guard_violations") else 0
+    if not hasattr(db, "tenant_guard_violations"):
+        violations = recent = 0
+    else:
+        # Perf: 2 sıralı count → tek gather
+        violations, recent = await asyncio.gather(
+            db.tenant_guard_violations.count_documents({"expected_tenant_id": tenant_id}),
+            db.tenant_guard_violations.count_documents({
+                "expected_tenant_id": tenant_id,
+                "timestamp": {"$gte": (datetime.now(UTC) - timedelta(hours=24)).isoformat()},
+            }),
+        )
     return {
         "violations_count": violations,
         "violations_24h": recent,
@@ -70,11 +81,14 @@ async def _get_drift_summary(tenant_id: str) -> dict[str, Any]:
 
 
 async def _get_worker_health(tenant_id: str) -> dict[str, Any]:
-    recent_activity = await db.task_queue.count_documents({
-        "status": "completed",
-        "started_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=10)).isoformat()}
-    })
-    dl_total = await db.dead_letter_tasks.count_documents({})
+    # Perf: 2 sıralı count → tek gather
+    recent_activity, dl_total = await asyncio.gather(
+        db.task_queue.count_documents({
+            "status": "completed",
+            "started_at": {"$gte": (datetime.now(UTC) - timedelta(minutes=10)).isoformat()},
+        }),
+        db.dead_letter_tasks.count_documents({}),
+    )
     return {
         "workers_responding": recent_activity > 0,
         "recent_completions": recent_activity,
@@ -98,8 +112,11 @@ async def _get_night_audit_status(tenant_id: str) -> dict[str, Any]:
 async def _get_sync_summary(tenant_id: str) -> dict[str, Any]:
     now = datetime.now(UTC)
     last_24h = (now - timedelta(hours=24)).isoformat()
-    total = await db.channel_sync_logs.count_documents({"tenant_id": tenant_id, "timestamp": {"$gte": last_24h}})
-    failed = await db.channel_sync_logs.count_documents({"tenant_id": tenant_id, "timestamp": {"$gte": last_24h}, "status": "error"})
+    # Perf: 2 sıralı count → tek gather
+    total, failed = await asyncio.gather(
+        db.channel_sync_logs.count_documents({"tenant_id": tenant_id, "timestamp": {"$gte": last_24h}}),
+        db.channel_sync_logs.count_documents({"tenant_id": tenant_id, "timestamp": {"$gte": last_24h}, "status": "error"}),
+    )
     return {
         "syncs_24h": total,
         "failed_24h": failed,
@@ -117,30 +134,52 @@ async def _build_role_dashboard(tenant_id: str, role: str) -> dict[str, Any]:
         "last_updated_at": datetime.now(UTC).isoformat(),
     }
 
+    # Perf: panel build'lerini paralel topla — her panel kendi içinde de paralel
     if role == "gm":
+        night, drift, sync = await asyncio.gather(
+            _get_night_audit_status(tenant_id),
+            _get_drift_summary(tenant_id),
+            _get_sync_summary(tenant_id),
+        )
         base_data["panels"] = {
-            "night_audit": await _get_night_audit_status(tenant_id),
-            "drift_summary": await _get_drift_summary(tenant_id),
-            "sync_summary": await _get_sync_summary(tenant_id),
+            "night_audit": night,
+            "drift_summary": drift,
+            "sync_summary": sync,
             "queue_impact": {"status": "healthy", "detail": "No blocked operations"},
         }
     elif role in ("admin", "supervisor"):
+        queue, sec, work, drift, sync, night = await asyncio.gather(
+            _get_queue_health(tenant_id),
+            _get_security_summary(tenant_id),
+            _get_worker_health(tenant_id),
+            _get_drift_summary(tenant_id),
+            _get_sync_summary(tenant_id),
+            _get_night_audit_status(tenant_id),
+        )
         base_data["panels"] = {
-            "queue_health": await _get_queue_health(tenant_id),
-            "security": await _get_security_summary(tenant_id),
-            "workers": await _get_worker_health(tenant_id),
-            "drift_summary": await _get_drift_summary(tenant_id),
-            "sync_summary": await _get_sync_summary(tenant_id),
-            "night_audit": await _get_night_audit_status(tenant_id),
+            "queue_health": queue,
+            "security": sec,
+            "workers": work,
+            "drift_summary": drift,
+            "sync_summary": sync,
+            "night_audit": night,
         }
     else:  # super_admin or other
+        queue, sec, work, drift, sync, night = await asyncio.gather(
+            _get_queue_health(tenant_id),
+            _get_security_summary(tenant_id),
+            _get_worker_health(tenant_id),
+            _get_drift_summary(tenant_id),
+            _get_sync_summary(tenant_id),
+            _get_night_audit_status(tenant_id),
+        )
         base_data["panels"] = {
-            "queue_health": await _get_queue_health(tenant_id),
-            "security": await _get_security_summary(tenant_id),
-            "workers": await _get_worker_health(tenant_id),
-            "drift_summary": await _get_drift_summary(tenant_id),
-            "sync_summary": await _get_sync_summary(tenant_id),
-            "night_audit": await _get_night_audit_status(tenant_id),
+            "queue_health": queue,
+            "security": sec,
+            "workers": work,
+            "drift_summary": drift,
+            "sync_summary": sync,
+            "night_audit": night,
             "cross_property": {"tenant_count": 1, "properties_monitored": 1},
         }
 
