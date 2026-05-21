@@ -3,6 +3,7 @@ Revenue ML - Machine learning models for demand forecasting, rate elasticity,
 booking probability, and cancellation prediction.
 Uses statistical models (no external ML dependencies needed).
 """
+import asyncio
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -22,18 +23,38 @@ class DemandForecastingModel:
             total_rooms = 1
 
         today = date.today()
-        # Historical data: last 90 days by day-of-week
-        dow_history: dict[int, list[float]] = {i: [] for i in range(7)}
-        for i in range(1, 91):
-            hist_date = (today - timedelta(days=i))
-            hist_s = hist_date.isoformat()
-            booked = await db.bookings.count_documents({
+        # Perf: 90 historical + N forecast count_documents seri çağrı
+        # cold-start'ta /api/data-intelligence/revenue/forecast-dashboard'u dakikalara
+        # çıkartıyordu. Hepsi bağımsız → tek asyncio.gather ile paralel çalıştır.
+        hist_dates = [(today - timedelta(days=i)) for i in range(1, 91)]
+        target_dates = [(today + timedelta(days=i)) for i in range(forecast_days)]
+
+        hist_status_set = ["confirmed", "guaranteed", "checked_in", "checked_out"]
+        otb_status_set = ["confirmed", "guaranteed"]
+
+        hist_tasks = [
+            db.bookings.count_documents({
                 "tenant_id": tenant_id,
-                "check_in": {"$lte": hist_s}, "check_out": {"$gt": hist_s},
-                "status": {"$in": ["confirmed", "guaranteed", "checked_in", "checked_out"]},
-            })
-            occ = booked / total_rooms
-            dow_history[hist_date.weekday()].append(occ)
+                "check_in": {"$lte": d.isoformat()}, "check_out": {"$gt": d.isoformat()},
+                "status": {"$in": hist_status_set},
+            }) for d in hist_dates
+        ]
+        otb_tasks = [
+            db.bookings.count_documents({
+                "tenant_id": tenant_id,
+                "check_in": {"$lte": d.isoformat()}, "check_out": {"$gt": d.isoformat()},
+                "status": {"$in": otb_status_set},
+            }) for d in target_dates
+        ]
+        all_counts = await asyncio.gather(*hist_tasks, *otb_tasks, return_exceptions=True)
+        hist_counts = all_counts[:len(hist_tasks)]
+        otb_counts = all_counts[len(hist_tasks):]
+
+        dow_history: dict[int, list[float]] = {i: [] for i in range(7)}
+        for d, booked in zip(hist_dates, hist_counts):
+            if isinstance(booked, Exception):
+                continue
+            dow_history[d.weekday()].append(booked / total_rooms)
 
         # Weighted average (recent weeks weighted more)
         def weighted_avg(values):
@@ -45,19 +66,16 @@ class DemandForecastingModel:
 
         forecast = []
         for i in range(forecast_days):
-            target = today + timedelta(days=i)
+            target = target_dates[i]
             target_s = target.isoformat()
             dow = target.weekday()
 
             # Base prediction from day-of-week history
             base_occ = weighted_avg(dow_history.get(dow, []))
 
-            # Current bookings on-the-books
-            otb = await db.bookings.count_documents({
-                "tenant_id": tenant_id,
-                "check_in": {"$lte": target_s}, "check_out": {"$gt": target_s},
-                "status": {"$in": ["confirmed", "guaranteed"]},
-            })
+            # Current bookings on-the-books (gather'dan çekildi)
+            otb_raw = otb_counts[i]
+            otb = 0 if isinstance(otb_raw, Exception) else otb_raw
             otb_occ = otb / total_rooms
 
             # Blend: nearer dates trust OTB more, farther dates trust historical more

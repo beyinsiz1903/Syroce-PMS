@@ -5,7 +5,7 @@
 
 // Bumped when caching topology değişiyor — eski client'lar otomatik yeni
 // CACHE_NAME'e geçer (activate handler eskileri siler).
-const CACHE_VERSION = 'v1.1.0';
+const CACHE_VERSION = 'v1.2.0';
 const CACHE_NAME = `hotel-pms-${CACHE_VERSION}`;
 // Auth ayrımı: kullanıcı değişimi sonrası tüm cache'i drop edebilmek için
 // client'lar `postMessage({ type: 'AUTH_CHANGED' })` gönderir → SW siler.
@@ -92,6 +92,27 @@ const ROUTE_STRATEGIES = [
     cacheDuration: 7 * 24 * 60 * 60 * 1000, // 7 days
   },
 ];
+
+// ─── Cache timestamp yan-channel ────────────────────────────────────────────
+// Body-moving + custom header desenini kaldırdık (race → "body already used").
+// Onun yerine SW global scope'ta in-memory bir timestamp haritası tutuyoruz.
+// SW yeniden başlarsa harita boşalır → ilgili URL için cache "stale" sayılır
+// ve networkFirst/SWR network'ten taze veri çeker (güvenli/fail-safe).
+const _cacheTimestamps = new Map();
+// Maksimum giriş sayısı (LRU yerine basit FIFO eviction — memory leak guard).
+const _CACHE_TS_MAX = 500;
+
+function recordCacheTimestamp(url, ts) {
+  if (_cacheTimestamps.size >= _CACHE_TS_MAX) {
+    const firstKey = _cacheTimestamps.keys().next().value;
+    if (firstKey !== undefined) _cacheTimestamps.delete(firstKey);
+  }
+  _cacheTimestamps.set(url, ts);
+}
+
+function getCacheTimestamp(url) {
+  return _cacheTimestamps.get(url);
+}
 
 // Install event - precache assets
 self.addEventListener('install', (event) => {
@@ -199,24 +220,19 @@ async function networkFirst(request, cacheDuration) {
   
   try {
     const networkResponse = await fetch(request);
-    
-    // Cache successful responses
+
+    // Cache successful responses.
+    // Önemli: body'yi clone'dan yeni Response'a "taşımak" (new Response(clone.body, ...))
+    // tarayıcı/Sentry instrumentation ile race'e girip "Failed to execute 'clone' on
+    // 'Response': Response body is already used" üretebiliyor. MDN standardı: clone'u
+    // doğrudan cache.put'a ver. Timestamp için yan-channel kullanıyoruz (timestampCache).
     if (networkResponse.ok) {
-      const responseToCache = networkResponse.clone();
-      
-      // Add expiry timestamp
-      const headers = new Headers(responseToCache.headers);
-      headers.append('sw-cached-at', Date.now().toString());
-      
-      const cachedResponse = new Response(responseToCache.body, {
-        status: responseToCache.status,
-        statusText: responseToCache.statusText,
-        headers: headers,
-      });
-      
-      cache.put(request, cachedResponse);
+      const clone = networkResponse.clone();
+      cache.put(request, clone).then(() => {
+        recordCacheTimestamp(request.url, Date.now());
+      }).catch(() => {});
     }
-    
+
     return networkResponse;
   } catch (error) {
     console.log('[SW] Network failed, falling back to cache:', request.url);
@@ -243,38 +259,25 @@ async function cacheFirst(request, cacheDuration) {
   const cachedResponse = await cache.match(request);
   
   if (cachedResponse) {
-    // Check if cache is expired
-    const cachedAt = cachedResponse.headers.get('sw-cached-at');
-    
-    if (cachedAt) {
-      const age = Date.now() - parseInt(cachedAt);
-      
-      if (age < cacheDuration) {
-        console.log('[SW] Serving from cache:', request.url);
-        return cachedResponse;
-      }
+    // Check if cache is expired (yan-channel timestamp; bkz networkFirst)
+    const cachedAt = getCacheTimestamp(request.url);
+    if (cachedAt && Date.now() - cachedAt < cacheDuration) {
+      console.log('[SW] Serving from cache:', request.url);
+      return cachedResponse;
     }
   }
-  
-  // Fetch from network
+
+  // Fetch from network — body-moving desenden kaçınıyoruz; clone doğrudan cache'e gider.
   try {
     const networkResponse = await fetch(request);
-    
+
     if (networkResponse.ok) {
-      const headers = new Headers(networkResponse.headers);
-      headers.append('sw-cached-at', Date.now().toString());
-      
-      const responseToCache = new Response(networkResponse.body, {
-        status: networkResponse.status,
-        statusText: networkResponse.statusText,
-        headers: headers,
-      });
-      
-      cache.put(request, responseToCache.clone());
-      
-      return responseToCache;
+      const clone = networkResponse.clone();
+      cache.put(request, clone).then(() => {
+        recordCacheTimestamp(request.url, Date.now());
+      }).catch(() => {});
     }
-    
+
     return networkResponse;
   } catch (error) {
     // Return cached response even if expired
@@ -293,13 +296,13 @@ async function staleWhileRevalidate(request, cacheDuration) {
   // Cache TTL aşıldıysa "stale" sayma — fetch sonucunu bekle.
   let cacheStillFresh = false;
   if (cachedResponse) {
-    const cachedAt = cachedResponse.headers.get('sw-cached-at');
+    const cachedAt = getCacheTimestamp(request.url);
     if (cachedAt) {
-      cacheStillFresh = Date.now() - parseInt(cachedAt, 10) < cacheDuration;
+      cacheStillFresh = Date.now() - cachedAt < cacheDuration;
     }
   }
 
-  // Fetch from network in background
+  // Fetch from network in background — clone doğrudan cache.put'a; body-moving YOK.
   const fetchPromise = fetch(request)
     .then((networkResponse) => {
       // Hatalı yanıtları ASLA cache'leme (401/403/5xx leak'ini engelle).
@@ -307,14 +310,10 @@ async function staleWhileRevalidate(request, cacheDuration) {
         // Cache-Control: no-store / private respect
         const cc = (networkResponse.headers.get('Cache-Control') || '').toLowerCase();
         if (!cc.includes('no-store') && !cc.includes('private')) {
-          const headers = new Headers(networkResponse.headers);
-          headers.append('sw-cached-at', Date.now().toString());
-          const responseToCache = new Response(networkResponse.clone().body, {
-            status: networkResponse.status,
-            statusText: networkResponse.statusText,
-            headers,
-          });
-          cache.put(request, responseToCache).catch(() => {});
+          const clone = networkResponse.clone();
+          cache.put(request, clone).then(() => {
+            recordCacheTimestamp(request.url, Date.now());
+          }).catch(() => {});
         }
       }
       return networkResponse;
