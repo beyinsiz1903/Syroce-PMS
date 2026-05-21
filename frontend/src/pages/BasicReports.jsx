@@ -30,6 +30,29 @@ import { OfficialSection, PoliceSection } from './reports/OfficialSection';
 
 const BACKEND_URL = "";
 
+// Sentry browserTracingIntegration fetch wrapper + service-worker race
+// nadiren "Failed to execute 'clone' on 'Response': Response body is already
+// used" üretiyor. Hata transient — bir kez kısa gecikmeli retry yeterli.
+const TRANSIENT_FETCH_ERR = /clone|body is already used|body stream/i;
+async function fetchJsonWithRetry(url, opts) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, opts);
+      if (!res.ok) {
+        const err = new Error('HTTP ' + res.status);
+        err.status = res.status;
+        throw err;
+      }
+      return await res.json();
+    } catch (err) {
+      const msg = err && err.message ? String(err.message) : '';
+      const isTransient = TRANSIENT_FETCH_ERR.test(msg);
+      if (!isTransient || attempt === 1) throw err;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+}
+
 const REPORT_MENU = [
   { type: 'header', label: 'GENEL' },
   { id: 'overview', label: 'Genel Bakış', icon: LayoutDashboard, desc: 'Yönetici özet raporu' },
@@ -108,13 +131,12 @@ const BasicReports = ({ user, tenant, onLogout }) => {
     setError(null);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(BACKEND_URL + '/api/reports/basic-dashboard', {
+      const json = await fetchJsonWithRetry(BACKEND_URL + '/api/reports/basic-dashboard', {
         headers: { 'Authorization': 'Bearer ' + token }
       });
-      if (!res.ok) throw new Error('Veri yüklenemedi');
-      setData(await res.json());
+      setData(json);
     } catch (err) {
-      setError(err.message);
+      setError(err && err.status ? 'Veri yüklenemedi' : (err.message || 'Veri yüklenemedi'));
     } finally {
       setLoading(false);
       inFlightRef.current = false;
@@ -135,14 +157,13 @@ const BasicReports = ({ user, tenant, onLogout }) => {
     setOfficialError(null);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(BACKEND_URL + '/api/reports/official-guest-list?date=' + (dateParam || officialDate), {
-        headers: { 'Authorization': 'Bearer ' + token }
-      });
-      if (!res.ok) throw new Error('Resmi misafir listesi yüklenemedi');
-      const result = await res.json();
+      const result = await fetchJsonWithRetry(
+        BACKEND_URL + '/api/reports/official-guest-list?date=' + (dateParam || officialDate),
+        { headers: { 'Authorization': 'Bearer ' + token } }
+      );
       setOfficialRows(result?.rows || []);
     } catch (err) {
-      setOfficialError(err.message);
+      setOfficialError(err && err.status ? 'Resmi misafir listesi yüklenemedi' : (err.message || 'Resmi misafir listesi yüklenemedi'));
     } finally {
       setOfficialLoading(false);
     }
