@@ -1937,13 +1937,29 @@ async def export_payroll_run_xlsx(
     return resp
 
 
+_PAYROLL_ME_BLOCKED_ROLES = frozenset({'guest', 'external', 'agency', 'b2b'})
+
+
 @router.get("/hr/payroll/me")
 async def get_my_payroll(
     month: str | None = Query(None, pattern=r'^\d{4}-\d{2}$'),
     current_user: User = Depends(get_current_user),
 ):
     """Self-service: kullanıcının kendi locked bordro satırı. Yalnız `locked`
-    runlardan veri döner — taslak görünmez (KVKK + iş hukuku doktrin)."""
+    runlardan veri döner — taslak görünmez (KVKK + iş hukuku doktrin).
+
+    RBAC (Task #264 post-review round 5): yalnız iç staff (UserRole tipi)
+    erişebilir. Guest portal / B2B agency / harici roller 403 alır (raw
+    role allow-list; `_PAYROLL_ME_BLOCKED_ROLES` kontrol edilir + bilinmeyen
+    role enum'u da reddedilir → fail-closed). Erişim açılsa bile object-level
+    self-match (`staff_id`/e-posta) ile sadece kendi satırı döner.
+    """
+    role_lc = (getattr(current_user, 'role', '') or '').lower()
+    if not role_lc or role_lc in _PAYROLL_ME_BLOCKED_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Bordro self-service yalnız iç staff için açıktır.",
+        )
     self_id = str(getattr(current_user, 'id', '') or '')
     self_email = (str(getattr(current_user, 'email', '') or '')).strip().lower()
     q: dict[str, Any] = {
