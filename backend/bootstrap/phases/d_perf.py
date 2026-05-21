@@ -110,6 +110,33 @@ async def phase_d_perf_and_marketplace(app):
     except Exception as e:
         logger.warning(f"Tenant uniqueness index error: {e}")
 
+    # Sales CRM piggyback indexes: mice_opportunities + mice_opportunity_activities
+    # koleksiyonları Atlas 500 koleksiyon limiti workaround'u olarak hem MICE
+    # opportunity'leri hem sales leads (`_kind="lead"`) hem aktiviteleri
+    # (`_kind="lead_activity"`) barındırıyor. `_kind` ayraçlı filtreler
+    # tenant_id ile birleşince lead listesi (~yüzlerce satır), funnel
+    # aggregation ve lead-detail aktivite tarama'sı index olmadan collection
+    # scan'a düşer. Aşağıdaki kompozit index'ler her üç hot path'i destekler.
+    try:
+        await db.mice_opportunities.create_index(
+            [("tenant_id", 1), ("_kind", 1), ("status", 1), ("created_at", -1)],
+            name="tenant_kind_status_created",
+        )
+        # Status'suz get_leads path için: filtre tenant+_kind, sort created_at
+        # desc. Yukarıdaki index status'u 3. konumda taşıdığı için sort prefix
+        # uyumu zayıflıyordu; bu ikinci index status-agnostic listeyi destekler.
+        await db.mice_opportunities.create_index(
+            [("tenant_id", 1), ("_kind", 1), ("created_at", -1)],
+            name="tenant_kind_created",
+        )
+        await db.mice_opportunity_activities.create_index(
+            [("tenant_id", 1), ("_kind", 1), ("lead_id", 1), ("created_at", -1)],
+            name="tenant_kind_lead_created",
+        )
+        logger.info("✅ Sales CRM piggyback indexes ensured (mice_opportunities, mice_opportunity_activities)")
+    except Exception as e:
+        logger.warning(f"Sales CRM index error: {e}")
+
     # Task #254 follow-up: backfill `shift_schedule_locks` from existing
     # active `shift_schedules` rows. Before this collection existed, the
     # overlap guard read directly from `shift_schedules`; after the

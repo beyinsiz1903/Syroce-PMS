@@ -44,38 +44,50 @@ async def get_sales_customers(
     """
     current_user = await get_current_user(credentials)
 
-    query = {'tenant_id': current_user.tenant_id}
+    # Perf: tüm bookings'i belleğe çekip Python tarafında guest_id'ye gruplamak
+    # büyük tenant'larda saniyeler sürüyordu. Aynı agregasyonu MongoDB tarafında
+    # tek pipeline ile yapıyoruz; sadece guest başına 1 satır geri geliyor.
+    # `booking_source` ($first) ile rezervasyon kanalı korunuyor → corporate
+    # sınıflandırması bozulmuyor. $sort+$limit'i Python tarafında bırakıyoruz
+    # çünkü VIP eşiği ($50k) total_revenue toplamından sonra hesaplanıyor.
+    # Legacy `if not guest_id` skipped null **ve** boş string; aggregation'da
+    # ikisini de elemek için $nin kullanılıyor.
+    # $first non-determinism: en güncel check_in'i temsil eden değerlerin
+    # alınması için $group öncesi `check_in` desc sıralama. Böylece misafir
+    # adı/iletişim/booking_source rezervasyon güncelliğine göre kararlı seçilir
+    # (eski .find() unsorted davranıştan daha deterministik).
+    pipeline = [
+        {"$match": {
+            "tenant_id": current_user.tenant_id,
+            "guest_id": {"$nin": [None, ""]},
+        }},
+        {"$sort": {"check_in": -1}},
+        {"$group": {
+            "_id": "$guest_id",
+            "guest_name": {"$first": "$guest_name"},
+            "email": {"$first": "$guest_email"},
+            "phone": {"$first": "$guest_phone"},
+            "total_bookings": {"$sum": 1},
+            "total_revenue": {"$sum": {"$ifNull": ["$total_amount", 0]}},
+            "last_stay": {"$max": "$check_in"},
+            "booking_source": {"$first": "$booking_source"},
+        }},
+    ]
+    customers_raw = await db.bookings.aggregate(pipeline, allowDiskUse=True).to_list(None)
 
-    # Get all bookings to analyze customers
-    customers_data = {}
-    async for booking in db.bookings.find(query):
-        guest_id = booking.get('guest_id')
-        if not guest_id:
-            continue
-
-        if guest_id not in customers_data:
-            customers_data[guest_id] = {
-                'guest_id': guest_id,
-                'guest_name': booking.get('guest_name', 'Unknown'),
-                'email': booking.get('guest_email', ''),
-                'phone': booking.get('guest_phone', ''),
-                'total_bookings': 0,
-                'total_revenue': 0,
-                'last_stay': None,
-                'is_vip': False,
-                'is_corporate': booking.get('booking_source') == 'corporate'
-            }
-
-        customers_data[guest_id]['total_bookings'] += 1
-        customers_data[guest_id]['total_revenue'] += booking.get('total_amount', 0)
-
-        booking_date = booking.get('check_in', '')
-        if not customers_data[guest_id]['last_stay'] or booking_date > customers_data[guest_id]['last_stay']:
-            customers_data[guest_id]['last_stay'] = booking_date
-
-    # Convert to list and classify
     customers = []
-    for customer in customers_data.values():
+    for row in customers_raw:
+        customer = {
+            'guest_id': row['_id'],
+            'guest_name': row.get('guest_name') or 'Unknown',
+            'email': row.get('email') or '',
+            'phone': row.get('phone') or '',
+            'total_bookings': int(row.get('total_bookings') or 0),
+            'total_revenue': row.get('total_revenue') or 0,
+            'last_stay': row.get('last_stay'),
+            'is_vip': False,
+            'is_corporate': row.get('booking_source') == 'corporate',
+        }
         # Classify customer type
         if customer['total_revenue'] > 50000:
             customer['is_vip'] = True
