@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+from datetime import datetime, timezone
 
 from core.database import _raw_db, db
 
@@ -94,9 +95,32 @@ async def phase_d_perf_and_marketplace(app):
             partialFilterExpression={"period": {"$type": "string"}},
             name="uniq_tenant_staff_period",
         )
-        logger.info("✅ Tenant uniqueness indexes ensured (hotel_id, username, performance_reviews)")
+        # Task #254 (concurrency follow-up): shift overlap guard depends on
+        # one lock document per (tenant, staff, shift_date). Application
+        # logic in `create_shift_v2` uses find_one_and_update + upsert; the
+        # DB-level uniqueness here is what converts a race-losing upsert
+        # into the `DuplicateKeyError` → 409 path. Without this index the
+        # overlap guard silently collapses back to the TOCTOU race.
+        await db.shift_schedule_locks.create_index(
+            [("tenant_id", 1), ("staff_id", 1), ("shift_date", 1)],
+            unique=True,
+            name="uniq_tenant_staff_shift_date",
+        )
+        logger.info("✅ Tenant uniqueness indexes ensured (hotel_id, username, performance_reviews, shift_schedule_locks)")
     except Exception as e:
         logger.warning(f"Tenant uniqueness index error: {e}")
+
+    # Task #254 follow-up: backfill `shift_schedule_locks` from existing
+    # active `shift_schedules` rows. Before this collection existed, the
+    # overlap guard read directly from `shift_schedules`; after the
+    # migration the lock collection is the source-of-truth. Legacy rows
+    # must be represented in the lock collection or overlap enforcement
+    # silently misses them (false negative — exactly the regression the
+    # task is meant to fix). Backfill is idempotent (`$addToSet` on the
+    # interval dict + upsert) so it is safe to run on every boot. We run
+    # it as a background task so a large historical dataset never blocks
+    # platform health checks.
+    asyncio.create_task(_backfill_shift_schedule_locks())
 
     # Database optimization
     try:
@@ -315,3 +339,91 @@ async def _create_perf_indexes_inner():
     global BOOT_READY
     BOOT_READY = True
     logger.info("✅ Boot phase D complete — readiness probe is now green")
+
+
+async def _backfill_shift_schedule_locks() -> None:
+    """Idempotent backfill: ensure every active shift has a lock entry.
+
+    Task #254 follow-up. Before the lock collection existed the overlap
+    guard read directly from `shift_schedules`. After cutover the lock
+    collection is the source of truth for overlap; legacy rows must be
+    represented or overlap enforcement silently misses them.
+
+    Behaviour:
+      * Scans `shift_schedules` for active rows (status NOT in
+        cancelled/completed/deleted).
+      * For each row, upserts the (tenant_id, staff_id, shift_date) lock
+        doc with `$addToSet` of the interval dict — re-running with the
+        same shift_id/start/end is a no-op (set semantics on the dict).
+      * Best-effort: failures are logged, never raised; boot never
+        depends on backfill completion.
+      * Bounded scan (200k rows max per boot) to protect Atlas; if the
+        dataset is larger, operators can re-run the boot or split via
+        offline migration.
+    """
+    try:
+        cursor = _raw_db.shift_schedules.find(
+            {'status': {'$nin': ['cancelled', 'completed', 'deleted']}},
+            {
+                '_id': 0,
+                'id': 1,
+                'tenant_id': 1,
+                'staff_id': 1,
+                'shift_date': 1,
+                'start_time': 1,
+                'end_time': 1,
+            },
+        )
+        scanned = 0
+        upserted = 0
+        async for row in cursor:
+            scanned += 1
+            if scanned > 200_000:
+                logger.warning(
+                    "Shift lock backfill: 200k row cap hit, aborting "
+                    "(re-run boot or use offline migration for remainder)"
+                )
+                break
+            sid = row.get('id')
+            tid = row.get('tenant_id')
+            stf = row.get('staff_id')
+            day = row.get('shift_date')
+            st = row.get('start_time')
+            en = row.get('end_time')
+            if not (sid and tid and stf and day and st and en):
+                continue
+            try:
+                await _raw_db.shift_schedule_locks.update_one(
+                    {
+                        'tenant_id': tid,
+                        'staff_id': stf,
+                        'shift_date': day,
+                    },
+                    {
+                        '$setOnInsert': {
+                            'tenant_id': tid,
+                            'staff_id': stf,
+                            'shift_date': day,
+                            'created_at': datetime.now(timezone.utc).isoformat(),
+                        },
+                        '$addToSet': {'intervals': {
+                            'shift_id': sid,
+                            'start_time': st,
+                            'end_time': en,
+                        }},
+                    },
+                    upsert=True,
+                )
+                upserted += 1
+            except Exception as row_exc:
+                # Tek bir satır hatası backfill'i durdurmasın.
+                logger.warning(
+                    "Shift lock backfill row error (shift_id=%s): %s",
+                    sid, row_exc,
+                )
+        logger.info(
+            "✅ Shift lock backfill complete: scanned=%d upserted=%d",
+            scanned, upserted,
+        )
+    except Exception as e:
+        logger.warning(f"Shift lock backfill error: {e}")

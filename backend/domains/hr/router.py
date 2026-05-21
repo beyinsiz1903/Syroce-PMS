@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, Field, field_validator
+from pymongo.errors import DuplicateKeyError
 
 from core.database import _raw_db, db
 from core.security import get_current_user
@@ -1659,6 +1660,160 @@ async def set_leave_balance(
 
 
 # ============= Shifts (vardiya planlaması) =============
+#
+# Task #254 (concurrency follow-up): vardiya çakışma koruması
+# `shift_schedule_locks` koleksiyonuna delege edilmiştir. Bu koleksiyon
+# (tenant_id, staff_id, shift_date) üzerinde UNIQUE compound index taşır
+# (bkz. `backend/bootstrap/phases/d_perf.py`). Her dokümanın `intervals`
+# array'i o güne ait AKTİF (cancelled/deleted DEĞİL) vardiya
+# entry'lerini tutar (`{shift_id, start_time, end_time}`).
+#
+# Kontrat:
+#   * create  → `_acquire_shift_lock_interval` atomik findOneAndUpdate +
+#               upsert. Overlap varsa unique index DuplicateKeyError →
+#               HTTPException(409).
+#   * delete  → `_release_shift_lock_interval` $pull. Aksi halde silinmiş
+#               vardiya hala yeni create'i bloke eder (false 409).
+#   * swap    → from_staff lock entry'sini at, target_staff'a ata. Sıra:
+#               önce hedef için acquire (çakışma → 409 + abort), sonra
+#               shift_schedules update; update başarısızsa target'ten
+#               release ile rollback; başarılıysa from_staff'tan release.
+# Bu invariant'ı kıran her mutation `shift_schedule_locks` ile drift
+# yaratır ve overlap enforcement sessizce eskir.
+
+
+async def _acquire_shift_lock_interval(
+    *,
+    tenant_id: str,
+    staff_id: str,
+    shift_date: str,
+    start_time: str,
+    end_time: str,
+    shift_id: str,
+    now_iso: str,
+) -> None:
+    """Atomic overlap-rejecting reservation for one (staff, day) slot.
+
+    Half-open interval rule: ``new.start < ex.end AND new.end > ex.start``.
+    Boundary equality (09:00-13:00 + 13:00-17:00) is NOT overlap.
+
+    Raises HTTPException(409) with a Turkish description if the slot
+    overlaps an existing reserved interval. The DuplicateKeyError branch
+    is what makes the concurrent case safe — without the unique index in
+    `d_perf.py` this collapses back into a TOCTOU race.
+    """
+    lock_filter = {
+        'tenant_id': tenant_id,
+        'staff_id': staff_id,
+        'shift_date': shift_date,
+        '$or': [
+            {'intervals': {'$exists': False}},
+            {'intervals': {
+                '$not': {'$elemMatch': {
+                    'start_time': {'$lt': end_time},
+                    'end_time': {'$gt': start_time},
+                }}
+            }},
+        ],
+    }
+    lock_update = {
+        '$setOnInsert': {
+            'tenant_id': tenant_id,
+            'staff_id': staff_id,
+            'shift_date': shift_date,
+            'created_at': now_iso,
+        },
+        '$push': {'intervals': {
+            'shift_id': shift_id,
+            'start_time': start_time,
+            'end_time': end_time,
+        }},
+    }
+    # `DuplicateKeyError` iki ayrı senaryoda fırlayabilir:
+    #   (a) Gerçek overlap: doc zaten var, filtre overlap nedeniyle
+    #       match etmedi → upsert mevcut key'e insert denedi → 409.
+    #   (b) Doküman yaratım yarışı: doc henüz yokken iki eşzamanlı
+    #       upsert; biri kazanır insert eder, diğeri (b) DuplicateKey
+    #       alır AMA aslında overlap yoktu. Bu durumda retry'da doc
+    #       artık var ve filtre overlap kontrolünü doğru yapar →
+    #       overlap yoksa $push başarılı olur.
+    # Bu yüzden bounded retry + post-DuplicateKey "gerçek overlap mı?"
+    # doğrulaması yapıyoruz; sadece gerçek overlap'ta 409 atıyoruz.
+    last_exc: DuplicateKeyError | None = None
+    for _attempt in range(3):
+        try:
+            await db.shift_schedule_locks.find_one_and_update(
+                lock_filter, lock_update, upsert=True,
+            )
+            return
+        except DuplicateKeyError as e:
+            last_exc = e
+            existing_doc = await db.shift_schedule_locks.find_one(
+                {
+                    'tenant_id': tenant_id,
+                    'staff_id': staff_id,
+                    'shift_date': shift_date,
+                },
+                {'_id': 0, 'intervals': 1},
+            )
+            conflicting = None
+            for iv in (existing_doc or {}).get('intervals') or []:
+                if (
+                    iv.get('start_time', '') < end_time
+                    and iv.get('end_time', '') > start_time
+                ):
+                    conflicting = iv
+                    break
+            if conflicting:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Bu personelin {shift_date} tarihinde "
+                        f"{conflicting.get('start_time')}-"
+                        f"{conflicting.get('end_time')} saatleri arası "
+                        f"başka bir vardiyası var "
+                        f"(id={conflicting.get('shift_id')}). Çakışan "
+                        f"vardiya oluşturulamaz."
+                    ),
+                )
+            # Overlap yok → creation race'iydi, retry.
+            continue
+    # 3 retry sonrası hâlâ DuplicateKeyError + overlap yok: patolojik.
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            "Vardiya kilidi alınamadı, lütfen tekrar deneyin "
+            f"(son hata: {last_exc})"
+        ),
+    )
+
+
+async def _release_shift_lock_interval(
+    *,
+    tenant_id: str,
+    staff_id: str,
+    shift_date: str,
+    shift_id: str,
+) -> None:
+    """Remove the locked interval for a shift after delete/swap.
+
+    Idempotent: missing lock doc or missing entry is a no-op. Best-effort
+    — failure here must not block the primary mutation; the worst case is
+    a stale lock entry that future creates report as overlap (operator
+    can re-issue with a different time or delete the lock).
+    """
+    try:
+        await db.shift_schedule_locks.update_one(
+            {
+                'tenant_id': tenant_id,
+                'staff_id': staff_id,
+                'shift_date': shift_date,
+            },
+            {'$pull': {'intervals': {'shift_id': shift_id}}},
+        )
+    except Exception:  # pragma: no cover - defensive, never block parent
+        pass
+
 
 class ShiftPayload(BaseModel):
     staff_id: str = Field(..., min_length=1)
@@ -1696,44 +1851,28 @@ async def create_shift_v2(
             ),
         )
 
-    # Task #254 (F8D-v2 § 35 P1): overlap guard — aynı staff + aynı tarihte
-    # zaman aralığı çakışan ikinci shift kabul edilmemeli. Önceki guard
-    # eksikti; stres testlerinde S1=09:00-13:00 + S2=10:00-14:00 her ikisi de
-    # kayıt oluyordu (double-booking riski). MongoDB'de saatler "HH:MM"
-    # string olarak tutuluyor (ShiftPayload validator format'ı) → ISO-style
-    # ASCII sıralama doğru çalışıyor (lexicographic compare == time compare).
-    # Bu nedenle string karşılaştırma yeterli; ek datetime parse maliyeti yok.
-    #
-    # Çakışma kuralı (yarı-açık aralık [start, end)):
-    #     overlap = (new.start < existing.end) AND (new.end > existing.start)
-    #
-    # Sınır eşitliği overlap DEĞİL (09:00-13:00 + 13:00-17:00 OK).
-    # Aynı status='scheduled'/'active' shift'ler kapsama girer; silinmiş /
-    # cancelled / completed shift'ler bloklanmaz.
+    # Task #254 (F8D-v2 § 35 P1 + concurrency follow-up): overlap guard
+    # delegated to `_acquire_shift_lock_interval` helper which uses an
+    # atomic `find_one_and_update` + unique index on `shift_schedule_locks`
+    # to close the TOCTOU race. See helper docstring for details. The
+    # helper raises HTTPException(409) on overlap, so falling through here
+    # means the slot is reserved for `shift_id`.
     new_start = payload.start_time
     new_end = payload.end_time
-    overlap_existing = await db.shift_schedules.find_one({
-        'tenant_id': current_user.tenant_id,
-        'staff_id': payload.staff_id,
-        'shift_date': payload.shift_date,
-        'status': {'$nin': ['cancelled', 'completed', 'deleted']},
-        # Yarı-açık aralık çakışması: new.start < ex.end AND new.end > ex.start
-        'start_time': {'$lt': new_end},
-        'end_time': {'$gt': new_start},
-    }, {'_id': 0, 'id': 1, 'start_time': 1, 'end_time': 1})
-    if overlap_existing:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"Bu personelin {payload.shift_date} tarihinde "
-                f"{overlap_existing.get('start_time')}-{overlap_existing.get('end_time')} "
-                f"saatleri arası başka bir vardiyası var (id={overlap_existing.get('id')}). "
-                f"Çakışan vardiya oluşturulamaz."
-            ),
-        )
+    shift_id = str(uuid.uuid4())
+    now_iso = datetime.now(UTC).isoformat()
+    await _acquire_shift_lock_interval(
+        tenant_id=current_user.tenant_id,
+        staff_id=payload.staff_id,
+        shift_date=payload.shift_date,
+        start_time=new_start,
+        end_time=new_end,
+        shift_id=shift_id,
+        now_iso=now_iso,
+    )
 
     item = {
-        'id': str(uuid.uuid4()),
+        'id': shift_id,
         'tenant_id': current_user.tenant_id,
         'staff_id': payload.staff_id,
         'staff_name': staff.get('name'),
@@ -1745,7 +1884,18 @@ async def create_shift_v2(
         'status': 'scheduled',
         'created_at': datetime.now(UTC).isoformat(),
     }
-    await db.shift_schedules.insert_one(item)
+    # Task #254 follow-up: lock acquired ama insert başarısızsa lock
+    # entry'sini geri al → orphan lock + future false 409 olmasın.
+    try:
+        await db.shift_schedules.insert_one(item)
+    except Exception:
+        await _release_shift_lock_interval(
+            tenant_id=current_user.tenant_id,
+            staff_id=payload.staff_id,
+            shift_date=payload.shift_date,
+            shift_id=shift_id,
+        )
+        raise
     item.pop('_id', None)
     return {'success': True, 'shift': item}
 
@@ -1806,11 +1956,28 @@ async def delete_shift(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_executive_reports")),
 ):
+    # Task #254 follow-up: önce shift'i okuyup (staff_id, shift_date)
+    # parametrelerini al; sonra schedule sil, son olarak overlap lock
+    # entry'sini at. Aksi halde silinmiş vardiya `shift_schedule_locks`
+    # üzerinde stale kalır ve aynı saat aralığında yeni create false 409
+    # döner.
+    existing = await db.shift_schedules.find_one(
+        {'tenant_id': current_user.tenant_id, 'id': shift_id},
+        {'_id': 0, 'staff_id': 1, 'shift_date': 1},
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
     res = await db.shift_schedules.delete_one(
         {'tenant_id': current_user.tenant_id, 'id': shift_id}
     )
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Vardiya bulunamadı")
+    await _release_shift_lock_interval(
+        tenant_id=current_user.tenant_id,
+        staff_id=existing.get('staff_id'),
+        shift_date=existing.get('shift_date'),
+        shift_id=shift_id,
+    )
     return {'success': True}
 
 
@@ -2315,6 +2482,39 @@ async def decide_shift_swap(
         target = await _verify_staff_in_tenant(req['target_staff_id'], current_user.tenant_id)
         if not target:
             raise HTTPException(status_code=400, detail="Hedef personel artık aktif değil")
+        # Task #254 follow-up: swap, overlap lock'ı `from_staff` → `target`
+        # taşır. Sıra önemli:
+        #   1) Mevcut shift'i oku (start/end/shift_date) — lock filtresi
+        #      için lazım.
+        #   2) Target için aynı saat aralığını acquire et: target'ın o
+        #      gününde başka çakışan vardiyası varsa 409 + abort.
+        #   3) shift_schedules update'ini atomik filtreli yap; matched=0
+        #      ise (yarış: silindi/değişti) az önce acquire ettiğimiz
+        #      target lock entry'sini release ile geri al → orphan lock yok.
+        #   4) Başarılıysa from_staff lock entry'sini release et.
+        original_shift = await db.shift_schedules.find_one(
+            {
+                'tenant_id': current_user.tenant_id,
+                'id': req['shift_id'],
+                'staff_id': req['from_staff_id'],
+            },
+            {'_id': 0, 'shift_date': 1, 'start_time': 1, 'end_time': 1},
+        )
+        if not original_shift:
+            raise HTTPException(
+                status_code=409,
+                detail="Vardiya bu sürede değişti veya silindi — talebi yeniden değerlendirin",
+            )
+        swap_now_iso = datetime.now(UTC).isoformat()
+        await _acquire_shift_lock_interval(
+            tenant_id=current_user.tenant_id,
+            staff_id=req['target_staff_id'],
+            shift_date=original_shift.get('shift_date'),
+            start_time=original_shift.get('start_time'),
+            end_time=original_shift.get('end_time'),
+            shift_id=req['shift_id'],
+            now_iso=swap_now_iso,
+        )
         # Atomik filtre: vardiyanın hâlâ orijinal sahibinde olduğunu doğrula.
         # Aksi halde başka bir swap zaten uygulanmış demektir (race koruması).
         upd = await db.shift_schedules.update_one(
@@ -2327,14 +2527,28 @@ async def decide_shift_swap(
                 'staff_id': req['target_staff_id'],
                 'staff_name': target.get('name'),
                 'swapped_from': req['from_staff_id'],
-                'swapped_at': datetime.now(UTC).isoformat(),
+                'swapped_at': swap_now_iso,
             }},
         )
         if upd.matched_count == 0:
+            # Rollback: target için almış olduğumuz lock'ı bırak.
+            await _release_shift_lock_interval(
+                tenant_id=current_user.tenant_id,
+                staff_id=req['target_staff_id'],
+                shift_date=original_shift.get('shift_date'),
+                shift_id=req['shift_id'],
+            )
             raise HTTPException(
                 status_code=409,
                 detail="Vardiya bu sürede değişti veya silindi — talebi yeniden değerlendirin",
             )
+        # Sahiplik transferi başarılı: from_staff lock entry'sini bırak.
+        await _release_shift_lock_interval(
+            tenant_id=current_user.tenant_id,
+            staff_id=req['from_staff_id'],
+            shift_date=original_shift.get('shift_date'),
+            shift_id=req['shift_id'],
+        )
         new_status = 'approved'
     else:
         new_status = 'rejected'
