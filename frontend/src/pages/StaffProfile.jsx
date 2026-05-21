@@ -7,6 +7,7 @@ import {
   Calendar, Clock, DollarSign, Award, FileText, AlertCircle,
   GraduationCap, Folder, TrendingUp, UserMinus, Plus, Trash2,
   Download, Upload, ChevronDown, ChevronRight, Target,
+  Package, ShieldAlert, BookOpen, Check, RotateCcw,
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,6 +65,10 @@ const StaffProfile = () => {
   const [salaryHistory, setSalaryHistory] = useState([]);
   const [salaryError, setSalaryError] = useState(null);
   const [termination, setTermination] = useState(null);
+  // Task #265 (İK v2 Lifecycle): Zimmet / Uyarı / Eğitim section state.
+  const [equipment, setEquipment] = useState({ items: [], active: 0, returned: 0, lost: 0, error: null });
+  const [warnings, setWarnings] = useState({ items: [], by_type: { verbal: 0, written: 0, final: 0 }, error: null });
+  const [trainings, setTrainings] = useState({ items: [], valid: 0, expired: 0, error: null });
 
   // Dialogs
   const [certDialog, setCertDialog] = useState({ open: false, form: null });
@@ -71,6 +76,9 @@ const StaffProfile = () => {
   const [salaryDialog, setSalaryDialog] = useState({ open: false, form: null });
   const [termDialog, setTermDialog] = useState({ open: false, form: null });
   const [checkinDialog, setCheckinDialog] = useState({ open: false, reviewId: null, form: null });
+  const [eqDialog, setEqDialog] = useState({ open: false, form: null });
+  const [warnDialog, setWarnDialog] = useState({ open: false, form: null });
+  const [trainDialog, setTrainDialog] = useState({ open: false, form: null });
   const [checkinsByReview, setCheckinsByReview] = useState({});
   const [expandedReview, setExpandedReview] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -130,13 +138,53 @@ const StaffProfile = () => {
     }
   }, [id]);
 
+  const loadEquipment = useCallback(async () => {
+    try {
+      const r = await axios.get(`/hr/staff/${id}/equipment`);
+      setEquipment({
+        items: r.data.items || [], active: r.data.active || 0,
+        returned: r.data.returned || 0, lost: r.data.lost_or_damaged || 0, error: null,
+      });
+    } catch (err) {
+      setEquipment((s) => ({ ...s, error: err?.response?.data?.detail || 'Zimmet listesi yüklenemedi' }));
+    }
+  }, [id]);
+
+  const loadWarnings = useCallback(async () => {
+    try {
+      const r = await axios.get(`/hr/staff/${id}/warnings`);
+      setWarnings({
+        items: r.data.items || [],
+        by_type: r.data.by_type || { verbal: 0, written: 0, final: 0 },
+        error: null,
+      });
+    } catch (err) {
+      setWarnings((s) => ({ ...s, error: err?.response?.data?.detail || 'Uyarı geçmişi yüklenemedi' }));
+    }
+  }, [id]);
+
+  const loadTrainings = useCallback(async () => {
+    try {
+      const r = await axios.get(`/hr/staff/${id}/trainings`);
+      setTrainings({
+        items: r.data.items || [], valid: r.data.valid || 0,
+        expired: r.data.expired || 0, error: null,
+      });
+    } catch (err) {
+      setTrainings((s) => ({ ...s, error: err?.response?.data?.detail || 'Eğitim geçmişi yüklenemedi' }));
+    }
+  }, [id]);
+
   useEffect(() => {
     load();
     loadCerts();
     loadDocs();
     loadSalary();
     loadTermination();
-  }, [load, loadCerts, loadDocs, loadSalary, loadTermination]);
+    loadEquipment();
+    loadWarnings();
+    loadTrainings();
+  }, [load, loadCerts, loadDocs, loadSalary, loadTermination, loadEquipment, loadWarnings, loadTrainings]);
 
   // ===== Certifications =====
   const openCertDialog = () => setCertDialog({
@@ -295,6 +343,110 @@ const StaffProfile = () => {
     } finally { setSaving(false); }
   };
 
+  // ===== Task #265: Zimmet (Equipment) =====
+  const openEqDialog = () => setEqDialog({
+    open: true,
+    form: {
+      item_type: 'uniform', item_label: '', serial_no: '',
+      assigned_at: new Date().toISOString().slice(0, 10), notes: '',
+    },
+  });
+  const submitEq = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await axios.post(`/hr/staff/${id}/equipment`, eqDialog.form);
+      toast.success('Zimmet kaydedildi');
+      setEqDialog({ open: false, form: null });
+      loadEquipment();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Kaydedilemedi');
+    } finally { setSaving(false); }
+  };
+  const returnEq = async (eq) => {
+    if (!await confirmDialog({ message: `"${eq.item_label}" iade alınsın mı?` })) return;
+    try {
+      await axios.post(`/hr/equipment/${eq.id}/return`, {
+        returned_at: new Date().toISOString().slice(0, 10),
+        condition_on_return: 'good',
+      });
+      toast.success('İade alındı'); loadEquipment();
+    } catch (err) { toast.error(err.response?.data?.detail || 'İade alınamadı'); }
+  };
+  const deleteEq = async (eq) => {
+    if (!await confirmDialog({ message: `"${eq.item_label}" zimmet kaydı silinsin mi?` })) return;
+    try {
+      await axios.delete(`/hr/equipment/${eq.id}`);
+      toast.success('Silindi'); loadEquipment();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
+  };
+
+  // ===== Task #265: Uyarılar (Warnings) =====
+  const openWarnDialog = () => setWarnDialog({
+    open: true,
+    form: { warning_type: 'verbal', severity: 'medium', reason: '', issued_at: new Date().toISOString().slice(0, 10) },
+  });
+  const submitWarn = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await axios.post(`/hr/staff/${id}/warnings`, warnDialog.form);
+      toast.success('Uyarı kaydedildi');
+      setWarnDialog({ open: false, form: null });
+      loadWarnings();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Kaydedilemedi');
+    } finally { setSaving(false); }
+  };
+  const ackWarn = async (w) => {
+    try {
+      await axios.post(`/hr/warnings/${w.id}/acknowledge`);
+      toast.success('Onaylandı'); loadWarnings();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Onaylanamadı'); }
+  };
+  const deleteWarn = async (w) => {
+    if (!await confirmDialog({ message: `Uyarı kaydı silinsin mi?` })) return;
+    try {
+      await axios.delete(`/hr/warnings/${w.id}`);
+      toast.success('Silindi'); loadWarnings();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
+  };
+
+  // ===== Task #265: Eğitimler (Trainings) =====
+  const openTrainDialog = () => setTrainDialog({
+    open: true,
+    form: {
+      training_type: 'hygiene', title: '', provider: '',
+      completed_at: new Date().toISOString().slice(0, 10),
+      valid_until: '', hours: '', score: '', notes: '',
+    },
+  });
+  const submitTrain = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload = { ...trainDialog.form };
+      if (!payload.valid_until) delete payload.valid_until;
+      if (payload.provider === '') delete payload.provider;
+      if (payload.notes === '') delete payload.notes;
+      payload.hours = payload.hours === '' ? null : parseFloat(payload.hours);
+      payload.score = payload.score === '' ? null : parseFloat(payload.score);
+      await axios.post(`/hr/staff/${id}/trainings`, payload);
+      toast.success('Eğitim kaydedildi');
+      setTrainDialog({ open: false, form: null });
+      loadTrainings();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Kaydedilemedi');
+    } finally { setSaving(false); }
+  };
+  const deleteTrain = async (t) => {
+    if (!await confirmDialog({ message: `"${t.title}" eğitim kaydı silinsin mi?` })) return;
+    try {
+      await axios.delete(`/hr/trainings/${t.id}`);
+      toast.success('Silindi'); loadTrainings();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Silinemedi'); }
+  };
+
   const headerActions = (
     <>
       <Button variant="outline" size="sm" onClick={() => navigate('/staff-management')}>
@@ -395,13 +547,16 @@ const StaffProfile = () => {
       </div>
 
       <Tabs defaultValue="attendance">
-        <TabsList className="grid w-full grid-cols-8 text-xs">
+        <TabsList className="grid w-full grid-cols-11 text-xs">
           <TabsTrigger value="attendance">Devam</TabsTrigger>
           <TabsTrigger value="leave">İzin</TabsTrigger>
           <TabsTrigger value="performance">Performans</TabsTrigger>
           <TabsTrigger value="payroll">Bordro</TabsTrigger>
           <TabsTrigger value="shifts">Vardiya</TabsTrigger>
           <TabsTrigger value="certifications">Sertifika</TabsTrigger>
+          <TabsTrigger value="trainings">Eğitim</TabsTrigger>
+          <TabsTrigger value="equipment">Zimmet</TabsTrigger>
+          <TabsTrigger value="warnings">Uyarı</TabsTrigger>
           <TabsTrigger value="documents">Belgeler</TabsTrigger>
           <TabsTrigger value="salary">Maaş</TabsTrigger>
         </TabsList>
@@ -777,6 +932,194 @@ const StaffProfile = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* EĞİTİM (Task #265 — sertifikadan ayrı operasyonel zorunlu eğitim) */}
+        <TabsContent value="trainings" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2"><BookOpen className="w-4 h-4" /> Zorunlu Eğitimler</span>
+                <Button size="sm" onClick={openTrainDialog}><Plus className="w-4 h-4 mr-1.5" />Eğitim Ekle</Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {trainings.error && (
+                <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {trainings.error} <button onClick={loadTrainings} className="underline ml-2">Tekrar dene</button>
+                </div>
+              )}
+              <div className="mb-3 flex gap-2 text-xs">
+                <StatusBadge intent="success">{trainings.valid} geçerli</StatusBadge>
+                {trainings.expired > 0 && <StatusBadge intent="danger">{trainings.expired} tazelenmeli</StatusBadge>}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-left text-slate-500 border-b">
+                    <th className="py-2">Eğitim</th><th>Tür</th><th>Veren</th>
+                    <th>Tamamlandı</th><th>Geçerlilik</th><th className="text-right">Saat</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {trainings.items.map((t) => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const expired = t.valid_until && t.valid_until < today;
+                      return (
+                        <tr key={t.id} className="border-t border-slate-100">
+                          <td className="py-2 font-medium">{t.title}</td>
+                          <td className="text-xs uppercase">{t.training_type}</td>
+                          <td>{t.provider || '—'}</td>
+                          <td>{t.completed_at}</td>
+                          <td>{t.valid_until
+                            ? (expired
+                              ? <StatusBadge intent="danger">{t.valid_until}</StatusBadge>
+                              : <StatusBadge intent="success">{t.valid_until}</StatusBadge>)
+                            : <span className="text-slate-400">süresiz</span>}</td>
+                          <td className="text-right">{t.hours ?? '—'}</td>
+                          <td className="text-right">
+                            <Button size="sm" variant="ghost" onClick={() => deleteTrain(t)}>
+                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {trainings.items.length === 0 && (
+                      <tr><td colSpan={7} className="py-6 text-center text-slate-500">
+                        Henüz eğitim kaydı yok — hijyen tazeleme, iş güvenliği yıllık, oryantasyon gibi periyodik eğitimleri ekleyin
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ZİMMET (Task #265 — üniforma/kart/anahtar/cihaz) */}
+        <TabsContent value="equipment" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2"><Package className="w-4 h-4" /> Zimmet</span>
+                <Button size="sm" onClick={openEqDialog}><Plus className="w-4 h-4 mr-1.5" />Zimmet Ata</Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {equipment.error && (
+                <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {equipment.error} <button onClick={loadEquipment} className="underline ml-2">Tekrar dene</button>
+                </div>
+              )}
+              <div className="mb-3 flex gap-2 text-xs">
+                <StatusBadge intent="warning">{equipment.active} aktif</StatusBadge>
+                <StatusBadge intent="success">{equipment.returned} iade</StatusBadge>
+                {equipment.lost > 0 && <StatusBadge intent="danger">{equipment.lost} kayıp/hasar</StatusBadge>}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-left text-slate-500 border-b">
+                    <th className="py-2">Eşya</th><th>Tür</th><th>Seri No</th>
+                    <th>Zimmet Tarihi</th><th>İade Tarihi</th><th>Durum</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {equipment.items.map((eq) => (
+                      <tr key={eq.id} className="border-t border-slate-100">
+                        <td className="py-2 font-medium">{eq.item_label}</td>
+                        <td className="text-xs uppercase">{eq.item_type}</td>
+                        <td className="text-xs">{eq.serial_no || '—'}</td>
+                        <td>{eq.assigned_at}</td>
+                        <td>{eq.returned_at || '—'}</td>
+                        <td>
+                          {eq.status === 'assigned' && <StatusBadge intent="warning">Aktif</StatusBadge>}
+                          {eq.status === 'returned' && <StatusBadge intent="success">İade alındı</StatusBadge>}
+                          {eq.status === 'lost' && <StatusBadge intent="danger">Kayıp</StatusBadge>}
+                          {eq.status === 'damaged' && <StatusBadge intent="danger">Hasarlı</StatusBadge>}
+                        </td>
+                        <td className="text-right whitespace-nowrap">
+                          {eq.status === 'assigned' && (
+                            <Button size="sm" variant="ghost" onClick={() => returnEq(eq)} title="İade al">
+                              <RotateCcw className="w-3.5 h-3.5 text-emerald-700" />
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" onClick={() => deleteEq(eq)}>
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {equipment.items.length === 0 && (
+                      <tr><td colSpan={7} className="py-6 text-center text-slate-500">
+                        Henüz zimmet yok — üniforma, kart, telsiz, anahtar gibi tahsis edilen eşyaları kaydedin
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* UYARI (Task #265 — sözlü/yazılı/son ihtar sicili) */}
+        <TabsContent value="warnings" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2"><ShieldAlert className="w-4 h-4" /> Disiplin Uyarıları</span>
+                <Button size="sm" onClick={openWarnDialog}><Plus className="w-4 h-4 mr-1.5" />Uyarı Düş</Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {warnings.error && (
+                <div className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {warnings.error} <button onClick={loadWarnings} className="underline ml-2">Tekrar dene</button>
+                </div>
+              )}
+              <div className="mb-3 flex gap-2 text-xs">
+                <StatusBadge intent="info">{warnings.by_type.verbal} sözlü</StatusBadge>
+                <StatusBadge intent="warning">{warnings.by_type.written} yazılı</StatusBadge>
+                {warnings.by_type.final > 0 && <StatusBadge intent="danger">{warnings.by_type.final} son ihtar</StatusBadge>}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-left text-slate-500 border-b">
+                    <th className="py-2">Tarih</th><th>Tür</th><th>Şiddet</th>
+                    <th>Sebep</th><th>Onay</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {warnings.items.map((w) => (
+                      <tr key={w.id} className="border-t border-slate-100">
+                        <td className="py-2">{w.issued_at}</td>
+                        <td>
+                          {w.warning_type === 'verbal' && <StatusBadge intent="info">Sözlü</StatusBadge>}
+                          {w.warning_type === 'written' && <StatusBadge intent="warning">Yazılı</StatusBadge>}
+                          {w.warning_type === 'final' && <StatusBadge intent="danger">Son ihtar</StatusBadge>}
+                        </td>
+                        <td className="text-xs uppercase">{w.severity}</td>
+                        <td className="text-xs text-slate-700 max-w-md">{w.reason}</td>
+                        <td className="text-xs">
+                          {w.acknowledged_at
+                            ? <span className="text-emerald-700">✓ {w.acknowledged_at.slice(0, 10)}</span>
+                            : <Button size="sm" variant="outline" onClick={() => ackWarn(w)}>
+                                <Check className="w-3 h-3 mr-1" />Onayla
+                              </Button>}
+                        </td>
+                        <td className="text-right">
+                          <Button size="sm" variant="ghost" onClick={() => deleteWarn(w)}>
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {warnings.items.length === 0 && (
+                      <tr><td colSpan={6} className="py-6 text-center text-slate-500">
+                        Disiplin kaydı yok — İş K. m.25/II referansıyla sözlü/yazılı/son ihtar süreçlerini buradan yönetin
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* ============ DIALOGS ============ */}
@@ -953,6 +1296,143 @@ const StaffProfile = () => {
                 onChange={(e) => setCheckinDialog({ ...checkinDialog, form: { ...checkinDialog.form, note: e.target.value } })} /></div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setCheckinDialog({ open: false, reviewId: null, form: null })}>Vazgeç</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Kaydediliyor...' : 'Ekle'}</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Task #265: Zimmet ata */}
+      <Dialog open={eqDialog.open} onOpenChange={(o) => !o && setEqDialog({ open: false, form: null })}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Zimmet Ata</DialogTitle></DialogHeader>
+          {eqDialog.form && (
+            <form onSubmit={submitEq} className="grid gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>Tür *</Label>
+                  <select value={eqDialog.form.item_type}
+                    onChange={(e) => setEqDialog({ ...eqDialog, form: { ...eqDialog.form, item_type: e.target.value } })}
+                    className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                    <option value="uniform">Üniforma</option>
+                    <option value="card">Kart</option>
+                    <option value="key">Anahtar</option>
+                    <option value="radio">Telsiz</option>
+                    <option value="laptop">Dizüstü</option>
+                    <option value="phone">Telefon</option>
+                    <option value="tablet">Tablet</option>
+                    <option value="tool">Alet</option>
+                    <option value="vehicle">Araç</option>
+                    <option value="other">Diğer</option>
+                  </select>
+                </div>
+                <div><Label>Zimmet Tarihi</Label><Input type="date" value={eqDialog.form.assigned_at}
+                  onChange={(e) => setEqDialog({ ...eqDialog, form: { ...eqDialog.form, assigned_at: e.target.value } })} /></div>
+              </div>
+              <div><Label>Eşya Adı *</Label><Input required value={eqDialog.form.item_label}
+                onChange={(e) => setEqDialog({ ...eqDialog, form: { ...eqDialog.form, item_label: e.target.value } })} placeholder="Örn. Resepsiyon üniforması XL" /></div>
+              <div><Label>Seri No</Label><Input value={eqDialog.form.serial_no}
+                onChange={(e) => setEqDialog({ ...eqDialog, form: { ...eqDialog.form, serial_no: e.target.value } })} /></div>
+              <div><Label>Not</Label><Textarea rows={2} value={eqDialog.form.notes}
+                onChange={(e) => setEqDialog({ ...eqDialog, form: { ...eqDialog.form, notes: e.target.value } })} /></div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEqDialog({ open: false, form: null })}>Vazgeç</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Kaydediliyor...' : 'Ata'}</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Task #265: Uyarı düş */}
+      <Dialog open={warnDialog.open} onOpenChange={(o) => !o && setWarnDialog({ open: false, form: null })}>
+        <DialogContent>
+          <DialogHeader><DialogTitle className="text-amber-700">Disiplin Uyarısı</DialogTitle></DialogHeader>
+          {warnDialog.form && (
+            <form onSubmit={submitWarn} className="grid gap-3">
+              <div className="rounded bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                İş K. m.25/II referansıyla disiplin sicili kaydı oluşturulur. Personel "Onayla" diyene kadar tebliğ edilmemiş sayılır.
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <Label>Tür *</Label>
+                  <select value={warnDialog.form.warning_type}
+                    onChange={(e) => setWarnDialog({ ...warnDialog, form: { ...warnDialog.form, warning_type: e.target.value } })}
+                    className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                    <option value="verbal">Sözlü</option>
+                    <option value="written">Yazılı</option>
+                    <option value="final">Son ihtar</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>Şiddet</Label>
+                  <select value={warnDialog.form.severity}
+                    onChange={(e) => setWarnDialog({ ...warnDialog, form: { ...warnDialog.form, severity: e.target.value } })}
+                    className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                    <option value="low">Düşük</option>
+                    <option value="medium">Orta</option>
+                    <option value="high">Yüksek</option>
+                  </select>
+                </div>
+                <div><Label>Tarih</Label><Input type="date" value={warnDialog.form.issued_at}
+                  onChange={(e) => setWarnDialog({ ...warnDialog, form: { ...warnDialog.form, issued_at: e.target.value } })} /></div>
+              </div>
+              <div><Label>Sebep *</Label><Textarea required rows={4} value={warnDialog.form.reason}
+                onChange={(e) => setWarnDialog({ ...warnDialog, form: { ...warnDialog.form, reason: e.target.value } })}
+                placeholder="Tekrar eden geç kalma, görev ihmali, müşteri şikayeti vb." /></div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setWarnDialog({ open: false, form: null })}>Vazgeç</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Kaydediliyor...' : 'Uyarı Kaydet'}</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Task #265: Eğitim ekle */}
+      <Dialog open={trainDialog.open} onOpenChange={(o) => !o && setTrainDialog({ open: false, form: null })}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Eğitim Ekle</DialogTitle></DialogHeader>
+          {trainDialog.form && (
+            <form onSubmit={submitTrain} className="grid gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>Tür *</Label>
+                  <select value={trainDialog.form.training_type}
+                    onChange={(e) => setTrainDialog({ ...trainDialog, form: { ...trainDialog.form, training_type: e.target.value } })}
+                    className="w-full rounded-md border border-input px-3 py-2 text-sm">
+                    <option value="hygiene">Hijyen</option>
+                    <option value="safety">İş Güvenliği</option>
+                    <option value="orientation">Oryantasyon</option>
+                    <option value="technical">Teknik</option>
+                    <option value="language">Dil</option>
+                    <option value="leadership">Liderlik</option>
+                    <option value="compliance">Compliance</option>
+                    <option value="other">Diğer</option>
+                  </select>
+                </div>
+                <div><Label>Veren Kurum</Label><Input value={trainDialog.form.provider}
+                  onChange={(e) => setTrainDialog({ ...trainDialog, form: { ...trainDialog.form, provider: e.target.value } })} /></div>
+              </div>
+              <div><Label>Eğitim Adı *</Label><Input required value={trainDialog.form.title}
+                onChange={(e) => setTrainDialog({ ...trainDialog, form: { ...trainDialog.form, title: e.target.value } })} placeholder="Örn. Yıllık Hijyen Tazeleme" /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>Tamamlanma *</Label><Input required type="date" value={trainDialog.form.completed_at}
+                  onChange={(e) => setTrainDialog({ ...trainDialog, form: { ...trainDialog.form, completed_at: e.target.value } })} /></div>
+                <div><Label>Geçerlilik Bitiş</Label><Input type="date" value={trainDialog.form.valid_until}
+                  onChange={(e) => setTrainDialog({ ...trainDialog, form: { ...trainDialog.form, valid_until: e.target.value } })} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>Saat</Label><Input type="number" min="0" step="0.5" value={trainDialog.form.hours}
+                  onChange={(e) => setTrainDialog({ ...trainDialog, form: { ...trainDialog.form, hours: e.target.value } })} /></div>
+                <div><Label>Skor (0-100)</Label><Input type="number" min="0" max="100" value={trainDialog.form.score}
+                  onChange={(e) => setTrainDialog({ ...trainDialog, form: { ...trainDialog.form, score: e.target.value } })} /></div>
+              </div>
+              <div><Label>Not</Label><Textarea rows={2} value={trainDialog.form.notes}
+                onChange={(e) => setTrainDialog({ ...trainDialog, form: { ...trainDialog.form, notes: e.target.value } })} /></div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setTrainDialog({ open: false, form: null })}>Vazgeç</Button>
                 <Button type="submit" disabled={saving}>{saving ? 'Kaydediliyor...' : 'Ekle'}</Button>
               </DialogFooter>
             </form>

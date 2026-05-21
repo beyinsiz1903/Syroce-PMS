@@ -124,6 +124,13 @@ STRESS_COLLECTIONS = [
     # (`stress_seed=True` + `stress_prefix` tag konvansiyonu).
     "payroll_runs",
     "payroll_revisions",
+    # Task #265 (İK v2 Lifecycle): zimmet/uyarı/eğitim — 3 yeni koleksiyon.
+    # Tüm rowlar `stress_seed=True` + `stress_prefix` tag konvansiyonu ile
+    # unified cleanup loop'a düşer. Backend write yüzeyleri require_op(
+    # "manage_hr"); stress admin super_admin → gate'leri geçer.
+    "staff_equipment",
+    "staff_warnings",
+    "staff_trainings",
     # F8E (2026-05-18): Finance / Cashier / Accounting surface.
     # All rows tagged `stress_seed=True` + `stress_prefix` → unified cleanup
     # loop reaches them. No external service risk: Iyzico is logic-embedded

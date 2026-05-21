@@ -5951,3 +5951,447 @@ async def export_overtime_xlsx(
     resp = _xlsx_stream(wb)
     resp.headers['Content-Disposition'] = f'attachment; filename="mesai_{year}.xlsx"'
     return resp
+
+
+# ============================================================================
+# Task #265 (İK v2 Lifecycle): eksik 3 modül — Zimmet (staff_equipment) +
+# Uyarılar (staff_warnings) + Eğitimler (staff_trainings, sertifikadan ayrı).
+#
+# Doctrine:
+#   - Tüm endpoint'ler tenant-scoped (current_user.tenant_id).
+#   - Write yüzeyleri require_op("manage_hr"); read yüzeyleri
+#     `_authorize_staff_access` (dept-scope + self-service bypass).
+#   - Audit: write işlemleri _audit_event ile (best-effort, mutation bloklamaz).
+#   - Atlas 500-koleksiyon limiti: 3 yeni koleksiyon kabul edildi; alternatif
+#     `_kind` discriminator yerine ayrı koleksiyon tercihi → index plan basit
+#     kalır ve PII/RBAC isolation cleaner.
+# ============================================================================
+
+# ---------- Zimmet (Staff Equipment) ----------
+
+EQUIPMENT_ITEM_TYPES = {
+    'uniform', 'card', 'key', 'radio', 'laptop', 'phone',
+    'tablet', 'tool', 'vehicle', 'other',
+}
+EQUIPMENT_STATUSES = {'assigned', 'returned', 'lost', 'damaged'}
+EQUIPMENT_CONDITIONS = {'good', 'fair', 'poor', 'lost', 'damaged'}
+
+
+class EquipmentAssignPayload(BaseModel):
+    item_type: str = Field(..., max_length=20)
+    item_label: str = Field(..., min_length=1, max_length=200)
+    serial_no: str | None = Field(None, max_length=100)
+    assigned_at: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    notes: str | None = Field(None, max_length=1000)
+
+    @field_validator('item_type')
+    @classmethod
+    def _valid_type(cls, v: str) -> str:
+        if v not in EQUIPMENT_ITEM_TYPES:
+            raise ValueError(f"Geçersiz zimmet tipi. İzinli: {sorted(EQUIPMENT_ITEM_TYPES)}")
+        return v
+
+
+class EquipmentReturnPayload(BaseModel):
+    returned_at: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    condition_on_return: str = Field('good', max_length=20)
+    notes: str | None = Field(None, max_length=1000)
+
+    @field_validator('condition_on_return')
+    @classmethod
+    def _valid_condition(cls, v: str) -> str:
+        if v not in EQUIPMENT_CONDITIONS:
+            raise ValueError(f"Geçersiz iade durumu. İzinli: {sorted(EQUIPMENT_CONDITIONS)}")
+        return v
+
+
+@router.post("/hr/staff/{staff_id}/equipment")
+async def assign_equipment(
+    staff_id: str,
+    payload: EquipmentAssignPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Personele zimmet ata (üniforma/kart/anahtar/telsiz vb)."""
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    now_iso = datetime.now(UTC).isoformat()
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'staff_id': staff_id,
+        'staff_name': staff.get('name'),
+        'item_type': payload.item_type,
+        'item_label': payload.item_label,
+        'serial_no': payload.serial_no,
+        'assigned_at': payload.assigned_at or _today_local().isoformat(),
+        'returned_at': None,
+        'condition_on_return': None,
+        'status': 'assigned',
+        'notes': payload.notes,
+        'assigned_by': getattr(current_user, 'id', None),
+        'created_at': now_iso,
+        'updated_at': now_iso,
+    }
+    await db.staff_equipment.insert_one(item)
+    item.pop('_id', None)
+    await _audit(
+        current_user, action='equipment.assign', entity_type='staff_equipment',
+        entity_id=item['id'],
+        details={'staff_id': staff_id, 'item_type': payload.item_type, 'item_label': payload.item_label},
+    )
+    return {'success': True, 'equipment': item}
+
+
+@router.get("/hr/staff/{staff_id}/equipment")
+async def list_staff_equipment(
+    staff_id: str,
+    status: str | None = Query(None, max_length=20),
+    current_user: User = Depends(get_current_user),
+):
+    """Personelin zimmet listesi — RBAC: dept scope + self bypass."""
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    _authorize_staff_access(staff, current_user)
+    q: dict[str, Any] = {'tenant_id': current_user.tenant_id, 'staff_id': staff_id}
+    if status:
+        if status not in EQUIPMENT_STATUSES:
+            raise HTTPException(status_code=400, detail=f"Geçersiz durum. İzinli: {sorted(EQUIPMENT_STATUSES)}")
+        q['status'] = status
+    items = await db.staff_equipment.find(q, {'_id': 0}).sort('assigned_at', -1).to_list(500)
+    active = sum(1 for it in items if it.get('status') == 'assigned')
+    returned = sum(1 for it in items if it.get('status') == 'returned')
+    lost = sum(1 for it in items if it.get('status') in ('lost', 'damaged'))
+    return {'items': items, 'total': len(items), 'active': active, 'returned': returned, 'lost_or_damaged': lost}
+
+
+@router.post("/hr/equipment/{equipment_id}/return")
+async def return_equipment(
+    equipment_id: str,
+    payload: EquipmentReturnPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Zimmeti iade al — status: assigned → returned (veya lost/damaged)."""
+    eq = await db.staff_equipment.find_one({
+        'tenant_id': current_user.tenant_id, 'id': equipment_id,
+    })
+    if not eq:
+        raise HTTPException(status_code=404, detail="Zimmet kaydı bulunamadı")
+    if eq.get('status') != 'assigned':
+        raise HTTPException(status_code=409, detail=f"Bu zimmet zaten {eq.get('status')} durumunda")
+    cond = payload.condition_on_return
+    new_status = 'lost' if cond == 'lost' else ('damaged' if cond == 'damaged' else 'returned')
+    update = {
+        'status': new_status,
+        'returned_at': payload.returned_at or _today_local().isoformat(),
+        'condition_on_return': cond,
+        'notes': (eq.get('notes') or '') + (f"\n[iade] {payload.notes}" if payload.notes else ''),
+        'returned_by': getattr(current_user, 'id', None),
+        'updated_at': datetime.now(UTC).isoformat(),
+    }
+    await db.staff_equipment.update_one({'tenant_id': current_user.tenant_id, 'id': equipment_id}, {'$set': update})
+    await _audit(
+        current_user, action='equipment.return', entity_type='staff_equipment',
+        entity_id=equipment_id,
+        before={'status': 'assigned'}, after={'status': new_status},
+        details={'condition': cond},
+    )
+    return {'success': True, 'status': new_status}
+
+
+@router.delete("/hr/equipment/{equipment_id}")
+async def delete_equipment(
+    equipment_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Zimmet kaydı sil (yanlış giriş düzeltme)."""
+    res = await db.staff_equipment.delete_one({
+        'tenant_id': current_user.tenant_id, 'id': equipment_id,
+    })
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Zimmet kaydı bulunamadı")
+    await _audit(
+        current_user, action='equipment.delete', entity_type='staff_equipment',
+        entity_id=equipment_id, severity='warning',
+    )
+    return {'success': True}
+
+
+@router.get("/hr/equipment/outstanding")
+async def list_outstanding_equipment(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """Tüm tenant için iade alınmamış zimmet listesi (offboarding kontrolü)."""
+    items = await db.staff_equipment.find({
+        'tenant_id': current_user.tenant_id, 'status': 'assigned',
+    }, {'_id': 0}).sort('assigned_at', -1).to_list(2000)
+    return {'items': items, 'total': len(items)}
+
+
+# ---------- Uyarılar (Staff Warnings) ----------
+
+WARNING_TYPES = {'verbal', 'written', 'final'}
+WARNING_SEVERITIES = {'low', 'medium', 'high'}
+
+
+class WarningPayload(BaseModel):
+    warning_type: str = Field(..., max_length=20)
+    severity: str = Field('medium', max_length=10)
+    reason: str = Field(..., min_length=3, max_length=2000)
+    related_performance_id: str | None = Field(None, max_length=100)
+    issued_at: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+
+    @field_validator('warning_type')
+    @classmethod
+    def _valid_type(cls, v: str) -> str:
+        if v not in WARNING_TYPES:
+            raise ValueError(f"Geçersiz uyarı tipi. İzinli: {sorted(WARNING_TYPES)}")
+        return v
+
+    @field_validator('severity')
+    @classmethod
+    def _valid_severity(cls, v: str) -> str:
+        if v not in WARNING_SEVERITIES:
+            raise ValueError(f"Geçersiz şiddet. İzinli: {sorted(WARNING_SEVERITIES)}")
+        return v
+
+
+@router.post("/hr/staff/{staff_id}/warnings")
+async def add_warning(
+    staff_id: str,
+    payload: WarningPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Personele uyarı düş (sözlü/yazılı/son ihtar — İş K. m.25/II referansı)."""
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    now_iso = datetime.now(UTC).isoformat()
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'staff_id': staff_id,
+        'staff_name': staff.get('name'),
+        'warning_type': payload.warning_type,
+        'severity': payload.severity,
+        'reason': payload.reason,
+        'related_performance_id': payload.related_performance_id,
+        'issued_at': payload.issued_at or _today_local().isoformat(),
+        'issued_by': getattr(current_user, 'id', None),
+        'acknowledged_at': None,
+        'acknowledged_by': None,
+        'created_at': now_iso,
+    }
+    await db.staff_warnings.insert_one(item)
+    item.pop('_id', None)
+    # Audit severity: written/final → warning; verbal → info.
+    audit_sev = 'warning' if payload.warning_type in ('written', 'final') else 'info'
+    await _audit(
+        current_user, action='warning.issue', entity_type='staff_warnings',
+        entity_id=item['id'],
+        details={'staff_id': staff_id, 'warning_type': payload.warning_type, 'severity': payload.severity},
+        severity=audit_sev,
+    )
+    return {'success': True, 'warning': item}
+
+
+@router.get("/hr/staff/{staff_id}/warnings")
+async def list_staff_warnings(
+    staff_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Personel uyarı geçmişi — RBAC: dept scope + self bypass (kendi sicilini görür)."""
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    _authorize_staff_access(staff, current_user)
+    items = await db.staff_warnings.find({
+        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
+    }, {'_id': 0}).sort('issued_at', -1).to_list(500)
+    by_type = {'verbal': 0, 'written': 0, 'final': 0}
+    for it in items:
+        wt = it.get('warning_type')
+        if wt in by_type:
+            by_type[wt] += 1
+    return {'items': items, 'total': len(items), 'by_type': by_type}
+
+
+@router.post("/hr/warnings/{warning_id}/acknowledge")
+async def acknowledge_warning(
+    warning_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Uyarıyı 'okudum' olarak işaretle (personel self-service)."""
+    warn = await db.staff_warnings.find_one({
+        'tenant_id': current_user.tenant_id, 'id': warning_id,
+    })
+    if not warn:
+        raise HTTPException(status_code=404, detail="Uyarı bulunamadı")
+    # Self-service: yalnız uyarı sahibi personel veya manage_hr olan kullanıcı
+    # ack edebilir. Dept-scope view_hr ack'i kapalı — disiplin sicilinin
+    # tebliğ statüsü kritik (İş K. m.25/II tebellüğ kanıtı).
+    staff = await _verify_staff_in_tenant(warn.get('staff_id'), current_user.tenant_id)
+    _authorize_staff_access(staff, current_user, require_manage=True)
+    if warn.get('acknowledged_at'):
+        return {'success': True, 'already_acknowledged': True, 'acknowledged_at': warn['acknowledged_at']}
+    now_iso = datetime.now(UTC).isoformat()
+    await db.staff_warnings.update_one({'tenant_id': current_user.tenant_id, 'id': warning_id}, {'$set': {
+        'acknowledged_at': now_iso,
+        'acknowledged_by': getattr(current_user, 'id', None),
+    }})
+    await _audit(
+        current_user, action='warning.acknowledge', entity_type='staff_warnings',
+        entity_id=warning_id,
+    )
+    return {'success': True, 'acknowledged_at': now_iso}
+
+
+@router.delete("/hr/warnings/{warning_id}")
+async def delete_warning(
+    warning_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Uyarı sil (yanlış kayıt düzeltme — audit warning)."""
+    warn = await db.staff_warnings.find_one({
+        'tenant_id': current_user.tenant_id, 'id': warning_id,
+    })
+    if not warn:
+        raise HTTPException(status_code=404, detail="Uyarı bulunamadı")
+    await db.staff_warnings.delete_one({'tenant_id': current_user.tenant_id, 'id': warning_id})
+    await _audit(
+        current_user, action='warning.delete', entity_type='staff_warnings',
+        entity_id=warning_id, severity='warning',
+        before={'warning_type': warn.get('warning_type'), 'reason': warn.get('reason', '')[:100]},
+    )
+    return {'success': True}
+
+
+# ---------- Eğitimler (Staff Trainings — sertifikadan ayrı) ----------
+#
+# `staff_certifications` kalıcı belge (diploma, lisans, MEB sertifikası).
+# `staff_trainings` operasyonel zorunlu eğitim takvimi (hijyen tazeleme,
+# iş güvenliği yıllık, oryantasyon vb). Ayrı koleksiyon — compliance
+# raporlama (`/hr/trainings/expiring`) sertifika raporundan bağımsız çıkar.
+
+TRAINING_TYPES = {
+    'hygiene', 'safety', 'orientation', 'technical',
+    'language', 'leadership', 'compliance', 'other',
+}
+
+
+class TrainingPayload(BaseModel):
+    training_type: str = Field(..., max_length=20)
+    title: str = Field(..., min_length=1, max_length=200)
+    provider: str | None = Field(None, max_length=200)
+    completed_at: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
+    valid_until: str | None = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$')
+    hours: float | None = Field(None, ge=0, le=1000)
+    score: float | None = Field(None, ge=0, le=100)
+    notes: str | None = Field(None, max_length=1000)
+
+    @field_validator('training_type')
+    @classmethod
+    def _valid_type(cls, v: str) -> str:
+        if v not in TRAINING_TYPES:
+            raise ValueError(f"Geçersiz eğitim tipi. İzinli: {sorted(TRAINING_TYPES)}")
+        return v
+
+
+@router.post("/hr/staff/{staff_id}/trainings")
+async def add_training(
+    staff_id: str,
+    payload: TrainingPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Personel eğitim kaydı (hijyen, iş güvenliği, oryantasyon vb)."""
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    if payload.valid_until and payload.valid_until < payload.completed_at:
+        raise HTTPException(status_code=400, detail="Geçerlilik tarihi tamamlanma tarihinden önce olamaz")
+    item = {
+        'id': str(uuid.uuid4()),
+        'tenant_id': current_user.tenant_id,
+        'staff_id': staff_id,
+        'staff_name': staff.get('name'),
+        'training_type': payload.training_type,
+        'title': payload.title,
+        'provider': payload.provider,
+        'completed_at': payload.completed_at,
+        'valid_until': payload.valid_until,
+        'hours': payload.hours,
+        'score': payload.score,
+        'notes': payload.notes,
+        'recorded_by': getattr(current_user, 'id', None),
+        'created_at': datetime.now(UTC).isoformat(),
+    }
+    await db.staff_trainings.insert_one(item)
+    item.pop('_id', None)
+    await _audit(
+        current_user, action='training.add', entity_type='staff_trainings',
+        entity_id=item['id'],
+        details={'staff_id': staff_id, 'training_type': payload.training_type, 'title': payload.title},
+    )
+    return {'success': True, 'training': item}
+
+
+@router.get("/hr/staff/{staff_id}/trainings")
+async def list_staff_trainings(
+    staff_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Personel eğitim geçmişi + bitmek üzere olan eğitim sayısı."""
+    staff = await _verify_staff_in_tenant(staff_id, current_user.tenant_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Personel bulunamadı")
+    _authorize_staff_access(staff, current_user)
+    items = await db.staff_trainings.find({
+        'tenant_id': current_user.tenant_id, 'staff_id': staff_id,
+    }, {'_id': 0}).sort('completed_at', -1).to_list(500)
+    today = _today_local().isoformat()
+    expired = sum(1 for it in items if it.get('valid_until') and it['valid_until'] < today)
+    valid = sum(1 for it in items if not it.get('valid_until') or it['valid_until'] >= today)
+    return {'items': items, 'total': len(items), 'valid': valid, 'expired': expired}
+
+
+@router.delete("/hr/trainings/{training_id}")
+async def delete_training(
+    training_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    """Eğitim kaydı sil."""
+    res = await db.staff_trainings.delete_one({
+        'tenant_id': current_user.tenant_id, 'id': training_id,
+    })
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Eğitim kaydı bulunamadı")
+    await _audit(
+        current_user, action='training.delete', entity_type='staff_trainings',
+        entity_id=training_id, severity='warning',
+    )
+    return {'success': True}
+
+
+@router.get("/hr/trainings/expiring")
+async def list_expiring_trainings(
+    days_ahead: int = Query(60, ge=1, le=365),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    """N gün içinde tazelenmesi gereken eğitimler (compliance dashboard)."""
+    today = _today_local()
+    end = (today + timedelta(days=days_ahead)).isoformat()
+    items = await db.staff_trainings.find({
+        'tenant_id': current_user.tenant_id,
+        'valid_until': {'$gte': today.isoformat(), '$lte': end},
+    }, {'_id': 0}).sort('valid_until', 1).to_list(1000)
+    return {'items': items, 'total': len(items), 'window_days': days_ahead}

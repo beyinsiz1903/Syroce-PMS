@@ -159,6 +159,32 @@ async def phase_d_perf_and_marketplace(app):
             [("tenant_id", 1), ("parent_run_id", 1), ("created_at", -1)],
             name="idx_payroll_revisions_parent_created",
         )
+        # Task #265 (İK v2 Lifecycle): 3 yeni koleksiyon hot path index'leri.
+        # staff_equipment: tenant+staff+status (assigned filter), tenant+status
+        # (outstanding sweep).
+        await db.staff_equipment.create_index(
+            [("tenant_id", 1), ("staff_id", 1), ("status", 1)],
+            name="idx_staff_equipment_staff_status",
+        )
+        await db.staff_equipment.create_index(
+            [("tenant_id", 1), ("status", 1), ("assigned_at", -1)],
+            name="idx_staff_equipment_status_date",
+        )
+        # staff_warnings: tenant+staff+issued_at desc (sicil listesi).
+        await db.staff_warnings.create_index(
+            [("tenant_id", 1), ("staff_id", 1), ("issued_at", -1)],
+            name="idx_staff_warnings_staff_issued",
+        )
+        # staff_trainings: tenant+staff+completed_at (sicil), tenant+valid_until
+        # (expiring sweep).
+        await db.staff_trainings.create_index(
+            [("tenant_id", 1), ("staff_id", 1), ("completed_at", -1)],
+            name="idx_staff_trainings_staff_completed",
+        )
+        await db.staff_trainings.create_index(
+            [("tenant_id", 1), ("valid_until", 1)],
+            name="idx_staff_trainings_expiring",
+        )
         logger.info("✅ Tenant uniqueness indexes ensured (hotel_id, username, performance_reviews, shift_schedule_locks, hr_coverage_rules)")
     except Exception as e:
         logger.warning(f"Tenant uniqueness index error: {e}")
