@@ -150,7 +150,6 @@ export default function AdminHub({ user, tenant, onLogout }) {
                           <p className="text-sm font-medium text-gray-900 truncate">
                             {t(labelKey, labelFallback)}
                           </p>
-                          <p className="text-xs text-gray-500 truncate">{to}</p>
                         </div>
                         <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-slate-600" />
                       </CardContent>
