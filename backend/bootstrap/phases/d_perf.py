@@ -83,7 +83,18 @@ async def phase_d_perf_and_marketplace(app):
             partialFilterExpression={"username": {"$type": "string"}},
             name="tenant_username_unique",
         )
-        logger.info("✅ Tenant uniqueness indexes ensured (hotel_id, username)")
+        # Task #254 (F8D-v2 § 32 P1): DB-level partial unique index for
+        # performance reviews. Application-level find_one+insert_one is
+        # not atomic under concurrent requests; this index closes the race
+        # window. Partial expression excludes empty/missing period (ad-hoc
+        # reviews) so the legacy NULL/empty rows do not collide.
+        await db.performance_reviews.create_index(
+            [("tenant_id", 1), ("staff_id", 1), ("period", 1)],
+            unique=True,
+            partialFilterExpression={"period": {"$type": "string"}},
+            name="uniq_tenant_staff_period",
+        )
+        logger.info("✅ Tenant uniqueness indexes ensured (hotel_id, username, performance_reviews)")
     except Exception as e:
         logger.warning(f"Tenant uniqueness index error: {e}")
 

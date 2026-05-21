@@ -732,6 +732,25 @@ async def create_performance_review(
     staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
+
+    # Task #254 (F8D-v2 § 32 P1): terminal-state guard — bir personel için
+    # aynı `period` (örn. "2027-Q4") tekrar review oluşturulmamalı. Olmayan
+    # uniqueness gate olmadan stres testlerinde duplicate kayıt oluşuyor ve
+    # raporlarda çift sayım, kazanç hesabında çift faktör riskine yol açıyor.
+    # `period` boş ise ad-hoc review sayılır (rapor dönemi yok) → guard
+    # uygulanmaz. Aksi halde (tenant_id, staff_id, period) tekil olmalı.
+    if payload.period:
+        existing = await db.performance_reviews.find_one({
+            'tenant_id': current_user.tenant_id,
+            'staff_id': payload.staff_id,
+            'period': payload.period,
+        }, {'_id': 0, 'id': 1})
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Bu personel için {payload.period} dönemine ait performans değerlendirmesi zaten mevcut (id={existing.get('id')}).",
+            )
+
     review = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -1659,6 +1678,60 @@ async def create_shift_v2(
     staff = await _verify_staff_in_tenant(payload.staff_id, current_user.tenant_id)
     if not staff:
         raise HTTPException(status_code=404, detail="Personel bulunamadı")
+
+    # Task #254 (F8D-v2 § 35 architect-iter): overnight-shift contract.
+    # Mevcut overlap mantığı tek-gün lex "HH:MM" varsayar; gece vardiyası
+    # (örn. 22:00-06:00) burada false-negative üretirdi. Şimdilik tek-gün
+    # kontratı zorunlu tutuyoruz (end > start). Overnight desteklenmek
+    # istenirse iki ardışık shift_date olarak kayıt edilmelidir
+    # (22:00-23:59 + 00:00-06:00). Aksi halde 422 + Türkçe açıklama.
+    # Sınır eşitliği (start == end) sıfır-uzunluk vardiya → reddedilir.
+    if payload.end_time <= payload.start_time:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Vardiya bitiş saati ({payload.end_time}) başlangıç saatinden "
+                f"({payload.start_time}) sonra olmalı. Gece vardiyaları iki "
+                f"ardışık tarihe bölünerek kaydedilmelidir."
+            ),
+        )
+
+    # Task #254 (F8D-v2 § 35 P1): overlap guard — aynı staff + aynı tarihte
+    # zaman aralığı çakışan ikinci shift kabul edilmemeli. Önceki guard
+    # eksikti; stres testlerinde S1=09:00-13:00 + S2=10:00-14:00 her ikisi de
+    # kayıt oluyordu (double-booking riski). MongoDB'de saatler "HH:MM"
+    # string olarak tutuluyor (ShiftPayload validator format'ı) → ISO-style
+    # ASCII sıralama doğru çalışıyor (lexicographic compare == time compare).
+    # Bu nedenle string karşılaştırma yeterli; ek datetime parse maliyeti yok.
+    #
+    # Çakışma kuralı (yarı-açık aralık [start, end)):
+    #     overlap = (new.start < existing.end) AND (new.end > existing.start)
+    #
+    # Sınır eşitliği overlap DEĞİL (09:00-13:00 + 13:00-17:00 OK).
+    # Aynı status='scheduled'/'active' shift'ler kapsama girer; silinmiş /
+    # cancelled / completed shift'ler bloklanmaz.
+    new_start = payload.start_time
+    new_end = payload.end_time
+    overlap_existing = await db.shift_schedules.find_one({
+        'tenant_id': current_user.tenant_id,
+        'staff_id': payload.staff_id,
+        'shift_date': payload.shift_date,
+        'status': {'$nin': ['cancelled', 'completed', 'deleted']},
+        # Yarı-açık aralık çakışması: new.start < ex.end AND new.end > ex.start
+        'start_time': {'$lt': new_end},
+        'end_time': {'$gt': new_start},
+    }, {'_id': 0, 'id': 1, 'start_time': 1, 'end_time': 1})
+    if overlap_existing:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Bu personelin {payload.shift_date} tarihinde "
+                f"{overlap_existing.get('start_time')}-{overlap_existing.get('end_time')} "
+                f"saatleri arası başka bir vardiyası var (id={overlap_existing.get('id')}). "
+                f"Çakışan vardiya oluşturulamaz."
+            ),
+        )
+
     item = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,

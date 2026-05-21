@@ -432,12 +432,27 @@ try:
     from graphql_api.schema import schema
 
     async def _graphql_context_getter(
-        _current_user=Depends(get_current_user),
+        current_user=Depends(get_current_user),
     ) -> dict:
         # get_current_user enforces: access-token-only (rejects refresh tokens),
         # JTI revocation, tokens_invalid_before, user existence, and tenant
         # consistency. Any failure raises HTTP 401 before a resolver runs.
-        return {"db": db, "cache": None, "materialized_views": None}
+        #
+        # Task #254 (F8M § 40 P1): pass the authenticated user into the GraphQL
+        # context so every resolver can derive `tenant_id` explicitly instead
+        # of trusting the TenantContextMiddleware → contextvars chain. This is
+        # defense-in-depth: if middleware fails to set the contextvar (JWT
+        # decode mismatch, secret rotation, ASGI hop) the resolver's explicit
+        # filter still enforces tenant isolation. Without this, the proxy
+        # returns an UNSCOPED collection in soft mode (STRICT_TENANT_MODE=false)
+        # and the resolver leaks cross-tenant data.
+        return {
+            "db": db,
+            "cache": None,
+            "materialized_views": None,
+            "current_user": current_user,
+            "tenant_id": getattr(current_user, "tenant_id", None),
+        }
 
     graphql_app = GraphQLRouter(schema, context_getter=_graphql_context_getter)
     app.include_router(graphql_app, prefix="/api/graphql", tags=["graphql"])

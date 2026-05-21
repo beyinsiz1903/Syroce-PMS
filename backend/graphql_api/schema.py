@@ -122,9 +122,18 @@ class Booking:
 
     @strawberry.field
     async def guest(self, info: strawberry.Info) -> Guest | None:
-        """Lazy load guest data"""
+        """Lazy load guest data.
+
+        Task #254 (F8M § 40 P1): explicit tenant_id filter — even if the
+        TenantAwareDBProxy context isn't set, the nested resolver MUST NOT
+        load a guest from another tenant. Filter is additive; UNKNOWN tenant
+        -> None.
+        """
         db = info.context["db"]
-        guest_doc = await db.guests.find_one({"_id": self.guest_id})
+        tenant_id = info.context.get("tenant_id")
+        if not tenant_id:
+            return None
+        guest_doc = await db.guests.find_one({"_id": self.guest_id, "tenant_id": tenant_id})
         if not guest_doc or not isinstance(guest_doc, dict):
             return None
         return Guest(
@@ -138,9 +147,15 @@ class Booking:
 
     @strawberry.field
     async def room(self, info: strawberry.Info) -> Room | None:
-        """Lazy load room data"""
+        """Lazy load room data.
+
+        Task #254: explicit tenant_id filter (see Booking.guest docstring).
+        """
         db = info.context["db"]
-        room_doc = await db.rooms.find_one({"_id": self.room_id})
+        tenant_id = info.context.get("tenant_id")
+        if not tenant_id:
+            return None
+        room_doc = await db.rooms.find_one({"_id": self.room_id, "tenant_id": tenant_id})
         if not room_doc or not isinstance(room_doc, dict):
             return None
         return Room(
@@ -303,8 +318,14 @@ class Query:
         ``None`` instead of failing the whole query.
         """
         db = info.context["db"]
+        tenant_id = info.context.get("tenant_id")
+        # Task #254 (F8M § 40 P1): explicit tenant_id filter. Without
+        # tenant context the resolver MUST return empty rather than
+        # potentially fall back to an unscoped read.
+        if not tenant_id:
+            return []
 
-        query = {}
+        query: dict = {"tenant_id": tenant_id}
         if filter:
             if filter.status:
                 query["status"] = filter.status.value
@@ -372,8 +393,16 @@ class Query:
         """
         db = info.context["db"]
         cache = info.context.get("cache")
+        tenant_id = info.context.get("tenant_id")
+        # Task #254 (F8M § 40 P1): explicit tenant_id filter. Without
+        # tenant context the resolver MUST return empty.
+        if not tenant_id:
+            return []
 
-        cache_key = f"rooms:{filter}" if filter else "rooms:all"
+        # Task #254: cache key MUST be tenant-scoped, otherwise the first
+        # tenant to populate the cache leaks rooms to every subsequent
+        # tenant that queries with the same filter shape.
+        cache_key = f"rooms:{tenant_id}:{filter}" if filter else f"rooms:{tenant_id}:all"
         cached = None
         if cache is not None:
             try:
@@ -399,7 +428,8 @@ class Query:
                 ))
             return out
 
-        query = {}
+        # Task #254 (F8M § 40 P1): explicit tenant_id filter.
+        query: dict = {"tenant_id": tenant_id}
         if filter:
             if filter.status:
                 query["status"] = filter.status.value
