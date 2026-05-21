@@ -2,6 +2,7 @@
 Production Readiness Validator — Comprehensive system health check
 that aggregates all subsystem statuses into READY / DEGRADED / NOT_READY.
 """
+import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -22,240 +23,243 @@ class ReadinessValidator:
     def db(self):
         return self._db
 
-    async def validate(self) -> dict[str, Any]:
-        """Run all subsystem checks and produce readiness verdict."""
-        checks = {}
-        scores = []
+    # ── Subsystem checks ────────────────────────────────────────
+    # Her check (key, check_dict, score) tuple döner. İstisnalar
+    # asyncio.gather(return_exceptions=True) ile yakalanır ve
+    # validate() içinde "error" entry'sine düşürülür.
+    # Senkron alt sistemler asyncio.to_thread ile event loop'u
+    # bloklamadan paralel çalışır.
 
-        # 1. Redis connectivity
-        try:
-            from infra.redis_cluster import redis_cluster
-            redis_health = await redis_cluster.health_check()
-            redis_connected = redis_cluster.connected
-            checks["redis"] = {
-                "status": "healthy" if redis_connected else "disconnected",
-                "mode": redis_cluster.mode,
-                "connected": redis_connected,
-                "health": redis_health,
-            }
-            scores.append(1.0 if redis_connected else 0.3)
-        except Exception as e:
-            checks["redis"] = {"status": "error", "error": str(e)}
-            scores.append(0.0)
+    async def _check_redis(self):
+        from infra.redis_cluster import redis_cluster
+        redis_health = await redis_cluster.health_check()
+        redis_connected = redis_cluster.connected
+        return ("redis", {
+            "status": "healthy" if redis_connected else "disconnected",
+            "mode": redis_cluster.mode,
+            "connected": redis_connected,
+            "health": redis_health,
+        }, 1.0 if redis_connected else 0.3)
 
-        # 2. MongoDB cluster health
-        try:
-            from core.database import db as mongo_db
-            from infra.mongo_production import mongo_validator
-            if mongo_validator._db is None:
-                mongo_validator.set_db(mongo_db)
-            pool = await mongo_validator.get_connection_pool_info()
-            checks["mongodb"] = {
-                "status": pool.get("status", "unknown"),
-                "connections": pool.get("current_connections", 0),
-                "version": pool.get("mongo_version", "unknown"),
-            }
-            scores.append(1.0 if pool.get("status") == "connected" else 0.0)
-        except Exception as e:
-            checks["mongodb"] = {"status": "error", "error": str(e)}
-            scores.append(0.0)
+    async def _check_mongodb(self):
+        from core.database import db as mongo_db
+        from infra.mongo_production import mongo_validator
+        if mongo_validator._db is None:
+            mongo_validator.set_db(mongo_db)
+        pool = await mongo_validator.get_connection_pool_info()
+        return ("mongodb", {
+            "status": pool.get("status", "unknown"),
+            "connections": pool.get("current_connections", 0),
+            "version": pool.get("mongo_version", "unknown"),
+        }, 1.0 if pool.get("status") == "connected" else 0.0)
 
-        # 3. Worker availability
-        try:
-            from infra.worker_queue import worker_queue_manager
-            worker_summary = worker_queue_manager.get_worker_summary()
-            queue_count = len(worker_summary.get("queues", []))
-            checks["workers"] = {
-                "status": "active" if queue_count > 0 else "inactive",
-                "total_queues": queue_count,
-                "summary": worker_summary,
-            }
-            scores.append(1.0 if queue_count > 0 else 0.5)
-        except Exception as e:
-            checks["workers"] = {"status": "error", "error": str(e)}
-            scores.append(0.0)
+    async def _check_workers(self):
+        from infra.worker_queue import worker_queue_manager
+        worker_summary = await asyncio.to_thread(worker_queue_manager.get_worker_summary)
+        queue_count = len(worker_summary.get("queues", []))
+        return ("workers", {
+            "status": "active" if queue_count > 0 else "inactive",
+            "total_queues": queue_count,
+            "summary": worker_summary,
+        }, 1.0 if queue_count > 0 else 0.5)
 
-        # 4. Provider credentials
-        try:
-            from infra.provider_activation import provider_manager
-            provider_status = provider_manager.get_all_provider_status()
-            active = provider_status.get("active_providers", 0)
-            total = provider_status.get("total_providers", 3)
-            checks["providers"] = {
-                "status": "configured" if active > 0 else "not_configured",
-                "active": active,
-                "total": total,
-            }
-            scores.append(min(1.0, active / max(total, 1)))
-        except Exception as e:
-            checks["providers"] = {"status": "error", "error": str(e)}
-            scores.append(0.0)
+    async def _check_providers(self):
+        from infra.provider_activation import provider_manager
+        provider_status = await asyncio.to_thread(provider_manager.get_all_provider_status)
+        active = provider_status.get("active_providers", 0)
+        total = provider_status.get("total_providers", 3)
+        return ("providers", {
+            "status": "configured" if active > 0 else "not_configured",
+            "active": active,
+            "total": total,
+        }, min(1.0, active / max(total, 1)))
 
-        # 5. Backup readiness (Atlas-aware — see infra/atlas_backup_check.py).
-        # When the cluster is on MongoDB Atlas M10+, continuous cloud backup
-        # + PITR are managed by Atlas itself; the local backup_manager mongodump
-        # path becomes a secondary defense layer. URI detection avoids any
-        # network call here — the Atlas Admin API verification (when keys
-        # are configured) lives in backend/scripts/verify_atlas_backup.py.
-        try:
-            from infra.atlas_backup_check import resolve_backup_check
-            from infra.backup_manager import backup_manager
+    async def _check_backup(self):
+        # Atlas-aware — see infra/atlas_backup_check.py. URI detection avoids
+        # any network call here. Sync internals → to_thread.
+        from infra.atlas_backup_check import resolve_backup_check
+        from infra.backup_manager import backup_manager
+
+        def _run():
             backup_status = backup_manager.get_status()
-            backup_check, backup_score = resolve_backup_check(backup_status)
-            checks["backup"] = backup_check
-            scores.append(backup_score)
-        except Exception as e:
-            checks["backup"] = {"status": "error", "error": str(e)}
-            scores.append(0.0)
+            return resolve_backup_check(backup_status)
 
-        # 6. Observability export
-        try:
-            from infra.cloud_observability import otel_tracer, sentry_integration
-            otel_status = otel_tracer.get_status()
-            sentry_status = sentry_integration.get_status()
-            otel_active = otel_status.get("active", False)
-            sentry_active = sentry_status.get("active", False)
-            checks["observability"] = {
-                "status": "active" if (otel_active or sentry_active) else "inactive",
-                "otel_active": otel_active,
-                "sentry_active": sentry_active,
-            }
-            scores.append(1.0 if (otel_active and sentry_active) else 0.5 if (otel_active or sentry_active) else 0.2)
-        except Exception as e:
-            checks["observability"] = {"status": "error", "error": str(e)}
-            scores.append(0.0)
+        backup_check, backup_score = await asyncio.to_thread(_run)
+        return ("backup", backup_check, backup_score)
 
-        # 7. Alert engine health
-        try:
-            from modules.observability.alerting_engine import alerting_engine
-            alert_info = alerting_engine.get_summary() if hasattr(alerting_engine, "get_summary") else {"status": "available"}
-            checks["alerting"] = {"status": "active", "details": alert_info}
-            scores.append(1.0)
-        except Exception as e:
-            checks["alerting"] = {"status": "error", "error": str(e)}
-            scores.append(0.3)
+    async def _check_observability(self):
+        from infra.cloud_observability import otel_tracer, sentry_integration
+        otel_status = await asyncio.to_thread(otel_tracer.get_status)
+        sentry_status = await asyncio.to_thread(sentry_integration.get_status)
+        otel_active = otel_status.get("active", False)
+        sentry_active = sentry_status.get("active", False)
+        return ("observability", {
+            "status": "active" if (otel_active or sentry_active) else "inactive",
+            "otel_active": otel_active,
+            "sentry_active": sentry_active,
+        }, 1.0 if (otel_active and sentry_active) else 0.5 if (otel_active or sentry_active) else 0.2)
 
-        # 8. Environment configuration
-        try:
-            from infra.production_config import production_config
-            startup = production_config.startup_check()
-            checks["configuration"] = {
-                "status": startup.get("status", "unknown"),
-                "missing_critical": startup.get("missing_critical", []),
-            }
-            scores.append(1.0 if startup.get("status") == "pass" else 0.0)
-        except Exception as e:
-            checks["configuration"] = {"status": "error", "error": str(e)}
-            scores.append(0.0)
+    async def _check_alerting(self):
+        from modules.observability.alerting_engine import alerting_engine
+        alert_info = await asyncio.to_thread(
+            alerting_engine.get_summary
+        ) if hasattr(alerting_engine, "get_summary") else {"status": "available"}
+        return ("alerting", {"status": "active", "details": alert_info}, 1.0)
 
-        # 9. Exely webhook IP-allowlist (Pilot Readiness hard-blocker #1).
-        # We re-use backend/scripts/verify_exely_whitelist.py as the single
-        # source of truth so CLI, readiness API, and startup guardrail all
-        # reach identical verdicts. The JSON exposed here is intentionally
-        # IP-free: only verdict + counts. Raw IP/token values must NEVER
-        # leave this process via readiness output (Sentry/CI/log sinks).
-        try:
-            import os as _os
+    async def _check_configuration(self):
+        from infra.production_config import production_config
+        startup = await asyncio.to_thread(production_config.startup_check)
+        return ("configuration", {
+            "status": startup.get("status", "unknown"),
+            "missing_critical": startup.get("missing_critical", []),
+        }, 1.0 if startup.get("status") == "pass" else 0.0)
 
-            from scripts.verify_exely_whitelist import verify as _verify_exely
-            _env_label = (
+    async def _check_exely_whitelist(self):
+        # Re-uses backend/scripts/verify_exely_whitelist.py as single source
+        # of truth so CLI, readiness API, and startup guardrail all reach
+        # identical verdicts. JSON exposed is IP-free: verdict + counts only.
+        import os as _os
+
+        from scripts.verify_exely_whitelist import verify as _verify_exely
+
+        def _run():
+            env_label = (
                 _os.environ.get("ENVIRONMENT")
                 or _os.environ.get("APP_ENV")
                 or "development"
             )
-            _findings = _verify_exely(
-                dict(_os.environ), environment=_env_label, expect_ips=[]
+            findings = _verify_exely(
+                dict(_os.environ), environment=env_label, expect_ips=[]
             )
-            _verdict = _findings.verdict
-            _is_prod = _env_label.strip().lower() in ("production", "prod", "live")
-            _configured_count = len(
+            verdict = findings.verdict
+            is_prod = env_label.strip().lower() in ("production", "prod", "live")
+            configured_count = len(
                 [t for t in (_os.environ.get("EXELY_IP_WHITELIST") or "").split(",") if t.strip()]
             )
-            # NOTE: do NOT attach blocker/warning message strings — they
-            # may include redacted IP previews, but readiness JSON should
-            # stay metadata-only. Operators run the CLI for details.
-            if _verdict == "FAIL":
-                _status = "blocked" if _is_prod else "misconfigured"
-            elif _verdict == "REVIEW":
-                _status = "review"
+            if verdict == "FAIL":
+                status = "blocked" if is_prod else "misconfigured"
+            elif verdict == "REVIEW":
+                status = "review"
             else:
-                _status = "ok"
-            checks["exely_whitelist"] = {
-                "status": _status,
-                "verdict": _verdict,
-                "environment": _env_label,
-                "blocker_count": len(_findings.blockers),
-                "warning_count": len(_findings.warnings),
-                "configured_count": _configured_count,
-            }
-            # Production scoring: FAIL is a hard zero (NOT_READY contributor),
-            # REVIEW partially degrades, PASS is full credit. Non-prod missing
-            # whitelist is informational only (0.7) — webhook is offline but
-            # the rest of the PMS is healthy and the operator is staging.
-            if _verdict == "FAIL" and _is_prod:
-                scores.append(0.0)
-            elif _verdict == "FAIL":
-                scores.append(0.5)
-            elif _verdict == "REVIEW":
-                scores.append(0.7)
+                status = "ok"
+            # Production scoring: FAIL hard zero in prod; REVIEW partial.
+            if verdict == "FAIL" and is_prod:
+                score = 0.0
+            elif verdict == "FAIL":
+                score = 0.5
+            elif verdict == "REVIEW":
+                score = 0.7
             else:
-                scores.append(1.0)
-        except Exception as e:
-            # Fail-safe: never let the check itself crash readiness.
-            # Log error type only, never IP/env contents.
-            checks["exely_whitelist"] = {
-                "status": "error",
-                "error_type": type(e).__name__,
-            }
-            scores.append(0.0)
+                score = 1.0
+            return ({
+                "status": status,
+                "verdict": verdict,
+                "environment": env_label,
+                "blocker_count": len(findings.blockers),
+                "warning_count": len(findings.warnings),
+                "configured_count": configured_count,
+            }, score)
 
-        # 10. CM outbox queue health — backlog + failed + age signals.
-        # Reuses backend/infra/cm_observability_check.py so the readiness
-        # API, the cron-driven alert script, and ad-hoc CLI all reach
-        # identical verdicts. NEVER includes tenant_ids or event payloads.
-        try:
-            from core.database import db as mongo_db
-            from infra.cm_observability_check import get_outbox_status
-            outbox = await get_outbox_status(mongo_db)
-            checks["cm_outbox"] = {
-                "status": outbox.get("status", "unknown"),
-                "backlog": outbox.get("backlog", 0),
-                "failed": outbox.get("failed", 0),
-                "oldest_seconds": outbox.get("oldest_seconds"),
-                "last_processed_seconds": outbox.get("last_processed_seconds"),
-                "reasons": outbox.get("reasons", []),
-                "thresholds": outbox.get("thresholds", {}),
-            }
-            scores.append(outbox.get("score", 0.5))
-        except Exception as e:
-            checks["cm_outbox"] = {
-                "status": "error",
-                "error_type": type(e).__name__,
-            }
-            scores.append(0.5)
+        check, score = await asyncio.to_thread(_run)
+        return ("exely_whitelist", check, score)
 
-        # 11. CM provider circuit breakers — count by state, no per-
-        # connection leakage. RBAC drill-down at
+    async def _check_cm_outbox(self):
+        # Reuses backend/infra/cm_observability_check.py so readiness API,
+        # cron alert script, and CLI all reach identical verdicts.
+        # NEVER includes tenant_ids or event payloads.
+        from core.database import db as mongo_db
+        from infra.cm_observability_check import get_outbox_status
+        outbox = await get_outbox_status(mongo_db)
+        return ("cm_outbox", {
+            "status": outbox.get("status", "unknown"),
+            "backlog": outbox.get("backlog", 0),
+            "failed": outbox.get("failed", 0),
+            "oldest_seconds": outbox.get("oldest_seconds"),
+            "last_processed_seconds": outbox.get("last_processed_seconds"),
+            "reasons": outbox.get("reasons", []),
+            "thresholds": outbox.get("thresholds", {}),
+        }, outbox.get("score", 0.5))
+
+    async def _check_cm_circuit_breakers(self):
+        # Count by state, no per-connection leakage. RBAC drill-down at
         # GET /api/channel-manager/unified-rate-manager/circuit-breakers.
-        try:
-            from infra.cm_observability_check import get_circuit_breaker_status
-            cb = get_circuit_breaker_status()
-            checks["cm_circuit_breakers"] = {
-                "status": cb.get("status", "unknown"),
-                "total": cb.get("total", 0),
-                "open": cb.get("open", 0),
-                "half_open": cb.get("half_open", 0),
-                "closed": cb.get("closed", 0),
-                "reasons": cb.get("reasons", []),
-                "thresholds": cb.get("thresholds", {}),
-            }
-            scores.append(cb.get("score", 0.7))
-        except Exception as e:
-            checks["cm_circuit_breakers"] = {
-                "status": "error",
-                "error_type": type(e).__name__,
-            }
-            scores.append(0.7)
+        from infra.cm_observability_check import get_circuit_breaker_status
+        cb = await asyncio.to_thread(get_circuit_breaker_status)
+        return ("cm_circuit_breakers", {
+            "status": cb.get("status", "unknown"),
+            "total": cb.get("total", 0),
+            "open": cb.get("open", 0),
+            "half_open": cb.get("half_open", 0),
+            "closed": cb.get("closed", 0),
+            "reasons": cb.get("reasons", []),
+            "thresholds": cb.get("thresholds", {}),
+        }, cb.get("score", 0.7))
+
+    # Error fallback per check key — preserves the per-check error
+    # contract from the legacy serial implementation.
+    _ERROR_FALLBACKS = {
+        "redis": ({"status": "error"}, 0.0),
+        "mongodb": ({"status": "error"}, 0.0),
+        "workers": ({"status": "error"}, 0.0),
+        "providers": ({"status": "error"}, 0.0),
+        "backup": ({"status": "error"}, 0.0),
+        "observability": ({"status": "error"}, 0.0),
+        "alerting": ({"status": "error"}, 0.3),
+        "configuration": ({"status": "error"}, 0.0),
+        "exely_whitelist": ({"status": "error"}, 0.0),
+        "cm_outbox": ({"status": "error"}, 0.5),
+        "cm_circuit_breakers": ({"status": "error"}, 0.7),
+    }
+
+    async def validate(self) -> dict[str, Any]:
+        """Run all subsystem checks in parallel and produce readiness verdict.
+
+        Perf: önceden 11 alt sistem sıralı (3 async + 8 sync) çalışıyordu;
+        asyncio.gather ile tüm checkler paralel — async DB/Redis kontrolleri
+        eşzamanlı, sync olanlar asyncio.to_thread ile event loop'u bloklamaz.
+        Toplam latency artık en yavaş kontrole eşit.
+        """
+        # Sıra önemli: legacy JSON'da checks key sırası bu listeydi.
+        # (Dict order korunur — Python 3.7+ insertion-ordered.)
+        check_specs = [
+            ("redis", self._check_redis),
+            ("mongodb", self._check_mongodb),
+            ("workers", self._check_workers),
+            ("providers", self._check_providers),
+            ("backup", self._check_backup),
+            ("observability", self._check_observability),
+            ("alerting", self._check_alerting),
+            ("configuration", self._check_configuration),
+            ("exely_whitelist", self._check_exely_whitelist),
+            ("cm_outbox", self._check_cm_outbox),
+            ("cm_circuit_breakers", self._check_cm_circuit_breakers),
+        ]
+
+        raw = await asyncio.gather(
+            *(fn() for _, fn in check_specs),
+            return_exceptions=True,
+        )
+
+        checks: dict[str, Any] = {}
+        scores: list[float] = []
+        for (key, _fn), result in zip(check_specs, raw):
+            if isinstance(result, BaseException) and not isinstance(result, Exception):
+                # CancelledError / SystemExit / KeyboardInterrupt — yutma.
+                raise result
+            if isinstance(result, Exception):
+                fallback_check, fallback_score = self._ERROR_FALLBACKS[key]
+                checks[key] = {**fallback_check, "error": str(result)} if "error" not in fallback_check else {
+                    **fallback_check, "error_type": type(result).__name__,
+                }
+                # exely_whitelist / cm_* legacy davranışı: error_type yalın,
+                # error mesajı gizli — payload sızdırma riski.
+                if key in ("exely_whitelist", "cm_outbox", "cm_circuit_breakers"):
+                    checks[key] = {"status": "error", "error_type": type(result).__name__}
+                scores.append(fallback_score)
+                continue
+            _, check_dict, score = result
+            checks[key] = check_dict
+            scores.append(score)
 
         # Calculate overall readiness
         avg_score = sum(scores) / len(scores) if scores else 0
