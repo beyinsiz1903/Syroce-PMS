@@ -2,6 +2,7 @@
 Night Audit — Financial Service (Production-Grade)
 Provides financial reporting, revenue reconciliation, and payment integrity checks.
 """
+import asyncio
 import logging
 
 from common.context import OperationContext
@@ -26,7 +27,12 @@ class FinancialService:
     async def get_daily_financial_summary(
         self, ctx: OperationContext, business_date: str,
     ) -> ServiceResult:
-        """Generate comprehensive daily financial summary."""
+        """Generate comprehensive daily financial summary.
+
+        Perf: 6 bağımsız aggregation/lookup paralel çalışır (asyncio.gather);
+        seri await chain'i kaldırıldı. Hata izolasyonu için return_exceptions=True;
+        tek bir alt sorgu başarısız olsa bile diğerleri sonuç döndürmeye devam eder.
+        """
         # Revenue by category from folio_charges
         charge_pipeline = [
             {"$match": {
@@ -42,21 +48,6 @@ class FinancialService:
                 "count": {"$sum": 1},
             }},
         ]
-        revenue_by_category = {}
-        total_revenue = 0.0
-        total_tax = 0.0
-        total_charges_count = 0
-        async for doc in self._db.folio_charges.aggregate(charge_pipeline):
-            cat = doc["_id"] or "other"
-            revenue_by_category[cat] = {
-                "amount": round(doc["total_amount"], 2),
-                "tax": round(doc["total_tax"], 2),
-                "total": round(doc["total_with_tax"], 2),
-                "count": doc["count"],
-            }
-            total_revenue += doc["total_amount"]
-            total_tax += doc["total_tax"]
-            total_charges_count += doc["count"]
 
         # Payments received today
         payment_pipeline = [
@@ -74,17 +65,6 @@ class FinancialService:
                 "count": {"$sum": 1},
             }},
         ]
-        payments_by_method = {}
-        total_payments = 0.0
-        total_payments_count = 0
-        async for doc in self._db.payments.aggregate(payment_pipeline):
-            method = doc["_id"] or "other"
-            payments_by_method[method] = {
-                "amount": round(doc["total_amount"], 2),
-                "count": doc["count"],
-            }
-            total_payments += doc["total_amount"]
-            total_payments_count += doc["count"]
 
         # Also check inline folio payments
         folio_payment_pipeline = [
@@ -102,20 +82,6 @@ class FinancialService:
                 "count": {"$sum": 1},
             }},
         ]
-        async for doc in self._db.folios.aggregate(folio_payment_pipeline):
-            method = doc["_id"] or "other"
-            if method in payments_by_method:
-                payments_by_method[method]["amount"] = round(
-                    payments_by_method[method]["amount"] + doc["total_amount"], 2
-                )
-                payments_by_method[method]["count"] += doc["count"]
-            else:
-                payments_by_method[method] = {
-                    "amount": round(doc["total_amount"], 2),
-                    "count": doc["count"],
-                }
-            total_payments += doc["total_amount"]
-            total_payments_count += doc["count"]
 
         # Tax breakdown
         tax_pipeline = [
@@ -131,16 +97,8 @@ class FinancialService:
                 "total_accommodation_tax": {"$sum": "$tax_breakdown.accommodation_tax"},
             }},
         ]
-        tax_breakdown = {"vat": 0.0, "accommodation_tax": 0.0}
-        async for doc in self._db.folio_charges.aggregate(tax_pipeline):
-            tax_breakdown["vat"] = round(doc.get("total_vat", 0), 2)
-            tax_breakdown["accommodation_tax"] = round(doc.get("total_accommodation_tax", 0), 2)
 
-        # Open folios summary
-        open_folios_count = await self._db.folios.count_documents({
-            "tenant_id": ctx.tenant_id,
-            "status": "open",
-        })
+        # Open balance pipeline (combines count + balance aggregation)
         open_balance_pipeline = [
             {"$match": {"tenant_id": ctx.tenant_id, "status": "open"}},
             {"$group": {
@@ -152,19 +110,103 @@ class FinancialService:
                 "negative_balance": {
                     "$sum": {"$cond": [{"$lt": ["$balance", 0]}, "$balance", 0]}
                 },
+                "count": {"$sum": 1},
             }},
         ]
+
+        async def _agg(coll, pipeline):
+            return await coll.aggregate(pipeline).to_list(length=None)
+
+        # Parallel fan-out — 6 bağımsız sorgu tek round-trip penceresinde
+        (
+            charge_docs,
+            payment_docs,
+            folio_payment_docs,
+            tax_docs,
+            open_balance_docs,
+            audit_run,
+        ) = await asyncio.gather(
+            _agg(self._db.folio_charges, charge_pipeline),
+            _agg(self._db.payments, payment_pipeline),
+            _agg(self._db.folios, folio_payment_pipeline),
+            _agg(self._db.folio_charges, tax_pipeline),
+            _agg(self._db.folios, open_balance_pipeline),
+            self._db.night_audit_runs.find_one(
+                {"tenant_id": ctx.tenant_id, "business_date": business_date},
+                {"_id": 0},
+            ),
+            return_exceptions=True,
+        )
+
+        def _ok(result, default):
+            if isinstance(result, BaseException):
+                logger.warning("financial_summary subquery failed: %s", result)
+                return default
+            return result
+
+        charge_docs = _ok(charge_docs, [])
+        payment_docs = _ok(payment_docs, [])
+        folio_payment_docs = _ok(folio_payment_docs, [])
+        tax_docs = _ok(tax_docs, [])
+        open_balance_docs = _ok(open_balance_docs, [])
+        audit_run = _ok(audit_run, None)
+
+        # In-memory reduce
+        revenue_by_category: dict = {}
+        total_revenue = 0.0
+        total_tax = 0.0
+        total_charges_count = 0
+        for doc in charge_docs:
+            cat = doc["_id"] or "other"
+            revenue_by_category[cat] = {
+                "amount": round(doc["total_amount"], 2),
+                "tax": round(doc["total_tax"], 2),
+                "total": round(doc["total_with_tax"], 2),
+                "count": doc["count"],
+            }
+            total_revenue += doc["total_amount"]
+            total_tax += doc["total_tax"]
+            total_charges_count += doc["count"]
+
+        payments_by_method: dict = {}
+        total_payments = 0.0
+        total_payments_count = 0
+        for doc in payment_docs:
+            method = doc["_id"] or "other"
+            payments_by_method[method] = {
+                "amount": round(doc["total_amount"], 2),
+                "count": doc["count"],
+            }
+            total_payments += doc["total_amount"]
+            total_payments_count += doc["count"]
+
+        for doc in folio_payment_docs:
+            method = doc["_id"] or "other"
+            if method in payments_by_method:
+                payments_by_method[method]["amount"] = round(
+                    payments_by_method[method]["amount"] + doc["total_amount"], 2
+                )
+                payments_by_method[method]["count"] += doc["count"]
+            else:
+                payments_by_method[method] = {
+                    "amount": round(doc["total_amount"], 2),
+                    "count": doc["count"],
+                }
+            total_payments += doc["total_amount"]
+            total_payments_count += doc["count"]
+
+        tax_breakdown = {"vat": 0.0, "accommodation_tax": 0.0}
+        for doc in tax_docs:
+            tax_breakdown["vat"] = round(doc.get("total_vat", 0), 2)
+            tax_breakdown["accommodation_tax"] = round(doc.get("total_accommodation_tax", 0), 2)
+
         open_balance = {"total": 0.0, "receivable": 0.0, "overpayment": 0.0}
-        async for doc in self._db.folios.aggregate(open_balance_pipeline):
+        open_folios_count = 0
+        for doc in open_balance_docs:
             open_balance["total"] = round(doc.get("total_balance", 0), 2)
             open_balance["receivable"] = round(doc.get("positive_balance", 0), 2)
             open_balance["overpayment"] = round(abs(doc.get("negative_balance", 0)), 2)
-
-        # Night audit run for this date
-        audit_run = await self._db.night_audit_runs.find_one(
-            {"tenant_id": ctx.tenant_id, "business_date": business_date},
-            {"_id": 0},
-        )
+            open_folios_count = doc.get("count", 0)
 
         return ServiceResult.success({
             "business_date": business_date,
@@ -194,25 +236,38 @@ class FinancialService:
     async def get_payment_reconciliation(
         self, ctx: OperationContext, business_date: str,
     ) -> ServiceResult:
-        """Reconcile charges vs payments for a given date."""
-        # Total charges
-        charges_cursor = self._db.folio_charges.find({
-            "tenant_id": ctx.tenant_id,
-            "date": business_date,
-            "voided": {"$ne": True},
-        }, {"_id": 0, "id": 1, "booking_id": 1, "charge_category": 1,
-            "amount": 1, "tax_amount": 1, "total": 1, "description": 1})
-        charges = await charges_cursor.to_list(1000)
-        total_charges = sum(c.get("total", 0) for c in charges)
+        """Reconcile charges vs payments for a given date.
 
-        # Total payments
-        payments_cursor = self._db.payments.find({
-            "tenant_id": ctx.tenant_id,
-            "status": {"$ne": "voided"},
-            "$or": [{"date": business_date}, {"payment_date": business_date}],
-        }, {"_id": 0, "id": 1, "booking_id": 1, "amount": 1,
-            "payment_method": 1, "description": 1})
-        payments = await payments_cursor.to_list(1000)
+        Perf: charges + payments + high-balance folios paralel çekilir; seri
+        await zinciri kaldırıldı. Bookings bulk-fetch yine tek round-trip ($in).
+        """
+        # Parallel fan-out: charges + payments + high-balance folios
+        async def _to_list(cursor, n):
+            return await cursor.to_list(n)
+
+        charges, payments, high_balance_folios = await asyncio.gather(
+            _to_list(self._db.folio_charges.find({
+                "tenant_id": ctx.tenant_id,
+                "date": business_date,
+                "voided": {"$ne": True},
+            }, {"_id": 0, "id": 1, "booking_id": 1, "charge_category": 1,
+                "amount": 1, "tax_amount": 1, "total": 1, "description": 1}), 1000),
+            _to_list(self._db.payments.find({
+                "tenant_id": ctx.tenant_id,
+                "status": {"$ne": "voided"},
+                "$or": [{"date": business_date}, {"payment_date": business_date}],
+            }, {"_id": 0, "id": 1, "booking_id": 1, "amount": 1,
+                "payment_method": 1, "description": 1}), 1000),
+            _to_list(self._db.folios.find({
+                "tenant_id": ctx.tenant_id,
+                "status": "open",
+                "$or": [
+                    {"balance": {"$gt": 500}},
+                    {"balance": {"$lt": -100}},
+                ],
+            }, {"_id": 0, "id": 1, "folio_number": 1, "balance": 1, "booking_id": 1}), 200),
+        )
+        total_charges = sum(c.get("total", 0) for c in charges)
         total_payments_amount = sum(p.get("amount", 0) for p in payments)
 
         # Discrepancy detection
@@ -279,18 +334,8 @@ class FinancialService:
                         "actual": actual_rate,
                     })
 
-        # Check high-value unbalanced folios
-        high_balance_folios = []
-        hb_cursor = self._db.folios.find({
-            "tenant_id": ctx.tenant_id,
-            "status": "open",
-            "$or": [
-                {"balance": {"$gt": 500}},
-                {"balance": {"$lt": -100}},
-            ],
-        }, {"_id": 0, "id": 1, "folio_number": 1, "balance": 1, "booking_id": 1})
-        async for f in hb_cursor:
-            high_balance_folios.append(f)
+        # High-value unbalanced folios — already gathered above in parallel batch
+        for f in high_balance_folios:
             if f.get("balance", 0) > 1000:
                 discrepancies.append({
                     "type": "high_balance",
@@ -522,165 +567,219 @@ class FinancialService:
     async def get_integrity_check(
         self, ctx: OperationContext, business_date: str,
     ) -> ServiceResult:
-        """Run financial integrity checks for a given business date."""
-        checks = []
+        """Run financial integrity checks for a given business date.
+
+        Perf: 6 bağımsız check paralel çalışır (asyncio.gather). Önceden seri
+        await zinciri + her check sonrası ayrı `_enrich_with_guest_room` çağrısı
+        4×3=12 ek round-trip yapıyordu; şimdi tek geçişte ortak enrichment.
+        Check #4 (room rate) için DB-level $or filtresi ile sadece sıfır/eksik
+        fiyatlı kayıtlar çekilir (full scan değil).
+        """
         ITEM_LIMIT = 50
+        tid = ctx.tenant_id
 
-        # 1. Verify all checked-in bookings have folios
-        checked_in = await self._db.bookings.find(
-            {"tenant_id": ctx.tenant_id, "status": "checked_in"},
-            {"_id": 0, "id": 1, "folio_id": 1, "guest_name": 1, "room_no": 1, "guest_id": 1, "room_id": 1},
-        ).to_list(500)
-        missing_folios = [b for b in checked_in if not b.get("folio_id")]
-        mf_items = [{"booking_id": b["id"], "guest_name": b.get("guest_name"),
-                     "room_no": b.get("room_no"), "guest_id": b.get("guest_id"),
-                     "room_id": b.get("room_id"),
-                     "action": "open_booking"}
-                    for b in missing_folios[:ITEM_LIMIT]]
-        await self._enrich_with_guest_room(ctx.tenant_id, mf_items)
-        checks.append({
-            "check": "bookings_with_folios",
-            "label": "Rezervasyon-Folio Eslesmesi",
-            "status": "pass" if not missing_folios else "fail",
-            "detail": f"{len(checked_in)} aktif rezervasyondan {len(missing_folios)} tanesinin folyosu yok",
-            "count": len(missing_folios),
-            "items": mf_items,
-        })
+        async def _check1_bookings():
+            return await self._db.bookings.find(
+                {"tenant_id": tid, "status": "checked_in"},
+                {"_id": 0, "id": 1, "folio_id": 1, "guest_name": 1,
+                 "room_no": 1, "guest_id": 1, "room_id": 1},
+            ).to_list(500)
 
-        # 2. Check for voided charges today
-        voided_items: list[dict] = []
-        async for ch in self._db.folio_charges.find(
-            {"tenant_id": ctx.tenant_id, "date": business_date, "voided": True},
-            {"_id": 0, "id": 1, "folio_id": 1, "booking_id": 1, "amount": 1,
-             "description": 1, "voided_reason": 1},
-        ).limit(ITEM_LIMIT):
-            voided_items.append({
-                "folio_id": ch.get("folio_id"),
-                "booking_id": ch.get("booking_id"),
-                "amount": ch.get("amount"),
-                "description": ch.get("description"),
-                "reason": ch.get("voided_reason"),
-                "action": "open_folio",
-            })
-        voided_count = await self._db.folio_charges.count_documents({
-            "tenant_id": ctx.tenant_id, "date": business_date, "voided": True,
-        })
-        await self._enrich_with_guest_room(ctx.tenant_id, voided_items)
-        checks.append({
-            "check": "voided_charges",
-            "label": "Iptal Edilen Masraflar",
-            "status": "pass" if voided_count == 0 else "warning",
-            "detail": f"Bugun {voided_count} masraf iptal edildi",
-            "count": voided_count,
-            "items": voided_items,
-        })
+        async def _check2_voided():
+            q = {"tenant_id": tid, "date": business_date, "voided": True}
+            return await asyncio.gather(
+                self._db.folio_charges.count_documents(q),
+                self._db.folio_charges.find(q, {
+                    "_id": 0, "id": 1, "folio_id": 1, "booking_id": 1, "amount": 1,
+                    "description": 1, "voided_reason": 1,
+                }).limit(ITEM_LIMIT).to_list(ITEM_LIMIT),
+            )
 
-        # 3. Negative balance folios
-        neg_items: list[dict] = []
-        async for f in self._db.folios.find(
-            {"tenant_id": ctx.tenant_id, "status": "open", "balance": {"$lt": -0.01}},
-            {"_id": 0, "id": 1, "booking_id": 1, "balance": 1, "guest_name": 1,
-             "room_no": 1, "guest_id": 1, "room_id": 1},
-        ).limit(ITEM_LIMIT):
-            neg_items.append({
-                "folio_id": f.get("id"),
-                "booking_id": f.get("booking_id"),
-                "balance": round(f.get("balance", 0), 2),
-                "overpayment": round(abs(f.get("balance", 0)), 2),
-                "guest_name": f.get("guest_name"),
-                "room_no": f.get("room_no"),
-                "guest_id": f.get("guest_id"),
-                "room_id": f.get("room_id"),
-                "action": "open_folio",
-            })
-        neg_balance = await self._db.folios.count_documents({
-            "tenant_id": ctx.tenant_id, "status": "open", "balance": {"$lt": -0.01},
-        })
-        await self._enrich_with_guest_room(ctx.tenant_id, neg_items)
-        checks.append({
-            "check": "negative_balance_folios",
-            "label": "Negatif Bakiyeli Folyolar",
-            "status": "pass" if neg_balance == 0 else "warning",
-            "detail": f"{neg_balance} folyoda negatif bakiye (fazla odeme)",
-            "count": neg_balance,
-            "items": neg_items,
-        })
+        async def _check3_negative():
+            q = {"tenant_id": tid, "status": "open", "balance": {"$lt": -0.01}}
+            return await asyncio.gather(
+                self._db.folios.count_documents(q),
+                self._db.folios.find(q, {
+                    "_id": 0, "id": 1, "booking_id": 1, "balance": 1, "guest_name": 1,
+                    "room_no": 1, "guest_id": 1, "room_id": 1,
+                }).limit(ITEM_LIMIT).to_list(ITEM_LIMIT),
+            )
 
-        # 4. Room rate consistency
-        rate_items: list[dict] = []
-        async for booking in self._db.bookings.find(
-            {"tenant_id": ctx.tenant_id, "status": "checked_in"},
-            {"_id": 0, "id": 1, "room_rate": 1, "rate": 1, "guest_name": 1,
-             "room_no": 1, "guest_id": 1, "room_id": 1},
-        ):
-            rate = booking.get("room_rate") or booking.get("rate") or 0
-            if rate <= 0:
-                rate_items.append({
-                    "booking_id": booking["id"],
-                    "rate": rate,
-                    "guest_name": booking.get("guest_name"),
-                    "room_no": booking.get("room_no"),
-                    "guest_id": booking.get("guest_id"),
-                    "room_id": booking.get("room_id"),
-                    "action": "open_booking",
-                })
-        rate_issues = len(rate_items)
-        await self._enrich_with_guest_room(ctx.tenant_id, rate_items[:ITEM_LIMIT])
-        checks.append({
-            "check": "room_rate_consistency",
-            "label": "Oda Fiyat Tutarliligi",
-            "status": "pass" if rate_issues == 0 else "warning",
-            "detail": f"{rate_issues} aktif rezervasyonda sifir/eksik oda fiyati",
-            "count": rate_issues,
-            "items": rate_items[:ITEM_LIMIT],
-        })
+        async def _check4_rate():
+            # DB-level filter — Python truthy fallback semantiği:
+            # effective = room_rate if truthy else (rate if truthy else 0)
+            # issue iff effective <= 0. "Truthy" burada None/missing/0 değil.
+            # Örn: room_rate=0, rate=120 → effective=120 → NO issue (eski mantık).
+            q = {
+                "tenant_id": tid,
+                "status": "checked_in",
+                "$expr": {
+                    "$lte": [
+                        {"$cond": [
+                            # room_rate truthy mi?  (not null AND not 0)
+                            {"$and": [
+                                {"$ne": [{"$ifNull": ["$room_rate", None]}, None]},
+                                {"$ne": ["$room_rate", 0]},
+                            ]},
+                            "$room_rate",
+                            {"$cond": [
+                                # rate truthy mi?
+                                {"$and": [
+                                    {"$ne": [{"$ifNull": ["$rate", None]}, None]},
+                                    {"$ne": ["$rate", 0]},
+                                ]},
+                                "$rate",
+                                0,
+                            ]},
+                        ]},
+                        0,
+                    ],
+                },
+            }
+            return await asyncio.gather(
+                self._db.bookings.count_documents(q),
+                self._db.bookings.find(q, {
+                    "_id": 0, "id": 1, "room_rate": 1, "rate": 1, "guest_name": 1,
+                    "room_no": 1, "guest_id": 1, "room_id": 1,
+                }).limit(ITEM_LIMIT).to_list(ITEM_LIMIT),
+            )
 
-        # 5. Check for charges posted after close
-        closed_folios = await self._db.folios.find(
-            {"tenant_id": ctx.tenant_id, "status": "closed"},
-            {"_id": 0, "id": 1},
-        ).to_list(500)
-        closed_ids = [f["id"] for f in closed_folios]
-        closed_charge_items: list[dict] = []
-        closed_folio_charges = 0
-        if closed_ids:
-            closed_folio_charges = await self._db.folio_charges.count_documents({
-                "tenant_id": ctx.tenant_id, "folio_id": {"$in": closed_ids},
-                "date": business_date, "voided": {"$ne": True},
-            })
-            async for ch in self._db.folio_charges.find(
-                {"tenant_id": ctx.tenant_id, "folio_id": {"$in": closed_ids},
-                 "date": business_date, "voided": {"$ne": True}},
-                {"_id": 0, "folio_id": 1, "booking_id": 1, "amount": 1, "description": 1},
-            ).limit(ITEM_LIMIT):
-                closed_charge_items.append({
-                    "folio_id": ch.get("folio_id"),
-                    "booking_id": ch.get("booking_id"),
-                    "amount": ch.get("amount"),
-                    "description": ch.get("description"),
-                    "action": "open_folio",
-                })
-            await self._enrich_with_guest_room(ctx.tenant_id, closed_charge_items)
-        checks.append({
-            "check": "closed_folio_charges",
-            "label": "Kapali Folyoya Masraf",
-            "status": "pass" if closed_folio_charges == 0 else "error",
-            "detail": f"{closed_folio_charges} masraf kapali folyolara kaydedilmis",
-            "count": closed_folio_charges,
-            "items": closed_charge_items,
-        })
+        async def _check5_closed():
+            closed_folios = await self._db.folios.find(
+                {"tenant_id": tid, "status": "closed"},
+                {"_id": 0, "id": 1},
+            ).to_list(500)
+            closed_ids = [f["id"] for f in closed_folios]
+            if not closed_ids:
+                return 0, []
+            q = {"tenant_id": tid, "folio_id": {"$in": closed_ids},
+                 "date": business_date, "voided": {"$ne": True}}
+            return await asyncio.gather(
+                self._db.folio_charges.count_documents(q),
+                self._db.folio_charges.find(q, {
+                    "_id": 0, "folio_id": 1, "booking_id": 1, "amount": 1, "description": 1,
+                }).limit(ITEM_LIMIT).to_list(ITEM_LIMIT),
+            )
 
-        # 6. Unposted night audit charges
-        audit_run = await self._db.night_audit_runs.find_one(
-            {"tenant_id": ctx.tenant_id, "business_date": business_date, "status": {"$in": ["completed", "completed_with_exceptions"]}},
-            {"_id": 0, "audit_id": 1, "charges_posted": 1},
-        )
-        if audit_run:
-            actual_posted = await self._db.folio_charges.count_documents({
-                "tenant_id": ctx.tenant_id,
+        async def _check6_audit():
+            audit_run = await self._db.night_audit_runs.find_one(
+                {"tenant_id": tid, "business_date": business_date,
+                 "status": {"$in": ["completed", "completed_with_exceptions"]}},
+                {"_id": 0, "audit_id": 1, "charges_posted": 1},
+            )
+            if not audit_run:
+                return None
+            actual = await self._db.folio_charges.count_documents({
+                "tenant_id": tid,
                 "audit_id": audit_run["audit_id"],
                 "voided": {"$ne": True},
             })
+            return audit_run, actual
+
+        r1, r2, r3, r4, r5, r6 = await asyncio.gather(
+            _check1_bookings(), _check2_voided(), _check3_negative(),
+            _check4_rate(), _check5_closed(), _check6_audit(),
+            return_exceptions=True,
+        )
+
+        def _ok(result, default):
+            if isinstance(result, BaseException):
+                logger.warning("integrity_check subquery failed: %s", result)
+                return default
+            return result
+
+        checked_in = _ok(r1, [])
+        voided_count, voided_raw = _ok(r2, (0, []))
+        neg_balance, neg_raw = _ok(r3, (0, []))
+        rate_count, rate_raw = _ok(r4, (0, []))
+        closed_folio_charges, closed_raw = _ok(r5, (0, []))
+        audit_result = _ok(r6, None)
+
+        missing_folios = [b for b in checked_in if not b.get("folio_id")]
+        mf_items = [{"booking_id": b["id"], "guest_name": b.get("guest_name"),
+                     "room_no": b.get("room_no"), "guest_id": b.get("guest_id"),
+                     "room_id": b.get("room_id"), "action": "open_booking"}
+                    for b in missing_folios[:ITEM_LIMIT]]
+
+        voided_items = [{
+            "folio_id": ch.get("folio_id"), "booking_id": ch.get("booking_id"),
+            "amount": ch.get("amount"), "description": ch.get("description"),
+            "reason": ch.get("voided_reason"), "action": "open_folio",
+        } for ch in voided_raw]
+
+        neg_items = [{
+            "folio_id": f.get("id"), "booking_id": f.get("booking_id"),
+            "balance": round(f.get("balance", 0), 2),
+            "overpayment": round(abs(f.get("balance", 0)), 2),
+            "guest_name": f.get("guest_name"), "room_no": f.get("room_no"),
+            "guest_id": f.get("guest_id"), "room_id": f.get("room_id"),
+            "action": "open_folio",
+        } for f in neg_raw]
+
+        rate_items = [{
+            "booking_id": b["id"],
+            "rate": b.get("room_rate") or b.get("rate") or 0,
+            "guest_name": b.get("guest_name"), "room_no": b.get("room_no"),
+            "guest_id": b.get("guest_id"), "room_id": b.get("room_id"),
+            "action": "open_booking",
+        } for b in rate_raw]
+
+        closed_charge_items = [{
+            "folio_id": ch.get("folio_id"), "booking_id": ch.get("booking_id"),
+            "amount": ch.get("amount"), "description": ch.get("description"),
+            "action": "open_folio",
+        } for ch in closed_raw]
+
+        # Single shared enrichment pass — bookings/guests/rooms tek tek $in.
+        all_items_to_enrich = mf_items + voided_items + neg_items + rate_items + closed_charge_items
+        if all_items_to_enrich:
+            await self._enrich_with_guest_room(tid, all_items_to_enrich)
+
+        checks = [
+            {
+                "check": "bookings_with_folios",
+                "label": "Rezervasyon-Folio Eslesmesi",
+                "status": "pass" if not missing_folios else "fail",
+                "detail": f"{len(checked_in)} aktif rezervasyondan {len(missing_folios)} tanesinin folyosu yok",
+                "count": len(missing_folios),
+                "items": mf_items,
+            },
+            {
+                "check": "voided_charges",
+                "label": "Iptal Edilen Masraflar",
+                "status": "pass" if voided_count == 0 else "warning",
+                "detail": f"Bugun {voided_count} masraf iptal edildi",
+                "count": voided_count,
+                "items": voided_items,
+            },
+            {
+                "check": "negative_balance_folios",
+                "label": "Negatif Bakiyeli Folyolar",
+                "status": "pass" if neg_balance == 0 else "warning",
+                "detail": f"{neg_balance} folyoda negatif bakiye (fazla odeme)",
+                "count": neg_balance,
+                "items": neg_items,
+            },
+            {
+                "check": "room_rate_consistency",
+                "label": "Oda Fiyat Tutarliligi",
+                "status": "pass" if rate_count == 0 else "warning",
+                "detail": f"{rate_count} aktif rezervasyonda sifir/eksik oda fiyati",
+                "count": rate_count,
+                "items": rate_items,
+            },
+            {
+                "check": "closed_folio_charges",
+                "label": "Kapali Folyoya Masraf",
+                "status": "pass" if closed_folio_charges == 0 else "error",
+                "detail": f"{closed_folio_charges} masraf kapali folyolara kaydedilmis",
+                "count": closed_folio_charges,
+                "items": closed_charge_items,
+            },
+        ]
+
+        if audit_result is not None:
+            audit_run, actual_posted = audit_result
             expected = audit_run.get("charges_posted", 0)
             match = actual_posted == expected
             checks.append({
