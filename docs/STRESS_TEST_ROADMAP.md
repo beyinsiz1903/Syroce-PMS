@@ -21,28 +21,43 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
   `stress_seed=True` + `stress_prefix=<prefix>` etiketleri, chunked
   insert + orphan cleanup loop.
 
-## Faz listesi ve durumlar
+## Faz listesi ve durumlar (kod-senkron — 2026-05-22 audit)
 
-| Faz  | Kapsam                                                                  | Spec aralığı              | Status                                                       | ADR                                                       |
+> **Senkronizasyon notu (2026-05-22):** Bu tablo `frontend/e2e-stress/specs/`
+> dizinindeki **fiziksel dosyalara** göre yeniden senkronize edildi.
+> Önceki turlarda F8F/G/H/K "Planlandı" + F8L "DONE/IN_PROGRESS" çelişkili
+> görünüyordu; audit ile gerçek dosya envanteri eşleştirildi. Spec
+> numaraları **eski rezerve aralıklar değil**, mevcut dosya adları.
+> Toplam: **56 spec dosyası** (00–99 aralığında, 15 faz).
+
+| Faz  | Kapsam                                                                  | Spec dosyaları (real)     | Status                                                       | ADR                                                       |
 | ---- | ----------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------ | --------------------------------------------------------- |
-| F8A  | Front Office / Folio / Housekeeping (day-turnover, room-move, mass, **lifecycle, night-audit**) | 02 / 03 / 04 / 05 / 06    | **DONE** — GO WITH WATCH (CI #38 / #55 PASS, tur-6..22) + **v2 push 2026-05-18** (spec 05 reservation lifecycle + spec 06 night-audit + spec 04 refund/void extension) | `docs/adr/2026-05-f8a-stress-evolution.md`                |
+| F8A  | Front Office / Folio / Housekeeping (day-turnover, room-move, mass, lifecycle, night-audit) | 00 / 01 / 02 / 03 / 04 / 05 / 06 / 08 | **DONE** — GO WITH WATCH (CI #38 / #55 PASS, tur-6..22) + v2 push 2026-05-18 | `docs/adr/2026-05-f8a-stress-evolution.md`                |
 | F8B  | Guest Experience (QR / complaints / messaging / notifications)          | 10 / 11 / 12 / 13         | **DONE** — GO WITH WATCH (CI #55 PASS, tur-23..26)           | `docs/adr/2026-05-f8b-stress-evolution.md`                |
 | F8C  | MICE / Event / Banquet / Group Operations                               | 14 / 15 / 16 / 17         | **DONE** — GO WITH WATCH (tur-5 CI YEŞİL, 2026-05-18)        | `docs/adr/2026-05-f8c-stress-evolution.md`                |
-| F8D  | HR / İK / Staff / Shift / Leave / Department                            | 20 / 21 / 22 / 23 / **32 / 33 / 34 / 35 / 36** | **DONE v2** — GO WITH WATCH bekleniyor (CI, 2026-05-19, Task #205) — 5 yeni spec (24 test): perf review lifecycle + payroll dry-run (FORBIDDEN /finalize source-scan guard P0) + leave accrual+carryover + shift conflict guard (P1 if missing) + RBAC/PII/audit log cross-tenant guard | `docs/adr/2026-05-f8d-hr-staff-shift-evolution.md` (v2 section) |
-| F8E  | Finance / Cashier / Accounting / Invoice / City Ledger                  | 24 / 25 / 26 / 27 / 28    | **DONE v2** — GO WITH WATCH (CI #42+, 2026-05-19)            | `docs/adr/2026-05-f8e-finance-stress-evolution.md`        |
-| F8F  | Inventory / Stock / Purchasing / Supplier                               | 30 / 31 / 32 / 33         | Planlandı (Task #197)                                        | TBD                                                       |
-| F8G  | Sales / CRM / Offers / Contracts (F8C MICE-sales üstünde devam)         | 34 / 35 / 36              | Planlandı (Task #198)                                        | TBD                                                       |
-| F8H  | Reports / Analytics / Export                                            | 40 / 41 / 42              | Planlandı (Task #199)                                        | TBD                                                       |
+| F8D  | HR / İK / Staff / Shift / Leave / Department / Payroll v2 / Lifecycle v2 | 20 / 21 / 22 / 23 / 29 / 32 / 33 / 34 / 35 / 36 / 37 | **DONE v2** — Task #205 + #264 + İK v2 lifecycle (#268/#269/#270) merged (2026-05-19..22) — 11 spec, perf review + payroll dryrun (`/finalize` ASLA) + payroll lifecycle v2 + leave accrual + shift conflict + RBAC/PII/audit + IK lifecycle v2 (zimmet/uyarı/eğitim) | `docs/adr/2026-05-f8d-hr-staff-shift-evolution.md` (v2 section) |
+| F8E  | Finance / Cashier / Accounting / Invoice / City Ledger / Reports v2     | 24 / 25 / 26 / 27 / 28    | **DONE v2** — GO WITH WATCH (CI #42+, 2026-05-19)            | `docs/adr/2026-05-f8e-finance-stress-evolution.md`        |
+| F8F  | Inventory / Stock / Purchasing / Supplier                               | **70 / 71**               | **DONE** — Task #197 merged (2026-05-19+) — inventory item CRUD + movement + negative-stock guard + low-stock + tenant isolation; supplier CRUD + PR→PO lifecycle + GRN/invoice matching + supplier-delete-when-used guard. **Warehouse transfer bilinçli scope dışı** (multi-target probe contract uygun değil) — F8F-v2 backlog. | TBD                                                       |
+| F8G  | Sales / CRM / Offers / Contracts                                        | **80**                    | **DONE** — Task #198 merged — account/contact CRUD + duplicate tax-no guard + Lead→Opportunity (won/lost terminal) + contract lifecycle | TBD                                                       |
+| F8H  | Reports / Analytics / Export                                            | **90**                    | **DONE** — Task #199 merged — dashboard KPI (pms/accounting/revenue) + operational reports (occupancy/revenue/aging/HR/finance/inventory) + CSV/XLSX/PDF export + PII/token mask + pagination + cache invalidation | TBD                                                       |
 | F8I  | Admin / RBAC / Settings / Audit                                         | 30 / 31                   | **DONE** — Task #193 merged (2026-05-19) — 13 test, role matrix + cross-tenant settings drift + audit/PII guard | TBD                                                       |
-| F8J  | **Full 24h Hotel Simulation** — tüm modüller birlikte                   | 99 (chained scenario)     | **DONE** — Task #201 merged (2026-05-19)                     | TBD                                                       |
-| F8K  | **Guest-facing public flows** (online check-in / NPS / digital key)     | 60 / 61 / 62 / 63         | Planlandı (Task #196)                                        | TBD                                                       |
-| F8L  | **Channel Manager + Webhooks** (Exely / HotelRunner / SXI bus)          | 50 / 51 / 52              | **DONE** — Task #195 merged (2026-05-19) — 22 test (architect-iter-4 review sonrası: 50-F readiness gate + 50-G valid-payload duplicate ingest + 50-H cancel idempotency + 51-F signed valid-path + 52-E active idempotency; conditional path'lerde REVIEW+P2, secret/whitelist set ise P0/P1 enforce); Exely IP+payload+tenant-injection+replay, HotelRunner HMAC sig contract+surface coverage+logs scope, Outbox status/events/RBAC + Conflict Queue cross-tenant scope | TBD                                                       |
-| F8M  | **GraphQL + B2B API** (resolver isolation / API key scope)              | 40 / 41                   | **DONE** — Task #194 merged (2026-05-19) — 11 test, GraphQL introspection + resolver isolation + cross-tenant injection + B2B api-key lifecycle/scope/revocation | TBD                                                       |
-| F8N  | **Reservation lifecycle deep** (create/modify/cancel/no-show/group)     | 95 (deep batch)           | **DONE** — Task #200 merged (2026-05-19)                     | TBD                                                       |
-| F8O  | **AI / Automation Dry-run** (upsell-insights / dynamic-pricing / no-show risk) | 42 / 43 / 44 | **IN_PROGRESS** — Task #206 (2026-05-19) — 20 test (3 spec); vendor LLM HTTP çağrısı YOK (briefing.ai_powered=false guard) + autopilot run-cycle/set-mode + ML train kapalı kapı (source-scan) + cross-tenant insight/pricing/no-show leak guard | `docs/adr/2026-05-f8o-ai-automation-dryrun.md` |
-| F8P  | **Cross-tenant pen-test** (guests / folios / charges / messages / hr_staff dedicated probes) | 96 | **DONE** — 2026-05-21 — 5 step (Setup / A LIST scan / B IDOR probe / C PII guard / D final invariants), 5 yüzey: per-surface withModuleProbe, scanLeaks (tenant_id_exact + PILOT_/PROD_ string marker, prefix suppression KAPALI — mixed-payload defansif), pilot sample ID harvest (own-tenant read) → stress_token IDOR (200+pilot_tid evidence=P0, 200+no evidence=P1), assertPiiMasked guests/hr_staff/messages. F8M/F8I doctrine: A/B/C all-blocked → SKIP (effective coverage 0 → false PASS verme), D pilot_drift+external_calls bağımsız. Threat-model EoP coverage — bookings beyond surfaces. | TBD |
+| F8J  | Full 24h Hotel Simulation — tüm modüller birlikte                       | 99 (chained scenario)     | **DONE** — Task #201 merged (2026-05-19)                     | TBD                                                       |
+| F8K  | Guest-facing public flows (online check-in / NPS / digital key / KVKK)  | **60 / 61 / 62**          | **DONE** — Task #196 merged — public online check-in (anonymous/garbage/tampered JWT + ID metadata + KVKK) + NPS/reviews + KVKK consent + digital-key anonymous/cross-tenant + KVKK lifecycle. **QR token rotation deep → F8Q § 63.** | TBD                                                       |
+| F8L  | Channel Manager + Webhooks (Exely / HotelRunner / Outbox / SXI bus)     | 50 / 51 / 52              | **DONE** — Task #195 merged (2026-05-19) — 22 test (architect-iter-4): Exely IP+payload+tenant-injection+replay + HotelRunner HMAC sig contract+surface coverage+logs scope + Outbox status/events/RBAC + Conflict Queue cross-tenant scope. **Önceki tabloda IN_PROGRESS görünmesi stale idi — DONE doğru durum.** | TBD                                                       |
+| F8M  | GraphQL + B2B API (resolver isolation / API key scope)                  | 40 / 41                   | **DONE** — Task #194 merged (2026-05-19) — 11 test, GraphQL introspection + resolver isolation + cross-tenant injection + B2B api-key lifecycle/scope/revocation | TBD                                                       |
+| F8N  | Reservation lifecycle deep (create/modify/cancel/no-show/group)         | 95 (deep batch)           | **DONE** — Task #200 merged (2026-05-19)                     | TBD                                                       |
+| F8O  | AI / Automation Dry-run (upsell-insights / dynamic-pricing / no-show risk) | 42 / 43 / 44           | **DONE** — Task #206 merged (2026-05-19+) — 20 test (3 spec); vendor LLM HTTP çağrısı YOK (briefing.ai_powered=false guard) + autopilot run-cycle/set-mode + ML train kapalı kapı (source-scan) + cross-tenant insight/pricing/no-show leak guard. Dosya 44 disk'te → IN_PROGRESS değil DONE. | `docs/adr/2026-05-f8o-ai-automation-dryrun.md` |
+| F8P  | Cross-tenant pen-test (guests / folios / charges / messages / hr_staff dedicated probes) | 96 | **DONE** — 2026-05-21 — 5 step, 5 yüzey: per-surface withModuleProbe + scanLeaks (tenant_id_exact + PILOT_/PROD_ marker) + pilot sample ID harvest → IDOR (200+pilot_tid=P0, 200+no evidence=P1) + assertPiiMasked + final invariants. A/B/C all-blocked → SKIP doctrine (false PASS önleme). | TBD |
+| F8Q  | **Security & External Surface Hardening** — MICE BEO + push batch dry-run + QR token tamper/cross-tenant + per-endpoint RL boundary | **18 / 45 / 63 / 97** | **DONE** — 2026-05-22 commit `3f49b966` — 4 spec: MICE BEO/kitchen-ticket/ops-sheet/payment-schedule read-only + cross-tenant + F&B send P2 REVIEW (endpoint yok) · Push batch (DISABLE_EXPO_PUSH=1) 100-notif enqueue + delivery-logs/activity feed PII + cross-tenant + invalid-payload graceful · QR tampered/cross-tenant/bulk staff PII + ROOM_QR_SECRET rotation surface P2 REVIEW (endpoint yok) · Burst N=60 per surface (public/auth/GraphQL/B2B/reports) + tenant isolation (pilot sample post-burst healthy). CI verify bekleniyor; lokal smoke disk'te. | TBD |
 
-### F8F–F8N expansion contract (Task #192 Foundation)
+### F8F–F8N expansion contract (Task #192 Foundation — **LEGACY PLANNING**)
+
+> **2026-05-22 sync notu:** Aşağıdaki tablo Task #192 foundation
+> turunda yazıldığı orijinal planlama sözleşmesidir; spec numaraları
+> ve test sayıları **plan aşamasındaki rezerve değerlerdir**, gerçek
+> implementasyondan sapmıştır. Asıl durum yukarıdaki "Faz listesi ve
+> durumlar" tablosundadır (kod-senkron). Bu blok geriye dönük
+> referans için korunmuştur; çelişki durumunda üst tablo bağlayıcıdır.
 
 Her yeni faz için aşağıdaki sözleşme zorunludur (F8A–F8E baseline'ı bozmadan ek olarak):
 
@@ -155,14 +170,103 @@ leave (request/decision), shift swap (consent/decision lifecycle).
   masked; log/report exportlarında ham PII olmamalı.
 
 ### Genel (cross-cutting) backlog
-- **Rate-limit boundary**: 429 backoff var; explicit per-endpoint RL
-  boundary push testi yok.
-- **Tenant isolation cross-check**: bookings count spot-check seviyesinde;
-  guests / folios / charges / messages / hr_staff için ayrı pen-test yok.
-- **GraphQL surface** (threat-model yüksek risk): yok → F8M.
-- **B2B API** (API key auth): yok → F8M.
-- **Webhook endpoints** (Exely / HotelRunner IP allowlist): yok → F8L.
-- **AI integration paths** (upsell / dynamic pricing / no-show risk): yok.
+- ✅ **Rate-limit boundary** — F8Q § 97 (per-endpoint burst N=60, tenant isolation post-burst).
+- ✅ **Tenant isolation cross-check** — F8P § 96 (guests/folios/charges/messages/hr_staff dedicated probes).
+- ✅ **GraphQL surface** — F8M § 40.
+- ✅ **B2B API** — F8M § 41.
+- ✅ **Webhook endpoints** (Exely / HotelRunner IP allowlist) — F8L § 50/51.
+- ✅ **AI integration paths** (upsell / dynamic pricing / no-show risk) — F8O § 42/43/44.
+
+---
+
+## Hardening Backlog (F8R+ — 2026-05-22 audit önerileri)
+
+Bu bölüm, kullanıcı audit'i (2026-05-22) sonrası tespit edilen ve F8A–F8Q
+kapsamı dışında kalmış **gerçek production saldırı yüzeylerini** kayıt
+altına alır. Her madde ileride yeni bir faz veya v2 push için backlog.
+
+### F8R — Export Artifact IDOR (önerilen)
+- **Spec:** `98-export-artifact-idor.spec.js` (planlandı, henüz yok)
+- **Kapsam:** stress tenant export job oluştur → pilot token ile download
+  dene (403/404 expect) · pilot export id harvest → stress token ile
+  download dene (403/404 expect) · signed download URL varsa tenant-bound
+  ve expiry-bound enforcement · XLSX/PDF content-type + size header check.
+- **Neden:** F8H rapor üretimini test ediyor ama oluşan artifact'in
+  cross-tenant indirilemediği ayrıca doğrulanmalı (signed URL leak riski).
+
+### F8S — File/Document Upload Security (önerilen)
+- **Spec:** `64-file-upload-security.spec.js` (planlandı, henüz yok)
+- **Kapsam:** oversized file reject (size limit) · unsupported MIME reject
+  (allow-list enforce) · polyglot file reject (HTML-in-JPEG) · path
+  traversal filename reject (`../../etc/passwd`) · raw path/token response
+  leak guard · cross-tenant download reject.
+- **Neden:** F8K § 60 ID metadata-only test ediyor; sistem genelindeki
+  diğer upload sürfeyleri (avatar, doc, attachment) ayrı pen-test ister.
+
+### F8T — Staff Self-Service Scope (önerilen)
+- **Spec:** `38-hr-staff-self-service.spec.js` (planlandı, henüz yok)
+- **Kapsam:** personel kendi vardiyası/maaş/izin/performans kayıtlarını
+  görür · başka personelin kayıtlarını göremez (object-level RBAC) · kendi
+  izin talebini açabilir · kendi PII'sini sınırlı update edebilir (telefon
+  evet, TC/IBAN hayır).
+- **Neden:** F8D HR modülü çok büyüdü; staff role token'ları için
+  object-level isolation ayrı doğrulanmalı (`/hr/payroll/me` Task #264'te
+  fail-closed allow-list ile var, diğer self-service endpoint'ler için
+  paralel test yok).
+
+### F8U — Auth Token Lifecycle (önerilen)
+- **Spec:** `98-auth-token-lifecycle.spec.js` (planlandı, henüz yok)
+- **Kapsam:** refresh token rotation · revoked refresh token reject ·
+  logout invalidates access+refresh · device-bound token (mobile) · expired
+  access token reject · concurrent refresh race.
+- **Neden:** F8I admin RBAC + F8M B2B API key test ediyor; standart user
+  JWT lifecycle (mobil app dahil) ayrı pen-test gerektirir
+  (`JWT_EXPIRATION_MINUTES`/`REFRESH_TOKEN_EXPIRATION_DAYS` env'leri
+  contract olarak doğrulanmalı).
+
+### F8V — WebSocket / Live Panel Isolation (önerilen)
+- **Spec:** `98-websocket-tenant-isolation.spec.js` (planlandı, henüz yok)
+- **Kapsam:** stress token WS subscribe · pilot event görünmez ·
+  unauthorized subscribe reject · room/channel spoof reject · message
+  injection cross-tenant.
+- **Neden:** Canlı panel/notification/dashboard stream HTTP test'lerle
+  yakalanmaz; Redis pub/sub auth invalidation gotcha mevcut ama
+  multi-tenant WS isolation ayrı stress yok.
+
+### F8W — Ops Readiness Smoke (önerilen)
+- **Spec:** `98-ops-readiness-smoke.spec.js` (planlandı, henüz yok)
+- **Kapsam:** readiness endpoint PASS/REVIEW · backup status not stale
+  (`docs/REPLIT_OPS_CHEATSHEET.md` Atlas-managed backup metrik) · rollback
+  metadata endpoint · CM backlog status (outbox depth + conflict queue
+  count) · cache warm-up smoke.
+- **Neden:** Production Safety Pack 8/8 DONE ama stres suite içinde mini
+  readiness smoke yok; nightly cron stres run'ı bu sinyali yakalamalı.
+
+### F8X — E-invoice / Finance Document Forbidden Path (önerilen)
+- **Spec:** `28B-efatura-forbidden-source-scan.spec.js` (planlandı, henüz yok)
+- **Kapsam:** F8E'de `/efatura/*` ve `/invoices/{id}/generate-efatura`
+  YASAK; source-scan ile bu yolların stress spec'lerinde çağrılmadığını
+  doğrula · invoice preview/export dry-run · external_calls=[] post-batch.
+- **Neden:** Gerçek GİB dispatch risk; F8E gotcha not'unda "bilinçli
+  dışarıda" yazıyor ama otomatik regression koruması yok.
+
+### F8O v2 — AI prompt PII redaction (önerilen)
+- **Kapsam:** AI prompt PII redaction snapshot · AI recommendation audit
+  trail · human approval required guard · AI response explainability alanı
+  zorunlu · AI output deterministic schema validation.
+
+### F8K v2 — QR token rotation deep (önerilen — F8Q § 63 başlangıç)
+- ✅ Tamper / cross-tenant / staff PII bulk — F8Q § 63 (DONE).
+- **Eksik:** secret rotate old token grace behavior · revoked token TTL
+  · raw token/secret log leak guard · audit log emit.
+
+### F8F v2 — Warehouse Transfer (önerilen)
+- **Kapsam:** warehouse A → warehouse B transfer · transfer reversal ·
+  partial receipt · supplier credit limit · purchase order cancellation ·
+  stock valuation after movement.
+- **Neden:** F8F § 70/71 bilinçli olarak transfer'i scope dışı bıraktı
+  (multi-target probe contract'a uygun değil); canlı işletmede depo
+  transferi önemli.
 
 ---
 
