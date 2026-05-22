@@ -2169,6 +2169,20 @@ async def get_payroll(
     else:
         payload['scope'] = 'department_only'
         payload['department'] = assigned
+
+    # Backward-compat (F8D-v2 spec 33 contract — payroll numeric typing):
+    # top-level `count`/`total_gross`/`total_net` numeric fields. Yeni v2
+    # response shape `staff_count`/`total_gross_pay`/`total_net_pay` kullanır,
+    # ancak stress contract + dış tüketiciler (legacy export adapters) eski
+    # adlandırmaya bağlı. Numeric type guarantee (her zaman number, hiç None):
+    # dept-only scope'ta totals=0 (gizli), aksi halde summary'den okunur.
+    payload['count'] = int(summary.get('staff_count') or 0)
+    if not is_dept_only:
+        payload['total_gross'] = float(summary.get('total_gross') or 0)
+        payload['total_net'] = float(summary.get('total_net') or 0)
+    else:
+        payload['total_gross'] = 0.0
+        payload['total_net'] = 0.0
     return payload
 
 
