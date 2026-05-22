@@ -6136,7 +6136,8 @@ async def delete_equipment(
         raise HTTPException(status_code=404, detail="Zimmet kaydı bulunamadı")
     await _audit(
         current_user, action='equipment.delete', entity_type='staff_equipment',
-        entity_id=equipment_id, severity='warning',
+        entity_id=equipment_id, details=f'Zimmet kaydı silindi: {equipment_id}',
+        severity='warning',
     )
     return {'success': True}
 
@@ -6267,7 +6268,7 @@ async def acknowledge_warning(
     }})
     await _audit(
         current_user, action='warning.acknowledge', entity_type='staff_warnings',
-        entity_id=warning_id,
+        entity_id=warning_id, details=f'Uyarı tebellüğ edildi: {warning_id}',
     )
     return {'success': True, 'acknowledged_at': now_iso}
 
@@ -6301,7 +6302,9 @@ async def delete_warning(
     await db.staff_warnings.delete_one({'tenant_id': current_user.tenant_id, 'id': warning_id})
     await _audit(
         current_user, action='warning.delete', entity_type='staff_warnings',
-        entity_id=warning_id, severity='warning',
+        entity_id=warning_id,
+        details=f"Uyarı silindi: {warn.get('warning_type', 'unknown')}",
+        severity='warning',
         before={'warning_type': warn.get('warning_type'), 'reason': warn.get('reason', '')[:100]},
     )
     return {'success': True}
@@ -6410,7 +6413,8 @@ async def delete_training(
         raise HTTPException(status_code=404, detail="Eğitim kaydı bulunamadı")
     await _audit(
         current_user, action='training.delete', entity_type='staff_trainings',
-        entity_id=training_id, severity='warning',
+        entity_id=training_id, details=f'Eğitim kaydı silindi: {training_id}',
+        severity='warning',
     )
     return {'success': True}
 
