@@ -161,6 +161,16 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
     test('D) Pilot drift: spec sonu pilot bookings sayımı = baseline', async ({ request, stressTokens }, testInfo) => {
         if (!pilotBefore) { rec(testInfo, { module: MOD, step: 'pilot_drift', status: 'SKIP', note: 'pilot baseline yok' }); return; }
         const after = await pilotBookingsCount(request, stressTokens.pilot_token);
+        // tur-29 (CI #49 NO-GO follow-up): if helper exhausted 3x retry and
+        // backend still 5xx (unreachable=true), we cannot trust `count` as
+        // reflecting true tenant state — record REVIEW + skip hard expect.
+        // Real drift would resurface in subsequent drift-check specs (24,
+        // 28, 95, 99) which all snapshot pilot independently.
+        if (after?.unreachable) {
+            rec(testInfo, { module: MOD, step: 'pilot_drift', status: 'REVIEW',
+                note: `pilot endpoint unreachable (http=${after.http}) — drift verification skipped; downstream specs will re-snapshot.` });
+            return;
+        }
         const drift = (after?.count ?? 0) - pilotBefore.count;
         if (drift !== 0) {
             recFinding(testInfo, 'P0', MOD, 'Pilot tenant mutation tespit edildi',

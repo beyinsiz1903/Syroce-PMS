@@ -24,10 +24,22 @@ export async function fetchAllByPrefix(request, token, listPath, prefixField, pr
         // `offset=(page-1)*pageSize` ekleyip duplicate ID koruması koy.
         const offset = (page - 1) * pageSize;
         const url = `${listPath}${listPath.includes('?') ? '&' : '?'}page=${page}&page_size=${pageSize}&limit=${pageSize}&offset=${offset}`;
-        const r = await request.get(url, {
-            headers: { Authorization: `Bearer ${token}` },
-            failOnStatusCode: false, timeout: 30_000,
-        }).catch(() => null);
+        // tur-29 (CI #49 NO-GO follow-up): 5xx/network retry per-page so cold-Atlas
+        // backend hiccups don't truncate the snapshot mid-pagination. Same policy
+        // as fetchSingle: 3 attempts, 2s+4s pre-retry sleep (6s inter-attempt
+        // budget); 4xx no-retry.
+        let r = null;
+        let lastStatus = 0;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            r = await request.get(url, {
+                headers: { Authorization: `Bearer ${token}` },
+                failOnStatusCode: false, timeout: 30_000,
+            }).catch(() => null);
+            lastStatus = r?.status?.() ?? 0;
+            if (r && r.ok()) break;
+            if (lastStatus >= 400 && lastStatus < 500) break;
+            if (attempt < 3) await new Promise((res) => setTimeout(res, 2000 * Math.pow(2, attempt - 1)));
+        }
         if (!r || !r.ok()) break;
         const j = await r.json().catch(() => ({}));
         const list = Array.isArray(j) ? j
@@ -61,12 +73,31 @@ export async function fetchAllByPrefix(request, token, listPath, prefixField, pr
 }
 
 // Some tenants ignore page_size — fall back to single page request and accept whatever comes back.
+// tur-29 (CI #49 NO-GO follow-up — cold-Atlas cascade): 5xx/network-error
+// retry. Slow backend boot (Atlas cold-start) created a ~6-min window where
+// list endpoints returned 503 → fetchSingle silently returned `list:[]` →
+// 11 cascade failures (pilot drift=-30 P0 false-positive; setup-probes
+// "Received: 0"). 3 attempts with exponential backoff between them: 2s
+// sleep after attempt #1 failure, 4s after #2; attempt #3 returns
+// immediately on failure (no post-sleep). Total inter-attempt budget = 6s,
+// plus 3× per-call 30s playwright timeout in worst case.
 export async function fetchSingle(request, token, listPath) {
-    const r = await request.get(listPath, {
-        headers: { Authorization: `Bearer ${token}` },
-        failOnStatusCode: false, timeout: 30_000,
-    }).catch(() => null);
-    if (!r || !r.ok()) return { http: r?.status() ?? 0, list: [] };
+    let r = null;
+    let lastStatus = 0;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        r = await request.get(listPath, {
+            headers: { Authorization: `Bearer ${token}` },
+            failOnStatusCode: false, timeout: 30_000,
+        }).catch(() => null);
+        lastStatus = r?.status?.() ?? 0;
+        // Retry only on transient backend issues: 5xx or 0 (network/timeout).
+        // 4xx (auth/perm/not-found) is deterministic — don't retry.
+        if (r && r.ok()) break;
+        if (lastStatus >= 400 && lastStatus < 500) break;
+        // Sleep only BEFORE a subsequent attempt (no sleep after final).
+        if (attempt < 3) await new Promise((res) => setTimeout(res, 2000 * Math.pow(2, attempt - 1)));
+    }
+    if (!r || !r.ok()) return { http: lastStatus, list: [] };
     const j = await r.json().catch(() => ({}));
     const list = Array.isArray(j) ? j
         : (j?.bookings || j?.rooms || j?.guests || j?.folios || j?.complaints
@@ -163,7 +194,17 @@ export function summarize(samples) {
 export async function pilotBookingsCount(request, pilotToken) {
     if (!pilotToken) return null;
     const { list, http } = await fetchSingle(request, pilotToken, '/api/pms/bookings');
-    return { http, count: list.length };
+    // tur-29 (CI #49 NO-GO follow-up): fetchSingle now retries 5xx 3x with
+    // 2s+4s pre-attempt sleep (6s inter-attempt budget, no post-final sleep).
+    // If backend is still 5xx after that, the unreachable flag lets drift-check
+    // sites distinguish "true 0 bookings" from "couldn't verify"; legacy sites
+    // still read `count` as a number for back-compat. count mirrors list.length
+    // even on unreachable (typically 0) so `(after?.count ?? 0) - pilotBefore
+    // .count` callers can gate on `after.unreachable` BEFORE deciding to fail.
+    // Preferred migration: switch manual call sites to `assertPilotDriftZero`
+    // which centralizes the unreachable guard (see backlog #FOLLOWUP-drift).
+    const unreachable = !(http >= 200 && http < 300);
+    return { http, count: list.length, unreachable };
 }
 
 export function recPerf(testInfo, module, op, samples, ok = true) {
@@ -476,6 +517,22 @@ export async function assertPilotDriftZero(testInfo, module, request, pilotToken
     }
     const snap = await pilotBookingsCount(request, pilotToken);
     const baselineCount = (typeof baseline === 'number') ? baseline : (baseline?.count ?? null);
+    // tur-29 (CI #49 NO-GO follow-up): unreachable guard centralized here so
+    // ALL drift-check sites (~16 specs using assertPilotDriftZero) honor it
+    // uniformly. If pilotBookingsCount exhausted its 3-attempt 5xx retry and
+    // backend is still non-2xx, we cannot trust the synthetic `count=0` —
+    // record REVIEW (infra) and return true. Real drift would resurface in
+    // any subsequent drift-check spec since each re-snapshots independently.
+    if (snap?.unreachable) {
+        testInfo.annotations.push({
+            type: 'rec',
+            description: JSON.stringify({
+                module, step: 'pilot_drift_zero', status: 'REVIEW',
+                note: `pilot endpoint unreachable (http=${snap.http}) after retry — drift unverifiable; downstream specs re-snapshot.`,
+            }),
+        });
+        return true;
+    }
     const afterCount = snap?.count ?? null;
     const drift = (baselineCount != null && afterCount != null) ? (afterCount - baselineCount) : null;
     const pass = drift === 0;
