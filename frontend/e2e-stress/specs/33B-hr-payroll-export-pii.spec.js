@@ -62,10 +62,22 @@ test.describe('F8D-v3 § 33B — Payroll Export PII / Role Visibility', () => {
             test.skip(true, 'module blocked');
             return;
         }
-        const r = await callTimed(request, 'get',
-            `/api/hr/payroll/export?month=${month}`, undefined, stressTokens.stress_token);
-        const ctOk = r.headers?.['content-type']?.includes('application/json');
-        const body = r.body || {};
+        // callTimed döndüğü {status, ms, body, ok} yapısında headers YOK —
+        // content-type kontrolü için raw request.get kullanıyoruz (test B
+        // ile aynı pattern). Eski hali r.headers?.['content-type'] her zaman
+        // undefined döndürüp pass=falsy yapıyordu → spurious FAIL.
+        const t0 = Date.now();
+        const rRaw = await request.get(`/api/hr/payroll/export?month=${month}`, {
+            headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
+            failOnStatusCode: false,
+        });
+        const ms = Date.now() - t0;
+        const status = rRaw.status();
+        const ct = rRaw.headers()['content-type'] || '';
+        const ctOk = ct.includes('application/json');
+        let body = {};
+        try { body = await rRaw.json(); } catch { /* non-json body */ }
+        const r = { status, ms, body, ok: status >= 200 && status < 300 };
         // Backend response contract (router.py:1107-1114): month, payroll[],
         // staff_count, total_gross_pay, total_net_pay, currency.
         const numericOk = typeof body.staff_count === 'number'
