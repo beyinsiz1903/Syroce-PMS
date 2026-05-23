@@ -22,7 +22,7 @@ python-multipart==0.0.27
 python-socketio==5.16.1
 sentry-sdk[fastapi]>=2.0
 simple-websocket==1.1.0
-starlette==1.0.0
+starlette==1.0.1
 strawberry-graphql==0.315.4
 uvicorn==0.25.0
 uvloop==0.22.1

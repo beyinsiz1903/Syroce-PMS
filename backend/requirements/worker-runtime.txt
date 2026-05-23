@@ -23,4 +23,4 @@
 -r worker.txt
 
 fastapi==0.135.1
-starlette==1.0.0
+starlette==1.0.1
