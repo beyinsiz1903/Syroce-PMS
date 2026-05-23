@@ -1,6 +1,7 @@
 modules = ["python-3.12", "nodejs-20", "web", "bash", "postgresql-16"]
 [agent]
 expertMode = true
+stack = "BEST_EFFORT_FALLBACK"
 
 [nix]
 channel = "stable-25_05"
@@ -77,14 +78,6 @@ waitForPort = 8080
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 5001
-externalPort = 3000
-
-[[ports]]
-localPort = 6380
-externalPort = 3001
 
 [[ports]]
 localPort = 8000
