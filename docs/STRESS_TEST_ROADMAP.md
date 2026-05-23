@@ -213,23 +213,69 @@ Bu bölüm, kullanıcı audit'i (2026-05-22) sonrası tespit edilen ve F8A–F8Q
 kapsamı dışında kalmış **gerçek production saldırı yüzeylerini** kayıt
 altına alır. Her madde ileride yeni bir faz veya v2 push için backlog.
 
-### F8R — Export Artifact IDOR (önerilen)
-- **Spec:** `98-export-artifact-idor.spec.js` (planlandı, henüz yok)
-- **Kapsam:** stress tenant export job oluştur → pilot token ile download
-  dene (403/404 expect) · pilot export id harvest → stress token ile
-  download dene (403/404 expect) · signed download URL varsa tenant-bound
-  ve expiry-bound enforcement · XLSX/PDF content-type + size header check.
-- **Neden:** F8H rapor üretimini test ediyor ama oluşan artifact'in
-  cross-tenant indirilemediği ayrıca doğrulanmalı (signed URL leak riski).
+### F8R — Export Artifact IDOR — ✅ DONE (2026-05-23)
+- **Spec:** `frontend/e2e-stress/specs/91-export-artifact-idor.spec.js`
+- **Module:** `export_artifact_idor`
+- **Kapsam:** 9 export surface (hr_payroll_run · hr_shifts · hr_attendance ·
+  hr_leave · hr_overtime · hr_payroll_csv · admin_leads_csv ·
+  pms_commission · b2b_analytics). Path-ID surface'lerde pilot ID harvest
+  → stress_token download → 403/404 zorunlu; 2xx + body pilot marker →
+  P0 IDOR. Self-tenant smoke (content-type expected class, 5xx → P1).
+  Unauth probe (no bearer) → 2xx + content → P0. Binary-aware
+  `downloadProbe` (Content-Type/Length header + 2KB body sniff).
+- **Doctrine:** module-blocked her surface için tekil (list probe non-2xx
+  → o surface SKIP, diğerleri çalışır). Final invariant (drift=0,
+  external_calls=[]) bağımsız her zaman çalışır.
 
-### F8S — File/Document Upload Security (önerilen)
-- **Spec:** `64-file-upload-security.spec.js` (planlandı, henüz yok)
-- **Kapsam:** oversized file reject (size limit) · unsupported MIME reject
-  (allow-list enforce) · polyglot file reject (HTML-in-JPEG) · path
-  traversal filename reject (`../../etc/passwd`) · raw path/token response
-  leak guard · cross-tenant download reject.
-- **Neden:** F8K § 60 ID metadata-only test ediyor; sistem genelindeki
-  diğer upload sürfeyleri (avatar, doc, attachment) ayrı pen-test ister.
+### F8S — File/Document Upload Security — ✅ DONE (2026-05-23)
+- **Spec:** `frontend/e2e-stress/specs/64-file-upload-security.spec.js`
+- **Module:** `file_upload_security`
+- **Kapsam:** HR docs (`POST /api/hr/staff/{id}/documents`, 5 MB cap,
+  MIME allow-list) + housekeeping photo (`POST /api/housekeeping/upload-photo`,
+  Pillow magic-bytes). Probe matrix: oversized → 413 · exe/svg MIME → 400/415 ·
+  HTML-as-PDF polyglot (HR, P2 informational header-trust gotcha) ·
+  HTML-as-PNG/PDF-as-JPEG polyglot (HK, P0 if accepted) · empty file → 400 ·
+  path-traversal filename → sanitize zorunlu · cross-tenant download
+  (stress doc → pilot token = 403/404, pilot doc → stress token = 403/404) ·
+  unauth POST → 4xx zorunlu.
+- **Doctrine:** her surface ayrı module-block (staff probe vs rooms probe);
+  diğer surface çalışmaya devam. Final invariant bağımsız.
+
+### F8U — Auth Token Lifecycle — ✅ DONE (2026-05-23)
+- **Spec:** `frontend/e2e-stress/specs/98-auth-token-lifecycle.spec.js`
+- **Module:** `auth_token_lifecycle`
+- **Kapsam:** fresh login (paylaşılan stress bearer ASLA logout edilmez —
+  ayrı session) · token shape (access_token + refresh_token + expires_in) ·
+  refresh rotation (access + refresh diff zorunlu, refresh body single-use)
+  · old refresh after rotation → 4xx (P0 if reused) · logout invalidates
+  hem access hem refresh (Redis pub/sub auth invalidation gotcha guardı) ·
+  garbage/random/fake-shape/tampered (real JWT signature byte-flip) reject
+  · cross-scope guard (refresh token Bearer olarak `/auth/me` → 4xx, P0
+  if accepted) · final invariants.
+- **Doctrine:** serial mode (logout chain); module-blocked yok (creds env
+  yoksa A-G SKIP, H bağımsız).
+
+### F8V — WebSocket / Live Panel Isolation — ✅ DONE (2026-05-23)
+- **Spec:** `frontend/e2e-stress/specs/98B-websocket-tenant-isolation.spec.js`
+- **Module:** `ws_tenant_isolation`
+- **Kapsam:** `/api/enterprise/ws/live?token=...` (enterprise_live L86) ·
+  unauth/garbage/random token → close(4001) veya data frame yok (data frame
+  = P0) · valid stress_token connect → frame'lerde pilot_tid literal yok
+  (leak = P0) · cross-tenant subscribe spoof (4 farklı payload shape) →
+  pilot_tid frame'de görünmemeli · final invariants. Dynamic `ws` import
+  (Node 20 no native WebSocket; frontend/node_modules/ws bundled).
+- **Doctrine:** `ws` import veya endpoint 404 → A/B/C SKIP, D bağımsız.
+
+### F8W — Ops Readiness Smoke — ✅ DONE (2026-05-23)
+- **Spec:** `frontend/e2e-stress/specs/09-ops-readiness-smoke.spec.js`
+- **Module:** `ops_readiness`
+- **Kapsam:** `/health` + `/health/ready` + `/api/health` 2xx zorunlu ·
+  backup last age (5 endpoint candidate prob) — >36h REVIEW, >7d P1 ·
+  CM outbox depth (>10k = P1) + conflict queue (>100 open = P1) ·
+  liveness probes (ws/stats · observability/health · system-health/live ·
+  admin/cache/warmer-status) 5xx = P1 · final invariants.
+- **Doctrine:** read-only nightly cron sinyal yakalayıcı. Tek probe
+  unreachable → P2 informational, suite SKIP değil.
 
 ### F8T — Staff Self-Service Scope (önerilen)
 - **Spec:** `38-hr-staff-self-service.spec.js` (planlandı, henüz yok)
