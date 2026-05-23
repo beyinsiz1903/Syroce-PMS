@@ -94,13 +94,19 @@ test.describe('F8D-v3 § 38 — Employee Profile Detail', () => {
             if (r.ok) {
                 ok++;
                 const body = r.body || {};
+                // Backend nested response contract (router.py:3283-3302):
+                //   staff, attendance:{records[], total_hours_30d, days_present_30d},
+                //   leaves:{items[], total, pending}, leave_balance,
+                //   performance:{items[], avg_score, total, redacted},
+                //   payroll:{recent[], count}, upcoming_shifts[]
                 if (body.staff) shapeCheck.has_staff++;
-                if (Array.isArray(body.attendance)) shapeCheck.has_attendance++;
-                if (Array.isArray(body.leaves)) shapeCheck.has_leaves++;
-                if (Array.isArray(body.reviews)) shapeCheck.has_reviews++;
-                if (Array.isArray(body.payroll)) shapeCheck.has_payroll++;
-                if (Array.isArray(body.shifts)) shapeCheck.has_shifts++;
-                if (typeof body.total_hours === 'number' || typeof body.days_present === 'number') {
+                if (Array.isArray(body.attendance?.records)) shapeCheck.has_attendance++;
+                if (Array.isArray(body.leaves?.items)) shapeCheck.has_leaves++;
+                if (Array.isArray(body.performance?.items)) shapeCheck.has_reviews++;
+                if (Array.isArray(body.payroll?.recent)) shapeCheck.has_payroll++;
+                if (Array.isArray(body.upcoming_shifts)) shapeCheck.has_shifts++;
+                if (typeof body.attendance?.total_hours_30d === 'number'
+                    || typeof body.attendance?.days_present_30d === 'number') {
                     shapeCheck.has_metrics++;
                 }
                 // PII mask assert on staff doc (super_admin → manage_hr=true, may see raw).

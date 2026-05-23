@@ -141,19 +141,41 @@ test.describe('F8D § 22 — HR Leave', () => {
         const samples = [];
         let ok = 0, fail = 0, throttled = 0;
         const errs = [];
+        // Task #263: backend 2-aşamalı state machine — pending → dept_approve →
+        // dept_approved → approve → approved. Reject pending'den de olur.
+        // Spec her i için: i%2==0 → dept_approve sonra approve (chained ok),
+        //                   i%2==1 → reject (single-step). ok floor=N.
         for (let i = 0; i < createdRequestIds.length; i++) {
             const rid = createdRequestIds[i];
-            // LeaveDecision router contract: Literal['approve', 'reject'].
-            const payload = {
-                decision: i % 2 === 0 ? 'approve' : 'reject',
-                note: `${prefix} F8D 22-C decision`,
-            };
-            const r = await callTimedWithBackoff(request, 'post', `/api/hr/leave-request/${rid}/decision`,
-                payload, stressTokens.stress_token);
-            samples.push(r.ms);
-            if (r.throttled) throttled++;
-            if (r.ok) ok++;
-            else { fail++; if (errs.length < 3) errs.push({ status: r.status, body: JSON.stringify(r.body).slice(0, 120) }); }
+            if (i % 2 === 0) {
+                // Aşama 1: dept_approve
+                const r1 = await callTimedWithBackoff(request, 'post', `/api/hr/leave-request/${rid}/decision`,
+                    { decision: 'dept_approve', note: `${prefix} 22-C dept` }, stressTokens.stress_token);
+                samples.push(r1.ms);
+                if (r1.throttled) throttled++;
+                if (!r1.ok) {
+                    fail++;
+                    if (errs.length < 3) errs.push({ phase: 'dept_approve', status: r1.status, body: JSON.stringify(r1.body).slice(0, 120) });
+                    await new Promise((res) => setTimeout(res, 1500));
+                    continue;
+                }
+                await new Promise((res) => setTimeout(res, 600));
+                // Aşama 2: approve (final HR)
+                const r2 = await callTimedWithBackoff(request, 'post', `/api/hr/leave-request/${rid}/decision`,
+                    { decision: 'approve', note: `${prefix} 22-C final` }, stressTokens.stress_token);
+                samples.push(r2.ms);
+                if (r2.throttled) throttled++;
+                if (r2.ok) ok++;
+                else { fail++; if (errs.length < 3) errs.push({ phase: 'approve', status: r2.status, body: JSON.stringify(r2.body).slice(0, 120) }); }
+            } else {
+                // Reject — pending'den direkt geçer
+                const r = await callTimedWithBackoff(request, 'post', `/api/hr/leave-request/${rid}/decision`,
+                    { decision: 'reject', note: `${prefix} 22-C reject reason` }, stressTokens.stress_token);
+                samples.push(r.ms);
+                if (r.throttled) throttled++;
+                if (r.ok) ok++;
+                else { fail++; if (errs.length < 3) errs.push({ phase: 'reject', status: r.status, body: JSON.stringify(r.body).slice(0, 120) }); }
+            }
             await new Promise((res) => setTimeout(res, 1500));
         }
         const total = createdRequestIds.length;

@@ -97,10 +97,12 @@ test.describe('F8D-v3 § 39B — Offboarding (Termination Read-Only + 409 Guard)
         const r = await callTimed(request, 'post',
             `/api/hr/staff/${pilotSampleId}/terminate?force_release=false`,
             {
-                reason: `${MOD} F8D-v3 cross-tenant probe — should reject`,
+                // TerminationPayload.reason: Literal['resign','dismiss','mutual',
+                // 'retire','end_of_contract','death'] — free-form string 422.
+                reason: 'mutual',
                 last_day: '2099-01-01',
                 notice_period_days: 0,
-                exit_interview_notes: 'dry-run cross-tenant probe',
+                exit_interview_notes: `${MOD} F8D-v3 cross-tenant probe — should reject (dry-run)`,
                 eligible_for_rehire: true,
             },
             stressTokens.stress_token,
@@ -213,17 +215,23 @@ test.describe('F8D-v3 § 39B — Offboarding (Termination Read-Only + 409 Guard)
         const r = await callTimed(request, 'post',
             `/api/hr/staff/${staffSample.id}/terminate?force_release=false`,
             {
-                reason: `${MOD} F8D-v3 outstanding-equipment 409 guard probe (precondition verified)`,
+                // TerminationPayload.reason: Literal enum (router.py:4938) —
+                // free-form metin 422 üretir, guard'a erişemez.
+                reason: 'mutual',
                 last_day: '2099-12-31',
                 notice_period_days: 0,
-                exit_interview_notes: 'dry-run outstanding guard probe — staff must remain active',
+                exit_interview_notes: `${MOD} F8D-v3 outstanding-equipment 409 guard probe (precondition verified) — staff must remain active`,
                 eligible_for_rehire: true,
             },
             stressTokens.stress_token,
         );
         samples.push(r.ms);
-        const safe_status = [400, 401, 403, 409].includes(r.status);
-        const has_outstanding_payload = r.status === 409
+        // Architect feedback: preconditionOk=true olduktan sonra sıkı 409
+        // beklenir. Eski safe_status [400,401,403,409] permissive seti drift'i
+        // gizleyebilir; outstanding-equipment guard'ı **tek doğru** cevap 409
+        // (outstanding_equipment code + array payload). 422/400/401/403 → FAIL.
+        const status_409 = r.status === 409;
+        const has_outstanding_payload = status_409
             && r.body?.detail?.code === 'outstanding_equipment'
             && Array.isArray(r.body?.detail?.outstanding_equipment);
         const stress_staff_terminated = r.status === 200 || r.status === 201;
@@ -241,18 +249,22 @@ test.describe('F8D-v3 § 39B — Offboarding (Termination Read-Only + 409 Guard)
         samples.push(staffR.ms);
         const staff_still_active = staffR.ok && (staffR.body?.record === null || staffR.body?.record === undefined);
 
-        const pass = safe_status && has_outstanding_payload && staff_still_active && !stress_staff_terminated;
+        const pass = status_409 && has_outstanding_payload && staff_still_active && !stress_staff_terminated;
         recPerf(testInfo, MOD, 'outstanding_409_guard', samples, pass);
         rec(testInfo, { module: MOD, step: 'outstanding_409_guard', status: pass ? 'PASS' : 'FAIL',
             endpoint: 'POST /api/hr/staff/{stress_id}/terminate?force_release=false (preconditioned)',
-            note: `precondition_ok=true synth_equip=${synthEquipId.slice(0, 8)}.. terminate_status=${r.status} has_409_payload=${has_outstanding_payload} ret_status=${retR.status} staff_still_active=${staff_still_active} stress_staff_terminated=${stress_staff_terminated}` });
+            note: `precondition_ok=true synth_equip=${synthEquipId.slice(0, 8)}.. terminate_status=${r.status} status_409=${status_409} has_409_payload=${has_outstanding_payload} ret_status=${retR.status} staff_still_active=${staff_still_active} stress_staff_terminated=${stress_staff_terminated}` });
         if (stress_staff_terminated) {
             recFinding(testInfo, 'P0', MOD, 'Outstanding-equipment 409 guard BYPASS — stress staff terminated',
                 `status=${r.status} — 409 guard ihlal: outstanding equipment varken terminate kabul edildi. KATASTROFİK.`);
         }
-        if (!has_outstanding_payload && safe_status) {
+        if (!status_409 && !stress_staff_terminated) {
+            recFinding(testInfo, 'P1', MOD, '409 guard status drift — beklenen 409, alınan başka',
+                `status=${r.status} body=${JSON.stringify(r.body).slice(0, 160)} — outstanding guard tetiklenmedi; payload validation veya kontrat regresyonu olabilir.`);
+        }
+        if (status_409 && !has_outstanding_payload) {
             recFinding(testInfo, 'P1', MOD, '409 response shape drift',
-                `status=${r.status} detail.code=${r.body?.detail?.code} — outstanding_equipment payload yok.`);
+                `status=409 detail.code=${r.body?.detail?.code} — outstanding_equipment payload yok.`);
         }
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'outstanding_409_guard', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);

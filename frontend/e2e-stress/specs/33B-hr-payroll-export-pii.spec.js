@@ -40,8 +40,10 @@ test.describe('F8D-v3 § 33B — Payroll Export PII / Role Visibility', () => {
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
         const today = new Date();
         month = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+        // Backend export endpoint contract: query param `month` (NOT period_month).
+        // backend/domains/hr/router.py:1099 — `month: str | None = None`.
         const probe = await withModuleProbe(request, stressTokens.stress_token,
-            `/api/hr/payroll/export?period_month=${month}`);
+            `/api/hr/payroll/export?month=${month}`);
         if (probe.moduleBlocked) {
             moduleBlocked = true;
             blockedReason = `export_probe_${probe.reason}_status_${probe.status}`;
@@ -61,11 +63,14 @@ test.describe('F8D-v3 § 33B — Payroll Export PII / Role Visibility', () => {
             return;
         }
         const r = await callTimed(request, 'get',
-            `/api/hr/payroll/export?period_month=${month}`, undefined, stressTokens.stress_token);
+            `/api/hr/payroll/export?month=${month}`, undefined, stressTokens.stress_token);
         const ctOk = r.headers?.['content-type']?.includes('application/json');
         const body = r.body || {};
-        const numericOk = typeof body.count === 'number'
-            && typeof body.total_gross === 'number' && typeof body.total_net === 'number';
+        // Backend response contract (router.py:1107-1114): month, payroll[],
+        // staff_count, total_gross_pay, total_net_pay, currency.
+        const numericOk = typeof body.staff_count === 'number'
+            && typeof body.total_gross_pay === 'number'
+            && typeof body.total_net_pay === 'number';
         // PII scan — bordro JSON içinde TC (11 hane), IBAN (TR + 24 hane), JWT.
         // Architect feedback: bare JWT (Bearer prefix YOK) da yakalan; TC için
         // identity_no/tc_kimlik field bağlamına bakarak false-positive azalt.
@@ -87,7 +92,7 @@ test.describe('F8D-v3 § 33B — Payroll Export PII / Role Visibility', () => {
         recPerf(testInfo, MOD, 'json_export', [r.ms], pass);
         rec(testInfo, { module: MOD, step: 'json_export', status: pass ? 'PASS' : 'FAIL',
             endpoint: 'GET /api/hr/payroll/export',
-            note: `status=${r.status} ct_ok=${ctOk} numeric_ok=${numericOk} count=${body.count} tc_present=${!!tcMatch} iban_present=${!!ibanMatch} token_present=${!!tokenMatch}` });
+            note: `status=${r.status} ct_ok=${ctOk} numeric_ok=${numericOk} staff_count=${body.staff_count} gross=${body.total_gross_pay} net=${body.total_net_pay} tc_present=${!!tcMatch} iban_present=${!!ibanMatch} token_present=${!!tokenMatch}` });
         if (tcContextMatch) recFinding(testInfo, 'P0', MOD, 'TC kimlik plain-text in payroll JSON export (context field)',
             `field-context match (identity_no/tc_kimlik); first 3 digits=${tcContextMatch[1].slice(0, 3)}***`);
         else if (tcBareFalsePositive) recFinding(testInfo, 'P2', MOD, '11-digit literal in payroll JSON (informational, likely ID/ts)',
@@ -97,7 +102,7 @@ test.describe('F8D-v3 § 33B — Payroll Export PII / Role Visibility', () => {
         if (tokenMatch) recFinding(testInfo, 'P0', MOD, 'JWT token leak in payroll JSON export',
             `kind=${jwtBearerMatch ? 'bearer_prefixed' : 'bare_three_segment'} serialized in body`);
         if (!numericOk) recFinding(testInfo, 'P1', MOD, 'Payroll export numeric contract drift',
-            `count_type=${typeof body.count} gross_type=${typeof body.total_gross} net_type=${typeof body.total_net}`);
+            `staff_count_type=${typeof body.staff_count} gross_type=${typeof body.total_gross_pay} net_type=${typeof body.total_net_pay}`);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'json_export', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
     });
@@ -111,7 +116,7 @@ test.describe('F8D-v3 § 33B — Payroll Export PII / Role Visibility', () => {
         }
         // CSV stream — callTimed uses request.get; we need raw text body.
         const t0 = Date.now();
-        const r = await request.get(`/api/hr/payroll/export/csv?period_month=${month}`, {
+        const r = await request.get(`/api/hr/payroll/export/csv?month=${month}`, {
             headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
             failOnStatusCode: false,
         });

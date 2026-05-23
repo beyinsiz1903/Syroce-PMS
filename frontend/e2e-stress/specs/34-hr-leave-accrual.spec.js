@@ -168,16 +168,26 @@ test.describe('F8D-v2 § 34 — HR Leave Balance Accrual + Carryover', () => {
             expect(createOk).toBeGreaterThan(0);
             return;
         }
-        // Approve decision — router contract: { decision: 'approve'|'reject', note? }
-        // (backend/domains/hr/router.py:112-114 LeaveDecision). NOT `action`.
-        const decR = await callTimedWithBackoff(request, 'post',
+        // Task #263: 2-aşamalı state machine — pending → dept_approve →
+        // dept_approved → approve → approved. İzin bakiyesi decrement'i için
+        // final 'approved' status zorunlu (router.py:836-839 approved leaves
+        // sayılır), bu yüzden iki aşama da çağrılır.
+        const decR1 = await callTimedWithBackoff(request, 'post',
+            `/api/hr/leave-request/${lid}/decision`,
+            { decision: 'dept_approve', note: `${prefix} F8D-v2 34-B dept` },
+            stressTokens.stress_token);
+        samples.push(decR1.ms);
+        if (!decR1.ok && (decR1.status === 401 || decR1.status === 403)) permFail++;
+        else if (!decR1.ok) { fail++; errs.push({ phase: 'dept_approve', status: decR1.status, body: JSON.stringify(decR1.body).slice(0, 120) }); }
+        await new Promise((res) => setTimeout(res, 600));
+        const decR = decR1.ok ? await callTimedWithBackoff(request, 'post',
             `/api/hr/leave-request/${lid}/decision`,
             { decision: 'approve', note: `${prefix} F8D-v2 34-B approve` },
-            stressTokens.stress_token);
-        samples.push(decR.ms);
+            stressTokens.stress_token) : decR1;
+        if (decR !== decR1) samples.push(decR.ms);
         if (decR.ok) decisionOk++;
         else if (decR.status === 401 || decR.status === 403) permFail++;
-        else { fail++; errs.push({ phase: 'decision', status: decR.status, body: JSON.stringify(decR.body).slice(0, 120) }); }
+        else if (decR !== decR1) { fail++; errs.push({ phase: 'decision', status: decR.status, body: JSON.stringify(decR.body).slice(0, 120) }); }
         // Re-read balance — used should be ≥ before+2 (router computes from approved leaves)
         await new Promise((res) => setTimeout(res, 600));
         const afterR = await callTimed(request, 'get',
