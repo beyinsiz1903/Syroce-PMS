@@ -4,6 +4,33 @@
 sokmak — pilot tenant'a mutation yok, gerçek dış servis çağrısı yok,
 external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 
+## Latest verified baseline (2026-05-23) ✅ GREEN
+
+> **Bu satır resmi baseline'dır** — yeni geliştirmeler bu green run'a
+> karşı regression test'ler. Detay rapor:
+> [`docs/drill_reports/20260523_stress_full_stress_suite_GREEN.md`](./drill_reports/20260523_stress_full_stress_suite_GREEN.md)
+
+| Alan | Değer |
+|---|---|
+| Run tarihi | 2026-05-23 |
+| Suite | Full Operational Stress Suite (F8A+F8B+F8C+F8D+F8D-v3+F8E+F8F..F8O) |
+| Workflow | GitHub Actions — Full Operational Stress Suite (CI one-shot) |
+| Commit SHA (HEAD) | `a035568c` |
+| Contributing fixes | `8cee3050` (33B header read), `a035568c` (starlette ≥1.0.1 PYSEC-2026-161) |
+| Süre | 2758.8s (~46 dk) |
+| Toplam test | 413 |
+| Başarısız test | **0** |
+| Adım PASS / FAIL / REVIEW / SKIP | **662 / 0 / 44 / 53** |
+| P0 / P1 / P2 / P3 | **0 / 0 / 35 / 1** |
+| `external_calls` | `[]` (her modülde re-assert) |
+| `pilot_drift` | **0** (baseline=30, after=30) |
+| Cleanup | idempotent (cleanup#1 deleted=7732, cleanup#2 deleted=0) |
+| F8D-v3 HR extension | ✅ 6 yeni spec full-suite içinde geçti — 33B/35B/38/38B/39/39B |
+| Final verdict | ✅ **GO** |
+
+**Önceki kademe raporları (20260517..20260520)** artık tarihsel referans
+durumunda; canlı baseline olarak yukarıdaki tek run kullanılır.
+
 ## Mutlak kurallar (her faz için aynen geçerli)
 
 - Pilot tenant'a **mutation yok** (yalnızca read; pilot_drift gate
