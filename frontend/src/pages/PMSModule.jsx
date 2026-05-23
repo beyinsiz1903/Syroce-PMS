@@ -8,8 +8,9 @@ import GlobalSearch from '@/components/GlobalSearch';
 // Tur 5: Bundle code-split — tab içerikleri ve büyük dialog'lar lazy.
 // İlk yüklemede sadece varsayılan 'frontdesk' tab'ı indirilir; kullanıcı
 // diğer sekmelere geçince ilgili chunk talep üzerine yüklenir.
-// Sticky-mount mantığı (visitedTabs) korunur — bir kez ziyaret edilen
-// chunk RAM'de kalır, geri dönünce yeniden indirilmez.
+// Perf fix (2026-05): aktif-only mount (bkz. activeTab guard'ları) ile
+// arka planda paralel polling yapan eski sticky-mount kaldırıldı; lazy
+// chunk'lar browser/HTTP cache sayesinde geri dönüşlerde anında render.
 const FrontdeskTab = lazy(() => import('@/components/pms/FrontdeskTab'));
 const HousekeepingTab = lazy(() => import('@/components/pms/HousekeepingTab'));
 const BookingsTab = lazy(() => import('@/components/pms/BookingsTab'));
@@ -222,20 +223,14 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     return 'frontdesk';
   });
 
-  // Sticky-lazy mount: yalnızca ziyaret edilmiş PMS sekmelerinin içeriği
-  // mount edilir. Globaldeki TabsContent forceMount yapıyor; bu yüzden
-  // 20 sekmenin hepsi başlangıçta mount oluyor ve onlarca gereksiz
-  // endpoint + polling timer + Socket.IO bağlantısı tetikleniyordu.
-  // Bir sekme bir kez ziyaret edilince mount kalır → state ve abone-
-  // likler korunur, geri dönünce yeniden fetch yok.
-  const [visitedTabs, setVisitedTabs] = useState(() => {
-    const hash = window.location.hash.replace('#', '');
-    const initial = (hash && validTabKeys.has(hash)) ? hash : 'frontdesk';
-    return new Set([initial]);
-  });
-  useEffect(() => {
-    setVisitedTabs((prev) => (prev.has(activeTab) ? prev : new Set([...prev, activeTab])));
-  }, [activeTab]);
+  // Active-only mount (perf fix): önceki sticky-lazy `visitedTabs` modeli
+  // bir sekme bir kez ziyaret edildiğinde MOUNT halinde tutuyordu. Global
+  // `tabs.jsx` forceMount yaptığı için ziyaret edilmiş 5-6 ağır panel arka
+  // planda paralel çalışıyor (TanStack Query subscriptions, polling, socket
+  // listener'lar) ve her tab geçişinde hepsinin reconciliation maliyeti
+  // ödeniyordu → sekme geçişi gözle görülür yavaşlıyordu. Artık yalnız
+  // aktif sekme mount edilir; TanStack Query cache geri dönüşlerde
+  // veriyi anında yeniden hidrate eder, kullanıcı için kesinti olmadan.
 
   useEffect(() => {
     const onHashChange = () => {
@@ -851,14 +846,16 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             })}
           </TabsList>
 
-          {/* Tur 5: Tüm tab içerikleri lazy chunk — tek Suspense yeterli.
-              Sticky-mount + lazy birlikte: ziyaret edilmemiş tab indirilmez,
-              ziyaret edilmiş tab tekrar gelse RAM'den anında render. */}
+          {/* Perf fix: yalnız aktif sekme mount. Lazy chunk ilk ziyarette
+              indirilir; sonra browser/HTTP cache. TanStack Query cache veriyi
+              re-mount sırasında anında geri hidrate eder. Önceki "sticky-mount
+              + forceMount" modeli ziyaret edilmiş tüm panelleri arka planda
+              canlı tuttuğu için tab geçişi yavaşlıyordu. */}
           <Suspense fallback={<div className="p-6 text-sm text-slate-500">Yükleniyor…</div>}>
-          {visitedTabs.has('frontdesk') && (
+          {activeTab === 'frontdesk' && (
             <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} rooms={rooms} guests={guests} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loadData={loadData} loading={fdLoading} error={fdError} tenant={tenant} setReservationDetailId={setReservationDetailId} />
           )}
-          {visitedTabs.has('housekeeping') && (
+          {activeTab === 'housekeeping' && (
             <HousekeepingTab roomBlocks={roomBlocks} roomStatusBoard={roomStatusBoard} dueOutRooms={dueOutRooms} stayoverRooms={stayoverRooms} arrivalRooms={arrivalRooms} housekeepingTasks={housekeepingTasks} quickUpdateRoomStatus={quickUpdateRoomStatus} setOpenDialog={setOpenDialog} setSelectedRoom={setSelectedRoom} setNewBooking={setNewBooking} setMaintenanceForm={setMaintenanceForm} setMaintenanceDialogOpen={setMaintenanceDialogOpen} handleUpdateHKTask={handleUpdateHKTask} handleAssignHKTask={handleAssignHKTask} currentUserName={user?.name} loadHousekeepingData={loadHousekeepingData} onBookingCardClick={async (bookingId) => {
               let booking = bookings.find(b => b.id === bookingId);
               if (!booking) {
@@ -871,33 +868,33 @@ const PMSModule = ({ user, tenant, onLogout }) => {
               setOpenDialog('bookingDetail');
             }} toast={toast} loading={hkLoading} />
           )}
-          {visitedTabs.has('rooms') && (
+          {activeTab === 'rooms' && (
             <TabsContent value="rooms" className="space-y-4">
               <RoomsTab rooms={rooms} bookings={bookings} guests={guests} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} onPayment={(bookingId) => { setSelectedBookingDetail(bookings.find(b => b.id === bookingId) || null); setOpenDialog('bookingDetail'); }} onGuestClick={(guestId) => { const guest = guests.find(g => g.id === guestId); if (guest) { setSelectedGuest(guest); setOpenDialog('guestInfo'); } }} onBookingDoubleClick={(booking) => setReservationDetailId(booking.id)} onDataRefresh={loadData} />
               {selectedRoom && <RoomFeaturesPanel room={selectedRoom} onUpdate={loadData} />}
             </TabsContent>
           )}
-          {visitedTabs.has('guests') && (
+          {activeTab === 'guests' && (
             <GuestsTab guests={guests} setOpenDialog={setOpenDialog} setSelectedGuest360={setSelectedGuest360} loadGuest360={loadGuest360} setNewBooking={setNewBooking} t={t} />
           )}
-          {visitedTabs.has('bookings') && (
+          {activeTab === 'bookings' && (
             <BookingsTab bookingStats={bookingStats} bookings={bookings} groupedBookings={groupedBookings} guests={guests} rooms={rooms} companies={companies} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadBookingFolios={loadBookingFolios} loadGuest360={loadGuest360} setSelectedGuest360={setSelectedGuest360} setOpenDialog={setOpenDialog} setSelectedBooking={setSelectedBooking} setSelectedBookingDetail={setSelectedBookingDetail} toast={toast} isLite={isLite} roomsCount={roomsCount} activeTab={activeTab} />
           )}
-          {visitedTabs.has('cashier') && <TabsContent value="cashier" className="space-y-4"><CashierTab user={user} /></TabsContent>}
-          {visitedTabs.has('upsell') && <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>}
-          {visitedTabs.has('internal_chat') && <TabsContent value="internal_chat" className="space-y-4"><InternalChatTab currentUser={user} /></TabsContent>}
-          {visitedTabs.has('reports') && <TabsContent value="reports" className="space-y-4"><ReportsTab /></TabsContent>}
-          {visitedTabs.has('flash') && <TabsContent value="flash" className="space-y-4"><FlashReportContent rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
-          {visitedTabs.has('tasks') && <TabsContent value="tasks" className="space-y-4"><StaffTaskManager /></TabsContent>}
-          {visitedTabs.has('feedback') && <TabsContent value="feedback" className="space-y-4"><FeedbackSystem /></TabsContent>}
-          {visitedTabs.has('allotment') && <TabsContent value="allotment" className="space-y-4"><AllotmentGrid /></TabsContent>}
-          {visitedTabs.has('pos') && <TabsContent value="pos" className="space-y-4"><POSTab /></TabsContent>}
-          {visitedTabs.has('laundry') && <TabsContent value="laundry" className="space-y-4"><LaundryTab /></TabsContent>}
-          {visitedTabs.has('concierge') && <TabsContent value="concierge" className="space-y-4"><ConciergeDesk /></TabsContent>}
-          {visitedTabs.has('revenue') && <TabsContent value="revenue" className="space-y-4"><RevenueControls rooms={rooms} /></TabsContent>}
-          {visitedTabs.has('manager_report') && <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
-          {visitedTabs.has('kbs') && <TabsContent value="kbs" className="space-y-4"><KBSNotification bookings={bookings} guests={guests} /></TabsContent>}
-          {visitedTabs.has('kvkk') && <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>}
+          {activeTab === 'cashier' && <TabsContent value="cashier" className="space-y-4"><CashierTab user={user} /></TabsContent>}
+          {activeTab === 'upsell' && <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>}
+          {activeTab === 'internal_chat' && <TabsContent value="internal_chat" className="space-y-4"><InternalChatTab currentUser={user} /></TabsContent>}
+          {activeTab === 'reports' && <TabsContent value="reports" className="space-y-4"><ReportsTab /></TabsContent>}
+          {activeTab === 'flash' && <TabsContent value="flash" className="space-y-4"><FlashReportContent rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
+          {activeTab === 'tasks' && <TabsContent value="tasks" className="space-y-4"><StaffTaskManager /></TabsContent>}
+          {activeTab === 'feedback' && <TabsContent value="feedback" className="space-y-4"><FeedbackSystem /></TabsContent>}
+          {activeTab === 'allotment' && <TabsContent value="allotment" className="space-y-4"><AllotmentGrid /></TabsContent>}
+          {activeTab === 'pos' && <TabsContent value="pos" className="space-y-4"><POSTab /></TabsContent>}
+          {activeTab === 'laundry' && <TabsContent value="laundry" className="space-y-4"><LaundryTab /></TabsContent>}
+          {activeTab === 'concierge' && <TabsContent value="concierge" className="space-y-4"><ConciergeDesk /></TabsContent>}
+          {activeTab === 'revenue' && <TabsContent value="revenue" className="space-y-4"><RevenueControls rooms={rooms} /></TabsContent>}
+          {activeTab === 'manager_report' && <TabsContent value="manager_report" className="space-y-4"><ManagerDailyReport rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
+          {activeTab === 'kbs' && <TabsContent value="kbs" className="space-y-4"><KBSNotification bookings={bookings} guests={guests} /></TabsContent>}
+          {activeTab === 'kvkk' && <TabsContent value="kvkk" className="space-y-4"><KVKKManager /></TabsContent>}
           </Suspense>
         </Tabs>
 
