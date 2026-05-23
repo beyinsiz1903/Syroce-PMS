@@ -47,8 +47,11 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
   const token = localStorage.getItem('token');
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
+  // `silent=true` arka plan refresh — full skeleton flash etmeyelim, sadece
+  // ilk yüklemede `loading` göster. Aksi halde her 30 sn'de bir tüm UI
+  // refresh oluyordu (kullanıcı algıladığı yavaşlığın büyük kısmı buydu).
+  const fetchAll = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const priorityParam = filterPriority ? `&priority=${filterPriority}` : '';
       const [feedRes, statsRes, unreadRes, fdRes, hkRes] = await Promise.all([
@@ -66,17 +69,24 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
     } catch (err) {
       console.error('Event dashboard error:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [filterPriority]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // Auto-refresh every 30s
+  // 30 sn'de bir sessiz tazele; sekme arka plandayken pasif (CPU/network
+  // israfı yok). Sekme önplana döndüğünde anında bir refresh tetiklenir.
   useEffect(() => {
-    const interval = setInterval(fetchAll, 30000);
-    return () => clearInterval(interval);
+    const tick = () => { if (!document.hidden) fetchAll(true); };
+    const interval = setInterval(tick, 30000);
+    const onVis = () => { if (!document.hidden) fetchAll(true); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [fetchAll]);
 
   const markRead = async (eventIds) => {
@@ -125,7 +135,7 @@ export default function OperationalEventDashboard({ user, tenant, onLogout }) {
                 {unread.total_unread} Okunmamis
               </Badge>
             )}
-            <Button variant="outline" size="sm" onClick={fetchAll} data-testid="event-refresh-btn">
+            <Button variant="outline" size="sm" onClick={() => fetchAll(false)} data-testid="event-refresh-btn">
               <RefreshCw className="w-4 h-4 mr-2" /> Yenile
             </Button>
           </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import api from '@/api/axios';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -120,11 +120,15 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
   };
 
-  const byFloor = (data?.rooms || []).reduce((acc, r) => {
-    const f = r.floor ?? '—';
-    (acc[f] = acc[f] || []).push(r);
-    return acc;
-  }, {});
+  // Memoize: oda sayısı 200+ olabilen tesislerde her drag-hover render'ında
+  // tekrar hesaplama gereksiz idi (RoomCell child state setOver tetikliyor).
+  const byFloor = useMemo(() => {
+    return (data?.rooms || []).reduce((acc, r) => {
+      const f = r.floor ?? '—';
+      (acc[f] = acc[f] || []).push(r);
+      return acc;
+    }, {});
+  }, [data]);
 
   return (
     <>
