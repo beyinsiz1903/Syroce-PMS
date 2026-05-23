@@ -105,7 +105,7 @@ externalPort = 8099
 
 [deployment]
 deploymentTarget = "autoscale"
-build = ["bash", "-c", "uv venv /home/runner/workspace/.pythonlibs && uv pip install --python /home/runner/workspace/.pythonlibs/bin/python -r backend/requirements.txt && cd frontend && yarn install --ignore-engines --frozen-lockfile && yarn build"]
+build = ["bash", "-c", "uv venv --clear /home/runner/workspace/.pythonlibs && uv pip install --python /home/runner/workspace/.pythonlibs/bin/python -r backend/requirements.txt && cd frontend && yarn install --ignore-engines --frozen-lockfile && yarn build"]
 run = ["bash", "backend/start.sh"]
 
 [userenv]
