@@ -661,13 +661,31 @@ altına alır. Her madde ileride yeni bir faz veya v2 push için backlog.
 - **Eksik:** secret rotate old token grace behavior · revoked token TTL
   · raw token/secret log leak guard · audit log emit.
 
-### F8F v2 — Warehouse Transfer (önerilen)
-- **Kapsam:** warehouse A → warehouse B transfer · transfer reversal ·
-  partial receipt · supplier credit limit · purchase order cancellation ·
-  stock valuation after movement.
-- **Neden:** F8F § 70/71 bilinçli olarak transfer'i scope dışı bıraktı
-  (multi-target probe contract'a uygun değil); canlı işletmede depo
-  transferi önemli.
+### F8F v2 — Warehouse Transfer (DONE — Task #9, 2026-05-24)
+- **Spec:** `frontend/e2e-stress/specs/72-warehouse-transfer-procurement.spec.js`
+  (module `inventory_transfer_procurement`).
+- **Kapsam:** 5 segment — A) warehouse transfer probe
+  (`POST /api/accounting/inventory/movement?movement_type=transfer` →
+  422/400 fail-closed; 2xx = P0); B) partial GRN lifecycle
+  (sent→partially_received→received + rejected-qc no-stock guard +
+  overage 4xx); C) PO cancellation guard (empty reason 422 / cancel+GRN
+  409 / closed→cancelled 409); D) supplier `credit_limit` probe (Pydantic
+  extra-ignore → P2 product gap) + delete-when-used guard 409 + P0
+  cross-tenant IDOR (pilot bearer PUT/DELETE supplier + POST status +
+  POST GRN → 4xx mandatory); E) final invariants + idempotent cleanup
+  second-pass 404 assertion.
+- **STRESS_COLLECTIONS:** `proc_suppliers|proc_purchase_requests|
+  proc_purchase_orders|proc_goods_receipts|proc_counters` orphan-scrub
+  safety net (spec teardown primary).
+- **Doctrine:** module-blocked (suppliers GET probe non-2xx → A/B/C/D
+  skip + P2; E always runs) · pilot_drift=0 + external_calls=[] per
+  test in try/finally · inventory_item_id=null PO lines (no
+  housekeeping_inventory side-effect) · idempotent cleanup
+  (PO cancel → supplier delete; 404/409 absorb).
+- **Baseline:** 73 → **74 spec** (full-suite verification next round).
+- **Neden:** F8F § 70/71 bilinçli olarak transfer'i scope dışı bıraktı;
+  F8F v2 transfer contract'ını fail-closed olarak doğrular + partial
+  receipt + cancel guard + credit_limit gap'ini belgeler.
 
 ---
 

@@ -262,6 +262,19 @@ STRESS_COLLECTIONS = [
     # via the lifecycle; orphan scrub reaps them on residue.
     "vcc_cards",
     "reservation_activity_log",
+    # F8F v2 (2026-05-24, Task #9): Warehouse Transfer + Procurement
+    # Hardening. Spec 72 creates suppliers + POs + GRNs (+ proc_counters
+    # auto-numbering). spec-side teardown is primary (afterAll + E final
+    # cleanup); this list is the orphan-scrub safety net for runs that
+    # abort mid-flight. All rows tagged `stress_seed=True` + `stress_prefix`
+    # via the unified cleanup loop where tags are present; counters
+    # cleared by tenant_id sweep. Stress admin super_admin → manage_sales
+    # + require_procurement gate passes.
+    "proc_suppliers",
+    "proc_purchase_requests",
+    "proc_purchase_orders",
+    "proc_goods_receipts",
+    "proc_counters",
     "bookings",
     "guests",
     "rooms",
