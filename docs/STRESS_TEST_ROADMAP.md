@@ -460,6 +460,37 @@ altına alır. Her madde ileride yeni bir faz veya v2 push için backlog.
 - **Baseline:** 69 → **73 spec** (F8X/F8Y/F8Z/F8AA/F8AB + F8AC dahil;
   full-suite verification bir sonraki tur).
 
+### F8Z v2 — POS Deep Lifecycle Stress — ✅ DONE (2026-05-24)
+- **Spec:** `frontend/e2e-stress/specs/98-pos-deep-lifecycle.spec.js`
+- **Module:** `pos_deep_lifecycle`
+- **Kapsam:** POS v2 lifecycle (`POST /api/pos/v2/orders` → `/close` →
+  `/void`, `post_to_folio=false` + `booking_id=null` safe path) · split-check
+  (`POST /api/pos/check-split` equal/by_item/custom, sum ≤ total invariant)
+  · table-transfer negative contract (`POST /api/pos/transfer-table` bogus
+  from_table → 404 zorunlu) · validate-room-charge bogus + cross-tenant
+  probe (PII leak guard) · idempotency-key replay on create + close
+  (service-level `idempotency_key` body field → same order id or 4xx) ·
+  terminal-state guard (void closed order → idempotent flag, close-after-
+  void → 4xx, re-void → idempotent veya 4xx) · **P0 cross-tenant IDOR**
+  (pilot bearer stress-created order'a close/void/transfer → 4xx zorunlu,
+  2xx = P0; check-split tenant-agnostic computational, body'de stress
+  identifier görülürse P0) · cleanup idempotent (void round-trip, ikinci
+  pass idempotent veya 4xx terminal-state zorunlu) · post-batch
+  external_calls delta=0 + pilot_drift=0 her test'te.
+- **Folio safety:** `close_order(post_to_folio=False, booking_id=null)`
+  asla `folio_charges` insert etmez ve Xchange `POSTING_CHARGE` event'i
+  publish etmez (service-side short-circuit). external_calls invariant
+  batch sonunda doğrulanır.
+- **Doctrine:** F8AB spa + F8AC golf pattern'inin POS kardeşi. Module-
+  blocked pattern (`GET /api/pos/orders` probe 403/404 → A/B/C/D/E/F/G/H/I
+  `test.skip` + P2 informational, Z cleanup + final invariants bağımsız).
+  `STRESS_COLLECTIONS` listesine `pos_orders`, `pos_transactions`,
+  `table_layouts`, `kitchen_orders`, `pos_outlets`, `pos_menu_items`,
+  `happy_hour_rules`, `pos_room_charge_restrictions` eklendi (orphan-scrub
+  safety net; spec-side void primary path). Backend kodu değişmedi; v1
+  spec (`98-payment-pos-reconciliation-dryrun.spec.js`) dokunulmadı.
+- **Baseline:** 72 → **73 spec** (full-suite verification bir sonraki tur).
+
 ### F8O v2 — AI prompt PII redaction (önerilen)
 - **Kapsam:** AI prompt PII redaction snapshot · AI recommendation audit
   trail · human approval required guard · AI response explainability alanı

@@ -190,6 +190,22 @@ STRESS_COLLECTIONS = [
     "golf_players",
     "golf_tee_bookings",
     "golf_locks",
+    # F8Z v2 (2026-05-24): POS Deep Lifecycle stress (spec 98-pos-deep-lifecycle).
+    # All rows tagged `stress_seed=True` + `stress_prefix`. Spec-side teardown
+    # voids created pos_orders via POST /api/pos/v2/orders/void (idempotent);
+    # this list is the orphan-scrub safety net for runs that abort mid-flight.
+    # `post_to_folio=false` + `booking_id=null` is the safe-by-construction
+    # path in the close lifecycle: no folio_charges insert, no Xchange
+    # `POSTING_CHARGE` event. Stress admin super_admin → require_module("pos")
+    # + require_op("post_charge") gates pass.
+    "pos_orders",
+    "pos_transactions",
+    "table_layouts",
+    "kitchen_orders",
+    "pos_outlets",
+    "pos_menu_items",
+    "happy_hour_rules",
+    "pos_room_charge_restrictions",
     "bookings",
     "guests",
     "rooms",
