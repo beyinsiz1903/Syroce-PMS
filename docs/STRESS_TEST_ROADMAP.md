@@ -6,6 +6,11 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 
 ## Latest verified baseline (2026-05-24) ✅ GREEN — F8R–F8W included
 
+> **F8X–F8AA Local Compliance & Money Safety Pack** spec'leri yazıldı
+> (2026-05-24, bu commit) — 4 yeni spec (98-efatura, 65-identity, 98-payment,
+> 66-kvkk). Verified baseline rakamları **F8R–F8W dahil 68 spec** içindir;
+> F8X–F8AA full-suite verification roadmap'in bir sonraki adımıdır.
+
 > **Bu satır resmi baseline'dır** — yeni geliştirmeler bu green run'a
 > karşı regression test'ler. Detay raporlar:
 > - F8R–F8W post-fix green: [`docs/drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md`](./drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md)
@@ -323,13 +328,61 @@ altına alır. Her madde ileride yeni bir faz veya v2 push için backlog.
 - **Neden:** Production Safety Pack 8/8 DONE ama stres suite içinde mini
   readiness smoke yok; nightly cron stres run'ı bu sinyali yakalamalı.
 
-### F8X — E-invoice / Finance Document Forbidden Path (önerilen)
-- **Spec:** `28B-efatura-forbidden-source-scan.spec.js` (planlandı, henüz yok)
-- **Kapsam:** F8E'de `/efatura/*` ve `/invoices/{id}/generate-efatura`
-  YASAK; source-scan ile bu yolların stress spec'lerinde çağrılmadığını
-  doğrula · invoice preview/export dry-run · external_calls=[] post-batch.
-- **Neden:** Gerçek GİB dispatch risk; F8E gotcha not'unda "bilinçli
-  dışarıda" yazıyor ama otomatik regression koruması yok.
+### F8X — E-fatura / E-arşiv dry-run — ✅ DONE (2026-05-24)
+- **Spec:** `frontend/e2e-stress/specs/98-efatura-earsiv-dryrun.spec.js`
+- **Module:** `efatura_earsiv_dryrun`
+- **Kapsam:** `/api/invoices` list/stats read-only probe · invoice create
+  invalid VKN (4 örnek: short/long/non-numeric/all-zero) + invalid TCKN
+  (4 örnek: invalid-checksum/all-same/all-zero/non-numeric) validation
+  4xx zorunlu · cross-tenant invoice PUT IDOR (stress_token + pilot
+  invoice ID → 403/404 zorunlu, 2xx = P0) · ERP sync surface (`logo-integration/sync`,
+  `netsis-integration/sync`) module-probe + post-batch external-calls
+  delta=0 (gerçek GİB/Logo/Netsis HTTP yasak).
+- **Doctrine:** module-blocked per-surface (her endpoint için 403/404 →
+  P2 informational). Real GİB dispatch riski olmadığı assertNoExternalCallsPostBatch
+  ile her batch sonu doğrulanır.
+
+### F8Y — KBS / Jandarma identity reporting dry-run — ✅ DONE (2026-05-24)
+- **Spec:** `frontend/e2e-stress/specs/65-identity-reporting-kbs-jandarma-dryrun.spec.js`
+- **Module:** `identity_reporting_dryrun`
+- **Kapsam:** `/api/kbs/guests` · `/api/kbs/queue` · `/api/kbs/reports` ·
+  `/api/kbs/setup-info` read-only probe · invalid TC samples (5 örnek)
+  validation 4xx zorunlu · missing-identity payload → 4xx veya
+  `status=quarantined` PASS · KBS_TEST_MODE prefix guard (TEST- prefix'siz
+  reference reddedilmeli) · cross-tenant queue claim IDOR (stress_token +
+  pilot job ID → 403/404 zorunlu) · post-batch external-calls delta=0
+  (gerçek Emniyet/Jandarma HTTP yasak).
+- **Doctrine:** module-blocked per-surface. KBS_TEST_MODE OFF iken prefix
+  guard probe REVIEW olur (informational).
+
+### F8Z — Payment / POS reconciliation dry-run — ✅ DONE (2026-05-24)
+- **Spec:** `frontend/e2e-stress/specs/98-payment-pos-reconciliation-dryrun.spec.js`
+- **Module:** `payment_pos_reconciliation`
+- **Kapsam:** `/api/cashier/current-shift`, `/api/cashier/period-report`,
+  `/api/pos/orders`, `/api/pos/tables` read-only probe · folio payment
+  bogus folio ID → 404 zorunlu · negative amount → 4xx zorunlu (P1 if
+  accepted) · cross-tenant folio payment IDOR (stress_token + pilot
+  folio ID → 403/404 zorunlu, 2xx = P0 — gerçek para mutation) ·
+  manual-transaction Idempotency-Key replay → same id veya 409 zorunlu
+  (double-post P1 if distinct ids) · post-batch external-calls delta=0
+  (gerçek Iyzico/Stripe/POS HTTP yasak).
+- **Doctrine:** NO write probe outside cashier own shift; idempotency
+  probe shift YOK ise SKIP+P2 (fake PASS yok). Cross-tenant payment
+  attempt P0 hard-fail (`expect().toBeGreaterThanOrEqual(400)`).
+
+### F8AA — KVKK retention / deletion / anonymization — ✅ DONE (2026-05-24)
+- **Spec:** `frontend/e2e-stress/specs/66-kvkk-retention-deletion-anonymization.spec.js`
+- **Module:** `kvkk_retention`
+- **Kapsam:** `/api/gdpr/data-requests` · `/api/checkin/online/id-photos` ·
+  `/api/checkin/online/settings/id-photo-retention` read-only probe ·
+  bogus photo ID delete → 404 zorunlu · cross-tenant ID-photo delete
+  IDOR (stress_token + pilot photo ID → 403/404 zorunlu, 2xx = P0 KVKK
+  breach) · bulk-delete cross-tenant → `deleted_count=0` zorunlu (>0 = P0) ·
+  GDPR data-requests yanıtında pilot tenant_id literal yok (varsa P0) ·
+  anonymize/guest-hard-delete endpoint backend'te explicit YOK → P2
+  informational (roadmap backlog: F8AA v2 endpoint kontratı gerekir).
+- **Doctrine:** WRITE probe minimum (yalnız bogus-id 404 + cross-tenant
+  rejection). Real misafir profilini anonymize/silmiyoruz.
 
 ### F8O v2 — AI prompt PII redaction (önerilen)
 - **Kapsam:** AI prompt PII redaction snapshot · AI recommendation audit
