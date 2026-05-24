@@ -951,8 +951,22 @@ async def export_report_pdf(
 
         pdf_bytes = HTML(string=html, url_fetcher=_safe_fetcher).write_pdf()
         output = io.BytesIO(pdf_bytes)
-    except Exception:
-        output = io.BytesIO(html.encode('utf-8'))
+    except ImportError as e:
+        # weasyprint missing — fail LOUD (503). Silent HTML-as-PDF fallback
+        # is a contract regression (200 + HTML bytes with application/pdf
+        # media-type) and leaks rendered HTML through a PDF-typed response.
+        # Caught by stress spec F8H D (90-reports-analytics-export.spec.js)
+        # via %PDF- byte-magic assertion.
+        logger.error(f"[PDF EXPORT] weasyprint not installed: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="PDF renderer (weasyprint) unavailable on this deployment. "
+                   "Install weasyprint + system deps (cairo, pango) or use Excel/CSV export.",
+        )
+    except Exception as e:
+        # Real rendering failure — propagate as 500, not a fake 200.
+        logger.exception(f"[PDF EXPORT] render failed: {e}")
+        raise HTTPException(status_code=500, detail=f"PDF rendering failed: {type(e).__name__}")
 
     output.seek(0)
     filename = f"ozel_rapor_{config.data_source}_{datetime.now(UTC).strftime('%Y%m%d_%H%M')}.pdf"
