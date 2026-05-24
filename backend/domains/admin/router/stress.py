@@ -316,6 +316,19 @@ class StressSeedRequest(BaseModel):
     target_tenant_id: str
     room_count: int = Field(default=DEFAULT_ROOMS, ge=1, le=MAX_ROOMS_THIS_ROUND)
     data_prefix: str | None = None
+    # F8L v2 (Task #25) — synthetic `pending_assignment` bookings for the
+    # conflict-queue / bulk-resolve stress spec (52B). Without this, the
+    # stress tenant never carries pending bookings (OTA import is the only
+    # real-world producer, and external calls are invariant-blocked under
+    # `E2E_EXTERNAL_DRY_RUN=true`). Each row is tagged with the standard
+    # `stress_seed=True` + `stress_prefix=<prefix>` markers so the unified
+    # cleanup sweep covers them with zero extra code. Capped at 20 to keep
+    # the seed payload small; the spec needs only 1 to verify the real
+    # succeeded[]/failed[] partial-success contract deterministically.
+    # Synthetic bookings use a far-future stay window (today + 180 days)
+    # so `_claim_room_for_pending_booking` cannot collide with the baseline
+    # 1..4 night RNLs seeded above on any stress room.
+    seed_pending_bookings: int = Field(default=0, ge=0, le=20)
 
 
 class StressCleanupRequest(BaseModel):
@@ -1911,6 +1924,55 @@ async def stress_seed(
         counts["stock_movements"] = await _chunked_insert(db.stock_movements, stock_movements_docs, INSERT_CHUNK_SIZE)
         counts["cash_flow"] = await _chunked_insert(db.cash_flow, cash_flow_docs, INSERT_CHUNK_SIZE)
         counts["city_ledger_accounts"] = await _chunked_insert(db.city_ledger_accounts, city_ledger_accounts_docs, INSERT_CHUNK_SIZE)
+
+        # F8L v2 (Task #25) — synthetic pending_assignment bookings.
+        # These rows mimic OTA-imported reservations that could not claim
+        # a room atomically (`allocation_source="pending_assignment"`,
+        # `room_id=None`, status in PENDING_QUERY's accepted set). They
+        # let spec 52B verify the bulk-resolve succeeded[]/failed[]
+        # contract deterministically without firing any external HTTP
+        # call (OTA import — the real-world producer — is blocked by
+        # `E2E_EXTERNAL_DRY_RUN=true`). Far-future stay window guarantees
+        # no collision with the baseline RNLs seeded above, so resolve
+        # against ANY stress room succeeds. Tagged with the standard
+        # `stress_seed=True` + `stress_prefix=<prefix>` markers so the
+        # unified cleanup sweep covers them; the room_night_locks rows
+        # written by a successful resolve reference stress-tenant-only
+        # room_ids that are rotated every run (fresh UUIDs after each
+        # cleanup), so any residue is harmless.
+        pending_bookings_docs: list[dict] = []
+        if payload.seed_pending_bookings > 0:
+            future_in = (now + timedelta(days=180)).date().isoformat()
+            future_out = (now + timedelta(days=181)).date().isoformat()
+            for i in range(payload.seed_pending_bookings):
+                pending_bookings_docs.append({
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": stress_tid,
+                    "guest_id": str(uuid.uuid4()),
+                    "guest_name": f"{prefix}PendingGuest_{i + 1:03d}",
+                    "room_id": None,
+                    "room_type": ROOM_TYPES[i % len(ROOM_TYPES)],
+                    "check_in": future_in,
+                    "check_out": future_out,
+                    "nights": 1,
+                    "adults": 2, "children": 0, "guests_count": 2,
+                    "total_amount": 1000.0, "base_rate": 1000.0,
+                    "paid_amount": 0.0,
+                    "status": "confirmed",
+                    "channel": "ota_stress_synth",
+                    "source_channel": "ota_stress_synth",
+                    "origin": "stress_pending_seed",
+                    "allocation_source": "pending_assignment",
+                    "hold_status": "none",
+                    "currency": "TRY",
+                    "external_confirmation": f"{prefix}EXT_{i + 1:04d}",
+                    "special_requests": None,
+                    "created_at": now,
+                    "stress_seed": True, "stress_prefix": prefix,
+                })
+        counts["pending_bookings"] = await _chunked_insert(
+            db.bookings, pending_bookings_docs, INSERT_CHUNK_SIZE,
+        )
         # city_ledger_transactions is NOT seeded — specs write transactions
         # against the seeded city_ledger_accounts; cleanup loop still scrubs
         # the collection via the unified STRESS_COLLECTIONS sweep.

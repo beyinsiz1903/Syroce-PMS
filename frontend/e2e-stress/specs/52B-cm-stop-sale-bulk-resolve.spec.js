@@ -441,41 +441,68 @@ test.describe('F8L v2 § 52B — Stop-sale CB + Bulk Resolve', () => {
         }
     });
 
-    test('G) Bulk-resolve — real partial-success (existing pending; informational)', async ({ request, stressTokens }, testInfo) => {
+    test('G) Bulk-resolve — real partial-success (deterministic; seeded pending)', async ({ request, stressTokens }, testInfo) => {
         if (cqBlocked) {
             rec(testInfo, { module: MOD, step: 'br_real_partial', status: 'SKIP', note: `cq blocked: ${cqBlockedReason}` });
             test.skip(true, 'cq blocked');
             return;
         }
-        if (!existingPendingId || !stressRoomId) {
-            rec(testInfo, { module: MOD, step: 'br_real_partial', status: 'REVIEW',
-                note: `no_existing_pending=${!existingPendingId} no_stress_room=${!stressRoomId} — real-succeeded coverage atlandı; error-path B/C kapsadı.` });
-            recFinding(testInfo, 'P2', MOD,
-                'Bulk-resolve real-succeeded path coverage gap',
-                `Stres tenant'ta pending_assignment booking yok (seed pipeline OTA import gerektiriyor; external_calls invariant'ı engelliyor). Partial-failure ISOLATION error-path testleri (B/C) ile assert edildi; gerçek succeeded[] response shape bu run'da assert edilemedi.`);
+        // F8L v2 (Task #25): global-setup.js seeds N synthetic pending_assignment
+        // bookings via the stress seed endpoint (`seed_pending_bookings`) so this
+        // test asserts the real succeeded[]/failed[] partial-success contract on
+        // every run instead of degrading to an informational P2 review. The
+        // seeded bookings carry stress_seed=True + stress_prefix=<prefix> and
+        // a far-future stay window, so `_claim_room_for_pending_booking` cannot
+        // collide with the baseline RNLs on any stress room.
+        if (!existingPendingId) {
+            rec(testInfo, { module: MOD, step: 'br_real_partial', status: 'FAIL',
+                note: 'no_existing_pending — seed_pending_bookings did not populate a pending booking (expected ≥1)' });
+            recFinding(testInfo, 'P1', MOD,
+                'Bulk-resolve real-succeeded seed missing',
+                `GET ${CQ_PATH} returned no pending_assignment booking despite global-setup.js passing seed_pending_bookings>0. Check backend stress seed factory (`+
+                `pending_bookings_docs branch) or PENDING_QUERY shape drift.`);
+            expect(existingPendingId, 'seed_pending_bookings must produce a pending_assignment booking').toBeTruthy();
             return;
         }
-        // Gerçek partial-success: 1 valid pending + 1 bogus room_id.
+        if (!stressRoomId) {
+            rec(testInfo, { module: MOD, step: 'br_real_partial', status: 'FAIL',
+                note: 'no_stress_room — baseline seed should expose at least one room via /api/pms/rooms' });
+            expect(stressRoomId, 'stress room sample required for real-succeeded path').toBeTruthy();
+            return;
+        }
+        // Deterministic partial-success: 1 valid pending + 1 bogus room_id.
         const bogusBooking = `${prefix || 'STRESS'}_BR_REAL_BOGUS_${Date.now()}`;
         const items = [
             { booking_id: existingPendingId, room_id: stressRoomId },
             { booking_id: bogusBooking, room_id: 'STRESS_NONEXISTENT_ROOM_999' },
         ];
         const r = await callTimed(request, 'post', BR_PATH, { items }, stressTokens.stress_token);
-        if (!r.ok) {
-            rec(testInfo, { module: MOD, step: 'br_real_partial', status: 'FAIL', http: r.status,
-                note: `expected 200 got ${r.status}` });
-            return;
-        }
         const succeeded = r.body?.succeeded || [];
         const failed = r.body?.failed || [];
-        const realInSucceeded = succeeded.some((s) => s.booking_id === existingPendingId);
+        const realInSucceeded = succeeded.some((s) => s.booking_id === existingPendingId && s.room_id === stressRoomId);
         const bogusInFailed = failed.some((f) => f.booking_id === bogusBooking && f.error === 'room_not_found');
-        const pass = realInSucceeded && bogusInFailed && r.body?.total === 2;
+        const totalOk = r.body?.total === 2;
+        const succeededCountOk = succeeded.length === 1;
+        const failedCountOk = failed.length === 1;
+        const pass = r.ok && realInSucceeded && bogusInFailed && totalOk && succeededCountOk && failedCountOk;
+
         rec(testInfo, { module: MOD, step: 'br_real_partial',
             status: pass ? 'PASS' : 'FAIL',
             endpoint: `POST ${BR_PATH}`, http: r.status,
-            note: `real_in_succeeded=${realInSucceeded} bogus_in_failed=${bogusInFailed} total=${r.body?.total} succeeded=${succeeded.length} failed=${failed.length}` });
+            note: `real_in_succeeded=${realInSucceeded} bogus_in_failed=${bogusInFailed} total=${r.body?.total} succeeded=${succeeded.length}(want=1) failed=${failed.length}(want=1)` });
+
+        if (!pass) {
+            recFinding(testInfo, 'P1', MOD,
+                'Bulk-resolve real partial-success contract drift',
+                `Body=${JSON.stringify(r.body).slice(0, 320)}. Expected 1 succeeded (pending=${existingPendingId} → room=${stressRoomId}) + 1 failed (bogus_room=room_not_found), total=2.`);
+        }
+
+        expect(r.status, 'bulk-resolve should return 200 for partial-success').toBe(200);
+        expect(succeeded.length, 'exactly 1 succeeded entry expected').toBe(1);
+        expect(failed.length, 'exactly 1 failed entry expected').toBe(1);
+        expect(realInSucceeded, 'seeded pending booking must appear in succeeded[]').toBe(true);
+        expect(bogusInFailed, 'bogus room_id must surface as room_not_found in failed[]').toBe(true);
+        expect(r.body?.total, 'total must reflect dedup\'d item count').toBe(2);
     });
 
     // ──────────────────────────────────────────────────────────────────

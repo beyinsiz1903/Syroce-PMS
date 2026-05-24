@@ -160,7 +160,10 @@ export default async function globalSetup() {
     const dataPrefix = `E2E_STRESS_F7_${Date.now()}_`;
     const seedResp = await api.post('/api/admin/stress/seed', {
         headers: { Authorization: `Bearer ${pilotToken}` },
-        data: { target_tenant_id: STRESS_TID, room_count: ROOM_COUNT, data_prefix: dataPrefix },
+        // F8L v2 (Task #25) — seed_pending_bookings: 2 synthetic pending_assignment
+        // bookings for spec 52B's real-succeeded bulk-resolve coverage (1 consumed
+        // by test G, 1 spare for re-runs / future expansion).
+        data: { target_tenant_id: STRESS_TID, room_count: ROOM_COUNT, data_prefix: dataPrefix, seed_pending_bookings: 2 },
         failOnStatusCode: false,
         timeout: 120_000,
     });
