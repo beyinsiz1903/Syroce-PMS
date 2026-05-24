@@ -29,7 +29,11 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 > **F8Z.2 POS KDS Print + F&B Inventory Stress** spec'i de yazıldı
 > (2026-05-24, bu commit) — `frontend/e2e-stress/specs/98-pos-kds-inventory.spec.js`.
 > Task #8 (F8Z v2) sonrası baseline 73 → **74 spec** hedefi (F8Z.2 full-suite
-> verification bir sonraki adım). Spec doctrine: KDS catalog smoke
+> verification Task #29'da koşturuldu: targeted run 3✅/1✘/7-skip,
+> serial-describe C'de durdu — predicted P0 KDS `/complete` cross-tenant
+> mutate gerçekten yakalandı, mevcut "Make kitchen ticket 'complete' button
+> respect hotel boundaries" hardening follow-up'ına bağlandı; backend fix
+> sonrası full-suite re-baseline 74 spec). Spec doctrine: KDS catalog smoke
 > (`/api/fnb/kitchen-display`) + kitchen_order lifecycle (pending→preparing
 > →ready→served) + terminal-state guard (re-`complete` served ticket'ı
 > ready'e revert ederse P1) + **P0 cross-tenant KDS IDOR** (pilot bearer
