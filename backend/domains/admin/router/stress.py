@@ -180,6 +180,16 @@ STRESS_COLLECTIONS = [
     "spa_therapists",
     "spa_rooms",
     "spa_locks",
+    # F8AC (2026-05-24): Golf operational stress (sister of spa_operations).
+    # Same atomic per-resource lock pattern (golf_locks), tee-time slot
+    # capacity guard, double-booking guard per player/guest, folio-on-
+    # completion + explicit folio-post endpoint (idempotent). All rows
+    # tagged `stress_seed=True` + `stress_prefix`; spec-side teardown is
+    # primary, this list is the orphan-scrub safety net.
+    "golf_courses",
+    "golf_players",
+    "golf_tee_bookings",
+    "golf_locks",
     "bookings",
     "guests",
     "rooms",

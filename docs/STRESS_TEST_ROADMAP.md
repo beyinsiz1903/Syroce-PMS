@@ -427,6 +427,39 @@ altına alır. Her madde ileride yeni bir faz veya v2 push için backlog.
   DELETE primary cleanup path'tir).
 - **Baseline:** 68 → **69 spec** (full-suite verification bir sonraki tur).
 
+### F8AC — Golf Operational Stress — ✅ DONE (2026-05-24)
+- **Spec:** `frontend/e2e-stress/specs/98-golf-operational.spec.js`
+- **Module:** `golf_operations`
+- **Kapsam:** `/api/golf/courses|players|tee-sheet|daily-summary|bookings`
+  read-only probe (courses auto-seed default, super_admin POST fallback) ·
+  booking lifecycle (confirmed→checked_in→completed + no_show + cancelled)
+  · atomic conflict guard: **(a)** slot capacity overflow (party_size +
+  booked > capacity → 409, 2xx = P1) · **(b)** same player_ids OR guest_id
+  at same tee_time → 409, 2xx = P1 · folio-post endpoint contract
+  (`/bookings/{id}/folio-post`): reservation_id=null → 400 zorunlu,
+  bogus id → 404, replay → 409 idempotent · invalid status guard
+  (`invented_status` → 4xx) · Idempotency-Key replay with same player_id
+  (distinct ids = P1) · **P0 cross-tenant IDOR** (pilot bearer
+  stress-created booking status change / delete / folio-post → 4xx
+  zorunlu, 2xx = P0) · cleanup idempotent (DELETE round-trip, ikinci
+  pass 404 zorunlu) · post-batch external_calls delta=0 + pilot_drift=0
+  her test'te.
+- **Folio safety:** `charge_to_room=True + reservation_id=null` short-circuit
+  (`_post_to_folio` ve `bus.publish(POSTING_CHARGE)` ASLA tetiklenmez,
+  router.py L558-559); external_calls invariant batch sonunda doğrulanır.
+  `completed` ve `/folio-post` `require_finance` istiyor — stress admin
+  super_admin → PASS, 403 olursa P2 informational (role gap, lifecycle
+  invariant intact).
+- **Doctrine:** F8AB spa pattern'inin birebir kardeşi. module-blocked
+  pattern (courses/players probe herhangi biri 403/404 → A/B/C/D/E
+  `test.skip` + P2 informational, Z cleanup + final invariants bağımsız).
+  `STRESS_COLLECTIONS` listesine `golf_courses`, `golf_players`,
+  `golf_tee_bookings`, `golf_locks` eklendi (orphan-scrub safety net;
+  spec-side DELETE bookings primary path, players + self-seeded courses
+  unified cleanup loop ile).
+- **Baseline:** 69 → **73 spec** (F8X/F8Y/F8Z/F8AA/F8AB + F8AC dahil;
+  full-suite verification bir sonraki tur).
+
 ### F8O v2 — AI prompt PII redaction (önerilen)
 - **Kapsam:** AI prompt PII redaction snapshot · AI recommendation audit
   trail · human approval required guard · AI response explainability alanı
