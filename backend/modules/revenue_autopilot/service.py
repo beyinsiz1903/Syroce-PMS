@@ -6,6 +6,8 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
+from fastapi import HTTPException
+
 logger = logging.getLogger(__name__)
 
 
@@ -228,7 +230,7 @@ class RevenueAutopilotService:
             {"id": item_id, "tenant_id": tenant_id, "status": ApprovalStatus.PENDING}, {"_id": 0}
         )
         if not item:
-            return {"success": False, "error": "Item not found or not pending"}
+            raise HTTPException(status_code=404, detail="Item not found or not pending")
 
         result = await self._apply_price(
             tenant_id, item["room_type"], item["target_date"],
@@ -261,7 +263,7 @@ class RevenueAutopilotService:
             }},
         )
         if result.matched_count == 0:
-            return {"success": False, "error": "Item not found or not pending"}
+            raise HTTPException(status_code=404, detail="Item not found or not pending")
         return {"success": True}
 
     async def rollback_item(self, tenant_id: str, item_id: str, user_id: str) -> dict:
@@ -271,7 +273,7 @@ class RevenueAutopilotService:
             {"_id": 0},
         )
         if not item:
-            return {"success": False, "error": "Item not found or not applied"}
+            raise HTTPException(status_code=404, detail="Item not found or not applied")
 
         await self._apply_price(
             tenant_id, item["room_type"], item["target_date"],
