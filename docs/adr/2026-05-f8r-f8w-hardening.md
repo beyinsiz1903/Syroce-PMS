@@ -7,6 +7,42 @@ saldırı yüzeyi tespit edildi (bkz. `docs/STRESS_TEST_ROADMAP.md` Hardening
 Backlog). Bu ADR, audit önerilerinin spec'lere çevrilmesini ve nightly
 stress suite içine entegrasyonunu kayıt altına alır.
 
+## Verified status (2026-05-24) ✅
+
+Bu hardening pack **resmi baseline'a girdi**. Full Operational Stress Suite
+F8R–F8W dahil GREEN döndü:
+
+| Alan | Değer |
+|---|---|
+| Tarih | 2026-05-24 |
+| Commit | `ee7573b3` (HR docs `_sanitize_doc_filename` — F8S P1 fix) |
+| Workflow | GitHub Actions — Full Operational Stress Suite |
+| Spec count | 68 (5 F8R–F8W spec dahil: 09/64/91/98/98B) |
+| failedTests | 0 |
+| FAIL adım | 0 |
+| P0 / P1 | 0 / 0 |
+| `external_calls` | `[]` |
+| `pilot_drift` | 0 |
+| Cleanup idempotent | ✅ |
+| Architect verdict | PASS (5 round F8R–F8W + 1 round HR sanitizer) |
+| Final verdict | ✅ **GO** |
+
+**Iterasyon notu:** ilk CI run'ında F8S `hr_docs_traversal_sanitize` adımı
+1 P1 verdi — gerçek backend bug'ı yakalandı: HR docs upload endpoint
+`file.filename`'i raw kayıt ediyordu, path-traversal payload
+(`../../../../etc/passwd`) DB'ye literal yazılıyor + download
+Content-Disposition header'ında yansıyordu. **Doctrine'e uygun fix:**
+spec assertion gevşetilmedi; backend'e `_sanitize_doc_filename()` helper
+eklendi (basename + leading-dot strip + ASCII allowlist + 200-char cap),
+upload (GridFS filename + DB `filename` + DB `label`) ve download
+(Content-Disposition defense-in-depth) iki noktada uygulandı. Architect
+review PASS — URL-encoded / Unicode / nullbyte / CRLF / header-injection
+vektörlerinin tümü neutralize. Republish → CI yeşil → baseline'a yazıldı.
+
+Baseline tablosu ve drill report'a referans için:
+[`docs/STRESS_TEST_ROADMAP.md` Latest verified baseline](../STRESS_TEST_ROADMAP.md#latest-verified-baseline-2026-05-24--green--f8rf8w-included)
+ve [`docs/drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md`](../drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md).
+
 ## Karar
 
 Aşağıdaki 5 spec eklenir ve `Full Operational Stress Suite` içine standart

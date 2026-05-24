@@ -4,31 +4,38 @@
 sokmak — pilot tenant'a mutation yok, gerçek dış servis çağrısı yok,
 external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 
-## Latest verified baseline (2026-05-23) ✅ GREEN
+## Latest verified baseline (2026-05-24) ✅ GREEN — F8R–F8W included
 
 > **Bu satır resmi baseline'dır** — yeni geliştirmeler bu green run'a
-> karşı regression test'ler. Detay rapor:
-> [`docs/drill_reports/20260523_stress_full_stress_suite_GREEN.md`](./drill_reports/20260523_stress_full_stress_suite_GREEN.md)
+> karşı regression test'ler. Detay raporlar:
+> - F8R–F8W post-fix green: [`docs/drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md`](./drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md)
+> - Önceki F8A..F8O baseline (referans): [`docs/drill_reports/20260523_stress_full_stress_suite_GREEN.md`](./drill_reports/20260523_stress_full_stress_suite_GREEN.md)
 
 | Alan | Değer |
 |---|---|
-| Run tarihi | 2026-05-23 |
-| Suite | Full Operational Stress Suite (F8A+F8B+F8C+F8D+F8D-v3+F8E+F8F..F8O) |
+| Run tarihi | 2026-05-24 |
+| Suite | Full Operational Stress Suite + **F8R–F8W Hardening Pack** (F8A+F8B+F8C+F8D+F8D-v3+F8E+F8F..F8O+**F8R+F8S+F8U+F8V+F8W**) |
 | Workflow | GitHub Actions — Full Operational Stress Suite (CI one-shot) |
-| Commit SHA (HEAD) | `a035568c` |
-| Contributing fixes | `8cee3050` (33B header read), `a035568c` (starlette ≥1.0.1 PYSEC-2026-161) |
-| Süre | 2758.8s (~46 dk) |
-| Toplam test | 413 |
+| Commit SHA (HEAD) | `ee7573b3` (HR docs filename sanitization — F8S P1 fix) |
+| Contributing fixes (bu run) | `ee7573b3` (HR docs `_sanitize_doc_filename` upload+download), önceki: `a035568c` (starlette ≥1.0.1 PYSEC-2026-161), `8cee3050` (33B header read) |
+| Spec count | **68** (`frontend/e2e-stress/specs/`, +5 F8R–F8W: 09/64/91/98/98B) |
 | Başarısız test | **0** |
-| Adım PASS / FAIL / REVIEW / SKIP | **662 / 0 / 44 / 53** |
-| P0 / P1 / P2 / P3 | **0 / 0 / 35 / 1** |
+| FAIL adım | **0** |
+| P0 / P1 | **0 / 0** |
 | `external_calls` | `[]` (her modülde re-assert) |
-| `pilot_drift` | **0** (baseline=30, after=30) |
-| Cleanup | idempotent (cleanup#1 deleted=7732, cleanup#2 deleted=0) |
-| F8D-v3 HR extension | ✅ 6 yeni spec full-suite içinde geçti — 33B/35B/38/38B/39/39B |
+| `pilot_drift` | **0** |
+| Cleanup | idempotent (cleanup#1 deleted>0, cleanup#2 deleted=0) |
+| F8R–F8W pack | ✅ 5 spec full-suite içinde geçti — auth_token_lifecycle · ws_tenant_isolation · export_artifact_idor · file_upload_security · ops_readiness |
 | Final verdict | ✅ **GO** |
 
-**Önceki kademe raporları (20260517..20260520)** artık tarihsel referans
+**Not:** Bir önceki run (HR docs sanitization öncesi) F8S `hr_docs_traversal_sanitize`
+adımında 1 FAIL adım + 1 P1 vermişti (gerçek backend bug: raw `file.filename`
+DB'ye literal yazılıyordu). `ee7573b3` ile fix uygulandı (`backend/domains/hr/router.py`
+`_sanitize_doc_filename()` upload + download), republish → CI yeşil. Architect
+verdict: **PASS** (sanitize stratejisi path traversal + Content-Disposition
+header injection + URL-encoded/Unicode/nullbyte/CRLF tüm vektörleri kapsıyor).
+
+**Önceki kademe raporları (20260517..20260523)** artık tarihsel referans
 durumunda; canlı baseline olarak yukarıdaki tek run kullanılır.
 
 ## Mutlak kurallar (her faz için aynen geçerli)
