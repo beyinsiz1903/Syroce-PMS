@@ -213,6 +213,18 @@ STRESS_COLLECTIONS = [
     # already in list (under F8A) — covers booking_holds residue. cross-
     # property/webhook-admin/eod paths are read-only; no new collections.
     "shift_handovers",
+    # F8AG (2026-05-24): 2FA TOTP lifecycle stress.
+    # `consumed_totp` = same-window TOTP replay-guard collection (Bug CB).
+    # Spec enrolls/disables 2FA on the stress admin user within one run; the
+    # confirm/verify/regenerate paths each insert (user_id, counter) rows
+    # with a 180s TTL (auto-expires). Inclusion here is a forward-compat
+    # safety net: rows are TTL-cleaned by Mongo, but if the orphan-scrub
+    # loop ever needs to wipe leftover slots for a user, the collection is
+    # already in scope. Tag convention: backend writes via
+    # `consume_totp_counters` don't set `stress_seed`/`stress_prefix`, so
+    # this entry is observability-only (count != deletion until those tags
+    # exist; cleanup is a no-op for now, which is correct).
+    "consumed_totp",
     "bookings",
     "guests",
     "rooms",

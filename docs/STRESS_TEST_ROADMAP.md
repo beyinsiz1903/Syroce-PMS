@@ -491,6 +491,50 @@ altına alır. Her madde ileride yeni bir faz veya v2 push için backlog.
   safety net; spec-side void primary path). Backend kodu değişmedi; v1
   spec (`98-payment-pos-reconciliation-dryrun.spec.js`) dokunulmadı.
 - **Baseline:** 72 → **73 spec** (full-suite verification bir sonraki tur).
+### F8AG — 2FA TOTP Lifecycle Stress — ✅ DONE (2026-05-24)
+- **Spec:** `frontend/e2e-stress/specs/98C-twofa-totp-lifecycle.spec.js`
+- **Module:** `twofa_lifecycle`
+- **Kapsam:** `/api/2fa/status|setup|setup/confirm|disable|regenerate-backup-codes|policy`
+  + `/api/auth/login` (challenge gate) + `/api/auth/2fa/verify`. Lifecycle:
+  status probe → setup (pending secret + otpauth URI + QR data URL) →
+  confirm wrong code (400/401) → confirm correct (enabled=true + ≥8 backup
+  codes) → login challenge (`requires_2fa=true` + `challenge_token`,
+  `access_token=""`) → verify happy-path (exchange challenge for access)
+  → **challenge_token single-use replay** (aynı challenge ikinci verify →
+  4xx, 2xx = P0; `consumed_jtis` unique index regression sinyali) →
+  brute-force boundary (17 invalid burst → ≥1× 429; threshold 15/60s
+  endpoint-scoped, bleed yok) → backup code single-use via verify path
+  (REVIEW eğer backend backup'ı /verify'da kabul etmiyorsa; kabul ediyorsa
+  ikinci use 4xx zorunlu, 2xx = P0) → regenerate wrong code (4xx) →
+  regenerate correct (≥8 yeni code) → **same-window TOTP replay** (aynı
+  code anında ikinci /regenerate → 4xx zorunlu, 2xx = P0 = Bug CB
+  `consumed_totp` unique index regression) → policy GET → **P0 cross-tenant
+  IDOR matrix** (pilot bearer ile /status read + setup/disable/regenerate
+  mutate dener → pilot kendi state'ini görür, stress user state'i
+  ASLA değişmez; `enabled_before == enabled_after && backup_remaining_before
+  == backup_remaining_after` invariant, ihlal = P0; ek olarak
+  `pilotDisable.status ≥ 400` + `pilotRegen.status ≥ 400` hard-fail
+  `expect().toBeGreaterThanOrEqual(400)`) → disable cleanup (primary path
+  test H'de) + afterAll backup-code fallback (CRITICAL: 2FA enabled bırakılırsa
+  diğer tüm spec'lerin paylaşılan bearer login refresh'i challenge döner,
+  full-suite çöker).
+- **TOTP üretimi:** Self-contained node:crypto HMAC-SHA1 + base32 decode
+  helper (`totpAt`/`currentTotp`); pyotp/otplib bağımlılığı yok. Setup
+  response `secret` field plaintext (manual fallback) — bu spec onu
+  client-side TOTP üretimi için kullanır.
+- **Doctrine:** module-blocked (status probe 403/404/0 → A-G skip + P2;
+  2FA already enabled probe time → P1 + hard fail çünkü secret elde değil,
+  manuel operator cleanup gerekir). Shared stress_token bearer setup/confirm/
+  disable/regen yüzeylerine kullanılır (current_user-scoped, F8U fresh-login
+  doctrine'ine UYGUN çünkü logout/refresh dokunulmuyor). Fresh login sadece
+  verify happy-path + replay + throttle + backup tests için (her test
+  kendi challenge'ını alır). Final invariants H'de: pilot_drift=0 +
+  external_calls=[]. `STRESS_COLLECTIONS` listesine `consumed_totp` eklendi
+  (replay-guard koleksiyonu; TTL 180s ile Mongo auto-clean, ancak orphan-scrub
+  forward-compat safety net). Backend writes `stress_seed`/`stress_prefix`
+  tag konvansiyonunu uygulamıyor — entry observability-only.
+- **Baseline:** 73 → **74 spec** (F8AG dahil; full-suite verification bir
+  sonraki tur — Workflows kapalı, e2e CI sandbox'ta runnable değil).
 
 ### F8AH — Ops Surface Smoke Stress — ✅ DONE (2026-05-24)
 - **Spec:** `frontend/e2e-stress/specs/98-ops-surface-smoke.spec.js`
