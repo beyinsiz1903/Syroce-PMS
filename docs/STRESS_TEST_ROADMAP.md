@@ -10,6 +10,21 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 > (2026-05-24, bu commit) — 4 yeni spec (98-efatura, 65-identity, 98-payment,
 > 66-kvkk). Verified baseline rakamları **F8R–F8W dahil 68 spec** içindir;
 > F8X–F8AA full-suite verification roadmap'in bir sonraki adımıdır.
+>
+> **F8AB Spa & Wellness Operational Stress** spec'i de yazıldı
+> (2026-05-24, bu commit) — `frontend/e2e-stress/specs/98-spa-wellness-operational.spec.js`.
+> Suite baseline 68 → **69 spec** (F8X–F8AA + F8AB full-suite verification
+> bir sonraki adım). Spec doctrine: catalog smoke + appointment lifecycle
+> (scheduled→in_progress→completed + no_show + cancelled) + atomic conflict
+> guard (terapist/oda overlap → 409) + auto-pick + waitlist CRUD/promote +
+> P0 cross-tenant IDOR (pilot bearer'ı stress-created appt/waitlist mutate
+> edemez) + Idempotency-Key replay (aynı tuple → 409). Folio posting safety:
+> `charge_to_room=True + reservation_id=null` short-circuit ile Xchange
+> publish ASLA tetiklenmez; external_calls invariant batch sonunda
+> doğrulanır. `STRESS_COLLECTIONS` listesine `spa_appointments`,
+> `spa_waitlist`, `spa_services`, `spa_therapists`, `spa_rooms`, `spa_locks`
+> eklendi (orphan-scrub safety net; spec-side teardown DELETE primary
+> path'tir).
 
 > **Bu satır resmi baseline'dır** — yeni geliştirmeler bu green run'a
 > karşı regression test'ler. Detay raporlar:
@@ -383,6 +398,34 @@ altına alır. Her madde ileride yeni bir faz veya v2 push için backlog.
   informational (roadmap backlog: F8AA v2 endpoint kontratı gerekir).
 - **Doctrine:** WRITE probe minimum (yalnız bogus-id 404 + cross-tenant
   rejection). Real misafir profilini anonymize/silmiyoruz.
+
+### F8AB — Spa & Wellness Operational Stress — ✅ DONE (2026-05-24)
+- **Spec:** `frontend/e2e-stress/specs/98-spa-wellness-operational.spec.js`
+- **Module:** `spa_operations`
+- **Kapsam:** `/api/spa/services|therapists|rooms|availability|daily-summary|waitlist`
+  read-only probe · appointment lifecycle (scheduled→in_progress→completed
+  + no_show + cancelled) · atomic conflict guard (aynı therapist+room+slot
+  → 409, 2xx = P1) · auto-pick (therapist_id+room_id omit → backend
+  deterministik atama; assigned tuple zorunlu) · waitlist CRUD/patch/delete
+  + manual promote · invalid status guard (`invented_status` → 4xx) ·
+  Idempotency-Key replay (aynı tuple+key → same id veya 409, distinct
+  ids = P1) · P0 cross-tenant IDOR (pilot bearer stress-created
+  appointment status change / delete / waitlist patch / delete → 4xx
+  zorunlu, 2xx = P0) · cleanup idempotent (DELETE round-trip, ikinci
+  pass 404 zorunlu) · post-batch external_calls delta=0 + pilot_drift=0
+  her test'te.
+- **Folio safety:** `charge_to_room=True + reservation_id=null` short-circuit
+  (`_post_to_folio` ve `bus.publish(POSTING_CHARGE)` ASLA tetiklenmez);
+  external_calls invariant batch sonunda doğrulanır. `completed` transition
+  `require_finance` istiyor — stress admin super_admin → PASS, 403 olursa
+  P2 informational (role gap, lifecycle invariant intact).
+- **Doctrine:** module-blocked pattern (services/therapists/rooms probe
+  herhangi biri 403/404 → A/B/C/D/E `test.skip` + P2 informational, Z
+  cleanup + final invariants bağımsız). `STRESS_COLLECTIONS` listesine
+  `spa_appointments`, `spa_waitlist`, `spa_services`, `spa_therapists`,
+  `spa_rooms`, `spa_locks` eklendi (orphan-scrub safety net; spec-side
+  DELETE primary cleanup path'tir).
+- **Baseline:** 68 → **69 spec** (full-suite verification bir sonraki tur).
 
 ### F8O v2 — AI prompt PII redaction (önerilen)
 - **Kapsam:** AI prompt PII redaction snapshot · AI recommendation audit

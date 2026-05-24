@@ -168,6 +168,18 @@ STRESS_COLLECTIONS = [
     # `stress_prefix` etiketli rowlar unified cleanup loop'a düşer.
     "ai_audit_logs",
     "ai_prompt_logs",
+    # F8AB (2026-05-24): Spa & Wellness operational stress.
+    # All rows tagged `stress_seed=True` + `stress_prefix` → unified cleanup
+    # loop reaches them. spec-side teardown already DELETEs created
+    # appointments + waitlist via /api/spa/*; this list is the orphan-scrub
+    # safety net for runs that abort mid-flight. Stress admin super_admin →
+    # `require_catalog`/`require_spa_ops`/`require_finance` all pass.
+    "spa_appointments",
+    "spa_waitlist",
+    "spa_services",
+    "spa_therapists",
+    "spa_rooms",
+    "spa_locks",
     "bookings",
     "guests",
     "rooms",
