@@ -135,3 +135,27 @@ bu liste yalnız orphan-scrub safety net (run mid-flight abort edilirse).
 **Sıfır.** Yalnız `backend/domains/admin/router/stress.py` `STRESS_COLLECTIONS`
 listesine 8 koleksiyon ismi eklendi (orphan-scrub safety net). POS v2 router
 ya da service kodu değişmedi; v1 spec dokunulmadı.
+
+## Update 2026-05-24 — Task #32 fix
+
+First full-suite verification (Task #24) failed on test B with
+`Received: undefined` for `create.body.order_id`. Root cause: v2 router
+endpoints (`create_order`, `close_order`, `void_order`) wrapped service
+data via `from_service_result(...)`, producing
+`{status, severity, last_updated_at, data: {order_id, ...}}`. The spec
+reads top-level fields (`order_id`, `transaction_id`, `amount_paid`,
+`idempotent`, `order.id`), so the wrapped envelope hid them and the
+cascade skipped 13 dependent tests.
+
+Fix: `backend/domains/pms/pos_fnb_router_v2.py` introduces `_ok_payload`
+which returns `result.data` directly when it is a dict. The three
+lifecycle endpoints (`/api/pos/v2/orders`, `/orders/close`,
+`/orders/void`) now expose top-level fields matching the spec contract.
+Error responses still flow through `from_service_result` for the
+HTTPException detail envelope.
+
+Test impact: `backend/tests/test_phase5_comprehensive.py` and
+`backend/tests/test_phase5_api.py` updated to read top-level fields
+(`r.json()["order_id"]`, `r.json()["message"]`) instead of the
+removed `data` envelope key. No frontend or other backend consumer
+references these endpoints.

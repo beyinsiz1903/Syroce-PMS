@@ -280,7 +280,7 @@ class TestPOSV2:
             headers=auth_headers,
         )
         assert r.status_code == 200
-        data = r.json()["data"]
+        data = r.json()
         assert data["order_id"]
         assert data["grand_total"] == 110.0  # (50*2) + 10% tax
 
@@ -293,7 +293,7 @@ class TestPOSV2:
             headers=auth_headers,
         )
         assert r.status_code == 200
-        assert r.json()["data"]["message"] == "Order closed and payment processed"
+        assert r.json()["message"] == "Order closed and payment processed"
 
     def test_void_order_no_permission(self, auth_headers):
         # This test uses demo admin who has admin role, so it should be allowed

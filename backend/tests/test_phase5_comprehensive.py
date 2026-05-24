@@ -385,7 +385,7 @@ class TestPOSFnBV2:
             timeout=30
         )
         assert r.status_code == 200
-        data = r.json()["data"]
+        data = r.json()
         order_id = data["order_id"]
         assert data["grand_total"] == 82.5  # 75 + 10% tax
         print(f"✅ Created order: {order_id}, total={data['grand_total']}")
@@ -398,7 +398,7 @@ class TestPOSFnBV2:
             timeout=30
         )
         assert r.status_code == 200
-        assert r.json()["data"]["message"] == "Order closed and payment processed"
+        assert r.json()["message"] == "Order closed and payment processed"
         print(f"✅ Closed order: {order_id}")
 
     def test_void_order_requires_supervisor_permission(self, auth_headers):

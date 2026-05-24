@@ -15,6 +15,16 @@ from modules.pms_core.role_permission_service import require_module as require_m
 from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
 from modules.pms_core.role_permission_service import require_op  # v98 DW
 
+
+def _ok_payload(result):
+    """Return service data dict directly so callers see top-level fields
+    (e.g. `order_id`, `transaction_id`). Falls back to the envelope only
+    when the service returned no data dict."""
+    data = result.data
+    if isinstance(data, dict):
+        return data
+    return from_service_result(result)
+
 router = APIRouter(prefix="/api/pos/v2", tags=["POS & F&B v2"])
 
 
@@ -78,7 +88,7 @@ async def create_order(req: CreateOrderRequest, user=Depends(get_current_user),
     )
     if not result.ok:
         raise HTTPException(status_code=400, detail=from_service_result(result))
-    return from_service_result(result)
+    return _ok_payload(result)
 
 @router.post("/orders/close")
 async def close_order(req: CloseOrderRequest, user=Depends(get_current_user),
@@ -91,7 +101,7 @@ async def close_order(req: CloseOrderRequest, user=Depends(get_current_user),
     )
     if not result.ok:
         raise HTTPException(status_code=400, detail=from_service_result(result))
-    return from_service_result(result)
+    return _ok_payload(result)
 
 @router.post("/orders/void")
 async def void_order(req: VoidOrderRequest, user=Depends(get_current_user),
@@ -102,7 +112,7 @@ async def void_order(req: VoidOrderRequest, user=Depends(get_current_user),
     if not result.ok:
         code = 403 if result.code == "FORBIDDEN" else 400
         raise HTTPException(status_code=code, detail=from_service_result(result))
-    return from_service_result(result)
+    return _ok_payload(result)
 
 @router.post("/stock/adjust")
 async def adjust_stock(req: StockAdjustRequest, user=Depends(get_current_user),
