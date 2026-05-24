@@ -225,6 +225,21 @@ STRESS_COLLECTIONS = [
     # this entry is observability-only (count != deletion until those tags
     # exist; cleanup is a no-op for now, which is correct).
     "consumed_totp",
+    # F8AF (2026-05-24): RMS Revenue Deep Stress (autopilot · displacement ·
+    # demand forecast · AI pricing · hurdle rates). Backend write surfaces
+    # (revenue-autopilot, displacement, rms/demand-forecast, rms/ai-pricing,
+    # hurdle-rates) do NOT tag rows with `stress_seed`/`stress_prefix`
+    # (real backend routers, no Pydantic passthrough). Primary cleanup is
+    # spec-side: hurdles → DELETE, queue items → reject (no DELETE endpoint).
+    # These collection names are kept as orphan-scrub forward-compat anchors
+    # (no-op against current rows; future seed inserts with the tag pair will
+    # be captured by the unified loop automatically).
+    "revenue_autopilot_policies",
+    "revenue_approval_queue",
+    "revenue_apply_results",
+    "displacement_analyses",
+    "demand_forecasts",
+    "hurdle_rates",
     "bookings",
     "guests",
     "rooms",

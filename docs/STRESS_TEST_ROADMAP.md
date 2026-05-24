@@ -13,18 +13,32 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 >
 > **F8AB Spa & Wellness Operational Stress** spec'i de yazıldı
 > (2026-05-24, bu commit) — `frontend/e2e-stress/specs/98-spa-wellness-operational.spec.js`.
-> Suite baseline 68 → **69 spec** (F8X–F8AA + F8AB full-suite verification
-> bir sonraki adım). Spec doctrine: catalog smoke + appointment lifecycle
-> (scheduled→in_progress→completed + no_show + cancelled) + atomic conflict
-> guard (terapist/oda overlap → 409) + auto-pick + waitlist CRUD/promote +
-> P0 cross-tenant IDOR (pilot bearer'ı stress-created appt/waitlist mutate
-> edemez) + Idempotency-Key replay (aynı tuple → 409). Folio posting safety:
-> `charge_to_room=True + reservation_id=null` short-circuit ile Xchange
-> publish ASLA tetiklenmez; external_calls invariant batch sonunda
-> doğrulanır. `STRESS_COLLECTIONS` listesine `spa_appointments`,
-> `spa_waitlist`, `spa_services`, `spa_therapists`, `spa_rooms`, `spa_locks`
-> eklendi (orphan-scrub safety net; spec-side teardown DELETE primary
-> path'tir).
+> Suite baseline 68 → 69 spec (F8X–F8AA + F8AB full-suite verification
+> bir sonraki adım).
+>
+> **F8AF RMS Revenue Deep Stress** spec'i yazıldı (2026-05-24, bu commit) —
+> `frontend/e2e-stress/specs/98-rms-revenue-deep.spec.js` (module
+> `revenue_management`). Suite baseline 69 → **70 spec** (full-suite
+> verification bir sonraki adım). Kapsam: Revenue Autopilot policy/queue/
+> approve/reject lifecycle (mode FORCE `advisory`, original snapshot
+> restore in cleanup) + Displacement analyze/compare/save + Demand
+> Forecast POST + AI Pricing auto-publish dry-run + Hurdle CRUD/check.
+> P0 cross-tenant IDOR: stress_token → pilot_hurdle PATCH/DELETE,
+> stress_token → pilot_queue approve (≥400 hard-asserted, 2xx = P0
+> + F8X-pattern fix direktif). Bogus-id probes her zaman koşar
+> (`/queue/{00…0}/approve` + hurdle PATCH/DELETE). AI pricing batch
+> sonunda dispatcher delta=0 ZORUNLU (kanal push tetiklenirse patlar).
+> Forbidden surfaces: `/api/autopilot/run-cycle` + `/set-mode` (string
+> concat sentinel'lar import edilir, literal asla spec source'unda geçmez).
+> `STRESS_COLLECTIONS` += `revenue_autopilot_policies`,
+> `revenue_approval_queue`, `revenue_apply_results`,
+> `displacement_analyses`, `demand_forecasts`, `hurdle_rates`
+> (orphan-scrub forward-compat anchors). F8AB spa doctrine (referans):
+> catalog smoke + appointment lifecycle + atomic conflict guard
+> (terapist/oda overlap → 409) + auto-pick + waitlist CRUD/promote +
+> P0 cross-tenant IDOR + Idempotency-Key replay; spa folio safety
+> (`charge_to_room=True + reservation_id=null` short-circuit) ve
+> `STRESS_COLLECTIONS` += `spa_*` mevcut.
 
 > **Bu satır resmi baseline'dır** — yeni geliştirmeler bu green run'a
 > karşı regression test'ler. Detay raporlar:
@@ -548,6 +562,41 @@ altına alır. Her madde ileride yeni bir faz veya v2 push için backlog.
   - **E) booking_holds** — synthetic `booking_id=STRESS_F8AH_*` + `room_id=STRESS_F8AH_*` (service opaque tag, FK yok); create → status → IDOR (pilot status/confirm/delete) → stress re-check (has_hold still true zorunlu, false = P0) → self-DELETE → sweep role-guard probe (200 veya 403, 5xx = P1).
 - **STRESS_COLLECTIONS:** `shift_handovers` eklendi (orphan-scrub safety net; spec-side DELETE primary). `room_night_locks` zaten F8A altında (booking_holds residue). cross_property/webhook_admin/eod read-only → ek koleksiyon yok.
 - **Baseline:** 73 → **74 spec** (F8AH eklendi; full-suite verification bir sonraki tur).
+
+### F8AF — RMS Revenue Deep Stress — ✅ DONE (2026-05-24, spec written)
+- **Spec:** `frontend/e2e-stress/specs/98-rms-revenue-deep.spec.js`
+- **Module:** `revenue_management`
+- **Kapsam:** Revenue Autopilot (`/api/revenue-autopilot/policy|queue|process|
+  queue/{id}/approve|reject`) lifecycle — mode FORCE `advisory` (full_auto =
+  arka plan gerçek apply riski; closed door); process→queued→approve+reject
+  · Displacement (`/api/displacement/analyze|compare|save|history|market-
+  overview`) · Demand Forecast GET/POST · AI Pricing auto-publish dry-run
+  (`/api/rms/ai-pricing/auto-publish-rates`) · Hurdle CRUD
+  (`POST /api/hurdle-rates/`, `PATCH /{id}`, `DELETE /{id}`, `GET /check`
+  allowed+blocked) · cross-tenant IDOR + bogus-id probes.
+- **P0 hard-asserts:** stress_token → pilot_hurdle PATCH/DELETE ≥400 ·
+  stress_token → pilot_queue approve ≥400 (silent 200+success:false = F8X
+  regression risk → fix direktif: `backend/modules/revenue_autopilot/
+  service.py` `approve_item`/`reject_item`/`rollback_item` `if not item:
+  raise HTTPException(404,…)`) · advisory mode → action=auto_applied = P0
+  (mode enforcement broken) · bogus-id `00…0` UUID approve/PATCH/DELETE
+  ≥400 (pilot harvest'a bağımsız always-on).
+- **Safety:** AI pricing auto-publish batch sonunda dispatcher delta=0
+  ZORUNLU (channel push tetiklenirse `assertNoExternalCallsPostBatch`
+  patlar). Forbidden literal source-scan: `FORBIDDEN_AI_AUTOPILOT_RUN`
+  (`/api/autopilot/run-cycle`) + `FORBIDDEN_AI_AUTOPILOT_SETMODE`
+  (`/api/autopilot/set-mode`) — F8O doctrine.
+- **Doctrine:** Module-blocked pattern (dashboard/policy/queue probe
+  herhangi biri 403/404 → A..G `test.skip` + P2 informational, Z cleanup
+  + final invariants bağımsız). Setup'ta original policy snapshot al,
+  Z3'te best-effort restore. Pilot harvest empty olduğunda IDOR yolu
+  P2 SKIP (vector not exercised — fake PASS yok).
+- **Stress collections:** `revenue_autopilot_policies`,
+  `revenue_approval_queue`, `revenue_apply_results`,
+  `displacement_analyses`, `demand_forecasts`, `hurdle_rates` orphan-scrub
+  forward-compat anchor (mevcut router'lar `stress_seed` tag pass-through
+  yapmadığı için no-op).
+- **Baseline:** 69 → **70 spec** (full-suite verification bir sonraki tur).
 
 ### F8O v2 — AI prompt PII redaction (önerilen)
 - **Kapsam:** AI prompt PII redaction snapshot · AI recommendation audit
