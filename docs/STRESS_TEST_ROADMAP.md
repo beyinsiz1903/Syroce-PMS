@@ -622,6 +622,35 @@ altına alır. Her madde ileride yeni bir faz veya v2 push için backlog.
   yapmadığı için no-op).
 - **Baseline:** 69 → **70 spec** (full-suite verification bir sonraki tur).
 
+### F8AE — VCC + PCI Compliance Stress — ✅ DONE (2026-05-24)
+- **Spec:** `frontend/e2e-stress/specs/98-vcc-pci-compliance.spec.js`
+- **Module:** `vcc_pci_compliance`
+- **Kapsam:** `/api/pms/reservations/{id}/vcc[/status|/reveal]` + DELETE
+  + `/api/compliance/pci/{status,controls,report.csv,attestation}`
+  read smoke · VCC lifecycle (store → status → reveal #1) · audit
+  invariant via `/api/reservations/{id}/full-detail.history`
+  (vcc_stored + vcc_revealed + vcc_deleted) · 3-view reveal limit
+  hard guard (4th reveal **MUST 403**, 2xx = P0 PCI Req 3.2 breach) ·
+  PAN regex sweep `\b(?:\d[ -]?){13,19}\b` (masked değerler hariç) +
+  forbidden-key sweep (`*_enc` ciphertext leak guard) · CSV
+  formula-injection guard (`safe_writerow` line-prefix `=/+/-/@`) ·
+  **P0 cross-tenant IDOR bidirectional** (pilot bearer → stress VCC
+  status/reveal/delete/store ALL 4xx; stress bearer → pilot booking
+  VCC status/reveal ALL 4xx; 2xx = P0 catastrophic disclosure) ·
+  cleanup idempotent (DELETE round-trip, ikinci pass 404 zorunlu) ·
+  post-batch external_calls delta=0 + pilot_drift=0 her test'te.
+- **Test PAN:** Luhn-valid sentinel `4111…1111` konkatenasyon ile
+  yazılır (string split source-scan false-positive guard). AES-256-GCM
+  ile yalnız stress tenant'a şifrelenir; hiçbir PSP'ye iletilmez.
+- **Doctrine:** F8X–F8AA compliance pattern'inin VCC/PCI kardeşi.
+  module-blocked fallback (VCC veya PCI probe 403/404 → A/B/C/D
+  `test.skip` + P2 informational, Z cleanup + final invariants
+  bağımsız). 409 store conflict (prior partial run residue) → P2 +
+  cleanup'a id ekleyip skip (fake-PASS yok). `STRESS_COLLECTIONS`
+  listesine `vcc_cards` + `reservation_activity_log` eklendi
+  (orphan-scrub safety net; spec-side DELETE primary path'tir).
+- **Baseline:** 73 → **74 spec** (full-suite verification bir sonraki tur).
+
 ### F8O v2 — AI prompt PII redaction (önerilen)
 - **Kapsam:** AI prompt PII redaction snapshot · AI recommendation audit
   trail · human approval required guard · AI response explainability alanı

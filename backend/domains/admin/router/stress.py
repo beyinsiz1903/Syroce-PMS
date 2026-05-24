@@ -253,6 +253,15 @@ STRESS_COLLECTIONS = [
     "konaklama_vergisi_declarations",
     "konaklama_vergisi_postings",
     "tga_outbox",
+    # F8AE (2026-05-24): VCC + PCI compliance stress.
+    # vcc_cards: AES-256-GCM encrypted card vault (PCI Req 3.x). Spec-side
+    # DELETE via /api/pms/reservations/{id}/vcc is the primary cleanup path;
+    # this list is the orphan-scrub safety net for runs that abort mid-flight.
+    # reservation_activity_log: VCC stored/revealed/deleted audit rows
+    # (PCI Req 10.x audit trail). Stress writes prefix-tagged audit rows
+    # via the lifecycle; orphan scrub reaps them on residue.
+    "vcc_cards",
+    "reservation_activity_log",
     "bookings",
     "guests",
     "rooms",
