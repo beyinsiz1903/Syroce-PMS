@@ -240,6 +240,19 @@ STRESS_COLLECTIONS = [
     "displacement_analyses",
     "demand_forecasts",
     "hurdle_rates",
+    # F8AD (2026-05-24): Konaklama Vergisi (TR accommodation tax) dry-run.
+    # Spec `98-konaklama-vergisi-dryrun.spec.js` mutation YAPMAZ (negative
+    # validation + bogus id + cross-tenant IDOR P0 hard-fail). Aşağıdaki
+    # entries forward-compat orphan-scrub safety net'tir — backend gerçek
+    # koleksiyon adları `tax_declarations` / `accommodation_tax_postings` /
+    # `integration_tga_outbox`; bu alias'lar gelecekte `stress_seed=True` +
+    # `stress_prefix` tag'li seed eklenirse cleanup zaten kapsar. TGA
+    # outbound + Resend e-mail aktif (`tga_scheduler` + `konaklama_vergisi_scheduler`)
+    # → spec post-batch `external_calls=[]` re-assert eder, cron coupling
+    # guard'ı pilot_drift ile birlikte sağlanır.
+    "konaklama_vergisi_declarations",
+    "konaklama_vergisi_postings",
+    "tga_outbox",
     "bookings",
     "guests",
     "rooms",

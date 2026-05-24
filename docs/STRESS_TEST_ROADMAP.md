@@ -39,6 +39,30 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 > P0 cross-tenant IDOR + Idempotency-Key replay; spa folio safety
 > (`charge_to_room=True + reservation_id=null` short-circuit) ve
 > `STRESS_COLLECTIONS` += `spa_*` mevcut.
+>
+> **F8AD Konaklama Vergisi (TR accommodation tax) Dryrun** spec'i de
+> yazıldı (2026-05-24, bu commit) — `frontend/e2e-stress/specs/98-konaklama-vergisi-dryrun.spec.js`,
+> module `accommodation_tax`. Suite baseline 72 → **73 spec** (full-suite
+> verification bir sonraki tur). Spec doctrine: module-block probe
+> (`/api/finance/konaklama-vergisi/config` 403/404 → tüm bloklar SKIP +
+> P2) + read-only smoke (config/report/declaration/declarations list/
+> postings) + calculate validation (amount<=0 → 422, nights<1 → 422,
+> aynı input → aynı net_tax idempotent) + write surface negative
+> (PUT /config rate=999 → 422, finalize year=1999 → 422, bogus decl_id
+> submit/pay/email/get/export → 4xx, bogus folio post-folio → 4xx,
+> Idempotency-Key replay aynı bogus folio → replay 4xx) + **P0
+> cross-tenant IDOR (hard-fail)** stress_token bearer + pilot harvest
+> decl_id/folio_id → submit/pay/email/get/export/post-folio her biri
+> için `expect(status).toBeGreaterThanOrEqual(400)`, 2xx = KESIN P0.
+> Cron coupling guard: post-batch `external_calls` delta=0
+> (`konaklama_vergisi_scheduler` Resend e-posta + `tga_scheduler` TGA
+> outbound TETİKLENMEMELİ), `pilot_drift=0`. `STRESS_COLLECTIONS`
+> listesine forward-compat `konaklama_vergisi_declarations`,
+> `konaklama_vergisi_postings`, `tga_outbox` eklendi (gerçek backend
+> koleksiyonları `tax_declarations` / `accommodation_tax_postings` /
+> `integration_tga_outbox`; spec mutation YAPMAZ, orphan-scrub yalnız
+> gelecekte stress_seed tagged seed eklenirse aktif olur). Detay rapor:
+> [`docs/drill_reports/20260524_stress_f8ad_konaklama_vergisi.md`](./drill_reports/20260524_stress_f8ad_konaklama_vergisi.md).
 
 > **Bu satır resmi baseline'dır** — yeni geliştirmeler bu green run'a
 > karşı regression test'ler. Detay raporlar:
