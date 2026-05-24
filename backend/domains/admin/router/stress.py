@@ -206,6 +206,13 @@ STRESS_COLLECTIONS = [
     "pos_menu_items",
     "happy_hour_rules",
     "pos_room_charge_restrictions",
+    # F8AH (2026-05-24): Ops Surface Smoke (cross_property_rollup,
+    # shift_handover, webhook_admin_dlq, eod_report, booking_holds).
+    # `shift_handovers` rows: spec-side DELETE is primary; orphan-scrub here
+    # is safety net for runs that abort before cleanup. `room_night_locks`
+    # already in list (under F8A) — covers booking_holds residue. cross-
+    # property/webhook-admin/eod paths are read-only; no new collections.
+    "shift_handovers",
     "bookings",
     "guests",
     "rooms",

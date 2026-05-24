@@ -491,6 +491,19 @@ altına alır. Her madde ileride yeni bir faz veya v2 push için backlog.
   spec (`98-payment-pos-reconciliation-dryrun.spec.js`) dokunulmadı.
 - **Baseline:** 72 → **73 spec** (full-suite verification bir sonraki tur).
 
+### F8AH — Ops Surface Smoke Stress — ✅ DONE (2026-05-24)
+- **Spec:** `frontend/e2e-stress/specs/98-ops-surface-smoke.spec.js`
+- **Modüller:** `cross_property_rollup` · `shift_handover` · `webhook_admin_dlq` · `eod_report` · `booking_holds` (5 module-block tek spec).
+- **Kapsam (her blok):** module-blocked probe (403/404 → A/B/C/D/E `test.skip` + P2 informational, Z cleanup + final invariants bağımsız) · smoke (happy-path read + minimal-safe write) · **P0 cross-tenant IDOR** (pilot bearer ile stress kaynağı mutate/read = 2xx → P0 hard-fail) · negative validation (P1) · cleanup idempotent (DELETE round-trip, ikinci pass 404/no-op zorunlu) · post-batch `external_calls=[]` + `pilot_drift=0` her test'te try/finally.
+- **Module detayları:**
+  - **A) cross_property_rollup** — `GET /api/cross-property/guests/search` chain rollup yüzeyi (get_system_db bypass). Stress→pilot leak (returned tenant_id == pilot_tid) = P0. Pilot→stress leak (pilot returns stress tenant_id rows) = P0 (super_admin chain bypass policy review — operator decides).
+  - **B) shift_handover** — `POST/GET/PATCH ack/DELETE /api/pms/shift-handover` full lifecycle + open-count + invalid `shift` 4xx + **P0 IDOR**: pilot bearer cross-tenant ack/delete (find_one_and_update + delete_one tenant_id filter doğrulaması).
+  - **C) webhook_admin_dlq** — `/api/webhooks/status|deliveries|dlq` router-wide `require_super_admin_guard`. **Stress bearer 2xx = P0** (non-super-admin bypass). Pilot super_admin 2xx = expected smoke; `tenant_id` query filter narrow değil widen ediyorsa P1. DLQ retry/dismiss write yüzeyi out-of-scope (read-only smoke).
+  - **D) eod_report** — `/preview` + `/pdf` (yesterday business_date); `_collect(current_user.tenant_id, ...)` yapısal tenant filtre → leak imkânsız ama defensive (response body.tenant_id == stress_tid → P0). **`/send` ASLA çağrılmaz** (mail external_calls invariant'ı kırar — discipline + runtime guarantee).
+  - **E) booking_holds** — synthetic `booking_id=STRESS_F8AH_*` + `room_id=STRESS_F8AH_*` (service opaque tag, FK yok); create → status → IDOR (pilot status/confirm/delete) → stress re-check (has_hold still true zorunlu, false = P0) → self-DELETE → sweep role-guard probe (200 veya 403, 5xx = P1).
+- **STRESS_COLLECTIONS:** `shift_handovers` eklendi (orphan-scrub safety net; spec-side DELETE primary). `room_night_locks` zaten F8A altında (booking_holds residue). cross_property/webhook_admin/eod read-only → ek koleksiyon yok.
+- **Baseline:** 73 → **74 spec** (F8AH eklendi; full-suite verification bir sonraki tur).
+
 ### F8O v2 — AI prompt PII redaction (önerilen)
 - **Kapsam:** AI prompt PII redaction snapshot · AI recommendation audit
   trail · human approval required guard · AI response explainability alanı
