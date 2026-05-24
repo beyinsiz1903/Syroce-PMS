@@ -275,6 +275,19 @@ STRESS_COLLECTIONS = [
     "proc_purchase_orders",
     "proc_goods_receipts",
     "proc_counters",
+    # F8Z.2 (2026-05-24): POS KDS Print + F&B Inventory stress
+    # (spec 98-pos-kds-inventory). Spec-side primary teardown: kitchen_orders
+    # → status='cancelled' via PUT /api/fnb/kitchen-order/{id}/status;
+    # inventory_items + inventory_movements rely on orphan-scrub here for
+    # rows created via /api/accounting/inventory (those POSTs do not stamp
+    # stress_seed=True; orphan-scrub filters by stress_prefix presence in
+    # name/sku field, harmless if not matched). stock_consumption + recipes
+    # + menu_items are read-only in this spec but included as forward-compat
+    # safety net for future write-surface specs.
+    "stock_consumption",
+    "inventory_movements",
+    "recipes",
+    "menu_items",
     "bookings",
     "guests",
     "rooms",

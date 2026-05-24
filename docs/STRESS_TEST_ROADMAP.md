@@ -13,8 +13,48 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 >
 > **F8AB Spa & Wellness Operational Stress** spec'i de yazıldı
 > (2026-05-24, bu commit) — `frontend/e2e-stress/specs/98-spa-wellness-operational.spec.js`.
-> Suite baseline 68 → 69 spec (F8X–F8AA + F8AB full-suite verification
-> bir sonraki adım).
+> Suite baseline 68 → **69 spec** (F8X–F8AA + F8AB full-suite verification
+> bir sonraki adım). Spec doctrine: catalog smoke + appointment lifecycle
+> (scheduled→in_progress→completed + no_show + cancelled) + atomic conflict
+> guard (terapist/oda overlap → 409) + auto-pick + waitlist CRUD/promote +
+> P0 cross-tenant IDOR (pilot bearer'ı stress-created appt/waitlist mutate
+> edemez) + Idempotency-Key replay (aynı tuple → 409). Folio posting safety:
+> `charge_to_room=True + reservation_id=null` short-circuit ile Xchange
+> publish ASLA tetiklenmez; external_calls invariant batch sonunda
+> doğrulanır. `STRESS_COLLECTIONS` listesine `spa_appointments`,
+> `spa_waitlist`, `spa_services`, `spa_therapists`, `spa_rooms`, `spa_locks`
+> eklendi (orphan-scrub safety net; spec-side teardown DELETE primary
+> path'tir).
+>
+> **F8Z.2 POS KDS Print + F&B Inventory Stress** spec'i de yazıldı
+> (2026-05-24, bu commit) — `frontend/e2e-stress/specs/98-pos-kds-inventory.spec.js`.
+> Task #8 (F8Z v2) sonrası baseline 73 → **74 spec** hedefi (F8Z.2 full-suite
+> verification bir sonraki adım). Spec doctrine: KDS catalog smoke
+> (`/api/fnb/kitchen-display`) + kitchen_order lifecycle (pending→preparing
+> →ready→served) + terminal-state guard (re-`complete` served ticket'ı
+> ready'e revert ederse P1) + **P0 cross-tenant KDS IDOR** (pilot bearer
+> status PUT / `/pos/kds/update-order-status` / `/complete` ile stress
+> ticket mutate edemez — `kitchen.py:complete_kitchen_order` tenant-filter
+> gap'i forensic context ile yakalanır, fix ayrı hardening task'ına devredilir)
+> + idempotency replay (`POST /api/fnb/kitchen-order` `idempotency_key`
+> honoring yok → distinct id = P1 finding) + inventory negative-stock
+> guard (`POST /api/accounting/inventory/movement` `out` > available → 409,
+> qty unchanged) + concurrent close race (5 paralel `out(1)` on qty=3
+> → exactly 3 ok + final=0; final<0 → P0, ok>3 → P1) + **P0 cross-tenant
+> inventory mutate** (pilot bearer stress item movement/adjustment → 4xx)
+> + `stock-consumption` cross-tenant read (pilot body stress prefix
+> içermez). Folio safety: KDS rows folio-bağımsız (`kitchen_orders`
+> koleksiyonu), `post_to_folio=true` ASLA çağrılmaz; Xchange
+> `POSTING_CHARGE` event'i tetiklenmez. WebSocket broadcast tenant-
+> isolation indirect (list+mutate probes ile); direct spy mümkün değil
+> → P2 REVIEW. Module-blocked doctrine: KDS bloklu → A–D skip; inventory
+> bloklu → E/F/G/H/I skip; recipe yoksa → E/G skip + P2 (seed Task #11
+> kapsamı dışı). `STRESS_COLLECTIONS` listesine `stock_consumption`,
+> `inventory_movements`, `recipes`, `menu_items` eklendi (orphan-scrub
+> safety net; spec-side `kitchen_orders` → cancelled primary path).
+> Yeni helper: `assertPilotInventoryDeltaZero` (inline in spec) — pilot
+> `inventory_items` `qty_delta=0` AND `count_delta=0` her batch sonunda
+> doğrulanır. Detay: [`docs/drill_reports/20260524_stress_f8z2_kds_fnb_inventory.md`](./drill_reports/20260524_stress_f8z2_kds_fnb_inventory.md).
 >
 > **F8AF RMS Revenue Deep Stress** spec'i yazıldı (2026-05-24, bu commit) —
 > `frontend/e2e-stress/specs/98-rms-revenue-deep.spec.js` (module
