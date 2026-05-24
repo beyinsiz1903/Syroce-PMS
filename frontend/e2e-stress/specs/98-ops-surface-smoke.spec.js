@@ -20,7 +20,11 @@
 //   - shift_handover: PATCH /{id}/acknowledge + DELETE /{id} cross-tenant
 //     mutation = P0 (find_one_and_update tenant_id filter sağlamlık testi).
 //   - webhook_admin: require_super_admin_guard router-wide; non-super-admin
-//     bearer ile 200 → P0 (RBAC bypass).
+//     bearer ile 200 → P0 (RBAC bypass). Destructive endpoints
+//     POST /dlq/{id}/retry + /dismiss aynı guard'a tabi: stress bearer 2xx
+//     = P0; pilot bogus id retry → 4xx (idempotent replay), dismiss → 404
+//     (idempotent replay); retry ASLA real DLQ id ile çağrılmaz (outbound
+//     HTTP attempt external_calls=[] invariant'ını kırar).
 //   - eod_report: _collect(current_user.tenant_id, ...) — tenant filter
 //     yapısal; leak yapısal olarak imkânsız; sadece smoke + send YASAK.
 //   - booking_holds: tenant_id filter create/confirm/delete/status; cross-
@@ -319,8 +323,94 @@ test.describe.serial('F8AH ops surface smoke stress', () => {
                 expect(Array.isArray(dlq.body?.items), 'dlq items array').toBe(true);
             }
 
+            // ─────────────────────────────────────────────────────────
+            // Destructive endpoints — POST /dlq/{id}/retry and /dismiss
+            // ─────────────────────────────────────────────────────────
+            // Doctrine: NEVER call retry/dismiss with a real DLQ id —
+            // real retry triggers an outbound HTTP attempt (would break
+            // the post-batch external_calls=[] invariant) and a real
+            // dismiss mutates global ops state. Bogus uuid ids only.
+            // The two endpoints are router-mounted under the same
+            // require_super_admin_guard dependency as /status; the
+            // probes below verify the guard applies to writes too and
+            // that not-found / replay semantics are well-defined.
+            const bogusDlqId = `stress-bogus-${randomUUID()}`;
+
+            // C5) Non-super-admin retry — MUST 4xx. 2xx = P0 (RBAC bypass
+            // on a destructive write endpoint that fires outbound HTTP).
+            const sRetry = await callTimed(request, 'post',
+                `/api/webhooks/dlq/${bogusDlqId}/retry`, {}, sToken);
+            if (sRetry.status >= 200 && sRetry.status < 300) {
+                recFinding(testInfo, 'P0', MOD_WH,
+                    'webhook-admin /dlq/{id}/retry accessible to non-super-admin bearer',
+                    `stress_token POST /api/webhooks/dlq/${bogusDlqId}/retry → http=${sRetry.status}. require_super_admin_guard bypass on destructive endpoint (can trigger real outbound HTTP attempts).`);
+            } else {
+                expect(sRetry.status, `non-super-admin retry must 4xx; got ${sRetry.status}`).toBeGreaterThanOrEqual(400);
+            }
+
+            // C6) Non-super-admin dismiss — MUST 4xx. 2xx = P0 (RBAC bypass;
+            // can permanently mark DLQ items dismissed across tenants).
+            const sDismiss = await callTimed(request, 'post',
+                `/api/webhooks/dlq/${bogusDlqId}/dismiss`, {}, sToken);
+            if (sDismiss.status >= 200 && sDismiss.status < 300) {
+                recFinding(testInfo, 'P0', MOD_WH,
+                    'webhook-admin /dlq/{id}/dismiss accessible to non-super-admin bearer',
+                    `stress_token POST /api/webhooks/dlq/${bogusDlqId}/dismiss → http=${sDismiss.status}. require_super_admin_guard bypass on destructive endpoint (can dismiss arbitrary tenant DLQ items).`);
+            } else {
+                expect(sDismiss.status, `non-super-admin dismiss must 4xx; got ${sDismiss.status}`).toBeGreaterThanOrEqual(400);
+            }
+
+            // C7) Super-admin (pilot) destructive contract — bogus id only.
+            //   - retry on bogus id  → 400 (router wraps {ok:false} as 400)
+            //     OR 404; replay returns identical contract (idempotent
+            //     not-found). 2xx = P0 (a bogus id should never succeed).
+            //   - dismiss on bogus id → 404 ("DLQ item not found");
+            //     replay also 404 (find_one_and_update returns None).
+            //   - retry MUST NOT produce any /admin/stress/external-calls
+            //     delta (asserted at end of batch via assertNoExternalCallsPostBatch).
+            let retryReplayInfo = 'pilot_skipped';
+            let dismissReplayInfo = 'pilot_skipped';
+            if (pilotOk) {
+                const pRetry1 = await callTimed(request, 'post',
+                    `/api/webhooks/dlq/${bogusDlqId}/retry`, {}, pToken);
+                const pRetry2 = await callTimed(request, 'post',
+                    `/api/webhooks/dlq/${bogusDlqId}/retry`, {}, pToken);
+                if (pRetry1.status >= 200 && pRetry1.status < 300) {
+                    recFinding(testInfo, 'P0', MOD_WH,
+                        'webhook-admin retry on bogus dlq_id succeeded',
+                        `pilot POST /api/webhooks/dlq/${bogusDlqId}/retry → http=${pRetry1.status} body=${JSON.stringify(pRetry1.body).slice(0,200)}. Bogus id must return 4xx (retry_dlq_item returns {ok:false, error:'DLQ item bulunamadi'} → router wraps as 400).`);
+                } else {
+                    expect(pRetry1.status, `bogus retry must 4xx; got ${pRetry1.status}`).toBeGreaterThanOrEqual(400);
+                }
+                // Replay contract — same status on second call (idempotent not-found).
+                if (pRetry2.status !== pRetry1.status) {
+                    recFinding(testInfo, 'P1', MOD_WH,
+                        'webhook-admin retry replay non-deterministic on bogus id',
+                        `first=${pRetry1.status} second=${pRetry2.status} — replay should be idempotent for not-found id (no state to mutate).`);
+                }
+                retryReplayInfo = `${pRetry1.status}/${pRetry2.status}`;
+
+                const pDismiss1 = await callTimed(request, 'post',
+                    `/api/webhooks/dlq/${bogusDlqId}/dismiss`, {}, pToken);
+                const pDismiss2 = await callTimed(request, 'post',
+                    `/api/webhooks/dlq/${bogusDlqId}/dismiss`, {}, pToken);
+                if (pDismiss1.status >= 200 && pDismiss1.status < 300) {
+                    recFinding(testInfo, 'P0', MOD_WH,
+                        'webhook-admin dismiss on bogus dlq_id succeeded',
+                        `pilot POST /api/webhooks/dlq/${bogusDlqId}/dismiss → http=${pDismiss1.status} body=${JSON.stringify(pDismiss1.body).slice(0,200)}. Bogus id must 404 (find_one_and_update returns None → HTTPException 404).`);
+                } else {
+                    expect(pDismiss1.status, `bogus dismiss must be 404; got ${pDismiss1.status}`).toBe(404);
+                }
+                if (pDismiss2.status !== pDismiss1.status) {
+                    recFinding(testInfo, 'P1', MOD_WH,
+                        'webhook-admin dismiss replay non-deterministic on bogus id',
+                        `first=${pDismiss1.status} second=${pDismiss2.status} — replay should be idempotent for not-found id.`);
+                }
+                dismissReplayInfo = `${pDismiss1.status}/${pDismiss2.status}`;
+            }
+
             rec(testInfo, { module: MOD_WH, step: 'role_guard', status: 'PASS',
-                note: `stress_status=${sStatus.status} pilot_ok=${pilotOk}` });
+                note: `stress_status=${sStatus.status} pilot_ok=${pilotOk} stress_retry=${sRetry.status} stress_dismiss=${sDismiss.status} pilot_retry_replay=${retryReplayInfo} pilot_dismiss_replay=${dismissReplayInfo}` });
         } finally {
             await assertNoExternalCallsPostBatch(testInfo, MOD_WH, 'webhook_admin_batch',
                 stressTokens.seed_state ?? stressState ?? {}, request, pToken);
