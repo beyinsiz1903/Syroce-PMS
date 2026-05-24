@@ -1,6 +1,60 @@
 # ADR — F8X–F8AA Local Compliance & Money Safety Stress Pack
 
-**Status:** Specs written + architect-fix applied (2026-05-24); full-suite verification pending.
+**Status:** Specs written + architect-fix applied + F8X backend IDOR fix applied (2026-05-24); republish + full-suite verification pending.
+
+## F8X backend IDOR fix (2026-05-24)
+
+Targeted stress run (F8X|F8Y|F8Z|F8AA grep) gerçek **stress tenant
+credentials** (`stress-admin@e2e-stress.example.com`, tenant
+`23377306-…`) ile koşuldu — önceki "stress" sanılan login aslında pilot
+super_admin (`info@syroce.com`, tenant `5bad4a34-…`) idi, F8X cross-tenant
+IDOR probe'u kendi tenant'ını yazıp 200 alıyordu (false-pozitif P0
+süpheli). Stress admin'in bcrypt hash'i yenilendi
+(`hashed_password` + `password_hash`); user secrets güncellendi; iki
+tenant ayrı login `/api/auth/me` ile doğrulandı.
+
+Doğru credentials altında F8X probe **gerçek P0 IDOR** ortaya çıkardı:
+
+- `PUT /api/invoices/{invoice_id}` (`backend/routers/finance/invoices.py`
+  `update_invoke`) — hem `update_one` hem post-update `find_one`
+  tenant_id filtresi YOKTU → stress_token + pilot invoice_id → 200 +
+  pilot invoice mutated + döndü. Kesin tenant breach + disclosure.
+
+**Fix (`routers/finance/invoices.py`):** `tenant_filter = {"id": invoice_id,
+"tenant_id": current_user.tenant_id}` hem `update_one`'da hem post-update
+`find_one`'da; `matched_count == 0` durumunda
+`HTTPException(404, "Invoice not found")`. `HTTPException` import eklendi.
+Manual reproduce (localhost:8000): stress→pilot PUT = **404** ✅,
+pilot→pilot PUT = **200** ✅.
+
+### Architect 4. tur — paralel IDOR-class bulgusu (2026-05-24)
+
+Architect aynı pattern'ı ikinci handler'da bulup işaretledi:
+
+- `PUT /api/accounting/invoices/{invoice_id}` — iki yerde duplicate
+  handler: `backend/routers/finance/accounting.py:705` (aktif,
+  router_registry sırasıyla) ve `backend/domains/accounting/endpoints.py:672`
+  (shadow). Aktif handler `update_one` ve `find_one`'da tenant_id filtresi
+  ZATEN VARDI (cross-tenant disclosure YOK — find_one None döner) AMA
+  `matched_count==0` guard'ı YOKTU → cross-tenant PUT 200 + null body
+  (404 yerine sessiz no-op). Error semantics ihlali; aynı zamanda
+  IDOR-class regression risk'i (gelecek refactor'da find_one'dan filtre
+  silinirse direkt breach).
+
+**Fix (her iki dosya — `routers/finance/accounting.py` + `domains/accounting/endpoints.py`):**
+Aynı `tenant_filter` + `matched_count==0 → HTTPException(404)` pattern'i.
+Manual reproduce: bogus_id + stress_token PUT = **404** ✅
+(önceden 200+null).
+
+### Publish gereksinimi
+
+Re-run sırasında F8X spec hâlâ 200 aldı — root cause: stress suite
+production deployment URL'sine koşuyor
+(`E2E_BASE_URL=https://emergent-yeni-uygulama-1.replit.app`); fix
+dev/main'de uygulanmış ama prod hâlâ eski binary'i serve ediyor.
+F8S precedent'iyle birebir paralel: backend fix → **republish** → spec
+re-run → CI yeşil. Republish bekleniyor; ardından targeted re-run
+(F8X|F8Y|F8Z|F8AA) + full-suite verification (72 spec).
 
 ## Architect review iteration (2026-05-24)
 

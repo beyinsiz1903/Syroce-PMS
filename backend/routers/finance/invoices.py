@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 
 try:
@@ -88,8 +88,17 @@ async def update_invoice(
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("invoices")),
 ):
-    await db.invoices.update_one({'id': invoice_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    invoice_doc = await db.invoices.find_one({'id': invoice_id}, {'_id': 0})
+    # F8X (2026-05-24): tenant-scope both the update AND the read-back. Previously
+    # the read-back used {'id': invoice_id} only, which returned (and exposed) the
+    # invoice of another tenant when the update matched 0 docs. Fail-closed with
+    # 404 when the invoice does not belong to the caller's tenant.
+    tenant_filter = {'id': invoice_id, 'tenant_id': current_user.tenant_id}
+    result = await db.invoices.update_one(tenant_filter, {'$set': updates})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    invoice_doc = await db.invoices.find_one(tenant_filter, {'_id': 0})
+    if not invoice_doc:
+        raise HTTPException(status_code=404, detail="Invoice not found")
     return invoice_doc
 
 

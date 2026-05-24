@@ -676,8 +676,11 @@ async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], cu
     if 'status' in updates and updates['status'] == 'paid' and 'payment_date' not in updates:
         updates['payment_date'] = datetime.now(UTC).isoformat()
 
-    await db.accounting_invoices.update_one({'id': invoice_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    invoice = await db.accounting_invoices.find_one({'id': invoice_id}, {'_id': 0})
+    tenant_filter = {'id': invoice_id, 'tenant_id': current_user.tenant_id}
+    upd = await db.accounting_invoices.update_one(tenant_filter, {'$set': updates})
+    if upd.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Accounting invoice not found")
+    invoice = await db.accounting_invoices.find_one(tenant_filter, {'_id': 0})
     return invoice
 
 # ============= CASH FLOW =============

@@ -713,8 +713,11 @@ async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], cu
         if f in updates and isinstance(updates[f], str):
             updates[f] = sanitize_plaintext(updates[f], max_length=500)
 
-    await db.accounting_invoices.update_one({'id': invoice_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
-    invoice = await db.accounting_invoices.find_one({'id': invoice_id, 'tenant_id': current_user.tenant_id}, {'_id': 0})
+    tenant_filter = {'id': invoice_id, 'tenant_id': current_user.tenant_id}
+    upd = await db.accounting_invoices.update_one(tenant_filter, {'$set': updates})
+    if upd.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Accounting invoice not found")
+    invoice = await db.accounting_invoices.find_one(tenant_filter, {'_id': 0})
 
     # Drop the dashboard + invoices list cache so the UI reflects the change.
     # cached() builds keys as "cache:{tenant_id}:{key_prefix}:{hash}".
