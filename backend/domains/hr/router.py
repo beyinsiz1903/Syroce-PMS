@@ -11,6 +11,7 @@ Türk İş Kanunu uyumlu defaultlar (2026):
 """
 import base64
 import io
+import re
 import uuid
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Any, Literal
@@ -5188,6 +5189,27 @@ ALLOWED_DOC_MIME = {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 }
 
+# F8S § 64 (2026-05-24): Path traversal / unsafe filename hardening.
+# Saldırı yüzeyi: upload `file.filename` raw kabul ediliyordu → DB'ye literal
+# `../../../../etc/passwd` yazılıyor, download `Content-Disposition` header'ında
+# yansıyor (client-side path traversal + header injection). Sanitize stratejisi:
+#   1) Sadece basename (path separator'lar atılır: `/`, `\`).
+#   2) Leading dot'lar atılır (`..`, `.hidden` dosya adı oluşmasın).
+#   3) Whitelist [A-Za-z0-9._\- ] dışındaki karakter `_` ile değiştirilir
+#      (CR/LF/quote header injection vektörleri dahil temizlenir).
+#   4) Boş kalırsa fallback "document".
+#   5) 200 char hard cap (filesystem + header sanity).
+_FILENAME_SAFE_RE = re.compile(r'[^A-Za-z0-9._\- ]')
+
+
+def _sanitize_doc_filename(raw: str | None) -> str:
+    if not raw:
+        return 'document'
+    name = str(raw).replace('\\', '/').rsplit('/', 1)[-1]
+    name = name.lstrip('.')
+    name = _FILENAME_SAFE_RE.sub('_', name).strip()
+    return (name or 'document')[:200]
+
 
 @router.post("/hr/staff/{staff_id}/documents")
 async def upload_staff_document(
@@ -5212,9 +5234,13 @@ async def upload_staff_document(
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="Boş dosya")
 
+    # F8S § 64: filename sanitize — path traversal / header injection guard.
+    safe_filename = _sanitize_doc_filename(file.filename)
+    safe_label = _sanitize_doc_filename(label) if label else safe_filename
+
     # GridFS'e yaz — büyük dosyalar memory'de tutulmaz, koleksiyon liste sorguları hızlı kalır.
     gridfs_id = await _hr_docs_bucket.upload_from_stream(
-        file.filename or 'document',
+        safe_filename,
         content,
         metadata={
             'tenant_id': current_user.tenant_id,
@@ -5229,8 +5255,8 @@ async def upload_staff_document(
         'staff_id': staff_id,
         'staff_name': staff.get('name'),
         'doc_type': doc_type,
-        'label': label or file.filename or 'Belge',
-        'filename': file.filename,
+        'label': safe_label or 'Belge',
+        'filename': safe_filename,
         'content_type': file.content_type,
         'size_bytes': len(content),
         'gridfs_id': str(gridfs_id),
@@ -5307,8 +5333,11 @@ async def download_staff_document(
     else:
         raise HTTPException(status_code=410, detail="Belge içeriği yok")
 
+    # F8S § 64: defense-in-depth — legacy kayıtlarda raw filename varsa
+    # download anında da sanitize et (Content-Disposition header injection guard).
+    dl_filename = _sanitize_doc_filename(doc.get('filename')) or doc_id
     headers = {
-        'Content-Disposition': f'attachment; filename="{doc.get("filename", doc_id)}"',
+        'Content-Disposition': f'attachment; filename="{dl_filename}"',
         'Content-Length': str(len(raw)),
     }
     return StreamingResponse(
