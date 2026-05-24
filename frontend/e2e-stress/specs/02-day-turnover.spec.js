@@ -29,8 +29,12 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
 
     test('Setup: stress bookings + rooms listele, pilot drift baseline', async ({ request, stressTokens, stressState }, testInfo) => {
         const prefix = stressState.data_prefix;
-        bookings = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/bookings', 'stress_prefix', prefix, { maxPages: 8, pageSize: 200 });
-        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms', 'stress_prefix', prefix, { maxPages: 8, pageSize: 200 });
+        // Task #31 fix: maxPages 8 → 60 (helper default). 1600 doc cap was
+        // losing newly-seeded bookings under residue load (>1600 stale docs
+        // accumulated across runs) → setup saw 0 of the current round and
+        // downstream B/C ran on a partial list.
+        bookings = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/bookings', 'stress_prefix', prefix, { maxPages: 60, pageSize: 200 });
+        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms', 'stress_prefix', prefix, { maxPages: 60, pageSize: 200 });
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
         rec(testInfo, { module: MOD, step: 'setup_listing', status: 'PASS',
             note: `bookings_listed=${bookings.length} rooms_listed=${rooms.length} pilot_before=${pilotBefore?.count}` });
@@ -61,8 +65,16 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
     });
 
     test('B) Force checkout batch: 100 booking (force=true)', async ({ request, stressTokens }, testInfo) => {
-        const candidates = bookings.slice(20); // skip ones used in guard test
-        if (candidates.length < 50) { rec(testInfo, { module: MOD, step: 'force_co_sample', status: 'SKIP', note: `only ${candidates.length}` }); return; }
+        // Task #31 fix: filter to status==='checked_in' BEFORE slicing.
+        // Seed (architect tur-6) marks every 8th booking as pre_vacant
+        // (status=checked_out + room vacant) so spec 03 has a vacant pool.
+        // Without filtering, ~12-13% of slice(0,100) hits already-terminal
+        // bookings → atomic_checkout raises "Cannot check out booking with
+        // status 'checked_out'" → 400. Worst-case (status-grouped listing
+        // order) the entire slice can be terminal → B "mostly failing" P0
+        // and C (which depends on roomsFreed from B) cascades to all 400.
+        const candidates = bookings.slice(20).filter((b) => b.status === 'checked_in');
+        if (candidates.length < 50) { rec(testInfo, { module: MOD, step: 'force_co_sample', status: 'SKIP', note: `only ${candidates.length} checked_in (skip:20 + pre_vacant filter)` }); return; }
         const target = candidates.slice(0, Math.min(100, candidates.length));
         const samples = []; let ok = 0, fail = 0; const failModes = {};
         for (const b of target) {
