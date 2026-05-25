@@ -606,15 +606,19 @@ async def split_check(
         if not split_details:
             raise HTTPException(status_code=400, detail="split_details required for by_item split")
 
+        total_raw_indices = 0
+        total_valid_indices = 0
         for split_num, item_indices in split_details.items():
             safe_indices = []
             for raw_idx in (item_indices or []):
+                total_raw_indices += 1
                 try:
                     idx_int = int(raw_idx)
                 except (TypeError, ValueError):
                     continue
                 if 0 <= idx_int < len(items):
                     safe_indices.append(idx_int)
+                    total_valid_indices += 1
             split_amount = sum(float(items[i].get('price', 0) or 0) for i in safe_indices)
             split_items = [items[i].get('name') for i in safe_indices]
             try:
@@ -626,6 +630,12 @@ async def split_check(
                 'amount': round(split_amount, 2),
                 'items': split_items
             })
+
+        if total_raw_indices > 0 and total_valid_indices == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="by_item split: no valid item indices in split_details (all out of range or non-numeric)"
+            )
 
     elif split_type == 'custom':
         # Custom amounts
@@ -657,13 +667,23 @@ async def split_check(
         }}
     )
 
+    splits_total = round(sum(float(s.get('amount', 0) or 0) for s in split_transactions), 2)
+    expected_total = round(float(total_amount or 0), 2)
+    total_validation = {
+        'expected': expected_total,
+        'actual': splits_total,
+        'delta': round(splits_total - expected_total, 2),
+        'match': abs(splits_total - expected_total) < 0.01,
+    }
+
     return {
         'success': True,
         'original_transaction_id': transaction_id,
-        'original_amount': round(total_amount, 2),
+        'original_amount': expected_total,
         'split_type': split_type,
         'split_count': len(split_transactions),
-        'splits': split_transactions
+        'splits': split_transactions,
+        'total_validation': total_validation,
     }
 # ── POST /pos/transfer-table ──
 @router.post("/pos/transfer-table")
