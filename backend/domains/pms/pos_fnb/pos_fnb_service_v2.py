@@ -194,6 +194,11 @@ class PosFnbServiceV2:
         total_with_tip = round(grand_total + tip_amount, 2)
 
         # Create POS transaction
+        # SECURITY/INVARIANT: snapshot `order_items` into the txn so split-check
+        # and audit paths can read line items without an extra join to
+        # pos_orders. CI 2026-05-25 (98-pos-deep-lifecycle D) failed because
+        # split_check fell back to `items=[]` and rejected all indices as
+        # out-of-range. Denormalizing here is the cheapest correct fix.
         txn_id = str(uuid.uuid4())
         txn_doc = {
             "id": txn_id,
@@ -210,6 +215,7 @@ class PosFnbServiceV2:
             "status": "completed",
             "processed_by": ctx.actor_id,
             "idempotency_key": idempotency_key,
+            "order_items": order.get("order_items", []),
             "created_at": now.isoformat(),
         }
         await self._db.pos_transactions.insert_one(txn_doc)
@@ -239,13 +245,17 @@ class PosFnbServiceV2:
                     "posted_by": ctx.actor_id,
                     "created_at": now.isoformat(),
                 })
+                # SECURITY: tenant_id filter required (defense-in-depth).
                 await self._db.folios.update_one(
-                    {"id": folio["id"]}, {"$inc": {"balance": grand_total}}
+                    {"id": folio["id"], "tenant_id": ctx.tenant_id},
+                    {"$inc": {"balance": grand_total}},
                 )
 
-        # Close order
+        # Close order.
+        # SECURITY: tenant_id filter required (defense-in-depth — read above
+        # is tenant-scoped, but make the mutation independently safe).
         await self._db.pos_orders.update_one(
-            {"id": order_id},
+            {"id": order_id, "tenant_id": ctx.tenant_id},
             {
                 "$set": {
                     "status": "closed",
@@ -300,8 +310,9 @@ class PosFnbServiceV2:
             return ServiceResult.success({"message": "Already voided", "idempotent": True})
 
         now = datetime.now(UTC)
+        # SECURITY: tenant_id filter required (defense-in-depth).
         await self._db.pos_orders.update_one(
-            {"id": order_id},
+            {"id": order_id, "tenant_id": ctx.tenant_id},
             {
                 "$set": {
                     "status": "voided",
@@ -333,8 +344,9 @@ class PosFnbServiceV2:
         if order.get("payment_status") == "paid":
             txn = await self._db.pos_transactions.find_one({"order_id": order_id, "tenant_id": ctx.tenant_id})
             if txn:
+                # SECURITY: tenant_id filter required (defense-in-depth).
                 await self._db.pos_transactions.update_one(
-                    {"id": txn["id"]},
+                    {"id": txn["id"], "tenant_id": ctx.tenant_id},
                     {"$set": {"status": "voided", "voided_at": now.isoformat(), "void_reason": reason}},
                 )
 

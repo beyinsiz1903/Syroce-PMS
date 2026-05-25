@@ -338,7 +338,20 @@ class EnhancedRateLimitMiddleware:
         # Fail-closed: if REPLIT_DEPLOYMENT=1 (published deployment), force prod
         # limits regardless of any other dev signals.
         is_replit_deployment = os.environ.get('REPLIT_DEPLOYMENT', '') == '1'
-        if is_replit_deployment:
+        # E2E stress suites run against the published app with
+        # `E2E_ALLOW_DESTRUCTIVE_STRESS=true` set as a deployment secret
+        # (already enforced fail-closed in backend/domains/admin/router/stress.py).
+        # When that flag is on, the same deployment is intentionally a
+        # test target — prod-grade write-throttling (120/min) collapses
+        # the suite's bursty surface checks (CI 2026-05-25 shift-handover
+        # 429). We elevate ONLY the bursty test-relevant categories
+        # (write/default/export/report) and KEEP auth + anonymous at prod
+        # ceilings so a misconfigured deployment cannot become a login
+        # brute-force surface even if the flag leaks.
+        stress_e2e_enabled = (
+            os.environ.get('E2E_ALLOW_DESTRUCTIVE_STRESS', 'false').lower() == 'true'
+        )
+        if is_replit_deployment and not stress_e2e_enabled:
             is_test_env = False
         else:
             is_test_env = (
@@ -357,6 +370,19 @@ class EnhancedRateLimitMiddleware:
                 'write': (10000, 60),
                 'default': (10000, 60),
                 'anonymous': (10000, 60),
+            }
+        elif stress_e2e_enabled:
+            # Scoped stress profile: elevate authenticated test surfaces
+            # only. auth + anonymous stay at prod ceilings so login
+            # brute-force / unauthenticated DoS stay throttled even if the
+            # flag is accidentally left on in a shared environment.
+            self.limits = {
+                'auth': (15, 60),
+                'export': (10000, 60),
+                'report': (10000, 60),
+                'write': (10000, 60),
+                'default': (10000, 60),
+                'anonymous': (60, 60),
             }
         else:
             self.limits = {
@@ -390,16 +416,23 @@ class EnhancedRateLimitMiddleware:
         ])
 
     def _get_category(self, path: str, method: str, has_token: bool) -> str:
-        """Determine rate limit category for a request"""
+        """Determine rate limit category for a request.
+
+        SECURITY: anonymous classification takes precedence over the
+        method-based `write` bucket. Otherwise an unauthenticated POST
+        would land in `write` (10000/min under stress profile) instead of
+        `anonymous` (60/min), undermining DoS/brute-force protection on
+        non-mapped public paths.
+        """
         for prefix, cat in self.category_map.items():
             if path.startswith(prefix):
                 return cat
 
-        if method in ('POST', 'PUT', 'PATCH', 'DELETE'):
-            return 'write'
-
         if not has_token:
             return 'anonymous'
+
+        if method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            return 'write'
 
         return 'default'
 
@@ -485,7 +518,17 @@ class EnhancedRateLimitMiddleware:
 
         method = scope.get('method', 'GET')
         headers = dict(scope.get('headers', []))
-        has_token = b'authorization' in headers
+        # SECURITY: classify as `has_token` only when the Authorization
+        # header is a structurally valid Bearer token. Otherwise any
+        # anonymous caller could send a dummy `Authorization: x` header to
+        # escape the `anonymous` bucket (60/min) into `default`/`write`
+        # (especially relevant under the stress profile where those are
+        # elevated to 10000/min).
+        auth_header = headers.get(b'authorization', b'')
+        has_token = (
+            auth_header.startswith(b'Bearer ')
+            and len(auth_header) > 20
+        )
 
         identifier = self._get_identifier(scope)
         category = self._get_category(path, method, has_token)

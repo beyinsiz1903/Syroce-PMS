@@ -592,6 +592,20 @@ async def split_check(
     total_amount = transaction.get('total_amount', 0)
     # Item field is stored as 'order_items' on POS orders; older transactions used 'items'.
     items = transaction.get('order_items') or transaction.get('items', [])
+    # Legacy fallback: transactions closed before the v2 close handler
+    # snapshotted order_items into the txn doc may have no items field.
+    # Fetch from pos_orders via order_id (tenant-scoped) so split_check
+    # still works for old data. This is the safety net for the same-class
+    # bug fixed in pos_fnb_service_v2.complete_order (CI 2026-05-25).
+    if not items:
+        order_id = transaction.get('order_id')
+        if order_id:
+            parent_order = await db.pos_orders.find_one(
+                {'id': order_id, 'tenant_id': current_user.tenant_id},
+                {'order_items': 1, '_id': 0},
+            )
+            if parent_order:
+                items = parent_order.get('order_items', []) or []
 
     split_transactions = []
 
@@ -610,6 +624,30 @@ async def split_check(
         if not split_details:
             raise HTTPException(status_code=400, detail="split_details required for by_item split")
 
+        # Schema-agnostic field resolution: v2 close writes
+        # `{item_name, unit_price, quantity, total}`; legacy POS rows used
+        # `{name, price}`. split_check must read BOTH (CI 2026-05-25 D —
+        # without this, valid indices produced 0.0 splits silently).
+        def _line_amount(it):
+            for key in ('total', 'price'):
+                v = it.get(key)
+                if v is not None:
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        pass
+            unit = it.get('unit_price')
+            qty = it.get('quantity', 1)
+            if unit is not None:
+                try:
+                    return float(unit) * float(qty or 1)
+                except (TypeError, ValueError):
+                    pass
+            return 0.0
+
+        def _line_label(it):
+            return it.get('item_name') or it.get('name')
+
         total_raw_indices = 0
         total_valid_indices = 0
         for split_num, item_indices in split_details.items():
@@ -623,8 +661,8 @@ async def split_check(
                 if 0 <= idx_int < len(items):
                     safe_indices.append(idx_int)
                     total_valid_indices += 1
-            split_amount = sum(float(items[i].get('price', 0) or 0) for i in safe_indices)
-            split_items = [items[i].get('name') for i in safe_indices]
+            split_amount = sum(_line_amount(items[i]) for i in safe_indices)
+            split_items = [_line_label(items[i]) for i in safe_indices]
             try:
                 split_number = int(split_num)
             except (TypeError, ValueError):
@@ -661,9 +699,14 @@ async def split_check(
                 'items': 'Custom split'
             })
 
-    # Update original transaction
+    # Update original transaction.
+    # SECURITY: tenant_id filter required (same bug class as KDS IDOR fixed
+    # earlier in this batch). The earlier find_one above already enforces
+    # tenant scope, so this update logically cannot cross tenants — but
+    # leaving the filter open invites regressions if a future caller skips
+    # the find_one. Keep both call-sites tenant-scoped.
     await db.pos_transactions.update_one(
-        {'id': transaction_id},
+        {'id': transaction_id, 'tenant_id': current_user.tenant_id},
         {'$set': {
             'status': 'split',
             'split_type': split_type,
@@ -713,9 +756,12 @@ async def transfer_table(
         raise HTTPException(status_code=404, detail=f"No active transaction found for table {from_table}")
 
     if transfer_all:
-        # Transfer entire table
+        # Transfer entire table.
+        # SECURITY: tenant_id filter required even though source_transaction
+        # was fetched tenant-scoped above — defense-in-depth against future
+        # refactors that might skip the read.
         await db.pos_transactions.update_one(
-            {'id': source_transaction.get('id')},
+            {'id': source_transaction.get('id'), 'tenant_id': current_user.tenant_id},
             {'$set': {'table_number': to_table}}
         )
 
