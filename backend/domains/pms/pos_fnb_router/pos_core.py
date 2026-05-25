@@ -607,10 +607,22 @@ async def split_check(
             raise HTTPException(status_code=400, detail="split_details required for by_item split")
 
         for split_num, item_indices in split_details.items():
-            split_amount = sum(items[i].get('price', 0) for i in item_indices if i < len(items))
-            split_items = [items[i].get('name') for i in item_indices if i < len(items)]
+            safe_indices = []
+            for raw_idx in (item_indices or []):
+                try:
+                    idx_int = int(raw_idx)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= idx_int < len(items):
+                    safe_indices.append(idx_int)
+            split_amount = sum(float(items[i].get('price', 0) or 0) for i in safe_indices)
+            split_items = [items[i].get('name') for i in safe_indices]
+            try:
+                split_number = int(split_num)
+            except (TypeError, ValueError):
+                split_number = len(split_transactions) + 1
             split_transactions.append({
-                'split_number': int(split_num),
+                'split_number': split_number,
                 'amount': round(split_amount, 2),
                 'items': split_items
             })
@@ -621,9 +633,17 @@ async def split_check(
             raise HTTPException(status_code=400, detail="split_details required for custom split")
 
         for split_num, amount in split_details.items():
+            try:
+                amount_f = float(amount)
+            except (TypeError, ValueError):
+                amount_f = 0.0
+            try:
+                split_number = int(split_num)
+            except (TypeError, ValueError):
+                split_number = len(split_transactions) + 1
             split_transactions.append({
-                'split_number': int(split_num),
-                'amount': round(amount, 2),
+                'split_number': split_number,
+                'amount': round(amount_f, 2),
                 'items': 'Custom split'
             })
 
