@@ -45,7 +45,12 @@ async def _get_active_kitchen_orders(tenant_id: str, statuses: list[str] | None 
 
 async def _next_kitchen_order_number(tenant_id: str) -> int:
     last_order = await db.kitchen_orders.find({'tenant_id': tenant_id}).sort('order_number', -1).limit(1).to_list(1)
-    return (last_order[0]['order_number'] + 1) if last_order else 1
+    if not last_order:
+        return 1
+    try:
+        return int(last_order[0].get('order_number', 0)) + 1
+    except (TypeError, ValueError):
+        return 1
 
 
 async def _broadcast_kitchen_queue(tenant_id: str) -> None:
