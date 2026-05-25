@@ -47,6 +47,47 @@ def _is_transient_db_error(exc: BaseException) -> bool:
     return isinstance(exc, _TRANSIENT_DB_ERRORS)
 
 
+# Consecutive-transient escalation: a single Atlas flap is noise, but a long
+# real outage must still surface to Sentry. Per-key counter (tenant id or
+# "__loop__" for outer) increments on each transient failure and resets on
+# success. Once the counter reaches the threshold, the log is promoted back to
+# ERROR so the next tick of a sustained outage is visible.
+_TRANSIENT_ESCALATION_THRESHOLD = 5  # ≈ 25 minutes at 5-min worker interval
+_consecutive_transient_failures: dict[str, int] = {}
+_OUTER_LOOP_KEY = "__loop__"
+
+
+def _record_transient_failure(key: str) -> int:
+    n = _consecutive_transient_failures.get(key, 0) + 1
+    _consecutive_transient_failures[key] = n
+    return n
+
+
+def _reset_transient_failure(key: str) -> None:
+    if key in _consecutive_transient_failures:
+        _consecutive_transient_failures.pop(key, None)
+
+
+def _prune_stale_transient_keys(active_keys: set[str]) -> None:
+    """Drop counter entries for tenants no longer in the active set.
+
+    Prevents unbounded growth of `_consecutive_transient_failures` over long
+    process uptimes with tenant churn. The reserved `_OUTER_LOOP_KEY` is
+    always preserved regardless of `active_keys`.
+    """
+    keep = active_keys | {_OUTER_LOOP_KEY}
+    stale = [k for k in _consecutive_transient_failures if k not in keep]
+    for k in stale:
+        _consecutive_transient_failures.pop(k, None)
+
+
+# Concurrency note: this module assumes a single asyncio worker task per
+# process (singleton `_worker`). Increments/resets are simple dict ops on the
+# event-loop thread; no lock is needed under that contract. If multiple
+# concurrent workers are ever introduced, wrap state mutations in an
+# `asyncio.Lock` or move state into an instance attribute.
+
+
 async def ensure_room_type_inventory_indexes() -> None:
     """Create indexes for room_type_inventory collection."""
     coll = db.room_type_inventory
@@ -372,12 +413,20 @@ class RoomTypeInventoryWorker:
         while self._running:
             try:
                 await self._run_once()
+                _reset_transient_failure(_OUTER_LOOP_KEY)
             except Exception as e:
                 if _is_transient_db_error(e):
-                    logger.warning(
-                        "RoomTypeInventoryWorker transient db error (will retry next tick): %s",
-                        e.__class__.__name__,
-                    )
+                    streak = _record_transient_failure(_OUTER_LOOP_KEY)
+                    if streak >= _TRANSIENT_ESCALATION_THRESHOLD:
+                        logger.error(
+                            "RoomTypeInventoryWorker sustained transient db error (streak=%d, ~%d min): %s",
+                            streak, streak * (self._interval // 60 or 1), e.__class__.__name__,
+                        )
+                    else:
+                        logger.warning(
+                            "RoomTypeInventoryWorker transient db error (streak=%d, will retry next tick): %s",
+                            streak, e.__class__.__name__,
+                        )
                 else:
                     logger.error("RoomTypeInventoryWorker error: %s", e)
             await asyncio.sleep(self._interval)
@@ -395,6 +444,10 @@ class RoomTypeInventoryWorker:
         start_date = today.isoformat()
         end_date = (today + timedelta(days=30)).isoformat()
 
+        # Drop counters for tenants no longer in the active list (churn safety).
+        active_tids = {t["id"] for t in tenants if t.get("id")}
+        _prune_stale_transient_keys(active_tids)
+
         for tenant in tenants:
             tid = tenant.get("id")
             if not tid:
@@ -402,6 +455,7 @@ class RoomTypeInventoryWorker:
             try:
                 with tenant_context(tid):
                     result = await reconcile_date_range(tid, start_date, end_date)
+                _reset_transient_failure(tid)
                 if result["drift_detected"] > 0:
                     logger.warning(
                         "Inventory drift detected for tenant %s: %d drifts",
@@ -416,11 +470,20 @@ class RoomTypeInventoryWorker:
                 if _is_transient_db_error(e):
                     # Atlas hiccup — single tick miss is acceptable, next 5-min
                     # tick will retry. Keep visibility via warning, but do not
-                    # promote to Sentry-level error noise.
-                    logger.warning(
-                        "Reconciliation transient db error for tenant %s (will retry next tick): %s",
-                        tid, e.__class__.__name__,
-                    )
+                    # promote to Sentry-level error noise. After a sustained
+                    # streak (≥ threshold), escalate back to ERROR so a real
+                    # outage is not silenced.
+                    streak = _record_transient_failure(tid)
+                    if streak >= _TRANSIENT_ESCALATION_THRESHOLD:
+                        logger.error(
+                            "Reconciliation sustained transient db error for tenant %s (streak=%d): %s",
+                            tid, streak, e.__class__.__name__,
+                        )
+                    else:
+                        logger.warning(
+                            "Reconciliation transient db error for tenant %s (streak=%d, will retry next tick): %s",
+                            tid, streak, e.__class__.__name__,
+                        )
                 else:
                     logger.error("Reconciliation failed for tenant %s: %s", tid, e)
 
