@@ -316,6 +316,15 @@ class PosFnbServiceV2:
             return ServiceResult.fail("Order not found", "NOT_FOUND")
         if order.get("status") == "voided":
             return ServiceResult.success({"message": "Already voided", "idempotent": True})
+        # Terminal-state guard: a closed (paid) order MUST NOT be voided.
+        # Architect review 2026-05-25: void of a closed order would regress
+        # lifecycle state and bypass the dedicated refund/reversal workflow,
+        # leaving folio/ledger invariants inconsistent. Reject with CONFLICT
+        # and require an explicit refund flow for post-close reversals.
+        if order.get("status") == "closed":
+            return ServiceResult.fail(
+                "Cannot void a closed order; use refund/reversal flow", "ORDER_CLOSED"
+            )
 
         now = datetime.now(UTC)
         # SECURITY: tenant_id filter required (defense-in-depth).

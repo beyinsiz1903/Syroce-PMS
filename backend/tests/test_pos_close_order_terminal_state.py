@@ -83,6 +83,31 @@ async def test_close_order_still_idempotent_when_already_closed():
     assert result.data.get("idempotent") is True
 
 
+async def test_void_order_rejects_closed_order():
+    closed_order = {
+        "id": "ord1",
+        "tenant_id": "t1",
+        "status": "closed",
+        "payment_status": "paid",
+        "grand_total": 100.0,
+    }
+    db = SimpleNamespace(
+        pos_transactions=_FakeColl(None),
+        pos_orders=_FakeColl(closed_order),
+        kitchen_orders=_FakeColl(None),
+        folios=_FakeColl(None),
+        folio_charges=_FakeColl(None),
+        table_layouts=_FakeColl(None),
+        audit_logs=_FakeColl(None),
+    )
+    svc = PosFnbServiceV2()
+    svc._db = db
+
+    result = await svc.void_order(_ctx(), order_id="ord1", reason="staff error")
+    assert result.ok is False
+    assert result.code == "ORDER_CLOSED"
+
+
 async def test_close_order_returns_not_found_for_missing_order():
     db = SimpleNamespace(
         pos_transactions=_FakeColl(None),

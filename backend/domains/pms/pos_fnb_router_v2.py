@@ -100,7 +100,9 @@ async def close_order(req: CloseOrderRequest, user=Depends(get_current_user),
         req.booking_id, req.tip_amount, req.idempotency_key
     )
     if not result.ok:
-        raise HTTPException(status_code=400, detail=from_service_result(result))
+        # Terminal-state conflicts → 409; everything else → 400.
+        status_code = 409 if result.code == "ORDER_VOIDED" else 400
+        raise HTTPException(status_code=status_code, detail=from_service_result(result))
     return _ok_payload(result)
 
 @router.post("/orders/void")
@@ -110,8 +112,14 @@ async def void_order(req: VoidOrderRequest, user=Depends(get_current_user),
     ctx = OperationContext.from_user(user)
     result = await pos_fnb_service_v2.void_order(ctx, req.order_id, reason=req.reason)
     if not result.ok:
-        code = 403 if result.code == "FORBIDDEN" else 400
-        raise HTTPException(status_code=code, detail=from_service_result(result))
+        if result.code == "FORBIDDEN":
+            status_code = 403
+        elif result.code == "ORDER_CLOSED":
+            # Terminal-state conflict — closed orders require refund flow.
+            status_code = 409
+        else:
+            status_code = 400
+        raise HTTPException(status_code=status_code, detail=from_service_result(result))
     return _ok_payload(result)
 
 @router.post("/stock/adjust")
