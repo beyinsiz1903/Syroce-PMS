@@ -21,10 +21,30 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from pymongo.errors import AutoReconnect, NetworkTimeout, ServerSelectionTimeoutError
+
 from core.database import db
 from core.tenant_db import get_system_db, tenant_context
 
 logger = logging.getLogger("core.room_type_inventory")
+
+# Transient Atlas/network errors that the worker should treat as
+# "retry next tick" instead of Sentry-level errors. Atlas occasionally drops
+# the primary connection mid-reconciliation (No Primary / SSL handshake timeout
+# / connection closed); the worker runs every 5 minutes anyway, so a single
+# missed tick is not actionable. Logging at warning keeps the signal without
+# flooding Sentry.
+_TRANSIENT_DB_ERRORS: tuple[type[BaseException], ...] = (
+    AutoReconnect,
+    NetworkTimeout,
+    ServerSelectionTimeoutError,
+    ConnectionError,
+    OSError,
+)
+
+
+def _is_transient_db_error(exc: BaseException) -> bool:
+    return isinstance(exc, _TRANSIENT_DB_ERRORS)
 
 
 async def ensure_room_type_inventory_indexes() -> None:
@@ -353,7 +373,13 @@ class RoomTypeInventoryWorker:
             try:
                 await self._run_once()
             except Exception as e:
-                logger.error("RoomTypeInventoryWorker error: %s", e)
+                if _is_transient_db_error(e):
+                    logger.warning(
+                        "RoomTypeInventoryWorker transient db error (will retry next tick): %s",
+                        e.__class__.__name__,
+                    )
+                else:
+                    logger.error("RoomTypeInventoryWorker error: %s", e)
             await asyncio.sleep(self._interval)
 
     async def _run_once(self) -> None:
@@ -387,7 +413,16 @@ class RoomTypeInventoryWorker:
                         tid, result["dates_processed"], result["types_processed"],
                     )
             except Exception as e:
-                logger.error("Reconciliation failed for tenant %s: %s", tid, e)
+                if _is_transient_db_error(e):
+                    # Atlas hiccup — single tick miss is acceptable, next 5-min
+                    # tick will retry. Keep visibility via warning, but do not
+                    # promote to Sentry-level error noise.
+                    logger.warning(
+                        "Reconciliation transient db error for tenant %s (will retry next tick): %s",
+                        tid, e.__class__.__name__,
+                    )
+                else:
+                    logger.error("Reconciliation failed for tenant %s: %s", tid, e)
 
 
 # Singleton
