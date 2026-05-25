@@ -180,6 +180,14 @@ class PosFnbServiceV2:
         )
         if not order:
             return ServiceResult.fail("Order not found", "NOT_FOUND")
+        # Terminal-state guard: a voided order MUST NOT be closeable.
+        # CI 2026-05-25 (98-pos-deep-lifecycle G) failed because close
+        # silently succeeded on a voided order. Void is a terminal state
+        # for the order lifecycle — reject with 4xx (CONFLICT).
+        if order.get("status") == "voided":
+            return ServiceResult.fail(
+                "Cannot close a voided order", "ORDER_VOIDED"
+            )
         if order.get("status") == "closed":
             return ServiceResult.success(
                 {"message": "Order already closed (idempotent)", "idempotent": True}
