@@ -12,7 +12,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -567,7 +567,11 @@ async def split_check(
     transaction_id: str,
     split_type: str,  # equal, by_item, custom
     split_count: int | None = 2,
-    split_details: dict | None = None,
+    # `embed=True` so the body MUST be `{ "split_details": {...} }` rather
+    # than the bare dict — matches the e2e contract and avoids the
+    # ambiguous "whole body becomes split_details" FastAPI default that
+    # caused 400 "no valid item indices" regressions (CI 2026-05-25).
+    split_details: dict | None = Body(default=None, embed=True),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):

@@ -597,10 +597,16 @@ async def update_kitchen_order_status_v2(
 async def complete_kitchen_order(order_id: str, current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("pos")),  # v99 DW
 ):
-    await db.kitchen_orders.update_one(
-        {'id': order_id},
+    # SECURITY: tenant_id filter is mandatory. Without it, any authenticated
+    # user can mark another tenant's kitchen_order as ready (cross-tenant
+    # IDOR). See e2e-stress 98-pos-kds-inventory.spec.js "C) P0 cross-tenant
+    # KDS IDOR" — this used to flip stress tickets via pilot bearer.
+    result = await db.kitchen_orders.update_one(
+        {'id': order_id, 'tenant_id': current_user.tenant_id},
         {'$set': {'status': 'ready', 'ready_at': datetime.now(UTC).isoformat()}}
     )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Order not found")
     await _broadcast_kitchen_queue(current_user.tenant_id)
     return {'success': True, 'message': 'Sipariş hazır olarak işaretlendi'}
 # ── POST /pos/kds/update-order-status ──

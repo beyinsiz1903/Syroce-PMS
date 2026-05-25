@@ -27,10 +27,17 @@ class PosFnbService:
     # ------------------------------------------------------------------
     @audited("pos.complete_kitchen_order", "kitchen_order", severity=SEVERITY_INFO)
     async def complete_kitchen_order(self, ctx: OperationContext, order_id: str) -> ServiceResult:
-        await self._db.kitchen_orders.update_one(
-            {"id": order_id},
+        # SECURITY: filter MUST include tenant_id — otherwise this service
+        # method (if ever wired into a router) would be a cross-tenant IDOR
+        # mirroring the router-layer bug fixed in kitchen.py. Keep both
+        # call-sites tenant-scoped + fail with 404 on miss to avoid silent
+        # cross-tenant writes if a future caller hooks this up.
+        result = await self._db.kitchen_orders.update_one(
+            {"id": order_id, "tenant_id": ctx.tenant_id},
             {"$set": {"status": "ready", "ready_at": datetime.now(UTC).isoformat()}},
         )
+        if result.matched_count == 0:
+            return ServiceResult.fail("Order not found", code="not_found")
         return ServiceResult.success({"success": True, "message": "Siparis hazir olarak isaretlendi"})
 
     async def get_kitchen_display(self, ctx: OperationContext, station: str | None = None, status: str | None = None) -> ServiceResult:
