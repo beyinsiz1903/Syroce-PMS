@@ -41,7 +41,15 @@ import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from core.transient_db_guard import TransientFailureTracker
+
 logger = logging.getLogger(__name__)
+
+# Streak tracker so an Atlas blip on the system DB during a tick does not
+# emit an ERROR-level "tick crashed" on every run. After a sustained
+# streak the log is escalated back to ERROR so Sentry still surfaces a
+# real outage. See `core.transient_db_guard`.
+_transient_tracker = TransientFailureTracker("kvkk-id-photo-alert")
 
 DEFAULT_THRESHOLD = 20
 DEFAULT_WINDOW_MINUTES = 60
@@ -418,8 +426,14 @@ async def run_loop(interval_seconds: int | None = None) -> None:
             await _run_once()
         except asyncio.CancelledError:
             raise
-        except Exception:
-            logger.exception("[kvkk-id-photo-alert] tick crashed")
+        except Exception as exc:
+            _transient_tracker.log_exception(
+                logger, exc, TransientFailureTracker.OUTER_LOOP_KEY,
+                context="tick",
+                non_transient_msg="%s tick crashed: %s",
+            )
+        else:
+            _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         try:
             await asyncio.sleep(interval)
         except asyncio.CancelledError:

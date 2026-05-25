@@ -30,8 +30,15 @@ from core.import_bridge_service import (
     auto_import_reservation_to_pms,
 )
 from core.tenant_db import get_system_db, tenant_context
+from core.transient_db_guard import TransientFailureTracker
 
 logger = logging.getLogger("core.import_retry_worker")
+
+# Demotes Atlas transient hiccups (AutoReconnect / NoPrimary / SSL timeout)
+# to WARNING for the first few consecutive misses, then escalates to ERROR
+# so a sustained outage is still visible in Sentry. See
+# `core.transient_db_guard` for the rationale.
+_transient_tracker = TransientFailureTracker("import-retry-worker")
 
 
 @contextmanager
@@ -112,9 +119,17 @@ class ImportRetryWorker:
                         await asyncio.sleep(self.poll_interval)
                 except asyncio.CancelledError:
                     raise
-                except Exception:
-                    logger.exception("Import retry worker loop error")
+                except Exception as exc:
+                    _transient_tracker.log_exception(
+                        logger,
+                        exc,
+                        TransientFailureTracker.OUTER_LOOP_KEY,
+                        context="loop tick",
+                        non_transient_msg="%s loop error: %s",
+                    )
                     await asyncio.sleep(self.poll_interval)
+                else:
+                    _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except asyncio.CancelledError:
             pass
 
