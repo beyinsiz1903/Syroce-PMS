@@ -29,6 +29,8 @@ References:
   docs/drill_reports/20260513_stress_f4_tenant_leak_audit.md
   docs/drill_reports/20260513_stress_f5_seed_cleanup_smoke.md
 """
+import asyncio
+import logging
 import os
 import time
 import uuid
@@ -37,6 +39,48 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from pymongo.errors import AutoReconnect, NetworkTimeout, ServerSelectionTimeoutError
+
+_stress_log = logging.getLogger("stress.cleanup")
+
+_TRANSIENT_DB_ERRORS: tuple[type[BaseException], ...] = (
+    AutoReconnect,
+    NetworkTimeout,
+    ServerSelectionTimeoutError,
+    ConnectionError,
+    OSError,
+)
+
+
+async def _delete_many_with_retry(col, flt: dict, *, col_name: str, attempts: int = 4):
+    """Wrap motor `delete_many` with bounded retries against transient Atlas drops.
+
+    Sentry production drop: pymongo AutoReconnect / OSError("connection closed")
+    in the middle of a long cleanup loop blew up the whole admin endpoint with
+    a 500. Retries are bounded (4 attempts, exponential backoff 0.25/0.5/1.0s)
+    and reraise the original error if every attempt fails.
+    """
+    delay = 0.25
+    last_exc: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return await col.delete_many(flt)
+        except _TRANSIENT_DB_ERRORS as exc:
+            last_exc = exc
+            if attempt == attempts:
+                _stress_log.warning(
+                    "stress.cleanup transient db error exhausted retries: col=%s attempt=%d err=%s",
+                    col_name, attempt, exc.__class__.__name__,
+                )
+                raise
+            _stress_log.info(
+                "stress.cleanup transient db error, retrying: col=%s attempt=%d err=%s",
+                col_name, attempt, exc.__class__.__name__,
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 2.0)
+    if last_exc is not None:  # defensive — loop above always returns or raises
+        raise last_exc
 
 from core.helpers import require_super_admin_guard
 from core.tenant_db import tenant_context
@@ -2571,9 +2615,11 @@ async def stress_cleanup(
                 # F8E spec 28 currency rates exist only in stress tenant
                 # and only across F8E runs; full collection wipe is the
                 # intent (idempotent across runs, no real-data exposure).
-                res = await col.delete_many({"tenant_id": stress_tid})
+                res = await _delete_many_with_retry(
+                    col, {"tenant_id": stress_tid}, col_name=col_name,
+                )
             else:
-                res = await col.delete_many(flt)
+                res = await _delete_many_with_retry(col, flt, col_name=col_name)
             deleted_counts[col_name] = res.deleted_count
     cleanup_ms = round((time.perf_counter() - t_start) * 1000, 1)
 
