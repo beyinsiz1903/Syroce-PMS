@@ -101,7 +101,7 @@ jobs:
             # Job-level env önce bağlanır, condition güvenli çalışır.
             SLACK_WEBHOOK_URL: ${{ secrets.STRESS_SLACK_WEBHOOK_URL }}
         steps:
-            - uses: actions/checkout@v5
+            - uses: actions/checkout@v4
 
             - name: Pre-flight — required secrets + base URL health
               id: preflight
