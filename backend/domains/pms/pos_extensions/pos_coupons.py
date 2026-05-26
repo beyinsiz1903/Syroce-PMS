@@ -34,7 +34,7 @@ async def _ensure_coupon_indexes() -> None:
 
 class CouponCreate(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    code: str = Field(min_length=3, max_length=40)
+    code: str = Field(min_length=3, max_length=64)
     discount_type: str = Field(default="percent", pattern="^(percent|amount)$")
     discount_value: float = Field(gt=0)
     min_amount: float = Field(default=0, ge=0)
