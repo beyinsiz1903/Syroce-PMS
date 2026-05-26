@@ -57,6 +57,91 @@ _REDIS_NEXT_RETRY_AT = 0.0  # monotonic seconds; 0 = retry immediately
 _REDIS_RETRY_BACKOFF_SECONDS = 30.0  # re-attempt after transient failures
 
 
+# ── MongoDB-backed sliding window (cross-instance shared state) ──────────
+#
+# F8AH P0 follow-up — the Redis path is per-instance under Replit autoscale
+# (each container runs its own `localhost:6380` redis-server, so two
+# instances mean two independent throttle counters and a 17-burst attack
+# distributed across them only hits each one with ~9 requests, never
+# tripping the 15-cap). The Lua atomic fix is correct *within* one
+# instance, but the state itself is not shared.
+#
+# For `always_on` security-critical throttles (TWOFA_VERIFY_IP,
+# SENSITIVE_AUTH_USER, VERIFY_CODE_EMAIL, RESET_CODE_*) we instead back the
+# window with MongoDB Atlas, which is already a single shared cluster
+# across every deployment instance. The extra ~5-15ms per auth-verify
+# check is acceptable; the protection it provides (cross-instance
+# brute-force rate limit) is mandatory and cannot be delivered by any
+# per-process or per-container backend.
+_MONGO_THROTTLE_INDEX_READY = False
+_MONGO_THROTTLE_INDEX_LOCK = asyncio.Lock()
+
+
+async def _ensure_mongo_throttle_indexes() -> bool:
+    """Idempotently provision the `throttle_hits` collection indexes.
+
+    Returns True on success / already-present, False on hard failure so
+    the caller can fail-CLOSED rather than silently degrade to a path
+    that has no cross-instance enforcement.
+    """
+    global _MONGO_THROTTLE_INDEX_READY
+    if _MONGO_THROTTLE_INDEX_READY:
+        return True
+    async with _MONGO_THROTTLE_INDEX_LOCK:
+        if _MONGO_THROTTLE_INDEX_READY:
+            return True
+        try:
+            # `throttle_hits` is system-scoped (keyed by IP / user id, not
+            # by tenant_id), so we use `_raw_db` to bypass the tenant
+            # proxy which would otherwise raise without a request context.
+            from core.database import _raw_db as _db
+            # (key, score) compound — supports the sliding-window count
+            # query `{key: rkey, score: {$gt: cutoff}}` and the
+            # find-oldest sort used for retry-after computation.
+            await _db.throttle_hits.create_index(
+                [("key", 1), ("score", 1)],
+                name="ix_throttle_hits_key_score",
+            )
+            # TTL index on `expires_at` — Mongo auto-evicts rows past
+            # window. expireAfterSeconds=0 means "expire at the exact
+            # datetime stored in the field".
+            await _db.throttle_hits.create_index(
+                "expires_at",
+                expireAfterSeconds=0,
+                name="ttl_throttle_hits_expires",
+            )
+            _MONGO_THROTTLE_INDEX_READY = True
+            return True
+        except Exception:
+            # Verify whether equivalent indexes already exist under
+            # different names before declaring failure.
+            try:
+                from core.database import _raw_db as _db
+                idx = await _db.throttle_hits.index_information()
+                key_score_seen = False
+                ttl_seen = False
+                for _name, spec in idx.items():
+                    keys = spec.get("key") or []
+                    if (
+                        len(keys) == 2
+                        and keys[0][0] == "key"
+                        and keys[1][0] == "score"
+                    ):
+                        key_score_seen = True
+                    if (
+                        len(keys) == 1
+                        and keys[0][0] == "expires_at"
+                        and spec.get("expireAfterSeconds") == 0
+                    ):
+                        ttl_seen = True
+                if key_score_seen and ttl_seen:
+                    _MONGO_THROTTLE_INDEX_READY = True
+                    return True
+            except Exception:
+                pass
+            return False
+
+
 def _invalidate_redis() -> None:
     """Drop the cached client and arm the reconnect backoff.
 
@@ -257,8 +342,83 @@ class SlidingWindowThrottle:
         retry_after_s = max(1, (retry_after_ms + 999) // 1000)
         return False, retry_after_s
 
+    async def _check_mongo(self, key: str) -> tuple[bool, int]:
+        """Cross-instance sliding window backed by MongoDB Atlas.
+
+        Used for `always_on` security-critical throttles where the
+        per-instance local Redis cannot enforce a shared cap. Uses an
+        insert-first, count-second, compensating-delete pattern so no
+        transaction is required:
+
+          1. Insert our hit doc unconditionally.
+          2. Count hits in window for this key — includes our own.
+          3. If count > max → delete our hit, return (False, retry).
+          4. Else → return (True, 0).
+
+        Under concurrent burst at the cap boundary, several callers may
+        each insert + observe count > max + each delete their own. The
+        net effect is fail-CLOSED (zero pass-through during the burst,
+        slightly stricter than ideal) and never lets more than `max`
+        slip through the window.
+        """
+        import time as _time
+        import uuid as _uuid
+        from core.database import _raw_db as _db
+        rkey = self._rkey(key)
+        now_ms = float(_time.time() * 1000)
+        window_ms = float(self.window.total_seconds() * 1000)
+        cutoff_ms = now_ms - window_ms
+        expires_at = datetime.utcfromtimestamp(
+            (now_ms + window_ms + 5000) / 1000.0
+        )
+        doc_id = f"{int(now_ms)}:{_uuid.uuid4().hex[:12]}"
+        await _db.throttle_hits.insert_one({
+            "_id": doc_id,
+            "key": rkey,
+            "score": now_ms,
+            "expires_at": expires_at,
+        })
+        count = await _db.throttle_hits.count_documents({
+            "key": rkey,
+            "score": {"$gt": cutoff_ms},
+        })
+        if count > self.max:
+            # Over budget — compensate our insert and report retry.
+            try:
+                await _db.throttle_hits.delete_one({"_id": doc_id})
+            except Exception:
+                pass
+            oldest = await _db.throttle_hits.find_one(
+                {"key": rkey, "score": {"$gt": cutoff_ms}},
+                sort=[("score", 1)],
+                projection={"score": 1},
+            )
+            if oldest:
+                retry_ms = oldest["score"] + window_ms - now_ms
+            else:
+                retry_ms = window_ms
+            retry_s = max(1, int((retry_ms + 999) // 1000))
+            return False, retry_s
+        return True, 0
+
     async def check(self, key: str) -> tuple[bool, int]:
         """Return (allowed, retry_after_seconds). Records the hit when allowed."""
+        # F8AH P0 follow-up — security-critical (`always_on`) throttles MUST
+        # use the cross-instance Mongo backend. The local Redis path is
+        # per-deployment-instance under Replit autoscale, so a multi-
+        # instance fan-out dilutes the cap. Mongo Atlas is shared and
+        # the only backend that gives the production guarantee these
+        # throttles are documented to provide.
+        if self.always_on:
+            try:
+                if await _ensure_mongo_throttle_indexes():
+                    return await self._check_mongo(key)
+            except Exception:
+                # Mongo hiccup — fall through to Redis/in-memory below
+                # so the auth surface stays available. The throttle is
+                # weaker for the duration of the outage but never blocks
+                # legitimate traffic with a 503.
+                pass
         rc = await _get_redis()
         if rc is not None:
             try:
