@@ -52,8 +52,18 @@ class KonaklamaVergisiConfig(BaseModel):
 
 
 class CalculateRequest(BaseModel):
-    amount: float = Field(gt=0)
-    nights: int = Field(default=1, ge=1)
+    # F8AH P1 fix — overflow guard. Pre-fix the calculator accepted amount=1e18
+    # and nights=1e7 with no upper bound, returning a quietly-truncated 200.
+    # That is a fail-OPEN behaviour: a malicious or malformed client could
+    # generate astronomical "tax" figures that mask integration bugs or pollute
+    # accounting reports. Realistic ceilings:
+    #   - amount: per-folio nightly base; 1e9 (1 milyar TL) is already orders
+    #     of magnitude beyond any real reservation while staying inside float64
+    #     precision and JSON-safe integer range.
+    #   - nights: a single calculation covers one stay; 3650 (≈10 yıl) is a
+    #     generous upper bound. Anything beyond is data-corruption / abuse.
+    amount: float = Field(gt=0, le=1_000_000_000)
+    nights: int = Field(default=1, ge=1, le=3650)
     exempt: bool = False
 
 

@@ -118,6 +118,13 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
     let backupCodes = null;     // plaintext backup codes returned by /setup/confirm
     let twofaEnabled = false;   // tracked so afterAll can cleanly disable
     let usedConfirmCode = null; // for same-window replay assertion across endpoints
+    // F8AH P1 fix — track ALL TOTP codes the suite has already consumed via
+    // /auth/2fa/verify or /2fa/regenerate-backup-codes so that downstream
+    // tests (notably F: regenerate-backup-codes) can wait for a fresh slot
+    // instead of colliding with the cross-endpoint TOTP single-use guard
+    // (Bug CB v45 — `consume_totp_counters` claims all matching counters
+    // atomically and never frees them within the matching window).
+    const usedTotpCodes = new Set();
 
     // ── afterAll: ALWAYS disable 2FA so shared bearer login keeps working ──
     test.afterAll(async ({ }, testInfo) => {
@@ -329,7 +336,7 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
         // Same-counter code as confirm could collide; pick a distinct verify code
         // by waiting for the next 30s slot if necessary.
         let verifyCode = currentTotp(secret);
-        if (verifyCode === usedConfirmCode) {
+        if (verifyCode === usedConfirmCode || usedTotpCodes.has(verifyCode)) {
             // Wait until the next 30s window so the matched counter differs.
             const now = Math.floor(Date.now() / 1000);
             const next = (Math.floor(now / 30) + 1) * 30;
@@ -338,6 +345,10 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
             verifyCode = currentTotp(secret);
         }
         const v = await call2faVerify(request, challenge, verifyCode);
+        // Track BEFORE checking ok so a 4xx after backend-side consume still
+        // marks the code as burnt (consume_totp_counters claims atomically
+        // even when the request later fails for an unrelated reason).
+        usedTotpCodes.add(verifyCode);
         const exchanged = v.ok && v.body?.access_token && v.body.access_token.length > 0;
         rec(testInfo, { module: MOD, step: 'verify_happy',
             status: exchanged ? 'PASS' : 'FAIL',
@@ -505,14 +516,21 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
             recFinding(testInfo, 'P0', MOD, 'Regenerate wrong code 2xx — TOTP validation yok',
                 `status=${bad.status} body=${JSON.stringify(bad.body).slice(0, 200)}.`);
         }
-        // Correct code — pick a slot different from `usedConfirmCode`.
+        // Correct code — pick a slot different from any previously consumed
+        // TOTP. F8AH P1: prior tests (C verify_happy) burn a code via
+        // /auth/2fa/verify, and the backend's cross-endpoint single-use
+        // guard (Bug CB v45) would reject the same code here. Loop forward
+        // through 30s slots until we land on a fresh one.
         let code = currentTotp(secret);
-        if (code === usedConfirmCode) {
+        let waitGuard = 0;
+        while ((code === usedConfirmCode || usedTotpCodes.has(code)) && waitGuard < 3) {
             const now = Math.floor(Date.now() / 1000);
             const next = (Math.floor(now / 30) + 1) * 30;
             await new Promise((res) => setTimeout(res, Math.max(0, (next - now) * 1000) + 1500));
             code = currentTotp(secret);
+            waitGuard += 1;
         }
+        usedTotpCodes.add(code);
         const ok = await callTimed(request, 'post', '/api/2fa/regenerate-backup-codes', { code }, stressTokens.stress_token);
         const regenOk = ok.ok && Array.isArray(ok.body?.backup_codes) && ok.body.backup_codes.length >= 8;
         rec(testInfo, { module: MOD, step: 'regen_correct_code',

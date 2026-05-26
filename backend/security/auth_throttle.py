@@ -38,10 +38,146 @@ from fastapi import HTTPException, Request
 TRUST_PROXY = os.getenv("TRUST_PROXY", "1") == "1"
 
 
-class SlidingWindowThrottle:
-    """Per-key sliding window: at most `max_requests` per `window_seconds`."""
+# ── Redis-backed sliding window state (shared across replicas/workers) ──
+#
+# F8AH P0 fix — original SlidingWindowThrottle held counters in a process-local
+# `dict[str, deque]`. In a multi-replica/multi-worker deployment (Replit
+# autoscale, gunicorn workers, etc.) each process sees only a fraction of
+# requests, so a 17-burst attack against /api/auth/2fa/verify distributed
+# across N replicas can hit ~ceil(17/N) per replica — never tripping the
+# 15/60s threshold. Stress spec 98C-twofa-totp-lifecycle.spec.js D) exposed
+# this: 17/17 returned 401 (no 429). Fix: back the window with a Redis
+# ZSET (score=now_ms, member=unique_token); ZREMRANGEBYSCORE evicts expired
+# entries, ZCARD is the authoritative count across all replicas. In-memory
+# state remains as a fail-open fallback when Redis is unreachable so the
+# auth surface never goes 503 because of cache outage.
+_REDIS_CLIENT = None
+_REDIS_INIT_LOCK = asyncio.Lock()
+_REDIS_NEXT_RETRY_AT = 0.0  # monotonic seconds; 0 = retry immediately
+_REDIS_RETRY_BACKOFF_SECONDS = 30.0  # re-attempt after transient failures
 
-    def __init__(self, max_requests: int, window_seconds: int, *, always_on: bool = False):
+
+def _invalidate_redis() -> None:
+    """Drop the cached client and arm the reconnect backoff.
+
+    Called when a Redis operation throws against a previously-good client
+    (network drop, server restart, etc.). Without this, `_get_redis()`
+    would keep returning the dead handle for the lifetime of the process
+    and every throttle check would silently fall through to per-process
+    in-memory state — reintroducing multi-replica dilution.
+    """
+    global _REDIS_CLIENT, _REDIS_NEXT_RETRY_AT
+    import time as _time
+    _REDIS_CLIENT = None
+    _REDIS_NEXT_RETRY_AT = _time.monotonic() + _REDIS_RETRY_BACKOFF_SECONDS
+
+
+async def _get_redis():
+    """Return a shared async-redis client, or None if unavailable.
+
+    Lazy + retry-capable. On init/ping failure we record a re-try timestamp
+    (30s backoff) instead of permanently flipping a done-flag; this avoids
+    the architect-flagged "permanent downgrade" pitfall where a one-shot
+    Redis hiccup at first request would lock the process into per-process
+    in-memory throttling for its entire lifetime (= re-introducing the
+    multi-replica dilution we just fixed). Concurrent callers race on
+    `_REDIS_INIT_LOCK` so only one connection attempt is in-flight at a
+    time.
+    """
+    global _REDIS_CLIENT, _REDIS_NEXT_RETRY_AT
+    if _REDIS_CLIENT is not None:
+        return _REDIS_CLIENT
+    import time as _time
+    now = _time.monotonic()
+    if now < _REDIS_NEXT_RETRY_AT:
+        return None
+    async with _REDIS_INIT_LOCK:
+        if _REDIS_CLIENT is not None:
+            return _REDIS_CLIENT
+        now = _time.monotonic()
+        if now < _REDIS_NEXT_RETRY_AT:
+            return None
+        import os as _os
+        try:
+            from redis import asyncio as aioredis  # type: ignore
+            url = _os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+            client = aioredis.from_url(
+                url,
+                encoding="utf-8",
+                decode_responses=True,
+                socket_timeout=2,
+                socket_connect_timeout=2,
+            )
+            await client.ping()
+            _REDIS_CLIENT = client
+            _REDIS_NEXT_RETRY_AT = 0.0
+        except Exception:
+            _REDIS_CLIENT = None
+            _REDIS_NEXT_RETRY_AT = _time.monotonic() + _REDIS_RETRY_BACKOFF_SECONDS
+    return _REDIS_CLIENT
+
+
+# Atomic sliding-window claim Lua script. Encapsulates trim + count + add
+# in a single Redis-side operation so concurrent requests cannot both
+# observe `count < max` at the boundary and exceed the cap. The undo-on-
+# overlimit pattern from the original non-tx pipeline is replaced by a
+# conditional ZADD that never adds when over budget — strictly atomic.
+#
+# KEYS[1] = redis key
+# ARGV[1] = now_ms (claim timestamp)
+# ARGV[2] = cutoff_ms (window expiry boundary)
+# ARGV[3] = max_requests
+# ARGV[4] = ttl_seconds (key expiry; window + slack)
+# ARGV[5] = unique member identifier
+# RETURN  = {allowed (1|0), retry_after_ms (0 when allowed)}
+_SLIDING_WINDOW_LUA = """
+redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, ARGV[2])
+local count = redis.call('ZCARD', KEYS[1])
+if count >= tonumber(ARGV[3]) then
+  local oldest = redis.call('ZRANGE', KEYS[1], 0, 0, 'WITHSCORES')
+  local oldest_score = 0
+  if oldest[2] then oldest_score = tonumber(oldest[2]) end
+  local retry_after_ms = (oldest_score + (tonumber(ARGV[1]) - tonumber(ARGV[2]))) - tonumber(ARGV[1])
+  if retry_after_ms < 1 then retry_after_ms = 1 end
+  return {0, retry_after_ms}
+end
+redis.call('ZADD', KEYS[1], tonumber(ARGV[1]), ARGV[5])
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[4]))
+return {1, 0}
+"""
+
+_SLIDING_WINDOW_SHA: str | None = None
+_SLIDING_WINDOW_SHA_LOCK = asyncio.Lock()
+
+
+async def _get_sliding_window_sha(rc) -> str | None:
+    global _SLIDING_WINDOW_SHA
+    if _SLIDING_WINDOW_SHA is not None:
+        return _SLIDING_WINDOW_SHA
+    async with _SLIDING_WINDOW_SHA_LOCK:
+        if _SLIDING_WINDOW_SHA is not None:
+            return _SLIDING_WINDOW_SHA
+        try:
+            sha = await rc.script_load(_SLIDING_WINDOW_LUA)
+            _SLIDING_WINDOW_SHA = sha
+            return sha
+        except Exception:
+            return None
+
+
+class SlidingWindowThrottle:
+    """Per-key sliding window: at most `max_requests` per `window_seconds`.
+
+    Uses Redis ZSET when available (shared across replicas/workers); falls
+    back to in-memory `deque` per process when Redis is unreachable. The
+    fallback is intentionally fail-OPEN with respect to cross-process
+    coordination — a Redis outage degrades the per-IP cap to per-process
+    semantics, but never converts a legitimate request into a 503.
+    """
+
+    _instance_counter = 0
+
+    def __init__(self, max_requests: int, window_seconds: int, *, always_on: bool = False, name: str | None = None):
         self.max = max_requests
         self.window = timedelta(seconds=window_seconds)
         self._hits: dict[str, deque[datetime]] = {}
@@ -51,9 +187,92 @@ class SlidingWindowThrottle:
         # (TOTP verify) where the dev escape hatch would otherwise mask the
         # absence of throttling in stress runs AND production smoke tests.
         self.always_on = always_on
+        # Stable identifier for the Redis key namespace. We can't rely on
+        # variable-name reflection so callers may pass `name=` explicitly;
+        # otherwise we synthesise a deterministic id from (max, window).
+        # Two throttles with identical (max, window) sharing a namespace is
+        # fine — keys also include the per-request identity (ip / user / …).
+        SlidingWindowThrottle._instance_counter += 1
+        self.name = name or f"swt:{max_requests}x{window_seconds}:{SlidingWindowThrottle._instance_counter}"
+
+    def _rkey(self, key: str) -> str:
+        return f"throttle:{self.name}:{key}"
+
+    async def _check_redis(self, rc, key: str) -> tuple[bool, int]:
+        """Atomic sliding-window claim via server-side Lua.
+
+        Architect-flagged race fix: the original non-tx pipeline left a
+        check-then-claim window where two concurrent requests could each
+        observe `count < max` and both succeed at the cap boundary. The
+        Lua script collapses trim/count/add into a single atomic Redis
+        operation, eliminating that window entirely.
+        """
+        import time as _time
+        import uuid as _uuid
+        rkey = self._rkey(key)
+        now_ms = int(_time.time() * 1000)
+        window_ms = int(self.window.total_seconds() * 1000)
+        cutoff_ms = now_ms - window_ms
+        ttl_s = int(self.window.total_seconds()) + 1
+        member = f"{now_ms}:{_uuid.uuid4().hex[:10]}"
+        sha = await _get_sliding_window_sha(rc)
+        if sha is None:
+            # Fallback: EVAL each call. Slower but functionally identical
+            # and still atomic on the Redis side.
+            try:
+                result = await rc.eval(
+                    _SLIDING_WINDOW_LUA, 1, rkey,
+                    str(now_ms), str(cutoff_ms), str(self.max), str(ttl_s), member,
+                )
+            except Exception:
+                raise
+        else:
+            try:
+                result = await rc.evalsha(
+                    sha, 1, rkey,
+                    str(now_ms), str(cutoff_ms), str(self.max), str(ttl_s), member,
+                )
+            except Exception as exc:
+                # NOSCRIPT (script flushed) → reload and retry once.
+                if 'NOSCRIPT' in str(exc).upper():
+                    global _SLIDING_WINDOW_SHA
+                    _SLIDING_WINDOW_SHA = None
+                    sha2 = await _get_sliding_window_sha(rc)
+                    if sha2:
+                        result = await rc.evalsha(
+                            sha2, 1, rkey,
+                            str(now_ms), str(cutoff_ms), str(self.max), str(ttl_s), member,
+                        )
+                    else:
+                        result = await rc.eval(
+                            _SLIDING_WINDOW_LUA, 1, rkey,
+                            str(now_ms), str(cutoff_ms), str(self.max), str(ttl_s), member,
+                        )
+                else:
+                    raise
+        allowed = int(result[0]) == 1
+        if allowed:
+            return True, 0
+        retry_after_ms = int(result[1] or 0)
+        retry_after_s = max(1, (retry_after_ms + 999) // 1000)
+        return False, retry_after_s
 
     async def check(self, key: str) -> tuple[bool, int]:
         """Return (allowed, retry_after_seconds). Records the hit when allowed."""
+        rc = await _get_redis()
+        if rc is not None:
+            try:
+                return await self._check_redis(rc, key)
+            except Exception:
+                # Redis hiccup → fall through to in-memory (per-process) path
+                # so the auth surface stays available. We accept that the cap
+                # temporarily becomes per-process during the outage; this
+                # matches the pre-F8AH behaviour and is fail-OPEN by design.
+                # Architect-flagged: a dying connection would otherwise cause
+                # `_REDIS_CLIENT` to keep returning the dead handle forever.
+                # Clear the cache + arm the backoff timer so `_get_redis()`
+                # attempts reconnection on the next call after the window.
+                _invalidate_redis()
         async with self._lock:
             now = datetime.utcnow()
             cutoff = now - self.window
@@ -70,6 +289,15 @@ class SlidingWindowThrottle:
             return True, 0
 
     async def reset(self, key: str) -> None:
+        rc = await _get_redis()
+        if rc is not None:
+            try:
+                await rc.delete(self._rkey(key))
+            except Exception:
+                # Same invalidation policy as check(): a dead client must
+                # be cleared so the next call attempts reconnection rather
+                # than retrying against the broken handle indefinitely.
+                _invalidate_redis()
         async with self._lock:
             self._hits.pop(key, None)
 

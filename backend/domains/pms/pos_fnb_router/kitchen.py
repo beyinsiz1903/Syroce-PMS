@@ -7,6 +7,7 @@ Auto-split sub-router (shared imports/classes inlined).
 PMS / POS & F&B Domain Router
 Extracted from legacy_routes.py — Phase B Domain Separation
 """
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -544,6 +545,77 @@ async def get_kitchen_orders(
     orders = await _get_active_kitchen_orders(current_user.tenant_id, statuses=statuses)
     return {'orders': orders, 'total': len(orders)}
 # ── POST /fnb/kitchen-order ──
+_KITCHEN_IDEMP_INDEX_READY = False
+_KITCHEN_IDEMP_INDEX_LOCK = asyncio.Lock()
+
+
+async def _ensure_kitchen_idemp_index() -> bool:
+    """Ensure (tenant_id, idempotency_key) unique partial index exists.
+
+    Returns True only when the index is confirmed present in MongoDB.
+    Architect-flagged hardening: the previous version swallowed all
+    exceptions AND still flipped the ready flag, so a transient failure
+    could leave keyed inserts running on a pure find-then-insert path
+    with a TOCTOU window between the find and the insert — silently
+    creating duplicates under concurrent retries. The caller now treats
+    a False return as fail-closed (503) for idempotency-keyed requests.
+    """
+    global _KITCHEN_IDEMP_INDEX_READY
+    if _KITCHEN_IDEMP_INDEX_READY:
+        return True
+    async with _KITCHEN_IDEMP_INDEX_LOCK:
+        if _KITCHEN_IDEMP_INDEX_READY:
+            return True
+        try:
+            await db.kitchen_orders.create_index(
+                [('tenant_id', 1), ('idempotency_key', 1)],
+                unique=True,
+                partialFilterExpression={'idempotency_key': {'$type': 'string'}},
+                name='ux_kitchen_orders_tenant_idemp',
+            )
+            _KITCHEN_IDEMP_INDEX_READY = True
+            return True
+        except Exception as exc:
+            # Index may already exist under a different name with an
+            # equivalent definition; verify by reading the index catalogue.
+            # Architect-flagged: equivalence MUST be strict — a longer
+            # unique index like (tenant_id, idempotency_key, station)
+            # enforces uniqueness on the WHOLE triple, NOT on the
+            # (tenant_id, idempotency_key) pair, so two retries with the
+            # same key but a different station would both insert.
+            try:
+                indexes = await db.kitchen_orders.index_information()
+                for _name, spec in indexes.items():
+                    keys = spec.get('key') or []
+                    if not spec.get('unique'):
+                        continue
+                    # Strict key match: exactly two fields in this order.
+                    if len(keys) != 2:
+                        continue
+                    if keys[0][0] != 'tenant_id' or keys[1][0] != 'idempotency_key':
+                        continue
+                    # Partial filter must scope to keyed rows only — either
+                    # `{idempotency_key: {$type: 'string'}}` or `{$exists: true}`.
+                    # Anything else (including no partial filter) doesn't
+                    # match our contract; require equivalence to be safe.
+                    pfe = spec.get('partialFilterExpression') or {}
+                    target = pfe.get('idempotency_key')
+                    if isinstance(target, dict) and (
+                        target.get('$type') == 'string'
+                        or target.get('$exists') is True
+                    ):
+                        _KITCHEN_IDEMP_INDEX_READY = True
+                        return True
+            except Exception:
+                pass
+            # Genuinely missing → log and report fail-closed to caller.
+            import logging as _logging
+            _logging.getLogger(__name__).error(
+                "kitchen_orders idempotency index missing and create failed: %s", exc,
+            )
+            return False
+
+
 @router.post("/fnb/kitchen-order")
 async def create_kitchen_order(
     order_data: dict,
@@ -552,6 +624,35 @@ async def create_kitchen_order(
 ):
     if not order_data.get('items'):
         raise HTTPException(status_code=400, detail="Order items required")
+
+    # F8AH P1 fix — idempotency_key support. Stress spec
+    # 98-pos-kds-inventory.spec.js D) sends the same payload twice with a
+    # client-supplied idempotency_key and expects the second call to return
+    # the existing ticket (or 200/409 with the same id) instead of creating
+    # a duplicate. Without this, a transient network blip that retries the
+    # POST silently double-charges the kitchen queue.
+    idemp_raw = order_data.get('idempotency_key')
+    idemp = idemp_raw.strip() if isinstance(idemp_raw, str) and idemp_raw.strip() else None
+    if idemp and len(idemp) > 128:
+        raise HTTPException(status_code=400, detail="idempotency_key too long (max 128)")
+    if idemp:
+        # Fail-closed: if the unique partial index can't be confirmed, refuse
+        # the keyed write. Architect call-out: without the index, the
+        # find→insert path is TOCTOU and concurrent retries can silently
+        # create duplicates — exactly the contract this header promises NOT
+        # to violate. Better to return 503 and let the client retry with
+        # backoff than to silently break the idempotency contract.
+        if not await _ensure_kitchen_idemp_index():
+            raise HTTPException(
+                status_code=503,
+                detail="idempotency koruması geçici olarak kullanılamıyor — biraz sonra tekrar deneyin",
+            )
+        existing = await db.kitchen_orders.find_one(
+            {'tenant_id': current_user.tenant_id, 'idempotency_key': idemp},
+            {'_id': 0},
+        )
+        if existing:
+            return {'success': True, 'order': existing, 'idempotent_replay': True}
 
     order = {
         'id': str(uuid.uuid4()),
@@ -567,7 +668,22 @@ async def create_kitchen_order(
         'ordered_by': current_user.name,
         'ordered_at': datetime.now(UTC).isoformat(),
     }
-    await db.kitchen_orders.insert_one(order)
+    if idemp:
+        order['idempotency_key'] = idemp
+    try:
+        await db.kitchen_orders.insert_one(order)
+    except Exception as exc:
+        # DuplicateKeyError on the partial unique index → concurrent retry
+        # raced us. Re-read and return the winning row.
+        from pymongo.errors import DuplicateKeyError
+        if idemp and isinstance(exc, DuplicateKeyError):
+            existing = await db.kitchen_orders.find_one(
+                {'tenant_id': current_user.tenant_id, 'idempotency_key': idemp},
+                {'_id': 0},
+            )
+            if existing:
+                return {'success': True, 'order': existing, 'idempotent_replay': True}
+        raise
     await _broadcast_kitchen_queue(current_user.tenant_id)
     order.pop('_id', None)
     return {'success': True, 'order': order}
@@ -601,12 +717,34 @@ async def complete_kitchen_order(order_id: str, current_user: User = Depends(get
     # user can mark another tenant's kitchen_order as ready (cross-tenant
     # IDOR). See e2e-stress 98-pos-kds-inventory.spec.js "C) P0 cross-tenant
     # KDS IDOR" — this used to flip stress tickets via pilot bearer.
+    #
+    # F8AH P1 fix — terminal-state guard. Pre-fix, /complete unconditionally
+    # set status='ready', even when the ticket was already in a terminal
+    # state (served/cancelled). Stress spec 98-pos-kds-inventory.spec.js B)
+    # exposed this: a re-complete on a 'served' ticket reverted it to
+    # 'ready'. Reject the transition with 409 and keep the original state.
+    TERMINAL_STATES = {'served', 'cancelled', 'voided'}
     result = await db.kitchen_orders.update_one(
-        {'id': order_id, 'tenant_id': current_user.tenant_id},
-        {'$set': {'status': 'ready', 'ready_at': datetime.now(UTC).isoformat()}}
+        {
+            'id': order_id,
+            'tenant_id': current_user.tenant_id,
+            'status': {'$nin': list(TERMINAL_STATES)},
+        },
+        {'$set': {'status': 'ready', 'ready_at': datetime.now(UTC).isoformat()}},
     )
     if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Order not found")
+        # Distinguish "not found" from "already terminal" so callers can
+        # treat the conflict idempotently without polling.
+        existing = await db.kitchen_orders.find_one(
+            {'id': order_id, 'tenant_id': current_user.tenant_id},
+            {'_id': 0, 'status': 1},
+        )
+        if not existing:
+            raise HTTPException(status_code=404, detail="Order not found")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Sipariş zaten '{existing.get('status')}' durumunda — geri alınamaz",
+        )
     await _broadcast_kitchen_queue(current_user.tenant_id)
     return {'success': True, 'message': 'Sipariş hazır olarak işaretlendi'}
 # ── POST /pos/kds/update-order-status ──
