@@ -13,7 +13,6 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
-
 from pymongo.errors import DuplicateKeyError
 
 from core.database import db
