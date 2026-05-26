@@ -720,7 +720,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
     # force). user_id comes from the JWT-trusted challenge_token claim.
     _user_id_for_throttle = decoded.get("user_id")
     if _user_id_for_throttle:
-        from security.auth_throttle import TWOFA_VERIFY_USER, enforce as _enforce_user
+        from security.auth_throttle import enforce as _enforce_user, TWOFA_VERIFY_USER  # noqa: I001
         await _enforce_user(
             TWOFA_VERIFY_USER,
             f"user:{_user_id_for_throttle}",
