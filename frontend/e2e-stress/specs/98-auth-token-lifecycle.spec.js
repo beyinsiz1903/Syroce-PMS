@@ -449,4 +449,83 @@ test.describe('F8U § 98 — Auth Token Lifecycle', () => {
         expect(driftOk).toBe(true);
         expect(extOk).toBe(true);
     });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // afterAll — Refresh shared stress bearer.
+    //
+    // F8U bug fix (2026-05-26): /api/auth/logout (backend auth.py:1259-1279)
+    // sets `tokens_invalid_before` on the USER document — F8U P0 fix for
+    // stolen-refresh protection. This invalidates ALL tokens for that user,
+    // including the shared `stressTokens.stress_token` minted by globalSetup,
+    // because both fresh-login and shared tokens belong to the same stress
+    // admin user (E2E_STRESS_ADMIN_EMAIL). Subsequent specs that read the
+    // cached TOKEN_FILE then receive 401 "Şifre değişti".
+    //
+    // Mitigation: after this spec's lifecycle (logout test D) invalidates
+    // the watermark, re-login the stress admin and rewrite TOKEN_FILE so
+    // every subsequent spec/test (the `stressTokens` fixture is per-test
+    // and re-reads TOKEN_FILE via loadJson) picks up a fresh access token.
+    //
+    // Pilot token is preserved verbatim (pilot user not logged out anywhere).
+    // ─────────────────────────────────────────────────────────────────────
+    test.afterAll(async () => {
+        if (moduleBlocked) return;
+        const fs = await import('node:fs');
+        const path = await import('node:path');
+        const { request: plRequest } = await import('@playwright/test');
+        const tokenFile = path.join(process.cwd(), 'e2e-stress', '.auth', 'stress-token.json');
+        const email = process.env.E2E_STRESS_ADMIN_EMAIL;
+        const password = process.env.E2E_STRESS_ADMIN_PASSWORD;
+        if (!email || !password) {
+            // eslint-disable-next-line no-console
+            console.error('[F8U] afterAll token refresh skipped — missing E2E_STRESS_ADMIN_EMAIL/PASSWORD env.');
+            return;
+        }
+        let priorBlob = null;
+        try { priorBlob = JSON.parse(fs.readFileSync(tokenFile, 'utf-8')); } catch { /* ignore */ }
+        // Architect iter-2: fail-closed pre-flight — if TOKEN_FILE is missing
+        // or lacks pilot_token, refuse to overwrite with partial state.
+        // Partial blob would silently drop pilot_token and crash every
+        // downstream pilotBookingsCount(stressTokens.pilot_token) call.
+        if (!priorBlob || !priorBlob.pilot_token) {
+            // eslint-disable-next-line no-console
+            console.error('[F8U] CRITICAL: afterAll skipped — TOKEN_FILE missing/incomplete (pilot_token absent). Subsequent specs will inherit stale bearer; investigate globalSetup state.');
+            throw new Error('[F8U] afterAll fail-closed: prior TOKEN_FILE missing pilot_token; refusing partial overwrite.');
+        }
+        const baseURL = process.env.E2E_BASE_URL || 'http://localhost:8000';
+        const ctx = await plRequest.newContext({ baseURL });
+        try {
+            const r = await ctx.post('/api/auth/login', {
+                data: { email, password },
+                headers: { 'Content-Type': 'application/json' },
+                failOnStatusCode: false, timeout: 30_000,
+            }).catch(() => null);
+            const status = r?.status?.() ?? 0;
+            let body = null;
+            try { body = r?.json ? await r.json() : null; } catch { /* ignore */ }
+            const freshToken = body?.access_token;
+            if (!freshToken) {
+                // Architect iter-2: fail-closed — opaque 401 cascade in
+                // downstream specs is worse than a loud afterAll failure here.
+                // eslint-disable-next-line no-console
+                console.error(`[F8U] CRITICAL: afterAll re-login FAILED status=${status} body=${JSON.stringify(body).slice(0,200)} — subsequent specs would inherit stale bearer; raising hard error.`);
+                throw new Error(`[F8U] afterAll re-login failed (status=${status}); stress bearer refresh aborted.`);
+            }
+            // Preserve every key downstream specs may reference
+            // (pilot_tenant_id, seed_state, etc.) — only stress_token is
+            // refreshed; everything else carried over verbatim from
+            // globalSetup-written blob.
+            const merged = {
+                ...priorBlob,
+                stress_token: freshToken,
+                captured_at: Date.now(),
+                refreshed_after: 'auth_token_lifecycle_logout',
+            };
+            fs.writeFileSync(tokenFile, JSON.stringify(merged, null, 2), 'utf-8');
+            // eslint-disable-next-line no-console
+            console.log('[F8U] afterAll: stress bearer refreshed (post-logout watermark recovery).');
+        } finally {
+            await ctx.dispose();
+        }
+    });
 });
