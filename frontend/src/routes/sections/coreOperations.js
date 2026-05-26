@@ -6,7 +6,7 @@ import {
   ShiftHandoverPage, EarlyLatePricingSettings, EodReportPage, WalkinPage,
   RoomMapPage, WakeUpCallsPage, LostFoundPage, GuestJourney,
   OperationalEventDashboard, MigrationObservabilityPage, IntegrationHub,
-  AdminControlPanel, HousekeepingDashboard, POSDashboard, FeaturesShowcase,
+  AdminControlPanel, HousekeepingDashboard, POSDashboard, POSExtensions, FeaturesShowcase,
 } from "./lazyPages";
 
 export function coreOperationsRoutes({ p, pa, pm, modules }) {
@@ -52,6 +52,7 @@ export function coreOperationsRoutes({ p, pa, pm, modules }) {
     // ── Core Operations (Dashboard module cards) ──────
     { path: "/housekeeping", ...p(HousekeepingDashboard), wrapLayout: true, layoutModule: "housekeeping" },
     { path: "/pos", ...p(POSDashboard), wrapLayout: true, layoutModule: "pos" },
+    { path: "/pos-extensions", ...p(POSExtensions), wrapLayout: true, layoutModule: "pos" },
     { path: "/features", ...p(FeaturesShowcase), wrapLayout: true },
   ];
 }

@@ -146,6 +146,15 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     # Phase 5 — Production Hardening
     ("domains.pms.frontdesk_router_v2", "router", ["Front Desk v2"], None, None),
     ("domains.pms.pos_fnb_router_v2", "router", ["POS & F&B v2"], None, None),
+    # POS Extensions — 8 yeni modül (mevcut POS akışından bağımsız)
+    ("domains.pms.pos_extensions.pos_currency", "router", ["POS Ext / Multi-Currency"], None, None),
+    ("domains.pms.pos_extensions.pos_happy_hour", "router", ["POS Ext / Happy Hour"], None, None),
+    ("domains.pms.pos_extensions.pos_coupons", "router", ["POS Ext / Coupons"], None, None),
+    ("domains.pms.pos_extensions.pos_loyalty_pos", "router", ["POS Ext / Loyalty"], None, None),
+    ("domains.pms.pos_extensions.pos_shift_close", "router", ["POS Ext / Shift Close"], None, None),
+    ("domains.pms.pos_extensions.pos_barcode", "router", ["POS Ext / Barcode"], None, None),
+    ("domains.pms.pos_extensions.pos_print_spool", "router", ["POS Ext / Print Spool"], None, None),
+    ("domains.pms.pos_extensions.pos_fiscal", "router", ["POS Ext / Fiscal (ÖKC)"], None, None),
     # Semantic Layer (ADR read models for BI/SDK/partner consumers)
     ("modules.stays.router", "router", ["Semantic Stays"], None, None),
     ("modules.inventory.router", "router", ["Semantic Inventory"], None, None),

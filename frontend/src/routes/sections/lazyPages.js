@@ -98,6 +98,7 @@ export const MaintenancePriorityVisual = lazy(() => import("@/pages/MaintenanceP
 export const FeaturesShowcase = lazy(() => import("@/pages/FeaturesShowcase"));
 export const HousekeepingDashboard = lazy(() => import("@/pages/HousekeepingDashboard"));
 export const POSDashboard = lazy(() => import("@/pages/POSDashboard"));
+export const POSExtensions = lazy(() => import("@/pages/POSExtensions"));
 
 // Admin
 export const AdminTenants = lazy(() => import("@/pages/AdminTenants"));
