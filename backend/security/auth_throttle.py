@@ -41,11 +41,16 @@ TRUST_PROXY = os.getenv("TRUST_PROXY", "1") == "1"
 class SlidingWindowThrottle:
     """Per-key sliding window: at most `max_requests` per `window_seconds`."""
 
-    def __init__(self, max_requests: int, window_seconds: int):
+    def __init__(self, max_requests: int, window_seconds: int, *, always_on: bool = False):
         self.max = max_requests
         self.window = timedelta(seconds=window_seconds)
         self._hits: dict[str, deque[datetime]] = {}
         self._lock = asyncio.Lock()
+        # F8AG P0 fix — when True, this throttle ignores DISABLE_AUTH_THROTTLE
+        # regardless of APP_ENV. Used for brute-force-critical surfaces
+        # (TOTP verify) where the dev escape hatch would otherwise mask the
+        # absence of throttling in stress runs AND production smoke tests.
+        self.always_on = always_on
 
     async def check(self, key: str) -> tuple[bool, int]:
         """Return (allowed, retry_after_seconds). Records the hit when allowed."""
@@ -110,7 +115,7 @@ LOGIN_ACCOUNT = SlidingWindowThrottle(max_requests=10, window_seconds=300)
 FORGOT_PW_EMAIL = SlidingWindowThrottle(max_requests=3, window_seconds=600)
 FORGOT_PW_IP = SlidingWindowThrottle(max_requests=10, window_seconds=600)
 RESET_TOKEN_IP = SlidingWindowThrottle(max_requests=10, window_seconds=60)
-TWOFA_VERIFY_IP = SlidingWindowThrottle(max_requests=15, window_seconds=60)
+TWOFA_VERIFY_IP = SlidingWindowThrottle(max_requests=15, window_seconds=60, always_on=True)
 
 # v48 (Bug CE) — sensitive authenticated password/2FA endpoints. These routes
 # verify the caller's CURRENT password (or current TOTP) but, being
@@ -121,7 +126,7 @@ TWOFA_VERIFY_IP = SlidingWindowThrottle(max_requests=15, window_seconds=60)
 # `/2fa/disable` (password verify) and `/2fa/regenerate-backup-codes` (TOTP
 # replay surface). Per-user-id sliding window: a few attempts per 15 min is
 # plenty for a legitimate user yet kills credential dictionary attacks.
-SENSITIVE_AUTH_USER = SlidingWindowThrottle(max_requests=5, window_seconds=900)
+SENSITIVE_AUTH_USER = SlidingWindowThrottle(max_requests=5, window_seconds=900, always_on=True)
 
 # v54 (Bug CO) — `/auth/register`, `/auth/register-guest`,
 # `/auth/request-verification` previously had ZERO throttle, enabling:
@@ -143,7 +148,7 @@ REGISTER_EMAIL = SlidingWindowThrottle(max_requests=1, window_seconds=600)
 # with attempt-counter enforcement on the verification_codes doc itself,
 # this 5-attempts-per-15-min throttle pushes effective brute-force to
 # centuries.
-VERIFY_CODE_EMAIL = SlidingWindowThrottle(max_requests=5, window_seconds=900)
+VERIFY_CODE_EMAIL = SlidingWindowThrottle(max_requests=5, window_seconds=900, always_on=True)
 
 # Task-170 (Bug AY) — `/auth/reset-password` (code-based legacy path) had NO
 # throttle, making the 6-digit numeric code (900 000 possibilities) trivially
@@ -154,8 +159,8 @@ VERIFY_CODE_EMAIL = SlidingWindowThrottle(max_requests=5, window_seconds=900)
 #   - RESET_CODE_IP:    10 attempts / 60 s  — kills per-IP parallel spray.
 #   - RESET_CODE_EMAIL: 10 attempts / 30 min — matches the code expiry window,
 #                       caps total guesses per issued code to ≤10 across all IPs.
-RESET_CODE_IP = SlidingWindowThrottle(max_requests=10, window_seconds=60)
-RESET_CODE_EMAIL = SlidingWindowThrottle(max_requests=10, window_seconds=1800)
+RESET_CODE_IP = SlidingWindowThrottle(max_requests=10, window_seconds=60, always_on=True)
+RESET_CODE_EMAIL = SlidingWindowThrottle(max_requests=10, window_seconds=1800, always_on=True)
 
 
 async def enforce(throttle: SlidingWindowThrottle, key: str, label: str = "istek") -> None:
@@ -170,7 +175,11 @@ async def enforce(throttle: SlidingWindowThrottle, key: str, label: str = "istek
     a production env, it is IGNORED unless `APP_ENV` / `ENVIRONMENT` is dev/test.
     """
     import os as _os
-    if _os.environ.get("DISABLE_AUTH_THROTTLE") == "1":
+    # F8AG P0 fix — `always_on` throttles (e.g. TWOFA_VERIFY_IP) are never
+    # bypassed by the dev escape hatch. Brute-force-critical surfaces must
+    # keep their rate limit in every environment so stress/penetration
+    # tests measure the real production guarantee.
+    if not getattr(throttle, "always_on", False) and _os.environ.get("DISABLE_AUTH_THROTTLE") == "1":
         env = (_os.environ.get("APP_ENV") or _os.environ.get("ENVIRONMENT") or "development").lower()
         if env in ("development", "dev", "test", "testing", "local"):
             return

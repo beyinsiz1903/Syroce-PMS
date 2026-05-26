@@ -1256,6 +1256,35 @@ async def logout(
             logger.error("logout: revoke_jti raised: %s", e)
             raise HTTPException(status_code=503, detail="Logout failed, please retry")
 
+    # F8U P0 fix — mass-revoke watermark. Even when the client does NOT
+    # submit its refresh_token in the body, /auth/logout MUST invalidate
+    # ALL outstanding tokens for this user — otherwise a stolen refresh
+    # token survives the explicit logout and can be exchanged for fresh
+    # access tokens. We bump `tokens_invalid_before` to now+1s so every
+    # access AND refresh token whose `iat` precedes this moment is
+    # rejected by `get_current_user` (access) and `_enforce_refresh_invariants`
+    # (refresh). Trade-off: this terminates the user's other live sessions
+    # too — acceptable single-button-logout semantics for a staff PMS
+    # (matches typical enterprise behaviour; matches threat_model.md
+    # § Spoofing "enforce revocation/invalid-before semantics").
+    # Fail-closed: a watermark write failure means we cannot guarantee
+    # refresh-token revocation. Match the access-token revocation contract
+    # above (503 on failure) so the client never sees a 2xx that doesn't
+    # actually invalidate the session.
+    try:
+        invalid_before_ts = int(datetime.now(UTC).timestamp()) + 1
+        await db.users.update_one(
+            {"id": current_user.id},
+            {"$set": {"tokens_invalid_before": invalid_before_ts}},
+        )
+        try:
+            invalidate_user_doc_cache(current_user.id)
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error("logout: watermark update failed: %s", e)
+        raise HTTPException(status_code=503, detail="Logout failed, please retry")
+
     # V3: revoke the submitted refresh token if any.
     refresh_jti: str | None = None
     if isinstance(body, dict):

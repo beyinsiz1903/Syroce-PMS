@@ -8,10 +8,12 @@ Mirrors Marriott Bonvoy / Hilton Honors / OPERA Cloud Loyalty:
 * Loyalty summary (which guests stay at multiple properties)
 * Merge duplicate guest profiles
 
-Chain membership is determined by:
-* `tenants.chain_id` field (siblings share the same chain_id)
-* OR a user with `super_admin` role sees all tenants
-* Falls back to current tenant only when no chain context exists
+Chain membership is determined purely by the `tenants.chain_id` field
+(siblings share the same chain_id). The `super_admin` role grants no
+extra cross-tenant visibility on this endpoint — an unchained tenant
+sees only itself even when the caller is a super_admin. This avoids
+the F8AH P0 leak where a super_admin on an unchained ops/pilot tenant
+saw every tenant in the system.
 """
 from __future__ import annotations
 
@@ -24,7 +26,7 @@ from pydantic import BaseModel
 
 from cache_manager import cached as _cached
 from core.audit import log_audit_event
-from core.security import _is_super_admin, get_current_user
+from core.security import get_current_user
 from core.spa_mice_authz import require_roles
 from core.tenant_db import get_system_db
 from models.schemas import User, UserRole
@@ -52,12 +54,14 @@ async def _chain_tenant_ids(current_user: User) -> list[str]:
     def _tid(t: dict) -> str | None:
         return t.get("tenant_id") or t.get("id")
 
-    if _is_super_admin(current_user):
-        cursor = db.tenants.find({}, {"_id": 0, "tenant_id": 1, "id": 1})
-        ids = [_tid(t) async for t in cursor]
-        ids = [x for x in ids if x]
-        return ids or [current_user.tenant_id]
-
+    # F8AH P0 fix — even a super_admin must NOT see foreign tenants unless
+    # their OWN tenant explicitly declares a `chain_id`. The previous
+    # behaviour returned every tenant in the system for any super_admin,
+    # collapsing the tenant boundary whenever an ops/pilot user happened
+    # to hold the role (threat_model.md § Information Disclosure /
+    # cross-tenant exposure). Chain scope is now purely chain_id-driven
+    # for everyone; the super_admin role only widens scope WITHIN the
+    # chain (and is otherwise a no-op for unchained tenants).
     own = await db.tenants.find_one(
         {"$or": [{"tenant_id": current_user.tenant_id},
                  {"id": current_user.tenant_id}]},

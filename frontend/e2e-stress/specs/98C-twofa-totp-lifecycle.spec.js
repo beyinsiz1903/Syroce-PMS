@@ -363,7 +363,17 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
                 'Aynı challenge_token ikinci /2fa/verify çağrısında kabul edildi — single-use jti yok',
                 `status=${replay.status} body=${JSON.stringify(replay.body).slice(0, 200)}. consumed_jtis unique index regression.`);
         }
-        assertNoTokenLeak(testInfo, MOD, v.body, 'verify_response');
+        // /api/auth/2fa/verify is a token-issuance endpoint (login-completion
+        // contract): access_token + refresh_token in the body are REQUIRED,
+        // not a leak. Guard still fires on any OTHER token-shaped field
+        // (audit echoes, sibling response keys), preserving the threat-model
+        // invariant while allowing the documented happy-path contract.
+        assertNoTokenLeak(testInfo, MOD, v.body, 'verify_response', {
+            allowedTokenKeys: ['access_token', 'refresh_token'],
+            // JWT regex bypass is path-scoped (defence in depth) — must list
+            // every leaf where a JWT-shaped value is legitimately returned.
+            allowedJwtPaths: ['access_token', 'refresh_token'],
+        });
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'verify_happy', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
     });

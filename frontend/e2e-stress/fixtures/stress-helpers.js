@@ -567,9 +567,21 @@ export async function assertPilotDriftZero(testInfo, module, request, pilotToken
 //   • JWT compact: 3 base64url segment . ile ayrılmış, length≥40
 //   • Bearer prefix: "Bearer xxx..."
 //   • Common token field names + non-masked value (>20 char, non-hex-hash)
-export function assertNoTokenLeak(testInfo, module, responseBody, contextLabel = 'response') {
+export function assertNoTokenLeak(testInfo, module, responseBody, contextLabel = 'response', opts = {}) {
     const JWT_RE = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/;
     const BEARER_RE = /\bBearer\s+[A-Za-z0-9._-]{20,}/i;
+    // Context-scoped allowlist — token-issuance endpoints (login, 2FA verify)
+    // legitimately return access_token + refresh_token in the response body.
+    // Callers pass `allowedTokenKeys` so the guard still flags leaks in
+    // sibling/audit/admin fields and JWT-shaped values that ESCAPE the
+    // permitted field names (e.g. an audit log accidentally echoing a JWT
+    // into a `details` string is still a P0 leak).
+    const allowedTokenKeys = new Set(
+        (opts.allowedTokenKeys || []).map((s) => String(s).toLowerCase())
+    );
+    const allowedJwtPaths = new Set(
+        (opts.allowedJwtPaths || []).map((s) => String(s).toLowerCase())
+    );
     const TOKEN_KEYS = new Set([
         'jwt', 'token', 'access_token', 'refresh_token', 'id_token',
         'api_key', 'apikey', 'secret', 'client_secret', 'authorization',
@@ -592,11 +604,19 @@ export function assertNoTokenLeak(testInfo, module, responseBody, contextLabel =
         if (leaks.length >= 10) return; // cap output
         if (typeof node === 'string') {
             const path = pathParts.join('.') || '(root)';
-            if (JWT_RE.test(node)) {
+            // Defence-in-depth: JWT/Bearer regex bypass is path-scoped ONLY.
+            // `allowedTokenKeys` (field-name allowlist) deliberately does NOT
+            // suppress regex matches — otherwise an audit log echoing a JWT
+            // into a sibling string that happens to share an allowed key name
+            // would slip past the guard. Token-issuance contracts must
+            // declare BOTH the field allowlist (kills token_field hits)
+            // AND the explicit path allowlist (kills JWT/Bearer regex hits).
+            const jwtAllowed = allowedJwtPaths.has(path.toLowerCase());
+            if (JWT_RE.test(node) && !jwtAllowed) {
                 leaks.push({ path, kind: 'jwt', sample: node.slice(0, 16) + '…' });
                 return;
             }
-            if (BEARER_RE.test(node)) {
+            if (BEARER_RE.test(node) && !jwtAllowed) {
                 leaks.push({ path, kind: 'bearer', sample: node.slice(0, 20) + '…' });
                 return;
             }
@@ -612,7 +632,8 @@ export function assertNoTokenLeak(testInfo, module, responseBody, contextLabel =
             for (const k of Object.keys(node)) {
                 const lk = k.toLowerCase();
                 const v = node[k];
-                if (TOKEN_KEYS.has(lk) && typeof v === 'string'
+                if (TOKEN_KEYS.has(lk) && !allowedTokenKeys.has(lk)
+                    && typeof v === 'string'
                     && v.length >= MIN_OPAQUE_LEN && !isMaskedish(v)) {
                     leaks.push({
                         path: pathParts.concat(k).join('.'),
