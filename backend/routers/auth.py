@@ -714,6 +714,19 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
     if not jti:
         raise HTTPException(status_code=401, detail="Geçersiz doğrulama belirteci")
 
+    # F8AH P0 follow-up — per-user-id throttle MUST run BEFORE the
+    # consumed_jtis insert below, otherwise over-limit attackers still
+    # incur a DB write per attempt (write amplification under brute
+    # force). user_id comes from the JWT-trusted challenge_token claim.
+    _user_id_for_throttle = decoded.get("user_id")
+    if _user_id_for_throttle:
+        from security.auth_throttle import TWOFA_VERIFY_USER, enforce as _enforce_user
+        await _enforce_user(
+            TWOFA_VERIFY_USER,
+            f"user:{_user_id_for_throttle}",
+            "doğrulama denemesi",
+        )
+
     # Bug AS (CRITICAL): Atomic single-use enforcement via DB unique index.
     # Previously we used in-memory cache + check-then-set, which had a TOCTOU
     # race window between get() and set() that allowed N concurrent verifies

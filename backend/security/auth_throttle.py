@@ -504,6 +504,16 @@ FORGOT_PW_EMAIL = SlidingWindowThrottle(max_requests=3, window_seconds=600)
 FORGOT_PW_IP = SlidingWindowThrottle(max_requests=10, window_seconds=600)
 RESET_TOKEN_IP = SlidingWindowThrottle(max_requests=10, window_seconds=60)
 TWOFA_VERIFY_IP = SlidingWindowThrottle(max_requests=15, window_seconds=60, always_on=True)
+# F8AH P0 follow-up — per-IP throttle is bypassed by rotating-egress
+# attackers (CDN, mobile carrier NAT, GitHub Actions runners, Tor exits).
+# A per-user-id throttle (keyed by the JWT-trusted `user_id` claim inside
+# the challenge_token) survives IP rotation because the attacker can't
+# change WHICH ACCOUNT they're attacking without obtaining a fresh
+# challenge for that account — and challenges are single-use, so the
+# rate is bounded by login → challenge → verify per account anyway.
+# This is the real-world brute-force protection layer; IP throttle is
+# kept as defense-in-depth against garbage / pre-decode flooding.
+TWOFA_VERIFY_USER = SlidingWindowThrottle(max_requests=15, window_seconds=60, always_on=True)
 
 # v48 (Bug CE) — sensitive authenticated password/2FA endpoints. These routes
 # verify the caller's CURRENT password (or current TOTP) but, being
