@@ -23,10 +23,16 @@ test.describe('F8C § 15 — Sales-catering Opportunities', () => {
     let pilotBefore = null;
     let prefix = null;
     let createdOppIds = [];
-    // Stress admin lacks `mice_sales` module permission — all
-    // /api/mice/sales/* routes return 403 by design (planned RBAC guard,
-    // confirmed via prod logs 2026-05-18). When detected, skip CRUD
-    // tests with P2 informational finding (NOT a NO-GO).
+    // RBAC decision 2026-05-27 (Task #87): there is NO `mice_sales` role in
+    // the codebase. The actual gates on `/api/mice/sales/*` are
+    // `require_op("manage_sales")` + `require_mice_ops`, and the stress
+    // admin is `super_admin` which bypasses BOTH (and the entitlement
+    // middleware). The `mice` tenant add-on is enabled by Task #58
+    // (`backend/scripts/enable_mice_for_stress.py`), so with both gates
+    // open the probe must succeed. A 403 here is now a REAL backend
+    // regression (recFinding P1), not a benign "module-blocked SKIP".
+    // Decision rationale: docs/GOTCHAS.md → "Spec 15 mice_sales RBAC
+    // deferral (2026-05-27)".
     let moduleBlocked = false;
 
     test('Setup: prefix + pilot baseline + module access probe', async ({ request, stressTokens, stressState }, testInfo) => {
@@ -34,11 +40,14 @@ test.describe('F8C § 15 — Sales-catering Opportunities', () => {
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
         const probe = await callTimed(request, 'get', '/api/mice/sales/opportunities?limit=1', undefined, stressTokens.stress_token);
         moduleBlocked = probe.status === 403;
-        rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
+        rec(testInfo, { module: MOD, step: 'setup', status: moduleBlocked ? 'FAIL' : 'PASS',
             note: `prefix=${prefix} pilot_before=${pilotBefore?.count} probe_status=${probe.status} module_blocked=${moduleBlocked}` });
         if (moduleBlocked) {
-            recFinding(testInfo, 'P2', MOD, 'Sales-catering module access denied for stress admin',
-                `GET /api/mice/sales/opportunities → 403. CRUD tests skipped; RBAC guard is intentional (stress admin lacks mice_sales role). Informational only — does NOT block GO verdict.`);
+            // No `mice_sales` role exists; super_admin bypasses manage_sales
+            // + mice_ops + entitlement. A 403 means the `mice` add-on is
+            // off for the stress tenant OR a real regression — escalate.
+            recFinding(testInfo, 'P1', MOD, 'Sales-catering 403 despite super_admin + mice add-on',
+                `GET /api/mice/sales/opportunities → 403. Expected 200 (Task #87 deferral: super_admin bypasses manage_sales/mice_ops/entitlement). Check that scripts/enable_mice_for_stress.py has run for the stress tenant; if so, investigate a new gate on /api/mice/sales/*.`);
         }
     });
 
