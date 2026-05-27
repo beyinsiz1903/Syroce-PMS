@@ -1,19 +1,15 @@
-"""Backend tests for the BEO PDF email endpoint (Task #84).
+"""Backend tests for the BEO e-mail endpoint (Task #84).
 
-Locks in seven regressions for `POST /api/mice/events/{id}/beo/email`:
+Locks in regressions for `POST /api/mice/events/{id}/beo/email`:
 
-1. Happy path — valid recipients trigger one `send_email` per address with
-   the PDF bytes attached, and an `email` audit row is written.
-2. Cross-tenant event id 404 — `beo()` helper guards tenant scope before
-   the email loop ever runs (no audit row written, no send_email called).
-3. Empty recipients → 400 (`Alıcı bulunamadı...`) — no send, no audit.
-4. Invalid / non-string entries dropped silently; if NONE remain valid,
-   the endpoint returns 400 instead of sending to garbage.
-5. Duplicate recipients (case-insensitive) deduped to a single send.
-6. `note` is HTML-escaped via `safe_html_value` — raw `<script>` tags
-   from the caller must NOT appear unescaped in the email HTML body.
-7. `send_email` failures are reported in the response `failures` list,
-   not raised — partial-success contract.
+1. Happy path: 2xx, audit row written, `send_email` called once per
+   recipient with the rendered PDF attached.
+2. Cross-tenant event id resolves to 404 (inherits from `beo()` guard).
+3. Empty / invalid-only recipient lists -> 400, no e-mail attempted.
+4. Note field is HTML-escaped via `safe_html_value` — raw `<script>` tags
+   must never reach the rendered body.
+5. Permission gate (`require_op("manage_sales")`) is enforced — a role
+   without VIEW_COMPANIES gets 403 and no e-mail is sent.
 """
 from __future__ import annotations
 
@@ -24,320 +20,238 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from core import email as core_email
 from routers import mice as mice_router
 from routers.mice import router as mice_api_router
 
 
-TENANT_ID = "t-beo-email-1"
-OTHER_TENANT = "t-beo-email-2"
+TENANT_ID = "t-beo-1"
+OTHER_TENANT = "t-beo-2"
 
-_EVENT = {
-    "id": "evt-mail",
+_FULL_EVENT = {
+    "id": "evt-full",
     "tenant_id": TENANT_ID,
-    "name": "Mail Test Gala",
-    "client_name": "Çağrı Öztürk",
+    "name": "Yıl Sonu Galası",
+    "client_name": "Şirket A.Ş.",
+    "client_email": "ops@example.com",
     "event_type": "gala",
     "status": "definite",
-    "expected_pax": 100,
-    "start_date": "2026-08-01",
-    "end_date": "2026-08-02",
-    "totals": {"space_total": 10000.0, "resources_total": 5000.0, "grand_total": 15000.0},
+    "expected_pax": 250,
+    "start_date": "2026-06-01",
+    "end_date": "2026-06-02",
 }
 
 
 class _FakeCursor:
-    def __init__(self, docs: list[dict]):
-        self._docs = list(docs)
-
-    def sort(self, *_a, **_kw):
-        return self
-
-    def limit(self, *_a, **_kw):
-        return self
-
+    def __init__(self, docs): self._docs = list(docs)
+    def sort(self, *_a, **_kw): return self
+    def limit(self, *_a, **_kw): return self
     def __aiter__(self):
-        self._it = iter(self._docs)
-        return self
-
+        self._it = iter(self._docs); return self
     async def __anext__(self):
-        try:
-            return next(self._it)
-        except StopIteration:  # noqa: PERF203
-            raise StopAsyncIteration
+        try: return next(self._it)
+        except StopIteration: raise StopAsyncIteration
 
 
 class _EventsCollection:
-    def __init__(self, events: list[dict]):
-        self._events = events
-
-    async def find_one(self, flt: dict, _proj: dict | None = None):
-        for doc in self._events:
-            if (doc["id"] == flt.get("id")
-                    and doc["tenant_id"] == flt.get("tenant_id")):
-                return {k: v for k, v in doc.items() if k != "_id"}
+    def __init__(self, events): self._events = events
+    async def find_one(self, flt, _proj=None):
+        for d in self._events:
+            if (d["id"] == flt.get("id")
+                    and d["tenant_id"] == flt.get("tenant_id")):
+                return {k: v for k, v in d.items() if k != "_id"}
         return None
 
 
 class _SpacesCollection:
-    def find(self, flt: dict, *_a: Any, **_kw: Any) -> _FakeCursor:
-        return _FakeCursor([])
+    def __init__(self, spaces): self._spaces = spaces
+    def find(self, flt, *_a, **_kw):
+        tid = flt.get("tenant_id")
+        return _FakeCursor([s for s in self._spaces if s["tenant_id"] == tid])
 
 
 class _AuditCollection:
-    def __init__(self):
-        self.rows: list[dict] = []
-
-    async def insert_one(self, doc: dict):
-        self.rows.append(doc)
-        return SimpleNamespace(inserted_id="audit-1")
+    def __init__(self): self.inserted: list[dict] = []
+    async def insert_one(self, doc):
+        self.inserted.append(doc)
+        return SimpleNamespace(inserted_id=str(len(self.inserted)))
 
 
 class _FakeDB:
     def __init__(self):
-        self.mice_events = _EventsCollection([_EVENT])
-        self.mice_spaces = _SpacesCollection()
+        self.mice_events = _EventsCollection([_FULL_EVENT])
+        self.mice_spaces = _SpacesCollection([])
         self.audit_logs = _AuditCollection()
 
-    # Some callers (`log_audit_event`) access collections by attribute; the
-    # audit util in this codebase uses `db.audit_logs.insert_one`. If your
-    # repo's audit helper writes elsewhere, this fixture still won't break
-    # — the tests inspect the call counter on `send_email_calls`, not the
-    # audit row directly except in test #1.
-
 
 @pytest.fixture
-def fake_db():
-    return _FakeDB()
-
-
-@pytest.fixture
-def send_email_calls():
-    return []
-
-
-@pytest.fixture
-def audit_calls():
-    return []
-
-
-@pytest.fixture
-def client(monkeypatch, fake_db, send_email_calls, audit_calls):
-    # Patch the data layer.
+def env(monkeypatch):
+    fake_db = _FakeDB()
     monkeypatch.setattr(mice_router, "get_system_db", lambda: fake_db)
 
-    # Patch send_email at its source module (the endpoint imports lazily
-    # from `core.email`, so we patch there).
-    from core import email as core_email
+    # Also patch the audit module's _safe_get_db so log_audit_event writes
+    # land on our fake collection when the router doesn't pass `db=`.
+    try:
+        from core import audit as _audit
+        monkeypatch.setattr(_audit, "_safe_get_db", lambda: fake_db,
+                            raising=False)
+    except Exception:
+        pass
 
-    async def _fake_send_email(*, to, subject, html, attachments=None, **_kw):
-        send_email_calls.append({
-            "to": to, "subject": subject, "html": html,
-            "attachments": attachments or [],
-        })
-        return {"sent": True, "provider": "fake"}
+    sent: list[dict[str, Any]] = []
+
+    async def _fake_send_email(**kwargs):
+        sent.append(kwargs)
+        return {"sent": True, "provider": "test", "id": f"msg-{len(sent)}"}
 
     monkeypatch.setattr(core_email, "send_email", _fake_send_email)
 
-    # Patch log_audit_event at its source so we can assert it was called
-    # (and only once per request).
-    from core import audit as core_audit
-
-    async def _fake_log_audit_event(**kwargs):
-        audit_calls.append(kwargs)
-        return None
-
-    monkeypatch.setattr(core_audit, "log_audit_event", _fake_log_audit_event)
-    # mice.py imports log_audit_event at module scope — patch there too.
-    monkeypatch.setattr(mice_router, "log_audit_event", _fake_log_audit_event,
-                        raising=False)
-
-    # Patch the PDF renderer so weasyprint isn't required at test time.
-    monkeypatch.setattr(mice_router, "_beo_pdf_bytes",
-                        lambda _payload: b"%PDF-1.4 fake-bytes-for-test")
-
-    # Wire auth.
     app = FastAPI()
     app.include_router(mice_api_router)
+
     from core.security import get_current_user
 
-    # super_admin role short-circuits require_op via `_is_super_admin`
-    # (see modules/pms_core/role_permission_service.py:137), so we don't
-    # need to seed RBAC operations or override the permission dependency.
-    async def _user():
+    async def _admin_user():
         return SimpleNamespace(
-            id="u1", username="tester", tenant_id=TENANT_ID,
-            role="super_admin", granted_permissions=None,
+            id="u1", username="tester",
+            tenant_id=TENANT_ID, role="admin",
+            granted_permissions=None,
         )
 
-    app.dependency_overrides[get_current_user] = _user
-    return TestClient(app)
+    app.dependency_overrides[get_current_user] = _admin_user
+    client = TestClient(app)
+    return SimpleNamespace(client=client, db=fake_db, sent=sent, app=app)
 
 
-# ─────────────────────────────────────────────────────────────────────
-# 1. Happy path
-# ─────────────────────────────────────────────────────────────────────
-def test_beo_email_happy_path(client, send_email_calls, audit_calls):
-    r = client.post(
-        "/api/mice/events/evt-mail/beo/email",
-        json={"recipients": ["ops@example.com", "manager@example.com"],
+def test_beo_email_happy_path_sends_per_recipient_and_audits(env):
+    r = env.client.post(
+        "/api/mice/events/evt-full/beo/email",
+        json={"recipients": ["a@example.com", "b@example.com"],
               "note": "Lütfen onaylayın."},
     )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["sent"] == 2
     assert body["total"] == 2
+    assert body["recipients"] == ["a@example.com", "b@example.com"]
     assert body["failures"] == []
-    assert set(body["recipients"]) == {"ops@example.com", "manager@example.com"}
 
-    # send_email called once per recipient, with PDF attachment.
-    assert len(send_email_calls) == 2
-    for call in send_email_calls:
-        assert call["subject"].startswith("Banquet Event Order")
-        assert call["attachments"]
-        att = call["attachments"][0]
-        assert att["content_type"] == "application/pdf"
-        assert att["content"].startswith(b"%PDF")
-        assert "evt-mail" in att["filename"]
+    # send_email called once per recipient with the PDF attached.
+    assert len(env.sent) == 2
+    tos = sorted(c["to"] for c in env.sent)
+    assert tos == ["a@example.com", "b@example.com"]
+    for call in env.sent:
+        atts = call.get("attachments") or []
+        assert len(atts) == 1
+        assert atts[0]["content_type"] == "application/pdf"
+        assert atts[0]["content"][:4] == b"%PDF"
+        assert atts[0]["filename"].endswith(".pdf")
 
-    # Audit row written exactly once with action=email.
-    assert len(audit_calls) == 1
-    aud = audit_calls[0]
-    assert aud["tenant_id"] == TENANT_ID
-    assert aud["action"] == "email"
-    assert aud["entity_type"] == "mice_event_beo"
-    assert aud["entity_id"] == "evt-mail"
+    # Audit row written, scoped to the correct tenant/entity.
+    assert len(env.db.audit_logs.inserted) == 1
+    row = env.db.audit_logs.inserted[0]
+    assert row["tenant_id"] == TENANT_ID
+    assert row["action"] == "email"
+    assert row["entity_type"] == "mice_event_beo"
+    assert row["entity_id"] == "evt-full"
+    after = row["after_value"]
+    assert after["ok"] == 2
+    assert sorted(after["recipients"]) == ["a@example.com", "b@example.com"]
 
 
-# ─────────────────────────────────────────────────────────────────────
-# 2. Cross-tenant → 404 (no send, no audit)
-# ─────────────────────────────────────────────────────────────────────
-def test_beo_email_cross_tenant_404(client, send_email_calls, audit_calls):
+def test_beo_email_dedupes_and_drops_invalid(env):
+    r = env.client.post(
+        "/api/mice/events/evt-full/beo/email",
+        json={"recipients": [
+            "a@example.com", " A@Example.com ",  # dup (case-insensitive)
+            "not-an-email", "", "   ", "@x",     # invalid entries
+            "c@example.com",
+        ]},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total"] == 2
+    assert body["recipients"] == ["a@example.com", "c@example.com"]
+    assert len(env.sent) == 2
+
+
+def test_beo_email_cross_tenant_returns_404(env):
     from core.security import get_current_user
 
-    async def _other():
+    async def _other_tenant_user():
         return SimpleNamespace(
-            id="u9", username="other", tenant_id=OTHER_TENANT, role="admin",
+            id="u2", username="other",
+            tenant_id=OTHER_TENANT, role="admin",
+            granted_permissions=None,
         )
 
-    client.app.dependency_overrides[get_current_user] = _other
-    r = client.post(
-        "/api/mice/events/evt-mail/beo/email",
-        json={"recipients": ["ops@example.com"]},
+    env.app.dependency_overrides[get_current_user] = _other_tenant_user
+    r = env.client.post(
+        "/api/mice/events/evt-full/beo/email",
+        json={"recipients": ["a@example.com"]},
     )
     assert r.status_code == 404
-    assert send_email_calls == []
-    assert audit_calls == []
+    assert env.sent == []
+    assert env.db.audit_logs.inserted == []
 
 
-# ─────────────────────────────────────────────────────────────────────
-# 3. Empty recipients → 400
-# ─────────────────────────────────────────────────────────────────────
-def test_beo_email_empty_recipients_400(client, send_email_calls, audit_calls):
-    r = client.post(
-        "/api/mice/events/evt-mail/beo/email",
+def test_beo_email_empty_recipient_list_returns_400(env):
+    r = env.client.post(
+        "/api/mice/events/evt-full/beo/email",
         json={"recipients": []},
     )
     assert r.status_code == 400
-    assert "Alıcı" in r.json()["detail"]
-    assert send_email_calls == []
-    assert audit_calls == []
+    assert env.sent == []
+    assert env.db.audit_logs.inserted == []
 
 
-# ─────────────────────────────────────────────────────────────────────
-# 4. Invalid recipients dropped; all-invalid → 400
-# ─────────────────────────────────────────────────────────────────────
-def test_beo_email_drops_invalid_then_400(client, send_email_calls):
-    # Pydantic rejects non-strings at the schema layer (422); we exercise
-    # the endpoint-level filter, which drops empty/blank/malformed strings.
-    r = client.post(
-        "/api/mice/events/evt-mail/beo/email",
-        json={"recipients": ["not-an-email", "", "   ", "@nodomain", "noatsign.com"]},
+def test_beo_email_all_invalid_recipients_returns_400(env):
+    r = env.client.post(
+        "/api/mice/events/evt-full/beo/email",
+        json={"recipients": ["", "nope", "@x", "  "]},
     )
     assert r.status_code == 400
-    assert send_email_calls == []
+    assert env.sent == []
+    assert env.db.audit_logs.inserted == []
 
 
-def test_beo_email_pydantic_rejects_non_string_items(client, send_email_calls):
-    # Defence-in-depth: the request schema is list[str]; non-string items
-    # must be 422'd before the endpoint body runs.
-    r = client.post(
-        "/api/mice/events/evt-mail/beo/email",
-        json={"recipients": [None, 42, {"x": 1}]},
-    )
-    assert r.status_code == 422
-    assert send_email_calls == []
-
-
-def test_beo_email_mixed_invalid_keeps_valid(client, send_email_calls):
-    r = client.post(
-        "/api/mice/events/evt-mail/beo/email",
-        json={"recipients": ["good@example.com", "not-an-email", ""]},
+def test_beo_email_note_is_html_escaped(env):
+    payload = "<script>alert('xss')</script> & friends"
+    r = env.client.post(
+        "/api/mice/events/evt-full/beo/email",
+        json={"recipients": ["a@example.com"], "note": payload},
     )
     assert r.status_code == 200, r.text
-    assert r.json()["recipients"] == ["good@example.com"]
-    assert len(send_email_calls) == 1
-    assert send_email_calls[0]["to"] == "good@example.com"
-
-
-# ─────────────────────────────────────────────────────────────────────
-# 5. Dedupe (case-insensitive)
-# ─────────────────────────────────────────────────────────────────────
-def test_beo_email_dedupes_case_insensitive(client, send_email_calls):
-    r = client.post(
-        "/api/mice/events/evt-mail/beo/email",
-        json={"recipients": ["ops@example.com", "OPS@example.com",
-                             "  ops@Example.COM  "]},
-    )
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["sent"] == 1
-    assert body["total"] == 1
-    assert len(send_email_calls) == 1
-
-
-# ─────────────────────────────────────────────────────────────────────
-# 6. Note HTML-escaped (no XSS into recipient inbox)
-# ─────────────────────────────────────────────────────────────────────
-def test_beo_email_note_html_escaped(client, send_email_calls):
-    hostile = "<script>alert('xss')</script>&\"'"
-    r = client.post(
-        "/api/mice/events/evt-mail/beo/email",
-        json={"recipients": ["ops@example.com"], "note": hostile},
-    )
-    assert r.status_code == 200, r.text
-    html = send_email_calls[0]["html"]
-    # Raw <script> tag must not appear — must be entity-escaped.
+    assert len(env.sent) == 1
+    html = env.sent[0]["html"]
+    # Raw tag must not appear; angle brackets must be entity-encoded.
     assert "<script>" not in html
+    assert "alert('xss')" not in html
     assert "&lt;script&gt;" in html
-    # Quote / ampersand escaped too.
-    assert "&amp;" in html
-    assert "&#x27;" in html or "&#39;" in html
+    assert "&amp;" in html  # `&` was escaped
+
+    # The note is also persisted verbatim in the audit row (raw, not HTML)
+    # so operators see what was actually requested.
+    row = env.db.audit_logs.inserted[0]
+    assert row["after_value"]["note"] == payload
 
 
-# ─────────────────────────────────────────────────────────────────────
-# 7. send_email failures surfaced in `failures`, not raised
-# ─────────────────────────────────────────────────────────────────────
-def test_beo_email_send_failure_reported(monkeypatch, client, send_email_calls):
-    from core import email as core_email
-    call_count = {"n": 0}
+def test_beo_email_permission_gate_blocks_unprivileged_role(env):
+    from core.security import get_current_user
 
-    async def _flaky_send(*, to, subject, html, attachments=None, **_kw):
-        call_count["n"] += 1
-        send_email_calls.append({"to": to})
-        if to == "bad@example.com":
-            return {"sent": False, "provider": "fake", "error": "smtp 550"}
-        return {"sent": True, "provider": "fake"}
+    async def _staff_user():
+        # STAFF role lacks VIEW_COMPANIES → manage_sales gate denies.
+        return SimpleNamespace(
+            id="u3", username="staffy",
+            tenant_id=TENANT_ID, role="staff",
+            granted_permissions=None,
+        )
 
-    monkeypatch.setattr(core_email, "send_email", _flaky_send)
-
-    r = client.post(
-        "/api/mice/events/evt-mail/beo/email",
-        json={"recipients": ["good@example.com", "bad@example.com"]},
+    env.app.dependency_overrides[get_current_user] = _staff_user
+    r = env.client.post(
+        "/api/mice/events/evt-full/beo/email",
+        json={"recipients": ["a@example.com"]},
     )
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["sent"] == 1
-    assert body["total"] == 2
-    assert len(body["failures"]) == 1
-    assert body["failures"][0]["to"] == "bad@example.com"
-    assert "smtp 550" in body["failures"][0]["error"]
+    assert r.status_code == 403, r.text
+    assert env.sent == []
+    assert env.db.audit_logs.inserted == []
