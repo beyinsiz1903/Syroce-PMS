@@ -36,6 +36,12 @@ from models.schemas import (
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
 from modules.pms_core.role_permission_service import require_op
+from shared_kernel.idempotency import (
+    claim_idempotency,
+    complete_idempotency,
+    get_idempotency_key,
+    release_idempotency,
+)
 from shared_kernel.shadow_metrics import compare_folio_payloads, run_shadow_compare
 
 try:
@@ -475,6 +481,7 @@ async def export_folio_excel(
 async def post_charge_to_folio(
     folio_id: str,
     charge_data: ChargeCreate,
+    request: Request,
     current_user: User = Depends(get_current_user)
 ):
     """Post a charge to folio"""
@@ -482,109 +489,147 @@ async def post_charge_to_folio(
     from modules.pms_core.role_permission_service import RolePermissionService
     RolePermissionService().enforce_permission(current_user.role, "post_charge")
 
-    folio = await db.folios.find_one({
-        'id': folio_id,
-        'tenant_id': current_user.tenant_id,
-        'status': 'open'
-    })
+    # Optional Idempotency-Key replay protection (cashier double-click / retry).
+    idem_key = get_idempotency_key(request)
+    idem_lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope=f"folio_charge:{folio_id}",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
+            )
+        idem_lock_id = claim["lock_id"]
 
-    if not folio:
-        raise HTTPException(status_code=404, detail="Folio not found or closed")
-
-    # Calculate amounts with proper rounding
-    subtotal = round(charge_data.amount * charge_data.quantity, 2)
-    discount = round(max(0.0, float(charge_data.discount_amount or 0.0)), 2)
-    if discount > subtotal:
-        raise HTTPException(status_code=400, detail="İndirim ara toplamı aşamaz")
-    net = round(subtotal - discount, 2)
-    vat_rate = max(0.0, min(100.0, float(charge_data.vat_rate or 0.0)))
-    vat_amount = round(net * vat_rate / 100.0, 2)
-    tax_amount = 0.0
-
-    # Auto-calculate city tax if requested
-    if charge_data.auto_calculate_tax and charge_data.charge_category == ChargeCategory.ROOM:
-        # Get city tax rule
-        tax_rule = await db.city_tax_rules.find_one({
+    try:
+        folio = await db.folios.find_one({
+            'id': folio_id,
             'tenant_id': current_user.tenant_id,
-            'active': True
+            'status': 'open'
         })
-        if tax_rule:
-            if tax_rule.get('flat_amount'):
-                tax_amount = round(tax_rule['flat_amount'], 2)
-            else:
-                # v95.7: rate_percent yeni canonical alan; tax_percentage legacy fallback.
-                rate_pct = tax_rule.get('rate_percent', tax_rule.get('tax_percentage', 0))
-                tax_amount = round(net * (float(rate_pct) / 100), 2)
 
-    total = round(net + vat_amount + tax_amount, 2)
+        if not folio:
+            raise HTTPException(status_code=404, detail="Folio not found or closed")
 
-    charge = FolioCharge(
-        tenant_id=current_user.tenant_id,
-        folio_id=folio_id,
-        booking_id=folio['booking_id'],
-        charge_category=charge_data.charge_category,
-        description=charge_data.description,
-        unit_price=charge_data.amount,
-        quantity=charge_data.quantity,
-        amount=net,
-        subtotal=subtotal,
-        discount_amount=discount,
-        discount_reason=(charge_data.discount_reason or None) if discount > 0 else None,
-        vat_rate=vat_rate,
-        vat_amount=vat_amount,
-        tax_amount=tax_amount,
-        total=total,
-        posted_by=current_user.id
-    )
+        # Calculate amounts with proper rounding
+        subtotal = round(charge_data.amount * charge_data.quantity, 2)
+        discount = round(max(0.0, float(charge_data.discount_amount or 0.0)), 2)
+        if discount > subtotal:
+            raise HTTPException(status_code=400, detail="İndirim ara toplamı aşamaz")
+        net = round(subtotal - discount, 2)
+        vat_rate = max(0.0, min(100.0, float(charge_data.vat_rate or 0.0)))
+        vat_amount = round(net * vat_rate / 100.0, 2)
+        tax_amount = 0.0
 
-    charge_dict = charge.model_dump()
-    charge_dict['date'] = charge_dict['date'].isoformat()
-    await db.folio_charges.insert_one(charge_dict)
+        # Auto-calculate city tax if requested
+        if charge_data.auto_calculate_tax and charge_data.charge_category == ChargeCategory.ROOM:
+            # Get city tax rule
+            tax_rule = await db.city_tax_rules.find_one({
+                'tenant_id': current_user.tenant_id,
+                'active': True
+            })
+            if tax_rule:
+                if tax_rule.get('flat_amount'):
+                    tax_amount = round(tax_rule['flat_amount'], 2)
+                else:
+                    # v95.7: rate_percent yeni canonical alan; tax_percentage legacy fallback.
+                    rate_pct = tax_rule.get('rate_percent', tax_rule.get('tax_percentage', 0))
+                    tax_amount = round(net * (float(rate_pct) / 100), 2)
 
-    # Update folio balance
-    balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
-    await db.folios.update_one(
-        {'id': folio_id},
-        {'$set': {'balance': balance}}
-    )
+        total = round(net + vat_amount + tax_amount, 2)
 
-    # Audit log
-    await create_audit_log(
-        tenant_id=current_user.tenant_id,
-        user=current_user,
-        action="POST_CHARGE",
-        entity_type="folio_charge",
-        entity_id=charge.id,
-        changes={
-            'charge_category': charge_data.charge_category,
-            'subtotal': subtotal,
-            'discount': discount,
-            'vat_rate': vat_rate,
-            'vat_amount': vat_amount,
-            'city_tax': tax_amount,
-            'total': total,
-            'folio_id': folio_id,
-        }
-    )
+        charge = FolioCharge(
+            tenant_id=current_user.tenant_id,
+            folio_id=folio_id,
+            booking_id=folio['booking_id'],
+            charge_category=charge_data.charge_category,
+            description=charge_data.description,
+            unit_price=charge_data.amount,
+            quantity=charge_data.quantity,
+            amount=net,
+            subtotal=subtotal,
+            discount_amount=discount,
+            discount_reason=(charge_data.discount_reason or None) if discount > 0 else None,
+            vat_rate=vat_rate,
+            vat_amount=vat_amount,
+            tax_amount=tax_amount,
+            total=total,
+            posted_by=current_user.id
+        )
 
-    # v95.1 — revenue raporu cache'ini geçersiz kıl (yeni charge eklenince)
-    if cache:
-        cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category")
+        charge_dict = charge.model_dump()
+        charge_dict['date'] = charge_dict['date'].isoformat()
+        await db.folio_charges.insert_one(charge_dict)
 
-    # Acente webhook: rezervasyon güncellendi (yeni charge → toplam değişti)
-    from routers.webhook_retry_service import schedule_emit_reservation_updated
-    schedule_emit_reservation_updated(
-        current_user.tenant_id, folio['booking_id'], "charge_added",
-        {"charge_id": charge.id, "amount": total, "category": str(charge_data.charge_category)},
-    )
+        # Persist the replay body immediately after the durable insert so a
+        # retry that arrives while we are still running the best-effort
+        # side-effects below (balance / audit / webhook) replays the cached
+        # row instead of inserting a second one.
+        if idem_lock_id:
+            replay_body = {k: v for k, v in charge_dict.items() if k != '_id'}
+            await complete_idempotency(db, lock_id=idem_lock_id, response_body=replay_body)
+            idem_lock_id = None
 
-    return charge
+        # Update folio balance
+        balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
+        await db.folios.update_one(
+            {'id': folio_id},
+            {'$set': {'balance': balance}}
+        )
+
+        # Audit log
+        await create_audit_log(
+            tenant_id=current_user.tenant_id,
+            user=current_user,
+            action="POST_CHARGE",
+            entity_type="folio_charge",
+            entity_id=charge.id,
+            changes={
+                'charge_category': charge_data.charge_category,
+                'subtotal': subtotal,
+                'discount': discount,
+                'vat_rate': vat_rate,
+                'vat_amount': vat_amount,
+                'city_tax': tax_amount,
+                'total': total,
+                'folio_id': folio_id,
+            }
+        )
+
+        # v95.1 — revenue raporu cache'ini geçersiz kıl (yeni charge eklenince)
+        if cache:
+            cache.invalidate_tenant_cache(current_user.tenant_id, "folio_revenue_by_category")
+
+        # Acente webhook: rezervasyon güncellendi (yeni charge → toplam değişti)
+        from routers.webhook_retry_service import schedule_emit_reservation_updated
+        schedule_emit_reservation_updated(
+            current_user.tenant_id, folio['booking_id'], "charge_added",
+            {"charge_id": charge.id, "amount": total, "category": str(charge_data.charge_category)},
+        )
+
+        return charge
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as exc:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
+        raise
 
 
 @router.post("/folio/{folio_id}/payment", response_model=Payment)
 async def post_payment_to_folio(
     folio_id: str,
     payment_data: PaymentCreate,
+    request: Request,
     current_user: User = Depends(get_current_user)
 ):
     """Post a payment to folio"""
@@ -592,81 +637,125 @@ async def post_payment_to_folio(
     from modules.pms_core.role_permission_service import RolePermissionService
     RolePermissionService().enforce_permission(current_user.role, "post_payment")
 
-    folio = await db.folios.find_one({
-        'id': folio_id,
-        'tenant_id': current_user.tenant_id
-    })
-
-    if not folio:
-        raise HTTPException(status_code=404, detail="Folio not found")
-
-    # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu (5y kasa standardı)
-    from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
-    method_str = payment_data.method.value if hasattr(payment_data.method, 'value') else str(payment_data.method)
-    await ensure_active_shift(current_user.tenant_id, method_str)
-
-    payment = Payment(
-        tenant_id=current_user.tenant_id,
-        folio_id=folio_id,
-        booking_id=folio['booking_id'],
-        processed_by=current_user.id,
-        **payment_data.model_dump()
-    )
-
-    payment_dict = payment.model_dump()
-    payment_dict['processed_at'] = payment_dict['processed_at'].isoformat()
-    payment_dict['processed_by_name'] = current_user.name  # Add user name
-    await db.payments.insert_one(payment_dict)
-
-    # Update folio balance
-    balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
-    await db.folios.update_one(
-        {'id': folio_id},
-        {'$set': {'balance': balance}}
-    )
-
-    # Kasa hareketine yaz (idempotent — aynı payment.id için tek kayıt)
-    # Cash için vardiya zorunlu: TOCTOU race'inde 409 → ödemeyi geri al
-    is_cash = method_str.lower() == "cash"
-    try:
-        await record_cash_transaction(
+    # Optional Idempotency-Key replay protection (cashier double-click / retry).
+    idem_key = get_idempotency_key(request)
+    idem_lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
             tenant_id=current_user.tenant_id,
-            amount=payment.amount,
-            method=method_str,
-            direction="in",
-            description=f"Folio ödemesi - {folio.get('folio_number') or folio_id[:8]}",
-            txn_type="folio_payment",
-            ref_type="payment",
-            ref_id=payment.id,
-            created_by=current_user.email,
-            created_by_name=getattr(current_user, 'name', None) or current_user.email,
-            idempotency_key=f"payment:{payment.id}",
-            require_open_shift=is_cash,
+            scope=f"folio_payment:{folio_id}",
+            idempotency_key=idem_key,
         )
-    except HTTPException as he:
-        if is_cash and he.status_code == 409:
-            # vardiya kapanmış → ödemeyi rollback et
-            try:
-                await db.payments.delete_one({'id': payment.id, 'tenant_id': current_user.tenant_id})
-                new_balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
-                await db.folios.update_one({'id': folio_id}, {'$set': {'balance': new_balance}})
-            except Exception:
-                import logging as _lg
-                _lg.getLogger(__name__).exception("payment rollback failed after cashier 409")
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
+            )
+        idem_lock_id = claim["lock_id"]
+
+    try:
+        folio = await db.folios.find_one({
+            'id': folio_id,
+            'tenant_id': current_user.tenant_id
+        })
+
+        if not folio:
+            raise HTTPException(status_code=404, detail="Folio not found")
+
+        # Vardiya kontrolü: nakit ödemede aktif vardiya zorunlu (5y kasa standardı)
+        from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
+        method_str = payment_data.method.value if hasattr(payment_data.method, 'value') else str(payment_data.method)
+        await ensure_active_shift(current_user.tenant_id, method_str)
+
+        payment = Payment(
+            tenant_id=current_user.tenant_id,
+            folio_id=folio_id,
+            booking_id=folio['booking_id'],
+            processed_by=current_user.id,
+            **payment_data.model_dump()
+        )
+
+        payment_dict = payment.model_dump()
+        payment_dict['processed_at'] = payment_dict['processed_at'].isoformat()
+        payment_dict['processed_by_name'] = current_user.name  # Add user name
+        await db.payments.insert_one(payment_dict)
+
+        # Update folio balance
+        balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
+        await db.folios.update_one(
+            {'id': folio_id},
+            {'$set': {'balance': balance}}
+        )
+
+        # Persist replay body now: the payment row is durable. Any retry that
+        # races a still-running cashier/webhook call below must replay this
+        # response, never re-insert.
+        if idem_lock_id:
+            replay_body = {k: v for k, v in payment_dict.items() if k != '_id'}
+            await complete_idempotency(db, lock_id=idem_lock_id, response_body=replay_body)
+            cached_idem_lock_id = idem_lock_id
+            idem_lock_id = None
+        else:
+            cached_idem_lock_id = None
+
+        # Kasa hareketine yaz (idempotent — aynı payment.id için tek kayıt)
+        # Cash için vardiya zorunlu: TOCTOU race'inde 409 → ödemeyi geri al
+        is_cash = method_str.lower() == "cash"
+        try:
+            await record_cash_transaction(
+                tenant_id=current_user.tenant_id,
+                amount=payment.amount,
+                method=method_str,
+                direction="in",
+                description=f"Folio ödemesi - {folio.get('folio_number') or folio_id[:8]}",
+                txn_type="folio_payment",
+                ref_type="payment",
+                ref_id=payment.id,
+                created_by=current_user.email,
+                created_by_name=getattr(current_user, 'name', None) or current_user.email,
+                idempotency_key=f"payment:{payment.id}",
+                require_open_shift=is_cash,
+            )
+        except HTTPException as he:
+            if is_cash and he.status_code == 409:
+                # vardiya kapanmış → ödemeyi rollback et
+                try:
+                    await db.payments.delete_one({'id': payment.id, 'tenant_id': current_user.tenant_id})
+                    new_balance = await calculate_folio_balance(folio_id, current_user.tenant_id)
+                    await db.folios.update_one({'id': folio_id}, {'$set': {'balance': new_balance}})
+                    # Row no longer exists → wipe the replay cache so the
+                    # client can retry the same key after reopening a shift.
+                    if cached_idem_lock_id:
+                        await release_idempotency(db, lock_id=cached_idem_lock_id)
+                        cached_idem_lock_id = None
+                except Exception:
+                    import logging as _lg
+                    _lg.getLogger(__name__).exception("payment rollback failed after cashier 409")
+            raise
+        except Exception:
+            # Kasa kayıt arızası (kart/banka) ödemeyi düşürmesin (loglanır)
+            import logging as _lg
+            _lg.getLogger(__name__).exception("cashier txn record failed")
+
+        # Acente webhook: rezervasyon güncellendi (ödeme alındı → bakiye değişti)
+        from routers.webhook_retry_service import schedule_emit_reservation_updated
+        schedule_emit_reservation_updated(
+            current_user.tenant_id, folio['booking_id'], "payment_added",
+            {"payment_id": payment.id, "amount": float(payment.amount), "method": method_str},
+        )
+
+        return payment
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
         raise
-    except Exception:
-        # Kasa kayıt arızası (kart/banka) ödemeyi düşürmesin (loglanır)
-        import logging as _lg
-        _lg.getLogger(__name__).exception("cashier txn record failed")
-
-    # Acente webhook: rezervasyon güncellendi (ödeme alındı → bakiye değişti)
-    from routers.webhook_retry_service import schedule_emit_reservation_updated
-    schedule_emit_reservation_updated(
-        current_user.tenant_id, folio['booking_id'], "payment_added",
-        {"payment_id": payment.id, "amount": float(payment.amount), "method": method_str},
-    )
-
-    return payment
+    except Exception as exc:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
+        raise
 
 
 @router.get("/folio/reports/revenue-by-category")

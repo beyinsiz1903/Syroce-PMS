@@ -6,6 +6,9 @@ from typing import Any
 from fastapi import HTTPException, Request, status
 
 IDEMPOTENCY_HEADER = "Idempotency-Key"
+# Some clients (and our own stress harness) send the RFC-style `X-` prefixed
+# variant. Accept both so a retry from either client kind hits the same lock.
+IDEMPOTENCY_HEADER_ALIASES = ("Idempotency-Key", "X-Idempotency-Key")
 
 
 def normalize_idempotency_key(key: str | None) -> str | None:
@@ -16,7 +19,12 @@ def normalize_idempotency_key(key: str | None) -> str | None:
 
 
 def get_idempotency_key(request: Request) -> str | None:
-    return normalize_idempotency_key(request.headers.get(IDEMPOTENCY_HEADER))
+    for header in IDEMPOTENCY_HEADER_ALIASES:
+        value = request.headers.get(header)
+        normalized = normalize_idempotency_key(value)
+        if normalized:
+            return normalized
+    return None
 
 
 def ensure_idempotent_request(request: Request, required: bool = True) -> str | None:
