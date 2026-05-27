@@ -426,20 +426,35 @@ async def login(data: UserLogin, request: Request):
         normalize_identity,
     )
 
-    # Bug AT/AV fix — per-IP and per-account throttle on login attempts.
-    # Per-IP catches credential-stuffing across many accounts; per-account
-    # catches password brute-force against a single user. Successful login
-    # resets the per-account counter at the bottom of this handler.
-    # Architect-fix: normalize_identity (NFKC + strip + casefold) prevents
-    # Unicode/whitespace bypass of per-account lockout.
+    # Task-137 (P0 drain fix, peer of Task-135 agency_login / vendor_login) —
+    # Throttle wiring uses **verify-first, record-on-fail, drain-on-success**
+    # ordering so that a legitimate staff user who exhausts the per-account
+    # budget with mistyped passwords can still log in on the (cap+1)th
+    # attempt when they finally type the correct one, AND brute-force
+    # attackers are still capped (every wrong attempt records a hit, so the
+    # 11th wrong-credential attempt returns 429+Retry-After). The previous
+    # ordering (`enforce` BEFORE `verify_password`) blocked the legitimate
+    # user with 429 on attempt 11 because the throttle check inserted the
+    # hit before credentials were ever examined, making the success-path
+    # `.reset()` unreachable. See `docs/GOTCHAS.md` "Peer-login throttle
+    # drain semantics" for the doctrine.
     _ip = client_ip(request)
+    _ip_key = f"ip:{_ip}"
     _acct_key = (
         f"acc:hid:{normalize_identity(data.hotel_id)}|u:{normalize_identity(data.username)}"
         if data.hotel_id and data.username
         else f"acc:em:{normalize_identity(data.email)}"
     )
-    await enforce(LOGIN_IP, f"ip:{_ip}", "giriş denemesi")
-    await enforce(LOGIN_ACCOUNT, _acct_key, "giriş denemesi")
+
+    async def _record_failure_and_raise(status_code: int, detail: str):
+        # Record the failed attempt on BOTH layers. `enforce` may raise 429
+        # (with Retry-After header) instead of the underlying status when
+        # the post-insert count exceeds the cap — that is the brute-force
+        # boundary. IP layer is checked first so naive single-source spray
+        # trips fastest.
+        await enforce(LOGIN_IP, _ip_key, "giriş denemesi")
+        await enforce(LOGIN_ACCOUNT, _acct_key, "giriş denemesi")
+        raise HTTPException(status_code=status_code, detail=detail)
 
     # Build a stable cache key
     if data.hotel_id and data.username:
@@ -502,6 +517,15 @@ async def login(data: UserLogin, request: Request):
                         # the login hit the bcrypt-skipping cache or the
                         # full path. Build via the shared helper so it
                         # cannot drift from the canonical login response.
+                        # Task-137: cache-hit is a credential-verified
+                        # success path → drain throttle counters too, so a
+                        # user who mistyped between two correct logins
+                        # within the cache TTL isn't penalised.
+                        try:
+                            await LOGIN_IP.reset(_ip_key)
+                            await LOGIN_ACCOUNT.reset(_acct_key)
+                        except Exception:
+                            pass
                         return _build_token_response(cached_user, cached.get("tenant"))
             else:
                 # No user_id in cache → cannot verify watermark/2FA freshness.
@@ -529,7 +553,7 @@ async def login(data: UserLogin, request: Request):
                 "details": "Hotel ID not found",
                 "timestamp": datetime.now(UTC).isoformat(),
             })
-            raise HTTPException(status_code=401, detail="Otel ID veya bilgiler hatalı")
+            await _record_failure_and_raise(401, "Otel ID veya bilgiler hatalı")
         tid = tenant_doc_for_lookup.get("id")
         user_doc = await db.users.find_one({
             "tenant_id": tid,
@@ -574,7 +598,7 @@ async def login(data: UserLogin, request: Request):
             "details": "Invalid credentials",
             "timestamp": datetime.now(UTC).isoformat(),
         })
-        raise HTTPException(status_code=401, detail="Otel ID, kullanıcı adı veya şifre hatalı")
+        await _record_failure_and_raise(401, "Otel ID, kullanıcı adı veya şifre hatalı")
 
     user_data = {k: v for k, v in user_doc.items() if k not in ['password', 'hashed_password', 'password_hash']}
     user = User(**user_data)
@@ -666,9 +690,12 @@ async def login(data: UserLogin, request: Request):
         "cached_at": int(datetime.now(UTC).timestamp()),
     }, ttl=300)
 
-    # Successful login → clear per-account throttle so a legitimate user
-    # who mistyped recently isn't penalised after the right password lands.
+    # Task-137: Successful login drains BOTH per-IP and per-account
+    # throttle layers so a legitimate user who mistyped recently isn't
+    # penalised after the right password lands (drain-on-success half of
+    # the verify-first → drain → record-on-fail doctrine).
     try:
+        await LOGIN_IP.reset(_ip_key)
         await LOGIN_ACCOUNT.reset(_acct_key)
     except Exception:
         pass
@@ -684,12 +711,22 @@ class TwoFAVerifyIn(BaseModel):
 
 @router.post("/auth/2fa/verify", response_model=TokenResponse)
 async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
-    # Bug AT (companion) — per-IP throttle on 2FA verify. With Bug AS fix
-    # each challenge_token is single-use, so the brute-force surface is
-    # already (login → challenge → ONE verify); throttling here also caps
-    # the rate at which an attacker can spin up fresh challenges to retry.
-    from security.auth_throttle import TWOFA_VERIFY_IP, client_ip, enforce
-    await enforce(TWOFA_VERIFY_IP, f"ip:{client_ip(request)}", "doğrulama denemesi")
+    # Task-137 (peer of Task-135 doctrine) — verify-first, record-on-fail,
+    # drain-on-success ordering on the 2FA brute-force surface (TOTP code
+    # match). Per-IP + per-user-id throttles still cap brute-force, but
+    # are now incremented only when the code-match check fails, so a
+    # legitimate user who mistyped 15 codes can still complete 2FA on the
+    # 16th correct attempt (each verify burns the challenge_token jti, so
+    # the user is re-logging in between attempts; with pre-check enforce
+    # they would have been stuck at 429 on the cap+1 try). See
+    # `docs/GOTCHAS.md` "Peer-login throttle drain semantics".
+    from security.auth_throttle import (
+        TWOFA_VERIFY_IP,
+        TWOFA_VERIFY_USER,
+        client_ip,
+        enforce,
+    )
+    _ip_key = f"ip:{client_ip(request)}"
 
     import jwt as _jwt
 
@@ -714,18 +751,23 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
     if not jti:
         raise HTTPException(status_code=401, detail="Geçersiz doğrulama belirteci")
 
-    # F8AH P0 follow-up — per-user-id throttle MUST run BEFORE the
-    # consumed_jtis insert below, otherwise over-limit attackers still
-    # incur a DB write per attempt (write amplification under brute
-    # force). user_id comes from the JWT-trusted challenge_token claim.
     _user_id_for_throttle = decoded.get("user_id")
-    if _user_id_for_throttle:
-        from security.auth_throttle import enforce as _enforce_user, TWOFA_VERIFY_USER  # noqa: I001
-        await _enforce_user(
-            TWOFA_VERIFY_USER,
-            f"user:{_user_id_for_throttle}",
-            "doğrulama denemesi",
-        )
+    _user_throttle_key = (
+        f"user:{_user_id_for_throttle}" if _user_id_for_throttle else None
+    )
+
+    async def _record_failure_and_raise(status_code: int, detail: str):
+        # Record the failed attempt on BOTH 2FA throttle layers. `enforce`
+        # may raise 429+Retry-After once the post-insert count exceeds
+        # the cap (always_on=True, fail-closed). IP layer first so naive
+        # single-source spray trips fastest; user-id layer survives IP
+        # rotation per F8AH P0 doctrine.
+        await enforce(TWOFA_VERIFY_IP, _ip_key, "doğrulama denemesi")
+        if _user_throttle_key:
+            await enforce(
+                TWOFA_VERIFY_USER, _user_throttle_key, "doğrulama denemesi"
+            )
+        raise HTTPException(status_code=status_code, detail=detail)
 
     # Bug AS (CRITICAL): Atomic single-use enforcement via DB unique index.
     # Previously we used in-memory cache + check-then-set, which had a TOCTOU
@@ -810,7 +852,7 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
             "resource_type": "auth",
             "timestamp": datetime.now(UTC).isoformat(),
         })
-        raise HTTPException(status_code=401, detail="2FA kodu hatalı")
+        await _record_failure_and_raise(401, "2FA kodu hatalı")
 
     # Atomic single-use enforcement for backup codes:
     # use $pull keyed on the exact hash; if two requests race for the
@@ -898,6 +940,17 @@ async def verify_2fa_login(payload: TwoFAVerifyIn, request: Request):
         "details": "backup_code" if matched_backup else "totp",
         "timestamp": datetime.now(UTC).isoformat(),
     })
+
+    # Task-137: Successful 2FA verify drains BOTH per-IP and per-user
+    # throttle layers so a legitimate user who mistyped a few codes isn't
+    # penalised after the right one lands (drain-on-success half of the
+    # verify-first → drain → record-on-fail doctrine).
+    try:
+        await TWOFA_VERIFY_IP.reset(_ip_key)
+        if _user_throttle_key:
+            await TWOFA_VERIFY_USER.reset(_user_throttle_key)
+    except Exception:
+        pass
 
     # V3: 2FA-verified login must also issue a refresh token so the
     # mobile rotation lifecycle works identically whether the user
