@@ -309,12 +309,12 @@ const LandingPage = () => {
             transition={{ duration: 0.7 }}
             className="min-w-0"
           >
-            <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-medium tracking-wider text-cyan-300 sm:text-xs">
-              <Sparkles className="h-3.5 w-3.5 shrink-0" />
+            <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-medium tracking-wider text-cyan-300 sm:px-3 sm:text-xs">
+              <Sparkles className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" />
               <span className="truncate">MODERN HOSPITALITY OPERATING SYSTEM</span>
             </span>
 
-            <h1 className="mt-6 break-words text-[2rem] font-semibold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-[2.85rem] xl:text-[3.15rem]">
+            <h1 className="mt-4 break-words text-[1.75rem] font-semibold leading-[1.1] tracking-tight text-white sm:mt-6 sm:text-5xl sm:leading-[1.08] lg:text-[2.85rem] xl:text-[3.15rem]">
               Konaklama{' '}
               <span className="inline-block bg-gradient-to-r from-cyan-300 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
                 Operasyonunun
@@ -323,45 +323,51 @@ const LandingPage = () => {
               {' '}Yeni Merkezi
             </h1>
 
-            <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-300/90 sm:text-lg">
+            <p className="mt-3.5 max-w-xl text-[13.5px] leading-relaxed text-slate-300/90 sm:mt-5 sm:text-lg">
               Rezervasyondan gelire kadar tüm otel operasyonlarını tek akıllı platformda
               birleştirin. PMS, misafir deneyimi, tedarik ağı ve raporlama —
               <span className="text-cyan-200/90"> tek işletim sistemi.</span>
             </p>
 
-            <div className="mt-7 flex flex-wrap items-center gap-3">
+            <div className="mt-5 grid grid-cols-2 gap-2.5 sm:mt-7 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
               <button
                 onClick={goLogin}
-                className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-teal-300 px-6 py-3 text-sm font-semibold text-[#05070f] shadow-[0_12px_40px_-10px_rgba(34,211,238,0.7)] transition hover:translate-y-[-1px] hover:shadow-[0_16px_50px_-8px_rgba(34,211,238,0.9)]"
+                className="group col-span-2 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 to-teal-300 px-5 py-3 text-[13px] font-semibold text-[#05070f] shadow-[0_12px_40px_-10px_rgba(34,211,238,0.7)] transition hover:translate-y-[-1px] hover:shadow-[0_16px_50px_-8px_rgba(34,211,238,0.9)] sm:col-span-1 sm:px-6 sm:text-sm"
               >
                 Giriş Yap
                 <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
               </button>
               <button
                 onClick={goSupplier}
-                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
+                className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-4 py-3 text-[13px] font-semibold text-white transition hover:bg-white/[0.08] sm:px-6 sm:text-sm"
               >
                 <Users className="h-4 w-4" />
                 Tedarikçi Girişi
               </button>
               <a
                 href="#iletisim"
-                className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 bg-cyan-400/10 px-6 py-3 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-400/15"
+                className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full border border-cyan-400/40 bg-cyan-400/10 px-4 py-3 text-[13px] font-semibold text-cyan-200 transition hover:bg-cyan-400/15 sm:px-6 sm:text-sm"
               >
                 <Sparkles className="h-4 w-4" />
                 Demo Talep Et
               </a>
             </div>
 
-            <div className="mt-7 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:gap-5">
+            <div className="mt-5 grid grid-cols-2 gap-2.5 sm:mt-7 sm:flex sm:flex-wrap sm:gap-5">
               {heroBadges.map((b) => (
-                <div key={b.label} className="inline-flex items-center gap-2 text-sm text-slate-300">
-                  <span className="grid h-6 w-6 place-items-center rounded-full bg-cyan-400/15 text-cyan-300">
-                    <b.icon className="h-3.5 w-3.5" />
+                <div key={b.label} className="inline-flex items-center gap-2 text-[12px] text-slate-300 sm:text-sm">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-cyan-400/15 text-cyan-300 sm:h-6 sm:w-6">
+                    <b.icon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                   </span>
-                  {b.label}
+                  <span className="truncate">{b.label}</span>
                 </div>
               ))}
+            </div>
+
+            {/* Mobile-only pill — moved out of hero image area to prevent clipping */}
+            <div className="mt-5 inline-flex max-w-full items-center gap-2 rounded-2xl border border-cyan-400/40 bg-[#0a1424]/80 px-3.5 py-2 text-[11px] leading-snug text-cyan-100 shadow-[0_8px_30px_-8px_rgba(34,211,238,0.55)] backdrop-blur-xl lg:hidden">
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
+              <span>Oteliniz için akıllı, güvenli ve etkili bir yönetim platformu.</span>
             </div>
           </motion.div>
 
@@ -381,31 +387,30 @@ const LandingPage = () => {
               - Floating glass kartlar görselin etrafında dengeli pozisyonda.
             */}
             <div
-              className="relative mx-auto flex w-full max-w-[860px] items-center justify-center lg:-translate-y-4 lg:translate-x-3"
-              style={{ minHeight: 680 }}
+              className="relative mx-auto flex min-h-[300px] w-full max-w-[860px] items-center justify-center sm:min-h-[420px] lg:min-h-[680px] lg:-translate-y-4 lg:translate-x-3"
             >
               {/* Arka katman 1 — geniş cyan/teal ambient halo (otelin arka aydınlatması) */}
               <div
                 aria-hidden
-                className="pointer-events-none absolute inset-x-4 top-6 bottom-10 rounded-[3rem] bg-[radial-gradient(ellipse_at_center,_rgba(45,232,222,0.42),_rgba(34,211,238,0.18)_38%,_transparent_70%)] blur-3xl"
+                className="pointer-events-none absolute inset-x-8 top-4 bottom-6 rounded-[2rem] bg-[radial-gradient(ellipse_at_center,_rgba(45,232,222,0.32),_rgba(34,211,238,0.12)_38%,_transparent_70%)] blur-2xl sm:inset-x-4 sm:top-6 sm:bottom-10 sm:rounded-[3rem] sm:bg-[radial-gradient(ellipse_at_center,_rgba(45,232,222,0.42),_rgba(34,211,238,0.18)_38%,_transparent_70%)] sm:blur-3xl"
               />
               {/* Arka katman 2 — derin mavi/mor atmosfer (üst kısım) */}
               <div
                 aria-hidden
-                className="pointer-events-none absolute inset-x-12 top-0 h-[55%] rounded-full bg-[radial-gradient(ellipse_at_top,_rgba(99,102,241,0.32),_transparent_70%)] blur-3xl"
+                className="pointer-events-none absolute inset-x-16 top-0 h-[55%] rounded-full bg-[radial-gradient(ellipse_at_top,_rgba(99,102,241,0.22),_transparent_70%)] blur-2xl sm:inset-x-12 sm:bg-[radial-gradient(ellipse_at_top,_rgba(99,102,241,0.32),_transparent_70%)] sm:blur-3xl"
               />
               {/* Arka katman 3 — alt neon zemin parıltısı (otelin altı) */}
               <div
                 aria-hidden
-                className="pointer-events-none absolute inset-x-20 bottom-2 h-24 rounded-[100%] bg-[radial-gradient(ellipse_at_center,_rgba(56,242,232,0.55),_transparent_75%)] blur-2xl"
+                className="pointer-events-none absolute inset-x-24 bottom-2 h-16 rounded-[100%] bg-[radial-gradient(ellipse_at_center,_rgba(56,242,232,0.4),_transparent_75%)] blur-xl sm:inset-x-20 sm:h-24 sm:bg-[radial-gradient(ellipse_at_center,_rgba(56,242,232,0.55),_transparent_75%)] sm:blur-2xl"
               />
 
               {/* 3D otel görseli — bağımsız asset (frame YOK), büyütüldü */}
               <img
                 src={HERO_IMG}
                 alt="Syroce 3D Otel Görünümü"
-                className="relative z-[1] block h-auto w-full max-h-[680px] object-contain"
-                style={{ filter: 'drop-shadow(0 45px 90px rgba(0, 220, 220, 0.32)) drop-shadow(0 12px 28px rgba(99, 102, 241, 0.22))' }}
+                className="relative z-[1] block h-auto w-full max-h-[300px] object-contain sm:max-h-[420px] lg:max-h-[680px]"
+                style={{ filter: 'drop-shadow(0 25px 50px rgba(0, 220, 220, 0.28)) drop-shadow(0 8px 18px rgba(99, 102, 241, 0.18))' }}
                 loading="eager"
                 decoding="async"
               />
@@ -449,8 +454,8 @@ const LandingPage = () => {
                 ))}
               </svg>
 
-              {/* Alt orta neon pill — görselin altında */}
-              <div className="absolute bottom-1 left-1/2 z-[2] -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-400/45 bg-[#0a1424]/90 px-4 py-2 text-[11px] text-cyan-100 shadow-[0_12px_40px_-6px_rgba(34,211,238,0.65)] backdrop-blur-xl sm:text-xs">
+              {/* Alt orta neon pill — sadece lg+ görselin altında; mobilde sol kolona taşındı */}
+              <div className="absolute bottom-1 left-1/2 z-[2] hidden -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-400/45 bg-[#0a1424]/90 px-4 py-2 text-xs text-cyan-100 shadow-[0_12px_40px_-6px_rgba(34,211,238,0.65)] backdrop-blur-xl lg:block">
                 <Sparkles className="mr-1.5 inline h-3.5 w-3.5 text-cyan-300" />
                 Oteliniz için akıllı, güvenli ve etkili bir yönetim platformu.
               </div>
@@ -509,26 +514,26 @@ const LandingPage = () => {
               görsel altında düzenli 2 kolon grid olarak listelenir.
               Üst üste binme riski yok; tek liste, okunaklı.
             */}
-            <div className="mt-6 grid grid-cols-2 gap-3 lg:hidden">
+            <div className="mt-5 grid grid-cols-2 gap-2.5 lg:hidden">
               {[
-                { icon: Calendar,  title: 'Rezervasyonlar',   desc: 'Tüm kanalları tek yerden' },
-                { icon: Users,     title: 'Misafir Deneyimi', desc: 'Daha mutlu misafirler' },
-                { icon: Handshake, title: 'Tedarikçi Ağı',    desc: 'Hızlı iş birliği' },
-                { icon: BarChart3, title: 'Gelir & Rapor',    desc: 'Performansı görün' },
-                { icon: Boxes,     title: 'Tek Platform',     desc: 'Tüm modüller tek ekran' },
+                { icon: Calendar,  title: 'Rezervasyon',      desc: 'Tüm kanallar tek yerde' },
+                { icon: Users,     title: 'Misafir',          desc: 'Mutlu misafir, güçlü sadakat' },
+                { icon: Handshake, title: 'Tedarikçi',        desc: 'Hızlı iş birliği' },
+                { icon: BarChart3, title: 'Gelir & Rapor',    desc: 'Anlık performans' },
+                { icon: Boxes,     title: 'Tek Platform',     desc: 'Modüller tek ekranda' },
                 { icon: Headphones,title: 'Canlı Destek',     desc: '7/24 yanınızda' },
               ].map((c) => (
                 <div
                   key={c.title}
-                  className="rounded-[16px] border border-[rgba(75,235,230,0.22)] bg-[rgba(8,26,42,0.5)] p-3 backdrop-blur-md"
+                  className="flex h-full flex-col rounded-2xl border border-[rgba(75,235,230,0.22)] bg-[rgba(8,26,42,0.55)] p-3 backdrop-blur-lg shadow-[0_8px_24px_-12px_rgba(34,211,238,0.35)]"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="grid h-7 w-7 place-items-center rounded-md bg-cyan-400/15 text-cyan-300">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/25">
                       <c.icon className="h-3.5 w-3.5" />
                     </span>
-                    <div className="text-[12px] font-semibold text-white">{c.title}</div>
+                    <div className="truncate text-[12.5px] font-semibold text-white">{c.title}</div>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-300/85">{c.desc}</p>
+                  <p className="mt-1.5 line-clamp-2 text-[11px] leading-snug text-slate-300/85">{c.desc}</p>
                 </div>
               ))}
             </div>
