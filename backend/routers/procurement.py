@@ -29,7 +29,10 @@ from core.security import get_current_user
 from core.spa_mice_authz import require_procurement
 from core.tenant_db import get_system_db
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_op  # v76 Bug DL
+from modules.pms_core.role_permission_service import (  # v76 Bug DL
+    RolePermissionService,
+    require_op,
+)
 
 router = APIRouter(prefix="/api/procurement", tags=["procurement"])
 
@@ -109,6 +112,7 @@ class SupplierIn(BaseModel):
     phone: str | None = None
     address: str | None = None
     payment_terms_days: int = Field(default=30, ge=0, le=365)
+    credit_limit: float | None = Field(default=None, ge=0, le=1e12)
     categories: list[str] = Field(default_factory=list)
     notes: str | None = None
     active: bool = True
@@ -398,6 +402,7 @@ class POIn(BaseModel):
     tax_rate: float = Field(default=20.0, ge=0, le=100)
     notes: str | None = None
     lines: list[POLine] = Field(min_length=1)
+    override_credit_limit: bool = False
 
 
 def _po_compute(lines: list[dict], tax_rate: float) -> dict:
@@ -438,6 +443,48 @@ async def create_purchase_order(
         line["line_total"] = round(
             line["quantity"] * line["unit_cost"], 2)
     totals = _po_compute(lines, payload["tax_rate"])
+
+    # Credit-limit enforcement: sum open PO grand_totals for this supplier
+    # (draft + sent + partially_received) and reject if the new PO would
+    # push the running commitment past supplier.credit_limit. Users with
+    # `manage_credit_limit` permission may opt-in to bypass via
+    # `override_credit_limit=true` on the request body.
+    credit_limit = sup.get("credit_limit")
+    if credit_limit is not None and credit_limit >= 0:
+        override = bool(body.override_credit_limit)
+        override_allowed = override and RolePermissionService().check_permission(
+            current_user.role,
+            "manage_credit_limit",
+            granted_permissions=getattr(
+                current_user, "granted_permissions", None),
+        )
+        if override and not override_allowed:
+            raise HTTPException(
+                403,
+                "Kredi limiti aşımı override için 'manage_credit_limit' "
+                "yetkisi gerekli")
+        if not override_allowed:
+            pipeline = [
+                {"$match": {
+                    "tenant_id": current_user.tenant_id,
+                    "supplier_id": body.supplier_id,
+                    "status": {"$in": [
+                        "draft", "sent", "partially_received"]},
+                }},
+                {"$group": {"_id": None,
+                            "total": {"$sum": "$grand_total"}}},
+            ]
+            open_total = 0.0
+            async for row in db.proc_purchase_orders.aggregate(pipeline):
+                open_total = float(row.get("total", 0) or 0)
+            projected = round(open_total + totals["grand_total"], 2)
+            if projected > float(credit_limit) + 1e-6:
+                raise HTTPException(
+                    409,
+                    f"Tedarikçi kredi limiti aşıldı: açık {open_total:.2f} "
+                    f"+ yeni {totals['grand_total']:.2f} = {projected:.2f} "
+                    f"> limit {float(credit_limit):.2f}")
+
     po_no = await _next_no(current_user.tenant_id, "po", "PO")
     doc = {
         "id": str(uuid.uuid4()),
