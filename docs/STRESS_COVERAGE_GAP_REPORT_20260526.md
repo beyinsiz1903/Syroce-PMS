@@ -1,11 +1,27 @@
 # Stress Coverage Gap Report — 2026-05-26
 
+> **⚠️ STATUS UPDATE (2026-05-27):** Bu raporun "Current verified baseline"
+> bölümü (§1) **stale**'dir — raporun yazıldığı ana göre yazılmıştı.
+> Sonradan **Full Stress Suite Run #143** (commit `3b3891d`,
+> 2026-05-26, 84 spec / 556 test) GREEN verdict **GO WITH WATCH** ile
+> yeşil geçti. Yeni doğrulanmış baseline için:
+> [`docs/STRESS_TEST_ROADMAP.md`](./STRESS_TEST_ROADMAP.md) §
+> Latest verified baseline (2026-05-26) ve drill report
+> [`docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md`](./drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md).
+> P2/REVIEW backlog'u için yeni doküman:
+> [`docs/STRESS_P2_REVIEW_TRIAGE_20260526.md`](./STRESS_P2_REVIEW_TRIAGE_20260526.md).
+> §3–§7 (POS gaps, Spa gaps, next module candidates, follow-up plan)
+> hâlâ geçerli backlog kaynağıdır.
+>
+> ---
+>
 > Audit period: 2026-05-24 (last GREEN baseline) → 2026-05-26.
 > Audit scope: F8 stress series (`frontend/e2e-stress/specs/`) — production
 > readiness signal across PMS, POS, Spa, Compliance, Channel Manager,
 > Identity, Finance, RMS, B2B sub-router matrix.
 > Suite root: `frontend/e2e-stress/specs/` (84 spec files present on disk;
-> verified baseline still 68 — see "Pending verification" below).
+> verified baseline 68 at time of writing — **superseded 2026-05-26 by
+> Run #143 / 84 spec**; see banner above).
 
 ---
 
@@ -197,3 +213,16 @@ non-negotiable, per F8 series rules):
 Until §7.1 is unblocked, this report is the audit of record. **The 68-spec
 2026-05-24 GREEN baseline remains the only line eligible for production
 trust narrative.**
+
+> **Footer (2026-05-27 — superseded for baseline authority):** §7.1
+> sonradan çözüldü; Full Stress Suite Run #143 (84 spec / 556 test,
+> commit `3b3891d`) GREEN **GO WITH WATCH** verdict ile yeşil geçti.
+> Baseline authority artık **Run #143**'tedir; production trust
+> narrative için
+> [`docs/STRESS_TEST_ROADMAP.md`](./STRESS_TEST_ROADMAP.md) §
+> Latest verified baseline (2026-05-26) ve
+> [`docs/PILOT_TRUST_NARRATIVE.md`](./PILOT_TRUST_NARRATIVE.md)
+> referans alınır. Bu doküman §3–§6 (POS gaps, Spa gaps, next module
+> candidates, doctrinal constraints) hâlâ geçerli backlog kaynağıdır;
+> P2/REVIEW backlog'u için yeni adres
+> [`docs/STRESS_P2_REVIEW_TRIAGE_20260526.md`](./STRESS_P2_REVIEW_TRIAGE_20260526.md).
