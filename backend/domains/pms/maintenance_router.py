@@ -99,6 +99,7 @@ async def create_maintenance_work_order(
         'status': data.status or 'open',
     })
     await db.maintenance_work_orders.insert_one(payload)
+    payload.pop('_id', None)
     return payload
 
 
