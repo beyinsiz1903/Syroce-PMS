@@ -53,28 +53,33 @@ const MOD = 'backend_router_coverage_probe';
 // have NOT been built yet are removed entirely — listing them as probes does
 // not "increase coverage", it just inflates the 404 noise floor. When those
 // modules are actually shipped, add them back here with the real path.
+// NOTE (Task #139): A pytest guard in `backend/tests/
+// test_router_probe_matrix_sync.py` now parses this literal and asserts
+// every `path` resolves to a real mounted GET on the FastAPI app. If you
+// add or change a probe, run that test before merging — or expect CI to
+// fail with a "probe(s) not mounted" message naming the dead entry.
 const PROBES = [
-    // PMS sub-routers — verified mounted
+    // PMS / domain sub-routers — verified mounted
     { name: 'marketplace_router',         path: '/api/marketplace/incoming-requests',           list_shape: true },
-    { name: 'pos_v2_menu',                 path: '/api/pos/v2/menu',                             list_shape: true },
-    { name: 'mobile_router_tasks',         path: '/api/pms/tasks',                               list_shape: true },
-    { name: 'pms_groups',                  path: '/api/pms/groups',                              list_shape: true },
-    { name: 'pms_catering_events',         path: '/api/pms/catering-events',                     list_shape: true },
-    { name: 'pms_approvals_pending',       path: '/api/pms/approvals/pending',                   list_shape: true },
+    { name: 'pos_menu_items',              path: '/api/pos/menu-items',                          list_shape: true },
+    { name: 'pms_staff_tasks',             path: '/api/pms/staff-tasks',                         list_shape: true },
+    { name: 'groups_blocks',               path: '/api/groups/blocks',                           list_shape: true },
+    { name: 'catering_menu_items',         path: '/api/catering/menu-items',                     list_shape: true },
+    { name: 'approvals_pending',           path: '/api/approvals/pending',                       list_shape: true },
     { name: 'pms_lost_found',              path: '/api/pms/lost-found',                          list_shape: true },
-    { name: 'pms_maintenance_orders',      path: '/api/pms/maintenance/orders',                  list_shape: true },
-    { name: 'pms_concierge_requests',      path: '/api/pms/concierge/requests',                  list_shape: true },
+    { name: 'maintenance_work_orders',     path: '/api/maintenance/work-orders',                 list_shape: true },
+    { name: 'concierge_requests',          path: '/api/concierge/requests',                      list_shape: true },
 
     // Channel Manager — verified mounted
-    { name: 'hotelrunner_connection',      path: '/api/channel-manager/hotelrunner/connection/status'              },
+    { name: 'hotelrunner_connection',      path: '/api/channel-manager/hotelrunner/connection'                     },
     { name: 'exely_sync_status',           path: '/api/channel-manager/exely/sync/status'                          },
     { name: 'cm_ingest_status',            path: '/api/channel-manager/ingest/status'                              },
-    { name: 'cm_incident_list',            path: '/api/channel-manager/incidents/list',          list_shape: true },
-    { name: 'cm_reconciliation',           path: '/api/channel-manager/reconciliation/summary'                     },
+    { name: 'incidents_list',              path: '/api/incidents/list',                          list_shape: true },
+    { name: 'cm_reconciliation_dashboard', path: '/api/channel-manager/reconciliation/dashboard'                   },
 
     // Guest / Messaging — verified mounted (correct prefix is /api/guest-journey
     // and /api/messaging-center, not /api/guest/journey or /api/messaging).
-    { name: 'guest_journey_list',          path: '/api/guest-journey/list',                      list_shape: true },
+    { name: 'guest_journey_requests',      path: '/api/guest-journey/guest-requests',            list_shape: true },
     { name: 'messaging_templates',         path: '/api/messaging-center/templates',              list_shape: true },
     { name: 'messaging_settings',          path: '/api/messaging-center/settings'                                  },
 
