@@ -307,16 +307,16 @@ const LandingPage = () => {
             initial={{ opacity: 0, y: reduce ? 0 : 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7 }}
-            className=""
+            className="min-w-0"
           >
-            <span className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-medium tracking-wider text-cyan-300">
-              <Sparkles className="h-3.5 w-3.5" />
-              MODERN HOSPITALITY OPERATING SYSTEM
+            <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-medium tracking-wider text-cyan-300 sm:text-xs">
+              <Sparkles className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">MODERN HOSPITALITY OPERATING SYSTEM</span>
             </span>
 
-            <h1 className="mt-6 text-4xl font-semibold leading-[1.06] tracking-tight text-white sm:text-5xl lg:text-[2.85rem] xl:text-[3.15rem]">
+            <h1 className="mt-6 break-words text-[2rem] font-semibold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-[2.85rem] xl:text-[3.15rem]">
               Konaklama{' '}
-              <span className="bg-gradient-to-r from-cyan-300 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
+              <span className="inline-block bg-gradient-to-r from-cyan-300 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
                 Operasyonunun
               </span>
               <br className="hidden sm:block" />
