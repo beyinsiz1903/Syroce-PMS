@@ -106,54 +106,164 @@ test.describe('F8F v2 § 72 — Warehouse Transfer + Procurement Hardening', () 
         }
     });
 
-    test('A) Warehouse transfer probe — movement_type=transfer must NOT be silently accepted', async ({ request, stressTokens, stressState }, testInfo) => {
-        // Backend (`backend/routers/finance/accounting.py:429`) whitelists
-        // movement_type ∈ {in, out, adjustment}. "transfer" → 422. If a
-        // future multi-target probe ever lands, this assertion will be
-        // relaxed; for now any 2xx on a "transfer" movement = P0 (silent
-        // stock magicked between warehouses with no destination contract).
+    test('A) Warehouse transfer endpoint — happy path + insufficient-source-stock 409', async ({ request, stressTokens, stressState }, testInfo) => {
+        // Task #20 — `POST /api/accounting/inventory/transfer` performs an
+        // atomic source→destination stock move. Source decrement is guarded
+        // by `quantity >= requested` (409 on insufficient stock); destination
+        // increment is compensated on failure. Two stock_movements rows are
+        // written sharing the same `transfer_id` for reconciliation.
+        // Legacy probe also retained: movement_type=transfer on the OLD
+        // /movement endpoint MUST still 4xx — it has no destination contract.
         if (moduleBlocked) { test.skip(true, 'procurement module blocked'); return; }
         const sToken = stressTokens.stress_token;
         const pToken = stressTokens.pilot_token;
         const pilotBefore = await pilotBookingsCount(request, pToken);
+        const createdItemIds = [];
         try {
-            // Probe without a real item_id: query-string params satisfy the
-            // FastAPI signature; backend validates movement_type BEFORE
-            // tenant lookup so item existence isn't required to reach the
-            // 422 path. Use a bogus uuid just to satisfy required `item_id`.
-            const path = `/api/accounting/inventory/movement?item_id=${prefix}NONE&movement_type=transfer&quantity=1&unit_cost=1`;
-            const r = await callTimed(request, 'post', path, {}, sToken);
-            if (r.status === 422 || r.status === 400) {
-                rec(testInfo, { module: MOD, step: 'warehouse_transfer_probe',
-                    status: 'PASS',
-                    note: `transfer rejected http=${r.status} (whitelist {in,out,adjustment} intact)` });
-            } else if (r.status === 404) {
-                // Endpoint deployed but item_id lookup happened before
-                // whitelist check — defensive rejection still acceptable.
-                rec(testInfo, { module: MOD, step: 'warehouse_transfer_probe',
-                    status: 'PASS',
-                    note: `http=404 (item lookup before whitelist; no silent accept)` });
-            } else if (r.status === 403 || r.status === 401) {
-                recFinding(testInfo, 'P2', MOD, 'Warehouse transfer probe RBAC-blocked',
-                    `movement endpoint http=${r.status} — informational; transfer contract still unconfirmed.`);
-                rec(testInfo, { module: MOD, step: 'warehouse_transfer_probe',
-                    status: 'SKIP', note: `RBAC http=${r.status}` });
-            } else if (r.status >= 200 && r.status < 300) {
-                recFinding(testInfo, 'P0', MOD, 'Warehouse transfer silently accepted',
-                    `POST /api/accounting/inventory/movement?movement_type=transfer http=${r.status} body=${JSON.stringify(r.body).slice(0, 160)} — backend accepts "transfer" with no destination warehouse contract; stock moved without audit trail.`);
-                expect(r.status, 'transfer must NOT be silently accepted').toBeGreaterThanOrEqual(400);
-            } else {
-                // 5xx — REVIEW (backend hiccup, not a contract violation).
-                recFinding(testInfo, 'P2', MOD, 'Warehouse transfer probe non-2xx/4xx',
-                    `http=${r.status} body=${JSON.stringify(r.body).slice(0, 160)} — REVIEW; rerun on green backend.`);
-                rec(testInfo, { module: MOD, step: 'warehouse_transfer_probe',
-                    status: 'REVIEW', note: `http=${r.status}` });
+            // A0) Seed two inventory items representing two warehouses (the
+            // InventoryItem.location field is the warehouse label).
+            const srcCreate = await callTimed(request, 'post',
+                '/api/accounting/inventory', {
+                    name: `${prefix}TransferItemSrc`,
+                    category: 'general',
+                    unit: 'adet',
+                    quantity: 20,
+                    unit_cost: 5.0,
+                    reorder_level: 0,
+                    location: `${prefix}MainStore`,
+                    notes: `${prefix} spec72 A source warehouse`,
+                }, sToken);
+            if (srcCreate.status === 401 || srcCreate.status === 403) {
+                recFinding(testInfo, 'P2', MOD, 'Inventory create RBAC-blocked',
+                    `status=${srcCreate.status} — A transfer chain skipped.`);
+                test.skip(true, 'inventory create RBAC');
+                return;
             }
-            // Document the gap regardless: transfer contract NOT IMPLEMENTED
-            // is a P2 product-backlog item, not a security finding.
-            recFinding(testInfo, 'P2', MOD, 'Warehouse transfer endpoint not implemented',
-                `Multi-warehouse transfer (source→dest atomic) is out-of-scope in current procurement/inventory router. Product backlog item; this spec confirms backend fail-closed posture (422 on unknown movement_type).`);
+            expect(srcCreate.ok, `src inventory http=${srcCreate.status} body=${JSON.stringify(srcCreate.body).slice(0, 160)}`).toBe(true);
+            const srcId = srcCreate.body?.id;
+            createdItemIds.push(srcId);
+
+            const dstCreate = await callTimed(request, 'post',
+                '/api/accounting/inventory', {
+                    name: `${prefix}TransferItemDst`,
+                    category: 'general',
+                    unit: 'adet',
+                    quantity: 3,
+                    unit_cost: 5.0,
+                    reorder_level: 0,
+                    location: `${prefix}FloorBar`,
+                    notes: `${prefix} spec72 A destination warehouse`,
+                }, sToken);
+            expect(dstCreate.ok, `dst inventory http=${dstCreate.status}`).toBe(true);
+            const dstId = dstCreate.body?.id;
+            createdItemIds.push(dstId);
+
+            // A1) Happy path — transfer 8 units. Expected source=12, dst=11.
+            const ok = await callTimed(request, 'post',
+                '/api/accounting/inventory/transfer', {
+                    source_item_id: srcId,
+                    destination_item_id: dstId,
+                    quantity: 8,
+                    unit_cost: 5.0,
+                    reference: `${prefix}TRANSFER_A1`,
+                    notes: `${prefix} happy path 8 units`,
+                }, sToken);
+            expect(ok.ok, `transfer happy http=${ok.status} body=${JSON.stringify(ok.body).slice(0, 240)}`).toBe(true);
+            expect(typeof ok.body?.transfer_id, 'transfer_id must be returned').toBe('string');
+            expect(Array.isArray(ok.body?.legs)).toBe(true);
+            expect(ok.body?.legs?.length).toBe(2);
+            const transferId = ok.body.transfer_id;
+            const legs = ok.body.legs;
+            const outLeg = legs.find(l => l.movement_type === 'transfer_out');
+            const inLeg = legs.find(l => l.movement_type === 'transfer_in');
+            expect(outLeg, 'transfer_out leg must exist').toBeTruthy();
+            expect(inLeg, 'transfer_in leg must exist').toBeTruthy();
+            expect(outLeg.transfer_id, 'out leg transfer_id must match').toBe(transferId);
+            expect(inLeg.transfer_id, 'in leg transfer_id must match').toBe(transferId);
+            expect(outLeg.counterpart_item_id).toBe(dstId);
+            expect(inLeg.counterpart_item_id).toBe(srcId);
+
+            // Verify balances via inventory read.
+            const inv = await callTimed(request, 'get', '/api/accounting/inventory', undefined, sToken);
+            expect(inv.ok).toBe(true);
+            const items = inv.body?.items || [];
+            const srcAfter = items.find(i => i.id === srcId);
+            const dstAfter = items.find(i => i.id === dstId);
+            expect(srcAfter?.quantity, `src qty after transfer should be 12, got ${srcAfter?.quantity}`).toBe(12);
+            expect(dstAfter?.quantity, `dst qty after transfer should be 11, got ${dstAfter?.quantity}`).toBe(11);
+
+            // A2) Insufficient source stock — request 9999 → 409, balances unchanged.
+            const short = await callTimed(request, 'post',
+                '/api/accounting/inventory/transfer', {
+                    source_item_id: srcId,
+                    destination_item_id: dstId,
+                    quantity: 9999,
+                    unit_cost: 5.0,
+                    reference: `${prefix}TRANSFER_A2_SHORT`,
+                    notes: `${prefix} insufficient stock probe`,
+                }, sToken);
+            expect(short.status, `insufficient-stock must 409 http=${short.status}`).toBe(409);
+            if (short.status >= 200 && short.status < 300) {
+                recFinding(testInfo, 'P0', MOD, 'Warehouse transfer overdraws source',
+                    `http=${short.status} — backend allowed transfer beyond available source qty; financial integrity broken.`);
+            }
+            // Balances must not have shifted.
+            const inv2 = await callTimed(request, 'get', '/api/accounting/inventory', undefined, sToken);
+            const items2 = inv2.body?.items || [];
+            const srcAfter2 = items2.find(i => i.id === srcId);
+            const dstAfter2 = items2.find(i => i.id === dstId);
+            expect(srcAfter2?.quantity, 'src qty must be unchanged after rejected transfer').toBe(12);
+            expect(dstAfter2?.quantity, 'dst qty must be unchanged after rejected transfer').toBe(11);
+
+            // A3) Same-source/destination → 422 (no-op rejection).
+            const same = await callTimed(request, 'post',
+                '/api/accounting/inventory/transfer', {
+                    source_item_id: srcId,
+                    destination_item_id: srcId,
+                    quantity: 1,
+                    unit_cost: 5.0,
+                }, sToken);
+            expect(same.status, `same src/dst must 422 http=${same.status}`).toBeGreaterThanOrEqual(400);
+            expect(same.status).toBeLessThan(500);
+
+            // A4) Legacy fail-closed — movement_type=transfer on old endpoint
+            // still 4xx (no destination contract there).
+            const legacyPath = `/api/accounting/inventory/movement?item_id=${srcId}&movement_type=transfer&quantity=1&unit_cost=1`;
+            const legacy = await callTimed(request, 'post', legacyPath, {}, sToken);
+            expect(legacy.status, `legacy /movement transfer must still 4xx http=${legacy.status}`).toBeGreaterThanOrEqual(400);
+            if (legacy.status >= 200 && legacy.status < 300) {
+                recFinding(testInfo, 'P0', MOD, 'Legacy movement endpoint silently accepts transfer',
+                    `POST /api/accounting/inventory/movement?movement_type=transfer http=${legacy.status} — legacy endpoint must keep {in,out,adjustment} whitelist; multi-target moves only via /inventory/transfer.`);
+            }
+
+            // A5) Cross-tenant IDOR — pilot bearer must NOT transfer stress
+            // tenant stock.
+            if (pToken) {
+                const x = await callTimed(request, 'post',
+                    '/api/accounting/inventory/transfer', {
+                        source_item_id: srcId,
+                        destination_item_id: dstId,
+                        quantity: 1,
+                        unit_cost: 5.0,
+                        notes: `${prefix} pilot hijack`,
+                    }, pToken);
+                expect(x.status, `pilot cross-tenant transfer must 4xx http=${x.status}`).toBeGreaterThanOrEqual(400);
+                if (x.status >= 200 && x.status < 300) {
+                    recFinding(testInfo, 'P0', MOD, 'Pilot cross-tenant inventory transfer',
+                        `pilot bearer moved stress tenant stock http=${x.status}.`);
+                }
+            }
+
+            rec(testInfo, { module: MOD, step: 'warehouse_transfer_endpoint',
+                status: 'PASS',
+                note: `happy=${ok.status} transfer_id=${transferId?.slice(0, 8)} src_after=${srcAfter?.quantity} dst_after=${dstAfter?.quantity} short=${short.status} same=${same.status} legacy=${legacy.status}` });
         } finally {
+            // Idempotent cleanup — adjust both items back to 0; ignore errors.
+            for (const id of createdItemIds) {
+                await callTimed(request, 'post',
+                    `/api/accounting/inventory/movement?item_id=${id}&movement_type=adjustment&quantity=0&unit_cost=0`,
+                    {}, stressTokens.stress_token).catch(() => null);
+            }
             await assertNoExternalCallsPostBatch(testInfo, MOD, 'transfer_probe_batch',
                 stressState, request, pToken);
             await assertPilotDriftZero(testInfo, MOD, request, pToken, pilotBefore);

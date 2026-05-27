@@ -142,13 +142,26 @@ class StockMovement(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str
     item_id: str
-    movement_type: str  # in, out, adjustment
+    movement_type: str  # in, out, adjustment, transfer_out, transfer_in
     quantity: float
     unit_cost: float
     reference: str | None = None
     notes: str | None = None
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    # Task #20 — warehouse transfer: both legs share the same transfer_id
+    # so reconciliation can pair source decrement and destination increment.
+    transfer_id: str | None = None
+    counterpart_item_id: str | None = None
+
+
+class StockTransferRequest(BaseModel):
+    source_item_id: str
+    destination_item_id: str
+    quantity: float = Field(gt=0)
+    unit_cost: float = Field(default=0.0, ge=0)
+    reference: str | None = None
+    notes: str | None = None
 
 
 class SupplierCreateRequest(BaseModel):
@@ -488,6 +501,130 @@ async def create_stock_movement(
     await db.stock_movements.insert_one(movement_dict)
 
     return movement
+
+
+@router.post("/accounting/inventory/transfer")
+async def transfer_stock_between_warehouses(
+    payload: StockTransferRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    # Task #20 — Warehouse-to-warehouse atomic transfer.
+    # Each inventory item row represents stock at a specific location/warehouse
+    # (InventoryItem.location). Transfer decrements the source row and
+    # increments the destination row atomically using a compensating-$inc
+    # pattern: the source decrement is guarded by `quantity >= requested`
+    # so insufficient stock fails fast with 409. If the destination
+    # increment fails (e.g. dest deleted mid-flight) the source decrement
+    # is reversed and the operation reported as a 409/500. Both legs share
+    # a `transfer_id` so reconciliation can pair them.
+    if payload.source_item_id == payload.destination_item_id:
+        raise HTTPException(
+            status_code=422,
+            detail="source_item_id and destination_item_id must differ",
+        )
+    quantity = float(payload.quantity)
+    if quantity != quantity or quantity <= 0:  # NaN or non-positive
+        raise HTTPException(status_code=422, detail="quantity must be > 0")
+
+    src_filter = {'id': payload.source_item_id, 'tenant_id': current_user.tenant_id}
+    dst_filter = {'id': payload.destination_item_id, 'tenant_id': current_user.tenant_id}
+
+    src = await db.inventory_items.find_one(
+        src_filter, {'_id': 0, 'id': 1, 'quantity': 1, 'location': 1}
+    )
+    if not src:
+        raise HTTPException(status_code=404, detail='Source inventory item not found')
+    dst = await db.inventory_items.find_one(
+        dst_filter, {'_id': 0, 'id': 1, 'quantity': 1, 'location': 1}
+    )
+    if not dst:
+        raise HTTPException(status_code=404, detail='Destination inventory item not found')
+
+    # Atomic source decrement with insufficient-stock guard.
+    guard_src = dict(src_filter)
+    guard_src['quantity'] = {'$gte': quantity}
+    dec = await db.inventory_items.update_one(guard_src, {'$inc': {'quantity': -quantity}})
+    if dec.modified_count == 0:
+        current_qty = float(src.get('quantity') or 0)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Insufficient stock at source: requested={quantity}, "
+                f"available={current_qty}"
+            ),
+        )
+
+    # Destination increment. If it fails for any reason, reverse the source
+    # decrement so no stock is destroyed.
+    try:
+        inc = await db.inventory_items.update_one(dst_filter, {'$inc': {'quantity': quantity}})
+        if inc.matched_count == 0:
+            # Destination disappeared between read and write — compensate.
+            await db.inventory_items.update_one(src_filter, {'$inc': {'quantity': quantity}})
+            raise HTTPException(
+                status_code=409,
+                detail='Destination inventory item disappeared during transfer',
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Compensate source on any unexpected failure.
+        try:
+            await db.inventory_items.update_one(src_filter, {'$inc': {'quantity': quantity}})
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f'Transfer failed: {exc}') from exc
+
+    transfer_id = str(uuid.uuid4())
+    now_iso = datetime.now(UTC).isoformat()
+    out_leg = StockMovement(
+        tenant_id=current_user.tenant_id,
+        item_id=payload.source_item_id,
+        movement_type='transfer_out',
+        quantity=quantity,
+        unit_cost=payload.unit_cost,
+        reference=payload.reference,
+        notes=payload.notes,
+        created_by=current_user.name,
+        transfer_id=transfer_id,
+        counterpart_item_id=payload.destination_item_id,
+    )
+    in_leg = StockMovement(
+        tenant_id=current_user.tenant_id,
+        item_id=payload.destination_item_id,
+        movement_type='transfer_in',
+        quantity=quantity,
+        unit_cost=payload.unit_cost,
+        reference=payload.reference,
+        notes=payload.notes,
+        created_by=current_user.name,
+        transfer_id=transfer_id,
+        counterpart_item_id=payload.source_item_id,
+    )
+    out_dict = out_leg.model_dump()
+    in_dict = in_leg.model_dump()
+    out_dict['created_at'] = now_iso
+    in_dict['created_at'] = now_iso
+    # Insert both audit legs; if audit insert fails we still keep the
+    # successful stock movement (better than reversing real inventory)
+    # but log via HTTP 500 so caller can alert.
+    try:
+        await db.stock_movements.insert_many([out_dict, in_dict])
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f'Transfer completed but audit write failed: {exc}',
+        ) from exc
+
+    return {
+        'transfer_id': transfer_id,
+        'source_item_id': payload.source_item_id,
+        'destination_item_id': payload.destination_item_id,
+        'quantity': quantity,
+        'unit_cost': payload.unit_cost,
+        'legs': [out_leg, in_leg],
+    }
 
 
 # Block ANY HTML/XML-like tag (`<word`, `</word>`, `<...>`), event handlers,
