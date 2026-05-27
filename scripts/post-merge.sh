@@ -9,6 +9,14 @@ if [ -f frontend/package.json ]; then
   else
     cd frontend && npm install --no-audit --no-fund && cd ..
   fi
+
+  # Ensure Playwright browser binaries (chromium + headless shell) are present
+  # so the stress suite's mobile-viewport smoke (08-housekeeping-mass.spec E)
+  # can launch chrome-headless-shell. Idempotent: skips download if cached.
+  if [ -f frontend/node_modules/.bin/playwright ]; then
+    cd frontend && ./node_modules/.bin/playwright install chromium >/dev/null 2>&1 || true
+    cd ..
+  fi
 fi
 
 if [ -f backend/requirements/all.txt ]; then
