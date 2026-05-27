@@ -245,7 +245,7 @@ export async function callTimed(request, method, path, body, token, opts = {}) {
     if (!noPacer) await _paceBeforeCall(token, method);
 
     // Task #56: surface `throttled` + `attempts` on every return so callers
-    // no longer need the `callTimedWithBackoff` wrapper to read those fields.
+    // get pacing + 429-aware retry + throttle telemetry from `callTimed` directly.
     // `throttled=true` if we ever saw a 429 (regardless of final outcome);
     // `attempts` counts total HTTP attempts (1 = first try succeeded).
     let attempts = 1;
@@ -296,12 +296,6 @@ export async function callApiKey(request, method, urlPath, body, apiKey, opts = 
     const status = r.status?.() ?? 0;
     return { status, ms, body: bodyJson, ok: status >= 200 && status < 300 };
 }
-
-// @deprecated Task #56 — kept only as a thin alias for any out-of-tree caller.
-// Pacing + 429-aware retry + `throttled`/`attempts` fields are now built into
-// `callTimed`. All in-repo spec call sites have been migrated; please use
-// `callTimed` directly in new code.
-export const callTimedWithBackoff = callTimed;
 
 export function summarize(samples) {
     if (!samples || samples.length === 0) return { count: 0, p50: 0, p95: 0, max: 0, avg: 0 };
