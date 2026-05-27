@@ -258,15 +258,25 @@ const AuthPage = ({ onLogin }) => {
         <div style={{ textAlign: 'center', marginBottom: isMobile ? '1rem' : '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.75rem' }}>
             <a href="/" title="Ana sayfaya dön" style={{ display: 'inline-block', cursor: 'pointer' }}>
-              <img 
-                src="/syroce-logo.svg"
-                alt="Syroce Logo" 
-                style={{ 
-                  height: isMobile ? '60px' : '70px', 
-                  width: 'auto',
-                  filter: 'brightness(0) invert(1)'
-                }} 
-              />
+              <picture>
+                <source
+                  type="image/webp"
+                  srcSet="/syroce-circle-128.webp 1x, /syroce-circle-256.webp 2x"
+                />
+                <img
+                  src="/syroce-circle.png"
+                  alt="Syroce Logo"
+                  width={isMobile ? 96 : 112}
+                  height={isMobile ? 96 : 112}
+                  style={{
+                    height: isMobile ? '96px' : '112px',
+                    width: isMobile ? '96px' : '112px',
+                    borderRadius: '50%',
+                    objectFit: 'contain',
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.25)'
+                  }}
+                />
+              </picture>
             </a>
           </div>
           <p style={{ color: 'rgba(255,255,255,0.95)', fontSize: isMobile ? '0.875rem' : '1rem', marginBottom: '0.75rem', fontWeight: '500' }}>

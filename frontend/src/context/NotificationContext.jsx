@@ -176,7 +176,7 @@ export const NotificationProvider = ({ children }) => {
         const notif = new Notification(title, {
           body,
           tag: `internal-msg-${msg.id}`,
-          icon: '/syroce-icon.svg',
+          icon: '/syroce-circle-128.webp',
           requireInteraction: msg.priority === 'urgent',
         });
         notif.onclick = () => {

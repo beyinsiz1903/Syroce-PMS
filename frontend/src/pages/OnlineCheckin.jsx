@@ -128,7 +128,19 @@ const OnlineCheckin = () => {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <img src="/syroce-logo.svg" alt="Syroce" className="h-16" />
+            <picture>
+              <source
+                type="image/webp"
+                srcSet="/syroce-circle-128.webp 1x, /syroce-circle-256.webp 2x"
+              />
+              <img
+                src="/syroce-circle.png"
+                alt="Syroce"
+                width="80"
+                height="80"
+                className="h-20 w-20 rounded-full object-contain shadow-lg"
+              />
+            </picture>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             {t('guestPortal.onlineCheckin')}
