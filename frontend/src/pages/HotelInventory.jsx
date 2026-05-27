@@ -436,6 +436,14 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
               <FileText className="w-4 h-4 mr-2" />
               Yeni Transfer Belgesi
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => navigate('/hotel-inventory/transfers')}
+              data-testid="transfer-history-link"
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Transfer Geçmişi
+            </Button>
             <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => setNewItem({ ...EMPTY_ITEM })}>
               <Plus className="w-4 h-4 mr-2" />
               Yeni Ürün

@@ -1,6 +1,6 @@
 import {
   MarketplaceModule, SuppliesMarket, VendorPortal, LoyaltyModule,
-  HotelInventory, TemplateManager,
+  HotelInventory, InventoryTransferHistory, TemplateManager,
 } from "./lazyPages";
 
 export function marketplaceLoyaltyRoutes({ p }) {
@@ -15,6 +15,7 @@ export function marketplaceLoyaltyRoutes({ p }) {
     // ── Loyalty & Inventory ────────────────────────────
     { path: "/loyalty", ...p(LoyaltyModule), wrapLayout: true, layoutModule: "loyalty" },
     { path: "/hotel-inventory", ...p(HotelInventory), wrapLayout: true },
+    { path: "/hotel-inventory/transfers", ...p(InventoryTransferHistory), wrapLayout: true },
     { path: "/templates", ...p(TemplateManager), wrapLayout: true, layoutModule: "pms" },
   ];
 }

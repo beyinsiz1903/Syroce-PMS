@@ -41,6 +41,7 @@ export const MarketplaceModule = lazy(() => import("@/pages/MarketplaceModule"))
 export const SuppliesMarket = lazy(() => import("@/pages/SuppliesMarket"));
 export const VendorPortal = lazy(() => import("@/pages/VendorPortal"));
 export const HotelInventory = lazy(() => import("@/pages/HotelInventory"));
+export const InventoryTransferHistory = lazy(() => import("@/pages/InventoryTransferHistory"));
 export const TemplateManager = lazy(() => import("@/pages/TemplateManager"));
 export const SelfCheckin = lazy(() => import("@/pages/SelfCheckin"));
 export const PreCheckinPage = lazy(() => import("@/pages/PreCheckinPage"));
