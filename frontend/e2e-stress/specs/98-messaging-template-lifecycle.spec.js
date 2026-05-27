@@ -68,6 +68,7 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
     let blockedReason = null;
     let pilotBookingBaseline = null;
     const createdTemplateIds = [];
+    const createdAutomationRuleIds = [];
 
     function idemKey(op, i = 0) {
         return `${SUB_PREFIX}_${op}_${Date.now()}_${i}_${cryptoRandomUUID()}`;
@@ -362,6 +363,76 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
     });
 
     // ──────────────────────────────────────────────────────────────
+    // F2) POST /providers/health-check — read-only diagnostic probe.
+    //     The endpoint is POST by FastAPI route shape but is semantically
+    //     read-only (calls into provider.check() health probes). We accept
+    //     200/202 with a `results` map, 401/403/404 if RBAC denies the
+    //     stress role view_system_diagnostics, and treat anything else as
+    //     REVIEW. NO mutating outcome is asserted. external_calls=[] is
+    //     enforced by the suite-level fixture; this test additionally
+    //     leak-scans the response for credentials.
+    test('F2) POST /providers/health-check read-only probe', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'F2_providers_health_check', status: 'SKIP', note: blockedReason });
+            test.skip(true, `module_blocked: ${blockedReason}`);
+        }
+        const r = await callTimed(
+            request, 'post', `${BASE}/providers/health-check`, {},
+            stressTokens.stress_token, { timeout: 15_000 },
+        );
+        expect(r.status, `F2_providers_health_check 5xx status=${r.status}`).toBeLessThan(500);
+        if ([401, 403].includes(r.status)) {
+            // RBAC deny on view_system_diagnostics is acceptable for the
+            // stress role — record as PASS (boundary held) not REVIEW.
+            rec(testInfo, { module: MOD, step: 'F2_providers_health_check', status: 'PASS', http: r.status, note: 'rbac_deny_acceptable' });
+            return;
+        }
+        if (r.status === 404) {
+            // Endpoint absent on this deploy → REVIEW (coverage gap), not PASS.
+            recFinding(testInfo, 'P2', MOD, `F2_providers_health_check 404 — endpoint missing on this deploy`, '');
+            rec(testInfo, { module: MOD, step: 'F2_providers_health_check', status: 'REVIEW', http: r.status });
+            return;
+        }
+        if (r.status >= 200 && r.status < 300) {
+            // Credential leak guard — same FORBIDDEN_KEYS as F.
+            const FORBIDDEN_KEYS = new Set([
+                'credentials_encrypted', 'smtp_password', 'access_token',
+                'app_secret', 'webhook_verify_token',
+            ]);
+            function walk(node, parts, hits) {
+                if (node == null || hits.length >= 10) return;
+                if (Array.isArray(node)) {
+                    node.forEach((v, i) => walk(v, [...parts, `[${i}]`], hits));
+                    return;
+                }
+                if (typeof node === 'object') {
+                    for (const [k, v] of Object.entries(node)) {
+                        if (FORBIDDEN_KEYS.has(k)) hits.push([...parts, k].join('.'));
+                        walk(v, [...parts, k], hits);
+                    }
+                }
+            }
+            const hits = [];
+            walk(r.body, ['health'], hits);
+            if (hits.length > 0) {
+                for (const h of hits) {
+                    recFinding(testInfo, 'P0', MOD,
+                        `F2_providers_health_check: forbidden credential key leaked at ${h}`, '');
+                }
+                expect(hits.length, `F2_providers_health_check: leaked keys ${hits.join(', ')}`).toBe(0);
+            }
+            leakScan(testInfo, r.body, 'F2_providers_health_check_response');
+            const resultsCount = Array.isArray(r.body?.results)
+                ? r.body.results.length
+                : (typeof r.body?.results === 'object' && r.body.results ? Object.keys(r.body.results).length : 0);
+            rec(testInfo, { module: MOD, step: 'F2_providers_health_check', status: 'PASS', http: r.status, note: `results=${resultsCount}` });
+            return;
+        }
+        recFinding(testInfo, 'P2', MOD, `F2_providers_health_check unexpected status=${r.status}`, '');
+        rec(testInfo, { module: MOD, step: 'F2_providers_health_check', status: 'REVIEW', http: r.status });
+    });
+
+    // ──────────────────────────────────────────────────────────────
     // G) test-connection — sandbox path, NO real outbound expected.
     test('G) POST /settings/test-connection — sandbox safe', async ({ request, stressTokens }, testInfo) => {
         if (moduleBlocked) {
@@ -471,10 +542,17 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
                 `target_id=${targetId} response=${JSON.stringify(r.body).slice(0, 200)}`);
             expect(false, `J_idor_put: pilot token reached stress template ${targetId} (status=${r.status})`).toBe(true);
         }
-        if ([404, 403, 401].includes(r.status)) {
+        if ([404, 403, 401].includes(r.status) && probeKind === 'real_stress_template_id') {
             rec(testInfo, { module: MOD, step: 'J_idor_put', status: 'PASS', http: r.status, note: `${probeKind} rejected ${r.status}` });
+        } else if ([404, 403, 401].includes(r.status) && probeKind === 'bogus_uuid_fallback') {
+            // Doctrine: bogus fallback never produces a clean PASS — even a
+            // 401/403/404 here means the real cross-tenant boundary was
+            // not exercised, so the row must surface as REVIEW (not PASS).
+            recFinding(testInfo, 'P2', MOD,
+                `J_idor_put bogus-UUID fallback (no stress template existed) — boundary not exercised`,
+                `status=${r.status} — re-run after B_create succeeds to get authoritative coverage`);
+            rec(testInfo, { module: MOD, step: 'J_idor_put', status: 'REVIEW', http: r.status, note: 'bogus_fallback_not_authoritative' });
         } else if (is2xx && probeKind === 'bogus_uuid_fallback') {
-            // bogus id should also 404; any 2xx here = REVIEW (filter weird).
             recFinding(testInfo, 'P2', MOD, `J_idor_put bogus UUID returned ${r.status} — unexpected`,
                 `body=${JSON.stringify(r.body).slice(0, 200)}`);
             rec(testInfo, { module: MOD, step: 'J_idor_put', status: 'REVIEW', http: r.status });
@@ -510,8 +588,13 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
                 `target_id=${targetId} response=${JSON.stringify(r.body || {}).slice(0, 200)}`);
             expect(false, `J2_idor_del: pilot token reached stress template ${targetId} (status=${r.status})`).toBe(true);
         }
-        if ([404, 403, 401].includes(r.status)) {
+        if ([404, 403, 401].includes(r.status) && probeKind === 'real_stress_template_id') {
             rec(testInfo, { module: MOD, step: 'J2_idor_del', status: 'PASS', http: r.status, note: `${probeKind} rejected ${r.status}` });
+        } else if ([404, 403, 401].includes(r.status) && probeKind === 'bogus_uuid_fallback') {
+            recFinding(testInfo, 'P2', MOD,
+                `J2_idor_del bogus-UUID fallback (no stress template existed) — boundary not exercised`,
+                `status=${r.status} — re-run after B_create succeeds for authoritative coverage`);
+            rec(testInfo, { module: MOD, step: 'J2_idor_del', status: 'REVIEW', http: r.status, note: 'bogus_fallback_not_authoritative' });
         } else if (is2xx && probeKind === 'bogus_uuid_fallback') {
             recFinding(testInfo, 'P2', MOD, `J2_idor_del bogus UUID returned ${r.status} — unexpected`,
                 `body=${JSON.stringify(r.body || {}).slice(0, 200)}`);
@@ -557,8 +640,16 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
                 `target_id=${targetId} response=${JSON.stringify(r.body || {}).slice(0, 200)}`);
             expect(false, `J3_idor_put_doctrine: stress token reached pilot template ${targetId} (status=${r.status})`).toBe(true);
         }
-        if ([404, 403, 401].includes(r.status)) {
+        if ([404, 403, 401].includes(r.status) && probeKind === 'real_pilot_template_id') {
             rec(testInfo, { module: MOD, step: 'J3_idor_put_doctrine', status: 'PASS', http: r.status, note: `${probeKind} rejected ${r.status}` });
+        } else if ([404, 403, 401].includes(r.status) && probeKind === 'bogus_uuid_fallback') {
+            // Doctrine: bogus fallback never produces a clean PASS — even a
+            // 401/403/404 means the real cross-tenant boundary was not
+            // exercised against a live pilot object, so this is REVIEW.
+            recFinding(testInfo, 'P2', MOD,
+                `J3_idor_put_doctrine bogus-UUID fallback (pilot has no template) — boundary not exercised`,
+                `status=${r.status} — seed a pilot template so the doctrine direction can probe a real id`);
+            rec(testInfo, { module: MOD, step: 'J3_idor_put_doctrine', status: 'REVIEW', http: r.status, note: 'bogus_fallback_not_authoritative' });
         } else if (is2xx && probeKind === 'bogus_uuid_fallback') {
             recFinding(testInfo, 'P2', MOD, `J3_idor_put_doctrine bogus UUID returned ${r.status}`, '');
             rec(testInfo, { module: MOD, step: 'J3_idor_put_doctrine', status: 'REVIEW', http: r.status });
@@ -599,8 +690,13 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
                 `target_id=${targetId} response=${JSON.stringify(r.body || {}).slice(0, 200)}`);
             expect(false, `J4_idor_del_doctrine: stress token DELETED pilot template ${targetId}`).toBe(true);
         }
-        if ([404, 403, 401].includes(r.status)) {
+        if ([404, 403, 401].includes(r.status) && probeKind === 'real_pilot_template_id') {
             rec(testInfo, { module: MOD, step: 'J4_idor_del_doctrine', status: 'PASS', http: r.status, note: `${probeKind} rejected ${r.status}` });
+        } else if ([404, 403, 401].includes(r.status) && probeKind === 'bogus_uuid_fallback') {
+            recFinding(testInfo, 'P2', MOD,
+                `J4_idor_del_doctrine bogus-UUID fallback (pilot has no template) — boundary not exercised`,
+                `status=${r.status} — seed a pilot template for authoritative coverage`);
+            rec(testInfo, { module: MOD, step: 'J4_idor_del_doctrine', status: 'REVIEW', http: r.status, note: 'bogus_fallback_not_authoritative' });
         } else if (is2xx && probeKind === 'bogus_uuid_fallback') {
             recFinding(testInfo, 'P2', MOD, `J4_idor_del_doctrine bogus UUID returned ${r.status}`, '');
             rec(testInfo, { module: MOD, step: 'J4_idor_del_doctrine', status: 'REVIEW', http: r.status });
@@ -747,6 +843,10 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
         const ruleId = create.body?.id;
         expect(ruleId, `A1.2 create rule_id missing — body=${JSON.stringify(create.body || {}).slice(0, 200)}`).toBeTruthy();
         expect(create.body?.tenant_id, 'A1.2 rule tenant_id missing').toBeTruthy();
+        // Track for afterAll idempotent sweep (orphan-residue insurance:
+        // if any step between create and the explicit DELETE below throws,
+        // the afterAll loop will reclaim the rule).
+        createdAutomationRuleIds.push(ruleId);
         leakScan(testInfo, create.body, 'A1_create_rule');
 
         // A1.3 — list rules + verify present + tenant scope
@@ -925,7 +1025,8 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
             module: MOD,
             step: 'cleanup',
             tmpl_attempted: createdTemplateIds.length,
-            note: 'hard DELETE /templates/{id} idempotent; tagged with data_prefix for orphan sweep',
+            rule_attempted: createdAutomationRuleIds.length,
+            note: 'hard DELETE /templates/{id} + /automation/rules/{id} idempotent; tagged with data_prefix for orphan sweep',
         };
         try {
             const { request: globalRequest } = await import('@playwright/test');
@@ -955,9 +1056,26 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
                     else if (s === 404) already_gone += 1;
                 } catch { /* idempotent best-effort */ }
             }
+            // Automation rule sweep — A1 may have left orphans if a step
+            // between create and the explicit DELETE threw. Idempotent:
+            // 404 counts as already_gone, errors swallowed.
+            let rule_deleted = 0;
+            let rule_already_gone = 0;
+            for (const id of createdAutomationRuleIds) {
+                try {
+                    const r = await ctx.delete(`${BASE}/automation/rules/${id}`, {
+                        timeout: 10_000, failOnStatusCode: false,
+                    });
+                    const s = r.status();
+                    if (s >= 200 && s < 300) rule_deleted += 1;
+                    else if (s === 404) rule_already_gone += 1;
+                } catch { /* idempotent best-effort */ }
+            }
             await ctx.dispose();
             cleanupRec.deleted = deleted;
             cleanupRec.already_gone = already_gone;
+            cleanupRec.rule_deleted = rule_deleted;
+            cleanupRec.rule_already_gone = rule_already_gone;
             cleanupRec.status = 'PASS';
             testInfo.annotations.push({ type: 'rec', description: JSON.stringify(cleanupRec) });
         } catch (e) {
