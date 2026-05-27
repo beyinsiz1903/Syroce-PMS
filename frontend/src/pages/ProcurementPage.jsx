@@ -477,6 +477,69 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
         ))}
       </div>
 
+      {/* Suppliers near credit limit (utilization ≥ 80% or over-limit) */}
+      {(() => {
+        const atRisk = suppliers
+          .map((s) => {
+            const limit = s.credit_limit;
+            const hasLimit = limit !== null && limit !== undefined && limit !== '';
+            const limitNum = hasLimit ? Number(limit) : null;
+            if (!hasLimit || !(limitNum > 0)) return null;
+            const open = Number(s.open_commitment || 0);
+            const pct = (open / limitNum) * 100;
+            if (pct < 80) return null;
+            return { id: s.id, name: s.name, code: s.code, open, limit: limitNum, pct };
+          })
+          .filter(Boolean)
+          .sort((a, b) => b.pct - a.pct)
+          .slice(0, 5);
+        return (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">{t('procurement.creditWatch.title')}</CardTitle>
+              <CardDescription>{t('procurement.creditWatch.description')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {atRisk.length === 0 ? (
+                <div className="text-sm text-slate-400 py-2">{t('procurement.creditWatch.empty')}</div>
+              ) : (
+                <ul className="divide-y">
+                  {atRisk.map((s) => {
+                    const over = s.pct > 100;
+                    const toneText = over ? 'text-rose-700' : 'text-amber-700';
+                    const toneBar = over ? 'bg-rose-500' : 'bg-amber-500';
+                    const toneBg = over ? 'bg-rose-50' : '';
+                    return (
+                      <li key={s.id} className={`py-2 px-2 ${toneBg}`}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="font-medium truncate">{s.name}</div>
+                            {s.code && <div className="text-xs text-slate-500 font-mono">{s.code}</div>}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className={`text-sm font-semibold tabular-nums ${toneText}`}>
+                              {s.pct.toFixed(0)}%
+                              {over && <Badge className="ml-2 bg-rose-100 text-rose-800 border-0">{t('procurement.creditWatch.overLimit')}</Badge>}
+                            </div>
+                            <div className="text-xs text-slate-600 tabular-nums">
+                              {s.open.toLocaleString()} / {s.limit.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-1 h-1.5 w-full bg-slate-100 rounded">
+                          <div className={`h-1.5 rounded ${toneBar}`}
+                               style={{ width: `${Math.min(100, s.pct)}%` }} />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="summary"><ClipboardList className="w-4 h-4 mr-1" />{t('procurement.tabs.prs')}</TabsTrigger>

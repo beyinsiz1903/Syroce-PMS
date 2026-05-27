@@ -3284,6 +3284,12 @@
       "edit": "Bearbeiten",
       "openCommitmentTooltip": "Offene Bestellungen: {{open}} / Kreditlimit: {{limit}}"
     },
+    "creditWatch": {
+      "title": "Lieferanten nahe am Kreditlimit",
+      "description": "Top-Lieferanten mit Kreditauslastung ≥ 80 %, nach Auslastung sortiert.",
+      "empty": "Keine Risiko-Lieferanten — alle unter 80 % Auslastung.",
+      "overLimit": "Limit überschritten"
+    },
     "supplierModal": {
       "titleNew": "Neuer Lieferant",
       "titleEdit": "Lieferant bearbeiten",

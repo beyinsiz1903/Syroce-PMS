@@ -3339,6 +3339,12 @@
       "edit": "Edit",
       "openCommitmentTooltip": "Open PO commitment: {{open}} / Credit limit: {{limit}}"
     },
+    "creditWatch": {
+      "title": "Suppliers near credit limit",
+      "description": "Top suppliers with credit utilization ≥ 80%, sorted by usage.",
+      "empty": "No suppliers at risk — every supplier is below 80% utilization.",
+      "overLimit": "Over limit"
+    },
     "supplierModal": {
       "titleNew": "New Supplier",
       "titleEdit": "Edit Supplier",

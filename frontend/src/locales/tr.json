@@ -3339,6 +3339,12 @@
       "edit": "Düzenle",
       "openCommitmentTooltip": "Açık PO taahhüdü: {{open}} / Kredi limiti: {{limit}}"
     },
+    "creditWatch": {
+      "title": "Kredi limitine yaklaşan tedarikçiler",
+      "description": "Kredi kullanımı ≥ %80 olan tedarikçiler, kullanım oranına göre sıralı.",
+      "empty": "Riskli tedarikçi yok — tüm tedarikçiler %80 altında.",
+      "overLimit": "Limit aşıldı"
+    },
     "supplierModal": {
       "titleNew": "Yeni Tedarikçi",
       "titleEdit": "Tedarikçi Düzenle",

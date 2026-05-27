@@ -3284,6 +3284,12 @@
       "edit": "Modifica",
       "openCommitmentTooltip": "Impegno OdA aperto: {{open}} / Limite di credito: {{limit}}"
     },
+    "creditWatch": {
+      "title": "Fornitori vicini al limite di credito",
+      "description": "Fornitori con utilizzo del credito ≥ 80%, ordinati per utilizzo.",
+      "empty": "Nessun fornitore a rischio — tutti sotto l'80%.",
+      "overLimit": "Oltre il limite"
+    },
     "supplierModal": {
       "titleNew": "Nuovo fornitore",
       "titleEdit": "Modifica fornitore",

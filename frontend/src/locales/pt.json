@@ -3284,6 +3284,12 @@
       "edit": "Editar",
       "openCommitmentTooltip": "Compromisso aberto de OC: {{open}} / Limite de crédito: {{limit}}"
     },
+    "creditWatch": {
+      "title": "Fornecedores próximos do limite de crédito",
+      "description": "Principais fornecedores com utilização ≥ 80%, ordenados por uso.",
+      "empty": "Nenhum fornecedor em risco — todos abaixo de 80%.",
+      "overLimit": "Acima do limite"
+    },
     "supplierModal": {
       "titleNew": "Novo fornecedor",
       "titleEdit": "Editar fornecedor",

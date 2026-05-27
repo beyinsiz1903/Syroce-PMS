@@ -3284,6 +3284,12 @@
       "edit": "Modifier",
       "openCommitmentTooltip": "Engagements ouverts: {{open}} / Limite de crédit: {{limit}}"
     },
+    "creditWatch": {
+      "title": "Fournisseurs proches de la limite de crédit",
+      "description": "Principaux fournisseurs avec utilisation ≥ 80 %, triés par usage.",
+      "empty": "Aucun fournisseur à risque — tous sont sous 80 % d'utilisation.",
+      "overLimit": "Limite dépassée"
+    },
     "supplierModal": {
       "titleNew": "Nouveau fournisseur",
       "titleEdit": "Modifier le fournisseur",

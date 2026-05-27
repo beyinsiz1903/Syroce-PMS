@@ -3284,6 +3284,12 @@
       "edit": "编辑",
       "openCommitmentTooltip": "未结采购单金额: {{open}} / 信用额度: {{limit}}"
     },
+    "creditWatch": {
+      "title": "接近信用额度的供应商",
+      "description": "信用使用率 ≥ 80% 的供应商，按使用率排序。",
+      "empty": "无风险供应商 — 所有供应商使用率均低于 80%。",
+      "overLimit": "超出额度"
+    },
     "supplierModal": {
       "titleNew": "新增供应商",
       "titleEdit": "编辑供应商",
