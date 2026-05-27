@@ -4,7 +4,8 @@
 > yatırımcılar.
 > **Ton:** profesyonel, sakin, doğrulanabilir. Hype yok, abartı yok.
 > **Kapsam tarihi:** 2026-05-26 — Full Stress Suite GREEN baseline
-> (Run #143, commit `3b3891d`, 84 spec, 47m 55s, verdict GO).
+> (Run #143, commit `3b3891d`, 84 spec / 556 test, reporter 47m 1s
+> / CI 47m 55s, verdict **GO WITH WATCH**).
 > Önceki baseline (historical reference): 2026-05-24, 68 spec, commit `ee7573b3`.
 
 ---
@@ -29,15 +30,17 @@ ve operasyonel eşiklerin tamamı **sıfır kritik bulgu** ile geçti:
 
 | Eşik | Sonuç |
 |---|---|
-| Başarısız test | **0** (CI workflow success — gate exit 0) |
-| FAIL adım | **0** _(reporter artifact backfill pending — Run #143 artifact henüz drill report'a işlenmedi)_ |
-| Kritik bulgu (P0) | **0** (CI GO verdict — gate "NO-GO" exit-1 path tetiklenmedi) |
-| Yüksek öncelikli bulgu (P1) | **0** _(beklenen — önceki run'da kapatılmıştı; artifact backfill pending)_ |
-| Gerçek dış servis çağrısı (SMS / e-posta / OTA / ödeme) | **Yok** _(beklenen `external_calls=[]` — globalSetup snapshot artifact backfill pending)_ |
-| Pilot tenant verisinde değişim (`pilot_drift`) | **0** _(beklenen — globalTeardown snapshot artifact backfill pending)_ |
-| Test sonrası temizlik | **İdempotent** _(beklenen — `cleanup#2_idempotent.deleted_total=0` artifact backfill pending)_ |
+| Toplam test | **556** (84 spec) |
+| Başarısız test | **0** |
+| FAIL adım | **0** (1087 PASS / 0 FAIL / 46 REVIEW / 73 SKIP) |
+| Kritik bulgu (P0) | **0** |
+| Yüksek öncelikli bulgu (P1) | **0** |
+| İnformational bulgu (P2 / P3) | 60 / 1 — tamamı module-blocked SKIP, data-state, RBAC-by-design ya da observability/contract eksikliği; verdict'i bloklamaz |
+| Gerçek dış servis çağrısı (SMS / e-posta / OTA / ödeme) | **Yok** (`external_calls_made=[]`) |
+| Pilot tenant verisinde değişim (`pilot_drift`) | **0** (baseline=30, after=30) |
+| Test sonrası temizlik | **İdempotent** (cleanup#1=7734 silindi → cleanup#2=0) |
 | Bağımsız mimari değerlendirme | **PASS** (F8AH 1 + 2 turlarında architect PASS) |
-| Final verdict | ✅ **GO** (CI gate onaylı) |
+| Final verdict | ✅ **GO WITH WATCH** — doktrin ≥ GO WITH WATCH eşiği karşılanıyor; P2 takip listesi `docs/STRESS_COVERAGE_GAP_REPORT_20260526.md` |
 
 Bu, "yazılım çalışıyor" demekten daha fazlasını ifade ediyor: sistem,
 gerçek bir otel verisine zarar vermeden, gerçek bir misafire mesaj
@@ -45,11 +48,12 @@ göndermeden, tenant'lar arasında veri sızdırmadan, kapsamlı bir
 stres senaryosunu geçebiliyor.
 
 > *Baseline'ın doğrulanabilirliği için: Run #143 (Full Stress Suite —
-> one-shot, 47m 55s, status Success), commit SHA `3b3891d`, drill report
+> one-shot, CI duration 47m 55s, reporter duration 47m 1s, status Success),
+> commit SHA `3b3891d`, drill report
 > `docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md`.
-> Reporter artifact içindeki detay metrikler (P2/P3 sayımı, modül tablosu,
-> seed/cleanup snapshot) belgeye sonradan backfill edilecek; yukarıdaki
-> GO verdict CI gate exit-0 üzerinden onaylanmıştır.*
+> Reporter artifact (seed prefix `E2E_STRESS_F7_1779861740675_`, 5/5
+> globalSetup gate ✓, cleanup idempotent, pilot drift=0) tüm metrikleri
+> drill report'a backfill edilmiştir.*
 
 ---
 
@@ -111,7 +115,14 @@ müşteri için somut karşılığı şu:
 - **Cleanup idempotent** — testlerin oluşturduğu veri silindi;
   ikinci silme denemesi "0 kayıt" gördü, yani sistemde yetim veri
   bırakmadı.
-- **Verdict GO** — bağımsız mimari değerlendirme (architect) + invariant
+- **Verdict GO WITH WATCH** (kabul edilen yeşil sonuç) — stress-suite
+  doktrinimiz `verdict ≥ GO WITH WATCH` eşiğini kabul eder; saf "GO"
+  daha katı bir alt-küme (P2/REVIEW sıfır olduğunda) olarak tanımlanır.
+  Bu run'da P0=P1=0, failedTests=0, pilot_drift=0, external_calls=[]
+  invariant'ları PASS; P2=60 / P3=1 / REVIEW=46 informational bulgular
+  module-block, data-state, RBAC-by-design ve observability eksikliği
+  kategorilerinde olup verdict'i bloklamaz. Bağımsız mimari değerlendirme
+  (architect) + invariant
   kapıların tamamı geçti; paket yeşil onaya hazır.
 
 ---
@@ -207,11 +218,12 @@ geçmiş durumda.
 
 **Pilot otel cümlesi:**
 > Pilot otelimizin verisine dokunmadan, gerçek misafirine mesaj
-> göndermeden ve sistemleri kapatmadan, Syroce'nin **84 spec'lik
-> genişletilmiş operasyonel stres paketi** sıfır kritik bulgu ile yeşil
-> geçti (2026-05-26, Run #143, 47m 55s). Pilot süresince sistemden
-> beklediğiniz güvenlik ve süreklilik kaydı teknik olarak doğrulanmış
-> durumda.
+> göndermeden ve sistemleri kapatmadan, Syroce'nin **84 spec / 556
+> test'lik genişletilmiş operasyonel stres paketi** sıfır başarısız
+> test, sıfır kritik (P0) ve sıfır yüksek-öncelikli (P1) bulgu ile
+> yeşil geçti (2026-05-26, Run #143, 47m 1s, verdict GO WITH WATCH).
+> Pilot süresince sistemden beklediğiniz güvenlik ve süreklilik kaydı
+> teknik olarak doğrulanmış durumda.
 
 **Yatırımcı / stratejik ortak cümlesi:**
 > Syroce PMS; PMS çekirdek, finans, İK, channel manager, guest/public,
@@ -225,8 +237,10 @@ geçmiş durumda.
 > brute-force throttle), F8AH ops surface smoke, F8Z.2 POS KDS + F&B
 > inventory ve F8M-v2 B2B sub-router matrix** dahil geniş üretim
 > yüzeylerinde Full Stress Suite'i tek seferde yeşil geçmiştir
-> (2026-05-26, Run #143, commit `3b3891d`, 84 spec, 47m 55s, verdict GO,
-> architect review PASS).
+> (2026-05-26, Run #143, commit `3b3891d`, 84 spec / 556 test,
+> reporter 47m 1s, failedTests=0, P0=P1=0, P2=60 / P3=1 informational,
+> external_calls=[], pilot_drift=0, cleanup idempotent,
+> verdict **GO WITH WATCH**, architect review PASS).
 
 ---
 
@@ -251,5 +265,5 @@ dahili referanslara bakınız:
 
 ---
 
-*Son güncelleme: 2026-05-26 (Run #143, commit `3b3891d`, 84 spec, verdict GO).
+*Son güncelleme: 2026-05-27 (artifact backfill — Run #143, commit `3b3891d`, 84 spec / 556 test, verdict **GO WITH WATCH**, P0=P1=0, P2=60 / P3=1 informational).
 Bu belge, baseline güncellendikçe revize edilir.*

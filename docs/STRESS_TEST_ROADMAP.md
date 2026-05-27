@@ -18,12 +18,16 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 | Status | Success |
 | Artifacts | 2 |
 | Spec count | **84** (`frontend/e2e-stress/specs/`) |
-| failedTests | 0 (workflow success implicit) |
-| P0 / P1 | 0 / 0 (P1 backfill pending — reporter artifact) |
-| `external_calls_made` | `[]` (backfill pending — globalSetup) |
-| `pilot_drift` | 0 (backfill pending — globalTeardown) |
-| Cleanup idempotent | ✅ (backfill pending — `deleted=0` 2nd pass) |
-| Final verdict | ✅ **GO** |
+| Toplam test | **556** |
+| failedTests | **0** |
+| Adım PASS / FAIL / REVIEW / SKIP | **1087 / 0 / 46 / 73** |
+| P0 / P1 / P2 / P3 | **0 / 0 / 60 / 1** |
+| Reporter süre | 2821.0s (47m 1s) |
+| `external_calls_made` | `[]` ✓ |
+| `pilot_drift` | 0 ✓ (baseline=30, after=30) |
+| Cleanup idempotent | ✅ (cleanup#1=7734 → cleanup#2=0) |
+| Seed prefix | `E2E_STRESS_F7_1779861740675_` |
+| Final verdict | ✅ **GO WITH WATCH** — P2=60 REVIEW=46 (doktrin ≥ GO WITH WATCH karşılanıyor) |
 
 **Faz kapsamı (bu baseline'a giren):** F8A + F8B + F8C + F8D (v2 + v3
 HR extension) + F8E + F8F..F8O + F8R + F8S + F8U + F8V + F8W + **F8X +

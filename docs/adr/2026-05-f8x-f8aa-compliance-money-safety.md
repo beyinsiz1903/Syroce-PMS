@@ -1,6 +1,6 @@
 # ADR — F8X–F8AA Local Compliance & Money Safety Stress Pack
 
-**Status:** ✅ Verified GREEN in Full Stress Suite Run #143 (2026-05-26, commit `3b3891d`, 84 spec, verdict GO). Specs written + architect-fix applied + F8X backend IDOR fix applied (2026-05-24); full-suite verification completed 2026-05-26. Detay: bu dosyanın sonundaki "Verified status — 2026-05-26 (Run #143)" bölümü.
+**Status:** ✅ Verified GREEN in Full Stress Suite Run #143 (2026-05-26, commit `3b3891d`, 84 spec / 556 test, verdict **GO WITH WATCH**, P0=P1=0). Specs written + architect-fix applied + F8X backend IDOR fix applied (2026-05-24); full-suite verification completed 2026-05-26. Detay: bu dosyanın sonundaki "Verified status — 2026-05-26 (Run #143)" bölümü.
 
 ## F8X backend IDOR fix (2026-05-24)
 
@@ -206,7 +206,8 @@ Beklenen baseline:
 ## Verified status — 2026-05-26 (Run #143)
 
 **Status:** ✅ Verified GREEN in Full Stress Suite Run #143
-(2026-05-26, commit `3b3891d`, 47m 55s, 84 spec, verdict GO).
+(2026-05-26, commit `3b3891d`, 84 spec / 556 test, reporter 47m 1s,
+failedTests=0, P0=P1=0, P2=60 / P3=1 informational, verdict **GO WITH WATCH**).
 
 F8X–F8AA pack'inin 4 spec'i (`98-efatura-earsiv-dryrun`,
 `65-identity-reporting-kbs-jandarma-dryrun`,
@@ -214,5 +215,14 @@ F8X–F8AA pack'inin 4 spec'i (`98-efatura-earsiv-dryrun`,
 `66-kvkk-retention-deletion-anonymization`) full-suite içinde geçti.
 F8X backend IDOR fix (`backend/routers/finance/invoices.py` tenant_filter)
 regression-free.
+
+**Reporter modül istatistikleri:**
+
+| Modül | PASS | FAIL | REVIEW | SKIP | Toplam |
+|---|---:|---:|---:|---:|---:|
+| `efatura_earsiv_dryrun` (F8X) | 10 | 0 | 0 | 0 | 11 |
+| `identity_reporting_dryrun` (F8Y) | 11 | 0 | 1 | 0 | 13 |
+| `payment_pos_reconciliation` (F8Z) | 12 | 0 | 0 | 3 | 16 |
+| `kvkk_retention` (F8AA) | 11 | 0 | 0 | 2 | 14 |
 
 **Drill report:** [`docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md`](../drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md)

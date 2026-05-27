@@ -104,7 +104,10 @@ cross_property/webhook_admin/eod read-only → ek koleksiyon yok.
 ## Verified status — 2026-05-26 (Run #143)
 
 **Status:** ✅ Verified GREEN in Full Stress Suite Run #143
-(2026-05-26, commit `3b3891d`, 47m 55s, 84 spec, verdict GO).
+(2026-05-26, commit `3b3891d`, 84 spec / 556 test, reporter 47m 1s,
+failedTests=0, P0=P1=0, P2=60 / P3=1 informational, external_calls=[],
+pilot_drift=0, cleanup idempotent, verdict **GO WITH WATCH**).
+F8AH `f8ah_setup` 2 PASS / 1 SKIP + `f8ah_cleanup` 4 PASS / 0 FAIL.
 
 **İki-tur kapatma hikâyesi:**
 

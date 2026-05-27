@@ -150,7 +150,7 @@ gate (`pilot_drift=0`, `external_calls=[]`) ile kapanır.
 
 **Status:** ✅ Verified GREEN — F8R–F8W 5 spec'i 2026-05-24 baseline'ında
 (commit `ee7573b3`, 68 spec) GREEN geçti; 2026-05-26 genişletilmiş
-baseline'ında (Run #143, commit `3b3891d`, 84 spec, verdict GO)
+baseline'ında (Run #143, commit `3b3891d`, 84 spec / 556 test, verdict **GO WITH WATCH**)
 regression-free tekrar onaylandı. F8S `hr_docs_traversal_sanitize`
 fix (`backend/domains/hr/router.py` `_sanitize_doc_filename()`)
 yerleşik kaldı.

@@ -25,40 +25,117 @@
 | Artifacts | 2 |
 | Suite kapsamı | F8A + F8B + F8C + F8D (v2 + v3 HR extension) + F8E + F8F..F8O + F8R + F8S + F8U + F8V + F8W + **F8X + F8Y + F8Z + F8AA + F8AB + F8AD + F8AF + F8Z.2 + F8M-v2 + F8AC + F8AE + F8AG + F8AH** |
 | Spec count | **84** (`frontend/e2e-stress/specs/`) |
-| Final verdict | ✅ **GO** |
+| Toplam test | **556** |
+| Başarısız test | **0** |
+| Adım PASS / FAIL / REVIEW / SKIP | **1087 / 0 / 46 / 73** |
+| P0 / P1 / P2 / P3 finding | **0 / 0 / 60 / 1** |
+| Reporter süre | 2821.0s (47m 1s; CI workflow duration 47m 55s) |
+| Final verdict | ✅ **GO WITH WATCH** — P2=60 REVIEW=46 (doktrin ≥ GO WITH WATCH eşiği karşılanıyor) |
 
-## 2) Mutlak invariant gates (hepsi PASS — CI gate script onayı)
+## 2) Mutlak invariant gates (hepsi PASS — reporter artifact onayı)
 
 | Gate | Status | Kaynak |
 |---|---|---|
-| `failedTests == 0` | ✅ | CI workflow success (gate exit 0) |
-| `P0 == 0` | ✅ | CI verdict GO (gate "Stress verdict is NO-GO" exit 1 path tetiklenmedi) |
+| `failedTests == 0` | ✅ | reporter `failed=0`; CI workflow success (gate exit 0) |
+| `failedSteps (FAIL) == 0` | ✅ | reporter `FAIL=0` |
+| `P0 == 0` | ✅ | reporter `P0=0` |
+| `P1 == 0` | ✅ | reporter `P1=0` |
+| `external_calls_made == []` | ✅ | globalSetup snapshot `external_calls_made=[]` |
+| `pilot_drift == 0` | ✅ | globalTeardown `pilot_diff.drift=0` (baseline=30, after=30) |
+| Cleanup idempotent | ✅ | cleanup#1 deleted=7734 → cleanup#2 deleted=0 (`idempotent=true`) |
 | Workflow success | ✅ | Run #143 status=Success, duration 47m 55s |
 
-## 3) Reporter artifact metrikleri (backfill notu)
+## 3) Seed snapshot (globalSetup)
 
-Aşağıdaki alanlar reporter artifact'ı (run #143 artifacts: 2) içinden
-sonradan backfill edilecek. CI workflow success + GO verdict zaten
-kanıtlanmış durumda; aşağıdaki alanlar **detay teyit** içindir.
+| Alan | Değer |
+|---|---|
+| prefix | `E2E_STRESS_F7_1779861740675_` |
+| room_count | 500 |
+| counts | rooms=500, guests=500, bookings=500, folios=500, charges=1750, rnl=1250, hk=500 |
+| timing_ms | factory=93.2, insert=23936.6, total=24029.8 |
+| external_calls_made | `[]` |
+| tenant_context_used | `true` |
+| gates | `env_stress_tid_present=true · target_matches_stress_tid=true · pilot_tid_not_targeted=true · destructive_stress_allowed=true · external_dry_run=true` (5/5 ✓) |
 
-| Alan | Beklenen | Doğrulandı mı? |
-|---|---|---|
-| Test count (toplam) | ~556 (önceki suite koşusunda gözlendi) | backfill pending (artifact reporter summary) |
-| failedTests | 0 | ✅ workflow success implicit |
-| FAIL step | 0 | backfill pending |
-| P0 finding | 0 | ✅ GO verdict implicit |
-| P1 finding | 0 (önceki round'da kapatıldı; bu run regression yok) | backfill pending — artifact reporter summary |
-| P2 finding | ≈59 informational (önceki run snapshot) | backfill pending |
-| P3 finding | ≈1 informational (önceki run snapshot) | backfill pending |
-| `external_calls_made` | `[]` | backfill pending — globalSetup snapshot |
-| `pilot_drift` | 0 | backfill pending — globalTeardown snapshot |
-| `cleanup#2_idempotent.deleted_total` | 0 | backfill pending — globalTeardown snapshot |
+## 4) Cleanup snapshot (globalTeardown)
 
-> Reporter artifact'ı indirilip `docs/drill_reports/20260526_…_84spec.md`'ye
-> P2/P3 listesi, modül tablosu, seed/cleanup snapshot ve external_calls
-> sayımı eklendiğinde "backfill pending" satırları kapatılacak.
+| Alan | Değer |
+|---|---|
+| cleanup#1 | status=200, deleted_total=**7734**, ms=12546.9 |
+| cleanup#2_idempotent | status=200, deleted_total=**0**, ms=10119.2, `idempotent=true` ✓ |
+| pilot_diff | baseline_bookings=30, after_bookings=30, **drift=0** ✓ |
 
-## 4) Yeni eklemeler (F8R–F8W baseline'ından bu raporun baseline'ına +16 spec)
+## 5) P2/P3 severity triage (informational — verdict'i bloklamaz)
+
+**Toplam:** P2=60, P3=1. Hiçbirinin doktrin ≥ GO WITH WATCH eşiğini
+bozma yetkisi yok; tamamı module-blocked SKIP, data-state, RBAC-by-design,
+ya da observability/contract eksikliği kategorisinde.
+
+**Yüksek-trafikli P2 kümeleri (artifact'ten):**
+
+- **Module-blocked SKIP (RBAC by design — stress admin role-scope dışı):**
+  `mice_events` (A/B/C/D skipped, spaces 403),
+  `mice_opportunities` (sales-catering 403),
+  `mice_execution` (rbac_denied, A/B/C skip),
+  `hr_rbac_pii` (per-role test user 404),
+  `crm_offers` (4 SKIP),
+  `notification_batch` (DISABLE_EXPO_PUSH guard).
+- **Endpoint not deployed / observability eksik:**
+  `admin_rbac` ve `settings_audit` (`/api/admin/tenants` 404),
+  `ops_readiness` × 3 (backup-status shape değişti, CM outbox depth +
+  conflict queue endpoint reachable değil — observability sinyali eksik),
+  `mice_execution` D (F&B order send endpoint absent — F8C-v2 backlog).
+- **Data-state / sample sebepli inconclusive:**
+  `folio-mass` C4 (charges_empty=5/5 — earlier split/refund batch sample'ı
+  tüketmiş), `night-audit` C (200 unresolved exception — operasyon
+  dashboard takip etmeli), `housekeeping` D2 (OOO transition constraint),
+  `finance_reports_currency` B (currency convert 0/2; rate hard floor OK).
+- **B2B agency seed eksik:** `b2b_api` + `41B-b2b-subrouter-matrix` —
+  `agencies_list_len=0`, matrix tests skipped. F8M-v2 setup gap.
+- **GraphQL introspection açık (informational P2):**
+  `graphql_isolation` A — production'da disable önerisi; resolver
+  tenant_id filtresi (`schema.py:328`) leak'i engelliyor, sadece
+  attack surface keşfi ücretsiz oluyor.
+- **AI dry-run network/timeout:** `ai_pricing` (recommend-rates 10s
+  timeout — A/B/C skip, D/E/F enforced).
+- **HR shift consent RBAC:** `hr_shift` C consent_perm_fail=5/5
+  (caller ≠ target_staff email — intentional).
+
+P2 detayları ve coverage-gap follow-up planı:
+[`docs/STRESS_COVERAGE_GAP_REPORT_20260526.md`](../STRESS_COVERAGE_GAP_REPORT_20260526.md).
+
+## 6) Modül istatistikleri (özet — 85 modül × 556 test)
+
+Reporter modül tablosundan seçilmiş öne çıkanlar (en yüksek hacim +
+yeni faz modülleri):
+
+| Modül | PASS | FAIL | REVIEW | SKIP | Toplam |
+|---|---:|---:|---:|---:|---:|
+| `revenue_management` (F8AF) | 53 | 0 | 1 | 2 | 57 |
+| `pos_kds_inventory` (F8Z.2) | **40** | **0** | **0** | **0** | **41** |
+| `accommodation_tax` (F8AD) | 37 | 0 | 0 | 3 | 41 |
+| `pos_deep_lifecycle` | 33 | 0 | 1 | 0 | 35 |
+| `pos_extensions` | 30 | 0 | 0 | 0 | 31 |
+| `full_24h` | 22 | 0 | 7 | 1 | 30 |
+| `twofa_lifecycle` (F8AG) | **27** | **0** | **1** | **0** | **28** |
+| `golf_operations` (F8AC) | 24 | 0 | 0 | 0 | 25 |
+| `inventory_transfer_procurement` | 21 | 0 | 0 | 0 | 22 |
+| `reports_export` | 21 | 0 | 1 | 0 | 22 |
+| `auth_token_lifecycle` | 20 | 0 | 0 | 0 | 20 |
+| `payment_pos_reconciliation` (F8Z) | 12 | 0 | 0 | 3 | 16 |
+| `efatura_earsiv_dryrun` (F8X) | 10 | 0 | 0 | 0 | 11 |
+| `identity_reporting_dryrun` (F8Y) | 11 | 0 | 1 | 0 | 13 |
+| `kvkk_retention` (F8AA) | 11 | 0 | 0 | 2 | 14 |
+| `spa_operations` (F8AB) | 5 | 0 | 0 | 1 | 7 |
+| `vcc_pci_compliance` (F8AE) | 10 | 0 | 0 | 1 | 12 |
+| `ops_readiness` (F8R/F8W) | 11 | 0 | 1 | 0 | 12 |
+| `file_upload_security` (F8S) | 14 | 0 | 0 | 0 | 14 |
+| `f8ah_setup` | 2 | 0 | 0 | 0 | 3 |
+| `f8ah_cleanup` | 4 | 0 | 0 | 0 | 4 |
+
+Tam tablo reporter artifact'ında (85 modül).
+
+## 7) Yeni eklemeler (F8R–F8W baseline'ından bu raporun baseline'ına +16 spec)
 
 84 − 68 = 16 yeni spec, full-suite içinde geçti:
 
@@ -81,7 +158,7 @@ kanıtlanmış durumda; aşağıdaki alanlar **detay teyit** içindir.
 | `98-pos-deep-lifecycle.spec.js` | `pos_deep_lifecycle` | POS deep |
 | `99-full-24h-hotel-simulation.spec.js` | `full_24h` | full-day simulation |
 
-## 5) F8AH 2-turlu hardening — P0 + 4 P1 kapatma
+## 8) F8AH 2-turlu hardening — P0 + 4 P1 kapatma
 
 ### Tur 1 — 4 P1 (commit `94514e6`)
 
@@ -139,20 +216,22 @@ fail-open `always_on` throttles için — mevcut availability politikasıyla
 uyumlu non-blocking; strict-mode + alerting backlog ADR'a düştü
 (`docs/STRESS_COVERAGE_GAP_REPORT_20260526.md` T005 follow-up).
 
-## 6) Doctrine pekiştirme
+## 9) Doctrine pekiştirme
 
 - Spec assertion gevşetme: **YOK**. Tüm P0/P1 gerçek bug olarak
   fix'lendi (Pydantic clamp, atomic guard, layered throttle).
 - Skip-as-pass: **YOK**. Module-blocked SKIP'ler informational P2 olarak
-  raporlanıyor; final invariants her durumda koşuyor.
-- Pilot tenant mutation: **0** (backfill pending — globalTeardown).
-- External (SMS / e-posta / OTA / payment) çağrı: **0** (backfill pending —
-  globalSetup).
-- Cleanup idempotent: ✅ (backfill pending — `deleted=0` on 2nd pass).
-- Severity downgrade: **YOK**. P0 ve P1'ler kapatıldı, P2'ler informational
-  module-block/data-state olarak listelendi (`STRESS_COVERAGE_GAP_REPORT_20260526.md`).
+  raporlanıyor; final invariants her durumda koşuyor (73 SKIP'in
+  hiçbiri silent-pass değil — her biri reporter'da explicit P2 satırı).
+- Pilot tenant mutation: **0** (pilot_diff.drift=0, baseline=30→after=30).
+- External (SMS / e-posta / OTA / payment) çağrı: **0** (`external_calls_made=[]`).
+- Cleanup idempotent: ✅ (cleanup#1=7734 → cleanup#2=0, `idempotent=true`).
+- Severity downgrade: **YOK**. P0 ve P1'ler kapatıldı; P2=60 + P3=1
+  informational module-block / data-state / observability-gap olarak
+  listelendi (`STRESS_COVERAGE_GAP_REPORT_20260526.md`). REVIEW=46
+  REVIEW kategorisinde kaldı, PASS'e dönüştürülmedi.
 
-## 7) Çıktı cümlesi (pilot/yatırımcı için)
+## 10) Çıktı cümlesi (pilot/yatırımcı için)
 
 > Syroce PMS; PMS çekirdek, finans, İK, channel manager, guest/public,
 > GraphQL/B2B, AI dry-run, cross-tenant güvenlik, auth token lifecycle,
@@ -164,11 +243,13 @@ uyumlu non-blocking; strict-mode + alerting backlog ADR'a düştü
 > surface smoke (cross-property rollup + shift handover + webhook admin
 > DLQ + EOD report + booking holds), F8Z.2 POS KDS + F&B inventory,
 > F8M-v2 B2B sub-router matrix ve POS/Spa derinleştirmeleri** dahil
-> 84 spec'lik geniş üretim yüzeylerinde Full Stress Suite'i yeşil
-> geçmiştir (2026-05-26, commit `3b3891d`, run #143, 47m 55s,
-> failedTests=0, P0=0, verdict GO).
+> 84 spec / 556 test'lik geniş üretim yüzeylerinde Full Stress Suite'i
+> tek seferde yeşil geçmiştir (2026-05-26, commit `3b3891d`, run #143,
+> reporter süre 47m 1s, failedTests=0, P0=P1=0, P2=60 / P3=1 informational,
+> external_calls=[], pilot_drift=0, cleanup idempotent, verdict
+> **GO WITH WATCH**).
 
-## 8) Referanslar
+## 11) Referanslar
 
 - ADR (F8X–F8AA): [`docs/adr/2026-05-f8x-f8aa-compliance-money-safety.md`](../adr/2026-05-f8x-f8aa-compliance-money-safety.md)
 - ADR (F8AH): [`docs/adr/2026-05-f8ah-ops-surface-smoke.md`](../adr/2026-05-f8ah-ops-surface-smoke.md)
