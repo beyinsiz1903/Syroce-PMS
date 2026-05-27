@@ -202,10 +202,16 @@ const LandingPage = () => {
       >
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-10">
           <a href="#top" className="group flex items-center gap-2.5">
-            <span className="relative grid h-10 w-10 place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-cyan-300 via-teal-400 to-indigo-500 text-[#05070f] shadow-[0_0_32px_rgba(34,211,238,0.55),inset_0_1px_0_rgba(255,255,255,0.4)] ring-1 ring-white/20 transition group-hover:shadow-[0_0_44px_rgba(34,211,238,0.75)]">
-              <span aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.55),transparent_55%)]" />
-              <span className="relative text-base font-extrabold tracking-tight">S</span>
-            </span>
+            <img
+              src="/syroce-circle-256.webp"
+              srcSet="/syroce-circle-256.webp 1x, /syroce-circle-512.webp 2x"
+              alt="Syroce"
+              width={40}
+              height={40}
+              loading="eager"
+              decoding="async"
+              className="h-10 w-10 rounded-full shadow-[0_0_32px_rgba(34,211,238,0.45)] ring-1 ring-white/15 transition group-hover:shadow-[0_0_44px_rgba(34,211,238,0.7)]"
+            />
             <span className="text-lg font-bold tracking-tight text-white">Syroce</span>
           </a>
 
@@ -1238,10 +1244,16 @@ const LandingPage = () => {
           <div className="grid gap-10 lg:grid-cols-12">
             <div className="lg:col-span-4">
               <a href="#top" className="flex items-center gap-2.5">
-                <span className="relative grid h-10 w-10 place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-cyan-300 via-teal-400 to-indigo-500 text-[#05070f] shadow-[0_0_28px_rgba(34,211,238,0.45),inset_0_1px_0_rgba(255,255,255,0.4)] ring-1 ring-white/15">
-                  <span aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.5),transparent_55%)]" />
-                  <span className="relative text-base font-extrabold tracking-tight">S</span>
-                </span>
+                <img
+                  src="/syroce-circle-256.webp"
+                  srcSet="/syroce-circle-256.webp 1x, /syroce-circle-512.webp 2x"
+                  alt="Syroce"
+                  width={40}
+                  height={40}
+                  loading="lazy"
+                  decoding="async"
+                  className="h-10 w-10 rounded-full shadow-[0_0_28px_rgba(34,211,238,0.35)] ring-1 ring-white/15"
+                />
                 <div>
                   <div className="text-lg font-bold tracking-tight text-white">Syroce</div>
                   <div className="text-[10px] uppercase tracking-[0.18em] text-cyan-300/70">Hospitality OS</div>
