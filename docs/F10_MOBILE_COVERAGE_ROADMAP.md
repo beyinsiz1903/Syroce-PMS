@@ -161,6 +161,16 @@ digital key issue/revoke, cashier brute-force throttle.
 - Markdown reporter parity with `frontend/e2e-smoke/markdown-reporter.mjs`
   for drill-report integration.
 
+**F10A drill status (Task #119, 2026-05-27):** ⚠️ **scaffolded — operator
+dispatch pending**. Drill report
+`docs/drill_reports/20260527_f10a_mobile_smoke.md` records BLOCKED:
+the manual `workflow_dispatch` of `Mobile Web Smoke (F10A render-only
+matrix)` requires GitHub UI access and a deployed Expo Web bundle URL,
+neither of which the task-agent environment can produce. Status flips to
+**verified** only after a green run artifact (`mobile-web-smoke-report`)
+is in hand with fatal console errors = 0, PII/token leak = 0, and auth
+redirect honoured per doctrine.
+
 ### F10B — Mobile auth lifecycle deep (1 session)
 - Login → 2FA → refresh rotation → logout
 - Token storage validation (SecureStore, AsyncStorage rejection of plaintext)
