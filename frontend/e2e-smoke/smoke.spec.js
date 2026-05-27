@@ -76,6 +76,21 @@ for (const route of ROUTES) {
         test.info().annotations.push({ type: 'http-status', description: String(httpStatus) });
         test.info().annotations.push({ type: 'nav-ms', description: String(navDurationMs) });
         test.info().annotations.push({ type: 'inspect', description: JSON.stringify(inspect) });
+
+        // F9A Round-2 (architect feedback): PII/token leak findings görünür olmalı.
+        // inspectPageContent dönüşünde pii_findings varsa md-reporter
+        // finding kanalına emit et — sessizce annotation içinde kaybolmasın.
+        if (inspect.pii_findings && inspect.pii_findings.length > 0) {
+            test.info().annotations.push({
+                type: 'finding',
+                description: JSON.stringify({
+                    severity: route.critical ? 'P1' : 'P2',
+                    module: 'smoke_pii_scan',
+                    title: `PII/token leak pattern detected in DOM: ${route.label}`,
+                    detail: `path=${route.path} findings=${inspect.pii_findings.join(',')}`,
+                }),
+            });
+        }
         test.info().annotations.push({
             type: 'console-errors-count',
             description: String(consoleErrors.length),
@@ -110,8 +125,18 @@ for (const route of ROUTES) {
             expect(inspect.ok, `${route.label}: boş/hata ekranı (${inspect.reason}). Snippet: ${inspect.snippet || '-'}`).toBeTruthy();
             expect(consoleErrors.length, `${route.label}: ${consoleErrors.length} console error (allowlist sonrası)`).toBe(0);
             expect(networkErrors.length, `${route.label}: ${networkErrors.length} network error (allowlist sonrası)`).toBe(0);
+            // F9A: CRITICAL sayfada PII/token leak = hard fail (security gate)
+            expect(
+                (inspect.pii_findings || []).length,
+                `${route.label}: DOM içinde PII/token leak pattern: ${(inspect.pii_findings || []).join(',')}`,
+            ).toBe(0);
         } else {
             expect.soft(inspect.ok, `${route.label}: boş/hata ekranı (secondary)`).toBeTruthy();
+            // F9A: SECONDARY sayfada PII leak → soft fail (görünür, suite bloke etmez)
+            expect.soft(
+                (inspect.pii_findings || []).length,
+                `${route.label}: DOM içinde PII/token leak pattern (secondary): ${(inspect.pii_findings || []).join(',')}`,
+            ).toBe(0);
         }
     });
 }

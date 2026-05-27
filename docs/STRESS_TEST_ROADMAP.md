@@ -11,7 +11,7 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 | Faz | Durum | Teslim |
 |---|:---:|---|
 | **F9A** Frontend zero-page smoke matrix | ✅ DONE (2026-05-27) | `frontend/e2e-smoke/routes.js`'e 31 yeni route eklendi (`critical: false`), `fixtures.js` `inspectPageContent`'a PII/token leak scan eklendi (JWT, kart PAN, CVV, bearer/api-key). Syntax OK. Smoke run deploy env'de tetiklenmesi gerekli — bu environment'tan çalıştırılamaz |
-| **F9B** Backend zero-router probe spec | ⏸️ PENDING (user decision) | `frontend/e2e-stress/specs/97-backend-router-coverage-probe.spec.js` yeni dosya — 20+ router modülü için anon→401/403, auth→non-500, cross-tenant IDOR probe |
+| **F9B** Backend zero-router probe spec | ✅ DONE (2026-05-27) | `frontend/e2e-stress/specs/97-backend-router-coverage-probe.spec.js` — **51 router modülü** için parametric probe (anon→401/403 enforcement, auth→non-500 gate, list-shape sanity, doctrine-safe GET-only). Module-blocked → REVIEW, endpoint absent → REVIEW (PASS değil). 5xx veya anonymous bypass → P1 hard fail. Syntax OK. Deploy env'de koşulması bekliyor |
 | **F9C** 7 dedicated deep stress specs | ⏸️ MULTI-SESSION | Maintenance workorder, Messaging template, Mobile staff/cashier, F&B BEO, Sales lifecycle, Marketplace deep. Her biri 1–2 sa work (task agent paketi önerisi) |
 | **F9D** Targeted runs (deploy env) | ⛔ BLOCKED on env | Local'den koşulamaz; GitHub Actions / deploy gerekli |
 | **F9E** Full suite re-run | ⛔ BLOCKED on F9D | Hedef: 85+ spec → drill report `20260527_f9_full_app_coverage_closure.md` |
