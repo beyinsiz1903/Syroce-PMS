@@ -219,6 +219,16 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
     }
     if (!qty || qty <= 0) { toast.error('Geçerli bir miktar girin'); return; }
     const src = inventory.find((x) => x.id === transfer.source_item_id);
+    const dst = inventory.find((x) => x.id === transfer.destination_item_id);
+    // Task #75 — block mismatched units client-side. Backend rejects too,
+    // but disabling here avoids a useless round-trip and silent data corruption.
+    if (src && dst && src.unit && dst.unit && src.unit !== dst.unit) {
+      toast.error(
+        `Birimler uyuşmuyor: kaynak ${src.unit}, hedef ${dst.unit}. ` +
+        `Farklı birimler arası transfer şu an desteklenmiyor.`
+      );
+      return;
+    }
     if (src && qty > (src.quantity || 0)) {
       toast.error(`Kaynakta sadece ${src.quantity} ${src.unit} var`); return;
     }
@@ -232,7 +242,6 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
         reference: transfer.reference || null,
         notes: transfer.notes || null,
       });
-      const dst = inventory.find((x) => x.id === transfer.destination_item_id);
       toast.success(
         `${qty} ${src?.unit || ''} aktarıldı: ${src?.name || ''}${src?.location ? ` (${src.location})` : ''} → ${dst?.name || ''}${dst?.location ? ` (${dst.location})` : ''}`
       );
@@ -1304,6 +1313,9 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
         const candidates = inventory.filter((x) => x.id !== transfer.source_item_id);
         const qty = Number(transfer.quantity) || 0;
         const insufficient = src && qty > (src.quantity || 0);
+        // Task #75 — unit-mismatch block. Backend will 422 on this anyway,
+        // so we hard-disable Confirm and surface a clear explanation.
+        const unitMismatch = !!(src && dst && src.unit && dst.unit && src.unit !== dst.unit);
         return (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
                onClick={() => !saving && setTransfer(null)}>
@@ -1352,9 +1364,11 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                       </option>
                     ))}
                   </select>
-                  {dst && src && dst.unit !== src.unit && (
-                    <p className="text-xs text-amber-600 mt-1">
-                      Uyarı: birimler farklı (kaynak {src.unit}, hedef {dst.unit}).
+                  {unitMismatch && (
+                    <p className="text-xs text-red-600 mt-1">
+                      Birimler uyuşmuyor: kaynak <strong>{src.unit}</strong>, hedef{' '}
+                      <strong>{dst.unit}</strong>. Farklı birimler arası transfer
+                      stok seviyesini bozar; bu nedenle bloke edildi.
                     </p>
                   )}
                 </div>
@@ -1383,7 +1397,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                 <Button variant="outline" onClick={() => setTransfer(null)} disabled={saving}>Vazgeç</Button>
                 <Button className="bg-sky-600 hover:bg-sky-700"
                   onClick={saveTransfer}
-                  disabled={saving || !transfer.source_item_id || !transfer.destination_item_id || insufficient}>
+                  disabled={saving || !transfer.source_item_id || !transfer.destination_item_id || insufficient || unitMismatch}>
                   {saving ? 'Aktarılıyor…' : 'Transferi Onayla'}
                 </Button>
               </div>

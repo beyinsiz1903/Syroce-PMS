@@ -162,6 +162,13 @@ class StockTransferRequest(BaseModel):
     unit_cost: float = Field(default=0.0, ge=0)
     reference: str | None = None
     notes: str | None = None
+    # Task #75 — unit-mismatch guard. When the source and destination
+    # inventory rows use different units of measure (e.g. kg vs adet),
+    # the caller MUST pass an explicit conversion factor so the server
+    # knows how many destination units one source unit corresponds to.
+    # Destination receives `quantity * conversion_factor`. If units match
+    # this field is ignored.
+    conversion_factor: float | None = Field(default=None, gt=0)
 
 
 class StockTransferLine(BaseModel):
@@ -544,15 +551,37 @@ async def transfer_stock_between_warehouses(
     dst_filter = {'id': payload.destination_item_id, 'tenant_id': current_user.tenant_id}
 
     src = await db.inventory_items.find_one(
-        src_filter, {'_id': 0, 'id': 1, 'quantity': 1, 'location': 1}
+        src_filter, {'_id': 0, 'id': 1, 'quantity': 1, 'location': 1, 'unit': 1}
     )
     if not src:
         raise HTTPException(status_code=404, detail='Source inventory item not found')
     dst = await db.inventory_items.find_one(
-        dst_filter, {'_id': 0, 'id': 1, 'quantity': 1, 'location': 1}
+        dst_filter, {'_id': 0, 'id': 1, 'quantity': 1, 'location': 1, 'unit': 1}
     )
     if not dst:
         raise HTTPException(status_code=404, detail='Destination inventory item not found')
+
+    # Task #75 — unit-mismatch guard. A bare quantity transfer across
+    # different units of measure (e.g. kg → adet) silently corrupts stock
+    # levels. Reject unless the caller supplies an explicit conversion
+    # factor. When units match we ignore any supplied factor so legacy
+    # callers (no factor) keep working unchanged.
+    src_unit = (src.get('unit') or '').strip()
+    dst_unit = (dst.get('unit') or '').strip()
+    if src_unit and dst_unit and src_unit != dst_unit:
+        if payload.conversion_factor is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Unit mismatch: source is '{src_unit}' but destination is "
+                    f"'{dst_unit}'. Supply an explicit conversion_factor "
+                    f"(destination units per source unit) to proceed."
+                ),
+            )
+        factor = float(payload.conversion_factor)
+    else:
+        factor = 1.0
+    dst_quantity = quantity * factor
 
     # Atomic source decrement with insufficient-stock guard.
     guard_src = dict(src_filter)
@@ -571,7 +600,7 @@ async def transfer_stock_between_warehouses(
     # Destination increment. If it fails for any reason, reverse the source
     # decrement so no stock is destroyed.
     try:
-        inc = await db.inventory_items.update_one(dst_filter, {'$inc': {'quantity': quantity}})
+        inc = await db.inventory_items.update_one(dst_filter, {'$inc': {'quantity': dst_quantity}})
         if inc.matched_count == 0:
             # Destination disappeared between read and write — compensate.
             await db.inventory_items.update_one(src_filter, {'$inc': {'quantity': quantity}})
@@ -607,7 +636,7 @@ async def transfer_stock_between_warehouses(
         tenant_id=current_user.tenant_id,
         item_id=payload.destination_item_id,
         movement_type='transfer_in',
-        quantity=quantity,
+        quantity=dst_quantity,
         unit_cost=payload.unit_cost,
         reference=payload.reference,
         notes=payload.notes,
@@ -635,6 +664,8 @@ async def transfer_stock_between_warehouses(
         'source_item_id': payload.source_item_id,
         'destination_item_id': payload.destination_item_id,
         'quantity': quantity,
+        'destination_quantity': dst_quantity,
+        'conversion_factor': factor,
         'unit_cost': payload.unit_cost,
         'legs': [out_leg, in_leg],
     }
