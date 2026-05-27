@@ -122,11 +122,44 @@ Bugüne kadarki tüm stress + business + smoke spec'leri **web frontend** (React
 
 ## 5) F10 Sprint plan (öneri — multi-session)
 
-### F10A — Mobile smoke matrix (1 session)
-- `mobile/e2e/` altında Detox (veya Maestro) iskeleti
-- 24 ekran için **render-only** smoke (auth ile login → role-based grup root render → console error scan)
-- Output: `mobile/e2e/smoke.spec.ts`, CI workflow `.github/workflows/mobile-smoke.yml`
-- Acceptance: 24 ekran render OK, runtime error YOK, secret leak scan YOK (`JWT pattern`, `kart PAN`, `bearer`)
+### F10A — Mobile smoke matrix (1 session) — **OPENED 2026-05-27 (Task #83)**
+
+**Tooling decision (locked):** **Playwright on Expo Web bundle**, primary.
+- Linux-runnable CI (no Mac runner / Android emulator required for first smoke).
+- Reuses PII/console-error patterns from `frontend/e2e-smoke/fixtures.js`.
+- Render-only acceptance fits the web bundle perfectly.
+- Native deep flows (biometric, push, offline, camera) stay on **Maestro**
+  at `mobile/.maestro/` — already wired, EAS-build driven, complementary
+  rather than overlapping. **Detox rejected** for F10A: requires native
+  build + Mac runner, over-spec for render-only smoke; re-evaluate at F10G
+  if Maestro is insufficient for native deep flows.
+
+**Delivered:**
+- `mobile/e2e/` scaffold: `playwright.config.ts`, `routes.ts` (25 surfaces
+  — every file under `mobile/app/`, faithful to §2.1), `fixtures.ts`
+  (env-driven per-role login, observers, PII scanner), `smoke.spec.ts`
+  (per-role login + render-only matrix).
+- `mobile/package.json` script: `yarn test:e2e:smoke`.
+- CI workflow stub: `.github/workflows/mobile-web-smoke.yml`
+  (workflow_dispatch only at F10A; gated promotion to PR-required at F10G).
+  The existing `.github/workflows/mobile-smoke.yml` continues to drive
+  Maestro post-EAS-build flows and is **not** modified.
+- README at `mobile/e2e/README.md` documenting decision + run instructions.
+
+**Acceptance (per spec):** 25 surfaces render, console errors = 0
+(allowlist-filtered), no JWT / PAN / bearer / api-key pattern in DOM.
+Empty screen, error UI, console error, and PII leak each hard-fail the
+spec — no skip-as-pass.
+
+**Out of scope for F10A (handed to F10B+):** real auth lifecycle / refresh
+rotation, biometric gate, native camera / signature pad, offline replay,
+digital key issue/revoke, cashier brute-force throttle.
+
+**Open follow-ups (not blocking F10A landing):**
+- First green run against a live `mobile-stress-tenant` (needs seeded
+  per-role accounts + Expo Web bundle URL).
+- Markdown reporter parity with `frontend/e2e-smoke/markdown-reporter.mjs`
+  for drill-report integration.
 
 ### F10B — Mobile auth lifecycle deep (1 session)
 - Login → 2FA → refresh rotation → logout
