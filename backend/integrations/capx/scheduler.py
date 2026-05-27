@@ -11,9 +11,12 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from core.database import _raw_db
+from core.transient_db_guard import TransientFailureTracker
 from integrations.capx.client import CapXError, get_capx_client, get_capx_client_async
 
 logger = logging.getLogger(__name__)
+
+_transient_tracker = TransientFailureTracker("capx-availability")
 
 
 class CapXAvailabilityScheduler:
@@ -55,8 +58,13 @@ class CapXAvailabilityScheduler:
         while not self._stop.is_set():
             try:
                 await self._push_cycle(lookahead)
-            except Exception:
-                logger.exception("CapX availability cycle error")
+                _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
+            except Exception as e:
+                _transient_tracker.log_exception(
+                    logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                    context="availability cycle",
+                    non_transient_msg="%s availability cycle error: %s",
+                )
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
                 break  # stop() çağrıldı → graceful exit

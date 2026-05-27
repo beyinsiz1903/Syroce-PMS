@@ -13,7 +13,11 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from core.transient_db_guard import TransientFailureTracker
+
 logger = logging.getLogger("messaging.pre_arrival_scheduler")
+
+_transient_tracker = TransientFailureTracker("pre-arrival-scheduler")
 
 
 class PreArrivalScheduler:
@@ -59,11 +63,16 @@ class PreArrivalScheduler:
         while self._running:
             try:
                 await self.run_scan()
+                _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
                 await asyncio.sleep(self._interval_hours * 3600)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.exception(f"Pre-arrival scheduler loop error: {e}")
+                _transient_tracker.log_exception(
+                    logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                    context="scheduler loop",
+                    non_transient_msg="%s scheduler loop error: %s",
+                )
                 await asyncio.sleep(300)  # retry in 5min on error
 
     async def run_scan(self) -> dict:

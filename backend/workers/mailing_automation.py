@@ -13,7 +13,11 @@ import re
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
+from core.transient_db_guard import TransientFailureTracker
+
 logger = logging.getLogger("workers.mailing_automation")
+
+_transient_tracker = TransientFailureTracker("mailing-auto")
 
 INTERVAL_SECONDS = 600  # 10 minutes
 BOOKING_CREATED_LOOKBACK_HOURS = 24  # only notify bookings created in last 24h
@@ -294,10 +298,15 @@ async def _loop() -> None:
     while True:
         try:
             await _run_once()
+            _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except asyncio.CancelledError:
             raise
-        except Exception:
-            logger.exception("[mailing-auto] cycle crashed")
+        except Exception as e:
+            _transient_tracker.log_exception(
+                logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                context="cycle",
+                non_transient_msg="%s cycle crashed: %s",
+            )
         try:
             await asyncio.sleep(INTERVAL_SECONDS)
         except asyncio.CancelledError:

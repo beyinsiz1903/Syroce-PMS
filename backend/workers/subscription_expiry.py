@@ -9,7 +9,11 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
+from core.transient_db_guard import TransientFailureTracker
+
 logger = logging.getLogger(__name__)
+
+_transient_tracker = TransientFailureTracker("sub-expiry")
 
 
 def _db():
@@ -88,6 +92,11 @@ async def run_loop(interval_seconds: int = 3600) -> None:
         try:
             await _expire_due()
             await _send_warnings()
+            _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except Exception as e:
-            logger.exception("[sub-expiry] tick failed: %s", e)
+            _transient_tracker.log_exception(
+                logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                context="tick",
+                non_transient_msg="%s tick failed: %s",
+            )
         await asyncio.sleep(interval_seconds)

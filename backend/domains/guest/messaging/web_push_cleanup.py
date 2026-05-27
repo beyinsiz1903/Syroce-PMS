@@ -36,7 +36,11 @@ import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from core.transient_db_guard import TransientFailureTracker
+
 logger = logging.getLogger(__name__)
+
+_transient_tracker = TransientFailureTracker("web-push-cleanup")
 
 # Worker handle'ı; shutdown'da iptal edebilmek için modül seviyesinde tutulur.
 _worker_task: asyncio.Task | None = None
@@ -135,10 +139,15 @@ async def _worker_loop(interval_seconds: int) -> None:
         try:
             from core.database import db  # late import: web_push ile aynı kaynak
             await prune_inactive_subscriptions(db=db)
+            _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except asyncio.CancelledError:
             raise
-        except Exception:  # pragma: no cover — worker hiç durmamalı
-            logger.exception("web_push_cleanup: prune cycle error")
+        except Exception as e:  # pragma: no cover — worker hiç durmamalı
+            _transient_tracker.log_exception(
+                logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                context="prune cycle",
+                non_transient_msg="%s prune cycle error: %s",
+            )
 
         try:
             await asyncio.sleep(interval_seconds)

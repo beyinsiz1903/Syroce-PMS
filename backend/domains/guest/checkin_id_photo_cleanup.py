@@ -38,7 +38,11 @@ import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from core.transient_db_guard import TransientFailureTracker
+
 logger = logging.getLogger(__name__)
+
+_transient_tracker = TransientFailureTracker("checkin-id-photo-cleanup")
 
 DEFAULT_RETENTION_DAYS = 90
 DEFAULT_ORPHAN_TTL_HOURS = 24
@@ -435,10 +439,15 @@ async def _worker_loop(interval_seconds: int) -> None:
             # Task #124: per-tenant retention. Eski global cutoff yerine
             # her kiracının kendi ayarını uygulayan orchestrator kullanılır.
             await prune_expired_id_photos_per_tenant(db=db)
+            _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
         except asyncio.CancelledError:
             raise
-        except Exception:  # pragma: no cover — worker hiç durmamalı
-            logger.exception("checkin_id_photo_cleanup: prune cycle error")
+        except Exception as e:  # pragma: no cover — worker hiç durmamalı
+            _transient_tracker.log_exception(
+                logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                context="prune cycle",
+                non_transient_msg="%s prune cycle error: %s",
+            )
 
         try:
             await asyncio.sleep(interval_seconds)

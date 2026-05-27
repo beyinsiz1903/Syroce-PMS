@@ -28,10 +28,13 @@ from pymongo.errors import DuplicateKeyError
 
 from core.security import _is_super_admin, get_current_user
 from core.tenant_db import get_system_db, tenant_context  # noqa: F401
+from core.transient_db_guard import TransientFailureTracker
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v95 DW
 
 logger = logging.getLogger(__name__)
+
+_transient_tracker = TransientFailureTracker("agency-contracts-expire")
 
 
 def _now_iso() -> str:
@@ -58,8 +61,13 @@ async def _periodic_expire_worker(interval_seconds: int = 3600) -> None:
             n = await _auto_expire_overdue(None)
             if n:
                 logger.info("[contracts] auto-expired %d overdue contracts", n)
-        except Exception:  # noqa: BLE001
-            logger.exception("[contracts] periodic expire worker error")
+            _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
+        except Exception as e:  # noqa: BLE001
+            _transient_tracker.log_exception(
+                logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                context="periodic expire",
+                non_transient_msg="%s periodic expire worker error: %s",
+            )
         await asyncio.sleep(interval_seconds)
 
 

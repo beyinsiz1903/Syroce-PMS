@@ -12,11 +12,14 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from core.tenant_db import get_system_db
+from core.transient_db_guard import TransientFailureTracker
 from shared_kernel.migration_observability import MIGRATION_EVENT_TYPES
 
 logger = logging.getLogger(__name__)
 
 OUTBOX_WORKER_LOCK_ID = "outbox-lifecycle-worker"
+
+_transient_tracker = TransientFailureTracker("outbox-lifecycle-worker")
 
 
 def utc_now() -> datetime:
@@ -103,6 +106,7 @@ class OutboxLifecycleWorker:
                 try:
                     has_lock = await self.acquire_lock()
                     if not has_lock:
+                        _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
                         await asyncio.sleep(self.poll_interval_seconds)
                         continue
 
@@ -110,10 +114,15 @@ class OutboxLifecycleWorker:
                     processed_count = await self.process_batch(limit=self.batch_size)
                     if processed_count == 0:
                         await asyncio.sleep(self.poll_interval_seconds)
+                    _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
                 except asyncio.CancelledError:
                     raise
-                except Exception:
-                    logger.exception("Outbox lifecycle worker loop error")
+                except Exception as e:
+                    _transient_tracker.log_exception(
+                        logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                        context="loop tick",
+                        non_transient_msg="%s loop error: %s",
+                    )
                     await asyncio.sleep(self.poll_interval_seconds)
         finally:
             await self.release_lock()

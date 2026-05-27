@@ -27,7 +27,11 @@ import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from core.transient_db_guard import TransientFailureTracker
+
 logger = logging.getLogger(__name__)
+
+_transient_tracker = TransientFailureTracker("mobile-push-scheduler")
 
 # Default cadence: 15 minutes. Set MOBILE_PUSH_SCAN_SECONDS=0 to disable.
 DEFAULT_INTERVAL_SECONDS = int(os.environ.get("MOBILE_PUSH_SCAN_SECONDS", "900"))
@@ -309,8 +313,13 @@ async def _run_loop(interval_seconds: int) -> None:
     while True:
         try:
             await _tick()
-        except Exception:
-            logger.exception("[mobile-push-scheduler] tick crashed")
+            _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
+        except Exception as e:
+            _transient_tracker.log_exception(
+                logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                context="tick",
+                non_transient_msg="%s tick crashed: %s",
+            )
         await asyncio.sleep(interval_seconds)
 
 

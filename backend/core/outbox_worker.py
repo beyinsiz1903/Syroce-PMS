@@ -23,6 +23,8 @@ from typing import Any
 
 from pymongo import ReturnDocument
 
+from core.transient_db_guard import TransientFailureTracker
+
 from core.outbox_service import (
     STATUS_FAILED,
     STATUS_PENDING,
@@ -35,6 +37,8 @@ from core.outbox_service import (
 from core.tenant_db import get_system_db, tenant_context
 
 logger = logging.getLogger("core.outbox_worker")
+
+_transient_tracker = TransientFailureTracker("outbox-worker")
 
 
 @contextmanager
@@ -137,10 +141,15 @@ class OutboxWorker:
                     count = await self._process_batch()
                     if count == 0:
                         await asyncio.sleep(self.poll_interval)
+                    _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
                 except asyncio.CancelledError:
                     raise
-                except Exception:
-                    logger.exception("Outbox worker loop error")
+                except Exception as e:
+                    _transient_tracker.log_exception(
+                        logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                        context="loop tick",
+                        non_transient_msg="%s loop error: %s",
+                    )
                     await asyncio.sleep(self.poll_interval)
         except asyncio.CancelledError:
             pass

@@ -18,6 +18,7 @@ from pymongo import ASCENDING
 from pymongo.errors import DuplicateKeyError
 
 from core.tenant_db import get_system_db
+from core.transient_db_guard import TransientFailureTracker
 
 from .adapters.base import BaseAdapter, DeliveryResult
 from .registry import PARTNERS, get_partner
@@ -27,6 +28,8 @@ from .schemas import (
     MessageType,
     XchangeEnvelope,
 )
+
+_xchange_retry_tracker = TransientFailureTracker("xchange-retry")
 
 logger = logging.getLogger(__name__)
 
@@ -363,8 +366,13 @@ class XchangeBus:
                 count = await self.run_retry_cycle()
                 if count:
                     logger.info("[xchange] retry cycle processed %d", count)
+                _xchange_retry_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
             except Exception as e:
-                logger.exception("[xchange] retry loop error: %s", e)
+                _xchange_retry_tracker.log_exception(
+                    logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                    context="retry loop tick",
+                    non_transient_msg="%s retry loop error: %s",
+                )
             await asyncio.sleep(interval_seconds)
 
 
