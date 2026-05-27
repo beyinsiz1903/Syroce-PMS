@@ -552,7 +552,17 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
         r in ("agency_admin", "agency_agent") for r in _login_roles
     )
     if not (_login_is_sa or _login_is_agency):
-        await _record_failure_and_raise(403, "Bu giris sadece acente kullanicilari icindir")
+        # Role-block is an authorization decision, NOT a credential
+        # probe (it reveals nothing about whether the password is
+        # correct). Therefore it must NOT consume the throttle
+        # budget. Counting it would let any wrong-role caller burn
+        # the per-account cap with 10 bogus requests and then trip
+        # 429 on the (cap+1)th legitimate correct-credential
+        # attempt — re-introducing the Task #135 P0 against any
+        # account that hits this endpoint without an agency role.
+        # Stress spec 98D specifically skips on 403, so it must
+        # arrive as a clean 403, not a throttled 429.
+        raise HTTPException(status_code=403, detail="Bu giris sadece acente kullanicilari icindir")
 
     if not verify_password(data.password, user_doc.get("password", "")):
         await _record_failure_and_raise(401, "E-posta veya sifre hatali")

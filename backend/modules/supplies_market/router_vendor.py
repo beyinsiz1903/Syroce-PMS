@@ -103,7 +103,11 @@ async def vendor_login(request: Request, payload: VendorLogin):
     if not doc or not verify_password(payload.password, doc.get("password_hash", "")):
         await _record_failure_and_raise(401, "E-posta veya şifre hatalı")
     if doc.get("status") == "suspended":
-        await _record_failure_and_raise(403, "Hesabınız askıya alınmış")
+        # Account-status 403 is an authorization decision (credentials
+        # were already verified above), NOT a credential probe. Do not
+        # consume the throttle budget — see the parallel comment in
+        # agency_portal.agency_login.
+        raise HTTPException(403, "Hesabınız askıya alınmış")
 
     # Successful credential verify — drain throttle counters so a
     # legitimate vendor isn't penalised for prior typos.
