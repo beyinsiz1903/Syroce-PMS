@@ -220,6 +220,7 @@ async def ingest_sensor_alert(
             'status': 'open',
         })
         await db.maintenance_work_orders.insert_one(wo_payload)
+        wo_payload.pop('_id', None)
         auto_created_work_order = wo_payload
 
     return {

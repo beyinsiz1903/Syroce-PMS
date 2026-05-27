@@ -98,6 +98,7 @@ class SensorAlert(BaseModel):
     threshold: float | None = None
     threshold_breached: bool | None = None
     severity: str = "info"  # info, warning, high, critical
+    message: str | None = None
 
 
 class MaintenanceAsset(BaseModel):
