@@ -50,10 +50,6 @@ on:
                 description: 'E2E_ROOM_COUNT (seed size). Default: 500'
                 required: false
                 default: '500'
-            spec_pattern:
-                description: 'Optional Playwright spec filter (relative to e2e-stress/, e.g. `specs/99-finance-folio-surface.spec.js`). Empty = full suite.'
-                required: false
-                default: ''
 
 # Murat review #C2: aynı stress tenant üzerinde nightly cron + manuel dispatch +
 # push trigger çakışırsa biri seed yaparken diğeri cleanup yapabilir → sahte
@@ -95,15 +91,9 @@ jobs:
             E2E_EXTERNAL_DRY_RUN: 'true'
             # Tek konsolide rapor (lokal per-chunk tag'leme override edilir).
             STRESS_REPORT_TAG: ${{ github.event.inputs.report_tag || 'full_stress_suite' }}
-            STRESS_SPEC_PATTERN: ${{ github.event.inputs.spec_pattern || '' }}
             STRESS_REPORT_TITLE: 'Full Operational Stress Suite (CI one-shot) — F8A+F8B+F8C+F8D+F8E'
             E2E_ROOM_COUNT: ${{ github.event.inputs.room_count || '500' }}
             CI: 'true'
-            # Task #99: F9C § 98 mobile staff spec hard-fails self-check if
-            # DISABLE_EXPO_PUSH != '1' (would otherwise risk a real Expo
-            # delivery to the registered ExponentPushToken[...] payload).
-            # Set job-wide so the nightly run doesn't need a manual override.
-            DISABLE_EXPO_PUSH: '1'
             # Murat review #C1: Slack webhook job-level env'e taşındı. Step-level
             # `env:` GitHub Actions'ta `if:` koşulundan SONRA bağlanır → mevcut
             # step-level kullanımda `if: ... && env.SLACK_WEBHOOK_URL != ''`
@@ -182,21 +172,7 @@ jobs:
               # `-g` filtre YOK, chunking YOK — tüm spec'ler (F8A+F8B+F8C+F8D+F8E,
               # 00..28, ~140 test) tek Playwright process'inde sıralı koşar.
               # workers=1 zaten playwright.stress.config.js'de zorunlu.
-              #
-              # Task #59 — targeted single-spec dispatch (F9D finance folio v.b.):
-              # `STRESS_SPEC_PATTERN` workflow_dispatch input'undan gelir, set
-              # edilirse Playwright'a positional arg olarak iletilir (path
-              # `e2e-stress/` köküne göredir; örn.
-              # `specs/99-finance-folio-surface.spec.js`). Boş = full suite.
-              run: |
-                  set -euo pipefail
-                  cd frontend
-                  if [ -n "${STRESS_SPEC_PATTERN}" ]; then
-                      echo "Targeted stress run: ${STRESS_SPEC_PATTERN}"
-                      yarn playwright test --config=playwright.stress.config.js "${STRESS_SPEC_PATTERN}"
-                  else
-                      yarn test:e2e:stress
-                  fi
+              run: cd frontend && yarn test:e2e:stress
 
             - name: Verify drill report verdict (hard-fail on NO-GO)
               id: verdict_check
