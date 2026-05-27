@@ -4,6 +4,12 @@
 sokmak — pilot tenant'a mutation yok, gerçek dış servis çağrısı yok,
 external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 
+## Closing note (2026-05-26 baseline stabilization)
+
+**2026-05-26:** Run #143 official 84-spec GO WITH WATCH baseline stabilized. Stale T001–T006 plan retired. P2/REVIEW triage moved to §11 pre-pilot decision matrix (`docs/STRESS_P2_REVIEW_TRIAGE_20260526.md`). Sentry worker noise reduction completed with `TransientFailureTracker` across 11 workers, architect Round-2 PASS, commit `6f48e71`. **Bu noktadan sonra yeni faz ayrı başlık altında açılacak: Pilot Onboarding Pack · MUST CLOSE PC1–PC4 Sprint · Sales/Investor Readiness Pack.**
+
+---
+
 ## Latest verified baseline (2026-05-26) ✅ GREEN — 84 spec, Run #143
 
 | Alan | Değer |
