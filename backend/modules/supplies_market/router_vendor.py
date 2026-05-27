@@ -71,12 +71,16 @@ async def vendor_register(payload: VendorRegister):
 
 @router.post("/login", response_model=VendorTokenResponse)
 async def vendor_login(request: Request, payload: VendorLogin):
-    # Task-55 — brute-force throttle on the vendor login surface. The
-    # endpoint bcrypt-verifies vendor passwords but had no rate limit,
-    # leaving an unbounded credential-spray window against any vendor
-    # account. Two always_on sliding windows mirror the main login
-    # policy (per-IP + per-account NFKC-bucketed email), checked
-    # BEFORE bcrypt so over-budget attackers don't burn CPU/DB per try.
+    # Task-135 (P0 drain fix) — Verify-first, record-on-fail,
+    # drain-on-success ordering. See the parallel comment on
+    # agency_portal.agency_login for the full rationale: enforcing
+    # the throttle BEFORE verify_password makes the (cap+1)th attempt
+    # 429 even when credentials are correct, blocking legitimate
+    # users with mistyped-prior-attempts and making the `.reset()`
+    # drain branch unreachable. Failed attempts still record a hit,
+    # so the 21st wrong-credential attempt against a given IP (or
+    # 11th against a given account) returns 429 — matches stress
+    # spec 98D Phase 3 boundary.
     from security.auth_throttle import (
         VENDOR_LOGIN_ACCOUNT,
         VENDOR_LOGIN_IP,
@@ -86,24 +90,27 @@ async def vendor_login(request: Request, payload: VendorLogin):
     from security.auth_throttle import enforce as _throttle
     _ip = client_ip(request)
     _email_key = normalize_identity(payload.email)
-    await _throttle(VENDOR_LOGIN_IP, f"vendor_login_ip:{_ip}", "giris denemesi")
-    if _email_key:
-        await _throttle(
-            VENDOR_LOGIN_ACCOUNT, f"vendor_login_acct:{_email_key}", "giris denemesi"
-        )
+    _ip_key = f"vendor_login_ip:{_ip}"
+    _acct_key = f"vendor_login_acct:{_email_key}" if _email_key else None
+
+    async def _record_failure_and_raise(status_code: int, detail: str):
+        await _throttle(VENDOR_LOGIN_IP, _ip_key, "giris denemesi")
+        if _acct_key:
+            await _throttle(VENDOR_LOGIN_ACCOUNT, _acct_key, "giris denemesi")
+        raise HTTPException(status_code, detail)
 
     doc = await vendors_col.find_one({"email": payload.email.lower()})
     if not doc or not verify_password(payload.password, doc.get("password_hash", "")):
-        raise HTTPException(401, "E-posta veya şifre hatalı")
+        await _record_failure_and_raise(401, "E-posta veya şifre hatalı")
     if doc.get("status") == "suspended":
-        raise HTTPException(403, "Hesabınız askıya alınmış")
+        await _record_failure_and_raise(403, "Hesabınız askıya alınmış")
 
     # Successful credential verify — drain throttle counters so a
     # legitimate vendor isn't penalised for prior typos.
     try:
-        await VENDOR_LOGIN_IP.reset(f"vendor_login_ip:{_ip}")
-        if _email_key:
-            await VENDOR_LOGIN_ACCOUNT.reset(f"vendor_login_acct:{_email_key}")
+        await VENDOR_LOGIN_IP.reset(_ip_key)
+        if _acct_key:
+            await VENDOR_LOGIN_ACCOUNT.reset(_acct_key)
     except Exception:
         pass
 

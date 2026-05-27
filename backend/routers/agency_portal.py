@@ -495,15 +495,24 @@ async def list_agency_reservations(
 @router.post("/agency-portal/auth/login")
 async def agency_login(request: Request, data: AgencyLoginRequest):
     """Acente giris."""
-    # Task-55 — brute-force throttle on the peer login surface. This route
-    # bcrypt-verifies super_admin and agency_admin/agency_agent passwords
-    # but was never wired to LOGIN_IP/LOGIN_ACCOUNT, leaving an
-    # unbounded credential-spray window against any staff account. Two
-    # always_on sliding windows mirror the main login policy and are
-    # checked BEFORE the bcrypt verify so over-budget attackers don't
-    # incur the bcrypt cost or DB load per attempt. Per-IP layer kills
-    # naive parallel spray; per-account layer (NFKC casefold-bucketed
-    # email) survives IP rotation by capping total guesses per account.
+    # Task-135 (P0 drain fix) — Throttle wiring uses a **verify-first,
+    # record-on-fail, drain-on-success** ordering so that:
+    #   * a legitimate user who exhausts the per-account budget with
+    #     mistyped passwords can still log in on the (cap+1)th attempt
+    #     when they finally type the correct one, and
+    #   * a brute-force attacker is still capped — every wrong attempt
+    #     records a hit, so the 11th wrong-credential attempt against a
+    #     given account (or 21st against a given IP) returns 429.
+    #
+    # The previous ordering (`enforce` BEFORE `verify_password`) blocked
+    # the legitimate user with 429 on attempt 11 because the throttle
+    # check inserted the hit BEFORE credentials were ever examined,
+    # making the success-path `.reset()` unreachable. That regression
+    # was caught by stress spec 98D Phase 2 (Run #143 NO-GO P0).
+    #
+    # Per-account layer (NFKC casefold-bucketed email) survives IP
+    # rotation; per-IP layer caps naive parallel spray across distinct
+    # emails.
     from security.auth_throttle import (
         AGENCY_LOGIN_ACCOUNT,
         AGENCY_LOGIN_IP,
@@ -513,11 +522,19 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
     from security.auth_throttle import enforce as _throttle
     _ip = client_ip(request)
     _email_key = normalize_identity(data.email)
-    await _throttle(AGENCY_LOGIN_IP, f"agency_login_ip:{_ip}", "giris denemesi")
-    if _email_key:
-        await _throttle(
-            AGENCY_LOGIN_ACCOUNT, f"agency_login_acct:{_email_key}", "giris denemesi"
-        )
+    _ip_key = f"agency_login_ip:{_ip}"
+    _acct_key = f"agency_login_acct:{_email_key}" if _email_key else None
+
+    async def _record_failure_and_raise(status_code: int, detail: str):
+        # Record the failed attempt on BOTH layers. `_throttle` may
+        # raise 429 (with Retry-After header) instead of the underlying
+        # status when the post-insert count exceeds the cap — that is
+        # the brute-force boundary the spec asserts. IP layer is
+        # checked first so naive single-source spray trips fastest.
+        await _throttle(AGENCY_LOGIN_IP, _ip_key, "giris denemesi")
+        if _acct_key:
+            await _throttle(AGENCY_LOGIN_ACCOUNT, _acct_key, "giris denemesi")
+        raise HTTPException(status_code=status_code, detail=detail)
 
     from core.tenant_db import get_system_db
     sysdb = get_system_db()
@@ -526,7 +543,7 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
         {"email": data.email.strip().lower()}, {"_id": 0}
     )
     if not user_doc:
-        raise HTTPException(status_code=401, detail="E-posta veya sifre hatali")
+        await _record_failure_and_raise(401, "E-posta veya sifre hatali")
 
     _login_role = user_doc.get("role")
     _login_roles = user_doc.get("roles") or []
@@ -535,18 +552,21 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
         r in ("agency_admin", "agency_agent") for r in _login_roles
     )
     if not (_login_is_sa or _login_is_agency):
-        raise HTTPException(status_code=403, detail="Bu giris sadece acente kullanicilari icindir")
+        await _record_failure_and_raise(403, "Bu giris sadece acente kullanicilari icindir")
 
     if not verify_password(data.password, user_doc.get("password", "")):
-        raise HTTPException(status_code=401, detail="E-posta veya sifre hatali")
+        await _record_failure_and_raise(401, "E-posta veya sifre hatali")
 
     # Credential gate passed — drain the per-IP / per-account throttle
     # counters so a legitimate user who mistyped before succeeding isn't
-    # penalised for the rest of the window.
+    # penalised for the rest of the window. Drain happens BEFORE the
+    # account-status / agency-active checks so even an inactive-agency
+    # rejection from a correctly-authenticated user does not poison the
+    # window for their next successful attempt.
     try:
-        await AGENCY_LOGIN_IP.reset(f"agency_login_ip:{_ip}")
-        if _email_key:
-            await AGENCY_LOGIN_ACCOUNT.reset(f"agency_login_acct:{_email_key}")
+        await AGENCY_LOGIN_IP.reset(_ip_key)
+        if _acct_key:
+            await AGENCY_LOGIN_ACCOUNT.reset(_acct_key)
     except Exception:
         pass
 
