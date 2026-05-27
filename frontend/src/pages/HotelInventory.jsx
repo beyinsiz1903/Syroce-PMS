@@ -12,6 +12,7 @@ import {
   Package, AlertTriangle, TrendingDown, ShoppingCart,
   RefreshCw, FileText, BarChart3, CheckCircle, Plus, BookOpen, X,
   ArrowDownCircle, ArrowUpCircle, Edit3, BedDouble, Droplet, Trash2, Play,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,6 +34,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
   const [newItem, setNewItem] = useState(null);
   const [saving, setSaving] = useState(false);
   const [movement, setMovement] = useState(null); // { item, type, quantity, reference, notes }
+  const [transfer, setTransfer] = useState(null); // { source_item_id, destination_item_id, quantity, reference, notes }
   const [kits, setKits] = useState([]);
   const [kitForm, setKitForm] = useState(null); // { name, description, lines: [{item_id, item_name, unit, quantity}] }
   const [applyKit, setApplyKit] = useState(null); // { kit, multiplier, notes }
@@ -111,6 +113,58 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
         toast.error(`Yetersiz stok — ${list}`);
       } else {
         toast.error(det || 'Uygulanamadı');
+      }
+    } finally { setSaving(false); }
+  };
+
+  const openTransfer = (item = null) => {
+    setTransfer({
+      source_item_id: item?.id || '',
+      destination_item_id: '',
+      quantity: 1,
+      reference: '',
+      notes: '',
+    });
+  };
+
+  const saveTransfer = async () => {
+    const qty = Number(transfer.quantity);
+    if (!transfer.source_item_id) { toast.error('Kaynak ürün seçin'); return; }
+    if (!transfer.destination_item_id) { toast.error('Hedef ürün seçin'); return; }
+    if (transfer.source_item_id === transfer.destination_item_id) {
+      toast.error('Kaynak ve hedef farklı olmalı'); return;
+    }
+    if (!qty || qty <= 0) { toast.error('Geçerli bir miktar girin'); return; }
+    const src = inventory.find((x) => x.id === transfer.source_item_id);
+    if (src && qty > (src.quantity || 0)) {
+      toast.error(`Kaynakta sadece ${src.quantity} ${src.unit} var`); return;
+    }
+    setSaving(true);
+    try {
+      await axios.post('/accounting/inventory/transfer', {
+        source_item_id: transfer.source_item_id,
+        destination_item_id: transfer.destination_item_id,
+        quantity: qty,
+        unit_cost: src?.unit_cost || 0,
+        reference: transfer.reference || null,
+        notes: transfer.notes || null,
+      });
+      const dst = inventory.find((x) => x.id === transfer.destination_item_id);
+      toast.success(
+        `${qty} ${src?.unit || ''} aktarıldı: ${src?.name || ''}${src?.location ? ` (${src.location})` : ''} → ${dst?.name || ''}${dst?.location ? ` (${dst.location})` : ''}`
+      );
+      setTransfer(null);
+      loadInventory();
+      loadAlerts();
+    } catch (e) {
+      const status = e.response?.status;
+      const detail = e.response?.data?.detail;
+      if (status === 409) {
+        toast.error(typeof detail === 'string' ? detail : 'Kaynakta yeterli stok yok');
+      } else if (status === 422) {
+        toast.error(typeof detail === 'string' ? detail : 'Kaynak ve hedef ürün farklı olmalı');
+      } else {
+        toast.error(typeof detail === 'string' ? detail : 'Transfer başarısız');
       }
     } finally { setSaving(false); }
   };
@@ -291,6 +345,10 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
               <RefreshCw className="w-4 h-4 mr-2" />
               Yenile
             </Button>
+            <Button variant="outline" onClick={() => openTransfer()} disabled={inventory.length < 2}>
+              <ArrowRightLeft className="w-4 h-4 mr-2" />
+              Stok Transferi
+            </Button>
             <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => setNewItem({ ...EMPTY_ITEM })}>
               <Plus className="w-4 h-4 mr-2" />
               Yeni Ürün
@@ -453,6 +511,14 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                                     title="Sayım sonucu düzeltme"
                                   >
                                     <Edit3 className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button
+                                    size="sm" variant="outline"
+                                    className="text-xs px-2 border-sky-300 text-sky-700 hover:bg-sky-50"
+                                    onClick={() => openTransfer(item)}
+                                    title="Başka bir depoya/konuma transfer et"
+                                  >
+                                    <ArrowRightLeft className="w-3.5 h-3.5" />
                                   </Button>
                                   <Button
                                     size="sm" variant="outline"
@@ -968,6 +1034,101 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                   }
                   onClick={saveMovement} disabled={saving}>
                   {saving ? 'Kaydediliyor…' : 'Onayla'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Stok Transferi Modal ───────────────────────── */}
+      {transfer && (() => {
+        const src = inventory.find((x) => x.id === transfer.source_item_id);
+        const dst = inventory.find((x) => x.id === transfer.destination_item_id);
+        const candidates = inventory.filter((x) => x.id !== transfer.source_item_id);
+        const qty = Number(transfer.quantity) || 0;
+        const insufficient = src && qty > (src.quantity || 0);
+        return (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+               onClick={() => !saving && setTransfer(null)}>
+            <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full"
+                 onClick={(e) => e.stopPropagation()}>
+              <div className="border-b p-4 bg-sky-50 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <ArrowRightLeft className="w-6 h-6 text-sky-600" />
+                  <div>
+                    <h2 className="font-bold">Depolar Arası Stok Transferi</h2>
+                    <p className="text-xs text-gray-600">Bir konumdan diğerine atomik olarak aktarın.</p>
+                  </div>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => setTransfer(null)} disabled={saving}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+              <div className="p-5 space-y-3">
+                <div>
+                  <Label>Kaynak Ürün / Depo *</Label>
+                  <select className="w-full border rounded-md p-2 text-sm"
+                    value={transfer.source_item_id}
+                    onChange={(e) => setTransfer({ ...transfer, source_item_id: e.target.value })}>
+                    <option value="">— Kaynak seç —</option>
+                    {inventory.map((it) => (
+                      <option key={it.id} value={it.id}>
+                        {it.name}{it.location ? ` — ${it.location}` : ''} ({it.quantity} {it.unit})
+                      </option>
+                    ))}
+                  </select>
+                  {src && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Mevcut: {src.quantity} {src.unit}{src.location ? ` · ${src.location}` : ''}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label>Hedef Ürün / Depo *</Label>
+                  <select className="w-full border rounded-md p-2 text-sm"
+                    value={transfer.destination_item_id}
+                    onChange={(e) => setTransfer({ ...transfer, destination_item_id: e.target.value })}>
+                    <option value="">— Hedef seç —</option>
+                    {candidates.map((it) => (
+                      <option key={it.id} value={it.id}>
+                        {it.name}{it.location ? ` — ${it.location}` : ''} ({it.quantity} {it.unit})
+                      </option>
+                    ))}
+                  </select>
+                  {dst && src && dst.unit !== src.unit && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Uyarı: birimler farklı (kaynak {src.unit}, hedef {dst.unit}).
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label>Miktar{src ? ` (${src.unit})` : ''} *</Label>
+                  <Input type="number" min="0.01" step="0.01" autoFocus value={transfer.quantity}
+                    onChange={(e) => setTransfer({ ...transfer, quantity: e.target.value })} />
+                  {insufficient && (
+                    <p className="text-xs text-red-600 mt-1">
+                      Kaynakta sadece {src.quantity} {src.unit} var.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label>Referans (opsiyonel)</Label>
+                  <Input value={transfer.reference} placeholder="Örn: WT-2026-04-12"
+                    onChange={(e) => setTransfer({ ...transfer, reference: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Notlar (opsiyonel)</Label>
+                  <Input value={transfer.notes} placeholder="Örn: Restoran deposu için"
+                    onChange={(e) => setTransfer({ ...transfer, notes: e.target.value })} />
+                </div>
+              </div>
+              <div className="border-t p-4 flex items-center justify-end gap-2 bg-gray-50">
+                <Button variant="outline" onClick={() => setTransfer(null)} disabled={saving}>Vazgeç</Button>
+                <Button className="bg-sky-600 hover:bg-sky-700"
+                  onClick={saveTransfer}
+                  disabled={saving || !transfer.source_item_id || !transfer.destination_item_id || insufficient}>
+                  {saving ? 'Aktarılıyor…' : 'Transferi Onayla'}
                 </Button>
               </div>
             </div>
