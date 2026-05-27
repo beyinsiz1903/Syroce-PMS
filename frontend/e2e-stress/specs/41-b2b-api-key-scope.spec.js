@@ -29,7 +29,7 @@
 // riski + pilot tenant temas yok.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recFinding,
+    callTimed, callTimedWithBackoff, callApiKey, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     assertPiiMasked, assertNoTokenLeak, withModuleProbe, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
@@ -37,20 +37,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const MOD = 'b2b_api';
-
-// API key bearer-style call — X-API-Key header. callTimed JWT bearer pattern
-// kullandığı için ayrı wrapper. timeout 30s default.
-async function callApiKey(request, method, path, body, apiKey, opts = {}) {
-    const headers = { 'X-API-Key': apiKey || '', 'Content-Type': 'application/json' };
-    const t0 = Date.now();
-    const r = await request[method](path, {
-        headers, data: body, failOnStatusCode: false, timeout: opts.timeout ?? 30_000,
-    }).catch((e) => ({ status: () => 0, ok: () => false, _err: e?.message }));
-    const ms = Date.now() - t0;
-    let bodyJson = null;
-    try { bodyJson = r.json ? await r.json() : null; } catch { /* ignore */ }
-    return { status: r.status?.() ?? 0, ms, body: bodyJson, ok: (r.status?.() ?? 0) >= 200 && (r.status?.() ?? 0) < 300 };
-}
 
 test.describe.configure({ mode: 'serial' });
 

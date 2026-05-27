@@ -33,7 +33,7 @@
 //     çalışır.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, recFinding,
+    callTimed, callApiKey, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     assertPiiMasked, assertNoTokenLeak, withModuleProbe, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
@@ -41,25 +41,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const MOD = 'b2b_api';
-
-// X-API-Key bearer wrapper — v1 spec'teki callApiKey ile aynı imza, v3'te
-// stress-helpers.js'e taşınabilir (low blast-radius). Şimdilik local copy
-// (v1 + v2 paralel evolve etsin diye duplicate kabul).
-// TODO(F8M v3): callApiKey'ı fixtures/stress-helpers.js'e lift et;
-// v1 + v2 + ileride v3 import etsin.
-async function callApiKey(request, method, urlPath, body, apiKey, opts = {}) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (apiKey !== undefined && apiKey !== null) headers['X-API-Key'] = apiKey;
-    const t0 = Date.now();
-    const r = await request[method](urlPath, {
-        headers, data: body, failOnStatusCode: false, timeout: opts.timeout ?? 30_000,
-    }).catch((e) => ({ status: () => 0, ok: () => false, _err: e?.message }));
-    const ms = Date.now() - t0;
-    let bodyJson = null;
-    try { bodyJson = r.json ? await r.json() : null; } catch { /* ignore */ }
-    const status = r.status?.() ?? 0;
-    return { status, ms, body: bodyJson, ok: status >= 200 && status < 300 };
-}
 
 // 11 X-API-Key sub-router matrix. `collection` = id-siz read endpoint (varsa);
 // `idBearing` = id-bearing GET template ({booking}/{guest}/{block}/{kbs}

@@ -271,6 +271,24 @@ export async function callTimed(request, method, path, body, token, opts = {}) {
     return last;
 }
 
+// X-API-Key bearer wrapper — B2B sub-router stress specs share this helper
+// (F8M § 41 v1 + § 41B v2 matrix). Pass `apiKey=undefined`/`null` to OMIT the
+// header entirely (missing-key auth probe); any string value (incl. empty)
+// is sent as-is. Mirrors callTimed's return shape minus retryAfter.
+export async function callApiKey(request, method, urlPath, body, apiKey, opts = {}) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey !== undefined && apiKey !== null) headers['X-API-Key'] = apiKey;
+    const t0 = Date.now();
+    const r = await request[method](urlPath, {
+        headers, data: body, failOnStatusCode: false, timeout: opts.timeout ?? 30_000,
+    }).catch((e) => ({ status: () => 0, ok: () => false, _err: e?.message }));
+    const ms = Date.now() - t0;
+    let bodyJson = null;
+    try { bodyJson = r.json ? await r.json() : null; } catch { /* ignore */ }
+    const status = r.status?.() ?? 0;
+    return { status, ms, body: bodyJson, ok: status >= 200 && status < 300 };
+}
+
 // tur-24: 429-aware wrapper. On 429, sleep `retry_after` seconds (capped at
 // 65s — apm_middleware uses 60s sliding window so one cycle is enough) and
 // retry once. Prod write rate-limit (120/min/token) cascade observed in
