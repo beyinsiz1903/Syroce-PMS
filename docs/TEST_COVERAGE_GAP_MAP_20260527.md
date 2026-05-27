@@ -16,6 +16,14 @@
 
 ---
 
+## 0) F9 Sprint progress (2026-05-27)
+
+**F9A DONE:** 31 ZERO-coverage frontend route smoke matrix'e eklendi (`critical: false`) + PII/token leak scan fixture'a eklendi. Bu sayfaların ZERO → PARTIAL geçişi smoke suite koşulduğunda doğrulanacak. Aşağıdaki §2.1 tablosundaki tüm satırlar artık **smoke matrix'te listeli** — render + PII sanity OK olursa PARTIAL'a yükselir.
+
+**F9B/F9C/F9D/F9E:** Pending (bkz. `docs/STRESS_TEST_ROADMAP.md` F9 bölümü). F9C 7 deep stress spec için multi-session task agent paketi önerilir.
+
+---
+
 ## 1) Yönetici özeti
 
 | Yüzey | Toplam | COVERED | PARTIAL | ZERO | Boşluk oranı |

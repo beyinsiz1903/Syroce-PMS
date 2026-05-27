@@ -4,6 +4,23 @@
 sokmak — pilot tenant'a mutation yok, gerçek dış servis çağrısı yok,
 external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 
+## F9 — Full App Coverage Closure Sprint (2026-05-27, IN PROGRESS)
+
+**Tetik:** `docs/TEST_COVERAGE_GAP_MAP_20260527.md` — sayfa bazında %40 ZERO, endpoint bazında %57 ZERO. Business rule: hiçbir sayfa/modül tamamen testsiz kalmamalı.
+
+| Faz | Durum | Teslim |
+|---|:---:|---|
+| **F9A** Frontend zero-page smoke matrix | ✅ DONE (2026-05-27) | `frontend/e2e-smoke/routes.js`'e 31 yeni route eklendi (`critical: false`), `fixtures.js` `inspectPageContent`'a PII/token leak scan eklendi (JWT, kart PAN, CVV, bearer/api-key). Syntax OK. Smoke run deploy env'de tetiklenmesi gerekli — bu environment'tan çalıştırılamaz |
+| **F9B** Backend zero-router probe spec | ⏸️ PENDING (user decision) | `frontend/e2e-stress/specs/97-backend-router-coverage-probe.spec.js` yeni dosya — 20+ router modülü için anon→401/403, auth→non-500, cross-tenant IDOR probe |
+| **F9C** 7 dedicated deep stress specs | ⏸️ MULTI-SESSION | Maintenance workorder, Messaging template, Mobile staff/cashier, F&B BEO, Sales lifecycle, Marketplace deep. Her biri 1–2 sa work (task agent paketi önerisi) |
+| **F9D** Targeted runs (deploy env) | ⛔ BLOCKED on env | Local'den koşulamaz; GitHub Actions / deploy gerekli |
+| **F9E** Full suite re-run | ⛔ BLOCKED on F9D | Hedef: 85+ spec → drill report `20260527_f9_full_app_coverage_closure.md` |
+| **F9F** Doc updates | 🔄 PARTIAL | Roadmap (bu blok), gap map ZERO→PARTIAL transitions, pilot trust (sadece CI green sonrası) |
+
+**Doktrin kuralları F9 boyunca aynen geçerli:** fake PASS yok, skip-as-pass yok, P2/REVIEW downgrade yok, `external_calls=[]`, `pilot_drift=0`, cleanup idempotent. Module-blocked → P2 REVIEW (PASS değil). Destructive POST yok (dry-run + stress-prefixed seed dışında).
+
+---
+
 ## Closing note (2026-05-26 baseline stabilization)
 
 **2026-05-26:** Run #143 official 84-spec GO WITH WATCH baseline stabilized. Stale T001–T006 plan retired. P2/REVIEW triage moved to §11 pre-pilot decision matrix (`docs/STRESS_P2_REVIEW_TRIAGE_20260526.md`). Sentry worker noise reduction completed with `TransientFailureTracker` across 11 workers, architect Round-2 PASS, commit `6f48e71`. **Bu noktadan sonra yeni faz ayrı başlık altında açılacak: Pilot Onboarding Pack · MUST CLOSE PC1–PC4 Sprint · Sales/Investor Readiness Pack.**

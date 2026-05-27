@@ -100,7 +100,8 @@ export function attachObservers(page) {
  * Sayfanın "boş ekran" / "hata sayfası" olup olmadığını kontrol et.
  *   - body innerText < 50 char → boş
  *   - "404", "500", "Error", "Hata", "Bir şeyler ters" → error UI
- * Döner: { ok:boolean, reason?:string, snippet?:string }
+ *   - F9A: PII / token leak sanity scan (DOM içinde JWT, kart no, çoklu e-posta)
+ * Döner: { ok:boolean, reason?:string, snippet?:string, pii_findings?:string[] }
  */
 export async function inspectPageContent(page) {
     const text = (await page.locator('body').innerText().catch(() => '')) || '';
@@ -125,7 +126,30 @@ export async function inspectPageContent(page) {
         }
     }
 
-    return { ok: true };
+    // F9A: PII / token leak scan — DOM içinde **görünür metin** olarak
+    // hassas pattern var mı? Strict değil (false-positive olabilir), ama
+    // smoke seviyesinde sanity: gerçek leak'i fark etmemize yetecek kadar.
+    // Bulgular informational; suite'i bloke etmez (annotate edilir).
+    const piiFindings = [];
+
+    // JWT (header.payload.signature — base64url segmentleri)
+    if (/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/.test(trimmed)) {
+        piiFindings.push('jwt_in_dom');
+    }
+    // Kart no (13–19 hane, Luhn check değil ama spaced veya unspaced)
+    if (/\b(?:\d[ -]?){13,19}\b/.test(trimmed) && /\b4\d{3}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}\b/.test(trimmed)) {
+        piiFindings.push('card_pan_like');
+    }
+    // CVV/CVC inline (label + 3-4 hane)
+    if (/\b(cvv|cvc)[\s:]+\d{3,4}\b/i.test(trimmed)) {
+        piiFindings.push('cvv_inline');
+    }
+    // Bearer / api-key string'i (DOM'a stringify edilmiş response leak)
+    if (/\b(bearer\s+[A-Za-z0-9_\-.]{20,}|api[_-]?key["':\s]+[A-Za-z0-9_\-]{20,})\b/i.test(trimmed)) {
+        piiFindings.push('bearer_or_apikey_in_dom');
+    }
+
+    return { ok: true, ...(piiFindings.length ? { pii_findings: piiFindings } : {}) };
 }
 
 /**
