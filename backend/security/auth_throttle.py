@@ -561,6 +561,29 @@ VERIFY_CODE_EMAIL = SlidingWindowThrottle(max_requests=5, window_seconds=900, al
 RESET_CODE_IP = SlidingWindowThrottle(max_requests=10, window_seconds=60, always_on=True)
 RESET_CODE_EMAIL = SlidingWindowThrottle(max_requests=10, window_seconds=1800, always_on=True)
 
+# Task-51 — `/api/cashier/handover-shift` accepts (target_email, target_password)
+# and bcrypt-verifies the password before transferring the open cashier shift.
+# Without a throttle this is a financial PIN-equivalent gate that an attacker
+# holding a stolen staff access_token can brute-force at bcrypt-throttled
+# speed against any peer staff account in the same tenant — completely
+# bypassing the login-side `LOGIN_ACCOUNT` lockout (which only counts
+# `/api/auth/login` attempts). The F9C mobile-cashier stress spec (test L)
+# probes this surface and expects 429 by the 7th wrong-credential attempt.
+#
+# Per-user-id layer: JWT-trusted `current_user.id` of the operator initiating
+#   handover (IP-rotation immune; the attacker can't change which session is
+#   driving the brute-force without re-stealing the access_token).
+# Per-IP layer: defense-in-depth against credential-spraying tooling that
+#   could share a stolen token across many peer accounts in parallel.
+# always_on=True so the dev escape hatch (DISABLE_AUTH_THROTTLE) cannot mask
+# the protection in stress runs or production smoke tests.
+CASHIER_HANDOVER_USER = SlidingWindowThrottle(
+    max_requests=6, window_seconds=900, always_on=True, name="cashier_handover_user"
+)
+CASHIER_HANDOVER_IP = SlidingWindowThrottle(
+    max_requests=6, window_seconds=900, always_on=True, name="cashier_handover_ip"
+)
+
 
 async def enforce(throttle: SlidingWindowThrottle, key: str, label: str = "istek") -> None:
     """Raise 429 with a Turkish, non-technical message and Retry-After header.

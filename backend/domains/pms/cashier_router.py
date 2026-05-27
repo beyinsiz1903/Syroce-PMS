@@ -4,7 +4,7 @@ import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request
 
 from core.database import db
 from core.folio_ledger_service import FolioLedgerService
@@ -199,11 +199,40 @@ async def close_shift(body: dict = Body({}), current_user: User = Depends(get_cu
 
 
 @router.post("/cashier/handover-shift")
-async def handover_shift(body: dict = Body(...), current_user: User = Depends(get_current_user),
+async def handover_shift(
+    request: Request,
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_payment")),  # v94 DW
 ):
     from core._pwd import BcryptContext
     pwd_ctx = BcryptContext()
+
+    # Task-51 — brute-force throttle on the financial PIN-equivalent gate.
+    # Two layered sliding windows (per-operator-user-id + per-IP), each
+    # capped at 6 attempts / 900s, always_on (cannot be disabled via
+    # DISABLE_AUTH_THROTTLE). Both layers are checked BEFORE the bcrypt
+    # verify so over-budget attackers don't incur the bcrypt cost or
+    # produce DB load per attempt. The throttle is applied even before
+    # the open-shift / target lookup so a 404/401 attacker can't dodge
+    # the rate limit by spraying against a closed-shift state.
+    from security.auth_throttle import (
+        CASHIER_HANDOVER_IP,
+        CASHIER_HANDOVER_USER,
+        client_ip,
+    )
+    from security.auth_throttle import enforce as _throttle
+    _ip = client_ip(request)
+    await _throttle(
+        CASHIER_HANDOVER_USER,
+        f"handover:{current_user.id}",
+        "vardiya devir denemesi",
+    )
+    await _throttle(
+        CASHIER_HANDOVER_IP,
+        f"handover_ip:{_ip}",
+        "vardiya devir denemesi",
+    )
 
     shift = await db.cashier_shifts.find_one(
         {"tenant_id": current_user.tenant_id, "status": "open"}
@@ -228,6 +257,17 @@ async def handover_shift(body: dict = Body(...), current_user: User = Depends(ge
     stored_hash = target_user.get("hashed_password") or target_user.get("password_hash") or ""
     if not pwd_ctx.verify(target_password, stored_hash):
         raise HTTPException(status_code=401, detail="Sifre hatali. Devir alacak kisi kendi sifresini girmeli")
+
+    # Credential gate passed — drain the per-user/per-IP throttle counters
+    # so a legitimate operator who mistyped a few times before succeeding
+    # isn't penalised for the rest of the 15-minute window.
+    try:
+        await CASHIER_HANDOVER_USER.reset(f"handover:{current_user.id}")
+        await CASHIER_HANDOVER_IP.reset(f"handover_ip:{_ip}")
+    except Exception:
+        # Best-effort cache cleanup; failure here only means the legitimate
+        # operator stays in their existing budget — never a hard error.
+        pass
 
     target_name = target_user.get("name") or target_user.get("full_name") or target_email
     now = datetime.utcnow()
