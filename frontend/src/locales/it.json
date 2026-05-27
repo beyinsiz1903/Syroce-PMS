@@ -3273,6 +3273,7 @@
         "taxNo": "P.IVA",
         "contact": "Contatto",
         "paymentDays": "Termine",
+        "creditLimit": "Aperto / Limite",
         "status": "Stato",
         "action": "Azione"
       },
@@ -3280,7 +3281,8 @@
       "daysSuffix": "giorni",
       "active": "Attivo",
       "inactive": "Inattivo",
-      "edit": "Modifica"
+      "edit": "Modifica",
+      "openCommitmentTooltip": "Impegno OdA aperto: {{open}} / Limite di credito: {{limit}}"
     },
     "supplierModal": {
       "titleNew": "Nuovo fornitore",
@@ -3293,6 +3295,9 @@
       "phone": "Telefono",
       "address": "Indirizzo",
       "paymentTerms": "Termini di pagamento (giorni)",
+      "creditLimit": "Limite di credito",
+      "creditLimitPlaceholder": "Lasciare vuoto per nessun limite",
+      "creditLimitHelp": "Importo massimo di OdA aperti consentito per questo fornitore. Vuoto = controllo disattivato.",
       "categories": "Categorie (separate da virgola)",
       "active": "Attivo",
       "notes": "Note",

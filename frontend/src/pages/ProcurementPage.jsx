@@ -113,7 +113,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
     setSummary(r.data || {});
   };
   const loadSuppliers = async () => {
-    const r = await axios.get('/procurement/suppliers?active_only=false');
+    const r = await axios.get('/procurement/suppliers?active_only=false&with_commitment=true');
     setSuppliers(r.data?.items || []);
   };
   const loadPRs = async () => {
@@ -634,7 +634,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
               </div>
               <Button onClick={() => setSupplierForm({
                 name: '', code: '', tax_no: '', contact_name: '', email: '', phone: '',
-                address: '', payment_terms_days: 30, categories: [], notes: '', active: true,
+                address: '', payment_terms_days: 30, credit_limit: '', categories: [], notes: '', active: true,
               })}>
                 <Plus className="w-4 h-4 mr-1" /> {t('procurement.supplierList.newSupplier')}
               </Button>
@@ -647,17 +647,44 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                   <th className="p-2">{t('procurement.supplierList.columns.taxNo')}</th>
                   <th className="p-2">{t('procurement.supplierList.columns.contact')}</th>
                   <th className="p-2 text-right">{t('procurement.supplierList.columns.paymentDays')}</th>
+                  <th className="p-2 text-right">{t('procurement.supplierList.columns.creditLimit')}</th>
                   <th className="p-2">{t('procurement.supplierList.columns.status')}</th>
                   <th className="p-2 text-right">{t('procurement.supplierList.columns.action')}</th>
                 </tr></thead>
                 <tbody>
-                  {suppliers.map((s) => (
+                  {suppliers.map((s) => {
+                    const limit = s.credit_limit;
+                    const open = Number(s.open_commitment || 0);
+                    const hasLimit = limit !== null && limit !== undefined && limit !== '';
+                    const limitNum = hasLimit ? Number(limit) : null;
+                    const headroom = hasLimit ? limitNum - open : null;
+                    const pct = hasLimit && limitNum > 0 ? Math.min(100, (open / limitNum) * 100) : 0;
+                    const tone = !hasLimit
+                      ? 'text-slate-400'
+                      : headroom < 0
+                        ? 'text-rose-700'
+                        : pct >= 80
+                          ? 'text-amber-700'
+                          : 'text-slate-700';
+                    return (
                     <tr key={s.id} className="border-b hover:bg-slate-50">
                       <td className="p-2 font-mono text-xs">{s.code || '—'}</td>
                       <td className="p-2 font-medium">{s.name}</td>
                       <td className="p-2 text-xs">{s.tax_no || '—'}</td>
                       <td className="p-2 text-xs">{s.contact_name || s.email || s.phone || '—'}</td>
                       <td className="p-2 text-right">{s.payment_terms_days} {t('procurement.supplierList.daysSuffix')}</td>
+                      <td className={`p-2 text-right tabular-nums ${tone}`}>
+                        {hasLimit ? (
+                          <span title={t('procurement.supplierList.openCommitmentTooltip', {
+                            open: open.toLocaleString(),
+                            limit: limitNum.toLocaleString(),
+                          })}>
+                            {open.toLocaleString()} / {limitNum.toLocaleString()}
+                          </span>
+                        ) : (
+                          <span>—</span>
+                        )}
+                      </td>
                       <td className="p-2">
                         <Badge className={s.active ? 'bg-emerald-100 text-emerald-800 border-0' : 'bg-slate-200 text-slate-600 border-0'}>
                           {s.active ? t('procurement.supplierList.active') : t('procurement.supplierList.inactive')}
@@ -670,8 +697,9 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                         </Button>
                       </td>
                     </tr>
-                  ))}
-                  {suppliers.length === 0 && <tr><td colSpan="7" className="p-4 text-center text-slate-400">{t('procurement.supplierList.empty')}</td></tr>}
+                    );
+                  })}
+                  {suppliers.length === 0 && <tr><td colSpan="8" className="p-4 text-center text-slate-400">{t('procurement.supplierList.empty')}</td></tr>}
                 </tbody>
               </table>
             </CardContent>
@@ -708,6 +736,19 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
             <div><Label>{t('procurement.supplierModal.paymentTerms')}</Label>
               <Input type="number" value={supplierForm.payment_terms_days || 30}
                 onChange={(e) => setSupplierForm({ ...supplierForm, payment_terms_days: Number(e.target.value) })} /></div>
+            <div><Label>{t('procurement.supplierModal.creditLimit')}</Label>
+              <Input type="number" min="0" step="0.01"
+                placeholder={t('procurement.supplierModal.creditLimitPlaceholder')}
+                value={supplierForm.credit_limit ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setSupplierForm({
+                    ...supplierForm,
+                    credit_limit: v === '' ? null : Number(v),
+                  });
+                }} />
+              <p className="text-xs text-slate-500 mt-1">{t('procurement.supplierModal.creditLimitHelp')}</p>
+            </div>
             <div><Label>{t('procurement.supplierModal.categories')}</Label>
               <Input value={(supplierForm.categories || []).join(', ')}
                 onChange={(e) => setSupplierForm({

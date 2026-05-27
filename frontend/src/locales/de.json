@@ -3273,6 +3273,7 @@
         "taxNo": "Steuernr.",
         "contact": "Kontakt",
         "paymentDays": "Zahlung",
+        "creditLimit": "Offen / Limit",
         "status": "Status",
         "action": "Aktion"
       },
@@ -3280,7 +3281,8 @@
       "daysSuffix": "Tage",
       "active": "Aktiv",
       "inactive": "Inaktiv",
-      "edit": "Bearbeiten"
+      "edit": "Bearbeiten",
+      "openCommitmentTooltip": "Offene Bestellungen: {{open}} / Kreditlimit: {{limit}}"
     },
     "supplierModal": {
       "titleNew": "Neuer Lieferant",
@@ -3293,6 +3295,9 @@
       "phone": "Telefon",
       "address": "Adresse",
       "paymentTerms": "Zahlungsfrist (Tage)",
+      "creditLimit": "Kreditlimit",
+      "creditLimitPlaceholder": "Leer lassen für kein Limit",
+      "creditLimitHelp": "Maximaler offener Bestellbetrag für diesen Lieferanten. Leer = Prüfung deaktiviert.",
       "categories": "Kategorien (kommagetrennt)",
       "active": "Aktiv",
       "notes": "Notizen",

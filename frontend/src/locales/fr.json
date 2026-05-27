@@ -3273,6 +3273,7 @@
         "taxNo": "N° fiscal",
         "contact": "Contact",
         "paymentDays": "Délai",
+        "creditLimit": "Encours / Limite",
         "status": "Statut",
         "action": "Action"
       },
@@ -3280,7 +3281,8 @@
       "daysSuffix": "jours",
       "active": "Actif",
       "inactive": "Inactif",
-      "edit": "Modifier"
+      "edit": "Modifier",
+      "openCommitmentTooltip": "Engagements ouverts: {{open}} / Limite de crédit: {{limit}}"
     },
     "supplierModal": {
       "titleNew": "Nouveau fournisseur",
@@ -3293,6 +3295,9 @@
       "phone": "Téléphone",
       "address": "Adresse",
       "paymentTerms": "Délai de paiement (jours)",
+      "creditLimit": "Limite de crédit",
+      "creditLimitPlaceholder": "Laisser vide pour aucune limite",
+      "creditLimitHelp": "Montant maximum d'engagement ouvert autorisé pour ce fournisseur. Vide = contrôle désactivé.",
       "categories": "Catégories (séparées par virgule)",
       "active": "Actif",
       "notes": "Notes",

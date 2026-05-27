@@ -3273,6 +3273,7 @@
         "taxNo": "CNPJ",
         "contact": "Contato",
         "paymentDays": "Prazo",
+        "creditLimit": "Aberto / Limite",
         "status": "Status",
         "action": "Ação"
       },
@@ -3280,7 +3281,8 @@
       "daysSuffix": "dias",
       "active": "Ativo",
       "inactive": "Inativo",
-      "edit": "Editar"
+      "edit": "Editar",
+      "openCommitmentTooltip": "Compromisso aberto de OC: {{open}} / Limite de crédito: {{limit}}"
     },
     "supplierModal": {
       "titleNew": "Novo fornecedor",
@@ -3293,6 +3295,9 @@
       "phone": "Telefone",
       "address": "Endereço",
       "paymentTerms": "Prazo de pagamento (dias)",
+      "creditLimit": "Limite de crédito",
+      "creditLimitPlaceholder": "Deixe em branco para sem limite",
+      "creditLimitHelp": "Valor máximo de OCs abertas permitido para este fornecedor. Vazio = verificação desativada.",
       "categories": "Categorias (separadas por vírgula)",
       "active": "Ativo",
       "notes": "Notas",

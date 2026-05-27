@@ -3273,6 +3273,7 @@
         "taxNo": "NIF",
         "contact": "Contacto",
         "paymentDays": "Plazo",
+        "creditLimit": "Abierto / Límite",
         "status": "Estado",
         "action": "Acción"
       },
@@ -3280,7 +3281,8 @@
       "daysSuffix": "días",
       "active": "Activo",
       "inactive": "Inactivo",
-      "edit": "Editar"
+      "edit": "Editar",
+      "openCommitmentTooltip": "Compromiso abierto de OC: {{open}} / Límite de crédito: {{limit}}"
     },
     "supplierModal": {
       "titleNew": "Nuevo proveedor",
@@ -3293,6 +3295,9 @@
       "phone": "Teléfono",
       "address": "Dirección",
       "paymentTerms": "Plazo de pago (días)",
+      "creditLimit": "Límite de crédito",
+      "creditLimitPlaceholder": "Dejar en blanco para sin límite",
+      "creditLimitHelp": "Importe máximo de OC abiertas permitido para este proveedor. En blanco = control desactivado.",
       "categories": "Categorías (separadas por coma)",
       "active": "Activo",
       "notes": "Notas",

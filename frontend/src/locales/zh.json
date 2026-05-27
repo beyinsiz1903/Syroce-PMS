@@ -3273,6 +3273,7 @@
         "taxNo": "税号",
         "contact": "联系人",
         "paymentDays": "账期",
+        "creditLimit": "未结 / 信用额度",
         "status": "状态",
         "action": "操作"
       },
@@ -3280,7 +3281,8 @@
       "daysSuffix": "天",
       "active": "启用",
       "inactive": "停用",
-      "edit": "编辑"
+      "edit": "编辑",
+      "openCommitmentTooltip": "未结采购单金额: {{open}} / 信用额度: {{limit}}"
     },
     "supplierModal": {
       "titleNew": "新增供应商",
@@ -3293,6 +3295,9 @@
       "phone": "电话",
       "address": "地址",
       "paymentTerms": "付款条件（天）",
+      "creditLimit": "信用额度",
+      "creditLimitPlaceholder": "留空表示无限制",
+      "creditLimitHelp": "此供应商允许的未结采购单上限。留空则禁用检查。",
       "categories": "类别（逗号分隔）",
       "active": "启用",
       "notes": "备注",

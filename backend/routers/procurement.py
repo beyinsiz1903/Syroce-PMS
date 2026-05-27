@@ -158,6 +158,7 @@ def _invalidate_suppliers_cache(tenant_id: str) -> None:
 async def list_suppliers(
     active_only: bool = True,
     q: str | None = None,
+    with_commitment: bool = False,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_finance_reports")),  # v76 Bug DL: vendor cost data
 ):
@@ -171,6 +172,27 @@ async def list_suppliers(
         query["name"] = {"$regex": _re.escape(q.replace("\x00", "")), "$options": "i"}
     items = await db.proc_suppliers.find(query, {"_id": 0}) \
         .sort("name", 1).to_list(500)
+    if with_commitment and items:
+        # Per-supplier open PO commitment (matches credit-limit enforcement
+        # window in create PO: status in {sent, partially_received}). Single
+        # aggregation round-trip; map onto supplier rows for headroom UI.
+        pipeline = [
+            {"$match": {
+                "tenant_id": current_user.tenant_id,
+                "status": {"$in": ["sent", "partially_received"]},
+            }},
+            {"$group": {
+                "_id": "$supplier_id",
+                "total": {"$sum": "$grand_total"},
+            }},
+        ]
+        totals: dict[str, float] = {}
+        async for doc in db.proc_purchase_orders.aggregate(pipeline):
+            sid = doc.get("_id")
+            if sid:
+                totals[sid] = float(doc.get("total", 0) or 0)
+        for s in items:
+            s["open_commitment"] = round(totals.get(s.get("id"), 0.0), 2)
     return {"items": items, "count": len(items)}
 
 

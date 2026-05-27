@@ -3273,6 +3273,7 @@
         "taxNo": "الرقم الضريبي",
         "contact": "الاتصال",
         "paymentDays": "الأجل",
+        "creditLimit": "مفتوح / الحد",
         "status": "الحالة",
         "action": "الإجراء"
       },
@@ -3280,7 +3281,8 @@
       "daysSuffix": "يوم",
       "active": "نشط",
       "inactive": "غير نشط",
-      "edit": "تعديل"
+      "edit": "تعديل",
+      "openCommitmentTooltip": "الالتزامات المفتوحة: {{open}} / حد الائتمان: {{limit}}"
     },
     "supplierModal": {
       "titleNew": "مورد جديد",
@@ -3293,6 +3295,9 @@
       "phone": "الهاتف",
       "address": "العنوان",
       "paymentTerms": "شروط الدفع (أيام)",
+      "creditLimit": "حد الائتمان",
+      "creditLimitPlaceholder": "اتركه فارغًا لعدم وجود حد",
+      "creditLimitHelp": "الحد الأقصى لإجمالي أوامر الشراء المفتوحة المسموح به لهذا المورّد. فارغ = إيقاف التحقق.",
       "categories": "الفئات (مفصولة بفاصلة)",
       "active": "نشط",
       "notes": "ملاحظات",

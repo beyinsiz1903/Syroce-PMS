@@ -3328,6 +3328,7 @@
         "taxNo": "Tax No",
         "contact": "Contact",
         "paymentDays": "Terms",
+        "creditLimit": "Open / Limit",
         "status": "Status",
         "action": "Action"
       },
@@ -3335,7 +3336,8 @@
       "daysSuffix": "days",
       "active": "Active",
       "inactive": "Inactive",
-      "edit": "Edit"
+      "edit": "Edit",
+      "openCommitmentTooltip": "Open PO commitment: {{open}} / Credit limit: {{limit}}"
     },
     "supplierModal": {
       "titleNew": "New Supplier",
@@ -3348,6 +3350,9 @@
       "phone": "Phone",
       "address": "Address",
       "paymentTerms": "Payment Terms (days)",
+      "creditLimit": "Credit Limit",
+      "creditLimitPlaceholder": "Leave blank for no limit",
+      "creditLimitHelp": "Maximum open PO total allowed for this supplier. Blank disables the check.",
       "categories": "Categories (comma-separated)",
       "active": "Active",
       "notes": "Notes",

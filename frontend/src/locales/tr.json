@@ -3328,6 +3328,7 @@
         "taxNo": "Vergi No",
         "contact": "İletişim",
         "paymentDays": "Vade",
+        "creditLimit": "Açık / Limit",
         "status": "Durum",
         "action": "İşlem"
       },
@@ -3335,7 +3336,8 @@
       "daysSuffix": "gün",
       "active": "Aktif",
       "inactive": "Pasif",
-      "edit": "Düzenle"
+      "edit": "Düzenle",
+      "openCommitmentTooltip": "Açık PO taahhüdü: {{open}} / Kredi limiti: {{limit}}"
     },
     "supplierModal": {
       "titleNew": "Yeni Tedarikçi",
@@ -3348,6 +3350,9 @@
       "phone": "Telefon",
       "address": "Adres",
       "paymentTerms": "Ödeme Vadesi (gün)",
+      "creditLimit": "Kredi Limiti",
+      "creditLimitPlaceholder": "Limit yoksa boş bırakın",
+      "creditLimitHelp": "Bu tedarikçi için izin verilen toplam açık PO tutarı. Boş = kontrol kapalı.",
       "categories": "Kategoriler (virgülle)",
       "active": "Aktif",
       "notes": "Notlar",
