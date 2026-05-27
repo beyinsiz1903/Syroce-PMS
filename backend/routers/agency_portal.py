@@ -564,7 +564,26 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
         # arrive as a clean 403, not a throttled 429.
         raise HTTPException(status_code=403, detail="Bu giris sadece acente kullanicilari icindir")
 
-    if not verify_password(data.password, user_doc.get("password", "")):
+    # Hash field tolerance — mirror `auth.py:585` fallback chain.
+    # Accounts created via the main system (`auth.py`) store the bcrypt
+    # hash under `hashed_password`; accounts created via this agency
+    # registration path (line 436) historically used `password`; some
+    # legacy rows use `password_hash`. Reading only `password` (the
+    # original implementation) silently fails for every system-created
+    # user — verify_password gets "" → 401 → throttle hit → by the
+    # (per-account-cap+1)th attempt the success leg surfaces as 429
+    # instead of 200, which is exactly the symptom Stress spec 98D
+    # caught after Task #135 was deployed (RCA 2026-05-27): stress
+    # admin lives in sysdb.users with `hashed_password` only, so the
+    # drain leg could never succeed. Tolerance does NOT loosen security
+    # — all three field names hold the same bcrypt hash format and the
+    # verify_password call itself is unchanged.
+    hashed_pwd = (
+        user_doc.get("hashed_password")
+        or user_doc.get("password_hash")
+        or user_doc.get("password", "")
+    )
+    if not verify_password(data.password, hashed_pwd):
         await _record_failure_and_raise(401, "E-posta veya sifre hatali")
 
     # Credential gate passed — drain the per-IP / per-account throttle
