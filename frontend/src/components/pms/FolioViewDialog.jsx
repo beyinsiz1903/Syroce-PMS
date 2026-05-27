@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send, Loader2 } from 'lucide-react';
+import { Plus, ClipboardList, DollarSign, RotateCcw, FileText, ArrowLeftRight, Printer, Send, Loader2, KeyRound, RefreshCw } from 'lucide-react';
 
 const VAT_OPTIONS = [
   { value: '0', label: '%0' },
@@ -41,6 +41,9 @@ const FolioViewDialog = ({
   const [voidTarget, setVoidTarget] = useState(null);
   const [voidReason, setVoidReason] = useState('');
   const [voidLoading, setVoidLoading] = useState(false);
+  const [pinGate, setPinGate] = useState({ open: false, label: '', onVerified: null });
+  const [pinValue, setPinValue] = useState('');
+  const [pinSubmitting, setPinSubmitting] = useState(false);
   const [proforma, setProforma] = useState(null);
   const [proformaLoading, setProformaLoading] = useState(false);
   const [operations, setOperations] = useState(null);
@@ -124,9 +127,43 @@ const FolioViewDialog = ({
     }
   };
 
-  const handleVoidPayment = async () => {
+  const requirePin = (label, onVerified) => {
+    setPinValue('');
+    setPinGate({ open: true, label, onVerified });
+  };
+  const closePinGate = () => {
+    setPinGate({ open: false, label: '', onVerified: null });
+    setPinValue('');
+    setPinSubmitting(false);
+  };
+  const verifyPin = async () => {
+    const pin = pinValue.trim();
+    if (!pin) { toast.error('PIN gerekli'); return; }
+    setPinSubmitting(true);
+    try {
+      await axios.post('/cashier/peer-verify', { pin });
+      const cb = pinGate.onVerified;
+      closePinGate();
+      if (cb) await cb();
+    } catch (e) {
+      if (e?.response?.status === 429) {
+        const retry =
+          e.response.headers?.['retry-after'] ??
+          e.response.data?.retry_after ??
+          null;
+        const detail = e.response?.data?.detail || 'Çok fazla PIN denemesi, lütfen bekleyin';
+        toast.error(retry ? `${detail} (${retry}s)` : detail);
+      } else if (e?.response?.status === 401) {
+        toast.error(e.response?.data?.detail || 'PIN hatalı');
+      } else {
+        toast.error('PIN doğrulanamadı: ' + (e.response?.data?.detail || e.message));
+      }
+      setPinSubmitting(false);
+    }
+  };
+
+  const doVoidPayment = async () => {
     if (!selectedFolio || !voidTarget) return;
-    if (!voidReason.trim()) { toast.error('İade nedeni zorunlu'); return; }
     setVoidLoading(true);
     try {
       await axios.post(
@@ -141,6 +178,11 @@ const FolioViewDialog = ({
       toast.error(error.response?.data?.detail || 'İade başarısız');
     }
     setVoidLoading(false);
+  };
+  const handleVoidPayment = () => {
+    if (!selectedFolio || !voidTarget) return;
+    if (!voidReason.trim()) { toast.error('İade nedeni zorunlu'); return; }
+    requirePin('Ödeme iadesi öncesi PIN doğrulayın', doVoidPayment);
   };
 
   const loadProforma = async () => {
@@ -865,6 +907,39 @@ th{background:#f5f5f5}
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={pinGate.open} onOpenChange={(v) => { if (!v) closePinGate(); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="w-5 h-5" /> PIN doğrulama
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600">{pinGate.label}</p>
+            <Input
+              type="password"
+              autoFocus
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="PIN / şifre"
+              value={pinValue}
+              onChange={(e) => setPinValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !pinSubmitting) verifyPin(); }}
+              disabled={pinSubmitting}
+            />
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={closePinGate} disabled={pinSubmitting}>
+                İptal
+              </Button>
+              <Button onClick={verifyPin} disabled={pinSubmitting || !pinValue.trim()} className="bg-black hover:bg-gray-800 text-white">
+                {pinSubmitting ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <KeyRound className="w-4 h-4 mr-2" />}
+                Doğrula
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>

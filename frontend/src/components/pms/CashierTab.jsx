@@ -14,7 +14,7 @@ import {
   LogIn, LogOut, Receipt, RefreshCw,
   Calculator, UserCheck, Users, Plus, Minus,
   FileText, FileDown, Search, Printer, AlertTriangle,
-  Landmark, CalendarRange
+  Landmark, CalendarRange, KeyRound
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -63,6 +63,47 @@ const CashierTab = () => {
   const [periodData, setPeriodData] = useState(null);
   const [periodLoading, setPeriodLoading] = useState(false);
 
+  const [pinGate, setPinGate] = useState({ open: false, label: '', onVerified: null });
+  const [pinValue, setPinValue] = useState('');
+  const [pinSubmitting, setPinSubmitting] = useState(false);
+
+  const requirePin = (label, onVerified) => {
+    setPinValue('');
+    setPinGate({ open: true, label, onVerified });
+  };
+
+  const closePinGate = () => {
+    setPinGate({ open: false, label: '', onVerified: null });
+    setPinValue('');
+    setPinSubmitting(false);
+  };
+
+  const verifyPin = async () => {
+    const pin = pinValue.trim();
+    if (!pin) { toast.error('PIN gerekli'); return; }
+    setPinSubmitting(true);
+    try {
+      await axios.post('/cashier/peer-verify', { pin });
+      const cb = pinGate.onVerified;
+      closePinGate();
+      if (cb) await cb();
+    } catch (e) {
+      if (e?.response?.status === 429) {
+        const retry =
+          e.response.headers?.['retry-after'] ??
+          e.response.data?.retry_after ??
+          null;
+        const detail = e.response?.data?.detail || 'Çok fazla PIN denemesi, lütfen bekleyin';
+        toast.error(retry ? `${detail} (${retry}s)` : detail);
+      } else if (e?.response?.status === 401) {
+        toast.error(e.response?.data?.detail || 'PIN hatalı');
+      } else {
+        toast.error('PIN doğrulanamadı: ' + (e.response?.data?.detail || e.message));
+      }
+      setPinSubmitting(false);
+    }
+  };
+
   const loadShift = useCallback(async () => {
     try {
       const res = await axios.get('/cashier/current-shift');
@@ -86,7 +127,7 @@ const CashierTab = () => {
 
   useEffect(() => { loadShift(); loadHistory(); }, [loadShift, loadHistory]);
 
-  const openShift = async () => {
+  const doOpenShift = async () => {
     setLoading(true);
     try {
       await axios.post('/cashier/open-shift', { opening_amount: parseFloat(openingAmount) || 0 });
@@ -97,17 +138,14 @@ const CashierTab = () => {
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
   };
+  const openShift = () => requirePin('Vardiya açmadan önce PIN doğrulayın', doOpenShift);
 
   const calcTotal = (counts) =>
     (counts.cash_200 * 200) + (counts.cash_100 * 100) + (counts.cash_50 * 50) +
     (counts.cash_20 * 20) + (counts.cash_10 * 10) + (counts.cash_5 * 5) +
     (counts.cash_1 * 1) + (counts.coin_1 * 1) + (counts.coin_050 * 0.5) + (counts.coin_025 * 0.25);
 
-  const closeShift = async () => {
-    if (Math.abs(difference) >= DIFF_THRESHOLD && !closingNote.trim()) {
-      toast.error(`Fark ${DIFF_THRESHOLD} TL'yi aştığı için açıklama zorunlu`);
-      return;
-    }
+  const doCloseShift = async () => {
     setLoading(true);
     try {
       await axios.post('/cashier/close-shift', {
@@ -123,6 +161,13 @@ const CashierTab = () => {
       loadHistory();
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
     setLoading(false);
+  };
+  const closeShift = () => {
+    if (Math.abs(difference) >= DIFF_THRESHOLD && !closingNote.trim()) {
+      toast.error(`Fark ${DIFF_THRESHOLD} TL'yi aştığı için açıklama zorunlu`);
+      return;
+    }
+    requirePin('Vardiya kapatmadan önce PIN doğrulayın', doCloseShift);
   };
 
   const handoverShift = async () => {
@@ -146,13 +191,20 @@ const CashierTab = () => {
     setLoading(false);
   };
 
-  const submitManual = async (direction) => {
+  const submitManual = (direction) => {
     const amt = parseFloat(manualTxn.amount);
     if (!amt || amt <= 0) { toast.error('Tutar girin'); return; }
     if (!manualTxn.description.trim()) { toast.error('Açıklama girin'); return; }
     const cur = manualTxn.currency || 'TRY';
     const fx = parseFloat(manualTxn.fx_rate) || 1;
     if (cur !== 'TRY' && (!fx || fx <= 0)) { toast.error('Yabancı para için kur girin'); return; }
+    const label = direction === 'in'
+      ? 'Nakit girişi öncesi PIN doğrulayın'
+      : 'Kasa çıkışı öncesi PIN doğrulayın';
+    requirePin(label, () => doSubmitManual(direction, amt, cur, fx));
+  };
+
+  const doSubmitManual = async (direction, amt, cur, fx) => {
     setLoading(true);
     try {
       const idemKey = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
@@ -1169,6 +1221,39 @@ const CashierTab = () => {
                 </div>
               </>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={pinGate.open} onOpenChange={(v) => { if (!v) closePinGate(); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="w-5 h-5" /> PIN doğrulama
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600">{pinGate.label}</p>
+            <Input
+              type="password"
+              autoFocus
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="PIN / şifre"
+              value={pinValue}
+              onChange={(e) => setPinValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !pinSubmitting) verifyPin(); }}
+              disabled={pinSubmitting}
+            />
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={closePinGate} disabled={pinSubmitting}>
+                İptal
+              </Button>
+              <Button onClick={verifyPin} disabled={pinSubmitting || !pinValue.trim()} className="bg-black hover:bg-gray-800 text-white">
+                {pinSubmitting ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <KeyRound className="w-4 h-4 mr-2" />}
+                Doğrula
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
