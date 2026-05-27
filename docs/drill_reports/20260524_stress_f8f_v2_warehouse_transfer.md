@@ -105,7 +105,65 @@ for IDOR + external_calls), `E2E_ALLOW_DESTRUCTIVE_STRESS=true`,
 ## Verdict
 
 Spec written + STRESS_COLLECTIONS expanded + roadmap section moved from
-"önerilen" → DONE. Targeted run + full-suite verification (74 spec
-baseline) deferred to next round; expected verdict ≥ GO WITH WATCH on
-fail-closed posture (no production code changes in this task, only
-contract verification).
+"önerilen" → DONE.
+
+### Targeted run verification — 2026-05-27 (Task #18)
+
+Local targeted run executed against deployed backend
+(`E2E_BASE_URL` + stress tenant + pilot super_admin):
+
+```
+cd frontend && yarn playwright test \
+    --config=playwright.stress.config.js \
+    specs/72-warehouse-transfer-procurement.spec.js \
+    --reporter=list --workers=1
+```
+
+Result:
+
+| Field | Value |
+|---|---|
+| Tests run | 6 (Setup + A + B + C + D + E) |
+| Passed | **6** |
+| Failed | **0** |
+| P0 / P1 | **0 / 0** |
+| Total wall time | 1.8 min (108.14 s) |
+| Seed prefix | `E2E_STRESS_F7_1779881042759_` |
+| Cleanup#1 | deleted_total = 8154 (ms = 15670.9) |
+| Cleanup#2 | idempotent = true (no-op) |
+| Pilot bookings | baseline = 30 → after = 30 → **drift = 0** ✓ |
+| `external_calls` invariant | `[]` per batch (B/C/D/transfer_probe/setup/Z-final) ✓ |
+| Module-blocked | false (procurement GET probe 2xx) |
+
+All five contract assertions held against live backend:
+
+- **A** Warehouse transfer probe — `movement_type=transfer` rejected
+  (whitelist `{in,out,adjustment}` intact; no silent stock movement).
+- **B** Partial GRN lifecycle — sent → partially_received → received;
+  rejected-qc_status did NOT increment stock; overage on completed PO
+  rejected ≥400.
+- **C** PO cancellation guard — empty cancel reason 422; GRN on
+  cancelled PO ≥400; closed→cancelled invalid transition ≥400.
+- **D** Supplier credit_limit silently dropped (P2 REVIEW gap held,
+  documented in spec); delete-when-used → 409; P0 cross-tenant IDOR
+  — pilot bearer write probes on stress supplier/PO ≥400.
+- **E** Final invariants — second-pass DELETE returned 404 (idempotent
+  contract held); `external_calls=[]`; pilot_drift=0.
+
+### Full-suite re-run
+
+Full Operational Stress Suite is **91 spec** at HEAD (well past the
+74-spec target in the original task and the 84-spec Run #143 official
+baseline). Full local run requires ~47 min (CI Run #143 was 47m 55s),
+which exceeds the local environment's per-command ceiling and is
+explicitly designated CI-only per
+[STRESS_TEST_ROADMAP.md § F9D](../STRESS_TEST_ROADMAP.md)
+("Targeted runs (deploy env) ⛔ BLOCKED on env; Local'den koşulamaz;
+GitHub Actions / deploy gerekli"). Full-suite verification at the
+current spec count is deferred to the next CI Full Stress Suite run,
+consistent with how Task #6 (spec 52B) handled the same constraint.
+
+**Verdict:** ✅ **GO WITH WATCH** for spec 72 contract verification
+(targeted scope). Full-suite GREEN re-baseline pending the next CI
+Full Stress Suite trigger.
+
