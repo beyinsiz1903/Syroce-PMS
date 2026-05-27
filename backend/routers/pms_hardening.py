@@ -512,25 +512,98 @@ async def api_void_payment(req: VoidRequest, request: Request, current_user: Use
         raise
 
 @router.post("/folio/split", tags=["folio"])
-async def api_split_folio(req: SplitFolioRequest, current_user: User = Depends(get_current_user)):
+async def api_split_folio(req: SplitFolioRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Split charges from one folio to a new one."""
     perm_svc.enforce_permission(current_user.role, "split_folio")
-    result = await folio_svc.split_folio(current_user.tenant_id, req.source_folio_id, req.charge_ids, req.target_folio_type, req.reason, current_user.id)
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result)
-    return result
+
+    # Idempotency-Key replay protection — task #102. Scoped per source folio so
+    # a double-tap on Split cannot produce two ghost folios from the same click.
+    idem_key = get_idempotency_key(request)
+    idem_lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope=f"folio_split:{req.source_folio_id}",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
+            )
+        idem_lock_id = claim["lock_id"]
+
+    try:
+        result = await folio_svc.split_folio(current_user.tenant_id, req.source_folio_id, req.charge_ids, req.target_folio_type, req.reason, current_user.id)
+        if not result["success"]:
+            if idem_lock_id:
+                await release_idempotency(db, lock_id=idem_lock_id)
+                idem_lock_id = None
+            raise HTTPException(status_code=400, detail=result)
+        if idem_lock_id:
+            await complete_idempotency(db, lock_id=idem_lock_id, response_body=result)
+            idem_lock_id = None
+        return result
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as exc:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
+        raise
 
 @router.post("/folio/split-by-amount", tags=["folio"])
-async def api_split_folio_by_amount(req: SplitFolioByAmountRequest, current_user: User = Depends(get_current_user)):
+async def api_split_folio_by_amount(req: SplitFolioByAmountRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Split a folio by transferring monetary amounts (even or custom)."""
     perm_svc.enforce_permission(current_user.role, "split_folio")
-    splits = [s.model_dump() for s in req.splits]
-    result = await folio_svc.split_folio_by_amounts(
-        current_user.tenant_id, req.source_folio_id, splits, req.reason, current_user.id
-    )
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result)
-    return result
+
+    # Idempotency-Key replay protection — task #102. Per-source-folio scope
+    # prevents a double-tap from creating two sets of target folios and
+    # transferring the same balance twice.
+    idem_key = get_idempotency_key(request)
+    idem_lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope=f"folio_split_by_amount:{req.source_folio_id}",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
+            )
+        idem_lock_id = claim["lock_id"]
+
+    try:
+        splits = [s.model_dump() for s in req.splits]
+        result = await folio_svc.split_folio_by_amounts(
+            current_user.tenant_id, req.source_folio_id, splits, req.reason, current_user.id
+        )
+        if not result["success"]:
+            if idem_lock_id:
+                await release_idempotency(db, lock_id=idem_lock_id)
+                idem_lock_id = None
+            raise HTTPException(status_code=400, detail=result)
+        if idem_lock_id:
+            await complete_idempotency(db, lock_id=idem_lock_id, response_body=result)
+            idem_lock_id = None
+        return result
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as exc:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
+        raise
 
 @router.get("/folio/tax-breakdown/{folio_id}", tags=["folio"])
 async def api_tax_breakdown(folio_id: str, current_user: User = Depends(get_current_user)):
@@ -538,13 +611,50 @@ async def api_tax_breakdown(folio_id: str, current_user: User = Depends(get_curr
     return await folio_svc.get_tax_breakdown(current_user.tenant_id, folio_id)
 
 @router.post("/folio/city-ledger-transfer", tags=["folio"])
-async def api_city_ledger_transfer(req: CityLedgerTransferRequest, current_user: User = Depends(get_current_user)):
+async def api_city_ledger_transfer(req: CityLedgerTransferRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Transfer folio balance to city ledger."""
     perm_svc.enforce_permission(current_user.role, "close_folio")
-    result = await folio_svc.transfer_to_city_ledger(current_user.tenant_id, req.folio_id, req.account_id, req.reason, current_user.id)
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result)
-    return result
+
+    # Idempotency-Key replay protection — task #102. Per-source-folio scope so
+    # a double-tap cannot transfer the same balance twice (which would also
+    # try to close an already-closed folio).
+    idem_key = get_idempotency_key(request)
+    idem_lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope=f"folio_city_ledger:{req.folio_id}",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
+            )
+        idem_lock_id = claim["lock_id"]
+
+    try:
+        result = await folio_svc.transfer_to_city_ledger(current_user.tenant_id, req.folio_id, req.account_id, req.reason, current_user.id)
+        if not result["success"]:
+            if idem_lock_id:
+                await release_idempotency(db, lock_id=idem_lock_id)
+                idem_lock_id = None
+            raise HTTPException(status_code=400, detail=result)
+        if idem_lock_id:
+            await complete_idempotency(db, lock_id=idem_lock_id, response_body=result)
+            idem_lock_id = None
+        return result
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as exc:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
+        raise
 
 @router.get("/folio/audit/{folio_id}", tags=["folio"])
 async def api_folio_audit(folio_id: str, current_user: User = Depends(get_current_user)):
