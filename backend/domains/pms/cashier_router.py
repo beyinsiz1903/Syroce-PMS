@@ -338,7 +338,6 @@ async def peer_verify(
     The 11th wrong attempt in the window returns 429 with Retry-After.
     """
     from core._pwd import BcryptContext
-
     from security.auth_throttle import (
         CASHIER_PEER_VERIFY_IP,
         CASHIER_PEER_VERIFY_USER,
