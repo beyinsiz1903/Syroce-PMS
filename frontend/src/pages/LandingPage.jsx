@@ -405,15 +405,26 @@ const LandingPage = () => {
                 className="pointer-events-none absolute inset-x-24 bottom-2 h-16 rounded-[100%] bg-[radial-gradient(ellipse_at_center,_rgba(56,242,232,0.4),_transparent_75%)] blur-xl sm:inset-x-20 sm:h-24 sm:bg-[radial-gradient(ellipse_at_center,_rgba(56,242,232,0.55),_transparent_75%)] sm:blur-2xl"
               />
 
-              {/* 3D otel görseli — bağımsız asset (frame YOK), büyütüldü */}
-              <img
-                src={HERO_IMG}
-                alt="Syroce 3D Otel Görünümü"
-                className="relative z-[1] block h-auto w-full max-h-[300px] object-contain sm:max-h-[420px] lg:max-h-[680px]"
-                style={{ filter: 'drop-shadow(0 25px 50px rgba(0, 220, 220, 0.28)) drop-shadow(0 8px 18px rgba(99, 102, 241, 0.18))' }}
-                loading="eager"
-                decoding="async"
-              />
+              {/* 3D otel görseli — bağımsız asset (frame YOK), büyütüldü.
+                  Responsive: mobil/tablet/desktop için ayrı WebP variant'ları,
+                  PNG orijinal fallback olarak. */}
+              <picture>
+                <source
+                  type="image/webp"
+                  srcSet={`/landing/hero-hotel-640.webp 640w, /landing/hero-hotel-960.webp 960w, /landing/hero-hotel-1280.webp 1280w`}
+                  sizes="(max-width: 639px) 100vw, (max-width: 1023px) 80vw, 860px"
+                />
+                <img
+                  src={HERO_IMG}
+                  alt="Syroce 3D Otel Görünümü"
+                  className="relative z-[1] block h-auto w-full max-h-[300px] object-contain sm:max-h-[420px] lg:max-h-[680px]"
+                  style={{ filter: 'drop-shadow(0 25px 50px rgba(0, 220, 220, 0.28)) drop-shadow(0 8px 18px rgba(99, 102, 241, 0.18))' }}
+                  loading="eager"
+                  decoding="async"
+                  width="1280"
+                  height="896"
+                />
+              </picture>
 
               {/* Connection lines — otel merkezinden floating kartlara doğru ince
                   neon yollar + akan data dot'ları. SVG viewBox 100×100; pos %
