@@ -198,6 +198,29 @@ export default async function globalSetup() {
     // 7) Stress snapshot after seed
     const stressAfterSeed = await snapshot(api, stressToken, 'stress-after-seed');
 
+    // 7b) Pilot read-only fixtures — Task #13: F8M v2 § 41B B2B IDOR matrix
+    // sample-gap closer. Idempotently ensures the pilot tenant carries one
+    // `room_blocks` doc and one `kbs_reports` doc so the IDOR rows for
+    // `groups` and `kbs` exercise real pilot ids (not BOGUS_UUID). Fail-soft:
+    // endpoint not deployed yet → matrix spec falls back to existing
+    // sampling probes + sample-gap REVIEW (current behaviour preserved).
+    let pilotFixtures = null;
+    if (PILOT_TID) {
+        const pf = await api.post('/api/admin/pilot-fixtures/ensure', {
+            headers: { Authorization: `Bearer ${pilotToken}` },
+            data: { pilot_tenant_id: PILOT_TID },
+            failOnStatusCode: false,
+            timeout: 30_000,
+        });
+        if (pf.ok()) {
+            pilotFixtures = await pf.json().catch(() => null);
+            console.log(`[stress-setup] ✅ Pilot fixtures ensured: block=${pilotFixtures?.block_id?.slice(0,8)} kbs_report=${pilotFixtures?.kbs_report_id?.slice(0,8)} created=${JSON.stringify(pilotFixtures?.created)}`);
+        } else {
+            const txt = await pf.text().catch(() => '');
+            console.log(`[stress-setup] ⚠️ Pilot fixtures ensure non-2xx (${pf.status()}) — matrix spec will fall back to sampling. body=${txt.slice(0, 200)}`);
+        }
+    }
+
     // 8) Persist
     fs.writeFileSync(TOKEN_FILE, JSON.stringify({
         stress_token: stressToken,
@@ -214,6 +237,7 @@ export default async function globalSetup() {
         pilot_baseline: pilotBaseline,
         stress_baseline: stressBaseline,
         stress_after_seed: stressAfterSeed,
+        pilot_fixtures: pilotFixtures,
         gates: {
             destructive_flag: true,
             external_dry_run: true,

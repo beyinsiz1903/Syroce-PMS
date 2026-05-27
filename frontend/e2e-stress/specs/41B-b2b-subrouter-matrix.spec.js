@@ -192,27 +192,36 @@ test.describe('F8M v2 § 41B — B2B Sub-Router Matrix', () => {
                 }
             } catch (_) {}
         }
-        // Block + KBS report id: pilot read endpoint'leri çoğu deploy'da
-        // farklı path altında (group-blocks, kbs/reports). Best-effort dene;
-        // yoksa BOGUS_UUID fallback (sample-gap REVIEW emit edilir).
-        try {
-            const gb = await callTimed(request, 'get', '/api/group-blocks?limit=1',
-                undefined, stressTokens.pilot_token);
-            if (gb.ok) {
-                const list = Array.isArray(gb.body) ? gb.body
-                    : (gb.body?.blocks || gb.body?.items || gb.body?.groups || []);
-                if (list[0]) pilotIds.block = list[0].id || list[0]._id;
-            }
-        } catch (_) {}
-        try {
-            const kr = await callTimed(request, 'get', '/api/kbs/reports?limit=1',
-                undefined, stressTokens.pilot_token);
-            if (kr.ok) {
-                const list = Array.isArray(kr.body) ? kr.body
-                    : (kr.body?.reports || kr.body?.items || []);
-                if (list[0]) pilotIds.kbs_report = list[0].id || list[0]._id;
-            }
-        } catch (_) {}
+        // Block + KBS report id: Task #13 — pilot read-only fixtures seeded by
+        // global-setup (POST /api/admin/pilot-fixtures/ensure) deterministically
+        // ship one `room_blocks` + one `kbs_reports` doc owned by the pilot
+        // tenant. Prefer fixtures from state; fall back to pilot-side sampling
+        // (best-effort) and finally BOGUS_UUID if neither is available.
+        const pilotFixtures = stressState.pilot_fixtures || null;
+        if (pilotFixtures?.block_id) pilotIds.block = pilotFixtures.block_id;
+        if (pilotFixtures?.kbs_report_id) pilotIds.kbs_report = pilotFixtures.kbs_report_id;
+        if (!pilotIds.block) {
+            try {
+                const gb = await callTimed(request, 'get', '/api/group-blocks?limit=1',
+                    undefined, stressTokens.pilot_token);
+                if (gb.ok) {
+                    const list = Array.isArray(gb.body) ? gb.body
+                        : (gb.body?.blocks || gb.body?.items || gb.body?.groups || []);
+                    if (list[0]) pilotIds.block = list[0].id || list[0]._id;
+                }
+            } catch (_) {}
+        }
+        if (!pilotIds.kbs_report) {
+            try {
+                const kr = await callTimed(request, 'get', '/api/kbs/reports?limit=1',
+                    undefined, stressTokens.pilot_token);
+                if (kr.ok) {
+                    const list = Array.isArray(kr.body) ? kr.body
+                        : (kr.body?.reports || kr.body?.items || []);
+                    if (list[0]) pilotIds.kbs_report = list[0].id || list[0]._id;
+                }
+            } catch (_) {}
+        }
 
         const sampled = Object.entries(pilotIds)
             .map(([k, v]) => `${k}=${v ? v.slice(0, 8) : 'MISSING'}`).join(' ');
