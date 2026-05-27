@@ -27,10 +27,15 @@ const BURST_N = 60; // beyond typical per-minute ceiling for public surfaces.
 test.describe.configure({ mode: 'serial' });
 
 // Burst helper: N istek paralel atar, 429 sayar, 5xx sentinel.
+// Task #34: bu spec RL davranışını ölçmek için kasıtlı olarak limiti
+// zorluyor → `noPacer` + `noBackoff` ile client-side pacer ve 429 retry'ı
+// devre dışı bırakıyoruz. Aksi takdirde 429 sinyali helper tarafından
+// retry'lanır ve burst counter throttled=0 görür (false PASS).
 async function burst(request, method, url, body, token, n) {
     const promises = [];
     for (let i = 0; i < n; i++) {
-        promises.push(callTimed(request, method, url, body, token).catch((e) => ({ status: 0, body: null, ok: false, err: e?.message })));
+        promises.push(callTimed(request, method, url, body, token, { noPacer: true, noBackoff: true })
+            .catch((e) => ({ status: 0, body: null, ok: false, err: e?.message })));
     }
     const results = await Promise.all(promises);
     let ok = 0, throttled = 0, clientErr = 0, serverErr = 0, network = 0;

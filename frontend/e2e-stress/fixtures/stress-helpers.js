@@ -106,16 +106,88 @@ export async function fetchSingle(request, token, listPath) {
     return { http: r.status(), list: Array.isArray(list) ? list : [], raw: j };
 }
 
-export async function callTimed(request, method, path, body, token, opts = {}) {
-    // tur-27 (CI #42 NO-GO follow-up): per-call timeout override.
-    // Default stays 30_000 (back-compat). Heavy endpoints (night-audit/run on
-    // 500-folio stress tenant) need 60–120s; pass opts.timeout to override.
-    const timeoutMs = opts.timeout ?? 30_000;
-    // tur-27b (CI #43 NO-GO follow-up — 05-A Idempotency-Key): per-call extra
-    // header override. Default stays empty (back-compat). Mutation endpoints
-    // requiring Idempotency-Key (quick-booking, multi-room booking, kbs,
-    // upsell, cashier ops) için `opts.headers: {'Idempotency-Key': uuid}` geç.
-    const extraHeaders = opts.headers ?? {};
+// Task #34 — Client-side pacer + 429-aware retry baked into the default
+// primitive so the expanded stress suite (≥485 tests / ~23 min) stays under
+// the production `write=120/min` and `default=300/min` per-bearer buckets
+// enforced by `backend/apm_middleware.py`.
+//
+// Why a client-side pacer at all? The 2026-05-24 F8AH verification run
+// (`docs/drill_reports/20260524_stress_full_stress_suite_f8ah_NOT_GREEN.md`)
+// hit 429 on the FIRST `POST` of five lifecycle specs (F8AH B, F8Z v2 B,
+// F8AC B, 39 A, 71 A). The backend stress profile (`E2E_ALLOW_DESTRUCTIVE_
+// STRESS=true` → write=10000/min) is gated by deploy env and was not in
+// effect on the pilot host; even when it IS in effect, public/anonymous
+// surfaces stay at prod ceilings (60/min) by design, so a pure backend
+// bypass is not a full solution. Pacing in the client is the only fix that
+// works in every deployment posture.
+//
+// Doctrine:
+//   - `write` (POST/PUT/PATCH/DELETE) and `default` (GET) buckets are
+//     paced per-token with a safety margin under prod limits (100/min and
+//     250/min respectively, vs. prod 120/min and 300/min). The margin
+//     absorbs (a) helper-internal extra requests (assertNoExternalCalls,
+//     pilotBookingsCount), (b) seed/globalSetup residue still aging out
+//     of the bucket when the first spec starts, and (c) playwright's
+//     internal retry-after slop.
+//   - On 429, retry up to 3 times respecting `retry-after` (capped at
+//     65s — apm_middleware's window is 60s so one full cycle clears it).
+//   - `opts.noPacer:true` skips the pacer (used by rate-limit-boundary
+//     burst tests that EXPECT 429s).
+//   - `opts.noBackoff:true` skips the 429 retry (same use case).
+//   - `opts.maxRetries` overrides default (3).
+//
+// Pacer state is module-scoped → shared across all specs in the single
+// worker (`workers:1` + `fullyParallel:false` in playwright.stress.config).
+const _PACER_WINDOW_MS = 60_000;
+const _PACER_LIMITS = {
+    // Safety margins under prod ceilings (apm_middleware.py:387-395).
+    // 'write' (POST/PUT/PATCH/DELETE auth'd): prod 120/min → pace at 100
+    // 'default' (GET auth'd):                  prod 300/min → pace at 250
+    // 'anonymous' (no token, any method):      prod  60/min → pace at  50
+    write: 100,
+    default: 250,
+    anonymous: 50,
+};
+const _pacerWindows = new Map(); // key: `${tokenKey}:${category}` → number[] of timestamps
+
+function _pacerKey(token) {
+    if (!token) return 'anon';
+    // Avoid stringifying the full bearer in maps; last 12 chars are unique
+    // enough for the at-most ~3 tokens (stress + pilot + occasional B2B) a
+    // single suite run uses.
+    return String(token).slice(-12);
+}
+
+function _pacerCategory(method, token) {
+    if (!token) return 'anonymous';
+    return (method === 'get' || method === 'GET') ? 'default' : 'write';
+}
+
+async function _paceBeforeCall(token, method) {
+    const cat = _pacerCategory(method, token);
+    const limit = _PACER_LIMITS[cat];
+    if (!limit) return;
+    const key = `${_pacerKey(token)}:${cat}`;
+    let arr = _pacerWindows.get(key);
+    if (!arr) { arr = []; _pacerWindows.set(key, arr); }
+    // Loop because after one sleep more requests may have aged out OR a
+    // concurrent caller (test parallelism inside one spec) may have refilled
+    // the window; re-check until we have headroom.
+    for (let i = 0; i < 5; i++) {
+        const now = Date.now();
+        while (arr.length && arr[0] < now - _PACER_WINDOW_MS) arr.shift();
+        if (arr.length < limit) break;
+        const waitMs = Math.max(250, (arr[0] + _PACER_WINDOW_MS) - now + 250);
+        await new Promise((res) => setTimeout(res, Math.min(waitMs, _PACER_WINDOW_MS + 500)));
+    }
+    arr.push(Date.now());
+}
+
+export function _resetPacerForTests() {
+    _pacerWindows.clear();
+}
+
+async function _doCallOnce(request, method, path, body, token, timeoutMs, extraHeaders) {
     const t0 = Date.now();
     const r = await request[method](path, {
         headers: {
@@ -140,6 +212,53 @@ export async function callTimed(request, method, path, body, token, opts = {}) {
         } catch { /* ignore */ }
     }
     return { status, ms, body: bodyJson, ok: status >= 200 && status < 300, retryAfter };
+}
+
+export async function callTimed(request, method, path, body, token, opts = {}) {
+    // tur-27 (CI #42 NO-GO follow-up): per-call timeout override.
+    // Default stays 30_000 (back-compat). Heavy endpoints (night-audit/run on
+    // 500-folio stress tenant) need 60–120s; pass opts.timeout to override.
+    const timeoutMs = opts.timeout ?? 30_000;
+    // tur-27b (CI #43 NO-GO follow-up — 05-A Idempotency-Key): per-call extra
+    // header override. Default stays empty (back-compat). Mutation endpoints
+    // requiring Idempotency-Key (quick-booking, multi-room booking, kbs,
+    // upsell, cashier ops) için `opts.headers: {'Idempotency-Key': uuid}` geç.
+    const extraHeaders = opts.headers ?? {};
+    // Task #34: opt-outs for the rate-limit-boundary burst spec which EXPECTS
+    // 429s and intentionally hammers the limiter; everything else gets pacing
+    // + 429 retry by default.
+    const noPacer = opts.noPacer === true;
+    const noBackoff = opts.noBackoff === true;
+    const maxRetries = opts.maxRetries ?? 3;
+    const fallbackSleepMs = opts.fallbackSleepMs ?? 15_000;
+
+    if (!noPacer) await _paceBeforeCall(token, method);
+
+    let last = await _doCallOnce(request, method, path, body, token, timeoutMs, extraHeaders);
+    if (noBackoff || last.status !== 429) return last;
+
+    // 429 path: respect retry-after (capped) and retry. apm_middleware's
+    // window is 60s — one full cycle is enough to clear a saturated bucket.
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const retryAfter = last.retryAfter > 0 ? last.retryAfter : 0;
+        const sleepMs = retryAfter > 0
+            ? Math.min(retryAfter * 1000 + 500, 65_000)
+            : Math.min(fallbackSleepMs * attempt, 65_000);
+        await new Promise((res) => setTimeout(res, sleepMs));
+        // The server cleared room; reflect that in the local pacer so the
+        // next call doesn't immediately re-pace and double-wait.
+        if (!noPacer) {
+            const key = `${_pacerKey(token)}:${_pacerCategory(method, token)}`;
+            const arr = _pacerWindows.get(key);
+            if (arr) {
+                const now = Date.now();
+                while (arr.length && arr[0] < now - _PACER_WINDOW_MS) arr.shift();
+            }
+        }
+        last = await _doCallOnce(request, method, path, body, token, timeoutMs, extraHeaders);
+        if (last.status !== 429) return last;
+    }
+    return last;
 }
 
 // tur-24: 429-aware wrapper. On 429, sleep `retry_after` seconds (capped at

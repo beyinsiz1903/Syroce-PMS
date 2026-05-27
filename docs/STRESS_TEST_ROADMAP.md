@@ -1031,6 +1031,24 @@ F8D v2 başlatılana kadar bu liste değiştirilmez.
 3. **4-5 spec** (frontend/e2e-stress/specs/): Setup → A/B/C/D → external
    re-assert → pilot drift; serial mode, 1500ms gap,
    `callTimedWithBackoff` (429 retry).
+   - **Task #34 pacing contract (zorunlu, 2026-05-27)**: Tüm yeni spec'ler
+     `callTimed` / `callTimedWithBackoff` üzerinden istek atmalı — bu iki
+     primitive Task #34'te per-token client-side pacer (write=100/min,
+     default=250/min, anonymous=50/min, prod ceilingleri 120/300/60 altında
+     emniyet payı) + otomatik 429 retry (retry-after-aware, 3 deneme, 65s
+     cap) ile sertleştirildi. Doğrudan `request.post(...)` / `request.get(...)`
+     çağrısı YASAK (pacer'ı atlatır, 485+ test suite'inde bucket'ı patlatır).
+     Rate-limit boundary spec'leri (`97-rate-limit-boundary`,
+     `41B-b2b-subrouter-matrix` burst) kasıtlı 429 üretmek için
+     `{ noPacer: true, noBackoff: true }` opt-out ile çağırmalı; bu
+     kombinasyon RL davranışını ölçen testler haricinde KULLANILMAZ.
+   - Pacer module-scoped (`workers:1 + fullyParallel:false` doctrine'i
+     sayesinde tek event loop) ve bearer token'ın son 12 karakteri ile
+     key'lenir. Stress + pilot bearer'ları ayrı bucket'larda izole edilir
+     → cross-tenant izolasyon test'leri pacer pencereleri bağlamında da
+     korunur. Detay: `frontend/e2e-stress/fixtures/stress-helpers.js`
+     Task #34 yorum bloğu (line ~112) + drill report
+     `docs/drill_reports/20260524_stress_full_stress_suite_f8ah_NOT_GREEN.md`.
 4. **Drill report** (`docs/drill_reports/<date>_stress_<phase>_*.md`).
 5. **ADR** (`docs/adr/<yyyy-mm>-<phase>-*.md`).
 6. **replit.md** "Gotchas" → tek-satırlık pointer.
