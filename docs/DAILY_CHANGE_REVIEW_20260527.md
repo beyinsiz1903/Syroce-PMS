@@ -66,15 +66,15 @@
 
 | # | Spec | Lines | `node --check` | Architect review | Targeted run drill |
 |---|---|---:|:---:|:---:|:---:|
-| 1 | `98-maintenance-workorder-lifecycle.spec.js` | 522 | ✅ | ✅ Task #40 (initial PASS) | ❌ |
-| 2 | `98-messaging-template-lifecycle.spec.js` | 648 | ✅ | ✅ Task #41 Round-3 PASS | ❌ |
-| 3 | `98-mobile-staff-surface.spec.js` | 647 | ✅ | ✅ Task #42 | ❌ |
-| 4 | `98-mobile-cashier-surface.spec.js` | 747 | ✅ | ✅ Task #43 | ❌ |
+| 1 | `98-maintenance-workorder-lifecycle.spec.js` | 522 | ✅ | ✅ Task #40 (initial PASS) | ✅ Task #82 — **NO-GO** (`20260527_stress_98_maintenance_workorder_verify.md`) — POST `/api/maintenance/work-orders` → 500 ASGI exception |
+| 2 | `98-messaging-template-lifecycle.spec.js` | 648 | ✅ | ✅ Task #41 Round-3 PASS | ✅ Task #82 — **GO** (`20260527_stress_98_messaging_template_verify.md`) — 14/14 PASS, P0=P1=0 |
+| 3 | `98-mobile-staff-surface.spec.js` | 647 | ✅ | ✅ Task #42 | ✅ Task #82 — **NO-GO** (`20260527_stress_98_mobile_staff_verify.md`) — GET `/api/notifications/preferences` → 500 (Setup also requires `DISABLE_EXPO_PUSH=1` in runner env; harness gate already enforced in pre-flight) |
+| 4 | `98-mobile-cashier-surface.spec.js` | 747 | ✅ | ✅ Task #43 | ✅ Task #82 — **NO-GO** (`20260527_stress_98_mobile_cashier_verify.md`) — Cashier handover PIN gate: 7 wrong creds = 7×401, expected 429 by attempt 7 (financial gate missing brute-force throttle) |
 | 5 | `98-fnb-beo-generator.spec.js` | 635 | ✅ | ✅ Task #44 | ✅ Task #53 (`20260527_stress_98_fnb_beo_generator_verify.md`) |
 | 6 | `98-sales-basic-lifecycle.spec.js` | 698 | ✅ | ✅ Task #45/#48 | ✅ Task #47 (`20260527_stress_f9c_sales_lifecycle_verify.md`) |
-| 7 | `98-marketplace-deep-lifecycle.spec.js` | 624 | ✅ | ✅ Task #46 | ❌ |
+| 7 | `98-marketplace-deep-lifecycle.spec.js` | 624 | ✅ | ✅ Task #46 | ✅ Task #82 — **GO WITH WATCH** (`20260527_stress_98_marketplace_deep_verify.md`) — 13 PASS / 1 SKIP (I=reject when order auto-finalizes), P0=P1=0 |
 
-**Sonuç:** F9C **dosya teslimi COMPLETE** (7/7 mevcut, syntax PASS, architect onayları kayıtlı). **F9C targeted-run kapanışı: 2/7** (BEO, Sales). Geriye 5 spec için pilot CI drill report'u eksik.
+**Sonuç:** F9C **dosya teslimi COMPLETE** (7/7 mevcut, syntax PASS, architect onayları kayıtlı). **F9C targeted-run kapanışı: 7/7** (Task #82 kalan 5 spec'i pilot'a koştu — drill report'lar yukarıdaki kolonda). **Honest verdict dağılımı:** 1 GO (messaging), 3 GO WITH WATCH (BEO, sales, marketplace), 3 NO-GO (maintenance, mobile_staff, mobile_cashier — 3 gerçek backend P1). Suite green baseline'a promote edilemez; üç P1 düzeltilmeden F9E full-suite koşusu da NO-GO döner. Doctrine korundu: fake PASS yok, skip-as-pass yok — `failedTests=1` ve `recFinding('P1', ...)` çağrıları olduğu gibi reporter'a yansıdı.
 
 ---
 
