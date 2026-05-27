@@ -377,9 +377,10 @@ test.describe.serial('F8Z.2 pos kds + fnb inventory', () => {
                 table_number: `${prefix}T_D`,
                 priority: 'normal',
                 notes: `${prefix}IDEM_${randomUUID()}`,
-                // Pseudo idempotency key — backend currently ignores it; surfaced
-                // here so when backend later adopts idempotency support this spec
-                // already exercises the contract.
+                // Idempotency key — backend (Task #28 / F8AH P1) returns the
+                // original ticket with `idempotent_replay=true` on replay so a
+                // double-tap on a flaky tablet does not double-print in the
+                // kitchen. Distinct ids on r2 would re-flag the P1 below.
                 idempotency_key: `${prefix}IDEM_D_${randomUUID()}`,
             };
             const r1 = await callTimedWithBackoff(request, 'post', '/api/fnb/kitchen-order', replayPayload, sToken);
