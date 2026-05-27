@@ -627,6 +627,119 @@ async def transfer_stock_between_warehouses(
     }
 
 
+@router.get("/accounting/inventory/transfers")
+async def get_transfer_history(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 500,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    # Task #62 — Transfer history report for finance reconciliation.
+    # Each warehouse transfer writes two stock_movements rows tagged with the
+    # same `transfer_id` (one transfer_out + one transfer_in). Pair them back
+    # into a single row per transfer so finance can audit movements end-to-end.
+    # Tenant-scoped at the query level; date filter is inclusive on ISO
+    # `created_at` strings (lexicographic compare is safe because all rows
+    # are written with `.isoformat()` in UTC).
+    if limit < 1:
+        limit = 1
+    elif limit > 5000:
+        limit = 5000
+
+    query: dict[str, Any] = {
+        'tenant_id': current_user.tenant_id,
+        'movement_type': {'$in': ['transfer_out', 'transfer_in']},
+        'transfer_id': {'$ne': None},
+    }
+    if start_date and end_date:
+        query['created_at'] = {'$gte': start_date, '$lte': end_date}
+    elif start_date:
+        query['created_at'] = {'$gte': start_date}
+    elif end_date:
+        query['created_at'] = {'$lte': end_date}
+
+    # Pull both legs (cap at 2x the requested transfer limit so pairing
+    # still yields up to `limit` complete transfers in the common case).
+    rows = await db.stock_movements.find(query, {'_id': 0}).sort(
+        'created_at', -1
+    ).to_list(limit * 2)
+
+    # Resolve item names for readability without an extra round-trip per row.
+    item_ids = {r.get('item_id') for r in rows if r.get('item_id')}
+    item_ids.update(
+        r.get('counterpart_item_id') for r in rows if r.get('counterpart_item_id')
+    )
+    item_ids.discard(None)
+    name_by_id: dict[str, str] = {}
+    if item_ids:
+        items_cursor = db.inventory_items.find(
+            {
+                'tenant_id': current_user.tenant_id,
+                'id': {'$in': list(item_ids)},
+            },
+            {'_id': 0, 'id': 1, 'name': 1, 'location': 1},
+        )
+        async for it in items_cursor:
+            label = it.get('name') or ''
+            loc = it.get('location')
+            name_by_id[it['id']] = f"{label} ({loc})" if loc else label
+
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        tid = row.get('transfer_id')
+        if not tid:
+            continue
+        entry = grouped.setdefault(
+            tid,
+            {
+                'transfer_id': tid,
+                'quantity': float(row.get('quantity') or 0),
+                'unit_cost': float(row.get('unit_cost') or 0),
+                'reference': row.get('reference'),
+                'notes': row.get('notes'),
+                'created_at': row.get('created_at'),
+                'created_by': row.get('created_by'),
+                'source_item_id': None,
+                'source_item_name': None,
+                'destination_item_id': None,
+                'destination_item_name': None,
+            },
+        )
+        if row.get('movement_type') == 'transfer_out':
+            entry['source_item_id'] = row.get('item_id')
+            entry['source_item_name'] = name_by_id.get(row.get('item_id'))
+            if entry['destination_item_id'] is None:
+                entry['destination_item_id'] = row.get('counterpart_item_id')
+                entry['destination_item_name'] = name_by_id.get(
+                    row.get('counterpart_item_id')
+                )
+        elif row.get('movement_type') == 'transfer_in':
+            entry['destination_item_id'] = row.get('item_id')
+            entry['destination_item_name'] = name_by_id.get(row.get('item_id'))
+            if entry['source_item_id'] is None:
+                entry['source_item_id'] = row.get('counterpart_item_id')
+                entry['source_item_name'] = name_by_id.get(
+                    row.get('counterpart_item_id')
+                )
+
+    transfers = sorted(
+        grouped.values(),
+        key=lambda t: t.get('created_at') or '',
+        reverse=True,
+    )[:limit]
+
+    return {
+        'transfers': transfers,
+        'count': len(transfers),
+        'filters': {
+            'start_date': start_date,
+            'end_date': end_date,
+            'limit': limit,
+        },
+    }
+
+
 # Block ANY HTML/XML-like tag (`<word`, `</word>`, `<...>`), event handlers,
 # javascript: pseudo-URLs. Catches unknown tags too (e.g. `<x>`, `<EVIL>`).
 _INVOICE_NAME_BLOCK = _re.compile(
