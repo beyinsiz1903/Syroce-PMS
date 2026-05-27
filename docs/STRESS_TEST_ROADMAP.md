@@ -86,6 +86,17 @@ ile uyumlu, strict-mode + alerting backlog).
 
 **Coverage gap raporu:** [`docs/STRESS_COVERAGE_GAP_REPORT_20260526.md`](./STRESS_COVERAGE_GAP_REPORT_20260526.md)
 
+**Delta — 2026-05-27 (Task #53):** Suite **84 → 85 spec**. F9C `98-fnb-beo-generator.spec.js`
+(Task #44'te yazılmış, syntax-only kabul edilmişti) live backend'e karşı bir kez
+koşturuldu — verdict **GO WITH WATCH** (failedTests=0, P0=P1=0, P2=1 informational,
+REVIEW=2, SKIP=8). Setup probe `GET /api/mice/events` → 403 `ENTITLEMENT_DENIED`
+(stress tenant'ta `modules.mice` enable değil — `mice_events` ile aynı baseline
+davranışı, "RBAC by design" doctrine'i altında). Module-blocked doctrine devreye
+girdi: A–H lifecycle SKIP, J/K security probes PASS (IDOR 404, headerless 403),
+M (external_calls=[]) PASS, N (pilot drift=0 + BEO prefix scan) PASS. Cleanup
+ledger boş (created=0 → cancel hedefi yok). Drill report:
+[`docs/drill_reports/20260527_stress_98_fnb_beo_generator_verify.md`](./drill_reports/20260527_stress_98_fnb_beo_generator_verify.md).
+
 ---
 
 ## Historical reference — 2026-05-24 baseline (68 spec, commit `ee7573b3`)
