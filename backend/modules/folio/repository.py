@@ -60,7 +60,12 @@ class FolioRepository:
         request_hash: str,
         correlation_id: str | None,
     ) -> dict[str, Any]:
+        from shared_kernel.idempotency import (
+            IDEMPOTENCY_PROCESSING_GRACE_SECONDS,
+        )
+        from datetime import timedelta as _td
         lock_id = hashlib.sha256(f"{tenant_id}:{scope}:{idempotency_key}".encode()).hexdigest()
+        now = datetime.now(UTC)
         lock_doc = {
             "_id": lock_id,
             "tenant_id": tenant_id,
@@ -69,7 +74,9 @@ class FolioRepository:
             "request_hash": request_hash,
             "correlation_id": correlation_id,
             "status": "processing",
-            "created_at": datetime.now(UTC).isoformat(),
+            "created_at": now.isoformat(),
+            # Task #81 — TTL sweep field; processing rows expire after grace.
+            "expires_at": now + _td(seconds=IDEMPOTENCY_PROCESSING_GRACE_SECONDS),
         }
         try:
             await db.idempotency_keys.insert_one(lock_doc)
@@ -85,6 +92,9 @@ class FolioRepository:
         folio_id: str,
         response_body: dict[str, Any],
     ) -> None:
+        from shared_kernel.idempotency import IDEMPOTENCY_RETENTION_SECONDS
+        from datetime import timedelta as _td
+        now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},
             {
@@ -92,19 +102,28 @@ class FolioRepository:
                     "status": "completed",
                     "folio_id": folio_id,
                     "response_body": response_body,
-                    "completed_at": datetime.now(UTC).isoformat(),
+                    "completed_at": now.isoformat(),
+                    # Task #81 — extend TTL to retention window on completion.
+                    "expires_at": now + _td(seconds=IDEMPOTENCY_RETENTION_SECONDS),
                 }
             },
         )
 
     async def fail_idempotency_lock(self, lock_id: str, error_message: str) -> None:
+        from shared_kernel.idempotency import IDEMPOTENCY_RETENTION_SECONDS
+        from datetime import timedelta as _td
+        now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},
             {
                 "$set": {
                     "status": "failed",
                     "error_message": error_message,
-                    "failed_at": datetime.now(UTC).isoformat(),
+                    "failed_at": now.isoformat(),
+                    # Task #81 — failed rows are still kept for replay so a
+                    # retry sees the failure verdict; expire at the same 24h
+                    # mark as completed rows.
+                    "expires_at": now + _td(seconds=IDEMPOTENCY_RETENTION_SECONDS),
                 }
             },
         )

@@ -66,6 +66,22 @@ async def ensure_performance_indexes():
         # idx_exely_sync_tenant_timestamp (aşağıda) eklendi.
         ("hotelrunner_sync_logs", [("tenant_id", 1), ("created_at", -1)], "idx_hr_sync_tenant_created", {}),
         ("idempotency_keys", [("tenant_id", 1), ("created_at", -1)], "idx_idempotency_tenant_created", {}),
+        # Task #81 — TTL sweep on `idempotency_keys`. Every protected request
+        # (folio charge/payment, housekeeping create, KBS submit, reservation
+        # acquire, …) writes one document per (tenant, scope, key); without a
+        # janitor the collection grows without bound and the DuplicateKeyError
+        # lookup that gates every retry slows down. `expires_at` is a BSON
+        # Date set explicitly by the writers in shared_kernel/idempotency.py
+        # and the per-module repositories:
+        #   - processing rows: now + 5 min  (releases ghost locks left by
+        #     crashed workers so retries aren't blocked forever)
+        #   - completed/failed rows: now + 24 h  (replay window for clients
+        #     retrying the same Idempotency-Key)
+        # expireAfterSeconds=0 means Mongo deletes the row as soon as
+        # `expires_at` is in the past. Retention window is documented in
+        # docs/GOTCHAS.md.
+        ("idempotency_keys", [("expires_at", 1)], "idx_idempotency_expires_at_ttl",
+         {"expireAfterSeconds": 0}),
         ("audit_exceptions", [("tenant_id", 1), ("created_at", -1)], "idx_audit_exc_tenant_created", {}),
         ("agencies", [("tenant_id", 1), ("status", 1)], "idx_agencies_tenant_status", {}),
         ("night_audit_logs", [("tenant_id", 1), ("business_date", -1)], "idx_night_audit_logs_tenant_date", {}),

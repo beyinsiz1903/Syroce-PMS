@@ -111,6 +111,21 @@ Full architecture, test pins, file/line references → `docs/adr/2026-05-cm-hard
 
 ---
 
+## Idempotency keys retention (Task #81, May 2026)
+
+`backend/shared_kernel/idempotency.py` ve modül repository'leri (`backend/modules/{folio,reservations,inventory}/repository.py`) her korumalı isteğin `(tenant_id, scope, idempotency_key)` üçlüsü için `idempotency_keys` koleksiyonuna bir doc yazar. Multi-tenant pilot yüküyle bu koleksiyon sınırsız büyür ve her retry'ı serileştiren `DuplicateKeyError` yolu yavaşlar.
+
+**Çözüm**: Tek alan TTL index — `backend/bootstrap/phases/perf_indexes.py` içinde `idx_idempotency_expires_at_ttl` (`expires_at`, `expireAfterSeconds=0`). Yazıcılar `expires_at` BSON Date'ini açıkça set eder:
+
+- **processing** satırı: `now + 300s` (5 dk grace). Crash olmuş worker'ın bıraktığı hayalet kilit retry'ı sonsuza dek bloklamasın diye kısa.
+- **completed / failed** satırı: `now + 86400s` (24 saat). İstemcinin (mobil, OTA, internal worker) aynı `Idempotency-Key` ile retry'lama yapabileceği maksimum makul pencere = replay cache TTL'i.
+
+Constants: `IDEMPOTENCY_PROCESSING_GRACE_SECONDS = 300`, `IDEMPOTENCY_RETENTION_SECONDS = 86400` (`shared_kernel/idempotency.py`).
+
+**Yeni endpoint adopt ederken kural**: claim sırasında `expires_at = now + IDEMPOTENCY_PROCESSING_GRACE_SECONDS`, complete/fail sırasında `expires_at = now + IDEMPOTENCY_RETENTION_SECONDS` yazılmalı (BSON Date, isoformat string DEĞİL — Mongo TTL sadece BSON Date alanları üzerinde çalışır). Bu pencereden daha uzun retry yapan istemciler "ilk istek hiç olmamış" gibi davranmaya hazır olmalı.
+
+---
+
 ## Production Hardening Series (May 2026 — DONE)
 
 Full detail → `docs/adr/2026-05-production-hardening.md`.

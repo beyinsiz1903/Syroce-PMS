@@ -1,11 +1,26 @@
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException, Request, status
 
 IDEMPOTENCY_HEADER = "Idempotency-Key"
+
+# Task #81 — TTL retention windows for the `idempotency_keys` collection.
+# A single TTL index on `expires_at` (created in
+# bootstrap/phases/perf_indexes.py as `idx_idempotency_expires_at_ttl` with
+# expireAfterSeconds=0) sweeps rows once `expires_at` is reached.
+#
+#   - PROCESSING grace: a crashed worker that never calls complete/release
+#     leaves the slot in "processing". After 5 minutes the row expires so a
+#     legitimate retry is no longer blocked by a ghost lock.
+#   - COMPLETED / FAILED retention: completed and failed rows act as the
+#     replay cache for client retries. 24h matches the longest window in
+#     which a client (mobile app, OTA, internal worker) might sensibly
+#     retry the same Idempotency-Key.
+IDEMPOTENCY_PROCESSING_GRACE_SECONDS = 300
+IDEMPOTENCY_RETENTION_SECONDS = 24 * 60 * 60
 # Some clients (and our own stress harness) send the RFC-style `X-` prefixed
 # variant. Accept both so a retry from either client kind hits the same lock.
 IDEMPOTENCY_HEADER_ALIASES = ("Idempotency-Key", "X-Idempotency-Key")
@@ -64,13 +79,17 @@ async def claim_idempotency(
     from pymongo.errors import DuplicateKeyError  # type: ignore
 
     lock_id = _lock_id(tenant_id, scope, idempotency_key)
+    now = datetime.now(UTC)
     doc = {
         "_id": lock_id,
         "tenant_id": tenant_id,
         "scope": scope,
         "idempotency_key": idempotency_key,
         "status": "processing",
-        "created_at": datetime.now(UTC).isoformat(),
+        "created_at": now.isoformat(),
+        # BSON Date powers the TTL sweep — a crashed worker's "processing"
+        # slot expires after the short grace window so retries aren't blocked.
+        "expires_at": now + timedelta(seconds=IDEMPOTENCY_PROCESSING_GRACE_SECONDS),
     }
     try:
         await db_handle.idempotency_keys.insert_one(doc)
@@ -88,12 +107,16 @@ async def complete_idempotency(
     lock_id: str,
     response_body: dict[str, Any],
 ) -> None:
+    now = datetime.now(UTC)
     await db_handle.idempotency_keys.update_one(
         {"_id": lock_id},
         {"$set": {
             "status": "completed",
             "response_body": response_body,
-            "completed_at": datetime.now(UTC).isoformat(),
+            "completed_at": now.isoformat(),
+            # Push expiry out to the replay-retention window so the cached
+            # response survives client retries but still gets swept eventually.
+            "expires_at": now + timedelta(seconds=IDEMPOTENCY_RETENTION_SECONDS),
         }},
     )
 
