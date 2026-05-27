@@ -18,6 +18,12 @@
 //     I) GET    /api/messaging-center/delivery-logs       (PII/role-gated read)
 //     J) IDOR   PUT /templates/{stress_id} with PILOT token → 4xx (no cross-tenant update)
 //     J2) IDOR  DELETE /templates/{stress_id} with PILOT token → 4xx
+//     J3) IDOR  PUT /templates/{pilot_id} with STRESS token → 4xx (canonical doctrine direction;
+//               harvest real pilot template id first with pilot token, bogus UUID fallback)
+//     J4) IDOR  DELETE /templates/{pilot_id} with STRESS token → 4xx (doctrine direction)
+//     D2) DELETE lifecycle — stress deletes own template, then GET 404 + idempotent re-DELETE 404
+//     A1) AUTOMATION RULES CRUD — list triggers + create rule + update + delete (tenant-scoped, idempotent)
+//     S1) SCHEDULER STATUS probe — GET /scheduler/status (read-only, no start/stop)
 //     K) ANON   GET /templates (headerless) → 401/403 (PUBLIC SURFACE LEAK guard)
 //     L) PII/TOKEN LEAK SCAN — assertNoTokenLeak on every response body
 //     M) INVARIANT — assertNoExternalCallsPostBatch (external_calls=[])
@@ -513,6 +519,321 @@ test.describe('F9C § 98 — Messaging Template Lifecycle', () => {
         } else {
             recFinding(testInfo, 'P2', MOD, `J2_idor_del unexpected status=${r.status}`, `probe=${probeKind}`);
             rec(testInfo, { module: MOD, step: 'J2_idor_del', status: 'REVIEW', http: r.status });
+        }
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // J3) IDOR — STRESS token attempting PUT on PILOT template (doctrine direction).
+    //     Harvest pilot template id first with pilot token; bogus UUID fallback.
+    //     2xx on real pilot id = P0 cross-tenant tampering breach.
+    test('J3) IDOR doctrine PUT (stress→pilot template) → 4xx', async ({ request, stressTokens }, testInfo) => {
+        if (!stressTokens.pilot_token) {
+            rec(testInfo, { module: MOD, step: 'J3_idor_put_doctrine', status: 'SKIP', note: 'pilot_token yok' });
+            test.skip(true, 'pilot_token yok');
+        }
+        // Harvest a real pilot template id (read-only with pilot token).
+        let pilotTemplateId = null;
+        const harvest = await callTimed(
+            request, 'get', `${BASE}/templates`, null,
+            stressTokens.pilot_token, { timeout: 10_000 },
+        );
+        if (harvest.status === 200 && Array.isArray(harvest.body?.templates) && harvest.body.templates.length > 0) {
+            const first = harvest.body.templates.find(t => t.id) || null;
+            pilotTemplateId = first?.id || null;
+        }
+        const targetId = pilotTemplateId || `bogus-${cryptoRandomUUID()}`;
+        const probeKind = pilotTemplateId ? 'real_pilot_template_id' : 'bogus_uuid_fallback';
+
+        const r = await callTimed(
+            request, 'put', `${BASE}/templates/${targetId}`,
+            { body_template: 'IDOR_BREACH_ATTEMPT_DOCTRINE_DIRECTION' },
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(r.status, `J3_idor_put_doctrine 5xx status=${r.status}`).toBeLessThan(500);
+        const is2xx = r.status >= 200 && r.status < 300;
+        if (is2xx && probeKind === 'real_pilot_template_id') {
+            recFinding(testInfo, 'P0', MOD,
+                `IDOR doctrine-direction breach: stress token PUT pilot template returned ${r.status}`,
+                `target_id=${targetId} response=${JSON.stringify(r.body || {}).slice(0, 200)}`);
+            expect(false, `J3_idor_put_doctrine: stress token reached pilot template ${targetId} (status=${r.status})`).toBe(true);
+        }
+        if ([404, 403, 401].includes(r.status)) {
+            rec(testInfo, { module: MOD, step: 'J3_idor_put_doctrine', status: 'PASS', http: r.status, note: `${probeKind} rejected ${r.status}` });
+        } else if (is2xx && probeKind === 'bogus_uuid_fallback') {
+            recFinding(testInfo, 'P2', MOD, `J3_idor_put_doctrine bogus UUID returned ${r.status}`, '');
+            rec(testInfo, { module: MOD, step: 'J3_idor_put_doctrine', status: 'REVIEW', http: r.status });
+        } else {
+            recFinding(testInfo, 'P2', MOD, `J3_idor_put_doctrine unexpected status=${r.status}`, `probe=${probeKind}`);
+            rec(testInfo, { module: MOD, step: 'J3_idor_put_doctrine', status: 'REVIEW', http: r.status });
+        }
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // J4) IDOR — STRESS token attempting DELETE on PILOT template (doctrine direction).
+    test('J4) IDOR doctrine DELETE (stress→pilot template) → 4xx', async ({ request, stressTokens }, testInfo) => {
+        if (!stressTokens.pilot_token) {
+            rec(testInfo, { module: MOD, step: 'J4_idor_del_doctrine', status: 'SKIP', note: 'pilot_token yok' });
+            test.skip(true, 'pilot_token yok');
+        }
+        let pilotTemplateId = null;
+        const harvest = await callTimed(
+            request, 'get', `${BASE}/templates`, null,
+            stressTokens.pilot_token, { timeout: 10_000 },
+        );
+        if (harvest.status === 200 && Array.isArray(harvest.body?.templates) && harvest.body.templates.length > 0) {
+            const first = harvest.body.templates.find(t => t.id) || null;
+            pilotTemplateId = first?.id || null;
+        }
+        const targetId = pilotTemplateId || `bogus-${cryptoRandomUUID()}`;
+        const probeKind = pilotTemplateId ? 'real_pilot_template_id' : 'bogus_uuid_fallback';
+
+        const r = await callTimed(
+            request, 'delete', `${BASE}/templates/${targetId}`, null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(r.status, `J4_idor_del_doctrine 5xx status=${r.status}`).toBeLessThan(500);
+        const is2xx = r.status >= 200 && r.status < 300;
+        if (is2xx && probeKind === 'real_pilot_template_id') {
+            recFinding(testInfo, 'P0', MOD,
+                `IDOR doctrine-direction DELETE breach: stress token DELETE pilot template returned ${r.status}`,
+                `target_id=${targetId} response=${JSON.stringify(r.body || {}).slice(0, 200)}`);
+            expect(false, `J4_idor_del_doctrine: stress token DELETED pilot template ${targetId}`).toBe(true);
+        }
+        if ([404, 403, 401].includes(r.status)) {
+            rec(testInfo, { module: MOD, step: 'J4_idor_del_doctrine', status: 'PASS', http: r.status, note: `${probeKind} rejected ${r.status}` });
+        } else if (is2xx && probeKind === 'bogus_uuid_fallback') {
+            recFinding(testInfo, 'P2', MOD, `J4_idor_del_doctrine bogus UUID returned ${r.status}`, '');
+            rec(testInfo, { module: MOD, step: 'J4_idor_del_doctrine', status: 'REVIEW', http: r.status });
+        } else {
+            recFinding(testInfo, 'P2', MOD, `J4_idor_del_doctrine unexpected status=${r.status}`, `probe=${probeKind}`);
+            rec(testInfo, { module: MOD, step: 'J4_idor_del_doctrine', status: 'REVIEW', http: r.status });
+        }
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // D2) DELETE LIFECYCLE — stress deletes one of its own templates, then
+    //     verifies GET returns 404 and a second DELETE is idempotent (404, not 5xx).
+    //     This is a POSITIVE assertion that the documented DELETE contract
+    //     actually works for the owning tenant — the afterAll sweep alone does
+    //     not exercise the post-delete read-back or idempotency guarantees.
+    test('D2) DELETE lifecycle — own template hard-delete + idempotent re-DELETE', async ({ request, stressTokens }, testInfo) => {
+        const reason = moduleBlocked ? blockedReason : (createdTemplateIds.length === 0 ? 'no_template_created' : null);
+        if (reason) {
+            rec(testInfo, { module: MOD, step: 'D2_delete_lifecycle', status: 'SKIP', note: reason });
+            test.skip(true, reason);
+        }
+        // Create a dedicated throwaway template so D2 doesn't disturb the
+        // template the IDOR tests target via createdTemplateIds[0].
+        const payload = {
+            name: taggedName('D2_delete'),
+            category: 'rezervasyon_onay',
+            channel: 'email',
+            subject: `${prefix} ${SUB_PREFIX} D2 subject`,
+            body_template: `D2 delete-lifecycle ${prefix} ${SUB_PREFIX} body.`,
+            variables: [],
+        };
+        const created = await callTimed(
+            request, 'post', `${BASE}/templates`, payload,
+            stressTokens.stress_token,
+            { timeout: 15_000, headers: { 'Idempotency-Key': idemKey('D2_create') } },
+        );
+        if (!(created.status >= 200 && created.status < 300) || !created.body?.id) {
+            rec(testInfo, { module: MOD, step: 'D2_delete_lifecycle', status: 'SKIP',
+                note: `create-for-delete failed status=${created.status}` });
+            test.skip(true, `D2 create-for-delete failed status=${created.status}`);
+        }
+        const tid = created.body.id;
+        // Track for safety-net cleanup in case any of the steps below fails
+        // before our explicit DELETE — afterAll will idempotently sweep it.
+        createdTemplateIds.push(tid);
+
+        // First DELETE — must return 2xx.
+        const del1 = await callTimed(
+            request, 'delete', `${BASE}/templates/${tid}`, null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(del1.status, `D2 first DELETE 5xx status=${del1.status}`).toBeLessThan(500);
+        expect(del1.status, `D2 first DELETE non-2xx status=${del1.status}`).toBeGreaterThanOrEqual(200);
+        expect(del1.status, `D2 first DELETE non-2xx status=${del1.status}`).toBeLessThan(300);
+
+        // Read-back: GET should now 404 (or list should not contain id).
+        const after = await callTimed(
+            request, 'get', `${BASE}/templates`, null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        if (after.status === 200 && Array.isArray(after.body?.templates)) {
+            const stillPresent = after.body.templates.find(t => t.id === tid);
+            expect(stillPresent, `D2 deleted template ${tid} still present in list — soft delete leak`).toBeFalsy();
+        }
+
+        // Second DELETE — idempotency contract: must be 404 (or 2xx no-op),
+        // never 5xx. 404 is the documented behaviour per messaging.py:387.
+        const del2 = await callTimed(
+            request, 'delete', `${BASE}/templates/${tid}`, null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(del2.status, `D2 second DELETE 5xx status=${del2.status}`).toBeLessThan(500);
+        if (![404, 200, 204].includes(del2.status)) {
+            recFinding(testInfo, 'P2', MOD,
+                `D2 re-DELETE unexpected status=${del2.status} (expected 404 idempotent)`,
+                `template_id=${tid}`);
+        }
+        rec(testInfo, {
+            module: MOD, step: 'D2_delete_lifecycle', status: 'PASS',
+            http: del1.status, note: `delete=${del1.status} readback_ok re-delete=${del2.status}`,
+        });
+        await gap();
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // A1) AUTOMATION RULES CRUD — list triggers + create rule + update + delete.
+    //     Tenant-scoped, idempotent, tagged for cleanup. Uses a template id we
+    //     created earlier (createdTemplateIds[0]). Skip if no template.
+    test('A1) Automation rules CRUD (list triggers + create + update + delete)', async ({ request, stressTokens }, testInfo) => {
+        const reason = moduleBlocked ? blockedReason : (createdTemplateIds.length === 0 ? 'no_template_created' : null);
+        if (reason) {
+            rec(testInfo, { module: MOD, step: 'A1_automation_crud', status: 'SKIP', note: reason });
+            test.skip(true, reason);
+        }
+        // A1.1 — list triggers
+        const triggers = await callTimed(
+            request, 'get', `${BASE}/automation/triggers`, null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(triggers.status, `A1.1 triggers 5xx status=${triggers.status}`).toBeLessThan(500);
+        if (triggers.status !== 200) {
+            recFinding(testInfo, 'P2', MOD, `A1.1 triggers non-200 status=${triggers.status}`, '');
+            rec(testInfo, { module: MOD, step: 'A1_automation_crud', status: 'REVIEW', http: triggers.status,
+                note: 'triggers list unavailable — CRUD path not exercisable' });
+            return;
+        }
+        leakScan(testInfo, triggers.body, 'A1_triggers');
+        const trigList = triggers.body?.triggers || [];
+        // backend returns either dict-of-events or list-of-strings — pick first reasonable trigger.
+        const firstTrigger = (Array.isArray(trigList) && trigList.length > 0)
+            ? (typeof trigList[0] === 'string' ? trigList[0] : trigList[0]?.event)
+            : (typeof trigList === 'object' ? Object.keys(trigList)[0] : null);
+        if (!firstTrigger) {
+            rec(testInfo, { module: MOD, step: 'A1_automation_crud', status: 'REVIEW', http: triggers.status,
+                note: 'no trigger event resolvable from triggers payload — CRUD aborted' });
+            return;
+        }
+
+        // A1.2 — create rule
+        const createPayload = {
+            trigger_event: firstTrigger,
+            template_id: createdTemplateIds[0],
+            channel: 'email',
+            name: taggedName('A1_rule'),
+            enabled: false,
+            delay_minutes: 0,
+        };
+        const create = await callTimed(
+            request, 'post', `${BASE}/automation/rules`, createPayload,
+            stressTokens.stress_token,
+            { timeout: 15_000, headers: { 'Idempotency-Key': idemKey('A1_create') } },
+        );
+        if ([403, 404, 501].includes(create.status)) {
+            recFinding(testInfo, 'P2', MOD,
+                `A1.2 automation create not available status=${create.status}`,
+                `body=${JSON.stringify(create.body || {}).slice(0, 200)}`);
+            rec(testInfo, { module: MOD, step: 'A1_automation_crud', status: 'REVIEW', http: create.status,
+                note: 'create endpoint denied — CRUD aborted (no leftover to clean)' });
+            return;
+        }
+        expect(create.status, `A1.2 create 5xx status=${create.status}`).toBeLessThan(500);
+        expect(create.status, `A1.2 create non-2xx status=${create.status}`).toBeGreaterThanOrEqual(200);
+        expect(create.status).toBeLessThan(300);
+        const ruleId = create.body?.id;
+        expect(ruleId, `A1.2 create rule_id missing — body=${JSON.stringify(create.body || {}).slice(0, 200)}`).toBeTruthy();
+        expect(create.body?.tenant_id, 'A1.2 rule tenant_id missing').toBeTruthy();
+        leakScan(testInfo, create.body, 'A1_create_rule');
+
+        // A1.3 — list rules + verify present + tenant scope
+        const list = await callTimed(
+            request, 'get', `${BASE}/automation/rules`, null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(list.status, `A1.3 list 5xx status=${list.status}`).toBeLessThan(500);
+        if (list.status === 200) {
+            const rules = list.body?.rules || [];
+            for (const r of rules) {
+                expect(r.tenant_id, `A1.3 rule missing tenant_id: ${JSON.stringify(r).slice(0, 100)}`).toBeTruthy();
+            }
+            const found = rules.find(r => r.id === ruleId);
+            expect(found, `A1.3 created rule ${ruleId} not present in own-tenant rules list`).toBeTruthy();
+            leakScan(testInfo, list.body, 'A1_list_rules');
+        }
+
+        // A1.4 — update rule (toggle enabled)
+        const update = await callTimed(
+            request, 'put', `${BASE}/automation/rules/${ruleId}`,
+            { enabled: true, name: taggedName('A1_rule_updated') },
+            stressTokens.stress_token,
+            { timeout: 10_000, headers: { 'Idempotency-Key': idemKey('A1_update') } },
+        );
+        expect(update.status, `A1.4 update 5xx status=${update.status}`).toBeLessThan(500);
+        if (update.status === 200) {
+            expect(update.body?.success, 'A1.4 update success flag missing').toBe(true);
+        } else {
+            recFinding(testInfo, 'P2', MOD, `A1.4 update non-200 status=${update.status}`, `rule_id=${ruleId}`);
+        }
+
+        // A1.5 — delete rule (best-effort cleanup must not raise)
+        const del = await callTimed(
+            request, 'delete', `${BASE}/automation/rules/${ruleId}`, null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(del.status, `A1.5 delete 5xx status=${del.status}`).toBeLessThan(500);
+        if (!(del.status >= 200 && del.status < 300)) {
+            recFinding(testInfo, 'P2', MOD, `A1.5 delete non-2xx status=${del.status}`, `rule_id=${ruleId}`);
+        }
+        // A1.6 — idempotent re-delete → 404
+        const del2 = await callTimed(
+            request, 'delete', `${BASE}/automation/rules/${ruleId}`, null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(del2.status, `A1.6 re-delete 5xx status=${del2.status}`).toBeLessThan(500);
+
+        rec(testInfo, {
+            module: MOD, step: 'A1_automation_crud', status: 'PASS',
+            http: create.status,
+            note: `trigger=${firstTrigger} rule_id=${ruleId} update=${update.status} delete=${del.status} re-delete=${del2.status}`,
+        });
+        await gap();
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // S1) SCHEDULER STATUS — read-only probe of pre-arrival scheduler.
+    //     POST /scheduler/start and /stop are deliberately NOT exercised
+    //     (would mutate global background-task state shared with pilot
+    //     instance — destructive per F9 doctrine).
+    test('S1) GET /scheduler/status read-only probe', async ({ request, stressTokens }, testInfo) => {
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'S1_scheduler_status', status: 'SKIP', note: blockedReason });
+            test.skip(true, `module_blocked: ${blockedReason}`);
+        }
+        const r = await callTimed(
+            request, 'get', `${BASE}/scheduler/status`, null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(r.status, `S1 scheduler/status 5xx status=${r.status}`).toBeLessThan(500);
+        if (r.status === 200) {
+            leakScan(testInfo, r.body, 'S1_scheduler_status');
+            // Status payload should have at minimum a recognizable status field.
+            const status = r.body?.status ?? r.body?.state ?? null;
+            rec(testInfo, {
+                module: MOD, step: 'S1_scheduler_status', status: 'PASS',
+                http: r.status, note: `scheduler_status=${status ?? '(payload returned)'}`,
+            });
+        } else if ([403, 404, 501].includes(r.status)) {
+            recFinding(testInfo, 'P2', MOD,
+                `S1 scheduler/status non-200 status=${r.status}`,
+                'endpoint not deployed or RBAC denied — REVIEW (not PASS)');
+            rec(testInfo, { module: MOD, step: 'S1_scheduler_status', status: 'REVIEW', http: r.status });
+        } else {
+            recFinding(testInfo, 'P2', MOD, `S1 scheduler/status unexpected status=${r.status}`, '');
+            rec(testInfo, { module: MOD, step: 'S1_scheduler_status', status: 'REVIEW', http: r.status });
         }
     });
 

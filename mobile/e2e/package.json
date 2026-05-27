@@ -1,0 +1,14 @@
+{
+    "name": "syroce-mobile-e2e",
+    "version": "0.1.0",
+    "private": true,
+    "description": "F10A mobile smoke — Playwright Web against Expo Router dev server.",
+    "type": "module",
+    "scripts": {
+        "test": "playwright test",
+        "test:list": "playwright test --list"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.49.0"
+    }
+}
