@@ -350,6 +350,74 @@ tamamlanmalı).
 
 ---
 
+## 11) Pre-pilot close decision matrix
+
+> **Soru:** P2/REVIEW kalemlerinin hiçbiri doktrinen pilot-blocking değil
+> (eşik = P0/P1, ikisi de 0). O hâlde **pilot öncesi yine de kapatılması
+> gereken** kalemler hangileridir?
+>
+> **Karar kriteri (üç sorudan en az birine "evet" → MUST CLOSE):**
+> 1. **Operasyonel kör nokta:** Pilot otelde bir incident olduğunda, eksik
+>    olduğu için **fark edemeyeceğimiz / tepki veremeyeceğimiz** bir
+>    sinyal mi?
+> 2. **Operatör UX kırığı:** Pilot operatörün günlük rutininde
+>    göreceği bir dashboard / endpoint 404 mü veriyor?
+> 3. **Saldırı yüzeyi free win:** Düşük efor (≤1 gün) ile kapatılabilecek
+>    bir hardening kalemi mi (introspection, secret, alert gürültüsü)?
+>
+> Diğer hepsi → backlog'da kalır, pilot operasyonunu engellemez.
+
+### 11.1 MUST CLOSE before pilot (5 kalem, toplam ~1.0 gün efor)
+
+| # | Kalem | Kategori | Kriter | Efor | Sahip | Pre-pilot kapatma şartı |
+|---:|---|---|:---:|---:|---|---|
+| **PC1** | **E2/E3** — CM outbox depth + conflict queue observability endpoint | B (endpoint gap) | (1) Operasyonel kör nokta | 0.4 gün | Backend platform | Pilot operatör CM kuyruğunun derinliğini / conflict queue'yu **Atlas konsoluna girmeden** görebilmeli; aksi hâlde OTA stuck/conflict gerçek olduğunda saatlerce fark edilmez |
+| **PC2** | **E4** — Backup-status shape adapter | B (contract drift) | (1) Operasyonel kör nokta | 0.2 gün | Backend platform | Backup health pilot DR runbook'unun ön-koşulu. Yeni shape'e adapter yazılmazsa `deploy/smoke.sh` ve `docs/REPLIT_OPS_CHEATSHEET.md` yanlış sonuç verir |
+| **PC3** | **GraphQL introspection disable (pilot/prod env)** | B (hardening) | (3) Saldırı yüzeyi free win | 0.2 gün | Backend platform | Resolver tenant filter zaten OK; ama introspection açık olması = schema haritası ücretsiz keşif. Pilot ≠ stres env; pilot için `DISABLE_GRAPHQL_INTROSPECTION=true` set + verify |
+| **PC4** | **Pilot env webhook secret verify** (`EXELY_WEBHOOK_SECRET`, `HOTELRUNNER_WEBHOOK_SECRET`) | B (env config) | (1) Operasyonel kör nokta | 0.1 gün | DevOps | `replit.md` "pilot envler set" diyor; pilot kalkışından önce gerçekten set olduğunu `deploy/smoke.sh`'a webhook signature check ekleyerek doğrula. Set değilse webhook spoofing pencere açık |
+| **PC5** | **Sentry noise reduction (transient db guard 11 worker)** | C (observability hijyen) | (1) Operasyonel kör nokta | **DONE** (bu görüş) | Backend platform | Pilot'ta her Atlas blip'inin `error` seviyesinde alert tetiklemesi gerçek incident'leri gizlerdi. Bugün 11 worker'a uygulandı; pilot kalkışında alert hacmi kalibre edilecek |
+
+**Toplam efor:** ~1.0 gün (PC5 zaten yapıldı → kalan 4 kalem ~0.9 gün). Tek bir paralel günde sıkıştırılabilir.
+
+### 11.2 NICE-TO-HAVE before pilot (3 kalem, ~1.5 gün — opsiyonel)
+
+| # | Kalem | Kategori | Kriter | Efor | Sahip | Pilot'a etki |
+|---:|---|---|:---:|---:|---|---|
+| **NH1** | **F4** — City ledger + open folio seed (pilot tenant) | C (fixture) | (2) Operatör UX | 0.5 gün | Finance team | Pilot operatör city-ledger transfer denerse var olmalı; pilot launch öncesi pilot tenant'a 1 ledger account + 1 open folio seed |
+| **NH2** | **E14** — `KBS_TEST_MODE` pilot env policy karar | B (env) | (1) Operasyonel kör nokta | 0.1 gün | DevOps + Compliance | Pilot'ta KBS gerçek mi gönderecek yoksa dry-run mı? Pilot operatöre yazılı policy çıkar (jandarma raporu yanlış gönderilirse compliance riski) |
+| **NH3** | **AI pricing 10s timeout** — circuit breaker veya disable in pilot | B (resilience) | (2) Operatör UX | 1.0 gün | RMS team | AI pricing flaky → recommend-rates timeout = dashboard yavaş yükler. Pilot için ya CB (5s fast-fail) ya da feature flag ile kapalı başlat |
+
+### 11.3 DEFER to post-pilot backlog (kalan 60+ kalem)
+
+Aşağıdakiler **pilot operasyonunu hiç etkilemez**, doctrinal olarak GO WITH WATCH altında safe sayılır:
+
+- **F1, F2, F3, F5, F6, F7, F8** (8 fixture) — sadece stres suite coverage'ını PASS'e geçirir; pilot operatör hiçbirini fark etmez.
+- **E1, E5, E6, E7, E8, E9, E10, E11, E12, E13** (10 endpoint gap) — admin tenant probe, folios list, messaging settings, rooms list, warehouse transfer, supplier credit_limit, MICE F&B, WS endpoint, MICE accounts — pilot env'de zaten mount olabilir veya pilot rolü için irrelevant.
+- **§8 module-blocked (11 modül)** — RBAC by-design; pilot otel kendi role grant'ı ile erişir veya hiç kullanmaz.
+- **Tüm REVIEW (46 adım)** — insan-onayı satırları, bulgu değil. Hardening sprint ile birlikte gözden geçirilir.
+
+### 11.4 Pilot-watch list (operasyon sırasında izlenecek, pilot kalkışı engellemez)
+
+§4'teki 13 pilot-watch kalem **pilot kalkışında kapatılmaz** ama pilot operatöre özel takip notu çıkarılır:
+
+- **Watch sebebi:** Suite coverage'ında gap var ama production-OK (envler set, manuel doğrulama yeterli).
+- **Aksiyon:** `docs/REPLIT_OPS_CHEATSHEET.md`'e "Pilot-watch addendum" ekle — operatöre bu 13 yüzey için **günlük manuel check** ve **eşik aşılırsa eskalasyon** prosedürü.
+
+### 11.5 Karar özeti
+
+| Sınıf | Kalem sayısı | Pre-pilot aksiyon | Pilot kalkışı şartı |
+|---|---:|---|---|
+| **MUST CLOSE** | 5 (1 zaten DONE → 4 kalan) | ~0.9 gün geliştirme | ✅ Bu 4 kalem kapatılmadan pilot kalkışı önerilmez |
+| **NICE-TO-HAVE** | 3 | ~1.5 gün (opsiyonel) | ⚠️ Risk-toleranslı bir pilotta atlanabilir; finance/AI features kullanılmayacaksa skip |
+| **DEFER** | 60+ | Post-pilot hardening sprint (5–8 gün) | ⏭️ Pilot operasyonunu etkilemez |
+| **WATCH** | 13 | Operatöre runbook addendum | 👁️ Pilot kalkışını engellemez ama günlük takip listesinde |
+
+**Net karar:** Pilot kalkışı için tetik **4 MUST CLOSE kalemini bir günlük paralel sprint'le** kapatmaktır (PC1–PC4; PC5 bugün hallolundu). Bu 4 kalem kapatıldığında verdict hâlâ **GO WITH WATCH**'tır (P2/REVIEW > 0 kaldığı için saf GO değil), ancak pilot operasyonel kör nokta yüzeyi sıfırlanmış olur.
+
+**Doctrinal kalan kısıt:** "MUST CLOSE 4/4 done" → pilot launch için **gerekli ama yeter değil**. Yeter şart listesi `docs/REPLIT_OPS_CHEATSHEET.md` "Launch checklist" bölümünde (smoke test, rollback drill, backup verify, on-call rota).
+
+---
+
 ## Referanslar
 
 - Drill report:
