@@ -189,16 +189,26 @@ export function _resetPacerForTests() {
 
 async function _doCallOnce(request, method, path, body, token, timeoutMs, extraHeaders) {
     const t0 = Date.now();
-    const r = await request[method](path, {
+    // Task #47: Replit edge proxy rejects GET-with-body (HTTP 400 "malformed
+    // or illegal request"). Previously the helper always set `data: body` and
+    // `Content-Type: application/json` — Playwright then serialized `data: null`
+    // as a literal 4-byte body "null", which the edge proxy bounced before it
+    // ever reached FastAPI. Skip body + JSON content-type entirely when no
+    // body is supplied so GET probes (callTimed(..., 'get', path, null, ...))
+    // don't get hard-blocked at the proxy.
+    const hasBody = body !== null && body !== undefined;
+    const reqOpts = {
         headers: {
             Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
+            ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
             ...extraHeaders,
         },
-        data: body,
         failOnStatusCode: false,
         timeout: timeoutMs,
-    }).catch((e) => ({ status: () => 0, ok: () => false, _err: e?.message }));
+    };
+    if (hasBody) reqOpts.data = body;
+    const r = await request[method](path, reqOpts)
+        .catch((e) => ({ status: () => 0, ok: () => false, _err: e?.message }));
     const ms = Date.now() - t0;
     const status = r.status?.() ?? 0;
     let bodyJson = null;
