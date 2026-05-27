@@ -40,7 +40,7 @@ review PASS — URL-encoded / Unicode / nullbyte / CRLF / header-injection
 vektörlerinin tümü neutralize. Republish → CI yeşil → baseline'a yazıldı.
 
 Baseline tablosu ve drill report'a referans için:
-[`docs/STRESS_TEST_ROADMAP.md` Latest verified baseline](../STRESS_TEST_ROADMAP.md#latest-verified-baseline-2026-05-24--green--f8rf8w-included)
+[`docs/STRESS_TEST_ROADMAP.md` Latest verified baseline (2026-05-26)](../STRESS_TEST_ROADMAP.md#latest-verified-baseline-2026-05-26--green--84-spec-run-143) · [Historical reference (2026-05-24)](../STRESS_TEST_ROADMAP.md#historical-reference--2026-05-24-baseline-68-spec-commit-ee7573b3)
 ve [`docs/drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md`](../drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md).
 
 ## Karar
@@ -145,3 +145,16 @@ gate (`pilot_drift=0`, `external_calls=[]`) ile kapanır.
   P0/P1=0 zorunlu, P2 informational kabul.
 - F8T (HR staff self-service) ve F8X (e-fatura forbidden path source
   scan) önerileri bu pack dışında kalmıştır — ayrı backlog item.
+
+## Verified status — 2026-05-26 (Run #143)
+
+**Status:** ✅ Verified GREEN — F8R–F8W 5 spec'i 2026-05-24 baseline'ında
+(commit `ee7573b3`, 68 spec) GREEN geçti; 2026-05-26 genişletilmiş
+baseline'ında (Run #143, commit `3b3891d`, 84 spec, verdict GO)
+regression-free tekrar onaylandı. F8S `hr_docs_traversal_sanitize`
+fix (`backend/domains/hr/router.py` `_sanitize_doc_filename()`)
+yerleşik kaldı.
+
+**Güncel drill report:** [`docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md`](../drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md)
+
+**Historical drill report:** [`docs/drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md`](../drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md)

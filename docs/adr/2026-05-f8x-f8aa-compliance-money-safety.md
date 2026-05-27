@@ -1,6 +1,6 @@
 # ADR — F8X–F8AA Local Compliance & Money Safety Stress Pack
 
-**Status:** Specs written + architect-fix applied + F8X backend IDOR fix applied (2026-05-24); republish + full-suite verification pending.
+**Status:** ✅ Verified GREEN in Full Stress Suite Run #143 (2026-05-26, commit `3b3891d`, 84 spec, verdict GO). Specs written + architect-fix applied + F8X backend IDOR fix applied (2026-05-24); full-suite verification completed 2026-05-26. Detay: bu dosyanın sonundaki "Verified status — 2026-05-26 (Run #143)" bölümü.
 
 ## F8X backend IDOR fix (2026-05-24)
 
@@ -202,3 +202,17 @@ Beklenen baseline:
 - **F8AA v2:** Backend `/api/gdpr/guest/{id}/anonymize` endpoint
   kontratı şart; eklendikten sonra anonymize dry-run + retention
   rule probe genişletilir.
+
+## Verified status — 2026-05-26 (Run #143)
+
+**Status:** ✅ Verified GREEN in Full Stress Suite Run #143
+(2026-05-26, commit `3b3891d`, 47m 55s, 84 spec, verdict GO).
+
+F8X–F8AA pack'inin 4 spec'i (`98-efatura-earsiv-dryrun`,
+`65-identity-reporting-kbs-jandarma-dryrun`,
+`98-payment-pos-reconciliation-dryrun`,
+`66-kvkk-retention-deletion-anonymization`) full-suite içinde geçti.
+F8X backend IDOR fix (`backend/routers/finance/invoices.py` tenant_filter)
+regression-free.
+
+**Drill report:** [`docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md`](../drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md)

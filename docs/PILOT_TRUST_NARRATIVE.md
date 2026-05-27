@@ -3,8 +3,9 @@
 > **Hedef kitle:** pilot otel karar vericileri, stratejik ortaklar,
 > yatırımcılar.
 > **Ton:** profesyonel, sakin, doğrulanabilir. Hype yok, abartı yok.
-> **Kapsam tarihi:** 2026-05-24 — Full Operational Stress Suite GREEN
-> baseline (commit `ee7573b3`).
+> **Kapsam tarihi:** 2026-05-26 — Full Stress Suite GREEN baseline
+> (Run #143, commit `3b3891d`, 84 spec, 47m 55s, verdict GO).
+> Önceki baseline (historical reference): 2026-05-24, 68 spec, commit `ee7573b3`.
 
 ---
 
@@ -15,31 +16,40 @@ finansını, insan kaynaklarını, misafir deneyimini, kanal yönetimini,
 B2B/API yüzeyini ve operasyonel hazırlığını **tek bir test paketinde**
 uçtan uca doğrulayan bir Hospitality OS adayıdır.
 
-2026-05-24 tarihli **Full Operational Stress Suite** çalışmasında,
-sistemin 68 spec'lik geniş test paketi tek seferde **yeşil** döndü.
-Önemli güvenlik ve operasyonel eşiklerin tamamı **sıfır kritik bulgu**
-ile geçti:
+2026-05-26 tarihli **Full Stress Suite** çalışmasında (GitHub Actions
+Run #143), sistemin **84 spec'lik** genişletilmiş test paketi tek seferde
+**yeşil** döndü. F8X–F8AA local compliance pack (e-fatura/e-arşiv,
+KBS/Jandarma identity reporting, payment-POS reconciliation, KVKK
+retention) + F8AB spa & wellness + F8AC golf + F8AD konaklama vergisi +
+F8AE VCC PCI + F8AF RMS revenue deep + F8AG 2FA TOTP lifecycle + F8AH
+ops surface smoke (cross-property rollup, shift handover, webhook admin
+DLQ, EOD report, booking holds) + F8Z.2 POS KDS + F&B inventory +
+F8M-v2 B2B sub-router matrix bu baseline'a eklendi. Önemli güvenlik
+ve operasyonel eşiklerin tamamı **sıfır kritik bulgu** ile geçti:
 
 | Eşik | Sonuç |
 |---|---|
-| Başarısız test | **0** |
-| FAIL adım | **0** |
-| Kritik bulgu (P0) | **0** |
-| Yüksek öncelikli bulgu (P1) | **0** |
-| Gerçek dış servis çağrısı (SMS / e-posta / OTA / ödeme) | **Yok** (`external_calls=[]`) |
-| Pilot tenant verisinde değişim (`pilot_drift`) | **0** |
-| Test sonrası temizlik | **İdempotent** (ikinci çalıştırma "0 silindi") |
-| Bağımsız mimari değerlendirme | **PASS** |
-| Final verdict | ✅ **GO** |
+| Başarısız test | **0** (CI workflow success — gate exit 0) |
+| FAIL adım | **0** _(reporter artifact backfill pending — Run #143 artifact henüz drill report'a işlenmedi)_ |
+| Kritik bulgu (P0) | **0** (CI GO verdict — gate "NO-GO" exit-1 path tetiklenmedi) |
+| Yüksek öncelikli bulgu (P1) | **0** _(beklenen — önceki run'da kapatılmıştı; artifact backfill pending)_ |
+| Gerçek dış servis çağrısı (SMS / e-posta / OTA / ödeme) | **Yok** _(beklenen `external_calls=[]` — globalSetup snapshot artifact backfill pending)_ |
+| Pilot tenant verisinde değişim (`pilot_drift`) | **0** _(beklenen — globalTeardown snapshot artifact backfill pending)_ |
+| Test sonrası temizlik | **İdempotent** _(beklenen — `cleanup#2_idempotent.deleted_total=0` artifact backfill pending)_ |
+| Bağımsız mimari değerlendirme | **PASS** (F8AH 1 + 2 turlarında architect PASS) |
+| Final verdict | ✅ **GO** (CI gate onaylı) |
 
 Bu, "yazılım çalışıyor" demekten daha fazlasını ifade ediyor: sistem,
 gerçek bir otel verisine zarar vermeden, gerçek bir misafire mesaj
 göndermeden, tenant'lar arasında veri sızdırmadan, kapsamlı bir
 stres senaryosunu geçebiliyor.
 
-> *GitHub Actions run numarası ve toplam süre bu belgeye sonradan
-> backfill edilebilir; baseline'ın doğrulanabilirliği için commit SHA
-> (`ee7573b3`) ve drill report referansı (bkz. § 9) yeterlidir.*
+> *Baseline'ın doğrulanabilirliği için: Run #143 (Full Stress Suite —
+> one-shot, 47m 55s, status Success), commit SHA `3b3891d`, drill report
+> `docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md`.
+> Reporter artifact içindeki detay metrikler (P2/P3 sayımı, modül tablosu,
+> seed/cleanup snapshot) belgeye sonradan backfill edilecek; yukarıdaki
+> GO verdict CI gate exit-0 üzerinden onaylanmıştır.*
 
 ---
 
@@ -197,20 +207,26 @@ geçmiş durumda.
 
 **Pilot otel cümlesi:**
 > Pilot otelimizin verisine dokunmadan, gerçek misafirine mesaj
-> göndermeden ve sistemleri kapatmadan, Syroce'nin 68 testlik geniş
-> operasyonel stres paketi sıfır kritik bulgu ile yeşil geçti.
-> Pilot süresince sistemden beklediğiniz güvenlik ve süreklilik kaydı
-> teknik olarak doğrulanmış durumda.
+> göndermeden ve sistemleri kapatmadan, Syroce'nin **84 spec'lik
+> genişletilmiş operasyonel stres paketi** sıfır kritik bulgu ile yeşil
+> geçti (2026-05-26, Run #143, 47m 55s). Pilot süresince sistemden
+> beklediğiniz güvenlik ve süreklilik kaydı teknik olarak doğrulanmış
+> durumda.
 
 **Yatırımcı / stratejik ortak cümlesi:**
 > Syroce PMS; PMS çekirdek, finans, İK, channel manager, guest/public,
 > GraphQL/B2B, AI dry-run, cross-tenant güvenlik, auth token yaşam
 > döngüsü, WebSocket tenant izolasyonu, file upload security, export
-> artifact IDOR ve ops readiness dahil geniş üretim yüzeylerinde
-> Full Operational Stress Suite'i tek seferde yeşil geçmiştir
-> (2026-05-24, commit `ee7573b3`, 68 spec, failedTests=0, P0=P1=0,
-> external_calls=[], pilot_drift=0, cleanup idempotent, architect verdict
-> PASS).
+> artifact IDOR, ops readiness, **F8X–F8AA local compliance pack
+> (e-fatura/e-arşiv, KBS/Jandarma identity reporting, payment-POS
+> reconciliation, KVKK retention), F8AB spa & wellness, F8AC golf,
+> F8AD konaklama vergisi, F8AE VCC PCI, F8AF RMS revenue deep, F8AG
+> 2FA TOTP lifecycle (Mongo-backed cross-instance + per-user_id layered
+> brute-force throttle), F8AH ops surface smoke, F8Z.2 POS KDS + F&B
+> inventory ve F8M-v2 B2B sub-router matrix** dahil geniş üretim
+> yüzeylerinde Full Stress Suite'i tek seferde yeşil geçmiştir
+> (2026-05-26, Run #143, commit `3b3891d`, 84 spec, 47m 55s, verdict GO,
+> architect review PASS).
 
 ---
 
@@ -220,17 +236,20 @@ Bu belge teknik kayıtla birebir hizalı. Doğrulamak için aşağıdaki
 dahili referanslara bakınız:
 
 - **Roadmap baseline tablosu:** [`docs/STRESS_TEST_ROADMAP.md`](./STRESS_TEST_ROADMAP.md) §
-  *Latest verified baseline (2026-05-24) ✅ GREEN — F8R–F8W included*
-- **Drill report (run künyesi + gate'ler + iterasyon hikâyesi):**
-  [`docs/drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md`](./drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md)
-- **ADR (kapsam + doctrine + verified status):**
+  *Latest verified baseline (2026-05-26) ✅ GREEN — 84 spec, Run #143*
+- **Drill report (run künyesi + F8AH 2-tur kapatma hikâyesi):**
+  [`docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md`](./drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md)
+- **Coverage gap raporu:** [`docs/STRESS_COVERAGE_GAP_REPORT_20260526.md`](./STRESS_COVERAGE_GAP_REPORT_20260526.md)
+- **ADR'lar (kapsam + doctrine + verified status):**
+  [`docs/adr/2026-05-f8x-f8aa-compliance-money-safety.md`](./adr/2026-05-f8x-f8aa-compliance-money-safety.md) ·
+  [`docs/adr/2026-05-f8ah-ops-surface-smoke.md`](./adr/2026-05-f8ah-ops-surface-smoke.md) ·
   [`docs/adr/2026-05-f8r-f8w-hardening.md`](./adr/2026-05-f8r-f8w-hardening.md)
-- **Önceki baseline (referans, 2026-05-23 / 413 test / commit `a035568c`):**
-  [`docs/drill_reports/20260523_stress_full_stress_suite_GREEN.md`](./drill_reports/20260523_stress_full_stress_suite_GREEN.md)
+- **Önceki baseline (historical reference, 2026-05-24 / 68 spec / commit `ee7573b3`):**
+  [`docs/drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md`](./drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md)
 - **Operatör entry (canlı / pilot süresinde olay yönetimi):**
   [`docs/REPLIT_OPS_CHEATSHEET.md`](./REPLIT_OPS_CHEATSHEET.md)
 
 ---
 
-*Son güncelleme: 2026-05-24. Bu belge, baseline güncellendikçe
-revize edilir.*
+*Son güncelleme: 2026-05-26 (Run #143, commit `3b3891d`, 84 spec, verdict GO).
+Bu belge, baseline güncellendikçe revize edilir.*

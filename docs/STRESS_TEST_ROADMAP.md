@@ -4,7 +4,64 @@
 sokmak — pilot tenant'a mutation yok, gerçek dış servis çağrısı yok,
 external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 
-## Latest verified baseline (2026-05-24) ✅ GREEN — F8R–F8W included
+## Latest verified baseline (2026-05-26) ✅ GREEN — 84 spec, Run #143
+
+| Alan | Değer |
+|---|---|
+| Date | 2026-05-26 |
+| Workflow | GitHub Actions — Full Stress Suite (one-shot) |
+| Run | **#143** |
+| Trigger | `pull_request` |
+| Branch | `main` |
+| Commit SHA | `3b3891d` |
+| Duration | 47m 55s |
+| Status | Success |
+| Artifacts | 2 |
+| Spec count | **84** (`frontend/e2e-stress/specs/`) |
+| failedTests | 0 (workflow success implicit) |
+| P0 / P1 | 0 / 0 (P1 backfill pending — reporter artifact) |
+| `external_calls_made` | `[]` (backfill pending — globalSetup) |
+| `pilot_drift` | 0 (backfill pending — globalTeardown) |
+| Cleanup idempotent | ✅ (backfill pending — `deleted=0` 2nd pass) |
+| Final verdict | ✅ **GO** |
+
+**Faz kapsamı (bu baseline'a giren):** F8A + F8B + F8C + F8D (v2 + v3
+HR extension) + F8E + F8F..F8O + F8R + F8S + F8U + F8V + F8W + **F8X +
+F8Y + F8Z + F8AA + F8AB + F8AC + F8AD + F8AE + F8AF + F8AG + F8AH +
+F8Z.2 + F8M-v2 + POS/Spa derinleştirmeleri**.
+
+**Eklenen 16 spec (68 → 84):** `98-efatura-earsiv-dryrun`,
+`65-identity-reporting-kbs-jandarma-dryrun`,
+`98-payment-pos-reconciliation-dryrun`,
+`66-kvkk-retention-deletion-anonymization`,
+`98-spa-wellness-operational`, `98-konaklama-vergisi-dryrun`,
+`98-rms-revenue-deep`, `98-pos-kds-inventory`,
+`41B-b2b-subrouter-matrix`, `98-golf-operational`,
+`98-vcc-pci-compliance`, `98C-twofa-totp-lifecycle`,
+`98-ops-surface-smoke`, `99-pos-extensions`,
+`98-pos-deep-lifecycle`, `99-full-24h-hotel-simulation`.
+
+**F8AH iki-tur kapatma (5 finding):** Tur 1 commit `94514e6` — 4 P1
+(konaklama amount/nights overflow → Pydantic `le=1e9/3650` clamp,
+KDS terminal-state → 409 guard, KDS idempotency → Mongo unique index
++ 503 fail-closed). Tur 2 commits `147266d4` + `67374954` + `8f7f77b6` —
+P0 TWOFA brute-force throttle: Mongo-backed cross-instance throttle
+(`backend/security/auth_throttle.py` `_ensure_mongo_throttle_indexes`
++ `_check_mongo`, `always_on=True` routing) + per-user_id layered
+throttle (JWT-trusted `user_id` claim, IP rotation immune,
+`consumed_jtis` insert ÖNCESI placement → no DB write amplification
+under brute force). Local smoke: 17 verify → 1-15=401, 16-17=429 ✓.
+Architect review PASS her iki turda. Residual non-blocking: Mongo
+outage `always_on` throttles için fail-open (availability politikası
+ile uyumlu, strict-mode + alerting backlog).
+
+**Drill report:** [`docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md`](./drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md)
+
+**Coverage gap raporu:** [`docs/STRESS_COVERAGE_GAP_REPORT_20260526.md`](./STRESS_COVERAGE_GAP_REPORT_20260526.md)
+
+---
+
+## Historical reference — 2026-05-24 baseline (68 spec, commit `ee7573b3`)
 
 > **F8X–F8AA Local Compliance & Money Safety Pack** spec'leri yazıldı
 > (2026-05-24, bu commit) — 4 yeni spec (98-efatura, 65-identity, 98-payment,

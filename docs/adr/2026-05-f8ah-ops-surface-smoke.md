@@ -100,3 +100,38 @@ cross_property/webhook_admin/eod read-only → ek koleksiyon yok.
 - `backend/routers/{cross_property,shift_handover,webhook_admin,eod_report,booking_holds}.py`
 - `backend/core/booking_hold_service.py` (lock service contract)
 - `backend/domains/admin/router/stress.py` (`STRESS_COLLECTIONS`)
+
+## Verified status — 2026-05-26 (Run #143)
+
+**Status:** ✅ Verified GREEN in Full Stress Suite Run #143
+(2026-05-26, commit `3b3891d`, 47m 55s, 84 spec, verdict GO).
+
+**İki-tur kapatma hikâyesi:**
+
+- **Tur 1 (commit `94514e6`) — 4 P1 fix:**
+  - `calc_oversized_amount` / `calc_oversized_nights` (konaklama vergisi
+    overflow) → Pydantic `le=1e9` ve `le=3650` clamp + 422
+    (`backend/routers/finance/konaklama_vergisi.py`).
+  - KDS terminal-state revert (served→ready) → 409 guard + `current_status`
+    echo (`backend/domains/pms/pos_fnb_router/kitchen.py`).
+  - KDS idempotency replay (distinct ids) → Mongo unique
+    `(tenant_id, idempotency_key)` index + 503 fail-closed
+    (`backend/domains/pms/pos_fnb_router/kitchen.py`).
+
+- **Tur 2 (commits `147266d4` + `67374954` + `8f7f77b6`) — P0 TWOFA throttle:**
+  - **Root cause:** (1) Replit autoscale per-instance Redis dilution,
+    (2) GitHub Actions / CDN / NAT egress IP rotation per-IP throttle
+    key bypass paterni.
+  - **Fix:** Mongo-backed cross-instance throttle
+    (`backend/security/auth_throttle.py` `_ensure_mongo_throttle_indexes`
+    + `_check_mongo` insert→count→compensating-delete,
+    `always_on=True` routing) + per-user_id layered throttle
+    (`backend/routers/auth.py:720-732`, JWT-trusted `user_id` claim,
+    IP rotation immune, `consumed_jtis` insert ÖNCESI placement →
+    no DB write amplification under brute force).
+  - **Local smoke:** 17 verify → 1-15=401, 16-17=429 ✓.
+  - **Architect review:** PASS (her iki turda). Residual non-blocking:
+    Mongo outage `always_on` throttles için fail-open (mevcut
+    availability politikasıyla uyumlu; strict-mode + alerting backlog).
+
+**Drill report:** [`docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md`](../drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md)
