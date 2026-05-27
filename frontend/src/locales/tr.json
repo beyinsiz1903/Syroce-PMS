@@ -3255,7 +3255,8 @@
     "tabs": {
       "prs": "PRs",
       "pos": "POs",
-      "suppliers": "Tedarikçiler"
+      "suppliers": "Tedarikçiler",
+      "credit": "Kredi"
     },
     "prStatuses": {
       "draft": "Taslak",
@@ -3450,6 +3451,29 @@
       "generalNote": "Genel Not",
       "cancel": "Vazgeç",
       "confirm": "Mal Kabulü Onayla"
+    },
+    "creditReport": {
+      "title": "Tedarikçi Kredi Kullanımı",
+      "description": "Açık PO taahhüdü vs. kredi limiti portföy görünümü, riske göre sıralı.",
+      "includeUnlimited": "Limiti olmayan tedarikçileri de göster",
+      "refresh": "Yenile",
+      "loading": "Yükleniyor…",
+      "empty": "Kredi limiti olan tedarikçi yok",
+      "columns": {
+        "code": "Kod",
+        "supplier": "Tedarikçi",
+        "open": "Açık taahhüt",
+        "limit": "Kredi limiti",
+        "headroom": "Kalan",
+        "usedPct": "Kullanım %",
+        "status": "Durum"
+      },
+      "statuses": {
+        "ok": "OK",
+        "warning": "Uyarı",
+        "exceeded": "Aşıldı",
+        "no_limit": "Limit yok"
+      }
     }
   },
   "opsCenter": {

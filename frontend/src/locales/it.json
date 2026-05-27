@@ -3200,7 +3200,8 @@
     "tabs": {
       "prs": "PRs",
       "pos": "POs",
-      "suppliers": "Fornitori"
+      "suppliers": "Fornitori",
+      "credit": "Credito"
     },
     "prStatuses": {
       "draft": "Bozza",
@@ -3395,6 +3396,29 @@
       "generalNote": "Nota generale",
       "cancel": "Annulla",
       "confirm": "Conferma ricezione"
+    },
+    "creditReport": {
+      "title": "Utilizzo del credito fornitori",
+      "description": "Vista portafoglio dell'impegno OdA aperti vs. limite di credito, ordinata per esposizione.",
+      "includeUnlimited": "Includi fornitori senza limite di credito",
+      "refresh": "Aggiorna",
+      "loading": "Caricamento…",
+      "empty": "Nessun fornitore con limite di credito",
+      "columns": {
+        "code": "Codice",
+        "supplier": "Fornitore",
+        "open": "Impegno aperto",
+        "limit": "Limite credito",
+        "headroom": "Margine",
+        "usedPct": "Usato %",
+        "status": "Stato"
+      },
+      "statuses": {
+        "ok": "OK",
+        "warning": "Avviso",
+        "exceeded": "Superato",
+        "no_limit": "Nessun limite"
+      }
     }
   },
   "opsCenter": {

@@ -3255,7 +3255,8 @@
     "tabs": {
       "prs": "PRs",
       "pos": "POs",
-      "suppliers": "Suppliers"
+      "suppliers": "Suppliers",
+      "credit": "Credit"
     },
     "prStatuses": {
       "draft": "Draft",
@@ -3450,6 +3451,29 @@
       "generalNote": "General Note",
       "cancel": "Cancel",
       "confirm": "Confirm Receipt"
+    },
+    "creditReport": {
+      "title": "Supplier Credit Utilisation",
+      "description": "Portfolio view of open PO commitment vs. credit limit, sorted by exposure.",
+      "includeUnlimited": "Include suppliers without a credit limit",
+      "refresh": "Refresh",
+      "loading": "Loading…",
+      "empty": "No suppliers with a credit limit",
+      "columns": {
+        "code": "Code",
+        "supplier": "Supplier",
+        "open": "Open commitment",
+        "limit": "Credit limit",
+        "headroom": "Headroom",
+        "usedPct": "Used %",
+        "status": "Status"
+      },
+      "statuses": {
+        "ok": "OK",
+        "warning": "Warning",
+        "exceeded": "Exceeded",
+        "no_limit": "No limit"
+      }
     }
   },
   "opsCenter": {

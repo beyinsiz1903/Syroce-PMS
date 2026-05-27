@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Plus, Truck, ClipboardList, Package, FileCheck2, RefreshCw,
-  Trash2, Send, History as HistoryIcon, X, Check, Ban,
+  Trash2, Send, History as HistoryIcon, X, Check, Ban, TrendingUp,
 } from 'lucide-react';
 
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
@@ -74,6 +74,10 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   const [selectedPo, setSelectedPo] = useState(null);
   const [creditUtil, setCreditUtil] = useState(null);
   const creditReqRef = useRef(0);
+  const [creditReport, setCreditReport] = useState([]);
+  const [creditReportLoaded, setCreditReportLoaded] = useState(false);
+  const [creditReportLoading, setCreditReportLoading] = useState(false);
+  const [creditIncludeUnlimited, setCreditIncludeUnlimited] = useState(false);
 
   const prLabel = (code) => t(`procurement.prStatuses.${code || 'draft'}`);
   const poLabel = (code) => t(`procurement.poStatuses.${code || 'draft'}`);
@@ -125,6 +129,20 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
     setPos(r.data?.items || []);
     setPosLoaded(true);
   };
+  const loadCreditReport = async (includeUnlimited = creditIncludeUnlimited) => {
+    setCreditReportLoading(true);
+    try {
+      const r = await axios.get('/procurement/credit-utilisation', {
+        params: { include_unlimited: includeUnlimited },
+      });
+      setCreditReport(r.data?.items || []);
+      setCreditReportLoaded(true);
+    } catch (e) {
+      toast.error(t('procurement.errors.loadFailed'));
+    } finally {
+      setCreditReportLoading(false);
+    }
+  };
   const loadInventory = async () => {
     if (invLoadingRef.current) return;
     invLoadingRef.current = true;
@@ -169,6 +187,12 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
       toast.error('Satınalma siparişleri yüklenemedi');
     });
   }, [tab, posLoaded]);
+
+  // Lazy: credit utilisation report only when user opens that tab.
+  useEffect(() => {
+    if (tab === 'credit' && !creditReportLoaded) loadCreditReport();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, creditReportLoaded]);
 
   // Lazy: inventory list needed by both PR and PO form autocompletes.
   // Boolean dependency prevents per-keystroke re-runs while the form object
@@ -545,6 +569,7 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
           <TabsTrigger value="summary"><ClipboardList className="w-4 h-4 mr-1" />{t('procurement.tabs.prs')}</TabsTrigger>
           <TabsTrigger value="pos"><Package className="w-4 h-4 mr-1" />{t('procurement.tabs.pos')}</TabsTrigger>
           <TabsTrigger value="suppliers"><Truck className="w-4 h-4 mr-1" />{t('procurement.tabs.suppliers')}</TabsTrigger>
+          <TabsTrigger value="credit"><TrendingUp className="w-4 h-4 mr-1" />{t('procurement.tabs.credit')}</TabsTrigger>
         </TabsList>
 
         {/* ── PR LIST ─────────────────────────────────────── */}
@@ -763,6 +788,93 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                     );
                   })}
                   {suppliers.length === 0 && <tr><td colSpan="8" className="p-4 text-center text-slate-400">{t('procurement.supplierList.empty')}</td></tr>}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── CREDIT UTILISATION REPORT (Task #79) ───────── */}
+        <TabsContent value="credit">
+          <Card>
+            <CardHeader className="flex-row items-center justify-between gap-2">
+              <div>
+                <CardTitle>{t('procurement.creditReport.title')}</CardTitle>
+                <CardDescription>{t('procurement.creditReport.description')}</CardDescription>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-slate-600 flex items-center gap-1">
+                  <input type="checkbox"
+                    checked={creditIncludeUnlimited}
+                    onChange={(e) => {
+                      const v = e.target.checked;
+                      setCreditIncludeUnlimited(v);
+                      loadCreditReport(v);
+                    }} />
+                  {t('procurement.creditReport.includeUnlimited')}
+                </label>
+                <Button size="sm" variant="outline"
+                        onClick={() => loadCreditReport()}
+                        disabled={creditReportLoading}>
+                  <RefreshCw className={`w-4 h-4 mr-1 ${creditReportLoading ? 'animate-spin' : ''}`} />
+                  {t('procurement.creditReport.refresh')}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <table className="w-full text-sm">
+                <thead><tr className="text-left border-b text-slate-600">
+                  <th className="p-2">{t('procurement.creditReport.columns.code')}</th>
+                  <th className="p-2">{t('procurement.creditReport.columns.supplier')}</th>
+                  <th className="p-2 text-right">{t('procurement.creditReport.columns.open')}</th>
+                  <th className="p-2 text-right">{t('procurement.creditReport.columns.limit')}</th>
+                  <th className="p-2 text-right">{t('procurement.creditReport.columns.headroom')}</th>
+                  <th className="p-2 text-right">{t('procurement.creditReport.columns.usedPct')}</th>
+                  <th className="p-2">{t('procurement.creditReport.columns.status')}</th>
+                </tr></thead>
+                <tbody>
+                  {creditReport.map((row) => {
+                    const cls = row.status === 'exceeded'
+                      ? 'bg-rose-100 text-rose-800'
+                      : row.status === 'warning'
+                        ? 'bg-amber-100 text-amber-800'
+                        : row.status === 'ok'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-slate-100 text-slate-600';
+                    const tone = row.status === 'exceeded'
+                      ? 'text-rose-700'
+                      : row.status === 'warning'
+                        ? 'text-amber-700'
+                        : 'text-slate-700';
+                    return (
+                      <tr key={row.supplier_id} className="border-b hover:bg-slate-50">
+                        <td className="p-2 font-mono text-xs">{row.supplier_code || '—'}</td>
+                        <td className="p-2 font-medium">{row.supplier_name}</td>
+                        <td className={`p-2 text-right tabular-nums ${tone}`}>{tl(row.open_total)}</td>
+                        <td className="p-2 text-right tabular-nums">
+                          {row.limit === null ? '—' : tl(row.limit)}
+                        </td>
+                        <td className={`p-2 text-right tabular-nums ${tone}`}>
+                          {row.headroom === null ? '—' : tl(row.headroom)}
+                        </td>
+                        <td className={`p-2 text-right tabular-nums ${tone}`}>
+                          {row.used_pct === null ? '—' : `${row.used_pct.toFixed(1)}%`}
+                        </td>
+                        <td className="p-2">
+                          <Badge className={`${cls} border-0`}>
+                            {t(`procurement.creditReport.statuses.${row.status}`)}
+                          </Badge>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {creditReport.length === 0 && (
+                    <tr><td colSpan="7" className="p-4 text-center text-slate-400">
+                      {creditReportLoading
+                        ? t('procurement.creditReport.loading')
+                        : t('procurement.creditReport.empty')}
+                    </td></tr>
+                  )}
                 </tbody>
               </table>
             </CardContent>

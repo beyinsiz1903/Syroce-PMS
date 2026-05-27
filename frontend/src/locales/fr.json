@@ -3200,7 +3200,8 @@
     "tabs": {
       "prs": "DA",
       "pos": "BC",
-      "suppliers": "Fournisseurs"
+      "suppliers": "Fournisseurs",
+      "credit": "Crédit"
     },
     "prStatuses": {
       "draft": "Brouillon",
@@ -3395,6 +3396,29 @@
       "generalNote": "Note générale",
       "cancel": "Annuler",
       "confirm": "Confirmer la réception"
+    },
+    "creditReport": {
+      "title": "Utilisation du crédit fournisseur",
+      "description": "Vue portefeuille de l'engagement BC ouvert vs. limite de crédit, triée par exposition.",
+      "includeUnlimited": "Inclure les fournisseurs sans limite de crédit",
+      "refresh": "Actualiser",
+      "loading": "Chargement…",
+      "empty": "Aucun fournisseur avec limite de crédit",
+      "columns": {
+        "code": "Code",
+        "supplier": "Fournisseur",
+        "open": "Engagement ouvert",
+        "limit": "Limite de crédit",
+        "headroom": "Marge",
+        "usedPct": "Utilisé %",
+        "status": "Statut"
+      },
+      "statuses": {
+        "ok": "OK",
+        "warning": "Avertissement",
+        "exceeded": "Dépassé",
+        "no_limit": "Sans limite"
+      }
     }
   },
   "opsCenter": {

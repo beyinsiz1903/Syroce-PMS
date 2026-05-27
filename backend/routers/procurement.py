@@ -581,6 +581,92 @@ async def get_po(po_id: str,
     return doc
 
 
+@router.get("/credit-utilisation")
+async def credit_utilisation_report(
+    include_unlimited: bool = False,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    """Portfolio view of supplier credit exposure for finance (Task #79).
+
+    Returns every active supplier with the same open-PO commitment used
+    by the create-PO guard (``draft / sent / partially_received``).
+    Rows are sorted by ``used_pct`` descending so suppliers nearest /
+    over their limit appear first; suppliers without a credit_limit
+    (only returned when ``include_unlimited=true``) sort last.
+
+    Status badges:
+      * ``ok``       — used_pct < 80 (or no limit set, no open commitment)
+      * ``warning``  — used_pct >= 80 and <= 100
+      * ``exceeded`` — open_total > limit
+      * ``no_limit`` — supplier has no credit_limit configured
+    """
+    db = get_system_db()
+    sup_query: dict = {
+        "tenant_id": current_user.tenant_id,
+        "active": True,
+    }
+    if not include_unlimited:
+        sup_query["credit_limit"] = {"$gt": 0}
+    suppliers = await db.proc_suppliers.find(
+        sup_query,
+        {"_id": 0, "id": 1, "name": 1, "code": 1, "credit_limit": 1},
+    ).to_list(2000)
+
+    pipeline = [
+        {"$match": {
+            "tenant_id": current_user.tenant_id,
+            "status": {"$in": ["draft", "sent", "partially_received"]},
+        }},
+        {"$group": {"_id": "$supplier_id",
+                    "total": {"$sum": "$grand_total"}}},
+    ]
+    totals: dict[str, float] = {}
+    async for row in db.proc_purchase_orders.aggregate(pipeline):
+        sid = row.get("_id")
+        if sid:
+            totals[sid] = float(row.get("total", 0) or 0)
+
+    rows: list[dict] = []
+    for s in suppliers:
+        sid = s.get("id")
+        limit = s.get("credit_limit")
+        open_total = round(totals.get(sid, 0.0), 2)
+        used_pct: float | None = None
+        headroom: float | None = None
+        status = "no_limit"
+        if limit is not None and float(limit) > 0:
+            used_pct = round(open_total / float(limit) * 100.0, 2)
+            headroom = round(float(limit) - open_total, 2)
+            if open_total > float(limit) + 1e-6:
+                status = "exceeded"
+            elif used_pct >= 80.0:
+                status = "warning"
+            else:
+                status = "ok"
+        elif limit is not None and float(limit) == 0:
+            headroom = 0.0
+            used_pct = 0.0
+            status = "exceeded" if open_total > 0 else "ok"
+        rows.append({
+            "supplier_id": sid,
+            "supplier_name": s.get("name"),
+            "supplier_code": s.get("code"),
+            "limit": float(limit) if limit is not None else None,
+            "open_total": open_total,
+            "headroom": headroom,
+            "used_pct": used_pct,
+            "status": status,
+        })
+
+    rows.sort(key=lambda r: (
+        r["used_pct"] is None,
+        -(r["used_pct"] or 0.0),
+        (r["supplier_name"] or "").lower(),
+    ))
+    return {"items": rows, "count": len(rows)}
+
+
 @router.get("/suppliers/{supplier_id}/credit-utilisation")
 async def supplier_credit_utilisation(
     supplier_id: str,

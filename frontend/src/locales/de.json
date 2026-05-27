@@ -3200,7 +3200,8 @@
     "tabs": {
       "prs": "PRs",
       "pos": "POs",
-      "suppliers": "Lieferanten"
+      "suppliers": "Lieferanten",
+      "credit": "Kredit"
     },
     "prStatuses": {
       "draft": "Entwurf",
@@ -3395,6 +3396,29 @@
       "generalNote": "Allg. Notiz",
       "cancel": "Abbrechen",
       "confirm": "Wareneingang bestätigen"
+    },
+    "creditReport": {
+      "title": "Lieferanten-Kreditauslastung",
+      "description": "Portfolioansicht offener Bestellungen vs. Kreditlimit, nach Risiko sortiert.",
+      "includeUnlimited": "Lieferanten ohne Kreditlimit einschließen",
+      "refresh": "Aktualisieren",
+      "loading": "Wird geladen…",
+      "empty": "Keine Lieferanten mit Kreditlimit",
+      "columns": {
+        "code": "Code",
+        "supplier": "Lieferant",
+        "open": "Offen",
+        "limit": "Kreditlimit",
+        "headroom": "Spielraum",
+        "usedPct": "Verbraucht %",
+        "status": "Status"
+      },
+      "statuses": {
+        "ok": "OK",
+        "warning": "Warnung",
+        "exceeded": "Überschritten",
+        "no_limit": "Kein Limit"
+      }
     }
   },
   "opsCenter": {

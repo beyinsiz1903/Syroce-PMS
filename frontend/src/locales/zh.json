@@ -3200,7 +3200,8 @@
     "tabs": {
       "prs": "请购单",
       "pos": "采购订单",
-      "suppliers": "供应商"
+      "suppliers": "供应商",
+      "credit": "信用"
     },
     "prStatuses": {
       "draft": "草稿",
@@ -3395,6 +3396,29 @@
       "generalNote": "总体备注",
       "cancel": "取消",
       "confirm": "确认收货"
+    },
+    "creditReport": {
+      "title": "供应商信用使用情况",
+      "description": "未结采购订单承诺与信用额度的组合视图,按风险敞口排序。",
+      "includeUnlimited": "包含没有信用额度的供应商",
+      "refresh": "刷新",
+      "loading": "加载中…",
+      "empty": "没有设置信用额度的供应商",
+      "columns": {
+        "code": "代码",
+        "supplier": "供应商",
+        "open": "未结承诺",
+        "limit": "信用额度",
+        "headroom": "剩余额度",
+        "usedPct": "已用 %",
+        "status": "状态"
+      },
+      "statuses": {
+        "ok": "正常",
+        "warning": "警告",
+        "exceeded": "已超限",
+        "no_limit": "无限制"
+      }
     }
   },
   "opsCenter": {

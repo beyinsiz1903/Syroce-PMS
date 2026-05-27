@@ -3200,7 +3200,8 @@
     "tabs": {
       "prs": "PRs",
       "pos": "POs",
-      "suppliers": "Proveedores"
+      "suppliers": "Proveedores",
+      "credit": "Crédito"
     },
     "prStatuses": {
       "draft": "Borrador",
@@ -3395,6 +3396,29 @@
       "generalNote": "Nota general",
       "cancel": "Cancelar",
       "confirm": "Confirmar recepción"
+    },
+    "creditReport": {
+      "title": "Utilización de crédito de proveedores",
+      "description": "Vista de cartera del compromiso de OC abiertas vs. límite de crédito, ordenada por exposición.",
+      "includeUnlimited": "Incluir proveedores sin límite de crédito",
+      "refresh": "Actualizar",
+      "loading": "Cargando…",
+      "empty": "Sin proveedores con límite de crédito",
+      "columns": {
+        "code": "Código",
+        "supplier": "Proveedor",
+        "open": "Compromiso abierto",
+        "limit": "Límite de crédito",
+        "headroom": "Margen",
+        "usedPct": "Usado %",
+        "status": "Estado"
+      },
+      "statuses": {
+        "ok": "OK",
+        "warning": "Aviso",
+        "exceeded": "Excedido",
+        "no_limit": "Sin límite"
+      }
     }
   },
   "opsCenter": {
