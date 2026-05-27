@@ -8,7 +8,7 @@
 //   - module-blocked pattern: 403/non-2xx Setup → A/B/C skip + P2.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -85,7 +85,7 @@ test.describe('F8D § 21 — HR Attendance', () => {
         for (const s of targets) {
             // ClockInRequest router contract: { staff_id } only.
             const payload = { staff_id: s.id };
-            const r = await callTimedWithBackoff(request, 'post', '/api/hr/clock-in',
+            const r = await callTimed(request, 'post', '/api/hr/clock-in',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -132,7 +132,7 @@ test.describe('F8D § 21 — HR Attendance', () => {
         const errs = [];
         for (const sid of clockedInStaff) {
             const payload = { staff_id: sid };
-            const r = await callTimedWithBackoff(request, 'post', '/api/hr/clock-out',
+            const r = await callTimed(request, 'post', '/api/hr/clock-out',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;

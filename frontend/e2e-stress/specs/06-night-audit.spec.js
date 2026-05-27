@@ -15,7 +15,7 @@
 // - Bu spec deterministik koşmayı tercih eder — büyük batch yok, tek run
 //   + tek re-run + tek list. Sample size küçük tutulmuştur (smoke).
 import { test, expect, rec } from '../fixtures/stress-context.js';
-import { callTimed, callTimedWithBackoff, recFinding, pilotBookingsCount, assertNoExternalCallsPostBatch } from '../fixtures/stress-helpers.js';
+import { callTimed, recFinding, pilotBookingsCount, assertNoExternalCallsPostBatch } from '../fixtures/stress-helpers.js';
 
 const MOD = 'night-audit';
 
@@ -61,7 +61,7 @@ test.describe('F8A § 06 — Night audit (business-date / run / re-run idempoten
         // Per-call budget 120s → 180s; Playwright test timeout 240s.
         test.setTimeout(240_000);
         const body = businessDate ? { business_date: businessDate } : {};
-        const r = await callTimedWithBackoff(request, 'post', '/api/pms-core/night-audit/run',
+        const r = await callTimed(request, 'post', '/api/pms-core/night-audit/run',
             body, stressTokens.stress_token,
             { maxRetries: 1, fallbackSleepMs: 5000, timeout: 180_000 });
         const ok = r.ok;
@@ -119,7 +119,7 @@ test.describe('F8A § 06 — Night audit (business-date / run / re-run idempoten
         // almalı — re-run idempotency check yine 500-folio scan tetikleyebilir
         // (already_posted guard fast-path olsa bile DB lookup süresi 30s'i
         // aşabilir). A'daki 180s budget'ı buraya da uygula (tur-31 bump).
-        const r = await callTimedWithBackoff(request, 'post', '/api/pms-core/night-audit/run',
+        const r = await callTimed(request, 'post', '/api/pms-core/night-audit/run',
             body, stressTokens.stress_token,
             { maxRetries: 1, fallbackSleepMs: 5000, timeout: 180_000 });
         secondRunSnapshot = r.body || null;

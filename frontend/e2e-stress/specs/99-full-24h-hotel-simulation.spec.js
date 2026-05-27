@@ -41,7 +41,7 @@ import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
     fetchAllByPrefix,
     callTimed,
-    callTimedWithBackoff,
+    callTimed,
     recPerf,
     recFinding,
     pilotBookingsCount,
@@ -177,7 +177,7 @@ test.describe('F8J § 99 — Full 24h hotel simulation', () => {
         for (let i = 0; i < candidates.length && walkInBookingIds.length < 20; i++) {
             const room = candidates[i];
             const ts = Date.now();
-            const r = await callTimedWithBackoff(request, 'post', '/api/pms-core/walk-in', {
+            const r = await callTimed(request, 'post', '/api/pms-core/walk-in', {
                 room_id: room.id,
                 nights: 1,
                 rate: 1000,
@@ -338,7 +338,7 @@ test.describe('F8J § 99 — Full 24h hotel simulation', () => {
         }
         await gap();
 
-        const pr = await callTimedWithBackoff(request, 'post', '/api/procurement/purchase-requests', {
+        const pr = await callTimed(request, 'post', '/api/procurement/purchase-requests', {
             supplier_id: suppliers[0].id,
             requested_for: 'F8J 24h sim',
             items: [{ item_name: `${SUB_PREFIX}_smoke_item`, quantity: 1, estimated_price: 100 }],
@@ -429,7 +429,7 @@ test.describe('F8J § 99 — Full 24h hotel simulation', () => {
         const target = chargedBookingIds.slice(0, 5);
         let ok = 0; const failModes = {};
         for (const bid of target) {
-            const r = await callTimedWithBackoff(request, 'post', '/api/pms-core/folio/payment', {
+            const r = await callTimed(request, 'post', '/api/pms-core/folio/payment', {
                 booking_id: bid,
                 amount: 50,
                 payment_method: 'cash',
@@ -495,7 +495,7 @@ test.describe('F8J § 99 — Full 24h hotel simulation', () => {
         await gap();
         const target = staff.slice(0, 5);
         for (const s of target) {
-            const r = await callTimedWithBackoff(request, 'post', '/api/hr/clock-in', {
+            const r = await callTimed(request, 'post', '/api/hr/clock-in', {
                 staff_id: s.id,
                 notes: `${SUB_PREFIX} aksam clock-in smoke`,
             }, stressTokens.stress_token,
@@ -552,7 +552,7 @@ test.describe('F8J § 99 — Full 24h hotel simulation', () => {
         await gap();
         const body = businessDate ? { business_date: businessDate } : {};
 
-        const r1 = await callTimedWithBackoff(request, 'post', '/api/pms-core/night-audit/run',
+        const r1 = await callTimed(request, 'post', '/api/pms-core/night-audit/run',
             body, stressTokens.stress_token,
             { maxRetries: 1, fallbackSleepMs: 5000, timeout: 180_000,
               headers: { 'Idempotency-Key': idemKey('gece_na_run1') } });
@@ -574,7 +574,7 @@ test.describe('F8J § 99 — Full 24h hotel simulation', () => {
         await gap();
 
         if (!r1.ok) return;
-        const r2 = await callTimedWithBackoff(request, 'post', '/api/pms-core/night-audit/run',
+        const r2 = await callTimed(request, 'post', '/api/pms-core/night-audit/run',
             body, stressTokens.stress_token,
             { maxRetries: 1, fallbackSleepMs: 5000, timeout: 180_000,
               headers: { 'Idempotency-Key': idemKey('gece_na_run2') } });

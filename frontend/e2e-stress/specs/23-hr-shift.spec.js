@@ -8,7 +8,7 @@
 //   - module-blocked pattern: 403/non-2xx Setup → A/B/C skip + P2.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -103,7 +103,7 @@ test.describe('F8D § 23 — HR Shift', () => {
                 target_staff_id: pairs[i].target_staff_id,
                 reason: `${prefix} F8D 23-B swap req ${i + 1}`,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/hr/shift-swap-request',
+            const r = await callTimed(request, 'post', '/api/hr/shift-swap-request',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -168,7 +168,7 @@ test.describe('F8D § 23 — HR Shift', () => {
             const sid = createdSwapIds[i];
             // target consent — router requires caller email == target_staff email
             // (no role bypass). Stress admin will 403 → tolerated as RBAC.
-            const cR = await callTimedWithBackoff(request, 'post',
+            const cR = await callTimed(request, 'post',
                 `/api/hr/shift-swap-request/${sid}/consent`,
                 { action: 'approve', note: `${prefix} F8D 23-C consent` },
                 stressTokens.stress_token);
@@ -181,7 +181,7 @@ test.describe('F8D § 23 — HR Shift', () => {
             // final decision — ShiftSwapDecisionPayload: { action, note }
             const decisionAction = i % 2 === 0 ? 'approve' : 'reject';
             if (decisionAction === 'approve') decisionApproveTotal++; else decisionRejectTotal++;
-            const dR = await callTimedWithBackoff(request, 'post',
+            const dR = await callTimed(request, 'post',
                 `/api/hr/shift-swap-request/${sid}/decision`,
                 { action: decisionAction, note: `${prefix} F8D 23-C decision` },
                 stressTokens.stress_token);

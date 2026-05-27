@@ -22,7 +22,7 @@
 
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -81,7 +81,7 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
             return;
         }
         const samples = [];
-        const r = await callTimedWithBackoff(request, 'get', '/api/hr/performance', undefined, stressTokens.stress_token);
+        const r = await callTimed(request, 'get', '/api/hr/performance', undefined, stressTokens.stress_token);
         samples.push(r.ms);
         recPerf(testInfo, MOD, 'list_reviews', samples, r.ok);
         const items = r.body?.items || (Array.isArray(r.body) ? r.body : []);
@@ -114,7 +114,7 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
                 status: statusEnum,
                 note: `${prefix} F8D-v2 32-B note ${i + 1}`,
             };
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 `/api/hr/performance/${rid}/checkin`, payload, stressTokens.stress_token);
             samples.push(r.ms);
             const cid = r.body?.checkin?.id;
@@ -175,7 +175,7 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
             if (lr.ok) listOk++; else listFail++;
         }
         for (const c of createdCheckinIds) {
-            const dr = await callTimedWithBackoff(request, 'delete',
+            const dr = await callTimed(request, 'delete',
                 `/api/hr/performance/checkins/${c.checkin_id}`, undefined, stressTokens.stress_token);
             samples.push(dr.ms);
             if (dr.ok || dr.status === 404) delOk++; else delFail++;
@@ -257,7 +257,7 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
         const newPeriod = `${new Date().getUTCFullYear() + 1}-Q4`; // future-year unique period
         let createdId = null;
         // 1) CREATE — POST /api/hr/performance
-        const createR = await callTimedWithBackoff(request, 'post', '/api/hr/performance', {
+        const createR = await callTimed(request, 'post', '/api/hr/performance', {
             staff_id: candidate.id,
             period: newPeriod,
             overall_score: 7.5,
@@ -279,7 +279,7 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
         // 2) ACK ANALOG — check-in (per-goal acknowledgement, mirrors employee ack flow).
         let ackOk = false;
         if (createdId) {
-            const ackR = await callTimedWithBackoff(request, 'post',
+            const ackR = await callTimed(request, 'post',
                 `/api/hr/performance/${createdId}/checkin`, {
                     goal_text: `${prefix} F8D-v2 32-F ack analog`,
                     progress_pct: 50,
@@ -307,7 +307,7 @@ test.describe('F8D-v2 § 32 — HR Performance Review Lifecycle', () => {
         let terminalStatus = null;
         let dupCreatedId = null;
         if (createdId) {
-            const dupR = await callTimedWithBackoff(request, 'post', '/api/hr/performance', {
+            const dupR = await callTimed(request, 'post', '/api/hr/performance', {
                 staff_id: candidate.id,
                 period: newPeriod, // same staff_id + period → terminal-state probe
                 overall_score: 5.0,

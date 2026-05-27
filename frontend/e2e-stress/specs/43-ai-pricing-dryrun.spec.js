@@ -30,7 +30,7 @@
 
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
     assertEndpointNeverCalled, assertNoVendorHttpCall,
@@ -111,7 +111,7 @@ test.describe('F8O § 43 — AI Dynamic Pricing Dry-run', () => {
         }
         const win = pricingWindow(14);
         const samples = [];
-        const r = await callTimedWithBackoff(request, 'post',
+        const r = await callTimed(request, 'post',
             `/api/ai/recommend-rates?start_date=${win.start}&end_date=${win.end}`,
             undefined, stressTokens.stress_token, { timeout: 60_000 });
         samples.push(r.ms);
@@ -162,7 +162,7 @@ test.describe('F8O § 43 — AI Dynamic Pricing Dry-run', () => {
             return;
         }
         const win = pricingWindow(7);
-        const r = await callTimedWithBackoff(request, 'post',
+        const r = await callTimed(request, 'post',
             `/api/ai/recommend-rates?start_date=${win.start}&end_date=${win.end}`,
             undefined, stressTokens.pilot_token, { timeout: 30_000 });
         // Pilot response stress room_type isim leak içermemeli — eğer

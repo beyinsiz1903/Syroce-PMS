@@ -7,7 +7,7 @@
 //   - Created competitors tagged with prefix in name.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -61,7 +61,7 @@ test.describe('F8C § 17 — Banquet Competitor', () => {
                 notes: `${prefix} F8C 17-B created`,
                 active: true,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/banquet/competitors',
+            const r = await callTimed(request, 'post', '/api/banquet/competitors',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -102,7 +102,7 @@ test.describe('F8C § 17 — Banquet Competitor', () => {
                     source: 'web',
                     note: `${prefix} F8C 17-C rate ${r + 1}`,
                 };
-                const resp = await callTimedWithBackoff(request, 'post', `/api/banquet/competitors/${cid}/rates`,
+                const resp = await callTimed(request, 'post', `/api/banquet/competitors/${cid}/rates`,
                     payload, stressTokens.stress_token);
                 samples.push(resp.ms);
                 if (resp.throttled) throttled++;

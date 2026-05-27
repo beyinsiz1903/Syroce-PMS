@@ -20,7 +20,7 @@
 // restore edilir. Audit_logs koleksiyonuna ASLA dokunulmaz (KVKK).
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recFinding,
+    callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     assertPiiMasked, assertNoTokenLeak, withModuleProbe, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
@@ -84,7 +84,7 @@ test.describe('F8I § 31 — Settings + Audit', () => {
             test.skip(true, 'module blocked');
             return;
         }
-        const r = await callTimedWithBackoff(request, 'patch',
+        const r = await callTimed(request, 'patch',
             `/api/admin/tenants/${stressState.stress_tid}/info`,
             { description: mutationMarker },
             stressTokens.stress_token);

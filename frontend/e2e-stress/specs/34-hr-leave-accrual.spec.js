@@ -24,7 +24,7 @@
 
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -130,7 +130,7 @@ test.describe('F8D-v2 § 34 — HR Leave Balance Accrual + Carryover', () => {
         const end = new Date(start.getTime() + 1 * 86_400_000);
         const fmt = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
         // Yıl ortasında 2 günlük annual leave; days_requested=2.
-        const createR = await callTimedWithBackoff(request, 'post', '/api/hr/leave-request', {
+        const createR = await callTimed(request, 'post', '/api/hr/leave-request', {
             staff_id: target.staff_id,
             leave_type: 'annual',
             start_date: fmt(start),
@@ -172,7 +172,7 @@ test.describe('F8D-v2 § 34 — HR Leave Balance Accrual + Carryover', () => {
         // dept_approved → approve → approved. İzin bakiyesi decrement'i için
         // final 'approved' status zorunlu (router.py:836-839 approved leaves
         // sayılır), bu yüzden iki aşama da çağrılır.
-        const decR1 = await callTimedWithBackoff(request, 'post',
+        const decR1 = await callTimed(request, 'post',
             `/api/hr/leave-request/${lid}/decision`,
             { decision: 'dept_approve', note: `${prefix} F8D-v2 34-B dept` },
             stressTokens.stress_token);
@@ -180,7 +180,7 @@ test.describe('F8D-v2 § 34 — HR Leave Balance Accrual + Carryover', () => {
         if (!decR1.ok && (decR1.status === 401 || decR1.status === 403)) permFail++;
         else if (!decR1.ok) { fail++; errs.push({ phase: 'dept_approve', status: decR1.status, body: JSON.stringify(decR1.body).slice(0, 120) }); }
         await new Promise((res) => setTimeout(res, 600));
-        const decR = decR1.ok ? await callTimedWithBackoff(request, 'post',
+        const decR = decR1.ok ? await callTimed(request, 'post',
             `/api/hr/leave-request/${lid}/decision`,
             { decision: 'approve', note: `${prefix} F8D-v2 34-B approve` },
             stressTokens.stress_token) : decR1;
@@ -222,7 +222,7 @@ test.describe('F8D-v2 § 34 — HR Leave Balance Accrual + Carryover', () => {
         const target = savedBalances[0];
         const TEST_CARRY = 3; // 3 gün carry-over set
         // Upsert: carry_over set
-        const upR = await callTimedWithBackoff(request, 'post', '/api/hr/leave-balance', {
+        const upR = await callTimed(request, 'post', '/api/hr/leave-balance', {
             staff_id: target.staff_id,
             year: target.year,
             annual_entitlement: target.annual_entitlement,
@@ -239,7 +239,7 @@ test.describe('F8D-v2 § 34 — HR Leave Balance Accrual + Carryover', () => {
         samples.push(rbR.ms);
         if (rbR.ok && rbR.body?.annual?.carry_over === TEST_CARRY) readbackOk++;
         // Restore: carry_over original değerine geri al (idempotent upsert)
-        const restoreR = await callTimedWithBackoff(request, 'post', '/api/hr/leave-balance', {
+        const restoreR = await callTimed(request, 'post', '/api/hr/leave-balance', {
             staff_id: target.staff_id,
             year: target.year,
             annual_entitlement: target.annual_entitlement,
@@ -280,7 +280,7 @@ test.describe('F8D-v2 § 34 — HR Leave Balance Accrual + Carryover', () => {
         }
         const samples = [];
         const target = savedBalances[0];
-        const r = await callTimedWithBackoff(request, 'post', '/api/hr/leave-balance', {
+        const r = await callTimed(request, 'post', '/api/hr/leave-balance', {
             staff_id: target.staff_id,
             year: target.year,
             annual_entitlement: -5, // KASITLI invalid
@@ -305,7 +305,7 @@ test.describe('F8D-v2 § 34 — HR Leave Balance Accrual + Carryover', () => {
                 'Negative annual_entitlement KABUL EDİLDİ — Pydantic ge=0 validation drift',
                 `status=${r.status} body=${JSON.stringify(r.body).slice(0, 160)}. Negatif bakiye yıllık izin hesabını bozar, finance reporting'e leak eder.`);
             // Eğer kabul edildiyse derhal restore — residue bırakma.
-            await callTimedWithBackoff(request, 'post', '/api/hr/leave-balance', {
+            await callTimed(request, 'post', '/api/hr/leave-balance', {
                 staff_id: target.staff_id,
                 year: target.year,
                 annual_entitlement: target.annual_entitlement,

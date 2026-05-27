@@ -15,7 +15,7 @@
 //   - Module-blocked → A/B/C SKIP, D pilot_drift bağımsız.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recFinding,
+    callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe, assertPiiMasked,
 } from '../fixtures/stress-helpers.js';
@@ -77,7 +77,7 @@ test.describe('F8Q § 45 — Push notification batch dry-run', () => {
         // ile virtual recipient. Backend send-flow Resend/SMS silent (F8B
         // doctrine).
         for (let i = 0; i < N_NOTIF; i++) {
-            const r = await callTimedWithBackoff(request, 'post', '/api/messaging/send', {
+            const r = await callTimed(request, 'post', '/api/messaging/send', {
                 channel: 'in_app',
                 to: `${prefix}_user_${i}@stress.invalid`,
                 subject: `${prefix}_batch_subj_${i}`,

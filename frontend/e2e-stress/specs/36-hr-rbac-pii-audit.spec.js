@@ -30,7 +30,7 @@
 
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe, assertNoTokenLeak,
     assertHrPiiMasked,
@@ -342,7 +342,7 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
             return;
         }
         const samples = [];
-        const r = await callTimedWithBackoff(request, 'get', '/api/hr/staff', undefined, stressTokens.stress_token);
+        const r = await callTimed(request, 'get', '/api/hr/staff', undefined, stressTokens.stress_token);
         samples.push(r.ms);
         const piiOk = assertHrPiiMasked(testInfo, MOD, r.body, ['national_id', 'identity_number', 'tc_kimlik']);
         const tokOk = assertNoTokenLeak(testInfo, MOD, r.body, 'staff_list');
@@ -366,7 +366,7 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
         let probedOk = 0, permFail = 0, fail = 0;
         let tokenLeakViolations = 0, piiViolations = 0;
         for (const s of staffPool.slice(0, 3)) {
-            const r = await callTimedWithBackoff(request, 'get',
+            const r = await callTimed(request, 'get',
                 `/api/hr/staff/${s.id}/salary-history`, undefined, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.ok) {
@@ -403,7 +403,7 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
             return;
         }
         const samples = [];
-        const r = await callTimedWithBackoff(request, 'get', '/api/security/audit-logs',
+        const r = await callTimed(request, 'get', '/api/security/audit-logs',
             undefined, stressTokens.stress_token);
         samples.push(r.ms);
         if (!r.ok) {

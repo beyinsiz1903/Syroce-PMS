@@ -24,7 +24,7 @@
 //   • failedTests=0, P0=P1=0.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -101,7 +101,7 @@ test.describe('F8D-v2 § 37 — HR Lifecycle v2 (Zimmet / Uyarı / Eğitim)', ()
                 serial_no: `${prefix}-EQ-${i + 1}`,
                 notes: `${prefix} F8D-v2 37-A note`,
             };
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 `/api/hr/staff/${s.id}/equipment`, payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -134,7 +134,7 @@ test.describe('F8D-v2 § 37 — HR Lifecycle v2 (Zimmet / Uyarı / Eğitim)', ()
         const conditions = ['good', 'fair'];
         for (let i = 0; i < halfCount; i++) {
             const eid = createdEquipmentIds[i];
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 `/api/hr/equipment/${eid}/return`, {
                     condition_on_return: conditions[i % conditions.length],
                     notes: `${prefix} F8D-v2 37-A return`,
@@ -196,7 +196,7 @@ test.describe('F8D-v2 § 37 — HR Lifecycle v2 (Zimmet / Uyarı / Eğitim)', ()
                 severity: severities[i % severities.length],
                 reason: `${prefix} F8D-v2 37-B uyarı ${i + 1} — operational stress probe (İş K. m.25/II değil; dry-run).`,
             };
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 `/api/hr/staff/${s.id}/warnings`, payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -226,7 +226,7 @@ test.describe('F8D-v2 § 37 — HR Lifecycle v2 (Zimmet / Uyarı / Eğitim)', ()
         // Acknowledge each created warning (super_admin → require_manage gate passes).
         let ackOk = 0, ackFail = 0, ackIdem = 0;
         for (const wid of createdWarningIds) {
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 `/api/hr/warnings/${wid}/acknowledge`, {}, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.ok) ackOk++; else ackFail++;
@@ -299,7 +299,7 @@ test.describe('F8D-v2 § 37 — HR Lifecycle v2 (Zimmet / Uyarı / Eğitim)', ()
                 score: 85,
                 notes: `${prefix} F8D-v2 37-C note`,
             };
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 `/api/hr/staff/${s.id}/trainings`, payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;

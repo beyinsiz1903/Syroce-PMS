@@ -39,7 +39,7 @@
 import { randomUUID as cryptoRandomUUID } from 'node:crypto';
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    fetchAllByPrefix, callTimed, callTimedWithBackoff,
+    fetchAllByPrefix, callTimed,
     recPerf, recFinding, pilotBookingsCount,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
 } from '../fixtures/stress-helpers.js';
@@ -153,7 +153,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         const ts = Date.now();
         const checkIn = futureDateISO(200);
         const checkOut = futureDateISO(202);
-        const seedR = await callTimedWithBackoff(request, 'post', '/api/pms/quick-booking', {
+        const seedR = await callTimed(request, 'post', '/api/pms/quick-booking', {
             room_id: room.id,
             guest_name: `${SUB_PREFIX}_Hold_${ts}`,
             check_in: checkIn,
@@ -173,7 +173,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         await gap();
 
         // Create hold (TTL default).
-        const holdR = await callTimedWithBackoff(request, 'post', '/api/booking-holds', {
+        const holdR = await callTimed(request, 'post', '/api/booking-holds', {
             booking_id: bid,
             room_id: room.id,
             check_in: checkIn,
@@ -187,7 +187,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
             undefined, stressTokens.stress_token);
 
         // Release (cleanup belt-and-suspenders).
-        const releaseR = await callTimedWithBackoff(request, 'delete',
+        const releaseR = await callTimed(request, 'delete',
             `/api/booking-holds?booking_id=${encodeURIComponent(bid)}&reason=${encodeURIComponent(SUB_PREFIX + '_cleanup')}`,
             undefined, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('hold_release') } });
 
@@ -218,7 +218,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         const hasConflict = checkR.body?.has_conflict === true;
 
         const ts = Date.now();
-        const dupR = await callTimedWithBackoff(request, 'post', '/api/pms/quick-booking', {
+        const dupR = await callTimed(request, 'post', '/api/pms/quick-booking', {
             room_id: candidate.room_id,
             guest_name: `${SUB_PREFIX}_OversellAttempt_${ts}`,
             check_in: String(candidate.check_in).slice(0, 10),
@@ -280,7 +280,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         const pickRooms = rooms.slice(0, 3).map((r) => ({
             room_id: r.id, adults: 1, children: 0, guests_count: 1, total_amount: 1200,
         }));
-        const mr = await callTimedWithBackoff(request, 'post', '/api/pms/bookings/multi-room', {
+        const mr = await callTimed(request, 'post', '/api/pms/bookings/multi-room', {
             guest: {
                 name: `${SUB_PREFIX}_MRPartial_${ts}`,
                 email: `mrpartial-${ts}@e2e-stress.example.com`,
@@ -323,7 +323,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
             return;
         }
         const cancelTarget = subBookings[0].id;
-        const cancelR = await callTimedWithBackoff(request, 'post', '/api/pms-core/cancel', {
+        const cancelR = await callTimed(request, 'post', '/api/pms-core/cancel', {
             booking_id: cancelTarget,
             reason: `${SUB_PREFIX}_partial_cancel`,
         }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('mr_cancel') } });
@@ -344,7 +344,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         const ts = Date.now();
         const arrival = futureDateISO(240);
         const departure = futureDateISO(243);
-        const blockR = await callTimedWithBackoff(request, 'post', '/api/pms/groups/create-block', {
+        const blockR = await callTimed(request, 'post', '/api/pms/groups/create-block', {
             stress_prefix: `${SUB_PREFIX}_GroupBlock_${ts}`,
             group_name: `${SUB_PREFIX}_GroupBlock_${ts}`,
             block_code: `${SUB_PREFIX.slice(0, 8)}${ts.toString().slice(-6)}`,
@@ -383,7 +383,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
             check_out: departure,
             special_requests: `${SUB_PREFIX}_rl_${i}`,
         }));
-        const rlR = await callTimedWithBackoff(request, 'post',
+        const rlR = await callTimed(request, 'post',
             `/api/pms/groups/rooming-list/${encodeURIComponent(blockId)}`,
             entries, stressTokens.stress_token,
             { headers: { 'Idempotency-Key': idemKey('group_rl') } });
@@ -419,11 +419,11 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         const bid = createdBookingIds[0];
         // İki ardışık PUT: önce tarihleri shift, sonra total_amount değişikliği.
         // Backend rate change'in fee/folio'ya yansımasını gözlemlemek için ardışık modify.
-        const r1 = await callTimedWithBackoff(request, 'put', `/api/pms/bookings/${encodeURIComponent(bid)}`, {
+        const r1 = await callTimed(request, 'put', `/api/pms/bookings/${encodeURIComponent(bid)}`, {
             special_requests: `${SUB_PREFIX}_rate_modify_phase1`,
         }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('rate_p1') } });
         await gap();
-        const r2 = await callTimedWithBackoff(request, 'put', `/api/pms/bookings/${encodeURIComponent(bid)}`, {
+        const r2 = await callTimed(request, 'put', `/api/pms/bookings/${encodeURIComponent(bid)}`, {
             total_amount: 2750.50,
             special_requests: `${SUB_PREFIX}_rate_modify_phase2`,
         }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('rate_p2') } });
@@ -450,7 +450,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         const splitPoint = futureDateISO(262);     // 2 gece sonrası
 
         // Adım 1: 5-gecelik booking yarat.
-        const seedR = await callTimedWithBackoff(request, 'post', '/api/pms/quick-booking', {
+        const seedR = await callTimed(request, 'post', '/api/pms/quick-booking', {
             room_id: room.id,
             guest_name: `${SUB_PREFIX}_Split_${ts}`,
             check_in: checkIn,
@@ -468,7 +468,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         await gap();
 
         // Adım 2: orijinali 2 geceye kısalt (PUT check_out=splitPoint).
-        const shrinkR = await callTimedWithBackoff(request, 'put', `/api/pms/bookings/${encodeURIComponent(bid)}`, {
+        const shrinkR = await callTimed(request, 'put', `/api/pms/bookings/${encodeURIComponent(bid)}`, {
             check_out: splitPoint,
             total_amount: 2000,
             special_requests: `${SUB_PREFIX}_split_phase1_shortened`,
@@ -476,7 +476,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         await gap();
 
         // Adım 3: ikinci leg yarat (splitPoint → fullCheckOut, 3 gece).
-        const legR = await callTimedWithBackoff(request, 'post', '/api/pms/quick-booking', {
+        const legR = await callTimed(request, 'post', '/api/pms/quick-booking', {
             room_id: room.id,
             guest_name: `${SUB_PREFIX}_Split_${ts}_leg2`,
             check_in: splitPoint,
@@ -517,7 +517,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         // `/api/guests/{id}/merge` çağırıyordu → her zaman 404 → sahte
         // REVIEW (gerçek merge yüzeyi hiç test edilmiyordu). Doğru path:
         // `/api/cross-property/guests/{primary_id}/merge`.
-        const mergeR = await callTimedWithBackoff(request, 'post',
+        const mergeR = await callTimed(request, 'post',
             `/api/cross-property/guests/${encodeURIComponent(primary.id)}/merge`, {
                 target_guest_id: duplicate.id,
                 keep_field_overrides: {},
@@ -547,7 +547,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         // Confirmed booking yarat, no-show'a çevir, fee folio'da görünüyor mu?
         const room = rooms[2] || rooms[0];
         const ts = Date.now();
-        const seedR = await callTimedWithBackoff(request, 'post', '/api/pms/quick-booking', {
+        const seedR = await callTimed(request, 'post', '/api/pms/quick-booking', {
             room_id: room.id,
             guest_name: `${SUB_PREFIX}_NoShowFee_${ts}`,
             check_in: futureDateISO(280),
@@ -564,7 +564,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         }
         await gap();
 
-        const nsR = await callTimedWithBackoff(request, 'post', '/api/pms-core/no-show', {
+        const nsR = await callTimed(request, 'post', '/api/pms-core/no-show', {
             booking_id: bid,
         }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('nsfee_apply') } });
         await gap();
@@ -610,7 +610,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
             const t = tiers[i];
             const room = rooms[3 + i] || rooms[i];
             const ts = Date.now();
-            const seedR = await callTimedWithBackoff(request, 'post', '/api/pms/quick-booking', {
+            const seedR = await callTimed(request, 'post', '/api/pms/quick-booking', {
                 room_id: room.id,
                 guest_name: `${SUB_PREFIX}_CancelTier_${t.name}_${ts}`,
                 check_in: futureDateISO(300 + t.days),
@@ -624,7 +624,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
                 results.push({ tier: t.name, seed_status: seedR.status, cancel_status: 'n/a' });
                 continue;
             }
-            const cancelR = await callTimedWithBackoff(request, 'post', '/api/pms-core/cancel', {
+            const cancelR = await callTimed(request, 'post', '/api/pms-core/cancel', {
                 booking_id: bid,
                 reason: `${SUB_PREFIX}_tier_${t.name}`,
             }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey(`tier_cancel_${t.name}`, i) } });
@@ -674,7 +674,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
                 `Open folio veya city-ledger account stress-tenant'ta seed edilmemiş; smoke skipped.`);
             return;
         }
-        const transferR = await callTimedWithBackoff(request, 'post',
+        const transferR = await callTimed(request, 'post',
             '/api/pms-core/folio/city-ledger-transfer', {
                 folio_id: openFolio.id,
                 account_id: account.id,

@@ -31,7 +31,7 @@
 //
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recFinding,
+    callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -484,7 +484,7 @@ test.describe.serial('F8AC golf operational stress', () => {
             const slot = dayOffsetIso(42, 16);
             const playerId = players[0]?.id;
             if (playerId) {
-                const r1 = await callTimedWithBackoff(request, 'post', '/api/golf/bookings', {
+                const r1 = await callTimed(request, 'post', '/api/golf/bookings', {
                     course_id: course.id,
                     tee_time: slot,
                     lead_player: `${prefix}IdemE4`,
@@ -492,7 +492,7 @@ test.describe.serial('F8AC golf operational stress', () => {
                     player_ids: [playerId],
                     charge_to_room: false,
                 }, sToken, { headers: { 'X-Idempotency-Key': idemKey, 'Idempotency-Key': idemKey } });
-                const r2 = await callTimedWithBackoff(request, 'post', '/api/golf/bookings', {
+                const r2 = await callTimed(request, 'post', '/api/golf/bookings', {
                     course_id: course.id,
                     tee_time: slot,
                     lead_player: `${prefix}IdemE4`,

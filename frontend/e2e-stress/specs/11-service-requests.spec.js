@@ -6,7 +6,7 @@
 // dashboard ve filtre semantiğine bakar.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    fetchSingle, callTimed, callTimedWithBackoff, recPerf, recFinding,
+    fetchSingle, callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -66,11 +66,11 @@ test.describe('F8B § 11 — Service requests staff view', () => {
         // even with 700ms gap. Prod apm_middleware write bucket is
         // 120/min/token but the bucket is shared with globalSetup writes
         // and per-instance state under autoscale isn't guaranteed empty
-        // entering 11-B. Switched to callTimedWithBackoff which retries
+        // entering 11-B. Switched to callTimed which retries
         // once after `retry_after` seconds (max 65s, one full sliding
         // window). 1500ms inter-call gap also added to slow the burst.
         for (const item of target) {
-            const r = await callTimedWithBackoff(request, 'patch', `/api/room-requests/${item.id}`, {
+            const r = await callTimed(request, 'patch', `/api/room-requests/${item.id}`, {
                 priority: 'urgent', note: 'F8B bulk priority bump',
             }, stressTokens.stress_token);
             samples.push(r.ms);

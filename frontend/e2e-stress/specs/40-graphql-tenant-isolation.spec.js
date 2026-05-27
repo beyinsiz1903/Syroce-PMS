@@ -22,7 +22,7 @@
 // (Mutation görünürse REVIEW/P2 — task acceptance gevşek bunda).
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recFinding,
+    callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     assertPiiMasked, assertNoTokenLeak, withModuleProbe, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';

@@ -29,7 +29,7 @@
 // bağımsız çalışır.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -109,7 +109,7 @@ test.describe('F8F § 70 — Inventory / Stock Stress', () => {
                 unit_cost: 5.0 + (i * 2.5),
                 reorder_level: 20,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/accounting/inventory',
+            const r = await callTimed(request, 'post', '/api/accounting/inventory',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -185,7 +185,7 @@ test.describe('F8F § 70 — Inventory / Stock Stress', () => {
                 reference: `${prefix}MOVA${i + 1}`,
                 notes: `${prefix} F8F spec70 movement ${i + 1}`,
             }).toString();
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 `/api/accounting/inventory/movement?${params}`,
                 undefined, stressTokens.stress_token);
             samples.push(r.ms);

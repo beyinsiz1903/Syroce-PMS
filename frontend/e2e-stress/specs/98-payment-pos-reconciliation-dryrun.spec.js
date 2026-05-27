@@ -31,7 +31,7 @@
 //
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recFinding,
+    callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe, fetchSingle,
 } from '../fixtures/stress-helpers.js';
@@ -189,9 +189,9 @@ test.describe.serial('F8Z payment/pos reconciliation dryrun', () => {
                 type: 'manual_in',
                 currency: 'TRY',
             };
-            const r1 = await callTimedWithBackoff(request, 'post', '/api/cashier/manual-transaction',
+            const r1 = await callTimed(request, 'post', '/api/cashier/manual-transaction',
                 payload, sToken, { headers: { 'X-Idempotency-Key': idemKey } });
-            const r2 = await callTimedWithBackoff(request, 'post', '/api/cashier/manual-transaction',
+            const r2 = await callTimed(request, 'post', '/api/cashier/manual-transaction',
                 payload, sToken, { headers: { 'X-Idempotency-Key': idemKey } });
 
             // Backend returns `{ok: true, transaction: txn}` — read nested id.

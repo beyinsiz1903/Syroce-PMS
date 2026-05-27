@@ -8,7 +8,7 @@
 //   - Created leads tagged with prefix in company_name + contact_email.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -64,7 +64,7 @@ test.describe('F8C § 16 — Sales Leads', () => {
                 estimated_rooms: 15 + (i % 10),
                 notes: `${prefix} F8C 16-B created`,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/sales/leads', payload, stressTokens.stress_token);
+            const r = await callTimed(request, 'post', '/api/sales/leads', payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
             const lid = r.body?.lead_id || r.body?.id;
@@ -96,7 +96,7 @@ test.describe('F8C § 16 — Sales Leads', () => {
         const errs = [];
         for (const stage of STAGES) {
             for (const lid of createdLeadIds) {
-                const r = await callTimedWithBackoff(request, 'put', `/api/sales/leads/${lid}/stage`,
+                const r = await callTimed(request, 'put', `/api/sales/leads/${lid}/stage`,
                     { status: stage, note: `F8C 16-C → ${stage}` },
                     stressTokens.stress_token);
                 samples.push(r.ms);
@@ -129,7 +129,7 @@ test.describe('F8C § 16 — Sales Leads', () => {
         let ok = 0, fail = 0, throttled = 0;
         const errs = [];
         for (const lid of createdLeadIds) {
-            const r = await callTimedWithBackoff(request, 'post', '/api/sales/activity', {
+            const r = await callTimed(request, 'post', '/api/sales/activity', {
                 activity_type: 'call',
                 lead_id: lid,
                 subject: `${prefix}LeadActB_${lid.slice(-6)}`,

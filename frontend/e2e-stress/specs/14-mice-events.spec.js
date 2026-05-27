@@ -13,7 +13,7 @@
 //     conflict on lead→tentative transition (_check_space_conflict).
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    fetchSingle, callTimed, callTimedWithBackoff, recPerf, recFinding,
+    fetchSingle, callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -135,7 +135,7 @@ test.describe('F8C § 14 — MICE Events', () => {
                 payment_schedule: [],
                 notes: `${prefix} F8C 14-B created`,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/mice/events', payload, stressTokens.stress_token);
+            const r = await callTimed(request, 'post', '/api/mice/events', payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
             if (r.ok && (r.body?.id || r.body?.event?.id)) {
@@ -175,7 +175,7 @@ test.describe('F8C § 14 — MICE Events', () => {
         const errs = [];
         // lead → tentative
         for (const eid of createdEventIds) {
-            const r = await callTimedWithBackoff(request, 'post', `/api/mice/events/${eid}/status`,
+            const r = await callTimed(request, 'post', `/api/mice/events/${eid}/status`,
                 { status: 'tentative', reason: 'F8C 14-C tentative transition' },
                 stressTokens.stress_token);
             samples.push(r.ms);
@@ -185,7 +185,7 @@ test.describe('F8C § 14 — MICE Events', () => {
         }
         // tentative → definite
         for (const eid of createdEventIds) {
-            const r = await callTimedWithBackoff(request, 'post', `/api/mice/events/${eid}/status`,
+            const r = await callTimed(request, 'post', `/api/mice/events/${eid}/status`,
                 { status: 'definite', reason: 'F8C 14-C definite transition' },
                 stressTokens.stress_token);
             samples.push(r.ms);
@@ -229,7 +229,7 @@ test.describe('F8C § 14 — MICE Events', () => {
         };
         // Replace schedule: 3 items per event
         for (const eid of targets) {
-            const r = await callTimedWithBackoff(request, 'post', `/api/mice/events/${eid}/payment-schedule`, {
+            const r = await callTimed(request, 'post', `/api/mice/events/${eid}/payment-schedule`, {
                 items: [
                     { due_date: dueIso(7),  label: 'Depozito %30', amount: 3000.0, paid: false },
                     { due_date: dueIso(30), label: '1. Taksit',     amount: 4000.0, paid: false },
@@ -243,7 +243,7 @@ test.describe('F8C § 14 — MICE Events', () => {
         }
         // Mark first item paid on each event — guarded for require_finance 403.
         for (const eid of targets) {
-            const r = await callTimedWithBackoff(request, 'post', `/api/mice/events/${eid}/payment-schedule/0/mark-paid?reference=F8C-${prefix}-A`,
+            const r = await callTimed(request, 'post', `/api/mice/events/${eid}/payment-schedule/0/mark-paid?reference=F8C-${prefix}-A`,
                 undefined, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;

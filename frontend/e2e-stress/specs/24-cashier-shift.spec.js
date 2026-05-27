@@ -12,7 +12,7 @@
 //     C pilot_drift runs independently.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -85,7 +85,7 @@ test.describe('F8E § 24 — Cashier Shift Lifecycle', () => {
         const errs = [];
 
         // 1) open-shift
-        const openR = await callTimedWithBackoff(request, 'post', '/api/cashier/open-shift',
+        const openR = await callTimed(request, 'post', '/api/cashier/open-shift',
             { opening_amount: 500 }, stressTokens.stress_token);
         samples.push(openR.ms);
         if (openR.status === 403 || openR.status === 401) {
@@ -122,7 +122,7 @@ test.describe('F8E § 24 — Cashier Shift Lifecycle', () => {
                 method: methods[i % methods.length],
                 description: `${prefix} F8E spec24 txn ${i + 1}`,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/cashier/manual-transaction',
+            const r = await callTimed(request, 'post', '/api/cashier/manual-transaction',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -139,7 +139,7 @@ test.describe('F8E § 24 — Cashier Shift Lifecycle', () => {
         }
 
         // 3) close-shift (best-effort; if shift was never opened, skipped above)
-        const closeR = await callTimedWithBackoff(request, 'post', '/api/cashier/close-shift',
+        const closeR = await callTimed(request, 'post', '/api/cashier/close-shift',
             { counted_amount: 500 + okTxn * 25 }, stressTokens.stress_token);
         samples.push(closeR.ms);
 

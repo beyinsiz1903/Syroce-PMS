@@ -32,7 +32,7 @@
 
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe, assertPiiMasked,
     assertEndpointNeverCalled, assertNoVendorHttpCall,
@@ -125,7 +125,7 @@ test.describe('F8O § 44 — AI No-Show Risk Dry-run', () => {
             return;
         }
         const samples = [];
-        const r = await callTimedWithBackoff(request, 'get',
+        const r = await callTimed(request, 'get',
             `/api/predictions/no-shows?target_date=${targetDate(1)}`,
             undefined, stressTokens.stress_token);
         samples.push(r.ms);
@@ -149,7 +149,7 @@ test.describe('F8O § 44 — AI No-Show Risk Dry-run', () => {
             return;
         }
         const samples = [];
-        const r = await callTimedWithBackoff(request, 'post',
+        const r = await callTimed(request, 'post',
             `/api/ai/predict-no-shows?date=${targetDate(1)}`,
             undefined, stressTokens.stress_token, { timeout: 60_000 });
         samples.push(r.ms);
@@ -188,7 +188,7 @@ test.describe('F8O § 44 — AI No-Show Risk Dry-run', () => {
             test.skip(true, 'module blocked or empty pool');
             return;
         }
-        const r = await callTimedWithBackoff(request, 'get',
+        const r = await callTimed(request, 'get',
             `/api/predictions/no-shows?target_date=${targetDate(1)}`,
             undefined, stressTokens.pilot_token);
         let leakHits = 0;

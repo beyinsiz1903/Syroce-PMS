@@ -15,7 +15,7 @@
 // kapsanır; gerçek escalate API'sı production-only akış olarak bırakıldı.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    fetchSingle, callTimed, callTimedWithBackoff, recPerf, recFinding,
+    fetchSingle, callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -52,13 +52,13 @@ test.describe('F8B § 12 — Service complaints', () => {
         const samples = [];
         const errs = [];
         // tur-24: same CI #48 cascade observed (19/30 → 11 of 30 429).
-        // Uses callTimedWithBackoff (retry-after sleep + retry once) plus
+        // Uses callTimed (retry-after sleep + retry once) plus
         // 1500ms inter-call gap. resolve does ~1100ms server work
         // (folio compensation + history $push + audit) so wider gap also
         // reduces concurrent DB pressure.
         for (let i = 0; i < target.length; i++) {
             const c = target[i];
-            const r = await callTimedWithBackoff(request, 'post', `/api/service/complaints/${c.id}/resolve`, {
+            const r = await callTimed(request, 'post', `/api/service/complaints/${c.id}/resolve`, {
                 resolution_notes: `F8B resolve #${i}`,
                 compensation_offered: 'credit',
                 compensation_amount: 100,

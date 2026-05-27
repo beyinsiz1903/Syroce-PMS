@@ -13,7 +13,7 @@
 // Mutlak kurallar: pilot mutation YOK, external_calls=[], failedTests=0.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -65,7 +65,7 @@ test.describe('F8D-v3 § 39 — Department / Position Master Data', () => {
                 code,
                 description: `${prefix} masterdata stress`,
             };
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 '/api/hr/departments', payload, stressTokens.stress_token);
             samples.push(r.ms);
             const did = r.body?.department?.id;
@@ -88,7 +88,7 @@ test.describe('F8D-v3 § 39 — Department / Position Master Data', () => {
         const listItems = listR.body?.items || [];
         const ourSeen = listItems.filter((d) => createdDeptIds.includes(d.id)).length;
         // Position FK guard — pozisyon bilinmeyen departmana bağlanmaya çalışırsa 400.
-        const fakeDeptR = await callTimedWithBackoff(request, 'post',
+        const fakeDeptR = await callTimed(request, 'post',
             '/api/hr/positions', {
                 title: `${prefix} F8D-v3 39 FK-guard probe`,
                 department: `${prefix}_NONEXISTENT_DEPT`,
@@ -132,7 +132,7 @@ test.describe('F8D-v3 § 39 — Department / Position Master Data', () => {
                 department: deptCode,
                 default_hourly_rate: 100 + i * 10,
             };
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 '/api/hr/positions', payload, stressTokens.stress_token);
             samples.push(r.ms);
             const pid = r.body?.position?.id;
@@ -167,12 +167,12 @@ test.describe('F8D-v3 § 39 — Department / Position Master Data', () => {
             return;
         }
         const samples = [];
-        const r1 = await callTimedWithBackoff(request, 'post',
+        const r1 = await callTimed(request, 'post',
             '/api/hr/departments/sync-from-staff', {}, stressTokens.stress_token);
         samples.push(r1.ms);
         const created1 = r1.body?.created || 0;
         await new Promise((res) => setTimeout(res, 1000));
-        const r2 = await callTimedWithBackoff(request, 'post',
+        const r2 = await callTimed(request, 'post',
             '/api/hr/departments/sync-from-staff', {}, stressTokens.stress_token);
         samples.push(r2.ms);
         const created2 = r2.body?.created || 0;

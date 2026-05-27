@@ -20,7 +20,7 @@
 // Audit log'lar ASLA silinmez (KVKK gereği).
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recFinding,
+    callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     assertPiiMasked, assertNoTokenLeak, withModuleProbe, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
@@ -172,7 +172,7 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
         let okCount = 0, failCount = 0;
         const details = [];
         for (const e of SENSITIVE) {
-            const r = await callTimedWithBackoff(request, 'get', e.path, undefined, stressTokens.stress_token);
+            const r = await callTimed(request, 'get', e.path, undefined, stressTokens.stress_token);
             const is2xx = r.status >= 200 && r.status < 300;
             if (is2xx) okCount++;
             else { failCount++; details.push(`${e.path}=${r.status}`); }
@@ -250,7 +250,7 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
         for (const [role, token] of Object.entries(roleTokens)) {
             for (const e of SENSITIVE) {
                 totalChecks++;
-                const r = await callTimedWithBackoff(request, 'get', e.path, undefined, token);
+                const r = await callTimed(request, 'get', e.path, undefined, token);
                 const isAuthorized = e.expectAuthorized.includes(role);
                 const is2xx = r.status >= 200 && r.status < 300;
                 const isForbidden = r.status === 403 || r.status === 404;

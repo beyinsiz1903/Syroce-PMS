@@ -26,7 +26,7 @@
 
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe, assertNoTokenLeak,
     assertEndpointNeverCalled, FORBIDDEN_HR_PAYROLL_FINALIZE,
@@ -78,7 +78,7 @@ test.describe('F8D-v2 § 33 — HR Payroll Dry-run', () => {
             return;
         }
         const samples = [];
-        const r = await callTimedWithBackoff(request, 'get',
+        const r = await callTimed(request, 'get',
             `/api/hr/payroll/${MONTH}`, undefined, stressTokens.stress_token);
         samples.push(r.ms);
         recPerf(testInfo, MOD, 'lookup_month', samples, r.ok);
@@ -114,7 +114,7 @@ test.describe('F8D-v2 § 33 — HR Payroll Dry-run', () => {
             return;
         }
         const samples = [];
-        const r = await callTimedWithBackoff(request, 'get',
+        const r = await callTimed(request, 'get',
             `/api/hr/payroll/export?month=${MONTH}`, undefined, stressTokens.stress_token);
         samples.push(r.ms);
         recPerf(testInfo, MOD, 'export_json', samples, r.ok);

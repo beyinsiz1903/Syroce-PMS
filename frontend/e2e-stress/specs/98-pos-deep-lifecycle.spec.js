@@ -48,7 +48,7 @@
 //
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recFinding,
+    callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -210,8 +210,8 @@ test.describe.serial('F8Z v2 pos deep lifecycle', () => {
                 order_type: 'dine_in',
                 idempotency_key: key,
             };
-            const r1 = await callTimedWithBackoff(request, 'post', '/api/pos/v2/orders', payload, sToken);
-            const r2 = await callTimedWithBackoff(request, 'post', '/api/pos/v2/orders', payload, sToken);
+            const r1 = await callTimed(request, 'post', '/api/pos/v2/orders', payload, sToken);
+            const r2 = await callTimed(request, 'post', '/api/pos/v2/orders', payload, sToken);
             expect(r1.status, `r1 http=${r1.status} body=${JSON.stringify(r1.body).slice(0,200)}`).toBeGreaterThanOrEqual(200);
             expect(r1.status).toBeLessThan(300);
             const r1Id = r1.body?.order_id;
@@ -399,8 +399,8 @@ test.describe.serial('F8Z v2 pos deep lifecycle', () => {
                 tip_amount: 0,
                 idempotency_key: closeKey,
             };
-            const c1 = await callTimedWithBackoff(request, 'post', '/api/pos/v2/orders/close', closePayload, sToken);
-            const c2 = await callTimedWithBackoff(request, 'post', '/api/pos/v2/orders/close', closePayload, sToken);
+            const c1 = await callTimed(request, 'post', '/api/pos/v2/orders/close', closePayload, sToken);
+            const c2 = await callTimed(request, 'post', '/api/pos/v2/orders/close', closePayload, sToken);
             expect(c1.status, `c1 close http=${c1.status}`).toBe(200);
             // c2 must be idempotent: 200 with `idempotent:true` OR 4xx terminal-state.
             const c2IdemFlag = !!(c2.body?.idempotent);

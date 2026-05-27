@@ -30,7 +30,7 @@
 
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe, assertPiiMasked,
     assertEndpointNeverCalled, assertNoVendorHttpCall,
@@ -118,7 +118,7 @@ test.describe('F8O § 42 — AI Upsell Dry-run', () => {
             return;
         }
         const samples = [];
-        const r = await callTimedWithBackoff(request, 'get',
+        const r = await callTimed(request, 'get',
             '/api/ai/guest-persona/all-insights', undefined, stressTokens.stress_token);
         samples.push(r.ms);
         const items = r.body?.insights || r.body?.items
@@ -146,7 +146,7 @@ test.describe('F8O § 42 — AI Upsell Dry-run', () => {
         // Pilot token ile insights çağır — response'da stress tenant guest_id
         // görünmemeli (cross-tenant leak P0). Pilot tenant kendi insight'ını
         // dönebilir ama stress guest_id'leri ASLA görünmemeli.
-        const r = await callTimedWithBackoff(request, 'get',
+        const r = await callTimed(request, 'get',
             '/api/ai/guest-persona/all-insights', undefined, stressTokens.pilot_token);
         samples.push(r.ms);
         let leakHits = 0;

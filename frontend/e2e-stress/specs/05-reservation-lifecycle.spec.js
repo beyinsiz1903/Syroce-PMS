@@ -19,7 +19,7 @@
 // - Sample size'lar küçük (10/10/5/5) — bu lifecycle smoke, yük testi değil.
 import { randomUUID as cryptoRandomUUID } from 'node:crypto';
 import { test, expect, rec } from '../fixtures/stress-context.js';
-import { fetchAllByPrefix, callTimed, callTimedWithBackoff, recPerf, recFinding, pilotBookingsCount, assertNoExternalCallsPostBatch } from '../fixtures/stress-helpers.js';
+import { fetchAllByPrefix, callTimed, recPerf, recFinding, pilotBookingsCount, assertNoExternalCallsPostBatch } from '../fixtures/stress-helpers.js';
 
 const MOD = 'reservation-lifecycle';
 
@@ -81,7 +81,7 @@ test.describe('F8A § 05 — Reservation lifecycle (create / modify / cancel / n
             // o yüzden `${SUB_PREFIX}_${ts}_${i}_${randomUUID}` deterministic
             // ama tekil. crypto.randomUUID() Node 14.17+ built-in.
             const idemKey = `${SUB_PREFIX}_create_${ts}_${i}_${cryptoRandomUUID()}`;
-            const r = await callTimedWithBackoff(request, 'post', '/api/pms/quick-booking', {
+            const r = await callTimed(request, 'post', '/api/pms/quick-booking', {
                 room_id: room.id,
                 guest_name: `${SUB_PREFIX}_Create_${ts}_${i}`,
                 check_in: checkIn,
@@ -147,7 +147,7 @@ test.describe('F8A § 05 — Reservation lifecycle (create / modify / cancel / n
             const newCheckOut = futureDateISO(121 + (i * 3));
             // tur-27b: Idempotency-Key proactive (Asher A pattern parity).
             const idemKey = `${SUB_PREFIX}_modify_${bid}_${cryptoRandomUUID()}`;
-            const r = await callTimedWithBackoff(request, 'put', `/api/pms/bookings/${bid}`, {
+            const r = await callTimed(request, 'put', `/api/pms/bookings/${bid}`, {
                 check_in: newCheckIn,
                 check_out: newCheckOut,
                 special_requests: `${SUB_PREFIX}_modified_${i}`,
@@ -173,7 +173,7 @@ test.describe('F8A § 05 — Reservation lifecycle (create / modify / cancel / n
         for (const bid of sample) {
             // tur-27b: Idempotency-Key proactive.
             const idemKey = `${SUB_PREFIX}_cancel_${bid}_${cryptoRandomUUID()}`;
-            const r = await callTimedWithBackoff(request, 'post', '/api/pms-core/cancel', {
+            const r = await callTimed(request, 'post', '/api/pms-core/cancel', {
                 booking_id: bid,
                 reason: `${SUB_PREFIX}_cancel_test`,
             }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey } });
@@ -200,7 +200,7 @@ test.describe('F8A § 05 — Reservation lifecycle (create / modify / cancel / n
             const room = rooms[10 + i] || rooms[i];
             // tur-27b: Idempotency-Key proactive.
             const idemKey = `${SUB_PREFIX}_noshow_seed_${ts}_${i}_${cryptoRandomUUID()}`;
-            const r = await callTimedWithBackoff(request, 'post', '/api/pms/quick-booking', {
+            const r = await callTimed(request, 'post', '/api/pms/quick-booking', {
                 room_id: room.id,
                 guest_name: `${SUB_PREFIX}_NoShow_${ts}_${i}`,
                 check_in: futureDateISO(180 + i),
@@ -222,7 +222,7 @@ test.describe('F8A § 05 — Reservation lifecycle (create / modify / cancel / n
         for (const bid of noShowSample) {
             // tur-27b: Idempotency-Key proactive.
             const idemKey = `${SUB_PREFIX}_noshow_${bid}_${cryptoRandomUUID()}`;
-            const r = await callTimedWithBackoff(request, 'post', '/api/pms-core/no-show', {
+            const r = await callTimed(request, 'post', '/api/pms-core/no-show', {
                 booking_id: bid,
             }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey } });
             samples.push(r.ms);
@@ -264,7 +264,7 @@ test.describe('F8A § 05 — Reservation lifecycle (create / modify / cancel / n
         // a mutation POST; backend reject ETMEDEN ÖNCE header validate ediyor
         // → 400 Missing Idempotency-Key bizim conflict guard testimizi maskler).
         const dupIdemKey = `${SUB_PREFIX}_overbook_dup_${ts}_${cryptoRandomUUID()}`;
-        const dupR = await callTimedWithBackoff(request, 'post', '/api/pms/quick-booking', {
+        const dupR = await callTimed(request, 'post', '/api/pms/quick-booking', {
             room_id: candidate.room_id,
             guest_name: `${SUB_PREFIX}_OverbookAttempt_${ts}`,
             check_in: candidate.check_in.slice(0, 10),
@@ -289,7 +289,7 @@ test.describe('F8A § 05 — Reservation lifecycle (create / modify / cancel / n
         const ts = Date.now();
         // tur-27b: Idempotency-Key proactive.
         const idemKey = `${SUB_PREFIX}_group_${ts}_${cryptoRandomUUID()}`;
-        const r = await callTimedWithBackoff(request, 'post', '/api/pms/group-reservations', {
+        const r = await callTimed(request, 'post', '/api/pms/group-reservations', {
             stress_prefix: `${SUB_PREFIX}_Group_${ts}`,
             group_name: `${SUB_PREFIX}_Group_${ts}`,
             arrival_date: futureDateISO(60),
@@ -321,7 +321,7 @@ test.describe('F8A § 05 — Reservation lifecycle (create / modify / cancel / n
         }));
         // tur-27b: Idempotency-Key proactive (multi-room booking gerektirir).
         const idemKey = `${SUB_PREFIX}_multiroom_${ts}_${cryptoRandomUUID()}`;
-        const r = await callTimedWithBackoff(request, 'post', '/api/pms/bookings/multi-room', {
+        const r = await callTimed(request, 'post', '/api/pms/bookings/multi-room', {
             guest: {
                 name: `${SUB_PREFIX}_MultiRoom_${ts}`,
                 email: `multiroom-${ts}@e2e-stress.example.com`,

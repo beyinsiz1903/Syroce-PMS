@@ -54,7 +54,7 @@
 // dup constraint), NOT 409. Spec records the gap; not a P0.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -136,7 +136,7 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
                 notes: `${prefix} F8G 80-A created`,
                 active: true,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/mice/accounts',
+            const r = await callTimed(request, 'post', '/api/mice/accounts',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -176,7 +176,7 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
                 notes: `${prefix} F8G 80-A updated`,
                 active: true,
             };
-            const upd = await callTimedWithBackoff(request, 'put',
+            const upd = await callTimed(request, 'put',
                 `/api/mice/accounts/${createdAccountIds[0]}`, updPayload, stressTokens.stress_token);
             updateOk = upd.ok;
             samples.push(upd.ms);
@@ -199,7 +199,7 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
                 notes: `${prefix} F8G 80-A dup-tax probe`,
                 active: true,
             };
-            const dupT = await callTimedWithBackoff(request, 'post', '/api/mice/accounts',
+            const dupT = await callTimed(request, 'post', '/api/mice/accounts',
                 dupTaxPayload, stressTokens.stress_token);
             dupTaxStatus = dupT.status;
             samples.push(dupT.ms);
@@ -270,7 +270,7 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
                     is_primary: i === 0,
                     notes: `${prefix} F8G 80-B`,
                 };
-                const r = await callTimedWithBackoff(request, 'post',
+                const r = await callTimed(request, 'post',
                     `/api/mice/accounts/${aid}/contacts`, payload, stressTokens.stress_token);
                 samples.push(r.ms);
                 if (r.throttled) throttled++;
@@ -332,7 +332,7 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
                 source: 'website',
                 notes: `${prefix} F8G 80-C created`,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/mice/sales/opportunities',
+            const r = await callTimed(request, 'post', '/api/mice/sales/opportunities',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -364,7 +364,7 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
             const reason = isWon
                 ? `${prefix} F8G 80-C closed_won — contract signed`
                 : `${prefix} F8G 80-C closed_lost — price competitive`;
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 `/api/mice/sales/opportunities/${oid}/transition`,
                 { to_stage: toStage, reason },
                 stressTokens.stress_token);
@@ -393,7 +393,7 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
         // 3) One activity per opportunity (audit log per-mutation requirement).
         let actOk = 0;
         for (const oid of createdOpportunityIds) {
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 `/api/mice/sales/opportunities/${oid}/activities`, {
                     type: 'note',
                     subject: `${prefix}OppActC_${oid.slice(-6)}`,
@@ -481,7 +481,7 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
                 contact_phone: `+90555111${(i + 1).toString().padStart(4, '0')}`,
                 notes: `${prefix} F8G 80-D draft`,
             };
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 '/api/sales/corporate-contract', payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -519,7 +519,7 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
                     contact_phone: '+905551110000',
                     notes: `${prefix} F8G 80-D state=${st}`,
                 };
-                const r = await callTimedWithBackoff(request, 'put',
+                const r = await callTimed(request, 'put',
                     `/api/sales/corporate-contract/${cid}`, updPayload, stressTokens.stress_token);
                 samples.push(r.ms);
                 if (r.throttled) throttled++;

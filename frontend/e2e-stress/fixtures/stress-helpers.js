@@ -244,8 +244,15 @@ export async function callTimed(request, method, path, body, token, opts = {}) {
 
     if (!noPacer) await _paceBeforeCall(token, method);
 
+    // Task #56: surface `throttled` + `attempts` on every return so callers
+    // no longer need the `callTimedWithBackoff` wrapper to read those fields.
+    // `throttled=true` if we ever saw a 429 (regardless of final outcome);
+    // `attempts` counts total HTTP attempts (1 = first try succeeded).
+    let attempts = 1;
+    let throttled = false;
     let last = await _doCallOnce(request, method, path, body, token, timeoutMs, extraHeaders);
-    if (noBackoff || last.status !== 429) return last;
+    if (noBackoff || last.status !== 429) return { ...last, throttled, attempts };
+    throttled = true;
 
     // 429 path: respect retry-after (capped) and retry. apm_middleware's
     // window is 60s — one full cycle is enough to clear a saturated bucket.
@@ -266,9 +273,10 @@ export async function callTimed(request, method, path, body, token, opts = {}) {
             }
         }
         last = await _doCallOnce(request, method, path, body, token, timeoutMs, extraHeaders);
-        if (last.status !== 429) return last;
+        attempts++;
+        if (last.status !== 429) return { ...last, throttled, attempts };
     }
-    return last;
+    return { ...last, throttled, attempts };
 }
 
 // X-API-Key bearer wrapper — B2B sub-router stress specs share this helper
@@ -289,40 +297,11 @@ export async function callApiKey(request, method, urlPath, body, apiKey, opts = 
     return { status, ms, body: bodyJson, ok: status >= 200 && status < 300 };
 }
 
-// tur-24: 429-aware wrapper. On 429, sleep `retry_after` seconds (capped at
-// 65s — apm_middleware uses 60s sliding window so one cycle is enough) and
-// retry once. Prod write rate-limit (120/min/token) cascade observed in
-// CI #48 11-B (7 OK → 12 of next 13 → 429); deterministic 1500ms inter-call
-// gap alone isn't enough because globalSetup/seed leaves residual writes in
-// the bucket. Returns {status, ms, body, ok, throttled, attempts}.
-export async function callTimedWithBackoff(request, method, path, body, token, opts = {}) {
-    const maxRetries = opts.maxRetries ?? 1;
-    // tur-26: cap reduced from 65s → 15s. 65s burned full test budget on
-    // 90-iter loops (10-B timeout); 15s is enough for a partial window
-    // refresh and lets the inter-call gap absorb the rest. apm_middleware
-    // sliding window is 60s but heavily-loaded buckets typically free a
-    // slot within ~10-15s as older requests age out.
-    const fallbackSleepMs = opts.fallbackSleepMs ?? 15_000;
-    // tur-27 (CI #42 NO-GO follow-up): propagate per-call timeout to callTimed.
-    // Default stays 30_000 (back-compat).
-    const callTimeoutMs = opts.timeout ?? 30_000;
-    // tur-27b (CI #43 NO-GO follow-up): propagate per-call headers to callTimed.
-    const callHeaders = opts.headers ?? {};
-    let attempts = 0;
-    let throttled = false;
-    let last = null;
-    for (let i = 0; i <= maxRetries; i++) {
-        attempts++;
-        last = await callTimed(request, method, path, body, token,
-            { timeout: callTimeoutMs, headers: callHeaders });
-        if (last.status !== 429) return { ...last, throttled, attempts };
-        throttled = true;
-        if (i === maxRetries) break;
-        const sleepMs = last.retryAfter > 0 ? Math.min(last.retryAfter * 1000, fallbackSleepMs) : fallbackSleepMs;
-        await new Promise((res) => setTimeout(res, sleepMs));
-    }
-    return { ...last, throttled, attempts };
-}
+// @deprecated Task #56 — kept only as a thin alias for any out-of-tree caller.
+// Pacing + 429-aware retry + `throttled`/`attempts` fields are now built into
+// `callTimed`. All in-repo spec call sites have been migrated; please use
+// `callTimed` directly in new code.
+export const callTimedWithBackoff = callTimed;
 
 export function summarize(samples) {
     if (!samples || samples.length === 0) return { count: 0, p50: 0, p95: 0, max: 0, avg: 0 };

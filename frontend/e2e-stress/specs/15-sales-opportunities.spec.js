@@ -10,7 +10,7 @@
 //   - All created opportunities tagged with `stress_prefix` in title.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -79,7 +79,7 @@ test.describe('F8C § 15 — Sales-catering Opportunities', () => {
                 source: 'website',
                 notes: `${prefix} F8C 15-B created`,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/mice/sales/opportunities',
+            const r = await callTimed(request, 'post', '/api/mice/sales/opportunities',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -114,7 +114,7 @@ test.describe('F8C § 15 — Sales-catering Opportunities', () => {
         const errs = [];
         for (const stage of ['qualified', 'proposal', 'contract']) {
             for (const oid of createdOppIds) {
-                const r = await callTimedWithBackoff(request, 'post', `/api/mice/sales/opportunities/${oid}/transition`,
+                const r = await callTimed(request, 'post', `/api/mice/sales/opportunities/${oid}/transition`,
                     { to_stage: stage, reason: `F8C 15-C transition to ${stage}` },
                     stressTokens.stress_token);
                 samples.push(r.ms);
@@ -148,7 +148,7 @@ test.describe('F8C § 15 — Sales-catering Opportunities', () => {
         let ok = 0, fail = 0, throttled = 0;
         const errs = [];
         for (const oid of createdOppIds) {
-            const r = await callTimedWithBackoff(request, 'post', `/api/mice/sales/opportunities/${oid}/activities`, {
+            const r = await callTimed(request, 'post', `/api/mice/sales/opportunities/${oid}/activities`, {
                 type: 'note',
                 subject: `${prefix}OppActB_${oid.slice(-6)}`,
                 body: `${prefix} F8C 15-D activity`,

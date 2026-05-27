@@ -9,7 +9,7 @@
 //     C pilot_drift runs independently.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -92,7 +92,7 @@ test.describe('F8E § 26 — Accounting Expenses', () => {
                 address: `${prefix} spec26 supplier addr ${i + 1}`,
                 category: 'general',
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/accounting/suppliers',
+            const r = await callTimed(request, 'post', '/api/accounting/suppliers',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -118,7 +118,7 @@ test.describe('F8E § 26 — Accounting Expenses', () => {
                 supplier_id: seededSupplierId,
                 payment_method: 'cash',
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/accounting/expenses',
+            const r = await callTimed(request, 'post', '/api/accounting/expenses',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -147,7 +147,7 @@ test.describe('F8E § 26 — Accounting Expenses', () => {
                 due_date: new Date(Date.now() + (30 - i) * 86400000).toISOString().slice(0, 10),
                 notes: `${prefix} F8E spec26 invoice`,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/accounting/invoices',
+            const r = await callTimed(request, 'post', '/api/accounting/invoices',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;

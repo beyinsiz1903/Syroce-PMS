@@ -10,7 +10,7 @@
 //     runs independently.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -99,7 +99,7 @@ test.describe('F8D § 20 — HR Staff Org', () => {
                 monthly_hours: 160,
                 annual_leave_entitlement: 14,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/hr/staff',
+            const r = await callTimed(request, 'post', '/api/hr/staff',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;

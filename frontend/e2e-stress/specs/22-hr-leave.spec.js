@@ -8,7 +8,7 @@
 //   - module-blocked pattern: 403/non-2xx Setup → A/B/C skip + P2.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -93,7 +93,7 @@ test.describe('F8D § 22 — HR Leave', () => {
                 end_date: endD.toISOString().slice(0, 10),
                 reason: `${prefix} F8D 22-B leave req ${i + 1}`,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/hr/leave-request',
+            const r = await callTimed(request, 'post', '/api/hr/leave-request',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -149,7 +149,7 @@ test.describe('F8D § 22 — HR Leave', () => {
             const rid = createdRequestIds[i];
             if (i % 2 === 0) {
                 // Aşama 1: dept_approve
-                const r1 = await callTimedWithBackoff(request, 'post', `/api/hr/leave-request/${rid}/decision`,
+                const r1 = await callTimed(request, 'post', `/api/hr/leave-request/${rid}/decision`,
                     { decision: 'dept_approve', note: `${prefix} 22-C dept` }, stressTokens.stress_token);
                 samples.push(r1.ms);
                 if (r1.throttled) throttled++;
@@ -161,7 +161,7 @@ test.describe('F8D § 22 — HR Leave', () => {
                 }
                 await new Promise((res) => setTimeout(res, 600));
                 // Aşama 2: approve (final HR)
-                const r2 = await callTimedWithBackoff(request, 'post', `/api/hr/leave-request/${rid}/decision`,
+                const r2 = await callTimed(request, 'post', `/api/hr/leave-request/${rid}/decision`,
                     { decision: 'approve', note: `${prefix} 22-C final` }, stressTokens.stress_token);
                 samples.push(r2.ms);
                 if (r2.throttled) throttled++;
@@ -169,7 +169,7 @@ test.describe('F8D § 22 — HR Leave', () => {
                 else { fail++; if (errs.length < 3) errs.push({ phase: 'approve', status: r2.status, body: JSON.stringify(r2.body).slice(0, 120) }); }
             } else {
                 // Reject — pending'den direkt geçer
-                const r = await callTimedWithBackoff(request, 'post', `/api/hr/leave-request/${rid}/decision`,
+                const r = await callTimed(request, 'post', `/api/hr/leave-request/${rid}/decision`,
                     { decision: 'reject', note: `${prefix} 22-C reject reason` }, stressTokens.stress_token);
                 samples.push(r.ms);
                 if (r.throttled) throttled++;

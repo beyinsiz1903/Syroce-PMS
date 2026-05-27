@@ -18,7 +18,7 @@
 //     permFail >= 80% → P2 SKIP.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -142,7 +142,7 @@ test.describe('F8E § 28 — Finance Reports + Currency', () => {
                 rate: pairs[i].rate,
                 effective_date: eff,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/accounting/currency-rates',
+            const r = await callTimed(request, 'post', '/api/accounting/currency-rates',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -164,7 +164,7 @@ test.describe('F8E § 28 — Finance Reports + Currency', () => {
             { amount: 500, from: 'USD', to: 'EUR' },
         ];
         for (let i = 0; i < N_CONVERT; i++) {
-            const r = await callTimedWithBackoff(request, 'post', '/api/accounting/convert-currency',
+            const r = await callTimed(request, 'post', '/api/accounting/convert-currency',
                 convPairs[i], stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;

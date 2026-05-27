@@ -13,7 +13,7 @@
 // Mutlak kurallar: pilot mutation YOK, external_calls=[], failedTests=0.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -65,7 +65,7 @@ test.describe('F8D-v3 § 35B — Shift Coverage Planning', () => {
                 min_staff: 2 + i,
                 note: `${prefix} F8D-v3 35B rule ${i + 1}`,
             };
-            const r = await callTimedWithBackoff(request, 'post',
+            const r = await callTimed(request, 'post',
                 '/api/hr/coverage-rules', payload, stressTokens.stress_token);
             samples.push(r.ms);
             const rid = r.body?.rule?.id;
@@ -130,8 +130,8 @@ test.describe('F8D-v3 § 35B — Shift Coverage Planning', () => {
             department: 'idem_test', weekday: 3, shift_type: 'morning',
             min_staff: 1, note: `${prefix} 35B idempotency`,
         };
-        const r1 = await callTimedWithBackoff(request, 'post', '/api/hr/coverage-rules', payload, stressTokens.stress_token);
-        const r2 = await callTimedWithBackoff(request, 'post', '/api/hr/coverage-rules', payload, stressTokens.stress_token);
+        const r1 = await callTimed(request, 'post', '/api/hr/coverage-rules', payload, stressTokens.stress_token);
+        const r2 = await callTimed(request, 'post', '/api/hr/coverage-rules', payload, stressTokens.stress_token);
         samples.push(r1.ms, r2.ms);
         if (r1.body?.rule?.id) createdRuleIds.push(r1.body.rule.id);
         if (r2.body?.rule?.id) createdRuleIds.push(r2.body.rule.id);

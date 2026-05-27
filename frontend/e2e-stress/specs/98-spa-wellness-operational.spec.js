@@ -33,7 +33,7 @@
 //
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recFinding,
+    callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -483,7 +483,7 @@ test.describe.serial('F8AB spa wellness operational stress', () => {
             // for spa, but the atomic conflict guard MUST refuse the second insert (409).
             const idemKey = `STRESS_F8AB_${randomUUID()}`;
             const slot = dayOffsetIso(42, 16);
-            const r1 = await callTimedWithBackoff(request, 'post', '/api/spa/appointments', {
+            const r1 = await callTimed(request, 'post', '/api/spa/appointments', {
                 service_id: svc.id,
                 therapist_id: ther.id,
                 room_id: room.id,
@@ -491,7 +491,7 @@ test.describe.serial('F8AB spa wellness operational stress', () => {
                 guest_name: `${prefix}IdemE4`,
                 charge_to_room: false,
             }, sToken, { headers: { 'X-Idempotency-Key': idemKey, 'Idempotency-Key': idemKey } });
-            const r2 = await callTimedWithBackoff(request, 'post', '/api/spa/appointments', {
+            const r2 = await callTimed(request, 'post', '/api/spa/appointments', {
                 service_id: svc.id,
                 therapist_id: ther.id,
                 room_id: room.id,

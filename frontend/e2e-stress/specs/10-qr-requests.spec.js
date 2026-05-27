@@ -14,7 +14,7 @@
 // - Pilot drift = 0: tüm yazma stress tenant'a, pilot bookings sayısı sabit.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    fetchAllByPrefix, fetchSingle, callTimed, callTimedWithBackoff, recPerf, recFinding,
+    fetchAllByPrefix, fetchSingle, callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -151,13 +151,13 @@ test.describe('F8B § 10 — Room QR requests', () => {
         // F8B cumulative writes by stress_token: 10-B(90) + 11-B(20) + 12-A(30) + 13-A(50) = 190
         // tek 60s window'da budget aşıyor. tur-24 700ms→ok=83/90, 7×429 retry'sız fail.
         // tur-25 1500ms→test timeout 180s aşıldı (90×(500+1500)=180s baseline + retries).
-        // tur-26: 1000ms gap + 300s test budget + callTimedWithBackoff (cap 15s).
+        // tur-26: 1000ms gap + 300s test budget + callTimed (cap 15s).
         // 60s/1000ms = 60 writes/min ceiling vs 120 prod limit = %50 marj; baseline
         // 90×(500+1000)=135s, retry'lerle worst ~200s, 300s budget güvenli.
         let throttled = 0;
         for (const req of open) {
             for (const next of steps) {
-                const r = await callTimedWithBackoff(request, 'patch', `/api/room-requests/${req.id}`, {
+                const r = await callTimed(request, 'patch', `/api/room-requests/${req.id}`, {
                     status: next, note: `F8B transition → ${next}`,
                 }, stressTokens.stress_token);
                 samples.push(r.ms);

@@ -22,7 +22,7 @@
 
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -97,7 +97,7 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
             end_time: '13:00',
             notes: `${prefix} F8D-v2 35-A baseline shift`,
         };
-        const r = await callTimedWithBackoff(request, 'post', '/api/hr/shifts', payload, stressTokens.stress_token);
+        const r = await callTimed(request, 'post', '/api/hr/shifts', payload, stressTokens.stress_token);
         samples.push(r.ms);
         s1Id = r.body?.shift?.id || r.body?.id;
         if (s1Id) createdShiftIds.push({ id: s1Id, label: 'S1' });
@@ -136,7 +136,7 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
             end_time: '14:00',
             notes: `${prefix} F8D-v2 35-B overlapping shift`,
         };
-        const r = await callTimedWithBackoff(request, 'post', '/api/hr/shifts', payload, stressTokens.stress_token);
+        const r = await callTimed(request, 'post', '/api/hr/shifts', payload, stressTokens.stress_token);
         samples.push(r.ms);
         s2Status = r.status;
         s2Id = r.body?.shift?.id || r.body?.id;
@@ -207,7 +207,7 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
             start_time: '09:00', end_time: '17:00', crosses_midnight: true,
             notes: `${prefix} F8D-v2 35-B2 invalid-overnight`,
         };
-        const rBad = await callTimedWithBackoff(request, 'post', '/api/hr/shifts',
+        const rBad = await callTimed(request, 'post', '/api/hr/shifts',
             badPayload, stressTokens.stress_token);
         samples.push(rBad.ms);
         if (rBad.status === 401 || rBad.status === 403) {
@@ -233,7 +233,7 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
             start_time: '22:00', end_time: '06:00', crosses_midnight: true,
             notes: `${prefix} F8D-v2 35-B2 baseline-overnight`,
         };
-        const rNight = await callTimedWithBackoff(request, 'post', '/api/hr/shifts',
+        const rNight = await callTimed(request, 'post', '/api/hr/shifts',
             nightPayload, stressTokens.stress_token);
         samples.push(rNight.ms);
         nightId = rNight.body?.shift?.id || rNight.body?.id;
@@ -255,7 +255,7 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
             start_time: '05:00', end_time: '09:00', crosses_midnight: false,
             notes: `${prefix} F8D-v2 35-B2 next-day-overlap`,
         };
-        const rConflict = await callTimedWithBackoff(request, 'post', '/api/hr/shifts',
+        const rConflict = await callTimed(request, 'post', '/api/hr/shifts',
             conflictPayload, stressTokens.stress_token);
         samples.push(rConflict.ms);
         conflictId = rConflict.body?.shift?.id || rConflict.body?.id;
@@ -273,7 +273,7 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
             start_time: '07:00', end_time: '15:00', crosses_midnight: false,
             notes: `${prefix} F8D-v2 35-B2 next-day-accept`,
         };
-        const rAccepted = await callTimedWithBackoff(request, 'post', '/api/hr/shifts',
+        const rAccepted = await callTimed(request, 'post', '/api/hr/shifts',
             acceptedPayload, stressTokens.stress_token);
         samples.push(rAccepted.ms);
         acceptedId = rAccepted.body?.shift?.id || rAccepted.body?.id;
@@ -343,7 +343,7 @@ test.describe('F8D-v2 § 35 — HR Shift Conflict + Coverage', () => {
         const samples = [];
         let delOk = 0, delFail = 0, idemOk = 0, idemFail = 0;
         for (const sh of createdShiftIds) {
-            const r = await callTimedWithBackoff(request, 'delete',
+            const r = await callTimed(request, 'delete',
                 `/api/hr/shifts/${sh.id}`, undefined, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.ok || r.status === 404) delOk++; else delFail++;

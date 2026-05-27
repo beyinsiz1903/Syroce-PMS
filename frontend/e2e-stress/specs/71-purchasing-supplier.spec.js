@@ -36,7 +36,7 @@
 // → A/B/C test.skip; D (pilot_drift + external_calls) bağımsız çalışır.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -119,7 +119,7 @@ test.describe('F8F § 71 — Purchasing / Supplier Stress', () => {
                 notes: `${prefix} F8F spec71 supplier ${i + 1}`,
                 active: true,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/procurement/suppliers',
+            const r = await callTimed(request, 'post', '/api/procurement/suppliers',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;

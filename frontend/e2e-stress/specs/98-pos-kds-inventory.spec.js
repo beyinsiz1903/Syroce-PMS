@@ -62,7 +62,7 @@
 //
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recFinding,
+    callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe,
 } from '../fixtures/stress-helpers.js';
@@ -383,8 +383,8 @@ test.describe.serial('F8Z.2 pos kds + fnb inventory', () => {
                 // kitchen. Distinct ids on r2 would re-flag the P1 below.
                 idempotency_key: `${prefix}IDEM_D_${randomUUID()}`,
             };
-            const r1 = await callTimedWithBackoff(request, 'post', '/api/fnb/kitchen-order', replayPayload, sToken);
-            const r2 = await callTimedWithBackoff(request, 'post', '/api/fnb/kitchen-order', replayPayload, sToken);
+            const r1 = await callTimed(request, 'post', '/api/fnb/kitchen-order', replayPayload, sToken);
+            const r2 = await callTimed(request, 'post', '/api/fnb/kitchen-order', replayPayload, sToken);
             expect(r1.status, `r1 http=${r1.status}`).toBeLessThan(300);
             const id1 = r1.body?.order?.id;
             const id2 = r2.body?.order?.id;

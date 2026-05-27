@@ -13,7 +13,7 @@
 //     C pilot_drift runs independently.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -80,7 +80,7 @@ test.describe('F8E § 25 — Finance City Ledger', () => {
                 credit_limit: 5000 + (i * 1000),
                 payment_terms: 30,
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/cashiering/city-ledger',
+            const r = await callTimed(request, 'post', '/api/cashiering/city-ledger',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;

@@ -50,7 +50,7 @@
 // skip; F (pilot_drift + external_calls) bağımsız çalışır.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, assertPiiMasked, assertNoTokenLeak,
 } from '../fixtures/stress-helpers.js';
@@ -222,7 +222,7 @@ test.describe('F8H § 90 — Reports / Analytics / Export Stress', () => {
 
         // 2) generate CSV (inline rows) — pick first allowed type or default.
         const reportType = allowedTypes[0] || 'management_summary';
-        const genR = await callTimedWithBackoff(request, 'post',
+        const genR = await callTimed(request, 'post',
             '/api/reports/export/generate',
             { report_type: reportType, export_format: 'csv', filters: {} },
             stressTokens.stress_token);
@@ -272,7 +272,7 @@ test.describe('F8H § 90 — Reports / Analytics / Export Stress', () => {
         await new Promise((res) => setTimeout(res, 1500));
 
         // 5) report-builder /generate (JSON response) — verify summary shape.
-        const bldGenR = await callTimedWithBackoff(request, 'post',
+        const bldGenR = await callTimed(request, 'post',
             '/api/reports/builder/generate',
             { data_source: dsKey, columns: dsCols, filters: [], limit: 50 },
             stressTokens.stress_token);
@@ -374,7 +374,7 @@ test.describe('F8H § 90 — Reports / Analytics / Export Stress', () => {
         // 2) Builder generate (JSON) — assert PII masking when has_pii=false.
         // Stress admin is super_admin, so backend may consider has_pii=true and
         // return raw values; the response declares `pii_masked` boolean.
-        const bldGenR = await callTimedWithBackoff(request, 'post',
+        const bldGenR = await callTimed(request, 'post',
             '/api/reports/builder/generate',
             { data_source: guestKey, columns: guestCols, filters: [], limit: 30 },
             stressTokens.stress_token);

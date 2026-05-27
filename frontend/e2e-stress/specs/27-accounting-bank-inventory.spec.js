@@ -9,7 +9,7 @@
 //     C pilot_drift runs independently.
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount,
 } from '../fixtures/stress-helpers.js';
 
@@ -91,7 +91,7 @@ test.describe('F8E § 27 — Accounting Bank + Inventory', () => {
                 currency: currencies[i % currencies.length],
                 balance: 1000 + (i * 250),
             };
-            const r = await callTimedWithBackoff(request, 'post', '/api/accounting/bank-accounts',
+            const r = await callTimed(request, 'post', '/api/accounting/bank-accounts',
                 payload, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;
@@ -114,7 +114,7 @@ test.describe('F8E § 27 — Accounting Bank + Inventory', () => {
                 reference: `${prefix}MOVB${i + 1}`,
                 notes: `${prefix} F8E spec27 movement ${i + 1}`,
             }).toString();
-            const r = await callTimedWithBackoff(request, 'post', `/api/accounting/inventory/movement?${params}`,
+            const r = await callTimed(request, 'post', `/api/accounting/inventory/movement?${params}`,
                 undefined, stressTokens.stress_token);
             samples.push(r.ms);
             if (r.throttled) throttled++;

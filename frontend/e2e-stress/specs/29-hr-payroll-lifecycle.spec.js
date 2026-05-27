@@ -21,7 +21,7 @@ import fs from 'fs';
 import path from 'path';
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, callTimedWithBackoff, recPerf, recFinding,
+    callTimed, recPerf, recFinding,
     assertNoExternalCallsPostBatch, pilotBookingsCount, assertPiiMasked,
 } from '../fixtures/stress-helpers.js';
 
@@ -76,11 +76,11 @@ test.describe('F8D-v2 § 29 — HR Payroll Lifecycle', () => {
         const samples = [];
 
         // 1. Save draft (1st)
-        const save1 = await callTimedWithBackoff(request, 'post', `/api/hr/payroll/${MONTH}/save`,
+        const save1 = await callTimed(request, 'post', `/api/hr/payroll/${MONTH}/save`,
             { extras: [] }, stressTokens.stress_token);
         samples.push(save1.ms);
         // 2. Save draft (2nd) — idempotent update (same run_id)
-        const save2 = await callTimedWithBackoff(request, 'post', `/api/hr/payroll/${MONTH}/save`,
+        const save2 = await callTimed(request, 'post', `/api/hr/payroll/${MONTH}/save`,
             { extras: [] }, stressTokens.stress_token);
         samples.push(save2.ms);
 
