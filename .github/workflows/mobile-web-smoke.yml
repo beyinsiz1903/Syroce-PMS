@@ -1,0 +1,114 @@
+name: Mobile Web Smoke (F10A render-only matrix)
+
+# F10A — render-only smoke for every screen in `mobile/` via Playwright
+# against the Expo Web bundle. Manual trigger initially (per task #83);
+# moves to PR-required gate once F10A stabilises (F10G milestone).
+#
+# Why not the existing `mobile-smoke.yml`? That workflow runs Maestro
+# against EAS-built simulator/emulator artifacts (native deep flows).
+# This workflow is the Linux-runnable web-bundle smoke gate that lives
+# alongside it — see `mobile/e2e/README.md` for the tooling decision.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Expo Web bundle URL (örn. https://mobile-stress.syroce.com)"
+        required: true
+        type: string
+      note:
+        description: "Optional note for the run summary (kim/ne için)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-web-smoke-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Mobile Web smoke (Pixel 7 viewport)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MOBILE_E2E_BASE_URL: ${{ github.event.inputs.base_url }}
+      MOBILE_E2E_FRONTDESK_EMAIL:    ${{ secrets.MOBILE_E2E_FRONTDESK_EMAIL }}
+      MOBILE_E2E_FRONTDESK_PASSWORD: ${{ secrets.MOBILE_E2E_FRONTDESK_PASSWORD }}
+      MOBILE_E2E_GM_EMAIL:           ${{ secrets.MOBILE_E2E_GM_EMAIL }}
+      MOBILE_E2E_GM_PASSWORD:        ${{ secrets.MOBILE_E2E_GM_PASSWORD }}
+      MOBILE_E2E_HK_EMAIL:           ${{ secrets.MOBILE_E2E_HK_EMAIL }}
+      MOBILE_E2E_HK_PASSWORD:        ${{ secrets.MOBILE_E2E_HK_PASSWORD }}
+      MOBILE_E2E_GUEST_EMAIL:        ${{ secrets.MOBILE_E2E_GUEST_EMAIL }}
+      MOBILE_E2E_GUEST_PASSWORD:     ${{ secrets.MOBILE_E2E_GUEST_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fail-fast on missing secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for v in \
+            MOBILE_E2E_FRONTDESK_EMAIL MOBILE_E2E_FRONTDESK_PASSWORD \
+            MOBILE_E2E_GM_EMAIL MOBILE_E2E_GM_PASSWORD \
+            MOBILE_E2E_HK_EMAIL MOBILE_E2E_HK_PASSWORD \
+            MOBILE_E2E_GUEST_EMAIL MOBILE_E2E_GUEST_PASSWORD; do
+            if [ -z "${!v:-}" ]; then
+              echo "::error::Required secret $v is not set"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+
+      - name: Install Playwright + browsers
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          # Playwright is intentionally NOT in mobile/package.json prod deps
+          # (RN/Expo bundle would pull it in). Install ad-hoc in CI only.
+          npm install --no-save @playwright/test@^1.47.0
+          npx playwright install --with-deps chromium
+
+      - name: Run mobile web smoke
+        id: smoke
+        working-directory: mobile
+        run: |
+          set -o pipefail
+          npx playwright test --config=e2e/playwright.config.ts 2>&1 | tee mobile-smoke.log
+
+      - name: Build summary
+        if: always()
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          {
+            echo "## Mobile Web smoke (F10A) — ${{ steps.smoke.outcome }}"
+            echo ""
+            echo "- Base URL: \`${MOBILE_E2E_BASE_URL}\`"
+            echo "- Trigger note: ${{ github.event.inputs.note || '(none)' }}"
+            echo ""
+            echo "<details><summary>Playwright output (last 80 lines)</summary>"
+            echo ""
+            echo '```'
+            tail -80 mobile-smoke.log 2>/dev/null || echo "(no output)"
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: mobile-web-smoke-report
+          path: |
+            mobile/playwright-mobile-smoke-report
+            mobile/test-results-mobile-smoke
+            mobile/mobile-smoke.log
+          if-no-files-found: warn
