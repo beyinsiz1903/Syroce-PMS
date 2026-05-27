@@ -153,6 +153,17 @@ Full plan + per-package design notes → `docs/PRODUCTION_SAFETY_PLAN.md`. Pilot
 
 ## F8 Stress Test Series
 
+### Task #136 — Run #57 cluster RCA (2026-05-27)
+
+Run #57 (`docs/drill_reports/20260527_stress_full_stress_suite_task57.md`) raporladı `failedTests=11`. Task #136 RCA (`docs/drill_reports/20260527_stress_full_stress_suite_cluster_fix.md`) sonucu:
+
+- **97-backend-router-coverage-probe — REAL CODE FIX**: PROBES matrix'in 51 entry'sinden 38'i hiç mount edilmemiş aspirational path'lerdi (`/api/mobile/tasks` gerçek=`/api/pms/tasks`, `/api/channel-manager/hotelrunner/status` gerçek=`/api/channel-manager/hotelrunner/connection/status`, `/api/messaging/templates` gerçek=`/api/messaging-center/templates`, AI/HR deep tüm grubu hiç yok, vb.). 404 chorus'u `meaningfulCoverage >= 30%` gate'ini çökertti. Fix: 51→20 verified-mounted path'e prune + RCA header comment. **Aspirational path'leri probe'a eklemek "coverage" değildir** — sadece 404 noise floor'u şişirir ve invariant gate'i bozar. Yeni modüller mount edilince geri eklenir.
+- **52B G + 98 L — DEPLOY LAG, code in main is correct**: `seed_pending_bookings` factory branch (Task #25, `backend/domains/admin/router/stress.py:2023-2054`) + `CASHIER_PEER_VERIFY_USER/IP` throttle wiring (Task #120, `backend/security/auth_throttle.py:600-605` + `backend/domains/pms/cashier_router.py:318`) source'da doğru. Run #57 pilot image bu commit'leri içermiyordu. Smoke verify: (1) `POST /api/admin/stress/seed {seed_pending_bookings:2}` → response `counts.pending_bookings` must equal 2 (0 → stale image); (2) 11 ardışık `POST /api/cashier/peer-verify {pin:"wrong_<N>"}` → 1-10 = 401, 11 = 429 with `Retry-After`.
+- **Cluster A (10/12/14 setup) — RECLASSIFIED, not hard fails**: Drill module table qr_requests=1 PASS, complaints=1 REVIEW (soft-fail line in Setup, not `expect()` fail), mice_events=3 PASS. Failed-test list'te yoklar (lines 139, 142, 288+); task author REVIEW annotation'ları "fail" diye aggregate etmiş. Hard FAIL'e dönerse ayrı RCA.
+- **Out of scope**: 98D agency drain P0 (ayrı task), 98 mobile-staff Setup (env var `DISABLE_EXPO_PUSH=1`).
+
+Mutlak kurallar korundu: pilot mutation=0, external_calls=[], assertion gevşetme YOK, skip-as-pass YOK (20 retained probe full anon+auth+classify pipeline'ını koşar).
+
 Tek doğruluk kaynağı: `docs/STRESS_TEST_ROADMAP.md`. Faz başına ADR yolu aşağıda; mutlak kurallar her fazda aynı: pilot mutation yok, `external_calls=[]`, `failedTests=0`, `P0=P1=0`, verdict ≥ GO WITH WATCH. Ortak helper'lar (`frontend/e2e-stress/fixtures/stress-helpers.js`) — `(testInfo, module, ...)` konvansiyonu: `assertPilotDriftZero`, `assertPiiMasked`, `withModuleProbe`, `callTimed`/`callTimedWithBackoff`. Reporter modül aggregation dinamik (rec annotation `module` field).
 
 ### F8A — Front Office / Folio / Housekeeping / Reservation Lifecycle / Night Audit (DONE pending CI #47)

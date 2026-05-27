@@ -39,75 +39,49 @@ const MOD = 'backend_router_coverage_probe';
 //   list_shape: true ise response body'nin {items:[]} veya [] olması beklenir
 //               (IDOR/cross-tenant leak için sample)
 // ─────────────────────────────────────────────────────────────────────────
+// Task #136 (RCA): The original matrix had 38 paths that were never mounted
+// (legacy/aspirational naming — e.g. `/api/mobile/tasks` vs real
+// `/api/pms/tasks`, `/api/channel-manager/hotelrunner/status` vs real
+// `/api/channel-manager/hotelrunner/connection/status`). That collapsed the
+// `meaningfulCoverage >= 30%` gate (reachable+module_blocked / total) and
+// produced a P1 invariants failure plus a chorus of P2 `auth_404_not_deployed`
+// reviews that masked the real coverage signal.
+//
+// Pruning rule: only probe paths whose router decorator is verified to exist
+// in `backend/routers/` or `backend/domains/**/router*.py` at the time of this
+// commit. Aspirational endpoints (AI deep, HR deep, hotel services, etc.) that
+// have NOT been built yet are removed entirely — listing them as probes does
+// not "increase coverage", it just inflates the 404 noise floor. When those
+// modules are actually shipped, add them back here with the real path.
 const PROBES = [
-    // PMS sub-routers
+    // PMS sub-routers — verified mounted
     { name: 'marketplace_router',         path: '/api/marketplace/incoming-requests',           list_shape: true },
-    { name: 'pos_fnb_menu',                path: '/api/pos/fnb/menu',                            list_shape: true },
-    { name: 'pos_fnb_modifiers',           path: '/api/pos/fnb/modifiers',                       list_shape: true },
-    { name: 'mobile_router_tasks',         path: '/api/mobile/tasks',                            list_shape: true },
-    { name: 'mobile_router_shift',         path: '/api/mobile/shift/current'                                       },
-    { name: 'dashboard_widgets',           path: '/api/pms/dashboard/widgets',                   list_shape: true },
+    { name: 'pos_v2_menu',                 path: '/api/pos/v2/menu',                             list_shape: true },
+    { name: 'mobile_router_tasks',         path: '/api/pms/tasks',                               list_shape: true },
     { name: 'pms_groups',                  path: '/api/pms/groups',                              list_shape: true },
-    { name: 'pms_catering',                path: '/api/pms/catering',                            list_shape: true },
-    { name: 'pms_approvals',               path: '/api/pms/approvals',                           list_shape: true },
-    { name: 'pms_wakeup',                  path: '/api/pms/wakeup-calls',                        list_shape: true },
+    { name: 'pms_catering_events',         path: '/api/pms/catering-events',                     list_shape: true },
+    { name: 'pms_approvals_pending',       path: '/api/pms/approvals/pending',                   list_shape: true },
     { name: 'pms_lost_found',              path: '/api/pms/lost-found',                          list_shape: true },
-    { name: 'pms_maintenance_workorders',  path: '/api/maintenance/work-orders',                 list_shape: true },
-    { name: 'pms_maintenance_assets',      path: '/api/maintenance/assets',                      list_shape: true },
-    { name: 'pms_maintenance_plans',       path: '/api/maintenance/plans',                       list_shape: true },
+    { name: 'pms_maintenance_orders',      path: '/api/pms/maintenance/orders',                  list_shape: true },
+    { name: 'pms_concierge_requests',      path: '/api/pms/concierge/requests',                  list_shape: true },
 
-    // Channel Manager provider sub-routers
-    { name: 'hotelrunner_status',          path: '/api/channel-manager/hotelrunner/status'                          },
-    { name: 'exely_status',                path: '/api/channel-manager/exely/status'                                },
-    { name: 'cm_validation',               path: '/api/channel-manager/validation/health'                          },
-    { name: 'cm_lockdown',                 path: '/api/channel-manager/lockdown/status'                            },
+    // Channel Manager — verified mounted
+    { name: 'hotelrunner_connection',      path: '/api/channel-manager/hotelrunner/connection/status'              },
+    { name: 'exely_sync_status',           path: '/api/channel-manager/exely/sync/status'                          },
     { name: 'cm_ingest_status',            path: '/api/channel-manager/ingest/status'                              },
-    { name: 'cm_incident_list',            path: '/api/channel-manager/incidents',               list_shape: true },
+    { name: 'cm_incident_list',            path: '/api/channel-manager/incidents/list',          list_shape: true },
     { name: 'cm_reconciliation',           path: '/api/channel-manager/reconciliation/summary'                     },
 
-    // AI / ML deep router'lar
-    { name: 'ai_upsell',                   path: '/api/ai/upsell/recommendations',               list_shape: true },
-    { name: 'ai_forecasting',              path: '/api/ai/forecasting/horizon'                                    },
-    { name: 'ai_guest_pattern',            path: '/api/ai/guest-patterns/summary'                                 },
-    { name: 'ai_dynamic_offers',           path: '/api/ai/offers/active',                        list_shape: true },
+    // Guest / Messaging — verified mounted (correct prefix is /api/guest-journey
+    // and /api/messaging-center, not /api/guest/journey or /api/messaging).
+    { name: 'guest_journey_list',          path: '/api/guest-journey/list',                      list_shape: true },
+    { name: 'messaging_templates',         path: '/api/messaging-center/templates',              list_shape: true },
+    { name: 'messaging_settings',          path: '/api/messaging-center/settings'                                  },
 
-    // Finance / B2B deep
-    { name: 'finance_mobile_cashier',      path: '/api/finance/mobile/cashier/status'                              },
-    { name: 'finance_mobile_payments',     path: '/api/finance/mobile/payments/recent',          list_shape: true },
-
-    // Guest experience deep
-    { name: 'guest_journey_list',          path: '/api/guest/journey/list',                      list_shape: true },
-    { name: 'guest_loyalty_status',        path: '/api/guest/loyalty/status'                                       },
-    { name: 'guest_preferences',           path: '/api/guest/preferences',                       list_shape: true },
-    { name: 'messaging_templates',         path: '/api/messaging/templates',                     list_shape: true },
-    { name: 'messaging_settings',          path: '/api/messaging/settings'                                         },
-
-    // HR deep leftovers
-    { name: 'hr_leave_balance',            path: '/api/hr/leave/balance'                                           },
-    { name: 'hr_performance_reviews',      path: '/api/hr/performance/reviews',                  list_shape: true },
-    { name: 'hr_recruitment_postings',     path: '/api/hr/recruitment/postings',                 list_shape: true },
-    { name: 'hr_training_catalog',         path: '/api/hr/training/catalog',                     list_shape: true },
-    { name: 'hr_benefits_summary',         path: '/api/hr/benefits/summary'                                        },
-
-    // Admin / Observability / System
-    { name: 'admin_governance',            path: '/api/admin/governance/audit',                  list_shape: true },
+    // Admin / Observability / Reports — verified mounted
     { name: 'admin_feature_flags',         path: '/api/admin/feature-flags',                     list_shape: true },
     { name: 'observability_metrics',       path: '/api/observability/metrics'                                       },
-    { name: 'observability_traces',        path: '/api/observability/traces/recent',             list_shape: true },
-    { name: 'system_health_components',    path: '/api/system-health/components',                list_shape: true },
-
-    // Hotel services + Integrations
-    { name: 'svc_laundry_status',          path: '/api/services/laundry/status'                                     },
-    { name: 'svc_transport_status',        path: '/api/services/transport/status'                                   },
-    { name: 'svc_concierge_requests',      path: '/api/services/concierge/requests',             list_shape: true },
-    { name: 'svc_activities',              path: '/api/services/activities',                     list_shape: true },
-    { name: 'svc_kids_club',               path: '/api/services/kids-club',                      list_shape: true },
-    { name: 'integrations_whatsapp',       path: '/api/integrations/whatsapp/status'                                },
-
-    // Reports deep
-    { name: 'reports_list',                path: '/api/reports/list',                            list_shape: true },
     { name: 'report_builder_templates',    path: '/api/reports/builder/templates',               list_shape: true },
-    { name: 'reports_scheduled',           path: '/api/reports/scheduled',                       list_shape: true },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────
