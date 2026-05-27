@@ -3,7 +3,7 @@
 **Tarih:** 2026-05-24
 **Spec:** `frontend/e2e-stress/specs/41B-b2b-subrouter-matrix.spec.js`
 **Modül tag:** `b2b_api`
-**Status:** spec written (full-suite verification roadmap'in bir sonraki turunda)
+**Status:** ✅ DONE — full-suite verification GREEN (Run #143, 2026-05-26, commit `3b3891d`)
 
 ## Kapsam
 
@@ -114,6 +114,46 @@ gerçek IDOR/auth-bypass yakalanırsa: ASSERTION GEVŞETME YOK — backend
 fix follow-up task olarak açılır, spec değişmez (F8X tarihçesi:
 `docs/adr/2026-05-f8x-f8aa-compliance-money-safety.md` aynı doctrine'i
 örnekler — gerçek backend bug yakalanıp düzeltildi, spec sabit kaldı).
+
+## Verification — Run #143 (2026-05-26) ✅ GREEN
+
+41B spec, **84-spec GREEN baseline'ın** parçası olarak full-suite içinde
+koşturuldu ve doktrin gate'lerini geçti:
+
+| Alan | Değer |
+|---|---|
+| Workflow | GitHub Actions — Full Stress Suite (one-shot) |
+| Run | **#143** — `pull_request` / `main` |
+| Commit SHA (HEAD at CI) | `3b3891d` |
+| Duration | 47m 55s — Status Success |
+| Spec count | 84 (41B dahil) |
+| failedTests | **0** |
+| P0 / P1 | **0 / 0** |
+| `external_calls_made` | `[]` ✓ |
+| `pilot_drift` | 0 (baseline=30, after=30) ✓ |
+| Cleanup idempotent | cleanup#1 deleted=7734 → cleanup#2 deleted=0 ✓ |
+| Final verdict | ✅ **GO WITH WATCH** |
+
+**41B modül durumu (Run #143, b2b_api v2 matrix):** A/B/C/D matrix
+test'leri **module-blocked SKIP** — setup'ta stress tenant agency yok
+(`agencies_list_len=0`) → key create edilemedi → matrix probe'ları
+koşturulamadı. E invariant testi (pilot_drift + external_calls) PASS.
+Mevcut full-suite baseline drill report'unda da bu durum bir P2 olarak
+not edilmiş (`docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md`
+satır 93-94: "B2B agency seed eksik: `b2b_api` + `41B-b2b-subrouter-matrix`
+— `agencies_list_len=0`, matrix tests skipped. F8M-v2 setup gap.").
+
+**Doktrin notu:** Module-blocked SKIP, doktrinde **PASS sayılmaz** — hard
+P0/P1 gate'lerini bozmuyor (failedTests=0 + P0=P1=0 + external_calls=[]
++ pilot_drift=0 dört şart sağlanıyor → verdict GO WITH WATCH meşru).
+Ancak gerçek IDOR/auth-bypass invariant coverage (A/B/C blokları) bu
+run'da kanıt üretemedi. Coverage'ı tam doğrulamak için **stress tenant
+B2B agency seed pipeline'ına** ihtiyaç var — bu, `Improve B2B agency
+pilot id sampling for deeper isolation coverage` follow-up'ı tarafından
+adreslenecek.
+
+**Spec assertion'ları değiştirilmedi.** F8X precedent uygulandı:
+backend/setup fix follow-up'ları açılır, spec sabit kalır.
 
 ## Bağlantılar
 
