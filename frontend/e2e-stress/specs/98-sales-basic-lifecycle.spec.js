@@ -54,6 +54,7 @@ test.describe('F9C § 98 — Sales Basic Lifecycle', () => {
     let pilotKnownLeadId = null;
     const createdLeadIds = [];
     const createdOpportunityIds = [];
+    const createdPackageIds = [];
     let probedPackageId = null;
 
     function idemKey(op, i = 0) {
@@ -389,8 +390,20 @@ test.describe('F9C § 98 — Sales Basic Lifecycle', () => {
             rec(testInfo, { module: MOD, step: 'I_quote', status: 'SKIP', note: blockedReason });
             test.skip(true, `module_blocked: ${blockedReason}`);
         }
-        // Try to find an existing package (read-only; no package create to keep
-        // stress footprint tight). If tenant has none, REVIEW (informational).
+        // Task #48: seed a stress-prefixed package on demand so Step I exercises
+        // real pricing math (base + per_pax × pax + items_total). Prior behavior
+        // downgraded to REVIEW on a clean tenant because the spec only read.
+        //
+        // Strategy:
+        //   1) Try to find an EXISTING stress-prefixed package (idempotent /
+        //      respects prior global-seed packages tagged `stress_seed=true`).
+        //   2) If none, POST one tagged with `${prefix}` in name + a single
+        //      addon item with non-zero quantity × unit_price so the items_total
+        //      branch of the subtotal formula is actually covered.
+        //   3) Track in `createdPackageIds` for afterAll DELETE cleanup so the
+        //      tenant footprint stays bounded (only the package WE created is
+        //      deleted; pre-seeded packages stay intact).
+        //   4) Assert subtotal === base + per_pax*pax + items_total (rounded).
         const pkgList = await callTimed(
             request, 'get', '/api/mice/sales/packages?active_only=false', null,
             stressTokens.stress_token, { timeout: 10_000 },
@@ -400,26 +413,87 @@ test.describe('F9C § 98 — Sales Basic Lifecycle', () => {
             rec(testInfo, { module: MOD, step: 'I_quote_pkg_list', status: 'REVIEW', http: pkgList.status });
             return;
         }
-        const pkgs = pkgList.body?.packages;
-        if (!Array.isArray(pkgs) || pkgs.length === 0) {
+        let pkg = null;
+        const pkgs = Array.isArray(pkgList.body?.packages) ? pkgList.body.packages : [];
+        // Prefer a stress-prefixed pkg if any exist (deterministic math).
+        pkg = pkgs.find((p) => typeof p?.name === 'string' && p.name.includes(prefix)) || pkgs[0] || null;
+
+        if (!pkg) {
+            // Seed a stress-tagged package with deterministic, non-zero pricing
+            // so the subtotal assertion below exercises all three branches.
+            const seedPayload = {
+                name: taggedName('I_pkg'),
+                type: 'wedding',
+                description: taggedName('I_pkg_desc'),
+                min_pax: 10,
+                max_pax: 500,
+                base_price: 12000,
+                per_pax_price: 350,
+                currency: 'TRY',
+                items: [
+                    {
+                        kind: 'addon',
+                        name: taggedName('I_pkg_addon'),
+                        quantity: 2,
+                        unit_price: 1500,
+                    },
+                ],
+                active: true,
+            };
+            const seedResp = await callTimed(
+                request, 'post', '/api/mice/sales/packages', seedPayload,
+                stressTokens.stress_token,
+                { timeout: 15_000, headers: { 'Idempotency-Key': idemKey('I_pkg_seed') } },
+            );
+            expect(seedResp.status, `I_quote pkg-seed 5xx`).toBeLessThan(500);
+            if (seedResp.status < 200 || seedResp.status >= 300 || !seedResp.body?.id) {
+                rec(testInfo, {
+                    module: MOD, step: 'I_quote', status: 'REVIEW',
+                    http: seedResp.status,
+                    note: `pkg seed non-2xx — quote unverifiable. body=${JSON.stringify(seedResp.body || {}).slice(0, 200)}`,
+                });
+                recFinding(testInfo, 'P2', MOD,
+                    `package seed non-2xx status=${seedResp.status}`,
+                    'Step I cannot run pricing assertion without a package.');
+                return;
+            }
+            pkg = seedResp.body;
+            createdPackageIds.push(pkg.id);
             rec(testInfo, {
-                module: MOD, step: 'I_quote', status: 'REVIEW',
-                http: pkgList.status, note: 'no packages in tenant — quote unverifiable, informational',
+                module: MOD, step: 'I_quote_pkg_seed', status: 'PASS',
+                http: seedResp.status, note: `seeded pkg_id=${pkg.id}`,
             });
-            return;
         }
-        probedPackageId = pkgs[0].id;
+
+        probedPackageId = pkg.id;
+        const pax = 10;
         const r = await callTimed(
-            request, 'post', `/api/mice/sales/packages/${probedPackageId}/quote?pax=10`, null,
+            request, 'post', `/api/mice/sales/packages/${probedPackageId}/quote?pax=${pax}`, null,
             stressTokens.stress_token, { timeout: 10_000 },
         );
         expect(r.status, `I_quote 5xx`).toBeLessThan(500);
         if (r.status === 200) {
             expect(r.body?.package_id, 'quote package_id yok').toBe(probedPackageId);
             expect(typeof r.body?.subtotal, 'quote subtotal yok').toBe('number');
+
+            // Real pricing assertion: base + per_pax*pax + items_total (rounded
+            // to 2dp by backend). Tolerance 0.01 to absorb float drift.
+            const base = Number(pkg.base_price || 0);
+            const perPax = Number(pkg.per_pax_price || 0);
+            const items = Array.isArray(pkg.items) ? pkg.items : [];
+            const itemsTotal = items.reduce(
+                (acc, it) => acc + (Number(it?.quantity ?? 1) * Number(it?.unit_price ?? 0)),
+                0,
+            );
+            const expectedSubtotal = Math.round((base + perPax * pax + itemsTotal) * 100) / 100;
+            expect(
+                Math.abs(r.body.subtotal - expectedSubtotal),
+                `quote subtotal math mismatch: got=${r.body.subtotal} expected=${expectedSubtotal} (base=${base} per_pax=${perPax} pax=${pax} items_total=${itemsTotal})`,
+            ).toBeLessThanOrEqual(0.01);
+
             rec(testInfo, {
                 module: MOD, step: 'I_quote', status: 'PASS', http: r.status,
-                note: `pkg=${probedPackageId} subtotal=${r.body.subtotal}`,
+                note: `pkg=${probedPackageId} pax=${pax} subtotal=${r.body.subtotal} expected=${expectedSubtotal}`,
             });
         } else {
             recFinding(testInfo, 'P2', MOD, `quote non-200 status=${r.status}`, '');
@@ -556,7 +630,8 @@ test.describe('F9C § 98 — Sales Basic Lifecycle', () => {
             step: 'cleanup',
             leads_attempted: createdLeadIds.length,
             opps_attempted: createdOpportunityIds.length,
-            note: 'DELETE leads (idempotent); opportunities → transition lost (idempotent).',
+            packages_attempted: createdPackageIds.length,
+            note: 'DELETE leads + packages (idempotent); opportunities → transition lost (idempotent).',
         };
         try {
             const { request: globalRequest } = await import('@playwright/test');
@@ -598,9 +673,20 @@ test.describe('F9C § 98 — Sales Basic Lifecycle', () => {
                     if (r.status() < 500) oppsLost += 1;
                 } catch { /* idempotent best-effort */ }
             }
+            let packagesDeleted = 0;
+            for (const id of createdPackageIds) {
+                try {
+                    const r = await ctx.delete(
+                        `/api/mice/sales/packages/${id}`,
+                        { timeout: 10_000, failOnStatusCode: false },
+                    );
+                    if (r.status() < 500) packagesDeleted += 1;
+                } catch { /* idempotent best-effort */ }
+            }
             await ctx.dispose();
             cleanupRec.leads_deleted = leadsDeleted;
             cleanupRec.opps_lost = oppsLost;
+            cleanupRec.packages_deleted = packagesDeleted;
             cleanupRec.status = 'PASS';
             testInfo.annotations.push({ type: 'rec', description: JSON.stringify(cleanupRec) });
         } catch (e) {
