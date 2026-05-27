@@ -315,6 +315,84 @@ async def handover_shift(
     }
 
 
+@router.post("/cashier/peer-verify")
+async def peer_verify(
+    request: Request,
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_payment")),  # v94 DW
+):
+    """Task-120 — mobile cashier PIN re-auth gate.
+
+    The mobile cashier UI shows a PIN screen every shift before sensitive
+    actions (open/close/refund, etc.). Without a throttle this gate can be
+    brute-forced one tap at a time on an unattended terminal. Mirrors the
+    Task-51 `/cashier/handover-shift` throttle pattern using the
+    Mongo-backed cross-instance sliding window so a second tab / another
+    replica cannot reset the budget.
+
+    Body: { pin?: str, password?: str } — caller's own credential.
+    Two layered always-on sliding windows (cap=10 / 900s):
+      * per-operator-user-id (JWT-trusted; IP-rotation immune)
+      * per-IP (defense-in-depth against distributed spray)
+    The 11th wrong attempt in the window returns 429 with Retry-After.
+    """
+    from core._pwd import BcryptContext
+
+    from security.auth_throttle import (
+        CASHIER_PEER_VERIFY_IP,
+        CASHIER_PEER_VERIFY_USER,
+        client_ip,
+    )
+    from security.auth_throttle import enforce as _throttle
+
+    _ip = client_ip(request)
+    # Both throttle layers are checked BEFORE bcrypt verify so over-budget
+    # attackers don't incur the bcrypt cost per attempt, and BEFORE any
+    # user/shift lookup so a 401-attacker can't dodge the rate limit by
+    # spraying against state that would otherwise short-circuit.
+    await _throttle(
+        CASHIER_PEER_VERIFY_USER,
+        f"peer_verify:{current_user.id}",
+        "PIN denemesi",
+    )
+    await _throttle(
+        CASHIER_PEER_VERIFY_IP,
+        f"peer_verify_ip:{_ip}",
+        "PIN denemesi",
+    )
+
+    pin = (body.get("pin") or body.get("password") or "").strip()
+    if not pin:
+        raise HTTPException(status_code=400, detail="PIN gerekli")
+
+    pwd_ctx = BcryptContext()
+    me = await db.users.find_one({"_id": current_user.id})
+    if not me:
+        me = await db.users.find_one(
+            {"email": current_user.email, "tenant_id": current_user.tenant_id}
+        )
+    if not me:
+        raise HTTPException(status_code=401, detail="Kullanici dogrulanamadi")
+
+    stored_hash = me.get("hashed_password") or me.get("password_hash") or ""
+    if not pwd_ctx.verify(pin, stored_hash):
+        raise HTTPException(status_code=401, detail="PIN hatali")
+
+    # Credential gate passed — drain the per-user/per-IP throttle counters
+    # so a legitimate operator who mistyped a few times before succeeding
+    # isn't penalised for the rest of the 15-minute window.
+    try:
+        await CASHIER_PEER_VERIFY_USER.reset(f"peer_verify:{current_user.id}")
+        await CASHIER_PEER_VERIFY_IP.reset(f"peer_verify_ip:{_ip}")
+    except Exception:
+        # Best-effort cache cleanup; failure here only means the legitimate
+        # operator stays in their existing budget — never a hard error.
+        pass
+
+    return {"ok": True, "verified_at": datetime.utcnow().isoformat()}
+
+
 @router.post("/cashier/manual-transaction")
 async def manual_transaction(
     body: dict = Body(...),

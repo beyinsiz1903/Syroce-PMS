@@ -584,6 +584,26 @@ CASHIER_HANDOVER_IP = SlidingWindowThrottle(
     max_requests=6, window_seconds=900, always_on=True, name="cashier_handover_ip"
 )
 
+# Task-120 — `/api/cashier/peer-verify` is the mobile cashier PIN re-auth gate
+# (front-desk terminals every shift). Same financial-PIN-equivalent exposure as
+# the handover gate: an unattended terminal with a stolen access_token can be
+# brute-forced one tap at a time without any back-off. Wires the same Mongo-
+# backed sliding-window pattern as CASHIER_HANDOVER_* so the protection is
+# cross-instance and survives multi-replica fan-out.
+#
+# Cap is 10 (vs handover's 6) because the peer-verify gate is the routine
+# every-shift PIN screen where legitimate operators occasionally mistype a
+# digit, while handover is rarer/more deliberate. The 11th wrong attempt in
+# the window returns 429 — matches the regression probe in spec 98 test L.
+# always_on=True so DISABLE_AUTH_THROTTLE cannot mask the protection in
+# stress runs or production smoke tests.
+CASHIER_PEER_VERIFY_USER = SlidingWindowThrottle(
+    max_requests=10, window_seconds=900, always_on=True, name="cashier_peer_verify_user"
+)
+CASHIER_PEER_VERIFY_IP = SlidingWindowThrottle(
+    max_requests=10, window_seconds=900, always_on=True, name="cashier_peer_verify_ip"
+)
+
 # Task-55 — peer login surfaces (`/api/agency-portal/auth/login`,
 # `/api/supplies-market/vendor/login`) verify a staff/vendor password with
 # bcrypt but were never wired to LOGIN_IP/LOGIN_ACCOUNT. That left two

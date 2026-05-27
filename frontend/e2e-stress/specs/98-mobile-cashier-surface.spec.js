@@ -347,38 +347,28 @@ test.describe('F9C § 98 — Mobile Cashier Surface', () => {
     });
 
     // ──────────────────────────────────────────────────────────────
-    // L) SECURITY: PIN / password brute-force throttle probe.
-    // Mobile cashier shift HANDOVER requires the target user's password
-    // (functional equivalent of a financial PIN gate — wrong attempts must
-    // not be unbounded). We send 6 wrong-credential attempts and expect the
-    // 7th to be 429 (throttle present). Bogus target email is used so we
-    // never lock out a real user; both bogus-email and wrong-password paths
-    // return 401 from the route, and any endpoint/middleware-level throttle
-    // catches both equally.
+    // L) SECURITY: PIN brute-force throttle probe (Task-120).
+    // Mobile cashier `/api/cashier/peer-verify` is the PIN re-auth gate
+    // used at the front-desk terminal every shift. Without a throttle an
+    // unattended terminal can be brute-forced one tap at a time. Backend
+    // wires CASHIER_PEER_VERIFY_USER + CASHIER_PEER_VERIFY_IP sliding
+    // windows (cap=10/900s, always_on, Mongo-backed cross-instance) —
+    // the 11th wrong PIN in the window must return 429.
     //
-    // ORDERING (architect Round-1 fix): runs BEFORE G close-shift so the
-    // shift opened in B is still alive — otherwise handover-shift returns
-    // 404 ("Acik vardiya bulunamadi") before reaching the credential gate,
-    // turning the probe into noise.
+    // MODULE-BLOCKED: probe is independent of shift lifecycle; the
+    // throttle layer applies regardless of whether a shift is open.
     //
-    // MODULE-BLOCKED (architect Round-1 fix): probe is independent and runs
-    // even when GET current-shift was blocked; the throttle layer applies
-    // regardless of lifecycle availability.
-    //
-    // If the 7th attempt is NOT 429, that's a P1 finding (unbounded
-    // brute-force on a financial gate). Sequential — no Promise.all so a
-    // throttle window applies.
+    // If the 11th attempt is NOT 429, that's a P1 finding (unbounded
+    // brute-force on a financial gate). Sequential — no Promise.all so
+    // the throttle window applies cleanly.
     test('L) PIN brute-force throttle probe', async ({ request, stressTokens }, testInfo) => {
-        // Independent of moduleBlocked (architect Round-1).
-        const bogusTargetEmail = `pinprobe_${cryptoRandomUUID()}@stress.invalid`;
+        // Independent of moduleBlocked.
         const statuses = [];
-        for (let i = 1; i <= 7; i++) {
+        for (let i = 1; i <= 11; i++) {
             const r = await callTimed(
-                request, 'post', '/api/cashier/handover-shift',
+                request, 'post', '/api/cashier/peer-verify',
                 {
-                    target_email: bogusTargetEmail,
-                    target_password: `wrong_pwd_${i}_${cryptoRandomUUID().slice(0, 8)}`,
-                    note: `${prefix}_pin_probe_${i}`,
+                    pin: `wrong_pin_${i}_${cryptoRandomUUID().slice(0, 8)}`,
                 },
                 stressTokens.stress_token,
                 { timeout: 10_000 },
@@ -387,28 +377,11 @@ test.describe('F9C § 98 — Mobile Cashier Surface', () => {
             if (r.status === 429) break;
             // Light pacing so we don't trip global token rate-limit instead
             // of the per-gate throttle we're probing.
-            await new Promise((res) => setTimeout(res, 250));
+            await new Promise((res) => setTimeout(res, 200));
         }
         const last = statuses[statuses.length - 1];
         const throttled = statuses.includes(429);
         expect(last, `L_pin_throttle: 5xx=${last}`).toBeLessThan(500);
-
-        // Methodology guard: if every attempt returned 404, the open-shift
-        // pre-check rejected us before credential validation → ordering
-        // regression. Mark REVIEW (not P1) so a future refactor that
-        // accidentally puts G before L is visible without false-flagging
-        // the throttle layer.
-        const allNotFound = statuses.length > 0 && statuses.every(s => s === 404);
-        if (allNotFound) {
-            recFinding(testInfo, 'P2', MOD,
-                'L_pin_throttle: 404 on every attempt — credential gate unreachable (likely no open shift)',
-                `statuses=[${statuses.join(',')}] — verify L runs before G in source order; module_blocked=${moduleBlocked}`);
-            rec(testInfo, {
-                module: MOD, step: 'L_pin_throttle', status: 'REVIEW', http: last,
-                note: 'methodology unreachable — probe did not exercise credential path',
-            });
-            return;
-        }
 
         if (throttled) {
             rec(testInfo, {
@@ -416,12 +389,12 @@ test.describe('F9C § 98 — Mobile Cashier Surface', () => {
                 http: last, note: `throttle hit at attempt ${statuses.indexOf(429) + 1}; statuses=[${statuses.join(',')}]`,
             });
         } else {
-            // All attempts rejected only with 401 (and possibly some 404s
-            // mid-sequence) → gate validates credentials but does NOT
-            // throttle. Financial brute-force surface.
+            // All 11 attempts rejected only with 401 → gate validates
+            // credentials but does NOT throttle. Financial brute-force
+            // surface.
             recFinding(testInfo, 'P1', MOD,
-                'Cashier handover PIN/password gate has NO brute-force throttle',
-                `7 wrong-credential attempts produced statuses=[${statuses.join(',')}]; expected 429 by attempt 7. Financial gate must rate-limit.`);
+                'Cashier peer-verify PIN gate has NO brute-force throttle',
+                `11 wrong-PIN attempts produced statuses=[${statuses.join(',')}]; expected 429 by attempt 11. Financial gate must rate-limit.`);
             rec(testInfo, {
                 module: MOD, step: 'L_pin_throttle', status: 'REVIEW',
                 http: last, note: `no throttle observed; statuses=[${statuses.join(',')}]`,
