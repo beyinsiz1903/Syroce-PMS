@@ -589,9 +589,10 @@ async def get_notification_preferences(
     """
     current_user = await get_current_user(credentials)
 
-    preferences = await db.notification_preferences.find_one({
-        'user_id': current_user.id
-    })
+    preferences = await db.notification_preferences.find_one(
+        {'user_id': current_user.id},
+        {'_id': 0},
+    )
 
     if not preferences:
         # Return default preferences

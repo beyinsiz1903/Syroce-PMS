@@ -99,6 +99,11 @@ jobs:
             STRESS_REPORT_TITLE: 'Full Operational Stress Suite (CI one-shot) — F8A+F8B+F8C+F8D+F8E'
             E2E_ROOM_COUNT: ${{ github.event.inputs.room_count || '500' }}
             CI: 'true'
+            # Task #99: F9C § 98 mobile staff spec hard-fails self-check if
+            # DISABLE_EXPO_PUSH != '1' (would otherwise risk a real Expo
+            # delivery to the registered ExponentPushToken[...] payload).
+            # Set job-wide so the nightly run doesn't need a manual override.
+            DISABLE_EXPO_PUSH: '1'
             # Murat review #C1: Slack webhook job-level env'e taşındı. Step-level
             # `env:` GitHub Actions'ta `if:` koşulundan SONRA bağlanır → mevcut
             # step-level kullanımda `if: ... && env.SLACK_WEBHOOK_URL != ''`
