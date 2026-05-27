@@ -9,7 +9,7 @@ import os
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 
 from .models import (
     OrderOut,
@@ -70,12 +70,43 @@ async def vendor_register(payload: VendorRegister):
 
 
 @router.post("/login", response_model=VendorTokenResponse)
-async def vendor_login(payload: VendorLogin):
+async def vendor_login(request: Request, payload: VendorLogin):
+    # Task-55 — brute-force throttle on the vendor login surface. The
+    # endpoint bcrypt-verifies vendor passwords but had no rate limit,
+    # leaving an unbounded credential-spray window against any vendor
+    # account. Two always_on sliding windows mirror the main login
+    # policy (per-IP + per-account NFKC-bucketed email), checked
+    # BEFORE bcrypt so over-budget attackers don't burn CPU/DB per try.
+    from security.auth_throttle import (
+        VENDOR_LOGIN_ACCOUNT,
+        VENDOR_LOGIN_IP,
+        client_ip,
+    )
+    from security.auth_throttle import enforce as _throttle
+    from security.auth_throttle import normalize_identity
+    _ip = client_ip(request)
+    _email_key = normalize_identity(payload.email)
+    await _throttle(VENDOR_LOGIN_IP, f"vendor_login_ip:{_ip}", "giris denemesi")
+    if _email_key:
+        await _throttle(
+            VENDOR_LOGIN_ACCOUNT, f"vendor_login_acct:{_email_key}", "giris denemesi"
+        )
+
     doc = await vendors_col.find_one({"email": payload.email.lower()})
     if not doc or not verify_password(payload.password, doc.get("password_hash", "")):
         raise HTTPException(401, "E-posta veya şifre hatalı")
     if doc.get("status") == "suspended":
         raise HTTPException(403, "Hesabınız askıya alınmış")
+
+    # Successful credential verify — drain throttle counters so a
+    # legitimate vendor isn't penalised for prior typos.
+    try:
+        await VENDOR_LOGIN_IP.reset(f"vendor_login_ip:{_ip}")
+        if _email_key:
+            await VENDOR_LOGIN_ACCOUNT.reset(f"vendor_login_acct:{_email_key}")
+    except Exception:
+        pass
+
     token = create_vendor_token(doc["id"], doc["email"])
     return {
         "access_token": token,

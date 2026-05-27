@@ -584,6 +584,38 @@ CASHIER_HANDOVER_IP = SlidingWindowThrottle(
     max_requests=6, window_seconds=900, always_on=True, name="cashier_handover_ip"
 )
 
+# Task-55 — peer login surfaces (`/api/agency-portal/auth/login`,
+# `/api/supplies-market/vendor/login`) verify a staff/vendor password with
+# bcrypt but were never wired to LOGIN_IP/LOGIN_ACCOUNT. That left two
+# brute-force gaps with identical shape to the main login:
+#
+#   * agency_login accepts super_admin AND agency_admin/agency_agent
+#     credentials (see agency_portal.py:507-514). An attacker can
+#     dictionary-attack ANY staff account (incl. super-admin) through
+#     this endpoint at bcrypt-throttled speed, bypassing the
+#     LOGIN_ACCOUNT counter entirely.
+#   * vendor_login is unauth but unbounded, enabling vendor-account
+#     credential spraying.
+#
+# Per-IP layer: kills naive single-attacker parallel spray.
+# Per-account layer (NFKC casefold-bucketed email): survives IP rotation
+#   and caps total guesses against a given account across all sources.
+# always_on=True so DISABLE_AUTH_THROTTLE cannot mask the protection in
+# stress/pen runs or production smoke tests (matches the task-51 +
+# SENSITIVE_AUTH_USER doctrine).
+AGENCY_LOGIN_IP = SlidingWindowThrottle(
+    max_requests=20, window_seconds=60, always_on=True, name="agency_login_ip"
+)
+AGENCY_LOGIN_ACCOUNT = SlidingWindowThrottle(
+    max_requests=10, window_seconds=300, always_on=True, name="agency_login_account"
+)
+VENDOR_LOGIN_IP = SlidingWindowThrottle(
+    max_requests=20, window_seconds=60, always_on=True, name="vendor_login_ip"
+)
+VENDOR_LOGIN_ACCOUNT = SlidingWindowThrottle(
+    max_requests=10, window_seconds=300, always_on=True, name="vendor_login_account"
+)
+
 
 async def enforce(throttle: SlidingWindowThrottle, key: str, label: str = "istek") -> None:
     """Raise 429 with a Turkish, non-technical message and Retry-After header.

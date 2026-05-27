@@ -25,7 +25,7 @@ import uuid
 from datetime import UTC, datetime
 
 import jwt as pyjwt
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from core.atomic_booking import BookingConflictError, create_booking_atomic
@@ -493,8 +493,32 @@ async def list_agency_reservations(
 # ═══════════════════════════════════════════════════════════════════
 
 @router.post("/agency-portal/auth/login")
-async def agency_login(data: AgencyLoginRequest):
+async def agency_login(request: Request, data: AgencyLoginRequest):
     """Acente giris."""
+    # Task-55 — brute-force throttle on the peer login surface. This route
+    # bcrypt-verifies super_admin and agency_admin/agency_agent passwords
+    # but was never wired to LOGIN_IP/LOGIN_ACCOUNT, leaving an
+    # unbounded credential-spray window against any staff account. Two
+    # always_on sliding windows mirror the main login policy and are
+    # checked BEFORE the bcrypt verify so over-budget attackers don't
+    # incur the bcrypt cost or DB load per attempt. Per-IP layer kills
+    # naive parallel spray; per-account layer (NFKC casefold-bucketed
+    # email) survives IP rotation by capping total guesses per account.
+    from security.auth_throttle import (
+        AGENCY_LOGIN_ACCOUNT,
+        AGENCY_LOGIN_IP,
+        client_ip,
+    )
+    from security.auth_throttle import enforce as _throttle
+    from security.auth_throttle import normalize_identity
+    _ip = client_ip(request)
+    _email_key = normalize_identity(data.email)
+    await _throttle(AGENCY_LOGIN_IP, f"agency_login_ip:{_ip}", "giris denemesi")
+    if _email_key:
+        await _throttle(
+            AGENCY_LOGIN_ACCOUNT, f"agency_login_acct:{_email_key}", "giris denemesi"
+        )
+
     from core.tenant_db import get_system_db
     sysdb = get_system_db()
 
@@ -515,6 +539,16 @@ async def agency_login(data: AgencyLoginRequest):
 
     if not verify_password(data.password, user_doc.get("password", "")):
         raise HTTPException(status_code=401, detail="E-posta veya sifre hatali")
+
+    # Credential gate passed — drain the per-IP / per-account throttle
+    # counters so a legitimate user who mistyped before succeeding isn't
+    # penalised for the rest of the window.
+    try:
+        await AGENCY_LOGIN_IP.reset(f"agency_login_ip:{_ip}")
+        if _email_key:
+            await AGENCY_LOGIN_ACCOUNT.reset(f"agency_login_acct:{_email_key}")
+    except Exception:
+        pass
 
     agency = None
     if user_doc.get("agency_id"):
