@@ -164,6 +164,19 @@ class StockTransferRequest(BaseModel):
     notes: str | None = None
 
 
+class StockTransferLine(BaseModel):
+    source_item_id: str
+    destination_item_id: str
+    quantity: float = Field(gt=0)
+    unit_cost: float = Field(default=0.0, ge=0)
+
+
+class BulkStockTransferRequest(BaseModel):
+    lines: list[StockTransferLine] = Field(min_length=1, max_length=100)
+    reference: str | None = None
+    notes: str | None = None
+
+
 class SupplierCreateRequest(BaseModel):
     name: str
     tax_office: str | None = None
@@ -627,6 +640,210 @@ async def transfer_stock_between_warehouses(
     }
 
 
+@router.post("/accounting/inventory/transfer-bulk")
+async def transfer_stock_bulk(
+    payload: BulkStockTransferRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    # Task #74 — Multi-line warehouse transfer document.
+    # All lines share a single `transfer_id` so finance can reconcile the
+    # whole movement as one document. Each line is applied with the same
+    # source-guarded $inc pattern as the single-line endpoint. If any line
+    # fails mid-flight, every already-applied line is compensated (best
+    # effort) so we never destroy or duplicate stock on a partial failure.
+    lines = payload.lines
+    if not lines:
+        raise HTTPException(status_code=422, detail="at least one line required")
+
+    # Per-line structural validation + per-source aggregate so a duplicated
+    # source row across lines is validated against the sum, not per-line.
+    needed_per_source: dict[str, float] = {}
+    for idx, line in enumerate(lines, start=1):
+        if line.source_item_id == line.destination_item_id:
+            raise HTTPException(
+                status_code=422,
+                detail=f"line {idx}: source_item_id and destination_item_id must differ",
+            )
+        q = float(line.quantity)
+        if q != q or q <= 0:  # NaN or non-positive
+            raise HTTPException(
+                status_code=422,
+                detail=f"line {idx}: quantity must be > 0",
+            )
+        needed_per_source[line.source_item_id] = (
+            needed_per_source.get(line.source_item_id, 0.0) + q
+        )
+
+    # Pre-fetch every involved row so we can short-circuit obvious failures
+    # (missing rows, insufficient stock) before mutating anything.
+    all_ids = set(needed_per_source.keys())
+    all_ids.update(line.destination_item_id for line in lines)
+    items: dict[str, dict] = {}
+    async for it in db.inventory_items.find(
+        {'id': {'$in': list(all_ids)}, 'tenant_id': current_user.tenant_id},
+        {'_id': 0, 'id': 1, 'quantity': 1, 'location': 1},
+    ):
+        items[it['id']] = it
+
+    for idx, line in enumerate(lines, start=1):
+        if line.source_item_id not in items:
+            raise HTTPException(
+                status_code=404,
+                detail=f"line {idx}: source inventory item not found",
+            )
+        if line.destination_item_id not in items:
+            raise HTTPException(
+                status_code=404,
+                detail=f"line {idx}: destination inventory item not found",
+            )
+    for src_id, needed in needed_per_source.items():
+        available = float(items[src_id].get('quantity') or 0)
+        if available < needed:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Insufficient stock for source {src_id}: "
+                    f"requested={needed}, available={available}"
+                ),
+            )
+
+    transfer_id = str(uuid.uuid4())
+    now_iso = datetime.now(UTC).isoformat()
+    applied: list[tuple[StockTransferLine, dict, dict]] = []
+
+    async def _rollback():
+        # Best-effort compensation: re-increment any source we decremented
+        # and re-decrement any destination we incremented. We swallow errors
+        # because the original failure has already been raised to the caller.
+        for ln, src_f, dst_f in reversed(applied):
+            try:
+                await db.inventory_items.update_one(src_f, {'$inc': {'quantity': ln.quantity}})
+            except Exception:
+                pass
+            try:
+                await db.inventory_items.update_one(dst_f, {'$inc': {'quantity': -ln.quantity}})
+            except Exception:
+                pass
+
+    for idx, line in enumerate(lines, start=1):
+        src_filter = {'id': line.source_item_id, 'tenant_id': current_user.tenant_id}
+        dst_filter = {'id': line.destination_item_id, 'tenant_id': current_user.tenant_id}
+
+        guard_src = dict(src_filter)
+        guard_src['quantity'] = {'$gte': line.quantity}
+        try:
+            dec = await db.inventory_items.update_one(
+                guard_src, {'$inc': {'quantity': -line.quantity}}
+            )
+        except Exception as exc:
+            await _rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"line {idx}: transfer failed: {exc}",
+            ) from exc
+        if dec.modified_count == 0:
+            # Either source vanished or concurrent activity drained it.
+            await _rollback()
+            raise HTTPException(
+                status_code=409,
+                detail=f"line {idx}: insufficient stock at source (race)",
+            )
+
+        try:
+            inc = await db.inventory_items.update_one(
+                dst_filter, {'$inc': {'quantity': line.quantity}}
+            )
+        except Exception as exc:
+            # Compensate this line's source decrement, then rollback prior lines.
+            try:
+                await db.inventory_items.update_one(
+                    src_filter, {'$inc': {'quantity': line.quantity}}
+                )
+            except Exception:
+                pass
+            await _rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"line {idx}: transfer failed: {exc}",
+            ) from exc
+        if inc.matched_count == 0:
+            try:
+                await db.inventory_items.update_one(
+                    src_filter, {'$inc': {'quantity': line.quantity}}
+                )
+            except Exception:
+                pass
+            await _rollback()
+            raise HTTPException(
+                status_code=409,
+                detail=f"line {idx}: destination inventory item disappeared during transfer",
+            )
+
+        applied.append((line, src_filter, dst_filter))
+
+    # All lines applied successfully — write paired audit legs sharing the
+    # single transfer_id so the reconciliation report groups them together.
+    legs_to_insert: list[dict] = []
+    leg_models: list[StockMovement] = []
+    for line in lines:
+        out_leg = StockMovement(
+            tenant_id=current_user.tenant_id,
+            item_id=line.source_item_id,
+            movement_type='transfer_out',
+            quantity=line.quantity,
+            unit_cost=line.unit_cost,
+            reference=payload.reference,
+            notes=payload.notes,
+            created_by=current_user.name,
+            transfer_id=transfer_id,
+            counterpart_item_id=line.destination_item_id,
+        )
+        in_leg = StockMovement(
+            tenant_id=current_user.tenant_id,
+            item_id=line.destination_item_id,
+            movement_type='transfer_in',
+            quantity=line.quantity,
+            unit_cost=line.unit_cost,
+            reference=payload.reference,
+            notes=payload.notes,
+            created_by=current_user.name,
+            transfer_id=transfer_id,
+            counterpart_item_id=line.source_item_id,
+        )
+        for leg in (out_leg, in_leg):
+            d = leg.model_dump()
+            d['created_at'] = now_iso
+            legs_to_insert.append(d)
+        leg_models.extend([out_leg, in_leg])
+
+    try:
+        await db.stock_movements.insert_many(legs_to_insert)
+    except Exception as exc:
+        # Stock already moved successfully; surface so caller can alert,
+        # but do NOT roll back inventory (better than destroying real stock).
+        raise HTTPException(
+            status_code=500,
+            detail=f'Bulk transfer completed but audit write failed: {exc}',
+        ) from exc
+
+    return {
+        'transfer_id': transfer_id,
+        'reference': payload.reference,
+        'line_count': len(lines),
+        'lines': [
+            {
+                'source_item_id': line.source_item_id,
+                'destination_item_id': line.destination_item_id,
+                'quantity': line.quantity,
+                'unit_cost': line.unit_cost,
+            }
+            for line in lines
+        ],
+        'legs': leg_models,
+    }
+
+
 @router.get("/accounting/inventory/transfers")
 async def get_transfer_history(
     start_date: str | None = None,
@@ -636,9 +853,13 @@ async def get_transfer_history(
     _perm=Depends(require_op("view_finance_reports")),
 ):
     # Task #62 — Transfer history report for finance reconciliation.
-    # Each warehouse transfer writes two stock_movements rows tagged with the
-    # same `transfer_id` (one transfer_out + one transfer_in). Pair them back
-    # into a single row per transfer so finance can audit movements end-to-end.
+    # Each warehouse transfer writes paired stock_movements rows tagged with
+    # the same `transfer_id` (transfer_out + transfer_in per line).
+    # Task #74 extended this so a single `transfer_id` can carry many lines
+    # (multi-item transfer document). Pair every leg by (source, destination)
+    # within the transfer so multi-line documents preserve every line; for
+    # the legacy single-line case the response still exposes the top-level
+    # `source_*`/`destination_*` fields for backwards compatibility.
     # Tenant-scoped at the query level; date filter is inclusive on ISO
     # `created_at` strings (lexicographic compare is safe because all rows
     # are written with `.isoformat()` in UTC).
@@ -659,11 +880,13 @@ async def get_transfer_history(
     elif end_date:
         query['created_at'] = {'$lte': end_date}
 
-    # Pull both legs (cap at 2x the requested transfer limit so pairing
-    # still yields up to `limit` complete transfers in the common case).
+    # Pull legs. A multi-line transfer writes 2*N rows per transfer_id, so
+    # cap generously (200x) to keep up to `limit` complete documents in the
+    # common case (documents typically <=10 lines).
+    fetch_cap = max(limit * 4, min(limit * 200, 20000))
     rows = await db.stock_movements.find(query, {'_id': 0}).sort(
         'created_at', -1
-    ).to_list(limit * 2)
+    ).to_list(fetch_cap)
 
     # Resolve item names for readability without an extra round-trip per row.
     item_ids = {r.get('item_id') for r in rows if r.get('item_id')}
@@ -685,43 +908,107 @@ async def get_transfer_history(
             loc = it.get('location')
             name_by_id[it['id']] = f"{label} ({loc})" if loc else label
 
-    grouped: dict[str, dict[str, Any]] = {}
+    # First pass: bucket legs by transfer_id, then within each bucket pair
+    # them by (source_item_id, destination_item_id). Quantities for the same
+    # pair are summed so a document that legitimately repeats the same line
+    # (allowed by the bulk endpoint) collapses to one reconciliation row.
+    legs_by_tid: dict[str, list[dict]] = {}
     for row in rows:
         tid = row.get('transfer_id')
         if not tid:
             continue
-        entry = grouped.setdefault(
-            tid,
-            {
-                'transfer_id': tid,
-                'quantity': float(row.get('quantity') or 0),
-                'unit_cost': float(row.get('unit_cost') or 0),
-                'reference': row.get('reference'),
-                'notes': row.get('notes'),
-                'created_at': row.get('created_at'),
-                'created_by': row.get('created_by'),
-                'source_item_id': None,
-                'source_item_name': None,
-                'destination_item_id': None,
-                'destination_item_name': None,
-            },
+        legs_by_tid.setdefault(tid, []).append(row)
+
+    grouped: dict[str, dict[str, Any]] = {}
+    for tid, legs in legs_by_tid.items():
+        # Earliest leg drives the document header so all legs of one
+        # document share a single created_at/reference/etc.
+        header_leg = min(legs, key=lambda r: r.get('created_at') or '')
+        header = {
+            'transfer_id': tid,
+            'reference': header_leg.get('reference'),
+            'notes': header_leg.get('notes'),
+            'created_at': header_leg.get('created_at'),
+            'created_by': header_leg.get('created_by'),
+        }
+
+        # Pair legs into reconciliation lines.
+        pair_acc: dict[tuple[str | None, str | None], dict[str, Any]] = {}
+        for leg in legs:
+            mt = leg.get('movement_type')
+            if mt == 'transfer_out':
+                src = leg.get('item_id')
+                dst = leg.get('counterpart_item_id')
+            elif mt == 'transfer_in':
+                dst = leg.get('item_id')
+                src = leg.get('counterpart_item_id')
+            else:
+                continue
+            key = (src, dst)
+            entry = pair_acc.setdefault(
+                key,
+                {
+                    'source_item_id': src,
+                    'source_item_name': name_by_id.get(src),
+                    'destination_item_id': dst,
+                    'destination_item_name': name_by_id.get(dst),
+                    '_out_qty': 0.0,
+                    '_in_qty': 0.0,
+                    'unit_cost': float(leg.get('unit_cost') or 0),
+                },
+            )
+            q = float(leg.get('quantity') or 0)
+            if mt == 'transfer_out':
+                entry['_out_qty'] += q
+            else:
+                entry['_in_qty'] += q
+
+        lines_out: list[dict[str, Any]] = []
+        total_qty = 0.0
+        total_value = 0.0
+        for entry in pair_acc.values():
+            # The canonical quantity for a line is the out-leg sum (both
+            # legs should agree; out leg is what was decremented from the
+            # source warehouse).
+            qty = entry['_out_qty'] or entry['_in_qty']
+            unit_cost = entry['unit_cost']
+            line = {
+                'source_item_id': entry['source_item_id'],
+                'source_item_name': entry['source_item_name'],
+                'destination_item_id': entry['destination_item_id'],
+                'destination_item_name': entry['destination_item_name'],
+                'quantity': qty,
+                'unit_cost': unit_cost,
+            }
+            lines_out.append(line)
+            total_qty += qty
+            total_value += qty * unit_cost
+
+        # Stable line ordering by source/destination for deterministic output.
+        lines_out.sort(
+            key=lambda ln: (
+                ln.get('source_item_name') or '',
+                ln.get('destination_item_name') or '',
+            )
         )
-        if row.get('movement_type') == 'transfer_out':
-            entry['source_item_id'] = row.get('item_id')
-            entry['source_item_name'] = name_by_id.get(row.get('item_id'))
-            if entry['destination_item_id'] is None:
-                entry['destination_item_id'] = row.get('counterpart_item_id')
-                entry['destination_item_name'] = name_by_id.get(
-                    row.get('counterpart_item_id')
-                )
-        elif row.get('movement_type') == 'transfer_in':
-            entry['destination_item_id'] = row.get('item_id')
-            entry['destination_item_name'] = name_by_id.get(row.get('item_id'))
-            if entry['source_item_id'] is None:
-                entry['source_item_id'] = row.get('counterpart_item_id')
-                entry['source_item_name'] = name_by_id.get(
-                    row.get('counterpart_item_id')
-                )
+
+        # Backwards-compatible single-line summary fields when the document
+        # has exactly one line, so existing consumers keep working.
+        first = lines_out[0] if lines_out else None
+        single = len(lines_out) == 1
+        header.update({
+            'line_count': len(lines_out),
+            'total_quantity': total_qty,
+            'total_value': total_value,
+            'lines': lines_out,
+            'source_item_id': first['source_item_id'] if single else None,
+            'source_item_name': first['source_item_name'] if single else None,
+            'destination_item_id': first['destination_item_id'] if single else None,
+            'destination_item_name': first['destination_item_name'] if single else None,
+            'quantity': first['quantity'] if single else total_qty,
+            'unit_cost': first['unit_cost'] if single else 0.0,
+        })
+        grouped[tid] = header
 
     transfers = sorted(
         grouped.values(),

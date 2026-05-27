@@ -35,6 +35,7 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
   const [saving, setSaving] = useState(false);
   const [movement, setMovement] = useState(null); // { item, type, quantity, reference, notes }
   const [transfer, setTransfer] = useState(null); // { source_item_id, destination_item_id, quantity, reference, notes }
+  const [bulkTransfer, setBulkTransfer] = useState(null); // { source_location, destination_location, reference, notes, lines:[{source_item_id, quantity}] }
   const [kits, setKits] = useState([]);
   const [kitForm, setKitForm] = useState(null); // { name, description, lines: [{item_id, item_name, unit, quantity}] }
   const [applyKit, setApplyKit] = useState(null); // { kit, multiplier, notes }
@@ -114,6 +115,88 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
       } else {
         toast.error(det || 'Uygulanamadı');
       }
+    } finally { setSaving(false); }
+  };
+
+  const openBulkTransfer = () => {
+    setBulkTransfer({
+      source_location: '',
+      destination_location: '',
+      reference: '',
+      notes: '',
+      lines: [{ source_item_id: '', quantity: 1 }],
+    });
+  };
+
+  const resolveBulkDest = (sourceItem, destLoc) => {
+    if (!sourceItem || !destLoc) return null;
+    return inventory.find((x) =>
+      x.id !== sourceItem.id
+      && x.location === destLoc
+      && ((sourceItem.sku && x.sku && x.sku === sourceItem.sku) || x.name === sourceItem.name)
+    ) || null;
+  };
+
+  const saveBulkTransfer = async () => {
+    if (!bulkTransfer.source_location) { toast.error('Kaynak depo seçin'); return; }
+    if (!bulkTransfer.destination_location) { toast.error('Hedef depo seçin'); return; }
+    if (bulkTransfer.source_location === bulkTransfer.destination_location) {
+      toast.error('Kaynak ve hedef depo farklı olmalı'); return;
+    }
+    const rawLines = (bulkTransfer.lines || []).filter((l) => l.source_item_id);
+    if (!rawLines.length) { toast.error('En az bir kalem ekleyin'); return; }
+
+    const payloadLines = [];
+    for (let i = 0; i < rawLines.length; i += 1) {
+      const ln = rawLines[i];
+      const src = inventory.find((x) => x.id === ln.source_item_id);
+      if (!src) { toast.error(`Satır ${i + 1}: kaynak ürün bulunamadı`); return; }
+      const qty = Number(ln.quantity);
+      if (!qty || qty <= 0) { toast.error(`Satır ${i + 1}: geçerli miktar girin`); return; }
+      const dst = resolveBulkDest(src, bulkTransfer.destination_location);
+      if (!dst) {
+        toast.error(`Satır ${i + 1}: "${src.name}" için hedef depoda eşleşen kalem yok. Önce hedefte aynı SKU/isimle bir kalem oluşturun.`);
+        return;
+      }
+      payloadLines.push({
+        source_item_id: src.id,
+        destination_item_id: dst.id,
+        quantity: qty,
+        unit_cost: src.unit_cost || 0,
+      });
+    }
+    // Aggregate check per source_item_id
+    const sumBySrc = payloadLines.reduce((acc, l) => {
+      acc[l.source_item_id] = (acc[l.source_item_id] || 0) + l.quantity;
+      return acc;
+    }, {});
+    for (const [sid, total] of Object.entries(sumBySrc)) {
+      const src = inventory.find((x) => x.id === sid);
+      if (src && total > (src.quantity || 0)) {
+        toast.error(`"${src.name}" için kaynakta sadece ${src.quantity} ${src.unit} var (talep: ${total})`);
+        return;
+      }
+    }
+
+    setSaving(true);
+    try {
+      const r = await axios.post('/accounting/inventory/transfer-bulk', {
+        lines: payloadLines,
+        reference: bulkTransfer.reference || null,
+        notes: bulkTransfer.notes || null,
+      });
+      toast.success(`Transfer belgesi oluşturuldu: ${payloadLines.length} kalem · #${(r.data?.transfer_id || '').slice(0, 8)}`);
+      setBulkTransfer(null);
+      loadInventory();
+      loadAlerts();
+    } catch (e) {
+      const status = e.response?.status;
+      const detail = e.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : 'Transfer belgesi gönderilemedi';
+      if (status === 409) toast.error(msg);
+      else if (status === 422) toast.error(msg);
+      else if (status === 404) toast.error(msg);
+      else toast.error(msg);
     } finally { setSaving(false); }
   };
 
@@ -348,6 +431,10 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
             <Button variant="outline" onClick={() => openTransfer()} disabled={inventory.length < 2}>
               <ArrowRightLeft className="w-4 h-4 mr-2" />
               Stok Transferi
+            </Button>
+            <Button variant="outline" onClick={openBulkTransfer} disabled={inventory.length < 2}>
+              <FileText className="w-4 h-4 mr-2" />
+              Yeni Transfer Belgesi
             </Button>
             <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => setNewItem({ ...EMPTY_ITEM })}>
               <Plus className="w-4 h-4 mr-2" />
@@ -1034,6 +1121,167 @@ const HotelInventory = ({ user, tenant, onLogout }) => {
                   }
                   onClick={saveMovement} disabled={saving}>
                   {saving ? 'Kaydediliyor…' : 'Onayla'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Yeni Transfer Belgesi Modal (çok kalemli) ──── */}
+      {bulkTransfer && (() => {
+        const locations = Array.from(
+          new Set(inventory.map((x) => x.location).filter(Boolean))
+        ).sort();
+        const srcLoc = bulkTransfer.source_location;
+        const dstLoc = bulkTransfer.destination_location;
+        const sourceItems = srcLoc ? inventory.filter((x) => x.location === srcLoc) : [];
+        const setLines = (lines) => setBulkTransfer({ ...bulkTransfer, lines });
+        const addLine = () => setLines([...(bulkTransfer.lines || []), { source_item_id: '', quantity: 1 }]);
+        const removeLine = (idx) => setLines(bulkTransfer.lines.filter((_, i) => i !== idx));
+        const updateLine = (idx, patch) => setLines(
+          bulkTransfer.lines.map((l, i) => (i === idx ? { ...l, ...patch } : l))
+        );
+        // Aggregate per source row for live insufficient-stock hint
+        const sumBySrc = (bulkTransfer.lines || []).reduce((acc, l) => {
+          if (!l.source_item_id) return acc;
+          const q = Number(l.quantity) || 0;
+          acc[l.source_item_id] = (acc[l.source_item_id] || 0) + q;
+          return acc;
+        }, {});
+        return (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+               onClick={() => !saving && setBulkTransfer(null)}>
+            <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto"
+                 onClick={(e) => e.stopPropagation()}>
+              <div className="border-b p-4 bg-sky-50 flex items-center justify-between sticky top-0">
+                <div className="flex items-center gap-3">
+                  <FileText className="w-6 h-6 text-sky-600" />
+                  <div>
+                    <h2 className="font-bold">Yeni Transfer Belgesi</h2>
+                    <p className="text-xs text-gray-600">Tek belgede birden çok kalemi tek seferde aktarın. Tüm satırlar aynı referans altında işlenir.</p>
+                  </div>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => setBulkTransfer(null)} disabled={saving}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <Label>Kaynak Depo *</Label>
+                    <select className="w-full border rounded-md p-2 text-sm"
+                      value={srcLoc}
+                      onChange={(e) => setBulkTransfer({ ...bulkTransfer, source_location: e.target.value, lines: [{ source_item_id: '', quantity: 1 }] })}>
+                      <option value="">— Kaynak depo seç —</option>
+                      {locations.map((loc) => (<option key={loc} value={loc}>{loc}</option>))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Hedef Depo *</Label>
+                    <select className="w-full border rounded-md p-2 text-sm"
+                      value={dstLoc}
+                      onChange={(e) => setBulkTransfer({ ...bulkTransfer, destination_location: e.target.value })}>
+                      <option value="">— Hedef depo seç —</option>
+                      {locations.filter((l) => l !== srcLoc).map((loc) => (<option key={loc} value={loc}>{loc}</option>))}
+                    </select>
+                    {srcLoc && dstLoc && srcLoc === dstLoc && (
+                      <p className="text-xs text-red-600 mt-1">Kaynak ve hedef depo aynı olamaz.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="border rounded-lg">
+                  <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-gray-50 text-xs font-semibold text-gray-600 border-b">
+                    <div className="col-span-7">Kalem (kaynak depodaki)</div>
+                    <div className="col-span-3">Miktar</div>
+                    <div className="col-span-2 text-right">İşlem</div>
+                  </div>
+                  <div className="divide-y">
+                    {(bulkTransfer.lines || []).map((line, idx) => {
+                      const src = inventory.find((x) => x.id === line.source_item_id);
+                      const dst = resolveBulkDest(src, dstLoc);
+                      const totalForSrc = src ? (sumBySrc[src.id] || 0) : 0;
+                      const insufficient = src && totalForSrc > (src.quantity || 0);
+                      const missingDest = src && dstLoc && !dst;
+                      return (
+                        <div key={idx} className="grid grid-cols-12 gap-2 px-3 py-2 items-start">
+                          <div className="col-span-7">
+                            <select className="w-full border rounded-md p-2 text-sm"
+                              value={line.source_item_id}
+                              disabled={!srcLoc}
+                              onChange={(e) => updateLine(idx, { source_item_id: e.target.value })}>
+                              <option value="">— Kalem seç —</option>
+                              {sourceItems.map((it) => (
+                                <option key={it.id} value={it.id}>
+                                  {it.name}{it.sku ? ` [${it.sku}]` : ''} — {it.quantity} {it.unit}
+                                </option>
+                              ))}
+                            </select>
+                            {src && dst && (
+                              <p className="text-xs text-emerald-600 mt-1">
+                                Hedef eşleşme: {dst.name}{dst.sku ? ` [${dst.sku}]` : ''} · {dst.quantity} {dst.unit}
+                              </p>
+                            )}
+                            {missingDest && (
+                              <p className="text-xs text-amber-600 mt-1">
+                                Hedef depoda "{src.name}" için eşleşen kalem yok. Aynı SKU/isimle bir kalem oluşturulmalı.
+                              </p>
+                            )}
+                          </div>
+                          <div className="col-span-3">
+                            <Input type="number" min="0.01" step="0.01" value={line.quantity}
+                              onChange={(e) => updateLine(idx, { quantity: e.target.value })} />
+                            {insufficient && (
+                              <p className="text-xs text-red-600 mt-1">
+                                Toplam {totalForSrc} {src.unit}, mevcut {src.quantity} {src.unit}.
+                              </p>
+                            )}
+                          </div>
+                          <div className="col-span-2 flex justify-end">
+                            <Button size="sm" variant="ghost"
+                              onClick={() => removeLine(idx)}
+                              disabled={saving || (bulkTransfer.lines || []).length <= 1}
+                              title="Satırı sil">
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="px-3 py-2 border-t">
+                    <Button size="sm" variant="outline" onClick={addLine}
+                      disabled={saving || !srcLoc || (bulkTransfer.lines || []).length >= 100}>
+                      <Plus className="w-3.5 h-3.5 mr-1" /> Satır Ekle
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <Label>Belge Referansı (opsiyonel)</Label>
+                    <Input value={bulkTransfer.reference} placeholder="Örn: WT-2026-05-27"
+                      onChange={(e) => setBulkTransfer({ ...bulkTransfer, reference: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label>Notlar (opsiyonel)</Label>
+                    <Input value={bulkTransfer.notes} placeholder="Örn: Restoran deposu için haftalık aktarım"
+                      onChange={(e) => setBulkTransfer({ ...bulkTransfer, notes: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="bg-sky-50 border border-sky-100 rounded-lg p-3 text-xs text-sky-900">
+                  Tüm satırlar tek bir <strong>transfer_id</strong> ile yazılır, finans bu hareketi tek belge olarak görür.
+                  Herhangi bir satır başarısız olursa daha önce uygulanan satırlar otomatik geri alınır.
+                </div>
+              </div>
+              <div className="border-t p-4 flex items-center justify-end gap-2 bg-gray-50 sticky bottom-0">
+                <Button variant="outline" onClick={() => setBulkTransfer(null)} disabled={saving}>Vazgeç</Button>
+                <Button className="bg-sky-600 hover:bg-sky-700"
+                  onClick={saveBulkTransfer}
+                  disabled={saving || !srcLoc || !dstLoc || srcLoc === dstLoc}>
+                  {saving ? 'Gönderiliyor…' : 'Belgeyi Gönder'}
                 </Button>
               </div>
             </div>
