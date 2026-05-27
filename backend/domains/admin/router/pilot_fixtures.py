@@ -1,23 +1,35 @@
 """
-Pilot Read-Only Fixtures — F8M v2 § 41B sample-gap closer
-==========================================================
-Idempotently ensures the pilot tenant carries one `room_blocks` doc
-and one `kbs_reports` doc so the B2B sub-router IDOR matrix spec
-(`frontend/e2e-stress/specs/41B-b2b-subrouter-matrix.spec.js`) can
-exercise real pilot ids for the `groups` and `kbs` rows instead of
-falling back to BOGUS_UUID (pure existence-deny).
+Pilot Read-Only Fixtures — F8M v2 § 41B + F9C § 98 sample-gap closer
+=====================================================================
+Idempotently ensures the pilot tenant carries one `room_blocks` doc,
+one `kbs_reports` doc, and one sales lead so cross-tenant IDOR specs
+exercise real pilot ids instead of falling back to BOGUS_UUID
+(pure existence-deny):
+
+- F8M v2 § 41B B2B IDOR matrix (groups, kbs rows)
+  → `frontend/e2e-stress/specs/41B-b2b-subrouter-matrix.spec.js`
+- F9C § 98 Sales lifecycle step J (cross-tenant PUT
+  /api/sales/leads/{id}/stage)
+  → `frontend/e2e-stress/specs/98-sales-basic-lifecycle.spec.js`
 
 Fail-closed gates:
 - super_admin role required (require_super_admin_guard)
 - request `pilot_tenant_id` must equal env `PILOT_TENANT_ID`
   (refuses to seed any other tenant)
 - inserts are read-only fixtures (tagged `pilot_fixture=True`,
-  `_kind=fixture`) — no booking flow, no external calls, no PII
+  `_kind=fixture` for blocks/kbs; sales lead keeps the real
+  `_kind="lead"` so it appears in `/api/sales/leads` listings —
+  but carries `pilot_fixture=True` + a non-`E2E_` company name so
+  `backend/scripts/cleanup_e2e_pilot_residue.py` ignores it)
+  no booking flow, no external calls, no PII
 
 Endpoint:
 - POST /api/admin/pilot-fixtures/ensure
     body: { pilot_tenant_id: str }
-    returns: { block_id, kbs_report_id, agency_id, created: {...} }
+    returns: {
+        block_id, kbs_report_id, sales_lead_id,
+        agency_id, created: {...}
+    }
 
 Idempotency: a stable tagged doc is searched first; only created when
 missing. Re-running the endpoint always returns the same ids.
@@ -40,6 +52,14 @@ router = APIRouter(prefix="/api", tags=["Admin / Operations"])
 require_super_admin = require_super_admin_guard()
 
 FIXTURE_AGENCY_ID = "pilot_fixture_agency"
+
+# Stable marker for the F9C § 98 sales-lead IDOR fixture. Picked to be
+# unmistakable and NOT to start with `E2E_` so the residue cleanup
+# script (`backend/scripts/cleanup_e2e_pilot_residue.py`) leaves it
+# alone across runs.
+SALES_LEAD_COMPANY = "IDOR_PROBE_SEED"
+SALES_LEAD_CONTACT = "pilot.fixture.sales"
+SALES_LEAD_EMAIL = "pilot.fixture.sales@fixture.local"
 
 
 class PilotFixturesRequest(BaseModel):
@@ -116,6 +136,57 @@ async def _ensure_kbs_report(pilot_tid: str) -> tuple[str, bool]:
     return report_id, True
 
 
+async def _ensure_sales_lead(pilot_tid: str) -> tuple[str, bool]:
+    """Ensure one durable pilot sales lead so the F9C § 98 step J
+    cross-tenant IDOR probe always hits a real id instead of falling
+    back to a bogus UUID.
+
+    The lead lives in `mice_opportunities` with `_kind="lead"` (matches
+    `backend/domains/sales/router.py:LEAD_KIND`) so it shows up in
+    `GET /api/sales/leads`. `pilot_fixture=True` + the stable
+    `IDOR_PROBE_SEED` company name mark it as a long-lived fixture and
+    keep it out of the residue-cleanup script's `E2E_` regex.
+    """
+    existing = await db.mice_opportunities.find_one(
+        {
+            "_kind": "lead",
+            "tenant_id": pilot_tid,
+            "pilot_fixture": True,
+        },
+        {"id": 1, "_id": 0},
+    )
+    if existing and existing.get("id"):
+        return existing["id"], False
+    lead_id = str(uuid.uuid4())
+    now = _now_iso()
+    await db.mice_opportunities.insert_one({
+        "_kind": "lead",
+        "id": lead_id,
+        "tenant_id": pilot_tid,
+        "company_name": SALES_LEAD_COMPANY,
+        "contact_name": SALES_LEAD_CONTACT,
+        "contact_email": SALES_LEAD_EMAIL,
+        "contact_phone": "",
+        "source": "pilot_fixture",
+        "status": "new",
+        "priority": "low",
+        "estimated_value": 0,
+        "estimated_rooms": 0,
+        "target_checkin": None,
+        "assigned_to": None,
+        "lead_score": 0,
+        "notes": (
+            "Read-only fixture for F9C § 98 sales-lifecycle step J "
+            "(cross-tenant IDOR probe). Do not mutate or delete — "
+            "the stress suite expects this id to remain reachable."
+        ),
+        "pilot_fixture": True,
+        "created_at": now,
+        "updated_at": now,
+    })
+    return lead_id, True
+
+
 @router.post("/admin/pilot-fixtures/ensure")
 async def ensure_pilot_fixtures(
     req: PilotFixturesRequest,
@@ -135,11 +206,14 @@ async def ensure_pilot_fixtures(
 
     block_id, block_created = await _ensure_room_block(pilot_tid)
     kbs_report_id, kbs_created = await _ensure_kbs_report(pilot_tid)
+    sales_lead_id, lead_created = await _ensure_sales_lead(pilot_tid)
 
     logger.info(
         "pilot_fixtures.ensure tenant=%s block_id=%s (created=%s) "
-        "kbs_report_id=%s (created=%s)",
-        pilot_tid, block_id, block_created, kbs_report_id, kbs_created,
+        "kbs_report_id=%s (created=%s) sales_lead_id=%s (created=%s)",
+        pilot_tid, block_id, block_created,
+        kbs_report_id, kbs_created,
+        sales_lead_id, lead_created,
     )
 
     return {
@@ -148,8 +222,10 @@ async def ensure_pilot_fixtures(
         "agency_id": FIXTURE_AGENCY_ID,
         "block_id": block_id,
         "kbs_report_id": kbs_report_id,
+        "sales_lead_id": sales_lead_id,
         "created": {
             "block": block_created,
             "kbs_report": kbs_created,
+            "sales_lead": lead_created,
         },
     }

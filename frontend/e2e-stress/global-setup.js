@@ -198,12 +198,14 @@ export default async function globalSetup() {
     // 7) Stress snapshot after seed
     const stressAfterSeed = await snapshot(api, stressToken, 'stress-after-seed');
 
-    // 7b) Pilot read-only fixtures — Task #13: F8M v2 § 41B B2B IDOR matrix
-    // sample-gap closer. Idempotently ensures the pilot tenant carries one
-    // `room_blocks` doc and one `kbs_reports` doc so the IDOR rows for
-    // `groups` and `kbs` exercise real pilot ids (not BOGUS_UUID). Fail-soft:
-    // endpoint not deployed yet → matrix spec falls back to existing
-    // sampling probes + sample-gap REVIEW (current behaviour preserved).
+    // 7b) Pilot read-only fixtures — Task #13 (F8M v2 § 41B B2B IDOR matrix)
+    // + Task #67 (F9C § 98 sales-lifecycle step J). Idempotently ensures the
+    // pilot tenant carries one `room_blocks` doc, one `kbs_reports` doc and
+    // one sales lead (company_name `IDOR_PROBE_SEED`, `pilot_fixture=true`)
+    // so the cross-tenant IDOR rows for `groups`, `kbs`, and `sales/leads`
+    // exercise real pilot ids (not BOGUS_UUID). Fail-soft: endpoint not
+    // deployed yet → specs fall back to existing sampling probes +
+    // sample-gap REVIEW (current behaviour preserved).
     let pilotFixtures = null;
     if (PILOT_TID) {
         const pf = await api.post('/api/admin/pilot-fixtures/ensure', {
@@ -214,7 +216,7 @@ export default async function globalSetup() {
         });
         if (pf.ok()) {
             pilotFixtures = await pf.json().catch(() => null);
-            console.log(`[stress-setup] ✅ Pilot fixtures ensured: block=${pilotFixtures?.block_id?.slice(0,8)} kbs_report=${pilotFixtures?.kbs_report_id?.slice(0,8)} created=${JSON.stringify(pilotFixtures?.created)}`);
+            console.log(`[stress-setup] ✅ Pilot fixtures ensured: block=${pilotFixtures?.block_id?.slice(0,8)} kbs_report=${pilotFixtures?.kbs_report_id?.slice(0,8)} sales_lead=${pilotFixtures?.sales_lead_id?.slice(0,8)} created=${JSON.stringify(pilotFixtures?.created)}`);
         } else {
             const txt = await pf.text().catch(() => '');
             console.log(`[stress-setup] ⚠️ Pilot fixtures ensure non-2xx (${pf.status()}) — matrix spec will fall back to sampling. body=${txt.slice(0, 200)}`);
