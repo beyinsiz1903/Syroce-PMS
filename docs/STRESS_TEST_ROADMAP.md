@@ -87,6 +87,22 @@ ile uyumlu, strict-mode + alerting backlog).
 
 **Coverage gap raporu:** [`docs/STRESS_COVERAGE_GAP_REPORT_20260526.md`](./STRESS_COVERAGE_GAP_REPORT_20260526.md)
 
+**Delta — 2026-05-27 (Task #85):** Suite **+1 spec** — `98D-peer-login-throttle.spec.js`.
+Live probe for the Task-55 per-IP + per-account `always_on` SlidingWindow
+throttles wired into `POST /api/agency-portal/auth/login` and
+`POST /api/supplies-market/vendor/login`. Pairs with F8AH `98C-twofa-totp-lifecycle`
+as the second `always_on` brute-force coverage spec. Asserts: agency surface
+combined drain + per-account boundary (10 wrong → successful login drains via
+router `AGENCY_LOGIN_*.reset()` → 11 wrong post-drain, 11th = 429 with
+`Retry-After`), vendor surface per-IP boundary (21 distinct emails, 21st = 429
+with `Retry-After`). Module-blocked semantics: `E2E_STRESS_ADMIN_*` missing
+or stress admin non-super_admin (403) → SKIP + P2; endpoint 404/0 → SKIP +
+P2; 5xx on bogus credentials → P1 (DoS sentinel). Invariants:
+`external_calls=[]`, `pilot_drift=0`. Backend coverage unchanged —
+`backend/tests/test_peer_login_throttle.py` continues to exercise the
+throttle module directly. Syntax OK (`node --check`); live verification
+deferred to next full-suite CI dispatch.
+
 **Delta — 2026-05-27 (Task #53):** Suite **84 → 85 spec**. F9C `98-fnb-beo-generator.spec.js`
 (Task #44'te yazılmış, syntax-only kabul edilmişti) live backend'e karşı bir kez
 koşturuldu — verdict **GO WITH WATCH** (failedTests=0, P0=P1=0, P2=1 informational,
