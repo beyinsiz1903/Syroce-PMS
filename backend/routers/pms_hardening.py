@@ -4,13 +4,19 @@ Covers: Reservation lifecycle, Front desk, Folio/Billing, Housekeeping, Night Au
 """
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from cache_manager import cached  # Tur 3: tenant-aware cache for slow trends
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
+from shared_kernel.idempotency import (
+    claim_idempotency,
+    complete_idempotency,
+    get_idempotency_key,
+    release_idempotency,
+)
 from modules.pms_core.auto_housekeeping_service import AutoHousekeepingService
 from modules.pms_core.dashboard_trends_service import DashboardTrendsService
 from modules.pms_core.folio_detail_service import FolioDetailService
@@ -361,41 +367,149 @@ async def api_post_payment(req: PaymentPostRequest, current_user: User = Depends
     return result
 
 @router.post("/folio/refund", tags=["folio"])
-async def api_post_refund(req: RefundRequest, current_user: User = Depends(get_current_user)):
+async def api_post_refund(req: RefundRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Post a refund."""
     perm_svc.enforce_permission(current_user.role, "void_charge")
-    result = await folio_svc.post_refund(current_user.tenant_id, req.folio_id, req.booking_id, req.amount, req.reason, req.method, current_user.id)
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result)
-    from domains.pms.night_audit.router import invalidate_finance_cache
-    invalidate_finance_cache(current_user.tenant_id)
-    return result
+
+    # Idempotency-Key replay protection — task #80 (mirrors charge/payment).
+    idem_key = get_idempotency_key(request)
+    idem_lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope=f"folio_refund:{req.folio_id}",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
+            )
+        idem_lock_id = claim["lock_id"]
+
+    try:
+        result = await folio_svc.post_refund(current_user.tenant_id, req.folio_id, req.booking_id, req.amount, req.reason, req.method, current_user.id)
+        if not result["success"]:
+            if idem_lock_id:
+                await release_idempotency(db, lock_id=idem_lock_id)
+                idem_lock_id = None
+            raise HTTPException(status_code=400, detail=result)
+        # Cache the replay body right after the durable insert / before
+        # best-effort side-effects, so a retry replays the cached row.
+        if idem_lock_id:
+            await complete_idempotency(db, lock_id=idem_lock_id, response_body=result)
+            idem_lock_id = None
+        from domains.pms.night_audit.router import invalidate_finance_cache
+        invalidate_finance_cache(current_user.tenant_id)
+        return result
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as exc:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
+        raise
 
 @router.post("/folio/void-charge", tags=["folio"])
-async def api_void_charge(req: VoidRequest, current_user: User = Depends(get_current_user)):
+async def api_void_charge(req: VoidRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Void a charge."""
     perm_svc.enforce_permission(current_user.role, "void_charge")
     if not req.charge_id:
         raise HTTPException(status_code=400, detail="charge_id required")
-    result = await folio_svc.void_charge(current_user.tenant_id, req.charge_id, req.reason, current_user.id)
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result)
-    from domains.pms.night_audit.router import invalidate_finance_cache
-    invalidate_finance_cache(current_user.tenant_id)
-    return result
+
+    # Idempotency-Key replay protection — task #80. Scoped per charge_id so
+    # a double-tap on the same Void button cannot flip the row twice.
+    idem_key = get_idempotency_key(request)
+    idem_lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope=f"folio_void_charge:{req.charge_id}",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
+            )
+        idem_lock_id = claim["lock_id"]
+
+    try:
+        result = await folio_svc.void_charge(current_user.tenant_id, req.charge_id, req.reason, current_user.id)
+        if not result["success"]:
+            if idem_lock_id:
+                await release_idempotency(db, lock_id=idem_lock_id)
+                idem_lock_id = None
+            raise HTTPException(status_code=400, detail=result)
+        if idem_lock_id:
+            await complete_idempotency(db, lock_id=idem_lock_id, response_body=result)
+            idem_lock_id = None
+        from domains.pms.night_audit.router import invalidate_finance_cache
+        invalidate_finance_cache(current_user.tenant_id)
+        return result
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as exc:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
+        raise
 
 @router.post("/folio/void-payment", tags=["folio"])
-async def api_void_payment(req: VoidRequest, current_user: User = Depends(get_current_user)):
+async def api_void_payment(req: VoidRequest, request: Request, current_user: User = Depends(get_current_user)):
     """Void a payment."""
     perm_svc.enforce_permission(current_user.role, "void_payment")
     if not req.payment_id:
         raise HTTPException(status_code=400, detail="payment_id required")
-    result = await folio_svc.void_payment(current_user.tenant_id, req.payment_id, req.reason, current_user.id)
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result)
-    from domains.pms.night_audit.router import invalidate_finance_cache
-    invalidate_finance_cache(current_user.tenant_id)
-    return result
+
+    # Idempotency-Key replay protection — task #80.
+    idem_key = get_idempotency_key(request)
+    idem_lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope=f"folio_void_payment:{req.payment_id}",
+            idempotency_key=idem_key,
+        )
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                status_code=409,
+                detail="Ayni Idempotency-Key ile baska bir istek isleniyor",
+            )
+        idem_lock_id = claim["lock_id"]
+
+    try:
+        result = await folio_svc.void_payment(current_user.tenant_id, req.payment_id, req.reason, current_user.id)
+        if not result["success"]:
+            if idem_lock_id:
+                await release_idempotency(db, lock_id=idem_lock_id)
+                idem_lock_id = None
+            raise HTTPException(status_code=400, detail=result)
+        if idem_lock_id:
+            await complete_idempotency(db, lock_id=idem_lock_id, response_body=result)
+            idem_lock_id = None
+        from domains.pms.night_audit.router import invalidate_finance_cache
+        invalidate_finance_cache(current_user.tenant_id)
+        return result
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as exc:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
+        raise
 
 @router.post("/folio/split", tags=["folio"])
 async def api_split_folio(req: SplitFolioRequest, current_user: User = Depends(get_current_user)):
