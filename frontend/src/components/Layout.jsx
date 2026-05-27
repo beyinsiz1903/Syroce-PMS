@@ -360,19 +360,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
               className="flex items-center gap-2 shrink-0 cursor-pointer mr-3"
               onClick={() => navigate('/')}
             >
-              <picture>
-                <source
-                  type="image/webp"
-                  srcSet="/syroce-circle-64.webp 1x, /syroce-circle-128.webp 2x"
-                />
-                <img
-                  src="/syroce-circle.png"
-                  alt="Syroce"
-                  width="36"
-                  height="36"
-                  className="h-9 w-9 rounded-full object-contain"
-                />
-              </picture>
+              <img src="/syroce-logo.svg" alt="Syroce" className="h-7 w-auto" />
               <div className="hidden lg:flex flex-col leading-none">
                 <span className="text-[9px] uppercase tracking-widest text-gray-400">Syroce PMS</span>
                 <span className="text-xs font-semibold text-gray-700 truncate max-w-[120px]" title={tenant?.property_name || ''}>
