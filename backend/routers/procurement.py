@@ -405,6 +405,23 @@ class POIn(BaseModel):
     override_credit_limit: bool = False
 
 
+async def _supplier_open_po_total(tenant_id: str, supplier_id: str) -> float:
+    """Sum grand_total of open POs (draft / sent / partially_received)."""
+    db = get_system_db()
+    pipeline = [
+        {"$match": {
+            "tenant_id": tenant_id,
+            "supplier_id": supplier_id,
+            "status": {"$in": ["draft", "sent", "partially_received"]},
+        }},
+        {"$group": {"_id": None, "total": {"$sum": "$grand_total"}}},
+    ]
+    open_total = 0.0
+    async for row in db.proc_purchase_orders.aggregate(pipeline):
+        open_total = float(row.get("total", 0) or 0)
+    return round(open_total, 2)
+
+
 def _po_compute(lines: list[dict], tax_rate: float) -> dict:
     subtotal = round(
         sum(line["quantity"] * line["unit_cost"] for line in lines), 2)
@@ -464,19 +481,8 @@ async def create_purchase_order(
                 "Kredi limiti aşımı override için 'manage_credit_limit' "
                 "yetkisi gerekli")
         if not override_allowed:
-            pipeline = [
-                {"$match": {
-                    "tenant_id": current_user.tenant_id,
-                    "supplier_id": body.supplier_id,
-                    "status": {"$in": [
-                        "draft", "sent", "partially_received"]},
-                }},
-                {"$group": {"_id": None,
-                            "total": {"$sum": "$grand_total"}}},
-            ]
-            open_total = 0.0
-            async for row in db.proc_purchase_orders.aggregate(pipeline):
-                open_total = float(row.get("total", 0) or 0)
+            open_total = await _supplier_open_po_total(
+                current_user.tenant_id, body.supplier_id)
             projected = round(open_total + totals["grand_total"], 2)
             if projected > float(credit_limit) + 1e-6:
                 raise HTTPException(
@@ -551,6 +557,66 @@ async def get_po(po_id: str,
         {"_id": 0}).sort("received_at", -1).to_list(100)
     doc["grns"] = grns
     return doc
+
+
+@router.get("/suppliers/{supplier_id}/credit-utilisation")
+async def supplier_credit_utilisation(
+    supplier_id: str,
+    projected_amount: float = 0.0,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_finance_reports")),
+):
+    """Return supplier credit headroom so the PO form can warn buyers
+    before the create endpoint hard-rejects (HTTP 409) at >100%.
+
+    Response fields:
+      limit             — supplier.credit_limit (None if unset)
+      open_total        — sum of open PO grand_totals
+                          (draft / sent / partially_received)
+      projected_amount  — echoed back (0 if not provided)
+      projected_total   — open_total + projected_amount
+      headroom          — limit - projected_total (None if no limit)
+      used_pct          — projected_total / limit * 100 (None if no limit)
+      warning           — True when used_pct >= 80
+      exceeded          — True when projected_total > limit
+    """
+    db = get_system_db()
+    sup = await db.proc_suppliers.find_one(
+        {"id": supplier_id, "tenant_id": current_user.tenant_id},
+        {"_id": 0, "credit_limit": 1, "name": 1})
+    if not sup:
+        raise HTTPException(404, "Tedarikçi bulunamadı")
+    limit = sup.get("credit_limit")
+    open_total = await _supplier_open_po_total(
+        current_user.tenant_id, supplier_id)
+    projected_amount = max(0.0, float(projected_amount or 0))
+    projected_total = round(open_total + projected_amount, 2)
+    used_pct: float | None = None
+    headroom: float | None = None
+    warning = False
+    exceeded = False
+    if limit is not None and float(limit) > 0:
+        used_pct = round(projected_total / float(limit) * 100.0, 2)
+        headroom = round(float(limit) - projected_total, 2)
+        warning = used_pct >= 80.0
+        exceeded = projected_total > float(limit) + 1e-6
+    elif limit is not None and float(limit) == 0:
+        headroom = 0.0
+        used_pct = 0.0
+        exceeded = projected_total > 0
+        warning = exceeded
+    return {
+        "supplier_id": supplier_id,
+        "supplier_name": sup.get("name"),
+        "limit": float(limit) if limit is not None else None,
+        "open_total": open_total,
+        "projected_amount": round(projected_amount, 2),
+        "projected_total": projected_total,
+        "headroom": headroom,
+        "used_pct": used_pct,
+        "warning": warning,
+        "exceeded": exceeded,
+    }
 
 
 class POStatusIn(BaseModel):

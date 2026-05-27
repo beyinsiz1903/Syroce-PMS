@@ -3398,7 +3398,12 @@
       "vat": "VAT ({{rate}}%):",
       "grandTotal": "Grand Total:",
       "cancel": "Cancel",
-      "create": "Create Order"
+      "create": "Create Order",
+      "supplierOptionCredit": "{{name}} (limit: {{limit}})",
+      "creditHeadroom": "Headroom: {{headroom}} / {{limit}}",
+      "creditWarnTitle": "Heads up — {{pct}}% of supplier credit limit",
+      "creditExceededTitle": "This order exceeds the supplier credit limit",
+      "creditWarnDetail": "Open: {{open}} + this order: {{projected}} = {{total}} / limit {{limit}}"
     },
     "poDetail": {
       "title": "PO {{no}} — {{supplier}}",

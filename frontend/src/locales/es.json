@@ -3343,7 +3343,12 @@
       "vat": "IVA ({{rate}}%):",
       "grandTotal": "Total general:",
       "cancel": "Cancelar",
-      "create": "Crear orden"
+      "create": "Crear orden",
+      "supplierOptionCredit": "{{name}} (limit: {{limit}})",
+      "creditHeadroom": "Headroom: {{headroom}} / {{limit}}",
+      "creditWarnTitle": "Heads up — {{pct}}% of supplier credit limit",
+      "creditExceededTitle": "This order exceeds the supplier credit limit",
+      "creditWarnDetail": "Open: {{open}} + this order: {{projected}} = {{total}} / limit {{limit}}"
     },
     "poDetail": {
       "title": "PO {{no}} — {{supplier}}",

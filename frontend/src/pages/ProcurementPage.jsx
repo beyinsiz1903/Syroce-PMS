@@ -72,6 +72,8 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
   const [poForm, setPoForm] = useState(null);
   const [grnForm, setGrnForm] = useState(null);
   const [selectedPo, setSelectedPo] = useState(null);
+  const [creditUtil, setCreditUtil] = useState(null);
+  const creditReqRef = useRef(0);
 
   const prLabel = (code) => t(`procurement.prStatuses.${code || 'draft'}`);
   const poLabel = (code) => t(`procurement.poStatuses.${code || 'draft'}`);
@@ -330,6 +332,34 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
       })),
     });
   };
+
+  // ── PO credit-utilisation lookup ───────────────────────
+  // Projected grand_total for the current PO modal (subtotal * (1 + tax%)).
+  const poProjectedTotal = useMemo(() => {
+    if (!poForm) return 0;
+    const subtotal = (poForm.lines || []).reduce(
+      (s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0);
+    const taxRate = Number(poForm.tax_rate) || 0;
+    return Math.round(subtotal * (1 + taxRate / 100) * 100) / 100;
+  }, [poForm]);
+
+  useEffect(() => {
+    if (!poForm || !poForm.supplier_id) { setCreditUtil(null); return; }
+    const reqId = ++creditReqRef.current;
+    const supplierId = poForm.supplier_id;
+    const projected = poProjectedTotal;
+    const handle = setTimeout(async () => {
+      try {
+        const r = await axios.get(
+          `/procurement/suppliers/${supplierId}/credit-utilisation`,
+          { params: { projected_amount: projected } });
+        if (creditReqRef.current === reqId) setCreditUtil(r.data);
+      } catch {
+        if (creditReqRef.current === reqId) setCreditUtil(null);
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [poForm?.supplier_id, poProjectedTotal, poForm]);
 
   // ── PO ops ─────────────────────────────────────────────
   const savePO = async () => {
@@ -821,9 +851,23 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
                 value={poForm.supplier_id}
                 onChange={(e) => setPoForm({ ...poForm, supplier_id: e.target.value })}>
                 <option value="">{t('procurement.poModal.supplierSelect')}</option>
-                {suppliers.filter((s) => s.active).map((s) =>
-                  <option key={s.id} value={s.id}>{s.name}</option>)}
+                {suppliers.filter((s) => s.active).map((s) => {
+                  const cl = s.credit_limit;
+                  const label = (cl !== null && cl !== undefined)
+                    ? t('procurement.poModal.supplierOptionCredit', {
+                        name: s.name, limit: tl(cl) })
+                    : s.name;
+                  return <option key={s.id} value={s.id}>{label}</option>;
+                })}
               </select>
+              {creditUtil && creditUtil.limit !== null && (
+                <div className="text-xs text-slate-500 mt-1">
+                  {t('procurement.poModal.creditHeadroom', {
+                    headroom: tl(creditUtil.headroom),
+                    limit: tl(creditUtil.limit),
+                  })}
+                </div>
+              )}
             </div>
             <div><Label>{t('procurement.poModal.expectedDelivery')}</Label>
               <Input type="date" value={poForm.expected_delivery || ''}
@@ -832,6 +876,28 @@ const ProcurementPage = ({ user, tenant, onLogout }) => {
               <Input type="number" value={poForm.tax_rate}
                 onChange={(e) => setPoForm({ ...poForm, tax_rate: Number(e.target.value) })} /></div>
           </div>
+          {creditUtil && creditUtil.warning && creditUtil.limit !== null && (
+            <div className={`mt-3 rounded border px-3 py-2 text-sm ${
+              creditUtil.exceeded
+                ? 'border-rose-300 bg-rose-50 text-rose-800'
+                : 'border-amber-300 bg-amber-50 text-amber-800'
+            }`}>
+              <div className="font-semibold">
+                {creditUtil.exceeded
+                  ? t('procurement.poModal.creditExceededTitle')
+                  : t('procurement.poModal.creditWarnTitle', {
+                      pct: creditUtil.used_pct })}
+              </div>
+              <div className="text-xs mt-0.5">
+                {t('procurement.poModal.creditWarnDetail', {
+                  open: tl(creditUtil.open_total),
+                  projected: tl(creditUtil.projected_amount),
+                  total: tl(creditUtil.projected_total),
+                  limit: tl(creditUtil.limit),
+                })}
+              </div>
+            </div>
+          )}
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold text-sm">{t('procurement.poModal.items')}</h3>

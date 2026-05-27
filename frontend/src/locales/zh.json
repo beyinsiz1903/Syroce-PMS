@@ -3343,7 +3343,12 @@
       "vat": "税额（{{rate}}%）：",
       "grandTotal": "总计：",
       "cancel": "取消",
-      "create": "创建订单"
+      "create": "创建订单",
+      "supplierOptionCredit": "{{name}} (limit: {{limit}})",
+      "creditHeadroom": "Headroom: {{headroom}} / {{limit}}",
+      "creditWarnTitle": "Heads up — {{pct}}% of supplier credit limit",
+      "creditExceededTitle": "This order exceeds the supplier credit limit",
+      "creditWarnDetail": "Open: {{open}} + this order: {{projected}} = {{total}} / limit {{limit}}"
     },
     "poDetail": {
       "title": "PO {{no}} — {{supplier}}",

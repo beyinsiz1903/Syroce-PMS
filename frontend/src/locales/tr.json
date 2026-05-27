@@ -3398,7 +3398,12 @@
       "vat": "KDV ({{rate}}%):",
       "grandTotal": "Genel Toplam:",
       "cancel": "Vazgeç",
-      "create": "Sipariş Oluştur"
+      "create": "Sipariş Oluştur",
+      "supplierOptionCredit": "{{name}} (limit: {{limit}})",
+      "creditHeadroom": "Kalan kredi: {{headroom}} / {{limit}}",
+      "creditWarnTitle": "Dikkat — tedarikçi kredi limitinin %{{pct}}'i",
+      "creditExceededTitle": "Bu sipariş tedarikçi kredi limitini aşıyor",
+      "creditWarnDetail": "Açık: {{open}} + bu sipariş: {{projected}} = {{total}} / limit {{limit}}"
     },
     "poDetail": {
       "title": "PO {{no}} — {{supplier}}",
