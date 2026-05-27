@@ -1,7 +1,30 @@
+import axios from 'axios';
+import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Download } from 'lucide-react';
 import { Info, Modal } from '../_shared';
+
+const downloadBeoPdf = async (eventId, eventName) => {
+  try {
+    const res = await axios.get(`/mice/events/${eventId}/beo.pdf`, {
+      responseType: 'blob',
+    });
+    const blob = new Blob([res.data], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safe = (eventName || 'beo').replace(/[^a-zA-Z0-9_-]+/g, '_');
+    a.download = `${safe}_${eventId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    toast.error(err?.response?.data?.detail || 'PDF indirilemedi');
+  }
+};
 
 const BeoModal = ({ beoData, markPaid, onClose }) => (
   <Modal title={`BEO — ${beoData.event.name}`} onClose={onClose} wide>
@@ -138,7 +161,11 @@ const BeoModal = ({ beoData, markPaid, onClose }) => (
               cls="text-lg text-indigo-600 font-bold" />
       </CardContent></Card>
 
-      <div className="text-right">
+      <div className="text-right flex justify-end gap-2">
+        <Button variant="outline"
+                onClick={() => downloadBeoPdf(beoData.event.id, beoData.event.name)}>
+          <Download className="w-4 h-4 mr-1" /> PDF İndir
+        </Button>
         <Button variant="outline" onClick={() => window.print()}>Yazdır</Button>
         <Button variant="ghost" onClick={onClose}>Kapat</Button>
       </div>

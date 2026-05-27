@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar, Users, FileText, Clock, CheckCircle } from 'lucide-react';
+import { Calendar, Users, FileText, Clock, CheckCircle, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 
@@ -209,7 +209,19 @@ const FnbBeoGenerator = ({ user, tenant, onLogout }) => {
 
                   <div className="mt-4 flex items-center text-green-600 gap-2 text-sm">
                     <CheckCircle className="w-4 h-4" />
-                    <span>BEO kaydedildi. İleride PDF / e-posta çıktısı buradan oluşturulacak.</span>
+                    <span>BEO kaydedildi.</span>
+                  </div>
+
+                  <div className="pt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => window.print()}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      PDF İndir (Yazdır → PDF olarak kaydet)
+                    </Button>
                   </div>
                 </div>
               ) : (

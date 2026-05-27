@@ -1317,6 +1317,233 @@ async def beo(event_id: str,
     }
 
 
+def _beo_html(payload: dict) -> str:
+    """Render the BEO summary dict as a printable HTML document.
+
+    Same shape as the JSON endpoint above so kitchen/AV/floor teams
+    receive every section they already see in the modal.
+    """
+    from html import escape as _e
+
+    ev = payload.get("event") or {}
+    spaces = payload.get("spaces") or []
+    resources = payload.get("resources") or []
+    agenda = payload.get("agenda") or []
+    schedule = payload.get("payment_schedule") or []
+    tech = payload.get("technical_requirements") or {}
+    staff = payload.get("staff_assignments") or []
+    entertainment = payload.get("entertainment") or {}
+    totals = ev.get("totals") or {}
+
+    def _money(v: Any) -> str:
+        try:
+            return f"₺{float(v or 0):,.2f}"
+        except Exception:
+            return "₺0.00"
+
+    def _row(label: str, value: Any) -> str:
+        return (f"<tr><td class='k'>{_e(str(label))}</td>"
+                f"<td>{_e('' if value is None else str(value))}</td></tr>")
+
+    spaces_html = "".join(
+        f"<tr><td>{_e(s.get('space_name') or '—')}</td>"
+        f"<td>{_e(s.get('setup_style') or '—')}</td>"
+        f"<td class='r'>{_e(str(s.get('expected_pax') or '—'))}</td>"
+        f"<td class='mono'>{_e((s.get('starts_at') or '')[:16])}</td>"
+        f"<td class='mono'>{_e((s.get('ends_at') or '')[:16])}</td></tr>"
+        for s in spaces
+    ) or "<tr><td colspan='5' class='muted'>Mekan tanımlı değil.</td></tr>"
+
+    agenda_html = "".join(
+        f"<tr><td class='mono'>{_e((a.get('starts_at') or '')[11:16])}–"
+        f"{_e((a.get('ends_at') or '')[11:16])}</td>"
+        f"<td>{_e(a.get('title') or '')}</td>"
+        f"<td>{_e(a.get('kind') or '')}</td>"
+        f"<td>{_e(a.get('owner') or '—')}</td></tr>"
+        for a in agenda
+    ) or "<tr><td colspan='4' class='muted'>Ajanda boş.</td></tr>"
+
+    resources_html = "".join(
+        f"<tr><td>{_e(r.get('name') or '—')}</td>"
+        f"<td>{_e(r.get('type') or '—')}</td>"
+        f"<td class='r'>{_e(str(r.get('quantity') or 0))}</td>"
+        f"<td class='r'>{_money(r.get('unit_price'))}</td>"
+        f"<td class='r'>{_money((r.get('quantity') or 0) * (r.get('unit_price') or 0))}</td></tr>"
+        for r in resources
+    ) or "<tr><td colspan='5' class='muted'>Kaynak tanımlı değil.</td></tr>"
+
+    schedule_html = "".join(
+        f"<tr><td class='mono'>{_e(str(p.get('due_date') or ''))}</td>"
+        f"<td>{_e(p.get('label') or '')}</td>"
+        f"<td class='r'>{_money(p.get('amount'))}</td>"
+        f"<td>{'Ödendi' if p.get('paid') else 'Bekliyor'}"
+        f"{(' • Ref: ' + _e(str(p.get('reference')))) if p.get('reference') else ''}</td></tr>"
+        for p in schedule
+    ) or "<tr><td colspan='4' class='muted'>Ödeme takvimi tanımlı değil.</td></tr>"
+
+    staff_html = "".join(
+        f"<tr><td>{_e(s.get('role') or '—')}</td>"
+        f"<td>{_e(s.get('name') or s.get('user') or '—')}</td>"
+        f"<td>{_e(s.get('notes') or '')}</td></tr>"
+        for s in staff
+    ) or "<tr><td colspan='3' class='muted'>Personel ataması yok.</td></tr>"
+
+    # Field mapping mirrors `TechnicalRequirementsIn` (backend/routers/mice.py
+    # line 642) so every checklist item the ops team captured is printed on
+    # the hand sheet. Booleans render Var/Yok (incl. explicit Yok) and ints
+    # render the requested count (0 → Yok, otherwise the count + unit).
+    def _bool(v: Any) -> str:
+        return "Var" if bool(v) else "Yok"
+
+    if tech:
+        tech_rows = [
+            _row("Projeksiyon", _bool(tech.get("projector"))),
+            _row("Perde / Ekran", _bool(tech.get("screen"))),
+            _row("Kablolu Mikrofon",
+                 f"{int(tech.get('microphone_wired') or 0)} adet"),
+            _row("Kablosuz Mikrofon",
+                 f"{int(tech.get('microphone_wireless') or 0)} adet"),
+            _row("Ses Sistemi", _bool(tech.get("sound_system"))),
+            _row("Sahne", _bool(tech.get("stage"))),
+            _row("Aydınlatma", _bool(tech.get("lighting"))),
+            _row("Canlı Yayın", _bool(tech.get("livestream"))),
+            _row("İnternet (Mbps)",
+                 f"{int(tech.get('internet_mbps') or 0)} Mbps"),
+            _row("Çeviri Kabini",
+                 f"{int(tech.get('translation_booths') or 0)} adet"),
+        ]
+        if tech.get("notes"):
+            tech_rows.append(_row("Notlar", tech.get("notes")))
+        tech_html = "<table>" + "".join(tech_rows) + "</table>"
+    else:
+        tech_html = "<p class='muted'>Teknik gereksinim girilmemiş.</p>"
+
+    ent_html = ""
+    if entertainment:
+        ent_html = "<table>"
+        for key, val in entertainment.items():
+            ent_html += _row(key, val)
+        ent_html += "</table>"
+
+    generated_at = datetime.now(UTC).isoformat()[:19]
+
+    return f"""<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"/>
+<title>BEO — {_e(ev.get('name') or '')}</title>
+<style>
+  @page {{ size: A4; margin: 18mm 14mm; }}
+  body {{ font-family: 'Helvetica', 'Arial', sans-serif; color: #1f2937; font-size: 11px; }}
+  h1 {{ font-size: 18px; margin: 0 0 4px 0; color: #111827; }}
+  h2 {{ font-size: 13px; margin: 14px 0 6px 0; color: #1f2937;
+        border-bottom: 1px solid #d1d5db; padding-bottom: 2px; }}
+  .meta {{ color: #6b7280; font-size: 10px; margin-bottom: 8px; }}
+  table {{ width: 100%; border-collapse: collapse; margin-bottom: 4px; }}
+  th, td {{ border: 1px solid #d1d5db; padding: 4px 6px; vertical-align: top; }}
+  th {{ background: #f3f4f6; text-align: left; font-weight: 600; }}
+  td.k {{ background: #f9fafb; width: 35%; font-weight: 600; }}
+  td.r, th.r {{ text-align: right; }}
+  td.mono {{ font-family: 'Courier New', monospace; }}
+  .muted {{ color: #9ca3af; font-style: italic; text-align: center; }}
+  .totals td {{ font-weight: 600; }}
+  .totals .grand {{ background: #eef2ff; color: #3730a3; font-size: 13px; }}
+  .footer {{ margin-top: 18px; color: #9ca3af; font-size: 9px; text-align: center; }}
+</style>
+</head><body>
+  <h1>Banquet Event Order — {_e(ev.get('name') or '—')}</h1>
+  <div class="meta">Üretildi: {_e(generated_at)} UTC · Durum: {_e(ev.get('status') or '—')}</div>
+
+  <h2>Etkinlik Bilgileri</h2>
+  <table>
+    {_row('Müşteri', ev.get('client_name'))}
+    {_row('E-posta', ev.get('client_email'))}
+    {_row('Telefon', ev.get('client_phone'))}
+    {_row('Etkinlik Tipi', ev.get('event_type'))}
+    {_row('Beklenen Pax', ev.get('expected_pax'))}
+    {_row('Tarih', f"{ev.get('start_date') or ''} → {ev.get('end_date') or ''}")}
+    {_row('Organizatör', ev.get('organizer_user'))}
+    {_row('Notlar', ev.get('notes'))}
+  </table>
+
+  <h2>Mekanlar</h2>
+  <table>
+    <thead><tr><th>Mekan</th><th>Düzen</th><th class='r'>Pax</th>
+      <th>Başla</th><th>Bitir</th></tr></thead>
+    <tbody>{spaces_html}</tbody>
+  </table>
+
+  <h2>Ajanda / Fonksiyon Sheet</h2>
+  <table>
+    <thead><tr><th>Saat</th><th>Başlık</th><th>Tip</th><th>Sorumlu</th></tr></thead>
+    <tbody>{agenda_html}</tbody>
+  </table>
+
+  <h2>Kaynaklar (F&amp;B + AV)</h2>
+  <table>
+    <thead><tr><th>Hat</th><th>Tip</th><th class='r'>Adet</th>
+      <th class='r'>Birim</th><th class='r'>Toplam</th></tr></thead>
+    <tbody>{resources_html}</tbody>
+  </table>
+
+  <h2>Ödeme Takvimi</h2>
+  <table>
+    <thead><tr><th>Vade</th><th>Etiket</th><th class='r'>Tutar</th>
+      <th>Durum</th></tr></thead>
+    <tbody>{schedule_html}</tbody>
+  </table>
+
+  <h2>Teknik Gereksinimler</h2>
+  {tech_html}
+
+  <h2>Personel Ataması</h2>
+  <table>
+    <thead><tr><th>Rol</th><th>Kişi</th><th>Not</th></tr></thead>
+    <tbody>{staff_html}</tbody>
+  </table>
+
+  {('<h2>Eğlence / Program</h2>' + ent_html) if ent_html else ''}
+
+  <h2>Toplamlar</h2>
+  <table class="totals">
+    <tr><td class='k'>Mekan Toplamı</td><td class='r'>{_money(totals.get('space_total'))}</td></tr>
+    <tr><td class='k'>Kaynak Toplamı</td><td class='r'>{_money(totals.get('resources_total'))}</td></tr>
+    <tr class='grand'><td class='k'>GRAND TOTAL</td><td class='r'>{_money(totals.get('grand_total'))}</td></tr>
+  </table>
+
+  <div class="footer">
+    Syroce PMS · Banquet Event Order · Etkinlik ID: {_e(ev.get('id') or '')}
+  </div>
+</body></html>"""
+
+
+def _beo_pdf_bytes(payload: dict) -> bytes:
+    """Render BEO HTML → PDF via weasyprint (lazy import).
+
+    Fails loudly when weasyprint is unavailable so the caller surfaces a
+    clear error instead of returning an empty/silent response.
+    """
+    try:
+        from weasyprint import HTML  # type: ignore
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(
+            500, f"PDF üretimi için weasyprint yüklü değil: {exc}",
+        ) from exc
+    return HTML(string=_beo_html(payload)).write_pdf()
+
+
+@router.get("/events/{event_id}/beo.pdf")
+async def beo_pdf(event_id: str,
+                  current_user: User = Depends(get_current_user)):
+    """Printable BEO sheet — same payload as JSON endpoint, rendered as PDF."""
+    from fastapi.responses import Response
+    payload = await beo(event_id, current_user)  # tenant-scoped 404 inside
+    pdf = _beo_pdf_bytes(payload)
+    filename = f"beo-{event_id}.pdf"
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # ── Payment schedule (deposit + milestones) ─────────────────────
 class PaymentScheduleReplace(BaseModel):
     items: list[PaymentScheduleItemIn]

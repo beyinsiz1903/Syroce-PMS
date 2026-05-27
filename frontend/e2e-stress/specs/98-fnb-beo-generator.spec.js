@@ -24,8 +24,8 @@
 //     `tentative → cancelled` allowed). Hard DELETE yok.
 //   - Module-blocked doctrine: GET list non-2xx → A-H skip + REVIEW;
 //     J/K (security probes) BAĞIMSIZ çalışır.
-//   - PDF render YOK: BEO endpoint JSON döner, body length>0 + event field
-//     present şartı yeterli (task acceptance).
+//   - PDF render: Task #54 added GET /api/mice/events/{id}/beo.pdf —
+//     E2 step asserts 200 + Content-Type application/pdf + body length>0.
 //
 // Reporter satırı: `fnb_beo`.
 // ─────────────────────────────────────────────────────────────────────────
@@ -364,6 +364,41 @@ test.describe('F9C § 98 — F&B BEO Generator Lifecycle', () => {
         expect(r.body?.event?.id, 'E_beo event.id yok').toBe(evId);
         rec(testInfo, { module: MOD, step: 'E_beo', status: 'PASS', http: r.status,
             note: `body_len=${bodyStr.length} spaces=${(r.body?.spaces || []).length} resources=${(r.body?.resources || []).length}` });
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // E2) BEO PDF generator — task #54 acceptance: 200 + application/pdf + len>0
+    test('E2) GET /api/mice/events/{id}/beo.pdf — PDF render', async ({ request, stressTokens }, testInfo) => {
+        const reason = moduleBlocked ? blockedReason : (createdEventIds.length === 0 ? 'no_event_created' : null);
+        if (reason) {
+            rec(testInfo, { module: MOD, step: 'E2_beo_pdf', status: 'SKIP', note: reason });
+            test.skip(true, reason);
+        }
+        const evId = createdEventIds[0];
+        const t0 = Date.now();
+        const resp = await request.get(`/api/mice/events/${evId}/beo.pdf`, {
+            headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
+            failOnStatusCode: false,
+            timeout: 30_000,
+        });
+        const ms = Date.now() - t0;
+        const status = resp.status();
+        recPerf(testInfo, MOD, 'E2_beo_pdf', [ms], status === 200);
+        expect(status, `E2_beo_pdf 5xx status=${status}`).toBeLessThan(500);
+        if (status !== 200) {
+            recFinding(testInfo, 'P2', MOD, `E2_beo_pdf non-200 status=${status}`, '');
+            rec(testInfo, { module: MOD, step: 'E2_beo_pdf', status: 'REVIEW', http: status });
+            return;
+        }
+        const ct = (resp.headers()['content-type'] || '').toLowerCase();
+        expect(ct, `E2_beo_pdf content-type=${ct}`).toContain('application/pdf');
+        const buf = await resp.body();
+        expect(buf.length, 'E2_beo_pdf body empty').toBeGreaterThan(0);
+        // PDF magic bytes — protects against html-error-page-as-PDF regressions.
+        const head = buf.slice(0, 4).toString('ascii');
+        expect(head, `E2_beo_pdf magic=${head}`).toBe('%PDF');
+        rec(testInfo, { module: MOD, step: 'E2_beo_pdf', status: 'PASS', http: status,
+            note: `ct=${ct} bytes=${buf.length}` });
     });
 
     // ──────────────────────────────────────────────────────────────
