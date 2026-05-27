@@ -508,9 +508,9 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
         AGENCY_LOGIN_ACCOUNT,
         AGENCY_LOGIN_IP,
         client_ip,
+        normalize_identity,
     )
     from security.auth_throttle import enforce as _throttle
-    from security.auth_throttle import normalize_identity
     _ip = client_ip(request)
     _email_key = normalize_identity(data.email)
     await _throttle(AGENCY_LOGIN_IP, f"agency_login_ip:{_ip}", "giris denemesi")

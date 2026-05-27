@@ -81,9 +81,9 @@ async def vendor_login(request: Request, payload: VendorLogin):
         VENDOR_LOGIN_ACCOUNT,
         VENDOR_LOGIN_IP,
         client_ip,
+        normalize_identity,
     )
     from security.auth_throttle import enforce as _throttle
-    from security.auth_throttle import normalize_identity
     _ip = client_ip(request)
     _email_key = normalize_identity(payload.email)
     await _throttle(VENDOR_LOGIN_IP, f"vendor_login_ip:{_ip}", "giris denemesi")

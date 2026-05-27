@@ -60,10 +60,11 @@ class FolioRepository:
         request_hash: str,
         correlation_id: str | None,
     ) -> dict[str, Any]:
+        from datetime import timedelta as _td
+
         from shared_kernel.idempotency import (
             IDEMPOTENCY_PROCESSING_GRACE_SECONDS,
         )
-        from datetime import timedelta as _td
         lock_id = hashlib.sha256(f"{tenant_id}:{scope}:{idempotency_key}".encode()).hexdigest()
         now = datetime.now(UTC)
         lock_doc = {
@@ -92,8 +93,9 @@ class FolioRepository:
         folio_id: str,
         response_body: dict[str, Any],
     ) -> None:
-        from shared_kernel.idempotency import IDEMPOTENCY_RETENTION_SECONDS
         from datetime import timedelta as _td
+
+        from shared_kernel.idempotency import IDEMPOTENCY_RETENTION_SECONDS
         now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},
@@ -110,8 +112,9 @@ class FolioRepository:
         )
 
     async def fail_idempotency_lock(self, lock_id: str, error_message: str) -> None:
-        from shared_kernel.idempotency import IDEMPOTENCY_RETENTION_SECONDS
         from datetime import timedelta as _td
+
+        from shared_kernel.idempotency import IDEMPOTENCY_RETENTION_SECONDS
         now = datetime.now(UTC)
         await db.idempotency_keys.update_one(
             {"_id": lock_id},

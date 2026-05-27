@@ -23,8 +23,6 @@ from typing import Any
 
 from pymongo import ReturnDocument
 
-from core.transient_db_guard import TransientFailureTracker
-
 from core.outbox_service import (
     STATUS_FAILED,
     STATUS_PENDING,
@@ -35,6 +33,7 @@ from core.outbox_service import (
     is_retryable_error,
 )
 from core.tenant_db import get_system_db, tenant_context
+from core.transient_db_guard import TransientFailureTracker
 
 logger = logging.getLogger("core.outbox_worker")
 

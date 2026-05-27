@@ -11,12 +11,6 @@ from cache_manager import cached  # Tur 3: tenant-aware cache for slow trends
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
-from shared_kernel.idempotency import (
-    claim_idempotency,
-    complete_idempotency,
-    get_idempotency_key,
-    release_idempotency,
-)
 from modules.pms_core.auto_housekeeping_service import AutoHousekeepingService
 from modules.pms_core.dashboard_trends_service import DashboardTrendsService
 from modules.pms_core.folio_detail_service import FolioDetailService
@@ -32,6 +26,12 @@ from modules.pms_core.role_permission_service import (
     require_op,  # v90 DW
 )
 from modules.pms_core.role_permission_service import require_module as require_module_v101  # v101 DW
+from shared_kernel.idempotency import (
+    claim_idempotency,
+    complete_idempotency,
+    get_idempotency_key,
+    release_idempotency,
+)
 
 router = APIRouter(prefix="/api/pms-core", tags=["pms-core"])
 
