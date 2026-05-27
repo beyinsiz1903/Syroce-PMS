@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Download } from 'lucide-react';
+import { Download, Send } from 'lucide-react';
+import { promptDialog } from '@/lib/dialogs';
 import { Info, Modal } from '../_shared';
 
 const downloadBeoPdf = async (eventId, eventName) => {
@@ -26,7 +28,54 @@ const downloadBeoPdf = async (eventId, eventName) => {
   }
 };
 
-const BeoModal = ({ beoData, markPaid, onClose }) => (
+const emailBeoPdf = async (eventId, eventEmail, setSending) => {
+  const defaultRecipients = eventEmail || '';
+  const raw = await promptDialog({
+    title: 'BEO PDF Gönder',
+    message: 'Alıcı e-posta adreslerini virgül ile ayırarak girin.',
+    defaultValue: defaultRecipients,
+    placeholder: 'mutfak@otel.com, av@otel.com',
+    confirmText: 'Devam',
+  });
+  if (raw === null || raw === undefined) return;
+  const recipients = String(raw)
+    .split(/[,;\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (recipients.length === 0) {
+    toast.error('En az bir e-posta adresi girin');
+    return;
+  }
+  const note = await promptDialog({
+    title: 'Not (opsiyonel)',
+    message: 'Mesaja eklenecek kısa bir not yazabilirsiniz.',
+    defaultValue: '',
+    placeholder: 'Yarın saat 10:00 itibariyle son hâli ektedir.',
+    confirmText: 'Gönder',
+  });
+  if (note === null) return;
+  try {
+    setSending(true);
+    const res = await axios.post(`/mice/events/${eventId}/beo/email`, {
+      recipients,
+      note: note ? String(note) : null,
+    });
+    const { sent = 0, total = 0, failures = [] } = res.data || {};
+    if (failures.length > 0) {
+      toast.warning(`${sent}/${total} alıcıya gönderildi · ${failures.length} hata`);
+    } else {
+      toast.success(`${sent}/${total} alıcıya gönderildi`);
+    }
+  } catch (err) {
+    toast.error(err?.response?.data?.detail || 'PDF gönderilemedi');
+  } finally {
+    setSending(false);
+  }
+};
+
+const BeoModal = ({ beoData, markPaid, onClose }) => {
+  const [sending, setSending] = useState(false);
+  return (
   <Modal title={`BEO — ${beoData.event.name}`} onClose={onClose} wide>
     <div className="space-y-3 text-sm">
       <Card><CardContent className="p-3 grid grid-cols-2 gap-2 text-xs">
@@ -166,11 +215,18 @@ const BeoModal = ({ beoData, markPaid, onClose }) => (
                 onClick={() => downloadBeoPdf(beoData.event.id, beoData.event.name)}>
           <Download className="w-4 h-4 mr-1" /> PDF İndir
         </Button>
+        <Button variant="outline" disabled={sending}
+                onClick={() => emailBeoPdf(
+                  beoData.event.id, beoData.event.client_email, setSending)}>
+          <Send className="w-4 h-4 mr-1" />
+          {sending ? 'Gönderiliyor…' : 'PDF Gönder'}
+        </Button>
         <Button variant="outline" onClick={() => window.print()}>Yazdır</Button>
         <Button variant="ghost" onClick={onClose}>Kapat</Button>
       </div>
     </div>
   </Modal>
-);
+  );
+};
 
 export default BeoModal;

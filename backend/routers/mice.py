@@ -1544,6 +1544,118 @@ async def beo_pdf(event_id: str,
     )
 
 
+class BeoEmailRequest(BaseModel):
+    recipients: list[str] = Field(default_factory=list)
+    note: str | None = None
+
+
+@router.post("/events/{event_id}/beo/email")
+async def beo_email(
+    event_id: str,
+    body: BeoEmailRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+) -> dict[str, Any]:
+    """E-mail the BEO PDF to one or more recipients.
+
+    Mirrors the konaklama_vergisi `email_declaration` pattern: reuse the
+    existing weasyprint render + per-recipient `send_email` send so each
+    delivery gets its own provider trace. Tenant scope comes from the
+    `beo()` helper which 404s when the event belongs to another tenant.
+    """
+    from core.email import _is_valid_email, send_email
+    from core.mailing_safe import safe_html_value
+
+    payload = await beo(event_id, current_user)  # tenant-scoped 404 inside
+    ev = payload.get("event") or {}
+
+    seen: set[str] = set()
+    targets: list[str] = []
+    for r in body.recipients or []:
+        if not isinstance(r, str):
+            continue
+        rs = r.strip()
+        if not rs or not _is_valid_email(rs):
+            continue
+        k = rs.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        targets.append(rs)
+    if not targets:
+        raise HTTPException(
+            400, "Alıcı bulunamadı — en az bir geçerli e-posta adresi girin.")
+
+    pdf_bytes = _beo_pdf_bytes(payload)
+    event_name = ev.get("name") or "Etkinlik"
+    safe_filename = "".join(
+        ch if ch.isalnum() or ch in "-_" else "_"
+        for ch in (event_name or "beo")
+    ).strip("_") or "beo"
+    filename = f"{safe_filename}-{event_id}.pdf"
+    subject = f"Banquet Event Order — {event_name}"
+
+    note_html = ""
+    if body.note:
+        note_html = (
+            f"<p style='margin:0 0 12px;color:#0f172a;'>"
+            f"{safe_html_value(body.note)}</p>"
+        )
+    html = (
+        "<div style='font-family:Helvetica,Arial,sans-serif;max-width:600px;"
+        "margin:0 auto;padding:18px;color:#0f172a;'>"
+        f"<h2 style='margin:0 0 8px;'>Banquet Event Order — "
+        f"{safe_html_value(event_name)}</h2>"
+        f"<p style='color:#64748b;margin:0 0 16px;'>"
+        f"Tarih: <b>{safe_html_value(str(ev.get('start_date') or '-'))}</b> → "
+        f"<b>{safe_html_value(str(ev.get('end_date') or '-'))}</b> &middot; "
+        f"Pax: <b>{safe_html_value(str(ev.get('expected_pax') or '-'))}</b>"
+        "</p>"
+        f"{note_html}"
+        "<p style='margin:0 0 8px;'>BEO detayları PDF olarak ekte yer "
+        "almaktadır.</p>"
+        "<p style='font-size:11px;color:#94a3b8;margin-top:18px;'>"
+        "Syroce PMS · Otomatik üretilmiş bildirim"
+        "</p></div>"
+    )
+    attachments = [{
+        "filename": filename,
+        "content": pdf_bytes,
+        "content_type": "application/pdf",
+    }]
+
+    sent_ok = 0
+    failures: list[dict] = []
+    for to in targets:
+        res = await send_email(
+            to=to, subject=subject, html=html, attachments=attachments,
+        )
+        if res.get("sent"):
+            sent_ok += 1
+        else:
+            failures.append(
+                {"to": to, "error": res.get("error") or res.get("provider")})
+
+    db = get_system_db()
+    await log_audit_event(
+        tenant_id=current_user.tenant_id, user_id=current_user.username,
+        action="email", entity_type="mice_event_beo",
+        entity_id=event_id,
+        details=(f"BEO PDF gönderildi: {sent_ok}/{len(targets)} "
+                 f"({', '.join(targets)})"),
+        before_value=None,
+        after_value={"recipients": targets, "ok": sent_ok,
+                     "failures": failures,
+                     "note": body.note or None},
+        db=db)
+    return {
+        "sent": sent_ok,
+        "total": len(targets),
+        "recipients": targets,
+        "failures": failures,
+    }
+
+
 # ── Payment schedule (deposit + milestones) ─────────────────────
 class PaymentScheduleReplace(BaseModel):
     items: list[PaymentScheduleItemIn]
