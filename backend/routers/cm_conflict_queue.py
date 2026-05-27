@@ -117,6 +117,14 @@ async def _claim_room_for_pending_booking(
     claimed: list[str] = []
     now_iso = datetime.now(UTC).isoformat()
 
+    # Propagate stress-test markers from the source booking so the unified
+    # stress cleanup sweep reaps lock + notification side-effects too.
+    stress_markers: dict[str, Any] = {}
+    if booking.get("stress_seed"):
+        stress_markers["stress_seed"] = True
+        if booking.get("stress_prefix"):
+            stress_markers["stress_prefix"] = booking["stress_prefix"]
+
     for night in nights:
         lock_doc = {
             "tenant_id": tenant_id,
@@ -125,6 +133,7 @@ async def _claim_room_for_pending_booking(
             "booking_id": booking_id,
             "lock_type": "booking",
             "created_at": now_iso,
+            **stress_markers,
         }
         try:
             await db.room_night_locks.insert_one(lock_doc)
@@ -211,6 +220,7 @@ async def _claim_room_for_pending_booking(
                 "resolved_by": resolved_by,
                 "assigned_room_id": room_id,
             },
+            **stress_markers,
         })
     except Exception as exc:
         logger.warning("Resolve notification insert failed (booking=%s): %s", booking_id, exc)
