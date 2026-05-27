@@ -198,6 +198,35 @@ export default async function globalSetup() {
     // 7) Stress snapshot after seed
     const stressAfterSeed = await snapshot(api, stressToken, 'stress-after-seed');
 
+    // 7a) Stress add-on entitlement assertion — Task #58.
+    // Specs 14 / 15 / 18 / 98 all touch `/api/mice/*` which is gated by the
+    // `mice` add-on module (default OFF). When the stress tenant is missing
+    // the add-on every BEO/MICE spec falls into the "module-blocked SKIP"
+    // branch — green baseline, zero real coverage. Fail fast here instead
+    // of swallowing four specs' worth of SKIPs further down the run.
+    // Remediation when this trips: `cd backend && python -m scripts.enable_mice_for_stress`.
+    {
+        const probe = await api.get('/api/mice/events?limit=1', {
+            headers: { Authorization: `Bearer ${stressToken}` },
+            failOnStatusCode: false,
+            timeout: 30_000,
+        });
+        if (probe.status() === 403) {
+            const txt = await probe.text().catch(() => '');
+            let code = '';
+            try { code = JSON.parse(txt)?.detail?.error_code || JSON.parse(txt)?.error_code || ''; } catch { /* noop */ }
+            if (code === 'ENTITLEMENT_DENIED' || /mice/i.test(txt)) {
+                throw new Error(
+                    `[stress-setup] NO-GO: stress tenant is missing the \`mice\` add-on module ` +
+                    `(GET /api/mice/events → 403 ENTITLEMENT_DENIED). ` +
+                    `Specs 14/15/18/98 would silently SKIP. ` +
+                    `Fix: cd backend && python -m scripts.enable_mice_for_stress`,
+                );
+            }
+        }
+        console.log(`[stress-setup] ✅ mice add-on entitlement probe status=${probe.status()}`);
+    }
+
     // 7b) Pilot read-only fixtures — Task #13 (F8M v2 § 41B B2B IDOR matrix)
     // + Task #67 (F9C § 98 sales-lifecycle step J). Idempotently ensures the
     // pilot tenant carries one `room_blocks` doc, one `kbs_reports` doc and
