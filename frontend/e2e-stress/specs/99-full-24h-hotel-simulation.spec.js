@@ -41,7 +41,6 @@ import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
     fetchAllByPrefix,
     callTimed,
-    callTimed,
     recPerf,
     recFinding,
     pilotBookingsCount,
