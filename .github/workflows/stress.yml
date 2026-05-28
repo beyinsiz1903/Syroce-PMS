@@ -72,7 +72,7 @@ jobs:
         runs-on: ubuntu-latest
         # Murat review #E: suite F8A→F8E büyüdü (~140 test). 30dk artık dar;
         # 60dk hem mevcut kapsam hem F8F/G/H/I/J planlı eklemeler için tampon.
-        timeout-minutes: 60
+        timeout-minutes: 90
         env:
             # Public stress environment (pilot DEĞİL). Repo secret üzerinden.
             E2E_BASE_URL: ${{ secrets.STRESS_E2E_BASE_URL }}
