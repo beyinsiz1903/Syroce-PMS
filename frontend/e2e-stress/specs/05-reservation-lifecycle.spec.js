@@ -47,7 +47,19 @@ test.describe('F8A § 05 — Reservation lifecycle (create / modify / cancel / n
     test('Setup: stress bookings + rooms snapshot + pilot baseline', async ({ request, stressTokens, stressState }, testInfo) => {
         const prefix = stressState.data_prefix;
         bookings = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/bookings', 'stress_prefix', prefix);
-        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms', 'stress_prefix', prefix);
+        // CI 2026-05-28 NO-GO fix (mirror of 03-room-move tur-7 fix):
+        // `/api/pms/rooms` defaults `include_virtual=false` ile `use_cache=True`
+        // koşulunu tetikler (backend `pms_rooms.py:289`). `cache_warmer.warm_rooms_cache`
+        // projection'unda `stress_prefix` field'i YOK (backend `cache_warmer.py:176-179`)
+        // — cache-hit path stripped doc'lar döndürür → strict prefix filter tüm
+        // 500 odayı eler → rooms=0 → setup FAIL ("stress room havuzu boş").
+        // 02 day-turnover bunu görmüyor çünkü erken koşar (warmer henüz cache populate
+        // etmemiş — DB path fresh + full projection). 05 ~test #48'de koşuyor;
+        // warmer çoktan cache'lemiş. `include_virtual=true` query param'ı use_cache
+        // koşulunu false yapar → DB path zorlanır → projection L357 `stress_prefix`
+        // dahil fresh doc'lar döner → strict prefix match çalışır. 03-room-move
+        // setup'ı aynı tedavi ile zaten PASS.
+        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms?include_virtual=true', 'stress_prefix', prefix);
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
         rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
             note: `bookings=${bookings.length} rooms=${rooms.length} pilot_before=${pilotBefore?.count} sub_prefix=${SUB_PREFIX}` });
