@@ -289,3 +289,54 @@ bash deploy/smoke.sh
 - **v1.0** (12 Mayıs 2026) — Pilot HR canlı CM öncesi ilk yayın
 - **Maintainer**: Pilot operasyon ekibi
 - **Geri besleme**: Eksik komut/senaryo varsa GitHub PR
+
+---
+
+## CI 2FA Kalıntı Drenajı (Stress Admin)
+
+**Belirti:** GitHub Actions "Full Stress Suite" job'u şu hatayla bitiyor:
+```
+Error: [stress-setup] stress admin token boş geldi.
+   at ../global-setup.js:128
+```
+
+**Kök neden:** Spec `98C — F8AG § 2FA TOTP Lifecycle` stress admin
+hesabında 2FA enable ediyor (test B `Confirm`). Eğer job spec'in
+`afterAll` veya `Test H disable cleanup` adımı koşmadan hard-cancel olursa
+(workflow timeout, manual cancel, runner crash) hesap 2FA-enabled kalır.
+Sonraki run'da `/api/auth/login` `access_token=""` + `requires_2fa=true`
+döner → setup boş token görüp patlar.
+
+**Çözüm — Replit shell'inden tek komut:**
+
+```bash
+# Backend API workflow çalışıyor olmalı (env zaten sourced)
+PID=$(pgrep -f "uvicorn.*server:app" | head -1)
+while IFS='=' read -r k v; do
+  case "$k" in
+    MONGO_URL|DB_NAME|E2E_STRESS_ADMIN_EMAIL|FIELD_ENCRYPTION_KEY|FIELD_HASH_KEY|FIELD_ENC_KEY|SEARCH_HASH_SECRET|JWT_SECRET|ENCRYPTION_KEY)
+      export "$k=$v" ;;
+  esac
+done < <(tr '\0' '\n' < /proc/$PID/environ)
+
+# Dry-run önce (mevcut durumu raporlar, mutation yapmaz)
+python backend/scripts/reset_stress_admin_2fa.py
+
+# Onaylayınca uygula
+python backend/scripts/reset_stress_admin_2fa.py --apply
+```
+
+**Beklenen çıktı (apply sonrası):**
+```
+FOUND: role=admin active=True two_factor_enabled=True has_secret=True backup_codes=10
+APPLY: matched=1 modified=1
+AFTER: two_factor_enabled=False has_secret=False backup_codes=0
+```
+
+**Doğrulama:** GitHub Actions'tan stress workflow'u tekrar tetikle —
+`[stress-setup] ✅ Stress admin login OK` görmelisin.
+
+**Önleme (kalıcı):** Spec 98C'nin `afterAll` cleanup'ı sertleştirildi
+(±90s TOTP candidate window + tüm backup code fallback'leri); ancak
+SIGKILL-class cancel'lar hiçbir framework hook'unu çalıştırmadığından
+operator drenajı bu durumda zorunlu kalır.

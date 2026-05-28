@@ -144,37 +144,45 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
         }
         const ctx = await plRequest.newContext({ baseURL: process.env.E2E_BASE_URL || 'http://localhost:8000' });
         try {
-            // Try a few TOTP windows in case of clock drift; same-window replay
-            // guard means we must use a different counter than `usedConfirmCode`.
+            // Try a wider TOTP candidate window in case of clock drift (±90s)
+            // AND skip same-counter as `usedConfirmCode` (same-window replay
+            // guard). Each candidate gets a fresh 30s timeout (Atlas can be
+            // slow under stress run load).
             const now = Math.floor(Date.now() / 1000);
-            const candidates = [now, now + 30, now + 60, now - 30];
-            for (const t of candidates) {
+            const candidates = [now, now + 30, now + 60, now + 90, now - 30, now - 60, now - 90];
+            for (let i = 0; i < candidates.length && twofaEnabled; i++) {
+                const t = candidates[i];
                 const code = totpAt(secret, t);
-                if (code === usedConfirmCode) continue;
+                if (code === usedConfirmCode || usedTotpCodes.has(code)) continue;
                 const r = await ctx.post('/api/2fa/disable', {
                     data: { password, code },
                     headers: { Authorization: `Bearer ${tokens.stress_token}`, 'Content-Type': 'application/json' },
-                    failOnStatusCode: false, timeout: 15_000,
+                    failOnStatusCode: false, timeout: 30_000,
                 }).catch(() => null);
                 if (r && r.ok()) { twofaEnabled = false; break; }
-                // Throttle backoff if 429 hit.
-                if (r && r.status() === 429) await new Promise((res) => setTimeout(res, 2000));
+                // Throttle backoff if 429 hit (SENSITIVE_AUTH_USER 5/900s).
+                if (r && r.status() === 429) await new Promise((res) => setTimeout(res, 3000));
             }
+            // Fallback chain: try EVERY remaining backup code (newest first).
+            // Single-use semantics mean an already-consumed code is just a
+            // wasted attempt, not a failure — keep trying until one works.
             if (twofaEnabled && Array.isArray(backupCodes) && backupCodes.length > 0) {
-                // Fallback: try a backup code.
-                const r = await ctx.post('/api/2fa/disable', {
-                    data: { password, code: backupCodes[backupCodes.length - 1] },
-                    headers: { Authorization: `Bearer ${tokens.stress_token}`, 'Content-Type': 'application/json' },
-                    failOnStatusCode: false, timeout: 15_000,
-                }).catch(() => null);
-                if (r && r.ok()) twofaEnabled = false;
+                for (let i = backupCodes.length - 1; i >= 0 && twofaEnabled; i--) {
+                    const r = await ctx.post('/api/2fa/disable', {
+                        data: { password, code: backupCodes[i] },
+                        headers: { Authorization: `Bearer ${tokens.stress_token}`, 'Content-Type': 'application/json' },
+                        failOnStatusCode: false, timeout: 30_000,
+                    }).catch(() => null);
+                    if (r && r.ok()) { twofaEnabled = false; break; }
+                    if (r && r.status() === 429) await new Promise((res) => setTimeout(res, 3000));
+                }
             }
         } finally {
             await ctx.dispose();
         }
         if (twofaEnabled) {
             // eslint-disable-next-line no-console
-            console.error('[F8AG] CRITICAL: 2FA cleanup FAILED — stress admin still has 2FA enabled; next stress run logins will be challenged.');
+            console.error('[F8AG] CRITICAL: 2FA cleanup FAILED — stress admin still has 2FA enabled; next stress run logins will be challenged. RECOVERY: run `python backend/scripts/reset_stress_admin_2fa.py --apply` from a host that can reach Atlas + has E2E_STRESS_ADMIN_EMAIL set.');
         }
     });
 
@@ -228,9 +236,9 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
             blockedReason = 'twofa_already_enabled_residue';
             recFinding(testInfo, 'P1', MOD,
                 '2FA stress admin\'de zaten enabled — önceki run residue',
-                'Spec lifecycle test edemez (secret/backup codes elde değil). Operator manuel disable etmeli (super_admin direct DB) yoksa downstream tüm spec\'lerin login\'i challenge döner.');
+                'Spec lifecycle test edemez (secret/backup codes elde değil). RECOVERY: `python backend/scripts/reset_stress_admin_2fa.py --apply` (Atlas erişimi olan host\'tan, E2E_STRESS_ADMIN_EMAIL env\'i set). Aksi halde downstream tüm spec\'lerin login\'i challenge döner.');
             rec(testInfo, { module: MOD, step: 'setup', status: 'FAIL',
-                note: 'twofa_already_enabled — residue, manual cleanup required' });
+                note: 'twofa_already_enabled — residue, run backend/scripts/reset_stress_admin_2fa.py --apply' });
             expect(probe.body.enabled, 'stress admin should not have 2FA enabled at spec start — residue').toBe(false);
             return;
         }
