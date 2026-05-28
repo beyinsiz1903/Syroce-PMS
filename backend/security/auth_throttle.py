@@ -23,12 +23,24 @@ Caveats (acknowledged):
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import unicodedata
 from collections import deque
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, Request
+
+# CI 2026-05-28 NO-GO P0 RCA — 98C D (TWOFA brute-force) ve 98D B (vendor per-IP)
+# AYNI senaryo ile başarısız oldu (17×401 / 21×401, hiç 429). İkisi de
+# `always_on=True` Mongo-backed throttle. Bu sistemik bir backend
+# kullanılabilirlik sorununa işaret eder: `_check_mongo` sessiz hata ile
+# fall-through olup per-container in-memory yedeğine düşüyor → Replit
+# autoscale (deploymentTarget=autoscale) altında her container kendi
+# sayacını tutuyor → cap asla tetiklenmiyor. Tanılayıcı için structured
+# logger eklendi — production loglarında root cause'u görmek için her
+# bypass'ı kaydeder.
+logger = logging.getLogger(__name__)
 
 # When True, trust the rightmost X-Forwarded-For hop (Replit edge proxy
 # appends the real peer IP at the END of the chain). When False, ignore XFF
@@ -414,17 +426,38 @@ class SlidingWindowThrottle:
             try:
                 if await _ensure_mongo_throttle_indexes():
                     return await self._check_mongo(key)
-            except Exception:
+                else:
+                    # CI 2026-05-28 NO-GO P0 — sessiz fall-through bug'ı.
+                    # `always_on` throttle Mongo backend'i çağıramazsa per-
+                    # container yedeğe düşer; autoscale altında bu dilution
+                    # demektir (cap=15 ama 3 container = effective 45).
+                    # Production'da Sentry yakalasın diye ERROR seviyesi.
+                    logger.error(
+                        "throttle_mongo_backend_unavailable",
+                        extra={"throttle_name": self.name, "key_prefix": key.split(":")[0] if ":" in key else "?"},
+                    )
+            except Exception as exc:
                 # Mongo hiccup — fall through to Redis/in-memory below
                 # so the auth surface stays available. The throttle is
                 # weaker for the duration of the outage but never blocks
-                # legitimate traffic with a 503.
-                pass
+                # legitimate traffic with a 503. Structured log so Sentry
+                # ve drill RCA için root cause görünür olur (önceden bare
+                # `except: pass` idi, 98C D / 98D B drill bypass'ında bug
+                # tamamen gizli kaldı).
+                logger.error(
+                    "throttle_mongo_check_failed",
+                    extra={
+                        "throttle_name": self.name,
+                        "exc_type": type(exc).__name__,
+                        "exc_msg": str(exc)[:200],
+                    },
+                    exc_info=False,
+                )
         rc = await _get_redis()
         if rc is not None:
             try:
                 return await self._check_redis(rc, key)
-            except Exception:
+            except Exception as exc:
                 # Redis hiccup → fall through to in-memory (per-process) path
                 # so the auth surface stays available. We accept that the cap
                 # temporarily becomes per-process during the outage; this
@@ -433,6 +466,14 @@ class SlidingWindowThrottle:
                 # `_REDIS_CLIENT` to keep returning the dead handle forever.
                 # Clear the cache + arm the backoff timer so `_get_redis()`
                 # attempts reconnection on the next call after the window.
+                logger.warning(
+                    "throttle_redis_check_failed",
+                    extra={
+                        "throttle_name": self.name,
+                        "exc_type": type(exc).__name__,
+                        "exc_msg": str(exc)[:200],
+                    },
+                )
                 _invalidate_redis()
         async with self._lock:
             now = datetime.utcnow()
