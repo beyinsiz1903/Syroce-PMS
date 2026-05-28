@@ -405,19 +405,31 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
         }
         const email = process.env.E2E_STRESS_ADMIN_EMAIL;
         const password = process.env.E2E_STRESS_ADMIN_PASSWORD;
-        const login = await freshLogin(request, email, password);
-        if (!login.ok || !login.body?.challenge_token) {
-            recFinding(testInfo, 'P1', MOD, 'Throttle test için challenge alınamadı',
-                `status=${login.status} body=${JSON.stringify(login.body).slice(0, 200)}.`);
-            expect(login.ok, `throttle test needs challenge status=${login.status}`).toBe(true);
-            return;
-        }
-        const challenge = login.body.challenge_token;
-        // 17 burst = threshold(15) + 2 → at least 2 of them should hit 429.
-        // Each attempt uses a fresh fake code "111111"; backend rejects + counts.
+        // Task-137 + Bug AS doctrine — /api/auth/2fa/verify consumes the
+        // challenge_token jti atomically via consumed_jtis unique index
+        // BEFORE the throttle enforce() can run (auth.py L779-788 vs L765).
+        // A naive burst that reuses ONE challenge_token would only ever
+        // increment the throttle counter on attempt #1 — attempts #2..N
+        // bounce with 401 "Doğrulama belirteci zaten kullanıldı" via
+        // DuplicateKeyError, never reaching _record_failure_and_raise.
+        // Real brute-force vector = login + verify pair per attempt, so
+        // each iteration must mint a fresh challenge_token. LOGIN_IP
+        // (cap=20/60s) drains on every successful login (auth.py L525-526,
+        // L698-699), so 17 fresh logins stay well under the LOGIN budget.
+        // 17 burst = TWOFA_VERIFY_IP threshold(15) + 2 → at least the 16th
+        // verify should hit 429. Each attempt uses fake code "111111";
+        // backend's verify_totp fails → enforce(TWOFA_VERIFY_IP) +1.
         const results = [];
         for (let i = 0; i < 17; i++) {
-            const r = await call2faVerify(request, challenge, '111111');
+            const login = await freshLogin(request, email, password);
+            if (!login.ok || !login.body?.challenge_token) {
+                recFinding(testInfo, 'P1', MOD,
+                    `Throttle burst iterasyon ${i + 1} için challenge alınamadı`,
+                    `status=${login.status} body=${JSON.stringify(login.body).slice(0, 200)}. Önceki iterasyonlardan LOGIN_IP throttle tripped olabilir; cap=20/60s, başarılı login reset eder.`);
+                expect(login.ok, `throttle test iter=${i + 1} needs challenge status=${login.status}`).toBe(true);
+                return;
+            }
+            const r = await call2faVerify(request, login.body.challenge_token, '111111');
             results.push(r.status);
             if (r.status === 429) break; // threshold hit, no need to continue
         }

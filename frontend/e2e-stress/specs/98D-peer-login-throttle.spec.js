@@ -107,7 +107,7 @@ test.describe('§ 98D — Peer login throttle (agency + vendor)', () => {
         // with 401 (or any 4xx); 404/0 = route not mounted; 5xx = DoS.
         const agencyProbe = await loginAttempt(
             request, AGENCY_LOGIN,
-            `${prefix}_probe_agency@stress.invalid`,
+            `${prefix}_probe_agency@stress.example`,
             'wrong_pw_probe',
         );
         if (agencyProbe.status === 404 || agencyProbe.status === 0) {
@@ -124,7 +124,7 @@ test.describe('§ 98D — Peer login throttle (agency + vendor)', () => {
 
         const vendorProbe = await loginAttempt(
             request, VENDOR_LOGIN,
-            `${prefix}_probe_vendor@stress.invalid`,
+            `${prefix}_probe_vendor@stress.example`,
             'wrong_pw_probe',
         );
         if (vendorProbe.status === 404 || vendorProbe.status === 0) {
@@ -271,7 +271,7 @@ test.describe('§ 98D — Peer login throttle (agency + vendor)', () => {
         const statuses = [];
         let retryAfter = 0;
         for (let i = 1; i <= PER_IP_CAP + 1; i++) {
-            const email = `${prefix}_vip_${i}@stress.invalid`;
+            const email = `${prefix}_vip_${i}@stress.example`;
             const r = await loginAttempt(request, VENDOR_LOGIN, email, 'wrong_pw_per_ip_burst');
             statuses.push(r.status);
             if (r.status === 429) {
