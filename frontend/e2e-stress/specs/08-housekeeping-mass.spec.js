@@ -13,7 +13,10 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
 
     test('Setup: stress rooms + summary baseline', async ({ request, stressTokens, stressState }, testInfo) => {
         const prefix = stressState.data_prefix;
-        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms', 'stress_prefix', prefix);
+        // CI 2026-05-28 NO-GO follow-up (mirror 03/05 fix): `?include_virtual=true`
+        // backend `pms_rooms.py:289` use_cache koşulunu false yapar → cache_warmer'ın
+        // stress_prefix'siz projection (`cache_warmer.py:176-179`) drop'undan kaçar.
+        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms?include_virtual=true', 'stress_prefix', prefix);
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
         const sumR = await callTimed(request, 'get', '/api/pms-core/housekeeping/room-summary', undefined, stressTokens.stress_token);
         summaryBefore = sumR.body;
@@ -155,7 +158,11 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         // durumdaki ilk 5 odayı al.
         const candidateIds = new Set(rooms.slice(rooms.length - 20).map((r) => r.id));
         const prefix = stressState.data_prefix;
-        const freshR = await callTimed(request, 'get', '/api/pms/rooms', undefined, stressTokens.stress_token);
+        // CI 2026-05-28 NO-GO follow-up (mirror 03/05 fix): `?include_virtual=true`
+        // backend `pms_rooms.py:289` use_cache koşulunu false yapar — cache-hit
+        // path post-mutation stale status döndürürse OOO target seçimi yanlış olur;
+        // fresh DB read garantili.
+        const freshR = await callTimed(request, 'get', '/api/pms/rooms?include_virtual=true', undefined, stressTokens.stress_token);
         const freshAll = freshR.body?.rooms || freshR.body?.items || (Array.isArray(freshR.body) ? freshR.body : []);
         const BLOCKED = new Set(['out_of_order', 'out_of_service', 'maintenance']);
         const oooTargets = freshAll

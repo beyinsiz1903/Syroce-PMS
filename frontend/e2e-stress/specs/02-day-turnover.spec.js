@@ -34,7 +34,12 @@ test.describe('F8A § 02 — Day turnover (checkout + walk-in + guard)', () => {
         // accumulated across runs) → setup saw 0 of the current round and
         // downstream B/C ran on a partial list.
         bookings = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/bookings', 'stress_prefix', prefix, { maxPages: 60, pageSize: 200 });
-        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms', 'stress_prefix', prefix, { maxPages: 60, pageSize: 200 });
+        // CI 2026-05-28 NO-GO follow-up (mirror 03/05 fix): `?include_virtual=true`
+        // backend `pms_rooms.py:289` use_cache koşulunu false yapar → cache_warmer'ın
+        // stress_prefix'siz projection (`cache_warmer.py:176-179`) drop'undan kaçar.
+        // 02 erken koştuğu için bugüne kadar PASS, ama hızlı CI runner'da warmer önce
+        // populate ederse race FAIL'e döner — defense-in-depth.
+        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms?include_virtual=true', 'stress_prefix', prefix, { maxPages: 60, pageSize: 200 });
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
         rec(testInfo, { module: MOD, step: 'setup_listing', status: 'PASS',
             note: `bookings_listed=${bookings.length} rooms_listed=${rooms.length} pilot_before=${pilotBefore?.count}` });

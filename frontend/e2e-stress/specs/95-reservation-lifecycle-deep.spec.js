@@ -98,8 +98,11 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
             try {
                 bookings = await fetchAllByPrefix(request, stressTokens.stress_token,
                     '/api/pms/bookings', 'stress_prefix', prefix);
+                // CI 2026-05-28 NO-GO follow-up (mirror 03/05 fix): `?include_virtual=true`
+                // backend `pms_rooms.py:289` use_cache koşulunu false yapar → cache_warmer'ın
+                // stress_prefix'siz projection (`cache_warmer.py:176-179`) drop'undan kaçar.
                 rooms = await fetchAllByPrefix(request, stressTokens.stress_token,
-                    '/api/pms/rooms', 'stress_prefix', prefix);
+                    '/api/pms/rooms?include_virtual=true', 'stress_prefix', prefix);
                 guests = await fetchAllByPrefix(request, stressTokens.stress_token,
                     '/api/pms/guests', 'stress_prefix', prefix);
             } catch (e) {

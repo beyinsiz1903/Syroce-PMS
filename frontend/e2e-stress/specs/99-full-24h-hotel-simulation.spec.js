@@ -119,8 +119,11 @@ test.describe('F8J § 99 — Full 24h hotel simulation', () => {
         bookings = await fetchAllByPrefix(request, stressTokens.stress_token,
             '/api/pms/bookings', 'stress_prefix', prefix,
             { maxPages: 8, pageSize: 200 });
+        // CI 2026-05-28 NO-GO follow-up (mirror 03/05 fix): `?include_virtual=true`
+        // backend `pms_rooms.py:289` use_cache koşulunu false yapar → cache_warmer'ın
+        // stress_prefix'siz projection (`cache_warmer.py:176-179`) drop'undan kaçar.
         rooms = await fetchAllByPrefix(request, stressTokens.stress_token,
-            '/api/pms/rooms', 'stress_prefix', prefix,
+            '/api/pms/rooms?include_virtual=true', 'stress_prefix', prefix,
             { maxPages: 8, pageSize: 200 });
 
         rec(testInfo, { module: MOD, step: 'setup_baseline', status: 'PASS',

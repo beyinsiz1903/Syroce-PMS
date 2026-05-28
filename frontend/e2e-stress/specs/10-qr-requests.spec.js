@@ -29,7 +29,10 @@ test.describe('F8B § 10 — Room QR requests', () => {
 
     test('Setup: fetch rooms + seeded QR requests + pilot baseline', async ({ request, stressTokens, stressState }, testInfo) => {
         const prefix = stressState.data_prefix;
-        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms', 'stress_prefix', prefix);
+        // CI 2026-05-28 NO-GO follow-up (mirror 03/05 fix): `?include_virtual=true`
+        // backend `pms_rooms.py:289` use_cache koşulunu false yapar → cache_warmer'ın
+        // stress_prefix'siz projection (`cache_warmer.py:176-179`) drop'undan kaçar.
+        rooms = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/rooms?include_virtual=true', 'stress_prefix', prefix);
         const qrList = await fetchSingle(request, stressTokens.stress_token, '/api/room-requests?limit=500');
         qrSeed = Array.isArray(qrList.list) ? qrList.list.filter((r) =>
             typeof r.title === 'string' && r.title.startsWith(prefix)) : [];
