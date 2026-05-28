@@ -97,10 +97,17 @@ async function freshLogin(request, email, password) {
 
 async function call2faVerify(request, challengeToken, code, opts = {}) {
     const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+    // Timeout overridable — D) brute-force burst fires 17 verifies in
+    // parallel against a single-worker uvicorn; HOL blocking on serialized
+    // Mongo writes (consume_jti + throttle insert/count + audit_log per
+    // request) can push tail requests past the default 15s, returning
+    // status=0 (Playwright client cancel) instead of the expected 429.
+    // Per-call override lets the brute-force test grant >60s so every
+    // request completes within the throttle's 60s window.
     const r = await request.post('/api/auth/2fa/verify', {
         data: { challenge_token: challengeToken, code },
         headers,
-        failOnStatusCode: false, timeout: 15_000,
+        failOnStatusCode: false, timeout: opts.timeout || 15_000,
     }).catch((e) => ({ status: () => 0, ok: () => false, _err: e?.message }));
     let body = null;
     try { body = r.json ? await r.json() : null; } catch { /* ignore */ }
@@ -448,10 +455,16 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
             }
             challenges.push(login.body.challenge_token);
         }
-        // Parallel burst — all 17 verify calls fire within the same ~1s
-        // window so the sliding-window count strictly exceeds the cap.
+        // Parallel burst — all 17 verify calls fire concurrently so the
+        // sliding-window count strictly exceeds the cap. Per-call timeout
+        // is bumped to 60s (throttle window) because head-of-line blocking
+        // on serialized Mongo writes under single-worker uvicorn can push
+        // tail requests past the default 15s, returning status=0
+        // (Playwright client cancel) instead of the expected 429. With 60s
+        // every request completes within the throttle window; the inserts
+        // still all land before any age out, so cap=15 is exceeded.
         const verifyResponses = await Promise.all(
-            challenges.map((ct) => call2faVerify(request, ct, '111111'))
+            challenges.map((ct) => call2faVerify(request, ct, '111111', { timeout: 60_000 }))
         );
         const results = verifyResponses.map((r) => r.status);
         const got429 = results.includes(429);
