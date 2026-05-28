@@ -44,6 +44,11 @@ from models.enums import UserRole
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v101 DW
 
+# Bug AI mirror — precomputed bcrypt hash so verify_password burns equal
+# CPU on ghost users (see `auth.py:97`). Module-level so the bcrypt cost
+# is paid once at import, not per request.
+_DUMMY_PWHASH = hash_password("__agency_portal_timing_dummy__never_a_real_password__")
+
 router = APIRouter(prefix="/api", tags=["agency-portal"])
 
 
@@ -440,7 +445,10 @@ async def create_agency_user(agency_id: str, data: AgencyUserCreate, current_use
         "agency_id": agency_id,
         "name": data.name.strip(),
         "email": data.email.strip().lower(),
-        "password": hash_password(data.password),
+        # Standardize hash storage to `hashed_password` (matches auth.py
+        # canonical write path at lines 368/400/1064). Legacy rows still
+        # readable via the fallback chain in agency_login (line ~600).
+        "hashed_password": hash_password(data.password),
         "role": data.role,
         "roles": [data.role],
         "status": "active",
@@ -448,7 +456,8 @@ async def create_agency_user(agency_id: str, data: AgencyUserCreate, current_use
     }
     await db.users.insert_one(user_doc)
     user_doc.pop("_id", None)
-    user_doc.pop("password", None)
+    user_doc.pop("hashed_password", None)
+    user_doc.pop("password", None)  # belt-and-braces for any legacy leak
     return user_doc
 
 
@@ -458,7 +467,10 @@ async def list_agency_users(agency_id: str, current_user: User = Depends(get_cur
     _require_hotel_staff(current_user)
     docs = await db.users.find(
         {"agency_id": agency_id, "tenant_id": current_user.tenant_id},
-        {"_id": 0, "password": 0}
+        # Exclude every known password-hash field name so neither the
+        # canonical (`hashed_password`) nor legacy (`password_hash`,
+        # `password`) variant leaks into the agency-users listing.
+        {"_id": 0, "password": 0, "hashed_password": 0, "password_hash": 0}
     ).to_list(100)
     return docs
 
@@ -559,12 +571,41 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
     # blind index or legacy plaintext email; `decrypt_user_doc` restores
     # plaintext PII fields after read so downstream role/password checks
     # see the same shape as before.
-    user_doc = await sysdb.users.find_one(
+    user_doc_raw = await sysdb.users.find_one(
         build_user_email_query(data.email.strip().lower()), {"_id": 0}
     )
-    if not user_doc:
+
+    # Timing-attack equalization mirror of `auth.py:587-590` (Bug AI).
+    # ALWAYS run verify_password — on the real user's hash if found, on
+    # a precomputed dummy bcrypt hash otherwise — so bcrypt CPU cost is
+    # constant regardless of whether the account exists. Without this,
+    # the absence-of-user fast path leaks via response-time differences
+    # even when the per-IP/per-account throttle is in place.
+    # Hash-field tolerance (mirror of `auth.py:585`): accounts created
+    # via the main system store the bcrypt under `hashed_password`;
+    # the agency register path (line ~449) now also writes there but
+    # legacy rows may use `password_hash` or `password`. The fallback
+    # chain accepts all three; verify_password itself is unchanged.
+    if user_doc_raw:
+        user_doc = decrypt_user_doc(user_doc_raw)
+        hashed_pwd = (
+            user_doc.get("hashed_password")
+            or user_doc.get("password_hash")
+            or user_doc.get("password", "")
+        ) or _DUMMY_PWHASH
+    else:
+        user_doc = None
+        hashed_pwd = _DUMMY_PWHASH
+
+    pw_ok = verify_password(data.password, hashed_pwd)
+
+    if user_doc is None or not pw_ok:
+        # User-not-found and wrong-password collapse into the same 401
+        # response (identical detail text) and BOTH record a throttle
+        # hit — wrong-pw is the obvious brute-force vector, user-not-
+        # found is the email-enumeration vector. Constant-time bcrypt
+        # above ensures the two paths cost the same.
         await _record_failure_and_raise(401, "E-posta veya sifre hatali")
-    user_doc = decrypt_user_doc(user_doc)
 
     _login_role = user_doc.get("role")
     _login_roles = user_doc.get("roles") or []
@@ -575,37 +616,14 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
     if not (_login_is_sa or _login_is_agency):
         # Role-block is an authorization decision, NOT a credential
         # probe (it reveals nothing about whether the password is
-        # correct). Therefore it must NOT consume the throttle
-        # budget. Counting it would let any wrong-role caller burn
-        # the per-account cap with 10 bogus requests and then trip
-        # 429 on the (cap+1)th legitimate correct-credential
-        # attempt — re-introducing the Task #135 P0 against any
-        # account that hits this endpoint without an agency role.
+        # correct, since we only reach here after pw_ok). Therefore
+        # it must NOT consume the throttle budget. Counting it would
+        # let any wrong-role caller with a *valid* password burn the
+        # per-account cap and then trip 429 on the (cap+1)th
+        # legitimate attempt — re-introducing the Task #135 P0.
         # Stress spec 98D specifically skips on 403, so it must
         # arrive as a clean 403, not a throttled 429.
         raise HTTPException(status_code=403, detail="Bu giris sadece acente kullanicilari icindir")
-
-    # Hash field tolerance — mirror `auth.py:585` fallback chain.
-    # Accounts created via the main system (`auth.py`) store the bcrypt
-    # hash under `hashed_password`; accounts created via this agency
-    # registration path (line 436) historically used `password`; some
-    # legacy rows use `password_hash`. Reading only `password` (the
-    # original implementation) silently fails for every system-created
-    # user — verify_password gets "" → 401 → throttle hit → by the
-    # (per-account-cap+1)th attempt the success leg surfaces as 429
-    # instead of 200, which is exactly the symptom Stress spec 98D
-    # caught after Task #135 was deployed (RCA 2026-05-27): stress
-    # admin lives in sysdb.users with `hashed_password` only, so the
-    # drain leg could never succeed. Tolerance does NOT loosen security
-    # — all three field names hold the same bcrypt hash format and the
-    # verify_password call itself is unchanged.
-    hashed_pwd = (
-        user_doc.get("hashed_password")
-        or user_doc.get("password_hash")
-        or user_doc.get("password", "")
-    )
-    if not verify_password(data.password, hashed_pwd):
-        await _record_failure_and_raise(401, "E-posta veya sifre hatali")
 
     # Credential gate passed — drain the per-IP / per-account throttle
     # counters so a legitimate user who mistyped before succeeding isn't

@@ -61,6 +61,16 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
     });
 
     test('C) 100 oda HK transitions (dirty→cleaning→inspected→clean)', async ({ request, stressTokens }, testInfo) => {
+        // F8AH tur-4 fix (cold-boot CI regression): bu test'in eski 180s
+        // playwright default timeout'u, batched-parallel (10×4=40 conc)
+        // tasarımına rağmen CI→dev latency spike'larında (200-500ms/call)
+        // 400 toplam call için yetmiyor. 100 oda × 4 transition = 400
+        // call, en kötü senaryo 400×500ms = 200s → 180s aşılıyor.
+        // Coverage'ı azaltma DOKTRİN İHLALİ (sample küçültme=skip-as-pass
+        // muadili). Bunun yerine sadece bu testin timeout'unu 360s yap
+        // — backend yükü hâlâ BATCH_SIZE=10 ile kontrollü, sadece
+        // playwright'ın test-level budget'ı daha geniş.
+        test.setTimeout(360_000);
         if (rooms.length < 20) { rec(testInfo, { module: MOD, step: 'transitions_sample', status: 'SKIP', note: `rooms=${rooms.length}` }); return; }
         const target = rooms.slice(0, Math.min(100, rooms.length));
         const transitions = ['dirty', 'cleaning', 'inspected', 'clean'];

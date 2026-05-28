@@ -362,6 +362,16 @@ test.describe('F9C § 98 — Mobile Cashier Surface', () => {
     // brute-force on a financial gate). Sequential — no Promise.all so
     // the throttle window applies cleanly.
     test('L) PIN brute-force throttle probe', async ({ request, stressTokens }, testInfo) => {
+        // F8AH tur-4 fix (CI cold-boot regression): 11 sequential POSTs
+        // with per-call timeout=10s + 200ms pacing ⇒ ~112s nominal, ~165s
+        // worst-case (cold Mongo + throttle-enforce write per attempt on
+        // a fresh-boot replica without warm caches). Playwright default
+        // test budget is 180s which leaves no margin for the fixture
+        // setup or the report-recording teardown. Bump only this test's
+        // budget to 300s — the brute-force probe IS the test, can't
+        // parallelise; this is the cheapest correct fix that preserves
+        // the doctrine "no skip-as-pass, no coverage cut".
+        test.setTimeout(300_000);
         // Independent of moduleBlocked.
         const statuses = [];
         for (let i = 1; i <= 11; i++) {

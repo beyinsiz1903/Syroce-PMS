@@ -254,6 +254,7 @@ async def phase_d_perf_and_marketplace(app):
     asyncio.create_task(_create_perf_indexes_bg())
 
 async def _create_perf_indexes_inner():
+    global BOOT_READY  # must precede the two assignments below
     try:
         logger.info("🚀 Creating performance indexes for large-scale operations...")
         await _raw_db.bookings.create_index([("tenant_id", 1), ("check_in", 1), ("check_out", 1)], name="idx_bookings_tenant_checkin_checkout")
@@ -342,6 +343,52 @@ async def _create_perf_indexes_inner():
         else:
             logger.warning(f"Index creation warning: {e}")
 
+    # Entitlement, Metering & Feature Flag indexes
+    # F8AH tur-4 cold-boot fix (reorder): these blocks include UNIQUE
+    # indexes (metering tenant+date+event, feature_flags flag_key,
+    # deploy_pipelines pipeline_id) whose absence would let concurrent
+    # writers create duplicates that later fail the unique-build itself.
+    # Architect Round-1 flagged readiness-before-uniques as a correctness
+    # window, so all unique-bearing blocks now run BEFORE the BOOT_READY
+    # flip; only the purely cosmetic redundant-index cleanup runs after.
+    try:
+        from core.metering import ensure_metering_indexes
+        await ensure_metering_indexes()
+        logger.info("✅ Usage metering indexes ensured")
+    except Exception as e:
+        logger.warning(f"Metering index creation: {e}")
+
+    try:
+        from core.feature_flags import ensure_feature_flag_indexes
+        await ensure_feature_flag_indexes()
+        logger.info("✅ Feature flag indexes ensured")
+    except Exception as e:
+        logger.warning(f"Feature flag index creation: {e}")
+
+    # Deploy Pipeline indexes (unique idx_pipeline_id)
+    try:
+        await _raw_db.deploy_pipelines.create_index([("pipeline_id", 1)], unique=True, name="idx_pipeline_id")
+        await _raw_db.deploy_pipelines.create_index([("started_at", -1)], name="idx_pipeline_started")
+        await _raw_db.rollback_evaluations.create_index([("evaluated_at", -1)], name="idx_rollback_eval_time")
+        await _raw_db.rollback_history.create_index([("executed_at", -1)], name="idx_rollback_history_time")
+        logger.info("✅ Deploy pipeline indexes ensured")
+    except Exception as e:
+        logger.warning(f"Deploy pipeline index creation: {e}")
+
+    # ── BOOT_READY flip ─────────────────────────────────────────────
+    # All correctness-critical UNIQUE indexes are now ensured:
+    #   * rooms (tenant_id, room_number) unique           [line ~265]
+    #   * kbs_reports._open_lock partial-unique           [line ~325]
+    #   * metering (tenant_id, date, event_type) unique   [ensure_metering_indexes]
+    #   * feature_flags flag_key unique                   [ensure_feature_flag_indexes]
+    #   * deploy_pipelines.pipeline_id unique             [line above]
+    # Only purely cosmetic perf hygiene (redundant-index drops) remains
+    # below and runs in the BG tail without gating readiness. Cuts
+    # cold-boot /health/ready wait by skipping the ~3-8s drop_index
+    # chain from the gate. Idempotent re-set at function tail.
+    BOOT_READY = True
+    logger.info("✅ Boot phase D unique-index gate complete — readiness probe is now green (redundant cleanup continues in BG tail)")
+
     # ── REDUNDANT INDEX CLEANUP (Atlas Performance Advisor, Mayıs 2026) ──
     # Bağımsız try bloğu — yukarıdaki create_index zincirinde herhangi bir
     # IndexOptionsConflict (code=85) hatası bu cleanup'ı atlatmasın diye
@@ -415,36 +462,15 @@ async def _create_perf_indexes_inner():
     except Exception as e:
         logger.warning(f"Redundant index cleanup error: {e}")
 
-    # Entitlement, Metering & Feature Flag indexes
-    try:
-        from core.metering import ensure_metering_indexes
-        await ensure_metering_indexes()
-        logger.info("✅ Usage metering indexes ensured")
-    except Exception as e:
-        logger.warning(f"Metering index creation: {e}")
-
-    try:
-        from core.feature_flags import ensure_feature_flag_indexes
-        await ensure_feature_flag_indexes()
-        logger.info("✅ Feature flag indexes ensured")
-    except Exception as e:
-        logger.warning(f"Feature flag index creation: {e}")
-
-    # Deploy Pipeline indexes
-    try:
-        await _raw_db.deploy_pipelines.create_index([("pipeline_id", 1)], unique=True, name="idx_pipeline_id")
-        await _raw_db.deploy_pipelines.create_index([("started_at", -1)], name="idx_pipeline_started")
-        await _raw_db.rollback_evaluations.create_index([("evaluated_at", -1)], name="idx_rollback_eval_time")
-        await _raw_db.rollback_history.create_index([("executed_at", -1)], name="idx_rollback_history_time")
-        logger.info("✅ Deploy pipeline indexes ensured")
-    except Exception as e:
-        logger.warning(f"Deploy pipeline index creation: {e}")
-
-    # Phase D tamamlandı → readiness probe artık 200 dönebilir.
-    # Arka planda hâlâ koşan perf-index task'ı bunu beklemez.
-    global BOOT_READY
+    # Phase D BG tail complete. BOOT_READY was already flipped earlier
+    # in this function right after the unique-index gate (rooms, KBS,
+    # metering, feature_flags, deploy_pipelines) — see "F8AH tur-4
+    # cold-boot fix" comment. The only work between that flip and this
+    # line is the cosmetic redundant-index cleanup. Idempotent re-set
+    # below is a no-op safety net (covers the edge case where the gate
+    # was skipped due to an exception in the wrapping try-block above).
     BOOT_READY = True
-    logger.info("✅ Boot phase D complete — readiness probe is now green")
+    logger.info("✅ Boot phase D BG tail complete (readiness was already green)")
 
 
 async def _backfill_shift_schedule_locks() -> None:
