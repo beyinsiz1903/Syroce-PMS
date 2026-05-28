@@ -39,6 +39,7 @@ from core.security import (
     hash_password,
     verify_password,
 )
+from security.encrypted_lookup import build_user_email_query, decrypt_user_doc
 from models.enums import UserRole
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v101 DW
@@ -418,7 +419,13 @@ async def create_agency_user(agency_id: str, data: AgencyUserCreate, current_use
     if not agency:
         raise HTTPException(status_code=404, detail="Acente bulunamadi")
 
-    existing = await db.users.find_one({"email": data.email.strip().lower()}, {"_id": 0})
+    # Encrypted-email parity with login lookup above — plaintext-only
+    # `{"email": ...}` misses modern accounts whose email is stored as
+    # ciphertext, which would let the same address be re-registered and
+    # break the unique-email invariant. Use the blind-index `$or` helper.
+    existing = await db.users.find_one(
+        build_user_email_query(data.email.strip().lower()), {"_id": 0}
+    )
     if existing:
         raise HTTPException(status_code=409, detail="Bu e-posta adresi zaten kayitli")
 
@@ -539,11 +546,25 @@ async def agency_login(request: Request, data: AgencyLoginRequest):
     from core.tenant_db import get_system_db
     sysdb = get_system_db()
 
+    # Encrypted email lookup parity with `auth.py:563` — PII fields
+    # (including `email`) are encrypted at rest, with the searchable
+    # blind index stored under `_hash_email`. Looking up by plaintext
+    # `{"email": ...}` (the original implementation) silently misses
+    # every modern account whose email column holds ciphertext, so the
+    # router returned user-not-found 401 → throttle hit → by the
+    # (per-account-cap+1)th attempt the success leg surfaced as 429.
+    # This was the residual root cause of stress spec 98D Phase 2 after
+    # the hash-field-tolerance fix landed (RCA 2026-05-27 turn 2).
+    # `build_user_email_query` produces a `$or` query matching either the
+    # blind index or legacy plaintext email; `decrypt_user_doc` restores
+    # plaintext PII fields after read so downstream role/password checks
+    # see the same shape as before.
     user_doc = await sysdb.users.find_one(
-        {"email": data.email.strip().lower()}, {"_id": 0}
+        build_user_email_query(data.email.strip().lower()), {"_id": 0}
     )
     if not user_doc:
         await _record_failure_and_raise(401, "E-posta veya sifre hatali")
+    user_doc = decrypt_user_doc(user_doc)
 
     _login_role = user_doc.get("role")
     _login_roles = user_doc.get("roles") or []
