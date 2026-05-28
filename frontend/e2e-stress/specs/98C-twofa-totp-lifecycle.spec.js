@@ -419,7 +419,24 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
         // 17 burst = TWOFA_VERIFY_IP threshold(15) + 2 → at least the 16th
         // verify should hit 429. Each attempt uses fake code "111111";
         // backend's verify_totp fails → enforce(TWOFA_VERIFY_IP) +1.
-        const results = [];
+        //
+        // CI 2026-05-28 NO-GO P0 RCA — earlier sequential implementation
+        // (login + verify in serial, ~3-5s/iter under Atlas write latency)
+        // stretched the 17-iter loop across >60s, so the sliding window
+        // never strictly exceeded 15 hits within any 60s slice → no 429.
+        // Local `enforce()` smoke (in-process, ~8.9s for 17 calls) PASS
+        // confirms Mongo backend works; the failure was test rate <
+        // throttle rate. Real-world brute-force ALWAYS bursts (curl/script
+        // can send 17 requests in <1s), so the test now models that:
+        // (1) mint 17 fresh challenge tokens sequentially (each is single-
+        //     use; sequential is fine because LOGIN throttle is per-IP not
+        //     per-2FA-attempt and challenge minting itself is cheap), then
+        // (2) fire all 17 /api/auth/2fa/verify calls in parallel via
+        //     Promise.all. All 17 hits land in Mongo within ~1s window →
+        //     cap=15 strictly exceeded → ≥2× 429 returned. This is a
+        //     test-correctness fix (more realistic threat model), NOT an
+        //     assertion loosening — pass criterion unchanged (≥1× 429).
+        const challenges = [];
         for (let i = 0; i < 17; i++) {
             const login = await freshLogin(request, email, password);
             if (!login.ok || !login.body?.challenge_token) {
@@ -429,10 +446,14 @@ test.describe('F8AG § 98C — 2FA TOTP Lifecycle', () => {
                 expect(login.ok, `throttle test iter=${i + 1} needs challenge status=${login.status}`).toBe(true);
                 return;
             }
-            const r = await call2faVerify(request, login.body.challenge_token, '111111');
-            results.push(r.status);
-            if (r.status === 429) break; // threshold hit, no need to continue
+            challenges.push(login.body.challenge_token);
         }
+        // Parallel burst — all 17 verify calls fire within the same ~1s
+        // window so the sliding-window count strictly exceeds the cap.
+        const verifyResponses = await Promise.all(
+            challenges.map((ct) => call2faVerify(request, ct, '111111'))
+        );
+        const results = verifyResponses.map((r) => r.status);
         const got429 = results.includes(429);
         rec(testInfo, { module: MOD, step: 'verify_throttle',
             status: got429 ? 'PASS' : 'FAIL',
