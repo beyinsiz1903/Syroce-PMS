@@ -39,10 +39,10 @@ from core.security import (
     hash_password,
     verify_password,
 )
-from security.encrypted_lookup import build_user_email_query, decrypt_user_doc
 from models.enums import UserRole
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v101 DW
+from security.encrypted_lookup import build_user_email_query, decrypt_user_doc
 
 # Bug AI mirror — precomputed bcrypt hash so verify_password burns equal
 # CPU on ghost users (see `auth.py:97`). Module-level so the bcrypt cost
