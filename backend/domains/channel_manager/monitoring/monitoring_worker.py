@@ -16,11 +16,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.database import db
+from core.transient_db_guard import TransientFailureTracker
 
 from .aggregator import collect_all_metrics
 from .alert_engine import evaluate_alerts, process_alerts
 
 logger = logging.getLogger("monitoring.worker")
+
+_transient_tracker = TransientFailureTracker("monitoring-worker")
 
 COLL_METRICS_HISTORY = "monitoring_metrics_history"
 
@@ -96,6 +99,7 @@ async def monitoring_run_once() -> dict[str, Any]:
 
         state["runs_total"] += 1
         state["last_run"] = datetime.now(UTC).isoformat()
+        _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
 
         logger.info(
             f"Monitoring cycle #{state['runs_total']}: "
@@ -112,7 +116,15 @@ async def monitoring_run_once() -> dict[str, Any]:
         }
     except Exception as e:
         state["errors"] += 1
-        logger.error(f"Monitoring worker error: {e}")
+        # Transient Atlas hiccups (no-primary / SSL handshake timeout) are
+        # demoted to WARNING until sustained; real bugs stay ERROR (Sentry).
+        _transient_tracker.log_exception(
+            logger,
+            e,
+            TransientFailureTracker.OUTER_LOOP_KEY,
+            context="monitoring cycle",
+            non_transient_msg="%s monitoring worker error: %s",
+        )
         return {"status": "error", "error": str(e)}
 
 

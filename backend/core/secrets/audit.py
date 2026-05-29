@@ -8,7 +8,11 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from core.transient_db_guard import TransientFailureTracker
+
 logger = logging.getLogger("core.secrets.audit")
+
+_transient_tracker = TransientFailureTracker("secret-audit")
 
 COLL_SECRET_AUDIT = "secret_access_audit"
 
@@ -63,9 +67,19 @@ class SecretAuditLogger:
         try:
             db = self._get_db()
             await db[COLL_SECRET_AUDIT].insert_one(record)
-        except Exception:
-            # Audit failure must not break secret operations
-            logger.exception("Failed to write secret audit log")
+            _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
+        except Exception as exc:
+            # Audit failure must not break secret operations. Transient Atlas
+            # hiccups (no-primary / SSL handshake timeout) are demoted to
+            # WARNING until the streak hits threshold, then escalate to ERROR so
+            # a sustained outage stays visible; real bugs keep ERROR+traceback.
+            _transient_tracker.log_exception(
+                logger,
+                exc,
+                TransientFailureTracker.OUTER_LOOP_KEY,
+                context="secret audit write",
+                non_transient_msg="%s failed to write secret audit log: %s",
+            )
 
     async def get_audit_trail(
         self,
