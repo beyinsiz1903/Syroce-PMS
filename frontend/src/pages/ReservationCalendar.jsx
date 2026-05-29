@@ -678,7 +678,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         />
         </div>
 
-        <div className="flex-1 overflow-auto p-4 pt-3 space-y-3">
+        <div className="flex-1 overflow-auto px-4 pb-4 space-y-3">
         <CalendarOccupancy
           dateRange={dateRange}
           getOccupancyForDate={getOccupancyForDate}
@@ -730,6 +730,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           dateRange={dateRange}
           daysToShow={daysToShow}
           currentDate={currentDate}
+          businessDate={hotelBusinessDate}
           conflicts={conflicts}
           draggingBooking={draggingBooking}
           dragOverCell={dragOverCell}

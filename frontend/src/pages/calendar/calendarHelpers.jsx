@@ -182,9 +182,13 @@ export const getOTAInfo = (channel) => {
 
 // Status-based booking color for calendar bars
 // blue = confirmed, green = checked_in (in-house), red tint = checked_out, teal = guaranteed
-export const getBookingStatusColor = (booking) => {
+// refToday: otelin iş günü (business date). Gün sonu yapılmadıysa duvar-saati
+// (new Date) iş gününün ÖNÜNDE olur; o yüzden "geçmiş → kırmızı" kararı duvar
+// saatine göre değil, iş gününe göre verilmeli. Aksi halde gelecekteki onaylı
+// rezervasyonlar yanlışlıkla kırmızı görünür (bkz. takvim renk hatası).
+export const getBookingStatusColor = (booking, refToday) => {
   const status = booking.status;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = refToday || new Date().toISOString().slice(0, 10);
   const checkIn = toDateStringUTC(booking.check_in);
   const checkOut = toDateStringUTC(booking.check_out);
   // In-house: vibrant green

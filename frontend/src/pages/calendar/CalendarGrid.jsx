@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Calendar as CalendarIcon, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import {
   toDateStringUTC, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
@@ -16,6 +16,7 @@ const CELL_CLS = 'w-[72px]'; // Tailwind class matching CELL_W
 const CELL_H = 38;  // px room row height (was 52)
 const BOOKING_H = 30; // px booking bar height (was 46)
 const LANE_H = 32;  // px per unassigned lane (was 44)
+const LANE_BAR_H = 34;  // px per booking lane in a room row (BOOKING_H + 4px gap)
 
 const CalendarGrid = ({
   rooms,
@@ -24,6 +25,7 @@ const CalendarGrid = ({
   dateRange,
   daysToShow,
   currentDate,
+  businessDate,
   conflicts,
   draggingBooking,
   dragOverCell,
@@ -60,6 +62,24 @@ const CalendarGrid = ({
     );
   };
 
+  // Bir rezervasyonun dahil olduğu çakışma kaydını (varsa) döndürür — tooltip
+  // metni için kullanılır ("!!" rozeti ve yanıp sönen halkanın açıklaması).
+  const getConflictInfo = (roomId, booking) => {
+    return conflicts.find(c =>
+      c.room_id === roomId &&
+      (c.booking1_id === booking.id || c.booking2_id === booking.id)
+    );
+  };
+
+  const formatConflictRange = (start, end) => {
+    try {
+      const opts = { day: 'numeric', month: 'short' };
+      return `${new Date(start).toLocaleDateString('tr-TR', opts)} – ${new Date(end).toLocaleDateString('tr-TR', opts)}`;
+    } catch {
+      return '';
+    }
+  };
+
   const isGroupBooking = (bookingId) => {
     return (deluxeGroupBookings || []).some(g => g.booking_ids?.includes(bookingId));
   };
@@ -67,6 +87,29 @@ const CalendarGrid = ({
   const getGroupInfo = (bookingId) => {
     return (deluxeGroupBookings || []).find(g => g.booking_ids?.includes(bookingId));
   };
+
+  // Rezervasyonları oda bazında tek seferde grupla (iptal/no-show hariç) ve yalnızca
+  // görünür tarih aralığıyla kesişenleri tut. Böylece lane hesabı (a) her render'da
+  // her oda için tüm bookings'i taramaz, (b) görünmeyen ileri tarihli çakışmalar
+  // satır yüksekliğini boş yere şişirmez.
+  const rangeStartStr = dateRange.length > 0 ? toDateStringUTC(dateRange[0]) : '';
+  const rangeEndStr = dateRange.length > 0
+    ? toDateStringUTC(new Date(dateRange[dateRange.length - 1].getTime() + 86400000))
+    : '';
+  const bookingsByRoom = useMemo(() => {
+    const map = new Map();
+    if (!rangeStartStr || !rangeEndStr) return map;
+    for (const b of bookings) {
+      if (!b.room_id || b.status === 'cancelled' || b.status === 'no_show') continue;
+      const ci = toDateStringUTC(b.check_in);
+      const co = toDateStringUTC(b.check_out);
+      if (!(ci < rangeEndStr && co > rangeStartStr)) continue; // görünür aralıkla kesişmiyor
+      let arr = map.get(b.room_id);
+      if (!arr) { arr = []; map.set(b.room_id, arr); }
+      arr.push(b);
+    }
+    return map;
+  }, [bookings, rangeStartStr, rangeEndStr]);
 
   const getGroupColor = (booking) => {
     if (!booking || !booking.group_booking_id) return '#2563eb';
@@ -338,19 +381,33 @@ const CalendarGrid = ({
 
                   {/* Rooms of this type */}
                   {!collapsedTypes.has(roomType) && typeRooms.map((room) => {
-                    const hasBookingToday = bookings.some(b => b.room_id === room.id && isBookingOnDate(b, new Date()) && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
+                    const refTodayStr = businessDate || toDateStringUTC(new Date());
+                    const isActiveOn = (b, dStr) => {
+                      const ci = toDateStringUTC(b.check_in);
+                      const co = toDateStringUTC(b.check_out);
+                      return dStr >= ci && dStr < co;
+                    };
+                    // Bu odanın görünür aralıkla kesişen, iptal/no-show olmayan
+                    // rezervasyonları (checked_out dahil → turuncu kart). Lane hesabı ile
+                    // aynı odadaki çakışanlar üst üste binmek yerine alt alta dizilir.
+                    const roomBookings = bookingsByRoom.get(room.id) || [];
+                    const { lanes, maxLane } = computeUnassignedLanes(roomBookings);
+                    const laneCount = maxLane + 1;
+                    const rowHeight = Math.max(CELL_H, laneCount * LANE_BAR_H + 4);
+                    const hasBookingToday = roomBookings.some(b => isActiveOn(b, refTodayStr) && b.status !== 'checked_out');
                     return (
                       <div key={room.id} className="flex border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
-                        <div className="w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 bg-white flex items-center">
+                        <div className="w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 bg-white flex items-center" style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
                             <div className={`w-1.5 h-1.5 rounded-full ${hasBookingToday ? 'bg-red-500' : 'bg-green-500'}`}></div>
                             <div className="font-bold text-xs text-gray-800" data-testid={`room-${room.room_number}`}>{room.room_number}</div>
                           </div>
                         </div>
-                        <div className="flex relative" style={{ width: `${daysToShow * CELL_W}px` }}>
+                        <div className="flex relative" style={{ width: `${daysToShow * CELL_W}px`, height: `${rowHeight}px` }}>
+                          {/* Arka plan hücreleri: blok, drag-over, tıkla-oluştur, boş gösterge */}
                           {dateRange.map((date, idx) => {
-                            const booking = getBookingForRoomOnDate(room.id, date, bookings);
-                            const bIsStart = booking && isBookingStart(booking, date);
+                            const dStr = toDateStringUTC(date);
+                            const covered = roomBookings.some(b => isActiveOn(b, dStr));
                             const roomBlock = getRoomBlockForDate(room.id, date, roomBlocks);
                             const bBlockIsStart = roomBlock && isBlockStart(roomBlock, date);
                             const isDragOver = dragOverCell?.roomId === room.id &&
@@ -365,10 +422,10 @@ const CalendarGrid = ({
                                 } ${isDragOver ? 'bg-emerald-50 ring-1 ring-emerald-400' : ''}
                                 ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''}`}
                                 style={{
-                                  height: `${CELL_H}px`, minHeight: `${CELL_H}px`, overflow: 'visible',
+                                  height: `${rowHeight}px`, minHeight: `${rowHeight}px`, overflow: 'visible',
                                   ...(past && !roomBlock ? { backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 8px, rgba(0,0,0,0.02) 8px, rgba(0,0,0,0.02) 9px)' } : {})
                                 }}
-                                onClick={() => !booking && !roomBlock && onCellClick(room.id, date)}
+                                onClick={() => !covered && !roomBlock && onCellClick(room.id, date)}
                                 onDragOver={(e) => onDragOver(e, room.id, date)}
                                 onDragLeave={onDragLeave}
                                 onDrop={(e) => onDrop(e, room.id, date)}
@@ -398,68 +455,84 @@ const CalendarGrid = ({
                                 )}
 
                                 {/* Empty cell indicator */}
-                                {!booking && !roomBlock && (
+                                {!covered && !roomBlock && (
                                   <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
                                     <Plus className="w-4 h-4 text-gray-400" />
                                   </div>
                                 )}
+                              </div>
+                            );
+                          })}
 
-                                {/* Booking bar */}
-                                {bIsStart && booking && (() => {
-                                  const statusColor = getBookingStatusColor(booking);
-                                  return (
-                                  <div
-                                    draggable
-                                    onDragStart={(e) => onDragStart(e, booking)}
-                                    onDragEnd={onDragEnd}
-                                    onDoubleClick={() => onBookingDoubleClick(booking)}
-                                    className={`absolute top-1 left-0.5 rounded text-white text-[10px] shadow-sm hover:shadow-md transition-all cursor-move z-20 group ${
-                                      draggingBooking?.id === booking.id ? 'opacity-50 scale-95' : ''
-                                    } ${hasConflict(room.id, date) ? 'ring-2 ring-red-500 animate-pulse' : ''}
-                                    ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
-                                    style={{
-                                      width: `${calculateBookingSpan(booking, currentDate, daysToShow) * CELL_W - 4}px`,
-                                      height: `${BOOKING_H}px`,
-                                      backgroundColor: statusColor.bg,
-                                      borderLeft: `3px solid ${statusColor.border}`,
-                                    }}
-                                    data-testid={`booking-bar-${booking.id}`}
-                                    title={`${booking.guest_name}`}
-                                  >
-                                    <div className="px-1.5 py-0.5 relative overflow-hidden" style={{ height: `${BOOKING_H}px` }}>
-                                      <div className="font-extrabold text-[10px] truncate pr-3 text-white leading-tight">
-                                        {booking.guest_name || 'Misafir'}
+                          {/* Rezervasyon barları (overlay) — lane'lere dizilir, aynı odadaki
+                              çakışanlar asla üst üste binmez */}
+                          {roomBookings.map((booking) => {
+                            const checkInStr = toDateStringUTC(booking.check_in);
+                            const checkOutStr = toDateStringUTC(booking.check_out);
+                            let startIdx = dateRange.findIndex(d => toDateStringUTC(d) === checkInStr);
+                            // Görünür aralıktan önce başlayıp aralık içine taşan rezervasyonu
+                            // ilk kolona kenetle (eskiden böyleleri hiç görünmüyordu).
+                            if (startIdx < 0 && checkInStr < rangeStartStr && checkOutStr > rangeStartStr) startIdx = 0;
+                            if (startIdx < 0) return null;
+                            const span = calculateBookingSpan(booking, currentDate, daysToShow);
+                            if (span <= 0) return null;
+                            const lane = lanes[booking.id] || 0;
+                            const statusColor = getBookingStatusColor(booking, refTodayStr);
+                            const conflictInfo = getConflictInfo(room.id, booking);
+                            const arrivalInView = startIdx >= 0 && checkInStr === toDateStringUTC(dateRange[startIdx]);
+                            const conflictTitle = conflictInfo
+                              ? `⚠ Çakışma: Bu oda ${formatConflictRange(conflictInfo.overlap_start, conflictInfo.overlap_end)} tarihlerinde iki rezervasyona sahip (${conflictInfo.guest1 || 'Misafir'} ↔ ${conflictInfo.guest2 || 'Misafir'}). Lütfen birini başka odaya taşıyın.`
+                              : `${booking.guest_name || 'Misafir'}`;
+                            return (
+                              <div
+                                key={booking.id}
+                                draggable
+                                onDragStart={(e) => onDragStart(e, booking)}
+                                onDragEnd={onDragEnd}
+                                onDoubleClick={() => onBookingDoubleClick(booking)}
+                                className={`absolute rounded text-white text-[10px] shadow-sm hover:shadow-md transition-all cursor-move z-20 group ${
+                                  draggingBooking?.id === booking.id ? 'opacity-50 scale-95' : ''
+                                } ${conflictInfo ? 'ring-2 ring-red-500 animate-pulse' : ''}
+                                ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
+                                style={{
+                                  left: `${startIdx * CELL_W + 2}px`,
+                                  top: `${lane * LANE_BAR_H + 2}px`,
+                                  width: `${span * CELL_W - 4}px`,
+                                  height: `${BOOKING_H}px`,
+                                  backgroundColor: statusColor.bg,
+                                  borderLeft: `3px solid ${statusColor.border}`,
+                                }}
+                                data-testid={`booking-bar-${booking.id}`}
+                                title={conflictTitle}
+                              >
+                                <div className="px-1.5 py-0.5 relative overflow-hidden" style={{ height: `${BOOKING_H}px` }}>
+                                  <div className="font-extrabold text-[10px] truncate pr-3 text-white leading-tight">
+                                    {booking.guest_name || 'Misafir'}
+                                  </div>
+                                  <div className="text-[8px] text-white/80 truncate flex items-center gap-0.5">
+                                    {booking.adults && <span>Ks: {(booking.adults || 0) + (booking.children || 0)}</span>}
+                                  </div>
+                                  <div className="absolute top-0.5 right-0.5 flex flex-col space-y-0.5 items-end">
+                                    {showDeluxePanel && isGroupBooking(booking.id) && (
+                                      <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-white text-[7px] font-bold px-0.5 py-0 rounded" title={`Group: ${getGroupInfo(booking.id)?.company_name}`}>
+                                        G
                                       </div>
-                                      <div className="text-[8px] text-white/80 truncate flex items-center gap-0.5">
-                                        {booking.adults && <span>Ks: {(booking.adults || 0) + (booking.children || 0)}</span>}
-                                      </div>
-                                      <div className="absolute top-0.5 right-0.5 flex flex-col space-y-0.5 items-end">
-                                        {showDeluxePanel && isGroupBooking(booking.id) && (
-                                          <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-white text-[7px] font-bold px-0.5 py-0 rounded" title={`Group: ${getGroupInfo(booking.id)?.company_name}`}>
-                                            G
-                                          </div>
-                                        )}
-                                        <div className="flex space-x-0.5">
-                                          {getBookingStatus(booking, date) === 'arrival' && (
-                                            <div className="bg-white text-green-600 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[8px] font-bold" title="Arrival">A</div>
-                                          )}
-                                          {getBookingStatus(booking, date) === 'departure' && (
-                                            <div className="bg-white text-red-600 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[8px] font-bold" title="Departure">D</div>
-                                          )}
-                                          {getBookingStatus(booking, date) === 'stayover' && (
-                                            <div className="bg-white text-blue-600 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[8px] font-bold" title="Stayover">S</div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    {hasConflict(room.id, date) && (
-                                      <div className="absolute top-0 right-0 bg-red-600 text-white text-[7px] px-0.5 rounded-bl font-bold animate-pulse">
-                                        !!
+                                    )}
+                                    {arrivalInView && (
+                                      <div className="flex space-x-0.5">
+                                        <div className="bg-white text-green-600 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[8px] font-bold" title="Giriş günü">A</div>
                                       </div>
                                     )}
                                   </div>
-                                  );
-                                })()}
+                                </div>
+                                {conflictInfo && (
+                                  <div
+                                    className="absolute top-0 right-0 bg-red-600 text-white text-[7px] px-0.5 rounded-bl font-bold animate-pulse"
+                                    title={conflictTitle}
+                                  >
+                                    !!
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
