@@ -25,6 +25,7 @@ from pymongo.errors import DuplicateKeyError
 
 from core.database import _raw_db, db
 from core.security import get_current_user
+from security.upload_validator import validate_document_bytes
 
 # GridFS bucket — personel belgeleri için (5MB üstü destek + memory verimi).
 # Eski kayıtlar `data_b64` alanı üzerinden okunmaya devam eder (geriye uyum).
@@ -5234,6 +5235,16 @@ async def upload_staff_document(
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="Boş dosya")
 
+    # F8S § 64 (magic-bytes hardening): MIME header'a güvenmek polyglot
+    # saldırısına açıktı (HTML body + Content-Type: application/pdf kabul
+    # ediliyordu → stored XSS). İçerik imzasını doğrula ve saklanacak
+    # content_type'ı saldırgan-beyanlı değerden değil, TESPIT edilen gerçek
+    # türden türet.
+    verified_content_type = validate_document_bytes(
+        content, declared_mime=file.content_type, max_bytes=DOC_MAX_BYTES,
+        field_label="Belge",
+    )
+
     # F8S § 64: filename sanitize — path traversal / header injection guard.
     safe_filename = _sanitize_doc_filename(file.filename)
     safe_label = _sanitize_doc_filename(label) if label else safe_filename
@@ -5246,7 +5257,7 @@ async def upload_staff_document(
             'tenant_id': current_user.tenant_id,
             'staff_id': staff_id,
             'doc_type': doc_type,
-            'content_type': file.content_type,
+            'content_type': verified_content_type,
         },
     )
     item = {
@@ -5257,7 +5268,7 @@ async def upload_staff_document(
         'doc_type': doc_type,
         'label': safe_label or 'Belge',
         'filename': safe_filename,
-        'content_type': file.content_type,
+        'content_type': verified_content_type,
         'size_bytes': len(content),
         'gridfs_id': str(gridfs_id),
         'storage': 'gridfs',

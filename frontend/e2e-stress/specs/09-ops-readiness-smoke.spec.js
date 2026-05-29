@@ -156,6 +156,7 @@ test.describe('F8W § 09 — Ops Readiness Smoke', () => {
     test('C) CM outbox depth + conflict queue — within bounds', async ({ request, stressTokens, stressState }, testInfo) => {
         // Outbox depth — sık endpoint'ler.
         const outboxPaths = [
+            '/api/outbox/status',  // deployed: routers.outbox_admin (pending field)
             '/api/cm/outbox/stats', '/api/cm/outbox/depth',
             '/api/channel-manager/outbox/stats', '/api/cm/health',
         ];
@@ -174,6 +175,8 @@ test.describe('F8W § 09 — Ops Readiness Smoke', () => {
         }
         // Conflict queue — F8 CM-Hardening series ürünü.
         const conflictPaths = [
+            '/api/channel-manager/conflict-queue/count',  // deployed: {count}
+            '/api/channel-manager/conflict-queue?limit=1',  // deployed: {total}
             '/api/cm/conflict-queue/stats',
             '/api/cm/conflict-queue?status=open&limit=1',
         ];

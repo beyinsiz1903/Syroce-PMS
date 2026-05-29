@@ -126,3 +126,98 @@ def safe_filename_ext(filename: str | None, sanitized_ext: str) -> str:
     """Return a non-traversal extension. Always prefers the sanitized ext from
     magic-bytes detection; never trusts the user-supplied filename."""
     return sanitized_ext  # canonical ext from real format
+
+
+# ---------------------------------------------------------------------------
+# Document (PDF / DOC / DOCX / image) magic-byte verification.
+#
+# Why:
+#   - HR staff documents accept PDF, DOC, DOCX and a few image types. Until
+#     now acceptance relied purely on the attacker-controlled multipart
+#     Content-Type header (MIME-trust). That allows polyglots: an HTML body
+#     (with <script>) uploaded as `Content-Type: application/pdf` was stored
+#     and could be served back as text/html → stored XSS.
+#   - This verifier sniffs the real file signature and rejects anything that
+#     is not a genuine PDF / OLE-doc / OOXML-zip / allowed image. It returns
+#     the *detected* canonical content-type so callers persist a trustworthy
+#     value instead of the client-declared one.
+# ---------------------------------------------------------------------------
+
+MAX_DOC_BYTES = 5 * 1024 * 1024  # 5 MB
+
+_PDF_MAGIC = b"%PDF-"
+# ZIP local-file / empty-archive / spanned-archive headers (DOCX is a zip).
+_ZIP_MAGICS = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
+# OLE2 Compound File (legacy .doc / .xls / .ppt).
+_OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+
+# Detected family -> canonical document content-type.
+_DOC_CONTENT_TYPE = {
+    "pdf": "application/pdf",
+    "ole": "application/msword",
+    "ooxml": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+def _sniff_document_family(content: bytes) -> str | None:
+    """Return 'pdf' | 'ole' | 'ooxml' | None based on document magic bytes."""
+    if content.startswith(_PDF_MAGIC):
+        return "pdf"
+    if content.startswith(_OLE_MAGIC):
+        return "ole"
+    if any(content.startswith(m) for m in _ZIP_MAGICS):
+        # DOCX is a zip container. Other zip-based office formats share this
+        # signature; the declared MIME allow-list in the caller still gates
+        # which OOXML types are accepted.
+        return "ooxml"
+    return None
+
+
+def validate_document_bytes(
+    content: bytes,
+    *,
+    declared_mime: str | None = None,
+    max_bytes: int = MAX_DOC_BYTES,
+    field_label: str = "Belge",
+) -> str:
+    """
+    Verify `content` is a genuine PDF / DOC / DOCX / allowed image. Defends the
+    HR document upload path against polyglot/MIME-spoof attacks by inspecting
+    real file signatures instead of trusting the multipart Content-Type header.
+
+    Returns the *detected* canonical content-type so callers persist a
+    trustworthy value. Raises HTTP 400/413 (Turkish messages) on any failure.
+
+    Image content (PNG/JPEG/WEBP/GIF) is delegated to ``validate_image_bytes``
+    which performs full Pillow decode + format allow-listing.
+    """
+    if not content:
+        raise HTTPException(status_code=400, detail=f"{field_label} bos")
+
+    if len(content) > max_bytes:
+        mb = max_bytes // (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=f"{field_label} cok buyuk (en fazla {mb} MB).",
+        )
+
+    family = _sniff_document_family(content)
+    if family in _DOC_CONTENT_TYPE:
+        return _DOC_CONTENT_TYPE[family]
+
+    # Not a recognized document signature — try image validation (PNG/JPEG/etc).
+    try:
+        content_type, _ext = validate_image_bytes(
+            content, max_bytes=max_bytes, field_label=field_label
+        )
+        return content_type
+    except HTTPException:
+        # Neither a valid document nor a valid image → reject (covers polyglot
+        # HTML-as-PDF, SVG, executables, and corrupt files).
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{field_label} icerigi gecerli bir belge degil "
+                f"(yalnizca gercek PDF, DOC, DOCX, JPG, PNG, WEBP, GIF)."
+            ),
+        )

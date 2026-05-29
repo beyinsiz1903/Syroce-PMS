@@ -432,6 +432,80 @@ async def get_gdpr_data_requests(
         'pending': sum(1 for r in requests_data if r.get('status') == 'pending'),
         'completed': sum(1 for r in requests_data if r.get('status') == 'completed')
     }
+# ── KVKK/GDPR guest anonymization (F8 § 66, Wave 3) ──
+# Right-to-be-forgotten: irreversibly scrub a guest's PII while preserving the
+# tenant-scoped record skeleton for financial/audit integrity. Gated behind a
+# fail-closed feature flag — anonymization is destructive and must not be
+# reachable until an operator explicitly enables it per deployment.
+import os as _os
+
+_GUEST_PII_FIELDS = (
+    "full_name", "name", "first_name", "last_name", "email", "phone",
+    "address", "passport_number", "id_number", "birth_date", "date_of_birth",
+    "nationality", "gender", "contact_email", "contact_phone",
+)
+
+
+def guest_anonymization_enabled() -> bool:
+    """Fail-closed: only true when ENABLE_GUEST_ANONYMIZATION is explicitly on."""
+    return _os.environ.get("ENABLE_GUEST_ANONYMIZATION", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+@router.post("/gdpr/guests/{guest_id}/anonymize")
+async def anonymize_guest(
+    guest_id: str,
+    current_user: User = Depends(get_current_user),
+    _guard=Depends(require_super_admin_guard(not_found=False)),
+):
+    """KVKK/GDPR right-to-be-forgotten — irreversibly scrub guest PII.
+
+    Tenant-scoped + super-admin only. Feature-flag gated (fail-closed): when
+    ENABLE_GUEST_ANONYMIZATION is unset the route returns 503 so the
+    destructive path stays inert until an operator opts in per deployment.
+    """
+    if not guest_anonymization_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Guest anonymization disabled "
+                "(set ENABLE_GUEST_ANONYMIZATION=1 to enable)"
+            ),
+        )
+
+    guest = await db.guests.find_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id}, {"_id": 0, "id": 1}
+    )
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+
+    scrub = {f: None for f in _GUEST_PII_FIELDS}
+    scrub["full_name"] = "ANONYMIZED"
+    scrub["anonymized"] = True
+    scrub["anonymized_at"] = datetime.now(UTC).isoformat()
+    scrub["anonymized_by"] = getattr(current_user, "id", None)
+
+    result = await db.guests.update_one(
+        {"id": guest_id, "tenant_id": current_user.tenant_id},
+        {"$set": scrub},
+    )
+    await db.gdpr_requests.insert_one({
+        "tenant_id": current_user.tenant_id,
+        "guest_id": guest_id,
+        "type": "anonymization",
+        "status": "completed",
+        "created_at": datetime.now(UTC).isoformat(),
+        "requested_by": getattr(current_user, "id", None),
+    })
+    return {
+        "ok": True,
+        "guest_id": guest_id,
+        "anonymized": result.modified_count > 0,
+        "fields_scrubbed": len(_GUEST_PII_FIELDS),
+    }
+
+
 # ── GET /compliance/certifications ──
 @router.get("/compliance/certifications")
 async def get_compliance_certifications(current_user: User = Depends(get_current_user)):

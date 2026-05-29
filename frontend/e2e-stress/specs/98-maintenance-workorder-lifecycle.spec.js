@@ -253,13 +253,16 @@ test.describe('F9C § 98 — Maintenance Work Order Lifecycle', () => {
             rec(testInfo, { module: MOD, step: 'F_assets', status: 'SKIP', note: blockedReason });
             test.skip(true, `module_blocked: ${blockedReason}`);
         }
+        // Payload contract: MaintenanceAsset (backend/models/schemas/rooms.py)
+        // requires name + asset_type; frontend MaintenanceAssets.jsx aynı
+        // alanları gönderir. Önceki asset_tag/category alanları şema dışıydı
+        // (extra=ignore → name/asset_type missing → 422).
         const post = await callTimed(
             request, 'post', '/api/maintenance/assets',
             {
-                asset_tag: `${prefix}-ASSET-${Date.now()}`,
-                category: 'HVAC',
+                name: taggedDescription('F_asset'),
+                asset_type: 'hvac',
                 location: 'Stress Test Lab',
-                description: taggedDescription('F_asset'),
             },
             stressTokens.stress_token,
             { timeout: 10_000, headers: { 'Idempotency-Key': idemKey('F_asset') } },
@@ -291,11 +294,16 @@ test.describe('F9C § 98 — Maintenance Work Order Lifecycle', () => {
             rec(testInfo, { module: MOD, step: 'G_plans', status: 'SKIP', note: blockedReason });
             test.skip(true, `module_blocked: ${blockedReason}`);
         }
+        // Payload contract: PreventiveMaintenancePlan requires
+        // frequency_type (days/weeks/months) + frequency_value + next_due_date;
+        // frontend MaintenancePlans.jsx aynı alanları gönderir. Önceki
+        // frequency:'monthly' alanı şema dışıydı → 422.
         const post = await callTimed(
             request, 'post', '/api/maintenance/plans',
             {
-                name: `${prefix}-PLAN-${Date.now()}`,
-                frequency: 'monthly',
+                frequency_type: 'months',
+                frequency_value: 1,
+                next_due_date: new Date(Date.now() + 30 * 86_400_000).toISOString(),
                 description: taggedDescription('G_plan'),
             },
             stressTokens.stress_token,

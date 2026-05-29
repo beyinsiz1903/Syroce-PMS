@@ -486,9 +486,47 @@ class Query:
         return result
 
 # Schema
-from strawberry.extensions import QueryDepthLimiter
+import os
+
+from strawberry.extensions import AddValidationRules, QueryDepthLimiter
+
+try:
+    from graphql.validation import NoSchemaIntrospectionCustomRule
+except ImportError:  # pragma: no cover - graphql-core always present in prod
+    NoSchemaIntrospectionCustomRule = None  # type: ignore
+
+
+def _introspection_enabled() -> bool:
+    """F8M § 40 (triage PC3): GraphQL introspection production'da kapalı olmalı.
+
+    Açık introspection saldırgan için ücretsiz schema keşfi sağlar
+    (threat_model.md § Information Disclosure). Politika fail-closed:
+      - GRAPHQL_INTROSPECTION açıkça "true"/"1" set edilirse açılır
+        (lokal geliştirme / debugging için bilinçli opt-in).
+      - Aksi halde, ortam production veya stress ise kapalı.
+      - Diğer durumlarda (lokal dev varsayılanı) açık bırakılır ki
+        geliştirici deneyimi bozulmasın.
+    """
+    explicit = os.getenv("GRAPHQL_INTROSPECTION")
+    if explicit is not None:
+        return explicit.strip().lower() in ("1", "true", "yes", "on")
+    env = (
+        os.getenv("SENTRY_ENVIRONMENT")
+        or os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or ""
+    ).strip().lower()
+    if env in ("production", "prod", "stress", "staging"):
+        return False
+    return True
+
+
+_extensions = [QueryDepthLimiter(max_depth=10)]
+if not _introspection_enabled() and NoSchemaIntrospectionCustomRule is not None:
+    # Disable introspection by rejecting any query that touches __schema/__type.
+    _extensions.append(AddValidationRules([NoSchemaIntrospectionCustomRule]))
 
 schema = strawberry.Schema(
     query=Query,
-    extensions=[QueryDepthLimiter(max_depth=10)],
+    extensions=_extensions,
 )

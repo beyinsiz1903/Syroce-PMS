@@ -2,7 +2,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.enums import (
     InvoiceStatus,
@@ -20,12 +20,32 @@ class InvoiceCreate(BaseModel):
     booking_id: str | None = None
     customer_name: str
     customer_email: str
+    # F8 § 98 (Wave 3): Turkish e-Fatura/e-Arşiv customer identity. VKN (10
+    # digits, corporate) or TCKN (11 digits, individual). Optional so existing
+    # callers keep working; when supplied it must be a valid length/digit string
+    # so downstream e-invoice integrations don't emit malformed identifiers.
+    customer_tax_id: str | None = None
+    customer_tax_office: str | None = None
     items: list[InvoiceItem]
     subtotal: float
     tax: float
     total: float
     due_date: str
     notes: str | None = None
+
+    @field_validator("customer_tax_id")
+    @classmethod
+    def _validate_tax_id(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if v == "":
+            return None
+        if not v.isdigit() or len(v) not in (10, 11):
+            raise ValueError(
+                "customer_tax_id must be 10 digits (VKN) or 11 digits (TCKN)"
+            )
+        return v
 
 class Invoice(BaseModel):
     # v95 Bug fix: legacy DB rows from earlier seed/booking flows may lack
