@@ -1,16 +1,20 @@
 # Test Coverage Scorecard — Road to /100
 
-> **Authoritative baseline (UNCHANGED)**: Run #143, commit `3b3891d`,
-> 84 spec / 556 test, verdict **GO WITH WATCH**.
-> **Official application coverage score**: **75–80/100** (Run #143).
-> **Post-F9 candidate score**: **84/100 — NOT official** (no GitHub
-> Actions full-suite artifact).
-> **Pointer movement**: BLOCKED until a GitHub Actions full-suite
-> artifact clears every gate.
+> **Authoritative baseline**: **Run #159**, commit
+> `e23a4ec603cc32984b741d77d67d57a0abba698b`, 702 test, verdict
+> **GO WITH WATCH** (2026-05-28). Supersedes Run #143 (`3b3891d`,
+> historical reference).
+> **Official application coverage score**: **84/100** (Run #159 full-suite
+> artifact landed).
+> **/100 NOT achieved.** Mobile (F10) coverage remains separate and
+> open; backend deep routers, reports/AI deep, and frontend mutation
+> flows remain uncovered.
+> **Next pointer movement**: BLOCKED until the next GitHub Actions
+> full-suite artifact clears every gate.
 
 This scorecard separates two metrics that must NOT be conflated:
 
-1. **Pass/fail quality** of the specs that DO run (Run #143:
+1. **Pass/fail quality** of the specs that DO run (Run #159, 702 test:
    failedTests=0 / P0=0 / P1=0 / external_calls=[] / pilot_drift=0 /
    cleanup idempotent / GO WITH WATCH).
 2. **Surface coverage** of the whole application — how much of the
@@ -59,18 +63,20 @@ tested. The /100 score is surface coverage, not pass rate.
 
 | Score line | Value | Status |
 |---|---|---|
-| Run #143 official coverage | **75–80/100** | OFFICIAL — pointer locked here |
-| Post-F9 candidate coverage | **84/100** | CANDIDATE — not official, no artifact |
-| Artifact'd F9D/F9E + F10A | 90–92/100 (projected) | requires official artifacts |
+| Run #143 coverage (2026-05-26) | 75–80/100 | HISTORICAL — superseded by Run #159 |
+| **Run #159 official coverage (2026-05-28)** | **84/100** | **OFFICIAL — pointer locked here, full-suite artifact landed** |
+| Artifact'd F10A + F9D extensions | 90–92/100 (projected) | requires further official artifacts |
 | True /100 | requires F10B–F10G + backend deep router + UI mutation packs | future |
 
-**Why 84 is the candidate ceiling, not higher**: of the ~100 commits
-landed after Run #143, only ~14 are targeted-verified (backend pytest
-or live-backend spec verification). The rest are `shipped /
-pending-artifact`. Unverified code does not raise the official score.
-As targeted artifacts land, the candidate score climbs toward the
-projected 90–92, but it only becomes **official** through a GitHub
-Actions full-suite artifact.
+**84/100 is now OFFICIAL, not candidate**: the GitHub Actions full
+stress suite Run #159 (702 test, commit
+`e23a4ec603cc32984b741d77d67d57a0abba698b`, verdict GO WITH WATCH,
+external_calls=[], pilot_drift=0, cleanup idempotent) landed with full
+provenance, converting the post-F9 candidate score to the official
+score. The score does NOT climb to 90+ yet because mobile (F10) and the
+deep backend/UI packs remain uncovered. **/100 is NOT achieved.** The
+verdict is GO WITH WATCH (not GO); 65 P2 + 48 REVIEW + 1 P3 + 61 SKIP
+remain open and are NOT downgraded.
 
 ## Four closure sprints
 
@@ -170,12 +176,14 @@ Smoke ≠ mutation. These need real action flows, not render-only.
 
 ## Standing rules
 
-- **Run #143 pointer remains official** until a GitHub Actions
-  full-suite artifact clears every gate.
+- **Run #159 (`e23a4ec`) is the official pointer** as of 2026-05-28
+  (supersedes Run #143). Next pointer movement requires a new GitHub
+  Actions full-suite artifact that clears every gate.
 - **No fake green.** Verbal "test passed" without an attached drill
   artifact is candidate evidence at best.
 - **No artifact, no baseline.** Replit-environment runs (including Task
-  #57's 723-test run) are candidate evidence only.
+  #57's 723-test run) are candidate evidence only. Provenance (run URL
+  + run number + commit SHA) is part of the artifact.
 - **No ZERO route/module may remain pilot-accessible** without either
   `FEATURE_FLAG_OFF` or test coverage. A blind surface reachable in
   production is a pilot risk, not a coverage gap to defer.
@@ -189,7 +197,8 @@ Smoke ≠ mutation. These need real action flows, not render-only.
 ## Cross-references
 
 - `docs/DAILY_CHANGE_REVIEW_20260528_POST_UPDATES.md` — post-#143 commit inventory by domain
-- `docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md` — Run #143 baseline drill
+- `docs/drill_reports/20260528_stress_full_stress_suite_GREEN_702test.md` — **Run #159 official baseline drill (current)**
+- `docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md` — Run #143 baseline drill (historical)
 - `docs/drill_reports/20260528_twofa_round5_candidate_fix_pending_verification.md` — TWOFA Round-3/4/5 candidate detail
 - `docs/STRESS_TEST_ROADMAP.md` — F8/F9/F10 roadmap (single source of truth)
 - `replit.md` — F8 Stress Test Series section (pointer source of truth)

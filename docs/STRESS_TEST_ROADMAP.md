@@ -28,30 +28,54 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 
 ---
 
-## Latest verified baseline (2026-05-26) ✅ GREEN — 84 spec, Run #143
+## Latest verified baseline (2026-05-28) ✅ GREEN — 702 test, Run #159
+
+| Alan | Değer |
+|---|---|
+| Date | 2026-05-28 |
+| Workflow | GitHub Actions — Full Stress Suite (one-shot) |
+| Run | **#159** |
+| Run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26601324830 |
+| Run ID / Job ID | 26601324830 / 78385405937 |
+| Trigger | one-shot dispatch |
+| Branch | `main` |
+| Commit SHA | `e23a4ec603cc32984b741d77d67d57a0abba698b` |
+| Duration | 3623.6s (~60m 24s) |
+| Status | Success |
+| Artifacts | 2 (stress-drill-report ID 7278147196 · playwright-stress-report ID 7278146888) |
+| Toplam test | **702** |
+| failedTests | **0** |
+| Adım PASS / FAIL / REVIEW / SKIP | **1314 / 0 / 48 / 61** |
+| P0 / P1 / P2 / P3 | **0 / 0 / 65 / 1** |
+| `external_calls_made` | `[]` ✓ |
+| `pilot_drift` | 0 ✓ |
+| Cleanup idempotent | ✅ (cleanup#1=7756 → cleanup#2=0) |
+| Final verdict | ✅ **GO WITH WATCH** — P2=65 REVIEW=48 SKIP=61 P3=1 (downgrade YOK; doktrin ≥ GO WITH WATCH karşılanıyor) |
+| Drill report | `docs/drill_reports/20260528_stress_full_stress_suite_GREEN_702test.md` |
+
+**NOT — kapsam:** Bu baseline full stress suite (web PMS) içindir. **/100
+uygulama kapsamı DEĞİLDİR.** Mobile (F10) coverage ayrı ve açık;
+`docs/TEST_COVERAGE_SCORECARD_100.md` merkezi referanstır.
+
+### Historical reference — Run #143 (2026-05-26) ✅ GREEN — 84 spec
 
 | Alan | Değer |
 |---|---|
 | Date | 2026-05-26 |
-| Workflow | GitHub Actions — Full Stress Suite (one-shot) |
-| Run | **#143** |
-| Trigger | `pull_request` |
-| Branch | `main` |
+| Run | **#143** (superseded by #159 on 2026-05-28) |
 | Commit SHA | `3b3891d` |
 | Duration | 47m 55s |
-| Status | Success |
-| Artifacts | 2 |
-| Spec count | **84** (`frontend/e2e-stress/specs/`) |
-| Toplam test | **556** |
-| failedTests | **0** |
-| Adım PASS / FAIL / REVIEW / SKIP | **1087 / 0 / 46 / 73** |
-| P0 / P1 / P2 / P3 | **0 / 0 / 60 / 1** |
-| Reporter süre | 2821.0s (47m 1s) |
-| `external_calls_made` | `[]` ✓ |
-| `pilot_drift` | 0 ✓ (baseline=30, after=30) |
+| Spec count | 84 |
+| Toplam test | 556 |
+| failedTests | 0 |
+| Adım PASS / FAIL / REVIEW / SKIP | 1087 / 0 / 46 / 73 |
+| P0 / P1 / P2 / P3 | 0 / 0 / 60 / 1 |
+| `external_calls_made` | `[]` |
+| `pilot_drift` | 0 (baseline=30, after=30) |
 | Cleanup idempotent | ✅ (cleanup#1=7734 → cleanup#2=0) |
 | Seed prefix | `E2E_STRESS_F7_1779861740675_` |
-| Final verdict | ✅ **GO WITH WATCH** — P2=60 REVIEW=46 (doktrin ≥ GO WITH WATCH karşılanıyor) |
+| Final verdict | ✅ GO WITH WATCH |
+| Drill report | `docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md` |
 
 **Faz kapsamı (bu baseline'a giren):** F8A + F8B + F8C + F8D (v2 + v3
 HR extension) + F8E + F8F..F8O + F8R + F8S + F8U + F8V + F8W + **F8X +

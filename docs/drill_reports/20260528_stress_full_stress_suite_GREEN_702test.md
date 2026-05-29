@@ -1,22 +1,15 @@
-# Full Stress Suite — GREEN — 702 test (2026-05-28)
+# Full Stress Suite — GREEN — 702 test (2026-05-28) — Run #159
 
-## Status: BASELINE PROMOTION CANDIDATE — pointer move BLOCKED on provenance
+## Status: ✅ OFFICIAL BASELINE — supersedes Run #143
 
 This drill report records an **official GitHub Actions full-stress-suite
-artifact** whose metric values clear every promotion gate. However, the
-baseline pointer is **NOT moved yet** because three provenance fields
-are not yet documented:
+artifact** whose metric values clear every promotion gate AND whose
+provenance (run URL + run number + commit SHA) is fully documented.
 
-- GitHub Actions **run URL** — **MISSING**
-- GitHub Actions **run number** — **MISSING**
-- **commit SHA** the run executed against — **MISSING**
-
-Per standing doctrine (`docs/TEST_COVERAGE_SCORECARD_100.md`,
-`docs/DAILY_CHANGE_REVIEW_20260528_POST_UPDATES.md`): **Run #143 can be
-superseded only by this 2026-05-28 artifact AFTER the run URL + commit
-SHA are documented.** Metric values alone do not move the pointer; the
-provenance binds the artifact to a specific, auditable run and code
-state. Until then, this is a candidate.
+As of 2026-05-28, **Run #159 (commit `e23a4ec603cc32984b741d77d67d57a0abba698b`)
+is the official stress baseline**, superseding Run #143 (`3b3891d`,
+now historical reference). Pointer moved in `replit.md`,
+`docs/STRESS_TEST_ROADMAP.md`, and `docs/TEST_COVERAGE_SCORECARD_100.md`.
 
 ## Artifact metrics (as received)
 
@@ -50,11 +43,9 @@ All numeric and safety gates are satisfied:
 - `pilot_drift = 0` ✅
 - cleanup idempotent (`cleanup#2 deleted_total = 0`) ✅
 - `verdict ≥ GO WITH WATCH` ✅ (verdict IS exactly GO WITH WATCH)
+- provenance documented (run URL + run number + commit SHA) ✅
 
-**Outstanding requirement for promotion**: run URL + run number +
-commit SHA must be captured and recorded in this report. Without them,
-the artifact cannot be bound to an auditable run and the pointer stays
-at Run #143.
+**All promotion requirements met.** Pointer moved to Run #159.
 
 ## Verdict discipline
 
@@ -73,7 +64,7 @@ at Run #143.
 
 | Metric | Run #143 (2026-05-26) | This artifact (2026-05-28) |
 |---|---|---|
-| commit SHA | `3b3891d` | **PENDING** |
+| commit SHA | `3b3891d` | `e23a4ec603cc32984b741d77d67d57a0abba698b` |
 | spec count | 84 | (suite expanded) |
 | totalTests | 556 | 702 |
 | failedTests | 0 | 0 |
@@ -92,28 +83,33 @@ This 2026-05-28 artifact is a strict superset of Run #143's coverage
 (702 vs 556 tests, 84→ expanded specs) with all critical gates equal
 or green. It is a valid successor candidate — pending provenance.
 
-## Provenance capture block (FILL TO PROMOTE)
+## Provenance capture block (COMPLETED)
 
 ```
-GitHub Actions run URL : __________________________  (REQUIRED)
-GitHub Actions run num : __________________________  (REQUIRED)
-Commit SHA (run target): __________________________  (REQUIRED)
-Workflow file          : .github/workflows/stress.yml (confirm)
-Triggered by           : __________________________
+Workflow               : Full Stress Suite (one-shot)
+GitHub Actions run URL : https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26601324830
+GitHub Actions run num : #159
+Run ID                 : 26601324830
+Job ID                 : 78385405937
+Commit SHA (run target): e23a4ec603cc32984b741d77d67d57a0abba698b
+Branch                 : main
 Run date (UTC)         : 2026-05-28
+Artifact (drill report): stress-drill-report, ID 7278147196,
+                         digest sha256:c496b9f70fccebbf096e3136e0a91d92a9afd9aff63c3d46aac56fe1f09f6a26
+Artifact (pw report)   : playwright-stress-report, ID 7278146888,
+                         digest sha256:42e61c005505e729eecb9fc36951ceb26b4ee2433a6178c64e88eb06c3d37d5b
 ```
 
-## Promotion checklist (execute ONLY after provenance block is filled)
+## Promotion checklist (COMPLETED)
 
-- [ ] Run URL recorded above
-- [ ] Run number recorded above
-- [ ] Commit SHA recorded above
-- [ ] `docs/STRESS_TEST_ROADMAP.md` — latest verified baseline updated to 2026-05-28 / 702 test / <SHA>
-- [ ] `docs/TEST_COVERAGE_SCORECARD_100.md` — official score block updated (full-suite artifact = present; note this is full-stress baseline, NOT /100)
-- [ ] `replit.md` — F8 Stress Test Series baseline pointer updated to 2026-05-28 / 702 test / <SHA>, Run #143 marked historical reference
+- [x] Run URL recorded above
+- [x] Run number recorded above (#159)
+- [x] Commit SHA recorded above (`e23a4ec603cc32984b741d77d67d57a0abba698b`)
+- [x] `docs/STRESS_TEST_ROADMAP.md` — latest verified baseline updated to Run #159 / 2026-05-28 / 702 test / `e23a4ec`; Run #143 moved to historical reference
+- [x] `docs/TEST_COVERAGE_SCORECARD_100.md` — official score block updated (full-suite artifact present; official score → 84/100; /100 NOT achieved; mobile/F10 open)
+- [x] `replit.md` — F8 Stress Test Series baseline pointer updated to Run #159 / 2026-05-28 / 702 test / `e23a4ec603cc32984b741d77d67d57a0abba698b` / GO WITH WATCH; Run #143 marked historical reference
 
-Until every box is checked, **Run #143 (`3b3891d`) remains the official
-baseline** and the pointer does not move.
+All boxes checked. **Run #159 (`e23a4ec`) is the official baseline.**
 
 ## Standing rules (reaffirmed)
 
