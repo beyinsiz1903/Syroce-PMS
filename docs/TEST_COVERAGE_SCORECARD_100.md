@@ -46,7 +46,7 @@ tested. The /100 score is surface coverage, not pass rate.
 | 3 | Finance / idempotency | 12 | Spec exists (`99-finance-folio-surface`), targeted artifact pending | 6 |
 | 4 | F9 frontend/backend ZERO reduction | 10 | Files exist (F9A/F9B), deploy run pending | 4 |
 | 5 | F9C high-risk deep specs | 12 | 7 specs + partial targeted; fix-then-rerun artifact pending | 7 |
-| 6 | Mobile F10 | 15 | Largest gap; F10A scaffold only, dispatch pending | 1 |
+| 6 | Mobile F10 | 15 | Largest gap; F10A scaffold + locally runnable (28-test `--list`, `/login` render proof 0 console/0 PII), full matrix BLOCKED on 4 role secrets + GH Actions dispatch — see `docs/drill_reports/20260529_f10a_mobile_smoke.md` | 1 |
 | 7 | CM / OTA deep workflows | 8 | Core webhooks covered; mapping/admin/reconciliation missing | 3 |
 | 8 | Reports / AI / Revenue deep | 8 | Partial; builder + 50+ templates + AI deep routers missing | 2 |
 | 9 | HR / hotel services / guest deep | 6 | Mixed partial/zero (laundry/transport/concierge/activities/kids-club ZERO) | 2 |
@@ -95,6 +95,12 @@ No new features. Convert existing shipped code into official proof.
    city-ledger-transfer idempotency, closed-folio guard, cross-tenant
    folio deny, guest upsell IDOR.
 4. **F10A mobile smoke** — separate matrix; not part of web baseline.
+   Status 2026-05-29: scaffold now locally runnable (stale `.js`
+   collision removed, Playwright wired, `--list`=28 tests, `/login`
+   render proof = 0 console errors / 0 PII). Full 25-surface matrix
+   BLOCKED on 4 `MOBILE_E2E_*` role accounts + GH Actions dispatch +
+   deployed bundle URL. NOT verified; counts toward nothing. Drill:
+   `docs/drill_reports/20260529_f10a_mobile_smoke.md`.
 5. **GitHub Actions Full Stress Suite one-shot** — only after 1–4 are
    green. Requires re-applying dispatch workflow via GitHub web UI
    (OAuth token lacks `workflow` scope).

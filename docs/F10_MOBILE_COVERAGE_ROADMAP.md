@@ -171,6 +171,18 @@ neither of which the task-agent environment can produce. Status flips to
 is in hand with fatal console errors = 0, PII/token leak = 0, and auth
 redirect honoured per doctrine.
 
+**F10A update (2026-05-29):** ⚠️ **scaffolded + locally runnable +
+partially proven; full matrix still BLOCKED.** Drill report
+`docs/drill_reports/20260529_f10a_mobile_smoke.md`. Infra hardening done:
+removed stale `mobile/e2e/*.js` duplicate trio that shadowed the `.ts`
+specs (caused `--list` `SyntaxError: ... CONSOLE_ERROR_ALLOWLIST`),
+installed Playwright + chromium, confirmed `--list` = **28 tests**.
+Render proof: credential-free `/login` open against local Expo Web
+(`:8080`) → testIDs present, **0 console errors, 0 PII**. Full 25-surface
+matrix BLOCKED on 4 `MOBILE_E2E_*` role accounts (only stress-admin
+present; cross-role substitution forbidden by doctrine) + GH Actions
+dispatch + deployed bundle URL. Run #159 baseline pointer untouched.
+
 ### F10B — Mobile auth lifecycle deep (1 session)
 - Login → 2FA → refresh rotation → logout
 - Token storage validation (SecureStore, AsyncStorage rejection of plaintext)
@@ -205,15 +217,19 @@ redirect honoured per doctrine.
 
 ---
 
-## 6) Tooling decision (open)
+## 6) Tooling decision (LOCKED 2026-05-27 — see §5 F10A)
 
-| Aday | Pro | Con |
-|---|---|---|
-| **Detox** | Native, fast, gerçek RN render | iOS + Android ayrı setup, CI Mac runner |
-| **Maestro** | Yaml flow, basit | Native interaction limited |
-| **Playwright Web (Expo Web)** | Mevcut Playwright tooling reuse | Native API'ları (biometric, camera, push) kapsamaz |
+Karar F10A açılışında verildi ve **kilitlendi**. Aşağıdaki tablo karar
+gerekçesinin tarihsel kaydıdır; geçerli karar §5'tedir.
 
-**Öneri:** Detox primary + Playwright Web (Expo Web build) destekleyici smoke. Karar F10A açılışında verilecek.
+| Aday | Pro | Con | Karar |
+|---|---|---|---|
+| **Playwright Web (Expo Web)** | Mevcut Playwright tooling reuse, Linux-runnable CI, render-only smoke'a tam uyum | Native API'ları (biometric, camera, push) kapsamaz | ✅ **F10A primary (LOCKED)** |
+| **Maestro** | Yaml flow, basit, EAS-build driven, `mobile/.maestro/` zaten wired | Native interaction limited | ✅ **Native deep flows (F10B+)** |
+| **Detox** | Native, fast, gerçek RN render | iOS + Android ayrı setup, CI Mac runner, render-only smoke için over-spec | ❌ **F10A için reddedildi** — F10G'de Maestro yetersiz kalırsa yeniden değerlendirilir |
+
+**Geçerli karar:** F10A = Playwright on Expo Web (primary), native deep
+flows = Maestro. Detox F10A kapsamında DEĞİL. (§5 ile birebir aynı.)
 
 ---
 
