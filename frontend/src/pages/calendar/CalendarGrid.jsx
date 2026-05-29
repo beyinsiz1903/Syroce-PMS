@@ -145,10 +145,11 @@ const CalendarGrid = ({
   });
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 relative" data-testid="calendar-grid">
+    <div className="bg-white rounded-lg border border-gray-200 relative flex flex-col h-full overflow-hidden" data-testid="calendar-grid">
       {/* Date Header Row - STICKY */}
-      <div className="sticky top-0 z-40 bg-white border-b border-gray-300 overflow-x-auto">
+      <div className="overflow-auto flex-1">
         <div className="min-w-max">
+          <div className="sticky top-0 z-40 bg-white border-b border-gray-300">
           <div className="flex">
             <div className="w-28 flex-shrink-0 border-r border-gray-200"></div>
             <div className="flex-1 text-center text-[10px] font-semibold text-gray-500 py-0.5">
@@ -202,12 +203,9 @@ const CalendarGrid = ({
               );
             })}
           </div>
-        </div>
-      </div>
+          </div>
 
-      {/* Room Rows */}
-      <div className="overflow-x-auto">
-        <div className="min-w-max">
+          {/* Room Rows */}
           {rooms.length === 0 ? (
             <div className="p-12 text-center text-gray-500">
               <CalendarIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />

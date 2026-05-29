@@ -678,7 +678,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         />
         </div>
 
-        <div className="flex-1 overflow-auto px-4 pb-4 space-y-3">
+        <div className="flex-1 flex flex-col min-h-0 px-4 pb-4 gap-3">
         <CalendarOccupancy
           dateRange={dateRange}
           getOccupancyForDate={getOccupancyForDate}
@@ -687,7 +687,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
         />
 
         {/* Compact Legend */}
-        <div className="bg-white border rounded-lg px-4 py-2" data-testid="calendar-legend">
+        <div className="flex-none bg-white border rounded-lg px-4 py-2" data-testid="calendar-legend">
           <div className="flex items-center justify-between text-xs text-gray-500">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-1.5">
@@ -723,6 +723,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           </div>
         </div>
 
+        <div className="flex-1 min-h-0 overflow-hidden">
         <CalendarGrid
           rooms={rooms}
           bookings={bookings}
@@ -746,9 +747,10 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onDragEnd={handleDragEnd}
           onBookingDoubleClick={handleBookingDoubleClick}
         />
+        </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="flex-none grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-6">
               <div className="text-sm text-gray-600">Total Rooms</div>
