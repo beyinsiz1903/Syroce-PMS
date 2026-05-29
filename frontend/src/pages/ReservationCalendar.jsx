@@ -741,6 +741,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           groupColorMap={groupColorMap}
           setGroupColorMap={setGroupColorMap}
           groupBookings={groupBookings}
+          getOccupancyForDate={getOccupancyForDate}
           onCellClick={handleCellClick}
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}

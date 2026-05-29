@@ -9,6 +9,7 @@ import {
   getUnassignedUrgency, getUrgencyBarColors,
 } from "./calendarHelpers";
 import { useTranslation } from 'react-i18next';
+import OccupancyBand from "./OccupancyBand";
 
 // Compact grid constants
 const CELL_W = 72;  // px per day column (was 96)
@@ -33,6 +34,7 @@ const CalendarGrid = ({
   groupColorMap,
   setGroupColorMap,
   groupBookings: deluxeGroupBookings,
+  getOccupancyForDate,
   // Handlers
   onCellClick,
   onDragStart,
@@ -149,6 +151,13 @@ const CalendarGrid = ({
       {/* Date Header Row - STICKY */}
       <div className="overflow-auto flex-1">
         <div className="min-w-max pb-12">
+          <OccupancyBand
+            dateRange={dateRange}
+            daysToShow={daysToShow}
+            cellW={CELL_W}
+            getOccupancyForDate={getOccupancyForDate}
+            roomsCount={Array.isArray(rooms) ? rooms.length : 0}
+          />
           <div className="sticky top-0 z-40 bg-white border-b border-gray-300">
           <div className="flex">
             <div className="w-28 flex-shrink-0 border-r border-gray-200"></div>
