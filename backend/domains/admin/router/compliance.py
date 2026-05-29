@@ -480,7 +480,7 @@ async def anonymize_guest(
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
 
-    scrub = {f: None for f in _GUEST_PII_FIELDS}
+    scrub = dict.fromkeys(_GUEST_PII_FIELDS)
     scrub["full_name"] = "ANONYMIZED"
     scrub["anonymized"] = True
     scrub["anonymized_at"] = datetime.now(UTC).isoformat()
