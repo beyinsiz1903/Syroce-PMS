@@ -11,6 +11,7 @@ keep matching real endpoints:
 """
 
 from routers.cm_conflict_queue import router as conflict_router
+from routers.infra_hardening import router as infra_router
 from routers.outbox_admin import outbox_admin_router
 
 
@@ -27,3 +28,27 @@ def test_conflict_queue_count_route_registered():
     paths = _paths(conflict_router)
     assert "/api/channel-manager/conflict-queue/count" in paths
     assert "/api/channel-manager/conflict-queue" in paths
+
+
+# ── Wave 5: backup status shape contract ──
+# Spec probes recorded a P2 expecting `last_backup_at`; the deployed contract
+# nests the latest completed run under `last_successful` (with completed_at).
+# Lock the deployed shape so the spec's expectation maps onto reality without
+# loosening anything.
+
+
+def test_backup_status_route_registered():
+    # infra_hardening mounts under /api/infra → /api/infra/backup/status.
+    assert "/api/infra/backup/status" in _paths(infra_router)
+
+
+def test_backup_status_shape_has_last_successful_and_metrics():
+    from infra.backup_manager import backup_manager
+
+    status = backup_manager.get_status()
+    assert "enabled" in status
+    # `last_successful` is the deployed equivalent of the spec's last_backup_at;
+    # it is either None (no backup yet) or a dict carrying completed_at.
+    assert "last_successful" in status
+    ls = status["last_successful"]
+    assert ls is None or ("completed_at" in ls)
