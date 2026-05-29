@@ -4,7 +4,7 @@ import {
   toDateStringUTC, isBookingOnDate, isBookingStart, isWeekend, isToday, isPastDate,
   formatDateWithDay, getBookingForRoomOnDate, getRoomBlockForDate,
   isBlockStart, calculateBlockSpan, calculateBookingSpan,
-  getBookingStatusColor, getBookingStatus,
+  getBookingStatusColor, getBookingStatus, getSourceColor,
   getUnassignedBookingsForType, computeUnassignedLanes,
   getUnassignedUrgency, getUrgencyBarColors,
 } from "./calendarHelpers";
@@ -193,10 +193,10 @@ const CalendarGrid = ({
                   }`}
                   data-testid={`date-header-${dayNum}`}
                 >
-                  <div className={`text-[9px] font-semibold tracking-wide ${today ? 'text-blue-600' : past ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <div className={`text-[10px] font-semibold uppercase tracking-wide ${today ? 'text-blue-600' : past ? 'text-gray-400' : 'text-gray-500'}`}>
                     {dayName}
                   </div>
-                  <div className={`text-sm font-bold ${today ? 'text-blue-600' : past ? 'text-gray-400' : 'text-gray-800'}`}>
+                  <div className={`text-[15px] font-bold leading-tight ${today ? 'text-blue-600' : past ? 'text-gray-400' : 'text-gray-900'}`}>
                     {dayNum}
                   </div>
                 </div>
@@ -219,13 +219,13 @@ const CalendarGrid = ({
               return (
                 <div key={roomType}>
                   {/* Room Type Header */}
-                  <div className="bg-blue-50/70 border-b border-blue-200">
+                  <div className="bg-blue-50/70 border-b border-blue-200" data-testid="room-type-row">
                     <div className="flex">
                       <div className="w-28 flex-shrink-0 px-2 py-1.5 border-r border-blue-200 flex items-center">
                         <button
                           type="button"
                           onClick={() => toggleType(roomType)}
-                          className="flex items-center gap-1 font-bold text-xs text-gray-800 hover:text-blue-700 select-none"
+                          className="flex items-center gap-1 font-bold text-[13px] text-gray-900 tracking-tight hover:text-blue-700 select-none"
                           data-testid={`room-type-${roomType}`}
                           title={collapsedTypes.has(roomType) ? 'Aç' : 'Daralt'}
                         >
@@ -275,7 +275,7 @@ const CalendarGrid = ({
                               past ? 'bg-gray-100/70 border-gray-200' : weekend ? 'bg-blue-100/50 border-blue-200' : 'bg-blue-50/80 border-blue-200'
                             }`}
                           >
-                            <div className={`font-medium truncate ${past ? 'text-gray-400' : 'text-gray-700'}`}>
+                            <div className={`text-[10px] font-bold truncate ${past ? 'text-gray-400' : 'text-gray-800'}`}>
                               {avgPrice > 0 ? `${avgPrice.toLocaleString('tr-TR')} TL` : '-'}
                             </div>
                             <div className="flex items-center justify-center gap-0.5 mt-0.5">
@@ -394,11 +394,11 @@ const CalendarGrid = ({
                     const rowHeight = Math.max(CELL_H, laneCount * LANE_BAR_H + 4);
                     const hasBookingToday = roomBookings.some(b => isActiveOn(b, refTodayStr) && b.status !== 'checked_out');
                     return (
-                      <div key={room.id} className="flex border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
+                      <div key={room.id} className="flex border-b border-gray-100 hover:bg-gray-50/50 transition-colors" data-testid="room-row">
                         <div className="w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 bg-white flex items-center" style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
                             <div className={`w-1.5 h-1.5 rounded-full ${hasBookingToday ? 'bg-red-500' : 'bg-green-500'}`}></div>
-                            <div className="font-bold text-xs text-gray-800" data-testid={`room-${room.room_number}`}>{room.room_number}</div>
+                            <div className="font-bold text-[13px] text-gray-900" data-testid={`room-${room.room_number}`}>{room.room_number}</div>
                           </div>
                         </div>
                         <div className="flex relative" style={{ width: `${daysToShow * CELL_W}px`, height: `${rowHeight}px` }}>
@@ -488,7 +488,7 @@ const CalendarGrid = ({
                                 onDragStart={(e) => onDragStart(e, booking)}
                                 onDragEnd={onDragEnd}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
-                                className={`absolute rounded text-white text-[10px] shadow-sm hover:shadow-md transition-all cursor-move z-20 group ${
+                                className={`absolute rounded-md text-white text-[10px] shadow-sm hover:shadow-md transition-all cursor-move z-20 group ${
                                   draggingBooking?.id === booking.id ? 'opacity-50 scale-95' : ''
                                 } ${conflictInfo ? 'ring-2 ring-red-500 animate-pulse' : ''}
                                 ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
@@ -504,11 +504,12 @@ const CalendarGrid = ({
                                 title={conflictTitle}
                               >
                                 <div className="px-1.5 py-0.5 relative overflow-hidden" style={{ height: `${BOOKING_H}px` }}>
-                                  <div className="font-extrabold text-[10px] truncate pr-3 text-white leading-tight">
+                                  <div className="font-bold text-[11px] truncate pr-3 text-white leading-tight">
                                     {booking.guest_name || 'Misafir'}
                                   </div>
-                                  <div className="text-[8px] text-white/80 truncate flex items-center gap-0.5">
-                                    {booking.adults && <span>Ks: {(booking.adults || 0) + (booking.children || 0)}</span>}
+                                  <div className="text-[9px] text-white/85 truncate flex items-center gap-1 leading-tight">
+                                    <span className="font-semibold">{getSourceColor(booking).label}</span>
+                                    {(booking.adults || booking.children) ? <span className="opacity-80">· {(booking.adults || 0) + (booking.children || 0)} ks</span> : null}
                                   </div>
                                   <div className="absolute top-0.5 right-0.5 flex flex-col space-y-0.5 items-end">
                                     {showDeluxePanel && isGroupBooking(booking.id) && (
