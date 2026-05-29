@@ -350,10 +350,14 @@ const CalendarGrid = ({
                               <div
                                 key={booking.id}
                                 draggable
+                                tabIndex={0}
+                                role="button"
+                                aria-label={`${booking.guest_name || 'Misafir'}, ${urgency.label}, atanmamış — odaya sürükleyin`}
                                 onDragStart={(e) => onDragStart(e, booking)}
                                 onDragEnd={onDragEnd}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
-                                className={`absolute rounded text-[10px] shadow-sm hover:shadow-lg transition-all cursor-move z-20 border-2 ${urgency.level === 'overdue' ? 'ring-1 ring-red-400 ring-offset-1' : ''} ${urgency.level === 'today' ? 'ring-1 ring-amber-300' : ''}`}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
+                                className={`absolute rounded text-[10px] shadow-sm hover:shadow-lg hover:-translate-y-px transition-all cursor-move z-20 border-2 outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${urgency.level === 'overdue' ? 'ring-1 ring-red-400 ring-offset-1' : ''} ${urgency.level === 'today' ? 'ring-1 ring-amber-300' : ''}`}
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
                                   top: `${lane * LANE_H + 3}px`,
@@ -420,14 +424,18 @@ const CalendarGrid = ({
                             const isDragOver = dragOverCell?.roomId === room.id &&
                               new Date(dragOverCell.date).toDateString() === date.toDateString();
                             const past = isPastDate(date);
+                            const blockedForSell = !!roomBlock && roomBlock.allow_sell === false;
+                            const invalidDrop = isDragOver && blockedForSell;
+                            const canCreate = !covered && !roomBlock && !past;
 
                             return (
                               <div
                                 key={idx}
-                                className={`${CELL_CLS} flex-shrink-0 border-r border-gray-100 relative cursor-pointer transition-all ${
+                                className={`${CELL_CLS} flex-shrink-0 border-r border-gray-100 relative transition-colors group/cell ${
+                                  canCreate ? 'cursor-pointer' : 'cursor-default'
+                                } ${
                                   past ? 'bg-gray-100/50' : isToday(date) ? 'bg-blue-50/60' : isWeekend(date) ? 'bg-amber-50/30' : 'bg-white hover:bg-gray-50'
-                                } ${isDragOver ? 'bg-emerald-50 ring-1 ring-emerald-400' : ''}
-                                ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''}`}
+                                } ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''}`}
                                 style={{
                                   height: `${rowHeight}px`, minHeight: `${rowHeight}px`, overflow: 'visible',
                                   ...(past && !roomBlock ? { backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 8px, rgba(0,0,0,0.02) 8px, rgba(0,0,0,0.02) 9px)' } : {})
@@ -461,10 +469,34 @@ const CalendarGrid = ({
                                   </div>
                                 )}
 
-                                {/* Empty cell indicator */}
-                                {!covered && !roomBlock && (
-                                  <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                                    <Plus className="w-4 h-4 text-gray-400" />
+                                {/* Drop target preview (visual only) — valid=emerald, invalid=soft red */}
+                                {isDragOver && (
+                                  <div
+                                    data-testid="calendar-drop-target"
+                                    aria-hidden="true"
+                                    className={`absolute inset-0 z-10 pointer-events-none rounded-sm ${
+                                      invalidDrop
+                                        ? 'bg-red-100/50 ring-2 ring-inset ring-red-400'
+                                        : 'bg-emerald-100/50 ring-2 ring-inset ring-emerald-400'
+                                    }`}
+                                  />
+                                )}
+
+                                {/* Empty cell hover affordance — only on valid, non-past cells */}
+                                {canCreate && (
+                                  <div
+                                    className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cell:opacity-100 transition-opacity pointer-events-none"
+                                    data-testid="calendar-empty-cell"
+                                    aria-hidden="true"
+                                  >
+                                    <span
+                                      data-testid="reservation-card-hover-action"
+                                      className="flex items-center gap-0.5 max-w-full px-1.5 h-5 rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-300 shadow-sm text-[9px] font-semibold leading-none"
+                                      title="Yeni rezervasyon"
+                                    >
+                                      <Plus className="w-3 h-3 shrink-0" />
+                                      <span className="truncate">Yeni</span>
+                                    </span>
                                   </div>
                                 )}
                               </div>
@@ -490,17 +522,27 @@ const CalendarGrid = ({
                             const conflictTitle = conflictInfo
                               ? `⚠ Çakışma: Bu oda ${formatConflictRange(conflictInfo.overlap_start, conflictInfo.overlap_end)} tarihlerinde iki rezervasyona sahip (${conflictInfo.guest1 || 'Misafir'} ↔ ${conflictInfo.guest2 || 'Misafir'}). Lütfen birini başka odaya taşıyın.`
                               : `${booking.guest_name || 'Misafir'}`;
+                            const isDragging = draggingBooking?.id === booking.id;
+                            const isDeparted = booking.status === 'checked_out' || checkOutStr <= refTodayStr;
+                            const paxCount = (booking.adults || 0) + (booking.children || 0);
+                            const fmtCardDate = (d) => { try { return new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }); } catch { return ''; } };
+                            const cardAria = `${booking.guest_name || 'Misafir'}, ${getSourceColor(booking).label}${paxCount ? `, ${paxCount} kişi` : ''}, ${fmtCardDate(booking.check_in)} – ${fmtCardDate(booking.check_out)}`;
                             return (
                               <div
                                 key={booking.id}
                                 draggable
+                                tabIndex={0}
+                                role="button"
+                                aria-label={cardAria}
                                 onDragStart={(e) => onDragStart(e, booking)}
                                 onDragEnd={onDragEnd}
                                 onDoubleClick={() => onBookingDoubleClick(booking)}
-                                className={`absolute rounded-md text-white text-[10px] shadow-sm hover:shadow-md transition-all cursor-move z-20 group ${
-                                  draggingBooking?.id === booking.id ? 'opacity-50 scale-95' : ''
-                                } ${conflictInfo ? 'ring-2 ring-red-500 animate-pulse' : ''}
-                                ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBookingDoubleClick(booking); } }}
+                                className={`absolute rounded-md text-white text-[10px] transition-all cursor-move z-20 group outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
+                                  isDragging
+                                    ? 'opacity-90 ring-2 ring-blue-300 shadow-xl scale-[1.02] z-30'
+                                    : 'shadow-sm hover:shadow-lg hover:-translate-y-px hover:z-30'
+                                } ${conflictInfo ? 'ring-2 ring-red-500 animate-pulse' : ''} ${showDeluxePanel && isGroupBooking(booking.id) ? 'ring-2 ring-amber-400' : ''}`}
                                 style={{
                                   left: `${startIdx * CELL_W + 2}px`,
                                   top: `${lane * LANE_BAR_H + 2}px`,
@@ -509,9 +551,16 @@ const CalendarGrid = ({
                                   backgroundColor: statusColor.bg,
                                   borderLeft: `3px solid ${statusColor.border}`,
                                 }}
-                                data-testid={`booking-bar-${booking.id}`}
+                                data-testid={isDragging ? 'reservation-card-dragging' : `booking-bar-${booking.id}`}
                                 title={conflictTitle}
                               >
+                                {isDeparted && (
+                                  <div
+                                    className="absolute inset-0 rounded-md pointer-events-none"
+                                    aria-hidden="true"
+                                    style={{ backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 5px, rgba(0,0,0,0.18) 5px, rgba(0,0,0,0.18) 6px)' }}
+                                  />
+                                )}
                                 <div className="px-1.5 py-0.5 relative overflow-hidden" style={{ height: `${BOOKING_H}px` }}>
                                   <div className="font-bold text-[11px] truncate pr-3 text-white leading-tight">
                                     {booking.guest_name || 'Misafir'}
