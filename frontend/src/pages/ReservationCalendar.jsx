@@ -14,6 +14,7 @@ import {
   CalendarHeader,
   CalendarOccupancy,
   CalendarGrid,
+  CalendarDateScrubber,
   NewBookingDialog,
   BookingDetailsDialog,
   MoveReasonDialog,
@@ -751,6 +752,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onBookingDoubleClick={handleBookingDoubleClick}
         />
         </div>
+        <CalendarDateScrubber
+          currentDate={currentDate}
+          daysToShow={daysToShow}
+          onChange={goToDate}
+          businessDate={hotelBusinessDate}
+        />
         </div>
       </div>
 
