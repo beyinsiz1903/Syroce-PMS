@@ -148,7 +148,7 @@ const CalendarGrid = ({
     <div className="bg-white rounded-lg border border-gray-200 relative flex flex-col h-full overflow-hidden" data-testid="calendar-grid">
       {/* Date Header Row - STICKY */}
       <div className="overflow-auto flex-1">
-        <div className="min-w-max">
+        <div className="min-w-max pb-12">
           <div className="sticky top-0 z-40 bg-white border-b border-gray-300">
           <div className="flex">
             <div className="w-28 flex-shrink-0 border-r border-gray-200"></div>

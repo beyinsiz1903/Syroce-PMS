@@ -650,7 +650,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   // ─── Render ────────────────────────────────────────────────
   return (
     <Layout user={user} tenant={tenant} onLogout={onLogout} currentModule="calendar">
-      <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden">
+      <div className="flex flex-col h-[calc(100vh-72px)] overflow-hidden -mb-28">
         <div className="flex-none p-4 pb-3 bg-gray-50 border-b border-gray-200 space-y-3" data-testid="calendar-sticky-header">
         <CalendarHeader
           dateRange={dateRange}
