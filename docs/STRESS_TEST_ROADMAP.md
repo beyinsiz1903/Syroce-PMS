@@ -28,21 +28,21 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 
 ---
 
-## Latest verified baseline (2026-05-28) ✅ GREEN — 702 test, Run #159
+## Latest verified baseline (2026-05-29) ✅ GREEN — 702 test, Run #161
 
 | Alan | Değer |
 |---|---|
-| Date | 2026-05-28 |
+| Date | 2026-05-29 |
 | Workflow | GitHub Actions — Full Stress Suite (one-shot) |
-| Run | **#159** |
-| Run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26601324830 |
-| Run ID / Job ID | 26601324830 / 78385405937 |
+| Run | **#161** |
+| Run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26641150604 |
+| Run ID / Job ID | 26641150604 / 78514272098 |
 | Trigger | one-shot dispatch |
 | Branch | `main` |
-| Commit SHA | `e23a4ec603cc32984b741d77d67d57a0abba698b` |
-| Duration | 3623.6s (~60m 24s) |
+| Commit SHA | `ba9dfc7aafc0a694b70841d3405f8445ecfc1b67` |
+| Duration | 3441.6s (~57m 22s) |
 | Status | Success |
-| Artifacts | 2 (stress-drill-report ID 7278147196 · playwright-stress-report ID 7278146888) |
+| Artifacts | 2 (stress-drill-report ID 7293609890 · playwright-stress-report ID 7293609632) |
 | Toplam test | **702** |
 | failedTests | **0** |
 | Adım PASS / FAIL / REVIEW / SKIP | **1314 / 0 / 48 / 61** |
@@ -51,18 +51,38 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 | `pilot_drift` | 0 ✓ |
 | Cleanup idempotent | ✅ (cleanup#1=7756 → cleanup#2=0) |
 | Final verdict | ✅ **GO WITH WATCH** — P2=65 REVIEW=48 SKIP=61 P3=1 (downgrade YOK; doktrin ≥ GO WITH WATCH karşılanıyor) |
+| Drill report | `docs/drill_reports/20260529_stress_full_stress_suite_GREEN_702test.md` |
+
+**NOT — kapsam:** Bu baseline **web/backend full stress suite** içindir.
+**/100 uygulama kapsamı DEĞİLDİR.** Mobile (F10) coverage ayrı ve açık
+(doğrulanmadı); `docs/TEST_COVERAGE_SCORECARD_100.md` merkezi referanstır.
+
+### Historical reference — Run #159 (2026-05-28) ✅ GREEN — 702 test
+
+| Alan | Değer |
+|---|---|
+| Date | 2026-05-28 |
+| Run | **#159** (superseded by #161 on 2026-05-29) |
+| Run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26601324830 |
+| Run ID / Job ID | 26601324830 / 78385405937 |
+| Commit SHA | `e23a4ec603cc32984b741d77d67d57a0abba698b` |
+| Duration | 3623.6s (~60m 24s) |
+| Toplam test | 702 |
+| failedTests | 0 |
+| Adım PASS / FAIL / REVIEW / SKIP | 1314 / 0 / 48 / 61 |
+| P0 / P1 / P2 / P3 | 0 / 0 / 65 / 1 |
+| `external_calls_made` | `[]` |
+| `pilot_drift` | 0 |
+| Cleanup idempotent | ✅ (cleanup#1=7756 → cleanup#2=0) |
+| Final verdict | ✅ GO WITH WATCH |
 | Drill report | `docs/drill_reports/20260528_stress_full_stress_suite_GREEN_702test.md` |
 
-**NOT — kapsam:** Bu baseline full stress suite (web PMS) içindir. **/100
-uygulama kapsamı DEĞİLDİR.** Mobile (F10) coverage ayrı ve açık;
-`docs/TEST_COVERAGE_SCORECARD_100.md` merkezi referanstır.
-
-### Historical reference — Run #143 (2026-05-26) ✅ GREEN — 84 spec
+### Historical reference (older) — Run #143 (2026-05-26) ✅ GREEN — 84 spec
 
 | Alan | Değer |
 |---|---|
 | Date | 2026-05-26 |
-| Run | **#143** (superseded by #159 on 2026-05-28) |
+| Run | **#143** (superseded by #159 on 2026-05-28, then #161 on 2026-05-29) |
 | Commit SHA | `3b3891d` |
 | Duration | 47m 55s |
 | Spec count | 84 |

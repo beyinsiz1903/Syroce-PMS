@@ -1,11 +1,12 @@
 # Test Coverage Scorecard — Road to /100
 
-> **Authoritative baseline**: **Run #159**, commit
-> `e23a4ec603cc32984b741d77d67d57a0abba698b`, 702 test, verdict
-> **GO WITH WATCH** (2026-05-28). Supersedes Run #143 (`3b3891d`,
-> historical reference).
-> **Official application coverage score**: **84/100** (Run #159 full-suite
-> artifact landed).
+> **Authoritative baseline**: **Run #161**, commit
+> `ba9dfc7aafc0a694b70841d3405f8445ecfc1b67`, 702 test, verdict
+> **GO WITH WATCH** (2026-05-29). Supersedes Run #159
+> (`e23a4ec603cc32984b741d77d67d57a0abba698b`, historical reference) and
+> Run #143 (`3b3891d`, older historical reference).
+> **Official application coverage score**: **84/100** (Run #161
+> web/backend full-suite artifact landed).
 > **/100 NOT achieved.** Mobile (F10) coverage remains separate and
 > open; backend deep routers, reports/AI deep, and frontend mutation
 > flows remain uncovered.
@@ -14,7 +15,7 @@
 
 This scorecard separates two metrics that must NOT be conflated:
 
-1. **Pass/fail quality** of the specs that DO run (Run #159, 702 test:
+1. **Pass/fail quality** of the specs that DO run (Run #161, 702 test:
    failedTests=0 / P0=0 / P1=0 / external_calls=[] / pilot_drift=0 /
    cleanup idempotent / GO WITH WATCH).
 2. **Surface coverage** of the whole application — how much of the
@@ -41,7 +42,7 @@ tested. The /100 score is surface coverage, not pass rate.
 
 | # | Block | Weight | Current state | Earned (est.) |
 |---|---|---:|---|---:|
-| 1 | Official full-suite artifact | 15 | Missing (no GH Actions dispatch) | 0 |
+| 1 | Official full-suite artifact | 15 | Landed (Run #161, GH Actions, full provenance) | 15 |
 | 2 | Security / auth / TWOFA / peer-login | 10 | Strong; Round-5 fix candidate, artifact pending | 7 |
 | 3 | Finance / idempotency | 12 | Spec exists (`99-finance-folio-surface`), targeted artifact pending | 6 |
 | 4 | F9 frontend/backend ZERO reduction | 10 | Files exist (F9A/F9B), deploy run pending | 4 |
@@ -51,7 +52,7 @@ tested. The /100 score is surface coverage, not pass rate.
 | 8 | Reports / AI / Revenue deep | 8 | Partial; builder + 50+ templates + AI deep routers missing | 2 |
 | 9 | HR / hotel services / guest deep | 6 | Mixed partial/zero (laundry/transport/concierge/activities/kids-club ZERO) | 2 |
 | 10 | Docs + automatic coverage gate | 4 | Docs good; no automated scoreboard gate yet | 2 |
-| | **Total** | **100** | | **~36 earned / candidate-mapped to 84 on covered surface** |
+| | **Total** | **100** | | **~49 earned (full-suite artifact landed via Run #161) / candidate-mapped to 84 on covered surface** |
 
 > The weighted "earned" column reflects what is **artifact-proven
 > today**. The headline scores below describe trajectory once evidence
@@ -63,20 +64,22 @@ tested. The /100 score is surface coverage, not pass rate.
 
 | Score line | Value | Status |
 |---|---|---|
-| Run #143 coverage (2026-05-26) | 75–80/100 | HISTORICAL — superseded by Run #159 |
-| **Run #159 official coverage (2026-05-28)** | **84/100** | **OFFICIAL — pointer locked here, full-suite artifact landed** |
+| Run #143 coverage (2026-05-26) | 75–80/100 | HISTORICAL (older) — superseded by Run #159, then #161 |
+| Run #159 coverage (2026-05-28) | 84/100 | HISTORICAL — superseded by Run #161 |
+| **Run #161 official coverage (2026-05-29)** | **84/100** | **OFFICIAL — pointer locked here, web/backend full-suite artifact landed** |
 | Artifact'd F10A + F9D extensions | 90–92/100 (projected) | requires further official artifacts |
 | True /100 | requires F10B–F10G + backend deep router + UI mutation packs | future |
 
 **84/100 is now OFFICIAL, not candidate**: the GitHub Actions full
-stress suite Run #159 (702 test, commit
-`e23a4ec603cc32984b741d77d67d57a0abba698b`, verdict GO WITH WATCH,
+stress suite Run #161 (702 test, commit
+`ba9dfc7aafc0a694b70841d3405f8445ecfc1b67`, verdict GO WITH WATCH,
 external_calls=[], pilot_drift=0, cleanup idempotent) landed with full
-provenance, converting the post-F9 candidate score to the official
-score. The score does NOT climb to 90+ yet because mobile (F10) and the
-deep backend/UI packs remain uncovered. **/100 is NOT achieved.** The
-verdict is GO WITH WATCH (not GO); 65 P2 + 48 REVIEW + 1 P3 + 61 SKIP
-remain open and are NOT downgraded.
+provenance, holding the official web/backend baseline pointer
+(superseding Run #159). The score does NOT climb to 90+ yet because
+mobile (F10) and the deep backend/UI packs remain uncovered. **/100 is
+NOT achieved.** Mobile/F10 is NOT verified. The verdict is GO WITH WATCH
+(not GO); 65 P2 + 48 REVIEW + 1 P3 + 61 SKIP remain open and are NOT
+downgraded.
 
 ## Four closure sprints
 
@@ -182,9 +185,9 @@ Smoke ≠ mutation. These need real action flows, not render-only.
 
 ## Standing rules
 
-- **Run #159 (`e23a4ec`) is the official pointer** as of 2026-05-28
-  (supersedes Run #143). Next pointer movement requires a new GitHub
-  Actions full-suite artifact that clears every gate.
+- **Run #161 (`ba9dfc7`) is the official pointer** as of 2026-05-29
+  (supersedes Run #159, then Run #143). Next pointer movement requires a
+  new GitHub Actions full-suite artifact that clears every gate.
 - **No fake green.** Verbal "test passed" without an attached drill
   artifact is candidate evidence at best.
 - **No artifact, no baseline.** Replit-environment runs (including Task
@@ -203,8 +206,9 @@ Smoke ≠ mutation. These need real action flows, not render-only.
 ## Cross-references
 
 - `docs/DAILY_CHANGE_REVIEW_20260528_POST_UPDATES.md` — post-#143 commit inventory by domain
-- `docs/drill_reports/20260528_stress_full_stress_suite_GREEN_702test.md` — **Run #159 official baseline drill (current)**
-- `docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md` — Run #143 baseline drill (historical)
+- `docs/drill_reports/20260529_stress_full_stress_suite_GREEN_702test.md` — **Run #161 official baseline drill (current)**
+- `docs/drill_reports/20260528_stress_full_stress_suite_GREEN_702test.md` — Run #159 baseline drill (historical)
+- `docs/drill_reports/20260526_stress_full_stress_suite_GREEN_84spec.md` — Run #143 baseline drill (older historical)
 - `docs/drill_reports/20260528_twofa_round5_candidate_fix_pending_verification.md` — TWOFA Round-3/4/5 candidate detail
 - `docs/STRESS_TEST_ROADMAP.md` — F8/F9/F10 roadmap (single source of truth)
 - `replit.md` — F8 Stress Test Series section (pointer source of truth)
