@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import Layout from '@/components/Layout';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { X, Calendar as CalendarIcon, User, MapPin, ArrowRight, Ban, ChevronDown } from 'lucide-react';
@@ -91,6 +90,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [moveReason, setMoveReason] = useState('');
 
   const [showDeluxePanel, setShowDeluxePanel] = useState(false);
+  const [showOccupancyPanel, setShowOccupancyPanel] = useState(false);
   const [groupBookings, setGroupBookings] = useState([]);
   const [oversellProtection, setOversellProtection] = useState([]);
   const [channelMixData, setChannelMixData] = useState(null);
@@ -684,6 +684,8 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           getOccupancyForDate={getOccupancyForDate}
           showDeluxePanel={showDeluxePanel}
           onToggleDeluxe={toggleDeluxeMode}
+          collapsed={!showOccupancyPanel}
+          onToggleCollapse={() => setShowOccupancyPanel(v => !v)}
         />
 
         {/* Compact Legend */}
@@ -747,42 +749,6 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           onDragEnd={handleDragEnd}
           onBookingDoubleClick={handleBookingDoubleClick}
         />
-        </div>
-
-        {/* Stats */}
-        <div className="flex-none grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-sm text-gray-600">Total Rooms</div>
-              <div className="text-3xl font-bold">{rooms.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-sm text-gray-600">Active Bookings</div>
-              <div className="text-3xl font-bold text-blue-600">
-                {bookings.filter(b => b.status === 'confirmed' || b.status === 'checked_in').length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-sm text-gray-600">In-House</div>
-              <div className="text-3xl font-bold text-green-600">
-                {bookings.filter(b => b.status === 'checked_in').length}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-sm text-gray-600">Occupancy Today</div>
-              <div className="text-3xl font-bold text-indigo-600">
-                {rooms.length > 0
-                  ? Math.round((bookings.filter(b => isBookingOnDate(b, new Date()) && b.status === 'checked_in').length / rooms.length) * 100)
-                  : 0}%
-              </div>
-            </CardContent>
-          </Card>
         </div>
         </div>
       </div>
