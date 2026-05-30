@@ -4,7 +4,8 @@
 // önerilen taşıma metni. Ayrıca "çakışma yok" (empty) ve hata (error) durumları
 // da panelin none mesajına düştüğünü doğrular. axios mock'lanır.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within, fireEvent } from '@testing-library/react';
+import { toast } from 'sonner';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -90,8 +91,23 @@ function setupAxios({ overbooking } = {}) {
 beforeEach(() => {
   axiosGet.mockReset();
   axiosPost.mockReset();
+  toast.success.mockClear();
+  toast.error.mockClear();
 });
 afterEach(() => cleanup());
+
+// Apply-action fixture: includes recommended_room_id, which the room-move call
+// requires (the display fixtures above intentionally omit it).
+const applySolution = {
+  booking_id: 'bk-1',
+  guest_name: 'Ada Lovelace',
+  loyalty_tier: 'vip',
+  current_room: '101',
+  recommended_room: '301',
+  recommended_room_id: 'room-301',
+  priority_score: 95,
+  priority_rationale: 'VIP guest with long stay and high lifetime value',
+};
 
 describe('EnhancedFrontDesk — overbooking suggestions panel', () => {
   it('solutions render with score, rationale, tier badge and move text', async () => {
@@ -166,5 +182,94 @@ describe('EnhancedFrontDesk — overbooking suggestions panel', () => {
     expect(
       screen.getByText('frontDeskEnhanced.overbooking.none')
     ).toBeInTheDocument();
+  });
+
+  it('applies the recommended move, shows success and refreshes the panel', async () => {
+    axiosGet.mockResolvedValue({ data: { bookings: [] } });
+    let solveCalls = 0;
+    axiosPost.mockImplementation((url) => {
+      if (url.includes('/ai/solve-overbooking')) {
+        solveCalls += 1;
+        // First load returns the conflict; the post-apply refresh returns none.
+        return Promise.resolve({
+          data: { solutions: solveCalls === 1 ? [applySolution] : [] },
+        });
+      }
+      if (url.includes('/room-move')) {
+        return Promise.resolve({ data: { ok: true } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(<EnhancedFrontDesk />);
+    const btn = await screen.findByTestId('overbooking-apply-move');
+    fireEvent.click(btn);
+
+    // Recommended move is sent to the room-move endpoint with the booking and
+    // recommended room id derived from the suggestion.
+    await waitFor(() => {
+      expect(axiosPost).toHaveBeenCalledWith(
+        expect.stringContaining('/frontdesk/v2/room-move'),
+        expect.objectContaining({
+          booking_id: 'bk-1',
+          new_room_id: 'room-301',
+          reason: 'overbooking_resolution',
+        }),
+        expect.objectContaining({ headers: expect.any(Object) })
+      );
+    });
+
+    expect(toast.success).toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+
+    // Panel refreshed (second solve-overbooking call) and the resolved
+    // suggestion is gone.
+    await waitFor(() => {
+      expect(screen.queryByTestId('overbooking-solution')).toBeNull();
+    });
+    expect(solveCalls).toBe(2);
+  });
+
+  it('shows an error and keeps the suggestion when the move fails', async () => {
+    axiosGet.mockResolvedValue({ data: { bookings: [] } });
+    axiosPost.mockImplementation((url) => {
+      if (url.includes('/ai/solve-overbooking')) {
+        return Promise.resolve({ data: { solutions: [applySolution] } });
+      }
+      if (url.includes('/room-move')) {
+        return Promise.reject(new Error('409 conflict'));
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(<EnhancedFrontDesk />);
+    const btn = await screen.findByTestId('overbooking-apply-move');
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(toast.success).not.toHaveBeenCalled();
+    // Suggestion remains visible so staff can retry.
+    expect(screen.getByTestId('overbooking-solution')).toBeInTheDocument();
+  });
+
+  it('does not call room-move and surfaces an error when the recommended room id is missing', async () => {
+    axiosGet.mockResolvedValue({ data: { bookings: [] } });
+    const { recommended_room_id, ...withoutId } = applySolution;
+    axiosPost.mockImplementation((url) =>
+      url.includes('/ai/solve-overbooking')
+        ? Promise.resolve({ data: { solutions: [withoutId] } })
+        : Promise.resolve({ data: {} })
+    );
+
+    render(<EnhancedFrontDesk />);
+    const btn = await screen.findByTestId('overbooking-apply-move');
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(axiosPost).not.toHaveBeenCalledWith(
+      expect.stringContaining('/room-move'),
+      expect.anything(),
+      expect.anything()
+    );
   });
 });
