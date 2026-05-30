@@ -16,10 +16,18 @@ from domains.channel_manager.providers.common_ingest import ingest_reservation, 
 from domains.channel_manager.providers.exely.auto_import import auto_import_pending
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 from domains.channel_manager.providers.exely.provider import ExelyProvider
+from core.transient_db_guard import TransientFailureTracker
 
 logger = logging.getLogger(__name__)
 
 PROVIDER = "exely"
+
+# Demote transient Atlas hiccups (AutoReconnect / ServerSelectionTimeoutError
+# "No primary available for writes" / SSL handshake timeouts) from per-tick
+# ERROR (which floods Sentry with non-actionable alerts) to WARNING, while still
+# escalating to ERROR once a streak shows a sustained outage. Keyed per tenant
+# for the inner loop and by OUTER_LOOP_KEY for the scheduler tick.
+_transient_tracker = TransientFailureTracker("EXELY-PULL")
 
 # v95 — Per-(tenant,hotel) rate limit for plaintext-creds warning to stop log spam.
 # Format: {(tenant_id, hotel_code): epoch_seconds_of_last_warning}
@@ -161,7 +169,12 @@ class ExelyPullScheduler:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"[EXELY-PULL] Loop error: {e}")
+                _transient_tracker.log_exception(
+                    logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                    context="loop tick", non_transient_msg="%s loop error: %s",
+                )
+            else:
+                _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
             await asyncio.sleep(interval_seconds)
 
     async def _heartbeat(self, provider: ExelyProvider, tenant_id: str):
@@ -181,8 +194,11 @@ class ExelyPullScheduler:
             {"_id": 0},
         ).to_list(100)
 
+        active_keys: list[str] = []
         for conn in connections:
             tenant_id = conn.get("tenant_id", "")
+            key = tenant_id or "?"
+            active_keys.append(key)
             try:
                 set_tenant_context(tenant_id)
                 hotel_code = conn["hotel_code"]
@@ -194,6 +210,9 @@ class ExelyPullScheduler:
                         f"[EXELY-PULL] No credentials available for tenant {tenant_id}, hotel {hotel_code}. "
                         f"Connect Exely from the UI (Channel Manager → Exely → Connect) to enable auto-pull."
                     )
+                    # Not a transient DB failure — clear any prior streak so a
+                    # later genuine hiccup doesn't escalate early off stale state.
+                    _transient_tracker.reset(key)
                     continue
 
                 await self.pull_for_tenant(
@@ -205,9 +224,21 @@ class ExelyPullScheduler:
                     safety_window_minutes=safety_window_minutes,
                 )
             except Exception as e:
-                logger.error(f"[EXELY-PULL] Error for tenant {tenant_id or '?'}: {e}")
+                # Transient Atlas hiccups (No primary / SSL handshake timeout) →
+                # WARNING until a streak proves a sustained outage; real bugs →
+                # ERROR (with traceback) on first occurrence. See transient_db_guard.
+                _transient_tracker.log_exception(
+                    logger, e, key,
+                    context=f"tenant {key}", non_transient_msg="%s error: %s",
+                )
+            else:
+                _transient_tracker.reset(key)
             finally:
                 clear_tenant_context()
+
+        # Memory hygiene over long uptimes with tenant churn — drop streak
+        # counters for connections no longer active (OUTER_LOOP_KEY preserved).
+        _transient_tracker.prune(active_keys)
 
     async def pull_for_tenant(
         self,
