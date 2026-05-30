@@ -3203,6 +3203,10 @@
       "priority": "Priority {{score}}",
       "move": "Move from {{from}} → {{to}}",
       "reasonLabel": "Why this priority",
+      "apply": "Apply move",
+      "applying": "Applying…",
+      "applied": "Booking moved to {{to}}",
+      "applyFailed": "Could not apply room move",
       "tier": {
         "vip": "VIP",
         "gold": "Gold",

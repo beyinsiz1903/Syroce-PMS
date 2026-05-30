@@ -15,6 +15,7 @@ const EnhancedFrontDesk = () => {
   const [guestAlerts, setGuestAlerts] = useState([]);
   const [overbookingSolutions, setOverbookingSolutions] = useState([]);
   const [overbookingLoaded, setOverbookingLoaded] = useState(false);
+  const [applyingBookingId, setApplyingBookingId] = useState(null);
 
   useEffect(() => {
     fetchTodayArrivals();
@@ -31,6 +32,35 @@ const EnhancedFrontDesk = () => {
       console.error('Error fetching overbooking solutions:', error);
     } finally {
       setOverbookingLoaded(true);
+    }
+  };
+
+  const handleApplyOverbookingMove = async (sol) => {
+    if (!sol.booking_id || !sol.recommended_room_id) {
+      toast.error(t('frontDeskEnhanced.overbooking.applyFailed'));
+      return;
+    }
+    setApplyingBookingId(sol.booking_id);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `/frontdesk/v2/room-move`,
+        {
+          booking_id: sol.booking_id,
+          new_room_id: sol.recommended_room_id,
+          reason: 'overbooking_resolution',
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success(t('frontDeskEnhanced.overbooking.applied', {
+        to: sol.recommended_room,
+      }));
+      await fetchOverbookingSolutions();
+    } catch (error) {
+      console.error('Error applying overbooking move:', error);
+      toast.error(t('frontDeskEnhanced.overbooking.applyFailed'));
+    } finally {
+      setApplyingBookingId(null);
     }
   };
 
@@ -176,12 +206,25 @@ const EnhancedFrontDesk = () => {
                           })}
                         </div>
                       </div>
-                      <span
-                        data-testid="overbooking-priority-score"
-                        className="px-3 py-1 rounded-full text-sm font-semibold bg-gray-900 text-white whitespace-nowrap"
-                      >
-                        {t('frontDeskEnhanced.overbooking.priority', { score: sol.priority_score })}
-                      </span>
+                      <div className="flex flex-col items-end gap-2">
+                        <span
+                          data-testid="overbooking-priority-score"
+                          className="px-3 py-1 rounded-full text-sm font-semibold bg-gray-900 text-white whitespace-nowrap"
+                        >
+                          {t('frontDeskEnhanced.overbooking.priority', { score: sol.priority_score })}
+                        </span>
+                        <button
+                          type="button"
+                          data-testid="overbooking-apply-move"
+                          onClick={() => handleApplyOverbookingMove(sol)}
+                          disabled={applyingBookingId === sol.booking_id}
+                          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                        >
+                          {applyingBookingId === sol.booking_id
+                            ? t('frontDeskEnhanced.overbooking.applying')
+                            : t('frontDeskEnhanced.overbooking.apply')}
+                        </button>
+                      </div>
                     </div>
                     {sol.priority_rationale && (
                       <div className="mt-2 text-sm text-gray-600">

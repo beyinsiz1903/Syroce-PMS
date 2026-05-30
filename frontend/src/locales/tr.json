@@ -3203,6 +3203,10 @@
       "priority": "Öncelik {{score}}",
       "move": "{{from}} → {{to}} taşı",
       "reasonLabel": "Bu öncelik neden",
+      "apply": "Taşımayı uygula",
+      "applying": "Uygulanıyor…",
+      "applied": "Rezervasyon {{to}} odasına taşındı",
+      "applyFailed": "Oda taşıma uygulanamadı",
       "tier": {
         "vip": "VIP",
         "gold": "Gold",
