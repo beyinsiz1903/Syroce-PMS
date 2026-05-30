@@ -28,35 +28,55 @@ external_calls=[], failedTests=0, P0=P1=0, verdict ≥ GO WITH WATCH.
 
 ---
 
-## Latest verified baseline (2026-05-29) ✅ GREEN — 702 test, Run #162
+## Latest verified baseline (2026-05-30) ✅ GREEN — 702 test, Run #167
 
 | Alan | Değer |
 |---|---|
-| Date | 2026-05-29 |
+| Date | 2026-05-30 |
 | Workflow | GitHub Actions — Full Stress Suite (one-shot) |
-| Run | **#162** |
-| Run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26653464472 |
-| Run ID / Job ID | 26653464472 / 78557501168 |
+| Run | **#167** |
+| Run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26687012176 |
+| Run ID / Job ID | 26687012176 / 78656853578 |
 | Trigger | one-shot dispatch |
 | Branch | `main` |
-| Commit SHA | `bde7662744c9b94a5c9294fa778202d813319dfc` |
-| Duration | 3576.2s (~59m 36s) |
+| Commit SHA | `0b99607fe3a64a7ada660d1f1bcb8607bd47f5dd` |
 | Status | Success |
-| Artifacts | 2 (stress-drill-report ID 7298692917, digest sha256:ca8a84b03c07972ad70024284082f5f93d69f779ea441d21103dd24e6d266d28 · playwright-stress-report ID 7298692578, digest sha256:89f2e67d44099ba6ce603c1c5c4fd92bdee33966e7bd3b8c84b1e59c7939be07) |
+| Artifacts | 2 (stress-drill-report ID 7309449913, digest sha256:7a4d424aac978ba3adeed1851d911545196e0fd46c773616b176f20960e3a46d · playwright-stress-report ID 7309449854, digest sha256:288544edb3ada9c2a001559a2aadc4fae1c4c198b35a8024f1fffd1107ade622) |
 | Toplam test | **702** |
 | failedTests | **0** |
-| Adım PASS / FAIL / REVIEW / SKIP | **1316 / 0 / 46 / 61** |
-| P0 / P1 / P2 / P3 | **0 / 0 / 60 / 1** |
+| Adım PASS / FAIL / REVIEW / SKIP | **1379 / 0 / 48 / 44** |
+| P0 / P1 / P2 / P3 | **0 / 0 / 58 / 1** |
 | `external_calls_made` | `[]` ✓ |
 | `pilot_drift` | 0 ✓ |
-| Cleanup idempotent | ✅ (cleanup#1=7756 → cleanup#2=0) |
-| Final verdict | ✅ **GO WITH WATCH** — P2=60 REVIEW=46 SKIP=61 P3=1 (downgrade YOK; doktrin ≥ GO WITH WATCH karşılanıyor) |
-| Validates | Wave 1–5 P2/REVIEW cleanup candidate (test-only + docs + C420 lint fix; prod davranış değişikliği yok). Cleanup etkisi: REVIEW 48→46, P2 65→60. |
-| Drill report | `docs/drill_reports/20260529_stress_full_stress_suite_GREEN_702test.md` |
+| Cleanup idempotent | ✅ (cleanup#2 idempotent=true) |
+| Final verdict | ✅ **GO WITH WATCH** — P2=58 REVIEW=48 SKIP=44 P3=1 (downgrade YOK; doktrin ≥ GO WITH WATCH karşılanıyor) |
+| Validates | ai_pricing recommend-rates deterministik 500 fix (pilot kirli base_price). FAIL 1→0, ai_pricing 20/1→21/0. Detay: `docs/drill_reports/20260530_ai_pricing_recommend_rates_500_fix.md`. |
+| Drill report | `docs/drill_reports/20260530_stress_full_stress_suite_GREEN_702test_run167.md` |
 
 **NOT — kapsam:** Bu baseline **web/backend full stress suite** içindir.
 **/100 uygulama kapsamı DEĞİLDİR.** Mobile (F10) coverage ayrı ve açık
 (doğrulanmadı); `docs/TEST_COVERAGE_SCORECARD_100.md` merkezi referanstır.
+
+### Historical reference — Run #162 (2026-05-29) ✅ GREEN — 702 test
+
+| Alan | Değer |
+|---|---|
+| Date | 2026-05-29 |
+| Run | **#162** (superseded by #167 on 2026-05-30) |
+| Run URL | https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26653464472 |
+| Run ID / Job ID | 26653464472 / 78557501168 |
+| Commit SHA | `bde7662744c9b94a5c9294fa778202d813319dfc` |
+| Duration | 3576.2s (~59m 36s) |
+| Toplam test | 702 |
+| failedTests | 0 |
+| Adım PASS / FAIL / REVIEW / SKIP | 1316 / 0 / 46 / 61 |
+| P0 / P1 / P2 / P3 | 0 / 0 / 60 / 1 |
+| `external_calls_made` | `[]` |
+| `pilot_drift` | 0 |
+| Cleanup idempotent | ✅ (cleanup#1=7756 → cleanup#2=0) |
+| Artifacts | stress-drill-report ID 7298692917, digest sha256:ca8a84b03c07972ad70024284082f5f93d69f779ea441d21103dd24e6d266d28 · playwright-stress-report ID 7298692578, digest sha256:89f2e67d44099ba6ce603c1c5c4fd92bdee33966e7bd3b8c84b1e59c7939be07 |
+| Final verdict | ✅ GO WITH WATCH |
+| Drill report | `docs/drill_reports/20260529_stress_full_stress_suite_GREEN_702test.md` |
 
 ### Historical reference — Run #161 (2026-05-29) ✅ GREEN — 702 test
 
@@ -286,8 +306,9 @@ ledger boş (created=0 → cancel hedefi yok). Drill report:
 > gelecekte stress_seed tagged seed eklenirse aktif olur). Detay rapor:
 > [`docs/drill_reports/20260524_stress_f8ad_konaklama_vergisi.md`](./drill_reports/20260524_stress_f8ad_konaklama_vergisi.md).
 
-> **Bu satır resmi baseline'dır** — yeni geliştirmeler bu green run'a
-> karşı regression test'ler. Detay raporlar:
+> **HISTORICAL — bu blok 2026-05-24 tarihindeki resmi baseline'dı; güncel
+> resmi pointer Run #167'dir (yukarıdaki "Latest verified baseline").** Bu
+> green run o tarihte regression referansıydı. Detay raporlar:
 > - F8R–F8W post-fix green: [`docs/drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md`](./drill_reports/20260524_stress_full_stress_suite_GREEN_f8r_f8w.md)
 > - Önceki F8A..F8O baseline (referans): [`docs/drill_reports/20260523_stress_full_stress_suite_GREEN.md`](./drill_reports/20260523_stress_full_stress_suite_GREEN.md)
 
