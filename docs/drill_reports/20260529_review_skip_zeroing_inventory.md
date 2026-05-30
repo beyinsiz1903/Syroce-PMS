@@ -116,11 +116,11 @@ değişikliği gerekli mi) · **Seed?** · **Env/Secret?** · **Targeted cmd**
 
 | Modül | Kalem | Sev | Kat | Kök sebep | Karar | Targeted spec | Wave |
 |---|---|:--:|:--:|---|---|---|:--:|
-| `crm_offers` | mice/accounts 403 + duplicate tax_no | SKIP×4 | 8/5 | RBAC by-design + ürün kararı | tax_no kurumsal hesapta unique → **409** (user kararı) | `crm_offers` | 9 |
-| `public_nps` | NPS duplicate guard | REVIEW×1 | 5 | Ürün kararı | **booking/gün başına tek kayıt** (user kararı) | `public_nps` | 9 |
-| `identity_reporting` (e-Fatura) | VKN/TCKN schema | — | 5 | Ürün kararı | VKN/TCKN schema **zorunlu eklenmeli** (user kararı) | `identity_reporting_dryrun` | 9 |
-| `kvkk_retention` | hard-delete vs anonymize | SKIP×2 | 5/8 | Ürün/compliance kararı + RBAC | **Hard-delete YOK; anonymize + audit** politikası (user kararı) | `kvkk_retention` | 9 |
-| `revenue_management` | auto-publish dry_run kill-switch | REVIEW×1 / SKIP×2 | 5/8 | Ürün kararı + RBAC | Server-side `dry_run` **kill-switch eklenmeli** (user kararı) | `revenue_management` | 9 |
+| `crm_offers` | mice/accounts 403 + duplicate tax_no | SKIP×4 | 8/5 | RBAC by-design + ürün kararı | **DONE**: tax_no tenant-içi unique → **409** (create+update, whitespace-only None, tek insert path); test `test_company_tax_no_unique.py` | `crm_offers` | 9 |
+| `public_nps` | NPS duplicate guard | REVIEW×1 | 5 | Ürün kararı | **DONE**: (survey,booking) UTC-gün başına tek → **409**, booking_id'siz muaf; test `test_nps_duplicate_guard.py` | `public_nps` | 9 |
+| `identity_reporting` (e-Fatura) | VKN/TCKN schema | — | 5 | Ürün kararı | **DEFER (scoped follow-up)**: `customer_type`-zorunlu geriye-uyum bozar + migration; targeted-only doğrulanamaz (Wave 6/8 emsali). Karar kayıtlı. | `identity_reporting_dryrun` | 9 |
+| `kvkk_retention` | hard-delete vs anonymize | SKIP×2 | 5/8 | Ürün/compliance kararı + RBAC | **CONFIRM by-design**: hard-delete YOK kasıtlı; anonymize + audit + fail-closed zaten var (`test_kvkk_anonymize_contract.py`) | `kvkk_retention` | 9 |
+| `revenue_management` | auto-publish dry_run kill-switch | REVIEW×1 / SKIP×2 | 5/8 | Ürün kararı + RBAC | **DEFER (scoped follow-up)**: çok-endpoint mutation-suppression feature; targeted-only doğrulanamaz. Karar kayıtlı. | `revenue_management` | 9 |
 | `mice_events` | spaces 403 (A/B/C/D) | REVIEW×1 / SKIP×4 | 8 | RBAC by-design (sales-catering rolü yok) | Alt-role spec `98-mice-as-sales-manager` VEYA out-of-scope kabul | `mice_events` | 9 |
 | `mice_opportunities` | sales-catering 403 | SKIP×4 | 8 | RBAC by-design | Aynı | `mice_opportunities` | 9 |
 | `accommodation_tax` | RBAC | SKIP×3 | 8 | tax_officer rolü yok | Alt-role spec VEYA out-of-scope kabul | `accommodation_tax` | 9 |

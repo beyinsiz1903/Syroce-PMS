@@ -25,14 +25,23 @@ synthetic test domains (`.invalid`/`.test`/`.example`) and keep real-domain matc
 **REVIEW severity** unless you are certain real domains can never legitimately appear —
 demo seeds sometimes embed real-domain emails by design (false-P0 risk on hard-fail).
 
-# Genuine activity-feed RBAC/PII gap (Wave 9 candidate)
+# Sibling endpoints over the same PII must share the same RBAC gate (RESOLVED)
 
-`GET /api/messaging-center/activity` (`backend/routers/messaging.py`) is guarded only
-by `get_current_user`, while `GET /api/messaging-center/delivery-logs` requires
-`require_op("view_guest_list")`. The activity feed embeds the recipient inside each
-item's free-text `message` (`"{recipient} — {use_case}"`), and the messaging demo
-seed (`_get_demo_delivery_logs`) uses real-domain (`@gmail.com`) recipients.
+`GET /api/messaging-center/activity` and `GET /api/messaging-center/delivery-logs`
+(`backend/routers/messaging.py`) both surface the recipient (guest email/phone), but
+activity originally only required `get_current_user` while delivery-logs required
+`view_guest_list` (VIEW_REPORTS). Activity embeds recipient inside a free-text
+`message` (`"{recipient} — {use_case}"`), so the looser gate leaked PII to roles like
+HOUSEKEEPING.
 
-**Net:** activity exposes recipient PII without the guest-list gate that delivery-logs
-enforces. This is a product-contract / RBAC decision (add the op-gate, or mask/redact
-recipient in the activity payload), **not** a test-drift item. Deferred to Wave 9.
+**Resolution:** activity now masks the recipient via a local `_mask_recipient` helper
+unless the caller holds `view_guest_list` (checked through `RolePermissionService`).
+
+**Why:** when two endpoints expose the same sensitive field, the weaker gate defines the
+real exposure — auditing only the "obvious" PII endpoint misses the sibling.
+
+**How to apply:** when adding/auditing an endpoint that returns guest contact data, grep
+for sibling endpoints over the same collection/field and confirm they enforce the *same*
+permission; visibility must gate on a permission, not merely on authentication. Masking
+in-payload (vs 403) is the right tool when the row itself is legitimately listable but a
+single field is sensitive.

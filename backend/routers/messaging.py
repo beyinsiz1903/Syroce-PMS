@@ -12,7 +12,10 @@ from pydantic import BaseModel
 
 from core.security import get_current_user
 from models.schemas import User
-from modules.pms_core.role_permission_service import require_op  # v90 DW
+from modules.pms_core.role_permission_service import (  # v90 DW
+    RolePermissionService,
+    require_op,
+)
 from security.field_encryption import get_field_encryption_service
 
 logger = logging.getLogger(__name__)
@@ -987,6 +990,24 @@ async def run_scheduler_now(current_user: User = Depends(get_current_user),
 # Activity Feed (Real-time notifications)
 # ════════════════════════════════════════════════════════
 
+def _mask_recipient(value) -> str:
+    """KVKK/PII partial-mask for recipient shown in the activity feed to roles
+    that lack `view_guest_list`. Email → first char + ``***@domain``; other
+    (phone/handle) → only the last 2 chars remain. The domain alone is not
+    identifying; the local-part / number (the PII) is masked. Privileged roles
+    (view_guest_list) still see the raw recipient, matching /delivery-logs."""
+    s = str(value or "").strip()
+    if not s:
+        return s
+    if "@" in s:
+        local, _, domain = s.partition("@")
+        head = local[:1] if local else ""
+        return f"{head}***@{domain}"
+    if len(s) > 2:
+        return ("*" * (len(s) - 2)) + s[-2:]
+    return "***"
+
+
 @router.get("/activity")
 async def get_messaging_activity(
     limit: int = Query(20, ge=1, le=100),
@@ -994,6 +1015,16 @@ async def get_messaging_activity(
 ):
     """Get recent messaging activity (automation events, delivery results) as notifications."""
     db = _get_db()
+    # KVKK/PII (Wave 9): delivery-log entries embed the recipient (email/phone)
+    # in the free-text `message`. This endpoint is only get_current_user-guarded
+    # (unlike /delivery-logs which requires view_guest_list). To avoid PII
+    # exposure to non-privileged roles while keeping the feed usable, mask the
+    # recipient unless the caller holds view_guest_list (VIEW_REPORTS).
+    _can_view_pii = RolePermissionService().check_permission(
+        current_user.role,
+        "view_guest_list",
+        granted_permissions=getattr(current_user, "granted_permissions", None),
+    )
     notifications = await db.notifications.find(
         {
             "tenant_id": current_user.tenant_id,
@@ -1034,11 +1065,14 @@ async def get_messaging_activity(
             title = f"{channel_label} {status.title()}"
             priority = "normal"
 
+        recipient = log.get("recipient", "")
+        if not _can_view_pii:
+            recipient = _mask_recipient(recipient)
         activities.append({
             "id": log.get("id", ""),
             "type": "delivery",
             "title": title,
-            "message": f"{log.get('recipient', '')} — {log.get('use_case', '')}",
+            "message": f"{recipient} — {log.get('use_case', '')}",
             "priority": priority,
             "created_at": log.get("created_at", ""),
             "status": status,

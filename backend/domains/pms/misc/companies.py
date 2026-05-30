@@ -27,11 +27,29 @@ async def create_company(company_data: CompanyCreate, current_user: User = Depen
     _perm=Depends(require_op("manage_sales")),  # v101 DW
 ):
     """Create a new company. Status is 'pending' by default for quick-created companies from booking form."""
+    # Wave 9 (ürün kararı): kurumsal hesabın vergi numarası tenant içinde
+    # tekildir. Yalnız değer verildiğinde uygulanır — tax_number opsiyonel bir
+    # alandır ve numarasız çok sayıda şirket olabilir (geriye-uyumlu). Boş /
+    # whitespace değerler muaftır; saklanan değer de normalize edilir.
+    tax_no = (company_data.tax_number or "").strip()
+    if tax_no:
+        existing = await db.companies.find_one({
+            'tenant_id': current_user.tenant_id,
+            'tax_number': tax_no,
+        })
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Bu vergi numarası ({tax_no}) ile kayıtlı kurumsal hesap zaten var.",
+            )
     company = Company(
         tenant_id=current_user.tenant_id,
         **company_data.model_dump()
     )
     company_dict = company.model_dump()
+    # Normalize: store the stripped value, or None for empty/whitespace-only —
+    # never persist a dirty whitespace tax_number (keeps the uniqueness key clean).
+    company_dict['tax_number'] = tax_no or None
     company_dict['created_at'] = company_dict['created_at'].isoformat()
     company_dict['updated_at'] = company_dict['updated_at'].isoformat()
     await db.companies.insert_one(company_dict)
@@ -100,7 +118,24 @@ async def update_company(
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
 
+    # Wave 9: vergi numarası tenant içinde tekil kalır — başka bir kayda ait
+    # tax_number'a güncelleme 409 döner (yalnız değer verildiğinde).
+    new_tax = (company_data.tax_number or "").strip()
+    if new_tax:
+        dup = await db.companies.find_one({
+            'tenant_id': current_user.tenant_id,
+            'tax_number': new_tax,
+            'id': {'$ne': company_id},
+        })
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Bu vergi numarası ({new_tax}) ile kayıtlı başka bir kurumsal hesap var.",
+            )
+
     update_data = company_data.model_dump()
+    # Same normalization as create: stripped value or None (no dirty whitespace).
+    update_data['tax_number'] = new_tax or None
     update_data['updated_at'] = datetime.now(UTC).isoformat()
 
     await db.companies.update_one(

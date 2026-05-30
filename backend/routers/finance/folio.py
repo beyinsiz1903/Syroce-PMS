@@ -1021,7 +1021,12 @@ async def void_payment(
     Body: { reason: str }
     """
     from modules.pms_core.role_permission_service import RolePermissionService
-    RolePermissionService().enforce_permission(current_user.role, "post_payment")
+    # Wave 9 RBAC fix: voiding a payment is a reversal/refund action and must
+    # require the dedicated `void_payment` op (VOID_CHARGE), NOT `post_payment`
+    # (POST_PAYMENT). pms_hardening.py's void-payment route already uses the
+    # correct op; this aligns the legacy finance route to the same contract so a
+    # role that can only POST payments cannot also VOID them.
+    RolePermissionService().enforce_permission(current_user.role, "void_payment")
 
     reason = (body or {}).get("reason", "").strip()
     if not reason:

@@ -454,6 +454,25 @@ async def submit_survey_response(
     if not survey:
         raise HTTPException(status_code=404, detail="Survey not found")
 
+    # Wave 9 (ürün kararı): aynı rezervasyon için gün başına tek anket yanıtı.
+    # Ballot-stuffing / yinelenen NPS kayıtlarını engeller. booking_id verilmemiş
+    # ad-hoc yanıtlar muaf (eşleştirilemez). UTC gün aralığı index-dostu sorgu.
+    if getattr(request, "booking_id", None):
+        now = datetime.now(UTC)
+        day_start = now.strftime("%Y-%m-%dT00:00:00")
+        day_end = (now + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
+        dup = await db.survey_responses.find_one({
+            'tenant_id': current_user.tenant_id,
+            'survey_id': request.survey_id,
+            'booking_id': request.booking_id,
+            'submitted_at': {'$gte': day_start, '$lt': day_end},
+        })
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail="Bu rezervasyon için bugün zaten bir anket yanıtı gönderilmiş.",
+            )
+
     # Calculate overall rating
     ratings = [r.get('rating') for r in request.responses if r.get('rating')]
     avg_rating = sum(ratings) / len(ratings) if ratings else None
