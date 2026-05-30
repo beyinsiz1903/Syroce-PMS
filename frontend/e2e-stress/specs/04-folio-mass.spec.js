@@ -4,6 +4,20 @@ import { fetchAllByPrefix, callTimed, recPerf, recFinding, pilotBookingsCount, a
 
 const MOD = 'folio-mass';
 
+// Package E harvest fix (void-target window): tests C (split) and C3 (refund)
+// both mutate folios[0..9] (each uses slice(0,10)). C4 (void-charge) and C5
+// (void-payment) previously sampled the SAME folios[0..4], so by the time they
+// ran the charges/payments on those folios were already consumed → the void
+// path never executed and the spec emitted a vacuous data-state finding
+// (C4 allEmpty P2 / C5 allNoPay P3). Test A writes charges to folios[0..99] and
+// test B writes payments to folios[0..49]; sampling a window PAST the C/C3
+// destructive range (0..9) but INSIDE the A/B creation range gives intact void
+// targets so the void path runs for real (coverage strengthening, not fake-green).
+// Falls back to the original slice(0,5) when the pool is too small — the prior
+// behaviour AND the allEmpty/allNoPay/all403 REVIEW fallbacks + the 5xx→FAIL
+// invariant are preserved exactly (no assertion loosening, no new FAIL class).
+const voidSampleWindow = (src) => (src.length >= 16 ? src.slice(10, 15) : src.slice(0, 5));
+
 test.describe.configure({ mode: 'serial' });
 
 test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / closed-guard)', () => {
@@ -246,7 +260,7 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
 
     test('C4) Void charge (5 folio — fetch charge_id via detail)', async ({ request, stressTokens }, testInfo) => {
         if (folios.length < 5 && bookings.length < 5) { rec(testInfo, { module: MOD, step: 'void_charge_sample', status: 'SKIP' }); return; }
-        const sample = (folios.length > 0 ? folios : bookings).slice(0, 5);
+        const sample = voidSampleWindow(folios.length > 0 ? folios : bookings);
         let voided = 0, fail = 0; const failModes = {};
         const samples = [];
         // tur-27 (CI #42 NO-GO follow-up): diagnostic snapshots — earlier
@@ -346,7 +360,7 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
 
     test('C5) Void payment (5 folio — fetch payment_id via detail)', async ({ request, stressTokens }, testInfo) => {
         if (folios.length < 5 && bookings.length < 5) { rec(testInfo, { module: MOD, step: 'void_payment_sample', status: 'SKIP' }); return; }
-        const sample = (folios.length > 0 ? folios : bookings).slice(0, 5);
+        const sample = voidSampleWindow(folios.length > 0 ? folios : bookings);
         let voided = 0, fail = 0; const failModes = {};
         const samples = [];
         for (const it of sample) {

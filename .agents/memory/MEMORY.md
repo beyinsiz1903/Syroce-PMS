@@ -1,1 +1,2 @@
 - [Stress spec module-block probes hide path drift](stress-spec-module-block-probe.md) — a "blocked/SKIP" stress surface may be a vacuous scan from a drifted probe URL; verify the path resolves before trusting it honest.
+- [Serial stress specs self-deplete shared sample windows](stress-serial-sample-depletion.md) — a data-state "empty/no-target" finding may be self-inflicted slice(0,N) overlap with an earlier destructive batch; offset the window, don't seed.
