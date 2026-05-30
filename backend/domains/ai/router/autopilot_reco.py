@@ -410,33 +410,42 @@ async def solve_overbooking(
         alt_rooms = [r for r in rooms if r['room_type'] == room['room_type'] and r['id'] != room['id']]
 
         for booking in bookings[1:]:  # Keep first booking, move others
-            # Find available alternative rooms
+            # Calculate guest priority score once per booking. The score is a
+            # property of the guest (loyalty tier minus an OTA-channel penalty),
+            # not of the candidate room, so it is computed here rather than once
+            # per alternative room.
+            guest = await db.guests.find_one(
+                {'id': booking['guest_id'], 'tenant_id': current_user.tenant_id}, {'_id': 0}
+            )
+            loyalty_tier = (guest.get('loyalty_tier') if guest else None) or 'standard'
+            base_score = {
+                'vip': 100,
+                'gold': 80,
+                'silver': 60,
+                'standard': 40,
+            }.get(loyalty_tier, 40)
+            priority_score = base_score
+            rationale_parts = [f"{loyalty_tier.upper()} loyalty tier (+{base_score})"]
+
+            # OTA bookings are harder to move, so they carry a penalty that
+            # lowers their priority relative to direct bookings.
+            ota_channel = booking.get('ota_channel')
+            if ota_channel:
+                priority_score -= 20
+                rationale_parts.append(f"OTA channel {ota_channel} (-20)")
+
+            priority_rationale = "; ".join(rationale_parts) + f" = priority {priority_score}"
+
+            # Find available alternative rooms (the room choice does not affect
+            # the guest's priority score).
             available_alts = []
             for alt_room in alt_rooms:
                 # Check if alt room is available (in-memory, bulk-fetched above)
                 if _room_available(alt_room['id'], booking['check_in'], booking['check_out']):
-                    # Calculate guest priority score
-                    guest = await db.guests.find_one({'id': booking['guest_id'], 'tenant_id': current_user.tenant_id}, {'_id': 0})
-                    loyalty_tier = guest.get('loyalty_tier', 'standard') if guest else 'standard'
-                    priority_score = {
-                        'vip': 100,
-                        'gold': 80,
-                        'silver': 60,
-                        'standard': 40
-                    }.get(loyalty_tier, 40)
-
-                    # Add OTA channel penalty (harder to move OTA bookings)
-                    if booking.get('ota_channel'):
-                        priority_score -= 20
-
                     available_alts.append({
                         'room': alt_room,
-                        'priority_score': priority_score,
                         'reason': f"Same type ({alt_room['room_type']}), Floor {alt_room['floor']}"
                     })
-
-            # Sort by priority score
-            available_alts.sort(key=lambda x: x['priority_score'], reverse=True)
 
             if available_alts:
                 best_option = available_alts[0]
@@ -446,6 +455,9 @@ async def solve_overbooking(
                     'current_room': room['room_number'],
                     'booking_id': booking['id'],
                     'guest_name': booking.get('guest_name', 'Unknown'),
+                    'loyalty_tier': loyalty_tier,
+                    'priority_score': priority_score,
+                    'priority_rationale': priority_rationale,
                     'check_in': booking['check_in'],
                     'check_out': booking['check_out'],
                     'recommended_action': 'move',
@@ -456,6 +468,11 @@ async def solve_overbooking(
                     'impact': 'minimal',
                     'auto_apply': False
                 })
+
+    # Order solutions so the highest-priority guests surface first. This makes
+    # the loyalty tier and OTA penalty have a real, observable effect on the
+    # returned ordering instead of being a discarded intermediate value.
+    solutions.sort(key=lambda s: s['priority_score'], reverse=True)
 
     return {
         'date': target_date.isoformat(),

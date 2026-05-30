@@ -178,7 +178,95 @@ async def test_solve_overbooking_conflict_detection_and_move():
     assert sol["impact"] == "minimal"
     assert sol["auto_apply"] is False
     assert "Standard" in sol["reason"]
+    # The moved guest is a VIP (base 100) booked via an OTA channel (-20),
+    # so the surfaced priority score and rationale must reflect both inputs.
+    assert sol["loyalty_tier"] == "vip"
+    assert sol["priority_score"] == 80
+    assert "VIP" in sol["priority_rationale"]
+    assert "OTA" in sol["priority_rationale"]
     assert result["summary"] == "Found 1 overbooking conflicts with 1 AI-powered solutions"
+
+
+async def test_solve_overbooking_ota_penalty_changes_priority_score():
+    """The OTA-channel penalty has an observable effect: the same guest/booking
+    yields a 20-point-lower priority score (and an OTA rationale) when booked
+    through an OTA channel versus a direct booking."""
+
+    def _scenario(ota_channel):
+        rooms = [
+            _room("s1", "101", "Standard", 100),
+            _room("s2", "102", "Standard", 100),
+        ]
+        extra = {"guest_name": "Bob Move"}
+        if ota_channel:
+            extra["ota_channel"] = ota_channel
+        bookings = [
+            _booking("bkA", "s1", "g_std", "2026-07-01T14:00:00", "2026-07-02T11:00:00",
+                     guest_name="Alice Keep"),
+            _booking("bkB", "s1", "g_vip", "2026-07-01T15:00:00", "2026-07-03T11:00:00",
+                     **extra),
+        ]
+        guests = [
+            _guest("g_std", "Alice Keep", "standard"),
+            _guest("g_vip", "Bob Move", "vip"),
+        ]
+        return _FakeDB(rooms=rooms, bookings=bookings, guests=guests)
+
+    user = SimpleNamespace(tenant_id=TENANT)
+
+    with patch("domains.ai.router.autopilot_reco.db", _scenario("booking.com")):
+        ota_result = await solve_overbooking(date="2026-07-01", current_user=user, _perm=None)
+    with patch("domains.ai.router.autopilot_reco.db", _scenario(None)):
+        direct_result = await solve_overbooking(date="2026-07-01", current_user=user, _perm=None)
+
+    ota_sol = ota_result["solutions"][0]
+    direct_sol = direct_result["solutions"][0]
+
+    # Same VIP guest: direct booking scores 100, OTA booking scores 80.
+    assert direct_sol["priority_score"] == 100
+    assert ota_sol["priority_score"] == 80
+    assert direct_sol["priority_score"] - ota_sol["priority_score"] == 20
+    # The penalty is explained only when the booking actually came via an OTA.
+    assert "OTA" not in direct_sol["priority_rationale"]
+    assert "OTA channel booking.com (-20)" in ota_sol["priority_rationale"]
+
+
+async def test_solve_overbooking_solutions_ordered_by_priority():
+    """When multiple bookings must move, solutions are ordered highest priority
+    first, and the OTA penalty changes that ordering."""
+    rooms = [_room(f"s{i}", f"10{i}", "Standard", 100) for i in range(1, 7)]
+    bookings = [
+        # s1 double-booked: keep the standard guest, move the VIP (no OTA -> 100).
+        _booking("bkA1", "s1", "g_std1", "2026-07-01T14:00:00", "2026-07-02T11:00:00"),
+        _booking("bkB1", "s1", "g_vip", "2026-07-01T15:00:00", "2026-07-02T11:00:00",
+                 guest_name="Vera VIP"),
+        # s2 double-booked: keep the standard guest, move a silver guest booked
+        # via an OTA channel (60 - 20 = 40).
+        _booking("bkA2", "s2", "g_std2", "2026-07-01T14:00:00", "2026-07-02T11:00:00"),
+        _booking("bkB2", "s2", "g_silver", "2026-07-01T15:00:00", "2026-07-02T11:00:00",
+                 guest_name="Sid Silver", ota_channel="expedia"),
+    ]
+    guests = [
+        _guest("g_std1", "Std One", "standard"),
+        _guest("g_std2", "Std Two", "standard"),
+        _guest("g_vip", "Vera VIP", "vip"),
+        _guest("g_silver", "Sid Silver", "silver"),
+    ]
+    fake_db = _FakeDB(rooms=rooms, bookings=bookings, guests=guests)
+    user = SimpleNamespace(tenant_id=TENANT)
+
+    with patch("domains.ai.router.autopilot_reco.db", fake_db):
+        result = await solve_overbooking(date="2026-07-01", current_user=user, _perm=None)
+
+    assert result["conflicts_found"] == 2
+    scores = [s["priority_score"] for s in result["solutions"]]
+    # Highest priority first; non-increasing order overall.
+    assert scores == sorted(scores, reverse=True)
+    # The VIP direct booking (100) outranks the OTA silver booking (40).
+    assert result["solutions"][0]["booking_id"] == "bkB1"
+    assert result["solutions"][0]["priority_score"] == 100
+    assert result["solutions"][1]["booking_id"] == "bkB2"
+    assert result["solutions"][1]["priority_score"] == 40
 
 
 async def test_solve_overbooking_no_conflict_no_solutions():
