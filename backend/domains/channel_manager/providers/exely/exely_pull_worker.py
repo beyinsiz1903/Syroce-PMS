@@ -11,12 +11,12 @@ from typing import Any
 from core.database import db
 from core.secrets import get_secrets_manager
 from core.tenant_db import clear_tenant_context, set_tenant_context
+from core.transient_db_guard import TransientFailureTracker
 from domains.channel_manager.credential_vault import get_decrypted_credentials
 from domains.channel_manager.providers.common_ingest import ingest_reservation, log_sync
 from domains.channel_manager.providers.exely.auto_import import auto_import_pending
 from domains.channel_manager.providers.exely.normalizer import normalize_reservation
 from domains.channel_manager.providers.exely.provider import ExelyProvider
-from core.transient_db_guard import TransientFailureTracker
 
 logger = logging.getLogger(__name__)
 
