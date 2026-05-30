@@ -1,3 +1,1 @@
-- [Playwright reporter retry dedup](playwright-reporter-retry-dedup.md) — custom reporters must dedup onTestEnd by test.id or retries inflate FAIL into false NO-GO.
-- [PII mask helper limits + sibling-endpoint RBAC](stress-pii-mask-helper.md) — assertPiiMasked only checks hardcoded field-keys (free-text PII needs local regex); sibling endpoints over the same PII field must share the same permission gate.
-- [Permission-key reuse traps](permission-key-reuse-traps.md) — a route gated on the "nearest" op (post_payment) instead of the semantically-correct one (void_payment) silently over-grants; map each route to its own action.
+- [B2B API-key auth deny-path status](b2b-apikey-auth-status.md) — missing/empty X-API-Key must return 401 not 422; required-Header() FastAPI gotcha; pattern inlined across ~13 b2b sub-router files + marketplace_b2b twin.

@@ -186,12 +186,18 @@ class TestB2BAgencyEndpoints(TestB2BAPISetup):
         print(f"Invalid API key response: {response.status_code}")
         assert response.status_code == 401, f"Expected 401 for invalid API key, got {response.status_code}"
     
-    def test_02_missing_api_key_returns_422(self):
-        """Test that missing API key returns 422 (validation error)"""
+    def test_02_missing_api_key_returns_401(self):
+        """Test that missing API key returns 401 (clean auth deny, not 422 validation).
+
+        B2B sub-routers treat a missing X-API-Key as an authentication failure
+        (401) rather than a request-validation error (422). The deny path must
+        be a proper auth status so callers cannot distinguish 'missing' from
+        'invalid' via status code.
+        """
         headers = {"Content-Type": "application/json"}
         response = requests.get(f"{BASE_URL}/api/b2b/content", headers=headers)
         print(f"Missing API key response: {response.status_code}")
-        assert response.status_code == 422, f"Expected 422 for missing API key, got {response.status_code}"
+        assert response.status_code == 401, f"Expected 401 for missing API key, got {response.status_code}"
     
     def test_03_get_content(self):
         """GET /api/b2b/content - Get hotel content"""

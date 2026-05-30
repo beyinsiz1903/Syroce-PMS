@@ -388,7 +388,7 @@ class TestWebhookWithoutAPIKey(TestB2BWebhookSetup):
         """GET /api/b2b/webhooks - Should require API key"""
         response = requests.get(f"{BASE_URL}/api/b2b/webhooks")
         print(f"List webhooks without key: {response.status_code}")
-        assert response.status_code == 422, f"Expected 422 for missing API key, got {response.status_code}"
+        assert response.status_code == 401, f"Expected 401 for missing API key, got {response.status_code}"
     
     def test_02_register_webhook_without_key(self):
         """POST /api/b2b/webhooks - Should require API key"""
@@ -397,19 +397,19 @@ class TestWebhookWithoutAPIKey(TestB2BWebhookSetup):
             "events": ["reservation.created"]
         })
         print(f"Register webhook without key: {response.status_code}")
-        assert response.status_code == 422, f"Expected 422 for missing API key, got {response.status_code}"
+        assert response.status_code == 401, f"Expected 401 for missing API key, got {response.status_code}"
     
     def test_03_delete_webhook_without_key(self):
         """DELETE /api/b2b/webhooks/{id} - Should require API key"""
         response = requests.delete(f"{BASE_URL}/api/b2b/webhooks/some-id")
         print(f"Delete webhook without key: {response.status_code}")
-        assert response.status_code == 422, f"Expected 422 for missing API key, got {response.status_code}"
+        assert response.status_code == 401, f"Expected 401 for missing API key, got {response.status_code}"
     
     def test_04_test_webhook_without_key(self):
         """POST /api/b2b/webhooks/{id}/test - Should require API key"""
         response = requests.post(f"{BASE_URL}/api/b2b/webhooks/some-id/test")
         print(f"Test webhook without key: {response.status_code}")
-        assert response.status_code == 422, f"Expected 422 for missing API key, got {response.status_code}"
+        assert response.status_code == 401, f"Expected 401 for missing API key, got {response.status_code}"
 
 
 # Cleanup fixture

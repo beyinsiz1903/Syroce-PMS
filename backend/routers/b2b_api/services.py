@@ -153,10 +153,13 @@ async def _agency_owns_block(tenant_id: str, agency_id: str, block_id: str) -> d
 
 # ── API Key Auth Dependency ──────────────────────────────────────
 
-async def get_b2b_agency(x_api_key: str = Header(..., alias="X-API-Key")):
+async def get_b2b_agency(x_api_key: str | None = Header(None, alias="X-API-Key")):
     """API key ile acente kimlik dogrulamasi."""
     from core.tenant_db import get_system_db
     sysdb = get_system_db()
+
+    if not x_api_key:
+        raise HTTPException(status_code=401, detail="API key gerekli")
 
     key_hash = _hash_api_key(x_api_key)
     key_doc = await sysdb.agency_api_keys.find_one(
