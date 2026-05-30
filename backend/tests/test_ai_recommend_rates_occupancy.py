@@ -180,3 +180,52 @@ async def test_recommend_rates_occupancy_strategy_and_rate():
     assert dlx_wed["occupancy_pct"] == 0.0
     assert dlx_wed["strategy"] == "attract"
     assert dlx_wed["recommended_rate"] == 170.0  # 200 base * 0.85
+
+
+async def test_recommend_rates_dirty_base_price_no_500():
+    """Kirli/legacy oda verisi (eksik / None / 0 base_price) 500'e yol açmamalı.
+
+    Pilot tenant'ta lowercase 'standard' oda tipinin tek odası base_price=None
+    taşıyordu; eski kod `rt_rooms[0]['base_price']` ile None alıp aritmetikte
+    (None * 1.25) TypeError, ya da base_rate=0 olduğunda difference_pct
+    bölmesinde ZeroDivisionError üretip 500'lüyordu. Düzeltme: ilk geçerli
+    (>0) base_price'a düş, yoksa fail-safe 0 + bölme guard. Bu test handler'ın
+    artık exception fırlatmadan benign bir öneri döndürdüğünü kilitler.
+    """
+    rooms = [
+        # Geçerli tip — happy path korunsun.
+        _room("g1", "Standard", 100),
+        # base_price=None (anahtar var, değer None).
+        _room("n1", "none_priced", None),
+        # base_price anahtarı tamamen yok.
+        {"id": "m1", "tenant_id": TENANT, "room_type": "missing_priced"},
+        # base_price=0.
+        _room("z1", "zero_priced", 0),
+        # Aynı tipte biri kirli biri geçerli — geçerli olan seçilmeli.
+        _room("mix1", "mixed", None),
+        _room("mix2", "mixed", 300),
+    ]
+    fake_db = _FakeDB(rooms, [])
+    user = SimpleNamespace(tenant_id=TENANT)
+
+    with patch("domains.ai.router.autopilot_reco.db", fake_db):
+        result = await recommend_rates(
+            start_date="2026-06-01",
+            end_date="2026-06-02",
+            current_user=user,
+            _perm=None,
+        )
+
+    by_key = _index(result)
+
+    # Kirli tipler benign 0 oranlı öneri üretti, exception yok.
+    for rt in ("none_priced", "missing_priced", "zero_priced"):
+        rec = by_key[(rt, "2026-06-01")]
+        assert rec["current_rate"] == 0
+        assert rec["recommended_rate"] == 0.0
+        assert rec["difference_pct"] == 0.0
+
+    # Karışık tipte geçerli base_price (300) seçildi — 0% occ -> attract (*0.85).
+    mixed = by_key[("mixed", "2026-06-01")]
+    assert mixed["current_rate"] == 300
+    assert mixed["recommended_rate"] == 255.0  # 300 * 0.85

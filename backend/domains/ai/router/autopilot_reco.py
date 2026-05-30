@@ -676,7 +676,19 @@ async def recommend_rates(
     for rt in room_types:
         rt_rooms = [r for r in rooms if r['room_type'] == rt]
         total_rt_rooms = len(rt_rooms)
-        base_rate = rt_rooms[0]['base_price'] if rt_rooms else 0
+        # base_rate: ilk geçerli (sayısal, >0) base_price. Kirli/legacy veri
+        # (eksik anahtar / None / 0) bir oda tipinde 500'e (ZeroDivisionError /
+        # None aritmetiği) yol açmasın diye fail-safe 0'a düşülür.
+        base_rate = next(
+            (
+                r['base_price']
+                for r in rt_rooms
+                if isinstance(r.get('base_price'), (int, float))
+                and not isinstance(r.get('base_price'), bool)
+                and r['base_price'] > 0
+            ),
+            0,
+        )
 
         current_date = start
         while current_date <= end:
@@ -724,7 +736,7 @@ async def recommend_rates(
                 'current_rate': round(base_rate, 2),
                 'recommended_rate': round(recommended_rate, 2),
                 'difference': round(recommended_rate - base_rate, 2),
-                'difference_pct': round(((recommended_rate - base_rate) / base_rate * 100), 1),
+                'difference_pct': round(((recommended_rate - base_rate) / base_rate * 100), 1) if base_rate else 0.0,
                 'strategy': strategy,
                 'reason': reason,
                 'occupancy_pct': round(occupancy_pct, 1),

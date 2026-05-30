@@ -1,1 +1,2 @@
 - [B2B API-key auth deny-path status](b2b-apikey-auth-status.md) — missing/empty X-API-Key must return 401 not 422; required-Header() FastAPI gotcha; pattern inlined across ~13 b2b sub-router files + marketplace_b2b twin.
+- [Pilot dirty-data deterministic 500s](pilot-dirty-data-deterministic-500.md) — pilot-özgü+tekrarlayan stres FAIL = kirli pilot veri, transient değil; compute endpoint sayısal alanları guard et.
