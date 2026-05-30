@@ -89,21 +89,28 @@ değişikliği gerekli mi) · **Seed?** · **Env/Secret?** · **Targeted cmd**
 | `cross_tenant_pentest` | sample assertion | SKIP×1 | ZATEN OK (`pilot_fixtures` room_blocks/kbs/sales-lead anchor üretiyor) | aksiyon yok |
 | `public_token_rotation` | QR token rotation | SKIP | Stres room harvest + rooms/digital-key endpoint | → **W8** (endpoint) |
 
-### Wave 8 — ENDPOINT / MODULE MOUNT (kategori 3)
+### Wave 8 — ENDPOINT / MODULE MOUNT — **CANLI PROBE İLE ÇÖZÜLDÜ (2026-05-30)**
 
-| Modül | Endpoint | Sev | Kat | Kök sebep | Prod kod? | Targeted spec | Risk | Wave |
-|---|---|:--:|:--:|---|:--:|---|:--:|:--:|
-| `admin_rbac` | `/api/admin/tenants` 404 | P2×4 | 3 | Stres env'de mount değil (E1) | Olası | `admin_rbac` | Orta | 8 |
-| `settings_audit` | admin_tenants probe 404 | P2×5 | 3 | E1 (aynı) | Olası | `31-settings-audit` | Orta | 8 |
-| `messaging` | `/api/messaging/settings` 404 | REVIEW×1 | 3 | Messaging module mount (E7) | Olası | `messaging` | Orta | 8 |
-| `notification_batch` | messaging endpoint absent | P2×3 | 3/4 | E7 + `DISABLE_EXPO_PUSH` guard (kasıtlı) | Hayır | `45-notification-batch-dryrun` | Düşük | 8 |
-| `ops_readiness` | CM outbox depth / conflict queue / backup-status shape | REVIEW×1 | 3/6 | Observability endpoint yok (E2/E3) + contract drift (E4) | Evet | `ops_readiness` | Orta | 8 |
-| `payment_pos_reconciliation` | pos_tables_list 404, `/api/folios`, `/api/folio-charges` | P2×3 | 3 | Mount/alias (E5/E6) | Olası | `payment_pos_reconciliation` | Orta | 8 |
-| `public_token_rotation` | `/api/rooms` 404, digital-key 404 | P2×3 | 3 | Public room read + digital-key (E8/F6) | Olası | `public_token_rotation` | Orta | 8 |
-| `reservation_deep` | waitlist promote 404 | REVIEW | 3 | Waitlist promote endpoint | Olası | `reservation_deep` | Orta | 8 |
-| `ws_tenant_isolation` | WS endpoint 404 | P2×3 | 3/9 | WS server stres env'de mount değil (E12) | Olası | `ws_tenant_isolation` | Orta | 8 |
-| `mice_execution` | F&B order send absent | SKIP | 3/9 | Endpoint absent (E11) + RBAC | Olası | `mice_execution` | Orta | 8 |
-| `bulk-seed-500` | outbox_no_unexpected | REVIEW×1 | 3/6 | Outbox observability endpoint yok, manuel doğrula | Hayır | `bulk-seed-500` | Düşük | 8 |
+> **Ground truth:** lokal backend → shared Atlas, `E2E_STRESS_ADMIN_*` login,
+> **yalnız GET / mutasyon yok**. Headline: `ENDPOINT_NOT_DEPLOYED` büyük ölçüde
+> MİSCLASSIFICATION — endpoint'ler mount'lu; 404 kök sebep = (8) super-admin
+> guard fail-closed, (4) spec path-drift, (3) gerçek absent roadmap. Detay:
+> `docs/drill_reports/20260529_review_skip_wave8_candidate.md`.
+
+| Modül | Endpoint | Probe HTTP | Yeni Kat | KARAR | Wave |
+|---|---|:--:|:--:|---|:--:|
+| `admin_rbac` | `/api/admin/tenants` | **404** | **8** | By-design: platform-super-admin guard 404 (stres admin tenant-scoped). Mount VAR. Auth zayıflatma YOK. | 8 ✔ |
+| `settings_audit` | `/api/admin/tenants` | **404** | **8** | Aynı (super_admin global). | 8 ✔ |
+| admin feature-flags | `/api/admin/feature-flags` | **404** | **8** | Aynı (super_admin global). | 8 ✔ |
+| `webhook_admin_dlq` | `/api/webhooks/status`+`/dlq` | **404** | **8** | Aynı (super_admin ops yüzeyi). | 8 ✔ |
+| `messaging` | `/api/messaging-center/settings` | 200 | 4 | Spec path-drift (gerçek `messaging-center`). Endpoint çalışıyor. | 8 ✔ |
+| `notification_batch` | messaging path+field drift | — | **4** | **DÜZELTİLDİ** — spec `/api/messaging-center/*` + `recipient` alanı; SKIP×3+P2×3 → güvenlik assert'leri gerçek-koşar. | 8 ✅ DONE |
+| `ops_readiness` / `bulk-seed-500` | outbox depth | **404** | **8/4** | `/api/outbox/status` super_admin (out-of-scope); "manuel doğrula" REVIEW dürüst. | 8 ✔ |
+| `payment_pos_reconciliation` | `/api/pos/tables`; `/api/pms/folios` | 404; drift | **3/4** | pos_tables list roadmap (yalnız `POST /api/pos/v2/tables/reserve`); folio gerçek `/api/finance/folio/list`. SKIP "no open shift" = Wave 7 by-design. | 8 ✔ |
+| `public_token_rotation` | `/api/rooms`; QR rotate | 404; env | **3** | Rooms staff-only; QR rotation HTTP yok (env `ROOM_QR_SECRET`). REVIEW dürüst; tampered-token P0 assert public QR'da koşar. | 8 ✔ |
+| `reservation_deep` | waitlist `/promote` | **404** | **3** | Generic promote roadmap (yalnız `/api/spa/waitlist`). Group rooming-list + city-ledger VAR. | 8 ✔ |
+| `ws_tenant_isolation` | `/api/enterprise/ws/{stats,live}` | 200 | **4/env** | Mounted; WS 404 ise runner Upgrade/handshake env meselesi, mount değil. | 8 ✔ |
+| `mice_execution` | F&B order-send | absent | **3/8** | F&B order-send roadmap; mice module entitlement 403 by-design. | 8 ✔ |
 
 ### Wave 9 — PRODUCT CONTRACT / BY-DESIGN / ROADMAP (kategori 5, 8, 9)
 

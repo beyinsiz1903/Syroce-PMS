@@ -49,12 +49,12 @@ test.describe('F8Q § 45 — Push notification batch dry-run', () => {
         }
 
         const probe = await withModuleProbe(request, stressTokens.stress_token,
-            '/api/messaging/settings');
+            '/api/messaging-center/settings');
         if (probe.moduleBlocked || probe.status >= 300) {
             moduleBlocked = true;
             blockedReason = probe.reason || `status_${probe.status}`;
             recFinding(testInfo, 'P2', MOD, 'messaging module probe blocked',
-                `endpoint=/api/messaging/settings status=${probe.status} reason=${blockedReason} — A/B/C skip, D bağımsız.`);
+                `endpoint=/api/messaging-center/settings status=${probe.status} reason=${blockedReason} — A/B/C skip, D bağımsız.`);
         }
         rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
             note: `prefix=${prefix} pilot_before=${pilotBefore?.count} push_disabled=${pushDisabled} probe_status=${probe.status} module_blocked=${moduleBlocked}` });
@@ -72,14 +72,14 @@ test.describe('F8Q § 45 — Push notification batch dry-run', () => {
         let ok = 0, fail = 0, throttled = 0, serverErr = 0, permFail = 0;
         const errs = [];
         // Stres prefix'li template + payload — gerçek alıcı yok (push
-        // settings/activity feed üzerinden simulate). /api/messaging/send
-        // body kontratı: { channel, to, subject?, body } — to: stres prefix
-        // ile virtual recipient. Backend send-flow Resend/SMS silent (F8B
-        // doctrine).
+        // settings/activity feed üzerinden simulate). /api/messaging-center/send
+        // body kontratı (SendReq): { channel, recipient, subject?, body } —
+        // recipient: stres prefix ile virtual recipient. Backend send-flow
+        // Resend/SMS silent (F8B doctrine).
         for (let i = 0; i < N_NOTIF; i++) {
-            const r = await callTimed(request, 'post', '/api/messaging/send', {
+            const r = await callTimed(request, 'post', '/api/messaging-center/send', {
                 channel: 'in_app',
-                to: `${prefix}_user_${i}@stress.invalid`,
+                recipient: `${prefix}_user_${i}@stress.invalid`,
                 subject: `${prefix}_batch_subj_${i}`,
                 body: `${prefix}_batch_body_${i}`,
                 metadata: { stress_seed: true, stress_prefix: prefix, idx: i },
@@ -112,9 +112,9 @@ test.describe('F8Q § 45 — Push notification batch dry-run', () => {
         // Duplicate idempotency probe: aynı stress_seed metadata ile yeniden
         // gönder. Backend duplicate semantik definite contract'a sahip değilse
         // (queue-based async), P2 REVIEW yeterli. Hard-assert: 5xx yok.
-        const dup = await callTimed(request, 'post', '/api/messaging/send', {
+        const dup = await callTimed(request, 'post', '/api/messaging-center/send', {
             channel: 'in_app',
-            to: `${prefix}_user_0@stress.invalid`,
+            recipient: `${prefix}_user_0@stress.invalid`,
             subject: `${prefix}_batch_subj_0`,
             body: `${prefix}_batch_body_0`,
             metadata: { stress_seed: true, stress_prefix: prefix, idx: 0, dup: true },
@@ -125,9 +125,9 @@ test.describe('F8Q § 45 — Push notification batch dry-run', () => {
         // Invalid device token graceful: malformed expo token payload →
         // server graceful (no 5xx). Direct /messaging/send'de device_token
         // yok ama bozuk channel sufficient.
-        const bad = await callTimed(request, 'post', '/api/messaging/send', {
+        const bad = await callTimed(request, 'post', '/api/messaging-center/send', {
             channel: 'invalid_channel_xyz',
-            to: 'malformed',
+            recipient: 'malformed',
             body: 'x',
         }, stressTokens.stress_token);
         const badGraceful = bad.status < 500;
@@ -151,7 +151,7 @@ test.describe('F8Q § 45 — Push notification batch dry-run', () => {
             test.skip(true, 'module blocked');
             return;
         }
-        const logs = await callTimed(request, 'get', '/api/messaging/delivery-logs?limit=50',
+        const logs = await callTimed(request, 'get', '/api/messaging-center/delivery-logs?limit=50',
             undefined, stressTokens.stress_token);
         if (logs.status === 401 || logs.status === 403) {
             recFinding(testInfo, 'P2', MOD, 'delivery-logs perm-gated',
@@ -195,8 +195,8 @@ test.describe('F8Q § 45 — Push notification batch dry-run', () => {
         }
         // Activity feed endpoint — varsa real-time notifications. Yoksa 404
         // module-blocked sayılmaz çünkü messaging settings probe geçti;
-        // C için soft-skip.
-        const feed = await callTimed(request, 'get', '/api/messaging/activity-feed?limit=20',
+        // C için soft-skip. Real path: /api/messaging-center/activity.
+        const feed = await callTimed(request, 'get', '/api/messaging-center/activity?limit=20',
             undefined, stressTokens.stress_token);
         if (feed.status === 404) {
             rec(testInfo, { module: MOD, step: 'activity_feed', status: 'SKIP', note: 'endpoint 404 (alternate name)' });
@@ -205,13 +205,65 @@ test.describe('F8Q § 45 — Push notification batch dry-run', () => {
         if (feed.status >= 500) {
             recFinding(testInfo, 'P0', MOD, 'activity-feed 5xx', `status=${feed.status}`);
         }
-        const items = Array.isArray(feed.body?.notifications) ? feed.body.notifications
+        // Gerçek kontrat: GET /api/messaging-center/activity → { activities: [...] }
+        // (her item: id/type/title/message/priority/created_at). Legacy
+        // notifications/items fallback geri-uyum için tutulur.
+        const items = Array.isArray(feed.body?.activities) ? feed.body.activities
+            : Array.isArray(feed.body?.notifications) ? feed.body.notifications
             : Array.isArray(feed.body?.items) ? feed.body.items : [];
+        // Cross-tenant leak: stress_token GET → hiçbir item PILOT_/PROD_ marker
+        // taşımamalı (delivery-logs adımı ile aynı kontrat).
+        let feedLeaks = 0;
+        for (const it of items.slice(0, 50)) {
+            let blob = ''; try { blob = JSON.stringify(it); } catch { /* nz */ }
+            if (blob.includes('"PILOT_') || blob.includes('"PROD_')) feedLeaks++;
+        }
+        if (feedLeaks > 0) {
+            recFinding(testInfo, 'P0', MOD, 'activity-feed cross-tenant leak',
+                `leaks=${feedLeaks}/${items.length} stress_token döndüğünde pilot/prod prefix marker var.`);
+        }
+        // Structural PII guard: assertPiiMasked yalnız bilinen field-key + pattern
+        // tarar (phone/email/identity_number/passport/iban). Activity item'ları bu
+        // key'leri taşımaz → harmless; misleading "recipient/message" alan adları
+        // EKLENMEDİ (helper onları no-op sayar, sahte kapsam iddiası olur).
         const masked = assertPiiMasked(testInfo, MOD, items, ['phone', 'email']);
-        rec(testInfo, { module: MOD, step: 'activity_feed', status: feed.status < 500 && masked ? 'PASS' : 'FAIL',
-            note: `status=${feed.status} items=${items.length} pii_masked=${masked}` });
+        // Serbest-metin PII: activity message="{recipient} — {use_case}" / title
+        // recipient'i gömer. Demo seed gerçek-domain (@gmail.com) recipient
+        // kullanır (`_get_demo_delivery_logs`) → gerçek-domain email BEKLENEN
+        // olabilir; bu yüzden SOFT REVIEW (hard-fail DEĞİL — false-P0 riski).
+        // Sentetik test domain'leri (.invalid/.test/.example) muaf. NOT: /activity
+        // `view_guest_list` ile gate'li DEĞİL (delivery-logs ise gate'li) →
+        // recipient ifşası Wave 9 RBAC/ürün-kontrat kararı (mask + gate?).
+        const EMAIL_RE = /[^\s@"<>]+@[^\s@"<>]+\.[A-Za-z]{2,}/g;
+        let freetextPii = 0;
+        for (const it of items.slice(0, 50)) {
+            for (const key of ['message', 'title']) {
+                const s = String(it?.[key] ?? '');
+                for (const m of (s.match(EMAIL_RE) || [])) {
+                    const lo = m.toLowerCase();
+                    if (lo.endsWith('.invalid') || lo.endsWith('.test') || lo.endsWith('.example')) continue;
+                    freetextPii++;
+                }
+            }
+        }
+        if (freetextPii > 0) {
+            recFinding(testInfo, 'P2', MOD, 'activity-feed recipient PII serbest-metinde (REVIEW)',
+                `gerçek-domain email activity message/title'da görünür (count=${freetextPii}). /activity view_guest_list-gated değil → Wave 9 RBAC/ürün-kontrat.`);
+        }
+        // Boş feed → PII/leak assertion'ı vacuous (boş kümede trivially-pass).
+        // Fake-green önlemek için 2xx+0 item durumunu REVIEW olarak işaretle.
+        const feedEmpty = feed.status < 400 && items.length === 0;
+        if (feedEmpty) {
+            recFinding(testInfo, 'P2', MOD, 'activity-feed empty (vacuous PII assert)',
+                'stress_token 2xx ama 0 activity döndü — PII/leak kontrolü boş kümede; CI/manuel doğrula.');
+        }
+        rec(testInfo, { module: MOD, step: 'activity_feed',
+            status: feed.status >= 500 || feedLeaks > 0 || !masked ? 'FAIL'
+                : (feedEmpty || freetextPii > 0) ? 'REVIEW' : 'PASS',
+            note: `status=${feed.status} items=${items.length} leaks=${feedLeaks} pii_masked=${masked} freetext_pii=${freetextPii} empty=${feedEmpty}` });
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'activity_feed', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
+        expect(feedLeaks, `activity-feed cross-tenant leak count=${feedLeaks}`).toBe(0);
         expect(feed.status < 500, `activity-feed 5xx`).toBe(true);
     });
 

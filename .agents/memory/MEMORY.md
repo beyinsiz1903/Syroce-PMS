@@ -1,1 +1,2 @@
 - [Playwright reporter retry dedup](playwright-reporter-retry-dedup.md) — custom reporters must dedup onTestEnd by test.id or retries inflate FAIL into false NO-GO.
+- [PII mask helper limits + activity RBAC gap](stress-pii-mask-helper.md) — assertPiiMasked only checks hardcoded field-keys; free-text PII needs local regex; /activity lacks view_guest_list gate (Wave 9).
