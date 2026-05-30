@@ -589,6 +589,46 @@ async def recommend_rates(
     rooms = await db.rooms.find({'tenant_id': current_user.tenant_id}, {'_id': 0}).to_list(1000)
     room_types = list({r['room_type'] for r in rooms})
 
+    # N+1 fix: önceki versiyon her (room_type x gün) hücresi için ayrı
+    # count_documents açıyordu (room_types * days sorgu). Şimdi tüm pencere için
+    # TEK find ile çakışan bookings çekiliyor, occupancy Python tarafında
+    # (room_type, gün) bazında gruplanıyor. Mongo string karşılaştırması ($lte/$gte)
+    # leksikografik ISO sırasını kullandığından, aynı semantiği Python'da string
+    # karşılaştırmasıyla birebir koruyoruz.
+    room_id_to_type = {r['id']: r['room_type'] for r in rooms}
+    all_room_ids = list(room_id_to_type.keys())
+
+    window_start = datetime.combine(start, datetime.min.time())
+    window_end = datetime.combine(end, datetime.max.time())
+
+    window_bookings = await db.bookings.find({
+        'tenant_id': current_user.tenant_id,
+        'room_id': {'$in': all_room_ids},
+        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+        'check_in': {'$lte': window_end.isoformat()},
+        'check_out': {'$gte': window_start.isoformat()},
+    }, {'_id': 0, 'room_id': 1, 'check_in': 1, 'check_out': 1}).to_list(None) if all_room_ids else []
+
+    bookings_by_type: dict[str, list[dict]] = {}
+    for b in window_bookings:
+        rt = room_id_to_type.get(b.get('room_id'))
+        if rt is None:
+            continue
+        bookings_by_type.setdefault(rt, []).append(b)
+
+    # occupancy_by_type_day[(room_type, date)] = occupied room-nights for that day
+    occupancy_by_type_day: dict[tuple[str, object], int] = {}
+    for rt, rt_bookings in bookings_by_type.items():
+        current_date = start
+        while current_date <= end:
+            sod_iso = datetime.combine(current_date, datetime.min.time()).isoformat()
+            eod_iso = datetime.combine(current_date, datetime.max.time()).isoformat()
+            occupancy_by_type_day[(rt, current_date)] = sum(
+                1 for b in rt_bookings
+                if b.get('check_in', '') <= eod_iso and b.get('check_out', '') >= sod_iso
+            )
+            current_date += timedelta(days=1)
+
     recommendations = []
 
     for rt in room_types:
@@ -598,17 +638,8 @@ async def recommend_rates(
 
         current_date = start
         while current_date <= end:
-            start_of_day = datetime.combine(current_date, datetime.min.time())
-            end_of_day = datetime.combine(current_date, datetime.max.time())
-
-            # Calculate occupancy
-            occupied = await db.bookings.count_documents({
-                'tenant_id': current_user.tenant_id,
-                'room_id': {'$in': [r['id'] for r in rt_rooms]},
-                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-                'check_in': {'$lte': end_of_day.isoformat()},
-                'check_out': {'$gte': start_of_day.isoformat()}
-            })
+            # Calculate occupancy (precomputed via single aggregation query above)
+            occupied = occupancy_by_type_day.get((rt, current_date), 0)
 
             occupancy_pct = (occupied / total_rt_rooms * 100) if total_rt_rooms > 0 else 0
 
