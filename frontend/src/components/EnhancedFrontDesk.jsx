@@ -13,10 +13,37 @@ const EnhancedFrontDesk = () => {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [selectedGuest, setSelectedGuest] = useState(null);
   const [guestAlerts, setGuestAlerts] = useState([]);
+  const [overbookingSolutions, setOverbookingSolutions] = useState([]);
+  const [overbookingLoaded, setOverbookingLoaded] = useState(false);
 
   useEffect(() => {
     fetchTodayArrivals();
+    fetchOverbookingSolutions();
   }, []);
+
+  const fetchOverbookingSolutions = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const response = await axios.post(`/ai/solve-overbooking?date=${today}`);
+      // API returns solutions already sorted by priority_score descending.
+      setOverbookingSolutions(response.data.solutions || []);
+    } catch (error) {
+      console.error('Error fetching overbooking solutions:', error);
+    } finally {
+      setOverbookingLoaded(true);
+    }
+  };
+
+  const tierBadgeClass = (tier) => {
+    switch (tier) {
+      case 'vip': return 'bg-amber-100 text-amber-800 border border-amber-300';
+      case 'gold': return 'bg-yellow-100 text-yellow-800 border border-yellow-300';
+      case 'silver': return 'bg-gray-100 text-gray-700 border border-gray-300';
+      default: return 'bg-blue-100 text-blue-800 border border-blue-300';
+    }
+  };
+
+  const tierLabel = (tier) => t(`frontDeskEnhanced.overbooking.tier.${tier}`, { defaultValue: tier });
 
   const fetchTodayArrivals = async () => {
     try {
@@ -114,6 +141,63 @@ const EnhancedFrontDesk = () => {
           </button>
         </div>
       </div>
+
+      {/* Overbooking Suggestions */}
+      {overbookingLoaded && (
+        <div className="mb-6" data-testid="overbooking-suggestions">
+          <h2 className="text-xl font-semibold mb-1">{t('frontDeskEnhanced.overbooking.title')}</h2>
+          {overbookingSolutions.length > 0 ? (
+            <>
+              <p className="text-sm text-gray-500 mb-4">
+                {t('frontDeskEnhanced.overbooking.subtitle', { count: overbookingSolutions.length })}
+              </p>
+              <div className="space-y-3">
+                {overbookingSolutions.map((sol, idx) => (
+                  <div
+                    key={sol.booking_id || idx}
+                    data-testid="overbooking-solution"
+                    className="border-l-4 border-red-500 bg-red-50 rounded-lg p-4"
+                  >
+                    <div className="flex justify-between items-start gap-4 flex-wrap">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <h3 className="text-lg font-semibold">{sol.guest_name}</h3>
+                          <span
+                            data-testid="overbooking-loyalty-tier"
+                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${tierBadgeClass(sol.loyalty_tier)}`}
+                          >
+                            {tierLabel(sol.loyalty_tier)}
+                          </span>
+                        </div>
+                        <div className="text-gray-700 text-sm">
+                          {t('frontDeskEnhanced.overbooking.move', {
+                            from: sol.current_room,
+                            to: sol.recommended_room,
+                          })}
+                        </div>
+                      </div>
+                      <span
+                        data-testid="overbooking-priority-score"
+                        className="px-3 py-1 rounded-full text-sm font-semibold bg-gray-900 text-white whitespace-nowrap"
+                      >
+                        {t('frontDeskEnhanced.overbooking.priority', { score: sol.priority_score })}
+                      </span>
+                    </div>
+                    {sol.priority_rationale && (
+                      <div className="mt-2 text-sm text-gray-600">
+                        <span className="font-medium">{t('frontDeskEnhanced.overbooking.reasonLabel')}: </span>
+                        <span data-testid="overbooking-priority-rationale">{sol.priority_rationale}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-gray-500">{t('frontDeskEnhanced.overbooking.none')}</p>
+          )}
+        </div>
+      )}
 
       {/* Today's Arrivals */}
       <div className="mb-6">

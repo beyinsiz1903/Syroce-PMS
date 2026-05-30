@@ -3195,6 +3195,20 @@
       "walkInFailed": "Walk-in rezervasyon oluşturulamadı",
       "checkedIn": "Misafir girişi başarıyla tamamlandı",
       "checkinFailed": "Misafir giriş yapılamadı"
+    },
+    "overbooking": {
+      "title": "Overbooking Önerileri",
+      "subtitle": "Bugün için {{count}} AI-önceliklendirilmiş çözüm",
+      "none": "Bugün için overbooking çakışması yok",
+      "priority": "Öncelik {{score}}",
+      "move": "{{from}} → {{to}} taşı",
+      "reasonLabel": "Bu öncelik neden",
+      "tier": {
+        "vip": "VIP",
+        "gold": "Gold",
+        "silver": "Silver",
+        "standard": "Standart"
+      }
     }
   },
   "procurement": {

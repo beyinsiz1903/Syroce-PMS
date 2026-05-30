@@ -3195,6 +3195,20 @@
       "walkInFailed": "Failed to create walk-in booking",
       "checkedIn": "Guest checked in successfully",
       "checkinFailed": "Guest check-in failed"
+    },
+    "overbooking": {
+      "title": "Overbooking Suggestions",
+      "subtitle": "{{count}} AI-prioritized resolution(s) for today",
+      "none": "No overbooking conflicts for today",
+      "priority": "Priority {{score}}",
+      "move": "Move from {{from}} → {{to}}",
+      "reasonLabel": "Why this priority",
+      "tier": {
+        "vip": "VIP",
+        "gold": "Gold",
+        "silver": "Silver",
+        "standard": "Standard"
+      }
     }
   },
   "procurement": {
