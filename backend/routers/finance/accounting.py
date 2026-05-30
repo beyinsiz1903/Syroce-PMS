@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 try:
     from openpyxl import Workbook
@@ -1087,6 +1087,25 @@ def _validate_invoice_customer_name(name: str | None) -> str:
     return cleaned
 
 
+# Package C (e-Fatura/e-Arşiv compliance parity): single source of truth for the
+# Turkish tax-identity contract, mirroring InvoiceCreate.customer_tax_id. VKN
+# (10 digits, corporate) or TCKN (11 digits, individual). Optional so existing
+# callers keep working; when supplied it must be digits of length 10/11 so the
+# GIB e-invoice path never emits malformed identifiers. Raises ValueError on
+# malformed input (pydantic surfaces 422; the raw-dict update path wraps it).
+def _normalize_customer_tax_number(v: str | None) -> str | None:
+    if v is None:
+        return v
+    v = v.strip()
+    if v == "":
+        return None
+    if not v.isdigit() or len(v) not in (10, 11):
+        raise ValueError(
+            "customer_tax_number must be 10 digits (VKN) or 11 digits (TCKN)"
+        )
+    return v
+
+
 class AccountingInvoiceCreateRequest(BaseModel):
     invoice_type: str
     customer_name: str
@@ -1098,6 +1117,11 @@ class AccountingInvoiceCreateRequest(BaseModel):
     due_date: str
     booking_id: str | None = None
     notes: str | None = None
+
+    @field_validator("customer_tax_number")
+    @classmethod
+    def _validate_customer_tax_number(cls, v: str | None) -> str | None:
+        return _normalize_customer_tax_number(v)
 
 
 @router.post("/accounting/invoices")
@@ -1280,6 +1304,17 @@ async def update_accounting_invoice(invoice_id: str, updates: dict[str, Any], cu
     for f in ('customer_name', 'customer_tax_office', 'customer_address', 'customer_tax_number'):
         if f in updates and isinstance(updates[f], str):
             updates[f] = sanitize_plaintext(updates[f], max_length=500)
+
+    # Package C compliance parity: the create model validates customer_tax_number
+    # via pydantic, but this update path takes a raw dict, so enforce the same
+    # VKN/TCKN contract here to prevent post-create malformed writes.
+    if 'customer_tax_number' in updates:
+        try:
+            updates['customer_tax_number'] = _normalize_customer_tax_number(
+                updates['customer_tax_number']
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
 
     tenant_filter = {'id': invoice_id, 'tenant_id': current_user.tenant_id}
     upd = await db.accounting_invoices.update_one(tenant_filter, {'$set': updates})
