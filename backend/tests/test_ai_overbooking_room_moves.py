@@ -8,14 +8,25 @@ loyalty-tier priority scoring, OTA-channel penalty, in-memory availability
 checks, VIP/Gold complimentary upgrades, and active room-block avoidance — that
 could silently regress. The tests call each handler directly with a fake `db`
 patched in, mirroring the pattern in `test_ai_recommend_rates_occupancy.py`.
+
+End-to-end contract tests (bottom of file) additionally assert that the
+`recommended_room_id` a `/api/ai/solve-overbooking` suggestion returns is a
+valid `new_room_id` input to the `/api/frontdesk/v2/room-move` endpoint, and
+that the move actually relocates the booking with tenant scoping enforced. A
+drift on either side (e.g. solve-overbooking dropping `recommended_room_id`, or
+room-move renaming/removing the `new_room_id` field) would silently break the
+one-click apply in production, so these tie the two contracts together.
 """
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from common.context import OperationContext
 from domains.ai.router.autopilot_reco import (
     recommend_room_moves,
     solve_overbooking,
 )
+from domains.pms.frontdesk_router_v2 import RoomMoveRequest, room_move
+from domains.pms.frontdesk_service_v2 import FrontdeskServiceV2
 
 TENANT = "t-ai"
 
@@ -438,3 +449,260 @@ async def test_recommend_room_moves_vip_no_better_room_available():
         result = await recommend_room_moves(date="2026-08-01", current_user=user, _perm=None)
 
     assert result["count"] == 0
+
+
+# ──────────────── room-move endpoint + end-to-end contract ────────────────
+#
+# The fakes above are read-only (find / find_one). The room-move service path
+# also mutates state (claim target room, release old room, update booking,
+# create HK task, deactivate keycards, acquire/release a lock), so the tests
+# below use a small write-capable fake DB that supports update_one / insert_one
+# / delete_one with the `$set`, `$in`, `$or`, `$lt`, `$exists` operators those
+# code paths exercise.
+
+
+class _UpdateResult:
+    def __init__(self, matched_count, modified_count, upserted_id=None):
+        self.matched_count = matched_count
+        self.modified_count = modified_count
+        self.upserted_id = upserted_id
+
+
+def _match_writeable(doc: dict, query: dict) -> bool:
+    """Query matcher extended with the operators the room-move path relies on
+    (`$exists` and `$lt`) on top of those `_match` already supports."""
+    for key, cond in query.items():
+        if key == "$or":
+            if not any(_match_writeable(doc, sub) for sub in cond):
+                return False
+            continue
+        value = doc.get(key)
+        if isinstance(cond, dict):
+            if "$in" in cond and value not in cond["$in"]:
+                return False
+            if "$lte" in cond and not (value is not None and value <= cond["$lte"]):
+                return False
+            if "$gte" in cond and not (value is not None and value >= cond["$gte"]):
+                return False
+            if "$lt" in cond and not (value is not None and value < cond["$lt"]):
+                return False
+            if "$exists" in cond:
+                present = key in doc
+                if present != cond["$exists"]:
+                    return False
+        else:
+            if value != cond:
+                return False
+    return True
+
+
+def _apply_update(doc: dict, update: dict) -> None:
+    for op, fields in update.items():
+        if op == "$set":
+            doc.update(fields)
+        else:  # pragma: no cover - room-move only uses $set
+            raise NotImplementedError(f"Unsupported update operator: {op}")
+
+
+class _WriteableCollection:
+    def __init__(self, rows=None):
+        self._rows = list(rows or [])
+
+    def find(self, query, projection=None):
+        return _FakeCursor([r for r in self._rows if _match_writeable(r, query)])
+
+    async def find_one(self, query, projection=None):
+        for r in self._rows:
+            if _match_writeable(r, query):
+                return r
+        return None
+
+    async def update_one(self, query, update, upsert=False):
+        for r in self._rows:
+            if _match_writeable(r, query):
+                _apply_update(r, update)
+                return _UpdateResult(1, 1)
+        if upsert:
+            new_doc: dict = {
+                k: v for k, v in query.items() if not isinstance(v, dict) and not k.startswith("$")
+            }
+            _apply_update(new_doc, update)
+            self._rows.append(new_doc)
+            return _UpdateResult(0, 0, upserted_id="upserted")
+        return _UpdateResult(0, 0)
+
+    async def insert_one(self, doc):
+        self._rows.append(doc)
+        return SimpleNamespace(inserted_id=doc.get("id"))
+
+    async def delete_one(self, query):
+        for i, r in enumerate(self._rows):
+            if _match_writeable(r, query):
+                del self._rows[i]
+                return SimpleNamespace(deleted_count=1)
+        return SimpleNamespace(deleted_count=0)
+
+
+class _WriteableDB:
+    def __init__(self, rooms=None, bookings=None, keycards=None):
+        self.rooms = _WriteableCollection(rooms)
+        self.bookings = _WriteableCollection(bookings)
+        self.keycards = _WriteableCollection(keycards)
+        self.housekeeping_tasks = _WriteableCollection()
+        self.operation_locks = _WriteableCollection()
+        # The @audited wrapper on room_move snapshots the booking via
+        # `self._db["bookings"]` and writes to `self._db.audit_logs`.
+        self.audit_logs = _WriteableCollection()
+
+    def __getitem__(self, name):
+        return getattr(self, name)
+
+
+def _service_with_db(fake_db) -> FrontdeskServiceV2:
+    svc = FrontdeskServiceV2()
+    svc._db = fake_db
+    return svc
+
+
+def _ctx(tenant_id=TENANT) -> OperationContext:
+    user = SimpleNamespace(
+        tenant_id=tenant_id, id="u-1", email="staff@hotel.com", role="front_desk"
+    )
+    return OperationContext.from_user(user)
+
+
+async def test_room_move_endpoint_accepts_contract_fields_and_moves():
+    """`/api/frontdesk/v2/room-move` accepts {booking_id, new_room_id, reason}
+    and performs the move: the booking's room_id is rewritten, the target room
+    is claimed (occupied), and the old room is released (dirty)."""
+    rooms = [
+        _room("s1", "101", "Standard", 100) | {"status": "occupied", "current_booking_id": "bk1"},
+        _room("s2", "102", "Standard", 100) | {"status": "available"},
+    ]
+    bookings = [
+        _booking("bk1", "s1", "g1", "2026-07-01T14:00:00", "2026-07-02T11:00:00")
+        | {"status": "checked_in"},
+    ]
+    fake_db = _WriteableDB(rooms=rooms, bookings=bookings)
+    svc = _service_with_db(fake_db)
+
+    req = RoomMoveRequest(booking_id="bk1", new_room_id="s2", reason="overbooking fix")
+
+    with patch("domains.pms.frontdesk_router_v2.frontdesk_service_v2", svc):
+        resp = await room_move(req, user=SimpleNamespace(
+            tenant_id=TENANT, id="u-1", email="staff@hotel.com", role="front_desk"
+        ), _perm=None)
+
+    assert resp["status"] == "ok"
+    assert resp["data"]["booking_id"] == "bk1"
+    assert resp["data"]["from_room"] == "101"
+    assert resp["data"]["to_room"] == "102"
+
+    moved = await fake_db.bookings.find_one({"id": "bk1"})
+    assert moved["room_id"] == "s2"
+    assert moved["room_move_reason"] == "overbooking fix"
+
+    new_room = await fake_db.rooms.find_one({"id": "s2"})
+    assert new_room["status"] == "occupied"
+    assert new_room["current_booking_id"] == "bk1"
+
+    old_room = await fake_db.rooms.find_one({"id": "s1"})
+    assert old_room["status"] == "dirty"
+    assert old_room["current_booking_id"] is None
+
+
+async def test_room_move_is_tenant_scoped():
+    """A booking belonging to another tenant is invisible to the move: the
+    server derives tenant scope from the authenticated context, not the
+    client-supplied booking_id, so the move fails NOT_FOUND and nothing is
+    mutated."""
+    rooms = [
+        _room("s1", "101", "Standard", 100) | {"status": "occupied", "current_booking_id": "bk1"},
+        _room("s2", "102", "Standard", 100) | {"status": "available"},
+    ]
+    bookings = [
+        _booking("bk1", "s1", "g1", "2026-07-01T14:00:00", "2026-07-02T11:00:00")
+        | {"status": "checked_in"},
+    ]
+    fake_db = _WriteableDB(rooms=rooms, bookings=bookings)
+    svc = _service_with_db(fake_db)
+
+    # Context for a *different* tenant than the booking's TENANT.
+    other_ctx = _ctx(tenant_id="t-other")
+    result = await svc.room_move(other_ctx, "bk1", "s2", reason="cross-tenant attempt")
+
+    assert result.ok is False
+    assert result.code == "NOT_FOUND"
+
+    # Nothing was mutated by the rejected cross-tenant move.
+    booking = await fake_db.bookings.find_one({"id": "bk1"})
+    assert booking["room_id"] == "s1"
+    new_room = await fake_db.rooms.find_one({"id": "s2"})
+    assert new_room["status"] == "available"
+
+
+async def test_solve_overbooking_suggestion_id_is_valid_room_move_input():
+    """End-to-end contract: the `recommended_room_id` returned by
+    `/api/ai/solve-overbooking` is accepted verbatim as the `new_room_id` of a
+    `/api/frontdesk/v2/room-move` request and successfully relocates the
+    suggested booking. This catches drift on either side of the apply flow."""
+    # ── Step 1: get a suggestion from solve-overbooking. ──
+    reco_rooms = [
+        _room("s1", "101", "Standard", 100),
+        _room("s2", "102", "Standard", 100),
+    ]
+    reco_bookings = [
+        _booking("bkA", "s1", "g_std", "2026-07-01T14:00:00", "2026-07-02T11:00:00",
+                 guest_name="Alice Keep"),
+        _booking("bkB", "s1", "g_vip", "2026-07-01T15:00:00", "2026-07-02T11:00:00",
+                 guest_name="Bob Move"),
+    ]
+    reco_guests = [
+        _guest("g_std", "Alice Keep", "standard"),
+        _guest("g_vip", "Bob Move", "vip"),
+    ]
+    user = SimpleNamespace(tenant_id=TENANT)
+    with patch("domains.ai.router.autopilot_reco.db",
+               _FakeDB(rooms=reco_rooms, bookings=reco_bookings, guests=reco_guests)):
+        reco = await solve_overbooking(date="2026-07-01", current_user=user, _perm=None)
+
+    assert len(reco["solutions"]) == 1
+    suggestion = reco["solutions"][0]
+    # The suggestion contract the frontend apply action relies on.
+    assert "recommended_room_id" in suggestion
+    assert "recommended_room" in suggestion
+    suggested_booking_id = suggestion["booking_id"]
+    suggested_room_id = suggestion["recommended_room_id"]
+    assert suggested_booking_id == "bkB"
+    assert suggested_room_id == "s2"
+
+    # ── Step 2: feed the suggestion straight into the room-move endpoint. ──
+    move_rooms = [
+        _room("s1", "101", "Standard", 100) | {"status": "occupied", "current_booking_id": "bkB"},
+        _room("s2", "102", "Standard", 100) | {"status": "available"},
+    ]
+    move_bookings = [
+        _booking("bkB", "s1", "g_vip", "2026-07-01T15:00:00", "2026-07-02T11:00:00")
+        | {"status": "checked_in", "guest_name": "Bob Move"},
+    ]
+    fake_db = _WriteableDB(rooms=move_rooms, bookings=move_bookings)
+    svc = _service_with_db(fake_db)
+
+    # Field names from the suggestion line up with RoomMoveRequest's fields —
+    # if either contract drifts, this construction or the move below breaks.
+    req = RoomMoveRequest(
+        booking_id=suggested_booking_id,
+        new_room_id=suggested_room_id,
+        reason="apply AI overbooking suggestion",
+    )
+
+    with patch("domains.pms.frontdesk_router_v2.frontdesk_service_v2", svc):
+        resp = await room_move(req, user=SimpleNamespace(
+            tenant_id=TENANT, id="u-1", email="staff@hotel.com", role="front_desk"
+        ), _perm=None)
+
+    assert resp["status"] == "ok"
+    assert resp["data"]["to_room"] == "102"
+
+    moved = await fake_db.bookings.find_one({"id": "bkB"})
+    assert moved["room_id"] == suggested_room_id
