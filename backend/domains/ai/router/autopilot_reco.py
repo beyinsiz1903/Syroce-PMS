@@ -376,6 +376,30 @@ async def solve_overbooking(
                 'bookings': bookings
             })
 
+    # N+1 fix: alt-oda availability'sini her oda için ayrı count_documents ile
+    # değil, taşınacak booking'lerin pencere birleşimini kapsayan TEK find ile
+    # çekip room_id bazında grupluyoruz. Overlap, recommend-rates ile aynı
+    # leksikografik ISO string karşılaştırması ile Python tarafında hesaplanıyor.
+    move_bookings = [b for conflict in conflicts for b in conflict['bookings'][1:]]
+    avail_by_room: dict[str, list] = {}
+    if move_bookings and room_ids:
+        span_start = min(b['check_in'] for b in move_bookings)
+        span_end = max(b['check_out'] for b in move_bookings)
+        async for eb in db.bookings.find({
+            'tenant_id': current_user.tenant_id,
+            'room_id': {'$in': room_ids},
+            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+            'check_in': {'$lte': span_end},
+            'check_out': {'$gte': span_start},
+        }, {'_id': 0, 'room_id': 1, 'check_in': 1, 'check_out': 1}):
+            avail_by_room.setdefault(eb.get('room_id'), []).append(eb)
+
+    def _room_available(room_id: str, check_in: str, check_out: str) -> bool:
+        return not any(
+            eb.get('check_in', '') <= check_out and eb.get('check_out', '') >= check_in
+            for eb in avail_by_room.get(room_id, [])
+        )
+
     # Generate AI solutions
     solutions = []
     for conflict in conflicts:
@@ -389,16 +413,8 @@ async def solve_overbooking(
             # Find available alternative rooms
             available_alts = []
             for alt_room in alt_rooms:
-                # Check if alt room is available
-                existing = await db.bookings.count_documents({
-                    'tenant_id': current_user.tenant_id,
-                    'room_id': alt_room['id'],
-                    'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-                    'check_in': {'$lte': booking['check_out']},
-                    'check_out': {'$gte': booking['check_in']}
-                })
-
-                if existing == 0:
+                # Check if alt room is available (in-memory, bulk-fetched above)
+                if _room_available(alt_room['id'], booking['check_in'], booking['check_out']):
                     # Calculate guest priority score
                     guest = await db.guests.find_one({'id': booking['guest_id'], 'tenant_id': current_user.tenant_id}, {'_id': 0})
                     loyalty_tier = guest.get('loyalty_tier', 'standard') if guest else 'standard'
@@ -476,6 +492,30 @@ async def recommend_room_moves(
         async for g in db.guests.find({'id': {'$in': rm_guest_ids}, 'tenant_id': current_user.tenant_id}, {'_id': 0}):
             rm_guests_map[g['id']] = g
 
+    # N+1 fix: better/alt-oda availability'sini her aday oda için ayrı
+    # count_documents ile değil, booking pencerelerinin birleşimini kapsayan TEK
+    # find ile çekip room_id bazında grupluyoruz. Overlap, recommend-rates ile
+    # aynı leksikografik ISO string karşılaştırması ile Python tarafında.
+    rm_room_ids = [r['id'] for r in rooms]
+    rm_avail_by_room: dict[str, list] = {}
+    if bookings and rm_room_ids:
+        rm_span_start = min(b['check_in'] for b in bookings)
+        rm_span_end = max(b['check_out'] for b in bookings)
+        async for eb in db.bookings.find({
+            'tenant_id': current_user.tenant_id,
+            'room_id': {'$in': rm_room_ids},
+            'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+            'check_in': {'$lte': rm_span_end},
+            'check_out': {'$gte': rm_span_start},
+        }, {'_id': 0, 'room_id': 1, 'check_in': 1, 'check_out': 1}):
+            rm_avail_by_room.setdefault(eb.get('room_id'), []).append(eb)
+
+    def _rm_room_available(room_id: str, check_in: str, check_out: str) -> bool:
+        return not any(
+            eb.get('check_in', '') <= check_out and eb.get('check_out', '') >= check_in
+            for eb in rm_avail_by_room.get(room_id, [])
+        )
+
     recommendations = []
 
     for booking in bookings:
@@ -497,16 +537,8 @@ async def recommend_room_moves(
                           and r['base_price'] > current_room['base_price']]
 
             for better_room in better_rooms:
-                # Check availability
-                existing = await db.bookings.count_documents({
-                    'tenant_id': current_user.tenant_id,
-                    'room_id': better_room['id'],
-                    'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-                    'check_in': {'$lte': booking['check_out']},
-                    'check_out': {'$gte': booking['check_in']}
-                })
-
-                if existing == 0:
+                # Check availability (in-memory, bulk-fetched above)
+                if _rm_room_available(better_room['id'], booking['check_in'], booking['check_out']):
                     recommendations.append({
                         'type': 'upgrade',
                         'priority': 'high' if loyalty_tier == 'vip' else 'medium',
@@ -541,15 +573,8 @@ async def recommend_room_moves(
                         and r['id'] != current_room['id']]
 
             for alt_room in alt_rooms:
-                existing = await db.bookings.count_documents({
-                    'tenant_id': current_user.tenant_id,
-                    'room_id': alt_room['id'],
-                    'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-                    'check_in': {'$lte': booking['check_out']},
-                    'check_out': {'$gte': booking['check_in']}
-                })
-
-                if existing == 0:
+                # Check availability (in-memory, bulk-fetched above)
+                if _rm_room_available(alt_room['id'], booking['check_in'], booking['check_out']):
                     recommendations.append({
                         'type': 'block_avoidance',
                         'priority': 'urgent',
