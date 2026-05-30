@@ -214,6 +214,8 @@ Murat audit önerilerine göre eklendi: spec 38 (employee profile aggregate + cr
 
 Module-blocked doctrine: her spec'te setup probe non-2xx → moduleBlocked + P2 informational + A/B/C/D skip; E (50/51) ya da D (52) pilot_drift+external_calls bağımsız. Spec auth-mode aware — EXELY_IP_WHITELIST/HOTELRUNNER_WEBHOOK_SECRET stres ortamında set olmayabilir; 503 fail-closed contract PASS sayılır.
 
+**Wave 6 (REVIEW/SKIP zeroing — env/secret/test posture)**: Backend kodu 5 alanda zaten fail-closed/doğru (Exely whitelist 503, HotelRunner HMAC 503, KBS `_kbs_test_mode()` `TEST-` guard, GraphQL introspection prod/stress default-OFF, AI recommend-rates competitor fetch simüle → `external_calls=[]`). REVIEW'lar prod **bug değil**, stres **env posture** eksiği. Signed valid-path (51-F/52-E) çift taraflı secret ister: **runner** imzalar (stress.yml `HOTELRUNNER_WEBHOOK_SECRET = secrets.STRESS_HOTELRUNNER_WEBHOOK_SECRET`), **stres backend** AYNI değerle doğrular — backend imza tabanı `f"{ts}.".encode()+raw` = spec `"{ts}."+raw` (uyumlu, false-P0 yok). Backend mirror + Exely whitelist/`ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK` + `KBS_TEST_MODE=1` + `GRAPHQL_INTROSPECTION=false` operatör/devops işi (repl'den canlı backend secret set EDİLMEZ). Prod gerçek secret + gerçek whitelist; fail-closed korunur. AI recommend-rates 10s = N+1 `count_documents` (room_type×gün, salt-DB, no-network) → PERFORMANCE_WATCH, env wave dışı ayrı perf task. Runbook + validation matrix: `docs/drill_reports/20260529_review_skip_wave6_candidate.md`; envanter: `docs/drill_reports/20260529_review_skip_zeroing_inventory.md`.
+
 ### F8M — GraphQL + B2B API (Task #194 DONE 2026-05-19)
 
 2 spec (40-graphql-tenant-isolation + 41-b2b-api-key-scope), 11 test.

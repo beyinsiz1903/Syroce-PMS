@@ -93,6 +93,16 @@ jobs:
             # Fail-closed flags — globalSetup tam "true" yoksa throw.
             E2E_ALLOW_DESTRUCTIVE_STRESS: 'true'
             E2E_EXTERNAL_DRY_RUN: 'true'
+            # Wave 6 (REVIEW/SKIP zeroing) — runner-side test-only HMAC secret.
+            # Spec 51-F / 52-E imzalı valid-path'i SADECE bu secret set ise sürer;
+            # yoksa honest REVIEW kalır (fake-green YOK). Bu, payload'ı İMZALAMAK
+            # için runner tarafında gerekir. KRİTİK: signed path'in 2xx PASS
+            # vermesi için stres BACKEND deployment'ı AYNI değeri kendi
+            # HOTELRUNNER_WEBHOOK_SECRET env'inde tutmalı (backend imzayı doğrular).
+            # Bu test-only bir değerdir; PROD gerçek secret kullanır.
+            # Backend-side mirror + Exely/KBS/GraphQL posture runbook:
+            #   docs/drill_reports/20260529_review_skip_wave6_candidate.md
+            HOTELRUNNER_WEBHOOK_SECRET: ${{ secrets.STRESS_HOTELRUNNER_WEBHOOK_SECRET }}
             # Tek konsolide rapor (lokal per-chunk tag'leme override edilir).
             STRESS_REPORT_TAG: ${{ github.event.inputs.report_tag || 'full_stress_suite' }}
             STRESS_REPORT_TITLE: 'Full Operational Stress Suite (CI one-shot) — F8A+F8B+F8C+F8D+F8E'
