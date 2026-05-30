@@ -87,6 +87,25 @@ Missing any required var → `setup()` throws (env-hijack protection).
 - `smoke.spec.ts` — navigate every route, run console + PII/token scan
 - `playwright.config.ts` — chromium-only, 2 viewports (mobile + tablet)
 
+## Drill-report (markdown)
+
+Wired via `markdown-reporter.mjs` (custom Playwright reporter in
+`playwright.config.ts`). Every run writes a drill report to
+`docs/drill_reports/YYYYMMDD_f10a_mobile_smoke.md` alongside the HTML/JSON
+reports. The drill report classifies each screen as **PASS / FAIL / REVIEW /
+SKIP** and grades P0–P3 findings:
+
+- **P0** — JWT / PAN / bearer / api-key leak in DOM (hard-fail).
+- **P2 / REVIEW** — module-blocked / route-missing (network 4xx/5xx on a
+  rendered screen) — never silently counted as PASS.
+- **Verdict gate** — `P0 > 0` or any FAIL → **NO-GO**; P2/REVIEW present →
+  **GO WITH WATCH**; otherwise **GO**. GO is never silently upgraded.
+
+Tune the title/tag via `MOBILE_REPORT_TAG` / `MOBILE_REPORT_TITLE`.
+
 ## CI
 
-Not yet wired. Task #94 follow-up: add markdown drill-report reporter, then Task #93 baseline run on the live pilot environment. See `docs/F10_MOBILE_COVERAGE_ROADMAP.md` §5 (F10B–F10G).
+Reporter wired (above). Next: baseline run on the live pilot environment
+(requires `MOBILE_E2E_*` role secrets + CI dispatch — same operator-triggered
+discipline as the web stress suite). See `docs/F10_MOBILE_COVERAGE_ROADMAP.md`
+§5 (F10B–F10G).

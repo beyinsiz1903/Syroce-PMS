@@ -1,0 +1,1 @@
+- [Playwright reporter retry dedup](playwright-reporter-retry-dedup.md) — custom reporters must dedup onTestEnd by test.id or retries inflate FAIL into false NO-GO.

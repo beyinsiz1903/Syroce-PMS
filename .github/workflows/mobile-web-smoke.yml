@@ -112,3 +112,15 @@ jobs:
             mobile/test-results-mobile-smoke
             mobile/mobile-smoke.log
           if-no-files-found: warn
+
+      # Drill-report (markdown) — written by markdown-reporter.mjs to the
+      # repo-root docs/drill_reports/ regardless of working-directory.
+      # Uploaded separately (mirrors the web stress-drill-report discipline)
+      # so an official F10A baseline can be promoted from a single artifact.
+      - name: Upload drill report (markdown)
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: mobile-smoke-drill-report
+          path: docs/drill_reports/*_f10a_mobile_smoke.md
+          if-no-files-found: warn

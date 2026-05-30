@@ -41,6 +41,8 @@ export default defineConfig({
         ['list'],
         ['html', { open: 'never', outputFolder: 'playwright-mobile-smoke-report' }],
         ['json', { outputFile: 'playwright-mobile-smoke-report/results.json' }],
+        // F10A drill-report (markdown) → docs/drill_reports/YYYYMMDD_f10a_mobile_smoke.md
+        ['./markdown-reporter.mjs'],
     ],
     outputDir: 'test-results-mobile-smoke',
     use: {
