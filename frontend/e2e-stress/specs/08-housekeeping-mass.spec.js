@@ -270,8 +270,12 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
                 }, [stressTokens.stress_token]);
 
                 // 2) HK route'una git ve TTI ölç
+                //    NOT (Package F selector/route drift fix): oda grid'i /housekeeping
+                //    DASHBOARD'ında değil, /housekeeping-status (HousekeepingStatusPage →
+                //    HousekeepingRoomGrid) altında render olur. Eski /housekeeping hedefi
+                //    grid içermediği için TTI ölçümü vacuous (total_rows=0 → REVIEW) kalıyordu.
                 const t0 = Date.now();
-                const resp = await page.goto('/housekeeping', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+                const resp = await page.goto('/housekeeping-status', { waitUntil: 'domcontentloaded', timeout: 30_000 });
                 const ttfb = Date.now() - t0;
                 const dom = Date.now() - t0;
 
@@ -282,6 +286,7 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
                 let totalRows = 0;
                 let activeSel = null;
                 const candidates = [
+                    '[data-testid^="room-card-"]',
                     '[data-testid="room-card"]',
                     '[data-testid="hk-room-row"]',
                     'tr[data-room-id]',
@@ -321,7 +326,7 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
                     try {
                         const tStart = Date.now();
                         // İlk eyleme tıklanabilir bir butonu ara (clean/dirty toggle vb.)
-                        const action = page.locator('button:has-text("Temiz"), button:has-text("Clean"), [data-testid="hk-action"]').first();
+                        const action = page.locator('[data-testid^="status-btn-"], button:has-text("Temiz"), button:has-text("Clean"), [data-testid="hk-action"]').first();
                         if (await action.count() > 0) {
                             await action.click({ timeout: 5_000 });
                             await page.waitForTimeout(300); // optimistic UI tick
@@ -360,7 +365,7 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         const slow = gateBreaches.length > 0;
         const status = noRows ? 'REVIEW' : (slow ? 'FAIL' : 'PASS');
         rec(testInfo, { module: MOD, step: 'fe_render_tti', status,
-            endpoint: '/housekeeping (FE)',
+            endpoint: '/housekeeping-status (FE)',
             note: `fe_base=${feBase} viewports=${measurements.length} measurements=${JSON.stringify(measurements)} gates(rows_50<3s,200<6s,500<10s,dom<10s,first_row<8s) breaches=${JSON.stringify(gateBreaches)}` });
         recPerf(testInfo, MOD, 'fe_render_tti_desktop', desktop ? [desktop.dom_ms] : [], !slow);
         recPerf(testInfo, MOD, 'fe_render_tti_mobile', mobile ? [mobile.dom_ms] : [], !slow);
