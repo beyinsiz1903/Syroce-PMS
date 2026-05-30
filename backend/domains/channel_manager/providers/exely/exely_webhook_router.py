@@ -34,6 +34,67 @@ from core.database import db
 logger = logging.getLogger("exely.webhook")
 
 
+def _is_prod_env() -> bool:
+    """True when running under a production-flagged environment."""
+    import os
+    _env = (os.getenv("ENVIRONMENT") or os.getenv("APP_ENV") or "").lower()
+    return _env in ("production", "prod", "live")
+
+
+def _exely_test_auth_open() -> bool:
+    """Stress/E2E-only webhook IP-allowlist bypass — fail-closed multi-condition gate.
+
+    Returns True ONLY when ALL of the following hold simultaneously, so a single
+    stray env var can never open the webhook in production:
+      * EXELY_TEST_WEBHOOK_AUTH_MODE == "open_for_testing"
+      * environment is NOT production/prod/live
+      * E2E_EXTERNAL_DRY_RUN == "true"         (outbound side-effects suppressed)
+      * E2E_ALLOW_DESTRUCTIVE_STRESS == "true" (explicit destructive-stress opt-in)
+      * E2E_STRESS_TENANT_ID is set non-empty  (stress tenant scoping present)
+
+    This is intentionally SEPARATE from ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK (a
+    single-flag dev escape hatch) which operator policy forbids using for the
+    stress suite. The production default path remains fail-closed 503 — none of
+    these conditions can be satisfied in a prod deployment without deliberately
+    setting four test-only env vars in a non-prod environment.
+
+    Tenant resolution is still performed server-side from the SOAP HotelCode →
+    exely_connections lookup; the request body's tenant hints are never trusted.
+    Additionally, while this bypass is active the resolved tenant is hard-bound
+    to E2E_STRESS_TENANT_ID after lookup (see handler), so even a HotelCode that
+    maps to another tenant in the same non-prod deployment is rejected — the
+    bypass can only ever touch the stress tenant (pilot drift impossible).
+    """
+    import os
+    if os.getenv("EXELY_TEST_WEBHOOK_AUTH_MODE") != "open_for_testing":
+        return False
+    if _is_prod_env():
+        return False
+    if (os.getenv("E2E_EXTERNAL_DRY_RUN") or "").lower() != "true":
+        return False
+    if (os.getenv("E2E_ALLOW_DESTRUCTIVE_STRESS") or "").lower() != "true":
+        return False
+    if not (os.getenv("E2E_STRESS_TENANT_ID") or "").strip():
+        return False
+    return True
+
+
+def _exely_test_tenant_allowed(tenant_id: str) -> bool:
+    """Tenant binding for the test-auth-open bypass.
+
+    When the bypass removes the IP allowlist, the resolved tenant MUST equal
+    E2E_STRESS_TENANT_ID. Any other tenant (e.g. a pilot tenant that happens to
+    share the non-prod deployment) is rejected so the bypass can never mutate
+    data outside the stress tenant. Fail-closed: blank/missing stress tenant or
+    any mismatch returns False.
+    """
+    import os
+    _stress_tid = (os.getenv("E2E_STRESS_TENANT_ID") or "").strip()
+    if not _stress_tid:
+        return False
+    return (tenant_id or "").strip() == _stress_tid
+
+
 def _timeline_append(**kwargs):
     """Fire-and-forget timeline write. Returns a coroutine."""
     try:
@@ -275,7 +336,7 @@ async def webhook_info():
             "OTA_CancelRQ",
             "OTA_HotelResModifyNotifRQ",
         ],
-        "auth": "EXELY_IP_WHITELIST mandatory (set ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1 for dev/staging only)",
+        "auth": "EXELY_IP_WHITELIST mandatory (ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1 dev escape; EXELY_TEST_WEBHOOK_AUTH_MODE=open_for_testing is a fail-closed multi-condition stress/E2E-only bypass, prod stays 503)",
         "version": "1.0",
     }
 
@@ -380,7 +441,20 @@ async def receive_reservation(request: Request):
 
     _allow = (os.getenv("EXELY_IP_WHITELIST") or "").strip()
     _bypass = os.getenv("ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK") == "1"
-    if not _bypass:
+    # Stress/E2E-only fail-closed bypass (W6-deferred): activates ONLY when the
+    # full multi-condition gate holds in a NON-prod environment. This lets the
+    # stress suite exercise the valid-payload + idempotency path (spec § 50 "G")
+    # without weakening production (prod default stays fail-closed 503) and
+    # without using the operator-forbidden ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK.
+    _test_open = _exely_test_auth_open()
+    if _test_open:
+        logger.warning(
+            "Exely webhook TEST-AUTH-OPEN active (EXELY_TEST_WEBHOOK_AUTH_MODE=open_for_testing "
+            "+ E2E dry-run + destructive-stress opt-in + stress tenant, non-prod) source_ip=%s "
+            "— IP allowlist bypassed for stress/E2E ONLY; tenant still resolved server-side.",
+            source_ip,
+        )
+    if not _bypass and not _test_open:
         if not _allow:
             logger.warning(
                 "Exely webhook rejected: EXELY_IP_WHITELIST not configured "
@@ -527,6 +601,40 @@ async def receive_reservation(request: Request):
         )
 
     tenant_id = conn.get("tenant_id", "")
+
+    # When the stress/E2E test-auth bypass is active, hard-bind the resolved
+    # tenant to E2E_STRESS_TENANT_ID. Without this, a request whose HotelCode
+    # maps to ANY other tenant in the same non-prod deployment (e.g. a pilot
+    # tenant) would be processed under the bypass. The IP-allowlist normally
+    # provides that protection; since the bypass removes it, we reinstate the
+    # boundary explicitly so the bypass can only ever touch the stress tenant
+    # (pilot drift stays impossible). Defense-in-depth — outside the bypass
+    # this check never runs, so production behavior is unchanged.
+    if _test_open:
+        if not _exely_test_tenant_allowed(tenant_id):
+            logger.warning(
+                "Exely TEST-AUTH-OPEN rejected: hotel_code=%s resolved tenant_id=%s "
+                "!= E2E_STRESS_TENANT_ID (cross-tenant blocked under stress bypass)",
+                hotel_code, tenant_id,
+            )
+            await _timeline_append(
+                tenant_id=tenant_id or "unknown",
+                correlation_id=correlation_id,
+                entity_type="reservation",
+                external_id=ext_res_id,
+                stage="webhook_received",
+                status="failure",
+                source="exely_webhook",
+                provider="exely",
+                metadata={
+                    "error": "test-auth-open tenant binding violation",
+                    "raw_payload_id": raw_payload_id,
+                    "hotel_code": hotel_code,
+                },
+            )
+            return _xml_response(
+                _soap_error_rs(f"Unknown hotel code: {hotel_code} (404)", "404", echo_token)
+            )
 
     # Update raw payload with resolved tenant_id and external_id
     try:

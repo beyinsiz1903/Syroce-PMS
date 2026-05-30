@@ -16,10 +16,9 @@ A **missing** (or empty-string) `X-API-Key` must return **401** (auth deny), not
 **Why:** If the header param is declared required (`Header(..., alias="X-API-Key")`),
 FastAPI rejects a missing header with a **422 request-validation error before the
 handler runs**, so the auth logic never executes. The stress auth-matrix spec
-(`41B-b2b-subrouter-matrix`, added after the Run #162 baseline) asserts the deny path
-must be 401/403/404 (a 2xx would be a P0 bypass). 422 is not a bypass but a wrong
-status that lets callers fingerprint "missing" vs "invalid" key. A 422-on-missing
-caused a P1 NO-GO on the full stress suite.
+(`41B-b2b-subrouter-matrix`) asserts the deny path must be 401/403/404 (a 2xx would
+be a P0 bypass). 422 is not a bypass but a wrong status that lets callers fingerprint
+"missing" vs "invalid" key. A 422-on-missing caused a P1 NO-GO on the full stress suite.
 
 ## How to apply
 Declare the header optional and guard explicitly at the top of `get_b2b_agency`:

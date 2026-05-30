@@ -1,2 +1,3 @@
-- [B2B API-key auth deny-path status](b2b-apikey-auth-status.md) — missing/empty X-API-Key must return 401 not 422; required-Header() FastAPI gotcha; pattern inlined across ~13 b2b sub-router files + marketplace_b2b twin.
+- [B2B API-key auth deny-path status](b2b-apikey-auth-status.md) — missing/empty X-API-Key must deny with 401 not 422 (FastAPI required-header gotcha).
 - [Pilot dirty-data deterministic 500s](pilot-dirty-data-deterministic-500.md) — pilot-özgü+tekrarlayan stres FAIL = kirli pilot veri, transient değil; compute endpoint sayısal alanları guard et.
+- [Stress test-auth bypass rules](stress-test-auth-bypass-rules.md) — multi-condition fail-closed gate; re-bind tenant when bypass drops a per-tenant transport guard; CI-runner-env ≠ backend-deployment-env.

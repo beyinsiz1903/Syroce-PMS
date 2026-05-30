@@ -167,11 +167,36 @@ test.describe.serial('F8Z payment/pos reconciliation dryrun', () => {
         const pToken = stressTokens.pilot_token;
         const pilotBefore = await pilotBookingsCount(request, pToken);
 
+        // Self-opened shift bookkeeping. We open an isolated stress-tenant shift
+        // ONLY when none exists, then close it in finally so no open-shift residue
+        // is left behind (respects uniq_tenant_open_shift; benign closed-shift doc).
+        let selfOpenedShift = false;
+
         try {
             // Open-shift detection — response shape: { shift: {...} } veya { shift: null }.
-            const cur = await callTimed(request, 'get', '/api/cashier/current-shift', undefined, sToken);
-            const shiftBody = cur.body?.shift ?? null;
-            const hasOpenShift = cur.status === 200 && shiftBody && (shiftBody.id || shiftBody.shift_id);
+            let cur = await callTimed(request, 'get', '/api/cashier/current-shift', undefined, sToken);
+            let shiftBody = cur.body?.shift ?? null;
+            let hasOpenShift = cur.status === 200 && shiftBody && (shiftBody.id || shiftBody.shift_id);
+
+            if (!hasOpenShift) {
+                // Spec self-open: stress tenant only, opening_amount=0. open-shift is
+                // guarded by uniq_tenant_open_shift → 400 if another shift is already
+                // open (concurrent spec); in that race we fall back to the SKIP path.
+                const opened = await callTimed(request, 'post', '/api/cashier/open-shift',
+                    { opening_amount: 0 }, sToken);
+                if (opened.status >= 200 && opened.status < 300) {
+                    selfOpenedShift = true;
+                    cur = await callTimed(request, 'get', '/api/cashier/current-shift', undefined, sToken);
+                    shiftBody = cur.body?.shift ?? null;
+                    hasOpenShift = cur.status === 200 && shiftBody && (shiftBody.id || shiftBody.shift_id);
+                    rec(testInfo, { module: MOD, step: 'self_open_shift', status: 'PASS',
+                        note: `opened isolated stress shift http=${opened.status} (will close in finally)` });
+                } else {
+                    rec(testInfo, { module: MOD, step: 'self_open_shift', status: 'SKIP',
+                        note: `open-shift http=${opened.status} (likely already-open race or RBAC); falling back to probe skip` });
+                }
+            }
+
             if (!hasOpenShift) {
                 rec(testInfo, { module: MOD, step: 'manual_txn_idempotency', status: 'SKIP',
                     note: `no open cashier shift (http=${cur.status}, shift=${shiftBody ? 'closed' : 'null'}); idempotency probe requires active shift.` });
@@ -215,6 +240,31 @@ test.describe.serial('F8Z payment/pos reconciliation dryrun', () => {
                 status: idempotent ? 'PASS' : (bothOk ? 'FAIL' : (r1.status >= 400 ? 'SKIP' : 'REVIEW')),
                 note: `r1.http=${r1.status} r2.http=${r2.status} r1.id=${r1Id} r2.id=${r2Id} sameId=${!!sameId} conflict=${conflictAccepted}` });
         } finally {
+            // Close the shift we opened so no open-shift residue remains (idempotent:
+            // close-shift 404s harmlessly if it was already closed elsewhere).
+            if (selfOpenedShift) {
+                let closeHttp = 0;
+                try {
+                    const closed = await callTimed(request, 'post', '/api/cashier/close-shift',
+                        { counted_amount: 0 }, sToken);
+                    closeHttp = closed.status;
+                } catch (e) {
+                    rec(testInfo, { module: MOD, step: 'self_close_shift', status: 'REVIEW',
+                        note: `close-shift error: ${e?.message}` });
+                }
+                // Verify no open-shift residue remains: close is best-effort, so
+                // re-probe current-shift and FAIL loudly if our self-opened shift
+                // is still open (prevents silent residue surviving the run).
+                let residual = false;
+                try {
+                    const cur = await callTimed(request, 'get', '/api/cashier/current-shift',
+                        null, sToken);
+                    residual = cur.status >= 200 && cur.status < 300 && !!cur.body?.shift;
+                } catch { /* probe failure → treat as unverifiable below */ }
+                rec(testInfo, { module: MOD, step: 'self_close_shift',
+                    status: residual ? 'FAIL' : ((closeHttp >= 200 && closeHttp < 300) || closeHttp === 404 ? 'PASS' : 'REVIEW'),
+                    note: `close self-opened shift http=${closeHttp} residual_open=${residual}` });
+            }
             await assertNoExternalCallsPostBatch(testInfo, MOD, 'manual_txn_idempotency_batch',
                 stressTokens.seed_state ?? {}, request, pToken);
             await assertPilotDriftZero(testInfo, MOD, request, pToken, pilotBefore);
