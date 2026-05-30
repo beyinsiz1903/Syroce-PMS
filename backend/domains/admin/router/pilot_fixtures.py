@@ -27,9 +27,14 @@ Endpoint:
 - POST /api/admin/pilot-fixtures/ensure
     body: { pilot_tenant_id: str }
     returns: {
-        block_id, kbs_report_id, sales_lead_id,
+        block_id, kbs_report_id, sales_lead_id, payroll_run_id,
         agency_id, created: {...}
     }
+
+Wave 7 (2026-05-30): added `_ensure_payroll_run` so the export-artifact
+IDOR spec (91) harvests a real pilot payroll-run id instead of a bogus
+UUID. status="fixture" → never collides with the draft partial-unique
+index and never looks like a finalized run.
 
 Idempotency: a stable tagged doc is searched first; only created when
 missing. Re-running the endpoint always returns the same ids.
@@ -60,6 +65,13 @@ FIXTURE_AGENCY_ID = "pilot_fixture_agency"
 SALES_LEAD_COMPANY = "IDOR_PROBE_SEED"
 SALES_LEAD_CONTACT = "pilot.fixture.sales"
 SALES_LEAD_EMAIL = "pilot.fixture.sales@fixture.local"
+
+# Wave 7: export-artifact IDOR spec (91) harvests pilot payroll-run ids via
+# GET /api/hr/payroll/runs then probes cross-tenant export.xlsx with the
+# stress token (expects 403/404 deny). Without a real pilot run the harvest
+# falls back to a bogus UUID (pure existence-deny, weaker assertion). The
+# fixture period is far-future so it never overlaps a real pilot payroll.
+PAYROLL_FIXTURE_PERIOD = "2099-01"
 
 
 class PilotFixturesRequest(BaseModel):
@@ -187,6 +199,49 @@ async def _ensure_sales_lead(pilot_tid: str) -> tuple[str, bool]:
     return lead_id, True
 
 
+async def _ensure_payroll_run(pilot_tid: str) -> tuple[str, bool]:
+    """Ensure one durable pilot `payroll_runs` doc so the export-artifact
+    IDOR spec (91) harvests a real pilot run id instead of a bogus UUID.
+
+    `status="fixture"` (NOT draft/locked) keeps it out of the
+    (tenant, period_month, status=draft) partial-unique index and ensures
+    it never looks like a real finalized payroll run. `pilot_fixture=True`
+    marks it long-lived; the residue-cleanup script
+    (`backend/scripts/cleanup_e2e_pilot_residue.py`) only sweeps
+    bookings/guests/folio_charges, so this row is left alone across runs.
+    """
+    existing = await db.payroll_runs.find_one(
+        {"tenant_id": pilot_tid, "pilot_fixture": True},
+        {"id": 1, "_id": 0},
+    )
+    if existing and existing.get("id"):
+        return existing["id"], False
+    run_id = str(uuid.uuid4())
+    now = _now_iso()
+    await db.payroll_runs.insert_one({
+        "id": run_id,
+        "tenant_id": pilot_tid,
+        "period_month": PAYROLL_FIXTURE_PERIOD,
+        "status": "fixture",
+        "rows": [],
+        "summary": {},
+        "extras": [],
+        "note": (
+            "Read-only fixture for export-artifact IDOR spec (91) "
+            "cross-tenant export probe. Do not mutate or delete — the "
+            "stress suite expects this id to remain reachable."
+        ),
+        "parent_run_id": None,
+        "finalized_at": None,
+        "finalized_by": None,
+        "created_at": now,
+        "updated_at": now,
+        "pilot_fixture": True,
+        "_kind": "fixture",
+    })
+    return run_id, True
+
+
 @router.post("/admin/pilot-fixtures/ensure")
 async def ensure_pilot_fixtures(
     req: PilotFixturesRequest,
@@ -207,13 +262,16 @@ async def ensure_pilot_fixtures(
     block_id, block_created = await _ensure_room_block(pilot_tid)
     kbs_report_id, kbs_created = await _ensure_kbs_report(pilot_tid)
     sales_lead_id, lead_created = await _ensure_sales_lead(pilot_tid)
+    payroll_run_id, payroll_created = await _ensure_payroll_run(pilot_tid)
 
     logger.info(
         "pilot_fixtures.ensure tenant=%s block_id=%s (created=%s) "
-        "kbs_report_id=%s (created=%s) sales_lead_id=%s (created=%s)",
+        "kbs_report_id=%s (created=%s) sales_lead_id=%s (created=%s) "
+        "payroll_run_id=%s (created=%s)",
         pilot_tid, block_id, block_created,
         kbs_report_id, kbs_created,
         sales_lead_id, lead_created,
+        payroll_run_id, payroll_created,
     )
 
     return {
@@ -223,9 +281,11 @@ async def ensure_pilot_fixtures(
         "block_id": block_id,
         "kbs_report_id": kbs_report_id,
         "sales_lead_id": sales_lead_id,
+        "payroll_run_id": payroll_run_id,
         "created": {
             "block": block_created,
             "kbs_report": kbs_created,
             "sales_lead": lead_created,
+            "payroll_run": payroll_created,
         },
     }

@@ -64,23 +64,30 @@ değişikliği gerekli mi) · **Seed?** · **Env/Secret?** · **Targeted cmd**
 
 ### Wave 7 — SEED / DATA-STATE (kategori 2)
 
-| Modül | Kalem | Sev | Kat | Kök sebep | Prod kod? | Seed? | Env/Secret? | Targeted spec | Risk | Wave |
-|---|---|:--:|:--:|---|:--:|:--:|:--:|---|:--:|:--:|
-| `b2b_api` | agencies_list_len=0 | P2×10 | 2 | Stres agency seed yok (F1) | Hayır | Evet | Hayır | `b2b_api` | Düşük | 7 |
-| `folio-mass` | charges[] boş + payment yok | REVIEW×9 | 2 | Charge/payment seed yok (F4) | Hayır | Evet | Hayır | `folio-mass` | Düşük | 7 |
-| `pos_kds_inventory` | inventory deplete + concurrent close | SKIP | 2 | Recipe/BOM seed yok (F2) | Hayır | Evet | Hayır | `pos_deep_lifecycle` | Düşük | 7 |
-| `vcc_pci_compliance` | VCC attach booking | SKIP×1 | 2/8 | Stres booking seed + RBAC | Hayır | Evet | Hayır | `vcc_pci_compliance` | Düşük | 7 |
-| `full_24h` | full-day simulation review | REVIEW×7 / SKIP×1 | 2 | Yeterli booking/room seed yok | Hayır | Evet | Hayır | `full_24h` | Orta | 7 |
-| `finance_reports_currency` | currency convert 0/2 | REVIEW×2 | 2 | Rate-card seed yok (F3) | Hayır | Evet | Hayır | `finance_reports_currency` | Düşük | 7 |
-| `reservation_deep` | city ledger transfer pre-req | (REVIEW/SKIP) | 2/8 | Open folio + city-ledger account seed (F4) + waitlist endpoint | Kısmi | Evet | Hayır | `reservation_deep` | Orta | 7 |
-| `spa_operations` | services/therapists/rooms | SKIP×1 | 2/8 | Spa catalog seed (F5) + RBAC | Hayır | Evet | Hayır | `spa_operations` | Düşük | 7 |
-| `hr_rbac_pii` | team_create per-role 404 | P2×7 | 2 | HR per-role test user seed (F7) | Hayır | Evet | Hayır | `hr_rbac_pii` | Düşük | 7 |
-| `export_artifact_idor` | hr_payroll_run pilot_list_empty | SKIP×1 | 2 | Pilot payroll_run seed (F8, cleanup-safe) | Hayır | Evet | Hayır | `export_artifact_idor` | Orta | 7 |
-| `ai_noshow_risk` | no stress bookings | SKIP×1 | 2 | Booking seed yok | Hayır | Evet | Hayır | `ai_noshow_risk` | Düşük | 7 |
-| `housekeeping` | OOO transition guard inconclusive | REVIEW×2 / SKIP×1 | 2 | 0 oda BLOCKED durumunda branch exercise edilmiyor | Hayır | Evet | Hayır | `housekeeping` | Düşük | 7 |
-| `cross_tenant_pentest` | sample assertion | SKIP×1 | 2 | IDOR hedef örneklemi boş kaldı | Hayır | Evet | Hayır | `cross_tenant_pentest` | Düşük | 7 |
-| `payment_pos_reconciliation` | manual txn idempotency | SKIP | 2/8 | Aktif cashier shift seed + pos tables endpoint | Hayır | Evet | Hayır | `payment_pos_reconciliation` | Orta | 7 |
-| `public_token_rotation` | QR token rotation | SKIP | 2/8 | Stres room harvest + rooms/digital-key endpoint | Hayır | Evet | Hayır | `public_token_rotation` | Orta | 7 |
+> **Wave 7 yürütme gerçeği (2026-05-30):** Seed kodu birebir okununca 14
+> item'dan yalnız **2'si gerçek, güvenli, endpoint-bağımsız seed gap** çıktı
+> (b2b agencies + pilot payroll IDOR fixture → **DONE**). Geri kalanı zaten
+> seedli (duplicate-seed = false-green riski → eklenmedi) ya da gerçek blocker
+> endpoint/env/RBAC. Yeniden sınıflandırıldı. Tam analiz:
+> `docs/drill_reports/20260530_review_skip_wave7_candidate.md`.
+
+| Modül | Kalem | Sev | Kök sebep (revize) | Durum / Gerçek Wave |
+|---|---|:--:|---|---|
+| `b2b_api` | agencies_list_len=0 | P2×10 | `agencies` koleksiyonu stres seedli değildi | **✅ DONE (W7)** `_build_agency_docs` |
+| `export_artifact_idor` | hr_payroll_run pilot_list_empty | SKIP×1 | pilot `payroll_runs` IDOR anchor yoktu | **✅ DONE (W7)** `_ensure_payroll_run` |
+| `folio-mass` | charges[] boş + payment yok | REVIEW×9 | ZATEN SEEDLİ (factory folio+charge+tax); okuma endpoint eksik | → **W8** (`/api/folios` alias) |
+| `finance_reports_currency` | currency convert 0/2 | REVIEW×2 | ZATEN SEEDLİ (spec kendi rate'ini POST eder); convert endpoint | → **W8** (endpoint) |
+| `housekeeping` | OOO transition guard inconclusive | REVIEW×2 / SKIP×1 | ZATEN SEEDLİ (rooms); OOO transition state-machine/endpoint | → **W8** (HK transition) |
+| `reservation_deep` | waitlist promote / city ledger | (REVIEW/SKIP) | generic `/api/waitlist` yok (`spa_waitlist` var); boş seed 404'ü çözmez | → **W8** (endpoint) |
+| `pos_kds_inventory` | inventory deplete + concurrent close | SKIP | `pos` modül entitlement yok → dataset module-probe SKIP | → **W8** (POS mount) |
+| `spa_operations` | services/therapists/rooms | SKIP×1 | `spa` modül entitlement yok → katalog module-probe SKIP | → **W8** (SPA mount) |
+| `payment_pos_reconciliation` | manual txn idempotency | SKIP | seed shift'ler **bilinçli closed** (`uniq_tenant_open_shift`; spec self-open). OPEN seed spec'i kırardı → eklenmedi. Blocker `pos_tables` endpoint | → **W8** (pos_tables); spec self-open |
+| `vcc_pci_compliance` | VCC attach booking | SKIP×1 | ZATEN SEEDLİ (500 booking; spec kendi VCC); reveal `cashier_supervisor` rolü | → **W9** (RBAC alt-rol) |
+| `full_24h` | full-day simulation review | REVIEW×7 / SKIP×1 | ZATEN SEEDLİ (500 booking/oda/guest); review env-gate `STRESS_FULL_SUITE` | → env-gate (operatör) |
+| `ai_noshow_risk` | no stress bookings | SKIP×1 | ZATEN SEEDLİ (500 booking gelecek check_in); review env-gate `E2E_AI_DRY_RUN` | → env-gate (operatör) |
+| `hr_rbac_pii` | team_create per-role 404 | P2×7 | 404 = endpoint cevabı (veri değil); auth-hassas `users` seed lokal doğrulanamaz | → **W8** (endpoint teyidi) |
+| `cross_tenant_pentest` | sample assertion | SKIP×1 | ZATEN OK (`pilot_fixtures` room_blocks/kbs/sales-lead anchor üretiyor) | aksiyon yok |
+| `public_token_rotation` | QR token rotation | SKIP | Stres room harvest + rooms/digital-key endpoint | → **W8** (endpoint) |
 
 ### Wave 8 — ENDPOINT / MODULE MOUNT (kategori 3)
 

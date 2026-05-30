@@ -32,7 +32,7 @@ kaydediyor (fake-green yapmıyorlar). Dolayısıyla Wave 6:
 
 | Alan | Backend kodu | Spec | Wave 6 aksiyonu |
 |---|---|---|---|
-| **Exely webhook** | `exely_webhook_router.py` — `EXELY_IP_WHITELIST` unset → **503 fail-closed**; literal IP; bypass `ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1` | `50-cm-webhooks-exely` (G/H `auth_mode=open_for_testing` şartlı) | Backend stres env: whitelist=runner egress IP **veya** `ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1` (yalnız stres) |
+| **Exely webhook** | `exely_webhook_router.py` — `EXELY_IP_WHITELIST` unset → **503 fail-closed**; literal IP | `50-cm-webhooks-exely` (G/H `auth_mode=open_for_testing` şartlı) | Backend stres env: whitelist=runner egress IP **VEYA** stres-only test-auth mode (§4a — `ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK` DEĞİL) |
 | **HotelRunner webhook** | `hotelrunner_webhook.py` `_verify_hotelrunner_signature` — secret unset → **503**; HMAC-SHA256 `f"{ts}.".encode()+raw` | `51-cm-hotelrunner-outbox` F (secret şartlı) | Runner+backend AYNI `HOTELRUNNER_WEBHOOK_SECRET` (test-only) |
 | **CM outbox idempotency** | unique `idempotency_key` index (kod doğru) | `52-cm-outbox-idempotency` E (secret şartlı) | HotelRunner secret'a bağlı (aynı çift-taraf) |
 | **KBS dry-run** | `routers/kbs.py` `_kbs_test_mode()` — `KBS_TEST_MODE=1` → `TEST-` prefix guard | `65-identity-reporting-kbs-...` | Backend stres env: `KBS_TEST_MODE=1` |
@@ -72,13 +72,48 @@ HOTELRUNNER_WEBHOOK_SECRET: ${{ secrets.STRESS_HOTELRUNNER_WEBHOOK_SECRET }}
 | Env | Stres değeri (test-only) | Prod | Etki |
 |---|---|---|---|
 | `HOTELRUNNER_WEBHOOK_SECRET` | GH secret `STRESS_HOTELRUNNER_WEBHOOK_SECRET` ile **birebir aynı** | Gerçek secret | 51-F/52-E signed valid-path PASS |
-| `EXELY_IP_WHITELIST` | Runner egress IP (literal, CIDR değil) | Gerçek Exely IP'leri | 50-G/H open path |
-| _alternatif_ `ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK` | `1` (YALNIZ stres) | **set edilmez** | 50 auth_mode=open_for_testing |
+| `EXELY_IP_WHITELIST` | Runner egress IP (literal, CIDR değil) — **tercih edilen yol** | Gerçek Exely IP'leri | 50-G/H open path |
+| Exely test-auth mode (§4a) | stres-only, çok-koşullu gated | **set EDİLMEZ** | 50 auth_mode=open_for_testing (whitelist mümkün değilse) |
 | `KBS_TEST_MODE` | `1` | `0`/unset | 65 `TEST-` prefix guard 422 |
 | `GRAPHQL_INTROSPECTION` | `false` (veya `SENTRY_ENVIRONMENT=stress`) | unset/`false` | 40 introspection closed → PASS |
 
 Fail-closed korunur: env unset kalırsa backend 503/REVIEW verir (güvenli);
 hiçbir değişiklik güvenliği gevşetmez.
+
+---
+
+## 4a) Exely stres posture — KARAR (Murat, 2026-05-30)
+
+> **KARAR:** `ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1` **KULLANILMAYACAK**. Webhook
+> gibi dışarı açık bir yüzeyde adı "unauthenticated allow" olan bir bayrak,
+> stres-only olsa bile prod/staging'e sızma riski taşır. Yerine **stres-only,
+> çok-koşullu test-auth mode** tercih edilir.
+
+**Tercih sırası:**
+1. **Birincil:** `EXELY_IP_WHITELIST` = runner egress IP (literal). Mümkünse
+   bununla yetin — yeni bayrak gerekmez, en güvenli yol.
+2. **İkincil (whitelist mümkün değilse):** stres-only test-auth mode
+   `EXELY_TEST_WEBHOOK_AUTH_MODE=open_for_testing`.
+
+**`EXELY_TEST_WEBHOOK_AUTH_MODE=open_for_testing` etkinleşme koşulları (HEPSİ
+doğru olmalı — AND):**
+- `E2E_EXTERNAL_DRY_RUN=true`
+- `E2E_STRESS_TENANT_ID` set
+- `E2E_ALLOW_DESTRUCTIVE_STRESS=true`
+- ortam CI/stres/test (prod/staging **DEĞİL**)
+
+**Değişmez kurallar:**
+- Prod/varsayılan davranış **fail-closed 503** kalır (`EXELY_IP_WHITELIST`
+  yoksa). Bu mode prod'da ASLA etkin olmaz.
+- Payload yine tenant/prefix guard'dan geçer (kör kabul yok).
+- `external_calls=[]` kalır; pilot tenant mutasyonu YASAK.
+- Valid-payload / idempotency testleri (50-G/H) yalnız bu explicit stres-only
+  mode altında koşar.
+
+**Durum:** Bu bir **backend kod görevi** (yeni gated mode `exely_webhook_router.py`).
+Wave 6 env posture'ının dışında, ayrı follow-up olarak takip edilir — bu turda
+implement edilmez (doktrin: güvenlik-hassas webhook auth değişikliği kendi
+odaklı turunu + architect review'unu hak eder). Karar burada kilitlendi.
 
 ---
 
@@ -117,11 +152,12 @@ hiçbir değişiklik güvenliği gevşetmez.
 
 ---
 
-## 7) Açık karar (user'a)
+## 7) Kararlar (kapandı — Murat, 2026-05-30)
 
-- **AI recommend-rates N+1**: deterministik tek-sorgu aggregation (room_type×gün
-  occupancy) ayrı bir perf task olarak açılsın mı? (Prod revenue-pricing koduna
-  dokunur → env wave'inin dışında bilinçli bıraktım.)
-- **Exely stres modu**: whitelist=runner-IP mı yoksa `ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK=1`
-  (yalnız stres) mi tercih edilir? (İkincisi IP drift'e dayanıklı ama "open"
-  semantiği; ikisi de prod'da kapalı.)
+- **AI recommend-rates N+1**: ✅ Wave 6 dışında ayrı follow-up perf task olarak
+  açıldı (PERFORMANCE_WATCH). Prod revenue-pricing koduna bu env wave'inde
+  dokunulmaz.
+- **Exely stres modu**: ✅ KARAR §4a — `ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK`
+  KULLANILMAYACAK. Birincil yol `EXELY_IP_WHITELIST`=runner-IP; whitelist mümkün
+  değilse stres-only çok-koşullu `EXELY_TEST_WEBHOOK_AUTH_MODE=open_for_testing`
+  (backend kod görevi, ayrı tur). Prod fail-closed 503 değişmez.

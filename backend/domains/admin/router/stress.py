@@ -115,6 +115,12 @@ STRESS_COLLECTIONS = [
     "folios",
     "room_night_locks",
     "housekeeping_tasks",
+    # F8N (2026-05-30, Wave 7): B2B Acente seed — `agencies` koleksiyonu.
+    # 41B B2B IDOR matrix spec'i stres tenant'ında `tenant_id===stressTid`
+    # olan en az bir agency arar; yoksa `no_stress_agency_in_list` → P2 +
+    # matrix testleri skip. Saf-DB seed (dış servis yok); `stress_seed=True`
+    # + `stress_prefix` etiketi unified cleanup loop'a düşer.
+    "agencies",
     # F8B (2026-05-17): Guest Experience surface — QR requests, complaints,
     # messaging dry-run buckets, notifications. All rows tagged with the same
     # `stress_seed=True` + `stress_prefix` so the unified cleanup loop already
@@ -654,6 +660,40 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
 
     return (rooms_docs, guests_docs, bookings_docs,
             folios_docs, folio_charges_docs, rnl_docs, hk_docs)
+
+
+# F8N (2026-05-30, Wave 7): B2B Acente seed — `agencies` koleksiyonu.
+# 41B-b2b-subrouter-matrix spec'i stres tenant'ında `tenant_id===stressTid`
+# olan bir agency arar; yoksa `no_stress_agency_in_list` (len=0) raporlar →
+# P2 + matrix alt-testleri skip. Standalone saf factory: rooms/bookings'e
+# bağlı değil, dış servis çağrısı yok (yalnız DB). Doc alanları
+# `backend/routers/agency_portal.py:create_agency` çıktısıyla aynı şemayı
+# izler (create path payload'ı `.strip()`'ler; buradaki sabit seed string'ler
+# zaten boşluksuz, davranış eşdeğer). `name` ≥2 karakter →
+# `list_agencies` placeholder gizleme regex'i `^.{2,}$` ile uyumlu.
+# Her doc `stress_seed=True` + `stress_prefix=<prefix>` → unified cleanup
+# loop prefix-scoped toplar (ekstra cleanup kodu gerekmez).
+def _build_agency_docs(stress_tid: str, prefix: str, now: datetime) -> list[dict]:
+    now_iso = now.isoformat()
+    docs: list[dict] = []
+    for i in range(5):
+        docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "name": f"{prefix}Agency_{i + 1:02d}",
+            "contact_name": f"{prefix}AgencyContact{i + 1}",
+            "contact_email": f"{prefix.lower()}agency{i + 1}@e2e-stress.example.com",
+            "contact_phone": f"+90555{i + 1:07d}",
+            "commission_rate": 10.0 + i,
+            "notes": "E2E stress B2B agency seed (41B matrix). Do not mutate.",
+            "status": "active",
+            "published_content": False,
+            "published_at": None,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "stress_seed": True, "stress_prefix": prefix,
+        })
+    return docs
 
 
 # F8B (2026-05-17): Guest Experience seed — QR requests, complaints, messages,
@@ -1850,6 +1890,8 @@ async def stress_seed(
      cash_flow_docs, city_ledger_accounts_docs) = _build_f8e_docs(
         stress_tid, prefix, now,
     )
+    # F8N (Wave 7): B2B Acente surface (standalone — `agencies` koleksiyonu).
+    agency_docs = _build_agency_docs(stress_tid, prefix, now)
     factory_ms = round((time.perf_counter() - t_factory_start) * 1000, 1)
 
     counts = dict.fromkeys(STRESS_COLLECTIONS, 0)
@@ -1881,6 +1923,8 @@ async def stress_seed(
         # to the stress tenant + stress_seed marker → never touches real data.
         # Idempotent: also safe if no orphans exist (delete_count=0).
         for col_name in ("rooms", "bookings", "guests", "folios", "folio_charges",
+                         # F8N (Wave 7): B2B agency surface — orphan scrub mirror.
+                         "agencies",
                          "room_night_locks", "housekeeping_tasks",
                          "room_qr_requests", "service_complaints",
                          "messages", "notifications",
@@ -1959,6 +2003,8 @@ async def stress_seed(
         counts["bookings"] = await _chunked_insert(db.bookings, bookings_docs, INSERT_CHUNK_SIZE)
         counts["folios"] = await _chunked_insert(db.folios, folios_docs, INSERT_CHUNK_SIZE)
         counts["folio_charges"] = await _chunked_insert(db.folio_charges, folio_charges_docs, INSERT_CHUNK_SIZE)
+        # F8N (Wave 7): B2B agency surface — 41B matrix stres-agency probe.
+        counts["agencies"] = await _chunked_insert(db.agencies, agency_docs, INSERT_CHUNK_SIZE)
         counts["room_night_locks"] = await _chunked_insert(db.room_night_locks, rnl_docs, INSERT_CHUNK_SIZE)
         counts["housekeeping_tasks"] = await _chunked_insert(db.housekeeping_tasks, hk_docs, INSERT_CHUNK_SIZE)
         # F8B Guest Experience surface
