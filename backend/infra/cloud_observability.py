@@ -151,26 +151,78 @@ def get_sentry_filter_stats() -> dict[str, int]:
     Useful for ops dashboards / smoke tests. Resets only on process
     restart.
     """
-    return {"restart_bind_drops": _RESTART_BIND_DROP_COUNT}
+    return {
+        "restart_bind_drops": _RESTART_BIND_DROP_COUNT,
+        "nonprod_transient_db_drops": _TRANSIENT_DB_NONPROD_DROP_COUNT,
+    }
+
+
+# Environments where a SUSTAINED transient-DB escalation is a real incident and
+# must still page Sentry. Everywhere else (dev / replit-dev / stress) the
+# workflow console already carries the WARNING/ERROR streak, so the Sentry page
+# is pure noise from inherently flaky non-prod Atlas connectivity.
+_TRANSIENT_DB_ALERT_ENVS = frozenset({"production", "prod", "pilot"})
+_TRANSIENT_DB_NONPROD_DROP_COUNT = 0
+
+
+def _is_nonprod_sustained_transient_db(event: dict) -> bool:
+    """Drop predicate for the ``TransientFailureTracker`` sustained-streak ERROR
+    in non-production environments.
+
+    The transient_db_guard escalates a *sustained* Atlas outage
+    (``streak >= threshold``) to ERROR via the log template
+    ``"... sustained transient db error ..."``. In production/pilot that
+    escalation is a real, actionable incident and must page. In
+    dev/replit-dev/stress the Atlas link is inherently flaky and the workflow
+    console already carries the WARNING/ERROR streak, so the Sentry page is pure
+    noise. We require BOTH a non-prod environment AND the literal log-template
+    substring — we never drop on environment alone, so every other event
+    (including non-transient/real-bug ERRORs) still flows to Sentry.
+    """
+    try:
+        env = (os.environ.get("SENTRY_ENVIRONMENT", "development") or "").strip().lower()
+        if env in _TRANSIENT_DB_ALERT_ENVS:
+            return False
+        le = event.get("logentry") or {}
+        ev_msg = event.get("message")
+        candidates = (
+            le.get("message"),
+            le.get("formatted"),
+            ev_msg if isinstance(ev_msg, str) else None,
+        )
+        return any(c and "sustained transient db error" in c for c in candidates)
+    except Exception:
+        return False
 
 
 def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     """Sentry SDK ``before_send`` hook — restart-noise filter + PII scrub.
 
-    Returns ``None`` only for transient workflow-restart port-bind noise
-    (see ``_is_workflow_restart_port_bind``). Dropped events are counted
-    and logged at INFO so persistent bind conflicts remain visible in
-    the workflow console even when they no longer page Sentry. All
-    other events go through after PII scrub — we never drop on scrubber
-    failure.
+    Returns ``None`` for two noise classes: transient workflow-restart
+    port-bind noise (see ``_is_workflow_restart_port_bind``) and, in
+    non-production environments only, the sustained-transient-DB escalation
+    (see ``_is_nonprod_sustained_transient_db``). Dropped events are counted
+    and logged at INFO so the underlying condition stays visible in the
+    workflow console even when it no longer pages Sentry. All other events go
+    through after PII scrub — we never drop on scrubber failure.
     """
-    global _RESTART_BIND_DROP_COUNT
+    global _RESTART_BIND_DROP_COUNT, _TRANSIENT_DB_NONPROD_DROP_COUNT
     try:
         if _is_workflow_restart_port_bind(event, hint):
             _RESTART_BIND_DROP_COUNT += 1
             logger.info(
                 "sentry before_send dropped restart-bind noise "
                 f"(cumulative={_RESTART_BIND_DROP_COUNT})"
+            )
+            return None
+    except Exception:
+        pass
+    try:
+        if _is_nonprod_sustained_transient_db(event):
+            _TRANSIENT_DB_NONPROD_DROP_COUNT += 1
+            logger.info(
+                "sentry before_send dropped non-prod sustained-transient-db noise "
+                f"(cumulative={_TRANSIENT_DB_NONPROD_DROP_COUNT})"
             )
             return None
     except Exception:

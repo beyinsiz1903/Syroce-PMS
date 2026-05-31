@@ -18,9 +18,15 @@ import pytest
 
 from infra import cloud_observability as obs
 from infra.cloud_observability import (
+    _is_nonprod_sustained_transient_db,
     _is_workflow_restart_port_bind,
     _sentry_before_send,
     get_sentry_filter_stats,
+)
+
+_SUSTAINED_MSG = (
+    "[outbox-worker] loop tick sustained transient db error "
+    "(key=__loop__ streak=5): ServerSelectionTimeoutError"
 )
 
 
@@ -113,4 +119,53 @@ class TestBeforeSendIntegration:
         out = _sentry_before_send(
             {"exception": {"values": [{"value": str(exc)}]}}, _hint(exc)
         )
+        assert out is not None
+
+
+class TestNonProdSustainedTransientDb:
+    """The transient_db_guard escalates a SUSTAINED Atlas outage to ERROR.
+    In non-prod that escalation is noise (the workflow console already shows
+    the streak); in production/pilot it is a real incident and must page."""
+
+    def test_dropped_in_replit_dev(self, monkeypatch):
+        monkeypatch.setenv("SENTRY_ENVIRONMENT", "replit-dev")
+        assert _is_nonprod_sustained_transient_db(
+            {"logentry": {"message": _SUSTAINED_MSG}}
+        ) is True
+
+    def test_dropped_when_env_unset_defaults_dev(self, monkeypatch):
+        monkeypatch.delenv("SENTRY_ENVIRONMENT", raising=False)
+        assert _is_nonprod_sustained_transient_db(
+            {"message": _SUSTAINED_MSG}
+        ) is True
+
+    def test_kept_in_production(self, monkeypatch):
+        monkeypatch.setenv("SENTRY_ENVIRONMENT", "production")
+        assert _is_nonprod_sustained_transient_db(
+            {"logentry": {"message": _SUSTAINED_MSG}}
+        ) is False
+
+    def test_kept_in_pilot(self, monkeypatch):
+        monkeypatch.setenv("SENTRY_ENVIRONMENT", "pilot")
+        assert _is_nonprod_sustained_transient_db(
+            {"logentry": {"message": _SUSTAINED_MSG}}
+        ) is False
+
+    def test_unrelated_error_in_dev_passes_through(self, monkeypatch):
+        """Only the sustained-transient template is dropped; real errors flow."""
+        monkeypatch.setenv("SENTRY_ENVIRONMENT", "replit-dev")
+        assert _is_nonprod_sustained_transient_db(
+            {"logentry": {"message": "KeyError: tenant_id missing"}}
+        ) is False
+
+    def test_before_send_drops_and_counts_in_dev(self, monkeypatch):
+        monkeypatch.setenv("SENTRY_ENVIRONMENT", "replit-dev")
+        before = get_sentry_filter_stats()["nonprod_transient_db_drops"]
+        assert _sentry_before_send({"logentry": {"message": _SUSTAINED_MSG}}, {}) is None
+        after = get_sentry_filter_stats()["nonprod_transient_db_drops"]
+        assert after == before + 1
+
+    def test_before_send_keeps_sustained_in_production(self, monkeypatch):
+        monkeypatch.setenv("SENTRY_ENVIRONMENT", "production")
+        out = _sentry_before_send({"logentry": {"message": _SUSTAINED_MSG}}, {})
         assert out is not None
