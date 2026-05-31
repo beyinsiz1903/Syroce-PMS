@@ -9,8 +9,10 @@ import {
 } from '@/components/ui/dialog';
 import {
   Building2, RefreshCw, FileText, History, XCircle, CheckCircle2,
-  Clock, FilePen, AlertTriangle,
+  Clock, FilePen, AlertTriangle, Send,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { confirmDialog } from '@/lib/dialogs';
 
 // Approval-status → presentation map. Mirrors the backend state machine in
 // rms_router/sales.py (draft → pending → approved | rejected, rejected → draft).
@@ -47,6 +49,7 @@ const CorporateContractApprovals = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [historyContract, setHistoryContract] = useState(null);
+  const [resubmittingId, setResubmittingId] = useState(null);
 
   const loadContracts = async () => {
     setLoading(true);
@@ -67,6 +70,58 @@ const CorporateContractApprovals = () => {
       setContracts([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Move a rejected contract back through rejected → draft → pending so the
+  // owner can re-submit it for approval after fixing the issue. Two sequential
+  // transitions because the backend state machine only allows one hop each
+  // (CONTRACT_APPROVAL_TRANSITIONS in rms_router/sales.py).
+  const transition = async (contractId, toStatus) => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(
+      `/api/sales/corporate-contract/${contractId}/approval-transition`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ to_status: toStatus }),
+      },
+    );
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const body = await res.json();
+        if (body && body.detail) detail = body.detail;
+      } catch (_) { /* non-JSON error body */ }
+      throw new Error(detail);
+    }
+    return res.json();
+  };
+
+  const handleResubmit = async (contract) => {
+    if (!contract || contract.approval_status !== 'rejected') return;
+    const ok = await confirmDialog({
+      title: 'Sözleşmeyi Yeniden Gönder',
+      message: `"${contract.company_name || 'Bu sözleşme'}" taslağa alınıp tekrar `
+        + 'onaya gönderilecek. Devam edilsin mi?',
+      confirmText: 'Yeniden Gönder',
+      cancelText: 'Vazgeç',
+    });
+    if (!ok) return;
+    setResubmittingId(contract.id);
+    try {
+      await transition(contract.id, 'draft');
+      await transition(contract.id, 'pending');
+      toast.success('Sözleşme yeniden onaya gönderildi.');
+      await loadContracts();
+    } catch (err) {
+      console.error('Failed to resubmit corporate contract', err);
+      toast.error(`Yeniden gönderilemedi: ${err.message || 'Bilinmeyen hata'}`);
+    } finally {
+      setResubmittingId(null);
     }
   };
 
@@ -203,6 +258,20 @@ const CorporateContractApprovals = () => {
                             Sonraki adım: gerekli düzeltmeleri yapıp sözleşmeyi yeniden taslağa
                             alarak tekrar onaya gönderin.
                           </p>
+                          <div className="mt-3">
+                            <Button
+                              size="sm"
+                              onClick={() => handleResubmit(c)}
+                              disabled={resubmittingId === c.id}
+                            >
+                              {resubmittingId === c.id ? (
+                                <RefreshCw className="w-4 h-4 mr-1 animate-spin" />
+                              ) : (
+                                <Send className="w-4 h-4 mr-1" />
+                              )}
+                              Yeniden Gönder
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </CardContent>
