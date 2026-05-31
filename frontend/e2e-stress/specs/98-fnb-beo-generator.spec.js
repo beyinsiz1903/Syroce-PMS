@@ -53,6 +53,7 @@ test.describe('F9C § 98 — F&B BEO Generator Lifecycle', () => {
     let attachedSpaceId = null;
     let attachedMenuId = null;
     let attachedMenuPrice = 0;
+    let sentFnbOrderId = null;
     const createdEventIds = [];
 
     function idemKey(op, i = 0) {
@@ -447,6 +448,124 @@ test.describe('F9C § 98 — F&B BEO Generator Lifecycle', () => {
             return;
         }
         rec(testInfo, { module: MOD, step: 'H_kitchen', status: 'PASS', http: r.status });
+    });
+
+    // ──────────────────────────────────────────────────────────────
+    // P) F&B order send — BEO → kitchen production order lifecycle.
+    // Event reached `tentative` in F with an F&B menu line attached in D,
+    // so the send must hard-succeed (200 + status=sent + the F&B line).
+    test('P) Send F&B order → kitchen production order', async ({ request, stressTokens }, testInfo) => {
+        const reason = moduleBlocked ? blockedReason : (createdEventIds.length === 0 ? 'no_event_created' : null);
+        if (reason) {
+            rec(testInfo, { module: MOD, step: 'P_fnb_send', status: 'SKIP', note: reason });
+            test.skip(true, reason);
+        }
+        if (!attachedMenuId) {
+            // No F&B line attachable (catalog had no menu) → the send must
+            // graceful-reject 422; assert that contract instead of fabricating
+            // a green lifecycle on data we couldn't seed honestly.
+            const r422 = await callTimed(
+                request, 'post', `/api/mice/events/${createdEventIds[0]}/fnb-order/send`,
+                { target: 'kitchen' }, stressTokens.stress_token,
+                { timeout: 15_000, headers: { 'Idempotency-Key': idemKey('P_fnb_send_nofb') } },
+            );
+            expect(r422.status, `P_fnb_send no-fb 5xx status=${r422.status}`).toBeLessThan(500);
+            expect(r422.status, `P_fnb_send expected 422 when no F&B line, got ${r422.status}`).toBe(422);
+            rec(testInfo, { module: MOD, step: 'P_fnb_send', status: 'PASS', http: r422.status,
+                note: 'no menu in catalog → 422 graceful reject (lifecycle hard-assert skipped)' });
+            return;
+        }
+        const evId = createdEventIds[0];
+        const r = await callTimed(
+            request, 'post', `/api/mice/events/${evId}/fnb-order/send`,
+            { target: 'kitchen', note: `${SUB_PREFIX} production order` },
+            stressTokens.stress_token,
+            { timeout: 20_000, headers: { 'Idempotency-Key': idemKey('P_fnb_send') } },
+        );
+        recPerf(testInfo, MOD, 'P_fnb_send', [r.ms], r.status === 200);
+        expect(r.status, `P_fnb_send 5xx status=${r.status}`).toBeLessThan(500);
+        expect(r.status, `P_fnb_send non-200 status=${r.status} body=${JSON.stringify(r.body || {}).slice(0, 200)}`).toBe(200);
+        const order = r.body || {};
+        expect(order.id, 'P_fnb_send order id yok').toBeTruthy();
+        expect(order.tenant_id, 'P_fnb_send order tenant_id yok').toBeTruthy();
+        expect(order.event_id, 'P_fnb_send order event_id mismatch').toBe(evId);
+        expect(order.status, 'P_fnb_send order status != sent').toBe('sent');
+        expect(Array.isArray(order.lines), 'P_fnb_send lines array değil').toBe(true);
+        expect(order.lines.length, 'P_fnb_send lines empty — F&B line not snapshotted').toBeGreaterThan(0);
+        sentFnbOrderId = order.id;
+        rec(testInfo, { module: MOD, step: 'P_fnb_send', status: 'PASS', http: r.status,
+            note: `order=${order.id.slice(0, 8)} lines=${order.lines.length} total=${order.total}` });
+        await gap();
+    });
+
+    // P2) List F&B orders — the just-sent order must be persisted + readable.
+    test('P2) List F&B orders → sent order persisted', async ({ request, stressTokens }, testInfo) => {
+        const reason = moduleBlocked ? blockedReason
+            : (createdEventIds.length === 0 ? 'no_event_created'
+                : (!sentFnbOrderId ? 'no_fnb_order_sent' : null));
+        if (reason) {
+            rec(testInfo, { module: MOD, step: 'P2_fnb_list', status: 'SKIP', note: reason });
+            test.skip(true, reason);
+        }
+        const evId = createdEventIds[0];
+        const r = await callTimed(
+            request, 'get', `/api/mice/events/${evId}/fnb-orders`, null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(r.status, `P2_fnb_list 5xx status=${r.status}`).toBeLessThan(500);
+        expect(r.status, `P2_fnb_list non-200 status=${r.status}`).toBe(200);
+        const orders = r.body?.orders || [];
+        expect(Array.isArray(orders), 'P2_fnb_list orders array değil').toBe(true);
+        const found = orders.find((o) => o.id === sentFnbOrderId);
+        expect(found, `P2_fnb_list sent order ${sentFnbOrderId} not in list`).toBeTruthy();
+        // Tenant scoping invariant on every row.
+        for (const o of orders) {
+            expect(o.tenant_id, 'P2_fnb_list order tenant_id yok').toBeTruthy();
+            expect(o.event_id, 'P2_fnb_list order event_id mismatch').toBe(evId);
+        }
+        rec(testInfo, { module: MOD, step: 'P2_fnb_list', status: 'PASS', http: r.status,
+            note: `orders=${orders.length} found=${!!found}` });
+    });
+
+    // P3) Idempotency — resending with the SAME key must replay the same
+    // order (no duplicate kitchen order created).
+    test('P3) F&B order send idempotency — same key replays', async ({ request, stressTokens }, testInfo) => {
+        const reason = moduleBlocked ? blockedReason
+            : (createdEventIds.length === 0 ? 'no_event_created'
+                : (!sentFnbOrderId ? 'no_fnb_order_sent' : null));
+        if (reason) {
+            rec(testInfo, { module: MOD, step: 'P3_fnb_idem', status: 'SKIP', note: reason });
+            test.skip(true, reason);
+        }
+        const evId = createdEventIds[0];
+        const key = idemKey('P3_fnb_idem');
+        const headers = { 'Idempotency-Key': key };
+        const first = await callTimed(
+            request, 'post', `/api/mice/events/${evId}/fnb-order/send`,
+            { target: 'kitchen', note: `${SUB_PREFIX} idem probe` },
+            stressTokens.stress_token, { timeout: 20_000, headers },
+        );
+        expect(first.status, `P3 first 5xx status=${first.status}`).toBeLessThan(500);
+        expect(first.status, `P3 first non-200 status=${first.status}`).toBe(200);
+        const firstId = first.body?.id;
+        expect(firstId, 'P3 first order id yok').toBeTruthy();
+        const second = await callTimed(
+            request, 'post', `/api/mice/events/${evId}/fnb-order/send`,
+            { target: 'kitchen', note: `${SUB_PREFIX} idem probe` },
+            stressTokens.stress_token, { timeout: 20_000, headers },
+        );
+        expect(second.status, `P3 replay 5xx status=${second.status}`).toBeLessThan(500);
+        expect(second.status, `P3 replay non-200 status=${second.status}`).toBe(200);
+        expect(second.body?.id, 'P3 idempotency violated — replay returned a NEW order id').toBe(firstId);
+        // Confirm no duplicate persisted: count orders with this id must be 1.
+        const list = await callTimed(
+            request, 'get', `/api/mice/events/${evId}/fnb-orders`, null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        const dupCount = (list.body?.orders || []).filter((o) => o.id === firstId).length;
+        expect(dupCount, `P3 duplicate orders persisted for replay key (count=${dupCount})`).toBe(1);
+        rec(testInfo, { module: MOD, step: 'P3_fnb_idem', status: 'PASS', http: second.status,
+            note: `order=${firstId.slice(0, 8)} replay_same=true dup_count=${dupCount}` });
     });
 
     // ──────────────────────────────────────────────────────────────

@@ -16,7 +16,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from cache_manager import cache as _cache
@@ -32,6 +32,12 @@ from core.spa_mice_authz import require_catalog, require_finance, require_mice_o
 from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v94 DW
+from shared_kernel.idempotency import (
+    claim_idempotency,
+    complete_idempotency,
+    get_idempotency_key,
+    release_idempotency,
+)
 
 router = APIRouter(prefix="/api/mice", tags=["mice"])
 
@@ -72,6 +78,10 @@ async def _ensure_indexes() -> None:
         await db.mice_events.create_index(
             [("tenant_id", 1), ("resources.inventory_id", 1), ("status", 1)],
             name="mice_evt_inv_status")
+        # F&B kitchen production orders (BEO → kitchen send surface)
+        await db.mice_fnb_orders.create_index(
+            [("tenant_id", 1), ("event_id", 1), ("sent_at", -1)],
+            name="mice_fnb_order_event")
         _indexes_ready = True
     except Exception as exc:  # noqa: BLE001
         import logging
@@ -1792,6 +1802,164 @@ async def kitchen_ticket(event_id: str,
         "all_allergens": sorted(allergen_set),
         "all_dietary_tags": sorted(dietary_set),
     }
+
+
+# ── F&B order send (BEO → kitchen production order) ─────────────
+class FnbOrderSendRequest(BaseModel):
+    """Send the event's F&B lines to the kitchen as a production order.
+
+    `target` lets the banquet team route the order to a specific outlet /
+    kitchen; `note` is a free-text production instruction.
+    """
+    target: str = "kitchen"  # kitchen / restaurant / outlet code
+    note: str | None = None
+
+
+def _build_fnb_lines(event: dict) -> list[dict]:
+    """Snapshot the event's F&B (type == 'fb') resource lines into an
+    immutable order payload. Quantity falls back to the event pax when a
+    line has no explicit quantity (mirrors kitchen-ticket behaviour)."""
+    pax = int(event.get("expected_pax") or 0)
+    lines: list[dict] = []
+    for r in event.get("resources", []):
+        if r.get("type") != "fb":
+            continue
+        qty = float(r.get("quantity") or 0) or pax
+        lines.append({
+            "menu_id": r.get("menu_id"),
+            "name": r.get("name"),
+            "quantity": qty,
+            "unit": r.get("unit") or "pax",
+            "unit_price": float(r.get("unit_price") or 0),
+            "notes": r.get("notes"),
+        })
+    return lines
+
+
+@router.post("/events/{event_id}/fnb-order/send")
+async def send_fnb_order(
+    event_id: str,
+    body: FnbOrderSendRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # DW
+) -> dict:
+    """Send the event's F&B order lines to the kitchen as a production order.
+
+    Builds an immutable snapshot from the event's F&B resource lines
+    (type == "fb"), persists it to `mice_fnb_orders` (tenant-scoped) with
+    status="sent", and returns it. This is an internal production-order
+    record consumed by the kitchen-ticket / ops-sheet views — it makes NO
+    external HTTP call.
+
+    Guards:
+      - Tenant-scoped 404 when the event belongs to another tenant.
+      - RBAC: MICE ops roles only (`require_mice_ops`).
+      - Status guard: only tentative/definite/confirmed/completed events may
+        push a kitchen order; a `lead` (still pure inquiry) is rejected 409,
+        a `cancelled` event 409.
+      - Requires at least one F&B line, else 422.
+      - Idempotent on Idempotency-Key (scoped per event) so a double-tap on
+        the BEO "send order" button cannot create duplicate kitchen orders.
+    """
+    require_mice_ops(current_user)
+    await _ensure_indexes()
+    db = get_system_db()
+    tenant_id = current_user.tenant_id
+
+    event = await db.mice_events.find_one(
+        {"id": event_id, "tenant_id": tenant_id})
+    if not event:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+
+    status = event.get("status", "lead")
+    if status not in {"tentative", "definite", "confirmed", "completed"}:
+        raise HTTPException(
+            409,
+            f"F&B siparişi yalnızca en az 'tentative' durumundaki etkinlikler "
+            f"için gönderilebilir (mevcut durum: {status}).",
+        )
+
+    lines = _build_fnb_lines(event)
+    if not lines:
+        raise HTTPException(
+            422, "Etkinlikte gönderilecek F&B (yiyecek-içecek) satırı yok.")
+
+    # Idempotency-Key replay protection (scoped per event).
+    idem_key = get_idempotency_key(request)
+    idem_lock_id = None
+    if idem_key:
+        claim = await claim_idempotency(
+            db, tenant_id=tenant_id,
+            scope=f"mice_fnb_order_send:{event_id}",
+            idempotency_key=idem_key)
+        if claim["status"] == "replay":
+            return claim["response"]
+        if claim["status"] == "in_flight":
+            raise HTTPException(
+                409, "Aynı Idempotency-Key ile başka bir istek işleniyor.")
+        idem_lock_id = claim["lock_id"]
+
+    try:
+        order = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "event_id": event_id,
+            "event_name": event.get("name"),
+            "target": body.target,
+            "status": "sent",
+            "expected_pax": int(event.get("expected_pax") or 0),
+            "lines": lines,
+            "total": round(
+                sum(line_["unit_price"] * line_["quantity"]
+                    for line_ in lines), 2),
+            "note": body.note,
+            "sent_at": datetime.now(UTC).isoformat(),
+            "sent_by": current_user.username,
+        }
+        await db.mice_fnb_orders.insert_one(order)
+        order.pop("_id", None)
+        await log_audit_event(
+            tenant_id=tenant_id, user_id=current_user.username,
+            action="fnb_order_send", entity_type="mice_event",
+            entity_id=event_id,
+            details=(f"F&B siparişi gönderildi: {event.get('name')} "
+                     f"→ {body.target} ({len(lines)} satır)"),
+            before_value=None, after_value=order, db=db)
+        if idem_lock_id:
+            await complete_idempotency(
+                db, lock_id=idem_lock_id, response_body=order)
+            idem_lock_id = None
+        return order
+    except HTTPException:
+        if idem_lock_id:
+            await release_idempotency(db, lock_id=idem_lock_id)
+        raise
+    except Exception as exc:  # noqa: BLE001
+        if idem_lock_id:
+            await release_idempotency(
+                db, lock_id=idem_lock_id, error=str(exc))
+        raise
+
+
+@router.get("/events/{event_id}/fnb-orders")
+async def list_fnb_orders(
+    event_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """List the F&B production orders sent for an event (tenant-scoped).
+
+    404s when the event belongs to another tenant so a cross-tenant id can't
+    confirm/deny the existence of another hotel's event."""
+    db = get_system_db()
+    event = await db.mice_events.find_one(
+        {"id": event_id, "tenant_id": current_user.tenant_id}, {"_id": 1})
+    if not event:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+    cur = db.mice_fnb_orders.find(
+        {"tenant_id": current_user.tenant_id, "event_id": event_id},
+        {"_id": 0}).sort("sent_at", -1)
+    return {"orders": [d async for d in cur]}
 
 
 # ── Daily operations sheet (banquet team daily ops) ─────────────

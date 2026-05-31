@@ -8,8 +8,12 @@
 //   - POST /api/mice/events/{event_id}/payment-schedule         (replace)
 //   - POST /api/mice/events/{event_id}/payment-schedule/{idx}/mark-paid
 //
-// MISSING (acknowledged): F&B order send endpoint backend'de YOK.
-// Spec bunu D adımında P2 REVIEW olarak raporlar (P0/P1 değil).
+//   - POST /api/mice/events/{event_id}/fnb-order/send       (F&B kitchen send)
+//   - GET  /api/mice/events/{event_id}/fnb-orders           (sent orders list)
+//
+// F&B order send endpoint EKLENDİ (Task: MICE F&B order send yüzeyi).
+// Controlled BEO→send hard-assert spec 98'de; burada harvested event'te
+// D adımında graceful probe (200/409/422 OK, 5xx P0).
 //
 // Doctrine:
 //   - Stres prefix'li event harvest (F8C seed `mice_events` content).
@@ -183,16 +187,45 @@ test.describe('F8Q § 18 — MICE execution (BEO / kitchen / ops-sheet)', () => 
         expect(graceful, `mark-paid 5xx`).toBe(true);
     });
 
-    test('D) Missing endpoint REVIEW (F&B send) + final invariants', async ({ request, stressTokens, stressState }, testInfo) => {
-        // F&B order send endpoint backend'de YOK. F8C-v2 backlog'ta
-        // "MICE execution layer" kapsamında acknowledged. Bu adım P2 REVIEW
-        // informational (P0/P1 değil — backend henüz yok).
-        recFinding(testInfo, 'P2', MOD, 'F&B order send endpoint absent',
-            'Backend `backend/routers/mice.py` content: BEO + kitchen-ticket + ops-sheet + payment-schedule var; F&B order send (restoran/mutfak entegrasyon outbound) YOK. F8C-v2 backlog (docs/STRESS_TEST_ROADMAP.md "Coverage Gaps / F8C backlog"). Eklendiğinde bu spec extend edilir.');
+    test('D) F&B order send probe (graceful lifecycle) + final invariants', async ({ request, stressTokens, stressState }, testInfo) => {
+        // F&B order send endpoint NOW exists (Task: MICE F&B order send
+        // yüzeyi → POST /api/mice/events/{id}/fnb-order/send). Spec 98 owns
+        // the controlled create→tentative→send hard-assert with seeded F&B
+        // lines. Here events are *harvested* (uncontrolled status / lines),
+        // so we probe gracefully: 200 (sent), 409 (status guard — lead/
+        // cancelled), or 422 (no F&B line) are all valid; 5xx is a DoS
+        // sentinel P0. Pilot drift / external-calls invariants stay intact.
+        let fbSendStatus = null;
+        if (!moduleBlocked && stressEventId) {
+            const send = await callTimed(request, 'post',
+                `/api/mice/events/${stressEventId}/fnb-order/send`,
+                { target: 'kitchen', note: `${prefix}_dryrun_probe` },
+                stressTokens.stress_token);
+            fbSendStatus = send.status;
+            if (send.status >= 500) {
+                recFinding(testInfo, 'P0', MOD, 'fnb_order_send_5xx',
+                    `status=${send.status} snip=${JSON.stringify(send.body).slice(0, 200)}`);
+            } else if (![200, 409, 422].includes(send.status)) {
+                recFinding(testInfo, 'P2', MOD, 'fnb_order_send unexpected status',
+                    `status=${send.status} (expected 200/409/422) snip=${JSON.stringify(send.body).slice(0, 200)}`);
+            }
+            if (send.ok) {
+                // Cross-tenant guard: a harvested-event order must not carry
+                // a pilot marker in its body.
+                let blob = ''; try { blob = JSON.stringify(send.body); } catch { /* nz */ }
+                if (blob.includes('"PILOT_') || blob.includes('"PROD_')) {
+                    recFinding(testInfo, 'P0', MOD, 'fnb_order_send_cross_tenant_leak',
+                        'order body pilot prefix marker taşıyor.');
+                }
+            }
+            expect(send.status, `fnb_order_send 5xx status=${send.status}`).toBeLessThan(500);
+        } else {
+            rec(testInfo, { module: MOD, step: 'fnb_order_send', status: 'SKIP', note: blockedReason || 'no_event' });
+        }
         const driftOk = await assertPilotDriftZero(testInfo, MOD, request, stressTokens.pilot_token, pilotBefore);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'final', stressState, request, stressTokens.pilot_token);
         rec(testInfo, { module: MOD, step: 'final_invariants', status: driftOk && extOk ? 'PASS' : 'FAIL',
-            note: `pilot_drift_zero=${driftOk} external_calls_empty=${extOk} fb_send_endpoint=absent_P2_review` });
+            note: `pilot_drift_zero=${driftOk} external_calls_empty=${extOk} fb_send_status=${fbSendStatus ?? 'skip'}` });
         expect(driftOk).toBe(true);
         expect(extOk).toBe(true);
     });
