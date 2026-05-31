@@ -327,13 +327,15 @@ STRESS_COLLECTIONS = [
     "proc_counters",
     # F8Z.2 (2026-05-24): POS KDS Print + F&B Inventory stress
     # (spec 98-pos-kds-inventory). Spec-side primary teardown: kitchen_orders
-    # → status='cancelled' via PUT /api/fnb/kitchen-order/{id}/status;
-    # inventory_items + inventory_movements rely on orphan-scrub here for
-    # rows created via /api/accounting/inventory (those POSTs do not stamp
-    # stress_seed=True; orphan-scrub filters by stress_prefix presence in
-    # name/sku field, harmless if not matched). stock_consumption + recipes
-    # + menu_items are read-only in this spec but included as forward-compat
-    # safety net for future write-surface specs.
+    # → status='cancelled' via PUT /api/fnb/kitchen-order/{id}/status.
+    # Task #188: inventory_items + recipes rows created via POST /api/accounting/
+    # inventory and POST /api/fnb/recipes do NOT carry stress_seed/stress_prefix
+    # (both endpoints drop unknown fields), so they are reaped by the
+    # CURRENCY_RATES_TENANT_SCOPED tenant-scoped full-wipe exception in the
+    # cleanup endpoint below (see comment there) rather than the prefix-scoped
+    # filter — no more orphan accumulation across runs. stock_consumption +
+    # inventory_movements + menu_items are read-only in this spec but included
+    # as forward-compat safety net for future write-surface specs.
     "stock_consumption",
     "inventory_movements",
     "recipes",
@@ -2684,8 +2686,21 @@ async def stress_cleanup(
     # only the stress tenant ever holds these rows (gates enforce target ==
     # stress_tid), so a tenant-scoped full-collection wipe is the intended
     # idempotency (audit_logs untouched).
+    # Task #188 (F8Z.2 POS KDS + F&B inventory): `recipes` and `inventory_items`
+    # rows created by spec 98-pos-kds-inventory go through POST /api/fnb/recipes
+    # (hand-builds the stored doc from known keys, drops extras) and POST
+    # /api/accounting/inventory (query params → strict `InventoryItem` model),
+    # so neither persists `stress_seed`/`stress_prefix`. They previously
+    # accumulated as orphan rows across runs. Same rationale as currency_rates:
+    # only the stress tenant ever holds these rows (gates enforce target ==
+    # stress_tid), so a tenant-scoped full-collection wipe is the intended
+    # idempotency (audit_logs untouched). NOTE: inventory_items is also seeded
+    # by `_build_f8e_docs` with the stress_seed/prefix tags; a full-tenant wipe
+    # is a strict superset of the prefix-scoped delete, so F8E cleanup remains
+    # correct (and seed-time orphan scrub still pre-cleans cross-prefix rows).
     CURRENCY_RATES_TENANT_SCOPED = {
         "currency_rates", "performance_reviews", "reservation_waitlist",
+        "recipes", "inventory_items",
     }
     with tenant_context(stress_tid):
         from core.database import db

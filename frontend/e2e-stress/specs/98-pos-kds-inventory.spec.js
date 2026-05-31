@@ -755,13 +755,14 @@ test.describe.serial('F8Z.2 pos kds + fnb inventory', () => {
                 recFinding(testInfo, 'P1', MOD, 'KDS cleanup NOT idempotent',
                     `Second-pass cancel produced ${pass2Bad} non-idempotent response(s).`);
             }
-            // inventory_items + recipes rows are orphan-scrubbed via the unified
-            // STRESS_COLLECTIONS sweep (stress_seed tag is added by backend
-            // seed factories; direct POST /api/accounting/inventory and
-            // /api/fnb/recipes rows do not carry the tag — those rows persist as
-            // harmless orphans until the next prefix-scoped cleanup or until the
-            // create surfaces stamp stress metadata. The recipe seed is gated on
-            // count===0 so it does NOT accumulate across runs. Out of scope for spec).
+            // inventory_items + recipes rows created via POST /api/accounting/
+            // inventory and POST /api/fnb/recipes do NOT carry the stress_seed/
+            // stress_prefix tag (both endpoints drop unknown fields). Task #188:
+            // the unified STRESS_COLLECTIONS cleanup now reaps them via the
+            // tenant-scoped exception set (CURRENCY_RATES_TENANT_SCOPED) — a
+            // full-collection wipe in the isolated stress tenant — so they no
+            // longer accumulate as orphans across runs. The recipe seed is also
+            // gated on count===0 so a fresh recipe is not created every run.
             rec(testInfo, { module: MOD, step: 'cleanup',
                 status: pass2Bad === 0 ? 'PASS' : 'FAIL',
                 note: `kitchen_orders cancelled=${cancelled} terminal=${terminal} other=${other} pass2_bad=${pass2Bad} inventory_items_created=${createdInventoryItemIds.length} recipes_seeded=${createdRecipeIds.length} (orphan-scrub via STRESS_COLLECTIONS)` });
