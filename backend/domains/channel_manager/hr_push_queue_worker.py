@@ -15,8 +15,15 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from core.database import db
+from core.transient_db_guard import TransientFailureTracker
 
 logger = logging.getLogger(__name__)
+
+# Demote transient Atlas hiccups (AutoReconnect / ServerSelectionTimeoutError /
+# NetworkTimeout / SSL handshake timeouts) in the outer loop to WARNING with a
+# per-key streak; a sustained outage (streak >= threshold) still escalates to
+# ERROR so Sentry keeps real outages visible. Self-heals on the next tick.
+_transient_tracker = TransientFailureTracker("HR-QUEUE")
 
 QUEUE_CHECK_INTERVAL = 120  # seconds between queue checks
 INTER_PUSH_DELAY = 13.0    # seconds between individual pushes (5 req/min limit → 12s min)
@@ -279,7 +286,12 @@ class HRPushQueueWorker:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error("[HR-QUEUE] Loop error: %s", e)
+                _transient_tracker.log_exception(
+                    logger, e, TransientFailureTracker.OUTER_LOOP_KEY,
+                    context="loop tick", non_transient_msg="%s loop error: %s",
+                )
+            else:
+                _transient_tracker.reset(TransientFailureTracker.OUTER_LOOP_KEY)
 
             # Adaptive backoff when rate-limited
             if self._consecutive_rate_limits > 0:
