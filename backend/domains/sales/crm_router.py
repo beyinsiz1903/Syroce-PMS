@@ -353,6 +353,8 @@ async def create_public_pms_lite_lead(request: PmsLiteLeadCreateRequest, user_ag
         "metadata": meta.model_dump(),
     }
 
+    from security.search_normalize import apply_collection_normalized_fields
+    apply_collection_normalized_fields(doc, collection="leads")
     await db.leads.insert_one(doc)
 
     return {"ok": True, "lead_id": lead_uuid, "deduped": False}

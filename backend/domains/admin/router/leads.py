@@ -389,17 +389,16 @@ async def admin_list_pms_lite_leads(
         query["status"] = status.value
 
     if q:
-        from security.query_safety import safe_search_term
-        s = safe_search_term(q)
-        if s:
-            regex = {"$regex": s, "$options": "i"}
-            query["$or"] = [
-                {"contact.full_name": regex},
-                {"contact.phone": regex},
-                {"contact.email": regex},
-                {"hotel.property_name": regex},
-                {"hotel.location": regex},
-            ]
+        # Index-serviceable anchored prefix search on `<field>_lower` companions
+        # (backed by (source, <field>_lower) indexes — `leads` is a global,
+        # super-admin-only collection keyed by `source`, not tenant_id),
+        # replacing the un-indexable unanchored case-insensitive regex scan.
+        from security.search_normalize import prefix_conditions
+        conds = prefix_conditions(
+            ["contact.full_name", "contact.phone", "contact.email",
+             "hotel.property_name", "hotel.location"], q)
+        if conds:
+            query["$or"] = conds
 
     def _parse_iso_dt(v):
         if not v:
@@ -496,17 +495,16 @@ async def admin_export_pms_lite_leads_csv(
         query["status"] = status.value
 
     if q:
-        from security.query_safety import safe_search_term
-        s = safe_search_term(q)
-        if s:
-            regex = {"$regex": s, "$options": "i"}
-            query["$or"] = [
-                {"contact.full_name": regex},
-                {"contact.phone": regex},
-                {"contact.email": regex},
-                {"hotel.property_name": regex},
-                {"hotel.location": regex},
-            ]
+        # Index-serviceable anchored prefix search on `<field>_lower` companions
+        # (backed by (source, <field>_lower) indexes — `leads` is a global,
+        # super-admin-only collection keyed by `source`, not tenant_id),
+        # replacing the un-indexable unanchored case-insensitive regex scan.
+        from security.search_normalize import prefix_conditions
+        conds = prefix_conditions(
+            ["contact.full_name", "contact.phone", "contact.email",
+             "hotel.property_name", "hotel.location"], q)
+        if conds:
+            query["$or"] = conds
 
     docs: list[dict[str, Any]] = []
     async for lead in db.leads.find(query):

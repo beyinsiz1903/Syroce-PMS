@@ -1173,9 +1173,12 @@ async def update_reservation_guest(
         await db.guests.update_one({"id": booking["guest_id"], "tenant_id": tid}, {"$set": updates})
 
         if "name" in updates:
+            from security.search_normalize import normalized_set_for_update
+            _norm = normalized_set_for_update(
+                {"guest_name": updates["name"]}, collection="bookings")
             await db.bookings.update_one(
                 {"id": booking_id, "tenant_id": tid},
-                {"$set": {"guest_name": updates["name"]}},
+                {"$set": {"guest_name": updates["name"], **_norm}},
             )
 
     await _log_activity(tid, booking_id, "guest_updated", current_user.name, {"fields": list(updates.keys())})

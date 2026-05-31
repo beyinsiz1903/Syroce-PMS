@@ -65,6 +65,8 @@ async def create_lead(
         "created_at": datetime.now(UTC).isoformat(),
         "updated_at": datetime.now(UTC).isoformat(),
     }
+    from security.search_normalize import apply_collection_normalized_fields
+    apply_collection_normalized_fields(lead, collection="mice_opportunities")
     await db.mice_opportunities.insert_one(lead)
     return {"success": True, "message": "Lead basariyla olusturuldu", "lead_id": lead["id"]}
 
@@ -81,12 +83,13 @@ async def get_leads(
     if status and status in LEAD_STAGES:
         query["status"] = status
     if q:
-        rx = {"$regex": q.strip(), "$options": "i"}
-        query["$or"] = [
-            {"contact_name": rx},
-            {"company_name": rx},
-            {"contact_email": rx},
-        ]
+        # Index-serviceable anchored prefix search on `<field>_lower` companions
+        # (backed by (tenant_id, <field>_lower) indexes), replacing the
+        # un-indexable unanchored case-insensitive regex scan.
+        from security.search_normalize import prefix_conditions
+        conds = prefix_conditions(["contact_name", "company_name", "contact_email"], q)
+        if conds:
+            query["$or"] = conds
     leads = await db.mice_opportunities.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
     return {"leads": leads, "total": len(leads)}
 

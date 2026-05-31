@@ -179,3 +179,23 @@ async def phase_c_domain_indexes_and_workers(app):
             logger.info(f"Encrypted-PII hash indexes ensured ({len(created)} created)")
     except Exception as e:
         logger.warning(f"Hash index creation error: {e}")
+
+    # Plaintext search-box prefix indexes: `<field>_lower` companion fields
+    # backed by (leading_key, <field>_lower) compound indexes, replacing the
+    # un-indexable unanchored case-insensitive regex scans that drove Atlas
+    # query-targeting alerts. Idempotent index build + marker-gated one-shot
+    # backfill of existing rows. PII-safe: only configured plaintext fields.
+    try:
+        from core.database import _raw_db
+        from bootstrap.phases.search_normalize import (
+            backfill_search_normalize_fields,
+            ensure_search_normalize_indexes,
+        )
+        sn_created = await ensure_search_normalize_indexes(_raw_db)
+        if sn_created:
+            logger.info(f"Search-normalize indexes ensured ({len(sn_created)} created)")
+        sn_ran = await backfill_search_normalize_fields(_raw_db)
+        if sn_ran:
+            logger.info(f"Search-normalize backfill: {sn_ran}")
+    except Exception as e:
+        logger.warning(f"Search-normalize setup error: {e}")

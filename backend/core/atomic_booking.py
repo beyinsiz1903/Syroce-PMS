@@ -286,6 +286,14 @@ async def create_booking_atomic(booking_doc: dict[str, Any]) -> dict[str, Any]:
             booking_doc.get("id", "unknown"), enc_err,
         )
         raise RuntimeError(f"PII encryption failed, booking not saved: {enc_err}") from enc_err
+    # Index-serviceable search companions for plaintext guest_name/booking_number
+    # (guest_name is NOT an encrypted field). Written on the central booking
+    # insert so every new booking is prefix-searchable without a regex scan.
+    try:
+        from security.search_normalize import apply_collection_normalized_fields
+        apply_collection_normalized_fields(booking_doc, collection="bookings")
+    except Exception:  # pragma: no cover - never block a booking on this
+        pass
     tenant_id = booking_doc.get("tenant_id")
     room_id = booking_doc.get("room_id")
     check_in = booking_doc.get("check_in") or booking_doc.get("check_in_date")

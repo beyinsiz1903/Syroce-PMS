@@ -458,9 +458,12 @@ async def list_accounts(
                 {"account_type": "client"}],
     }
     if q:
-        from security.query_safety import safe_search_term
-        if (_s := safe_search_term(q)):
-            rx = {"$regex": _s, "$options": "i"}
+        # Index-serviceable anchored prefix search on the `<field>_lower`
+        # companion fields (backed by (tenant_id, <field>_lower) indexes),
+        # replacing the un-indexable unanchored case-insensitive regex scan.
+        from security.search_normalize import prefix_conditions
+        conds = prefix_conditions(["name", "legal_name", "tax_no"], q)
+        if conds:
             # Compose with the existing $or above using $and so both filters
             # are honoured.
             flt = {
@@ -468,8 +471,7 @@ async def list_accounts(
                 "$and": [
                     {"$or": [{"account_type": {"$exists": False}},
                              {"account_type": "client"}]},
-                    {"$or": [{"name": rx}, {"legal_name": rx},
-                             {"tax_no": rx}]},
+                    {"$or": conds},
                 ],
             }
     cur = db.mice_accounts.find(flt, {"_id": 0}).sort("name", 1).limit(500)
@@ -496,6 +498,8 @@ async def create_account(body: AccountIn,
            **body.model_dump(),
            "created_at": datetime.now(UTC).isoformat(),
            "created_by": current_user.username}
+    from security.search_normalize import apply_collection_normalized_fields
+    apply_collection_normalized_fields(doc, collection="mice_accounts")
     try:
         await db.mice_accounts.insert_one(doc)
     except DuplicateKeyError as exc:
@@ -520,11 +524,14 @@ async def update_account(account_id: str, body: AccountIn,
         db, current_user.tenant_id, body, exclude_id=account_id)
     # Discriminator guard: never mutate non-client docs (e.g. banquet
     # competitors stored in the same collection) via the CRM endpoint.
+    from security.search_normalize import normalized_set_for_update
+    _norm = normalized_set_for_update(body.model_dump(), collection="mice_accounts")
     try:
         res = await db.mice_accounts.update_one(
             {"id": account_id, "tenant_id": current_user.tenant_id,
              **_CLIENT_ACCT_FILTER},
             {"$set": {**body.model_dump(),
+                      **_norm,
                       "account_type": "client",
                       "updated_at": datetime.now(UTC).isoformat()}})
     except DuplicateKeyError as exc:

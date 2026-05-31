@@ -157,14 +157,15 @@ async def search_bookings(
     """Search bookings by various criteria"""
     search_query = {'tenant_id': current_user.tenant_id}
 
-    # Text search on booking number or guest name
+    # Text search on booking number or guest name — index-serviceable anchored
+    # prefix match on the `<field>_lower` companion fields (backed by
+    # (tenant_id, <field>_lower) indexes), replacing the un-indexable unanchored
+    # case-insensitive regex scan that drove Atlas query-targeting alerts.
     if query:
-        from security.query_safety import safe_search_term
-        if (s := safe_search_term(query)):
-            search_query['$or'] = [
-                {'booking_number': {'$regex': s, '$options': 'i'}},
-                {'guest_name': {'$regex': s, '$options': 'i'}}
-            ]
+        from security.search_normalize import prefix_conditions
+        conds = prefix_conditions(['booking_number', 'guest_name'], query)
+        if conds:
+            search_query['$or'] = conds
 
     # Date range filter
     if date_from or date_to:
