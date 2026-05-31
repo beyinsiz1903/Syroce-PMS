@@ -145,6 +145,8 @@ async def get_corporate_contracts(
             'allotment': contract.get('allotment', 0),
             'blackout_dates': contract.get('blackout_dates', []),
             'status': contract.get('status'),
+            'approval_status': contract.get('approval_status', 'draft'),
+            'approval_history': contract.get('approval_history', []),
             'total_bookings': contract.get('total_bookings', 0),
             'total_room_nights': contract.get('total_room_nights', 0),
             'total_revenue': contract.get('total_revenue', 0),
@@ -175,6 +177,51 @@ class CorporateContractCreate(BaseModel):
     notes: str | None = None
 
 
+# Corporate-contract approval state machine. Independent of the active/expired
+# `status` field — this governs whether a negotiated contract has cleared the
+# approval workflow. Terminal states (approved) only re-open via an explicit
+# reject→draft resubmission cycle.
+CONTRACT_APPROVAL_TRANSITIONS: dict[str, set[str]] = {
+    'draft': {'pending'},
+    'pending': {'approved', 'rejected'},
+    'rejected': {'draft'},
+    'approved': set(),
+}
+
+
+async def _assert_contract_unique(
+    tenant_id: str,
+    contract: "CorporateContractCreate",
+    exclude_id: str | None = None,
+) -> None:
+    """Tenant-scoped duplicate guard for corporate contracts.
+
+    Rejects (409) a create/update whose ``rate_code`` or ``contact_email``
+    collides with another contract in the same tenant. Blank values are
+    ignored. ``exclude_id`` skips the row being updated so a no-op PUT does not
+    self-collide.
+    """
+    checks: list[tuple[str, str]] = []
+    if contract.rate_code and contract.rate_code.strip():
+        checks.append(("rate_code", contract.rate_code.strip()))
+    if contract.contact_email and contract.contact_email.strip():
+        checks.append(("contact_email", contract.contact_email.strip()))
+    for field, value in checks:
+        flt: dict = {"tenant_id": tenant_id, field: value}
+        if exclude_id:
+            flt["id"] = {"$ne": exclude_id}
+        dup = await db.corporate_contracts.find_one(flt, {"_id": 0, "id": 1})
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Bu {field} ile kayıtlı sözleşme zaten var")
+
+
+class ContractApprovalTransition(BaseModel):
+    to_status: str  # pending | approved | rejected | draft (resubmit)
+    reason: str | None = None
+
+
 
 @router.post("/sales/corporate-contract")
 async def create_corporate_contract(
@@ -185,7 +232,13 @@ async def create_corporate_contract(
     """Create a new corporate contract"""
     current_user = await get_current_user(credentials)
 
+    # Tenant-scoped duplicate guard: rate_code and contact_email must be
+    # unique within a tenant so a negotiated rate / billing contact cannot be
+    # double-registered (409 rejected, not silently accepted).
+    await _assert_contract_unique(current_user.tenant_id, contract)
+
     contract_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
     corporate_contract = {
         'id': contract_id,
         'tenant_id': current_user.tenant_id,
@@ -203,10 +256,16 @@ async def create_corporate_contract(
         'contact_phone': contract.contact_phone,
         'notes': contract.notes,
         'status': 'active',
+        # Approval workflow is independent of the active/expired `status`.
+        # New contracts always start in `draft` and must walk the approval
+        # state machine (draft→pending→approved/rejected) before being
+        # considered commercially binding.
+        'approval_status': 'draft',
+        'approval_history': [],
         'total_bookings': 0,
         'total_room_nights': 0,
         'total_revenue': 0,
-        'created_at': datetime.now(UTC),
+        'created_at': now,
         'created_by': current_user.username
     }
 
@@ -215,7 +274,8 @@ async def create_corporate_contract(
     return {
         'message': 'Corporate contract created',
         'contract_id': contract_id,
-        'company_name': contract.company_name
+        'company_name': contract.company_name,
+        'approval_status': 'draft'
     }
 
 
@@ -238,6 +298,9 @@ async def update_corporate_contract(
 
     if not existing:
         raise HTTPException(status_code=404, detail="Contract not found")
+
+    await _assert_contract_unique(
+        current_user.tenant_id, contract, exclude_id=contract_id)
 
     await db.corporate_contracts.update_one(
         {'id': contract_id, 'tenant_id': current_user.tenant_id},
@@ -268,6 +331,71 @@ async def update_corporate_contract(
     }
 
 
+@router.post("/sales/corporate-contract/{contract_id}/approval-transition")
+async def transition_corporate_contract_approval(
+    contract_id: str,
+    body: ContractApprovalTransition,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Advance a corporate contract through its approval state machine.
+
+    Allowed transitions (see ``CONTRACT_APPROVAL_TRANSITIONS``):
+      draft → pending → approved | rejected, and rejected → draft (resubmit).
+    Any other transition is rejected with 409 so the approval lifecycle is
+    hard-enforced server-side rather than simulated client-side.
+    """
+    current_user = await get_current_user(credentials)
+
+    existing = await db.corporate_contracts.find_one({
+        'id': contract_id,
+        'tenant_id': current_user.tenant_id
+    })
+    if not existing:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    from_status = existing.get('approval_status', 'draft')
+    to_status = (body.to_status or '').strip().lower()
+
+    if to_status not in {'draft', 'pending', 'approved', 'rejected'}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Geçersiz onay durumu: {to_status}")
+
+    allowed = CONTRACT_APPROVAL_TRANSITIONS.get(from_status, set())
+    if to_status not in allowed:
+        raise HTTPException(
+            status_code=409,
+            detail=(f"Geçersiz onay geçişi: {from_status} → {to_status}. "
+                    f"İzin verilen: {sorted(allowed) or 'yok (terminal)'}"))
+
+    now = datetime.now(UTC)
+    history_entry = {
+        'from_status': from_status,
+        'to_status': to_status,
+        'reason': body.reason,
+        'at': now.isoformat(),
+        'by': current_user.username,
+    }
+
+    await db.corporate_contracts.update_one(
+        {'id': contract_id, 'tenant_id': current_user.tenant_id},
+        {
+            '$set': {
+                'approval_status': to_status,
+                'updated_at': now,
+                'updated_by': current_user.username,
+            },
+            '$push': {'approval_history': history_entry},
+        }
+    )
+
+    return {
+        'message': 'Contract approval transitioned',
+        'contract_id': contract_id,
+        'from_status': from_status,
+        'approval_status': to_status,
+    }
 
 
 @router.get("/sales/ota-promotions")

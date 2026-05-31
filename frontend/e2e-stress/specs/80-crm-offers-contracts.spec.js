@@ -182,15 +182,33 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
             samples.push(upd.ms);
         }
 
-        // 5) Duplicate-tax-no AND duplicate-email guard probes (architect
-        // review fix #1). Task requires "aynı tax_id/email 409"; backend
-        // may not enforce either as unique today. We probe BOTH and
-        // emit deterministic P2 contract-gap findings for any non-409
-        // outcome (covers 200/201 silent-accept AND 4xx/5xx noise).
+        // 5) Duplicate-tax-no AND duplicate-email guard — HARD ASSERT
+        // (task #176). Backend now enforces a tenant-scoped uniqueness guard
+        // on mice_accounts: a second client account with an existing tax_no or
+        // email MUST be rejected with 409. Both probes are hard-asserted; any
+        // non-409 outcome is a real contract regression, not an informational
+        // gap. We also re-create the first account with a unique email so the
+        // email-collision probe has a populated target.
         let dupTaxStatus = null;
         let dupEmailStatus = null;
+        // Seed a unique email on the first account so the email-dup probe has a
+        // concrete collision target (AccountIn now carries an `email` field).
+        let dupEmailTarget = `${prefix}dup@example.invalid`;
         if (createdAccountIds.length > 0) {
-            // Probe a) duplicate tax_no
+            const seedEmailPayload = {
+                name: `${prefix}AcctA_1_upd`,
+                tax_no: `${prefix}TAX1`,
+                email: dupEmailTarget,
+                city: 'Ankara', country: 'TR', industry: 'corporate',
+                credit_limit: 75000, payment_terms_days: 45,
+                notes: `${prefix} F8G 80-A email-seed`, active: true,
+            };
+            const seedR = await callTimed(request, 'put',
+                `/api/mice/accounts/${createdAccountIds[0]}`, seedEmailPayload,
+                stressTokens.stress_token);
+            samples.push(seedR.ms);
+
+            // Probe a) duplicate tax_no → expect 409.
             const dupTaxPayload = {
                 name: `${prefix}AcctA_dupTax`,
                 tax_no: `${prefix}TAX1`,  // same as first account
@@ -203,21 +221,26 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
                 dupTaxPayload, stressTokens.stress_token);
             dupTaxStatus = dupT.status;
             samples.push(dupT.ms);
+            // Defensive: if backend regressed and accepted the dup, track the
+            // orphan id for cleanup so we never leak rows.
             if (dupT.ok && dupT.body?.id) createdAccountIds.push(dupT.body.id);
-            if (dupTaxStatus !== 409) {
-                recFinding(testInfo, 'P2', MOD,
-                    'Duplicate tax_no contract gap on mice_accounts',
-                    `Expected 409 on duplicate tax_no POST; got ${dupTaxStatus}. Informational contract gap (no native unique index on mice_accounts.tax_no).`);
-            }
-            // Probe b) duplicate email — backend AccountIn has no email field,
-            // so duplicate-email surface is N/A on this collection. We record
-            // the surface-gap explicitly to satisfy the task contract bullet
-            // ("tax_id/email 409"). Contact-level email uniqueness is a
-            // separate concern and likewise not enforced today.
-            recFinding(testInfo, 'P2', MOD,
-                'Duplicate-email guard surface absent on mice_accounts',
-                `mice_accounts payload (AccountIn) has no email field, so duplicate-email guard not applicable at account level. Contact-level email also has no unique constraint. Informational gap recorded.`);
-            dupEmailStatus = 'n/a (no email field)';
+
+            // Probe b) duplicate email → expect 409 (distinct tax_no so only
+            // the email collides).
+            const dupEmailPayload = {
+                name: `${prefix}AcctA_dupEmail`,
+                tax_no: `${prefix}TAXEMAILX`,  // unique tax_no
+                email: dupEmailTarget,          // collides with seeded email
+                city: 'Istanbul', country: 'TR', industry: 'corporate',
+                credit_limit: 10000, payment_terms_days: 30,
+                notes: `${prefix} F8G 80-A dup-email probe`,
+                active: true,
+            };
+            const dupE = await callTimed(request, 'post', '/api/mice/accounts',
+                dupEmailPayload, stressTokens.stress_token);
+            dupEmailStatus = dupE.status;
+            samples.push(dupE.ms);
+            if (dupE.ok && dupE.body?.id) createdAccountIds.push(dupE.body.id);
         }
 
         // 6) Aggregate pass criteria (architect review fix #3): CRUD pass
@@ -225,12 +248,17 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
         const floor = Math.ceil(N_ACCOUNTS * 0.9);
         const listFloor = Math.ceil(ok * 0.9);  // listed own should reflect created
         const readOk = listR.ok === true;
-        const crudPass = ok >= floor && readOk && ownPrefixed.length >= listFloor && updateOk;
+        // Duplicate guard is now a hard pass criterion (task #176): both the
+        // tax_no and email collision probes MUST return 409.
+        const dupTaxOk = dupTaxStatus === 409;
+        const dupEmailOk = dupEmailStatus === 409;
+        const crudPass = ok >= floor && readOk && ownPrefixed.length >= listFloor
+            && updateOk && dupTaxOk && dupEmailOk;
         recPerf(testInfo, MOD, 'account_crud', samples, crudPass);
         rec(testInfo, { module: MOD, step: 'account_crud',
             status: crudPass ? 'PASS' : 'FAIL',
             endpoint: 'POST/PUT/GET /api/mice/accounts',
-            note: `n=${N_ACCOUNTS} ok=${ok} fail=${fail} throttled_429=${throttled} permFail=${permFail} list_ok=${readOk} listed_own=${ownPrefixed.length}/${ok}(floor>=${listFloor}) update_ok=${updateOk} dup_tax=${dupTaxStatus} dup_email=${dupEmailStatus} floor>=${floor} errs=${JSON.stringify(errs)}` });
+            note: `n=${N_ACCOUNTS} ok=${ok} fail=${fail} throttled_429=${throttled} permFail=${permFail} list_ok=${readOk} listed_own=${ownPrefixed.length}/${ok}(floor>=${listFloor}) update_ok=${updateOk} dup_tax=${dupTaxStatus}(want409) dup_email=${dupEmailStatus}(want409) floor>=${floor} errs=${JSON.stringify(errs)}` });
         if (ok < floor) recFinding(testInfo, 'P1', MOD, 'Account create floor ihlal',
             `n=${N_ACCOUNTS} ok=${ok} (<${floor}). errs=${JSON.stringify(errs)}`);
         if (!readOk) recFinding(testInfo, 'P1', MOD, 'Account list read failed',
@@ -240,9 +268,15 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
             `listed_own=${ownPrefixed.length} (<${listFloor}). Created accounts not visible to own tenant.`);
         if (!updateOk) recFinding(testInfo, 'P1', MOD, 'Account update failed',
             `PUT /api/mice/accounts/{id} failed — CRUD pass requires update success.`);
+        if (!dupTaxOk) recFinding(testInfo, 'P1', MOD, 'Duplicate tax_no guard ihlal',
+            `Expected 409 on duplicate tax_no POST; got ${dupTaxStatus}. Tenant-scoped uniqueness guard not enforced.`);
+        if (!dupEmailOk) recFinding(testInfo, 'P1', MOD, 'Duplicate email guard ihlal',
+            `Expected 409 on duplicate email POST; got ${dupEmailStatus}. Tenant-scoped uniqueness guard not enforced.`);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'account_crud', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
-        expect(crudPass, `account CRUD aggregate: create=${ok}/${floor} list_ok=${readOk} listed_own=${ownPrefixed.length}/${listFloor} update_ok=${updateOk}`).toBe(true);
+        expect(dupTaxOk, `duplicate tax_no must be 409; got ${dupTaxStatus}`).toBe(true);
+        expect(dupEmailOk, `duplicate email must be 409; got ${dupEmailStatus}`).toBe(true);
+        expect(crudPass, `account CRUD aggregate: create=${ok}/${floor} list_ok=${readOk} listed_own=${ownPrefixed.length}/${listFloor} update_ok=${updateOk} dup_tax=${dupTaxStatus} dup_email=${dupEmailStatus}`).toBe(true);
     });
 
     test('B) Contact CRUD per account', async ({ request, stressTokens, stressState }, testInfo) => {
@@ -501,55 +535,138 @@ test.describe('F8G § 80 — CRM Accounts + Contacts + Offers + Contracts', () =
             return;
         }
 
-        // 2) PUT update each — dry-run approval state machine simulated via
-        // notes field (draft → review → approved → signed). Backend has no
-        // native approval workflow; gap recorded as P2 below.
-        let updOk = 0;
-        const states = ['review', 'approved', 'signed'];
-        for (const cid of createdContractIds) {
-            for (const st of states) {
-                const updPayload = {
-                    company_name: `${prefix}ContractD_${cid.slice(-6)}`,
-                    contract_type: 'negotiated', rate_code: `${prefix}RC_${cid.slice(-6)}`,
-                    negotiated_rate: 1600, discount_percentage: 20,
-                    start_date: startIso, end_date: endIso,
-                    allotment: 100, blackout_dates: [],
-                    contact_person: `${prefix}Person`,
-                    contact_email: `${prefix}contract@example.invalid`,
-                    contact_phone: '+905551110000',
-                    notes: `${prefix} F8G 80-D state=${st}`,
-                };
-                const r = await callTimed(request, 'put',
-                    `/api/sales/corporate-contract/${cid}`, updPayload, stressTokens.stress_token);
-                samples.push(r.ms);
-                if (r.throttled) throttled++;
-                if (r.ok) updOk++;
-                await new Promise((res) => setTimeout(res, 1500));
-            }
+        // 2) Duplicate guard — HARD ASSERT (task #176). A second contract that
+        // reuses an existing rate_code OR contact_email MUST be rejected 409.
+        let dupRateStatus = null;
+        let dupEmailStatus = null;
+        if (ok > 0) {
+            const dupRate = await callTimed(request, 'post',
+                '/api/sales/corporate-contract', {
+                    company_name: `${prefix}ContractD_dupRate`,
+                    contract_type: 'negotiated', rate_code: `${prefix}RC1`,  // dup
+                    negotiated_rate: 1500, discount_percentage: 15,
+                    start_date: startIso, end_date: endIso, allotment: 50,
+                    blackout_dates: [], contact_person: `${prefix}P`,
+                    contact_email: `${prefix}uniq_rate@example.invalid`,
+                    contact_phone: '+905559990001', notes: `${prefix} dup-rate`,
+                }, stressTokens.stress_token);
+            dupRateStatus = dupRate.status;
+            samples.push(dupRate.ms);
+            if (dupRate.ok && dupRate.body?.contract_id) createdContractIds.push(dupRate.body.contract_id);
+
+            const dupEmail = await callTimed(request, 'post',
+                '/api/sales/corporate-contract', {
+                    company_name: `${prefix}ContractD_dupEmail`,
+                    contract_type: 'negotiated', rate_code: `${prefix}RC_UNIQX`,  // uniq
+                    negotiated_rate: 1500, discount_percentage: 15,
+                    start_date: startIso, end_date: endIso, allotment: 50,
+                    blackout_dates: [], contact_person: `${prefix}P`,
+                    contact_email: `${prefix}contract_1@example.invalid`,  // dup
+                    contact_phone: '+905559990002', notes: `${prefix} dup-email`,
+                }, stressTokens.stress_token);
+            dupEmailStatus = dupEmail.status;
+            samples.push(dupEmail.ms);
+            if (dupEmail.ok && dupEmail.body?.contract_id) createdContractIds.push(dupEmail.body.contract_id);
         }
 
-        // Record the missing-approval-workflow gap (informational).
-        recFinding(testInfo, 'P2', MOD,
-            'No native contract approval state machine',
-            `Backend POST /api/sales/corporate-contract hard-codes status="active"; PUT update does not expose approval lifecycle (draft→review→approved→signed) as a first-class field. Spec simulates the transition via notes payload. Informational gap — not blocking.`);
+        // 3) Approval state machine — HARD ASSERT (task #176). Each contract
+        // walks draft → pending → approved|rejected via the dedicated
+        // approval-transition endpoint. Invalid skips/terminal re-opens MUST
+        // be rejected 409. New contracts must start in `approval_status=draft`.
+        const APPROVAL = '/api/sales/corporate-contract';
+        const transition = (cid, to) => callTimed(request, 'post',
+            `${APPROVAL}/${cid}/approval-transition`, { to_status: to,
+                reason: `${prefix} F8G 80-D ${to}` }, stressTokens.stress_token);
+
+        let validOk = 0, finalStateOk = 0;
+        let invalidSkipStatus = null, invalidTerminalStatus = null;
+        const lifecycleContracts = createdContractIds.slice(0, N_CONTRACTS);
+        const expectedFinal = {};  // cid -> approved|rejected
+        for (let i = 0; i < lifecycleContracts.length; i++) {
+            const cid = lifecycleContracts[i];
+
+            // 3a) Illegal skip from draft → approved must 409 (only on first).
+            if (i === 0) {
+                const skip = await transition(cid, 'approved');
+                invalidSkipStatus = skip.status;
+                samples.push(skip.ms);
+            }
+
+            // 3b) Legal: draft → pending.
+            const toPending = await transition(cid, 'pending');
+            samples.push(toPending.ms);
+            if (toPending.ok && toPending.body?.approval_status === 'pending') validOk++;
+            else if (errs.length < 6) errs.push({ phase: 'to_pending', cid: cid.slice(-6), status: toPending.status, body: JSON.stringify(toPending.body).slice(0, 100) });
+
+            // 3c) Legal terminal: pending → approved | rejected (alternate).
+            const finalState = i % 2 === 0 ? 'approved' : 'rejected';
+            expectedFinal[cid] = finalState;
+            const toFinal = await transition(cid, finalState);
+            samples.push(toFinal.ms);
+            if (toFinal.ok && toFinal.body?.approval_status === finalState) validOk++;
+            else if (errs.length < 6) errs.push({ phase: `to_${finalState}`, cid: cid.slice(-6), status: toFinal.status, body: JSON.stringify(toFinal.body).slice(0, 100) });
+
+            // 3d) Illegal terminal re-open from approved → pending must 409
+            // (only on the first approved contract).
+            if (i === 0 && finalState === 'approved') {
+                const reopen = await transition(cid, 'pending');
+                invalidTerminalStatus = reopen.status;
+                samples.push(reopen.ms);
+            }
+            await new Promise((res) => setTimeout(res, 800));
+        }
+
+        // 4) Persistence verify: GET list and confirm approval_status matches
+        // the terminal state we drove each contract to.
+        const listR = await callTimed(request, 'get',
+            '/api/sales/corporate-contracts', undefined, stressTokens.stress_token);
+        const listed = listR.body?.contracts || [];
+        const byId = {};
+        for (const c of listed) byId[c.id] = c.approval_status;
+        for (const cid of lifecycleContracts) {
+            if (byId[cid] === expectedFinal[cid]) finalStateOk++;
+            else if (errs.length < 10) errs.push({ phase: 'persist', cid: cid.slice(-6), want: expectedFinal[cid], got: byId[cid] });
+        }
 
         const createFloor = Math.ceil(N_CONTRACTS * 0.9);
-        const updFloor = Math.ceil((N_CONTRACTS * states.length) * 0.9);
-        const allPass = ok >= createFloor && updOk >= updFloor;
+        const validFloor = Math.ceil((lifecycleContracts.length * 2) * 0.9);
+        const finalFloor = Math.ceil(lifecycleContracts.length * 0.9);
+        const dupRateOk = dupRateStatus === 409;
+        const dupEmailOk = dupEmailStatus === 409;
+        const invalidSkipOk = invalidSkipStatus === 409;
+        const invalidTerminalOk = invalidTerminalStatus === 409;
+        const allPass = ok >= createFloor && validOk >= validFloor
+            && finalStateOk >= finalFloor && dupRateOk && dupEmailOk
+            && invalidSkipOk && invalidTerminalOk;
         recPerf(testInfo, MOD, 'contract_lifecycle', samples, allPass);
         rec(testInfo, { module: MOD, step: 'contract_lifecycle',
             status: allPass ? 'PASS' : 'FAIL',
-            endpoint: 'POST/PUT /api/sales/corporate-contract',
-            note: `create_ok=${ok}/${N_CONTRACTS} update_ok=${updOk}/${N_CONTRACTS * states.length} fail=${fail} throttled_429=${throttled} permFail=${permFail} errs=${JSON.stringify(errs)}` });
+            endpoint: 'POST /api/sales/corporate-contract + /approval-transition',
+            note: `create_ok=${ok}/${N_CONTRACTS} valid_trans=${validOk}/${lifecycleContracts.length * 2} final_persist=${finalStateOk}/${lifecycleContracts.length} dup_rate=${dupRateStatus}(want409) dup_email=${dupEmailStatus}(want409) invalid_skip=${invalidSkipStatus}(want409) invalid_terminal=${invalidTerminalStatus}(want409) throttled_429=${throttled} permFail=${permFail} errs=${JSON.stringify(errs)}` });
         if (ok < createFloor) recFinding(testInfo, 'P1', MOD,
             'Corporate contract create floor ihlal',
             `n=${N_CONTRACTS} ok=${ok} (<${createFloor}). errs=${JSON.stringify(errs)}`);
-        if (updOk < updFloor) recFinding(testInfo, 'P1', MOD,
-            'Corporate contract update floor ihlal',
-            `total=${N_CONTRACTS * states.length} ok=${updOk} (<${updFloor}).`);
+        if (validOk < validFloor) recFinding(testInfo, 'P1', MOD,
+            'Contract approval valid-transition floor ihlal',
+            `valid=${validOk} (<${validFloor}). State machine not advancing draft→pending→terminal.`);
+        if (finalStateOk < finalFloor) recFinding(testInfo, 'P1', MOD,
+            'Contract approval_status persistence ihlal',
+            `persisted=${finalStateOk} (<${finalFloor}). Terminal approval_status not durable on list read.`);
+        if (!dupRateOk) recFinding(testInfo, 'P1', MOD, 'Duplicate rate_code guard ihlal',
+            `Expected 409 on duplicate rate_code POST; got ${dupRateStatus}.`);
+        if (!dupEmailOk) recFinding(testInfo, 'P1', MOD, 'Duplicate contact_email guard ihlal',
+            `Expected 409 on duplicate contact_email POST; got ${dupEmailStatus}.`);
+        if (!invalidSkipOk) recFinding(testInfo, 'P1', MOD, 'Approval state-skip not rejected',
+            `draft→approved skip expected 409; got ${invalidSkipStatus}. State machine not enforced.`);
+        if (!invalidTerminalOk) recFinding(testInfo, 'P1', MOD, 'Approval terminal re-open not rejected',
+            `approved→pending expected 409; got ${invalidTerminalStatus}. Terminal state not enforced.`);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'contract_lifecycle', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
-        expect(allPass, `contract aggregate: create=${ok}/${createFloor} update=${updOk}/${updFloor}`).toBe(true);
+        expect(dupRateOk, `duplicate rate_code must be 409; got ${dupRateStatus}`).toBe(true);
+        expect(dupEmailOk, `duplicate contact_email must be 409; got ${dupEmailStatus}`).toBe(true);
+        expect(invalidSkipOk, `draft→approved skip must be 409; got ${invalidSkipStatus}`).toBe(true);
+        expect(invalidTerminalOk, `approved→pending must be 409; got ${invalidTerminalStatus}`).toBe(true);
+        expect(allPass, `contract aggregate: create=${ok}/${createFloor} valid=${validOk}/${validFloor} final=${finalStateOk}/${finalFloor}`).toBe(true);
     });
 
     test('E) Tenant isolation + pilot_drift + external_calls invariant', async ({ request, stressTokens, stressState }, testInfo) => {

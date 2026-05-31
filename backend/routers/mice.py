@@ -351,6 +351,7 @@ class AccountIn(BaseModel):
     name: str
     legal_name: str | None = None
     tax_no: str | None = None
+    email: str | None = None
     address: str | None = None
     city: str | None = None
     country: str | None = "TR"
@@ -359,6 +360,35 @@ class AccountIn(BaseModel):
     payment_terms_days: int = Field(0, ge=0)
     notes: str | None = None
     active: bool = True
+
+
+async def _assert_account_unique(
+    db: Any, tenant_id: str, body: AccountIn, exclude_id: str | None = None
+) -> None:
+    """Tenant-scoped duplicate guard for CRM client accounts.
+
+    Rejects (409) a create/update whose ``tax_no`` or ``email`` collides with
+    another *client* account in the same tenant. Scoped via ``_CLIENT_ACCT_FILTER``
+    so piggybacked rows (e.g. banquet competitors) never produce false positives.
+    Blank values are ignored — uniqueness only applies to populated identifiers.
+    """
+    checks: list[tuple[str, str]] = []
+    if body.tax_no and body.tax_no.strip():
+        checks.append(("tax_no", body.tax_no.strip()))
+    if body.email and body.email.strip():
+        checks.append(("email", body.email.strip()))
+    for field, value in checks:
+        flt: dict[str, Any] = {
+            "tenant_id": tenant_id,
+            field: value,
+            **_CLIENT_ACCT_FILTER,
+        }
+        if exclude_id:
+            flt["id"] = {"$ne": exclude_id}
+        dup = await db.mice_accounts.find_one(flt, {"_id": 0, "id": 1})
+        if dup:
+            raise HTTPException(
+                409, f"Bu {field} ile kayıtlı müşteri zaten var")
 
 
 @router.get("/accounts")
@@ -408,6 +438,7 @@ async def create_account(body: AccountIn,
 ) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
+    await _assert_account_unique(db, current_user.tenant_id, body)
     doc = {"id": str(uuid.uuid4()),
            "tenant_id": current_user.tenant_id,
            "account_type": "client",  # discriminator; isolates piggybacked rows
@@ -427,6 +458,8 @@ async def update_account(account_id: str, body: AccountIn,
 ) -> dict:
     require_mice_ops(current_user)
     db = get_system_db()
+    await _assert_account_unique(
+        db, current_user.tenant_id, body, exclude_id=account_id)
     # Discriminator guard: never mutate non-client docs (e.g. banquet
     # competitors stored in the same collection) via the CRM endpoint.
     res = await db.mice_accounts.update_one(

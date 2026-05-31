@@ -15,3 +15,4 @@
 - [require_feature entitlement probes](require-feature-entitlement-probes.md) — probe a feature-gated surface with the TENANT token, not super_admin (bypasses require_feature); opt-in flags need OPT_IN_EXTRA_FEATURES or the override is silently dropped.
 - [POS transaction status semantics & inventory deplete](pos-transaction-status-semantics.md) — create_order=pos_orders/pending, close_order=pos_transactions/completed; transfer-table needs status='open' (open-tab surface); close_order does NOT auto-decrement inventory.
 - [B2B API key per-subrouter scope model](b2b-key-scope-model.md) — key scopes==None is unrestricted legacy (fail-open); a list is fail-closed (out-of-scope subrouter→403). Canonical list + shared auth in b2b_api/_scope.py.
+- [CRM dup guard + contract approval](crm-dup-guard-contract-approval.md) — mice_accounts piggybacks banquet-competitor rows; dup tax_no/email guard MUST be account_type='client' scoped or it false-positives.
