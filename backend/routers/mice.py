@@ -33,6 +33,7 @@ from core.spa_mice_authz import require_catalog, require_finance, require_mice_o
 from core.tenant_db import get_system_db
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v94 DW
+from shared_kernel import index_backstops as _index_backstops
 from shared_kernel.idempotency import (
     claim_idempotency,
     complete_idempotency,
@@ -44,10 +45,52 @@ router = APIRouter(prefix="/api/mice", tags=["mice"])
 
 _indexes_ready = False
 
+# Task #231: unique-index "backstops" that self-heal. The non-unique index
+# batch is built once (gated by ``_indexes_ready``); the unique duplicate-
+# prevention indexes below are retried on every call (subject to the helper's
+# retry throttle) until they actually build, so cleaning legacy duplicate data
+# re-enables the safeguard without a restart. Each is registered so ops can see
+# whether the backstop is active or off.
+_MICE_UNIQUE_BACKSTOPS = (
+    ("tax_no", "uniq_mice_acc_client_taxno"),
+    ("email", "uniq_mice_acc_client_email"),
+)
+for _f, _n in _MICE_UNIQUE_BACKSTOPS:
+    _index_backstops.register_expected(
+        _n, collection="mice_accounts", fields=["tenant_id", _f])
+
+
+async def _build_mice_unique_backstops(db) -> None:
+    """(Re)attempt the partial unique indexes that back ``_assert_account_unique``.
+
+    A pre-existing duplicate only disables *its own* backstop (each is wrapped
+    individually) and the build self-heals on a later attempt once the duplicate
+    rows are cleaned — see ``shared_kernel.index_backstops``.
+    """
+    for field, idx_name in _MICE_UNIQUE_BACKSTOPS:
+        async def _build(field=field, idx_name=idx_name) -> None:
+            await db.mice_accounts.create_index(
+                [("tenant_id", 1), (field, 1)],
+                unique=True,
+                partialFilterExpression={
+                    "account_type": "client",
+                    field: {"$gt": "", "$type": "string"},
+                },
+                name=idx_name)
+
+        await _index_backstops.attempt_backstop(
+            idx_name,
+            collection="mice_accounts",
+            fields=["tenant_id", field],
+            build=_build)
+
 
 async def _ensure_indexes() -> None:
     global _indexes_ready
     if _indexes_ready:
+        # Non-unique batch already built; still (re)attempt any unique backstop
+        # that is deferred so it self-heals once the duplicate data is cleaned.
+        await _build_mice_unique_backstops(get_system_db())
         return
     db = get_system_db()
     try:
@@ -71,35 +114,6 @@ async def _ensure_indexes() -> None:
             [("tenant_id", 1), ("name", 1)], name="mice_acc_name")
         await db.mice_accounts.create_index(
             [("tenant_id", 1), ("tax_no", 1)], name="mice_acc_taxno")
-        # Task #205: DB-level partial unique indexes close the read-then-insert
-        # race in `_assert_account_unique`. Two near-simultaneous creates with
-        # the same tax_no/email can both pass the app-level find_one; the unique
-        # index makes the losing insert fail with DuplicateKeyError (→ 409).
-        # The partial filter scopes uniqueness to *client* rows with a populated
-        # string value so (a) piggybacked banquet-competitor rows never collide,
-        # (b) blank ("")/missing identifiers are ignored exactly like the app
-        # guard, and (c) legacy rows without account_type stay out of the build.
-        # Each build is wrapped on its own so a pre-existing duplicate only
-        # disables this backstop, not the rest of the index batch.
-        for _uniq_field, _uniq_name in (
-            ("tax_no", "uniq_mice_acc_client_taxno"),
-            ("email", "uniq_mice_acc_client_email"),
-        ):
-            try:
-                await db.mice_accounts.create_index(
-                    [("tenant_id", 1), (_uniq_field, 1)],
-                    unique=True,
-                    partialFilterExpression={
-                        "account_type": "client",
-                        _uniq_field: {"$gt": "", "$type": "string"},
-                    },
-                    name=_uniq_name)
-            except Exception as _uniq_exc:  # noqa: BLE001
-                import logging
-                logging.getLogger("mice").warning(
-                    "mice_accounts unique index %s deferred (existing "
-                    "duplicate/data?) → race backstop NOT enforced: %s",
-                    _uniq_name, _uniq_exc)
         await db.mice_contacts.create_index(
             [("tenant_id", 1), ("account_id", 1)], name="mice_ctc_acc")
         await db.mice_resources.create_index(
@@ -116,6 +130,13 @@ async def _ensure_indexes() -> None:
     except Exception as exc:  # noqa: BLE001
         import logging
         logging.getLogger("mice").warning("Index creation deferred: %s", exc)
+        return
+    # Task #205/#231: DB-level partial unique indexes close the read-then-insert
+    # race in `_assert_account_unique`. Built (and self-healed) separately so a
+    # pre-existing duplicate only disables its own backstop — and is retried on a
+    # later call once the duplicate data is cleaned, rather than cached as
+    # "ready" and never retried until a restart.
+    await _build_mice_unique_backstops(db)
 
 # ── Function spaces ──────────────────────────────────────────────
 class FunctionSpaceIn(BaseModel):

@@ -14,6 +14,7 @@ from pymongo.errors import DuplicateKeyError
 from core.cache import cached
 from core.database import db
 from core.security import get_current_user, security
+from shared_kernel import index_backstops
 from modules.pms_core.role_permission_service import (
     require_op,
 )
@@ -190,11 +191,18 @@ CONTRACT_APPROVAL_TRANSITIONS: dict[str, set[str]] = {
 }
 
 
-_contract_indexes_ready = False
+# Task #205/#231: unique-index backstops behind ``_assert_contract_unique``.
+_CONTRACT_UNIQUE_BACKSTOPS = (
+    ("rate_code", "uniq_corp_contract_rate_code"),
+    ("contact_email", "uniq_corp_contract_contact_email"),
+)
+for _f, _n in _CONTRACT_UNIQUE_BACKSTOPS:
+    index_backstops.register_expected(
+        _n, collection="corporate_contracts", fields=["tenant_id", _f])
 
 
 async def _ensure_contract_indexes() -> None:
-    """Task #205: DB-level partial unique indexes behind ``_assert_contract_unique``.
+    """Task #205/#231: DB-level partial unique indexes behind ``_assert_contract_unique``.
 
     The application-level read-then-insert guard has a race window: two
     near-simultaneous creates with the same rate_code/contact_email can both
@@ -203,29 +211,29 @@ async def _ensure_contract_indexes() -> None:
     partial filter scopes uniqueness to populated *string* values (``$gt: ""``
     + ``$type``) so blank/missing identifiers never collide — exactly matching
     the app guard which ignores blanks — and legacy null rows do not break the
-    build. Each build is wrapped on its own so a pre-existing duplicate only
-    disables this backstop, not the other index.
+    build.
+
+    Task #231: each build is retried (subject to the helper's retry throttle)
+    until it succeeds instead of caching a "ready" flag after a deferred build.
+    The unique index is *global* across tenants, so duplicate rows in ANY hotel
+    disable the backstop for everyone; retrying means cleaning that residue
+    re-enables the safeguard on the next attempt without a restart. Deferred
+    builds are surfaced via a log warning + Prometheus metric and an ops health
+    check (see ``shared_kernel.index_backstops``).
     """
-    global _contract_indexes_ready
-    if _contract_indexes_ready:
-        return
-    for field, idx_name in (
-        ("rate_code", "uniq_corp_contract_rate_code"),
-        ("contact_email", "uniq_corp_contract_contact_email"),
-    ):
-        try:
+    for field, idx_name in _CONTRACT_UNIQUE_BACKSTOPS:
+        async def _build(field=field, idx_name=idx_name) -> None:
             await db.corporate_contracts.create_index(
                 [("tenant_id", 1), (field, 1)],
                 unique=True,
                 partialFilterExpression={field: {"$gt": "", "$type": "string"}},
                 name=idx_name)
-        except Exception as exc:  # noqa: BLE001
-            import logging
-            logging.getLogger("rms.sales").warning(
-                "corporate_contracts unique index %s deferred (existing "
-                "duplicate/data?) → race backstop NOT enforced: %s",
-                idx_name, exc)
-    _contract_indexes_ready = True
+
+        await index_backstops.attempt_backstop(
+            idx_name,
+            collection="corporate_contracts",
+            fields=["tenant_id", field],
+            build=_build)
 
 
 async def _assert_contract_unique(

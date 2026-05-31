@@ -608,6 +608,20 @@ async def _startup():
         await _ensure_notif_indexes()
     except Exception as _e:
         logging.getLogger(__name__).warning("notif index prewarm skipped: %s", _e)
+    # Task #231: build the duplicate-prevention unique-index backstops at boot so
+    # a deferred build (legacy duplicate residue → safeguard OFF) surfaces a
+    # warning + Prometheus metric immediately at startup, instead of only on the
+    # first request. The builds self-heal on later attempts once data is cleaned.
+    try:
+        from routers.mice import _ensure_indexes as _mice_ensure_indexes
+        await _mice_ensure_indexes()
+    except Exception as _e:
+        logging.getLogger(__name__).warning("mice uniqueness backstop prewarm skipped: %s", _e)
+    try:
+        from domains.revenue.rms_router.sales import _ensure_contract_indexes
+        await _ensure_contract_indexes()
+    except Exception as _e:
+        logging.getLogger(__name__).warning("contract uniqueness backstop prewarm skipped: %s", _e)
     try:
         from core.database import db as _db
         from scripts.ensure_demo_user import ensure_demo_user

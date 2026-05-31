@@ -23,6 +23,45 @@ async def get_readiness(current_user: User = Depends(get_current_user)):
     return await readiness_validator.validate()
 
 
+@router.get("/uniqueness-backstops")
+async def get_uniqueness_backstops(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
+):
+    """Report which duplicate-prevention unique-index backstops are active.
+
+    Task #231: the "no duplicate supplier/contract" safeguards are enforced by
+    unique indexes that are built best-effort. If legacy duplicate rows exist
+    (the index is global across tenants) a build is *deferred* and the safeguard
+    is silently OFF for everyone until the residue is cleaned. This surfaces each
+    backstop's status (active / deferred / unknown) so ops can see at a glance
+    whether the duplicate-prevention safeguards are enforced.
+    """
+    from shared_kernel import index_backstops
+
+    # Touch the lazy index builders so a not-yet-attempted backstop is attempted
+    # (and self-heals) when an operator checks, rather than reporting "unknown".
+    try:
+        from routers.mice import _ensure_indexes as _mice_ensure_indexes
+        await _mice_ensure_indexes()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from domains.revenue.rms_router.sales import _ensure_contract_indexes
+        await _ensure_contract_indexes()
+    except Exception:  # noqa: BLE001
+        pass
+
+    backstops = index_backstops.list_status()
+    deferred = [b for b in backstops if b.get("status") == "deferred"]
+    return {
+        "all_active": index_backstops.all_active(),
+        "any_deferred": index_backstops.any_deferred(),
+        "deferred_count": len(deferred),
+        "backstops": backstops,
+    }
+
+
 @router.get("/summary")
 @cached(ttl=60, key_prefix="golive_summary")
 async def get_golive_summary(

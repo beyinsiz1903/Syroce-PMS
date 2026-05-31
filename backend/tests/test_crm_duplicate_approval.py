@@ -12,12 +12,37 @@ import pytest
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
 
+import shared_kernel.index_backstops as index_backstops
 from routers.mice import AccountIn, _assert_account_unique
 from domains.revenue.rms_router.sales import (
     CONTRACT_APPROVAL_TRANSITIONS,
     CorporateContractCreate,
     _assert_contract_unique,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_index_backstops(monkeypatch):
+    """Isolate the global backstop registry between tests + disable retry throttle.
+
+    Task #231: ``attempt_backstop`` keeps module-global state (which backstops
+    are active/deferred) and throttles retries to once per 60s. Clearing it per
+    test and zeroing the throttle makes the self-heal/build assertions
+    deterministic regardless of execution order or wall-clock timing.
+    """
+    index_backstops._registry.clear()
+    monkeypatch.setattr(index_backstops, "_RETRY_THROTTLE_SECONDS", 0.0)
+    for _n, _coll, _fields in (
+        ("uniq_mice_acc_client_taxno", "mice_accounts", ["tenant_id", "tax_no"]),
+        ("uniq_mice_acc_client_email", "mice_accounts", ["tenant_id", "email"]),
+        ("uniq_corp_contract_rate_code", "corporate_contracts",
+         ["tenant_id", "rate_code"]),
+        ("uniq_corp_contract_contact_email", "corporate_contracts",
+         ["tenant_id", "contact_email"]),
+    ):
+        index_backstops.register_expected(_n, collection=_coll, fields=_fields)
+    yield
+    index_backstops._registry.clear()
 
 
 def _fake_db(find_one_return):
@@ -157,6 +182,9 @@ async def test_mice_ensure_indexes_builds_client_partial_unique(monkeypatch):
         pfe = kw["partialFilterExpression"]
         assert pfe["account_type"] == "client"  # piggyback rows excluded
         assert pfe[field] == {"$gt": "", "$type": "string"}  # blanks excluded
+        # Task #231: a successful build registers the backstop as ACTIVE so ops
+        # reporting reflects an enforced safeguard.
+        assert index_backstops.is_active(idx_name)
     monkeypatch.setattr(mice, "_indexes_ready", False)
 
 
@@ -191,7 +219,6 @@ async def test_ensure_contract_indexes_partial_unique(monkeypatch):
     fdb = MagicMock()
     fdb.corporate_contracts = cc
     monkeypatch.setattr(sales, "db", fdb)
-    monkeypatch.setattr(sales, "_contract_indexes_ready", False)
 
     await sales._ensure_contract_indexes()
 
@@ -203,11 +230,11 @@ async def test_ensure_contract_indexes_partial_unique(monkeypatch):
         assert keys == [("tenant_id", 1), (field, 1)]
         assert kw["unique"] is True
         assert kw["partialFilterExpression"][field] == {"$gt": "", "$type": "string"}
-    monkeypatch.setattr(sales, "_contract_indexes_ready", False)
+        assert index_backstops.is_active(idx_name)
 
 
 async def test_ensure_contract_indexes_tolerates_build_failure(monkeypatch):
-    """A pre-existing duplicate must not crash boot — failure is logged only."""
+    """A pre-existing duplicate must not crash boot — failure is logged + deferred."""
     import domains.revenue.rms_router.sales as sales
 
     cc = MagicMock()
@@ -215,11 +242,40 @@ async def test_ensure_contract_indexes_tolerates_build_failure(monkeypatch):
     fdb = MagicMock()
     fdb.corporate_contracts = cc
     monkeypatch.setattr(sales, "db", fdb)
-    monkeypatch.setattr(sales, "_contract_indexes_ready", False)
 
     await sales._ensure_contract_indexes()  # no raise
-    assert sales._contract_indexes_ready is True
-    monkeypatch.setattr(sales, "_contract_indexes_ready", False)
+
+    # Task #231: the failed build is recorded as DEFERRED (safeguard OFF), NOT
+    # cached as "ready" — so ops can see it and a later call retries it.
+    for idx_name in ("uniq_corp_contract_rate_code",
+                     "uniq_corp_contract_contact_email"):
+        assert not index_backstops.is_active(idx_name)
+        entry = next(e for e in index_backstops.list_status()
+                     if e["name"] == idx_name)
+        assert entry["status"] == "deferred"
+        assert entry["deferred_count"] >= 1
+
+
+async def test_ensure_contract_indexes_self_heals_after_data_cleaned(monkeypatch):
+    """Task #231: a deferred backstop re-builds on a later call (no restart)."""
+    import domains.revenue.rms_router.sales as sales
+
+    cc = MagicMock()
+    fdb = MagicMock()
+    fdb.corporate_contracts = cc
+    monkeypatch.setattr(sales, "db", fdb)
+
+    # 1st attempt fails (legacy duplicate residue still present).
+    cc.create_index = AsyncMock(side_effect=Exception("E11000 existing dup"))
+    await sales._ensure_contract_indexes()
+    assert not index_backstops.is_active("uniq_corp_contract_rate_code")
+
+    # Operator cleans the residue → the very next call rebuilds successfully,
+    # without a restart or clearing the cached "ready" flag.
+    cc.create_index = AsyncMock(return_value="uniq_corp_contract_rate_code")
+    await sales._ensure_contract_indexes()
+    assert index_backstops.is_active("uniq_corp_contract_rate_code")
+    assert index_backstops.is_active("uniq_corp_contract_contact_email")
 
 
 async def test_create_contract_duplicate_key_translated_to_409(monkeypatch):
@@ -232,8 +288,8 @@ async def test_create_contract_duplicate_key_translated_to_409(monkeypatch):
     fdb.corporate_contracts.insert_one = AsyncMock(
         side_effect=DuplicateKeyError(
             "E11000 dup key: uniq_corp_contract_contact_email"))
+    fdb.corporate_contracts.create_index = AsyncMock()  # backstop build no-op
     monkeypatch.setattr(sales, "db", fdb)
-    monkeypatch.setattr(sales, "_contract_indexes_ready", True)  # skip build
     user = MagicMock(tenant_id="t1", username="u")
     monkeypatch.setattr(sales, "get_current_user", AsyncMock(return_value=user))
 
@@ -242,4 +298,3 @@ async def test_create_contract_duplicate_key_translated_to_409(monkeypatch):
             _contract(), credentials=None, _perm=None)
     assert exc.value.status_code == 409
     assert "contact_email" in exc.value.detail
-    monkeypatch.setattr(sales, "_contract_indexes_ready", False)
