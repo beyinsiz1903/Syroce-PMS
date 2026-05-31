@@ -2,11 +2,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   render, screen, act, cleanup, waitFor, within, fireEvent,
 } from '@testing-library/react';
+import { toast } from 'sonner';
 import CorporateContractApprovals from '@/pages/CorporateContractApprovals';
+
+// Toast feedback is asserted in the approver-action tests; mock sonner so the
+// success/error calls are observable and don't try to render real toasts.
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
 
 // Stable token so the component's Authorization header / fetch path resolve.
 beforeEach(() => {
   localStorage.setItem('token', 'test-token');
+  // The sonner mock is module-level; clear it so toast assertions don't see
+  // calls leaked from a previous test (restoreAllMocks won't reset vi.mock fns).
+  toast.success.mockClear();
+  toast.error.mockClear();
 });
 
 afterEach(() => {
@@ -21,6 +32,31 @@ function mockContracts(contracts) {
     status: 200,
     json: async () => ({ contracts }),
   });
+}
+
+// Route fetch by URL: the list GET vs the approval-transition POST. Returns the
+// spy so tests can assert on the exact transition payload and on the refresh GET.
+// `transition` defaults to a success; pass { ok:false, status, body } to fail it.
+function mockFetchRouter(contracts, transition = {}) {
+  const t = { ok: true, status: 200, body: { ok: true }, ...transition };
+  return vi.spyOn(global, 'fetch').mockImplementation(async (url, opts) => {
+    if (String(url).includes('approval-transition')) {
+      return { ok: t.ok, status: t.status, json: async () => t.body };
+    }
+    return { ok: true, status: 200, json: async () => ({ contracts }) };
+  });
+}
+
+const PENDING = [{
+  id: 'p1', company_name: 'Pending Co', approval_status: 'pending', approval_history: [],
+}];
+
+function transitionCall(fetchSpy) {
+  return fetchSpy.mock.calls.find((c) => String(c[0]).includes('approval-transition'));
+}
+
+function getCallCount(fetchSpy) {
+  return fetchSpy.mock.calls.filter((c) => !(c[1] && c[1].method === 'POST')).length;
 }
 
 async function renderPage() {
@@ -219,5 +255,148 @@ describe('CorporateContractApprovals — status badges & empty state', () => {
     await renderPage();
 
     expect(screen.getByText('Kurumsal sözleşmeler yüklenemedi.')).toBeInTheDocument();
+  });
+});
+
+describe('CorporateContractApprovals — approve / reject buttons', () => {
+  it('shows Approve + Reject buttons only for pending contracts', async () => {
+    mockContracts([
+      { id: 'p1', company_name: 'Pending Co', approval_status: 'pending', approval_history: [] },
+      { id: 'a1', company_name: 'Approved Co', approval_status: 'approved', approval_history: [] },
+    ]);
+
+    await renderPage();
+
+    // The pending contract exposes both approver actions.
+    expect(screen.getByRole('button', { name: 'Onayla' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reddet' })).toBeInTheDocument();
+
+    // Only one of each — the approved contract does not surface them.
+    expect(screen.getAllByRole('button', { name: 'Onayla' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Reddet' })).toHaveLength(1);
+  });
+
+  it('approve: posts to_status=approved (reason null) then refreshes the list and toasts success', async () => {
+    const fetchSpy = mockFetchRouter(PENDING);
+
+    await renderPage();
+    const getsBefore = getCallCount(fetchSpy);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Onayla' }));
+
+    await waitFor(() => expect(transitionCall(fetchSpy)).toBeTruthy());
+    const call = transitionCall(fetchSpy);
+    expect(call[0]).toContain('/api/sales/corporate-contract/p1/approval-transition');
+    expect(call[1].method).toBe('POST');
+    expect(JSON.parse(call[1].body)).toEqual({ to_status: 'approved', reason: null });
+
+    // The list reloads after a successful transition.
+    await waitFor(() => expect(getCallCount(fetchSpy)).toBeGreaterThan(getsBefore));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(
+      'Sözleşme onaylandı',
+      expect.objectContaining({ description: 'Pending Co' }),
+    ));
+  });
+
+  it('approve: shows an error toast and does NOT refresh when the transition fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchSpy = mockFetchRouter(PENDING, {
+      ok: false, status: 400, body: { detail: 'Geçersiz onay geçişi' },
+    });
+
+    await renderPage();
+    const getsBefore = getCallCount(fetchSpy);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Onayla' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
+      'İşlem başarısız',
+      expect.objectContaining({ description: 'Geçersiz onay geçişi' }),
+    ));
+    expect(toast.success).not.toHaveBeenCalled();
+    // A failed transition leaves the list untouched (no reload GET).
+    expect(getCallCount(fetchSpy)).toBe(getsBefore);
+  });
+
+  it('reject: requires a non-empty reason — submit is disabled until a real reason is typed', async () => {
+    mockContracts(PENDING);
+
+    await renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Reddet' }));
+
+    const dialog = await screen.findByRole('dialog');
+    const submit = within(dialog).getByRole('button', { name: 'Reddet' });
+    const reason = within(dialog).getByLabelText('Reddetme Gerekçesi');
+
+    // Empty → disabled.
+    expect(submit).toBeDisabled();
+
+    // Whitespace-only is still treated as empty.
+    fireEvent.change(reason, { target: { value: '   ' } });
+    expect(submit).toBeDisabled();
+
+    // A real reason enables the submit.
+    fireEvent.change(reason, { target: { value: 'Oran politikamızla uyuşmuyor' } });
+    expect(submit).not.toBeDisabled();
+  });
+
+  it('reject: posts to_status=rejected with the reason, closes the dialog, refreshes and toasts', async () => {
+    const fetchSpy = mockFetchRouter(PENDING);
+
+    await renderPage();
+    const getsBefore = getCallCount(fetchSpy);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reddet' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(
+      within(dialog).getByLabelText('Reddetme Gerekçesi'),
+      { target: { value: '  Oran politikamızla uyuşmuyor  ' } },
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reddet' }));
+
+    await waitFor(() => expect(transitionCall(fetchSpy)).toBeTruthy());
+    const call = transitionCall(fetchSpy);
+    expect(call[1].method).toBe('POST');
+    // Reason is trimmed before it is sent.
+    expect(JSON.parse(call[1].body)).toEqual({
+      to_status: 'rejected', reason: 'Oran politikamızla uyuşmuyor',
+    });
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(
+      'Sözleşme reddedildi',
+      expect.objectContaining({ description: 'Pending Co' }),
+    ));
+    // Dialog closes and the list reloads on success.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(getCallCount(fetchSpy)).toBeGreaterThan(getsBefore));
+  });
+
+  it('reject: keeps the dialog open and toasts an error when the transition fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchSpy = mockFetchRouter(PENDING, {
+      ok: false, status: 400, body: { detail: 'Reddetme için gerekçe zorunludur' },
+    });
+
+    await renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reddet' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(
+      within(dialog).getByLabelText('Reddetme Gerekçesi'),
+      { target: { value: 'Bir gerekçe' } },
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reddet' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
+      'İşlem başarısız',
+      expect.objectContaining({ description: 'Reddetme için gerekçe zorunludur' }),
+    ));
+    expect(toast.success).not.toHaveBeenCalled();
+    // Failure keeps the reject dialog open so the approver can retry.
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    // Sanity: the transition really did request a rejection.
+    expect(JSON.parse(transitionCall(fetchSpy)[1].body).to_status).toBe('rejected');
   });
 });
