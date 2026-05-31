@@ -140,6 +140,14 @@ async function wsProbe(WsCtor, url, opts = {}) {
             clearTimeout(killer);
             settle({ error: `ws_${String(e?.message || e).slice(0, 80)}` });
         });
+        // Task #164: handshake upgrade non-101 dönerse (örn. mount yok → HTTP
+        // 404, pre-upgrade auth reject → 401/403) `ws` lib 'unexpected-response'
+        // emit eder. httpStatus'u yakala — reachability bunu kullanır (HTTP-GET
+        // probe WS-only route'ta DAİMA 404 verir; gerçek mount sinyali handshake).
+        ws.on('unexpected-response', (_req, res) => {
+            clearTimeout(killer);
+            settle({ error: `unexpected_response_${res?.statusCode ?? 'na'}`, httpStatus: res?.statusCode ?? null });
+        });
     });
 }
 
@@ -187,22 +195,43 @@ test.describe('F8V § 98B — WebSocket Tenant Isolation', () => {
             return;
         }
 
-        // Endpoint reachability — HTTP GET ws path normalde 426 Upgrade Required
-        // veya 405 dönmeli (FastAPI ws route). 404 → router mount yok.
-        const probe = await callTimed(request, 'get', wsPath, undefined, stressTokens.stress_token, { timeout: 8_000 });
-        if (probe.status === 404) {
+        // Endpoint reachability — Task #164 ROOT-CAUSE FIX: eski sürüm düz HTTP
+        // GET atıyordu. Starlette WebSocketRoute SADECE "websocket" scope'unda
+        // match eder; HTTP GET hiçbir zaman match etmez → DAİMA 404 → eski
+        // sürüm bunu "mount yok" sanıp A/B/C'yi TÜMÜYLE SKIP ediyordu (vacuous).
+        // Gerçek reachability ancak WS upgrade handshake ile ölçülür: garbage
+        // token ile connect dene. Upgrade'e HTTP 404 dönerse mount gerçekten
+        // yok; aksi halde reachable (handshake 101 → open + auth-fail close 4001,
+        // ya da pre-upgrade 401/403 = mount VAR ama reddetti).
+        const reach = await wsProbe(WsCtor, `${wsBase}${wsPath}?token=garbage.not.a.jwt&last_event_ts=0`,
+            { timeoutMs: 8_000, collectFramesMs: 600 });
+        if (reach.httpStatus === 404) {
             moduleBlocked = true;
             blockedReason = 'ws_endpoint_404';
             recFinding(testInfo, 'P2', MOD, 'WS endpoint 404 — enterprise_live router mount yok',
-                'A/B/C SKIP, D bağımsız.');
+                'WS upgrade handshake 404 döndü (HTTP-GET değil). A/B/C SKIP, D bağımsız.');
+            rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
+                note: `module_blocked=true reason=${blockedReason} reach_http=404` });
+            // Module-block: router mount yok (deploy variant), explicit skip.
+            test.skip(true, 'WS endpoint not mounted (404 on upgrade)');
+            return;
+        }
+        // Transport-level erişilemezlik (DNS/ECONNREFUSED/timeout) — handshake
+        // ne açıldı ne de bir HTTP status döndü, sadece transport error var → env
+        // blok (mount durumu kanıtlanamaz). 401/403 unexpected-response =
+        // reachable (mount var), bu dala düşmez.
+        if (!reach.opened && reach.httpStatus == null && reach.closeCode == null && reach.error) {
+            moduleBlocked = true;
+            blockedReason = `ws_unreachable_${reach.error}`;
+            recFinding(testInfo, 'P2', MOD, 'WS transport erişilemez',
+                `reach_error=${reach.error} — env/transport, A/B/C SKIP, D bağımsız.`);
             rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
                 note: `module_blocked=true reason=${blockedReason}` });
-            // Module-block: router mount yok (deploy variant), explicit skip.
-            test.skip(true, 'WS endpoint not mounted (404)');
+            test.skip(true, 'WS transport unreachable');
             return;
         }
         rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
-            note: `prefix=${prefix} ws_base=${wsBase} probe_http=${probe.status} stress_tid=${stressTid?.slice(0, 8)} pilot_tid=${pilotTid ? pilotTid.slice(0, 8) : 'unset'}` });
+            note: `prefix=${prefix} ws_base=${wsBase} reach_opened=${reach.opened} reach_close=${reach.closeCode} reach_http=${reach.httpStatus ?? 'na'} stress_tid=${stressTid?.slice(0, 8)} pilot_tid=${pilotTid ? pilotTid.slice(0, 8) : 'unset'}` });
     });
 
     test('A) Unauthenticated / garbage / tampered tokens — WS auth fail (close code 4001 or short-lived) + no leaked frames', async ({ request, stressState, stressTokens }, testInfo) => {
@@ -295,6 +324,11 @@ test.describe('F8V § 98B — WebSocket Tenant Isolation', () => {
         }
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'unauth_reject', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
+        // Task #164 hard-assert: unauth/garbage/tampered token WS bağlantısı
+        // OPERASYONEL veri frame'i ALAMAZ (auth bypass = P0 leak). Close-code
+        // davranışı (4001 vs 1000) observability bulgusu olarak REVIEW'da kalır;
+        // güvenlik invariantı = sıfır data leak.
+        expect(leaked, `unauth WS operational data leaks=${leaked}`).toBe(0);
     });
 
     test('B) Valid stress token — connect OK + initial frame scoped to stress tenant + no pilot_tid leak', async ({ request, stressState, stressTokens }, testInfo) => {
@@ -337,6 +371,11 @@ test.describe('F8V § 98B — WebSocket Tenant Isolation', () => {
         }
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'valid_token_scope', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
+        // Task #164 hard-assert: valid stress token WS frame'inde pilot tenant_id
+        // literal SIZAMAZ (cross-tenant scope leak = P0). opened/authError
+        // fonksiyonel sorunları REVIEW olarak kaydedilir (env-flake'e karşı hard-
+        // fail edilmez); güvenlik invariantı = pilot leak yok.
+        expect(pilotLeak, `stress-token WS pilot_tid leak=${pilotLeak}`).toBe(false);
     });
 
     test('C) Cross-tenant subscribe spoof — stress socket "subscribe pilot tenant" must not yield pilot data', async ({ request, stressState, stressTokens }, testInfo) => {
@@ -377,6 +416,9 @@ test.describe('F8V § 98B — WebSocket Tenant Isolation', () => {
         }
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'cross_tenant_subscribe_spoof', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
+        // Task #164 hard-assert: cross-tenant subscribe spoof pilot verisi
+        // DÖNDÜREMEZ (ws_hub tenant guard = P0). Güvenlik invariantı.
+        expect(pilotLeak, `WS cross-tenant subscribe spoof pilot leak=${pilotLeak}`).toBe(false);
     });
 
     test('D) Pilot drift = 0 + external_calls = [] (final invariants)', async ({ request, stressTokens, stressState }, testInfo) => {
