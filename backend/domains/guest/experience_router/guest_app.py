@@ -1285,6 +1285,8 @@ async def update_guest_profile(
             'preferences': profile_data.get('preferences', {}),
             'created_at': datetime.now(UTC).isoformat()
         }
+        from security.search_normalize import apply_collection_normalized_fields
+        apply_collection_normalized_fields(guest_data, collection="guests")
         await db.guests.insert_one(guest_data)
         return {'success': True, 'message': 'Profile created'}
 
@@ -1297,6 +1299,8 @@ async def update_guest_profile(
         'preferences': profile_data.get('preferences', guest.get('preferences', {})),
         'updated_at': datetime.now(UTC).isoformat()
     }
+    from security.search_normalize import normalized_set_for_update
+    update_data.update(normalized_set_for_update(update_data, collection="guests"))
 
     await db.guests.update_one(
         {'id': guest['id']},

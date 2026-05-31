@@ -170,6 +170,8 @@ async def ensure_guest_record(db, mapper: BookingReservationMapper, reservation:
         return guest['id']
 
     payload = mapper.to_guest_payload(reservation)
+    from security.search_normalize import apply_collection_normalized_fields
+    apply_collection_normalized_fields(payload, collection="guests")
     await db.guests.insert_one(payload)
     return payload['id']
 

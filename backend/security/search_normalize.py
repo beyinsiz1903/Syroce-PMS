@@ -39,6 +39,7 @@ import unicodedata
 # IMPORTANT: never list an ENCRYPTED field here (see module docstring).
 NORMALIZED_SEARCH_FIELDS: dict[str, list[str]] = {
     "bookings": ["guest_name", "booking_number"],
+    "guests": ["name", "first_name", "last_name"],
     "mice_accounts": ["name", "legal_name", "tax_no"],
     "mice_opportunities": ["contact_name", "company_name", "contact_email"],
     "leads": [
@@ -56,6 +57,7 @@ NORMALIZED_SEARCH_FIELDS: dict[str, list[str]] = {
 # dataset filtered by `source` — so its index leads with `source`.
 LEADING_KEY: dict[str, str] = {
     "bookings": "tenant_id",
+    "guests": "tenant_id",
     "mice_accounts": "tenant_id",
     "mice_opportunities": "tenant_id",
     "leads": "source",

@@ -36,13 +36,7 @@ the Replit sandbox reaps `--fork`/`nohup` daemons between separate tool calls.
 - **Encrypted-PII** (guest/user email/phone/id) keeps the `_hash_<field>` blind
   index exact-match path. NEVER add a `_lower` plaintext copy of an encrypted
   field — it re-exposes the plaintext you encrypted.
-- **`guests.name` / complaints guest-picker search**: NOT converted. `guests` has
-  ~7 production insert paths and several (agency_portal, reservation_waitlist,
-  reservation_detail) insert raw docs that bypass the encryption helper entirely,
-  so a companion field can't be written reliably on every new row — partial
-  coverage would silently drop new guests from prefix search (worse than the
-  scan). `service_complaints` itself has no text-search endpoint, so indexing it
-  would be fake-green. Both deferred to a follow-up.
+<<<<<<< HEAD
 - **`folios.guest_name`**: NOT given a companion either — `folios` has ~20+
   decentralized `db.folios.insert_one` sites (no central write helper), so a
   `guest_name_lower` would be missing on most new rows → silent drop. Instead,
@@ -52,9 +46,28 @@ the Replit sandbox reaps `--fork`/`nohup` daemons between separate tool calls.
   but can't carry its own companion. **Why:** folio.guest_name mirrors the
   booking's guest, so the bridge preserves intent while staying IXSCAN.
 
+## guests is now IN (converted)
+`guests.name`/`first_name`/`last_name` are **plaintext** (NOT encrypted) so a
+`_lower` companion is safe. Both the main guest search (`routers/pms_guests.py`
+`search_guests`, prefix on name/first_name/last_name) and the complaints
+guest-picker (`domains/pms/misc/complaints.py`, prefix on name) now use prefix
+RANGE; the encrypted email/phone/id_number branch still uses the `_hash_` path.
+**Why the earlier "can't do it reliably" worry was wrong:** the companion is
+written by `apply_collection_normalized_fields(doc, collection="guests")` /
+`normalized_set_for_update(...)`, which is independent of the encryption helper,
+so the several raw-doc insert paths (agency_portal, reservation_waitlist,
+reservation_detail, walk-in, OTA imports, b2b/marketplace, celery, group
+booking, exely auto-import, etc.) each call the normalize helper explicitly.
+**The invariant that keeps it honest:** EVERY production `guests.insert_one` and
+every name-bearing `guests.update_one` must route through the helper, or new/
+renamed guests silently drop out of prefix search. When adding a new guest write
+path, grep `guests.insert_one` and confirm the helper is applied. Backfill for
+existing rows is marker-gated `guests:v1` (config key `guests` was new → ran
+once automatically; no `_BACKFILL_VERSION` bump was needed).
+
 ## Centralized vs decentralized write test (before adding a collection)
 Only add a collection to `NORMALIZED_SEARCH_FIELDS` if its create/update path is
 **centralized** so the companion is written on every new row. Confirmed central:
 `bookings` (`core/atomic_booking.py`), `mice_accounts`/`mice_opportunities`/`leads`
 (`routers/mice.py`, `domains/sales/*`). Confirmed NOT central → must bridge or
-defer: `guests`, `folios`.
+defer: `folios`.

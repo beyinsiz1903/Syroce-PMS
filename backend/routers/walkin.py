@@ -124,7 +124,10 @@ async def walkin_checkin(
         "is_walkin": True,
         "created_at": now.isoformat(),
     }
-    await db.guests.insert_one(_encrypt_guest(guest_plain.copy()))
+    from security.search_normalize import apply_collection_normalized_fields
+    await db.guests.insert_one(
+        apply_collection_normalized_fields(_encrypt_guest(guest_plain.copy()), collection="guests")
+    )
 
     # Booking — atomic checked_in. Conditional update ile son anda cakisma kontrolu:
     # ayni odaya ayni anda iki insert olursa, ikinci sorgu room_id+overlap'i tekrar gorur.

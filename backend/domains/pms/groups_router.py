@@ -255,6 +255,8 @@ async def upload_rooming_list(
                     'passport_number': entry.passport_number,
                     'created_at': datetime.now(UTC).isoformat()
                 }
+                from security.search_normalize import apply_collection_normalized_fields
+                apply_collection_normalized_fields(guest, collection="guests")
                 await db.guests.insert_one(guest)
 
             # Find available room of requested type

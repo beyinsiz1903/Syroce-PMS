@@ -627,6 +627,8 @@ class ReservationImportService:
             "source": "ota",
             "created_at": datetime.now(UTC).isoformat(),
         }
+        from security.search_normalize import apply_collection_normalized_fields
+        apply_collection_normalized_fields(guest, collection="guests")
         await db.guests.insert_one(guest)
         return guest_id
 

@@ -94,6 +94,10 @@ async def create_guest(
         guest_dict = guest.model_dump()
         guest_dict['created_at'] = guest_dict['created_at'].isoformat()
         guest_dict_to_store = _encrypt_guest(guest_dict.copy())
+        # Plaintext name companions for index-serviceable prefix search (name is
+        # NOT encrypted, so this is safe). Keeps every new guest prefix-searchable.
+        from security.search_normalize import apply_collection_normalized_fields
+        apply_collection_normalized_fields(guest_dict_to_store, collection="guests")
         await db.guests.insert_one(guest_dict_to_store)
         if lock_id:
             # Persist ONLY the guest id + tenant in the idempotency cache to
@@ -166,35 +170,36 @@ async def search_guests(
 
     tenant_id = current_user.tenant_id
     import re as _re
-    safe_q = _re.escape(q)
-    regex = {"$regex": safe_q, "$options": "i"}
+
+    from security.search_normalize import prefix_conditions
+
+    # Plaintext name fields use an index-serviceable anchored prefix RANGE on the
+    # `<field>_lower` companion fields (backed by (tenant_id, <field>_lower)
+    # indexes), replacing the un-indexable unanchored case-insensitive regex scan
+    # that drove the Atlas query-targeting alert. (Behavior change: substring ->
+    # "starts typing a name" prefix.)
+    name_conditions = prefix_conditions(["name", "first_name", "last_name"], q)
 
     # Build search conditions supporting both encrypted and plaintext fields
     if _fenc:
-        # Pass RAW q (not safe_q): build_search_query hashes it for the
-        # _hash_<field> index match and escapes internally for its regex branch.
-        # Escaping here would break the HMAC match for emails/ids (chars like ".").
+        # Pass RAW q: build_search_query hashes it for the _hash_<field> index
+        # match and escapes internally for its regex branch. Escaping here would
+        # break the HMAC match for emails/ids (chars like ".").
         encrypted_conditions = _fenc.build_search_query(
             collection=_GUEST_COLLECTION,
             search_fields=["email", "phone", "id_number", "passport_number"],
             search_value=q,
         )
-        name_conditions = [
-            {"name": regex},
-            {"first_name": regex},
-            {"last_name": regex},
-        ]
         query = {
             "tenant_id": tenant_id,
             "$or": name_conditions + encrypted_conditions,
         }
     else:
+        safe_q = _re.escape(q)
+        regex = {"$regex": safe_q, "$options": "i"}
         query = {
             "tenant_id": tenant_id,
-            "$or": [
-                {"name": regex},
-                {"first_name": regex},
-                {"last_name": regex},
+            "$or": name_conditions + [
                 {"email": regex},
                 {"phone": regex},
                 {"id_number": regex},
@@ -274,8 +279,14 @@ async def update_guest(
     if not update_fields:
         raise HTTPException(status_code=400, detail="Guncellenecek alan bulunamadi")
 
+    # Companion name_lower updates (computed from the plaintext name before
+    # encryption — name is NOT encrypted). Keeps prefix search consistent on rename.
+    from security.search_normalize import normalized_set_for_update
+    _norm = normalized_set_for_update(update_fields, collection="guests")
+
     # Encrypt PII fields in the update
     update_fields = _encrypt_guest(update_fields)
+    update_fields.update(_norm)
 
     await db.guests.update_one(
         {"id": guest_id, "tenant_id": current_user.tenant_id},

@@ -706,10 +706,14 @@ async def get_guests_for_complaints(
     q: str | None = None,
     current_user: User = Depends(get_current_user)
 ):
-    from security.query_safety import safe_search_term
+    from security.search_normalize import prefix_condition
     query = {"tenant_id": current_user.tenant_id}
-    if (s := safe_search_term(q)):
-        query["name"] = {"$regex": s, "$options": "i"}
+    # Index-serviceable anchored prefix RANGE on the `name_lower` companion field
+    # (backed by the (tenant_id, name_lower) index), replacing the un-indexable
+    # unanchored case-insensitive regex scan. Behavior change: substring ->
+    # "starts typing a name" prefix.
+    if q and (cond := prefix_condition("name", q)):
+        query.update(cond)
     guests = await db.guests.find(
         query,
         {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "vip_status": 1}

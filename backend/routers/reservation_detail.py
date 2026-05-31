@@ -1170,10 +1170,12 @@ async def update_reservation_guest(
 
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
     if updates:
+        from security.search_normalize import normalized_set_for_update
+        # Guest name_lower companion so renames stay prefix-searchable.
+        updates.update(normalized_set_for_update(updates, collection="guests"))
         await db.guests.update_one({"id": booking["guest_id"], "tenant_id": tid}, {"$set": updates})
 
         if "name" in updates:
-            from security.search_normalize import normalized_set_for_update
             _norm = normalized_set_for_update(
                 {"guest_name": updates["name"]}, collection="bookings")
             await db.bookings.update_one(
@@ -1479,7 +1481,8 @@ async def create_group_booking(
     try:
         for idx, row in enumerate(data.new_bookings, start=1):
             guest_id = str(uuid.uuid4())
-            await db.guests.insert_one({
+            from security.search_normalize import apply_collection_normalized_fields
+            _guest_doc = apply_collection_normalized_fields({
                 "id": guest_id,
                 "tenant_id": tid,
                 "name": row.guest_name.strip(),
@@ -1491,7 +1494,8 @@ async def create_group_booking(
                 "total_stays": 0,
                 "total_spend": 0.0,
                 "created_at": datetime.now(UTC).isoformat(),
-            })
+            }, collection="guests")
+            await db.guests.insert_one(_guest_doc)
             created_guest_ids.append(guest_id)
 
             booking_data = BookingCreate(

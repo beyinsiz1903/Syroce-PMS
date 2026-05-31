@@ -654,6 +654,8 @@ async def create_walk_in_booking(
 
             guest_dict = new_guest.model_dump()
             guest_dict['created_at'] = guest_dict['created_at'].isoformat()
+            from security.search_normalize import apply_collection_normalized_fields
+            apply_collection_normalized_fields(guest_dict, collection="guests")
             await db.guests.insert_one(guest_dict)
             guest_id = new_guest.id
 

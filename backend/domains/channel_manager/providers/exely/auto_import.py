@@ -79,7 +79,8 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
             "notes": f"Exely kanal rezervasyonu ({external_id})",
             "created_at": datetime.now(UTC).isoformat(),
         }
-        await db.guests.insert_one({**guest})
+        from security.search_normalize import apply_collection_normalized_fields
+        await db.guests.insert_one(apply_collection_normalized_fields({**guest}, collection="guests"))
         guest.pop("_id", None)
 
     # Build PMS booking (room_id intentionally omitted – user assigns rooms via drag-and-drop)
@@ -272,13 +273,16 @@ async def _update_existing_booking(tenant_id: str, channel_res: dict[str, Any]) 
     guest_id = existing_booking.get("guest_id")
     if guest_id and new_guest_name and new_guest_name != old_name:
         name_parts = new_guest_name.split()
+        from security.search_normalize import normalized_set_for_update
+        _guest_set = {
+            "name": new_guest_name,
+            "first_name": name_parts[0] if name_parts else "",
+            "last_name": " ".join(name_parts[1:]) if len(name_parts) > 1 else "",
+        }
+        _guest_set.update(normalized_set_for_update(_guest_set, collection="guests"))
         await db.guests.update_one(
             {"id": guest_id, "tenant_id": tenant_id},
-            {"$set": {
-                "name": new_guest_name,
-                "first_name": name_parts[0] if name_parts else "",
-                "last_name": " ".join(name_parts[1:]) if len(name_parts) > 1 else "",
-            }},
+            {"$set": _guest_set},
         )
 
     # Mark exely_reservation as imported again

@@ -390,6 +390,9 @@ async def auto_import_reservation_to_pms(
                     guest_doc = get_field_encryption_service().encrypt_document(guest_doc, collection="guests")
                 except Exception:
                     pass
+                # Plaintext name companions for index-serviceable prefix search.
+                from security.search_normalize import apply_collection_normalized_fields
+                apply_collection_normalized_fields(guest_doc, collection="guests")
                 await db.guests.insert_one(guest_doc)
                 guest_doc.pop("_id", None)
                 booking_doc["guest_id"] = guest_id

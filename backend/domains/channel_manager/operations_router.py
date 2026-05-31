@@ -290,6 +290,8 @@ async def import_ota_reservation(
         guest = Guest(tenant_id=current_user.tenant_id, **guest_create.model_dump())
         guest_dict = guest.model_dump()
         guest_dict['created_at'] = guest_dict['created_at'].isoformat()
+        from security.search_normalize import apply_collection_normalized_fields
+        apply_collection_normalized_fields(guest_dict, collection="guests")
         await db.guests.insert_one(guest_dict)
 
     # Find available room of matching type

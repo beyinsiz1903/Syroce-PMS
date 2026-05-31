@@ -435,6 +435,8 @@ async def merge_guest_profiles(
                 if k in {"name", "first_name", "last_name", "email", "phone",
                          "loyalty_tier", "preferences", "vip", "company"}}
         if safe:
+            from security.search_normalize import normalized_set_for_update
+            safe.update(normalized_set_for_update(safe, collection="guests"))
             await db.guests.update_one(
                 {"_id": primary["_id"], "tenant_id": primary.get("tenant_id")},
                 {"$set": safe},

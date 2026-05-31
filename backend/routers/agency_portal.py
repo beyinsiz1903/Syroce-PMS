@@ -826,6 +826,8 @@ async def agency_portal_create_reservation(
         "total_spend": 0.0,
         "created_at": _now_iso(),
     }
+    from security.search_normalize import apply_collection_normalized_fields
+    apply_collection_normalized_fields(guest_doc, collection="guests")
     await db.guests.insert_one(guest_doc)
 
     # Create booking directly in PMS

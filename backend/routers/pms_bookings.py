@@ -188,6 +188,8 @@ async def create_quick_booking(
                 "total_spend": 0.0,
                 "created_at": now_ts.isoformat(),
             }
+            from security.search_normalize import apply_collection_normalized_fields
+            apply_collection_normalized_fields(guest_doc, collection="guests")
             await db.guests.insert_one(guest_doc)
 
     # 3) Build BookingCreate and delegate to the standard service
@@ -734,6 +736,8 @@ async def create_multi_room_booking(
         )
         guest_dict = guest.model_dump()
         guest_dict["created_at"] = guest_dict["created_at"].isoformat()
+        from security.search_normalize import apply_collection_normalized_fields
+        apply_collection_normalized_fields(guest_dict, collection="guests")
         await db.guests.insert_one(guest_dict)
         guest_id = guest.id
 

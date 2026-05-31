@@ -787,6 +787,8 @@ class FrontdeskServiceV2:
             "source": "walk_in",
             "created_at": now.isoformat(),
         }
+        from security.search_normalize import apply_collection_normalized_fields
+        apply_collection_normalized_fields(guest_doc, collection="guests")
         await self._db.guests.insert_one(guest_doc)
 
         # Create booking
