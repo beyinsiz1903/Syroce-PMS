@@ -23,6 +23,8 @@ export const test = base.extend({
     //   super_admin  — pilot super_admin (cross-tenant/admin baseline)
     //   stress_admin — stress tenant admin (mutasyonların çoğu)
     //   staff_lowtrust — düşük-güven non-admin front_desk (RBAC-deny spec)
+    //   staff_housekeeping — non-admin housekeeping; view_guest_list YOK
+    //     (Task #213 — PII-mask edilen recipient path'ini hard-assert için)
     //   agency_admin — acente-portal agency_admin (B2B IDOR / cross-tenant)
     stressRoles: async ({}, use) => {
         let roles = {};
@@ -33,6 +35,7 @@ export const test = base.extend({
             super_admin: roles.super_admin ?? null,
             stress_admin: roles.stress_admin ?? null,
             staff_lowtrust: roles.staff_lowtrust ?? null,
+            staff_housekeeping: roles.staff_housekeeping ?? null,
             agency_admin: roles.agency_admin ?? null,
         });
     },

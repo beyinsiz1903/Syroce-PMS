@@ -51,6 +51,7 @@ async function tryLogin(api, email, password, loginPath = '/api/auth/login') {
 //   - agency_admin: acente-portal `agency_admin` (B2B IDOR / cross-tenant spec).
 const ROLE_PASSWORD = process.env.E2E_STRESS_ROLE_PASSWORD || 'Str3ss-R0le!2026#fixed';
 const STAFF_LOWTRUST_EMAIL = 'e2e-stress-lowtrust@syroce-stress.local';
+const STAFF_HOUSEKEEPING_EMAIL = 'e2e-stress-housekeeping@syroce-stress.local';
 const AGENCY_NAME = 'E2E Stress Harness Agency';
 const AGENCY_ADMIN_EMAIL = 'e2e-stress-agency-admin@syroce-stress.local';
 
@@ -66,6 +67,30 @@ async function provisionLowTrustStaff(api, stressAdminToken) {
     out.created = createStatus >= 200 && createStatus < 300;
     out.create_status = createStatus;
     const { token, status } = await tryLogin(api, STAFF_LOWTRUST_EMAIL, ROLE_PASSWORD);
+    out.token = token;
+    out.login_status = status;
+    return out;
+}
+
+// Task #213 — housekeeping principal: a non-admin staff role that LACKS
+// `view_guest_list` (VIEW_REPORTS). Required to hard-assert the PII-masked
+// branch of /api/messaging-center/activity end-to-end. `staff_lowtrust`
+// (front_desk) is unsuitable: front_desk HOLDS view_guest_list, so it always
+// sees the UNMASKED recipient (same as admin/super_admin). Only a role without
+// view_guest_list exercises `_mask_recipient`. Idempotent + fail-soft, mirroring
+// provisionLowTrustStaff. Created in the STRESS tenant only (no pilot mutation).
+async function provisionHousekeepingStaff(api, stressAdminToken) {
+    const out = { role: 'housekeeping', email: STAFF_HOUSEKEEPING_EMAIL, token: null, created: false };
+    const createResp = await api.post('/api/hotel/team', {
+        headers: { Authorization: `Bearer ${stressAdminToken}` },
+        data: { email: STAFF_HOUSEKEEPING_EMAIL, name: 'E2E Stress Housekeeping', role: 'housekeeping', password: ROLE_PASSWORD },
+        failOnStatusCode: false, timeout: 60_000,
+    }).catch(() => null);
+    const createStatus = createResp?.status?.() ?? 0;
+    // 2xx = yeni oluşturuldu; 400 "already registered" = mevcut → login dene.
+    out.created = createStatus >= 200 && createStatus < 300;
+    out.create_status = createStatus;
+    const { token, status } = await tryLogin(api, STAFF_HOUSEKEEPING_EMAIL, ROLE_PASSWORD);
     out.token = token;
     out.login_status = status;
     return out;
@@ -470,13 +495,16 @@ export default async function globalSetup() {
     // GERÇEK create endpoint'leri üzerinden stress tenant'ında düşük-güven
     // staff + agency_admin principal üret. Fail-soft: başarısızlık globalSetup'ı
     // NO-GO'ya düşürmez, token=null kalır (downstream spec honest SKIP eder).
-    let roleProvisioning = { staff_lowtrust: null, agency_admin: null };
+    let roleProvisioning = { staff_lowtrust: null, staff_housekeeping: null, agency_admin: null };
     try {
         const staff = await provisionLowTrustStaff(api, stressToken);
+        const housekeeping = await provisionHousekeepingStaff(api, stressToken);
         const agency = await provisionAgencyAdmin(api, stressToken);
-        roleProvisioning = { staff_lowtrust: staff, agency_admin: agency };
+        roleProvisioning = { staff_lowtrust: staff, staff_housekeeping: housekeeping, agency_admin: agency };
         if (staff.token) console.log(`[stress-setup] ✅ low-trust staff principal hazır (role=front_desk created=${staff.created} login=${staff.login_status})`);
         else console.log(`[stress-setup] ⚠️ low-trust staff principal token alınamadı (create=${staff.create_status} login=${staff.login_status}) — RBAC spec'leri SKIP edebilir.`);
+        if (housekeeping.token) console.log(`[stress-setup] ✅ housekeeping principal hazır (role=housekeeping created=${housekeeping.created} login=${housekeeping.login_status})`);
+        else console.log(`[stress-setup] ⚠️ housekeeping principal token alınamadı (create=${housekeeping.create_status} login=${housekeeping.login_status}) — PII-mask spec (45 § E) SKIP edebilir.`);
         if (agency.token) console.log(`[stress-setup] ✅ agency_admin principal hazır (agency_id=${String(agency.agency_id).slice(0, 8)} created=${agency.created} login=${agency.login_status})`);
         else console.log(`[stress-setup] ⚠️ agency_admin principal token alınamadı (agency_id=${agency.agency_id} create=${agency.create_status} login=${agency.login_status}) — B2B/cross-tenant spec'leri SKIP edebilir.`);
     } catch (e) {
@@ -513,6 +541,7 @@ export default async function globalSetup() {
             super_admin: pilotToken,          // pilot super_admin (admin/stress + cross-tenant baseline)
             stress_admin: stressToken,        // stress tenant admin (mutasyonların çoğu bununla)
             staff_lowtrust: roleProvisioning.staff_lowtrust?.token || null,
+            staff_housekeeping: roleProvisioning.staff_housekeeping?.token || null,  // Task #213 — non-view_guest_list role (PII-mask assert)
             agency_admin: roleProvisioning.agency_admin?.token || null,
         },
         // Task #171 — agency-portal LOGIN credentials (not just bearer). Specs

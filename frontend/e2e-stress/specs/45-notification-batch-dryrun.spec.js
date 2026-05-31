@@ -267,6 +267,134 @@ test.describe('F8Q § 45 — Push notification batch dry-run', () => {
         expect(feed.status < 500, `activity-feed 5xx`).toBe(true);
     });
 
+    test('E) Activity feed recipient PII mask — housekeeping(masked) vs privileged(visible) RBAC', async ({ request, stressTokens, stressRoles, stressState }, testInfo) => {
+        // Task #213 — hard-assert the masked-recipient RBAC path end-to-end.
+        // /api/messaging-center/activity masks the guest recipient (email local
+        // part / phone digits) for roles WITHOUT view_guest_list, and shows it
+        // raw for roles WITH it. The only previously-available stress tokens
+        // (stress_admin + pilot super_admin) BOTH hold view_guest_list, so the
+        // masked branch could never be proven live — only the visible branch.
+        // A housekeeping principal (no view_guest_list) closes that gap.
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'activity_pii_mask_rbac', status: 'SKIP', note: blockedReason });
+            test.skip(true, 'module blocked');
+            return;
+        }
+        const hkToken = stressRoles?.staff_housekeeping || null;
+        if (!hkToken) {
+            // Fail-soft provisioning: no low-trust principal → honest SKIP, NEVER
+            // fake-green. The masked branch CANNOT be asserted with admin tokens.
+            recFinding(testInfo, 'P2', MOD, 'housekeeping principal token yok',
+                'role_tokens.staff_housekeeping null (globalSetup provisioning fail-soft) — masked-recipient RBAC path hard-assert edilemedi.');
+            rec(testInfo, { module: MOD, step: 'activity_pii_mask_rbac', status: 'SKIP', note: 'no housekeeping token' });
+            test.skip(true, 'no housekeeping token');
+            return;
+        }
+
+        // Seed a deterministic delivery-log row with a recognisable recipient via
+        // the real /send flow (admin = manage_sales). channel='email' so a
+        // delivery log IS written (note: 'in_app' is NOT in CHANNEL_PROVIDER_MAP
+        // → unknown channel → no log). No provider config for the stress tenant
+        // ⇒ status=failed, recipient persisted, ZERO external call (fallback
+        // chain for email is empty; external_calls=[] gate still enforced below).
+        // PII token `guestpii` lives in the email local-part (masked away);
+        // `mask_uc_marker` lives in use_case (never masked) so we can locate the
+        // exact probe row in BOTH the masked and unmasked feeds.
+        const piiLocal = `${prefix}guestpii`;
+        const probeRecipient = `${piiLocal}@stress.invalid`;
+        const ucMarker = `${prefix}mask_uc_marker`;
+        const send = await callTimed(request, 'post', '/api/messaging-center/send', {
+            channel: 'email',
+            recipient: probeRecipient,
+            subject: `${prefix}_mask_probe_subj`,
+            body: `${prefix}_mask_probe_body`,
+            use_case: ucMarker,
+            metadata: { stress_seed: true, stress_prefix: prefix, mask_probe: true },
+        }, stressTokens.stress_token);
+        if (send.status === 401 || send.status === 403) {
+            // stress_admin lacking manage_sales would be a backend RBAC change,
+            // not a test bug — record honestly and SKIP rather than fake-pass.
+            recFinding(testInfo, 'P2', MOD, 'mask-probe /send perm-gated',
+                `status=${send.status} — stress_admin manage_sales beklenirdi; probe row seed edilemedi.`);
+            rec(testInfo, { module: MOD, step: 'activity_pii_mask_rbac', status: 'SKIP', note: `probe send status=${send.status}` });
+            return;
+        }
+        if (send.status >= 500) {
+            recFinding(testInfo, 'P0', MOD, 'mask-probe /send 5xx', `status=${send.status}`);
+        }
+
+        const fetchFeed = async (token) => {
+            const r = await callTimed(request, 'get', '/api/messaging-center/activity?limit=100',
+                undefined, token);
+            const items = Array.isArray(r.body?.activities) ? r.body.activities
+                : Array.isArray(r.body?.notifications) ? r.body.notifications
+                : Array.isArray(r.body?.items) ? r.body.items : [];
+            return { status: r.status, items };
+        };
+
+        const hk = await fetchFeed(hkToken);                       // no view_guest_list → masked
+        const priv = await fetchFeed(stressTokens.stress_token);   // admin (view_guest_list) → visible
+
+        const findProbe = (items) => items.find((it) => String(it?.message ?? '').includes(ucMarker)) || null;
+        const hkProbe = findProbe(hk.items);
+        const privProbe = findProbe(priv.items);
+
+        // Cross-tenant: neither feed may carry pilot/prod prefix markers.
+        const leakCount = (items) => items.slice(0, 100).reduce((n, it) => {
+            let blob = ''; try { blob = JSON.stringify(it); } catch { /* nz */ }
+            return n + ((blob.includes('"PILOT_') || blob.includes('"PROD_')) ? 1 : 0);
+        }, 0);
+        const hkLeaks = leakCount(hk.items);
+        const privLeaks = leakCount(priv.items);
+        if (hkLeaks > 0 || privLeaks > 0) {
+            recFinding(testInfo, 'P0', MOD, 'activity-feed cross-tenant leak (mask RBAC)',
+                `hk_leaks=${hkLeaks} priv_leaks=${privLeaks} — düşük/yüksek-güven token pilot/prod prefix marker gördü.`);
+        }
+
+        // Non-vacuous guard: both principals must actually see the seeded probe
+        // row, else the mask/visible assertions are trivially-true on an empty
+        // set (fake-green). The privileged principal must ALSO see the raw PII.
+        const hkSeen = !!hkProbe;
+        const privSeen = !!privProbe;
+        if (!hkSeen || !privSeen) {
+            recFinding(testInfo, 'P0', MOD, 'mask-probe row not surfaced in activity feed',
+                `hk_seen=${hkSeen} priv_seen=${privSeen} hk_items=${hk.items.length} priv_items=${priv.items.length} — vacuous mask assert riski; probe row delivery-log olarak yazılmadı/feed'e düşmedi.`);
+        }
+
+        // Core contract:
+        //  - housekeeping (no view_guest_list): recipient MASKED — raw local-part
+        //    PII (`guestpii`) absent, masked sentinel `***@stress.invalid` present.
+        //  - admin (view_guest_list): recipient VISIBLE — raw `guestpii@...` shown.
+        const hkMsg = String(hkProbe?.message ?? '');
+        const privMsg = String(privProbe?.message ?? '');
+        const hkMasked = hkSeen && !hkMsg.includes(piiLocal) && hkMsg.includes('***@stress.invalid');
+        const privVisible = privSeen && privMsg.includes(probeRecipient);
+        if (hkSeen && !hkMasked) {
+            recFinding(testInfo, 'P0', MOD, 'housekeeping sees UNMASKED recipient PII',
+                `msg="${hkMsg.slice(0, 120)}" — view_guest_list olmayan rol guest email local-part görüyor (KVKK/PII ihlali).`);
+        }
+        if (privSeen && !privVisible) {
+            recFinding(testInfo, 'P2', MOD, 'privileged role recipient not visible',
+                `msg="${privMsg.slice(0, 120)}" — view_guest_list olan rol raw recipient görmeli (kontrat regresyonu).`);
+        }
+
+        rec(testInfo, { module: MOD, step: 'activity_pii_mask_rbac',
+            status: (hk.status < 500 && priv.status < 500 && hkLeaks === 0 && privLeaks === 0
+                && hkSeen && privSeen && hkMasked && privVisible) ? 'PASS' : 'FAIL',
+            note: `hk_status=${hk.status} priv_status=${priv.status} hk_seen=${hkSeen} priv_seen=${privSeen} hk_masked=${hkMasked} priv_visible=${privVisible} hk_leaks=${hkLeaks} priv_leaks=${privLeaks}` });
+
+        const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'activity_pii_mask_rbac', stressState, request, stressTokens.pilot_token);
+        expect(extOk, 'external_calls must stay empty').toBe(true);
+        expect(hkLeaks, `housekeeping feed cross-tenant leak=${hkLeaks}`).toBe(0);
+        expect(privLeaks, `privileged feed cross-tenant leak=${privLeaks}`).toBe(0);
+        expect(hk.status < 500, 'housekeeping activity 5xx').toBe(true);
+        expect(priv.status < 500, 'privileged activity 5xx').toBe(true);
+        expect(hkSeen, 'housekeeping must see the seeded probe row (non-vacuous)').toBe(true);
+        expect(privSeen, 'privileged must see the seeded probe row (non-vacuous)').toBe(true);
+        expect(hkMasked, 'housekeeping (no view_guest_list) MUST get masked recipient').toBe(true);
+        expect(privVisible, 'privileged (view_guest_list) MUST see raw recipient').toBe(true);
+    });
+
     test('D) Pilot drift = 0 + external_calls = [] (final invariants)', async ({ request, stressTokens, stressState }, testInfo) => {
         const driftOk = await assertPilotDriftZero(testInfo, MOD, request, stressTokens.pilot_token, pilotBefore);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'final', stressState, request, stressTokens.pilot_token);

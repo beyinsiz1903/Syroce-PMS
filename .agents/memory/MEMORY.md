@@ -19,3 +19,4 @@
 - [B2B API key per-subrouter scope model](b2b-key-scope-model.md) — key scopes==None is unrestricted legacy (fail-open); a list is fail-closed (out-of-scope subrouter→403). Canonical list + shared auth in b2b_api/_scope.py.
 - [CRM dup guard + contract approval](crm-dup-guard-contract-approval.md) — mice_accounts piggybacks banquet-competitor rows; dup tax_no/email guard MUST be account_type='client' scoped or it false-positives.
 - [Stress seed aged-booking reconciliation](stress-seed-aged-reconciliation.md) — aging a stay must regenerate per-night charges (sum==folio.total), net balance by payments (amount+total both set), keep non-aged at offset 0; verify factory offline.
+- [Stress masked-PII needs a role lacking the gate](stress-masked-pii-role-principal.md) — to assert a permission-masked path live, provision a principal WITHOUT the gating perm; front_desk holds view_guest_list so it's NOT low-trust for guest-PII.
