@@ -6,15 +6,16 @@
 //   read-only + schema-validation + tenant-isolation + external-call gate ile
 //   doğrular.
 //
-// Architect fix notes (2026-05-24 NO-GO → revised):
-//   - Backend `InvoiceCreate` şeması VKN/TCKN field'ı surface ETMİYOR; bu
-//     yüzden invalid-VKN/TCKN payload testi YANLIŞTI (gerçek bir validation
-//     katmanı yok; tüm sample'lar 422 ile düşse de bu schema-required-field
-//     hatasıdır, VKN format guard değil). VKN/TCKN gap'i P2 REVIEW olarak
-//     kayda alınır — informational, fake PASS değil.
+// Schema parity (e-Fatura VKN/TCKN):
+//   - Backend `InvoiceCreate` (`backend/models/schemas/invoicing.py`) artık
+//     `customer_tax_id` alanını VKN (10 hane) / TCKN (11 hane) olarak validate
+//     ediyor; bu yüzden VKN/TCKN gap'i artık P2 REVIEW DEĞİL — geçerli/geçersiz
+//     vergi no senaryoları 422 yüzeyinde HARD-ASSERT edilir (section C).
 //   - Backend `db.invoices` koleksiyonu STRESS_COLLECTIONS sweep'inde yok
 //     (yalnız `accounting_invoices` var). Bu yüzden valid POST asla yapılmaz;
-//     sadece eksik payload → 422 PASS testi yürütülür.
+//     VKN/TCKN parity testleri her senaryoda 422'ye düşecek payload kullanır
+//     (geçersiz tax_id, ya da geçerli tax_id + kasıtlı eksik zorunlu alan) →
+//     db.invoices write = 0 invariant'ı korunur.
 //
 // Mutlak kurallar:
 //   - pilot mutation = 0 (yalnız read snapshot)
@@ -26,7 +27,9 @@
 //   - Read-only invoice list + stats probe (stress tenant).
 //   - Schema enforcement probe: minimal eksik payload → 422 PASS, 2xx = P1
 //     (zorunlu alanlar boş kabul ediliyor).
-//   - VKN/TCKN gap: P2 REVIEW (schema'da field yok).
+//   - VKN/TCKN parity: hard-assert. Geçersiz customer_tax_id → 422 + hata
+//     loc'unda customer_tax_id; geçerli VKN(10)/TCKN(11) → 422 (kasıtlı eksik
+//     due_date) ama customer_tax_id flag YOK. db.invoices write = 0 korunur.
 //   - Cross-tenant invoice PUT IDOR (stress_token + pilot harvest ID) →
 //     403/404 hard-fail, 2xx = P0.
 //   - ERP sync endpoint'leri (`/finance/logo-integration/sync`,
@@ -90,10 +93,79 @@ test.describe.serial('F8X efatura/earsiv dryrun', () => {
                     note: `http=${schemaProbe.status} (unexpected; backend may be unreachable)` });
             }
 
-            // C. VKN/TCKN field surface gap → P2 informational (NOT fake PASS).
-            recFinding(testInfo, 'P2', MOD,
-                'InvoiceCreate schema lacks VKN/TCKN customer identity fields',
-                'Backend `InvoiceCreate` (`backend/models/schemas/invoicing.py`) yalnız customer_name + customer_email saklıyor; Türkiye e-fatura/e-arşiv UBL pratiğinde VKN (kurumsal) ve TCKN (bireysel) zorunlu. Schema genişletilmesi roadmap backlog: F8X v2.');
+            // C. VKN/TCKN schema parity — HARD-ASSERT (e-Fatura VKN/TCKN şema
+            // paritesi). `InvoiceCreate.customer_tax_id`
+            // (backend/models/schemas/invoicing.py) artık VKN (10 hane) /
+            // TCKN (11 hane) validate ediyor. Geçerli/geçersiz vergi no
+            // senaryoları 422 yüzeyinde doğrulanır.
+            //
+            // db.invoices write = 0 invariant'ı korunur: hiçbir senaryoda tam-geçerli
+            // payload gönderilmez.
+            //   - Geçersiz tax_id → diğer tüm zorunlu alanlar geçerli, yalnız
+            //     customer_tax_id 422'ye düşer → hata loc'unda customer_tax_id beklenir.
+            //   - Geçerli tax_id → due_date KASITLI eksik → yine 422 (yazma YOK)
+            //     ve customer_tax_id'nin hata listesinde OLMADIĞI doğrulanır
+            //     (validator geçerli VKN/TCKN'i kabul ediyor).
+            const taxBase = {
+                booking_id: null,
+                customer_name: '__E2E_STRESS_TAXID_PROBE__',
+                customer_email: 'stress.taxid@example.invalid',
+                items: [{ description: 'probe', quantity: 1, unit_price: 1, total: 1 }],
+                subtotal: 1, tax: 0, total: 1,
+            };
+            const taxIdFlagged = (body) => Array.isArray(body?.detail)
+                && body.detail.some((e) => Array.isArray(e?.loc) && e.loc.includes('customer_tax_id'));
+
+            const invalidTaxIds = ['123', '123456789', '123456789012', '12345abc90', 'ABCDEFGHIJ'];
+            const validTaxIds = ['1234567890', '12345678901']; // VKN(10) + TCKN(11)
+
+            // Module-block guard via first invalid sample (otherwise valid payload
+            // → only customer_tax_id can fail).
+            const taxProbe = await callTimed(request, 'post', '/api/invoices',
+                { ...taxBase, due_date: '2026-12-31', customer_tax_id: invalidTaxIds[0] }, sToken);
+            if (taxProbe.status === 403 || taxProbe.status === 404) {
+                rec(testInfo, { module: MOD, step: 'taxid_schema_parity', status: 'SKIP',
+                    note: `module_blocked http=${taxProbe.status}` });
+                recFinding(testInfo, 'P2', MOD, 'Invoice create surface module-blocked',
+                    `POST /api/invoices http=${taxProbe.status}; VKN/TCKN parity cannot be exercised.`);
+            } else {
+                // C1. Geçersiz VKN/TCKN → 422 ve customer_tax_id hata loc'unda.
+                for (const bad of invalidTaxIds) {
+                    const r = bad === invalidTaxIds[0]
+                        ? taxProbe
+                        : await callTimed(request, 'post', '/api/invoices',
+                            { ...taxBase, due_date: '2026-12-31', customer_tax_id: bad }, sToken);
+                    if (r.status >= 200 && r.status < 300) {
+                        recFinding(testInfo, 'P1', MOD, 'InvoiceCreate accepts invalid VKN/TCKN',
+                            `POST /api/invoices customer_tax_id=${bad} → http=${r.status} (must be 422). Schema parity broken; a malformed Turkish tax identifier could persist.`);
+                    } else if (r.status === 422 && !taxIdFlagged(r.body)) {
+                        recFinding(testInfo, 'P1', MOD, 'InvoiceCreate 422 not attributed to VKN/TCKN',
+                            `POST /api/invoices customer_tax_id=${bad} → 422 but customer_tax_id absent from error loc; rejection may be incidental, not a tax-id guard.`);
+                    }
+                    expect(r.status, `invalid customer_tax_id ${bad} must be 422`).toBe(422);
+                    expect(taxIdFlagged(r.body), `422 for ${bad} must flag customer_tax_id`).toBe(true);
+                    rec(testInfo, { module: MOD, step: 'taxid_invalid_rejected', status: 'PASS',
+                        note: `customer_tax_id=${bad} → 422 (VKN/TCKN guard)` });
+                }
+
+                // C2. Geçerli VKN(10)/TCKN(11) → due_date kasıtlı eksik → 422 ama
+                // customer_tax_id flag YOK (yazma YOK, validator kabul ediyor).
+                for (const good of validTaxIds) {
+                    const r = await callTimed(request, 'post', '/api/invoices',
+                        { ...taxBase, customer_tax_id: good }, sToken); // due_date omitted on purpose
+                    if (r.status >= 200 && r.status < 300) {
+                        recFinding(testInfo, 'P1', MOD, 'InvoiceCreate persisted probe payload',
+                            `POST /api/invoices customer_tax_id=${good} (due_date omitted) → http=${r.status}; expected 422 for missing field. db.invoices write guard breached.`);
+                    } else if (r.status === 422 && taxIdFlagged(r.body)) {
+                        recFinding(testInfo, 'P1', MOD, 'InvoiceCreate rejects valid VKN/TCKN',
+                            `POST /api/invoices customer_tax_id=${good} → 422 flagging customer_tax_id; validator over-strict, rejects a legal Turkish identifier.`);
+                    }
+                    expect(r.status, `valid customer_tax_id ${good} payload (missing due_date) must be 422`).toBe(422);
+                    expect(taxIdFlagged(r.body), `valid customer_tax_id ${good} must NOT be flagged`).toBe(false);
+                    rec(testInfo, { module: MOD, step: 'taxid_valid_accepted', status: 'PASS',
+                        note: `customer_tax_id=${good} accepted (only missing due_date flagged)` });
+                }
+            }
 
             // D. Cross-tenant invoice PUT IDOR.
             if (pToken) {
