@@ -580,11 +580,39 @@ class TestCorporateContractApprovalWorkflow:
         contract_id = self._create_draft_contract(admin_headers)
 
         assert self._transition(admin_headers, contract_id, "pending").status_code == 200
-        r_reject = self._transition(admin_headers, contract_id, "rejected")
+        r_reject = self._transition(
+            admin_headers, contract_id, "rejected", reason="Rates out of policy")
         assert r_reject.status_code == 200, r_reject.text
         r_resubmit = self._transition(admin_headers, contract_id, "draft")
         assert r_resubmit.status_code == 200, r_resubmit.text
         assert self._persisted_approval_status(admin_headers, contract_id) == "draft"
+
+    def test_reject_without_reason_returns_400(self, admin_headers):
+        """rejected requires a mandatory reason → blank/missing reason is a 400.
+
+        The contract owner needs to know what to fix before resubmitting, so a
+        rejection with no explanation is refused server-side and the state
+        machine must NOT advance (stays pending).
+        """
+        contract_id = self._create_draft_contract(admin_headers)
+        assert self._transition(admin_headers, contract_id, "pending").status_code == 200
+
+        # No reason at all.
+        r_none = self._transition(admin_headers, contract_id, "rejected")
+        assert r_none.status_code == 400, r_none.text
+        assert self._persisted_approval_status(admin_headers, contract_id) == "pending"
+
+        # Whitespace-only reason is also blank.
+        r_blank = self._transition(
+            admin_headers, contract_id, "rejected", reason="   ")
+        assert r_blank.status_code == 400, r_blank.text
+        assert self._persisted_approval_status(admin_headers, contract_id) == "pending"
+
+        # A real reason now succeeds.
+        r_ok = self._transition(
+            admin_headers, contract_id, "rejected", reason="Margins below floor")
+        assert r_ok.status_code == 200, r_ok.text
+        assert self._persisted_approval_status(admin_headers, contract_id) == "rejected"
 
     def test_illegal_skip_draft_to_approved_returns_409(self, admin_headers):
         """draft→approved skips the pending review gate → 409 (and no persist)."""

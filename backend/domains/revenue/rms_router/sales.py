@@ -418,6 +418,11 @@ async def transition_corporate_contract_approval(
             status_code=400,
             detail=f"Geçersiz onay durumu: {to_status}")
 
+    if to_status == 'rejected' and not (body.reason or '').strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Reddetme için gerekçe (reason) zorunludur.")
+
     allowed = CONTRACT_APPROVAL_TRANSITIONS.get(from_status, set())
     if to_status not in allowed:
         raise HTTPException(
