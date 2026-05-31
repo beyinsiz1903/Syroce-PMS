@@ -42,6 +42,23 @@ yok.
 
 ---
 
+## Run #170 — post-packages verification run (NOT baseline)
+
+- **Tarih / commit:** 2026-05-30, commit `b3d3bdb` (HEAD "Published your App").
+- **Sonuç:** 702 test, status=Success, failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1380/0/50/43, P0=P1=0, P2=57 / P3=1 informational,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**.
+- **Promote? HAYIR.** #168'den daha iyi değil (REVIEW +2, PASS −2, P2 aynı). #168 current
+  GREEN BASELINE olarak KALIR; #170 yalnızca paket A+B/C/D/E/F sonrası doğrulama run'ıdır.
+- **Provenance:** #168 (`52575268`) Package C/D/E/F'in hepsinden ÖNCE; #170 hepsini İÇERİR
+  (zincir: `52575268`→C`5c858cbe`→D`76f57095`→E`12452add`→F`443b2093`→docs`0daab6ec`→#170`b3d3bdb`).
+  Delta gerçekten paket etkisini ölçer.
+- **Delta analizi & sınıflandırma:** `docs/drill_reports/20260531_post_run170_delta_review.md`
+  (kalan açıklar: çoğu OPERATOR-ENV; e-Fatura + housekeeping-not SPEC-DRIFT; folio void-charge
+  teşhis-bekler).
+
+---
+
 ## Run #167 — historical reference
 
 - 2026-05-30, commit `0b99607fe3a64a7ada660d1f1bcb8607bd47f5dd`,
