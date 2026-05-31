@@ -18,10 +18,16 @@ import pytest
 
 from infra import cloud_observability as obs
 from infra.cloud_observability import (
+    _is_graphql_introspection_denied,
     _is_nonprod_sustained_transient_db,
     _is_workflow_restart_port_bind,
     _sentry_before_send,
     get_sentry_filter_stats,
+)
+
+_INTROSPECTION_MSG = (
+    "GraphQL introspection has been disabled, but the requested query "
+    "contained the field '__schema'."
 )
 
 _SUSTAINED_MSG = (
@@ -168,4 +174,75 @@ class TestNonProdSustainedTransientDb:
     def test_before_send_keeps_sustained_in_production(self, monkeypatch):
         monkeypatch.setenv("SENTRY_ENVIRONMENT", "production")
         out = _sentry_before_send({"logentry": {"message": _SUSTAINED_MSG}}, {})
+        assert out is not None
+
+
+class TestGraphQLIntrospectionDenied:
+    """The introspection-disabled validation rejection is an EXPECTED client
+    denial (the security control working), logged at ERROR by Strawberry. It is
+    never an actionable server incident, so it must be dropped in every
+    environment — while genuine GraphQL errors keep flowing."""
+
+    def test_detected_from_logentry(self):
+        assert _is_graphql_introspection_denied(
+            {"logentry": {"message": _INTROSPECTION_MSG}}
+        ) is True
+
+    def test_detected_from_exception_value(self):
+        assert _is_graphql_introspection_denied(
+            {"exception": {"values": [{"value": _INTROSPECTION_MSG}]}}
+        ) is True
+
+    def test_detected_for_other_introspection_fields(self):
+        for field in ("queryType", "mutationType", "types", "kind"):
+            msg = (
+                "GraphQL introspection has been disabled, but the requested "
+                f"query contained the field '{field}'."
+            )
+            assert _is_graphql_introspection_denied(
+                {"logentry": {"message": msg}}
+            ) is True
+
+    def test_unrelated_graphql_error_passes_through(self):
+        assert _is_graphql_introspection_denied(
+            {"logentry": {"message": "GraphQLError: tenant_id resolver failed"}}
+        ) is False
+
+    def test_near_miss_phrase_not_dropped(self):
+        """A genuine error that merely mentions the phrase (without the full
+        graphql-core template) must still page — we anchor on the template."""
+        near = (
+            "RuntimeError: our middleware reports introspection has been "
+            "disabled for this tenant; aborting startup"
+        )
+        assert _is_graphql_introspection_denied(
+            {"exception": {"values": [{"value": near}]}}
+        ) is False
+
+    def test_logger_prefixed_denial_still_dropped(self):
+        """A logger prefix before the template must not defeat the match."""
+        prefixed = "strawberry.execution ERROR " + _INTROSPECTION_MSG
+        assert _is_graphql_introspection_denied(
+            {"logentry": {"formatted": prefixed}}
+        ) is True
+
+    def test_empty_event_safe(self):
+        assert _is_graphql_introspection_denied({}) is False
+
+    def test_before_send_drops_in_any_env_and_counts(self, monkeypatch):
+        # Even in production this is an expected denial, not an incident.
+        monkeypatch.setenv("SENTRY_ENVIRONMENT", "production")
+        before = get_sentry_filter_stats()["graphql_introspection_denied_drops"]
+        assert _sentry_before_send(
+            {"logentry": {"message": _INTROSPECTION_MSG}}, {}
+        ) is None
+        after = get_sentry_filter_stats()["graphql_introspection_denied_drops"]
+        assert after == before + 1
+
+    def test_before_send_keeps_real_graphql_error(self):
+        out = _sentry_before_send(
+            {"exception": {"values": [
+                {"value": "GraphQLError: tenant_id resolver failed"}
+            ]}}, {}
+        )
         assert out is not None

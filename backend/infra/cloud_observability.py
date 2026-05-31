@@ -154,6 +154,7 @@ def get_sentry_filter_stats() -> dict[str, int]:
     return {
         "restart_bind_drops": _RESTART_BIND_DROP_COUNT,
         "nonprod_transient_db_drops": _TRANSIENT_DB_NONPROD_DROP_COUNT,
+        "graphql_introspection_denied_drops": _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT,
     }
 
 
@@ -195,6 +196,61 @@ def _is_nonprod_sustained_transient_db(event: dict) -> bool:
         return False
 
 
+# Counter for filtered GraphQL introspection-denied events. Exposed via
+# ``get_sentry_filter_stats()`` so ops can confirm the noise is gone without
+# paging the on-call channel.
+_GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT = 0
+
+# Exact denial template emitted by graphql-core's NoSchemaIntrospectionCustomRule:
+#   "GraphQL introspection has been disabled, but the requested query contained
+#    the field '<field>'."
+# We anchor on the FULL template (not the bare substring) so a genuine error
+# that merely mentions the phrase is never dropped. ``search`` (not ``match``)
+# tolerates a logger prefix while still requiring the complete denial structure.
+_GRAPHQL_INTROSPECTION_DENIED_RE = re.compile(
+    r"GraphQL introspection has been disabled, but the requested query "
+    r"contained the field '[^']*'\."
+)
+
+
+def _is_graphql_introspection_denied(event: dict) -> bool:
+    """Drop predicate for the EXPECTED GraphQL introspection-disabled rejection.
+
+    When ``GRAPHQL_INTROSPECTION`` is off (production/pilot/stress default), the
+    ``NoSchemaIntrospectionCustomRule`` validation rule rejects any query that
+    touches ``__schema``/``__type`` with a ``GraphQLError`` whose message reads
+    ``"GraphQL introspection has been disabled, but the requested query
+    contained the field '...'."``. Strawberry logs that validation error at
+    ERROR on the ``strawberry.execution`` logger, so the default Sentry logging
+    integration turns every such *expected policy denial* into a paging event.
+
+    This is a client-side denial (the security control working as intended), not
+    a server fault, so it must never page in ANY environment — dropping it does
+    NOT weaken the control: introspection stays disabled and the query is still
+    rejected. We match ONLY the full graphql-core denial template
+    (``_GRAPHQL_INTROSPECTION_DENIED_RE``), so a genuine GraphQL error that
+    merely mentions the phrase still flows to Sentry.
+    """
+    try:
+        le = event.get("logentry") or {}
+        ev_msg = event.get("message")
+        candidates = [
+            le.get("message"),
+            le.get("formatted"),
+            ev_msg if isinstance(ev_msg, str) else None,
+        ]
+        exc = event.get("exception") or {}
+        for val in (exc.get("values") or []):
+            if isinstance(val, dict):
+                candidates.append(val.get("value"))
+        return any(
+            isinstance(c, str) and _GRAPHQL_INTROSPECTION_DENIED_RE.search(c)
+            for c in candidates
+        )
+    except Exception:
+        return False
+
+
 def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     """Sentry SDK ``before_send`` hook — restart-noise filter + PII scrub.
 
@@ -207,6 +263,17 @@ def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     through after PII scrub — we never drop on scrubber failure.
     """
     global _RESTART_BIND_DROP_COUNT, _TRANSIENT_DB_NONPROD_DROP_COUNT
+    global _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT
+    try:
+        if _is_graphql_introspection_denied(event):
+            _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT += 1
+            logger.info(
+                "sentry before_send dropped expected graphql introspection-denied "
+                f"(cumulative={_GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT})"
+            )
+            return None
+    except Exception:
+        pass
     try:
         if _is_workflow_restart_port_bind(event, hint):
             _RESTART_BIND_DROP_COUNT += 1
