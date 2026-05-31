@@ -73,6 +73,18 @@ class TableReserveRequest(BaseModel):
     reservation_time: str
     party_size: int = 2
 
+class OpenTabRequest(BaseModel):
+    outlet_id: str
+    table_number: str
+    items: list[OrderItemSchema] = []
+    guest_name: str | None = None
+    guests: int = 1
+    idempotency_key: str | None = None
+
+class CloseTabRequest(BaseModel):
+    transaction_id: str
+    payment_method: str = "cash"
+
 
 # ── Endpoints ────────────────────────────────────────────────────────
 
@@ -147,3 +159,30 @@ async def reserve_table(req: TableReserveRequest, user=Depends(get_current_user)
     if not result.ok:
         raise HTTPException(status_code=400, detail=from_service_result(result))
     return from_service_result(result)
+
+@router.post("/tabs/open")
+async def open_tab(req: OpenTabRequest, user=Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
+    ctx = OperationContext.from_user(user)
+    items_dicts = [item.model_dump() for item in req.items]
+    result = await pos_fnb_service_v2.open_tab(
+        ctx, req.outlet_id, req.table_number, items_dicts,
+        req.guest_name, req.guests, req.idempotency_key
+    )
+    if not result.ok:
+        # Duplicate open tab on the same table → 409 conflict; else 400.
+        status_code = 409 if result.code == "TAB_ALREADY_OPEN" else 400
+        raise HTTPException(status_code=status_code, detail=from_service_result(result))
+    return _ok_payload(result)
+
+@router.post("/tabs/close")
+async def close_tab(req: CloseTabRequest, user=Depends(get_current_user),
+    _perm=Depends(require_module_v99("pos")),  # v99 DW
+):
+    ctx = OperationContext.from_user(user)
+    result = await pos_fnb_service_v2.close_tab(ctx, req.transaction_id, req.payment_method)
+    if not result.ok:
+        status_code = 404 if result.code == "NOT_FOUND" else 400
+        raise HTTPException(status_code=status_code, detail=from_service_result(result))
+    return _ok_payload(result)

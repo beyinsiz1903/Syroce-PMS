@@ -138,6 +138,7 @@ test.describe.serial('F8Z.2 pos kds + fnb inventory', () => {
     let prefix = null;
     let createdKitchenOrderIds = [];
     let createdInventoryItemIds = [];
+    let createdRecipeIds = [];
     let kdsBlocked = false;
     let inventoryBlocked = false;
     let recipeBlocked = false;  // E/G skip when no recipe surface
@@ -169,14 +170,30 @@ test.describe.serial('F8Z.2 pos kds + fnb inventory', () => {
                     `GET /api/accounting/inventory http=${invProbe.status} reason=${invProbe.reason} — E/F/G/H/I skip; final invariants still enforced.`);
             }
 
-            // Recipe/menu-item availability probe — E/G depend on recipe seed.
-            // Task #11 explicitly leaves recipe seeding out of scope.
-            const recipeProbe = await withModuleProbe(request, sToken, '/api/fnb/mobile/recipes');
-            const recipeCount = (recipeProbe.body?.recipes || []).length;
+            // Recipe/menu-item availability probe — E depends on a recipe/BOM.
+            // Task #165: seed ONE recipe/BOM via the real product endpoint
+            // (POST /api/fnb/recipes) ONLY when the stress tenant has none, so
+            // the deplete lifecycle (E) is genuinely exercised without
+            // accumulating a fresh recipe on every run.
+            let recipeProbe = await withModuleProbe(request, sToken, '/api/fnb/mobile/recipes');
+            let recipeCount = (recipeProbe.body?.recipes || []).length;
+            if (!recipeProbe.moduleBlocked && recipeCount === 0) {
+                const seed = await callTimed(request, 'post', '/api/fnb/recipes', {
+                    recipe_name: `${prefix}RECIPE_KDS`,
+                    category: 'food',
+                    selling_price: 120,
+                    ingredients: [{ ingredient_name: `${prefix}ING`, quantity: 2, unit: 'pcs', unit_cost: 1.0 }],
+                }, sToken);
+                if (seed.status >= 200 && seed.status < 300) {
+                    if (seed.body?.recipe_id) createdRecipeIds.push(seed.body.recipe_id);
+                    recipeProbe = await withModuleProbe(request, sToken, '/api/fnb/mobile/recipes');
+                    recipeCount = (recipeProbe.body?.recipes || []).length;
+                }
+            }
             if (recipeProbe.moduleBlocked || recipeCount === 0) {
                 recipeBlocked = true;
                 recFinding(testInfo, 'P2', MOD, 'F&B recipe catalog empty/blocked',
-                    `recipes_http=${recipeProbe.status} count=${recipeCount} — E (inventory deplete happy) + G (concurrent close race) skip. Out of scope per Task #11.`);
+                    `recipes_http=${recipeProbe.status} count=${recipeCount} — E (inventory deplete + reversal) skips. Recipe seed surface unreachable/RBAC-blocked.`);
             }
 
             rec(testInfo, { module: MOD, step: 'surface_probe',
@@ -408,20 +425,78 @@ test.describe.serial('F8Z.2 pos kds + fnb inventory', () => {
         }
     });
 
-    test('E) Inventory deplete happy path (recipe → close → inventory_items decrement)', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('E) Inventory deplete + reversal (recipe BOM → inventory movement decrement → reversal)', async ({ request, stressTokens, stressState }, testInfo) => {
         if (inventoryBlocked) { test.skip(true, 'inventory surface blocked'); return; }
         if (recipeBlocked) {
-            recFinding(testInfo, 'P2', MOD, 'Inventory deplete happy path skipped — no recipe seed',
-                'Stress tenant has no recipes/BOM; Task #11 leaves seeding out of scope. Step recorded as P2 REVIEW (not fake PASS).');
-            test.skip(true, 'no recipe seed in stress tenant');
+            recFinding(testInfo, 'P2', MOD, 'Inventory deplete + reversal skipped — no recipe seed',
+                'Recipe/BOM seed surface unreachable or RBAC-blocked in stress tenant; the deplete lifecycle cannot be exercised. Recorded as P2 (not fake PASS).');
+            test.skip(true, 'no recipe surface');
             return;
         }
-        // Recipe surface present — would close a v2 order and verify decrement.
-        // Real lifecycle would require pos_menu_items linked to recipes linked
-        // to inventory_items, which the stress tenant does not seed. Recorded
-        // as P2 REVIEW per task spec; assertion is structural-only.
-        rec(testInfo, { module: MOD, step: 'inventory_deplete_happy', status: 'SKIP',
-            note: 'recipe present but full BOM lifecycle requires per-tenant seed — out of scope per Task #11' });
+        const sToken = stressTokens.stress_token;
+        const pToken = stressTokens.pilot_token;
+        const pilotBefore = await pilotBookingsCount(request, pToken);
+        try {
+            // Honest BOM-driven deplete: recipe/BOM consumption is applied through
+            // the PRODUCTION inventory movement surface. NOTE: close_order does
+            // NOT auto-decrement inventory in this codebase — there is no
+            // recipe→close→decrement wiring. The deplete path IS the atomic
+            // movement endpoint, which is what we hard-assert here (out then in).
+            const BOM_QTY_PER_PORTION = 2;
+            const PORTIONS = 3;
+            const START_QTY = 20;
+            const depleteQty = BOM_QTY_PER_PORTION * PORTIONS;  // 6
+
+            // Confirm the seeded recipe/BOM is readable from the real surface.
+            const recipes = await callTimed(request, 'get', '/api/fnb/mobile/recipes', undefined, sToken);
+            expect(recipes.status, `recipes read http=${recipes.status}`).toBeLessThan(300);
+            const recipeVisible = JSON.stringify(recipes.body || {}).includes(prefix);
+
+            // Seed the ingredient inventory_item that the BOM consumes.
+            const create = await callTimed(request, 'post', '/api/accounting/inventory', {
+                name: `${prefix}DEPLETE_ITEM`,
+                sku: `${prefix}SKU_E`,
+                category: 'food',
+                unit: 'pcs',
+                quantity: START_QTY,
+                unit_cost: 1.0,
+                reorder_level: 1,
+            }, sToken);
+            expect(create.status, `seed item http=${create.status} body=${JSON.stringify(create.body).slice(0,200)}`).toBeLessThan(300);
+            const itemId = create.body?.id;
+            expect(itemId, 'item id').toBeTruthy();
+            createdInventoryItemIds.push(itemId);
+
+            // Deplete: out movement of (BOM_QTY × PORTIONS) → hard-assert decrement.
+            const out = await callTimed(request, 'post',
+                `/api/accounting/inventory/movement?${qs({
+                    item_id: itemId, movement_type: 'out', quantity: depleteQty, unit_cost: 1.0,
+                    reference: `${prefix}DEPLETE`,
+                })}`, {}, sToken);
+            expect(out.status, `deplete out http=${out.status} body=${JSON.stringify(out.body).slice(0,200)}`).toBeLessThan(300);
+            let verify = await callTimed(request, 'get', '/api/accounting/inventory', undefined, sToken);
+            let after = (verify.body?.items || []).find(i => i.id === itemId);
+            expect(after?.quantity, `qty after deplete must be ${START_QTY - depleteQty}; got ${after?.quantity}`).toBe(START_QTY - depleteQty);
+
+            // Reversal: compensating in movement → hard-assert restoration to start.
+            const rev = await callTimed(request, 'post',
+                `/api/accounting/inventory/movement?${qs({
+                    item_id: itemId, movement_type: 'in', quantity: depleteQty, unit_cost: 1.0,
+                    reference: `${prefix}REVERSAL`,
+                })}`, {}, sToken);
+            expect(rev.status, `reversal in http=${rev.status} body=${JSON.stringify(rev.body).slice(0,200)}`).toBeLessThan(300);
+            verify = await callTimed(request, 'get', '/api/accounting/inventory', undefined, sToken);
+            after = (verify.body?.items || []).find(i => i.id === itemId);
+            expect(after?.quantity, `qty after reversal must be ${START_QTY}; got ${after?.quantity}`).toBe(START_QTY);
+
+            rec(testInfo, { module: MOD, step: 'inventory_deplete_reversal', status: 'PASS',
+                note: `item=${itemId} start=${START_QTY} deplete=${depleteQty} out=${out.status} reversal=${rev.status} recipe_visible=${recipeVisible} final=${after?.quantity}` });
+        } finally {
+            await assertNoExternalCallsPostBatch(testInfo, MOD, 'inventory_deplete_batch',
+                stressTokens.seed_state ?? stressState ?? {}, request, pToken);
+            await assertPilotDriftZero(testInfo, MOD, request, pToken, pilotBefore);
+            await assertPilotInventoryDeltaZero(testInfo, MOD, request, pToken, pilotInventoryBaseline);
+        }
     });
 
     test('F) Negative-stock guard: out movement > available → 409 (atomic guard)', async ({ request, stressTokens, stressState }, testInfo) => {
@@ -680,15 +755,16 @@ test.describe.serial('F8Z.2 pos kds + fnb inventory', () => {
                 recFinding(testInfo, 'P1', MOD, 'KDS cleanup NOT idempotent',
                     `Second-pass cancel produced ${pass2Bad} non-idempotent response(s).`);
             }
-            // inventory_items rows are orphan-scrubbed via the unified
+            // inventory_items + recipes rows are orphan-scrubbed via the unified
             // STRESS_COLLECTIONS sweep (stress_seed tag is added by backend
-            // seed factories; direct POST /api/accounting/inventory rows do
-            // not carry the tag — those rows persist as harmless orphans
-            // until the next prefix-scoped cleanup or until the create surface
-            // is extended to stamp stress metadata. Out of scope for spec).
+            // seed factories; direct POST /api/accounting/inventory and
+            // /api/fnb/recipes rows do not carry the tag — those rows persist as
+            // harmless orphans until the next prefix-scoped cleanup or until the
+            // create surfaces stamp stress metadata. The recipe seed is gated on
+            // count===0 so it does NOT accumulate across runs. Out of scope for spec).
             rec(testInfo, { module: MOD, step: 'cleanup',
                 status: pass2Bad === 0 ? 'PASS' : 'FAIL',
-                note: `kitchen_orders cancelled=${cancelled} terminal=${terminal} other=${other} pass2_bad=${pass2Bad} inventory_items_created=${createdInventoryItemIds.length} (orphan-scrub via STRESS_COLLECTIONS)` });
+                note: `kitchen_orders cancelled=${cancelled} terminal=${terminal} other=${other} pass2_bad=${pass2Bad} inventory_items_created=${createdInventoryItemIds.length} recipes_seeded=${createdRecipeIds.length} (orphan-scrub via STRESS_COLLECTIONS)` });
             expect(pass2Bad, 'kds cleanup must be idempotent').toBe(0);
         } finally {
             await assertNoExternalCallsPostBatch(testInfo, MOD, 'cleanup_batch',

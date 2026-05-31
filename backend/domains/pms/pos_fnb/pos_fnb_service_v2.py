@@ -516,5 +516,157 @@ class PosFnbServiceV2:
             "reservation_time": reservation_time,
         })
 
+    # ==================================================================
+    # Open Tab — running bill on a table (status='open')
+    # ==================================================================
+    # The transfer-table endpoint (`/api/pos/transfer-table`) operates on
+    # `pos_transactions` rows with status='open'. `create_order` writes
+    # pos_orders (status='pending') and `close_order` writes pos_transactions
+    # with status='completed' — neither ever produces an OPEN transaction.
+    # This minimal "open tab" surface is the missing production write path:
+    # it opens a running bill so a table can be transferred (or settled)
+    # before payment.
+    @audited("pos.open_tab", "pos_transaction", severity=SEVERITY_INFO)
+    async def open_tab(
+        self,
+        ctx: OperationContext,
+        outlet_id: str,
+        table_number: str,
+        items: list[dict] | None = None,
+        guest_name: str | None = None,
+        guests: int = 1,
+        idempotency_key: str | None = None,
+    ) -> ServiceResult:
+        if not table_number:
+            return ServiceResult.fail("table_number is required to open a tab", "VALIDATION_ERROR")
+
+        # Idempotency guard.
+        if idempotency_key:
+            existing = await self._db.pos_transactions.find_one(
+                {"idempotency_key": idempotency_key, "tenant_id": ctx.tenant_id}, {"_id": 0}
+            )
+            if existing:
+                return ServiceResult.success({
+                    "message": "Tab already open (idempotent)",
+                    "transaction_id": existing.get("id"),
+                    "status": existing.get("status"),
+                    "idempotent": True,
+                })
+
+        # One open tab per (tenant, outlet, table) — a second open tab on the
+        # same table would make transfer/check-split ambiguous.
+        dup = await self._db.pos_transactions.find_one({
+            "tenant_id": ctx.tenant_id,
+            "outlet_id": outlet_id,
+            "table_number": table_number,
+            "status": "open",
+        })
+        if dup:
+            return ServiceResult.fail(
+                f"Table {table_number} already has an open tab", "TAB_ALREADY_OPEN"
+            )
+
+        now = datetime.now(UTC)
+        txn_id = str(uuid.uuid4())
+        line_items = []
+        total_amount = 0.0
+        for item in (items or []):
+            qty = item.get("quantity", 1)
+            price = item.get("price", 0.0)
+            line_total = round(qty * price, 2)
+            total_amount += line_total
+            line_items.append({
+                "item_id": item.get("item_id", str(uuid.uuid4())),
+                "item_name": item.get("name", "Unknown"),
+                "quantity": qty,
+                "unit_price": price,
+                "total": line_total,
+                "station": item.get("station", "main"),
+            })
+        total_amount = round(total_amount, 2)
+
+        txn_doc = {
+            "id": txn_id,
+            "tenant_id": ctx.tenant_id,
+            "outlet_id": outlet_id,
+            "table_number": table_number,
+            "guest_name": guest_name or "Walk-in",
+            "guests": guests,
+            "order_items": line_items,
+            "amount": total_amount,
+            "total_amount": total_amount,
+            "status": "open",
+            "opened_by": ctx.actor_id,
+            "idempotency_key": idempotency_key,
+            "created_at": now.isoformat(),
+        }
+        await self._db.pos_transactions.insert_one(txn_doc)
+
+        # Mark table occupied (best-effort — table_layouts row may not exist).
+        await self._db.table_layouts.update_one(
+            {"table_number": table_number, "outlet_id": outlet_id, "tenant_id": ctx.tenant_id},
+            {"$set": {"status": "occupied", "current_transaction_id": txn_id}},
+        )
+
+        return ServiceResult.success({
+            "transaction_id": txn_id,
+            "table_number": table_number,
+            "outlet_id": outlet_id,
+            "total_amount": total_amount,
+            "status": "open",
+        })
+
+    # ==================================================================
+    # Close Tab — settle an open tab (status open → completed)
+    # ==================================================================
+    @audited("pos.close_tab", "pos_transaction", severity=SEVERITY_INFO, capture_before=True)
+    async def close_tab(
+        self,
+        ctx: OperationContext,
+        transaction_id: str,
+        payment_method: str = "cash",
+    ) -> ServiceResult:
+        txn = await self._db.pos_transactions.find_one(
+            {"id": transaction_id, "tenant_id": ctx.tenant_id}, {"_id": 0}
+        )
+        if not txn:
+            return ServiceResult.fail("Open tab not found", "NOT_FOUND")
+        if txn.get("status") == "completed":
+            return ServiceResult.success({
+                "message": "Tab already closed (idempotent)",
+                "transaction_id": transaction_id,
+                "idempotent": True,
+            })
+        if txn.get("status") != "open":
+            return ServiceResult.fail(
+                f"Tab is in terminal state '{txn.get('status')}'", "TAB_NOT_OPEN"
+            )
+
+        now = datetime.now(UTC)
+        # SECURITY: tenant_id filter required (defense-in-depth).
+        await self._db.pos_transactions.update_one(
+            {"id": transaction_id, "tenant_id": ctx.tenant_id},
+            {"$set": {
+                "status": "completed",
+                "payment_method": payment_method,
+                "closed_at": now.isoformat(),
+                "closed_by": ctx.actor_id,
+            }},
+        )
+
+        # Release table.
+        if txn.get("table_number") and txn.get("outlet_id"):
+            await self._db.table_layouts.update_one(
+                {"table_number": txn["table_number"], "outlet_id": txn["outlet_id"], "tenant_id": ctx.tenant_id},
+                {"$set": {"status": "dirty", "current_transaction_id": None}},
+            )
+
+        return ServiceResult.success({
+            "message": "Tab closed",
+            "transaction_id": transaction_id,
+            "status": "completed",
+            "payment_method": payment_method,
+        })
+
 
 pos_fnb_service_v2 = PosFnbServiceV2()

@@ -310,49 +310,40 @@ test.describe.serial('F8Z v2 pos deep lifecycle', () => {
         const sToken = stressTokens.stress_token;
         const pToken = stressTokens.pilot_token;
         const pilotBefore = await pilotBookingsCount(request, pToken);
+        let openTabTxnId = null;
         try {
-            // E1) Happy-path attempt — STRUCTURALLY UNREACHABLE caveat:
-            //   transfer_table queries `pos_transactions` with status='open' on
-            //   (tenant, outlet, from_table). NO production endpoint (v0 or v2)
-            //   writes that row: `/pos/transaction` (legacy line 536) and v2
-            //   close_order both write status='completed'. Without a separate
-            //   "open-tab" surface, the transfer endpoint is dead-code for the
-            //   v2 lifecycle. We seed a completed pos_transactions row via
-            //   `/pos/transaction` to PROVE the gap deterministically: transfer
-            //   will 404 because filter requires status='open'. P2 informational
-            //   finding captures the gap; compensating assertions below cover
-            //   the contract + cross-tenant guard.
+            // E1) Happy-path — now REAL. Task #165 added the missing "open tab"
+            //   write surface (POST /api/pos/v2/tabs/open) that creates a
+            //   `pos_transactions` row with status='open'. transfer_table
+            //   filters on (tenant, outlet, from_table, status='open'), so the
+            //   happy path is reachable end-to-end:
+            //     open-tab(happyTable) → transfer-table(happyTable→dest) → 2xx.
             const happyTable = `${prefix}T_E_HAPPY`;
-            const seed = await callTimed(request, 'post', '/api/pos/transaction', {
-                amount: 100,
-                payment_method: 'cash',
-                folio_id: null,
+            const happyDest = `${prefix}T_E_HAPPY_DEST`;
+            const open = await callTimed(request, 'post', '/api/pos/v2/tabs/open', {
+                outlet_id: outletId,
+                table_number: happyTable,
+                items: makeItems('E'),
+                guest_name: `${prefix}WalkIn-E`,
+                guests: 2,
+                idempotency_key: `${prefix}IDEM_E_TAB_${randomUUID()}`,
             }, sToken);
-            // Seed write status — accept 2xx (row seeded) or non-2xx (gate). Don't
-            // hard-fail; this is forward-compat probe only.
-            const seedOk = seed.status >= 200 && seed.status < 300;
+            expect(open.status, `open-tab http=${open.status} body=${JSON.stringify(open.body).slice(0,200)}`).toBe(200);
+            openTabTxnId = open.body?.transaction_id;
+            expect(openTabTxnId, 'open-tab transaction_id').toBeTruthy();
+            expect(open.body?.status, 'open-tab status must be open').toBe('open');
 
             const happyTransfer = await callTimed(request, 'post',
                 `/api/pos/transfer-table?${qs({
                     from_table: happyTable,
-                    to_table: `${prefix}T_E_HAPPY_DEST`,
+                    to_table: happyDest,
                     outlet_id: outletId,
                     transfer_all: true,
                 })}`, {}, sToken);
-            if (happyTransfer.status >= 200 && happyTransfer.status < 300) {
-                rec(testInfo, { module: MOD, step: 'transfer_happy_path', status: 'PASS',
-                    note: `seeded_row=${seedOk} happy_transfer=${happyTransfer.status} (open-state pos_transactions surface present)` });
-            } else {
-                recFinding(testInfo, 'P2', MOD, 'transfer-table happy-path structurally unreachable',
-                    `No production write surface creates pos_transactions.status='open'. ` +
-                    `Seed via /pos/transaction (status='completed') produced http=${seed.status}; ` +
-                    `subsequent transfer-table call http=${happyTransfer.status} (expected 404 because ` +
-                    `filter requires status='open'). Backend gap — transfer-table is dead-code for v2 ` +
-                    `lifecycle until an "open-tab" surface is added. Compensating: negative-contract + ` +
-                    `cross-tenant guard tested below.`);
-                rec(testInfo, { module: MOD, step: 'transfer_happy_path', status: 'REVIEW',
-                    note: `seed_http=${seed.status} happy_transfer_http=${happyTransfer.status} (gap documented, see P2)` });
-            }
+            expect(happyTransfer.status, `happy transfer http=${happyTransfer.status} body=${JSON.stringify(happyTransfer.body).slice(0,200)}`).toBe(200);
+            expect(happyTransfer.body?.transaction_id, 'transfer returns the open-tab txn id').toBe(openTabTxnId);
+            rec(testInfo, { module: MOD, step: 'transfer_happy_path', status: 'PASS',
+                note: `open_tab=${open.status} txn=${openTabTxnId} happy_transfer=${happyTransfer.status} items_transferred=${happyTransfer.body?.items_transferred}` });
 
             // E2) Negative contract — bogus from_table → 4xx (404 expected).
             const bogus = await callTimed(request, 'post',
@@ -366,7 +357,31 @@ test.describe.serial('F8Z v2 pos deep lifecycle', () => {
             expect(bogus.status, `bogus transfer must be <500; got ${bogus.status}`).toBeLessThan(500);
             rec(testInfo, { module: MOD, step: 'transfer_negative', status: 'PASS',
                 note: `bogus_http=${bogus.status}` });
+
+            // E3) Cross-tenant guard — pilot bearer must NOT transfer the stress
+            //   open tab (no such open tab exists in the pilot tenant → 4xx).
+            if (pToken) {
+                const xfer = await callTimed(request, 'post',
+                    `/api/pos/transfer-table?${qs({
+                        from_table: happyDest,
+                        to_table: `${prefix}T_XT_DEST`,
+                        outlet_id: outletId,
+                        transfer_all: true,
+                    })}`, {}, pToken);
+                if (xfer.status >= 200 && xfer.status < 300) {
+                    recFinding(testInfo, 'P0', MOD, 'Cross-tenant table-transfer succeeded',
+                        `pilot bearer transferred stress open tab (table=${happyDest} outlet=${outletId}) → http=${xfer.status}. Tenant isolation breach.`);
+                }
+                expect(xfer.status, `pilot cross-tenant transfer must 4xx; got ${xfer.status}`).toBeGreaterThanOrEqual(400);
+                rec(testInfo, { module: MOD, step: 'transfer_cross_tenant', status: 'PASS',
+                    note: `pilot_transfer_http=${xfer.status}` });
+            }
         } finally {
+            // Settle the open tab so no status='open' residue is left behind.
+            if (openTabTxnId) {
+                await callTimed(request, 'post', '/api/pos/v2/tabs/close',
+                    { transaction_id: openTabTxnId, payment_method: 'cash' }, sToken);
+            }
             await assertNoExternalCallsPostBatch(testInfo, MOD, 'transfer_batch',
                 stressTokens.seed_state ?? stressState ?? {}, request, pToken);
             await assertPilotDriftZero(testInfo, MOD, request, pToken, pilotBefore);

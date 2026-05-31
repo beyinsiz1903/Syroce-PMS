@@ -62,7 +62,6 @@ test.describe.serial('F8Z payment/pos reconciliation dryrun', () => {
                 { name: 'cashier_current_shift', path: '/api/cashier/current-shift' },
                 { name: 'cashier_period_report', path: '/api/cashier/period-report' },
                 { name: 'pos_orders_list', path: '/api/pos/orders?limit=5' },
-                { name: 'pos_tables_list', path: '/api/pos/tables?limit=5' },
             ];
             for (const s of surfaces) {
                 const probe = await withModuleProbe(request, sToken, s.path);
@@ -74,6 +73,30 @@ test.describe.serial('F8Z payment/pos reconciliation dryrun', () => {
                 } else {
                     rec(testInfo, { module: MOD, step: `${s.name}_probe`, status: 'PASS',
                         note: `http=${probe.status}` });
+                }
+            }
+
+            // Task #165 — POS tables read uses the REAL table-layout surface
+            // (/api/pos/table-layout/{outlet_id}), not the phantom /api/pos/tables.
+            // Harvest a real outlet first; record honestly when none is seeded
+            // (the outlets read surface is still proven reachable).
+            const outletsProbe = await withModuleProbe(request, sToken, '/api/pos/outlets');
+            if (outletsProbe.moduleBlocked) {
+                rec(testInfo, { module: MOD, step: 'pos_table_layout_probe', status: 'SKIP',
+                    note: `outlets module_blocked:${outletsProbe.reason} http=${outletsProbe.status}` });
+                recFinding(testInfo, 'P2', MOD, 'Payment POS outlets surface module-blocked',
+                    `GET /api/pos/outlets http=${outletsProbe.status} reason=${outletsProbe.reason}.`);
+            } else {
+                const outlets = outletsProbe.body?.outlets || outletsProbe.body?.items || [];
+                const outletId = outlets[0]?.id || outlets[0]?._id || null;
+                if (!outletId) {
+                    rec(testInfo, { module: MOD, step: 'pos_table_layout_probe', status: 'PASS',
+                        note: `outlets_http=${outletsProbe.status} no outlet seeded — table-layout not drilled (read surface reachable)` });
+                } else {
+                    const tl = await withModuleProbe(request, sToken, `/api/pos/table-layout/${outletId}`);
+                    rec(testInfo, { module: MOD, step: 'pos_table_layout_probe',
+                        status: tl.moduleBlocked ? 'SKIP' : 'PASS',
+                        note: `outlet=${outletId} http=${tl.status}${tl.moduleBlocked ? ` reason=${tl.reason}` : ''}` });
                 }
             }
         } finally {
@@ -136,7 +159,7 @@ test.describe.serial('F8Z payment/pos reconciliation dryrun', () => {
 
             // D. Cross-tenant folio payment IDOR — schema-valid + pilot folio_id.
             if (pToken) {
-                const pilotFolios = await fetchSingle(request, pToken, '/api/pms/folios?limit=5');
+                const pilotFolios = await fetchSingle(request, pToken, '/api/folio/list?limit=5');
                 const items = pilotFolios?.raw?.folios || pilotFolios?.raw?.items || pilotFolios?.list || [];
                 const pilotFolioId = items[0]?.id || items[0]?._id || items[0]?.folio_id || null;
                 if (pilotFolioId) {
