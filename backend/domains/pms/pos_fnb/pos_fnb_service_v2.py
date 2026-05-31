@@ -286,6 +286,20 @@ class PosFnbServiceV2:
                 {"$set": {"status": "dirty", "current_order_id": None}},
             )
 
+        # Recipe/BOM consumption: decrement ingredient stock for recipe-linked
+        # menu items. Best-effort — stock wiring must never roll back a
+        # completed payment — but each decrement is individually atomic,
+        # tenant-scoped and overdraft-safe. Runs exactly once per order because
+        # the idempotency/terminal-state guards above return early on re-close.
+        try:
+            await self._consume_recipe_stock(ctx, order)
+        except Exception:  # noqa: BLE001 — never break payment on stock failure
+            logger.exception(
+                "Recipe stock consumption failed for order %s (tenant %s)",
+                order_id,
+                ctx.tenant_id,
+            )
+
         return ServiceResult.success({
             "message": "Order closed and payment processed",
             "order_id": order_id,
@@ -367,11 +381,188 @@ class PosFnbServiceV2:
                     {"$set": {"status": "voided", "voided_at": now.isoformat(), "void_reason": reason}},
                 )
 
+        # Restore any ingredient stock this order consumed at close time.
+        # Best-effort and idempotent (per-record reversal flag). For the
+        # current lifecycle a closed order can only be reversed via the
+        # dedicated refund flow (void rejects closed orders above), so this is
+        # a safe no-op for the normal pending→void path while keeping the
+        # consume/restore pair symmetric and reusable by any reversal flow.
+        try:
+            await self._restore_recipe_stock(ctx, order_id)
+        except Exception:  # noqa: BLE001 — never break void on stock failure
+            logger.exception(
+                "Recipe stock restore failed for order %s (tenant %s)",
+                order_id,
+                ctx.tenant_id,
+            )
+
         return ServiceResult.success({
             "message": "Order voided",
             "order_id": order_id,
             "reason": reason,
         })
+
+    # ==================================================================
+    # Recipe/BOM Stock Consumption — close → decrement, void → restore
+    # ==================================================================
+    async def _consume_recipe_stock(self, ctx: OperationContext, order: dict) -> None:
+        """Decrement ingredient stock for recipe-linked menu items on close.
+
+        For every ordered item that maps to a recipe, each recipe ingredient
+        line is decremented by ``bom_qty * ordered_qty`` from
+        ``db.ingredients.current_stock``. Each decrement uses the same atomic,
+        overdraft-safe guard as ``POST /api/accounting/inventory/movement``
+        (conditional ``$gte`` update → stock can never go negative) and is
+        tenant-scoped. A ``stock_consumptions`` record is written per ingredient
+        so the consumption can be reversed on void.
+        """
+        order_items = order.get("order_items") or []
+        if not order_items:
+            return
+
+        recipes = await self._db.recipes.find(
+            {"tenant_id": ctx.tenant_id}, {"_id": 0}
+        ).to_list(1000)
+        if not recipes:
+            return
+
+        # Index recipes by every plausible join key so we can resolve an
+        # ordered item whether the client referenced the recipe by id, by
+        # menu_item_id, or only by the displayed dish/menu-item name.
+        by_id: dict[str, dict] = {}
+        by_name: dict[str, dict] = {}
+        for r in recipes:
+            for key in (r.get("id"), r.get("menu_item_id")):
+                if key:
+                    by_id[str(key)] = r
+            for nm in (r.get("dish_name"), r.get("menu_item_name")):
+                if nm:
+                    by_name[str(nm).strip().lower()] = r
+
+        # Aggregate required quantity per ingredient across the whole order so
+        # an ingredient shared by multiple lines is decremented once.
+        required: dict[str, dict] = {}
+        for item in order_items:
+            ordered_qty = item.get("quantity", 1) or 0
+            if ordered_qty <= 0:
+                continue
+            recipe = (
+                by_id.get(str(item.get("recipe_id")))
+                or by_id.get(str(item.get("item_id")))
+                or by_name.get((item.get("item_name") or "").strip().lower())
+            )
+            if not recipe:
+                continue
+            for line in recipe.get("ingredients", []):
+                ing_id = line.get("ingredient_id")
+                if not ing_id:
+                    continue
+                bom_qty = line.get("quantity", 0) or 0
+                if bom_qty <= 0:
+                    continue
+                agg = required.setdefault(
+                    ing_id, {"qty": 0.0, "name": line.get("ingredient_name")}
+                )
+                agg["qty"] += bom_qty * ordered_qty
+
+        if not required:
+            return
+
+        now = datetime.now(UTC)
+        for ing_id, info in required.items():
+            need = round(info["qty"], 4)
+            if need <= 0:
+                continue
+
+            # Atomic overdraft-safe decrement: only succeeds if enough stock is
+            # available, so current_stock can never go negative.
+            res = await self._db.ingredients.update_one(
+                {
+                    "id": ing_id,
+                    "tenant_id": ctx.tenant_id,
+                    "current_stock": {"$gte": need},
+                },
+                {
+                    "$inc": {"current_stock": -need},
+                    "$set": {"updated_at": now.isoformat()},
+                },
+            )
+            if res.modified_count == 1:
+                applied, overdraft = need, 0.0
+            else:
+                # Insufficient stock (or ingredient missing). Never go negative:
+                # leave stock untouched and record the shortfall for visibility.
+                applied, overdraft = 0.0, need
+                logger.warning(
+                    "Ingredient %s short on stock for order %s (tenant %s): "
+                    "needed %s, not decremented (overdraft guard)",
+                    ing_id,
+                    order.get("id"),
+                    ctx.tenant_id,
+                    need,
+                )
+
+            await self._db.stock_consumptions.insert_one({
+                "id": str(uuid.uuid4()),
+                "tenant_id": ctx.tenant_id,
+                "order_id": order.get("id"),
+                "ingredient_id": ing_id,
+                "ingredient_name": info.get("name"),
+                "required_quantity": need,
+                "consumed_quantity": applied,
+                "overdraft_quantity": overdraft,
+                "reversed": False,
+                "created_by": ctx.actor_id,
+                "created_at": now.isoformat(),
+            })
+
+    async def _restore_recipe_stock(self, ctx: OperationContext, order_id: str) -> None:
+        """Restore ingredient stock consumed by an order when it is reversed.
+
+        Reads the order's non-reversed ``stock_consumptions`` records and adds
+        the actually-consumed quantity back to ``db.ingredients.current_stock``.
+        Idempotent: the reversal flag is flipped atomically before the restore
+        so a concurrent/duplicate reversal cannot double-credit stock.
+        """
+        records = await self._db.stock_consumptions.find(
+            {
+                "order_id": order_id,
+                "tenant_id": ctx.tenant_id,
+                "reversed": {"$ne": True},
+            },
+            {"_id": 0},
+        ).to_list(1000)
+        if not records:
+            return
+
+        now = datetime.now(UTC)
+        for rec in records:
+            # Flip the reversal flag first; only restore if WE flipped it.
+            flip = await self._db.stock_consumptions.update_one(
+                {
+                    "id": rec.get("id"),
+                    "tenant_id": ctx.tenant_id,
+                    "reversed": {"$ne": True},
+                },
+                {
+                    "$set": {
+                        "reversed": True,
+                        "reversed_at": now.isoformat(),
+                        "reversed_by": ctx.actor_id,
+                    }
+                },
+            )
+            if flip.modified_count != 1:
+                continue
+            qty = rec.get("consumed_quantity", 0) or 0
+            if qty > 0:
+                await self._db.ingredients.update_one(
+                    {"id": rec.get("ingredient_id"), "tenant_id": ctx.tenant_id},
+                    {
+                        "$inc": {"current_stock": qty},
+                        "$set": {"updated_at": now.isoformat()},
+                    },
+                )
 
     # ==================================================================
     # Stock Adjustment — with race-condition protection
