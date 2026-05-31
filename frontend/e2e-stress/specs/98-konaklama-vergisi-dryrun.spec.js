@@ -5,27 +5,31 @@
 //   çalışır: `backend/workers/konaklama_vergisi_scheduler.py` (aylık beyanname
 //   otomatik finalize + Resend e-posta) ve `backend/workers/tga_scheduler.py`
 //   (TGA outbound batch + retry, `integration_tga_outbox` koleksiyonu).
-//   Stres testi gerçek beyanname/posting/folio mutasyonu YARATMAMALI, TGA/
-//   e-posta outbound çağrısı TETİKLEMEMELİ ve cross-tenant IDOR'a karşı
-//   sert (P0 hard-fail) kapı olmalıdır.
+//   Stres testi PILOT tenant'ta mutasyon YARATMAMALI ve TGA/e-posta
+//   outbound çağrısı TETİKLEMEMELİ; cross-tenant IDOR'a karşı sert (P0
+//   hard-fail) kapı olmalıdır. Success-path doğrulaması için STRESS
+//   tenant'ta sınırlı + idempotent (period başına tek kayıt) bir
+//   beyanname finalize ile seed edilir (pilot DOKUNULMAZ).
 //
 // Doctrine (F8X–F8AA paketinin devamı):
 //   - Module-block: `GET /api/finance/konaklama-vergisi/config` 403/404 →
 //     tüm test blokları SKIP + P2 REVIEW.
 //   - Read-only smoke (config/report/declaration/declarations list/postings)
-//     + success-path detail/export probe (pilot harvest decl_id → pilot
-//     token ile GET detail + export; cross-tenant değil, surface 2xx ground
-//     truth için).
+//     + success-path detail/export: STRESS tenant'ta finalize ile seed
+//     edilen GERÇEK decl_id → stress token ile GET detail + export
+//     json/xml hard-assert 2xx (surface ground truth, pilot DOKUNULMAZ).
 //   - Calculate validation (amount<=0/-, nights<1, oversized payload, /report
 //     month=13 = invalid range → 4xx) + idempotency (aynı input → identik).
 //   - Write surface NEGATIVE: config PUT rate=999, finalize year=1999, bogus
 //     decl_id submit/pay/email/get/export → 4xx; bogus folio post-folio →
 //     4xx; Idempotency-Key replay aynı bogus folio → her ikisi 4xx.
 //     Negatif gate'ler SADECE 4xx kabul eder (5xx fail-open değil).
-//   - **P0 cross-tenant IDOR (hard-fail)**: stress_token bearer + pilot
-//     harvest decl_id / folio_id → submit/pay/email/get/export/post-folio
-//     her biri için `expect(status).toBeGreaterThanOrEqual(400)`. Ek:
-//     config PUT + finalize stress_token ile çağrıldığında pilot tenant'ın
+//   - **P0 cross-tenant IDOR (hard-fail)**: çift yön. (a) stress_token
+//     bearer + pilot harvest decl_id/folio_id ve (b) pilot_token + STRESS
+//     seeded decl_id + harvested stress folio_id →
+//     submit/pay/email/get/export/post-folio her biri için
+//     `expect(status).toBeGreaterThanOrEqual(400)`. Ek: config PUT +
+//     finalize stress_token ile çağrıldığında pilot tenant'ın
 //     declarations + postings count'u DEĞİŞMEMELİ (custom drift sayacı).
 //   - Cron coupling guard: batch sonrası `external_calls` delta = 0
 //     (TGA/e-mail outbound çağrısı tetiklenmemiş), `pilot_drift = 0`
@@ -113,6 +117,13 @@ async function assertKvbPilotDriftZero(testInfo, module, request, pToken, baseli
 }
 
 test.describe.serial('F8AD konaklama vergisi dryrun', () => {
+    // Shared across serial tests: a REAL declaration seeded in the STRESS
+    // tenant (finalize, idempotent per (tenant,period); pilot DOKUNULMAZ).
+    // Feeds both the success-path self detail/export probe (test 1) and the
+    // pilot→stress cross-tenant IDOR deny probes (P0 IDOR test).
+    let seededDeclId = null;
+    let seededDeclPeriod = null;
+
     test('read-only surface smoke + module probe + success-path detail/export', async ({ request, stressTokens }, testInfo) => {
         const sToken = stressTokens.stress_token;
         const pToken = stressTokens.pilot_token;
@@ -169,36 +180,61 @@ test.describe.serial('F8AD konaklama vergisi dryrun', () => {
                 }
             }
 
-            // Success-path detail + export probe — pilot tenant pool'undan
-            // (var ise) bir decl_id harvest et, kendi token'ı ile GET detail
-            // ve GET export?format=json/xml çağır. Bu cross-tenant DEĞİL —
-            // pilot kendi decl'ini okur — surface 2xx ground truth.
-            if (pToken) {
-                const pilotList = await fetchSingle(request, pToken, `${BASE}/declarations?limit=5`);
-                const pilotDeclItems = pilotList?.raw?.items || pilotList?.list || [];
-                const pilotDeclId = pilotDeclItems[0]?.id || pilotDeclItems[0]?._id || null;
-                if (pilotDeclId) {
-                    for (const probe of [
-                        { name: 'detail_pilot_self', path: `${BASE}/declarations/${pilotDeclId}` },
-                        { name: 'export_json_pilot_self', path: `${BASE}/declarations/${pilotDeclId}/export?format=json` },
-                        { name: 'export_xml_pilot_self', path: `${BASE}/declarations/${pilotDeclId}/export?format=xml` },
-                    ]) {
-                        const r = await callTimed(request, 'get', probe.path, undefined, pToken);
-                        if (is2xx(r.status)) {
-                            rec(testInfo, { module: MOD, step: probe.name, status: 'PASS',
-                                note: `http=${r.status}` });
-                        } else if (r.status === 403 || r.status === 404) {
-                            rec(testInfo, { module: MOD, step: probe.name, status: 'SKIP',
-                                note: `pilot self-read blocked http=${r.status}` });
-                        } else {
-                            rec(testInfo, { module: MOD, step: probe.name, status: 'REVIEW',
-                                note: `http=${r.status} unexpected (pilot self-read)` });
-                        }
-                    }
-                } else {
-                    rec(testInfo, { module: MOD, step: 'pilot_self_detail_export', status: 'SKIP',
-                        note: 'pilot declaration pool empty — success-path detail/export not exercised' });
+            // Success-path detail + export — STRESS tenant'ta GERÇEK bir
+            // beyanname seed et (finalize idempotent per (tenant,period);
+            // pilot DOKUNULMAZ), sonra kendi (stress) token'ı ile GET detail
+            // + GET export?format=json/xml çağırıp 2xx HARD-ASSERT et. Bu
+            // cross-tenant DEĞİL — stress kendi decl'ini okur — ama artık
+            // pilot pool'unun dolu olmasına bağlı vacuous SKIP yok; surface
+            // ground truth her koşuşta gerçekten egzersiz edilir.
+            //
+            // NOT: seed edilen folio_charge'lar BSON Date taşır; aggregate
+            // pipeline `date`'i ISO string aralığıyla karşılaştırır → matrah
+            // genelde 0 döner. Kayıt YİNE DE gerçek bir tax_declaration'dır
+            // (id/period/status alanları dolu); detail/export invariant'ı
+            // tutara bağlı değildir. Bu fake-green DEĞİL — gerçek endpoint,
+            // gerçek kayıt, dürüst telemetri.
+            const now = new Date();
+            const seedYear = now.getUTCFullYear();
+            const seedMonth = now.getUTCMonth() + 1;
+            seededDeclPeriod = `${seedYear}-${String(seedMonth).padStart(2, '0')}`;
+            const finalizeRes = await callTimed(request, 'post',
+                `${BASE}/declaration/finalize`, { year: seedYear, month: seedMonth }, sToken);
+            if (finalizeRes.status === 403 || finalizeRes.status === 404) {
+                // Module-block doctrine: finalize surface kapalı → seed yok,
+                // success-path SKIP + P2 (gerçek UI failure değil, RBAC/deploy).
+                rec(testInfo, { module: MOD, step: 'stress_declaration_seed', status: 'SKIP',
+                    note: `finalize module-blocked http=${finalizeRes.status}` });
+                recFinding(testInfo, 'P2', MOD,
+                    'Konaklama Vergisi finalize surface module-blocked',
+                    `POST ${BASE}/declaration/finalize → http=${finalizeRes.status}; success-path detail/export seed edilemedi.`);
+            } else if (is2xx(finalizeRes.status) && finalizeRes.body?.id) {
+                seededDeclId = finalizeRes.body.id;
+                rec(testInfo, { module: MOD, step: 'stress_declaration_seed', status: 'PASS',
+                    note: `decl_id=${seededDeclId} period=${seededDeclPeriod} status=${finalizeRes.body?.status} total_base=${finalizeRes.body?.total_base}` });
+                // Self-detail — stress token kendi beyannamesini okur → 2xx zorunlu.
+                const detail = await callTimed(request, 'get',
+                    `${BASE}/declarations/${seededDeclId}`, undefined, sToken);
+                expect(detail.status, `stress self-detail http=${detail.status} body=${JSON.stringify(detail.body).slice(0,160)}`).toBeGreaterThanOrEqual(200);
+                expect(detail.status, `stress self-detail http=${detail.status}`).toBeLessThan(300);
+                expect(detail.body?.id, 'self-detail must echo seeded decl id').toBe(seededDeclId);
+                expect(detail.body?.period, 'self-detail must carry seeded period').toBe(seededDeclPeriod);
+                expect(typeof detail.body?.total_base, 'self-detail must carry numeric total_base').toBe('number');
+                rec(testInfo, { module: MOD, step: 'stress_self_detail', status: 'PASS',
+                    note: `http=${detail.status} period=${detail.body?.period}` });
+                // Export json + xml — her ikisi 2xx zorunlu.
+                for (const fmt of ['json', 'xml']) {
+                    const exp = await callTimed(request, 'get',
+                        `${BASE}/declarations/${seededDeclId}/export?format=${fmt}`, undefined, sToken);
+                    expect(exp.status, `stress export ${fmt} http=${exp.status} body=${JSON.stringify(exp.body).slice(0,160)}`).toBeGreaterThanOrEqual(200);
+                    expect(exp.status, `stress export ${fmt} http=${exp.status}`).toBeLessThan(300);
+                    rec(testInfo, { module: MOD, step: `stress_self_export_${fmt}`, status: 'PASS',
+                        note: `http=${exp.status}` });
                 }
+            } else {
+                // 2xx ama id yok / beklenmedik durum → REVIEW (fake PASS yok).
+                rec(testInfo, { module: MOD, step: 'stress_declaration_seed', status: 'REVIEW',
+                    note: `finalize http=${finalizeRes.status} body=${JSON.stringify(finalizeRes.body).slice(0,160)}` });
             }
         } finally {
             await assertNoExternalCallsPostBatch(testInfo, MOD, 'kvb_readonly_batch',
@@ -519,6 +555,45 @@ test.describe.serial('F8AD konaklama vergisi dryrun', () => {
                 }
             }
 
+            // Pilot → stress yönü (hard-fail): PILOT bearer + STRESS tenant'ta
+            // test 1'de finalize ile seed edilen GERÇEK decl_id. _load_decl
+            // tenant_id ile filtreler → pilot bu decl'e ASLA erişemez (404).
+            // Her probe ≥400 zorunlu; 2xx = KESIN tenant breach (P0). Bu yön
+            // hiçbir mutation üretmez: decl pilot tenant'ta yok, email/submit/
+            // pay _load_decl'de 404'e takılır (outbound/Resend tetiklenmez).
+            if (seededDeclId) {
+                const denyProbes = [
+                    { name: 'idor_pilot_get_stress_decl', method: 'get',
+                      path: `${BASE}/declarations/${seededDeclId}`, body: undefined },
+                    { name: 'idor_pilot_submit_stress_decl', method: 'post',
+                      path: `${BASE}/declarations/${seededDeclId}/submit`,
+                      body: { submission_ref: 'STRESS_F8AD_IDOR_REF' } },
+                    { name: 'idor_pilot_pay_stress_decl', method: 'post',
+                      path: `${BASE}/declarations/${seededDeclId}/pay`,
+                      body: { payment_ref: 'STRESS_F8AD_IDOR_PAY' } },
+                    { name: 'idor_pilot_email_stress_decl', method: 'post',
+                      path: `${BASE}/declarations/${seededDeclId}/email`,
+                      body: { recipients: ['stress-f8ad@example.invalid'] } },
+                    { name: 'idor_pilot_export_stress_decl', method: 'get',
+                      path: `${BASE}/declarations/${seededDeclId}/export?format=json`, body: undefined },
+                ];
+                for (const p of denyProbes) {
+                    const r = await callTimed(request, p.method, p.path, p.body, pToken);
+                    if (is2xx(r.status)) {
+                        recFinding(testInfo, 'P0', MOD,
+                            `Cross-tenant Konaklama Vergisi ${p.name} IDOR`,
+                            `pilot_token ${p.method.toUpperCase()} ${p.path} → ${r.status} (STRESS declaration leaked/mutated). KESIN tenant breach.`);
+                        expect(r.status, `pilot→stress ${p.name} must be 4xx`).toBeGreaterThanOrEqual(400);
+                    } else {
+                        rec(testInfo, { module: MOD, step: p.name, status: 'PASS',
+                            note: `http=${r.status} (tenant guard enforced)` });
+                    }
+                }
+            } else {
+                rec(testInfo, { module: MOD, step: 'idor_pilot_stress_decl', status: 'SKIP',
+                    note: 'stress declaration seed yok (test 1 module-blocked) — pilot→stress decl IDOR target yok' });
+            }
+
             // Pilot folio harvest.
             const pilotFolios = await fetchSingle(request, pToken, '/api/folios?limit=5');
             const folioItems = pilotFolios?.raw?.folios || pilotFolios?.raw?.items || pilotFolios?.list || [];
@@ -538,6 +613,32 @@ test.describe.serial('F8AD konaklama vergisi dryrun', () => {
             } else {
                 rec(testInfo, { module: MOD, step: 'idor_post_folio', status: 'SKIP',
                     note: 'pilot folio harvest empty' });
+            }
+
+            // Pilot → stress post-folio yönü (hard-fail): STRESS tenant'tan
+            // bir folio_id harvest et (seed edilen bookings folio_id taşır),
+            // PILOT bearer ile post-folio çağır → ≥400 zorunlu (folio pilot
+            // tenant'ta yok → folio_not_found 404). Bu yön HİÇBİR mutation
+            // üretmez: pilot tenant'ta o folio yok (yazma yapılmaz), stress
+            // folio'ya da pilot token erişemez (tenant guard). 2xx = P0 breach.
+            const stressBookingsForFolio = await fetchSingle(request, sToken, '/api/pms/bookings?limit=5');
+            const sbItems = stressBookingsForFolio?.raw?.bookings || stressBookingsForFolio?.list || [];
+            const stressFolioId = sbItems[0]?.folio_id || null;
+            if (stressFolioId) {
+                const r = await callTimed(request, 'post',
+                    `${BASE}/post-folio/${stressFolioId}`, {}, pToken);
+                if (is2xx(r.status)) {
+                    recFinding(testInfo, 'P0', MOD,
+                        'Cross-tenant Konaklama Vergisi post-folio IDOR (pilot→stress)',
+                        `pilot_token POST ${BASE}/post-folio/${stressFolioId} → ${r.status} (STRESS folio'ya pilot token ile konaklama vergisi posting yazıldı). KESIN tenant breach + finansal mutation.`);
+                    expect(r.status, 'pilot→stress post-folio must be 4xx').toBeGreaterThanOrEqual(400);
+                } else {
+                    rec(testInfo, { module: MOD, step: 'idor_pilot_post_stress_folio', status: 'PASS',
+                        note: `http=${r.status} (tenant guard enforced)` });
+                }
+            } else {
+                rec(testInfo, { module: MOD, step: 'idor_pilot_post_stress_folio', status: 'SKIP',
+                    note: 'stress folio harvest empty (booking.folio_id yok)' });
             }
 
             // P0 IDOR — config PUT + finalize. Bu endpoint'ler tenant_id

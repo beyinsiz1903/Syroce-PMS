@@ -22,7 +22,7 @@ import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
     callTimed, recFinding,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
-    pilotBookingsCount, withModuleProbe, fetchAllByPrefix,
+    pilotBookingsCount, withModuleProbe, fetchAllByPrefix, fetchSingle,
 } from '../fixtures/stress-helpers.js';
 
 const MOD = 'vcc_pci_compliance';
@@ -125,21 +125,35 @@ test.describe.serial('F8AE VCC + PCI compliance stress', () => {
 
         try {
             // Harvest a stress-seeded booking (VCC store needs an existing
-            // booking row with matching tenant_id).
+            // booking row with matching tenant_id). Prefer the active-round
+            // prefix for cross-round isolation. FALLBACK: if the prefix scan
+            // is empty (stale cache_warmer snapshot, stripped/renamed
+            // stress_prefix field, or a residue tenant whose current-round
+            // docs sort past the page window), take ANY booking returned by
+            // the stress token — that token is tenant-scoped, so any booking
+            // it sees IS a stress-tenant booking and is a valid VCC attach
+            // target. Recording `harvestMode` keeps the path honest.
             const stressBookings = await fetchAllByPrefix(
                 request, sToken, '/api/pms/bookings', 'stress_prefix', prefix,
                 { maxPages: 2, pageSize: 50 },
             );
             stressBookingId = stressBookings?.[0]?.id || null;
+            let harvestMode = stressBookingId ? 'prefix' : null;
+            if (!stressBookingId) {
+                const anyStress = await fetchSingle(request, sToken, '/api/pms/bookings?limit=50');
+                const anyItems = anyStress?.raw?.bookings || anyStress?.list || [];
+                stressBookingId = (Array.isArray(anyItems) && anyItems.length) ? anyItems[0]?.id : null;
+                if (stressBookingId) harvestMode = 'fallback_any_stress';
+            }
             if (!stressBookingId) {
                 vccModuleBlocked = true;
                 recFinding(testInfo, 'P2', MOD, 'No stress-seeded booking available for VCC attach',
-                    `fetchAllByPrefix returned 0 bookings for prefix=${prefix}. A/B/C/D/E skip; cleanup + final invariants still run.`);
+                    `prefix scan + any-stress fallback both returned 0 bookings for prefix=${prefix}. A/B/C/D/E skip; cleanup + final invariants still run.`);
                 rec(testInfo, { module: MOD, step: 'booking_harvest', status: 'SKIP',
-                    note: 'no stress bookings' });
+                    note: 'no stress bookings (prefix + fallback empty)' });
             } else {
                 rec(testInfo, { module: MOD, step: 'booking_harvest', status: 'PASS',
-                    note: `stress_booking_id=${stressBookingId}` });
+                    note: `stress_booking_id=${stressBookingId} mode=${harvestMode}` });
             }
 
             // Pilot booking harvest (read-only) for cross-tenant IDOR probe.
