@@ -101,6 +101,8 @@ from core.tenant_db import set_tenant_context
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op  # v101 DW
 
+from ._scope import normalize_scopes  # Task #174 — per-subrouter scope
+
 logger = logging.getLogger(__name__)
 
 
@@ -524,12 +526,23 @@ router = APIRouter(prefix="/api/b2b", tags=["B2B API - Syroce"])
 @router.post("/api-keys")
 async def create_api_key(
     agency_id: str = Query(...),
+    scopes: list[str] | None = Query(
+        None,
+        description=(
+            "Optional per-subrouter scope list (least-privilege). When omitted "
+            "the key is unrestricted (legacy full access). When provided, the "
+            "key may only call the listed B2B sub-routers; others return 403."
+        ),
+    ),
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("view_system_diagnostics")),  # v101 DW
 ):
-    """Acente icin API key olustur."""
+    """Acente icin API key olustur (opsiyonel per-subrouter scope ile)."""
     _require_hotel_staff(current_user)
     tenant_id = current_user.tenant_id
+
+    # Fail-closed scope validation: unknown scope -> 400 (Task #174).
+    normalized_scopes = normalize_scopes(scopes)
 
     agency = await db.agencies.find_one(
         {"id": agency_id, "tenant_id": tenant_id}, {"_id": 0}
@@ -555,6 +568,7 @@ async def create_api_key(
         "agency_name": agency.get("name", ""),
         "key_hash": key_hash,
         "key_prefix": raw_key[:16] + "...",
+        "scopes": normalized_scopes,
         "is_active": True,
         "usage_count": 0,
         "created_at": _now_iso(),
@@ -569,6 +583,7 @@ async def create_api_key(
         "key_prefix": key_doc["key_prefix"],
         "agency_id": agency_id,
         "agency_name": agency.get("name", ""),
+        "scopes": normalized_scopes,
         "message": "API key olusturuldu. Bu key sadece bir kez gosterilir, guvenli bir yerde saklayin.",
     }
 # ── GET /api-keys/{agency_id} ──
@@ -592,6 +607,7 @@ async def get_api_key_info(
         "has_key": True,
         "agency_id": agency_id,
         "key_prefix": key_doc.get("key_prefix", ""),
+        "scopes": key_doc.get("scopes"),
         "created_at": key_doc.get("created_at"),
         "last_used_at": key_doc.get("last_used_at"),
         "usage_count": key_doc.get("usage_count", 0),
@@ -632,6 +648,14 @@ async def regenerate_api_key(
     if not agency:
         raise HTTPException(status_code=404, detail="Acente bulunamadi")
 
+    # Preserve the existing key's per-subrouter scopes (Task #174) so a
+    # regenerate does not silently widen access from least-privilege to full.
+    prev_key = await db.agency_api_keys.find_one(
+        {"agency_id": agency_id, "tenant_id": tenant_id, "is_active": True},
+        {"_id": 0, "scopes": 1},
+    )
+    preserved_scopes = prev_key.get("scopes") if prev_key else None
+
     # Revoke old keys
     await db.agency_api_keys.update_many(
         {"agency_id": agency_id, "tenant_id": tenant_id, "is_active": True},
@@ -649,6 +673,7 @@ async def regenerate_api_key(
         "agency_name": agency.get("name", ""),
         "key_hash": key_hash,
         "key_prefix": raw_key[:16] + "...",
+        "scopes": preserved_scopes,
         "is_active": True,
         "usage_count": 0,
         "created_at": _now_iso(),
@@ -662,5 +687,6 @@ async def regenerate_api_key(
         "api_key": raw_key,
         "key_prefix": key_doc["key_prefix"],
         "agency_id": agency_id,
+        "scopes": preserved_scopes,
         "message": "API key yenilendi. Eski key artik gecersiz.",
     }

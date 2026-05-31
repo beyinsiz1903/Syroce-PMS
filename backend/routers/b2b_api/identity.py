@@ -175,41 +175,9 @@ async def _agency_owns_block(tenant_id: str, agency_id: str, block_id: str) -> d
 # ── API Key Auth Dependency ──────────────────────────────────────
 
 async def get_b2b_agency(x_api_key: str | None = Header(None, alias="X-API-Key")):
-    """API key ile acente kimlik dogrulamasi."""
-    from core.tenant_db import get_system_db
-    sysdb = get_system_db()
-
-    if not x_api_key:
-        raise HTTPException(status_code=401, detail="API key gerekli")
-
-    key_hash = _hash_api_key(x_api_key)
-    key_doc = await sysdb.agency_api_keys.find_one(
-        {"key_hash": key_hash, "is_active": True}, {"_id": 0}
-    )
-    if not key_doc:
-        raise HTTPException(status_code=401, detail="Gecersiz veya devre disi API key")
-
-    agency = await sysdb.agencies.find_one(
-        {"id": key_doc["agency_id"], "status": "active"}, {"_id": 0}
-    )
-    if not agency:
-        raise HTTPException(status_code=403, detail="Acente hesabi aktif degil")
-
-    # Set tenant context for downstream DB queries
-    set_tenant_context(key_doc["tenant_id"])
-
-    # Update last_used
-    await sysdb.agency_api_keys.update_one(
-        {"key_hash": key_hash},
-        {"$set": {"last_used_at": _now_iso()}, "$inc": {"usage_count": 1}},
-    )
-
-    return {
-        "agency_id": key_doc["agency_id"],
-        "tenant_id": key_doc["tenant_id"],
-        "agency_name": agency.get("name", ""),
-        "commission_rate": agency.get("commission_rate", 0),
-    }
+    """API key ile acente kimlik dogrulamasi + per-subrouter scope kontrolu."""
+    from ._scope import authenticate_b2b_agency
+    return await authenticate_b2b_agency(x_api_key, required_scope="identity")
 
 
 # ── Request Models ───────────────────────────────────────────────

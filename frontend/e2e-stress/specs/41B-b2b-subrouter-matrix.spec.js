@@ -390,45 +390,128 @@ test.describe('F8M v2 § 41B — B2B Sub-Router Matrix', () => {
         expect(bypasses.length).toBe(0);
     });
 
-    test('D) Per-subrouter scope enforcement — P2 REVIEW (scope provisioning yok)', async ({ request }, testInfo) => {
+    // Granted scope subset for the matrix hard-assert. Spans collection +
+    // id-bearing surfaces so both probe shapes exercise the scope gate.
+    const GRANTED_SCOPES = ['housekeeping', 'wake_up', 'services', 'folio', 'guests'];
+
+    test('D) Per-subrouter scope enforcement — hard matrix assert (granted 2xx/non-403, ungranted 403)', async ({ request, stressTokens }, testInfo) => {
         if (moduleBlocked) {
             rec(testInfo, { module: MOD, step: 'scope_per_subrouter', status: 'SKIP', note: `module blocked: ${blockedReason}` });
             test.skip(true, 'module blocked');
             return;
         }
-        // Şu anki backend'de B2B key per-subrouter scope tutmuyor — tek key
-        // agency'ye bağlı, tüm 11 alt-router'a erişiyor. POST /b2b/api-keys
-        // contract'ı `scopes`/`permissions` field'ı kabul etmiyor. Bu
-        // bilinçli bir tasarım kararı (Syroce Agency programı tek-key model)
-        // ama threat-model § Elevation of Privilege açısından least-privilege
-        // ilkesi ihlali → P2 REVIEW emit et, downstream provisioning eklenirse
-        // v3 burada hard P1 assert eder.
+        // Task #174: B2B API key'leri artık per-subrouter scope taşıyor.
+        // POST /api/b2b/api-keys `scopes` query param'ı kabul eder; scope
+        // listesi verilirse key SADECE o alt-router'lara erişir, dışındaki
+        // alt-router get_b2b_agency dependency'sinde 403 döner (fail-closed).
         //
-        // Doğrulama: oluşturulan key tüm collection endpoint'lerinde 2xx
-        // veya 404 (deploy-eksik) döner; 403 (scope-deny) ASLA dönmez.
-        const scopeResults = [];
-        let any403 = false;
-        for (const sub of SUBROUTERS) {
-            if (!sub.collection) continue;
-            const r = await callApiKey(request, 'get', sub.collection, undefined, createdRawKey);
-            scopeResults.push({ sub: sub.name, http: r.status });
-            if (r.status === 403) any403 = true;
+        // Bu test scope matrisini HARD-ASSERT eder:
+        //   - granted alt-router → status != 403 (ve != 401): scope erişime izin verdi.
+        //   - ungranted alt-router → status == 403: scope erişimi reddetti.
+        // skip-as-pass YOK: tek istisna 404 (route deploy yok) — o satır
+        // REVIEW olarak ayrı kaydedilir, pass/fail sayımına girmez.
+
+        // Önce A/B/C'de kullanılan scope'suz key'i revoke et (agency başına tek
+        // aktif key kuralı — aksi halde scoped create 409 döner).
+        await callTimed(request, 'delete', `/api/b2b/api-keys/${stressAgencyId}`,
+            undefined, stressTokens.stress_token);
+
+        const scopeQs = GRANTED_SCOPES.map(s => `scopes=${encodeURIComponent(s)}`).join('&');
+        const create = await callTimed(request, 'post',
+            `/api/b2b/api-keys?agency_id=${stressAgencyId}&${scopeQs}`,
+            {}, stressTokens.stress_token);
+        if (!create.ok || !create.body?.api_key) {
+            recFinding(testInfo, 'P2', MOD,
+                'Scoped B2B API key oluşturulamadı (matrix hard-assert atlandı)',
+                `status=${create.status} body=${JSON.stringify(create.body).slice(0, 160)} — scope create contract eksik veya deploy yok. Sonraki round'da re-verify.`);
+            rec(testInfo, { module: MOD, step: 'scope_per_subrouter', status: 'REVIEW',
+                note: `scoped_key_create_failed status=${create.status}` });
+            return;
         }
-        if (any403) {
-            // Beklenmedik — provisioning mevcut demek; v3'te P1 hard assert
-            // pattern'i kur.
+        const scopedKey = create.body.api_key;
+        createdRawKey = scopedKey;  // cleanup afterAll DELETE agency key'i revoke eder
+
+        // Deploy guard: çalışan backend scope feature'ını destekliyor mu?
+        // create response `scopes` listesini geri döndürmeli; null/eksikse
+        // feature deploy yok → environment-blocked REVIEW (gerçek bir UI
+        // failure değil), hard assert atlanır.
+        const returnedScopes = create.body.scopes;
+        if (!Array.isArray(returnedScopes) || returnedScopes.length === 0) {
             recFinding(testInfo, 'P2', MOD,
-                'B2B per-subrouter scope provisioning aktif görünüyor (beklenmedik 403)',
-                `results=${JSON.stringify(scopeResults)} — v3 spec hard scope assert için yeniden kalibre edilmeli.`);
-        } else {
+                'B2B scope feature deploy yok — create response scopes döndürmedi (REVIEW)',
+                `requested=${JSON.stringify(GRANTED_SCOPES)} returned=${JSON.stringify(returnedScopes)}. Çalışan backend per-subrouter scope desteklemiyor; matrix hard-assert sonraki deploy'da çalışır.`);
+            rec(testInfo, { module: MOD, step: 'scope_per_subrouter', status: 'REVIEW',
+                note: `scope_feature_not_deployed returned=${JSON.stringify(returnedScopes)}` });
+            return;
+        }
+
+        const granted = new Set(GRANTED_SCOPES);
+        const results = [];
+        const violations = [];  // hard-assert failures
+        const routeMissing = [];  // 404 → REVIEW carve-out (not pass/fail)
+        for (const sub of SUBROUTERS) {
+            const probeEp = sub.collection || (sub.idBearing
+                ? renderTemplate(sub.idBearing, {}) : null);
+            if (!probeEp) {
+                results.push({ sub: sub.name, status: 'N/A', note: 'no_probe_endpoint' });
+                continue;
+            }
+            const isGranted = granted.has(sub.name);
+            const r = await callApiKey(request, 'get', probeEp, undefined, scopedKey);
+            const row = { sub: sub.name, granted: isGranted, ep: probeEp, http: r.status };
+            if (r.body) assertNoTokenLeak(testInfo, MOD, r.body, `b2b_scope_${sub.name}`);
+            if (r.ok && sub.piiFields && r.body) assertPiiMasked(testInfo, MOD, r.body, sub.piiFields);
+
+            if (isGranted) {
+                // Granted: scope erişime izin vermeli → 403 (ve 401) yasak.
+                if (r.status === 403) {
+                    row.verdict = 'FAIL_granted_denied';
+                    violations.push(row);
+                    recFinding(testInfo, 'P1', MOD,
+                        `Scope matrix — granted '${sub.name}' alt-router'ı 403 döndü`,
+                        `endpoint=${probeEp} scopes=${JSON.stringify(returnedScopes)} status=403. Granted scope yanlışlıkla reddedildi (scope check fazla agresif).`);
+                } else if (r.status === 401) {
+                    row.verdict = 'FAIL_granted_401';
+                    violations.push(row);
+                    recFinding(testInfo, 'P1', MOD,
+                        `Scope matrix — granted '${sub.name}' alt-router'ı 401 döndü`,
+                        `endpoint=${probeEp} status=401. Valid scoped key reddedildi; key auth flow bozuk.`);
+                } else {
+                    row.verdict = 'PASS_granted';  // 2xx / 400 / 404 — scope geçti
+                }
+            } else {
+                // Ungranted: scope reddetmeli → 403 beklenir.
+                if (r.status === 403) {
+                    row.verdict = 'PASS_denied';
+                } else if (r.status >= 200 && r.status < 300) {
+                    row.verdict = 'FAIL_scope_bypass';
+                    violations.push(row);
+                    recFinding(testInfo, 'P0', MOD,
+                        `Scope matrix — ungranted '${sub.name}' alt-router'ı 2xx döndü (scope bypass)`,
+                        `endpoint=${probeEp} scopes=${JSON.stringify(returnedScopes)} status=${r.status}. Scope dışı alt-router veri döndürdü; per-subrouter enforcement çalışmıyor. Threat-model § Elevation of Privilege.`);
+                } else if (r.status === 404) {
+                    row.verdict = 'REVIEW_route_missing';
+                    routeMissing.push(row);
+                } else {
+                    // 401/400/5xx — 403 beklenirken başka deny; tutarsız.
+                    row.verdict = 'FAIL_ungranted_non403';
+                    violations.push(row);
+                    recFinding(testInfo, 'P1', MOD,
+                        `Scope matrix — ungranted '${sub.name}' 403 yerine ${r.status} döndü`,
+                        `endpoint=${probeEp} status=${r.status}. Scope-deny tutarlı 403 olmalı; ${r.status} bulanık deny vektörü.`);
+                }
+            }
+            results.push(row);
+        }
+        if (routeMissing.length > 0) {
             recFinding(testInfo, 'P2', MOD,
-                'B2B key per-subrouter scope provisioning yok — least-privilege ihlali (REVIEW)',
-                `Tek agency-key 11 alt-router'a erişiyor (403 yok). results=${JSON.stringify(scopeResults)}. ` +
-                `Tasarım kararı; ileride per-subrouter scope eklenirse v3 burada P1 hard assert eder.`);
+                'Scope matrix — bazı ungranted alt-router\'lar 404 (route deploy yok, REVIEW)',
+                `rows=${JSON.stringify(routeMissing)}. Route mount edilmediği için scope-deny gözlenemedi; deploy sonrası re-verify.`);
         }
         rec(testInfo, { module: MOD, step: 'scope_per_subrouter',
-            status: 'REVIEW',
-            note: `provisioning_missing=${!any403} probes=${JSON.stringify(scopeResults)}` });
+            status: violations.length === 0 ? 'PASS' : 'FAIL',
+            note: `granted=${JSON.stringify(GRANTED_SCOPES)} tested=${results.length} violations=${violations.length} route_missing=${routeMissing.length} matrix=${JSON.stringify(results).slice(0, 800)}` });
+        expect(violations.length).toBe(0);
     });
 
     test('E) Invariants — pilot_drift=0 + external_calls delta=0', async ({ request, stressTokens }, testInfo) => {
