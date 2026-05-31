@@ -1,7 +1,7 @@
 import {
   InvoiceModule, NightAuditDashboard, NightAuditLogs, PendingAR,
   CityLedgerAccounts, EFaturaModule, Settings, BasicReports, ReportBuilder,
-  OfficialGuestList, CorporateContractsDashboard,
+  OfficialGuestList, CorporateContractsDashboard, CorporateContractApprovals,
 } from "./lazyPages";
 
 export function financeReportsRoutes({ p }) {
@@ -28,5 +28,6 @@ export function financeReportsRoutes({ p }) {
     { path: "/app/rapor-olusturucu", ...p(ReportBuilder), wrapLayout: true, layoutModule: "reports" },
     { path: "/reports/official-guest-list", ...p(OfficialGuestList), wrapLayout: true, layoutModule: "reports" },
     { path: "/reports/corporate-contracts", ...p(CorporateContractsDashboard), wrapLayout: true, layoutModule: "reports" },
+    { path: "/reports/corporate-contract-approvals", ...p(CorporateContractApprovals), wrapLayout: true, layoutModule: "reports" },
   ];
 }

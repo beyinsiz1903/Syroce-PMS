@@ -169,6 +169,7 @@ export const AIZekaPage = lazy(() => import("@/pages/AIZekaPage"));
 export const AnalitikRaporlarPage = lazy(() => import("@/pages/AnalitikRaporlarPage"));
 export const FrontdeskAuditChecklist = lazy(() => import("@/pages/FrontdeskAuditChecklist"));
 export const CorporateContractsDashboard = lazy(() => import("@/pages/CorporateContractsDashboard"));
+export const CorporateContractApprovals = lazy(() => import("@/pages/CorporateContractApprovals"));
 
 // Maintenance
 export const MaintenanceWorkOrders = lazy(() => import("@/pages/MaintenanceWorkOrders"));

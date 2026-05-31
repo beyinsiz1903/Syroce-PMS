@@ -560,6 +560,14 @@ const Reports = ({ user, tenant, onLogout }) => {
                   >
                     Corporate Contracts Dashboard
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate('/reports/corporate-contract-approvals')}
+                    className="text-xs"
+                  >
+                    Sözleşme Onayları
+                  </Button>
                 </div>
               </CardContent>
             </Card>
