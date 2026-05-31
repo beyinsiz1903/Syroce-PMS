@@ -171,10 +171,13 @@ async def search_guests(
 
     # Build search conditions supporting both encrypted and plaintext fields
     if _fenc:
+        # Pass RAW q (not safe_q): build_search_query hashes it for the
+        # _hash_<field> index match and escapes internally for its regex branch.
+        # Escaping here would break the HMAC match for emails/ids (chars like ".").
         encrypted_conditions = _fenc.build_search_query(
             collection=_GUEST_COLLECTION,
             search_fields=["email", "phone", "id_number", "passport_number"],
-            search_value=safe_q,
+            search_value=q,
         )
         name_conditions = [
             {"name": regex},

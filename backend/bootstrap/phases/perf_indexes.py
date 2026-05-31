@@ -58,6 +58,15 @@ async def ensure_performance_indexes():
         # back to a tenant-wide scan (high scanned/returned query-targeting on
         # the `payments` collection). This indexes the date branch directly.
         ("payments", [("tenant_id", 1), ("date", 1)], "idx_payment_tenant_date", {}),
+        # Sibling of idx_payment_tenant_date for the SAME night-audit daily
+        # revenue $or branch `{payment_date: bd}` (financial_service.py) and the
+        # payment_date range scans. idx_payment_voided_date is (tenant_id,
+        # voided, payment_date): the night-audit query filters on `status` (NOT
+        # the `voided` boolean), so that index's middle key is unconstrained and
+        # only a less-efficient skip-scan is possible. A clean (tenant_id,
+        # payment_date) serves the $ne-status query directly. Both $or branches
+        # run on every daily-revenue call, so both legs need direct coverage.
+        ("payments", [("tenant_id", 1), ("payment_date", 1)], "idx_payment_tenant_paydate", {}),
         ("audit_logs", [("tenant_id", 1), ("timestamp", -1)], "idx_audit_log_timestamp", {}),
         ("audit_logs", [("tenant_id", 1), ("action", 1), ("timestamp", -1)], "idx_audit_log_action", {}),
         ("tenants", [("chain_id", 1), ("parent_tenant_id", 1)], "idx_tenant_chain", {}),

@@ -202,14 +202,24 @@ class FieldEncryptionService:
         """
         conditions = []
         searchable = _get_searchable_fields(collection)
+        # `search_value` is treated as RAW (un-escaped). The hash branch needs
+        # the raw value: compute_search_hash normalizes (strip+lower) it to match
+        # the stored _hash_<field> token written at encrypt time. Passing a
+        # pre-regex-escaped value here would corrupt the HMAC (e.g. "a.b@x.com"
+        # → "a\.b@x\.com") and the hash index would never match.
         search_hash = self.compute_search_hash(search_value)
+        # The regex branch is only a dual-read fallback for un-migrated plaintext
+        # docs; escape here so PII regex metacharacters (the "." in emails) stay
+        # literal and cannot inject/DoS the Mongo regex engine.
+        import re as _re
+        regex_value = _re.escape(search_value or "")
 
         for field_name in search_fields:
             if field_name in searchable:
                 # Exact match via hash index
                 conditions.append({f"_hash_{field_name}": search_hash})
             # Also try regex on plaintext (dual-read: un-migrated docs)
-            conditions.append({field_name: {"$regex": search_value, "$options": "i"}})
+            conditions.append({field_name: {"$regex": regex_value, "$options": "i"}})
 
         return conditions
 

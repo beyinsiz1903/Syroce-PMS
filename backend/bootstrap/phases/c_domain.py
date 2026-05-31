@@ -161,3 +161,21 @@ async def phase_c_domain_indexes_and_workers(app):
             logger.info(f"R5 audit indexes ensured ({added} created)")
     except Exception as e:
         logger.warning(f"R5 audit index creation error: {e}")
+
+    # Encrypted-PII search: sparse indexes on the _hash_<field> blind-index
+    # tokens (HMAC-SHA256) that back searchable encrypted fields (guests.email,
+    # phone, id_number, passport_number, …). Without these, the encrypted-search
+    # branch of build_search_query (_hash_<field> equality) falls back to a
+    # tenant-wide collection scan — high Atlas query-targeting. ensure_hash_
+    # indexes was previously reachable ONLY via the admin field-encryption
+    # router (manual trigger); wiring it into startup makes the indexes
+    # always-present and idempotent. PII-safe: indexes only the HMAC tokens,
+    # never plaintext.
+    try:
+        from core.database import _raw_db
+        from security.field_encryption import get_field_encryption_service
+        created = await get_field_encryption_service().ensure_hash_indexes(_raw_db)
+        if created:
+            logger.info(f"Encrypted-PII hash indexes ensured ({len(created)} created)")
+    except Exception as e:
+        logger.warning(f"Hash index creation error: {e}")
