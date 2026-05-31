@@ -56,6 +56,13 @@ yok.
 - **Delta analizi & sınıflandırma:** `docs/drill_reports/20260531_post_run170_delta_review.md`
   (kalan açıklar: çoğu OPERATOR-ENV; e-Fatura + housekeeping-not SPEC-DRIFT; folio void-charge
   teşhis-bekler).
+- **Post-#170 Minimal Fix Pack (SPEC-DRIFT, kod CI'da doğrulanmadı — baseline taşımaz):**
+  `docs/drill_reports/20260531_post_run170_minimal_fix_candidate.md`. e-Fatura spec
+  customer_tax_number → geçerli 10-hane VKN + B2 strict-validator assertion (backend validator
+  DEĞİŞMEDİ); housekeeping selector-miss notu test-scope `candidates` + `/housekeeping-status`
+  route'una hizalandı (status ladder / TTI gate DEĞİŞMEDİ). Folio C4 KOD DEĞİŞTİRİLMEDİ
+  (path+shape doğru; charges_empty ayrımı CI detailShapeSnap gerektirir). #168 current GREEN
+  BASELINE olarak KALIR; etki yalnızca yeniden full stress dispatch ile doğrulanır (operatör).
 
 ---
 

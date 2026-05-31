@@ -249,6 +249,17 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
             { name: 'desktop_1440', width: 1440, height: 900 },
             { name: 'mobile_390',   width: 390,  height: 844 },
         ];
+        // Oda grid whitelist selector'ları (design system değişirse genişletilmeli).
+        // Test scope'unda tanımlı: hem viewport loop'u hem aşağıdaki selector-miss
+        // REVIEW notu AYNI listeyi kullansın — not metni drift'ini (stale selector) önler.
+        const candidates = [
+            '[data-testid^="room-card-"]',
+            '[data-testid="room-card"]',
+            '[data-testid="hk-room-row"]',
+            'tr[data-room-id]',
+            'div[data-room-id]',
+            '.room-card',
+        ];
         for (const vp of viewports) {
             const ctx = await browser.newContext({
                 viewport: { width: vp.width, height: vp.height },
@@ -285,14 +296,6 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
                 let firstRow = -1;
                 let totalRows = 0;
                 let activeSel = null;
-                const candidates = [
-                    '[data-testid^="room-card-"]',
-                    '[data-testid="room-card"]',
-                    '[data-testid="hk-room-row"]',
-                    'tr[data-room-id]',
-                    'div[data-room-id]',
-                    '.room-card',
-                ];
                 for (const sel of candidates) {
                     try {
                         await page.locator(sel).first().waitFor({ state: 'visible', timeout: 8_000 });
@@ -376,7 +379,7 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         }
         if (noRows) {
             rec(testInfo, { module: MOD, step: 'fe_render_tti_selector_miss', status: 'REVIEW',
-                note: `Whitelist selector (${'[data-testid="room-card"], tr[data-room-id], ...'}) hiçbiri eşleşmedi — UI değişti veya auth fail. measurements=${JSON.stringify(measurements)}` });
+                note: `Whitelist selector (${candidates.join(', ')}) /housekeeping-status route'unda hiçbiri eşleşmedi — UI/selector değişti, FE auth/data yok veya grid boş render. measurements=${JSON.stringify(measurements)}` });
         }
         // FE test'i için runtime endpoint check ile post-batch invariant.
         // browser context ayrı request worker fixture'ından bağımsız; helper tek GET atar.

@@ -136,7 +136,11 @@ test.describe('F8E § 26 — Accounting Expenses', () => {
                 customer_name: `${prefix}InvCustomer_${i + 1}`,
                 customer_email: `${prefix.toLowerCase()}invc${i + 1}@e2e-stress.example.com`,
                 customer_tax_office: `${prefix}TaxOffI`,
-                customer_tax_number: `${prefix}ITX${i + 1}00000`,
+                // Package C validator (_normalize_customer_tax_number): customer_tax_number
+                // 10-hane VKN veya 11-hane TCKN (numeric) olmalı; aksi halde 422.
+                // Önceki alfabetik değer (`${prefix}ITX...`) Package C sonrası 422'ye düşüp
+                // SPEC-DRIFT REVIEW üretiyordu. Geçerli 10-hane VKN ile değiştirildi.
+                customer_tax_number: String(1000000001 + i),
                 customer_address: `${prefix} spec26 invoice addr ${i + 1}`,
                 items: [{
                     description: `${prefix} spec26 invoice item ${i + 1}`,
@@ -189,6 +193,69 @@ test.describe('F8E § 26 — Accounting Expenses', () => {
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'bulk_create_accounting', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
         expect(okExp, `expense floor>=${expFloor}; got ok=${okExp}`).toBeGreaterThanOrEqual(expFloor);
+    });
+
+    test('B2) VKN validator strict — invalid rejected (422), valid 10-digit accepted', async ({ request, stressTokens, stressState }, testInfo) => {
+        // Package C anti-fake-green guard: backend _normalize_customer_tax_number
+        // GEVŞETİLMEDEN kalmalı. Geçersiz (alfabetik) customer_tax_number 422/400 ile
+        // reddedilmeli; geçerli 10-hane VKN (perm-gate yoksa) kabul edilmeli.
+        if (moduleBlocked) {
+            rec(testInfo, { module: MOD, step: 'vkn_validation', status: 'SKIP', note: 'module blocked (see Setup)' });
+            test.skip(true, 'Accounting module blocked');
+            return;
+        }
+        const dueDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+        const badPayload = {
+            invoice_type: 'sales',
+            customer_name: `${prefix}VKNBad`,
+            customer_tax_number: `${prefix}ITX_BAD`, // alfabetik → reddedilmeli
+            items: [{ description: `${prefix} vkn neg`, quantity: 1, unit_price: 100, vat_rate: 20 }],
+            due_date: dueDate,
+            notes: `${prefix} F8E spec26 vkn-negative`,
+        };
+        const badR = await callTimed(request, 'post', '/api/accounting/invoices', badPayload, stressTokens.stress_token);
+        const goodPayload = {
+            invoice_type: 'sales',
+            customer_name: `${prefix}VKNGood`,
+            customer_tax_number: '1000000099', // geçerli 10-hane VKN
+            items: [{ description: `${prefix} vkn pos`, quantity: 1, unit_price: 100, vat_rate: 20 }],
+            due_date: dueDate,
+            notes: `${prefix} F8E spec26 vkn-positive`,
+        };
+        const goodR = await callTimed(request, 'post', '/api/accounting/invoices', goodPayload, stressTokens.stress_token);
+        const badPermGate = badR.status === 401 || badR.status === 403;
+        const goodPermGate = goodR.status === 401 || goodR.status === 403;
+        // RBAC short-circuit: invoice create perm bu token'da yoksa hem bad hem good
+        // 401/403 döner; validator sözleşmesi bu token'la test EDİLEMEZ → SKIP.
+        // (skip-as-pass DEĞİL: gerçek RBAC blok, B testindeki permFail pattern'iyle
+        // tutarlı, informational P2.) Validator GEVŞETİLMEZ — sadece test edilemez.
+        if (badPermGate && goodPermGate) {
+            recFinding(testInfo, 'P2', MOD, 'VKN validator testi RBAC-blocked',
+                `bad_status=${badR.status} good_status=${goodR.status} — invoice create perm yok, validator strict kontrolü bu token'la atlandı.`);
+            rec(testInfo, { module: MOD, step: 'vkn_validation', status: 'SKIP',
+                endpoint: '/api/accounting/invoices',
+                note: `RBAC short-circuit: bad=${badR.status} good=${goodR.status} (validator strict kontrolü perm-gate nedeniyle skip)` });
+            const extOkSkip = await assertNoExternalCallsPostBatch(testInfo, MOD, 'vkn_validation', stressState, request, stressTokens.pilot_token);
+            expect(extOkSkip).toBe(true);
+            test.skip(true, 'Invoice create RBAC-blocked');
+            return;
+        }
+        const badRejected = badR.status === 422 || badR.status === 400;
+        const goodAccepted = goodR.ok && (goodR.body?.id || goodR.body?.invoice_number);
+        rec(testInfo, { module: MOD, step: 'vkn_validation', status: badRejected ? 'PASS' : 'FAIL',
+            endpoint: '/api/accounting/invoices',
+            note: `bad_vkn_status=${badR.status} (expect 422/400) good_vkn_status=${goodR.status} good_accepted=${goodAccepted} good_perm_gate=${goodPermGate}` });
+        if (!badRejected) recFinding(testInfo, 'P1', MOD, 'VKN validator gevşemiş — geçersiz customer_tax_number 2xx',
+            `bad_status=${badR.status} body=${JSON.stringify(badR.body).slice(0, 120)}`);
+        const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'vkn_validation', stressState, request, stressTokens.pilot_token);
+        expect(extOk).toBe(true);
+        // Hard guard: validator strict — geçersiz VKN (perm-gate DIŞINDA) ASLA 2xx olmamalı.
+        expect(badRejected, `invalid VKN must be 422/400 (not perm-gated here); got ${badR.status}`).toBe(true);
+        expect(badR.ok, `invalid VKN must NOT be 2xx`).toBe(false);
+        // Pozitif yön: good için perm-gate yoksa geçerli 10-hane VKN kabul edilmeli.
+        if (!goodPermGate) {
+            expect(goodAccepted, `valid 10-digit VKN should be accepted; got ${goodR.status}`).toBeTruthy();
+        }
     });
 
     test('C) Read expenses filtered by category (aggregation)', async ({ request, stressTokens }, testInfo) => {
