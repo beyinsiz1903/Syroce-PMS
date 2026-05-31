@@ -72,35 +72,66 @@ test.describe('F7 § Stress Gates', () => {
         rec(testInfo, { module: 'gates', step: 'system_health', status: 'REVIEW', note: `Hiç health endpoint cevap vermedi (last=${JSON.stringify(last)}); pilot için manuel doğrula.` });
     });
 
-    test('CM outbox backlog: snapshot (best-effort)', async ({ request, stressTokens }, testInfo) => {
-        const candidates = ['/api/admin/cm/outbox/stats', '/api/cm/outbox/stats', '/api/admin/outbox/stats'];
-        for (const p of candidates) {
-            const r = await request.get(p, {
-                headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
-                failOnStatusCode: false, timeout: 10_000,
-            }).catch(() => null);
-            if (r && r.ok()) {
-                const j = await r.json().catch(() => ({}));
-                rec(testInfo, { module: 'gates', step: 'cm_outbox_backlog', status: 'PASS', endpoint: p, note: JSON.stringify(j).slice(0, 200) });
-                return;
-            }
-        }
-        rec(testInfo, { module: 'gates', step: 'cm_outbox_backlog', status: 'REVIEW', note: 'Outbox stats endpoint bulunamadı; pilot sırasında manuel takip.' });
+    // Task #172: real ops backlog endpoint = routers.outbox_admin GET
+    // /api/outbox/status (require_super_admin). Stress admin is a tenant admin,
+    // NOT a global super_admin → 404; pilot_token IS super_admin. Hard-assert
+    // the health-metric shape (numeric pending/retry/failed) instead of a
+    // best-effort scan over non-existent /api/admin/cm/* paths.
+    test('CM outbox backlog: /api/outbox/status health metrics (super_admin)', async ({ request, stressTokens }, testInfo) => {
+        const r = await request.get('/api/outbox/status', {
+            headers: { Authorization: `Bearer ${stressTokens.pilot_token}` },
+            failOnStatusCode: false, timeout: 10_000,
+        });
+        expect(r.status(), '/api/outbox/status super_admin ile 200 dönmeli').toBe(200);
+        const j = await r.json();
+        expect(typeof j.pending, 'pending numeric').toBe('number');
+        expect(typeof j.retry, 'retry numeric').toBe('number');
+        expect(typeof j.failed, 'failed numeric').toBe('number');
+        rec(testInfo, {
+            module: 'gates', step: 'cm_outbox_backlog', status: 'PASS',
+            endpoint: '/api/outbox/status', http: 200,
+            note: `pending=${j.pending} retry=${j.retry} failed=${j.failed} processed_24h=${j.processed_24h} worker=${JSON.stringify(j.worker)}`.slice(0, 200),
+        });
     });
 
-    test('Circuit breaker: başlangıç snapshot (best-effort)', async ({ request, stressTokens }, testInfo) => {
-        const candidates = ['/api/admin/cm/circuit-breakers', '/api/admin/circuit-breakers'];
-        for (const p of candidates) {
-            const r = await request.get(p, {
-                headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
-                failOnStatusCode: false, timeout: 10_000,
-            }).catch(() => null);
-            if (r && r.ok()) {
-                const j = await r.json().catch(() => ({}));
-                rec(testInfo, { module: 'gates', step: 'circuit_breaker_snapshot', status: 'PASS', endpoint: p, note: JSON.stringify(j).slice(0, 200) });
-                return;
-            }
-        }
-        rec(testInfo, { module: 'gates', step: 'circuit_breaker_snapshot', status: 'REVIEW', note: 'CB endpoint bulunamadı.' });
+    // Task #172: real CM circuit-breaker / runtime snapshot = runtime
+    // enforcement cockpit GET /api/lockdown/runtime/cockpit (get_current_user).
+    // Any authenticated principal works → use stress_token. Hard-assert the
+    // golden-metric blocks are present.
+    test('Circuit breaker: /api/lockdown/runtime/cockpit snapshot', async ({ request, stressTokens }, testInfo) => {
+        const r = await request.get('/api/lockdown/runtime/cockpit', {
+            headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
+            failOnStatusCode: false, timeout: 10_000,
+        });
+        expect(r.status(), 'runtime cockpit authenticated ile 200 dönmeli').toBe(200);
+        const j = await r.json();
+        expect(j.health, 'health bloğu var').toBeTruthy();
+        expect(j.flow, 'flow bloğu var').toBeTruthy();
+        expect(j.reliability, 'reliability bloğu var').toBeTruthy();
+        rec(testInfo, {
+            module: 'gates', step: 'circuit_breaker_snapshot', status: 'PASS',
+            endpoint: '/api/lockdown/runtime/cockpit', http: 200,
+            note: `health=${JSON.stringify(j.health)} flow=${JSON.stringify(j.flow)}`.slice(0, 200),
+        });
+    });
+
+    // Task #172: webhook delivery backlog = routers.webhook_admin GET
+    // /api/webhooks/status (require_super_admin) → pilot_token. Hard-assert
+    // numeric delivery/DLQ health metrics.
+    test('Webhooks status: /api/webhooks/status health metrics (super_admin)', async ({ request, stressTokens }, testInfo) => {
+        const r = await request.get('/api/webhooks/status', {
+            headers: { Authorization: `Bearer ${stressTokens.pilot_token}` },
+            failOnStatusCode: false, timeout: 10_000,
+        });
+        expect(r.status(), '/api/webhooks/status super_admin ile 200 dönmeli').toBe(200);
+        const j = await r.json();
+        expect(typeof j.deliveries_pending, 'deliveries_pending numeric').toBe('number');
+        expect(typeof j.dlq_pending, 'dlq_pending numeric').toBe('number');
+        expect(typeof j.dlq_total, 'dlq_total numeric').toBe('number');
+        rec(testInfo, {
+            module: 'gates', step: 'webhooks_status', status: 'PASS',
+            endpoint: '/api/webhooks/status', http: 200,
+            note: `pending=${j.deliveries_pending} succeeded_24h=${j.deliveries_succeeded_24h} dlq_pending=${j.dlq_pending} dlq_total=${j.dlq_total}`.slice(0, 200),
+        });
     });
 });

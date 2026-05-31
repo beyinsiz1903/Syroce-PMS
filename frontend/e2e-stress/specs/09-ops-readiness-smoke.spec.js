@@ -123,11 +123,17 @@ test.describe('F8W § 09 — Ops Readiness Smoke', () => {
             test.skip(true, 'backup status endpoint not deployed');
             return;
         }
-        // last backup zaman damgası — sık alan adları: last_backup_at,
-        // last_backup_time, latest_backup, last_snapshot_at, snapshots[0].created_at.
+        // Task #172: real shape from infra.backup_manager.get_status() is
+        // `last_successful` — a dict (BackupMetadata.to_dict) carrying
+        // completed_at/started_at — plus `history`/`metrics`. The old probe
+        // only knew last_backup_at/latest_backup/etc, so the timestamp was
+        // never derived → P2 REVIEW on every run. Pull the real field first,
+        // then fall back to the legacy alias list for shape-drift resilience.
         const candidates2 = [
-            body?.last_backup_at, body?.last_backup_time, body?.latest_backup,
-            body?.last_snapshot_at, body?.snapshots?.[0]?.created_at,
+            body?.last_successful?.completed_at, body?.last_successful?.started_at,
+            body?.last_backup, body?.last_backup_at, body?.last_backup_time,
+            body?.latest_backup, body?.last_snapshot_at,
+            body?.snapshots?.[0]?.created_at,
             body?.items?.[0]?.created_at, body?.history?.[0]?.created_at,
             body?.backups?.[0]?.created_at,
         ].filter(Boolean);
@@ -136,8 +142,16 @@ test.describe('F8W § 09 — Ops Readiness Smoke', () => {
         let status = 'PASS';
         if (age == null) {
             status = 'REVIEW';
-            recFinding(testInfo, 'P2', MOD, 'Backup status response\'unda last_backup_at türetilemedi',
-                `endpoint=${probed} body_keys=${Object.keys(body || {}).join(',').slice(0, 200)}. Shape değişti veya boş history.`);
+            // Task #172: distinguish posture (backup not enabled in this env →
+            // no timestamp by design) from a genuine shape drift. enabled=false
+            // is an expected config posture for the stress runner, not a parse
+            // failure — keep it REVIEW (no fake PASS) with a precise diagnostic.
+            const enabled = body?.enabled;
+            const histCount = body?.history_count ?? (Array.isArray(body?.history) ? body.history.length : null);
+            recFinding(testInfo, 'P2', MOD,
+                enabled === false ? 'Backup disabled (BACKUP_ENABLED!=true) — timestamp yok (posture)'
+                    : 'Backup status last_successful timestamp türetilemedi',
+                `endpoint=${probed} enabled=${enabled} history_count=${histCount} last_successful=${JSON.stringify(body?.last_successful)?.slice(0, 120)} body_keys=${Object.keys(body || {}).join(',').slice(0, 160)}.`);
         } else if (age > THRESHOLDS.backup_critical_age_hours) {
             status = 'FAIL';
             recFinding(testInfo, 'P1', MOD, 'Backup last age critical — >7 gün',

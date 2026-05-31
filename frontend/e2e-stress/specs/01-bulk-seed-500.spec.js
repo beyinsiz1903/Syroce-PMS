@@ -134,21 +134,22 @@ test.describe('F7 § Bulk Seed 500 — entity counts', () => {
         rec(testInfo, { module: 'bulk-seed-500', step: 'external_calls_zero', status: 'PASS' });
     });
 
-    test('Outbox unexpected event yok (best-effort)', async ({ request, stressTokens, stressState }, testInfo) => {
-        const candidates = ['/api/admin/cm/outbox/stats', '/api/cm/outbox/stats'];
-        for (const p of candidates) {
-            const r = await request.get(p, {
-                headers: { Authorization: `Bearer ${stressTokens.stress_token}` },
-                failOnStatusCode: false, timeout: 10_000,
-            }).catch(() => null);
-            if (r && r.ok()) {
-                const j = await r.json().catch(() => ({}));
-                rec(testInfo, { module: 'bulk-seed-500', step: 'outbox_no_unexpected', status: 'PASS',
-                    endpoint: p, note: `snapshot=${JSON.stringify(j).slice(0, 200)} (seed event üretmiyor — beklenti)` });
-                return;
-            }
-        }
-        rec(testInfo, { module: 'bulk-seed-500', step: 'outbox_no_unexpected', status: 'REVIEW',
-            note: 'Outbox endpoint yok — manuel doğrula. (seed kodu domain event yayınlamıyor → REVIEW kabul edilebilir)' });
+    // Task #172: real ops outbox endpoint = routers.outbox_admin GET
+    // /api/outbox/status (require_super_admin → pilot_token). Seed is a direct
+    // DB insert path that publishes NO domain events, so the outbox snapshot is
+    // read for a health-metric shape assertion (numeric pending/failed) rather
+    // than a best-effort scan over non-existent /api/admin/cm/* paths.
+    test('Outbox status: seed domain event yaymaz (super_admin snapshot)', async ({ request, stressTokens, stressState }, testInfo) => {
+        const r = await request.get('/api/outbox/status', {
+            headers: { Authorization: `Bearer ${stressTokens.pilot_token}` },
+            failOnStatusCode: false, timeout: 10_000,
+        });
+        expect(r.status(), '/api/outbox/status super_admin ile 200 dönmeli').toBe(200);
+        const j = await r.json();
+        expect(typeof j.pending, 'pending numeric').toBe('number');
+        expect(typeof j.failed, 'failed numeric').toBe('number');
+        rec(testInfo, { module: 'bulk-seed-500', step: 'outbox_no_unexpected', status: 'PASS',
+            endpoint: '/api/outbox/status',
+            note: `pending=${j.pending} retry=${j.retry} failed=${j.failed} (seed domain event yayınlamıyor — snapshot)` });
     });
 });

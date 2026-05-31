@@ -129,6 +129,12 @@ STRESS_COLLECTIONS = [
     "service_complaints",
     "messages",
     "notifications",
+    # Task #172: messaging activity-feed surface. /api/messaging-center/activity
+    # reads notifications(type==messaging_automation) + messaging_delivery_logs.
+    # F8B seeds the delivery logs (synthetic .example.com / synthetic phone
+    # recipients — never real PII) tagged `stress_seed=True` + `stress_prefix`
+    # so the unified cleanup loop reaches them with no extra logic.
+    "messaging_delivery_logs",
     # F8C (2026-05-17): MICE / Event / Banquet / Group Operations surface.
     # `mice_accounts` taşıyıcı: hem client account'ları (event organizatörü)
     # hem `account_type=banquet_competitor` rakipleri tek koleksiyonda; her
@@ -792,6 +798,7 @@ def _build_f8b_docs(
     complaint_docs: list[dict] = []
     message_docs: list[dict] = []
     notif_docs: list[dict] = []
+    delivery_log_docs: list[dict] = []
 
     QR_CATEGORIES = [
         "cleaning", "towels", "amenities", "maintenance", "wifi",
@@ -941,7 +948,54 @@ def _build_f8b_docs(
             "stress_prefix": prefix,
         })
 
-    return qr_docs, complaint_docs, message_docs, notif_docs
+    # 5) MESSAGING ACTIVITY FEED surface (Task #172). The activity feed
+    #    (/api/messaging-center/activity) reads notifications with
+    #    type=="messaging_automation" PLUS messaging_delivery_logs. The F8B
+    #    notifications above use complaint_escalated/guest_request types and no
+    #    delivery logs existed, so the feed was empty → spec 45-C recorded a
+    #    vacuous REVIEW (PII/leak assertions trivially pass on an empty set).
+    #    Seed a bounded batch of both so the feed reflects real data and the
+    #    cross-tenant isolation assertion runs non-vacuously. Recipients use the
+    #    RFC 2606 reserved `.example.com` test domain and an all-zero synthetic
+    #    phone — never real PII. Role-based recipient masking for non-privileged
+    #    roles is locked separately by test_messaging_activity_pii_rbac.py.
+    ACTIVITY_BATCH = 20
+    dl_channels = ["email", "whatsapp"]
+    dl_statuses = ["sent", "delivered", "failed"]
+    for j in range(ACTIVITY_BATCH):
+        a_created = (now - timedelta(minutes=j)).isoformat()
+        notif_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "user_id": None,
+            "type": "messaging_automation",
+            "title": f"{prefix}Automation_{j + 1}",
+            "message": f"{prefix} F8B automation event #{j + 1}",
+            "priority": "normal",
+            "read": (j % 2 == 0),
+            "created_at": a_created,
+            "stress_seed": True,
+            "stress_prefix": prefix,
+        })
+        ch = dl_channels[j % len(dl_channels)]
+        recipient = (
+            f"{prefix.lower()}d{j}@e2e-stress.example.com"
+            if ch == "email"
+            else f"+9000000{j:05d}"
+        )
+        delivery_log_docs.append({
+            "id": str(uuid.uuid4()),
+            "tenant_id": stress_tid,
+            "channel": ch,
+            "status": dl_statuses[j % len(dl_statuses)],
+            "recipient": recipient,
+            "use_case": "checkin_reminder",
+            "created_at": a_created,
+            "stress_seed": True,
+            "stress_prefix": prefix,
+        })
+
+    return qr_docs, complaint_docs, message_docs, notif_docs, delivery_log_docs
 
 
 # F8C — MICE / Event / Banquet / Group Operations surface factory.
@@ -1948,7 +2002,7 @@ async def stress_seed(
         rc, stress_tid, prefix, now,
     )
     # F8B: Guest Experience surface derived from baseline rooms/bookings/guests.
-    qr_docs, complaint_docs, message_docs, notif_docs = _build_f8b_docs(
+    qr_docs, complaint_docs, message_docs, notif_docs, delivery_log_docs = _build_f8b_docs(
         rooms_docs, bookings_docs, guests_docs, stress_tid, prefix, now,
     )
     # F8C: MICE / Event / Banquet / Group Operations surface (standalone —
@@ -2017,6 +2071,8 @@ async def stress_seed(
                          "room_night_locks", "housekeeping_tasks",
                          "room_qr_requests", "service_complaints",
                          "messages", "notifications",
+                         # Task #172: messaging activity-feed delivery logs.
+                         "messaging_delivery_logs",
                          # F8C MICE surface — orphan scrub mirror.
                          "mice_spaces", "mice_menus", "mice_accounts",
                          "mice_contacts", "mice_resources", "mice_events",
@@ -2107,6 +2163,8 @@ async def stress_seed(
         counts["service_complaints"] = await _chunked_insert(db.service_complaints, complaint_docs, INSERT_CHUNK_SIZE)
         counts["messages"] = await _chunked_insert(db.messages, message_docs, INSERT_CHUNK_SIZE)
         counts["notifications"] = await _chunked_insert(db.notifications, notif_docs, INSERT_CHUNK_SIZE)
+        # Task #172: messaging activity-feed delivery logs (synthetic recipients).
+        counts["messaging_delivery_logs"] = await _chunked_insert(db.messaging_delivery_logs, delivery_log_docs, INSERT_CHUNK_SIZE)
         # F8C MICE / Event / Banquet / Group Operations surface
         counts["mice_spaces"] = await _chunked_insert(db.mice_spaces, spaces_docs, INSERT_CHUNK_SIZE)
         counts["mice_menus"] = await _chunked_insert(db.mice_menus, menus_docs, INSERT_CHUNK_SIZE)

@@ -84,7 +84,10 @@ const PROBES = [
     { name: 'messaging_settings',          path: '/api/messaging-center/settings'                                  },
 
     // Admin / Observability / Reports — verified mounted
-    { name: 'admin_feature_flags',         path: '/api/admin/feature-flags',                     list_shape: true },
+    // Task #172: feature-flags is require_super_admin → stress tenant admin
+    // gets 404 (not 403). Probe with the super_admin (pilot) principal so the
+    // surface registers as reachable instead of a spurious auth_404 REVIEW.
+    { name: 'admin_feature_flags',         path: '/api/admin/feature-flags',                     list_shape: true, principal: 'super_admin' },
     { name: 'observability_metrics',       path: '/api/observability/metrics'                                       },
     { name: 'report_builder_templates',    path: '/api/reports/builder/templates',               list_shape: true },
 ];
@@ -172,8 +175,13 @@ test.describe.serial('F9B § Backend Router Coverage Probe', () => {
             // 1) Anonymous probe
             const anon = await safeGet(request, probe.path, { token: null });
 
-            // 2) Authenticated (stress admin) probe
-            const auth = await safeGet(request, probe.path, { token: stressTokens.stress_token });
+            // 2) Authenticated probe. Most probes use the stress tenant admin;
+            //    require_super_admin surfaces (probe.principal==='super_admin')
+            //    need the pilot super_admin token or they 404 (Task #172).
+            const authToken = probe.principal === 'super_admin'
+                ? stressTokens.pilot_token
+                : stressTokens.stress_token;
+            const auth = await safeGet(request, probe.path, { token: authToken });
 
             const cls = classify(probe, anon.status, auth.status);
             probeStats.total += 1;
@@ -182,8 +190,9 @@ test.describe.serial('F9B § Backend Router Coverage Probe', () => {
             let shapeOk = null;
             if (probe.list_shape && auth.status >= 200 && auth.status < 300 && auth.bodySample) {
                 const s = auth.bodySample.trim();
-                // Accept array or {items:[]} or {results:[]} or {data:[]}
-                shapeOk = s.startsWith('[') || /["'](items|results|data)["']\s*:/.test(s);
+                // Accept array or {items:[]}/{results:[]}/{data:[]}/{flags:[]}
+                // (Task #172: feature-flags returns {flags, count}).
+                shapeOk = s.startsWith('[') || /["'](items|results|data|flags)["']\s*:/.test(s);
             }
 
             // Record outcome

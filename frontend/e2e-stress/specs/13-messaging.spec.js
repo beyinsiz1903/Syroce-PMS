@@ -86,23 +86,50 @@ test.describe('F8B § 13 — Messaging dry-run', () => {
         expect(totalOk, `messaging send floor>=${floor}; got total_ok=${totalOk}`).toBeGreaterThanOrEqual(floor);
     });
 
-    test('B) Conversations read endpoint reachable + paginated', async ({ request, stressTokens }, testInfo) => {
+    test('B) Conversations read endpoint reachable + paginated + tenant-isolated', async ({ request, stressTokens }, testInfo) => {
         const samples = [];
         let body = null;
+        let lastStatus = null;
         for (let i = 0; i < 3; i++) {
             const r = await callTimed(request, 'get', '/api/messaging/conversations?limit=100', undefined, stressTokens.stress_token);
             samples.push(r.ms);
             body = r.body;
+            lastStatus = r.status;
         }
         recPerf(testInfo, MOD, 'conversations', samples, true);
-        const arr = Array.isArray(body) ? body : (body?.conversations || body?.items || []);
-        rec(testInfo, { module: MOD, step: 'conversations', status: arr.length > 0 ? 'PASS' : 'REVIEW',
+        // Task #172: real contract = GET /api/messaging/conversations →
+        // { messages: [...], count } (router parses db.messages, NOT a
+        // `conversations`/`items` field). The old parse read non-existent keys
+        // → arr=[] → perpetual REVIEW despite the F8B seed (1000 messages).
+        // Parse `messages` first; keep legacy aliases for shape-drift safety.
+        const arr = Array.isArray(body) ? body
+            : (body?.messages || body?.conversations || body?.items || []);
+        // Cross-tenant isolation: this endpoint returns same-tenant raw to/from
+        // by design (staff legitimately need guest contact info — masking is NOT
+        // applied here, unlike the view_guest_list-gated activity feed). The
+        // security invariant we CAN hard-assert is tenant isolation: a stress
+        // admin must never receive any pilot/prod-tenant marker.
+        let leaks = 0;
+        for (const it of arr.slice(0, 100)) {
+            let blob = ''; try { blob = JSON.stringify(it); } catch { /* nz */ }
+            if (blob.includes('"PILOT_') || blob.includes('"PROD_')) leaks++;
+        }
+        if (leaks > 0) {
+            recFinding(testInfo, 'P0', MOD, 'conversations cross-tenant leak',
+                `leaks=${leaks}/${arr.length} stress_token döndüğünde pilot/prod prefix marker var.`);
+        }
+        rec(testInfo, { module: MOD, step: 'conversations',
+            status: leaks > 0 ? 'FAIL' : (arr.length > 0 ? 'PASS' : 'REVIEW'),
             endpoint: '/api/messaging/conversations',
-            note: `conversations_len=${arr.length} max_ms=${Math.max(...samples)}` });
+            note: `http=${lastStatus} conversations_len=${arr.length} leaks=${leaks} max_ms=${Math.max(...samples)}` });
         if (Math.max(...samples) > 4000) {
             recFinding(testInfo, 'P3', MOD, 'Conversations yavaş',
                 `max=${Math.max(...samples)}ms — 1000+ message kümesi için indexleme izlenmeli.`);
         }
+        // Hard-assert: F8B seeds ≥1000 messages for the stress tenant, so a
+        // healthy read must be non-empty AND tenant-isolated.
+        expect(leaks, `conversations cross-tenant leak count=${leaks}`).toBe(0);
+        expect(arr.length, 'F8B seed mevcut — conversations boş olmamalı').toBeGreaterThan(0);
     });
 
     test('C) External-calls=[] suite-final invariant', async ({ request, stressTokens, stressState }, testInfo) => {
