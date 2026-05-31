@@ -50,6 +50,14 @@ async def ensure_performance_indexes():
         ("payments", [("tenant_id", 1), ("folio_id", 1), ("voided", 1)], "idx_payment_tenant_folio", {}),
         ("payments", [("tenant_id", 1), ("voided", 1), ("payment_date", -1)], "idx_payment_voided_date", {}),
         ("payments", [("tenant_id", 1), ("booking_id", 1)], "idx_payment_booking", {}),
+        # Night-audit daily revenue (financial_service.py): payments pipeline
+        # matches `{tenant_id, status:{$ne:"voided"}, $or:[{date:bd},
+        # {payment_date:bd}]}` plus `date` range scans in the daily/period
+        # report. `payment_date` is partially covered by idx_payment_voided_date,
+        # but the legacy `date` field had NO index, so the $or's date branch fell
+        # back to a tenant-wide scan (high scanned/returned query-targeting on
+        # the `payments` collection). This indexes the date branch directly.
+        ("payments", [("tenant_id", 1), ("date", 1)], "idx_payment_tenant_date", {}),
         ("audit_logs", [("tenant_id", 1), ("timestamp", -1)], "idx_audit_log_timestamp", {}),
         ("audit_logs", [("tenant_id", 1), ("action", 1), ("timestamp", -1)], "idx_audit_log_action", {}),
         ("tenants", [("chain_id", 1), ("parent_tenant_id", 1)], "idx_tenant_chain", {}),
