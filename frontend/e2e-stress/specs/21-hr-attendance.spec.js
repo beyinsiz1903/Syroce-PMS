@@ -30,23 +30,32 @@ test.describe('F8D § 21 — HR Attendance', () => {
         const staffR = await callTimed(request, 'get', '/api/hr/staff', undefined, stressTokens.stress_token);
         const allStaff = staffR.body?.staff || staffR.body?.staff_members || staffR.body?.items
             || (Array.isArray(staffR.body) ? staffR.body : []);
-        // Filter to seeded stress-prefixed staff who don't have an open attendance row.
-        // Router returns staff with `name`/`email`; filter by prefix-tagged
-        // identity. Offset 20-30 avoids the first 10 used in 60-row attendance seed.
-        staffPool = allStaff.filter((s) => {
+        // Filter to seeded stress-prefixed staff. Router returns staff with
+        // `name`/`email`; filter by prefix-tagged identity. The seeded
+        // attendance rows (first 10 staff) are CLOSED + PAST-dated and each run
+        // uses a UNIQUE prefix → fresh staff, so ANY prefixed staff is a valid
+        // open-row-free clock-in target for TODAY.
+        const prefixed = allStaff.filter((s) => {
             const name = s?.name || s?.full_name || '';
             const email = (s?.email || '').toLowerCase();
             return (typeof name === 'string' && name.startsWith(prefix))
                 || (typeof email === 'string' && email.startsWith(prefix.toLowerCase()));
-        }).slice(20, 30);
+        });
+        // Prefer staff beyond the first 10 (the attendance-seeded sample) when
+        // the pool is comfortably large, but NEVER starve below N_CLOCK. The
+        // previous hard `.slice(20,30)` required >=25 returned staff and emptied
+        // the pool whenever GET /hr/staff returned fewer (e.g. dept-scoped for
+        // a non-manage_hr admin) → false module-block SKIP (Run #171). This
+        // mirrors spec 23 which uses the full prefixed pool and passes.
+        staffPool = prefixed.length >= 10 + N_CLOCK ? prefixed.slice(10) : prefixed;
         const reachable = staffR.ok;
         if (!reachable || staffPool.length < N_CLOCK) {
             moduleBlocked = true;
             recFinding(testInfo, 'P2', MOD, 'HR attendance module read blocked',
-                `staff_status=${staffR.status} pool_size=${staffPool.length} need>=${N_CLOCK} — A/B/C skipped, pilot_drift gate still enforced.`);
+                `staff_status=${staffR.status} prefixed=${prefixed.length} pool_size=${staffPool.length} need>=${N_CLOCK} — A/B/C skipped, pilot_drift gate still enforced.`);
         }
         rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
-            note: `prefix=${prefix} pilot_before=${pilotBefore?.count} staff_status=${staffR.status} pool=${staffPool.length} module_blocked=${moduleBlocked}` });
+            note: `prefix=${prefix} pilot_before=${pilotBefore?.count} staff_status=${staffR.status} prefixed=${prefixed.length} pool=${staffPool.length} module_blocked=${moduleBlocked}` });
         expect(typeof staffR.status).toBe('number');
     });
 

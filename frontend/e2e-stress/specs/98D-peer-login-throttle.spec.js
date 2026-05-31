@@ -24,12 +24,19 @@
 //
 // Layering:
 //   * Agency surface — combined drain + per-account boundary test.
-//     The drain proof requires a known-good credential; the stress
-//     admin (super_admin role) is the only one available, and the
-//     router calls `AGENCY_LOGIN_*.reset()` on successful verify, so a
-//     single test can prove BOTH "success drains per-account budget"
-//     AND "the (cap+1)th post-drain wrong attempt re-arms the 429".
-//     Per-IP cost is bounded by the mid-test reset: max in-window = 11.
+//     The drain proof requires a known-good credential. The stress admin
+//     is a tenant `admin` (NOT super_admin, NOT agency) and gets a clean
+//     403 from this surface — it can never drain the counter, which is why
+//     this leg historically SKIPped (Run #171). Task #171 switches the
+//     drain leg to the real provisioned `agency_admin` principal
+//     (global-setup `provisionAgencyAdmin` → persisted under
+//     stressTokens.role_principals.agency_admin: a genuine agency user with
+//     an ACTIVE agency that the router authorizes). The router calls
+//     `AGENCY_LOGIN_*.reset()` on successful verify, so a single test proves
+//     BOTH "success drains per-account budget" AND "the (cap+1)th post-drain
+//     wrong attempt re-arms the 429". Per-IP cost is bounded by the mid-test
+//     reset: max in-window = 11. No auth/throttle weakening — a real
+//     authorized principal exercises the real success path.
 //   * Vendor surface — per-account boundary test (1 email × 11 wrong
 //     attempts → 11th = 429 against vendor_login_account cap=10/300s).
 //     CI 2026-05-28 RCA (commit follows): production logs proved per-IP
@@ -43,8 +50,10 @@
 //     regression coverage moved to operator canary (out-of-scope here).
 //
 // Module-blocked semantics (F8M/F8I doctrine):
-//   * E2E_STRESS_ADMIN_EMAIL/PASSWORD env missing → agency test
-//     module-blocked + P2 REVIEW (drain leg cannot be proved).
+//   * agency_admin principal not provisioned (global-setup fail-soft →
+//     stressTokens.role_principals.agency_admin null) → agency test
+//     module-blocked + P2 REVIEW (drain leg cannot be proved with a real
+//     authorized principal; honest SKIP, never fake-green).
 //   * Either endpoint returning 404/0 on the initial bogus-credential
 //     probe → module-blocked + P2 REVIEW (router not mounted in this
 //     deployment posture).
@@ -93,6 +102,8 @@ test.describe('§ 98D — Peer login throttle (agency + vendor)', () => {
     let prefix = null;
     let agencyBlocked = false;
     let agencyBlockedReason = null;
+    let agencyEmail = null;
+    let agencyPassword = null;
     let vendorBlocked = false;
     let vendorBlockedReason = null;
 
@@ -100,14 +111,19 @@ test.describe('§ 98D — Peer login throttle (agency + vendor)', () => {
         prefix = stressState.data_prefix;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
-        const email = process.env.E2E_STRESS_ADMIN_EMAIL;
-        const password = process.env.E2E_STRESS_ADMIN_PASSWORD;
-        if (!email || !password) {
+        // Drain leg needs a REAL agency-authorized principal (super_admin or
+        // agency_admin/agent). The stress admin is a tenant `admin` → 403 on
+        // this surface, so it can never prove the .reset() drain. Use the
+        // provisioned agency_admin principal persisted by global-setup.
+        const agencyPrincipal = stressTokens.role_principals?.agency_admin || null;
+        agencyEmail = agencyPrincipal?.email || null;
+        agencyPassword = agencyPrincipal?.password || null;
+        if (!agencyEmail || !agencyPassword) {
             agencyBlocked = true;
-            agencyBlockedReason = 'no_stress_admin_credentials_in_env';
+            agencyBlockedReason = 'agency_admin_principal_not_provisioned';
             recFinding(testInfo, 'P2', MOD,
-                'Agency drain leg test edilemiyor — E2E_STRESS_ADMIN_EMAIL/PASSWORD yok',
-                'Per-account boundary + drain proof aynı testte birleşik; valid credential olmadan drain dalı yapılamaz, full test skipped.');
+                'Agency drain leg test edilemiyor — agency_admin principal provision edilemedi',
+                'global-setup provisionAgencyAdmin fail-soft (token/cred yok). Per-account boundary + drain proof aynı testte birleşik; gerçek yetkili principal olmadan drain dalı yapılamaz → honest SKIP (fake-green YOK).');
         }
 
         // Endpoint reachability probe — bogus credentials should bounce
@@ -162,11 +178,11 @@ test.describe('§ 98D — Peer login throttle (agency + vendor)', () => {
             test.skip(true, `agency blocked: ${agencyBlockedReason}`);
             return;
         }
-        const email = process.env.E2E_STRESS_ADMIN_EMAIL;
-        const password = process.env.E2E_STRESS_ADMIN_PASSWORD;
+        const email = agencyEmail;
+        const password = agencyPassword;
 
-        // Phase 1 — 10 wrong on stress admin email; counter at cap but
-        // none should 429 yet (cap=10 means the 10th is still allowed).
+        // Phase 1 — 10 wrong on the agency principal's email; counter at cap
+        // but none should 429 yet (cap=10 means the 10th is still allowed).
         const phase1 = [];
         for (let i = 0; i < PER_ACCOUNT_CAP; i++) {
             const r = await loginAttempt(request, AGENCY_LOGIN, email, 'wrong_pw_pre_drain');
@@ -186,20 +202,22 @@ test.describe('§ 98D — Peer login throttle (agency + vendor)', () => {
         const drained = success.ok && (success.body?.token || success.body?.access_token);
         if (!drained) {
             // Two failure modes worth distinguishing:
-            //   - status=403: stress admin lacks super_admin/agency_admin role.
-            //     Drain leg untestable in this deployment posture; module-block
-            //     instead of FAILing the whole spec.
+            //   - status=403: the provisioned agency_admin principal is NOT
+            //     authorized by this surface (e.g. its agency went inactive, or
+            //     the agency-portal posture rejects it). This is a precondition
+            //     failure, not a throttle regression — module-block + P2 SKIP
+            //     instead of FAILing the whole spec (honest SKIP, never green).
             //   - any other non-2xx: real regression in success path.
             if (success.status === 403) {
                 rec(testInfo, {
                     module: MOD, step: 'agency_per_account', status: 'SKIP',
                     endpoint: `POST ${AGENCY_LOGIN}`, http: success.status,
-                    note: `stress_admin not super_admin/agency_admin (status=403) — drain leg untestable in this deployment posture`,
+                    note: `agency_admin principal not authorized by agency-portal login (status=403) — drain leg untestable; agency may be inactive in this deployment posture`,
                 });
                 recFinding(testInfo, 'P2', MOD,
-                    'Stress admin agency-portal login için yetkili rolde değil',
-                    `status=${success.status} body=${JSON.stringify(success.body).slice(0, 200)}. Drain dalı bu deploy posture'ında test edilemez; tek dal (per-account boundary) ileri taşınmadı çünkü dinleyen counter agency_portal-specific. F8 baseline'ında ROL super_admin gerektirir.`);
-                test.skip(true, 'stress admin not authorized for agency-portal login');
+                    'Agency_admin principal agency-portal login için yetkili değil',
+                    `status=${success.status} body=${JSON.stringify(success.body).slice(0, 200)}. Provision edilen agency_admin bu surface tarafından reddedildi (acente inactive olabilir). Drain dalı bu deploy posture'ında test edilemez — honest SKIP, fake-green YOK.`);
+                test.skip(true, 'agency_admin principal not authorized for agency-portal login');
                 return;
             }
             recFinding(testInfo, 'P0', MOD,

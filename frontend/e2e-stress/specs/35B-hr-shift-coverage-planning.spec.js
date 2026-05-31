@@ -118,7 +118,7 @@ test.describe('F8D-v3 § 35B — Shift Coverage Planning', () => {
         expect(ok, `coverage_crud floor>=${floor}; got ok=${ok}`).toBeGreaterThanOrEqual(floor);
     });
 
-    test('B) Idempotency window — same payload create twice (allowed, no unique constraint)', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('B) Idempotency replay — same payload create twice returns the SAME rule (no 500, no duplicate)', async ({ request, stressTokens, stressState }, testInfo) => {
         test.setTimeout(60_000);
         if (moduleBlocked) {
             rec(testInfo, { module: MOD, step: 'idem_window', status: 'SKIP', note: `module blocked: ${blockedReason}` });
@@ -133,16 +133,33 @@ test.describe('F8D-v3 § 35B — Shift Coverage Planning', () => {
         const r1 = await callTimed(request, 'post', '/api/hr/coverage-rules', payload, stressTokens.stress_token);
         const r2 = await callTimed(request, 'post', '/api/hr/coverage-rules', payload, stressTokens.stress_token);
         samples.push(r1.ms, r2.ms);
-        if (r1.body?.rule?.id) createdRuleIds.push(r1.body.rule.id);
-        if (r2.body?.rule?.id) createdRuleIds.push(r2.body.rule.id);
-        // Backend'de unique constraint yok → 2 ayrı rule yaratılır (beklenen).
-        // Contract: her iki POST 200/201, 2 farklı id.
-        const both_ok = r1.ok && r2.ok && r1.body?.rule?.id !== r2.body?.rule?.id;
-        recPerf(testInfo, MOD, 'idem_window', samples, both_ok);
-        rec(testInfo, { module: MOD, step: 'idem_window', status: both_ok ? 'PASS' : 'REVIEW',
-            note: `r1_status=${r1.status} r2_status=${r2.status} r1_id=${r1.body?.rule?.id?.slice(0, 8)} r2_id=${r2.body?.rule?.id?.slice(0, 8)}` });
+        const id1 = r1.body?.rule?.id;
+        const id2 = r2.body?.rule?.id;
+        if (id1) createdRuleIds.push(id1);
+        if (id2 && id2 !== id1) createdRuleIds.push(id2);
+        // Contract (Task #171 bug fix): the (tenant, department, weekday,
+        // shift_type) bucket is backed by a unique index, so the second
+        // identical POST is an idempotent REPLAY — both calls return 2xx with
+        // the SAME rule id and the replay carries `idempotent_replay:true`.
+        // The previous spec assumed "no unique constraint → 2 distinct rules",
+        // which masked the real defect: an unhandled DuplicateKeyError made the
+        // 2nd call return HTTP 500 (Run #171 REVIEW). A regression here surfaces
+        // as r2_status=500 (unhandled dup) or a 2nd distinct id (duplicate row).
+        const bothOk = r1.ok && r2.ok;
+        const sameRule = !!id1 && id1 === id2;
+        const replayFlag = r2.body?.idempotent_replay === true;
+        const pass = bothOk && sameRule;
+        recPerf(testInfo, MOD, 'idem_window', samples, pass);
+        rec(testInfo, { module: MOD, step: 'idem_window', status: pass ? 'PASS' : 'FAIL',
+            endpoint: 'POST /api/hr/coverage-rules (idempotent replay)',
+            note: `r1_status=${r1.status} r2_status=${r2.status} r1_id=${id1?.slice(0, 8)} r2_id=${id2?.slice(0, 8)} same_rule=${sameRule} replay_flag=${replayFlag}` });
+        if (!r2.ok) recFinding(testInfo, 'P1', MOD, 'Coverage-rule idempotent replay non-2xx',
+            `r2_status=${r2.status} — unhandled DuplicateKeyError 500 regression (Task #171 bug). Identical POST must replay 2xx, not 500.`);
+        else if (!sameRule) recFinding(testInfo, 'P1', MOD, 'Coverage-rule duplicate row on identical POST',
+            `id1=${id1} id2=${id2} — unique index/idempotent-replay missing; second identical POST minted a duplicate rule.`);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'idem_window', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
+        expect(pass, `idem replay: r1=${r1.status} r2=${r2.status} id1=${id1} id2=${id2} replay_flag=${replayFlag}`).toBe(true);
     });
 
     test('Cleanup) Inline DELETE coverage-rules (residue=0 target)', async ({ request, stressTokens }, testInfo) => {

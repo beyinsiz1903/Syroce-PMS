@@ -5507,6 +5507,16 @@ async def create_coverage_rule(
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_hr")),
 ):
+    # Idempotent create — the (tenant_id, department, weekday, shift_type)
+    # bucket is backed by a unique index (`uniq_tenant_dept_weekday_shifttype`,
+    # bootstrap/phases/d_perf.py). A naive `insert_one` therefore raised an
+    # *unhandled* `DuplicateKeyError` → HTTP 500 the second time the same
+    # bucket was POSTed (caught by stress spec 35B idem_window, Run #171
+    # REVIEW). Per the Atomic-Operations doctrine, a repeated identical create
+    # must be a deterministic idempotent REPLAY, not a 500: insert on first
+    # call, and on duplicate return the existing rule with an explicit
+    # `idempotent_replay` flag so callers (and the stress harness) can tell a
+    # replay from a fresh insert.
     item = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
@@ -5518,9 +5528,29 @@ async def create_coverage_rule(
         'created_by': getattr(current_user, 'id', None),
         'created_at': datetime.now(UTC).isoformat(),
     }
-    await db.hr_coverage_rules.insert_one(item)
+    try:
+        await db.hr_coverage_rules.insert_one(item)
+    except DuplicateKeyError:
+        existing = await db.hr_coverage_rules.find_one(
+            {
+                'tenant_id': current_user.tenant_id,
+                'department': payload.department,
+                'weekday': payload.weekday,
+                'shift_type': payload.shift_type,
+            },
+            {'_id': 0},
+        )
+        # Race-safe: the row that won the insert is now visible. If it somehow
+        # vanished between the failed insert and this read, surface the
+        # conflict honestly rather than fabricating a body.
+        if not existing:
+            raise HTTPException(
+                status_code=409,
+                detail="Kapsama kuralı çakışması (eşzamanlı oluşturma).",
+            )
+        return {'success': True, 'rule': existing, 'idempotent_replay': True}
     item.pop('_id', None)
-    return {'success': True, 'rule': item}
+    return {'success': True, 'rule': item, 'idempotent_replay': False}
 
 
 @router.get("/hr/coverage-rules")

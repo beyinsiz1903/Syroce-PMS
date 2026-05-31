@@ -153,7 +153,14 @@ async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
 }
 
 async function provisionAgencyAdmin(api, stressAdminToken) {
-    const out = { role: 'agency_admin', email: AGENCY_ADMIN_EMAIL, token: null, agency_id: null, created: false };
+    // `password` is persisted alongside the token so specs that must exercise
+    // the agency-portal LOGIN surface itself (e.g. 98D peer-login throttle
+    // drain leg) can authenticate as a real agency principal. The stress
+    // admin is a tenant `admin` (NOT super_admin, NOT agency) and gets a clean
+    // 403 from /agency-portal/auth/login, which would force that drain leg to
+    // SKIP — so the real agency_admin credentials are required to hard-assert
+    // it. Throwaway test principal; `.auth/` is gitignored.
+    const out = { role: 'agency_admin', email: AGENCY_ADMIN_EMAIL, password: ROLE_PASSWORD, token: null, agency_id: null, created: false };
     // 1) Idempotent agency: önce ara, yoksa oluştur (POST /agencies her zaman
     //    insert ettiği için kör create cross-round bloat üretir).
     let agencyId = null;
@@ -507,6 +514,18 @@ export default async function globalSetup() {
             stress_admin: stressToken,        // stress tenant admin (mutasyonların çoğu bununla)
             staff_lowtrust: roleProvisioning.staff_lowtrust?.token || null,
             agency_admin: roleProvisioning.agency_admin?.token || null,
+        },
+        // Task #171 — agency-portal LOGIN credentials (not just bearer). Specs
+        // that drive the agency login surface itself (98D drain leg) need a
+        // real agency principal's email+password; the stress admin 403s there.
+        // null when provisioning failed → spec honest-SKIPs (no fake-green).
+        role_principals: {
+            agency_admin: roleProvisioning.agency_admin?.token ? {
+                email: roleProvisioning.agency_admin.email,
+                password: roleProvisioning.agency_admin.password,
+                agency_id: roleProvisioning.agency_admin.agency_id || null,
+                login_status: roleProvisioning.agency_admin.login_status || null,
+            } : null,
         },
         captured_at: Date.now(),
     }, null, 2));
