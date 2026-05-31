@@ -451,12 +451,99 @@ async def transition_corporate_contract_approval(
         }
     )
 
+    # Notify the contract owner/contact when the contract reaches a terminal
+    # approval outcome (approved/rejected). Best-effort: a mail failure must
+    # never break the state transition, so we swallow errors here. Rejections
+    # include the reason so the owner can act without opening the approvals UI.
+    notified = False
+    if to_status in {'approved', 'rejected'}:
+        notified = await _notify_contract_owner_approval(
+            existing,
+            to_status=to_status,
+            reason=body.reason,
+            actor=current_user.username,
+        )
+
     return {
         'message': 'Contract approval transitioned',
         'contract_id': contract_id,
         'from_status': from_status,
         'approval_status': to_status,
+        'owner_notified': notified,
     }
+
+
+async def _notify_contract_owner_approval(
+    contract: dict,
+    *,
+    to_status: str,
+    reason: str | None,
+    actor: str | None,
+) -> bool:
+    """Email the corporate-contract owner/contact about an approval outcome.
+
+    Returns True when a provider accepted the message. Never raises: an email
+    failure (bad address, provider down, missing key) must not roll back or
+    block the approval transition that already committed to the DB.
+    """
+    try:
+        from core.email import _is_valid_email, send_email
+        from core.mailing_safe import safe_html_value
+
+        to_addr = (contract.get('contact_email') or '').strip()
+        if not _is_valid_email(to_addr):
+            return False
+
+        company = contract.get('company_name') or 'Sözleşme'
+        contact_person = contract.get('contact_person') or ''
+        rate_code = contract.get('rate_code') or '-'
+
+        approved = to_status == 'approved'
+        outcome_tr = 'Onaylandı' if approved else 'Reddedildi'
+        accent = '#16a34a' if approved else '#dc2626'
+        subject = f"Kurumsal sözleşme {outcome_tr.lower()} — {company}"
+
+        greeting = (
+            f"Sayın {safe_html_value(contact_person)},"
+            if contact_person else "Merhaba,"
+        )
+
+        reason_html = ""
+        if not approved and (reason or '').strip():
+            reason_html = (
+                "<p style='margin:0 0 8px;color:#0f172a;'>"
+                "<b>Reddetme gerekçesi:</b></p>"
+                f"<p style='margin:0 0 16px;color:#334155;'>"
+                f"{safe_html_value(reason.strip())}</p>"
+            )
+
+        html = (
+            "<div style='font-family:Helvetica,Arial,sans-serif;max-width:600px;"
+            "margin:0 auto;padding:18px;color:#0f172a;'>"
+            f"<h2 style='margin:0 0 8px;'>Kurumsal Sözleşme "
+            f"<span style='color:{accent};'>{outcome_tr}</span></h2>"
+            f"<p style='margin:0 0 16px;color:#334155;'>{greeting}</p>"
+            f"<p style='margin:0 0 8px;color:#334155;'>"
+            f"<b>{safe_html_value(company)}</b> firması için kurumsal "
+            f"sözleşmeniz <b style='color:{accent};'>{outcome_tr.lower()}</b>."
+            "</p>"
+            f"<p style='margin:0 0 16px;color:#64748b;'>"
+            f"Rate kodu: <b>{safe_html_value(str(rate_code))}</b></p>"
+            f"{reason_html}"
+            "<p style='font-size:11px;color:#94a3b8;margin-top:18px;'>"
+            "Syroce PMS · Otomatik üretilmiş bildirim"
+            "</p></div>"
+        )
+
+        res = await send_email(to=to_addr, subject=subject, html=html)
+        return bool(res.get("sent"))
+    except Exception:  # noqa: BLE001 — notification is best-effort
+        import logging
+        logging.getLogger(__name__).exception(
+            "[contract-approval] owner notification failed for %s",
+            contract.get('id'),
+        )
+        return False
 
 
 @router.get("/sales/corporate-contract/{contract_id}/approval-history")
