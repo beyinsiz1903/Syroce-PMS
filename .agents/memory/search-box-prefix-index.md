@@ -43,3 +43,18 @@ the Replit sandbox reaps `--fork`/`nohup` daemons between separate tool calls.
   coverage would silently drop new guests from prefix search (worse than the
   scan). `service_complaints` itself has no text-search endpoint, so indexing it
   would be fake-green. Both deferred to a follow-up.
+- **`folios.guest_name`**: NOT given a companion either — `folios` has ~20+
+  decentralized `db.folios.insert_one` sites (no central write helper), so a
+  `guest_name_lower` would be missing on most new rows → silent drop. Instead,
+  **bridge through the indexed `bookings.guest_name_lower`**: prefix-match
+  `bookings`, then fetch folios via the existing `(tenant_id, booking_id)` index.
+  Use this bridge pattern for any folio/child collection that links to bookings
+  but can't carry its own companion. **Why:** folio.guest_name mirrors the
+  booking's guest, so the bridge preserves intent while staying IXSCAN.
+
+## Centralized vs decentralized write test (before adding a collection)
+Only add a collection to `NORMALIZED_SEARCH_FIELDS` if its create/update path is
+**centralized** so the companion is written on every new row. Confirmed central:
+`bookings` (`core/atomic_booking.py`), `mice_accounts`/`mice_opportunities`/`leads`
+(`routers/mice.py`, `domains/sales/*`). Confirmed NOT central → must bridge or
+defer: `guests`, `folios`.

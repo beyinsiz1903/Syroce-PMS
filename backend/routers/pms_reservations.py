@@ -532,15 +532,16 @@ async def search_reservations(
         import re as _re
 
         if query:
-            # Search in guest name or booking ID — escape user regex meta chars
-            _q = _re.escape(query)
-            search_conditions.append({
-                '$or': [
-                    {'guest_name': {'$regex': _q, '$options': 'i'}},
-                    {'id': {'$regex': _q, '$options': 'i'}},
-                    {'booking_number': {'$regex': _q, '$options': 'i'}}
-                ]
-            })
+            # Index-serviceable anchored prefix match on the bookings
+            # `<field>_lower` companion fields (backed by
+            # (tenant_id, <field>_lower) indexes) — replaces the un-indexable
+            # unanchored case-insensitive regex scan that drove Atlas
+            # query-targeting alerts. (#247 pattern; the internal `id` substring
+            # branch is dropped because it has no companion index.)
+            from security.search_normalize import prefix_conditions
+            _conds = prefix_conditions(['guest_name', 'booking_number'], query)
+            if _conds:
+                search_conditions.append({'$or': _conds})
 
         if booking_id:
             search_conditions.append({'id': booking_id})

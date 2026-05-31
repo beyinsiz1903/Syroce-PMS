@@ -383,11 +383,27 @@ async def ai_chat(
 
                 guest_ids = [g['id'] for g in guests]
 
-                # Also search folios directly by guest_name field
-                folios_by_name = await db.folios.find({
-                    "tenant_id": current_user.tenant_id,
-                    "guest_name": {"$regex": _gnh or "", "$options": "i"}
-                }).to_list(20) if _gnh else []
+                # Resolve folios by name through the indexed bookings
+                # `guest_name_lower` companion (folios has no companion field —
+                # its writes are decentralized across ~20 insert sites, so it
+                # can't reliably carry one). Prefix-match bookings, then fetch
+                # their folios via the indexed (tenant_id, booking_id). Replaces
+                # the un-indexable unanchored folios.guest_name regex scan that
+                # drove Atlas query-targeting alerts.
+                folios_by_name = []
+                from security.search_normalize import prefix_conditions
+                _name_conds = prefix_conditions(['guest_name'], guest_name_hint)
+                if _name_conds:
+                    _name_bookings = await db.bookings.find({
+                        "tenant_id": current_user.tenant_id,
+                        "$or": _name_conds,
+                    }, {"_id": 0, "id": 1}).to_list(20)
+                    _name_booking_ids = [b["id"] for b in _name_bookings]
+                    if _name_booking_ids:
+                        folios_by_name = await db.folios.find({
+                            "tenant_id": current_user.tenant_id,
+                            "booking_id": {"$in": _name_booking_ids},
+                        }).to_list(20)
 
                 # Search folios by guest_id
                 folios_by_id = []

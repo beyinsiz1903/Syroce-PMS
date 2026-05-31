@@ -331,16 +331,17 @@ async def get_bookings(
 
     # If search is provided, do a text search across bookings
     if search and search.strip():
-        from security.query_safety import safe_search_term
-        term = safe_search_term(search) or "a^"  # 'a^' = regex-impossible (anchor after literal)
-        query = {
-            "tenant_id": current_user.tenant_id,
-            "$or": [
-                {"guest_name": {"$regex": term, "$options": "i"}},
-                {"room_number": {"$regex": term, "$options": "i"}},
-                {"id": {"$regex": term, "$options": "i"}},
-            ],
-        }
+        # Index-serviceable anchored prefix match on the bookings
+        # `<field>_lower` companion fields (backed by (tenant_id, <field>_lower)
+        # indexes) — replaces the un-indexable unanchored case-insensitive regex
+        # scan that drove Atlas query-targeting alerts. (#247 pattern; the
+        # `room_number`/`id` substring branches are dropped because they have no
+        # companion index, and `booking_number` prefix search is added.)
+        from security.search_normalize import prefix_conditions
+        conds = prefix_conditions(['guest_name', 'booking_number'], search)
+        query = {"tenant_id": current_user.tenant_id}
+        if conds:
+            query["$or"] = conds
         bookings = await db.bookings.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(length=limit)
         # Batch-fetch ALL guest names — guests koleksiyonu otorite. bookings.guest_name
         # eski sync/import artigi olabilir ("V4 Refund", "X" gibi); guests'te gercek
