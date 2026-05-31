@@ -16,11 +16,11 @@ demo tenant attempt the action, assert 404, verify the foreign row is untouched
 (side-effect check), and delete the row in `finally`. conftest wires `MONGO_URL`
 from `MONGO_ATLAS_URI` and `DB_NAME=syroce-pms`.
 
-**403 (missing-permission) tests:** the seeded `frontdesk@hotel.com` user is
-FRONT_DESK which *has* `VIEW_COMPANIES`, so it PASSES `manage_sales` (no 403).
-Use the seeded `housekeeping@hotel.com` / `staff123` (HOUSEKEEPING role, no
-VIEW_COMPANIES) to get a real 403. Seeded staff users + creds live in
-`backend/seed/tenant_users.py`.
+**403 (missing-permission) tests:** the seeded FRONT_DESK user *has*
+`VIEW_COMPANIES`, so it PASSES `manage_sales` (no 403). Use the seeded
+HOUSEKEEPING-role user (no VIEW_COMPANIES) to get a real 403. The seeded staff
+users, their roles, and their credentials live in `backend/seed/tenant_users.py`
+— read that file for the exact email/password rather than hardcoding them here.
 
 **Why:** wasted a run discovering register→basic-plan→entitlement 403 masks the
 isolation 404; and FRONT_DESK silently passing manage_sales would have made a

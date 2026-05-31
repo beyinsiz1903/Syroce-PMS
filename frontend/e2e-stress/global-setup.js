@@ -50,10 +50,10 @@ async function tryLogin(api, email, password, loginPath = '/api/auth/login') {
 //     izinli). RBAC-deny / privilege-escalation spec'leri için.
 //   - agency_admin: acente-portal `agency_admin` (B2B IDOR / cross-tenant spec).
 const ROLE_PASSWORD = process.env.E2E_STRESS_ROLE_PASSWORD || 'Str3ss-R0le!2026#fixed';
-const STAFF_LOWTRUST_EMAIL = 'e2e-stress-lowtrust@syroce-stress.local';
-const STAFF_HOUSEKEEPING_EMAIL = 'e2e-stress-housekeeping@syroce-stress.local';
+const STAFF_LOWTRUST_EMAIL = 'e2e-stress-lowtrust@e2e-stress.example.com';
+const STAFF_HOUSEKEEPING_EMAIL = 'e2e-stress-housekeeping@e2e-stress.example.com';
 const AGENCY_NAME = 'E2E Stress Harness Agency';
-const AGENCY_ADMIN_EMAIL = 'e2e-stress-agency-admin@syroce-stress.local';
+const AGENCY_ADMIN_EMAIL = 'e2e-stress-agency-admin@e2e-stress.example.com';
 
 async function provisionLowTrustStaff(api, stressAdminToken) {
     const out = { role: 'front_desk', email: STAFF_LOWTRUST_EMAIL, token: null, created: false };
@@ -202,7 +202,7 @@ async function provisionAgencyAdmin(api, stressAdminToken) {
     if (!agencyId) {
         const createAgencyResp = await api.post('/api/agencies', {
             headers: { Authorization: `Bearer ${stressAdminToken}` },
-            data: { name: AGENCY_NAME, contact_name: 'E2E Stress', contact_email: 'e2e-stress-agency@syroce-stress.local' },
+            data: { name: AGENCY_NAME, contact_name: 'E2E Stress', contact_email: 'e2e-stress-agency@e2e-stress.example.com' },
             failOnStatusCode: false, timeout: 30_000,
         }).catch(() => null);
         if (createAgencyResp && createAgencyResp.ok()) {
