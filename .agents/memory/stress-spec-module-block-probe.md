@@ -26,3 +26,24 @@ informational (never a hard FAIL). Distinct doctrine for the by-design cases tha
 NOT be "fixed" to 2xx: super_admin fail-closed 404 (`require_super_admin_guard(
 not_found=True)`), EntitlementMiddleware 403 (module-not-purchased), HMAC-gated public
 surfaces — making those reachable would be auth weakening.
+
+## Variant: handler-404 misread as endpoint_not_deployed
+
+`withModuleProbe` keys `moduleBlocked` on `status===403||404||0`, labelling 404 as
+`endpoint_not_deployed`. But a 404 that is the *handler's own* "not found" response
+(e.g. digital-key matches guest by `current_user.email`; a staff/admin token whose
+email matches no guest gets a legit handler-404) means the route IS mounted — the probe
+ran the auth dependency and the handler body. Blindly treating that 404 as "blocked"
+makes the whole spec SKIP forever, so its anonymous-deny + cross-tenant-deny security
+asserts never execute.
+
+**Why:** route-absence (FastAPI default 404, `detail:"Not Found"`) and a handler-raised
+404 (`detail:"Booking not found"`/custom) are the same HTTP status but opposite
+meanings. Status alone can't tell them apart.
+
+**How to apply:** distinguish via the response body — treat the route as PRESENT when
+status is 401/403/2xx, OR 404 with a non-empty `detail` that isn't literally
+`"not found"`. Only gate the spec when the route is genuinely absent/unreachable.
+Restoring the run is strengthening, not fake-green: the positive 2xx path stays
+fail-soft (P2, never hard-FAIL) while the anon/cross-tenant denials become real P0
+asserts that finally run.

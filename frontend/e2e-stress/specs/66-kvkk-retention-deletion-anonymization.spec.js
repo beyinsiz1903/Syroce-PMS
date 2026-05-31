@@ -63,9 +63,25 @@ test.describe.serial('F8AA KVKK retention/deletion/anonymization', () => {
                 }
             }
 
-            // Anonymize / hard-delete endpoint backend'te YOK → P2 informational.
-            recFinding(testInfo, 'P2', MOD, 'Anonymize / hard-delete guest endpoint not surfaced',
-                'Backend explicit `/api/gdpr/anonymize` veya `/api/gdpr/guest-delete` endpoint\'i bulunmadı. KVKK silinme talebi şu an file-level (ID-photo) cleanup\'a dayanıyor; guest profile anonymize/erase iş kuralı için endpoint kontratı gerekir. Roadmap backlog: F8AA v2.');
+            // Anonymize endpoint MEVCUT: POST /api/gdpr/guests/{guest_id}/anonymize
+            // (super_admin guard + ENABLE_GUEST_ANONYMIZATION fail-closed flag,
+            // 503 when off). Fail-closed kontrat probe — BOGUS guest_id +
+            // non-super-admin stress token → ASLA 2xx/mutasyon. Beklenen: 403
+            // (super_admin guard reddi) | 503 (flag off) | 404 (tenant-scope).
+            // 2xx = P0 (RBAC + feature-flag fail-closed bypass + pilot mutation).
+            const bogusGuest = '00000000-0000-0000-0000-000000000000';
+            const anon = await callTimed(request, 'post',
+                `/api/gdpr/guests/${bogusGuest}/anonymize`, {}, sToken);
+            const anonFailClosed = anon.status === 403 || anon.status === 404 || anon.status === 503;
+            if (anon.status >= 200 && anon.status < 300) {
+                recFinding(testInfo, 'P0', MOD, 'Guest anonymize fail-closed bypass',
+                    `POST /api/gdpr/guests/${bogusGuest}/anonymize (stress non-super-admin) → ${anon.status}. RBAC + feature-flag fail-closed kontratı ihlali.`);
+            }
+            rec(testInfo, { module: MOD, step: 'anonymize_fail_closed',
+                status: anonFailClosed ? 'PASS' : 'REVIEW',
+                note: `http=${anon.status} (endpoint mevcut + fail-closed; expect 403/404/503)` });
+            expect(anon.status < 200 || anon.status >= 300,
+                `guest anonymize must never 2xx for bogus id via non-super-admin (got ${anon.status})`).toBe(true);
         } finally {
             await assertNoExternalCallsPostBatch(testInfo, MOD, 'kvkk_readonly_batch',
                 stressTokens.seed_state ?? {}, request, pToken);
@@ -131,7 +147,7 @@ test.describe.serial('F8AA KVKK retention/deletion/anonymization', () => {
                 //    POST bulk-delete. Backend query `{booking_id, tenant_id:
                 //    stress_tenant}` eşleşmediği için matched=0/deleted_count=0
                 //    PASS (idempotent op). deleted_count>0 = P0.
-                const pilotBookings = await fetchSingle(request, pToken, '/api/bookings?limit=5');
+                const pilotBookings = await fetchSingle(request, pToken, '/api/pms/bookings?limit=5');
                 const pbItems = pilotBookings?.raw?.bookings || pilotBookings?.raw?.items || pilotBookings?.list || [];
                 const pilotBookingId = pbItems[0]?.id || pbItems[0]?._id || pbItems[0]?.booking_id || null;
                 if (pilotBookingId) {

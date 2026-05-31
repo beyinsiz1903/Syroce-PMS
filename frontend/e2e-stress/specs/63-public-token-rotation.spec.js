@@ -49,6 +49,7 @@ test.describe('F8Q § 63 — Public QR token tamper/cross-tenant/expiry deep', (
     let prefix = null;
     let stressTid = null;
     let stressRoomId = null;
+    let stressRoomToken = null;
     let moduleBlocked = false;
     let blockedReason = null;
 
@@ -57,8 +58,10 @@ test.describe('F8Q § 63 — Public QR token tamper/cross-tenant/expiry deep', (
         stressTid = stressState.stress_tenant_id || process.env.E2E_STRESS_TENANT_ID || null;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
-        // Harvest a stress room ID — bulk QR codes endpoint or rooms list.
-        const rooms = await callTimed(request, 'get', '/api/rooms?limit=1',
+        // Harvest a stress room ID — pms rooms list (bare array; items[] de
+        // tolere edilir). NOT: `/api/rooms` list route YOK; doğru yüzey
+        // `/api/pms/rooms`.
+        const rooms = await callTimed(request, 'get', '/api/pms/rooms?limit=1',
             undefined, stressTokens.stress_token);
         if (rooms.ok) {
             const arr = Array.isArray(rooms.body?.items) ? rooms.body.items
@@ -69,10 +72,25 @@ test.describe('F8Q § 63 — Public QR token tamper/cross-tenant/expiry deep', (
             moduleBlocked = true;
             blockedReason = 'no_stress_room_harvest';
             recFinding(testInfo, 'P2', MOD, 'no stress room harvested',
-                `GET /api/rooms status=${rooms.status} — A/B/C skip, D bağımsız.`);
+                `GET /api/pms/rooms status=${rooms.status} — A/B/C skip, D bağımsız.`);
         }
+
+        // Harvest a VALID token via staff qr-code endpoint (gerçek token contract
+        // doğrulaması + D rotation karşılaştırması için). Token döner ama tuz
+        // (server-side sır) dönmez.
+        if (stressRoomId) {
+            const qr = await callTimed(request, 'get', `/api/rooms/${stressRoomId}/qr-code`,
+                undefined, stressTokens.stress_token);
+            if (qr.ok && qr.body?.token) {
+                stressRoomToken = qr.body.token;
+            } else if (qr.status === 401 || qr.status === 403) {
+                recFinding(testInfo, 'P2', MOD, 'staff qr-code perm-gated',
+                    `GET /api/rooms/<room>/qr-code status=${qr.status} — valid-token harvest skip, tamper/rotation contract daralır.`);
+            }
+        }
+
         rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
-            note: `prefix=${prefix} stress_tid=${stressTid?.slice(0, 8)} room=${stressRoomId?.slice(0, 8) || 'none'} module_blocked=${moduleBlocked}` });
+            note: `prefix=${prefix} stress_tid=${stressTid?.slice(0, 8)} room=${stressRoomId?.slice(0, 8) || 'none'} valid_token=${stressRoomToken ? 'harvested' : 'none'} module_blocked=${moduleBlocked}` });
         expect(true).toBe(true);
     });
 
@@ -179,19 +197,79 @@ test.describe('F8Q § 63 — Public QR token tamper/cross-tenant/expiry deep', (
         expect(secretLeak, 'secret literal in response').toBe(false);
     });
 
-    test('D) Rotation surface contract REVIEW + final invariants', async ({ request, stressTokens, stressState }, testInfo) => {
-        // Backend'de explicit "rotate QR secret" public/staff endpoint yok.
-        // ROOM_QR_SECRET env var rotation deployment seviyesinde manuel.
-        // Documented contract: rotation sonrası eski JWT'ler `_verify_token`
-        // tarafından reject edilir (HMAC sig mismatch). Bu spec rotation'ı
-        // emule edemez — P2 REVIEW informational, P0/P1 değil.
-        recFinding(testInfo, 'P2', MOD, 'QR secret rotation endpoint absent',
-            'ROOM_QR_SECRET rotation deployment-only (env var). Public/staff API surface yok. Rotation-after token reject kontratı _verify_token HMAC sig mismatch ile dolaylı doğrulanır (tamper_contract A adımı).');
+    test('D) QR secret rotation — endpoint + old-token invalidation contract', async ({ request, stressTokens, stressState }, testInfo) => {
+        // POST /api/rooms/qr/rotate-secret per-tenant QR HMAC tuzunu döndürür
+        // (tenant-scoped — yalnız çağıranın tenant'ı; pilot etkilenmez). Rotation
+        // sonrası bu tenant'a ait eski tokenlar `_verify_token` HMAC mismatch ile
+        // 403 reddedilir; yeni basılan token doğrulanır. Tuz ASLA yanıtta dönmez.
+        const base = stressRoomId ? `/api/public/room-qr/${stressTid}/${stressRoomId}` : null;
+
+        // 0) Positive contract: harvested valid token rotation ÖNCESİ 200 verir.
+        let positiveOk = null;
+        if (base && stressRoomToken) {
+            const pos = await callTimed(request, 'get', `${base}?t=${stressRoomToken}`, undefined, null);
+            positiveOk = pos.ok && pos.status === 200;
+            if (positiveOk === false) {
+                recFinding(testInfo, 'P2', MOD, 'valid QR token did not verify pre-rotation',
+                    `GET ${base}?t=<valid> status=${pos.status} — beklenen 200.`);
+            }
+        }
+
+        // 1) Rotate THIS tenant's QR secret.
+        const rot = await callTimed(request, 'post', '/api/rooms/qr/rotate-secret',
+            {}, stressTokens.stress_token);
+        const rotateOk = rot.ok && (rot.body?.rotated === true || typeof rot.body?.version === 'number');
+        if (rot.status === 401 || rot.status === 403) {
+            recFinding(testInfo, 'P2', MOD, 'QR rotate-secret perm-gated',
+                `POST /api/rooms/qr/rotate-secret status=${rot.status} — rotation contract daralır.`);
+        } else if (!rotateOk && rot.status !== 0) {
+            recFinding(testInfo, 'P1', MOD, 'QR rotate-secret unexpected response',
+                `POST /api/rooms/qr/rotate-secret status=${rot.status} body=${JSON.stringify(rot.body).slice(0, 120)}.`);
+        }
+        if (rot.ok && tokenContainsSecretLeak(rot.body)) {
+            recFinding(testInfo, 'P0', MOD, 'rotate-secret response leaks secret',
+                'rotate-secret yanıtı salt/secret literal taşıyor — server-side sır sızıntısı.');
+        }
+
+        // 2) Rotation sonrası ESKİ token reddedilmeli (HMAC sig mismatch → 403).
+        let oldTokenRejected = null;
+        if (rotateOk && base && stressRoomToken) {
+            const old = await callTimed(request, 'get', `${base}?t=${stressRoomToken}`, undefined, null);
+            oldTokenRejected = old.status === 403;
+            if (old.ok && old.status === 200) {
+                recFinding(testInfo, 'P0', MOD, 'old QR token still valid after rotation',
+                    `GET ${base}?t=<old> status=${old.status} — rotation eski tokenı geçersiz kılmadı.`);
+            }
+        }
+
+        // 3) Yeni token re-harvest → 200 (rotation yeni sırrı etkin kıldı).
+        let newTokenOk = null;
+        if (rotateOk && base && stressRoomId) {
+            const qr2 = await callTimed(request, 'get', `/api/rooms/${stressRoomId}/qr-code`,
+                undefined, stressTokens.stress_token);
+            if (qr2.ok && qr2.body?.token) {
+                const fresh = await callTimed(request, 'get', `${base}?t=${qr2.body.token}`, undefined, null);
+                newTokenOk = fresh.ok && fresh.status === 200;
+                if (newTokenOk === false) {
+                    recFinding(testInfo, 'P1', MOD, 'fresh QR token rejected post-rotation',
+                        `GET ${base}?t=<fresh> status=${fresh.status} — rotation sonrası yeni token doğrulanmadı.`);
+                }
+            }
+        }
+
         const driftOk = await assertPilotDriftZero(testInfo, MOD, request, stressTokens.pilot_token, pilotBefore);
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'final', stressState, request, stressTokens.pilot_token);
-        rec(testInfo, { module: MOD, step: 'final_invariants', status: driftOk && extOk ? 'PASS' : 'FAIL',
-            note: `pilot_drift_zero=${driftOk} external_calls_empty=${extOk} rotation_endpoint=absent_P2_review` });
+        rec(testInfo, { module: MOD, step: 'rotation_contract',
+            status: driftOk && extOk ? 'PASS' : 'FAIL',
+            note: `positive=${positiveOk} rotate=${rot.status}/${rotateOk} old_rejected=${oldTokenRejected} new_ok=${newTokenOk} drift=${driftOk} ext=${extOk}` });
         expect(driftOk).toBe(true);
         expect(extOk).toBe(true);
+        // Rotation gerçekleştiyse eski-token reddi + yeni-token kabulü zorunlu.
+        if (rotateOk && base && stressRoomToken) {
+            expect(oldTokenRejected, 'old QR token must be rejected after rotation').toBe(true);
+        }
+        if (rotateOk && newTokenOk !== null) {
+            expect(newTokenOk, 'fresh QR token must verify after rotation').toBe(true);
+        }
     });
 });

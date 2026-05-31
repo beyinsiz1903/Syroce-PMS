@@ -113,16 +113,25 @@ test.describe('F8K § 62 — KVKK Consent + Digital Key + PII Guard Stress', () 
         // peer'lerle hizalı kalmak için 404'ü de blocked kabul ediyoruz; A
         // (consent contract) checkin endpoint'ine yöneliktir ve onun ayrı
         // probe'una ihtiyaç yok — bookings probe başarılı zaten.
+        // DİKKAT: stress admin'in email'i hiçbir guest ile eşleşmediği için
+        // get_digital_key guest_records=[] → booking lookup boş → 404 "Booking
+        // not found" döner. Bu 404 *route mount* anlamında DEPLOYED demektir,
+        // endpoint_not_deployed DEĞİL. withModuleProbe 404'ü kör "blocked"
+        // sayıyor → eski davranış B step'i HER ZAMAN skip ediyordu (gerçek
+        // anon/cross-tenant güvenlik assert'leri hiç koşmuyordu). Route'un
+        // gerçekten yok olup olmadığını handler-detail ile ayırt ediyoruz:
+        // 401/403 (auth dependency koştu) veya 404+handler-detail = route VAR.
         const dkProbe = await withModuleProbe(request, stressTokens.stress_token,
             `/api/guest/digital-key/${stressBookingId}`);
-        if (dkProbe.moduleBlocked) {
-            // 404 burada özel durum — checkin contract (A) hâlâ çalıştırılabilir.
-            // Bu yüzden moduleBlocked'ı sadece B (digital_key_dryrun) için
-            // local guard'a çeviriyoruz; A + C bağımsız.
+        const dkDetail = typeof dkProbe.body?.detail === 'string' ? dkProbe.body.detail : '';
+        const dkRouteExists = dkProbe.status === 401 || dkProbe.status === 403
+            || (dkProbe.status === 404 && dkDetail !== '' && dkDetail.toLowerCase() !== 'not found')
+            || (dkProbe.status >= 200 && dkProbe.status < 300);
+        if (!dkRouteExists) {
             digitalKeyBlocked = true;
-            digitalKeyBlockReason = `dk_probe_${dkProbe.reason}_status_${dkProbe.status}`;
-            recFinding(testInfo, 'P2', MOD, `Digital key route probe non-2xx (${dkProbe.reason})`,
-                `GET /api/guest/digital-key/<stress_bk> status=${dkProbe.status} — B step skipped, A+C bağımsız.`);
+            digitalKeyBlockReason = `dk_route_absent_${dkProbe.reason}_status_${dkProbe.status}`;
+            recFinding(testInfo, 'P2', MOD, `Digital key route absent/unreachable (${dkProbe.reason})`,
+                `GET /api/guest/digital-key/<stress_bk> status=${dkProbe.status} detail=${dkDetail || 'n/a'} — B step skipped, A+C bağımsız.`);
         }
 
         rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
@@ -248,10 +257,82 @@ test.describe('F8K § 62 — KVKK Consent + Digital Key + PII Guard Stress', () 
             }
         }
 
+        // 5) POSITIVE guest-principal path (best-effort, FAIL-SOFT):
+        //    digital-key guest'i `current_user.email` ile eşler. Seed guest
+        //    isimleri `{prefix}Guest_{NNNN}`, emailleri `{prefix.lower()}g{N}@
+        //    e2e-stress.example.com` (NNNN == N). checked_in bir booking'in
+        //    guest_id'sini al → guest_name'den N türet → o email ile bir
+        //    front_desk user provision et → login → digital-key 200 +
+        //    key_id/room_number + PII/pilot leak guard. Provisioning herhangi
+        //    bir adımda non-2xx → P2 REVIEW informational (pozitif path
+        //    doğrulanamadı), HARD-FAIL DEĞİL. Güvenlik kontratı (anon/cross)
+        //    yukarıda zaten P0 ile hard-enforced.
+        let positiveStatus = null;
+        let positiveValidated = false;
+        try {
+            const blist = await fetchSingle(request, stressTokens.stress_token, '/api/pms/bookings?limit=50');
+            const items = Array.isArray(blist.list) ? blist.list : [];
+            const ci = items.find((b) => (b.status || b.booking_status) === 'checked_in' && (b.guest_id));
+            const ciBookingId = ci?.id || ci?._id;
+            let guestEmail = null;
+            if (ci?.guest_id) {
+                const gdet = await callTimed(request, 'get', `/api/guests/${ci.guest_id}`,
+                    undefined, stressTokens.stress_token);
+                const gname = gdet.body?.guest_name || gdet.body?.name || '';
+                const m = /Guest_(\d+)/i.exec(gname);
+                if (m) guestEmail = `${prefix.toLowerCase()}g${parseInt(m[1], 10)}@e2e-stress.example.com`;
+            }
+            if (ci && ciBookingId && guestEmail) {
+                const GUEST_PW = 'StressGuestDK!A1b2C3';
+                const create = await callTimed(request, 'post', '/api/hotel/team',
+                    { email: guestEmail, name: `${prefix} DK Principal`, role: 'front_desk', password: GUEST_PW },
+                    stressTokens.stress_token);
+                const provisioned = create.ok || create.status === 409 || create.status === 400;
+                const login = await callTimed(request, 'post', '/api/auth/login',
+                    { email: guestEmail, password: GUEST_PW }, null);
+                const gToken = login.body?.access_token || login.body?.token;
+                if (provisioned && gToken) {
+                    const dk = await callTimed(request, 'get',
+                        `/api/guest/digital-key/${ciBookingId}`, undefined, gToken);
+                    positiveStatus = dk.status;
+                    if (dk.ok && dk.body) {
+                        assertNoTokenLeak(testInfo, MOD, dk.body, 'digital_key_positive');
+                        if (pilotTid && JSON.stringify(dk.body).includes(pilotTid)) {
+                            recFinding(testInfo, 'P0', MOD,
+                                'Digital key positive payload\'unda pilot tenant_id sızdı',
+                                `GET /api/guest/digital-key/<ci_bk> guest-principal body leak.`);
+                        }
+                        positiveValidated = Boolean(dk.body.key_id || dk.body.room_number);
+                        if (!positiveValidated) {
+                            recFinding(testInfo, 'P2', MOD,
+                                'Digital key positive 2xx ama key_id/room_number yok',
+                                `GET /api/guest/digital-key/<ci_bk> status=${dk.status} body=${JSON.stringify(dk.body).slice(0, 160)}.`);
+                        }
+                    } else {
+                        recFinding(testInfo, 'P2', MOD,
+                            'Digital key positive path 2xx alınamadı (fail-soft)',
+                            `GET /api/guest/digital-key/<ci_bk> status=${dk.status} — guest principal eşleşmesine rağmen key dönmedi (booking state/timing).`);
+                    }
+                } else {
+                    recFinding(testInfo, 'P2', MOD,
+                        'Digital key positive provision/login unavailable (fail-soft)',
+                        `create=${create.status} login=${login.status} — pozitif path doğrulanamadı.`);
+                }
+            } else {
+                recFinding(testInfo, 'P2', MOD,
+                    'Digital key positive harvest unavailable (fail-soft)',
+                    `checked_in booking/guest-email harvest edilemedi (ci=${Boolean(ci)} email=${Boolean(guestEmail)}).`);
+            }
+        } catch (e) {
+            recFinding(testInfo, 'P2', MOD,
+                'Digital key positive path exception (fail-soft)',
+                `${String(e?.message || e).slice(0, 120)}.`);
+        }
+
         const pass = anonOk && anonRefreshOk && validExpected && crossOk;
         rec(testInfo, { module: MOD, step: 'digital_key_dryrun',
             status: pass ? 'PASS' : 'FAIL',
-            note: `anon_get=${anon.status} anon_refresh=${anonRefresh.status} valid_get=${valid.status} cross_tenant_get=${crossStatus ?? 'no_pilot_bk'}` });
+            note: `anon_get=${anon.status} anon_refresh=${anonRefresh.status} valid_get=${valid.status} cross_tenant_get=${crossStatus ?? 'no_pilot_bk'} positive=${positiveStatus ?? 'n/a'}/${positiveValidated}` });
     });
 
     test('C) Guest profile PII guard + cross-tenant scope (profile-enhanced / profile-complete)', async ({ request, stressTokens }, testInfo) => {
@@ -414,29 +495,77 @@ test.describe('F8K § 62 — KVKK Consent + Digital Key + PII Guard Stress', () 
 
         // Cross-tenant: stress admin /api/kvkk/requests body'sinde pilot_tid
         // hiçbir item içinde olmamalı (zaten 2. probe'da kontrol edildi).
-        // 7) REVOKE + EXPORT probes — backend explicit /api/kvkk/revoke veya
-        //    /api/kvkk/export endpoint'i yoktur (operations_router'da DELETE
-        //    /requests/{id} delete'i tek revoke proxy'si; consent storage
-        //    immutable audit modeli). Spec gap'i belgelemek için 404/405
-        //    bekleyen probe — 2xx → P2 (backend exposure beklenmiyordu).
-        const revokeProbe = await callTimed(request, 'post', '/api/kvkk/consents/revoke',
-            { consent_id: 'F8K_NONEXIST' }, stressTokens.stress_token);
-        const exportProbe = await callTimed(request, 'get', '/api/kvkk/export?format=json',
+        // 7) REVOKE + EXPORT — backend KVKK lifecycle endpoint'leri MEVCUT:
+        //    POST /api/kvkk/consents/{id}/revoke (tenant-scoped; sahip değilse 404)
+        //    GET  /api/kvkk/export?guest_id= (tenant-scoped aggregate; selectorsuz 400)
+        //    Hard kontrat: bogus revoke → 404 (mutasyon yok); selectorsuz export
+        //    → 400; stress-guest export → 2xx + pilot_tid leak yok; cross-tenant
+        //    (pilot guest_id) export → boş + pilot verisi/tid yok.
+        const revokeProbe = await callTimed(request, 'post',
+            '/api/kvkk/consents/F8K_NONEXIST_CONSENT/revoke',
+            { reason: `${prefix}_revoke_probe` }, stressTokens.stress_token);
+        if (revokeProbe.status >= 200 && revokeProbe.status < 300) {
+            recFinding(testInfo, 'P1', MOD,
+                'KVKK revoke nonexistent consent 2xx',
+                `POST /api/kvkk/consents/<bogus>/revoke status=${revokeProbe.status} — tenant-scope/404 guard bypass.`);
+        }
+        const revokeOk = revokeProbe.status === 404 || revokeProbe.status === 403;
+
+        // Selectorsuz export → 400 (sınırsız tenant-genişliğinde döküm engeli).
+        const exportNoSel = await callTimed(request, 'get', '/api/kvkk/export',
             undefined, stressTokens.stress_token);
-        const expectAbsent = (r) => r.status === 404 || r.status === 405 || r.status === 403;
-        if (!expectAbsent(revokeProbe) && revokeProbe.status !== 0) {
-            recFinding(testInfo, 'P2', MOD,
-                'KVKK /consents/revoke endpoint beklenmedik şekilde mevcut',
-                `POST /api/kvkk/consents/revoke status=${revokeProbe.status} — backend revoke endpoint eklendiyse spec'e lifecycle eklensin.`);
+        const exportNoSelOk = exportNoSel.status === 400 || exportNoSel.status === 422 || exportNoSel.status === 403;
+
+        // Export by stress guest → 2xx tenant-scoped; token/pilot_tid leak yok.
+        let exportSelOk = true;
+        let exportSelStatus = null;
+        if (stressGuestId) {
+            const exp = await callTimed(request, 'get',
+                `/api/kvkk/export?guest_id=${encodeURIComponent(stressGuestId)}`,
+                undefined, stressTokens.stress_token);
+            exportSelStatus = exp.status;
+            if (exp.ok && exp.body) {
+                assertNoTokenLeak(testInfo, MOD, exp.body, 'kvkk_export_read');
+                if (pilotTid && JSON.stringify(exp.body).includes(pilotTid)) {
+                    recFinding(testInfo, 'P0', MOD,
+                        'KVKK export response\'unda pilot tenant_id sızdı',
+                        `GET /api/kvkk/export?guest_id=<stress> — cross-tenant leak.`);
+                    exportSelOk = false;
+                }
+            }
+            exportSelOk = exportSelOk && (exp.ok || exp.status === 403 || exp.status === 404);
         }
-        if (!expectAbsent(exportProbe) && exportProbe.status !== 0) {
-            recFinding(testInfo, 'P2', MOD,
-                'KVKK /export endpoint beklenmedik şekilde mevcut',
-                `GET /api/kvkk/export status=${exportProbe.status} — backend export endpoint eklendiyse PII mask guard eklensin.`);
+
+        // Cross-tenant export: stress admin + pilot guest_id → tenant-scope ile
+        // eşleşmesiz; pilot verisi/tid ASLA dönmemeli.
+        if (pilotGuestId) {
+            const xexp = await callTimed(request, 'get',
+                `/api/kvkk/export?guest_id=${encodeURIComponent(pilotGuestId)}`,
+                undefined, stressTokens.stress_token);
+            if (xexp.ok && xexp.body) {
+                const dump = JSON.stringify(xexp.body);
+                if (pilotTid && dump.includes(pilotTid)) {
+                    recFinding(testInfo, 'P0', MOD,
+                        'Cross-tenant KVKK export pilot tenant_id sızdı',
+                        `GET /api/kvkk/export?guest_id=<pilot> stress token ile pilot tid döndü — cross-tenant disclosure.`);
+                }
+                const c = xexp.body.counts || {};
+                const total = (c.consents || 0) + (c.requests || 0) + (c.audit_log || 0);
+                if (total > 0) {
+                    recFinding(testInfo, 'P0', MOD,
+                        'Cross-tenant KVKK export non-empty',
+                        `pilot guest_id stress tenant export'unda ${total} kayıt döndü — tenant-scope query kırık.`);
+                }
+            }
         }
-        rec(testInfo, { module: MOD, step: 'kvkk_revoke_export_probe',
-            status: 'REVIEW',
-            note: `revoke=${revokeProbe.status} export=${exportProbe.status} (backend'de bu endpoint'ler yok; DELETE /requests/{id} tek revoke proxy. F8K-v2 backlog: dedicated revoke + export endpoint).` });
+
+        rec(testInfo, { module: MOD, step: 'kvkk_revoke_export',
+            status: (revokeOk && exportNoSelOk && exportSelOk) ? 'PASS' : 'REVIEW',
+            note: `revoke=${revokeProbe.status} export_nosel=${exportNoSel.status} export_sel=${exportSelStatus ?? 'no_stress_guest'}` });
+        expect(revokeProbe.status < 200 || revokeProbe.status >= 300,
+            `revoke of bogus consent must never 2xx (got ${revokeProbe.status})`).toBe(true);
+        expect(exportNoSel.status !== 200,
+            `export without selector must not 200 (got ${exportNoSel.status})`).toBe(true);
 
         const pass = (consents.ok || consents.status === 403)
                   && (audit.ok || audit.status === 403)

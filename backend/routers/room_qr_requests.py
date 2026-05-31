@@ -19,6 +19,7 @@ import hmac
 import ipaddress
 import logging
 import os
+import secrets
 import uuid
 from datetime import UTC, datetime
 
@@ -28,6 +29,7 @@ from pydantic import BaseModel, Field
 from cache_manager import cache as _cache
 from core.database import _raw_db as raw_db
 from core.security import JWT_SECRET, generate_qr_code, get_current_user
+from modules.pms_core.role_permission_service import require_op
 
 logger = logging.getLogger("room_qr_requests")
 
@@ -214,7 +216,43 @@ CATEGORY_LABELS = {
 }
 
 
-def _token_for(tenant_id: str, room_id: str) -> str:
+# ── Per-tenant QR secret rotation (backward-compatible) ──────────────
+# Un-rotated tenants carry NO salt → token derivation is byte-identical to
+# the original `HMAC(tenant_id|room_id)` scheme (zero migration, no churn on
+# already-printed QR codes). After an operator rotates, a per-tenant salt is
+# mixed into the HMAC so every previously issued token fails `_verify_token`.
+_QR_SALT_COLL = "room_qr_secret_versions"
+_QR_SALT_CACHE_PREFIX = "room_qr_salt"
+_QR_SALT_CACHE_TTL = 300  # saniye — public scan hot-path'ini tek-RTT tutar
+
+
+async def _get_qr_salt(tenant_id: str) -> str | None:
+    """Tenant'ın aktif QR HMAC tuzunu döndürür; None → legacy (rotate edilmemiş).
+
+    Negatif sonuç (tuz yok) de cache'lenir (sentinel "") → her public taramada
+    DB lookup yapılmaz. Rotation cache'i hemen günceller, eski tokenlar düşer.
+    """
+    cache_key = f"{_QR_SALT_CACHE_PREFIX}:{tenant_id}"
+    try:
+        cached = _cache.get(cache_key)
+    except Exception:
+        cached = None
+    if cached is not None:
+        return cached or None  # "" sentinel → None
+    salt = ""
+    try:
+        doc = await raw_db[_QR_SALT_COLL].find_one({"tenant_id": tenant_id})
+        salt = (doc or {}).get("salt") or ""
+    except Exception:
+        salt = ""
+    try:
+        _cache.set(cache_key, salt, ttl=_QR_SALT_CACHE_TTL)
+    except Exception:
+        pass
+    return salt or None
+
+
+def _token_for(tenant_id: str, room_id: str, salt: str | None = None) -> str:
     if not _QR_SECRET:
         # Üretimde sır yoksa fail-closed — güvensiz sabit fallback yok
         raise HTTPException(
@@ -222,14 +260,15 @@ def _token_for(tenant_id: str, room_id: str) -> str:
             detail="QR servisi yapılandırılmamış: ROOM_QR_SECRET veya JWT_SECRET gerekir",
         )
     secret = _QR_SECRET.encode("utf-8")
-    msg = f"{tenant_id}|{room_id}".encode()
-    return hmac.new(secret, msg, hashlib.sha256).hexdigest()  # tam digest (64 char)
+    # salt yoksa legacy mesaj formatı korunur (byte-identik token).
+    raw = f"{tenant_id}|{room_id}" if not salt else f"{tenant_id}|{room_id}|{salt}"
+    return hmac.new(secret, raw.encode(), hashlib.sha256).hexdigest()  # tam digest (64 char)
 
 
-def _verify_token(tenant_id: str, room_id: str, token: str) -> bool:
+def _verify_token(tenant_id: str, room_id: str, token: str, salt: str | None = None) -> bool:
     if not _QR_SECRET:
         return False
-    expected = _token_for(tenant_id, room_id)
+    expected = _token_for(tenant_id, room_id, salt)
     return hmac.compare_digest(expected, token or "")
 
 
@@ -245,10 +284,15 @@ def _public_url_base(request: Request) -> str:
     return f"{proto}://{host}".rstrip("/")
 
 
-def _guest_url(request: Request, tenant_id: str, room_id: str) -> str:
+def _guest_url_with_salt(request: Request, tenant_id: str, room_id: str, salt: str | None) -> str:
     base = _public_url_base(request)
-    token = _token_for(tenant_id, room_id)
+    token = _token_for(tenant_id, room_id, salt)
     return f"{base}/g/room/{tenant_id}/{room_id}?t={token}"
+
+
+async def _guest_url(request: Request, tenant_id: str, room_id: str) -> str:
+    salt = await _get_qr_salt(tenant_id)
+    return _guest_url_with_salt(request, tenant_id, room_id, salt)
 
 
 async def _find_active_booking(tenant_id: str, room_id: str) -> dict | None:
@@ -271,7 +315,8 @@ async def _find_active_booking(tenant_id: str, room_id: str) -> dict | None:
 @router.get("/api/public/room-qr/{tenant_id}/{room_id}")
 async def public_room_info(tenant_id: str, room_id: str, t: str = Query(...)):
     """QR tarayıp formu açmak için oda & otel bilgilerini döner."""
-    if not _verify_token(tenant_id, room_id, t):
+    salt = await _get_qr_salt(tenant_id)
+    if not _verify_token(tenant_id, room_id, t, salt):
         raise HTTPException(status_code=403, detail="Geçersiz QR token")
 
     room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
@@ -324,7 +369,8 @@ async def public_submit_request(
     t: str = Query(...),
 ):
     """Misafir talep gönderir (giriş gerekmez)."""
-    if not _verify_token(tenant_id, room_id, t):
+    salt = await _get_qr_salt(tenant_id)
+    if not _verify_token(tenant_id, room_id, t, salt):
         raise HTTPException(status_code=403, detail="Geçersiz QR token")
 
     # Rate limit: 10 dk içinde aynı oda+IP için 20 submit (Redis-backed,
@@ -626,14 +672,15 @@ async def room_qr_code(
     if not room:
         raise HTTPException(status_code=404, detail="Oda bulunamadı")
 
-    url = _guest_url(request, tenant_id, room_id)
+    salt = await _get_qr_salt(tenant_id)
+    url = _guest_url_with_salt(request, tenant_id, room_id, salt)
     png = generate_qr_code(url)
     return {
         "room_id": room_id,
         "room_number": room.get("room_number"),
         "url": url,
         "qr_png_base64": png,  # data:image/png;base64,...
-        "token": _token_for(tenant_id, room_id),
+        "token": _token_for(tenant_id, room_id, salt),
     }
 
 
@@ -651,11 +698,48 @@ async def all_room_qr_codes(
         {"tenant_id": tenant_id, "is_active": {"$ne": False}},
         {"_id": 0, "id": 1, "room_number": 1, "room_type": 1, "floor": 1},
     ).sort("room_number", 1).to_list(2000)
+    salt = await _get_qr_salt(tenant_id)
     items = [{
         "room_id": room.get("id"),
         "room_number": room.get("room_number"),
         "room_type": room.get("room_type"),
         "floor": room.get("floor"),
-        "url": _guest_url(request, tenant_id, room.get("id")),
+        "url": _guest_url_with_salt(request, tenant_id, room.get("id"), salt),
     } for room in rooms]
     return {"items": items, "count": len(items)}
+
+
+@router.post("/api/rooms/qr/rotate-secret")
+async def rotate_room_qr_secret(
+    current_user=Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # admin-grade, tenant-scoped
+):
+    """Bu tenant'ın oda-QR HMAC tuzunu döndürür (KVKK/güvenlik rotasyonu).
+
+    Tenant-scoped: yalnız çağıranın tenant sırrı döner. Rotasyon sonrası bu
+    tenant'a ait daha önce üretilmiş/yazdırılmış tüm QR tokenları
+    `_verify_token` HMAC mismatch ile reddedilir; personel QR endpoint'inden
+    yeniden basılmalıdır. Tuz değeri ASLA yanıtta dönmez (server-side sır).
+    """
+    tenant_id = _tenant_of(current_user)
+    new_salt = secrets.token_hex(32)
+    now = datetime.now(UTC).isoformat()
+    existing = await raw_db[_QR_SALT_COLL].find_one({"tenant_id": tenant_id})
+    version = int((existing or {}).get("version") or 0) + 1
+    await raw_db[_QR_SALT_COLL].update_one(
+        {"tenant_id": tenant_id},
+        {"$set": {
+            "tenant_id": tenant_id,
+            "salt": new_salt,
+            "version": version,
+            "rotated_at": now,
+            "rotated_by": getattr(current_user, "id", None),
+        }},
+        upsert=True,
+    )
+    # Cache'i hemen güncelle → yeni tuz aynı instance'ta anında etkin.
+    try:
+        _cache.set(f"{_QR_SALT_CACHE_PREFIX}:{tenant_id}", new_salt, ttl=_QR_SALT_CACHE_TTL)
+    except Exception:
+        pass
+    return {"tenant_id": tenant_id, "version": version, "rotated_at": now, "rotated": True}

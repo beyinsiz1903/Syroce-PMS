@@ -497,6 +497,87 @@ async def get_kvkk_audit_log(skip: int = 0, limit: int = 200, current_user: User
     return {"logs": docs}
 
 
+@router.post("/kvkk/consents/{consent_id}/revoke")
+async def revoke_kvkk_consent(consent_id: str, body: dict = Body(default=None), current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # KVKK rıza geri çekme
+):
+    """KVKK rıza geri çekme (right to withdraw consent).
+
+    Tenant-scoped: yalnız çağıranın tenant'ına ait rıza kaydını "revoked"
+    işaretler + audit satırı yazar. Kayıt başka tenant'a aitse 404 (cross-tenant
+    açığa çıkarma/mutasyon yok). `_id` (uuid-string) veya `id` alanı eşleşir.
+    """
+    body = body or {}
+    reason = (body.get("reason") or "").strip()
+    now = datetime.utcnow()
+    result = await db.kvkk_consents.update_one(
+        {"$or": [{"_id": consent_id}, {"id": consent_id}], "tenant_id": current_user.tenant_id},
+        {"$set": {
+            "status": "revoked",
+            "revoked": True,
+            "revoked_at": now.isoformat(),
+            "revoked_by": current_user.email,
+            "revoke_reason": reason,
+        }},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Consent not found")
+    await db.kvkk_audit_log.insert_one({
+        "_id": str(uuid.uuid4()),
+        "tenant_id": current_user.tenant_id,
+        "action": "consent_revoked",
+        "consent_id": consent_id,
+        "reason": reason,
+        "actor": current_user.email,
+        "timestamp": now.isoformat(),
+    })
+    return {"id": consent_id, "status": "revoked"}
+
+
+@router.get("/kvkk/export")
+async def export_kvkk_data(guest_id: str | None = None, guest_name: str | None = None,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),  # KVKK veri erişim/taşınabilirlik
+):
+    """KVKK veri-sahibi erişim ihracı (right of access / data portability).
+
+    Bir misafirin tenant-scoped KVKK ayak izini toplar: saklanan rızalar,
+    veri-sahibi talepleri ve audit-log kayıtları. Selector (guest_id veya
+    guest_name) verilmezse 400 — sınırsız tenant-genişliğinde döküm engellenir.
+    Tüm sorgular `tenant_id` ile sınırlıdır (cross-tenant disclosure yok).
+    """
+    if not (guest_id or guest_name):
+        raise HTTPException(status_code=400, detail="guest_id veya guest_name zorunludur")
+    selectors = []
+    if guest_id:
+        selectors.append({"guest_id": guest_id})
+    if guest_name:
+        selectors.append({"guest_name": guest_name})
+    sel = {"$or": selectors} if len(selectors) > 1 else selectors[0]
+    query = {"tenant_id": current_user.tenant_id, **sel}
+    consents = await db.kvkk_consents.find(query).sort("date", -1).to_list(500)
+    requests_ = await db.kvkk_requests.find(query).sort("created_at", -1).to_list(500)
+    audit = await db.kvkk_audit_log.find(query).sort("timestamp", -1).to_list(500)
+    for coll in (consents, requests_, audit):
+        for d in coll:
+            if "_id" in d:
+                d["id"] = str(d.pop("_id"))
+    return {
+        "guest_id": guest_id,
+        "guest_name": guest_name,
+        "tenant_id": current_user.tenant_id,
+        "consents": consents,
+        "requests": requests_,
+        "audit_log": audit,
+        "exported_at": datetime.utcnow().isoformat(),
+        "counts": {
+            "consents": len(consents),
+            "requests": len(requests_),
+            "audit_log": len(audit),
+        },
+    }
+
+
 @router.patch("/pms/guests/{guest_id}/preferences")
 async def update_guest_preferences(guest_id: str, body: dict = Body(...), current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v100("frontdesk")),  # v100 DW
