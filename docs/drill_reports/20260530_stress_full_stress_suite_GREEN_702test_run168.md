@@ -1,7 +1,12 @@
-# Full Stress Suite — GREEN BASELINE — Run #168 (2026-05-30)
+# Full Stress Suite — Run #168 (2026-05-30) — historical reference
 
-> Bu doküman, web/backend Full Operational Stress Suite'in **resmi GREEN BASELINE**
-> kaydıdır. Önceki resmi baseline Run #167 → historical reference'a indi.
+> **SUPERSEDED:** Run #171 (2026-05-31) yeni resmi GREEN BASELINE oldu; bu kayıt
+> historical reference'a indi. Güncel baseline: `docs/baselines/BASELINE_CHAIN.md`
+> + `docs/drill_reports/20260531_stress_full_stress_suite_GREEN_703test_run171.md`.
+> Aşağıdaki metrikler/provenance #168 için tarihsel kayıt olarak korunmuştur.
+>
+> Bu doküman koştuğu sırada web/backend Full Operational Stress Suite'in resmi
+> GREEN BASELINE kaydıydı. Önceki resmi baseline Run #167 → historical reference'a indi.
 > **Kapsam notu:** bu web/backend full stress suite baseline'ıdır, /100 uygulama
 > kapsamı DEĞİLDİR — mobile/F10 ayrı ve açık (doğrulanmadı). Merkezi referans:
 > `docs/TEST_COVERAGE_SCORECARD_100.md`.

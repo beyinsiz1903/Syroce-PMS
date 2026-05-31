@@ -68,16 +68,16 @@ Detaylı gotcha kayıtları, dosya/satır referansları ve tarihçe → **`docs/
 
 ## Stress / REVIEW-SKIP Reduction — Current State
 
-- **Mevcut baseline (tek kaynak):** **Run #168 GREEN BASELINE** (2026-05-30, commit `52575268c025d97ce67b409d187b041283c74064`) — 702 test, status=Success, failedTests=0, PASS/FAIL/REVIEW/SKIP=1382/0/48/43, P0=P1=0, P2=57 / P3=1 informational, external_calls=[], pilot_drift=0, verdict **GO WITH WATCH**. Tam baseline zinciri + provenance (#168 current; #167/#162/#161/#159/#143 historical) → **`docs/baselines/BASELINE_CHAIN.md`**. **Kapsam notu:** bu web/backend full stress suite baseline'ıdır, /100 uygulama kapsamı DEĞİLDİR — mobile/F10 ayrı ve açık (doğrulanmadı); merkezi referans `docs/TEST_COVERAGE_SCORECARD_100.md`.
+- **Mevcut baseline (tek kaynak):** **Run #171 GREEN BASELINE** (2026-05-31, commit `b6c61862be61d111a5f725c786073fa57f35276f`, run ID 26708567911, job ID 78714440738) — 703 test, status=Success, failedTests=0, PASS/FAIL/REVIEW/SKIP=1384/0/48/43, P0=P1=0, P2=56 / P3=1 informational, external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**. #168→#171 delta: toplam +1, PASS +2, P2 −1 (e-Fatura test verisi fix → `accounting_expenses` temiz 10/0/0); regresyon yok. Drill: `docs/drill_reports/20260531_stress_full_stress_suite_GREEN_703test_run171.md`. Tam baseline zinciri + provenance (#171 current; #168/#167/#162/#161/#159/#143 historical) → **`docs/baselines/BASELINE_CHAIN.md`**. **Kapsam notu:** bu web/backend full stress suite baseline'ıdır, /100 uygulama kapsamı DEĞİLDİR — mobile/F10 ayrı ve açık (doğrulanmadı); merkezi referans `docs/TEST_COVERAGE_SCORECARD_100.md`.
 - **Doktrin (her fazda mutlak):** no fake-green · no RBAC weakening · no auth weakening · no PII exposure · no pilot mutation (pilot_drift=0) · external_calls=[] · failedTests=0 · P0=P1=0 · assertion gevşetme YOK · skip-as-pass YOK · kör-seed YASAK · gerçek UI failure'ı REVIEW'a düşürme YOK · gerçek başarısız UI path'i sayım azaltmak için skip etme YOK · verdict ≥ GO WITH WATCH · düz "GO" veya "/100" iddiası YOK · mobile/F10 ayrı. Agent full stress dispatch EDEMEZ; doğrulama targeted pytest / `node --check` / canlı read-only probe ile CI-deferred.
-- **Açık sayımlar (son full stress re-run ÖNCESİ, Run #168):** P2=57, REVIEW=48, SKIP=43, P3=1 informational.
+- **Açık sayımlar (Run #171 current baseline):** P2=56, REVIEW=48, SKIP=43, P3=1 informational.
 - **Tamamlanan paketler (REVIEW/SKIP Reduction; detay → `docs/drill_reports/20260530_review_skip_packages_ab_to_f_summary.md` + `docs/ops/REVIEW_SKIP_ZEROING_GOTCHAS.md`):**
   - **A+B** — ENV/posture + güvenli seed/data-state. Tek kod: Exely çok-koşullu fail-closed test-auth gate + spec idempotency stress vardiya self-open.
   - **C** — Ürün-sözleşme/uyum. Tek kod: e-Fatura `_normalize_customer_tax_number` parite (VKN/TCKN).
   - **D** — Endpoint/surface/module-blocked. Tek güvenli düzeltme: cross-tenant pentest messaging path-drift (`/messaging/messages`→`/conversations`).
   - **E** — Seed/data-state/harvest. Tek güvenli düzeltme: folio-mass void harvest window (`slice(10,15)`).
   - **F** — Frontend/UI selector & render. Tek güvenli düzeltme: housekeeping render spec route+selector drift (`/housekeeping`→`/housekeeping-status`, `room-card-*`/`status-btn-*`).
-- **Sıradaki adım:** tüm paketler sonrası **final full stress dispatch** (operatör; GREEN doğrulama sonrası baseline pointer güncelleme) VEYA mobile/F10 baseline. Full stress agent tarafından dispatch EDİLMEZ. Tüm paketler sonrası final full stress HENÜZ yeniden koşturulmadı.
+- **Sıradaki adım:** Post-paket final full stress KOŞTURULDU → **Run #171 GREEN** (e-Fatura fix dahil, current baseline). Sıradaki seçenek: mobile/F10 baseline (ayrı ve açık, doğrulanmadı). Full stress agent tarafından dispatch EDİLMEZ.
 
 ## Pointers
 
