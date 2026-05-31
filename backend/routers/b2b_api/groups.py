@@ -97,7 +97,6 @@ from pydantic import BaseModel, Field
 from core.atomic_booking import BookingConflictError, create_booking_atomic
 from core.database import db
 from core.security import _is_super_admin
-from core.tenant_db import set_tenant_context
 from models.schemas import User
 
 logger = logging.getLogger(__name__)

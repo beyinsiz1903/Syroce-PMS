@@ -14,10 +14,10 @@ from pymongo.errors import DuplicateKeyError
 from core.cache import cached
 from core.database import db
 from core.security import get_current_user, security
-from shared_kernel import index_backstops
 from modules.pms_core.role_permission_service import (
     require_op,
 )
+from shared_kernel import index_backstops
 
 router = APIRouter(prefix="/api", tags=["rms-revenue"])
 
