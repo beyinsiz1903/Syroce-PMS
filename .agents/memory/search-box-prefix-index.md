@@ -32,11 +32,27 @@ Run an `explain(executionStats)`: winningPlan stages must show `IXSCAN`, and
 Local mongod must be a **child of the verifying python process** (subprocess.Popen);
 the Replit sandbox reaps `--fork`/`nohup` daemons between separate tool calls.
 
+### Live Atlas explain — two traps (confirmed against guests, 2026-05-31)
+- **The shell DOES have the Atlas URI**: `MONGO_ATLAS_URI` is in the bash env even
+  though `MONGO_URL` isn't (`start.sh` derives `MONGO_URL` from it). So a read-only
+  live `explain` runs directly from a script — no need to drive it through the
+  workflow runner. `DB_NAME` defaults to `syroce-pms`.
+- **Pick a SELECTIVE prefix or you get a false positive.** With a broad prefix
+  (e.g. the `e2`-named stress tenant where one prefix matches ~73% of rows) the
+  cost-based planner prefers the OLD `(tenant_id, name)` index because it also
+  serves the endpoint's `.sort('name')` and residual-filters `_lower`; ratio still
+  looks ~1 only because nearly everything matches + the `limit` caps it. That does
+  NOT prove the companion index is used. Verify with a *selective* prefix (few
+  matches): then the planner picks `sn_<tenant>_<field>_lower` and ratio ~1 for the
+  right reason. A `SORT` stage is expected (the `_lower` index doesn't provide
+  `name` order) but it's a tiny in-memory sort over the matched prefix set, not the
+  alert metric. Neither path is an alert risk because every search endpoint caps
+  with a `limit`.
+
 ## What is OUT, and why
 - **Encrypted-PII** (guest/user email/phone/id) keeps the `_hash_<field>` blind
   index exact-match path. NEVER add a `_lower` plaintext copy of an encrypted
   field — it re-exposes the plaintext you encrypted.
-<<<<<<< HEAD
 - **`folios.guest_name`**: NOT given a companion either — `folios` has ~20+
   decentralized `db.folios.insert_one` sites (no central write helper), so a
   `guest_name_lower` would be missing on most new rows → silent drop. Instead,
