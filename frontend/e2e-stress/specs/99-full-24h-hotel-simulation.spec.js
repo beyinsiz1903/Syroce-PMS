@@ -665,7 +665,27 @@ test.describe('F8J § 99 — Full 24h hotel simulation', () => {
         // Cleanup, global stress_prefix script tarafından upstream'de yapılıyor;
         // bu spec yeni booking'leri walk-in ile yarattı, hepsinin guest_name'i
         // SUB_PREFIX taşır (E2E_STRESS_F8J_24H_*) → global cleanup eşleştirir.
-        rec(testInfo, { module: MOD, step: 'final_cleanup_snapshot', status: 'PASS',
+        // Task #173: when the sim is NOT module-blocked (foundation data present),
+        // the morning walk-in batch (Sabah-A, off rooms.slice(0,25)) is the spine
+        // of the 24h chain — every downstream phase (folio, payment, checkout,
+        // night audit) iterates walkInBookingIds[]. A 0-length batch means the sim
+        // ran vacuously and the snapshot would be fake-green. Hard-assert the
+        // chain actually did real work rather than silently passing.
+        const simDidWork = walkInBookingIds.length > 0;
+        rec(testInfo, { module: MOD, step: 'final_cleanup_snapshot',
+            status: simDidWork ? 'PASS' : 'FAIL',
             note: `sub_prefix=${SUB_PREFIX} walk_in=${walkInBookingIds.length} charged=${chargedBookingIds.length} paid=${paymentDoneBookingIds.length} moved=${movedRoomPairs.length} clock_in_ok=${clockInOk} checked_out=${checkedOutOk} pr_created=${prCreatedId ?? 'n/a'} na_first_posted=${naFirstSnapshot?.posted_charges ?? 'n/a'} qr_count=${qrCount ?? 'n/a'} complaints=${complaintCount ?? 'n/a'} mice_events=${miceEventCount ?? 'n/a'}` });
+        if (!simDidWork) {
+            recFinding(testInfo, 'P2', MOD,
+                '24h sim vacuous — walk-in spine 0 booking üretti',
+                `moduleBlocked=false (foundation data present) ama walkInBookingIds=0. Sabah-A walk-in batch tamamen başarısız → downstream zincir boş koştu; snapshot fake-green olurdu.`);
+        }
+        // Hard-assert: a non-blocked 24h sim MUST have produced at least one
+        // walk-in booking, otherwise the entire chain is a no-op masquerading as
+        // green (doctrine: no fake-green). module-blocked / data-scarcity already
+        // returns SKIP above — that's the honest path for genuine infra/data gaps.
+        expect(walkInBookingIds.length,
+            `24h sim produced 0 walk-in bookings despite not being module-blocked — Sabah-A spine failed, downstream phases ran empty. snapshot would be fake-green.`)
+            .toBeGreaterThan(0);
     });
 });

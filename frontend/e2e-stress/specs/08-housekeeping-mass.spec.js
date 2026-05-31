@@ -149,37 +149,62 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
         // Architect tur-3 feedback: OOO işareti tutmuyorsa booking layer reject etmeli.
         // D)'de işaretlenen OOO odalara walk-in dene → 4xx bekle. Kabul edilirse P0 finding.
         if (rooms.length < 20) { rec(testInfo, { module: MOD, step: 'ooo_booking_guard', status: 'SKIP' }); return; }
-        // Tur-23 fix: D)'de housekeeping-status set 200 dönse de bazı odalar
-        // (occupied/dirty) status transition rejection nedeniyle out_of_order'a
-        // geçmemiş olabiliyor. D2'nin guard'ı test edebilmesi için ROOM'un
-        // gerçekten out_of_order/out_of_service durumunda olması GEREK. Aksi
-        // halde "available" odaya walk-in başarısı = beklenen davranış (false P0).
-        // Fix: D'den sonra fresh GET ile status'ları yenile, sadece BLOCKED
-        // durumdaki ilk 5 odayı al.
-        const candidateIds = new Set(rooms.slice(rooms.length - 20).map((r) => r.id));
         const prefix = stressState.data_prefix;
-        // CI 2026-05-28 NO-GO follow-up (mirror 03/05 fix): `?include_virtual=true`
-        // backend `pms_rooms.py:289` use_cache koşulunu false yapar — cache-hit
-        // path post-mutation stale status döndürürse OOO target seçimi yanlış olur;
-        // fresh DB read garantili.
+        const BLOCKED = new Set(['out_of_order', 'out_of_service', 'maintenance']);
+        // Task #173: self-seed the BLOCKED precondition instead of depending on
+        // D)'s side effects. D) marked the last-20 rooms, but those may be
+        // occupied/dirty and rejected by the HK transition guard, so the OOO
+        // target set was usually empty → D2 SKIPped (vacuous). Here we pick
+        // *available* (bookable) foundation-seeded rooms and force them to
+        // out_of_order via the product's own room-status endpoint (force:true
+        // bypasses transition validation — housekeeping_state_service). Picking
+        // bookable rooms isolates the OOO guard: an available room is otherwise
+        // accept-able, so a walk-in rejection is attributable to the OOO state
+        // alone. This is NOT a blind seed — it uses the foundation rooms + the
+        // real state-transition API to establish a known precondition.
+        // `?include_virtual=true` (pms_rooms.py:289) bypasses the stress-prefix-
+        // less cache projection so we read fresh DB status.
         const freshR = await callTimed(request, 'get', '/api/pms/rooms?include_virtual=true', undefined, stressTokens.stress_token);
         const freshAll = freshR.body?.rooms || freshR.body?.items || (Array.isArray(freshR.body) ? freshR.body : []);
-        const BLOCKED = new Set(['out_of_order', 'out_of_service', 'maintenance']);
-        const oooTargets = freshAll
-            .filter((r) => candidateIds.has(r.id) && BLOCKED.has(r.status))
-            .slice(0, 5);
-        if (oooTargets.length === 0) {
-            rec(testInfo, { module: MOD, step: 'ooo_booking_guard', status: 'SKIP',
-                note: `no rooms in BLOCKED status after D) — HK transition guard rejected all 20 (likely occupied/dirty preconditions). Guard test inconclusive.` });
-            recFinding(testInfo, 'P2', MOD, 'OOO guard test inconclusive',
-                `D) housekeeping-status set sonrası 0 oda BLOCKED durumunda; D2 guard test skipped (pre-existing HK transition constraints).`);
+        if (!freshR.ok || freshAll.length === 0) {
+            rec(testInfo, { module: MOD, step: 'ooo_booking_guard', status: 'REVIEW',
+                note: `rooms list unreachable (http=${freshR.status}) — OOO guard precondition unverifiable (infra/env, not a product defect).` });
             return;
         }
+        // Prefer bookable rooms; fall back to any non-occupied room so the force
+        // transition isn't fighting an active stay.
+        const bookable = freshAll.filter((r) => r.status === 'available');
+        const seedPool = (bookable.length >= 3 ? bookable : freshAll.filter((r) => r.status !== 'occupied')).slice(0, 5);
+        for (const room of seedPool) {
+            await callTimed(request, 'post', '/api/pms-core/housekeeping/room-status', {
+                room_id: room.id, new_status: 'out_of_order', force: true,
+                notes: `${prefix} F8A OOO guard precondition`,
+            }, stressTokens.stress_token,
+            { headers: { 'Idempotency-Key': `${prefix}_ooo_seed_${room.id}` } });
+        }
+        // Verify the precondition via a fresh read (cache-bypass).
+        const seededIds = new Set(seedPool.map((r) => r.id));
+        const verifyR = await callTimed(request, 'get', '/api/pms/rooms?include_virtual=true', undefined, stressTokens.stress_token);
+        const verifyAll = verifyR.body?.rooms || verifyR.body?.items || (Array.isArray(verifyR.body) ? verifyR.body : []);
+        const oooTargets = verifyAll
+            .filter((r) => seededIds.has(r.id) && BLOCKED.has(r.status))
+            .slice(0, 5);
+        // Precondition hard-assert: if force:true room-status couldn't move a
+        // single available room into a BLOCKED state, the OOO transition itself
+        // is broken — surface it instead of silently SKIPping the guard.
+        rec(testInfo, { module: MOD, step: 'ooo_guard_precondition',
+            status: oooTargets.length > 0 ? 'PASS' : 'FAIL',
+            note: `seed_pool=${seedPool.length} blocked_after_force=${oooTargets.length}` });
+        expect(oooTargets.length, `Could not establish any BLOCKED room via force room-status — OOO transition broken. seed_pool=${seedPool.length}`).toBeGreaterThan(0);
         let rejected = 0, accepted = 0, other = 0;
         const acceptedDetail = [];
         for (let i = 0; i < oooTargets.length; i++) {
             const room = oooTargets[i];
             const ts = Date.now();
+            // Send a valid Idempotency-Key (walk-in route honors it,
+            // pms_hardening.py) so a 400 means the OOO guard rejected the room,
+            // NOT a missing-key 400 (which would otherwise count as a false
+            // "rejected" and mask a broken guard).
             const r = await callTimed(request, 'post', '/api/pms-core/walk-in', {
                 room_id: room.id,
                 nights: 1, rate: 1000,
@@ -188,14 +213,15 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
                 guest_email: `f8a-ooo-guard-${ts}-${i}@e2e-stress.example.com`,
                 guest_id_number: `E2EOG${ts}${i}`,
                 adults: 1,
-            }, stressTokens.stress_token);
+            }, stressTokens.stress_token,
+            { headers: { 'Idempotency-Key': `${prefix}_ooo_guard_${ts}_${i}` } });
             if (r.status === 400 || r.status === 409 || r.status === 422 || r.status === 403) rejected++;
             else if (r.ok) {
                 accepted++;
                 acceptedDetail.push({ room_id: room.id, status: r.status, body_excerpt: JSON.stringify(r.body).slice(0, 120) });
             } else other++;
         }
-        const guardStatus = oooTargets.length === 0 ? 'SKIP' : (accepted === 0 && rejected > 0 ? 'PASS' : (accepted > 0 ? 'FAIL' : 'REVIEW'));
+        const guardStatus = accepted === 0 && rejected > 0 ? 'PASS' : (accepted > 0 ? 'FAIL' : 'REVIEW');
         rec(testInfo, { module: MOD, step: 'ooo_booking_guard', status: guardStatus,
             endpoint: '/api/pms-core/walk-in (OOO target)',
             note: `n=${oooTargets.length} rejected=${rejected} accepted=${accepted} other=${other} ${accepted > 0 ? `accepted_samples=${JSON.stringify(acceptedDetail)}` : ''}` });
@@ -204,7 +230,12 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
                 'OOO odaya yeni booking kabul edildi — overbook + maintenance risk',
                 `${accepted}/${oooTargets.length} OOO odaya walk-in başarılı oldu. front_desk_service.walk_in OOO room status guard kırık. Detay: ${JSON.stringify(acceptedDetail)}`);
         }
-        expect(guardStatus, `ooo_booking_guard FAIL: accepted=${accepted}/${oooTargets.length} samples=${JSON.stringify(acceptedDetail)}`).not.toBe('FAIL');
+        // Hard-assert: every walk-in into a BLOCKED room MUST be rejected.
+        // accepted>0 is a P0 overbook/maintenance breach; the precondition above
+        // already guarantees ≥1 BLOCKED target, so a healthy guard yields
+        // rejected>0 & accepted=0 (no vacuous SKIP, no inconclusive green).
+        expect(accepted, `OOO booking guard breached: ${accepted}/${oooTargets.length} walk-ins accepted into BLOCKED rooms. samples=${JSON.stringify(acceptedDetail)}`).toBe(0);
+        expect(rejected, `OOO booking guard inconclusive: rejected=${rejected} other=${other} of ${oooTargets.length} — expected every walk-in into a BLOCKED room to be rejected.`).toBeGreaterThan(0);
         const extOk1 = await assertNoExternalCallsPostBatch(testInfo, MOD, 'ooo_booking_guard_5', stressState, request, stressTokens.pilot_token);
         expect(extOk1, 'ooo_booking_guard_5 sonrası external_calls invariant ihlal').toBe(true);
     });
@@ -277,6 +308,15 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
                     try {
                         localStorage.setItem('token', t);
                         localStorage.setItem('token_ts', String(Date.now()));
+                        // App.jsx auth gate (App.jsx:99) flips isAuthenticated=true
+                        // ONLY when BOTH `token` AND `user` exist in localStorage and
+                        // the token is not locally expired; it then re-validates via
+                        // /auth/me. Seeding only `token` made the app call
+                        // clearAuthStorage() → redirect to /auth → grid never mounts →
+                        // 0 rows (the prior vacuous REVIEW). The canonical user is
+                        // re-fetched from /auth/me with this valid stress token, so a
+                        // minimal placeholder `user` is enough to pass the gate.
+                        localStorage.setItem('user', JSON.stringify({ role: 'admin', email: 'e2e-stress@syroce-stress.local' }));
                     } catch (_e) { /* incognito or denied */ }
                 }, [stressTokens.stress_token]);
 
@@ -366,7 +406,15 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
             if (m.first_row_ms > 0 && m.first_row_ms > 8_000) gateBreaches.push({ viewport: m.viewport, kind: 'first_row_ms', ms: m.first_row_ms, gate: 8_000 });
         }
         const slow = gateBreaches.length > 0;
-        const status = noRows ? 'REVIEW' : (slow ? 'FAIL' : 'PASS');
+        // navOk = the FE actually served + DOM-loaded at least one viewport (the
+        // measurement push only happens after a successful page.goto). If BOTH
+        // navigations threw (FE unreachable / wrong port in this CI posture),
+        // measurements is empty → genuine infra/env gap → REVIEW (NOT a product
+        // defect, so no hard fail). When navOk, a 0-row grid is a real
+        // auth/data/selector regression and MUST fail (doctrine: gerçek UI
+        // failure'ı REVIEW'a düşürme YOK).
+        const navOk = measurements.length > 0;
+        const status = !navOk ? 'REVIEW' : (noRows ? 'FAIL' : (slow ? 'FAIL' : 'PASS'));
         rec(testInfo, { module: MOD, step: 'fe_render_tti', status,
             endpoint: '/housekeeping-status (FE)',
             note: `fe_base=${feBase} viewports=${measurements.length} measurements=${JSON.stringify(measurements)} gates(rows_50<3s,200<6s,500<10s,dom<10s,first_row<8s) breaches=${JSON.stringify(gateBreaches)}` });
@@ -377,9 +425,21 @@ test.describe('F8A § 08 — Housekeeping mass (render + transitions + OOO + sum
                 'HK FE render TTI gate aşıldı (50/200/500 row checkpoint)',
                 `Breaches: ${JSON.stringify(gateBreaches)}. 500-oda render için virtualization/pagination gerekli olabilir. Measurements: ${JSON.stringify(measurements)}`);
         }
-        if (noRows) {
-            rec(testInfo, { module: MOD, step: 'fe_render_tti_selector_miss', status: 'REVIEW',
-                note: `Whitelist selector (${candidates.join(', ')}) /housekeeping-status route'unda hiçbiri eşleşmedi — UI/selector değişti, FE auth/data yok veya grid boş render. measurements=${JSON.stringify(measurements)}` });
+        if (noRows && navOk) {
+            rec(testInfo, { module: MOD, step: 'fe_render_tti_selector_miss', status: 'FAIL',
+                note: `Whitelist selector (${candidates.join(', ')}) /housekeeping-status route'unda hiçbiri eşleşmedi — FE served (navOk) ama grid 0 row render etti: auth/data/selector regresyonu. measurements=${JSON.stringify(measurements)}` });
+            recFinding(testInfo, 'P2', MOD, 'HK grid 0-row render (FE served)',
+                `/housekeeping-status DOM-load oldu ama grid hiç room-card render etmedi — auth seed (token+user) veya /pms/housekeeping/rooms data/selector path'i kırık. measurements=${JSON.stringify(measurements)}`);
+        }
+        // Hard-assert: when the FE actually served the page (navOk), the HK grid
+        // MUST render real room rows. A served-but-empty grid is a genuine
+        // auth/data/selector failure and fails the run rather than degrading to a
+        // silent REVIEW (doctrine: no fake-green, gerçek UI failure'ı REVIEW'a
+        // düşürme YOK). FE totally unreachable (navOk=false) stays REVIEW above —
+        // that's an env/infra gap, not a product defect, so no hard fail here.
+        if (navOk) {
+            expect(noRows, `HK grid rendered 0 rows on /housekeeping-status despite FE serving the page (auth/data/selector regression). measurements=${JSON.stringify(measurements)}`).toBe(false);
+            expect(gateBreaches.length, `HK FE render TTI gate breached: ${JSON.stringify(gateBreaches)}`).toBe(0);
         }
         // FE test'i için runtime endpoint check ile post-batch invariant.
         // browser context ayrı request worker fixture'ından bağımsız; helper tek GET atar.

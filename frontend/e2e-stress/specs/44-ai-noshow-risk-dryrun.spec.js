@@ -32,7 +32,7 @@
 
 import { test, expect, rec } from '../fixtures/stress-context.js';
 import {
-    callTimed, recPerf, recFinding,
+    callTimed, recPerf, recFinding, fetchAllByPrefix,
     assertNoExternalCallsPostBatch, assertPilotDriftZero,
     pilotBookingsCount, withModuleProbe, assertPiiMasked,
     assertEndpointNeverCalled, assertNoVendorHttpCall,
@@ -113,8 +113,26 @@ test.describe('F8O § 44 — AI No-Show Risk Dry-run', () => {
             .map((p) => p?.booking_id)
             .filter((id) => typeof id === 'string' && id.length > 0)
             .slice(0, 5);
+        // Task #173: no-show predictions only score confirmed/guaranteed arrivals
+        // whose check_in == target_date. The foundation seed's bookings are
+        // checked_in/checked_out, so `preds` is typically empty → stressBookingIds=[]
+        // → the cross-tenant IDOR guard (test C) SKIPped (vacuous). The guard
+        // doesn't need a prediction — it needs real stress-tenant booking_ids to
+        // prove the pilot token's no-show response never leaks them. Source them
+        // directly from the seeded bookings list so C always runs (not a blind
+        // seed — reads the already-seeded foundation bookings by active prefix).
+        let bookingIdSource = 'predictions';
+        if (stressBookingIds.length === 0) {
+            const seeded = await fetchAllByPrefix(request, stressTokens.stress_token,
+                '/api/pms/bookings', 'stress_prefix', prefix, { maxPages: 4, pageSize: 200 });
+            stressBookingIds = seeded
+                .map((b) => b?.id)
+                .filter((id) => typeof id === 'string' && id.length > 0)
+                .slice(0, 5);
+            bookingIdSource = `bookings_list(${seeded.length})`;
+        }
         rec(testInfo, { module: MOD, step: 'setup', status: 'PASS',
-            note: `prefix=${prefix} pilot_before=${pilotBefore?.count} preds=${preds.length} stress_bookings=${stressBookingIds.length}` });
+            note: `prefix=${prefix} pilot_before=${pilotBefore?.count} preds=${preds.length} stress_bookings=${stressBookingIds.length} id_source=${bookingIdSource}` });
     });
 
     test('A) GET /api/predictions/no-shows — read + shape', async ({ request, stressTokens, stressState }, testInfo) => {
@@ -213,6 +231,12 @@ test.describe('F8O § 44 — AI No-Show Risk Dry-run', () => {
                 'Cross-tenant no-show leak — pilot response stress booking_id içeriyor',
                 `leak_hits=${leakHits}/${stressBookingIds.length} sample=${JSON.stringify(leakSample)}. Tenant isolation ihlali.`);
         }
+        // Hard-assert (Task #173): the pilot token's no-show response must NEVER
+        // contain a stress-tenant booking_id. With stressBookingIds now sourced
+        // from the seeded bookings list, this guard runs on real data instead of
+        // SKIPping, and a leak fails the run (doctrine: tenant isolation > sayım).
+        expect(tenantIsolated, `Cross-tenant no-show leak: ${leakHits}/${stressBookingIds.length} stress booking_ids in pilot response. sample=${JSON.stringify(leakSample)}`).toBe(true);
+        expect(r.ok || r.status === 403 || r.status === 404, `pilot no-show probe unexpected status=${r.status} — expected 2xx/403/404`).toBe(true);
     });
 
     test('D) Forbidden endpoint source-scan — autopilot/ML/pricing kapalı kapı', async ({}, testInfo) => {
