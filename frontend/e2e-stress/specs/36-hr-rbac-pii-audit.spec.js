@@ -92,11 +92,18 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
     let firstStaffId = null;
     let createdUsers = []; // {id, email, role, password}
     let roleTokens = {};   // role → bearer
+    // Task #162: team create/delete + /api/admin/users require_super_admin.
+    // stress_token tenant admin'dir → 403 → createOk=0 → modül bloke oluyordu.
+    // super_admin principal ile per-rol user create/cleanup gerçekten koşar.
+    // HR/audit reads (probe + staff list + salary + audit) tenant-scoped olduğu
+    // için stress_token'da kalır (super_admin pilot tenant'ı okurdu, yanlış scope).
+    let superToken = null;
     const MONTH = currentMonth();
 
-    test('Setup: prefix + pilot baseline + staff pool + per-role test user create + login', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('Setup: prefix + pilot baseline + staff pool + per-role test user create + login', async ({ request, stressTokens, stressRoles, stressState }, testInfo) => {
         test.setTimeout(120_000);
         prefix = stressState.data_prefix;
+        superToken = stressRoles.super_admin ?? stressTokens.pilot_token;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
         // HR staff list probe (super_admin) — staff pool + PII guard baseline.
@@ -122,7 +129,7 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
         const stressTid = stressState.stress_tid;
 
         // Idempotent pre-cleanup: prior-run residue (prefix+rbacpi prefix-tag).
-        const listR = await callTimed(request, 'get', '/api/admin/users', undefined, stressTokens.stress_token);
+        const listR = await callTimed(request, 'get', '/api/admin/users', undefined, superToken);
         let preCleaned = 0;
         if (listR.ok) {
             const users = Array.isArray(listR.body) ? listR.body
@@ -132,7 +139,7 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
                 if (em.startsWith(prefix.toLowerCase() + 'hrpii_') && em.endsWith('@stress.test') && u.tenant_id === stressTid) {
                     const del = await callTimed(request, 'delete',
                         `/api/admin/tenants/${stressTid}/team/${u.id || u._id}`,
-                        undefined, stressTokens.stress_token);
+                        undefined, superToken);
                     if (del.ok || del.status === 404) preCleaned++;
                 }
             }
@@ -146,7 +153,7 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
             const r = await callTimed(request, 'post',
                 `/api/admin/tenants/${stressTid}/team`,
                 { email, name, role, password },
-                stressTokens.stress_token);
+                superToken);
             if (r.ok && r.body?.user_id) {
                 createOk++;
                 createdUsers.push({ id: r.body.user_id, email, role, password });
@@ -461,7 +468,7 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
         for (const u of createdUsers) {
             const del = await callTimed(request, 'delete',
                 `/api/admin/tenants/${stressTid}/team/${u.id}`,
-                undefined, stressTokens.stress_token);
+                undefined, superToken);
             if (del.ok || del.status === 404) delOk++; else delFail++;
             await new Promise((res) => setTimeout(res, 250));
         }

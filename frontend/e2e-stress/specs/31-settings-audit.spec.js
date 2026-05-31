@@ -40,12 +40,18 @@ test.describe('F8I § 31 — Settings + Audit', () => {
     let pilotTenantSnapshot = null;
     let originalDescription = null;
     let mutationMarker = null;
+    // Task #162: admin/tenants + /info yüzeyleri require_super_admin. stress_token
+    // tenant admin'dir → 403 → modül bloke oluyordu. super_admin principal ile
+    // çağrılınca settings mutation/restore + cross-tenant drift guard gerçekten
+    // koşar. Audit reads (B) tenant-scoped olduğu için stress_token'da kalır.
+    let superToken = null;
 
-    test('Setup: prefix + pilot baseline + tenants probe + snapshots', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('Setup: prefix + pilot baseline + tenants probe + snapshots', async ({ request, stressTokens, stressRoles, stressState }, testInfo) => {
         prefix = stressState.data_prefix;
+        superToken = stressRoles.super_admin ?? stressTokens.pilot_token;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
-        const probe = await withModuleProbe(request, stressTokens.stress_token, '/api/admin/tenants');
+        const probe = await withModuleProbe(request, superToken, '/api/admin/tenants');
         if (probe.moduleBlocked) {
             moduleBlocked = true;
             blockedReason = `admin_tenants_probe_${probe.reason}_status_${probe.status}`;
@@ -87,7 +93,7 @@ test.describe('F8I § 31 — Settings + Audit', () => {
         const r = await callTimed(request, 'patch',
             `/api/admin/tenants/${stressState.stress_tid}/info`,
             { description: mutationMarker },
-            stressTokens.stress_token);
+            superToken);
         const ok = r.ok && r.body?.success === true;
         rec(testInfo, { module: MOD, step: 'mutation',
             status: ok ? 'PASS' : 'REVIEW',
@@ -191,7 +197,7 @@ test.describe('F8I § 31 — Settings + Audit', () => {
             return;
         }
         // Pilot tenant'ı listeden re-fetch et, baseline ile karşılaştır.
-        const r = await callTimed(request, 'get', '/api/admin/tenants', undefined, stressTokens.stress_token);
+        const r = await callTimed(request, 'get', '/api/admin/tenants', undefined, superToken);
         if (!r.ok) {
             recFinding(testInfo, 'P2', MOD, 'Pilot tenant re-fetch failed',
                 `status=${r.status} body=${JSON.stringify(r.body).slice(0, 120)}`);
@@ -246,7 +252,7 @@ test.describe('F8I § 31 — Settings + Audit', () => {
         const statuses = [];
         const otherStatuses = [];
         for (let i = 0; i < 20; i++) {
-            const r = await callTimed(request, 'get', '/api/admin/tenants', undefined, stressTokens.stress_token);
+            const r = await callTimed(request, 'get', '/api/admin/tenants', undefined, superToken);
             statuses.push(r.status);
             if (r.status >= 200 && r.status < 300) ok2xx++;
             else if (r.status === 429) throttled++;
@@ -277,7 +283,7 @@ test.describe('F8I § 31 — Settings + Audit', () => {
         const r = await callTimed(request, 'patch',
             `/api/admin/tenants/${stressState.stress_tid}/info`,
             { description: originalDescription || ' ' },
-            stressTokens.stress_token);
+            superToken);
         const ok = r.ok;
         rec(testInfo, { module: MOD, step: 'restore',
             status: ok ? 'PASS' : 'REVIEW',
@@ -306,10 +312,12 @@ test.describe('F8I § 31 — Settings + Audit', () => {
         try {
             const stateBlob = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'e2e-stress', '.auth', 'stress-state.json'), 'utf-8'));
             const tokenBlob = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'e2e-stress', '.auth', 'stress-token.json'), 'utf-8'));
+            // PATCH /info require_super_admin — super_admin principal kullan.
+            const restoreToken = tokenBlob.role_tokens?.super_admin ?? tokenBlob.pilot_token;
             const { request: apiReq } = await import('@playwright/test');
             const ctx = await apiReq.newContext({ baseURL: process.env.E2E_BASE_URL });
             const r = await ctx.patch(`/api/admin/tenants/${stateBlob.stress_tid}/info`, {
-                headers: { Authorization: `Bearer ${tokenBlob.stress_token}` },
+                headers: { Authorization: `Bearer ${restoreToken}` },
                 data: { description: originalDescription || ' ' },
                 failOnStatusCode: false,
                 timeout: 30_000,

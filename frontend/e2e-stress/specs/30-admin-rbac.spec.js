@@ -65,13 +65,22 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
     let blockedReason = null;
     let createdUsers = [];   // {id, email, role, token}
     let roleTokens = {};     // role → bearer
+    // Task #162: admin/tenants + team + admin/users yüzeyleri require_super_admin.
+    // stress_token tenant-level admin'dir (super_admin DEĞİL) → 403 → modül
+    // tamamen bloke oluyordu. super_admin principal token'ı (role_tokens.super_admin
+    // = pilot super_admin) ile çağrılınca gerçek RBAC matrisi test edilebilir.
+    // Tenant-scoped reads (rbac/system/gdpr) için low-priv roleTokens kullanılır.
+    let superToken = null;
 
-    test('Setup: prefix + pilot baseline + super_admin team POST probe + per-role user create', async ({ request, stressTokens, stressState }, testInfo) => {
+    test('Setup: prefix + pilot baseline + super_admin team POST probe + per-role user create', async ({ request, stressTokens, stressRoles, stressState }, testInfo) => {
         prefix = stressState.data_prefix;
+        // super_admin principal — admin/tenants + team yüzeyleri için. role_tokens
+        // yoksa pilot_token'a düş (ikisi de pilot super_admin'i çözümler).
+        superToken = stressRoles.super_admin ?? stressTokens.pilot_token;
         pilotBefore = await pilotBookingsCount(request, stressTokens.pilot_token);
 
         // Reachability probe: super_admin must be able to read tenants list.
-        const probe = await withModuleProbe(request, stressTokens.stress_token, '/api/admin/tenants');
+        const probe = await withModuleProbe(request, superToken, '/api/admin/tenants');
         if (probe.moduleBlocked) {
             moduleBlocked = true;
             blockedReason = `admin_tenants_probe_${probe.reason}_status_${probe.status}`;
@@ -86,7 +95,7 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
         // Idempotent pre-cleanup: önceki run'dan kalan prefix'li RBAC user'lar
         // varsa sil (architect review #4, 2026-05-19). 400 already-registered
         // hatasını önler, residue bırakmaz.
-        const listR = await callTimed(request, 'get', '/api/admin/users', undefined, stressTokens.stress_token);
+        const listR = await callTimed(request, 'get', '/api/admin/users', undefined, superToken);
         let preCleaned = 0;
         if (listR.ok) {
             const users = Array.isArray(listR.body) ? listR.body
@@ -96,7 +105,7 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
                 if (em.startsWith(prefix.toLowerCase() + 'rbac_') && em.endsWith('@stress.test') && u.tenant_id === stressTid) {
                     const del = await callTimed(request, 'delete',
                         `/api/admin/tenants/${stressTid}/team/${u.id || u._id}`,
-                        undefined, stressTokens.stress_token);
+                        undefined, superToken);
                     if (del.ok || del.status === 404) preCleaned++;
                 }
             }
@@ -112,7 +121,7 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
             const r = await callTimed(request, 'post',
                 `/api/admin/tenants/${stressTid}/team`,
                 { email, name, role, password },
-                stressTokens.stress_token);
+                superToken);
             if (r.ok && r.body?.user_id) {
                 createOk++;
                 createdUsers.push({ id: r.body.user_id, email, role, password });
@@ -172,7 +181,7 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
         let okCount = 0, failCount = 0;
         const details = [];
         for (const e of SENSITIVE) {
-            const r = await callTimed(request, 'get', e.path, undefined, stressTokens.stress_token);
+            const r = await callTimed(request, 'get', e.path, undefined, superToken);
             const is2xx = r.status >= 200 && r.status < 300;
             if (is2xx) okCount++;
             else { failCount++; details.push(`${e.path}=${r.status}`); }
@@ -194,7 +203,7 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
         // metrics). Tokens=spoofing primitive (threat-model § Spoofing).
         let baselineTokOk = true;
         for (const ep of SENSITIVE) {
-            const r = await callTimed(request, 'get', ep.path, undefined, stressTokens.stress_token);
+            const r = await callTimed(request, 'get', ep.path, undefined, superToken);
             if (r.ok) {
                 baselineTokOk = assertNoTokenLeak(testInfo, MOD, r.body, `admin_baseline:${ep.path}`) && baselineTokOk;
             }
@@ -213,7 +222,7 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
             return;
         }
         // /api/rbac/roles süper admin ile çağrılır (her auth gider).
-        const rolesR = await callTimed(request, 'get', '/api/rbac/roles', undefined, stressTokens.stress_token);
+        const rolesR = await callTimed(request, 'get', '/api/rbac/roles', undefined, superToken);
         let rolesOk = rolesR.ok;
         rec(testInfo, { module: MOD, step: 'rbac_roles_read',
             status: rolesOk ? 'PASS' : 'REVIEW',
@@ -350,7 +359,7 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
         // token ile sample alalım (best-effort).
         let pilotUserId = null;
         try {
-            const ul = await callTimed(request, 'get', `/api/admin/users?tenant_id_filter=${pilotTid}`, undefined, stressTokens.stress_token);
+            const ul = await callTimed(request, 'get', `/api/admin/users?tenant_id_filter=${pilotTid}`, undefined, superToken);
             const list = Array.isArray(ul.body) ? ul.body : (ul.body?.users || ul.body?.items || []);
             const u = list.find(x => x.tenant_id === pilotTid);
             if (u) pilotUserId = u.id || u._id;
@@ -429,7 +438,7 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
         for (const u of createdUsers) {
             const r = await callTimed(request, 'delete',
                 `/api/admin/tenants/${stressTid}/team/${u.id}`,
-                undefined, stressTokens.stress_token);
+                undefined, superToken);
             if (r.ok || r.status === 404) deleted++;
             else failed++;
             await new Promise(res => setTimeout(res, 150));
@@ -455,14 +464,15 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
             const stressTid = stateBlob.stress_tid;
             // Best-effort: state'ten okunan token blob.
             const tokenBlob = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'e2e-stress', '.auth', 'stress-token.json'), 'utf-8'));
-            const stressToken = tokenBlob.stress_token;
+            // team DELETE require_super_admin — super_admin principal kullan.
+            const cleanupToken = tokenBlob.role_tokens?.super_admin ?? tokenBlob.pilot_token;
             const { request: apiReq } = await import('@playwright/test');
             const ctx = await apiReq.newContext({ baseURL: process.env.E2E_BASE_URL });
             let cleaned = 0;
             for (const u of createdUsers) {
                 try {
                     await ctx.delete(`/api/admin/tenants/${stressTid}/team/${u.id}`, {
-                        headers: { Authorization: `Bearer ${stressToken}` },
+                        headers: { Authorization: `Bearer ${cleanupToken}` },
                         failOnStatusCode: false,
                         timeout: 30_000,
                     });
