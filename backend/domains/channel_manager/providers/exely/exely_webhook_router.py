@@ -474,7 +474,12 @@ async def receive_reservation(request: Request):
             return _xml_response(_soap_error_rs("Unauthorized source IP", "403"), status_code=403)
 
     if not raw_body or not raw_body.strip():
-        return _xml_response(_soap_error_rs("Empty request body", "400"))
+        # Transport-level malformed input (empty body) → HTTP 400. Business/
+        # resource faults (unknown hotel, tenant binding) keep HTTP 200 + SOAP
+        # fault per the OTA no-retry convention, but an empty/unparseable body
+        # is a client transport error and must not return 2xx (would be an
+        # ambiguous "success" status for invalid input).
+        return _xml_response(_soap_error_rs("Empty request body", "400"), status_code=400)
 
     # v109 Bug DAL round-7 follow-up (architect P2): bound XML payload size
     # before parsing. Without this, an attacker past the IP allowlist can
@@ -548,14 +553,24 @@ async def receive_reservation(request: Request):
         # Do NOT echo defusedxml exception details back to the wire (could
         # leak server-side info about parser configuration). Generic message
         # for security violations; ParseError detail is safe to surface.
+        # Transport-level malformed input (unparseable / hostile XML) → HTTP
+        # 400, mirroring the empty-body case. Resource/business faults below
+        # (unknown hotel code, tenant binding) deliberately stay HTTP 200 +
+        # SOAP fault per the OTA no-retry convention.
         return _xml_response(_soap_error_rs(
             "XML security violation" if _is_security else f"XML parse error: {exc}",
             "400",
-        ))
+        ), status_code=400)
 
     try:
         data = _parse_reservation(root)
     except ValueError as exc:
+        # Well-formed XML that is missing required OTA structure (e.g. no
+        # OTA_HotelResNotifRQ / HotelReservation) is a business/protocol-level
+        # fault, not a transport-malformed body: the SOAP envelope parsed fine.
+        # Per the OTA no-retry convention (and consistent with the unknown-hotel
+        # and tenant-binding faults below) this returns HTTP 200 + SOAP fault,
+        # NOT 400. Only empty/unparseable bodies above are HTTP 400.
         await _timeline_append(
             tenant_id="unknown",
             correlation_id=correlation_id,

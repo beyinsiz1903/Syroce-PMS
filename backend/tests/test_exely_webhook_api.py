@@ -182,8 +182,10 @@ class TestExelyWebhookReservationPush:
             data=""
         )
         
-        # Webhook returns 200 even for errors (OTA convention to prevent retries)
-        assert response.status_code == 200, f"Webhook returned {response.status_code}"
+        # Transport-level malformed body (empty) → HTTP 400. Business/resource
+        # faults (unknown hotel) still return HTTP 200 + SOAP fault per the OTA
+        # no-retry convention; an empty body is a client transport error.
+        assert response.status_code == 400, f"Webhook returned {response.status_code}"
         assert "text/xml" in response.headers.get("content-type", ""), "Response should be XML"
         
         # Should return error response
@@ -201,7 +203,8 @@ class TestExelyWebhookReservationPush:
             data=invalid_xml
         )
         
-        assert response.status_code == 200, f"Webhook returned {response.status_code}"
+        # Transport-level malformed XML → HTTP 400 (mirrors empty-body case).
+        assert response.status_code == 400, f"Webhook returned {response.status_code}"
         assert "text/xml" in response.headers.get("content-type", ""), "Response should be XML"
         
         # Should return XML parse error
@@ -543,7 +546,9 @@ class TestExelyWebhookResponseFormat:
             data=""  # Empty body triggers error
         )
         
-        assert response.status_code == 200
+        # Transport-level malformed body (empty) → HTTP 400, but the body is
+        # still a well-formed OTA_HotelResNotifRS SOAP fault envelope.
+        assert response.status_code == 400
         body = response.text
         
         assert "OTA_HotelResNotifRS" in body, "Error should still return OTA_HotelResNotifRS"
