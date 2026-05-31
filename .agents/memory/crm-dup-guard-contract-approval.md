@@ -37,3 +37,22 @@ false 409s. Index build is wrapped per-index (try/except + warning) so a
 pre-existing duplicate only disables that one backstop, never aborts boot.
 mice indexes live in `_ensure_indexes`; contract indexes in lazy
 `_ensure_contract_indexes` (sales.py).
+
+**Deferred-index trap (proven live, Task #216):** these partial unique indexes
+are GLOBAL (span all tenants), and `_ensure_indexes`/`_ensure_contract_indexes`
+set `_indexes_ready/_contract_indexes_ready = True` even when an individual
+unique build is *deferred* by its per-index try/except. So if a backend process
+first runs ensure-indexes while ANY duplicate exists in ANY tenant (e.g. stress
+residue: `E2E_STRESS_F7_*` dup `contact_email` rows blocked
+`uniq_corp_contract_contact_email`), that backstop is silently absent for the
+whole process and never retried — the race window is open even though unit tests
+("index params + DuplicateKeyError→409") stay green. Only a restart against
+clean data rebuilds it. To prove/repair: delete the blocking duplicate rows,
+restart backend, hit any endpoint that calls ensure-indexes, then verify via
+`index_information()` that the `uniq_*` index exists with `unique=True`.
+
+**demo@hotel.com == the PILOT tenant** (5bad4a34-…). Any live integration test
+using the demo login mutates pilot, so it MUST be net-zero: purge created rows
+in `finally` (delete_many by the unique identifier) so a failed assertion can't
+leak duplicate rows and break pilot_drift=0. Live race proof:
+`backend/tests/integration/test_crm_duplicate_race_live.py`.
