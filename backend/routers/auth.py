@@ -456,6 +456,19 @@ async def login(data: UserLogin, request: Request):
         await enforce(LOGIN_ACCOUNT, _acct_key, "giriş denemesi")
         raise HTTPException(status_code=status_code, detail=detail)
 
+    async def _safe_audit(doc: dict) -> None:
+        # F8Q §97 DoS sentinel: the login surface is public and burst-tested.
+        # The auth outcome (401/200) and the brute-force throttle are decided
+        # BEFORE we record the audit row, so a transient DB hiccup on this
+        # side-effect insert must NOT surface as a 5xx under burst. Mirrors the
+        # best-effort pattern already used by the QR complaint mirror and
+        # _find_active_booking. Auth correctness is unaffected: wrong creds
+        # still fail-closed and the throttle still records every attempt.
+        try:
+            await db.audit_logs.insert_one(doc)
+        except Exception as _audit_exc:
+            logger.warning("login audit write skipped (transient DB): %s", _audit_exc)
+
     # Build a stable cache key
     if data.hotel_id and data.username:
         cache_seed = f"hid:{data.hotel_id}|u:{data.username.lower()}|p:{data.password}"
@@ -544,7 +557,7 @@ async def login(data: UserLogin, request: Request):
         # Lookup tenant by hotel_id
         tenant_doc_for_lookup = await db.tenants.find_one({"hotel_id": str(data.hotel_id).strip()})
         if not tenant_doc_for_lookup:
-            await db.audit_logs.insert_one({
+            await _safe_audit({
                 "id": str(__import__('uuid').uuid4()),
                 "tenant_id": None,
                 "user_email": identity_label,
@@ -589,7 +602,7 @@ async def login(data: UserLogin, request: Request):
     # on the ghost-user path and leak ~250ms timing difference).
     pw_ok = verify_password(data.password, hashed_pwd or _DUMMY_PWHASH)
     if not user_doc or not pw_ok:
-        await db.audit_logs.insert_one({
+        await _safe_audit({
             "id": str(__import__('uuid').uuid4()),
             "tenant_id": user_doc.get('tenant_id') if user_doc else None,
             "user_email": identity_label,
@@ -612,7 +625,7 @@ async def login(data: UserLogin, request: Request):
             tenant_doc["features"] = resolve_tenant_features(tenant_doc)
             tenant = Tenant(**tenant_doc)
 
-    await db.audit_logs.insert_one({
+    await _safe_audit({
         "id": str(__import__('uuid').uuid4()),
         "tenant_id": user.tenant_id,
         "user_id": user.id,
@@ -651,7 +664,7 @@ async def login(data: UserLogin, request: Request):
             JWT_SECRET,
             algorithm=JWT_ALGORITHM,
         )
-        await db.audit_logs.insert_one({
+        await _safe_audit({
             "id": str(__import__('uuid').uuid4()),
             "tenant_id": user.tenant_id,
             "user_id": user.id,

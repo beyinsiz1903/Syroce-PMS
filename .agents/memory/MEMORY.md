@@ -4,3 +4,4 @@
 - [Validation fix drifts a stress spec into REVIEW](stress-validation-fix-spec-drift.md) — tightening a backend validator makes specs that sent garbage data 422; that's spec-drift, fix the test data, don't loosen the validator.
 - [charges_empty: confirm path+shape first](stress-charges-empty-endpoint-shape.md) — once detail path & charges[] shape match the backend, charges_empty=N/N is data-state vs 404, split only by CI detailShapeSnap.http; don't patch/seed/fake.
 - [Sentry before_send noise filtering](sentry-before-send-noise-filter.md) — expected/benign ERROR logs page via default logging integration; drop the exact class (full template regex) + counter in before_send, never lower log level or broad-substring.
+- [Public burst 5xx from side-effect DB writes](public-burst-5xx-sidewrite.md) — a DoS-sentinel "5xx under burst" on public auth/QR is usually an unprotected audit-write hiccup; wrap side-effect writes best-effort, NEVER swallow the auth-decision read.
