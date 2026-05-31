@@ -110,10 +110,22 @@ doğru olmalı — AND):**
 - Valid-payload / idempotency testleri (50-G/H) yalnız bu explicit stres-only
   mode altında koşar.
 
-**Durum:** Bu bir **backend kod görevi** (yeni gated mode `exely_webhook_router.py`).
-Wave 6 env posture'ının dışında, ayrı follow-up olarak takip edilir — bu turda
-implement edilmez (doktrin: güvenlik-hassas webhook auth değişikliği kendi
-odaklı turunu + architect review'unu hak eder). Karar burada kilitlendi.
+**Durum:** _(SUPERSEDED 2026-05-31 — aşağıdaki GÜNCELLEME geçerlidir; bu paragraf
+o tarihteki point-in-time durumdur.)_ Bu bir **backend kod görevi** (yeni gated mode
+`exely_webhook_router.py`). Wave 6 env posture'ının dışında, ayrı follow-up olarak
+takip edilir — bu turda implement edilmez (doktrin: güvenlik-hassas webhook auth
+değişikliği kendi odaklı turunu + architect review'unu hak eder). Karar burada
+kilitlendi.
+
+> **GÜNCELLEME (2026-05-31, baseline #171):** Bu deferred backend kod görevi
+> ARTIK TAMAMLANDI (Package A+B — `exely_webhook_router.py` çok-koşullu
+> fail-closed test-auth gate; gate koşulları L45-75 + allowlist bypass L442-466).
+> §4a bundan böyle bir **kod görevi DEĞİL, env-only**'dir: stres backend
+> deployment'ında `EXELY_TEST_WEBHOOK_AUTH_MODE=open_for_testing` set etmek
+> (yukarıdaki AND koşulları zaten sağlanıyorsa — `E2E_EXTERNAL_DRY_RUN=true`,
+> `E2E_ALLOW_DESTRUCTIVE_STRESS=true`, `E2E_STRESS_TENANT_ID` set, ortam non-prod)
+> 50-G/H valid/idempotency path'ini sürmeye yeter. Prod fail-closed 503 değişmez,
+> hiçbir güvenlik gevşetmesi yok. Mevcut baseline: `docs/baselines/BASELINE_CHAIN.md`.
 
 ---
 
@@ -160,4 +172,5 @@ odaklı turunu + architect review'unu hak eder). Karar burada kilitlendi.
 - **Exely stres modu**: ✅ KARAR §4a — `ALLOW_UNAUTHENTICATED_EXELY_WEBHOOK`
   KULLANILMAYACAK. Birincil yol `EXELY_IP_WHITELIST`=runner-IP; whitelist mümkün
   değilse stres-only çok-koşullu `EXELY_TEST_WEBHOOK_AUTH_MODE=open_for_testing`
-  (backend kod görevi, ayrı tur). Prod fail-closed 503 değişmez.
+  (backend kod görevi → **2026-05-31 itibarıyla TAMAMLANDI, Package A+B; artık
+  env-only**, bkz. §4a GÜNCELLEME). Prod fail-closed 503 değişmez.
