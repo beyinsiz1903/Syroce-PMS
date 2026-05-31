@@ -76,12 +76,26 @@ test.describe.serial('F8AB spa wellness operational stress', () => {
             const therProbe = await withModuleProbe(request, sToken, '/api/spa/therapists');
             const roomProbe = await withModuleProbe(request, sToken, '/api/spa/rooms');
 
+            // Task #166: global-setup grants the `spa` add-on to the stress tenant
+            // (real entitlement, no RBAC weakening — see ensureSpaEntitlement in
+            // global-setup.js). A 403 here means that provisioning regressed; that
+            // is a real entitlement/RBAC gap, so HARD-FAIL instead of the old
+            // silent SKIP. This is the skip-as-pass loophole the task closes.
+            const entitlementBlocked = [svcProbe, therProbe, roomProbe].some((p) => p.status === 403);
+            expect(entitlementBlocked,
+                `spa catalog entitlement-blocked (403) — global-setup must grant the spa add-on. ` +
+                `services_http=${svcProbe.status} therapists_http=${therProbe.status} rooms_http=${roomProbe.status}`
+            ).toBe(false);
+
+            // A non-403 unreachable (404 endpoint missing / network 0) is a
+            // deploy/environment fault, not a real failed path — tolerate as the
+            // module-blocked doctrine intends (record + SKIP downstream).
             if (svcProbe.moduleBlocked || therProbe.moduleBlocked || roomProbe.moduleBlocked) {
                 moduleBlocked = true;
-                recFinding(testInfo, 'P2', MOD, 'Spa catalog surface module-blocked',
-                    `services_http=${svcProbe.status} therapists_http=${therProbe.status} rooms_http=${roomProbe.status} — A/B/C/D/E skip, final invariants still enforced.`);
+                recFinding(testInfo, 'P2', MOD, 'Spa catalog surface unreachable (non-403)',
+                    `services_http=${svcProbe.status} therapists_http=${therProbe.status} rooms_http=${roomProbe.status} — deploy/network fault, not entitlement; A/B/C/D/E skip, final invariants still enforced.`);
                 rec(testInfo, { module: MOD, step: 'catalog_probe', status: 'SKIP',
-                    note: `module_blocked services=${svcProbe.status} therapists=${therProbe.status} rooms=${roomProbe.status}` });
+                    note: `unreachable services=${svcProbe.status} therapists=${therProbe.status} rooms=${roomProbe.status}` });
                 return;
             }
 
@@ -90,8 +104,9 @@ test.describe.serial('F8AB spa wellness operational stress', () => {
             rooms = roomProbe.body?.rooms || [];
 
             // If services exist but therapists/rooms are empty, we can still seed
-            // a therapist + room with the catalog role. Stress admin is super_admin
-            // so require_catalog passes.
+            // a therapist + room with the catalog role. The stress admin is a tenant
+            // ADMIN (in CATALOG_ROLES + short-circuits manage_sales), so with the
+            // `spa` add-on now provisioned require_catalog passes server-side.
             if (therapists.length === 0) {
                 const r = await callTimed(request, 'post', '/api/spa/therapists', {
                     name: `${prefix}Therapist`,
@@ -114,14 +129,15 @@ test.describe.serial('F8AB spa wellness operational stress', () => {
                 services = r.body?.services || [];
             }
 
-            if (services.length === 0 || therapists.length === 0 || rooms.length === 0) {
-                moduleBlocked = true;
-                recFinding(testInfo, 'P2', MOD, 'Spa catalog empty after seed attempt',
-                    `services=${services.length} therapists=${therapists.length} rooms=${rooms.length}. A/B/C/D/E skip.`);
-            }
+            // Task #166: with the `spa` add-on provisioned and the ADMIN principal
+            // authorized, the catalog MUST materialize real rows. Hard-assert
+            // instead of downgrading to a P2 SKIP — an empty catalog here is a real
+            // seeding/authorization failure, not a benign skip.
+            expect(services.length, `spa services must seed (got ${services.length})`).toBeGreaterThan(0);
+            expect(therapists.length, `spa therapists must seed (got ${therapists.length})`).toBeGreaterThan(0);
+            expect(rooms.length, `spa rooms must seed (got ${rooms.length})`).toBeGreaterThan(0);
 
-            rec(testInfo, { module: MOD, step: 'catalog_probe',
-                status: moduleBlocked ? 'SKIP' : 'PASS',
+            rec(testInfo, { module: MOD, step: 'catalog_probe', status: 'PASS',
                 note: `services=${services.length} therapists=${therapists.length} rooms=${rooms.length}` });
         } finally {
             await assertNoExternalCallsPostBatch(testInfo, MOD, 'setup_batch',

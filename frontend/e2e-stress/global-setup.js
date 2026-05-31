@@ -71,6 +71,87 @@ async function provisionLowTrustStaff(api, stressAdminToken) {
     return out;
 }
 
+// Task #166 — Spa add-on entitlement provisioning for the stress tenant.
+// Spec 98 (spa-wellness-operational) hits /api/spa/* which is entitlement-gated
+// by the `spa` add-on module (default OFF; core/entitlement.py ROUTE_MODULE_MAP).
+// A stress-tenant ADMIN principal is NOT a global super_admin, so the entitlement
+// middleware returns 403 ENTITLEMENT_DENIED on GET /api/spa/{services,therapists,
+// rooms} → the spec's catalog_probe flags moduleBlocked → A/B/C/D/E all SKIP
+// (green baseline, zero real spa coverage).
+//
+// Fix: actively grant the `spa` module to the stress tenant via the super-admin
+// module-management endpoint (PATCH /api/admin/tenants/{tid}/modules). This is a
+// REAL entitlement grant on a throwaway test tenant — NOT an RBAC/auth weakening:
+// the spa routers still enforce require_catalog / require_spa_ops / require_finance
+// + require_op("manage_sales") server-side, and the stress ADMIN role legitimately
+// satisfies them. The current module map is read first and merged so no other
+// add-on (e.g. `mice`) is clobbered. PATCH replaces the whole `modules` dict, so
+// merge-then-write is mandatory. Pilot guard: refuse to touch the pilot tenant.
+async function ensureSpaEntitlement(api, pilotToken, stressTid, stressToken) {
+    const out = { module: 'spa', already_on: false, patched: false, probe_status: null };
+    if (!stressTid) { out.skipped = 'no_stress_tid'; return out; }
+    if (PILOT_TID && stressTid === PILOT_TID) {
+        throw new Error('[stress-setup] NO-GO: refusing to enable spa add-on — STRESS_TENANT_ID equals PILOT_TENANT_ID.');
+    }
+
+    // 1) Read current modules for the stress tenant (super-admin only endpoint).
+    let currentModules = {};
+    const listResp = await api.get('/api/admin/tenants?limit=2000', {
+        headers: { Authorization: `Bearer ${pilotToken}` },
+        failOnStatusCode: false, timeout: 30_000,
+    }).catch(() => null);
+    if (listResp && listResp.ok()) {
+        const body = await listResp.json().catch(() => null);
+        const tenants = Array.isArray(body) ? body : (body?.tenants || []);
+        const match = tenants.find((t) => t?.id === stressTid);
+        if (match && match.modules && typeof match.modules === 'object') {
+            currentModules = match.modules;
+        }
+        out.found_tenant = !!match;
+    } else {
+        out.list_status = listResp?.status?.() ?? 0;
+    }
+
+    out.already_on = currentModules.spa === true;
+
+    // 2) Grant `spa` (merge — PATCH overwrites the entire modules map).
+    if (!out.already_on) {
+        const merged = { ...currentModules, spa: true };
+        const patchResp = await api.patch(`/api/admin/tenants/${stressTid}/modules`, {
+            headers: { Authorization: `Bearer ${pilotToken}` },
+            data: { modules: merged },
+            failOnStatusCode: false, timeout: 30_000,
+        }).catch(() => null);
+        out.patch_status = patchResp?.status?.() ?? 0;
+        out.patched = out.patch_status >= 200 && out.patch_status < 300;
+        if (!out.patched) {
+            throw new Error(
+                `[stress-setup] NO-GO: failed to enable \`spa\` add-on for stress tenant ` +
+                `(PATCH /api/admin/tenants/${stressTid}/modules → ${out.patch_status}). ` +
+                `Spec 98 would silently SKIP. ` +
+                `Manual fix: cd backend && STRESS_ENABLE_MODULES=spa python -m scripts.enable_mice_for_stress`,
+            );
+        }
+    }
+
+    // 3) Probe the gated surface with the STRESS principal — fail-fast if it
+    //    still 403s so a silent SKIP can never masquerade as a real PASS.
+    const probe = await api.get('/api/spa/services', {
+        headers: { Authorization: `Bearer ${stressToken}` },
+        failOnStatusCode: false, timeout: 30_000,
+    }).catch(() => null);
+    out.probe_status = probe?.status?.() ?? 0;
+    if (out.probe_status === 403) {
+        const txt = probe ? await probe.text().catch(() => '') : '';
+        throw new Error(
+            `[stress-setup] NO-GO: stress tenant STILL entitlement-blocked on /api/spa/services ` +
+            `after enabling \`spa\` (HTTP 403). body=${txt.slice(0, 200)}. ` +
+            `Manual fix: cd backend && STRESS_ENABLE_MODULES=spa python -m scripts.enable_mice_for_stress`,
+        );
+    }
+    return out;
+}
+
 async function provisionAgencyAdmin(api, stressAdminToken) {
     const out = { role: 'agency_admin', email: AGENCY_ADMIN_EMAIL, token: null, agency_id: null, created: false };
     // 1) Idempotent agency: önce ara, yoksa oluştur (POST /agencies her zaman
@@ -324,6 +405,20 @@ export default async function globalSetup() {
         console.log(`[stress-setup] ✅ mice add-on entitlement probe status=${probe.status()}`);
     }
 
+    // 7a-bis) Spa add-on entitlement provisioning — Task #166.
+    // Self-heal the `spa` add-on so spec 98 (spa-wellness-operational) runs with
+    // real data instead of catalog_probe SKIP. Real entitlement grant on the
+    // throwaway stress tenant (NOT an RBAC weakening); fail-fast if still blocked.
+    let spaEntitlement = null;
+    try {
+        spaEntitlement = await ensureSpaEntitlement(api, pilotToken, STRESS_TID, stressToken);
+        console.log(`[stress-setup] ✅ spa add-on entitlement ready: ${JSON.stringify(spaEntitlement)}`);
+    } catch (e) {
+        // Hard NO-GO — mirrors the mice gate: a missing/blocked spa add-on must
+        // surface loudly, never degrade spec 98 into a silent green SKIP.
+        throw e;
+    }
+
     // 7b) Pilot read-only fixtures — Task #13 (F8M v2 § 41B B2B IDOR matrix)
     // + Task #67 (F9C § 98 sales-lifecycle step J). Idempotently ensures the
     // pilot tenant carries one `room_blocks` doc, one `kbs_reports` doc and
@@ -411,6 +506,7 @@ export default async function globalSetup() {
         stress_baseline: stressBaseline,
         stress_after_seed: stressAfterSeed,
         pilot_fixtures: pilotFixtures,
+        spa_entitlement: spaEntitlement,
         gates: {
             destructive_flag: true,
             external_dry_run: true,
