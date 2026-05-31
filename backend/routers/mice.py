@@ -18,6 +18,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from pymongo.errors import DuplicateKeyError
 
 from cache_manager import cache as _cache
 from cache_manager import cached as _cached
@@ -70,6 +71,35 @@ async def _ensure_indexes() -> None:
             [("tenant_id", 1), ("name", 1)], name="mice_acc_name")
         await db.mice_accounts.create_index(
             [("tenant_id", 1), ("tax_no", 1)], name="mice_acc_taxno")
+        # Task #205: DB-level partial unique indexes close the read-then-insert
+        # race in `_assert_account_unique`. Two near-simultaneous creates with
+        # the same tax_no/email can both pass the app-level find_one; the unique
+        # index makes the losing insert fail with DuplicateKeyError (→ 409).
+        # The partial filter scopes uniqueness to *client* rows with a populated
+        # string value so (a) piggybacked banquet-competitor rows never collide,
+        # (b) blank ("")/missing identifiers are ignored exactly like the app
+        # guard, and (c) legacy rows without account_type stay out of the build.
+        # Each build is wrapped on its own so a pre-existing duplicate only
+        # disables this backstop, not the rest of the index batch.
+        for _uniq_field, _uniq_name in (
+            ("tax_no", "uniq_mice_acc_client_taxno"),
+            ("email", "uniq_mice_acc_client_email"),
+        ):
+            try:
+                await db.mice_accounts.create_index(
+                    [("tenant_id", 1), (_uniq_field, 1)],
+                    unique=True,
+                    partialFilterExpression={
+                        "account_type": "client",
+                        _uniq_field: {"$gt": "", "$type": "string"},
+                    },
+                    name=_uniq_name)
+            except Exception as _uniq_exc:  # noqa: BLE001
+                import logging
+                logging.getLogger("mice").warning(
+                    "mice_accounts unique index %s deferred (existing "
+                    "duplicate/data?) → race backstop NOT enforced: %s",
+                    _uniq_name, _uniq_exc)
         await db.mice_contacts.create_index(
             [("tenant_id", 1), ("account_id", 1)], name="mice_ctc_acc")
         await db.mice_resources.create_index(
@@ -445,7 +475,14 @@ async def create_account(body: AccountIn,
            **body.model_dump(),
            "created_at": datetime.now(UTC).isoformat(),
            "created_by": current_user.username}
-    await db.mice_accounts.insert_one(doc)
+    try:
+        await db.mice_accounts.insert_one(doc)
+    except DuplicateKeyError as exc:
+        # Lost the read-then-insert race: a concurrent request inserted the same
+        # tax_no/email first. Surface the identical field-specific 409 the
+        # app-level guard would have raised.
+        field = "tax_no" if "taxno" in str(exc) else "email"
+        raise HTTPException(409, f"Bu {field} ile kayıtlı müşteri zaten var")
     doc.pop("_id", None)
     _invalidate_mice_accounts_cache(current_user.tenant_id)
     return doc
@@ -462,12 +499,17 @@ async def update_account(account_id: str, body: AccountIn,
         db, current_user.tenant_id, body, exclude_id=account_id)
     # Discriminator guard: never mutate non-client docs (e.g. banquet
     # competitors stored in the same collection) via the CRM endpoint.
-    res = await db.mice_accounts.update_one(
-        {"id": account_id, "tenant_id": current_user.tenant_id,
-         **_CLIENT_ACCT_FILTER},
-        {"$set": {**body.model_dump(),
-                  "account_type": "client",
-                  "updated_at": datetime.now(UTC).isoformat()}})
+    try:
+        res = await db.mice_accounts.update_one(
+            {"id": account_id, "tenant_id": current_user.tenant_id,
+             **_CLIENT_ACCT_FILTER},
+            {"$set": {**body.model_dump(),
+                      "account_type": "client",
+                      "updated_at": datetime.now(UTC).isoformat()}})
+    except DuplicateKeyError as exc:
+        # Concurrent update raced us to the same tax_no/email — same 409.
+        field = "tax_no" if "taxno" in str(exc) else "email"
+        raise HTTPException(409, f"Bu {field} ile kayıtlı müşteri zaten var")
     if not res.matched_count:
         raise HTTPException(404, "Hesap bulunamadı")
     _invalidate_mice_accounts_cache(current_user.tenant_id)

@@ -21,5 +21,19 @@ approval state machine). Implemented as tenant-scoped app-level guards (not a un
 index) to avoid index-build failure on existing dup/null data; observable 409 is identical.
 
 **How to apply:** When touching account/contract uniqueness, keep the client-scope
-filter and the self-exclude (`exclude_id`) on updates. For race-safety upgrade, a
-partial unique index is the follow-up, not a behavior change.
+filter and the self-exclude (`exclude_id`) on updates.
+
+**Race-safety backstop (now implemented):** The app-level find_one guard is now
+backed by tenant-scoped *partial unique* indexes — `mice_accounts` on
+(tenant_id, tax_no) & (tenant_id, email), `corporate_contracts` on
+(tenant_id, rate_code) & (tenant_id, contact_email). Insert/update paths catch
+`DuplicateKeyError` and re-raise the SAME field-specific 409 (field sniffed from
+the index name in the error string). Two invariants the partial filter MUST keep:
+(1) scope `mice_accounts` to `account_type:"client"` so piggyback rows never
+collide; (2) exclude blanks/nulls with `{field: {"$gt": "", "$type": "string"}}`
+— required fields like rate_code/contact_email can be `""` and the app guard
+ignores blanks, so an empty-string-in-index would both break the build and cause
+false 409s. Index build is wrapped per-index (try/except + warning) so a
+pre-existing duplicate only disables that one backstop, never aborts boot.
+mice indexes live in `_ensure_indexes`; contract indexes in lazy
+`_ensure_contract_indexes` (sales.py).

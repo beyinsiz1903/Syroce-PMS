@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
+from pymongo.errors import DuplicateKeyError
 
 from core.cache import cached
 from core.database import db
@@ -189,6 +190,44 @@ CONTRACT_APPROVAL_TRANSITIONS: dict[str, set[str]] = {
 }
 
 
+_contract_indexes_ready = False
+
+
+async def _ensure_contract_indexes() -> None:
+    """Task #205: DB-level partial unique indexes behind ``_assert_contract_unique``.
+
+    The application-level read-then-insert guard has a race window: two
+    near-simultaneous creates with the same rate_code/contact_email can both
+    pass ``find_one`` and insert duplicates. The unique index makes the losing
+    write fail with ``DuplicateKeyError`` (translated to the same 409). The
+    partial filter scopes uniqueness to populated *string* values (``$gt: ""``
+    + ``$type``) so blank/missing identifiers never collide — exactly matching
+    the app guard which ignores blanks — and legacy null rows do not break the
+    build. Each build is wrapped on its own so a pre-existing duplicate only
+    disables this backstop, not the other index.
+    """
+    global _contract_indexes_ready
+    if _contract_indexes_ready:
+        return
+    for field, idx_name in (
+        ("rate_code", "uniq_corp_contract_rate_code"),
+        ("contact_email", "uniq_corp_contract_contact_email"),
+    ):
+        try:
+            await db.corporate_contracts.create_index(
+                [("tenant_id", 1), (field, 1)],
+                unique=True,
+                partialFilterExpression={field: {"$gt": "", "$type": "string"}},
+                name=idx_name)
+        except Exception as exc:  # noqa: BLE001
+            import logging
+            logging.getLogger("rms.sales").warning(
+                "corporate_contracts unique index %s deferred (existing "
+                "duplicate/data?) → race backstop NOT enforced: %s",
+                idx_name, exc)
+    _contract_indexes_ready = True
+
+
 async def _assert_contract_unique(
     tenant_id: str,
     contract: "CorporateContractCreate",
@@ -235,6 +274,7 @@ async def create_corporate_contract(
     # Tenant-scoped duplicate guard: rate_code and contact_email must be
     # unique within a tenant so a negotiated rate / billing contact cannot be
     # double-registered (409 rejected, not silently accepted).
+    await _ensure_contract_indexes()
     await _assert_contract_unique(current_user.tenant_id, contract)
 
     contract_id = str(uuid.uuid4())
@@ -269,7 +309,15 @@ async def create_corporate_contract(
         'created_by': current_user.username
     }
 
-    await db.corporate_contracts.insert_one(corporate_contract)
+    try:
+        await db.corporate_contracts.insert_one(corporate_contract)
+    except DuplicateKeyError as exc:
+        # Lost the read-then-insert race: a concurrent create registered the
+        # same rate_code/contact_email first. Surface the identical 409.
+        field = "rate_code" if "rate_code" in str(exc) else "contact_email"
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bu {field} ile kayıtlı sözleşme zaten var")
 
     return {
         'message': 'Corporate contract created',
@@ -299,31 +347,39 @@ async def update_corporate_contract(
     if not existing:
         raise HTTPException(status_code=404, detail="Contract not found")
 
+    await _ensure_contract_indexes()
     await _assert_contract_unique(
         current_user.tenant_id, contract, exclude_id=contract_id)
 
-    await db.corporate_contracts.update_one(
-        {'id': contract_id, 'tenant_id': current_user.tenant_id},
-        {
-            '$set': {
-                'company_name': contract.company_name,
-                'contract_type': contract.contract_type,
-                'rate_code': contract.rate_code,
-                'negotiated_rate': contract.negotiated_rate,
-                'discount_percentage': contract.discount_percentage,
-                'start_date': datetime.fromisoformat(contract.start_date),
-                'end_date': datetime.fromisoformat(contract.end_date),
-                'allotment': contract.allotment,
-                'blackout_dates': contract.blackout_dates,
-                'contact_person': contract.contact_person,
-                'contact_email': contract.contact_email,
-                'contact_phone': contract.contact_phone,
-                'notes': contract.notes,
-                'updated_at': datetime.now(UTC),
-                'updated_by': current_user.username
+    try:
+        await db.corporate_contracts.update_one(
+            {'id': contract_id, 'tenant_id': current_user.tenant_id},
+            {
+                '$set': {
+                    'company_name': contract.company_name,
+                    'contract_type': contract.contract_type,
+                    'rate_code': contract.rate_code,
+                    'negotiated_rate': contract.negotiated_rate,
+                    'discount_percentage': contract.discount_percentage,
+                    'start_date': datetime.fromisoformat(contract.start_date),
+                    'end_date': datetime.fromisoformat(contract.end_date),
+                    'allotment': contract.allotment,
+                    'blackout_dates': contract.blackout_dates,
+                    'contact_person': contract.contact_person,
+                    'contact_email': contract.contact_email,
+                    'contact_phone': contract.contact_phone,
+                    'notes': contract.notes,
+                    'updated_at': datetime.now(UTC),
+                    'updated_by': current_user.username
+                }
             }
-        }
-    )
+        )
+    except DuplicateKeyError as exc:
+        # Concurrent update raced us to the same rate_code/contact_email — 409.
+        field = "rate_code" if "rate_code" in str(exc) else "contact_email"
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bu {field} ile kayıtlı sözleşme zaten var")
 
     return {
         'message': 'Contract updated',
