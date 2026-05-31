@@ -159,9 +159,15 @@ test.describe('F8E § 28 — Finance Reports + Currency', () => {
 
         // 3) Convert against the rates.
         let okConv = 0, failConv = 0;
+        // Task #161 fix: convert-currency endpoint ConvertCurrencyRequest
+        // (backend/models/schemas/requests.py:225-229) zorunlu alanları
+        // `from_currency`/`to_currency` — `from`/`to` DEĞİL. Önceki payload
+        // `{amount,from,to}` gönderiyordu → Pydantic eksik-zorunlu-alan → 422 →
+        // okConv=0 → lifecycle REVIEW. Doğru alan adlarıyla convert 200 +
+        // converted_amount döner (rate create+list+convert lifecycle PASS).
         const convPairs = [
-            { amount: 1000, from: 'TRY', to: 'USD' },
-            { amount: 500, from: 'USD', to: 'EUR' },
+            { amount: 1000, from_currency: 'TRY', to_currency: 'USD' },
+            { amount: 500, from_currency: 'USD', to_currency: 'EUR' },
         ];
         for (let i = 0; i < N_CONVERT; i++) {
             const r = await callTimed(request, 'post', '/api/accounting/convert-currency',

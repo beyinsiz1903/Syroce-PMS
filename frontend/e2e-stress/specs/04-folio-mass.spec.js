@@ -28,9 +28,18 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
     test('Setup: stress folios + bookings list', async ({ request, stressTokens, stressState }, testInfo) => {
         const prefix = stressState.data_prefix;
         bookings = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/bookings', 'stress_prefix', prefix);
-        // Folio listesi için doğrudan endpoint olmayabilir → checkout-preview üzerinden de erişebiliriz.
-        // İlk attempt: /api/pms/folios
-        folios = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/pms/folios', 'stress_prefix', prefix, { maxPages: 8 });
+        // Task #161 path-drift fix: önceki revizyon `/api/pms/folios` çağırıyordu
+        // ama backend'de böyle bir route YOK (404) → fetchAllByPrefix her zaman []
+        // dönüyordu → spec booking-fallback'e düşüp charge'ları booking-türevli id
+        // ile POST ediyordu; resolve edilen id açık bir folio değilse
+        // FolioHardeningService.post_charge {success:False,"Folio not found"} →
+        // HTTP 400 (meşru validasyon, folio_hardening_service.py:18-21). Bu, "%82 400"
+        // bulgusunun kök nedeni: backend bug DEĞİL, spec'in path-drift'i. Canonical
+        // route `/api/folio/list` (backend/routers/finance/folio.py:75) gerçek folio
+        // id'leri (status=open + seeded room/tax charge'larıyla) döner ve `stress_prefix`
+        // alanını taşır → prefix filtresi çalışır; charge/void/reconcile gerçek veriyle
+        // koşar. Booking-fallback defense-in-depth olarak korunur (folio list boşsa).
+        folios = await fetchAllByPrefix(request, stressTokens.stress_token, '/api/folio/list', 'stress_prefix', prefix, { maxPages: 8 });
         let fallbackUsed = false;
         let bookingsWithFolioId = 0;
         if (folios.length === 0 && bookings.length > 0) {
@@ -67,7 +76,14 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
 
     test('A) 100 folio charge POST (mini-bar, restaurant, other)', async ({ request, stressTokens }, testInfo) => {
         if (folios.length < 5 && bookings.length < 5) { rec(testInfo, { module: MOD, step: 'charge_sample', status: 'SKIP', note: 'No folios reachable' }); return; }
-        // folio_id bilinmiyorsa booking_id üzerinden attempt; backend folio'yu booking'den çıkarsın.
+        // Task #161 root-cause note: eski revizyonda bu batch ~%82 s400
+        // raporluyordu. Kök neden Setup'taki path-drift'ti (`/api/pms/folios` 404
+        // → booking-fallback → booking-türevli id folio olarak çözülemiyor →
+        // post_charge "Folio not found" → 400). Bu MEŞRU validasyon (folio
+        // contract'ı doğru reddediyor) — backend bug DEĞİL, validator GEVŞETİLMEZ.
+        // Setup artık canonical `/api/folio/list` ile gerçek açık folio'ları
+        // harvest ediyor → charge'lar gerçek folio_id'ye gidiyor → s400 beklenmiyor.
+        // folio_id bilinmiyorsa booking_id üzerinden attempt (defense-in-depth).
         const sample = (folios.length > 0 ? folios : bookings).slice(0, 100);
         const cats = ['minibar', 'restaurant', 'spa', 'laundry'];
         const samples = []; let ok = 0, fail = 0; const failModes = {};
