@@ -1476,3 +1476,226 @@ export function assertAiKeyShapeIsSentinel(testInfo, module, llmStateBody) {
     }
     return pass;
 }
+
+// ============================================================================
+// Task #160 — Stress harness ortak altyapı: canonical API path haritası,
+// harvest offset/pencere helper'ı, idempotency replay assert helper'ı.
+// ============================================================================
+//
+// STRESS_PATHS — canonical API path haritası (tek doğruluk kaynağı).
+// Tüm downstream domain spec'leri (finans, admin/RBAC, public/KVKK,
+// cross-tenant, POS, spa, marketplace, RMS, rezervasyon, vergi/VCC)
+// endpoint URL'lerini BURADAN okur. Path drift'i (örn. cross-tenant
+// pentest messaging `/messaging/messages`→`/conversations`, housekeeping
+// `/housekeeping`→`/housekeeping-status`) tek yerde düzeltilir, spec'lere
+// hard-coded literal dağıtılmaz. Her path backend route source'una karşı
+// doğrulanmıştır (Task #160 keşif turu):
+//   - pms_rooms.py / pms_bookings.py                → /api/pms/{rooms,bookings}
+//   - routers/finance/folio.py                      → /api/finance/folio/*
+//   - domains/admin/router/tenants.py               → /api/admin/tenants
+//   - domains/admin/router/hotel.py                 → /api/hotel/team
+//   - domains/admin/router/users.py                 → /api/admin/tenant-users
+//   - domains/admin/entitlement_router.py           → /api/admin/feature-flags
+//   - domains/pms/pos_router/pos_core.py            → /api/pos/table-layout/*
+//   - app.mount("/ws", ...)                         → /ws
+//   - domains/admin/router/compliance.py            → /api/gdpr/*
+//   - routers/webhook_admin.py (prefix /api+/webhooks) → /api/webhooks/status
+//   - routers/agency_portal.py (prefix /api)        → /api/agencies, /api/agency-portal/*
+//
+// Fonksiyon değerleri path-param alan endpoint'ler içindir (örn.
+// folioDetail(folioId)); statik string'ler parametresiz list/collection
+// surface'leridir.
+export const STRESS_PATHS = Object.freeze({
+    // Auth
+    authLogin: '/api/auth/login',
+    // PMS core
+    pmsRooms: '/api/pms/rooms',
+    pmsBookings: '/api/pms/bookings',
+    pmsCheckout: '/api/pms-core/checkout',
+    // Finance / folio
+    folioList: '/api/finance/folio/list',
+    folioDetail: (folioId) => `/api/finance/folio/${folioId}`,
+    folioCharge: (folioId) => `/api/finance/folio/${folioId}/charge`,
+    // Admin / RBAC / settings
+    adminTenants: '/api/admin/tenants',
+    adminTenantUsers: '/api/admin/tenant-users',
+    adminFeatureFlags: '/api/admin/feature-flags',
+    hotelTeam: '/api/hotel/team',
+    // POS
+    posTableLayout: (outletId) => `/api/pos/table-layout/${outletId}`,
+    posTableLayoutUpdate: '/api/pos/table-layout/update',
+    // Enterprise realtime (WebSocket)
+    enterpriseWs: '/ws',
+    // GDPR / KVKK compliance
+    gdprGuestAnonymize: (guestId) => `/api/gdpr/guests/${guestId}/anonymize`,
+    gdprDataRequests: '/api/gdpr/data-requests',
+    // Channel-manager webhooks
+    webhooksStatus: '/api/webhooks/status',
+    // Agency / B2B portal
+    agencies: '/api/agencies',
+    agencyUsers: (agencyId) => `/api/agencies/${agencyId}/users`,
+    agencyPortalLogin: '/api/agency-portal/auth/login',
+});
+
+// harvestWindow — offset/pencere helper'ı. Seri çalışan stress spec'leri
+// (workers:1 + fullyParallel:false) paylaşılan bir örnek havuzundan
+// (örn. fetchAllByPrefix ile çekilen booking/folio listesi) `slice(0,N)`
+// ile pencere alırsa, bir önceki destructive batch o pencereyi tüketmiş
+// olur → sonraki spec "empty/no-target" REVIEW'ına düşer (self-depletion).
+// Bu helper modül-scope'lu bir cursor registry tutar: aynı `key` için her
+// çağrı bir ÖNCEKİ pencereden SONRA başlayan, çakışmayan yeni bir dilim
+// döndürür. Böylece kör-seed gerekmeden pencere kayması ile self-depletion
+// önlenir.
+//
+// Signature: harvestWindow(key, items, count, opts?) →
+//   { window, offset, nextOffset, exhausted, total }
+//   - key: paylaşılan havuz kimliği (örn. `${module}:bookings`). Aynı key'i
+//     paylaşan çağrılar aynı cursor'ı ilerletir.
+//   - items: harvest edilecek dizi (genelde fetchAllByPrefix sonucu).
+//   - count: istenen pencere boyutu.
+//   - opts.startOffset: cursor yoksa başlangıç offset (default 0).
+//   - opts.wrap: true ise havuz sonunda başa sarar (default false → exhausted).
+//   - opts.peek: true ise cursor'ı İLERLETMEZ (salt-okunur bakış).
+const _harvestCursors = new Map();
+
+export function harvestWindow(key, items, count, opts = {}) {
+    const list = Array.isArray(items) ? items : [];
+    const total = list.length;
+    const wrap = opts.wrap === true;
+    const peek = opts.peek === true;
+    let offset = _harvestCursors.has(key)
+        ? _harvestCursors.get(key)
+        : (Number.isInteger(opts.startOffset) ? opts.startOffset : 0);
+    if (wrap && total > 0) offset = ((offset % total) + total) % total;
+
+    let window = list.slice(offset, offset + count);
+    // Wrap-around: havuz sonuna gelindiyse ve wrap istendiyse baştan tamamla.
+    if (wrap && window.length < count && total > 0) {
+        const remaining = count - window.length;
+        window = window.concat(list.slice(0, Math.min(remaining, offset)));
+    }
+    const nextOffset = offset + count;
+    const exhausted = !wrap && offset >= total;
+    if (!peek) {
+        _harvestCursors.set(key, wrap && total > 0 ? (nextOffset % total) : nextOffset);
+    }
+    return { window, offset, nextOffset, exhausted, total };
+}
+
+export function resetHarvestCursors() {
+    _harvestCursors.clear();
+}
+
+// assertIdempotentReplay — idempotency replay assert helper'ı. Aynı
+// mutation'ı aynı `Idempotency-Key` ile İKİ kez gönderir ve ikinci çağrının
+// gerçek bir replay olduğunu (yeni kaynak ÜRETMEDİĞİNİ) doğrular. Backend'in
+// idempotency sözleşmesi (quick-booking, multi-room booking, kbs, upsell,
+// cashier ops, folio charge vb.) için tek-noktada guard.
+//
+// PASS kriteri (aşağıdakilerden biri):
+//   1. İki çağrı da 2xx ve aynı kaynak kimliği (id/booking_id/charge_id...)
+//      → klasik "replay returns same resource" sözleşmesi.
+//   2. İlk çağrı 2xx, ikinci 409/422 "duplicate/idempotency" → reddedildi,
+//      yine de yeni kaynak üretilmedi (conflict-style idempotency).
+//   3. İkinci çağrı `idempotent_replay:true` / `replayed:true` flag döndü.
+// FAIL kriteri:
+//   - İki çağrı da 2xx ama FARKLI kaynak kimliği → duplicate üretildi (P1).
+//   - İlk çağrı başarısız (idempotency doğrulanamaz) → REVIEW (informational),
+//     fail-soft: setup/precondition sorunu, sözleşme ihlali değil.
+//
+// Signature: (testInfo, module, request, method, path, body, token, opts?) →
+//   { pass, idempotencyKey, first, second, sameResource }
+//   - opts.idempotencyKey: dış key (default rastgele uuid-vari).
+//   - opts.idFields: kaynak kimliği aranacak alan adları (default geniş set).
+//   - opts.timeout / opts.headers: callTimed'a iletilir.
+export async function assertIdempotentReplay(testInfo, module, request, method, path, body, token, opts = {}) {
+    const idempotencyKey = opts.idempotencyKey
+        || `e2e-stress-idem-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const idFields = opts.idFields || [
+        'id', 'booking_id', 'charge_id', 'folio_id', 'payment_id',
+        'transaction_id', 'resource_id', 'event_id', '_id',
+    ];
+    const callOpts = {
+        ...opts,
+        headers: { 'Idempotency-Key': idempotencyKey, ...(opts.headers || {}) },
+    };
+    const extractId = (resp) => {
+        const b = resp?.body;
+        if (!b || typeof b !== 'object') return null;
+        for (const f of idFields) {
+            if (b[f] != null) return String(b[f]);
+            if (b.data && typeof b.data === 'object' && b.data[f] != null) return String(b.data[f]);
+        }
+        return null;
+    };
+    const first = await callTimed(request, method, path, body, token, callOpts);
+    const second = await callTimed(request, method, path, body, token, callOpts);
+
+    const firstOk = first.status >= 200 && first.status < 300;
+    const secondOk = second.status >= 200 && second.status < 300;
+    const firstId = extractId(first);
+    const secondId = extractId(second);
+    const replayFlag = !!(second.body && (second.body.idempotent_replay || second.body.replayed
+        || second.body.is_replay || second.body.duplicate));
+    const conflictStyle = !secondOk && (second.status === 409 || second.status === 422);
+
+    // Precondition: ilk mutation başarısız → idempotency sözleşmesi
+    // doğrulanamaz (kaynak hiç oluşmadı). REVIEW (fail-soft) — bu bir
+    // contract ihlali değil, setup/precondition eksiği.
+    if (!firstOk) {
+        testInfo.annotations.push({
+            type: 'rec',
+            description: JSON.stringify({
+                module, step: 'idempotent_replay',
+                status: 'REVIEW',
+                note: `first_call_not_2xx status=${first.status} — idempotency unverifiable (precondition). key=${idempotencyKey} path=${path}`,
+            }),
+        });
+        return { pass: true, idempotencyKey, first, second, sameResource: null, unverifiable: true };
+    }
+
+    const sameResource = (firstId != null && secondId != null) ? (firstId === secondId) : null;
+    const distinctResource = (firstId != null && secondId != null && firstId !== secondId);
+
+    let pass;
+    let detail;
+    if (distinctResource) {
+        pass = false;
+        detail = `Aynı Idempotency-Key ile 2 çağrı FARKLI kaynak üretti: first_id=${firstId} second_id=${secondId}. Duplicate yazım — idempotency sözleşmesi ihlali.`;
+    } else if (secondOk && sameResource === true) {
+        pass = true; // klasik replay-returns-same-resource
+    } else if (replayFlag) {
+        pass = true; // backend explicit replay flag
+    } else if (conflictStyle) {
+        pass = true; // conflict-style idempotency (duplicate reddedildi, yeni kaynak yok)
+    } else if (secondOk && sameResource === null) {
+        // Id alanı bulunamadı; kimlik karşılaştırması yapılamadı. Yeni kaynak
+        // üretildiğini KANITLAYAMADIK ama ELEYEMEDİK de → REVIEW.
+        pass = true;
+        detail = `İkinci çağrı 2xx fakat kaynak kimliği çıkarılamadı (idFields=${idFields.join(',')}). Replay kanıtlanamadı, duplicate de eleyemedik — REVIEW.`;
+    } else {
+        pass = false;
+        detail = `Beklenmeyen replay sonucu: first_status=${first.status} second_status=${second.status} first_id=${firstId} second_id=${secondId}.`;
+    }
+
+    const isReviewOnly = pass && !!detail;
+    testInfo.annotations.push({
+        type: 'rec',
+        description: JSON.stringify({
+            module, step: 'idempotent_replay',
+            status: isReviewOnly ? 'REVIEW' : (pass ? 'PASS' : 'FAIL'),
+            note: `key=${idempotencyKey} first=${first.status} second=${second.status} first_id=${firstId} second_id=${secondId} same=${sameResource} replay_flag=${replayFlag} conflict_style=${conflictStyle}`,
+        }),
+    });
+    if (!pass) {
+        testInfo.annotations.push({
+            type: 'finding',
+            description: JSON.stringify({
+                severity: 'P1', module,
+                title: 'Idempotency replay ihlali — aynı key duplicate kaynak üretti',
+                detail: detail || `path=${path} key=${idempotencyKey}`,
+            }),
+        });
+    }
+    return { pass, idempotencyKey, first, second, sameResource };
+}

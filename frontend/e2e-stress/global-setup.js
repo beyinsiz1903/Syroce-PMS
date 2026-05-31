@@ -21,6 +21,103 @@ async function login(api, email, password) {
     return body?.access_token || body?.token;
 }
 
+// Task #160 — fail-soft login: rol-spesifik principal'lar için. Hata fırlatmaz,
+// başarısızlıkta null döner (downstream spec'ler eksik token'ı honest SKIP eder,
+// fake-green YOK). `loginPath` agency-portal gibi alternatif login surface'leri
+// için override edilebilir. Hem access_token hem token (agency login `token`
+// döndürür) shape'lerini kabul eder.
+async function tryLogin(api, email, password, loginPath = '/api/auth/login') {
+    try {
+        const resp = await api.post(loginPath, { data: { email, password }, failOnStatusCode: false, timeout: 60_000 });
+        if (!resp.ok()) return { token: null, status: resp.status() };
+        const body = await resp.json().catch(() => ({}));
+        return { token: body?.access_token || body?.token || null, status: resp.status() };
+    } catch (e) {
+        return { token: null, status: 0, error: String(e?.message || e).slice(0, 120) };
+    }
+}
+
+// Task #160 — rol-spesifik authenticated principal provisioning.
+// Doktrin: server-side auth/RBAC ASLA gevşetilmez; principal'lar GERÇEK
+// create endpoint'leri üzerinden, STRESS tenant'ında üretilir (pilot mutation
+// YOK). Idempotent: sabit sentinel email + sabit parola → re-run'larda mevcut
+// kullanıcıyı yeniden kullanır (create 4xx "already exists" ise direkt login).
+// Fail-soft: endpoint deploy değil / tier rolü desteklemiyor → null token +
+// uyarı log; globalSetup NO-GO'ya DÜŞMEZ (mevcut GREEN baseline korunur).
+//
+// Üretilen principal'lar:
+//   - staff_lowtrust: düşük-güven (non-admin) `front_desk` staff (tüm tier'larda
+//     izinli). RBAC-deny / privilege-escalation spec'leri için.
+//   - agency_admin: acente-portal `agency_admin` (B2B IDOR / cross-tenant spec).
+const ROLE_PASSWORD = process.env.E2E_STRESS_ROLE_PASSWORD || 'Str3ss-R0le!2026#fixed';
+const STAFF_LOWTRUST_EMAIL = 'e2e-stress-lowtrust@syroce-stress.local';
+const AGENCY_NAME = 'E2E Stress Harness Agency';
+const AGENCY_ADMIN_EMAIL = 'e2e-stress-agency-admin@syroce-stress.local';
+
+async function provisionLowTrustStaff(api, stressAdminToken) {
+    const out = { role: 'front_desk', email: STAFF_LOWTRUST_EMAIL, token: null, created: false };
+    const createResp = await api.post('/api/hotel/team', {
+        headers: { Authorization: `Bearer ${stressAdminToken}` },
+        data: { email: STAFF_LOWTRUST_EMAIL, name: 'E2E Stress LowTrust', role: 'front_desk', password: ROLE_PASSWORD },
+        failOnStatusCode: false, timeout: 60_000,
+    }).catch(() => null);
+    const createStatus = createResp?.status?.() ?? 0;
+    // 2xx = yeni oluşturuldu; 400 "already registered" = mevcut → login dene.
+    out.created = createStatus >= 200 && createStatus < 300;
+    out.create_status = createStatus;
+    const { token, status } = await tryLogin(api, STAFF_LOWTRUST_EMAIL, ROLE_PASSWORD);
+    out.token = token;
+    out.login_status = status;
+    return out;
+}
+
+async function provisionAgencyAdmin(api, stressAdminToken) {
+    const out = { role: 'agency_admin', email: AGENCY_ADMIN_EMAIL, token: null, agency_id: null, created: false };
+    // 1) Idempotent agency: önce ara, yoksa oluştur (POST /agencies her zaman
+    //    insert ettiği için kör create cross-round bloat üretir).
+    let agencyId = null;
+    const listResp = await api.get(`/api/agencies?q=${encodeURIComponent(AGENCY_NAME)}&page_size=50`, {
+        headers: { Authorization: `Bearer ${stressAdminToken}` },
+        failOnStatusCode: false, timeout: 30_000,
+    }).catch(() => null);
+    if (listResp && listResp.ok()) {
+        const body = await listResp.json().catch(() => null);
+        const items = Array.isArray(body) ? body : (body?.items || []);
+        const match = items.find((a) => a?.name === AGENCY_NAME);
+        if (match?.id) agencyId = match.id;
+    }
+    if (!agencyId) {
+        const createAgencyResp = await api.post('/api/agencies', {
+            headers: { Authorization: `Bearer ${stressAdminToken}` },
+            data: { name: AGENCY_NAME, contact_name: 'E2E Stress', contact_email: 'e2e-stress-agency@syroce-stress.local' },
+            failOnStatusCode: false, timeout: 30_000,
+        }).catch(() => null);
+        if (createAgencyResp && createAgencyResp.ok()) {
+            const body = await createAgencyResp.json().catch(() => null);
+            agencyId = body?.id || null;
+        }
+        out.agency_create_status = createAgencyResp?.status?.() ?? 0;
+    }
+    out.agency_id = agencyId;
+    if (!agencyId) return out; // agency yoksa user da yok — fail-soft.
+
+    // 2) Idempotent agency user: create 409 "zaten kayitli" → login dene.
+    const createUserResp = await api.post(`/api/agencies/${agencyId}/users`, {
+        headers: { Authorization: `Bearer ${stressAdminToken}` },
+        data: { name: 'E2E Stress Agency Admin', email: AGENCY_ADMIN_EMAIL, password: ROLE_PASSWORD, role: 'agency_admin' },
+        failOnStatusCode: false, timeout: 30_000,
+    }).catch(() => null);
+    const createStatus = createUserResp?.status?.() ?? 0;
+    out.created = createStatus >= 200 && createStatus < 300;
+    out.create_status = createStatus;
+
+    // 3) Agency-portal login surface (NOT /api/auth/login).
+    const { token, status } = await tryLogin(api, AGENCY_ADMIN_EMAIL, ROLE_PASSWORD, '/api/agency-portal/auth/login');
+    out.token = token;
+    out.login_status = status;
+    return out;
+}
+
 // Replit Autoscale (1 Max instance) idle olunca soğuk başlar; CI'dan ilk POST
 // 60s timeout'a takılabiliyor (Mongo Atlas + Redis init + bootstrap phases A-G).
 // Fresh deploy bootstrap'ı 90-120s'yi bulabiliyor; warm-up gate /api/* yollarına
@@ -252,10 +349,55 @@ export default async function globalSetup() {
         }
     }
 
+    // 7c) Rol-spesifik authenticated principal provisioning — Task #160.
+    // GERÇEK create endpoint'leri üzerinden stress tenant'ında düşük-güven
+    // staff + agency_admin principal üret. Fail-soft: başarısızlık globalSetup'ı
+    // NO-GO'ya düşürmez, token=null kalır (downstream spec honest SKIP eder).
+    let roleProvisioning = { staff_lowtrust: null, agency_admin: null };
+    try {
+        const staff = await provisionLowTrustStaff(api, stressToken);
+        const agency = await provisionAgencyAdmin(api, stressToken);
+        roleProvisioning = { staff_lowtrust: staff, agency_admin: agency };
+        if (staff.token) console.log(`[stress-setup] ✅ low-trust staff principal hazır (role=front_desk created=${staff.created} login=${staff.login_status})`);
+        else console.log(`[stress-setup] ⚠️ low-trust staff principal token alınamadı (create=${staff.create_status} login=${staff.login_status}) — RBAC spec'leri SKIP edebilir.`);
+        if (agency.token) console.log(`[stress-setup] ✅ agency_admin principal hazır (agency_id=${String(agency.agency_id).slice(0, 8)} created=${agency.created} login=${agency.login_status})`);
+        else console.log(`[stress-setup] ⚠️ agency_admin principal token alınamadı (agency_id=${agency.agency_id} create=${agency.create_status} login=${agency.login_status}) — B2B/cross-tenant spec'leri SKIP edebilir.`);
+    } catch (e) {
+        console.log(`[stress-setup] ⚠️ rol provisioning hatası (fail-soft): ${String(e?.message || e).slice(0, 160)}`);
+    }
+
+    // 7d) Seed yeterlilik doğrulaması — Task #160. Seed gerçek backend endpoint
+    // üzerinden booking/folio/charge/payment/rooms/staff üretti; eşikleri
+    // burada gözle (staff pool >= 5, rooms ve booking present). Fail-soft:
+    // eşik karşılanmazsa uyarı log (NO-GO değil), seeded_counts state'e yazılır.
+    const seededCounts = seedBody?.seeded_counts || {};
+    const staffSeeded = seededCounts.staff_members ?? seededCounts.staff ?? 0;
+    const seedSummary = {
+        rooms: seededCounts.rooms ?? seededCounts.total_rooms ?? stressAfterSeed?.rooms ?? 0,
+        bookings: seededCounts.bookings ?? stressAfterSeed?.bookings ?? 0,
+        folios: seededCounts.folios ?? 0,
+        charges: seededCounts.folio_charges ?? seededCounts.charges ?? 0,
+        payments: seededCounts.payments ?? 0,
+        staff: staffSeeded,
+        staff_pool_ok: staffSeeded >= 5,
+    };
+    console.log(`[stress-setup] seed_summary: ${JSON.stringify(seedSummary)}`);
+    if (!seedSummary.staff_pool_ok) {
+        console.log(`[stress-setup] ⚠️ staff pool < 5 (=${staffSeeded}) — HR/shift/RBAC spec'leri yetersiz veri görebilir.`);
+    }
+
     // 8) Persist
     fs.writeFileSync(TOKEN_FILE, JSON.stringify({
         stress_token: stressToken,
         pilot_token: pilotToken,
+        // Task #160 — rol-spesifik principal token'ları. null olabilir
+        // (fail-soft); downstream spec'ler null'ı honest SKIP eder.
+        role_tokens: {
+            super_admin: pilotToken,          // pilot super_admin (admin/stress + cross-tenant baseline)
+            stress_admin: stressToken,        // stress tenant admin (mutasyonların çoğu bununla)
+            staff_lowtrust: roleProvisioning.staff_lowtrust?.token || null,
+            agency_admin: roleProvisioning.agency_admin?.token || null,
+        },
         captured_at: Date.now(),
     }, null, 2));
     fs.writeFileSync(STATE_FILE, JSON.stringify({
