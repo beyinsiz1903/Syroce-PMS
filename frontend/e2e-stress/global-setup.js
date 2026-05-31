@@ -363,6 +363,21 @@ export default async function globalSetup() {
     }
     console.log(`[stress-setup] ✅ Seed OK n=${ROOM_COUNT} prefix=${dataPrefix} timing_ms=${JSON.stringify(seedBody.timing_ms)}`);
     console.log(`[stress-setup]    counts: ${JSON.stringify(seedBody.seeded_counts)}`);
+    // Task #178 — aged-booking (check_in > 24h ago) + deposit-payment coverage
+    // report. 24h-dependent specs (full-24h sim, night-audit aging, harvest-
+    // window depletion) rely on older-than-threshold data existing in the seed.
+    // Fail-soft warn (not NO-GO): a count of 0 against a non-trivial booking set
+    // means the backend ran a pre-aged seed; surface it loudly so a silent
+    // all-today dataset can't masquerade as 24h-flow coverage.
+    {
+        const aged = seedBody.seeded_counts?.aged_bookings;
+        const payments = seedBody.seeded_counts?.payments;
+        const baseBookings = seedBody.seeded_counts?.bookings;
+        console.log(`[stress-setup]    aged_bookings=${aged ?? 'n/a'} payments=${payments ?? 'n/a'} (check_in > 24h ago + deposit coverage)`);
+        if (typeof aged === 'number' && aged === 0 && typeof baseBookings === 'number' && baseBookings >= 30) {
+            console.warn(`[stress-setup] ⚠️ aged_bookings=0 with bookings=${baseBookings} — 24h-dependent specs (99 full-24h sim / 06 night-audit / harvest) will lack older-than-24h data. Verify backend seed aging (Task #178).`);
+        }
+    }
     if (seedBody.post_insert_verification) {
         console.log(`[stress-setup]    post_insert_verification: ${JSON.stringify(seedBody.post_insert_verification)}`);
     }

@@ -445,11 +445,19 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
       - VIP every 7th, late_checkout every 11th, allergy every 13th,
         accessibility every 17th
       - stay_length: 1..4 nights → matching RNL fan-out
-    Returns (rooms, guests, bookings, folios, charges, rnls, hk_tasks).
+    Returns (rooms, guests, bookings, folios, charges, payments, rnls, hk_tasks).
+
+    Aged bookings (Task #178): ~1/3 of in-house bookings check in 2..5 days
+    before `now` (strictly > the 24h sim threshold) so 24h-dependent flows
+    (full-24h sim, night-audit aging, harvest-window depletion) exercise
+    realistic older-than-24h data. Each aged booking carries a deposit payment
+    so the `payments` collection has aged financial coverage; all rows keep the
+    standard `stress_seed`/`stress_prefix` tags for the unified cleanup sweep.
     """
     rooms_docs, guests_docs, bookings_docs = [], [], []
     folios_docs, folio_charges_docs = [], []
     rnl_docs, hk_docs = [], []
+    payments_docs = []
 
     for i in range(rc):
         rid = str(uuid.uuid4())
@@ -466,12 +474,28 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
         has_allergy = (i % 13 == 0)
         accessibility_needed = (i % 17 == 0) or (room_type == "accessible")
 
-        check_in = now.date()
-        check_out = (now + timedelta(days=stay_nights)).date()
+        # Aged-booking generation (Task #178): a meaningful subset of in-house
+        # bookings check in 2..5 days before `now` (strictly > the 24h sim
+        # threshold) so 24h-dependent stress flows (full-24h sim, night-audit
+        # aging, harvest-window depletion) exercise realistic older-than-24h
+        # data instead of all-today bookings. Excludes the pre_vacant pool
+        # (i % 8 == 0 → checked_out today) so the room-move vacant supply stays
+        # untouched. ~1/3 of the remaining bookings are aged.
+        is_aged = (i % 8 != 0) and (i % 3 == 0)
+        aged_offset_days = (2 + (i % 4)) if is_aged else 0  # 2..5 days in past
+        check_in = (now - timedelta(days=aged_offset_days)).date()
+        # Aged stays span past→future (offset + base nights) so the guest is
+        # still in-house at `now`; non-aged keep the original today→+stay window
+        # (offset 0 → nights == stay_nights → identical to prior behaviour).
+        nights = aged_offset_days + stay_nights
+        check_out = (check_in + timedelta(days=nights))
 
         # Pricing varies a bit so analytics surface non-trivial distributions
         base_price = 800.0 + (i % 20) * 50.0  # 800..1750
-        total_amount = base_price * stay_nights
+        total_amount = base_price * nights
+        # Aged bookings carry a one-night deposit so the `payments` collection
+        # has aged financial coverage; never exceeds the folio total.
+        aged_payment = round(base_price, 2) if is_aged else 0.0
 
         # Architect tur-6 (round 2) fix: 03-room-move setup'ının vacant pool
         # garantilemek için 30+ force-checkout yapması 108s sandbox timeout'unu
@@ -541,10 +565,13 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
             "folio_id": fid,
             "check_in": check_in.isoformat(),
             "check_out": check_out.isoformat(),
-            "nights": stay_nights,
+            "nights": nights,
+            # Task #178: marker so the seed handler can count aged bookings
+            # without re-parsing dates; harmless extra field (direct DB write).
+            "aged": is_aged,
             "adults": 2, "children": (i % 3), "guests_count": 2 + (i % 3),
             "total_amount": total_amount, "base_rate": base_price,
-            "paid_amount": 0.0, "status": booking_status,
+            "paid_amount": aged_payment, "status": booking_status,
             "channel": "direct", "rate_plan": "Standard",
             "source_channel": "direct", "origin": "stress_seed",
             "hold_status": "none", "allocation_source": "manual",
@@ -557,23 +584,33 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
         # Architect tur-6 (round 2) fix: 04-folio-mass C2 (sum(charges)==total)
         # reconciliation testi `folio.total`'ı 0 olarak okuyup mismatch raporluyordu.
         # Seed'de gerçek charges toplamını folio'ya da yaz (room*nights + tax*nights).
-        folio_total = (base_price * stay_nights) + (7.50 * stay_nights)
+        folio_total = (base_price * nights) + (7.50 * nights)
+        folio_balance = round(folio_total - aged_payment, 2)
         folios_docs.append({
             "id": fid, "tenant_id": stress_tid,
             "booking_id": bid, "guest_id": gid,
             "folio_number": f"{prefix}F{i + 1:04d}",
             "folio_type": "guest",
             "status": "open",
-            "balance": folio_total,
+            # balance = charges − payments (gross-net invariant); aged folios
+            # carry a deposit so balance < total. 04-folio-mass C2 recomputes
+            # this from the live detail service so it stays self-consistent.
+            "balance": folio_balance,
             "total": folio_total,
             "total_amount": folio_total,
-            "balance_total": folio_total,
+            "balance_total": folio_balance,
+            "paid_amount": aged_payment,
             "created_at": now,
             "stress_seed": True, "stress_prefix": prefix,
         })
 
-        # 2+ charges per folio: room (per-night) + service tax
-        for night in range(stay_nights):
+        # 2+ charges per folio: room (per-night) + service tax. Aged bookings
+        # span `nights` (offset + base) nights so per-night charges + RNLs cover
+        # the past→future window and the folio total stays charges-consistent.
+        for night in range(nights):
+            charge_date = datetime.combine(
+                check_in + timedelta(days=night), datetime.min.time(), tzinfo=UTC,
+            )
             folio_charges_docs.append({
                 "id": str(uuid.uuid4()), "tenant_id": stress_tid,
                 "folio_id": fid, "booking_id": bid,
@@ -584,7 +621,7 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
                 "discount_amount": 0.0, "vat_rate": 0.0,
                 "vat_amount": 0.0, "tax_amount": 0.0,
                 "total": base_price, "voided": False,
-                "date": now,
+                "date": charge_date,
                 "stress_seed": True, "stress_prefix": prefix,
             })
         # service tax (always at least one extra → ≥2 charges per folio)
@@ -593,20 +630,37 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
             "folio_id": fid, "booking_id": bid,
             "charge_category": "tax",
             "description": f"{prefix}AccTax_{i + 1}",
-            "unit_price": 7.50, "quantity": float(stay_nights),
-            "amount": 7.50 * stay_nights, "subtotal": 7.50 * stay_nights,
+            "unit_price": 7.50, "quantity": float(nights),
+            "amount": 7.50 * nights, "subtotal": 7.50 * nights,
             "discount_amount": 0.0, "vat_rate": 0.0,
-            "vat_amount": 0.0, "tax_amount": 7.50 * stay_nights,
-            "total": 7.50 * stay_nights, "voided": False,
+            "vat_amount": 0.0, "tax_amount": 7.50 * nights,
+            "total": 7.50 * nights, "voided": False,
             "date": now,
             "stress_seed": True, "stress_prefix": prefix,
         })
 
+        # Aged deposit payment → aged financial coverage in the `payments`
+        # collection (empty before Task #178). Field names cover both readers:
+        # folio-detail aggregates `amount`, night-audit reads `total`.
+        if is_aged:
+            pay_at = now - timedelta(days=aged_offset_days)
+            payments_docs.append({
+                "id": str(uuid.uuid4()), "tenant_id": stress_tid,
+                "folio_id": fid, "booking_id": bid, "guest_id": gid,
+                "amount": aged_payment, "total": aged_payment,
+                "payment_method": "cash", "payment_type": "deposit",
+                "reference": f"{prefix}DEP_{i + 1:04d}",
+                "status": "completed", "currency": "TRY",
+                "voided": False,
+                "created_at": pay_at, "date": pay_at,
+                "stress_seed": True, "stress_prefix": prefix,
+            })
+
         # RNL fan-out per stay night.
         # Atlas index: ux_room_night UNIQUE on (tenant_id, room_id, night_date).
         # Secondary index idx_rnl_tenant_date_room reads `date`. Set both.
-        for night in range(stay_nights):
-            night_date = (now + timedelta(days=night)).date().isoformat()
+        for night in range(nights):
+            night_date = (check_in + timedelta(days=night)).isoformat()
             rnl_docs.append({
                 "id": str(uuid.uuid4()), "tenant_id": stress_tid,
                 "room_id": rid, "booking_id": bid,
@@ -669,7 +723,7 @@ def _build_factory_docs(rc: int, stress_tid: str, prefix: str, now: datetime):
             })
 
     return (rooms_docs, guests_docs, bookings_docs,
-            folios_docs, folio_charges_docs, rnl_docs, hk_docs)
+            folios_docs, folio_charges_docs, payments_docs, rnl_docs, hk_docs)
 
 
 # F8N (2026-05-30, Wave 7): B2B Acente seed — `agencies` koleksiyonu.
@@ -1890,7 +1944,7 @@ async def stress_seed(
 
     t_factory_start = time.perf_counter()
     (rooms_docs, guests_docs, bookings_docs,
-     folios_docs, folio_charges_docs, rnl_docs, hk_docs) = _build_factory_docs(
+     folios_docs, folio_charges_docs, payments_docs, rnl_docs, hk_docs) = _build_factory_docs(
         rc, stress_tid, prefix, now,
     )
     # F8B: Guest Experience surface derived from baseline rooms/bookings/guests.
@@ -1954,6 +2008,10 @@ async def stress_seed(
         # to the stress tenant + stress_seed marker → never touches real data.
         # Idempotent: also safe if no orphans exist (delete_count=0).
         for col_name in ("rooms", "bookings", "guests", "folios", "folio_charges",
+                         # Task #178: aged-booking deposit payments — orphan scrub
+                         # mirror (end-of-round cleanup already covers payments via
+                         # STRESS_COLLECTIONS; this catches cross-prefix residue).
+                         "payments",
                          # F8N (Wave 7): B2B agency surface — orphan scrub mirror.
                          "agencies",
                          "room_night_locks", "housekeeping_tasks",
@@ -2034,6 +2092,12 @@ async def stress_seed(
         counts["bookings"] = await _chunked_insert(db.bookings, bookings_docs, INSERT_CHUNK_SIZE)
         counts["folios"] = await _chunked_insert(db.folios, folios_docs, INSERT_CHUNK_SIZE)
         counts["folio_charges"] = await _chunked_insert(db.folio_charges, folio_charges_docs, INSERT_CHUNK_SIZE)
+        # Task #178: aged-booking deposit payments (empty collection before this).
+        counts["payments"] = await _chunked_insert(db.payments, payments_docs, INSERT_CHUNK_SIZE)
+        # Aged-booking count surfaced so 24h/harvest-dependent specs + global-setup
+        # can trust that older-than-24h data exists. Derived from the factory's
+        # `aged=True` marker on base bookings (pending bookings are never aged).
+        counts["aged_bookings"] = sum(1 for b in bookings_docs if b.get("aged") is True)
         # F8N (Wave 7): B2B agency surface — 41B matrix stres-agency probe.
         counts["agencies"] = await _chunked_insert(db.agencies, agency_docs, INSERT_CHUNK_SIZE)
         counts["room_night_locks"] = await _chunked_insert(db.room_night_locks, rnl_docs, INSERT_CHUNK_SIZE)
