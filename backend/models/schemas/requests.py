@@ -179,6 +179,9 @@ class ApprovePurchaseOrderRequest(BaseModel):
 class RejectPurchaseOrderRequest(BaseModel):
     rejection_reason: str
 
+class CancelPurchaseOrderRequest(BaseModel):
+    reason: str | None = None
+
 class UpdateDeliveryStatusRequest(BaseModel):
     status: str  # in_transit, delivered, failed
     location: str | None = None

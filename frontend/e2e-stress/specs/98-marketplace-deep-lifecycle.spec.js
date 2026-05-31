@@ -61,6 +61,11 @@ test.describe('F9C § 98 — Marketplace Deep Lifecycle', () => {
     let pilotKnownPoId = null;         // best-effort pilot PO id for J probe
     const createdPoIds = [];
     let listingPublished = false;
+    // PMS marketplace_router PO write surface (`/api/marketplace/*`) is gated by
+    // the `hidden_marketplace` feature, independent of the b2b `/v1/listings/*`
+    // surface that drives `moduleBlocked`. F/H/I depend on THIS gate.
+    let marketplaceCoreEntitled = false;
+    let coreBlockedReason = null;
 
     function idemKey(op, i = 0) {
         return `${SUB_PREFIX}_${op}_${Date.now()}_${i}_${cryptoRandomUUID()}`;
@@ -104,6 +109,38 @@ test.describe('F9C § 98 — Marketplace Deep Lifecycle', () => {
                 }
             } catch { /* ignore */ }
         }
+
+        // Marketplace CORE entitlement probe — the PMS marketplace_router PO
+        // surface (`/api/marketplace/*`) is gated by the `hidden_marketplace`
+        // feature, granted to the stress tenant by the seed endpoint. This is
+        // INDEPENDENT of the b2b `/v1/listings/*` surface below, so it runs
+        // before any module-blocked early-return. MUST use the STRESS token —
+        // super_admin bypasses require_feature, which would be a false positive.
+        const coreProbe = await callTimed(
+            request, 'get', '/api/marketplace/purchase-orders/entitlement-check', null,
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        if (coreProbe.status >= 500) {
+            recFinding(testInfo, 'P1', MOD,
+                'Marketplace core entitlement-check 5xx',
+                `status=${coreProbe.status} body=${JSON.stringify(coreProbe.body || {}).slice(0, 200)}`);
+            expect(coreProbe.status, 'Marketplace core entitlement 5xx').toBeLessThan(500);
+        }
+        if (coreProbe.status >= 200 && coreProbe.status < 300 && coreProbe.body?.entitled === true) {
+            marketplaceCoreEntitled = true;
+        } else {
+            marketplaceCoreEntitled = false;
+            coreBlockedReason = `core_not_entitled_${coreProbe.status}`;
+            recFinding(testInfo, 'P2', MOD,
+                `Marketplace PO surface not entitled (hidden_marketplace) status=${coreProbe.status}`,
+                'Remediation: cd backend && python -m scripts.enable_marketplace_for_stress (seed endpoint also sets it).');
+        }
+        rec(testInfo, {
+            module: MOD, step: 'core_entitlement_probe',
+            status: marketplaceCoreEntitled ? 'PASS' : 'REVIEW',
+            http: coreProbe.status,
+            note: `hidden_marketplace entitled=${marketplaceCoreEntitled}`,
+        });
 
         // Module probe: GET listing — stress tenant hotel admin scope.
         const probe = await callTimed(
@@ -312,20 +349,18 @@ test.describe('F9C § 98 — Marketplace Deep Lifecycle', () => {
     // ──────────────────────────────────────────────────────────────
     // F) INVENTORY CHECK — GET /api/marketplace/inventory (PMS marketplace)
     test('F) Inventory check — GET marketplace/inventory', async ({ request, stressTokens }, testInfo) => {
-        if (moduleBlocked) {
-            rec(testInfo, { module: MOD, step: 'F_inventory', status: 'SKIP', note: blockedReason });
-            test.skip(true, `module_blocked: ${blockedReason}`);
+        if (!marketplaceCoreEntitled) {
+            rec(testInfo, { module: MOD, step: 'F_inventory', status: 'REVIEW', note: coreBlockedReason || 'core_not_entitled' });
+            test.skip(true, coreBlockedReason || 'core_not_entitled');
         }
         const r = await callTimed(
             request, 'get', '/api/marketplace/inventory', null,
             stressTokens.stress_token, { timeout: 10_000 },
         );
         expect(r.status, `F_inventory 5xx`).toBeLessThan(500);
-        if (r.status !== 200) {
-            recFinding(testInfo, 'P2', MOD, `inventory non-200 status=${r.status}`, '');
-            rec(testInfo, { module: MOD, step: 'F_inventory', status: 'REVIEW', http: r.status });
-            return;
-        }
+        // Entitled tenant MUST be able to read inventory — hard-assert 2xx + array.
+        expect(r.status, `F_inventory not 2xx (status=${r.status})`).toBeGreaterThanOrEqual(200);
+        expect(r.status, `F_inventory not 2xx (status=${r.status})`).toBeLessThan(300);
         const items = r.body?.inventory || [];
         expect(Array.isArray(items), 'F_inventory items array değil').toBe(true);
         // Tenant scope invariant — backend filters by tenant_id; double-check.
@@ -335,6 +370,7 @@ test.describe('F9C § 98 — Marketplace Deep Lifecycle', () => {
             }
         }
         rec(testInfo, { module: MOD, step: 'F_inventory', status: 'PASS', http: r.status, note: `items=${items.length}` });
+        await gap();
     });
 
     // ──────────────────────────────────────────────────────────────
@@ -362,13 +398,13 @@ test.describe('F9C § 98 — Marketplace Deep Lifecycle', () => {
     // ──────────────────────────────────────────────────────────────
     // H) ORDER PLACE — POST /api/marketplace/purchase-orders (tagged, idempotent)
     test('H) Order place — POST purchase-orders', async ({ request, stressTokens }, testInfo) => {
-        if (moduleBlocked) {
-            rec(testInfo, { module: MOD, step: 'H_order', status: 'SKIP', note: blockedReason });
-            test.skip(true, `module_blocked: ${blockedReason}`);
+        if (!marketplaceCoreEntitled) {
+            rec(testInfo, { module: MOD, step: 'H_order', status: 'REVIEW', note: coreBlockedReason || 'core_not_entitled' });
+            test.skip(true, coreBlockedReason || 'core_not_entitled');
         }
         const payload = {
             supplier: taggedString('H_supplier'),
-            items: [{ product_name: taggedString('H_item'), quantity: 1, unit_price: 1.0 }],
+            items: [{ product_name: taggedString('H_item'), quantity: 2, unit_price: 3.5 }],
             delivery_location: taggedString('H_loc'),
             expected_delivery_date: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10),
         };
@@ -379,47 +415,60 @@ test.describe('F9C § 98 — Marketplace Deep Lifecycle', () => {
         );
         recPerf(testInfo, MOD, 'H_order', [r.ms], r.status >= 200 && r.status < 300);
         expect(r.status, `H_order 5xx`).toBeLessThan(500);
-
-        if (r.status >= 200 && r.status < 300 && r.body?.id) {
-            createdPoIds.push(r.body.id);
-            expect(r.body.tenant_id, 'H_order PO tenant_id yok').toBeTruthy();
-            rec(testInfo, { module: MOD, step: 'H_order', status: 'PASS', http: r.status, note: `po_id=${r.body.id}` });
-        } else if ([403, 404, 422, 501].includes(r.status)) {
-            recFinding(testInfo, 'P2', MOD, `purchase-orders POST non-2xx status=${r.status}`,
-                `body=${JSON.stringify(r.body || {}).slice(0, 200)}`);
-            rec(testInfo, { module: MOD, step: 'H_order', status: 'REVIEW', http: r.status });
-        } else {
-            rec(testInfo, { module: MOD, step: 'H_order', status: 'REVIEW', http: r.status });
+        // Entitled tenant MUST be able to create a PO — hard-assert the real
+        // create contract (2xx + id + tenant scope + pending status).
+        expect(r.status, `H_order not 2xx (status=${r.status}) body=${JSON.stringify(r.body || {}).slice(0, 200)}`).toBeGreaterThanOrEqual(200);
+        expect(r.status, `H_order not 2xx (status=${r.status})`).toBeLessThan(300);
+        expect(r.body?.id, 'H_order PO id yok').toBeTruthy();
+        expect(r.body?.tenant_id, 'H_order PO tenant_id yok').toBeTruthy();
+        expect(r.body?.status, 'H_order PO status pending değil').toBe('pending');
+        // Tenant scope invariant — created PO must NOT belong to the pilot.
+        if (pilotKnownTenantId) {
+            expect(r.body.tenant_id, 'H_order PO CROSS-TENANT').not.toBe(pilotKnownTenantId);
         }
+        createdPoIds.push(r.body.id);
+        rec(testInfo, { module: MOD, step: 'H_order', status: 'PASS', http: r.status, note: `po_id=${r.body.id}` });
         await gap();
     });
 
     // ──────────────────────────────────────────────────────────────
-    // I) ORDER CANCEL — POST /api/marketplace/purchase-orders/{id}/reject
-    test('I) Order cancel — POST purchase-orders/{id}/reject', async ({ request, stressTokens }, testInfo) => {
-        const reason = moduleBlocked ? blockedReason : (createdPoIds.length === 0 ? 'no_po_created' : null);
+    // I) ORDER CANCEL — POST /api/marketplace/purchase-orders/{id}/cancel
+    test('I) Order cancel — POST purchase-orders/{id}/cancel', async ({ request, stressTokens }, testInfo) => {
+        const reason = !marketplaceCoreEntitled
+            ? (coreBlockedReason || 'core_not_entitled')
+            : (createdPoIds.length === 0 ? 'no_po_created' : null);
         if (reason) {
-            rec(testInfo, { module: MOD, step: 'I_cancel', status: 'SKIP', note: reason });
+            rec(testInfo, { module: MOD, step: 'I_cancel', status: 'REVIEW', note: reason });
             test.skip(true, reason);
         }
         const poId = createdPoIds[0];
         const r = await callTimed(
             request, 'post',
-            `/api/marketplace/purchase-orders/${poId}/reject`,
+            `/api/marketplace/purchase-orders/${poId}/cancel`,
             { reason: taggedString('I_cancel') },
             stressTokens.stress_token,
             { timeout: 10_000, headers: { 'Idempotency-Key': idemKey('I_cancel') } },
         );
         expect(r.status, `I_cancel 5xx`).toBeLessThan(500);
-        if (r.status >= 200 && r.status < 300) {
-            rec(testInfo, { module: MOD, step: 'I_cancel', status: 'PASS', http: r.status });
-        } else if ([403, 404, 422, 501].includes(r.status)) {
-            recFinding(testInfo, 'P2', MOD, `reject non-2xx status=${r.status}`,
-                `po_id=${poId} body=${JSON.stringify(r.body || {}).slice(0, 200)}`);
-            rec(testInfo, { module: MOD, step: 'I_cancel', status: 'REVIEW', http: r.status });
-        } else {
-            rec(testInfo, { module: MOD, step: 'I_cancel', status: 'REVIEW', http: r.status });
-        }
+        // Created PO MUST cancel — hard-assert 2xx + terminal cancelled status.
+        expect(r.status, `I_cancel not 2xx (status=${r.status}) body=${JSON.stringify(r.body || {}).slice(0, 200)}`).toBeGreaterThanOrEqual(200);
+        expect(r.status, `I_cancel not 2xx (status=${r.status})`).toBeLessThan(300);
+        expect(r.body?.status, 'I_cancel status cancelled değil').toBe('cancelled');
+        expect(r.body?.id, 'I_cancel PO id yok').toBe(poId);
+
+        // Idempotency — re-cancel returns 2xx + still cancelled (no error).
+        const r2 = await callTimed(
+            request, 'post',
+            `/api/marketplace/purchase-orders/${poId}/cancel`,
+            { reason: taggedString('I_cancel_again') },
+            stressTokens.stress_token,
+            { timeout: 10_000, headers: { 'Idempotency-Key': idemKey('I_cancel2') } },
+        );
+        expect(r2.status, `I_cancel idempotent 5xx`).toBeLessThan(500);
+        expect(r2.status >= 200 && r2.status < 300, `I_cancel re-cancel not 2xx (status=${r2.status})`).toBe(true);
+        expect(r2.body?.status, 'I_cancel re-cancel status cancelled değil').toBe('cancelled');
+
+        rec(testInfo, { module: MOD, step: 'I_cancel', status: 'PASS', http: r.status, note: `po_id=${poId} cancelled` });
         await gap(500);
     });
 
@@ -469,10 +518,28 @@ test.describe('F9C § 98 — Marketplace Deep Lifecycle', () => {
         }
         expect(r2.status >= 400, `J2: cross-tenant PO reject succeeded (${probeKind2})`).toBe(true);
 
+        // J3: CANCEL pilot purchase-order via stress token → must 403/404 (NEVER
+        // 2xx). The new /cancel endpoint is tenant-scoped; cross-tenant access
+        // must fall through to the 404 not-found guard, never mutate a pilot PO.
+        const r3 = await callTimed(
+            request, 'post',
+            `/api/marketplace/purchase-orders/${targetPoId}/cancel`,
+            { reason: 'J3_cross_tenant_cancel_probe' },
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(r3.status, `J3 5xx`).toBeLessThan(500);
+        if (r3.status >= 200 && r3.status < 300) {
+            recFinding(testInfo, 'P0', MOD,
+                `IDOR breach: stress token cancelled pilot PO (${probeKind2})`,
+                `po_id=${targetPoId} status=${r3.status} body=${JSON.stringify(r3.body || {}).slice(0, 200)}`);
+        }
+        expect(r3.status >= 400, `J3: cross-tenant PO cancel succeeded (${probeKind2})`).toBe(true);
+        expect([403, 404].includes(r3.status), `J3: cross-tenant cancel unexpected status=${r3.status} (expected 403/404)`).toBe(true);
+
         rec(testInfo, {
             module: MOD, step: 'J_idor', status: 'PASS',
             http: r1.status,
-            note: `J1=${probeKind1}/${r1.status} J2=${probeKind2}/${r2.status}`,
+            note: `J1=${probeKind1}/${r1.status} J2=${probeKind2}/${r2.status} J3=cancel/${r3.status}`,
         });
     });
 

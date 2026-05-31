@@ -111,6 +111,16 @@ FEATURES_BY_PLAN: dict[str, dict[str, bool]] = {
 }
 
 
+# Opt-in extra features that intentionally belong to NO subscription plan and
+# therefore ship dark (default OFF for every tenant). They can only be turned
+# on by an explicit per-tenant `features` override. Without registering them
+# here, such an override is silently dropped because `resolve_tenant_features`
+# only honors keys already present in some plan.
+#   - hidden_marketplace: B2B marketplace procurement write surface
+#     (purchase-order create/cancel). Default OFF in prod; granted per-tenant.
+OPT_IN_EXTRA_FEATURES: set[str] = {"hidden_marketplace"}
+
+
 def resolve_tenant_features(tenant_doc: dict[str, Any]) -> dict[str, bool]:
     """Plan + overrides ile efektif feature set uretir."""
     tenant_doc = tenant_doc or {}
@@ -124,6 +134,7 @@ def resolve_tenant_features(tenant_doc: dict[str, Any]) -> dict[str, bool]:
     for _plan, feats in FEATURES_BY_PLAN.items():
         for k in (feats or {}).keys():
             all_keys.add(k)
+    all_keys |= OPT_IN_EXTRA_FEATURES
     resolved: dict[str, bool] = dict.fromkeys(all_keys, False)
     plan_feats = FEATURES_BY_PLAN.get(plan) or FEATURES_BY_PLAN.get("core_small_hotel") or {}
     for k, v in plan_feats.items():
@@ -138,6 +149,13 @@ def resolve_tenant_features(tenant_doc: dict[str, Any]) -> dict[str, bool]:
             for k in resolved.keys():
                 if k in tenant_overrides:
                     resolved[k] = bool(tenant_overrides[k])
+        # Opt-in extra features belong to no plan, so the loops above never
+        # touch them under pms_lite (and only coincidentally otherwise). Apply
+        # their explicit override regardless of plan — still default OFF when
+        # no override is present.
+        for k in OPT_IN_EXTRA_FEATURES:
+            if k in tenant_overrides:
+                resolved[k] = bool(tenant_overrides[k])
     return resolved
 
 

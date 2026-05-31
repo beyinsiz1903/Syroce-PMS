@@ -1861,6 +1861,27 @@ async def stress_seed(
     gates = _gates(payload.target_tenant_id)
     stress_tid = _stress_tid()
 
+    # Task #167 — entitle the stress tenant for the `hidden_marketplace`
+    # procurement write surface (PO create/cancel) so the marketplace deep
+    # lifecycle spec exercises the real lifecycle instead of REVIEW/SKIP.
+    # Idempotent + stress-tenant-only (the gate stack above already enforces
+    # target == E2E_STRESS_TENANT_ID and explicitly blocks the pilot tenant).
+    # Default OFF in prod; this flips it ON only for the stress tenant doc.
+    # Fail-soft: a write hiccup must not NO-GO the whole seed — the spec's
+    # entitlement probe falls back to an honest REVIEW with remediation.
+    try:
+        from core.tenant_db import get_system_db
+        _sysdb = get_system_db()
+        await _sysdb.tenants.update_one(
+            {"id": stress_tid},
+            {"$set": {"features.hidden_marketplace": True}},
+        )
+    except Exception as e:
+        _stress_log.warning(
+            "stress.seed hidden_marketplace entitlement set failed for %s: %s",
+            stress_tid, type(e).__name__,
+        )
+
     rc = payload.room_count
     prefix = payload.data_prefix or f"E2E_STRESS_{int(time.time())}_"
     now = datetime.now(UTC)

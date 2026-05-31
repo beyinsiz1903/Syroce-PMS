@@ -15,6 +15,7 @@ from core.security import get_current_user, security
 from models.schemas import (
     AdjustInventoryRequest,
     ApprovePurchaseOrderRequest,
+    CancelPurchaseOrderRequest,
     CreateDeliveryRequest,
     CreateMarketplaceProductRequest,
     CreateMenuItemRequest,
@@ -1120,6 +1121,29 @@ async def get_purchase_orders(
 
     return {'orders': orders, 'count': len(orders)}
 
+@router.get(
+    "/marketplace/purchase-orders/entitlement-check",
+    dependencies=[Depends(require_feature("hidden_marketplace"))],
+)
+async def purchase_order_entitlement_check(
+    current_user: User = Depends(get_current_user),
+):
+    """Read-only entitlement probe for the `hidden_marketplace` procurement
+    write surface (PO create/cancel). Returns 200 only when the caller's tenant
+    has the feature enabled — `require_feature` raises 404 otherwise. No DB
+    mutation. Used by the marketplace stress spec to gate the PO lifecycle on a
+    real entitlement instead of skipping blindly.
+
+    NOTE: super_admin always passes `require_feature`, so callers verifying a
+    specific tenant's entitlement must use that tenant's (non-super-admin)
+    token, not a super_admin token.
+    """
+    return {
+        'entitled': True,
+        'feature': 'hidden_marketplace',
+        'tenant_id': current_user.tenant_id,
+    }
+
 @router.post("/marketplace/purchase-orders", dependencies=[Depends(require_feature("hidden_marketplace"))])
 async def create_purchase_order(
     request: CreatePurchaseOrderRequest,
@@ -1146,6 +1170,58 @@ async def create_purchase_order(
 
     po_copy = po.copy()
     await db.purchase_orders.insert_one(po_copy)
+    return po
+
+@router.post(
+    "/marketplace/purchase-orders/{po_id}/cancel",
+    dependencies=[Depends(require_feature("hidden_marketplace"))],
+)
+async def cancel_purchase_order(
+    po_id: str,
+    request: CancelPurchaseOrderRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),
+):
+    """Cancel a purchase order created by the requesting tenant.
+
+    RBAC + tenant scope + feature-flag gated (`hidden_marketplace`). Only
+    non-terminal orders (pending / awaiting_approval / approved) may be
+    cancelled. Already-cancelled orders are returned idempotently (200);
+    terminal orders (received / rejected) return 409.
+    """
+    po = await db.purchase_orders.find_one(
+        {'id': po_id, 'tenant_id': current_user.tenant_id},
+        {'_id': 0},
+    )
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+
+    status = po.get('status')
+    if status == 'cancelled':
+        # Idempotent — re-cancelling an already-cancelled PO is a no-op.
+        return po
+
+    if status in ('received', 'rejected'):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Purchase order in terminal state '{status}' cannot be cancelled",
+        )
+
+    cancelled_at = datetime.now(UTC).isoformat()
+    update = {
+        'status': 'cancelled',
+        'cancelled_at': cancelled_at,
+        'cancelled_by': current_user.id,
+    }
+    if request.reason:
+        update['cancellation_reason'] = request.reason
+
+    await db.purchase_orders.update_one(
+        {'id': po_id, 'tenant_id': current_user.tenant_id},
+        {'$set': update},
+    )
+
+    po.update(update)
     return po
 
 @router.post("/marketplace/purchase-orders/{po_id}/approve")
