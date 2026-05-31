@@ -6,12 +6,12 @@
 //   GENİŞLETIR. Bu spec'in odağı: edge-case'ler + multi-step orchestrations
 //   (split / merge / fee tier / city-ledger transfer / hold expiry).
 //
-//     A) Waitlist promote                — POST /api/waitlist (yoksa module-blocked + REVIEW)
+//     A) Waitlist promote                — POST /api/waitlist (add) + POST /api/waitlist/{id}/promote (hard-assert real booking)
 //     B) Option / hold create + status   — POST /api/booking-holds + GET /api/booking-holds/status
 //     C) Overbooking oversell guard      — GET /api/pms-core/overbooking-check + POST quick-booking duplicate reject
 //     D) Overbooking yield guard         — same endpoint, RoomType-level sample
 //     E) Multi-room partial cancel       — POST /api/pms/bookings/multi-room (3 oda) → POST /api/pms-core/cancel (1 oda)
-//     F) Group rooming list batch        — POST /api/pms/groups/create-block + POST /api/pms/groups/rooming-list/{id}
+//     F) Group rooming list batch        — POST /api/groups/create-block + POST /api/groups/rooming-list/{id}
 //     G) Rate change after modification  — PUT /api/pms/bookings/{id} total_amount değişikliği
 //     H) Split reservation (5-gece→2+3)  — PUT /api/pms/bookings/{id} (kısalt) + POST /api/pms/quick-booking (ikinci leg)
 //     I) Merge duplicate guest           — POST /api/guests/{primary_id}/merge (cross-property router)
@@ -32,8 +32,10 @@
 //   - Setup probe (/api/pms/bookings stress-tenant) non-2xx → A–L skip;
 //     M (external_calls) ve N (pilot_drift) BAĞIMSIZ çalışır.
 //   - Bireysel varyant probe non-2xx (404/403/501) → o varyant SKIP + P2
-//     informational; downstream varyantlar etkilenmez. Backend bazı yüzeyleri
-//     (özellikle waitlist) production'da henüz mount edilmemiş olabilir.
+//     informational; downstream varyantlar etkilenmez.
+//   - Task #169 (KOVA 4): waitlist (A), merge (I), city-ledger (L) artık
+//     gerçek ön-koşul seed'i + hard-assert ediyor (no fake-green). Waitlist
+//     yüzeyi backend'de mount edildi (routers/reservation_waitlist.py).
 //
 // Reporter satırı: `reservation_deep`.
 import { randomUUID as cryptoRandomUUID } from 'node:crypto';
@@ -122,24 +124,70 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
     });
 
     // ────────────────────────────────────────────────────────────────────
-    // A) Waitlist promote — endpoint contract probe
+    // A) Waitlist add + promote — real endpoint, hard-asserted
     // ────────────────────────────────────────────────────────────────────
-    test('A) Waitlist promote (endpoint probe + REVIEW if absent)', async ({ request, stressTokens }, testInfo) => {
+    test('A) Waitlist add + promote (real endpoint hard-assert)', async ({ request, stressTokens }, testInfo) => {
         if (moduleBlocked) { rec(testInfo, { module: MOD, step: 'waitlist_promote', status: 'SKIP', note: `module_blocked=true (${blockedReason})` }); test.skip(); return; }
-        // Reservation waitlist endpoint'i backend'de mount değil
-        // (spa/waitlist mevcut ama bu rezervasyon kapsamında değil).
-        // Doctrine: probe + REVIEW + P2 informational.
-        const probe = await callTimed(request, 'get', '/api/waitlist',
-            undefined, stressTokens.stress_token);
-        const reachable = probe.ok || (probe.status >= 400 && probe.status < 500 && probe.status !== 404);
-        const status = reachable ? 'PASS' : 'REVIEW';
-        rec(testInfo, { module: MOD, step: 'waitlist_promote', status,
-            endpoint: '/api/waitlist',
-            note: `probe_status=${probe.status} reachable=${reachable} (404=endpoint not mounted; not a regression — REVIEW informational)` });
-        if (!reachable) {
-            recFinding(testInfo, 'P2', MOD, 'Waitlist endpoint mount yok',
-                `GET /api/waitlist → ${probe.status}. Reservation waitlist promote yüzeyi henüz production'da değil; spec gelecekteki feature gate için iskelet bırakıyor.`);
+        if (rooms.length < 1) { rec(testInfo, { module: MOD, step: 'waitlist_promote', status: 'SKIP', note: 'no rooms' }); return; }
+
+        // Task #169 (KOVA 4): reservation waitlist yüzeyi backend'de mount edildi
+        // (routers/reservation_waitlist.py). Gerçek add → promote akışı:
+        //  1) POST /api/waitlist (waiting entry)
+        //  2) POST /api/waitlist/{id}/promote (explicit room_id + far-future
+        //     dates → deterministik booking; create_booking_atomic oda-gece
+        //     lock'u alır). 409 = oda-gece çakışması (beklenen guard).
+        const room = rooms[rooms.length - 1];
+        const ts = Date.now();
+        const checkIn = futureDateISO(450);
+        const checkOut = futureDateISO(452);
+        const addR = await callTimed(request, 'post', '/api/waitlist', {
+            guest_name: `${SUB_PREFIX}_WL_${ts}`,
+            room_type: room.room_type || 'standard',
+            check_in: checkIn,
+            check_out: checkOut,
+            guest_email: `wl-${ts}@e2e-stress.example.com`,
+            preferred_rate: 1750,
+            priority: 'high',
+            notes: `${SUB_PREFIX} waitlist add/promote`,
+        }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('wl_add') } });
+        const entryId = addR.body?.id;
+        if (!addR.ok || !entryId) {
+            rec(testInfo, { module: MOD, step: 'waitlist_promote', status: addR.status >= 500 ? 'FAIL' : 'REVIEW',
+                endpoint: '/api/waitlist',
+                note: `add_status=${addR.status} body=${JSON.stringify(addR.body).slice(0, 160)} — promote test edilemedi` });
+            if (addR.status >= 500) recFinding(testInfo, 'P1', MOD, 'Waitlist add 5xx', `status=${addR.status}`);
+            else recFinding(testInfo, 'P2', MOD, 'Waitlist add başarısız', `status=${addR.status}`);
+            await gap();
+            return;
         }
+        await gap();
+
+        const promoteR = await callTimed(request, 'post',
+            `/api/waitlist/${encodeURIComponent(entryId)}/promote`, {
+                room_id: room.id,
+                total_amount: 1750,
+            }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('wl_promote') } });
+        const promoteBid = promoteR.body?.booking_id;
+        if (promoteR.ok && promoteBid) createdBookingIds.push(promoteBid);
+
+        const fiveXx = promoteR.status >= 500;
+        // 2xx + booking_id = promote başarılı (PASS). 409 = oda-gece çakışması
+        // (beklenen guard, PASS). 5xx = FAIL. Diğer 4xx = REVIEW.
+        const status = fiveXx ? 'FAIL'
+            : ((promoteR.ok && promoteBid) ? 'PASS'
+                : (promoteR.status === 409 ? 'PASS' : 'REVIEW'));
+        rec(testInfo, { module: MOD, step: 'waitlist_promote', status,
+            endpoint: '/api/waitlist + /api/waitlist/{id}/promote',
+            note: `add_status=${addR.status} entry=${entryId} promote_status=${promoteR.status} booking_id=${promoteBid ?? 'n/a'} body=${JSON.stringify(promoteR.body).slice(0, 160)}` });
+        if (fiveXx) recFinding(testInfo, 'P1', MOD, 'Waitlist promote 5xx', `status=${promoteR.status}`);
+        // Hard-assert: promote 5xx üretmemeli; happy path 2xx booking üretmeli
+        // VEYA 409 beklenen guard döndürmeli (no fake-green).
+        expect(promoteR.status, `waitlist promote 5xx: ${promoteR.status}`).toBeLessThan(500);
+        expect([200, 201, 409], `waitlist promote unexpected status ${promoteR.status}`).toContain(promoteR.status);
+
+        // Teardown: entry'yi sil (orphan-scrub safety net cleanup'ta da var).
+        await callTimed(request, 'delete', `/api/waitlist/${encodeURIComponent(entryId)}`,
+            undefined, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('wl_del') } });
         await gap();
     });
 
@@ -347,7 +395,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         const ts = Date.now();
         const arrival = futureDateISO(240);
         const departure = futureDateISO(243);
-        const blockR = await callTimed(request, 'post', '/api/pms/groups/create-block', {
+        const blockR = await callTimed(request, 'post', '/api/groups/create-block', {
             stress_prefix: `${SUB_PREFIX}_GroupBlock_${ts}`,
             group_name: `${SUB_PREFIX}_GroupBlock_${ts}`,
             block_code: `${SUB_PREFIX.slice(0, 8)}${ts.toString().slice(-6)}`,
@@ -362,7 +410,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
 
         if (!blockR.ok) {
             rec(testInfo, { module: MOD, step: 'group_rooming_list', status: 'REVIEW',
-                endpoint: '/api/pms/groups/create-block',
+                endpoint: '/api/groups/create-block',
                 note: `block create status=${blockR.status} body=${JSON.stringify(blockR.body).slice(0, 200)}` });
             recFinding(testInfo, 'P2', MOD, 'Group block create başarısız — rooming-list test edilemedi',
                 `status=${blockR.status} (RBAC veya schema drift olabilir)`);
@@ -387,7 +435,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
             special_requests: `${SUB_PREFIX}_rl_${i}`,
         }));
         const rlR = await callTimed(request, 'post',
-            `/api/pms/groups/rooming-list/${encodeURIComponent(blockId)}`,
+            `/api/groups/rooming-list/${encodeURIComponent(blockId)}`,
             entries, stressTokens.stress_token,
             { headers: { 'Idempotency-Key': idemKey('group_rl') } });
 
@@ -404,7 +452,7 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         const fiveXx = rlR.status >= 500;
         const status = fiveXx ? 'FAIL' : (rlR.ok ? 'PASS' : 'REVIEW');
         rec(testInfo, { module: MOD, step: 'group_rooming_list', status,
-            endpoint: '/api/pms/groups/rooming-list/{block_id}',
+            endpoint: '/api/groups/rooming-list/{block_id}',
             note: `block_id=${blockId ?? 'n/a'} entries=${entries.length} rl_status=${rlR.status} created=${created.length} errors=${(rlR.body?.errors || []).length}` });
         if (fiveXx) recFinding(testInfo, 'P1', MOD, 'Rooming-list 5xx', `status=${rlR.status}`);
         await gap();
@@ -491,13 +539,23 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
         await gap();
 
         const fiveXx = [seedR, shrinkR, legR].filter((r) => r.status >= 500).length;
+        // Task #169 (KOVA 4): leg2 (splitPoint→fullCheckOut, AYNI oda) 409 =
+        // beklenen oda-gece çakışması guard'ı. PUT shrink room_night_locks'u
+        // senkron release etmeyebilir → aynı odada ikinci leg create_booking_
+        // atomic tarafından 409 ile reddedilir. Bu DOĞRU oversell koruması
+        // (REVIEW değil). 2xx (lock release sonrası başarılı) de PASS.
+        const legGuardOk = legR.ok || legR.status === 409;
         const status = fiveXx > 0 ? 'FAIL'
-            : (shrinkR.ok && legR.ok ? 'PASS' : 'REVIEW');
+            : (shrinkR.ok && legGuardOk ? 'PASS' : 'REVIEW');
         rec(testInfo, { module: MOD, step: 'split_reservation', status,
             endpoint: '/api/pms/quick-booking + PUT /api/pms/bookings/{id}',
-            note: `seed=${seedR.status} shrink=${shrinkR.status} leg2=${legR.status} 5xx=${fiveXx} leg2_body=${JSON.stringify(legR.body).slice(0, 120)}` });
+            note: `seed=${seedR.status} shrink=${shrinkR.status} leg2=${legR.status} leg2_guard=${legR.status === 409 ? '409_expected_conflict' : (legR.ok ? 'created' : 'other')} 5xx=${fiveXx} leg2_body=${JSON.stringify(legR.body).slice(0, 120)}` });
         if (fiveXx > 0) recFinding(testInfo, 'P1', MOD, 'Split reservation 5xx',
             `seed=${seedR.status} shrink=${shrinkR.status} leg2=${legR.status}`);
+        // Hard-assert: split akışı 5xx üretmemeli; leg2 ya yaratılmalı ya da
+        // 409 beklenen guard döndürmeli (oversell koruması).
+        expect(fiveXx, 'split reservation 5xx').toBe(0);
+        expect(legGuardOk, `split leg2 unexpected status ${legR.status}`).toBe(true);
     });
 
     // ────────────────────────────────────────────────────────────────────
@@ -505,39 +563,63 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
     // ────────────────────────────────────────────────────────────────────
     test('I) Merge duplicate guest profiles', async ({ request, stressTokens }, testInfo) => {
         if (moduleBlocked) { rec(testInfo, { module: MOD, step: 'merge_guest', status: 'SKIP' }); test.skip(); return; }
-        if (guests.length < 2) {
-            rec(testInfo, { module: MOD, step: 'merge_guest', status: 'SKIP', note: `guests<2 (have ${guests.length})` });
+        if (rooms.length < 2) {
+            rec(testInfo, { module: MOD, step: 'merge_guest', status: 'SKIP', note: 'rooms<2 — guest seed edilemedi' });
             return;
         }
-        const primary = guests[0];
-        const duplicate = guests[1];
-        if (!primary?.id || !duplicate?.id) {
-            rec(testInfo, { module: MOD, step: 'merge_guest', status: 'SKIP', note: 'guest ids missing' });
+        // Task #169 (KOVA 4): merge gerçek ön-koşul = ≥2 ayrı misafir. Mevcut
+        // stress_prefix'li guest havuzu yetersizse iki quick-booking walk-in ile
+        // gerçek 2 misafir seed et (kör-seed DEĞİL — merge'in test edilebilmesi
+        // için zorunlu gerçek ön-koşul). guest_id quick-booking response'unda
+        // döner. _chain_tenant_ids unchained tenant'ta [own tenant] döndürür →
+        // taze stress-tenant misafirleri merge tarafından bulunur.
+        let primaryId = guests[0]?.id;
+        let duplicateId = guests[1]?.id;
+        if (!primaryId || !duplicateId) {
+            const ts = Date.now();
+            const seeded = [];
+            for (let i = 0; i < 2; i++) {
+                const r = await callTimed(request, 'post', '/api/pms/quick-booking', {
+                    room_id: rooms[i].id,
+                    guest_name: `${SUB_PREFIX}_MergeSeed_${ts}_${i}`,
+                    check_in: futureDateISO(470 + i * 3),
+                    check_out: futureDateISO(472 + i * 3),
+                    total_amount: 1400,
+                }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('merge_seed', i) } });
+                const bid = r.body?.id || r.body?.booking_id || r.body?.booking?.id;
+                if (r.ok && bid) createdBookingIds.push(bid);
+                const gid = r.body?.guest_id;
+                if (r.ok && gid) seeded.push(gid);
+                await gap();
+            }
+            primaryId = primaryId || seeded[0];
+            duplicateId = duplicateId || seeded[1];
+        }
+        if (!primaryId || !duplicateId || primaryId === duplicateId) {
+            rec(testInfo, { module: MOD, step: 'merge_guest', status: 'REVIEW',
+                note: `merge ön-koşul seed başarısız primary=${primaryId} duplicate=${duplicateId}` });
+            recFinding(testInfo, 'P2', MOD, 'Merge guest seed başarısız',
+                `İki ayrı misafir seed edilemedi (primary=${primaryId} duplicate=${duplicateId}).`);
+            await gap();
             return;
         }
-        // Architect-iter-1 fix #2: backend merge router prefix
-        // `/api/cross-property` (cross_property.py:38). Önceki revizyon
-        // `/api/guests/{id}/merge` çağırıyordu → her zaman 404 → sahte
-        // REVIEW (gerçek merge yüzeyi hiç test edilmiyordu). Doğru path:
-        // `/api/cross-property/guests/{primary_id}/merge`.
+        // Backend merge router prefix `/api/cross-property` (cross_property.py).
         const mergeR = await callTimed(request, 'post',
-            `/api/cross-property/guests/${encodeURIComponent(primary.id)}/merge`, {
-                target_guest_id: duplicate.id,
+            `/api/cross-property/guests/${encodeURIComponent(primaryId)}/merge`, {
+                target_guest_id: duplicateId,
                 keep_field_overrides: {},
             }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('merge') } });
 
         const fiveXx = mergeR.status >= 500;
-        // 403 / 404 RBAC veya schema drift olabilir → REVIEW.
-        const status = fiveXx ? 'FAIL'
-            : (mergeR.ok ? 'PASS'
-                : (mergeR.status === 403 || mergeR.status === 404 ? 'REVIEW' : 'REVIEW'));
+        const status = fiveXx ? 'FAIL' : (mergeR.ok ? 'PASS' : 'REVIEW');
         rec(testInfo, { module: MOD, step: 'merge_guest', status,
-            endpoint: '/api/guests/{primary_id}/merge',
-            note: `primary=${primary.id} duplicate=${duplicate.id} merge_status=${mergeR.status} body=${JSON.stringify(mergeR.body).slice(0, 160)}` });
+            endpoint: '/api/cross-property/guests/{primary_id}/merge',
+            note: `primary=${primaryId} duplicate=${duplicateId} merge_status=${mergeR.status} body=${JSON.stringify(mergeR.body).slice(0, 160)}` });
         if (fiveXx) recFinding(testInfo, 'P1', MOD, 'Merge guest 5xx', `status=${mergeR.status}`);
-        else if (mergeR.status === 403) recFinding(testInfo, 'P2', MOD,
-            'Merge guest RBAC short-circuit',
-            `Stress automation role manage_sales perm eksik (403). Beklenen — merge SUPER_ADMIN/ADMIN/SUPERVISOR sınırlı.`);
+        // Hard-assert: stress token super_admin → merge RBAC geçer; 2 gerçek
+        // misafir seed edildi (aynı tenant) → merge 2xx dönmeli (no fake-green).
+        expect(mergeR.status, `merge 5xx: ${mergeR.status}`).toBeLessThan(500);
+        expect(mergeR.ok, `merge başarısız status=${mergeR.status} body=${JSON.stringify(mergeR.body).slice(0, 160)}`).toBe(true);
         await gap();
     });
 
@@ -644,57 +726,109 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
     });
 
     // ────────────────────────────────────────────────────────────────────
-    // L) City ledger transfer dry-run
+    // L) City ledger transfer — seeded pre-reqs, hard-asserted
     // ────────────────────────────────────────────────────────────────────
-    test('L) City ledger transfer dry-run', async ({ request, stressTokens }, testInfo) => {
+    test('L) City ledger transfer (seed folio+charge+account, hard-assert)', async ({ request, stressTokens }, testInfo) => {
         if (moduleBlocked) { rec(testInfo, { module: MOD, step: 'city_ledger_transfer', status: 'SKIP' }); test.skip(); return; }
-        // Stress tenant'ta açık bir folio + city ledger account ID'leri lazım.
-        // İlk açık folio'yu bul.
-        const folioListR = await callTimed(request, 'get',
-            '/api/pms/folios?status=open&limit=20',
-            undefined, stressTokens.stress_token);
-        const folios = folioListR.ok
-            ? (Array.isArray(folioListR.body) ? folioListR.body
-                : (folioListR.body?.folios || folioListR.body?.items || []))
-            : [];
-        const openFolio = folios.find((f) => f?.id);
+        if (rooms.length < 1) { rec(testInfo, { module: MOD, step: 'city_ledger_transfer', status: 'SKIP', note: 'no rooms' }); return; }
 
-        // City ledger account ID'sini cashiering listesinden çek.
-        const accListR = await callTimed(request, 'get',
-            '/api/cashiering/city-ledger',
-            undefined, stressTokens.stress_token);
-        const accounts = accListR.ok
-            ? (Array.isArray(accListR.body) ? accListR.body
-                : (accListR.body?.accounts || accListR.body?.items || []))
-            : [];
-        const account = accounts.find((a) => a?.id);
-
-        if (!openFolio || !account) {
-            rec(testInfo, { module: MOD, step: 'city_ledger_transfer', status: 'SKIP',
-                endpoint: '/api/pms-core/folio/city-ledger-transfer',
-                note: `folios_ok=${folioListR.ok}(${folioListR.status}) folios=${folios.length} accounts_ok=${accListR.ok}(${accListR.status}) accounts=${accounts.length} — pre-req unavailable` });
-            recFinding(testInfo, 'P2', MOD, 'City ledger transfer pre-req yok',
-                `Open folio veya city-ledger account stress-tenant'ta seed edilmemiş; smoke skipped.`);
+        // Task #169 (KOVA 4): city-ledger transfer gerçek ön-koşulları seed
+        // edilir (önceki revizyon var olan veriyi arıyordu → çoğu zaman SKIP):
+        //  1) city-ledger account (POST /api/cashiering/city-ledger)
+        //  2) açık folio + pozitif bakiye: quick-booking → açık folio,
+        //     POST /api/pms-core/folio/charge → balance>0 (yoksa backend
+        //     "No outstanding balance" 400 döner — transfer test edilemez)
+        //  3) POST /api/pms-core/folio/city-ledger-transfer → hard-assert 2xx.
+        const ts = Date.now();
+        const accR = await callTimed(request, 'post', '/api/cashiering/city-ledger', {
+            account_name: `${SUB_PREFIX}_CL_${ts}`,
+            company_name: `${SUB_PREFIX}_Co_${ts}`,
+            credit_limit: 100000,
+        }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('cl_acct') } });
+        const accountId = accR.body?.account_id || accR.body?.id;
+        if (!accR.ok || !accountId) {
+            rec(testInfo, { module: MOD, step: 'city_ledger_transfer', status: accR.status >= 500 ? 'FAIL' : 'REVIEW',
+                endpoint: '/api/cashiering/city-ledger',
+                note: `account create status=${accR.status} body=${JSON.stringify(accR.body).slice(0, 160)} — transfer test edilemedi` });
+            if (accR.status >= 500) recFinding(testInfo, 'P1', MOD, 'City-ledger account create 5xx', `status=${accR.status}`);
+            else recFinding(testInfo, 'P2', MOD, 'City-ledger account create başarısız', `status=${accR.status}`);
+            await gap();
             return;
         }
+        await gap();
+
+        // Açık folio için booking seed et (quick-booking otomatik açık folio yaratır).
+        const room = rooms[rooms.length - 2] || rooms[0];
+        const bookR = await callTimed(request, 'post', '/api/pms/quick-booking', {
+            room_id: room.id,
+            guest_name: `${SUB_PREFIX}_CLFolio_${ts}`,
+            check_in: futureDateISO(480),
+            check_out: futureDateISO(482),
+            total_amount: 2400,
+        }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('cl_book') } });
+        const bid = bookR.body?.id || bookR.body?.booking_id || bookR.body?.booking?.id;
+        if (bookR.ok && bid) createdBookingIds.push(bid);
+        if (!bookR.ok || !bid) {
+            rec(testInfo, { module: MOD, step: 'city_ledger_transfer', status: 'REVIEW',
+                note: `folio seed booking status=${bookR.status} — transfer test edilemedi` });
+            recFinding(testInfo, 'P2', MOD, 'City-ledger folio seed başarısız', `status=${bookR.status}`);
+            await gap();
+            return;
+        }
+        await gap();
+
+        // Booking'in açık folio'sunu bul.
+        const folioR = await callTimed(request, 'get',
+            `/api/pms/folios?booking_id=${encodeURIComponent(bid)}`,
+            undefined, stressTokens.stress_token);
+        const folios = folioR.ok
+            ? (Array.isArray(folioR.body) ? folioR.body : (folioR.body?.folios || folioR.body?.items || []))
+            : [];
+        const folio = folios.find((f) => f?.id);
+        if (!folio) {
+            rec(testInfo, { module: MOD, step: 'city_ledger_transfer', status: 'REVIEW',
+                note: `folio lookup status=${folioR.status} folios=${folios.length} — transfer test edilemedi` });
+            recFinding(testInfo, 'P2', MOD, 'City-ledger folio bulunamadı', `booking=${bid} folios=${folios.length}`);
+            await gap();
+            return;
+        }
+
+        // Pozitif bakiye için charge post et (balance>0 zorunlu).
+        const chargeR = await callTimed(request, 'post', '/api/pms-core/folio/charge', {
+            folio_id: folio.id,
+            booking_id: bid,
+            category: 'other',
+            description: `${SUB_PREFIX}_cl_charge`,
+            amount: 1500,
+            quantity: 1,
+            tax_rate: 0,
+        }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('cl_charge') } });
+        await gap();
+        if (chargeR.status >= 500) {
+            rec(testInfo, { module: MOD, step: 'city_ledger_transfer', status: 'FAIL',
+                endpoint: '/api/pms-core/folio/charge',
+                note: `charge status=${chargeR.status} body=${JSON.stringify(chargeR.body).slice(0, 160)}` });
+            recFinding(testInfo, 'P1', MOD, 'City-ledger charge 5xx', `status=${chargeR.status}`);
+            return;
+        }
+
         const transferR = await callTimed(request, 'post',
             '/api/pms-core/folio/city-ledger-transfer', {
-                folio_id: openFolio.id,
-                account_id: account.id,
+                folio_id: folio.id,
+                account_id: accountId,
                 reason: `${SUB_PREFIX}_cl_transfer`,
             }, stressTokens.stress_token, { headers: { 'Idempotency-Key': idemKey('cl_transfer') } });
 
         const fiveXx = transferR.status >= 500;
-        const status = fiveXx ? 'FAIL'
-            : (transferR.ok ? 'PASS'
-                : (transferR.status === 400 || transferR.status === 403 ? 'REVIEW' : 'REVIEW'));
+        const status = fiveXx ? 'FAIL' : (transferR.ok ? 'PASS' : 'REVIEW');
         rec(testInfo, { module: MOD, step: 'city_ledger_transfer', status,
             endpoint: '/api/pms-core/folio/city-ledger-transfer',
-            note: `folio=${openFolio.id} account=${account.id} transfer_status=${transferR.status} body=${JSON.stringify(transferR.body).slice(0, 200)}` });
+            note: `account=${accountId} folio=${folio.id} charge=${chargeR.status} transfer_status=${transferR.status} body=${JSON.stringify(transferR.body).slice(0, 200)}` });
         if (fiveXx) recFinding(testInfo, 'P1', MOD, 'City ledger transfer 5xx', `status=${transferR.status}`);
-        else if (transferR.status === 403) recFinding(testInfo, 'P2', MOD,
-            'City ledger transfer RBAC short-circuit',
-            `close_folio perm gate (403); beklenen RBAC davranışı.`);
+        // Hard-assert: gerçek ön-koşullar seed edildi (açık folio + pozitif
+        // bakiye + city-ledger account) → transfer 2xx dönmeli (no fake-green).
+        expect(transferR.status, `city-ledger transfer 5xx: ${transferR.status}`).toBeLessThan(500);
+        expect(transferR.ok, `city-ledger transfer fail status=${transferR.status} body=${JSON.stringify(transferR.body).slice(0, 200)}`).toBe(true);
         await gap();
     });
 

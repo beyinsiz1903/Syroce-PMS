@@ -121,6 +121,9 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.guest.operations_router", "router", ["Guest / Operations"], None, None),
     ("domains.guest.qr_badge", "router", ["Guest / QR Badge"], None, None),
     ("domains.pms.groups_router", "router", ["PMS / Groups"], None, None),
+    # Task #169 (KOVA 4): reservation-level waitlist surface (distinct from
+    # spa waitlist). add/list/delete + promote-to-booking; tenant scope + RBAC.
+    ("routers.reservation_waitlist", "router", ["PMS / Reservation Waitlist"], None, None),
     ("domains.channel_manager.operations_router", "router", ["Channel Manager / Operations"], None, None),
     ("domains.sales.crm_router", "router", ["Sales / CRM"], None, None),
     ("domains.pms.calendar_router", "router", ["PMS / Calendar"], None, None),

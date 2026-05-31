@@ -338,6 +338,14 @@ STRESS_COLLECTIONS = [
     "inventory_movements",
     "recipes",
     "menu_items",
+    # Task #169 (KOVA 4): reservation waitlist surface (95-reservation-
+    # lifecycle-deep). Spec-side DELETE on created entries is primary; this
+    # entry is the orphan-scrub safety net for runs that abort before the
+    # entry is promoted/deleted. The product POST /api/waitlist is a strict
+    # Pydantic route (strips unknown fields) so rows do NOT carry
+    # `stress_seed`/`stress_prefix` — handled via the tenant-scoped exception
+    # set below (same rationale as currency_rates / performance_reviews).
+    "reservation_waitlist",
     "bookings",
     "guests",
     "rooms",
@@ -2649,7 +2657,15 @@ async def stress_cleanup(
     # absent → spec-created reviews would residue across runs without
     # tenant-scoped wipe. Same rationale as currency_rates: only stress
     # tenant has these rows, full-collection wipe is intended idempotency.
-    CURRENCY_RATES_TENANT_SCOPED = {"currency_rates", "performance_reviews"}
+    # Task #169 (KOVA 4): reservation_waitlist rows are created via the strict
+    # Pydantic POST /api/waitlist which strips unknown fields, so they cannot
+    # carry `stress_seed`/`stress_prefix`. Same rationale as currency_rates:
+    # only the stress tenant ever holds these rows (gates enforce target ==
+    # stress_tid), so a tenant-scoped full-collection wipe is the intended
+    # idempotency (audit_logs untouched).
+    CURRENCY_RATES_TENANT_SCOPED = {
+        "currency_rates", "performance_reviews", "reservation_waitlist",
+    }
     with tenant_context(stress_tid):
         from core.database import db
         for col_name in STRESS_COLLECTIONS:
