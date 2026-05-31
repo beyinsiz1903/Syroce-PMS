@@ -5,8 +5,10 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { PageHeader } from '@/components/ui/page-header';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import {
   Building2, RefreshCw, FileText, History, XCircle, CheckCircle2,
   Clock, FilePen, AlertTriangle, Send,
@@ -49,7 +51,14 @@ const CorporateContractApprovals = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [historyContract, setHistoryContract] = useState(null);
+  // Owner resubmit flow: the rejected contract currently being re-sent.
   const [resubmittingId, setResubmittingId] = useState(null);
+  // Contract currently being approved/rejected (id) so we can disable its
+  // buttons and avoid double-submits while the request is in flight.
+  const [actioningId, setActioningId] = useState(null);
+  // Reject flow: the contract being rejected + the mandatory reason text.
+  const [rejectContract, setRejectContract] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const loadContracts = async () => {
     setLoading(true);
@@ -73,11 +82,11 @@ const CorporateContractApprovals = () => {
     }
   };
 
-  // Move a rejected contract back through rejected → draft → pending so the
-  // owner can re-submit it for approval after fixing the issue. Two sequential
-  // transitions because the backend state machine only allows one hop each
-  // (CONTRACT_APPROVAL_TRANSITIONS in rms_router/sales.py).
-  const transition = async (contractId, toStatus) => {
+  // Low-level approval-transition POST. The backend (rms_router/sales.py) is the
+  // source of truth: it validates the transition and 400s on a rejection without
+  // a reason, so we surface its error detail verbatim rather than re-implementing
+  // the rules client-side.
+  const postTransition = async (contractId, toStatus, reason) => {
     const token = localStorage.getItem('token');
     const res = await fetch(
       `/api/sales/corporate-contract/${contractId}/approval-transition`,
@@ -87,7 +96,7 @@ const CorporateContractApprovals = () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ to_status: toStatus }),
+        body: JSON.stringify({ to_status: toStatus, reason: reason || null }),
       },
     );
     if (!res.ok) {
@@ -101,6 +110,10 @@ const CorporateContractApprovals = () => {
     return res.json();
   };
 
+  // Move a rejected contract back through rejected → draft → pending so the
+  // owner can re-submit it for approval after fixing the issue. Two sequential
+  // transitions because the backend state machine only allows one hop each
+  // (CONTRACT_APPROVAL_TRANSITIONS in rms_router/sales.py).
   const handleResubmit = async (contract) => {
     if (!contract || contract.approval_status !== 'rejected') return;
     const ok = await confirmDialog({
@@ -113,8 +126,8 @@ const CorporateContractApprovals = () => {
     if (!ok) return;
     setResubmittingId(contract.id);
     try {
-      await transition(contract.id, 'draft');
-      await transition(contract.id, 'pending');
+      await postTransition(contract.id, 'draft');
+      await postTransition(contract.id, 'pending');
       toast.success('Sözleşme yeniden onaya gönderildi.');
       await loadContracts();
     } catch (err) {
@@ -128,6 +141,43 @@ const CorporateContractApprovals = () => {
   useEffect(() => {
     loadContracts();
   }, []);
+
+  // Approver action: drive a single contract through one approval hop and give
+  // toast feedback, disabling its buttons while the request is in flight.
+  const runApproverAction = async (contract, toStatus, reason) => {
+    setActioningId(contract.id);
+    try {
+      await postTransition(contract.id, toStatus, reason);
+      toast.success(
+        toStatus === 'approved' ? 'Sözleşme onaylandı' : 'Sözleşme reddedildi',
+        { description: contract.company_name || 'Sözleşme' },
+      );
+      return true;
+    } catch (err) {
+      console.error('Approval transition failed', err);
+      toast.error('İşlem başarısız', { description: err.message });
+      return false;
+    } finally {
+      setActioningId(null);
+    }
+  };
+
+  const handleApprove = async (contract) => {
+    const ok = await runApproverAction(contract, 'approved');
+    if (ok) await loadContracts();
+  };
+
+  const submitReject = async () => {
+    if (!rejectContract) return;
+    const reason = rejectReason.trim();
+    if (!reason) return;
+    const ok = await runApproverAction(rejectContract, 'rejected', reason);
+    if (ok) {
+      setRejectContract(null);
+      setRejectReason('');
+      await loadContracts();
+    }
+  };
 
   const counts = useMemo(() => {
     const acc = { total: contracts.length, pending: 0, approved: 0, rejected: 0 };
@@ -145,7 +195,7 @@ const CorporateContractApprovals = () => {
       <PageHeader
         icon={Building2}
         title="Kurumsal Sözleşme Onayları"
-        subtitle="Sözleşmelerinizin onay durumunu görün; reddedilen sözleşmelerde gerekçeyi okuyup düzeltin ve yeniden gönderin."
+        subtitle="Onay bekleyen sözleşmeleri inceleyin; onaylayın veya gerekçe belirterek reddedin. Reddedilen sözleşmelerde gerekçeyi okuyup düzeltin ve yeniden gönderin."
         actions={(
           <Button size="sm" variant="outline" onClick={loadContracts} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
@@ -229,15 +279,44 @@ const CorporateContractApprovals = () => {
                             )}
                           </div>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setHistoryContract(c)}
-                          disabled={historyLen === 0}
-                        >
-                          <History className="w-4 h-4 mr-1" />
-                          Onay Geçmişi{historyLen ? ` (${historyLen})` : ''}
-                        </Button>
+                        <div className="flex items-center gap-2 flex-wrap shrink-0">
+                          {c.approval_status === 'pending' && (
+                            <>
+                              <Button
+                                size="sm"
+                                onClick={() => handleApprove(c)}
+                                disabled={actioningId === c.id}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                              >
+                                {actioningId === c.id ? (
+                                  <RefreshCw className="w-4 h-4 mr-1 animate-spin" />
+                                ) : (
+                                  <CheckCircle2 className="w-4 h-4 mr-1" />
+                                )}
+                                Onayla
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => { setRejectContract(c); setRejectReason(''); }}
+                                disabled={actioningId === c.id}
+                                className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                              >
+                                <XCircle className="w-4 h-4 mr-1" />
+                                Reddet
+                              </Button>
+                            </>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setHistoryContract(c)}
+                            disabled={historyLen === 0}
+                          >
+                            <History className="w-4 h-4 mr-1" />
+                            Onay Geçmişi{historyLen ? ` (${historyLen})` : ''}
+                          </Button>
+                        </div>
                       </div>
 
                       {rejection && (
@@ -331,6 +410,58 @@ const CorporateContractApprovals = () => {
                 })
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!rejectContract}
+        onOpenChange={(open) => {
+          if (!open) { setRejectContract(null); setRejectReason(''); }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="w-4 h-4 text-rose-600" />
+              Sözleşmeyi Reddet
+            </DialogTitle>
+            <DialogDescription>
+              {rejectContract?.company_name || 'Sözleşme'} reddedilecek. Gerekçe
+              zorunludur ve sözleşme sahibine gösterilir.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="reject-reason">Reddetme Gerekçesi</Label>
+            <Textarea
+              id="reject-reason"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Örn. Görüşülen oran politikamızla uyuşmuyor; indirim oranını revize edin."
+              rows={4}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setRejectContract(null); setRejectReason(''); }}
+              disabled={!!actioningId}
+            >
+              Vazgeç
+            </Button>
+            <Button
+              onClick={submitReject}
+              disabled={!rejectReason.trim() || !!actioningId}
+              className="bg-rose-600 hover:bg-rose-700 text-white"
+            >
+              {actioningId ? (
+                <RefreshCw className="w-4 h-4 mr-1 animate-spin" />
+              ) : (
+                <XCircle className="w-4 h-4 mr-1" />
+              )}
+              Reddet
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
