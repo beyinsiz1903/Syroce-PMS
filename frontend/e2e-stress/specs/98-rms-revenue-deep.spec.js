@@ -498,35 +498,38 @@ test.describe.serial('F8AF revenue_management deep stress', () => {
                 rateCalBeforeHash = JSON.stringify(pRatesBefore.body?.published_rates ?? null);
             }
 
-            // Doctrine: backend `/rms/ai-pricing/auto-publish-rates` (signature
-            // `start_date, end_date, strategy`) does NOT support a `dry_run`
-            // flag — there is no server-side gate to suppress real channel
-            // push. Per F8AF task doctrine: when dry_run gate is unsupported,
-            // probe with `dry_run=true` query param + record P2 deferral
-            // (NOT a fake PASS). The post-batch `assertNoExternalCallsPostBatch`
-            // verifies that no real CM/channel HTTP fired during this batch.
+            // Server-side dry_run kill-switch (KOVA 4 product gap CLOSED):
+            // backend `/rms/ai-pricing/auto-publish-rates` now accepts a
+            // `dry_run` flag (fail-closed default true). With dry_run=true the
+            // endpoint MUST suppress ALL persistent writes + outbox events and
+            // self-report `dry_run=true`, `rates_persisted=0`,
+            // `outbox_events_emitted=0`, with every published_rate carrying
+            // `published=false`. HARD-assert this — no fake-green REVIEW.
             const probeUrl = `/api/rms/ai-pricing/auto-publish-rates?start_date=${start}&end_date=${end}&strategy=balanced&dry_run=true`;
             const probe = await callTimed(request, 'post', probeUrl, {}, sToken);
-            if (probe.status >= 200 && probe.status < 300) {
-                recFinding(testInfo, 'P2', MOD,
-                    'ai-pricing auto-publish lacks server-side dry_run gate',
-                    `POST .../auto-publish-rates accepted dry_run=true query param without distinct behaviour (rates_published=${probe.body?.rates_published}). Backend has no dry_run kill-switch — operator must rely on external_calls invariant (no real channel HTTP this run) + caller-side gating. Feature request: add explicit dry_run server flag suppressing rate-calendar writes + outbox events.`);
-                rec(testInfo, { module: MOD, step: 'ai_pricing_dry_run_probe', status: 'REVIEW',
-                    note: `http=${probe.status} rates_published=${probe.body?.rates_published} (no dry_run gate)` });
-            } else if (probe.status === 403 || probe.status === 404) {
+            if (probe.status === 403 || probe.status === 404) {
                 rec(testInfo, { module: MOD, step: 'ai_pricing_dry_run_probe', status: 'SKIP',
                     note: `http=${probe.status} (surface absent)` });
                 recFinding(testInfo, 'P2', MOD, 'ai-pricing auto-publish non-2xx',
                     `POST .../auto-publish-rates http=${probe.status}`);
-            } else if (probe.status === 422 || probe.status === 400) {
-                rec(testInfo, { module: MOD, step: 'ai_pricing_dry_run_probe', status: 'SKIP',
-                    note: `http=${probe.status} dry_run query param rejected → live call deferred per F8AF doctrine` });
-                recFinding(testInfo, 'P2', MOD,
-                    'ai-pricing auto-publish dry_run param unsupported — live call deferred',
-                    `POST .../auto-publish-rates?dry_run=true → http=${probe.status}. No supported dry-run path; F8AF doctrine: skip live publish + P2 (informational) rather than risk real channel push.`);
             } else {
-                rec(testInfo, { module: MOD, step: 'ai_pricing_dry_run_probe', status: 'REVIEW',
-                    note: `http=${probe.status}` });
+                expect(probe.status, 'ai-pricing auto-publish dry_run must be 2xx for stress tenant')
+                    .toBeGreaterThanOrEqual(200);
+                expect(probe.status).toBeLessThan(300);
+                // HARD-FAIL: dry_run gate must be honoured by the server.
+                expect(probe.body?.dry_run, 'server must echo dry_run=true').toBe(true);
+                expect(probe.body?.rates_persisted, 'dry_run must persist ZERO rates').toBe(0);
+                expect(probe.body?.outbox_events_emitted, 'dry_run must emit ZERO outbox events').toBe(0);
+                const anyPublished = Array.isArray(probe.body?.published_rates)
+                    ? probe.body.published_rates.some((r) => r?.published === true)
+                    : false;
+                if (anyPublished) {
+                    recFinding(testInfo, 'P0', MOD, 'ai-pricing dry_run marked a rate published',
+                        `dry_run=true returned a published_rate with published=true — write-suppression gate broken. body=${JSON.stringify(probe.body).slice(0, 200)}`);
+                }
+                expect(anyPublished, 'no rate may be marked published under dry_run').toBe(false);
+                rec(testInfo, { module: MOD, step: 'ai_pricing_dry_run_probe', status: 'PASS',
+                    note: `http=${probe.status} dry_run=${probe.body?.dry_run} persisted=${probe.body?.rates_persisted} outbox=${probe.body?.outbox_events_emitted} rates=${probe.body?.rates_published}` });
             }
 
             // Additional hard-fail cross-tenant mutation probe: attempt to
@@ -724,6 +727,82 @@ test.describe.serial('F8AF revenue_management deep stress', () => {
                 .toBeGreaterThanOrEqual(400);
             rec(testInfo, { module: MOD, step: 'bogus_id_hurdle_delete', status: 'PASS',
                 note: `http=${bogusHurdleDel.status}` });
+
+            // G4: SEEDED cross-tenant IDOR (deterministic, no kör-seed, no pilot
+            // mutation). Earlier serial steps created REAL records in the STRESS
+            // tenant via real endpoints: a hurdle (E → createdHurdleIds) and an
+            // autopilot queue item (C → createdQueueItemIds). Here the PILOT
+            // token plays attacker and tries to mutate those stress-owned
+            // records. The backend tenant guard MUST deny (≥400 / 404). This
+            // replaces the old "pilot harvest empty → SKIP+P2" hole with a
+            // guaranteed-exercisable IDOR vector. Pilot is never mutated → no
+            // pilot_drift; if the guard were broken the bleed would hit the
+            // stress tenant, surfaced as a hard FAIL below.
+            const seededHurdleId = [...new Set(createdHurdleIds.filter(Boolean))][0] || null;
+            if (seededHurdleId) {
+                // Pilot PATCH of a stress-owned hurdle → deny.
+                const pPatch = await callTimed(request, 'patch',
+                    `/api/hurdle-rates/${seededHurdleId}`, { min_rate: 1.0 }, pToken);
+                if (pPatch.status >= 200 && pPatch.status < 300) {
+                    recFinding(testInfo, 'P0', MOD, 'Seeded cross-tenant hurdle PATCH IDOR',
+                        `pilot_token PATCH /api/hurdle-rates/${seededHurdleId} (stress-owned) → ${pPatch.status}. Tenant guard breach or silent matched_count==0 success. Fix: update_hurdle filter must include tenant_id + matched_count==0 → 404.`);
+                }
+                expect(pPatch.status, `seeded cross-tenant hurdle PATCH must be >=400; got ${pPatch.status}`)
+                    .toBeGreaterThanOrEqual(400);
+                rec(testInfo, { module: MOD, step: 'seeded_idor_hurdle_patch', status: 'PASS',
+                    note: `http=${pPatch.status}` });
+
+                // Pilot DELETE of a stress-owned hurdle → deny.
+                const pDel = await callTimed(request, 'delete',
+                    `/api/hurdle-rates/${seededHurdleId}`, undefined, pToken);
+                if (pDel.status >= 200 && pDel.status < 300) {
+                    recFinding(testInfo, 'P0', MOD, 'Seeded cross-tenant hurdle DELETE IDOR',
+                        `pilot_token DELETE /api/hurdle-rates/${seededHurdleId} (stress-owned) → ${pDel.status}. Fix: delete_hurdle matched_count==0 → 404.`);
+                }
+                expect(pDel.status, `seeded cross-tenant hurdle DELETE must be >=400; got ${pDel.status}`)
+                    .toBeGreaterThanOrEqual(400);
+                rec(testInfo, { module: MOD, step: 'seeded_idor_hurdle_delete', status: 'PASS',
+                    note: `http=${pDel.status}` });
+            } else {
+                rec(testInfo, { module: MOD, step: 'seeded_idor_hurdle', status: 'SKIP',
+                    note: 'no stress-seeded hurdle id (step E create non-2xx)' });
+                recFinding(testInfo, 'P2', MOD, 'seeded hurdle IDOR not exercised',
+                    'createdHurdleIds empty — step E hurdle create returned non-2xx this run.');
+            }
+
+            const seededItemId = [...new Set(createdQueueItemIds.filter(Boolean))][0] || null;
+            if (seededItemId) {
+                // Pilot approve of a stress-owned queue item → deny (item not
+                // found for pilot tenant → 404).
+                const pAppr = await callTimed(request, 'post',
+                    `/api/revenue-autopilot/queue/${seededItemId}/approve`, undefined, pToken);
+                if (pAppr.status >= 200 && pAppr.status < 300) {
+                    recFinding(testInfo, 'P0', MOD, 'Seeded cross-tenant queue approve IDOR',
+                        `pilot_token POST /api/revenue-autopilot/queue/${seededItemId}/approve (stress-owned) → ${pAppr.status} body=${JSON.stringify(pAppr.body).slice(0, 200)}. Expected ≥400 (find_one tenant-scoped → 404).`);
+                }
+                expect(pAppr.status, `seeded cross-tenant queue approve must be >=400; got ${pAppr.status}`)
+                    .toBeGreaterThanOrEqual(400);
+                rec(testInfo, { module: MOD, step: 'seeded_idor_queue_approve', status: 'PASS',
+                    note: `http=${pAppr.status}` });
+
+                // Pilot reject of a stress-owned queue item → deny.
+                const pRej = await callTimed(request, 'post',
+                    `/api/revenue-autopilot/queue/${seededItemId}/reject`,
+                    { reason: 'idor probe' }, pToken);
+                if (pRej.status >= 200 && pRej.status < 300) {
+                    recFinding(testInfo, 'P0', MOD, 'Seeded cross-tenant queue reject IDOR',
+                        `pilot_token POST /api/revenue-autopilot/queue/${seededItemId}/reject (stress-owned) → ${pRej.status}. Expected ≥400.`);
+                }
+                expect(pRej.status, `seeded cross-tenant queue reject must be >=400; got ${pRej.status}`)
+                    .toBeGreaterThanOrEqual(400);
+                rec(testInfo, { module: MOD, step: 'seeded_idor_queue_reject', status: 'PASS',
+                    note: `http=${pRej.status}` });
+            } else {
+                rec(testInfo, { module: MOD, step: 'seeded_idor_queue', status: 'SKIP',
+                    note: 'no stress-seeded queue item id (step C process non-2xx)' });
+                recFinding(testInfo, 'P2', MOD, 'seeded queue IDOR not exercised',
+                    'createdQueueItemIds empty — step C /process returned no item_id this run.');
+            }
         } finally {
             await assertNoExternalCallsPostBatch(testInfo, MOD, 'idor_batch',
                 stressTokens.seed_state ?? stressState ?? {}, request, pToken);

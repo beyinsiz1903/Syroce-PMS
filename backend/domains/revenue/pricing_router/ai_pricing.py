@@ -12,8 +12,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
+from pymongo import UpdateOne
 
 from core.database import db
+from core.outbox_service import RATE_UPDATED, enqueue_outbox_event
 from core.security import (
     get_current_user,
 )
@@ -289,6 +291,7 @@ async def auto_publish_rates_based_on_forecast(
     start_date: str,
     end_date: str,
     strategy: str = "revenue_optimization",  # occupancy_maximization, revenue_optimization, balanced
+    dry_run: bool = True,  # fail-closed: default suppresses ALL writes + outbox
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("manage_rates")),  # v99 DW
 ):
@@ -297,6 +300,19 @@ async def auto_publish_rates_based_on_forecast(
     - Revenue optimization strategy
     - Occupancy maximization strategy
     - Balanced approach
+
+    Server-side dry_run kill-switch (fail-closed; default ``dry_run=True``):
+      * ``dry_run=True``  → compute recommendations ONLY. No persistent writes,
+        no outbox events. Response reports ``dry_run=True``,
+        ``rates_persisted=0``, ``outbox_events_emitted=0`` and every entry in
+        ``published_rates`` carries ``published=False``.
+      * ``dry_run=False`` → persist each recommended rate to
+        ``ai_pricing_publications`` (tenant-scoped upsert) AND enqueue one
+        ``RATE_UPDATED`` outbox event per date for downstream channel delivery.
+
+    The pricing algorithm itself is identical in both modes; the flag only
+    gates the side effects (persistence + outbox), so the stress suite can
+    hard-assert "dry_run ⇒ zero writes ⇒ external_calls=[]".
     """
     # Get demand forecast
     forecasts = []
@@ -341,19 +357,77 @@ async def auto_publish_rates_based_on_forecast(
             'date': forecast.get('date'),
             'forecasted_occupancy': round(occupancy * 100, 1),
             'recommended_rate': recommended_rate,
-            'published': True,
+            'published': (not dry_run),
             'strategy': strategy
         })
 
+    # Side effects (persistence + outbox) are gated behind the dry_run flag.
+    # When dry_run=True (default) NOTHING below runs → no writes, no outbox
+    # events, no downstream channel delivery.
+    rates_persisted = 0
+    outbox_events_emitted = 0
+    if not dry_run and published_rates:
+        now_iso = datetime.now(UTC).isoformat()
+        ops = [
+            UpdateOne(
+                {
+                    'tenant_id': current_user.tenant_id,
+                    'date': r['date'],
+                    'strategy': strategy,
+                },
+                {'$set': {
+                    'tenant_id': current_user.tenant_id,
+                    'date': r['date'],
+                    'strategy': strategy,
+                    'recommended_rate': r['recommended_rate'],
+                    'forecasted_occupancy': r['forecasted_occupancy'],
+                    'published_at': now_iso,
+                    'published_by': current_user.email,
+                }},
+                upsert=True,
+            )
+            for r in published_rates
+        ]
+        await db.ai_pricing_publications.bulk_write(ops, ordered=False)
+        rates_persisted = len(ops)
+
+        for r in published_rates:
+            await enqueue_outbox_event(
+                db,
+                tenant_id=current_user.tenant_id,
+                event_type=RATE_UPDATED,
+                entity_type='ai_pricing_publication',
+                entity_id=f"{current_user.tenant_id}:{r['date']}:{strategy}",
+                payload={
+                    'date': r['date'],
+                    'recommended_rate': r['recommended_rate'],
+                    'strategy': strategy,
+                    'source': 'ai_auto_publish',
+                },
+            )
+            outbox_events_emitted += 1
+
     return {
         'success': True,
+        'dry_run': dry_run,
         'start_date': start_date,
         'end_date': end_date,
         'strategy': strategy,
         'rates_published': len(published_rates),
+        'rates_persisted': rates_persisted,
+        'outbox_events_emitted': outbox_events_emitted,
         'published_rates': published_rates,
-        'avg_rate': round(sum(r['recommended_rate'] for r in published_rates) / len(published_rates), 2),
-        'note': 'Rates automatically published to PMS rate calendar'
+        'avg_rate': (
+            round(sum(r['recommended_rate'] for r in published_rates) / len(published_rates), 2)
+            if published_rates else 0
+        ),
+        'note': (
+            'Dry-run: recommendations computed only; no rates persisted and no '
+            'channel/outbox events emitted.'
+            if dry_run else
+            'Rates persisted to ai_pricing_publications and queued for channel '
+            'delivery via outbox.'
+        ),
     }
 
 
