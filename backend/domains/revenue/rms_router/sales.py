@@ -459,6 +459,35 @@ async def transition_corporate_contract_approval(
     }
 
 
+@router.get("/sales/corporate-contract/{contract_id}/approval-history")
+async def get_corporate_contract_approval_history(
+    contract_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """Return the approval lifecycle trail for a single corporate contract.
+
+    Surfaces the ``approval_history`` written by
+    ``transition_corporate_contract_approval`` (from/to status, reason, who,
+    when) so finance/sales can audit who moved a contract through the workflow.
+    Tenant-scoped: only the owning tenant can read its history.
+    """
+    current_user = await get_current_user(credentials)
+
+    contract = await db.corporate_contracts.find_one(
+        {'id': contract_id, 'tenant_id': current_user.tenant_id},
+        {'id': 1, 'company_name': 1, 'approval_status': 1, 'approval_history': 1},
+    )
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    return {
+        'contract_id': contract.get('id'),
+        'company_name': contract.get('company_name'),
+        'approval_status': contract.get('approval_status', 'draft'),
+        'approval_history': contract.get('approval_history', []),
+    }
+
+
 @router.get("/sales/ota-promotions")
 async def get_ota_promotions(
     active_only: bool = False,

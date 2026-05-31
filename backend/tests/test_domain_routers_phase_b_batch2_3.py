@@ -712,6 +712,46 @@ class TestCorporateContractApprovalWorkflow:
         resp = self._transition(admin_headers, str(uuid.uuid4()), "pending")
         assert resp.status_code == 404, resp.text
 
+    def _approval_history(self, headers, contract_id):
+        return requests.get(
+            f"{BASE_URL}/api/sales/corporate-contract/{contract_id}/approval-history",
+            headers=headers,
+        )
+
+    def test_approval_history_endpoint_records_who_and_transitions(self, admin_headers):
+        """GET .../approval-history returns the per-transition trail (who/from/to).
+
+        Walks a contract draft→pending→approved, then reads the dedicated
+        history endpoint and asserts each transition is recorded with the
+        acting user (`by`), the from/to status, and a timestamp — so finance
+        can audit who moved the contract through the workflow.
+        """
+        contract_id = self._create_draft_contract(admin_headers)
+        assert self._transition(admin_headers, contract_id, "pending").status_code == 200
+        assert self._transition(
+            admin_headers, contract_id, "approved", reason="budget ok").status_code == 200
+
+        resp = self._approval_history(admin_headers, contract_id)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data.get("contract_id") == contract_id
+        assert data.get("approval_status") == "approved"
+        history = data.get("approval_history", [])
+        assert len(history) == 2, history
+        assert [h.get("from_status") for h in history] == ["draft", "pending"]
+        assert [h.get("to_status") for h in history] == ["pending", "approved"]
+        # Every entry records who acted and when.
+        for h in history:
+            assert h.get("by"), f"history entry missing actor: {h}"
+            assert h.get("at"), f"history entry missing timestamp: {h}"
+        # The reason supplied on the approving transition is preserved.
+        assert history[1].get("reason") == "budget ok"
+
+    def test_approval_history_unknown_contract_returns_404(self, admin_headers):
+        """Reading history for a non-existent contract id → 404 (tenant-scoped)."""
+        resp = self._approval_history(admin_headers, str(uuid.uuid4()))
+        assert resp.status_code == 404, resp.text
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

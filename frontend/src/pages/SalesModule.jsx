@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import axios from 'axios';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -30,6 +31,26 @@ const SalesModule = ({ user, tenant, onLogout }) => {
   const [activeTab, setActiveTab] = useState('pipeline');
   const [detailItem, setDetailItem] = useState(null);
   const [detailKind, setDetailKind] = useState('opportunity');
+  const [realContracts, setRealContracts] = useState([]);
+  const [contractsLoading, setContractsLoading] = useState(false);
+
+  const loadContracts = async () => {
+    try {
+      setContractsLoading(true);
+      const res = await axios.get('/sales/corporate-contracts');
+      setRealContracts(res.data?.contracts || []);
+    } catch (err) {
+      console.error('Failed to load corporate contracts', err);
+    } finally {
+      setContractsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'contracts') {
+      loadContracts();
+    }
+  }, [activeTab]);
 
   const openDetail = (kind, item) => {
     setDetailKind(kind);
@@ -116,47 +137,6 @@ const SalesModule = ({ user, tenant, onLogout }) => {
     }
   ];
 
-  const corporateContracts = [
-    {
-      id: 1,
-      company: 'Global Enterprise Inc.',
-      rate: 145,
-      rooms: 250,
-      nights: 450,
-      revenue: 65250,
-      startDate: '2025-01-01',
-      endDate: '2025-12-31',
-      status: 'active',
-      contact: 'John Davis',
-      tier: 'platinum'
-    },
-    {
-      id: 2,
-      company: 'Tech Innovations Ltd.',
-      rate: 155,
-      rooms: 180,
-      nights: 320,
-      revenue: 49600,
-      startDate: '2025-01-01',
-      endDate: '2025-12-31',
-      status: 'active',
-      contact: 'Lisa Zhang',
-      tier: 'gold'
-    },
-    {
-      id: 3,
-      company: 'Consulting Partners',
-      rate: 165,
-      rooms: 120,
-      nights: 210,
-      revenue: 34650,
-      startDate: '2024-06-01',
-      endDate: '2025-05-31',
-      status: 'renewal-due',
-      contact: 'Robert Wilson',
-      tier: 'silver'
-    }
-  ];
 
   const getStageColor = (stage) => {
     const colors = {
@@ -180,13 +160,20 @@ const SalesModule = ({ user, tenant, onLogout }) => {
     return badges[status] || badges['confirmed'];
   };
 
-  const getTierBadge = (tier) => {
-    const tiers = {
-      'platinum': 'bg-indigo-600',
-      'gold': 'bg-yellow-600',
-      'silver': 'bg-gray-400'
+  const getApprovalBadge = (approval) => {
+    const map = {
+      'draft': { color: 'bg-gray-100 text-gray-700', text: 'Taslak' },
+      'pending': { color: 'bg-amber-100 text-amber-800', text: 'Onay Bekliyor' },
+      'approved': { color: 'bg-emerald-100 text-emerald-800', text: 'Onaylandı' },
+      'rejected': { color: 'bg-red-100 text-red-800', text: 'Reddedildi' }
     };
-    return tiers[tier] || 'bg-gray-400';
+    return map[approval] || map['draft'];
+  };
+
+  const formatHistoryTime = (iso) => {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
   };
 
   return (
@@ -432,43 +419,60 @@ const SalesModule = ({ user, tenant, onLogout }) => {
         {/* Corporate Contracts */}
         {activeTab === 'contracts' && (
           <div className="space-y-4">
-            {corporateContracts.map((contract) => (
+            {contractsLoading ? (
+              <div className="py-10 text-center text-gray-500 text-sm">Yükleniyor...</div>
+            ) : realContracts.length === 0 ? (
+              <div className="py-10 text-center text-gray-500 text-sm">
+                Henüz kurumsal sözleşme bulunmuyor.
+              </div>
+            ) : realContracts.map((contract) => {
+              const approval = getApprovalBadge(contract.approval_status);
+              return (
               <Card key={contract.id} className="hover:shadow-lg transition-shadow">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-3">
-                        <h3 className="text-lg font-bold">{contract.company}</h3>
-                        <Badge className={getTierBadge(contract.tier) + ' text-white capitalize'}>
-                          {contract.tier}
-                        </Badge>
+                        <h3 className="text-lg font-bold">{contract.company_name}</h3>
+                        {contract.contract_type && (
+                          <Badge variant="outline" className="capitalize">
+                            {contract.contract_type}
+                          </Badge>
+                        )}
                         <Badge className={getStatusBadge(contract.status).color}>
                           {getStatusBadge(contract.status).text}
                         </Badge>
+                        <Badge className={approval.color}>{approval.text}</Badge>
                       </div>
 
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                         <div>
                           <div className="text-gray-600">Contract Period</div>
                           <div className="font-semibold">
-                            {new Date(contract.startDate).toLocaleDateString()} - {new Date(contract.endDate).toLocaleDateString()}
+                            {contract.start_date || '-'} - {contract.end_date || '-'}
                           </div>
                         </div>
                         <div>
                           <div className="text-gray-600">Negotiated Rate</div>
-                          <div className="font-semibold text-blue-600">${contract.rate}/night</div>
+                          <div className="font-semibold text-blue-600">
+                            {contract.negotiated_rate != null ? `${contract.negotiated_rate}/night` : '-'}
+                          </div>
                         </div>
                         <div>
                           <div className="text-gray-600">YTD Usage</div>
-                          <div className="font-semibold">{contract.rooms} rooms | {contract.nights} nights</div>
+                          <div className="font-semibold">
+                            {contract.total_bookings || 0} bookings | {contract.total_room_nights || 0} nights
+                          </div>
                         </div>
                         <div>
                           <div className="text-gray-600">YTD Revenue</div>
-                          <div className="font-semibold text-green-600">${contract.revenue.toLocaleString()}</div>
+                          <div className="font-semibold text-green-600">
+                            ₺{(contract.total_revenue || 0).toLocaleString()}
+                          </div>
                         </div>
                         <div>
                           <div className="text-gray-600">Contact</div>
-                          <div className="font-semibold">{contract.contact}</div>
+                          <div className="font-semibold">{contract.contact_person || '-'}</div>
                         </div>
                       </div>
                     </div>
@@ -482,17 +486,11 @@ const SalesModule = ({ user, tenant, onLogout }) => {
                         <TrendingUp className="w-4 h-4 mr-1" />
                         Report
                       </Button>
-                      {contract.status === 'renewal-due' && (
-                        <Button size="sm" className="bg-amber-600 hover:bg-amber-700">
-                          <Clock className="w-4 h-4 mr-1" />
-                          Renew
-                        </Button>
-                      )}
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            );})}
           </div>
         )}
       </div>
@@ -507,7 +505,61 @@ const SalesModule = ({ user, tenant, onLogout }) => {
               {detailKind === 'opportunity' ? 'Firsat detaylari' : 'Kurumsal sozlesme detaylari'}
             </DialogDescription>
           </DialogHeader>
-          {detailItem && (
+          {detailItem && detailKind === 'contract' ? (
+            <div className="space-y-4 text-sm">
+              <div className="space-y-2">
+                <div className="flex justify-between border-b py-1">
+                  <span className="text-gray-500">Onay Durumu</span>
+                  <Badge className={getApprovalBadge(detailItem.approval_status).color}>
+                    {getApprovalBadge(detailItem.approval_status).text}
+                  </Badge>
+                </div>
+                <div className="flex justify-between border-b py-1">
+                  <span className="text-gray-500">Sözleşme Durumu</span>
+                  <span className="font-medium">{detailItem.status || '-'}</span>
+                </div>
+                <div className="flex justify-between border-b py-1">
+                  <span className="text-gray-500">İletişim</span>
+                  <span className="font-medium">{detailItem.contact_person || '-'}</span>
+                </div>
+              </div>
+
+              <div>
+                <div className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                  <Clock className="w-4 h-4" />
+                  Onay Geçmişi
+                </div>
+                {(detailItem.approval_history || []).length === 0 ? (
+                  <div className="text-gray-500 text-xs py-2">
+                    Bu sözleşme için henüz onay hareketi kaydedilmemiş.
+                  </div>
+                ) : (
+                  <ol className="relative border-l border-gray-200 ml-2 space-y-4">
+                    {[...detailItem.approval_history].reverse().map((h, idx) => (
+                      <li key={idx} className="ml-4">
+                        <div className="absolute -left-1.5 mt-1.5 w-3 h-3 rounded-full bg-blue-500" />
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge className={getApprovalBadge(h.from_status).color}>
+                            {getApprovalBadge(h.from_status).text}
+                          </Badge>
+                          <span className="text-gray-400">→</span>
+                          <Badge className={getApprovalBadge(h.to_status).color}>
+                            {getApprovalBadge(h.to_status).text}
+                          </Badge>
+                        </div>
+                        <div className="text-xs text-gray-600 mt-1">
+                          {h.by || 'Bilinmiyor'} · {formatHistoryTime(h.at)}
+                        </div>
+                        {h.reason && (
+                          <div className="text-xs text-gray-500 mt-0.5 italic">"{h.reason}"</div>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            </div>
+          ) : detailItem ? (
             <div className="space-y-2 text-sm">
               {Object.entries(detailItem).map(([k, v]) => (
                 <div key={k} className="flex justify-between border-b py-1">
@@ -516,7 +568,7 @@ const SalesModule = ({ user, tenant, onLogout }) => {
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDetailItem(null)}>Kapat</Button>
           </DialogFooter>
