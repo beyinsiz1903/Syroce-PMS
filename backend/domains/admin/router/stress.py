@@ -2133,6 +2133,31 @@ async def stress_seed(
             orphan_cleanup["payroll_revisions"] = res.deleted_count
         except Exception as e:
             orphan_cleanup["payroll_revisions_error"] = str(e)[:120]
+        # Spec 39 (F8D-v3 § 39) Department/Position master data: test A + C
+        # create departments/positions via the PRODUCTION POST /hr/departments
+        # and /hr/positions. Those routes use strict Pydantic models
+        # (DepartmentPayload/PositionPayload) that strip unknown fields, so the
+        # rows persist WITHOUT `stress_seed`/`stress_prefix`. The cross-prefix
+        # orphan scrub above (stress_seed-filtered) cannot reach them, and the
+        # DELETE endpoint is a SOFT delete (active:false) — so prior-run rows
+        # accumulate and are still returned by `include_inactive=true`. Once the
+        # tenant crosses the list's 200-row name-sorted cap, freshly-created
+        # rows fall off the page (our_seen<floor → spec FAIL). Wipe ALL
+        # hr_departments/hr_positions for the stress tenant BEFORE this round's
+        # inserts (same rationale + gates as currency_rates/payroll above: stress
+        # tenant only, pilot blocked, destructive flag required). Seed re-inserts
+        # the tagged baseline rows immediately after this block, so wipe-then-
+        # insert keeps the seeded master data intact.
+        try:
+            res = await db.hr_departments.delete_many({"tenant_id": stress_tid})
+            orphan_cleanup["hr_departments"] = res.deleted_count
+        except Exception as e:
+            orphan_cleanup["hr_departments_error"] = str(e)[:120]
+        try:
+            res = await db.hr_positions.delete_many({"tenant_id": stress_tid})
+            orphan_cleanup["hr_positions"] = res.deleted_count
+        except Exception as e:
+            orphan_cleanup["hr_positions_error"] = str(e)[:120]
         total_rooms_inserted = await _chunked_insert(db.rooms, rooms_docs, INSERT_CHUNK_SIZE)
         # Authoritative split — `counts["rooms"]` MUST equal base (500) for
         # tenant-isolation contract testing; extras are an internal stress-only
@@ -2820,9 +2845,17 @@ async def stress_cleanup(
     # by `_build_f8e_docs` with the stress_seed/prefix tags; a full-tenant wipe
     # is a strict superset of the prefix-scoped delete, so F8E cleanup remains
     # correct (and seed-time orphan scrub still pre-cleans cross-prefix rows).
+    # Spec 39 (F8D-v3 § 39): hr_departments/hr_positions created by test A/C go
+    # through the strict-Pydantic production POSTs (DepartmentPayload/
+    # PositionPayload strip unknown fields) so they carry no stress_seed/
+    # stress_prefix and the prefix-scoped sweep below misses them; the DELETE
+    # endpoint only soft-deletes (active:false). Tenant-scoped full-wipe here
+    # mirrors the seed-time drain so teardown clears the residue and cleanup#2
+    # stays idempotent (full collection already empty → deleted_count=0).
     CURRENCY_RATES_TENANT_SCOPED = {
         "currency_rates", "performance_reviews", "reservation_waitlist",
         "recipes", "inventory_items",
+        "hr_departments", "hr_positions",
     }
     with tenant_context(stress_tid):
         from core.database import db
