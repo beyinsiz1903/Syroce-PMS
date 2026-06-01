@@ -136,7 +136,7 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
                 : (listR.body?.users || listR.body?.items || listR.body?.data || []);
             for (const u of users) {
                 const em = (u.email || '').toLowerCase();
-                if (em.startsWith(prefix.toLowerCase() + 'hrpii_') && em.endsWith('@stress.test') && u.tenant_id === stressTid) {
+                if (em.startsWith(prefix.toLowerCase() + 'hrpii_') && em.endsWith('@stress-e2e.com') && u.tenant_id === stressTid) {
                     const del = await callTimed(request, 'delete',
                         `/api/admin/tenants/${stressTid}/team/${u.id || u._id}`,
                         undefined, superToken);
@@ -147,7 +147,7 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
 
         let createOk = 0, createFail = 0, firstFailDetail = null;
         for (const role of ROLES) {
-            const email = `${prefix}hrpii_${role}@stress.test`.toLowerCase();
+            const email = `${prefix}hrpii_${role}@stress-e2e.com`.toLowerCase();
             const password = `Stress_${prefix}_${role}_Pw!2026`;
             const name = `Stress HR-RBAC ${role}`;
             const r = await callTimed(request, 'post',

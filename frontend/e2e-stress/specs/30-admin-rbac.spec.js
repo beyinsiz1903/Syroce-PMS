@@ -102,7 +102,7 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
                 : (listR.body?.users || listR.body?.items || listR.body?.data || []);
             for (const u of users) {
                 const em = (u.email || '').toLowerCase();
-                if (em.startsWith(prefix.toLowerCase() + 'rbac_') && em.endsWith('@stress.test') && u.tenant_id === stressTid) {
+                if (em.startsWith(prefix.toLowerCase() + 'rbac_') && em.endsWith('@stress-e2e.com') && u.tenant_id === stressTid) {
                     const del = await callTimed(request, 'delete',
                         `/api/admin/tenants/${stressTid}/team/${u.id || u._id}`,
                         undefined, superToken);
@@ -115,7 +115,7 @@ test.describe('F8I § 30 — Admin / RBAC Matrix', () => {
         // Tier-block (400) veya başka 4xx → user create skipped, role token yok.
         let createOk = 0, createFail = 0, firstFailDetail = null;
         for (const role of ROLES) {
-            const email = `${prefix}rbac_${role}@stress.test`.toLowerCase();
+            const email = `${prefix}rbac_${role}@stress-e2e.com`.toLowerCase();
             const password = `Stress_${prefix}_${role}_Pw!2026`;
             const name = `Stress RBAC ${role}`;
             const r = await callTimed(request, 'post',
