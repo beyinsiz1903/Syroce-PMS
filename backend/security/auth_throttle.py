@@ -491,10 +491,36 @@ class SlidingWindowThrottle:
             return True, 0
 
     async def reset(self, key: str) -> None:
+        rkey = self._rkey(key)
+        # always_on security-critical throttles record their hits in the
+        # shared Mongo `throttle_hits` collection (see check/_check_mongo),
+        # NOT in Redis or the per-process deque. The success-path drain MUST
+        # clear that backend too — otherwise reset() is a silent no-op
+        # against the real counter store and a legitimate user who mistyped
+        # before authenticating stays one wrong attempt away from a 429
+        # lockout for the rest of the window (the (cap+1)th attempt trips
+        # immediately because the pre-success failures were never cleared).
+        # Mirror check()'s backend selection so the drain reaches wherever
+        # the hits actually live. Best-effort + structured log: a Mongo
+        # hiccup must never make a successful auth raise.
+        if self.always_on:
+            try:
+                from core.database import _raw_db as _db
+                await _db.throttle_hits.delete_many({"key": rkey})
+            except Exception as exc:
+                logger.error(
+                    "throttle_mongo_reset_failed",
+                    extra={
+                        "throttle_name": self.name,
+                        "exc_type": type(exc).__name__,
+                        "exc_msg": str(exc)[:200],
+                    },
+                    exc_info=False,
+                )
         rc = await _get_redis()
         if rc is not None:
             try:
-                await rc.delete(self._rkey(key))
+                await rc.delete(rkey)
             except Exception:
                 # Same invalidation policy as check(): a dead client must
                 # be cleared so the next call attempts reconnection rather

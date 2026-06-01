@@ -171,6 +171,109 @@ def test_email_normalization_buckets_case_and_whitespace_variants():
     assert normalize_identity("Ａｌｉｃｅ@example.com") == canonical
 
 
+class _FakeThrottleHits:
+    """Minimal in-list stand-in for the Mongo `throttle_hits` collection,
+    implementing only the four ops `_check_mongo`/`reset` use."""
+
+    def __init__(self):
+        self.docs = []
+
+    async def insert_one(self, doc):
+        self.docs.append(dict(doc))
+
+    async def count_documents(self, q):
+        key = q["key"]
+        gt = q.get("score", {}).get("$gt")
+        return sum(
+            1 for d in self.docs
+            if d["key"] == key and (gt is None or d["score"] > gt)
+        )
+
+    async def delete_one(self, q):
+        _id = q["_id"]
+        self.docs = [d for d in self.docs if d["_id"] != _id]
+
+    async def delete_many(self, q):
+        key = q["key"]
+        before = len(self.docs)
+        self.docs = [d for d in self.docs if d["key"] != key]
+        return type("R", (), {"deleted_count": before - len(self.docs)})()
+
+    async def find_one(self, q, sort=None, projection=None):
+        key = q["key"]
+        gt = q.get("score", {}).get("$gt")
+        rows = [
+            d for d in self.docs
+            if d["key"] == key and (gt is None or d["score"] > gt)
+        ]
+        if not rows:
+            return None
+        if sort:
+            field, direction = sort[0]
+            rows.sort(key=lambda d: d[field], reverse=direction < 0)
+        return rows[0]
+
+
+class _FakeRawDB:
+    def __init__(self):
+        self.throttle_hits = _FakeThrottleHits()
+
+
+def test_mongo_backed_reset_clears_throttle_hits(monkeypatch):
+    """Regression for the success-drain no-op: `always_on` throttles record
+    hits in the shared Mongo `throttle_hits` collection, so `reset()` MUST
+    delete from Mongo too. Before the fix `reset()` only touched Redis +
+    in-memory, leaving the Mongo counter at cap — the live 98D spec saw the
+    (cap+1)th post-success attempt trip 429 immediately (trip_index=0).
+
+    This drives the real Mongo backend (via a fake `_raw_db`) end to end:
+    10 hits → reset → 10 more must pass → 11th raises. Without the Mongo
+    delete in reset() the second batch would 429 on its first attempt."""
+    import core.database as _coredb
+    import security.auth_throttle as at
+
+    fake_db = _FakeRawDB()
+    monkeypatch.setattr(_coredb, "_raw_db", fake_db, raising=False)
+
+    async def _mongo_index_ready():
+        return True
+
+    # Pin the Mongo path on; never fall through to Redis/in-memory.
+    monkeypatch.setattr(at, "_ensure_mongo_throttle_indexes", _mongo_index_ready)
+
+    async def _no_redis():
+        return None
+
+    monkeypatch.setattr(at, "_get_redis", _no_redis)
+
+    t = SlidingWindowThrottle(
+        max_requests=10,
+        window_seconds=300,
+        always_on=True,
+        name="t_peer_login_mongo_reset",
+    )
+    key = "agency_login_acct:mongo-reset@example.com"
+
+    async def _drive():
+        for _ in range(10):
+            await enforce(t, key, "giris denemesi")
+        # Mongo backend now holds 10 hits for this key.
+        assert len(fake_db.throttle_hits.docs) == 10
+        await t.reset(key)
+        # Post-success drain must have emptied the Mongo counter.
+        remaining = [d for d in fake_db.throttle_hits.docs if d["key"].endswith(key)]
+        assert remaining == [], f"reset() left {len(remaining)} Mongo hits"
+        # Full budget restored — 10 pass, 11th trips.
+        for _ in range(10):
+            await enforce(t, key, "giris denemesi")
+        with pytest.raises(HTTPException) as exc_info:
+            await enforce(t, key, "giris denemesi")
+        return exc_info.value
+
+    err = _run(_drive())
+    assert err.status_code == 429
+
+
 def test_disable_auth_throttle_ignored_for_always_on(monkeypatch):
     """DISABLE_AUTH_THROTTLE must NOT bypass these throttles — they are
     `always_on=True` precisely so stress/pen tests measure the real
