@@ -31,3 +31,17 @@ fix landed" does NOT prove "run included the fix".
 START (globalSetup seed) epoch in milliseconds; `date -u -d @<seconds>`. Compare
 it against the fix's commit time, but treat the comparison as a hint, not proof
 (see the two-namespace caveat above).
+
+**Second, distinct mechanism — backend-under-test deploy lag (NOT checkout lag):**
+`stress.yml` points at a PERSISTENT deployed backend via a fixed secret
+(`E2E_BASE_URL: secrets.STRESS_E2E_BASE_URL`); it only health-warms that URL and
+does NOT deploy the backend from the run's commit (no uvicorn/kubectl/start.sh in
+stress.yml). Consequence: a **spec-only** fix takes effect the instant CI checks
+out your commit, but a **backend** fix only takes effect after the stress backend
+deployment is separately redeployed. So a run can simultaneously show a spec fix
+working AND a backend fix not working, with the SAME commit checked out.
+**Diagnostic that pins it:** find a spec-side change of yours in the same commit
+and confirm it took effect this run (e.g. a gate-tier/selector change now passing).
+If the spec change took effect but the backend behavior is unchanged, it is
+backend-deploy lag, not checkout lag → action is "redeploy the stress backend,
+then re-run", never a code change.
