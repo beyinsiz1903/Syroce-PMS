@@ -136,7 +136,18 @@ class WebSocketHub:
                     logger.warning(f"WS auth: revoked jti rejected user={user_id}")
                     return None
 
-            user_doc = await db.users.find_one(
+            # WS connections never traverse TenantContextMiddleware (it is
+            # http-scope only — see core/tenant_middleware.py), so there is no
+            # tenant context at this point. The tenant is derived FROM this very
+            # token, so the user lookup must run unscoped: under
+            # STRICT_TENANT_MODE the TenantAwareDBProxy would otherwise return a
+            # SchemaOnlyCollection and raise TenantViolationError on db.users,
+            # rejecting every valid token. Tenant isolation is still fully
+            # enforced by the explicit jwt_tenant == doc_tenant consistency
+            # check below (Parity #3).
+            from core.tenant_db import get_system_db
+            sys_db = get_system_db()
+            user_doc = await sys_db.users.find_one(
                 {"$or": [{"id": user_id}, {"user_id": user_id}]},
                 {"_id": 0, "id": 1, "user_id": 1, "tenant_id": 1, "role": 1, "name": 1, "tokens_invalid_before": 1},
             )
@@ -178,6 +189,15 @@ class WebSocketHub:
         user_ctx = await self.authenticate_token(token)
         if not user_ctx:
             return None
+
+        # WS tasks bypass TenantContextMiddleware, so explicitly bind this
+        # connection's task to the authenticated tenant. Without this the
+        # tenant-scoped bookkeeping writes below (ws_connection_log) — and any
+        # same-task ops in the receive loop / disconnect — raise
+        # TenantViolationError under STRICT_TENANT_MODE. Safe: the tenant comes
+        # from the verified token and is constant for this connection's task.
+        from core.tenant_db import set_tenant_context
+        set_tenant_context(user_ctx["tenant_id"])
 
         session = WebSocketSession(
             websocket=websocket,
