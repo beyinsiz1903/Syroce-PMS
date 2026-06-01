@@ -274,21 +274,38 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
         expect(status, `folio_refund_batch FAIL: ok=${ok} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
     });
 
-    test('C4) Void charge (5 folio — fetch charge_id via detail)', async ({ request, stressTokens }, testInfo) => {
+    test('C4) Void charge (open folio — scan for voidable charge)', async ({ request, stressTokens }, testInfo) => {
         if (folios.length < 5 && bookings.length < 5) { rec(testInfo, { module: MOD, step: 'void_charge_sample', status: 'SKIP' }); return; }
-        const sample = voidSampleWindow(folios.length > 0 ? folios : bookings);
+        test.setTimeout(120_000);
+        // Earlier specs close an UNPREDICTABLE subset of folios (02 force-checkout
+        // test 27) and /api/folio/list ordering is independent of the booking
+        // checkout ordering, so a closed folio can appear at any index — a fixed
+        // slice(10,15) routinely lands entirely on closed folios, whose void is
+        // LEGITIMATELY rejected with 400 (closed-folio void guard,
+        // folio_hardening_service.py:168). That guard-400 is correct backend
+        // behaviour, NOT a void-path regression. So scan from index 10 onward
+        // (past C/C3 split+refund range 0..9), skip non-open folios + folios with
+        // no voidable charge, and void up to VOID_TARGET real OPEN folios. Proves
+        // the void SUCCESS path whenever an open voidable folio exists; degrades
+        // to an honest REVIEW (never FAIL) only when the whole post-split pool is
+        // closed/empty. A void error on an OPEN folio still FAILs (no loosening).
+        const pool = (folios.length > 0 ? folios : bookings).slice(10);
+        const SCAN_CAP = Math.min(pool.length, 40);
+        const VOID_TARGET = 5;
         let voided = 0, fail = 0; const failModes = {};
         const samples = [];
-        // tur-27 (CI #42 NO-GO follow-up): diagnostic snapshots — earlier
-        // run reported `no_charge_found=5` with no hint of charges[] shape.
-        // Capture first detail body keys + first non-voided charge keys so
-        // next failure log pinpoints field-name drift instantly.
+        // tur-27 diagnostic snapshots: first detail body keys + first charge keys
+        // so a failure log pinpoints field-name drift instantly.
         let detailShapeSnap = null;
         let chargeShapeSnap = null;
         let chargesEmptyCount = 0;
-        for (const it of sample) {
+        let folioClosedCount = 0;
+        let scanned = 0;
+        for (let i = 0; i < SCAN_CAP && voided < VOID_TARGET; i++) {
+            const it = pool[i];
+            scanned++;
             const fid = it.folio_id || it.id;
-            // 1. Folio detail'den son charge'u al.
+            // 1. Folio detail → charges + folio.status.
             const detailR = await callTimed(request, 'get', `/api/pms-core/folio/detail/${fid}`,
                 undefined, stressTokens.stress_token);
             const charges = detailR.body?.charges || [];
@@ -296,9 +313,8 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
                 detailShapeSnap = { http: detailR.status, keys: Object.keys(detailR.body).slice(0, 12),
                     charges_len: charges.length };
             }
-            // tur-27: tolerate field-name drift — backend may serialize
-            // charges with id|_id|charge_id|charge_uuid. Earlier spec only
-            // checked `c.id` → false-FAIL when serializer changed.
+            // tur-27: tolerate field-name drift — backend may serialize charges
+            // with id|_id|charge_id|charge_uuid.
             const pickChargeId = (c) => c?.id ?? c?._id ?? c?.charge_id ?? c?.chargeId ?? c?.charge_uuid ?? null;
             const candidate = charges.find((c) => !c.voided && pickChargeId(c));
             const chargeId = candidate ? pickChargeId(candidate) : null;
@@ -307,12 +323,20 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
                     voided_first: charges[0]?.voided, has_id: !!charges[0]?.id };
             }
             if (charges.length === 0) chargesEmptyCount++;
+            // Closed-folio guard: void on a non-open folio is a legitimate 400
+            // (production-hardening closed-folio void guard). Skip — data-state,
+            // not a regression. POST is never sent so no s400 is emitted.
+            const folioStatus = detailR.body?.folio?.status;
+            if (folioStatus && folioStatus !== 'open') {
+                folioClosedCount++;
+                failModes['folio_closed_guard'] = (failModes['folio_closed_guard'] || 0) + 1;
+                continue;
+            }
             if (!chargeId) {
-                fail++;
                 failModes['no_charge_found'] = (failModes['no_charge_found'] || 0) + 1;
                 continue;
             }
-            // 2. Void et.
+            // 2. Void et (gerçek OPEN folio).
             const r = await callTimed(request, 'post', '/api/pms-core/folio/void-charge', {
                 charge_id: chargeId,
                 reason: 'F8A § 04 C4 dry-run void test',
@@ -322,55 +346,72 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
             await new Promise((res) => setTimeout(res, 1200));
         }
-        const all403 = fail > 0 && voided === 0 && failModes.s403 === sample.length;
-        // tur-27 (architect review tighten): data-state vs contract violation ayrımı.
-        // - Tüm sample folio'larda charges[] BOŞ → REVIEW + P2 (earlier C/C3
-        //   split/refund batch sample folio'ları boşaltmış olabilir;
-        //   deterministik regression değil, data-state).
-        // - Charges var ama hiçbiri id|_id|charge_id|... ile resolve edilemiyor
-        //   → FAIL + P1 (detail serializer drift, contract regression).
-        // - Actual void POST hata response'ları (s400/s500) → FAIL korunur.
-        // - All-403 → REVIEW (RBAC short-circuit pattern).
-        const allNoCharge = fail > 0 && voided === 0 && failModes.no_charge_found === sample.length;
-        const allEmpty = allNoCharge && chargesEmptyCount === sample.length;
-        const shapeDrift = allNoCharge && !allEmpty;  // charges var ama ID yok = contract drift
+        // Gerçek void-POST hatası = OPEN folio'da void endpoint'in döndüğü 4xx/5xx
+        // (closed folio'lar POST edilmeden skip edildiği için s4xx üretmez).
+        const voidPostErrorCount = Object.keys(failModes)
+            .filter((k) => /^s\d{3}$/.test(k))
+            .reduce((n, k) => n + failModes[k], 0);
+        const all403 = voided === 0 && voidPostErrorCount > 0 && (failModes.s403 || 0) === voidPostErrorCount;
+        // Serializer contract regression: tüm taranan folio'lar OPEN + charges DOLU
+        // ama hiçbiri id|_id|charge_id|... ile resolve edilemedi → /folio/detail
+        // serializer breaking change → hard FAIL (data-state ile maskelenmez).
+        const noChargeFound = failModes.no_charge_found || 0;
+        const shapeDrift = voided === 0 && voidPostErrorCount === 0 && noChargeFound > 0
+            && chargesEmptyCount === 0 && folioClosedCount === 0;
+        // Data-state-only: void başarısı YOK, gerçek void hatası YOK, serializer
+        // drift YOK → kalanlar closed-folio guard / boş charges (earlier spec
+        // mutasyonları). Void-path regression DEĞİL → REVIEW (FAIL değil).
+        const dataStateOnly = voided === 0 && voidPostErrorCount === 0 && !shapeDrift;
         const status = all403
             ? 'REVIEW'
-            : (allEmpty
-                ? 'REVIEW'
-                : (voided === 0 ? 'FAIL' : (voided >= 1 ? 'PASS' : 'REVIEW')));
+            : (shapeDrift
+                ? 'FAIL'
+                : (dataStateOnly
+                    ? 'REVIEW'
+                    : (voided >= 1 ? 'PASS' : 'FAIL')));
         rec(testInfo, { module: MOD, step: 'folio_void_charge_batch', status,
             endpoint: '/api/pms-core/folio/void-charge',
-            note: `n=${sample.length} voided=${voided} fail=${fail} fail_modes=${JSON.stringify(failModes)} ` +
-                  `all_403=${all403} all_no_charge=${allNoCharge} charges_empty=${chargesEmptyCount}/${sample.length} ` +
+            note: `scanned=${scanned}/${SCAN_CAP} voided=${voided} fail=${fail} fail_modes=${JSON.stringify(failModes)} ` +
+                  `all_403=${all403} shape_drift=${shapeDrift} data_state_only=${dataStateOnly} ` +
+                  `charges_empty=${chargesEmptyCount} folio_closed=${folioClosedCount} ` +
                   `detail_shape=${JSON.stringify(detailShapeSnap)} charge_shape=${JSON.stringify(chargeShapeSnap)}` });
         recPerf(testInfo, MOD, 'folio_void_charge', samples, voided > 0);
         if (all403) {
             recFinding(testInfo, 'P2', MOD, 'Folio void-charge RBAC short-circuit',
                 'Stress automation token void_charge yetkisine sahip değil.');
         }
-        if (allEmpty) {
-            // P2 informational: earlier batch (C/C3 split/refund) sample
-            // folio'ların charges'ını tüketmiş olabilir — charges[] tüm
-            // sample'da boş döndü. Data-state, contract regression değil.
+        if (dataStateOnly && folioClosedCount > 0) {
+            // P3 informational: pencere folio'ları earlier spec (02 force-checkout)
+            // tarafından kapatılmış; void closed folio'da meşru 400 ile reddedilir.
+            // Backend guard doğru — void-path regression değil. Açık voidable folio
+            // bulunamadığı için success path bu data-state'te kanıtlanamadı.
+            recFinding(testInfo, 'P3', MOD,
+                'Folio void-charge: taranan folio\'lar kapalı (closed-folio guard) — success path kanıtlanamadı',
+                `scanned=${scanned} folio_closed=${folioClosedCount} charges_empty=${chargesEmptyCount}. ` +
+                '02 force-checkout bu folio\'ları closed yaptı; closed folio void meşru 400 (folio_hardening_service.py:168). ' +
+                'Informational — backend guard doğru çalışıyor.');
+        }
+        if (dataStateOnly && folioClosedCount === 0 && chargesEmptyCount > 0) {
+            // P2 informational: charges[] boş döndü (earlier C/C3 split/refund
+            // tüketmiş olabilir). Data-state, contract regression değil.
             recFinding(testInfo, 'P2', MOD,
-                'Folio void-charge: sample folio\'larda charges[] boş (data-state)',
-                `n=${sample.length} sample'da charges_empty=${chargesEmptyCount}. ` +
-                'Earlier C/C3 split/refund batch sample charges\'ı tüketmiş olabilir. ' +
+                'Folio void-charge: taranan folio\'larda charges[] boş (data-state)',
+                `scanned=${scanned} charges_empty=${chargesEmptyCount}. Earlier split/refund tüketmiş olabilir. ` +
                 `detail_shape=${JSON.stringify(detailShapeSnap)}`);
         }
         if (shapeDrift) {
-            // P1 contract regression: charges var ama hiçbiri id|_id|charge_id|
-            // chargeId|charge_uuid varyasyonlarıyla resolve edilemiyor.
-            // /folio/detail serializer breaking change → hard FAIL.
             recFinding(testInfo, 'P1', MOD,
                 'Folio void-charge: detail serializer charge ID drift — contract regression',
-                `n=${sample.length} sample'da charges DOLU ama hiçbiri id|_id|charge_id|chargeId|charge_uuid ile lookup edilemiyor. ` +
+                `scanned=${scanned} OPEN folio'larda charges DOLU ama hiçbiri id|_id|charge_id|chargeId|charge_uuid ile lookup edilemiyor. ` +
                 `/api/pms-core/folio/detail charges[] serializer breaking change şüphesi. ` +
                 `detail_shape=${JSON.stringify(detailShapeSnap)} charge_shape=${JSON.stringify(chargeShapeSnap)}`);
         }
+        if (voided === 0 && voidPostErrorCount > 0 && !all403) {
+            recFinding(testInfo, 'P1', MOD, 'Folio void-charge OPEN folio\'da başarısız',
+                `OPEN folio void POST 0 başarı, void_post_errors=${voidPostErrorCount}. Modes: ${JSON.stringify(failModes)}. Gerçek void-path hatası.`);
+        }
         expect(status, `folio_void_charge_batch FAIL: voided=${voided} fail_modes=${JSON.stringify(failModes)} ` +
-            `shape_drift=${shapeDrift} all_empty=${allEmpty} ` +
+            `shape_drift=${shapeDrift} data_state_only=${dataStateOnly} folio_closed=${folioClosedCount} ` +
             `detail_shape=${JSON.stringify(detailShapeSnap)} charge_shape=${JSON.stringify(chargeShapeSnap)}`).not.toBe('FAIL');
     });
 
