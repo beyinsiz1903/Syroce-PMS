@@ -283,46 +283,33 @@ test.describe.serial('Core PMS happy-path: booking → check-in → folio → ch
     });
 
     test('8) Booking statüsü checked_out (cross-check)', async () => {
-        // Test 7 zaten checkout→success=true doğrular. Burada listeden
-        // status'ü cross-check ediyoruz: drift'i (örn. "checkout başarılı
-        // dönüyor ama booking statüsü güncellenmiyor") yakalamak için.
+        // Test 7 zaten checkout→success=true doğrular. Burada booking'i id ile
+        // TEKİL olarak çekip status'ü cross-check ediyoruz: drift'i (örn.
+        // "checkout başarılı dönüyor ama booking statüsü güncellenmiyor")
+        // yakalamak için.
         //
-        // Generic booking-detail endpoint yok; /pms/bookings list ile
-        // filtreliyoruz. Liste endpoint'i çağrı başarılıysa booking'i
-        // kesinlikle bulmalıyız — bulunamıyorsa SESSİZCE GEÇMİYORUZ:
-        // ya state drift var ya da query parametresi sürüm uyumsuz; ikisi
-        // de yatırım yapılması gereken sinyal.
-        // Endpoint paramları: start_date, end_date, status, search (regex
-        // on id/guest_name/room_number). booking_id query param YOK; UUID'yi
-        // search ile bul (uuid eşsiz olduğundan tek sonuç döner).
+        // NEDEN list+search DEĞİL: /pms/bookings `search` paramı (index-
+        // serviceable #247 pattern) yalnızca `guest_name_lower` /
+        // `booking_number_lower` companion alanlarında PREFIX eşleşir —
+        // booking UUID ile arama YAPMAZ. Ayrıca quick-booking bookings
+        // dokümanına `guest_name` YAZMAZ (okuma anında guests koleksiyonundan
+        // zenginleştirilir), dolayısıyla guest adıyla da bulunamaz. Tekil
+        // detay endpoint'i id ile birebir lookup yapar: search/cache yok.
         const r = await api.get(
-            `/api/pms/bookings?search=${encodeURIComponent(bookingId)}&include_completed=true&limit=10`
+            `/api/pms/reservations/${encodeURIComponent(bookingId)}/full-detail`
         );
 
-        if (!r.ok()) {
-            // Endpoint sürümü farklı/erişilemez → best-effort skip,
-            // primary proof test 7'de.
-            test.skip(
-                true,
-                `/api/pms/bookings sorgusu erişilemedi (${r.status()}); test 7 primary kanıt.`
-            );
-            return;
-        }
-
-        const body = await r.json();
-        const list = Array.isArray(body)
-            ? body
-            : body.bookings || body.items || body.data || [];
-        const found = list.find((b) => (b.id || b._id) === bookingId);
-
-        // Liste döndüyse booking görünmek ZORUNDA (include_completed=true
-        // verdik). Aksi halde state drift var.
+        // Başarılı checkout sonrası booking MUTLAKA bulunmalı. 404/erişilemez
+        // → gerçek state drift (booking kayboldu) → SESSİZCE GEÇMİYORUZ,
+        // hard fail. (Geçici 5xx için Playwright retry zaten devrede.)
         expect(
-            found,
-            `Booking ${bookingId} listede yok — checkout sonrası state drift olabilir`
+            r.ok(),
+            `/full-detail erişilemedi veya booking yok (${r.status()}): ${await r.text()}`
         ).toBeTruthy();
 
-        const status = String(found.status || found.booking?.status || '').toLowerCase();
+        const body = await r.json();
+        const booking = body.booking || body;
+        const status = String(booking.status || '').toLowerCase();
         expect(
             status,
             `Booking status checked_out beklenir, gelen: "${status}"`

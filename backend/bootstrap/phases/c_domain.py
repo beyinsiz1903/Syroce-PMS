@@ -186,11 +186,11 @@ async def phase_c_domain_indexes_and_workers(app):
     # query-targeting alerts. Idempotent index build + marker-gated one-shot
     # backfill of existing rows. PII-safe: only configured plaintext fields.
     try:
-        from core.database import _raw_db
         from bootstrap.phases.search_normalize import (
             backfill_search_normalize_fields,
             ensure_search_normalize_indexes,
         )
+        from core.database import _raw_db
         sn_created = await ensure_search_normalize_indexes(_raw_db)
         if sn_created:
             logger.info(f"Search-normalize indexes ensured ({len(sn_created)} created)")
