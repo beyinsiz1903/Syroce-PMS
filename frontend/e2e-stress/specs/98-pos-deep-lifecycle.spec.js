@@ -339,7 +339,12 @@ test.describe.serial('F8Z v2 pos deep lifecycle', () => {
                     to_table: happyDest,
                     outlet_id: outletId,
                     transfer_all: true,
-                })}`, {}, sToken);
+                // transfer_table: tüm scalar paramlar query'de; items_to_transfer
+                // list[int]|None gövde param. Boş `{}` gövdesi FastAPI'de list
+                // doğrulamasına takılıp 422 verirdi → null geç (gövde gönderilmez,
+                // items_to_transfer=None → transfer_all branch). Negatif testler de
+                // (bogus 404 / cross-tenant) artık handler'a ulaşır, 422'de ölmez.
+                })}`, null, sToken);
             expect(happyTransfer.status, `happy transfer http=${happyTransfer.status} body=${JSON.stringify(happyTransfer.body).slice(0,200)}`).toBe(200);
             expect(happyTransfer.body?.transaction_id, 'transfer returns the open-tab txn id').toBe(openTabTxnId);
             rec(testInfo, { module: MOD, step: 'transfer_happy_path', status: 'PASS',
@@ -352,7 +357,7 @@ test.describe.serial('F8Z v2 pos deep lifecycle', () => {
                     to_table: `${prefix}T_DEST_${randomUUID().slice(0, 8)}`,
                     outlet_id: outletId,
                     transfer_all: true,
-                })}`, {}, sToken);
+                })}`, null, sToken);
             expect(bogus.status, `bogus transfer must 4xx; got ${bogus.status}`).toBeGreaterThanOrEqual(400);
             expect(bogus.status, `bogus transfer must be <500; got ${bogus.status}`).toBeLessThan(500);
             rec(testInfo, { module: MOD, step: 'transfer_negative', status: 'PASS',
@@ -367,7 +372,7 @@ test.describe.serial('F8Z v2 pos deep lifecycle', () => {
                         to_table: `${prefix}T_XT_DEST`,
                         outlet_id: outletId,
                         transfer_all: true,
-                    })}`, {}, pToken);
+                    })}`, null, pToken);
                 if (xfer.status >= 200 && xfer.status < 300) {
                     recFinding(testInfo, 'P0', MOD, 'Cross-tenant table-transfer succeeded',
                         `pilot bearer transferred stress open tab (table=${happyDest} outlet=${outletId}) → http=${xfer.status}. Tenant isolation breach.`);

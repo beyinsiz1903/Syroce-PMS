@@ -42,9 +42,12 @@ test.describe('F7 § Bulk Seed 500 — entity counts', () => {
 
     test('Seed response counts: room_night_locks beklenen aralıkta', async ({ stressState }, testInfo) => {
         const c = stressState.seed_response.seeded_counts;
-        // stay_nights cycles 1..4 → toplam = (1+2+3+4)/4 * N = 2.5*N (N tam 4'ün katıysa eşit)
-        // 500 oda için 500 / 4 = 125 cycle → 125*(1+2+3+4)=1250 ✓
-        const expected = ROOM_COUNT === 500 ? 1250 : null;
+        // stay_nights cycles 1..4 → base toplam = 125*(1+2+3+4)=1250.
+        // Task #178 aging (deterministik, tarihten bağımsız): is_aged=(i%8!=0 &&
+        // i%3==0) → 146 booking'e nights += aged_offset_days (2+(i%4)) eklenir =
+        // +543 ekstra gece. Toplam 1250 + 543 = 1793 (seed factory tam belirli;
+        // değer gevşetilmedi, sadece aging sonrası deterministik toplama güncellendi).
+        const expected = ROOM_COUNT === 500 ? 1793 : null;
         if (expected) expect(c.room_night_locks).toBe(expected);
         else expect(c.room_night_locks).toBeGreaterThanOrEqual(ROOM_COUNT);
         rec(testInfo, { module: 'bulk-seed-500', step: 'rnl_count', status: 'PASS', note: `rnl=${c.room_night_locks} (expected=${expected})` });
@@ -52,7 +55,7 @@ test.describe('F7 § Bulk Seed 500 — entity counts', () => {
 
     test('Seed response counts: folio_charges ≥ 2*N (per-night room + acc-tax)', async ({ stressState }, testInfo) => {
         const c = stressState.seed_response.seeded_counts;
-        const expected = ROOM_COUNT === 500 ? 1750 : null; // 1250 RNL room charges + 500 acc-tax
+        const expected = ROOM_COUNT === 500 ? 2293 : null; // 1793 per-night room charge (Task #178 aging dahil) + 500 acc-tax = 2293
         if (expected) expect(c.folio_charges).toBe(expected);
         else expect(c.folio_charges).toBeGreaterThanOrEqual(2 * ROOM_COUNT);
         rec(testInfo, { module: 'bulk-seed-500', step: 'charges_count', status: 'PASS', note: `charges=${c.folio_charges} (expected=${expected})` });
