@@ -95,7 +95,15 @@ async def get_audit_timeline(
         query["target_type"] = entity_type
 
     try:
-        logs = await db.audit_logs.find(query, {"_id": 0}).sort(
+        # Exclude the heavy before/after entity-diff snapshots from this flat
+        # timeline. after_snapshot mirrors a service `result.data` dict that
+        # under mutation-heavy load may hold non-JSON-native Mongo types
+        # (Decimal128, encrypted-field bytes, naive datetimes) — those serialize
+        # OUTSIDE this try/except (at response encoding) and surface as a 500.
+        # They are also PII-heavy; the per-entity audit-trail endpoints serve
+        # them on demand. Dropping them here keeps the timeline 200-stable.
+        projection = {"_id": 0, "before_snapshot": 0, "after_snapshot": 0}
+        logs = await db.audit_logs.find(query, projection).sort(
             "timestamp", -1
         ).limit(limit + 1).to_list(limit + 1)
 

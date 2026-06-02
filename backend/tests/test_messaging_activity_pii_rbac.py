@@ -129,3 +129,64 @@ async def test_activity_queries_are_tenant_scoped(monkeypatch):
     )
     assert all(q.get("tenant_id") == "t1" for q in notifications.queries)
     assert all(q.get("tenant_id") == "t1" for q in delivery.queries)
+
+
+# ── _mask_freetext_pii unit ───────────────────────────────────────────
+
+def test_mask_freetext_pii_masks_inline_email_keeps_domain():
+    out = messaging._mask_freetext_pii("Hatırlatma ahmet.yilmaz@example.com gönderildi")
+    assert "ahmet.yilmaz@example.com" not in out
+    assert "a***@example.com" in out
+
+
+def test_mask_freetext_pii_masks_inline_phone_keeps_last_two():
+    out = messaging._mask_freetext_pii("WhatsApp +90 532 123 45 67 iletildi")
+    assert "532 123 45 67" not in out
+    assert out.endswith("67 iletildi")
+
+
+def test_mask_freetext_pii_leaves_non_pii_amounts_intact():
+    txt = "Toplam 1234.56 TL tahsil edildi (oda 204)"
+    assert messaging._mask_freetext_pii(txt) == txt
+
+
+# ── notification free-text masking via RBAC ───────────────────────────
+
+def _db_with_notification(message, title="Otomasyon"):
+    notifications = _Coll([
+        {
+            "id": "n1",
+            "tenant_id": "t1",
+            "type": "messaging_automation",
+            "title": title,
+            "message": message,
+            "priority": "normal",
+            "created_at": "2026-05-30T11:00:00Z",
+            "read": False,
+        }
+    ])
+    delivery = _Coll([])
+    db = SimpleNamespace(notifications=notifications, messaging_delivery_logs=delivery)
+    return db
+
+
+@pytest.mark.asyncio
+async def test_activity_masks_notification_freetext_for_non_privileged(monkeypatch):
+    db = _db_with_notification("Misafir ahmet@example.com için onay e-postası")
+    monkeypatch.setattr(messaging, "_get_db", lambda: db)
+    res = await messaging.get_messaging_activity(
+        limit=20, current_user=_user(UserRole.HOUSEKEEPING)
+    )
+    msg = res["activities"][0]["message"]
+    assert "ahmet@example.com" not in msg
+    assert "a***@example.com" in msg
+
+
+@pytest.mark.asyncio
+async def test_activity_shows_notification_freetext_for_privileged(monkeypatch):
+    db = _db_with_notification("Misafir ahmet@example.com için onay e-postası")
+    monkeypatch.setattr(messaging, "_get_db", lambda: db)
+    res = await messaging.get_messaging_activity(
+        limit=20, current_user=_user(UserRole.FRONT_DESK)
+    )
+    assert "ahmet@example.com" in res["activities"][0]["message"]

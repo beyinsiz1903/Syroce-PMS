@@ -405,7 +405,16 @@ async def get_security_audit_logs(
     if user_id:
         query['user_id'] = user_id
 
-    logs = await db.audit_logs.find(query, {'_id': 0}).sort('timestamp', -1).limit(100).to_list(100)
+    # before_snapshot/after_snapshot are full entity diffs captured by the
+    # audit_hook decorator. after_snapshot mirrors a service `result.data`
+    # dict, which under mutation-heavy load can carry non-JSON-native Mongo
+    # types (Decimal128, bytes from encrypted PII fields, naive datetimes) →
+    # the flat list serializer then 500s. They are also PII-heavy and have no
+    # place in a flat list view (the per-entity audit-trail endpoints serve
+    # them on demand). Exclude them here: prevents the conditional 500 and
+    # trims list-response PII without changing the visible audit metadata.
+    projection = {'_id': 0, 'before_snapshot': 0, 'after_snapshot': 0}
+    logs = await db.audit_logs.find(query, projection).sort('timestamp', -1).limit(100).to_list(100)
 
     return {
         'logs': logs,

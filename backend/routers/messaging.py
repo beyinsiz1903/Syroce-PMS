@@ -4,6 +4,7 @@ Provider settings, template CRUD, sending, delivery logs, metrics.
 """
 import logging
 import random
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -1020,6 +1021,41 @@ def _mask_recipient(value) -> str:
     return "***"
 
 
+_FREETEXT_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+# Phone: optional +, then 9+ digits possibly grouped by spaces/dashes/parens.
+_FREETEXT_PHONE_RE = re.compile(r"\+?\d[\d\s().\-]{8,}\d")
+
+
+def _mask_freetext_pii(text) -> str:
+    """KVKK/PII mask for guest contact data embedded in free-text automation
+    titles/messages shown in the activity feed to roles lacking
+    `view_guest_list`. Notification rows (unlike delivery-log rows whose
+    recipient is a discrete field) carry the email/phone inline in the
+    `title`/`message`, so the discrete `_mask_recipient` gate misses them.
+    Email local-part is reduced to its first char (`a***@domain`); phone digits
+    are masked to the last 2. Non-PII text is left intact so the feed stays
+    usable. Privileged roles never reach this path (raw text preserved)."""
+    s = str(text or "")
+    if not s:
+        return s
+
+    def _mask_email(m):
+        local, _, domain = m.group(0).partition("@")
+        head = local[:1] if local else ""
+        return f"{head}***@{domain}"
+
+    def _mask_phone(m):
+        raw = m.group(0)
+        digits = re.sub(r"\D", "", raw)
+        if len(digits) < 9:
+            return raw  # too short to be a phone number; leave untouched
+        return ("*" * (len(raw) - 2)) + raw[-2:]
+
+    s = _FREETEXT_EMAIL_RE.sub(_mask_email, s)
+    s = _FREETEXT_PHONE_RE.sub(_mask_phone, s)
+    return s
+
+
 @router.get("/activity")
 async def get_messaging_activity(
     limit: int = Query(20, ge=1, le=100),
@@ -1054,11 +1090,21 @@ async def get_messaging_activity(
     # Combine into a unified activity feed
     activities = []
     for n in notifications:
+        _title = n.get("title", "")
+        _message = n.get("message", "")
+        if not _can_view_pii:
+            # Automation notifications embed guest email/phone inline in the
+            # free-text title/message (the delivery-log branch below masks its
+            # discrete `recipient`, but notifications have no such field). Mask
+            # the inline PII for roles lacking view_guest_list, matching the
+            # delivery-log gate so the feed never leaks contact data.
+            _title = _mask_freetext_pii(_title)
+            _message = _mask_freetext_pii(_message)
         activities.append({
             "id": n.get("id", ""),
             "type": "automation",
-            "title": n.get("title", ""),
-            "message": n.get("message", ""),
+            "title": _title,
+            "message": _message,
             "priority": n.get("priority", "normal"),
             "created_at": n.get("created_at", ""),
             "read": n.get("read", False),

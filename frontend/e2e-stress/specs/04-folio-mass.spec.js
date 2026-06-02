@@ -4,19 +4,13 @@ import { fetchAllByPrefix, callTimed, recPerf, recFinding, pilotBookingsCount, a
 
 const MOD = 'folio-mass';
 
-// Package E harvest fix (void-target window): tests C (split) and C3 (refund)
-// both mutate folios[0..9] (each uses slice(0,10)). C4 (void-charge) and C5
-// (void-payment) previously sampled the SAME folios[0..4], so by the time they
-// ran the charges/payments on those folios were already consumed → the void
-// path never executed and the spec emitted a vacuous data-state finding
-// (C4 allEmpty P2 / C5 allNoPay P3). Test A writes charges to folios[0..99] and
-// test B writes payments to folios[0..49]; sampling a window PAST the C/C3
-// destructive range (0..9) but INSIDE the A/B creation range gives intact void
-// targets so the void path runs for real (coverage strengthening, not fake-green).
-// Falls back to the original slice(0,5) when the pool is too small — the prior
-// behaviour AND the allEmpty/allNoPay/all403 REVIEW fallbacks + the 5xx→FAIL
-// invariant are preserved exactly (no assertion loosening, no new FAIL class).
-const voidSampleWindow = (src) => (src.length >= 16 ? src.slice(10, 15) : src.slice(0, 5));
+// Void-target selection: tests C (split) and C3 (refund) both mutate
+// folios[0..9]. A fixed slice window for the void tests was fragile — the
+// seeded deposit payments live ONLY on aged folios and /api/folio/list order
+// gives no guarantee any aged folio lands in a fixed slice, so C5 hit a
+// vacuous allNoPay REVIEW every run. C5 now HARVESTS payment-bearing folios by
+// probing detail (see C5 below) instead of slicing. C4 (void-charge) keeps its
+// own OPEN-folio harvest. No assertion loosening, no new FAIL class.
 
 test.describe.configure({ mode: 'serial' });
 
@@ -415,24 +409,52 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             `detail_shape=${JSON.stringify(detailShapeSnap)} charge_shape=${JSON.stringify(chargeShapeSnap)}`).not.toBe('FAIL');
     });
 
-    test('C5) Void payment (5 folio — fetch payment_id via detail)', async ({ request, stressTokens }, testInfo) => {
+    test('C5) Void payment (harvest payment-bearing folios via detail)', async ({ request, stressTokens }, testInfo) => {
         if (folios.length < 5 && bookings.length < 5) { rec(testInfo, { module: MOD, step: 'void_payment_sample', status: 'SKIP' }); return; }
-        const sample = voidSampleWindow(folios.length > 0 ? folios : bookings);
+        // Seeded deposit payments live ONLY on aged folios (stress seed writes
+        // them keyed by folio_id), and the natural /api/folio/list order gives
+        // no guarantee that any aged folio falls inside a fixed slice. The old
+        // blind slice(10,15) systematically missed the aged subset → every run
+        // hit allNoPay REVIEW. Harvest folios that ACTUALLY expose a non-voided
+        // payment id via detail (bounded scan, NO seeding), then void from that
+        // real set. This fixes sample SELECTION only; a genuine void-path
+        // failure on a payment-bearing folio still surfaces as FAIL.
+        const pool = folios.length > 0 ? folios : bookings;
+        const HARVEST_SCAN_CAP = 30;   // bound the detail-probe fan-out
+        const VOID_TARGET = 5;         // attempt up to 5 real voids
         let voided = 0, fail = 0; const failModes = {};
         const samples = [];
-        for (const it of sample) {
+        // Signal-quality counters so a genuine detail-endpoint regression cannot
+        // hide behind the data-state REVIEW: detailFail = detail GET not ok
+        // (5xx/auth); nonVoidedRowsSeen = non-voided payment rows observed;
+        // rowsButNoId = rows present but NO id under any known key → serializer
+        // shape drift (mirrors C4's shapeDrift contract-regression branch).
+        let scanned = 0, foundWithPay = 0, detailFail = 0, nonVoidedRowsSeen = 0, rowsButNoId = 0;
+        let detailShapeSnap = null;
+        const _pid = (p) => p.id || p._id || p.payment_id || p.paymentId;
+        for (const it of pool) {
+            if (scanned >= HARVEST_SCAN_CAP || (voided + fail) >= VOID_TARGET) break;
+            scanned++;
             const fid = it.folio_id || it.id;
             const detailR = await callTimed(request, 'get', `/api/pms-core/folio/detail/${fid}`,
                 undefined, stressTokens.stress_token);
+            if (!detailR.ok) { detailFail++; continue; }   // endpoint regression candidate
             const payments = detailR.body?.payments || [];
-            const paymentId = payments.find((p) => !p.voided && p.id)?.id;
-            if (!paymentId) {
-                fail++;
-                failModes['no_payment_found'] = (failModes['no_payment_found'] || 0) + 1;
-                continue;
+            if (!detailShapeSnap) {
+                detailShapeSnap = { has_payments_key: Array.isArray(detailR.body?.payments),
+                    payment_keys: payments[0] ? Object.keys(payments[0]).slice(0, 12) : [] };
             }
+            const liveRows = payments.filter((p) => !p.voided);
+            nonVoidedRowsSeen += liveRows.length;
+            const target = liveRows.find((p) => _pid(p));
+            if (!target) {
+                // Rows exist but none expose an id under any known key → drift.
+                if (liveRows.length > 0) rowsButNoId += liveRows.length;
+                continue;   // no usable payment here → not a void target
+            }
+            foundWithPay++;
             const r = await callTimed(request, 'post', '/api/pms-core/folio/void-payment', {
-                payment_id: paymentId,
+                payment_id: _pid(target),
                 reason: 'F8A § 04 C5 dry-run void test',
             }, stressTokens.stress_token);
             samples.push(r.ms);
@@ -440,23 +462,49 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             else { fail++; const k = `s${r.status}`; failModes[k] = (failModes[k] || 0) + 1; }
             await new Promise((res) => setTimeout(res, 1200));
         }
-        const all403 = fail > 0 && voided === 0 && failModes.s403 === sample.length;
-        const allNoPay = fail === sample.length && failModes['no_payment_found'] === sample.length;
-        const status = (all403 || allNoPay) ? 'REVIEW' : (voided === 0 ? 'FAIL' : 'PASS');
+        const attempted = voided + fail;
+        const all403 = attempted > 0 && voided === 0 && failModes.s403 === attempted;
+        // Serializer shape drift: detail returned non-voided payment rows but
+        // none carried an id under any known key → contract regression → FAIL.
+        const shapeDrift = foundWithPay === 0 && rowsButNoId > 0;
+        // Detail endpoint systematically failing (5xx/auth) and we never reached
+        // a single payment-bearing folio → endpoint regression → FAIL, NOT the
+        // data-state REVIEW (would mask a real failure path).
+        const detailBroken = foundWithPay === 0 && detailFail > 0;
+        // Only when detail calls were healthy AND no non-voided payment row
+        // existed anywhere in the scanned window → genuine data-state REVIEW.
+        const allNoPay = foundWithPay === 0 && detailFail === 0 && rowsButNoId === 0;
+        const status = (shapeDrift || detailBroken) ? 'FAIL'
+            : (allNoPay || all403) ? 'REVIEW'
+                : (voided === 0 ? 'FAIL' : 'PASS');
         rec(testInfo, { module: MOD, step: 'folio_void_payment_batch', status,
             endpoint: '/api/pms-core/folio/void-payment',
-            note: `n=${sample.length} voided=${voided} fail=${fail} fail_modes=${JSON.stringify(failModes)} no_payment_seed=${allNoPay}` });
+            note: `scanned=${scanned} found_with_payment=${foundWithPay} voided=${voided} fail=${fail} ` +
+                `detail_fail=${detailFail} non_voided_rows=${nonVoidedRowsSeen} rows_but_no_id=${rowsButNoId} ` +
+                `fail_modes=${JSON.stringify(failModes)} no_payment_seed=${allNoPay} detail_shape=${JSON.stringify(detailShapeSnap)}` });
         recPerf(testInfo, MOD, 'folio_void_payment', samples, voided > 0);
+        if (shapeDrift) {
+            recFinding(testInfo, 'P1', MOD,
+                'Folio void-payment: detail serializer payment ID drift — contract regression',
+                `scanned=${scanned} non_voided_rows=${nonVoidedRowsSeen} ama hiçbiri id|_id|payment_id|paymentId ile lookup edilemedi. ` +
+                `/api/pms-core/folio/detail payments[] serializer breaking change şüphesi. detail_shape=${JSON.stringify(detailShapeSnap)}`);
+        }
+        if (detailBroken) {
+            recFinding(testInfo, 'P1', MOD,
+                'Folio detail endpoint sistematik başarısız — void-payment harvest yapılamadı',
+                `scanned=${scanned} detail_fail=${detailFail}, payment-bearing folio'ya hiç ulaşılamadı. /api/pms-core/folio/detail regression şüphesi.`);
+        }
         if (allNoPay) {
             recFinding(testInfo, 'P3', MOD,
-                'Stress seed folio\'larda payment yok — void-payment path test edilemedi',
-                'Seed _build_f8a_docs() folio için payment seed etmiyor; B test\'inde dry-run payment yapılsa da sample folio kümesi farklı olabilir.');
+                'Taranan folio penceresinde non-voided payment yok — void-payment path test edilemedi',
+                `scanned=${scanned} (cap ${HARVEST_SCAN_CAP}). Seeded deposit payment yalnız aged folio'lara yazılıyor; bu run'da taranan pool'da aged/payment-bearing folio bulunmadı (data-state, contract regression değil).`);
         }
         if (all403) {
             recFinding(testInfo, 'P2', MOD, 'Folio void-payment RBAC short-circuit',
                 'Stress token void_payment yetkisine sahip değil.');
         }
-        expect(status, `folio_void_payment_batch FAIL: voided=${voided} fail_modes=${JSON.stringify(failModes)}`).not.toBe('FAIL');
+        expect(status, `folio_void_payment_batch FAIL: voided=${voided} fail_modes=${JSON.stringify(failModes)} ` +
+            `shape_drift=${shapeDrift} detail_broken=${detailBroken} detail_fail=${detailFail} rows_but_no_id=${rowsButNoId}`).not.toBe('FAIL');
     });
 
     test('D) Folio audit GET (5 folio)', async ({ request, stressTokens }, testInfo) => {

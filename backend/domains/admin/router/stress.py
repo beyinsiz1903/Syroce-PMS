@@ -2158,6 +2158,25 @@ async def stress_seed(
             orphan_cleanup["hr_positions"] = res.deleted_count
         except Exception as e:
             orphan_cleanup["hr_positions_error"] = str(e)[:120]
+        # Spec 37/39B HR staff lifecycle/offboarding create staff via the
+        # PRODUCTION POST /hr/staff (strict Pydantic model → unknown fields
+        # like `stress_seed`/`stress_prefix` are stripped), so those rows
+        # persist UNTAGGED. The cross-prefix orphan scrub above
+        # (stress_seed-filtered) cannot reach them, and GET /hr/staff caps at
+        # `.to_list(500)` with no sort — once the stress tenant accumulates
+        # >500 active staff_members across runs, the freshly-seeded prefixed
+        # baseline (inserted last) falls outside the natural-order window and
+        # the setup pool probe sees prefixed≈0 → HR specs module-block/SKIP.
+        # Wipe ALL staff_members for the stress tenant BEFORE this round's
+        # inserts (same rationale + gates as hr_departments/hr_positions/
+        # currency_rates/payroll above: stress tenant only, pilot blocked,
+        # destructive flag required). Seed re-inserts the tagged baseline rows
+        # immediately after this block, so wipe-then-insert keeps it intact.
+        try:
+            res = await db.staff_members.delete_many({"tenant_id": stress_tid})
+            orphan_cleanup["staff_members"] = res.deleted_count
+        except Exception as e:
+            orphan_cleanup["staff_members_error"] = str(e)[:120]
         total_rooms_inserted = await _chunked_insert(db.rooms, rooms_docs, INSERT_CHUNK_SIZE)
         # Authoritative split — `counts["rooms"]` MUST equal base (500) for
         # tenant-isolation contract testing; extras are an internal stress-only
