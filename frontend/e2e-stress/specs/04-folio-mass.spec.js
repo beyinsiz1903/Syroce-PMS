@@ -294,14 +294,24 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
         let chargeShapeSnap = null;
         let chargesEmptyCount = 0;
         let folioClosedCount = 0;
+        let detail5xx = 0;
+        const detailFailModes = {};
         let scanned = 0;
         for (let i = 0; i < SCAN_CAP && voided < VOID_TARGET; i++) {
             const it = pool[i];
             scanned++;
             const fid = it.folio_id || it.id;
-            // 1. Folio detail → charges + folio.status.
+            // 1. Folio detail → charges + folio.status. Heavy payload → 60s headroom
+            // under load (a slow-but-healthy detail must not count as a failure).
             const detailR = await callTimed(request, 'get', `/api/pms-core/folio/detail/${fid}`,
-                undefined, stressTokens.stress_token);
+                undefined, stressTokens.stress_token, { timeout: 60_000 });
+            // Detail 5xx is a real server error on the dependency — must NOT be
+            // masked as charges_empty data-state REVIEW (mirrors C5's detail5xxFail).
+            if (!detailR.ok) {
+                const k = `s${detailR.status}`;
+                detailFailModes[k] = (detailFailModes[k] || 0) + 1;
+                if (detailR.status >= 500 && detailR.status <= 599) detail5xx++;
+            }
             const charges = detailR.body?.charges || [];
             if (!detailShapeSnap && detailR.body && typeof detailR.body === 'object') {
                 detailShapeSnap = { http: detailR.status, keys: Object.keys(detailR.body).slice(0, 12),
@@ -350,16 +360,27 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
         // ama hiçbiri id|_id|charge_id|... ile resolve edilemedi → /folio/detail
         // serializer breaking change → hard FAIL (data-state ile maskelenmez).
         const noChargeFound = failModes.no_charge_found || 0;
+        // Detail endpoint returned a SERVER error (5xx) → real backend regression
+        // on the dependency → FAIL regardless of how many voids succeeded (a partial
+        // success must not mask a genuine backend 5xx).
+        const detail5xxFail = detail5xx > 0;
+        // Real void-path failure: closed/empty folios are skipped BEFORE the POST,
+        // so any void-charge error in failModes is on an OPEN folio with a live
+        // charge → genuine regression → FAIL even if other voids succeeded. RBAC-
+        // only short-circuit (all403) stays REVIEW. Closes voided>=1 && err>0 gap.
+        const realVoidFail = voidPostErrorCount > 0 && !all403;
         const shapeDrift = voided === 0 && voidPostErrorCount === 0 && noChargeFound > 0
             && chargesEmptyCount === 0 && folioClosedCount === 0;
         // Data-state-only: void başarısı YOK, gerçek void hatası YOK, serializer
-        // drift YOK → kalanlar closed-folio guard / boş charges (earlier spec
-        // mutasyonları). Void-path regression DEĞİL → REVIEW (FAIL değil).
-        const dataStateOnly = voided === 0 && voidPostErrorCount === 0 && !shapeDrift;
-        const status = all403
-            ? 'REVIEW'
-            : (shapeDrift
-                ? 'FAIL'
+        // drift YOK, detail 5xx YOK → kalanlar closed-folio guard / boş charges
+        // / 4xx-timeout (earlier spec mutasyonları). Void-path regression DEĞİL → REVIEW.
+        const dataStateOnly = voided === 0 && voidPostErrorCount === 0 && detail5xx === 0 && !shapeDrift;
+        // FAIL group is evaluated FIRST so a genuine detail 5xx is never suppressed
+        // by the all403 RBAC short-circuit (all403 + detail5xx>0 => FAIL, not REVIEW).
+        const status = (shapeDrift || detail5xxFail || realVoidFail)
+            ? 'FAIL'
+            : (all403
+                ? 'REVIEW'
                 : (dataStateOnly
                     ? 'REVIEW'
                     : (voided >= 1 ? 'PASS' : 'FAIL')));
@@ -368,6 +389,7 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             note: `scanned=${scanned}/${SCAN_CAP} voided=${voided} fail=${fail} fail_modes=${JSON.stringify(failModes)} ` +
                   `all_403=${all403} shape_drift=${shapeDrift} data_state_only=${dataStateOnly} ` +
                   `charges_empty=${chargesEmptyCount} folio_closed=${folioClosedCount} ` +
+                  `detail_5xx=${detail5xx} detail_fail_modes=${JSON.stringify(detailFailModes)} ` +
                   `detail_shape=${JSON.stringify(detailShapeSnap)} charge_shape=${JSON.stringify(chargeShapeSnap)}` });
         recPerf(testInfo, MOD, 'folio_void_charge', samples, voided > 0);
         if (all403) {
@@ -393,6 +415,12 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
                 `scanned=${scanned} charges_empty=${chargesEmptyCount}. Earlier split/refund tüketmiş olabilir. ` +
                 `detail_shape=${JSON.stringify(detailShapeSnap)}`);
         }
+        if (detail5xxFail) {
+            recFinding(testInfo, 'P1', MOD,
+                'Folio detail endpoint 5xx — void-charge harvest yapılamadı (backend regression)',
+                `scanned=${scanned} detail_5xx=${detail5xx} detail_fail_modes=${JSON.stringify(detailFailModes)}. ` +
+                `/api/pms-core/folio/detail sunucu hatası döndü; charge harvest engellendi. detail_shape=${JSON.stringify(detailShapeSnap)}`);
+        }
         if (shapeDrift) {
             recFinding(testInfo, 'P1', MOD,
                 'Folio void-charge: detail serializer charge ID drift — contract regression',
@@ -400,13 +428,14 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
                 `/api/pms-core/folio/detail charges[] serializer breaking change şüphesi. ` +
                 `detail_shape=${JSON.stringify(detailShapeSnap)} charge_shape=${JSON.stringify(chargeShapeSnap)}`);
         }
-        if (voided === 0 && voidPostErrorCount > 0 && !all403) {
+        if (realVoidFail) {
             recFinding(testInfo, 'P1', MOD, 'Folio void-charge OPEN folio\'da başarısız',
-                `OPEN folio void POST 0 başarı, void_post_errors=${voidPostErrorCount}. Modes: ${JSON.stringify(failModes)}. Gerçek void-path hatası.`);
+                `OPEN folio void POST hatası (closed/empty skip sonrası): voided=${voided} void_post_errors=${voidPostErrorCount}. ` +
+                `Modes: ${JSON.stringify(failModes)}. Gerçek void-path hatası — başarılı void'ler maskelemez.`);
         }
         expect(status, `folio_void_charge_batch FAIL: voided=${voided} fail_modes=${JSON.stringify(failModes)} ` +
-            `shape_drift=${shapeDrift} data_state_only=${dataStateOnly} folio_closed=${folioClosedCount} ` +
-            `detail_shape=${JSON.stringify(detailShapeSnap)} charge_shape=${JSON.stringify(chargeShapeSnap)}`).not.toBe('FAIL');
+            `real_void_fail=${realVoidFail} detail_5xx=${detail5xx} shape_drift=${shapeDrift} data_state_only=${dataStateOnly} ` +
+            `folio_closed=${folioClosedCount} detail_shape=${JSON.stringify(detailShapeSnap)} charge_shape=${JSON.stringify(chargeShapeSnap)}`).not.toBe('FAIL');
     });
 
     test('C5) Void payment (harvest payment-bearing folios via detail)', async ({ request, stressTokens }, testInfo) => {
@@ -424,24 +453,55 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
         const VOID_TARGET = 5;         // attempt up to 5 real voids
         let voided = 0, fail = 0; const failModes = {};
         const samples = [];
-        // Signal-quality counters so a genuine detail-endpoint regression cannot
-        // hide behind the data-state REVIEW: detailFail = detail GET not ok
-        // (5xx/auth); nonVoidedRowsSeen = non-voided payment rows observed;
-        // rowsButNoId = rows present but NO id under any known key → serializer
-        // shape drift (mirrors C4's shapeDrift contract-regression branch).
-        let scanned = 0, foundWithPay = 0, detailFail = 0, nonVoidedRowsSeen = 0, rowsButNoId = 0;
+        // Signal-quality counters. The detail probe gates the whole harvest, so a
+        // "found nothing to void" outcome must be split by WHY:
+        //   detail5xx       → server error on the dependency → real regression FAIL
+        //   detailOtherFail → 4xx/0/429 (state, not-found, throttle, timeout) →
+        //                     harvest couldn't reach a payment-bearing folio →
+        //                     data-state/env REVIEW, NOT a void-path regression
+        //   rowsButNoId     → rows present but no id under any known key →
+        //                     serializer contract regression FAIL (mirrors C4)
+        // A blind "any detail fail → FAIL" is a fake-RED on a fast 404/throttle;
+        // a blind "→ REVIEW" is a fake-GREEN that hides a 5xx. Split by status.
+        let scanned = 0, foundWithPay = 0, detailFail = 0, detail5xx = 0, nonVoidedRowsSeen = 0, rowsButNoId = 0;
+        let folioClosedCount = 0;
+        const detailFailModes = {};
         let detailShapeSnap = null;
         const _pid = (p) => p.id || p._id || p.payment_id || p.paymentId;
         for (const it of pool) {
             if (scanned >= HARVEST_SCAN_CAP || (voided + fail) >= VOID_TARGET) break;
             scanned++;
             const fid = it.folio_id || it.id;
+            // Detail builds a heavy payload (folio+timeline+charges+payments+tax+
+            // invoices+audit_trail+void_details); give it headroom under load so a
+            // slow-but-healthy response isn't miscounted as a timeout failure.
             const detailR = await callTimed(request, 'get', `/api/pms-core/folio/detail/${fid}`,
-                undefined, stressTokens.stress_token);
-            if (!detailR.ok) { detailFail++; continue; }   // endpoint regression candidate
+                undefined, stressTokens.stress_token, { timeout: 60_000 });
+            if (!detailR.ok) {
+                detailFail++;
+                const k = `s${detailR.status}`;
+                detailFailModes[k] = (detailFailModes[k] || 0) + 1;
+                if (detailR.status >= 500 && detailR.status <= 599) detail5xx++;
+                // Snapshot the FIRST failure too (diagnostic gap fix): without
+                // this, an all-fail run logs detail_shape=null and the next run
+                // can't tell 5xx from 404.
+                if (!detailShapeSnap) {
+                    detailShapeSnap = { http: detailR.status,
+                        keys: detailR.body && typeof detailR.body === 'object'
+                            ? Object.keys(detailR.body).slice(0, 12) : [],
+                        err: detailR.body?.detail || detailR.body?.err || null };
+                }
+                continue;
+            }
+            // Closed-folio guard: void-payment on a non-open folio is a legitimate
+            // 400 (closed-folio guard). Skip BEFORE attempting the POST so a benign
+            // guard-400 never counts as a void-path failure — this is what lets the
+            // remaining void-POST errors be treated as REAL failures (open folios).
+            const folioStatus = detailR.body?.folio?.status;
+            if (folioStatus && folioStatus !== 'open') { folioClosedCount++; continue; }
             const payments = detailR.body?.payments || [];
             if (!detailShapeSnap) {
-                detailShapeSnap = { has_payments_key: Array.isArray(detailR.body?.payments),
+                detailShapeSnap = { http: detailR.status, has_payments_key: Array.isArray(detailR.body?.payments),
                     payment_keys: payments[0] ? Object.keys(payments[0]).slice(0, 12) : [] };
             }
             const liveRows = payments.filter((p) => !p.voided);
@@ -464,24 +524,35 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
         }
         const attempted = voided + fail;
         const all403 = attempted > 0 && voided === 0 && failModes.s403 === attempted;
+        // Real void-path failure: closed folios are skipped BEFORE the POST, so any
+        // void-payment error that reaches failModes is on an OPEN folio with a live
+        // payment → genuine regression → FAIL even if other voids succeeded (no
+        // PASS masking of mixed success+error). RBAC-only short-circuit (all403)
+        // stays REVIEW. This closes the voided>=1 && fail>0 fake-green gap.
+        const realVoidFail = fail > 0 && !all403;
         // Serializer shape drift: detail returned non-voided payment rows but
         // none carried an id under any known key → contract regression → FAIL.
         const shapeDrift = foundWithPay === 0 && rowsButNoId > 0;
-        // Detail endpoint systematically failing (5xx/auth) and we never reached
-        // a single payment-bearing folio → endpoint regression → FAIL, NOT the
-        // data-state REVIEW (would mask a real failure path).
-        const detailBroken = foundWithPay === 0 && detailFail > 0;
+        // Detail endpoint returned a SERVER error (5xx) → genuine backend
+        // regression on the dependency → FAIL regardless of partial harvest/void
+        // success (a real 5xx must never be masked by a payment found elsewhere).
+        const detail5xxFail = detail5xx > 0;
+        // Detail failed only with 4xx/0/429 (not-found, state, throttle, timeout)
+        // and we never reached a payment-bearing folio → harvest couldn't land on
+        // an aged/payment folio. State/env, NOT a void-path regression → REVIEW.
+        const detailStateMiss = foundWithPay === 0 && detail5xx === 0 && detailFail > 0;
         // Only when detail calls were healthy AND no non-voided payment row
         // existed anywhere in the scanned window → genuine data-state REVIEW.
         const allNoPay = foundWithPay === 0 && detailFail === 0 && rowsButNoId === 0;
-        const status = (shapeDrift || detailBroken) ? 'FAIL'
-            : (allNoPay || all403) ? 'REVIEW'
+        const status = (shapeDrift || detail5xxFail || realVoidFail) ? 'FAIL'
+            : (allNoPay || all403 || detailStateMiss) ? 'REVIEW'
                 : (voided === 0 ? 'FAIL' : 'PASS');
         rec(testInfo, { module: MOD, step: 'folio_void_payment_batch', status,
             endpoint: '/api/pms-core/folio/void-payment',
             note: `scanned=${scanned} found_with_payment=${foundWithPay} voided=${voided} fail=${fail} ` +
-                `detail_fail=${detailFail} non_voided_rows=${nonVoidedRowsSeen} rows_but_no_id=${rowsButNoId} ` +
-                `fail_modes=${JSON.stringify(failModes)} no_payment_seed=${allNoPay} detail_shape=${JSON.stringify(detailShapeSnap)}` });
+                `detail_fail=${detailFail} detail_5xx=${detail5xx} detail_fail_modes=${JSON.stringify(detailFailModes)} ` +
+                `non_voided_rows=${nonVoidedRowsSeen} rows_but_no_id=${rowsButNoId} folio_closed=${folioClosedCount} ` +
+                `real_void_fail=${realVoidFail} fail_modes=${JSON.stringify(failModes)} no_payment_seed=${allNoPay} detail_shape=${JSON.stringify(detailShapeSnap)}` });
         recPerf(testInfo, MOD, 'folio_void_payment', samples, voided > 0);
         if (shapeDrift) {
             recFinding(testInfo, 'P1', MOD,
@@ -489,10 +560,17 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
                 `scanned=${scanned} non_voided_rows=${nonVoidedRowsSeen} ama hiçbiri id|_id|payment_id|paymentId ile lookup edilemedi. ` +
                 `/api/pms-core/folio/detail payments[] serializer breaking change şüphesi. detail_shape=${JSON.stringify(detailShapeSnap)}`);
         }
-        if (detailBroken) {
+        if (detail5xxFail) {
             recFinding(testInfo, 'P1', MOD,
-                'Folio detail endpoint sistematik başarısız — void-payment harvest yapılamadı',
-                `scanned=${scanned} detail_fail=${detailFail}, payment-bearing folio'ya hiç ulaşılamadı. /api/pms-core/folio/detail regression şüphesi.`);
+                'Folio detail endpoint 5xx — void-payment harvest yapılamadı (backend regression)',
+                `scanned=${scanned} detail_5xx=${detail5xx} detail_fail_modes=${JSON.stringify(detailFailModes)}. ` +
+                `/api/pms-core/folio/detail sunucu hatası döndü; payment-bearing folio'ya ulaşılamadı. detail_shape=${JSON.stringify(detailShapeSnap)}`);
+        }
+        if (detailStateMiss) {
+            recFinding(testInfo, 'P2', MOD,
+                'Folio detail probe 4xx/timeout — payment-bearing folio harvest edilemedi (state/env)',
+                `scanned=${scanned} detail_fail=${detailFail} detail_fail_modes=${JSON.stringify(detailFailModes)} (5xx=0). ` +
+                `Harvested folio id'leri detail'de resolve olmadı (not-found/state) veya throttle/timeout. Void-path regression DEĞİL — data-state/env. detail_shape=${JSON.stringify(detailShapeSnap)}`);
         }
         if (allNoPay) {
             recFinding(testInfo, 'P3', MOD,
@@ -503,8 +581,14 @@ test.describe('F8A § 04 — Folio mass (charge / payment / split / audit / clos
             recFinding(testInfo, 'P2', MOD, 'Folio void-payment RBAC short-circuit',
                 'Stress token void_payment yetkisine sahip değil.');
         }
+        if (realVoidFail) {
+            recFinding(testInfo, 'P1', MOD, 'Folio void-payment OPEN folio\'da başarısız',
+                `OPEN folio (closed-folio skip sonrası) void-payment POST ${fail} hata. voided=${voided} fail_modes=${JSON.stringify(failModes)}. ` +
+                'Gerçek void-path hatası — başarılı void\'ler bunu maskelemez.');
+        }
         expect(status, `folio_void_payment_batch FAIL: voided=${voided} fail_modes=${JSON.stringify(failModes)} ` +
-            `shape_drift=${shapeDrift} detail_broken=${detailBroken} detail_fail=${detailFail} rows_but_no_id=${rowsButNoId}`).not.toBe('FAIL');
+            `real_void_fail=${realVoidFail} shape_drift=${shapeDrift} detail_5xx=${detail5xx} detail_fail=${detailFail} ` +
+            `detail_fail_modes=${JSON.stringify(detailFailModes)} rows_but_no_id=${rowsButNoId} folio_closed=${folioClosedCount}`).not.toBe('FAIL');
     });
 
     test('D) Folio audit GET (5 folio)', async ({ request, stressTokens }, testInfo) => {
