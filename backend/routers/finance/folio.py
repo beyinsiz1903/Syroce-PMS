@@ -3,7 +3,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
@@ -55,6 +55,25 @@ except ImportError:
 
 router = APIRouter()
 security = HTTPBearer()
+
+
+def _ts_sort_key(value) -> str:
+    """Type-safe sort key for timestamp fields that may arrive as a mix of
+    `datetime`/`date` (newer writers) and `str`/`None` (legacy/transfer ops).
+    Sorting a mixed list directly raises `TypeError: '<' not supported between
+    datetime and str` and 500s the endpoint, so coerce everything to a
+    comparable ISO string here.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, (datetime, date)):
+        try:
+            return value.isoformat()
+        except Exception:
+            return str(value)
+    return str(value)
+
+
 folio_balance_read_service = FolioBalanceReadService()
 open_folio_service = OpenFolioService()
 
@@ -1237,7 +1256,7 @@ async def get_folio_activity_log(
         })
 
     # Sort by timestamp
-    activities.sort(key=lambda x: x['timestamp'] if x['timestamp'] else '', reverse=True)
+    activities.sort(key=lambda x: _ts_sort_key(x.get('timestamp')), reverse=True)
 
     return {
         'folio': folio,
@@ -1309,7 +1328,7 @@ async def get_folio_operations(
             'performed_by_name': users.get(op.get('performed_by')) if op.get('performed_by') else None,
             'performed_at': op.get('performed_at'),
         })
-    items.sort(key=lambda x: x.get('performed_at') or '', reverse=True)
+    items.sort(key=lambda x: _ts_sort_key(x.get('performed_at')), reverse=True)
     return {'folio_id': folio_id, 'folio_number': folio.get('folio_number'), 'operations': items, 'count': len(items)}
 
 

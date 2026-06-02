@@ -4,7 +4,26 @@ tax breakdown per line, city ledger history, invoice association, audit trail,
 supervisor override and void reason visibility.
 """
 
+from datetime import date, datetime
+
 from core.database import db
+
+
+def _ts_sort_key(value) -> str:
+    """Type-safe sort key for heterogeneous timestamp values.
+
+    Folio charges/payments may persist date/processed_at/voided_at as BSON
+    datetimes, ISO strings, or be missing entirely (especially on folios touched
+    by void/split/refund/room-move flows). Python 3 raises TypeError when sorting
+    a mix of datetime and str, which previously surfaced as a 500 on
+    /folio/detail. Coerce every value to a comparable ISO string so the sort is
+    always total and chronologically correct (ISO strings sort lexically).
+    """
+    if value is None:
+        return ""
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return str(value)
 
 
 class FolioDetailService:
@@ -115,8 +134,8 @@ class FolioDetailService:
                 "reference": p.get("reference"),
             })
 
-        # Sort by timestamp
-        events.sort(key=lambda e: e.get("timestamp", ""))
+        # Sort by timestamp (type-safe: events may carry datetime or str ts)
+        events.sort(key=lambda e: _ts_sort_key(e.get("timestamp")))
 
         # Calculate running balance
         running = 0.0
@@ -270,5 +289,5 @@ class FolioDetailService:
                     "is_supervisor_override": bool(p.get("supervisor_override")),
                 })
 
-        voids.sort(key=lambda v: v.get("voided_at") or "", reverse=True)
+        voids.sort(key=lambda v: _ts_sort_key(v.get("voided_at")), reverse=True)
         return voids

@@ -6,8 +6,11 @@ and summary endpoints for the upcoming Audit Timeline Panel.
 import csv
 import io
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
+from bson import ObjectId
+from bson.decimal128 import Decimal128
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
@@ -41,6 +44,40 @@ def _ts_to_iso(ts) -> str:
             return str(ts)
     # Sayı / dict / başka tipler — defansif fallback (logger kayıt almaz)
     return str(ts)
+
+
+def _json_safe(value):
+    """Recursively coerce a Mongo document into JSON-native types.
+
+    FastAPI serializes the handler return value OUTSIDE the handler's
+    try/except, so a single non-JSON-native field (BSON Decimal128, naive
+    datetime, ObjectId, encrypted-field bytes) on any returned audit row would
+    surface as an unhandled 500 — exactly the timeline crash seen at higher
+    `limit` windows where a stray-typed legacy row enters the page. Coercing the
+    payload to JSON-native types here makes the response total-serializable.
+    Binary/encrypted blobs are REDACTED (never base64-exposed) so this is not a
+    PII-disclosure path.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (datetime, date)):
+        try:
+            return value.isoformat()
+        except Exception:
+            return str(value)
+    if isinstance(value, Decimal128):
+        return str(value)
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (bytes, bytearray)):
+        return "<binary>"
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return str(value)
 
 
 @router.get("/timeline")
@@ -116,6 +153,10 @@ async def get_audit_timeline(
         for _log in logs:
             if "timestamp" in _log:
                 _log["timestamp"] = _ts_to_iso(_log["timestamp"])
+
+        # Total-serialize the page so a stray non-JSON-native legacy field
+        # cannot 500 at FastAPI's encode step (which runs outside this try).
+        logs = [_json_safe(_log) for _log in logs]
 
         next_cursor = logs[-1]["timestamp"] if has_more and logs else None
         grouped = _group_by_time(logs)
