@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.database import db
+from core.tenant_db import get_system_db
 from core.helpers import (
     get_tenant_modules,
     require_super_admin_guard,
@@ -816,11 +817,18 @@ async def admin_list_tenant_team(
     current_user: User = Depends(require_super_admin),
 ):
     """List team members for a specific tenant (SUPER ADMIN only)"""
-    tenant = await db.tenants.find_one({"id": tenant_id})
+    # Cross-tenant admin read: the request's tenant context is the super_admin's
+    # OWN tenant (set from JWT by TenantContextMiddleware), so the scoped proxy
+    # would reject these explicit foreign-tenant_id queries as a TenantViolation.
+    # require_super_admin already gates this; the target tenant_id is path-bound
+    # and every query below carries it explicitly → use the system (unscoped) db,
+    # the documented pattern for cross-tenant admin queries (see auth.py).
+    sysdb = get_system_db()
+    tenant = await sysdb.tenants.find_one({"id": tenant_id})
     if not tenant:
         raise HTTPException(status_code=404, detail="Hotel not found")
 
-    users_raw = await db.users.find(
+    users_raw = await sysdb.users.find(
         {"tenant_id": tenant_id},
         {"_id": 0, "hashed_password": 0, "password_hash": 0, "password": 0},
     ).to_list(200)
@@ -835,11 +843,18 @@ async def admin_add_tenant_team_member(
     current_user: User = Depends(require_super_admin),
 ):
     """Add a team member to a specific tenant (SUPER ADMIN only)"""
-    tenant = await db.tenants.find_one({"id": tenant_id})
+    # Cross-tenant admin write: scoped proxy is bound to the super_admin's own
+    # tenant, so inserting {tenant_id: <target>} trips _inject_doc's TenantViolation
+    # (403). The email-uniqueness check must also be GLOBAL — login resolves users
+    # by email across all tenants via get_system_db (auth.py), so a scoped dup-check
+    # would miss a global collision. require_super_admin gates this; tenant_id is
+    # path-bound and set explicitly on the inserted doc → use the system db.
+    sysdb = get_system_db()
+    tenant = await sysdb.tenants.find_one({"id": tenant_id})
     if not tenant:
         raise HTTPException(status_code=404, detail="Hotel not found")
 
-    existing = await db.users.find_one(build_user_email_query(payload.email))
+    existing = await sysdb.users.find_one(build_user_email_query(payload.email))
     if existing:
         raise HTTPException(status_code=400, detail="This email address is already registered")
 
@@ -869,7 +884,7 @@ async def admin_add_tenant_team_member(
         "created_at": datetime.now(UTC).isoformat(),
     }
     new_user = encrypt_user_doc(new_user)
-    await db.users.insert_one(new_user)
+    await sysdb.users.insert_one(new_user)
 
     return {
         "success": True,
@@ -884,14 +899,18 @@ async def admin_remove_tenant_team_member(
     current_user: User = Depends(require_super_admin),
 ):
     """Remove a team member from a specific tenant (SUPER ADMIN only)"""
-    target = await db.users.find_one({"id": user_id, "tenant_id": tenant_id})
+    # Cross-tenant admin delete: scoped proxy bound to caller's own tenant would
+    # reject the explicit foreign tenant_id filter. require_super_admin gates this;
+    # both filters carry the path-bound tenant_id explicitly → use the system db.
+    sysdb = get_system_db()
+    target = await sysdb.users.find_one({"id": user_id, "tenant_id": tenant_id})
     if not target:
         raise HTTPException(status_code=404, detail="Team member not found")
 
     if target.get("role") == "super_admin":
         raise HTTPException(status_code=400, detail="Super Admin cannot be deleted")
 
-    await db.users.delete_one({"id": user_id, "tenant_id": tenant_id})
+    await sysdb.users.delete_one({"id": user_id, "tenant_id": tenant_id})
     return {"success": True, "message": "Team member removed"}
 # ── PATCH /admin/tenants/{tenant_id}/team/{user_id}/role ──
 @router.patch("/admin/tenants/{tenant_id}/team/{user_id}/role")
@@ -902,14 +921,18 @@ async def admin_update_tenant_team_role(
     current_user: User = Depends(require_super_admin),
 ):
     """Update a team member's role (SUPER ADMIN only)"""
-    target = await db.users.find_one({"id": user_id, "tenant_id": tenant_id})
+    # Cross-tenant admin update: scoped proxy bound to caller's own tenant would
+    # reject the explicit foreign tenant_id filter. require_super_admin gates this;
+    # every filter carries the path-bound tenant_id explicitly → use the system db.
+    sysdb = get_system_db()
+    target = await sysdb.users.find_one({"id": user_id, "tenant_id": tenant_id})
     if not target:
         raise HTTPException(status_code=404, detail="Team member not found")
 
     if target.get("role") == "super_admin":
         raise HTTPException(status_code=400, detail="Super Admin role cannot be changed")
 
-    tier_doc = await db.tenants.find_one({"id": tenant_id})
+    tier_doc = await sysdb.tenants.find_one({"id": tenant_id})
     tier = (tier_doc.get("subscription_tier", "basic") if tier_doc else "basic").lower()
     if tier == "pro":
         tier = "professional"
@@ -927,7 +950,7 @@ async def admin_update_tenant_team_role(
     # update filter. find_one above already restricts to tenant; adding it
     # here closes a TOCTOU window where a concurrent re-tenant of the user
     # could otherwise let a stale role write land cross-tenant.
-    res = await db.users.update_one(
+    res = await sysdb.users.update_one(
         {"id": user_id, "tenant_id": tenant_id},
         {"$set": {"role": payload.role}},
     )
@@ -943,23 +966,27 @@ async def admin_get_tenant_stats(
     current_user: User = Depends(require_super_admin),
 ):
     """Get detailed stats for a specific tenant (SUPER ADMIN only)"""
-    tenant = await db.tenants.find_one({"id": tenant_id})
+    # Cross-tenant admin read: scoped proxy bound to caller's own tenant would
+    # reject these explicit foreign tenant_id counts. require_super_admin gates
+    # this; every count carries the path-bound tenant_id explicitly → system db.
+    sysdb = get_system_db()
+    tenant = await sysdb.tenants.find_one({"id": tenant_id})
     if not tenant:
         raise HTTPException(status_code=404, detail="Hotel not found")
 
-    rooms = await db.rooms.count_documents({"tenant_id": tenant_id})
-    users = await db.users.count_documents({"tenant_id": tenant_id})
-    guests = await db.guests.count_documents({"tenant_id": tenant_id})
-    bookings = await db.bookings.count_documents({"tenant_id": tenant_id})
+    rooms = await sysdb.rooms.count_documents({"tenant_id": tenant_id})
+    users = await sysdb.users.count_documents({"tenant_id": tenant_id})
+    guests = await sysdb.guests.count_documents({"tenant_id": tenant_id})
+    bookings = await sysdb.bookings.count_documents({"tenant_id": tenant_id})
 
     now = datetime.now(UTC)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
-    bookings_this_month = await db.bookings.count_documents({
+    bookings_this_month = await sysdb.bookings.count_documents({
         "tenant_id": tenant_id,
         "created_at": {"$gte": month_start},
     })
 
-    checked_in = await db.bookings.count_documents({
+    checked_in = await sysdb.bookings.count_documents({
         "tenant_id": tenant_id,
         "status": "checked_in",
     })
