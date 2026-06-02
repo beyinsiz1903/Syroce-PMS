@@ -54,6 +54,12 @@ ONLY where `allow_finance_unmask=True` (the default — payroll/salary/leave); t
 caller passes False so finance IS masked there now (see the operator-decision section above).
 On the directory the masking branch is exercised by finance and by any granted "department manager"
 (view_hr + assigned_department, no manage_hr). A PII-masking assertion run with the tenant ADMIN token
-(`stress_token`, role=admin → has manage_hr) is a false positive: admin seeing unmasked PII is
-correct. To assert masking live you must provision a principal that can read the list but lacks
-the unmask gate — which no base role provides; that's a test-design/product question, not a leak.
+(`stress_token`, role=admin → has manage_hr) is a FALSE POSITIVE (fake-RED): admin seeing unmasked PII
+is correct-by-design, so asserting masking against admin tests behavior the product deliberately does
+NOT implement. **Operator decision:** the directory PII-mask guard must be asserted with the FINANCE
+principal (lacks the unmask gate on the list), NOT admin; admin gets only an authz (2xx) + no-token-leak
+check. **Why this surfaced late:** the assertion was vacuous-green while the directory was empty; once
+the role-provisioned team users (front_desk/hk/finance/sales) appeared as "derived" staff with
+plaintext phones, the admin-unmask read tripped a PHONE_PLAIN P0 that drove the whole suite NO-GO.
+**Watch:** if finance provisioning fails the masking step is an honest SKIP (visible in the ledger),
+not a pass — don't let an empty/no-principal directory masquerade as a passed PII guard.

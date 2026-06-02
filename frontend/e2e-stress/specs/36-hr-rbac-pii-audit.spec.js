@@ -356,24 +356,31 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
             return;
         }
         const samples = [];
+        // Admin (stress_token) manage_hr taşır → _mask_hr_pii TASARIM GEREĞİ
+        // unmask döner: HR yöneticisi dizinde tam PII görür (manage_hr'ın amacı,
+        // operatör kararı). Bu yüzden admin'e karşı MASKELEME İDDİA ETMEYİZ —
+        // ederdik fake-RED olurdu (ürünün bilinçle uygulamadığı davranışı test
+        // etmek). Admin'de yalnız (a) yetkili 200 ve (b) ham token/secret
+        // sızıntısı YOK doğrulanır. Gerçek KVKK masking güvencesi unmask-gate'i
+        // OLMAYAN finance principal'ında aşağıda doğrulanır.
         const r = await callTimed(request, 'get', '/api/hr/staff', undefined, stressTokens.stress_token);
         samples.push(r.ms);
-        const piiOk = assertHrPiiMasked(testInfo, MOD, r.body, ['national_id', 'identity_number', 'tc_kimlik']);
         const tokOk = assertNoTokenLeak(testInfo, MOD, r.body, 'staff_list');
-        const pass = r.ok && piiOk && tokOk;
+        const pass = r.ok && tokOk;
         const items = r.body?.staff || r.body?.staff_members || r.body?.items
             || (Array.isArray(r.body) ? r.body : []);
         recPerf(testInfo, MOD, 'staff_list_pii', samples, r.ok);
-        rec(testInfo, { module: MOD, step: 'staff_list_pii',
+        rec(testInfo, { module: MOD, step: 'staff_list_admin_authz',
             status: pass ? 'PASS' : 'FAIL',
-            endpoint: '/api/hr/staff',
-            note: `status=${r.status} items=${items.length} pii_ok=${piiOk} token_ok=${tokOk}` });
+            endpoint: '/api/hr/staff (admin principal)',
+            note: `status=${r.status} items=${items.length} token_ok=${tokOk} (admin manage_hr → PII unmask by design; masking NOT asserted here)` });
 
-        // Operatör kararı (Q1 nüans): Finance personel DİZİNİNİ okuyabilir
-        // (yetkili) AMA TC/telefon/IBAN'ı MASKELI görmeli (backend
-        // _mask_hr_pii allow_finance_unmask=False). manage_hr/super_admin
-        // unmask kararına DOKUNULMAZ (Q2 açık). Finance principal yoksa
-        // honest SKIP. Bu, finance-mask backend değişikliğinin canlı kanıtı.
+        // KVKK masking güvencesi BURADA doğrulanır (testin asıl PII guard'ı):
+        // finance unmask-gate'i taşımaz (staff_list çağrısı allow_finance_unmask
+        // =False) → dizinde TC/telefon/IBAN MASKELI görmeli. assertHrPiiMasked
+        // tüm gövdeyi TC/IBAN/maaş/telefon kalıpları için tarar (vacuous değil).
+        // Finance principal provision edilemezse honest SKIP (fail-soft) —
+        // skip-as-pass DEĞİL, masking adımı ledger'da SKIP olarak görünür.
         if (roleTokens.finance) {
             const fr = await callTimed(request, 'get', '/api/hr/staff', undefined, roleTokens.finance);
             samples.push(fr.ms);
@@ -389,11 +396,15 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
                 rec(testInfo, { module: MOD, step: 'staff_list_pii_finance', status: 'SKIP',
                     endpoint: '/api/hr/staff (finance principal)',
                     note: `finance read non-2xx status=${fr.status}` });
+                recFinding(testInfo, 'P2', MOD, 'Directory PII-mask coverage lost — finance read non-2xx',
+                    `finance /api/hr/staff status=${fr.status}. Masking guard (the real PII assertion) could not run; admin path only checks authz. Provisioning/RBAC drift — masking NOT verified this run.`);
             }
         } else {
             rec(testInfo, { module: MOD, step: 'staff_list_pii_finance', status: 'SKIP',
                 endpoint: '/api/hr/staff (finance principal)',
                 note: 'no finance role token (provisioning fail-soft)' });
+            recFinding(testInfo, 'P2', MOD, 'Directory PII-mask coverage lost — no finance principal',
+                'finance role token absent (provisioning fail-soft). Masking guard (the real PII assertion) could not run; admin path only checks authz. Masking NOT verified this run.');
         }
     });
 
