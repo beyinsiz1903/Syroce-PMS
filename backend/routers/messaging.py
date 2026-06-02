@@ -413,12 +413,24 @@ async def send_message(req: SendReq, current_user: User = Depends(get_current_us
     _perm=Depends(require_op("manage_sales")),  # v100 DW
 ):
     svc = _get_service()
-    result = await svc.send_message(
-        tenant_id=current_user.tenant_id, channel=req.channel, recipient=req.recipient,
-        body=req.body, subject=req.subject, template_id=req.template_id,
-        variables=req.variables, booking_id=req.booking_id, guest_id=req.guest_id,
-        property_id=req.property_id, use_case=req.use_case,
-    )
+    # Graceful-delivery contract: send_message already returns {"success": False, ...}
+    # for every known failure mode (no provider, rate limit, bad channel, opt-out).
+    # An unexpected infra hiccup (e.g. a transient consent/delivery-log read under
+    # burst) must NOT surface as 5xx — that would break the messaging resilience
+    # contract. Convert it into the same graceful fail-closed shape (no message is
+    # sent) and log it so it stays observable. Intentional HTTPExceptions propagate.
+    try:
+        result = await svc.send_message(
+            tenant_id=current_user.tenant_id, channel=req.channel, recipient=req.recipient,
+            body=req.body, subject=req.subject, template_id=req.template_id,
+            variables=req.variables, booking_id=req.booking_id, guest_id=req.guest_id,
+            property_id=req.property_id, use_case=req.use_case,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("messaging send failed (graceful fail-closed)")
+        return {"success": False, "error": "send_failed"}
     return result
 
 
