@@ -2242,7 +2242,15 @@ async def create_performance_review(
 async def list_performance_reviews(
     staff_id: str | None = None,
     current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
 ):
+    """Performans değerlendirme listesi — RBAC: SADECE `manage_hr`.
+
+    Performans notları hassas veridir; `GET /hr/performance/{staff_id}` ve
+    `POST /hr/performance` ile aynı posture: HR Admin / Supervisor / super_admin
+    (manage_hr) görebilir. Finance (`view_hr`) ve diğer departman rolleri
+    (front_desk/housekeeping/sales) erişemez — cross-department leakage guard.
+    """
     query: dict[str, Any] = {'tenant_id': current_user.tenant_id}
     if staff_id:
         query['staff_id'] = staff_id

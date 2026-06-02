@@ -14,7 +14,6 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.database import db
-from core.tenant_db import get_system_db
 from core.helpers import (
     get_tenant_modules,
     require_super_admin_guard,
@@ -22,6 +21,7 @@ from core.helpers import (
 from core.security import (
     _is_super_admin,
 )
+from core.tenant_db import get_system_db
 
 try:
     from cache_manager import cache as _cache_mgr
