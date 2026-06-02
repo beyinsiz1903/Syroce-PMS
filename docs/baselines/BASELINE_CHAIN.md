@@ -1,7 +1,7 @@
 # Stress Suite Baseline Chain
 
 Bu dosya, web/backend Full Stress Suite'in resmi baseline zincirinin tek kayıt
-kaynağıdır. **Yalnızca Run #171 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
+kaynağıdır. **Yalnızca Run #190 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
 run'lar tarihsel referanstır (historical reference) — provenance ve metrikler
 korunur ama "current/official baseline" DEĞİLDİR.
 
@@ -17,7 +17,56 @@ yok.
 
 ---
 
-## Run #171 — CURRENT GREEN BASELINE
+## Run #190 — CURRENT GREEN BASELINE
+
+- **Tarih / commit:** 2026-06-02, commit `adfa87d39f91bac5221247217f89d3207a08ab4a`
+  ("Published your App" — messaging `/send` graceful-delivery 5xx guard + HR
+  RBAC/PII spec-36 false-RED fix içerir).
+- **Sonuç:** 708 test, status=Success, failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1471/0/21/44, P0=P1=0, P2=30 / P3=2 informational,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict
+  **GO WITH WATCH**.
+- **#184 → #190 delta:** PASS +31, REVIEW +2, SKIP −10, P2 −1; FAIL/P0/P1 sabit 0.
+  Pozitif ilerleme (önceden module-blocked/atlanan yüzeyler artık koşuyor);
+  regresyon yok. REVIEW +2 data-state varyansı.
+- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26819935740
+  (run #190, run ID 26819935740, job ID 79071540497, branch main).
+- **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı, fabrike EDİLMEDİ):**
+  - stress-drill-report — ID `7359234557` (31639 B) —
+    sha256:`827b360b95d91d78d02d9571fadbb7b92e91bc96cc43707d381fb3817df15454`.
+  - playwright-stress-report — ID `7359234213` (794962 B) —
+    sha256:`6a7dedefd75d9d2f490410ed2c48a5fc3e8d28291caf6d8c10651d279a3079e1`.
+- **Tutarlılık doğrulaması:** reservation_deep (waitlist/city-ledger) + settings_audit/
+  admin/HR REVIEW kalemleri GERÇEK run #190 bulgularıdır (modül tablosu REVIEW
+  toplamı = 21 birebir mutabık); stale triage carryover DEĞİL. Envanter "passed" =
+  Playwright case-seviyesi (hard-throw yok); REVIEW = harness adım-içi annotation
+  (module-access 403 / data-state). Detay → drill §5.
+- **Drill:** `docs/drill_reports/20260602_stress_full_stress_suite_GREEN_708test_run190.md`.
+
+---
+
+## Run #184 — historical reference
+
+- **Tarih / commit:** 2026-06-01, commit `1055e6848aa047a3f8d46d5f5d05cde145d2b3fc`.
+- **Sonuç:** 708 test, status=Success, failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1440/0/19/54, P0=P1=0, P2=31 / P3=2 informational,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict
+  **GO WITH WATCH** (metrikler operatör raporundan; CI conclusion=success doğrulandı).
+- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26771158900
+  (run #184, run ID 26771158900, job ID 78910688457, branch main).
+- **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı):**
+  - stress-drill-report — ID `7339879559` (32351 B) —
+    sha256:`d21e9c5ad6be7731479e5994f99236a8118f94e3dc0397e65914c6a381d9bf74`.
+  - playwright-stress-report — ID `7339879193` (788756 B) —
+    sha256:`ebc0cb3b4cd3a26ce69cd2b0d278b6d5028680ebcadafaec2b0a6202e92b34ac`.
+- **Drift notu:** #184 operatör tarafından current baseline sayıldı ama bu zincir
+  ve `replit.md` o tarihte hiç #184'e güncellenmedi (docs #171'de kaldı). Bu kayıt
+  ilk kez backfill'dir; provenance CI'dan doğrulandı, fabrike EDİLMEDİ. #190
+  promote'u sırasında historical'a alındı.
+
+---
+
+## Run #171 — historical reference (önceki current; #190 promote'unda indirildi)
 
 - **Tarih / commit:** 2026-05-31, commit `b6c61862be61d111a5f725c786073fa57f35276f`
   ("Published your App" — Post-#170 Minimal Fix Pack'i içerir: e-Fatura VKN spec
@@ -73,7 +122,7 @@ yok.
   PASS/FAIL/REVIEW/SKIP=1380/0/50/43, P0=P1=0, P2=57 / P3=1 informational,
   external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**.
 - **Promote? HAYIR.** #168'den daha iyi değil (REVIEW +2, PASS −2, P2 aynı). O tarihte #168
-  current GREEN BASELINE olarak kaldı (artık #171 current); #170 yalnızca paket A+B/C/D/E/F sonrası doğrulama run'ıdır.
+  current GREEN BASELINE olarak kaldı (sonradan #171→#184→#190; artık #190 current); #170 yalnızca paket A+B/C/D/E/F sonrası doğrulama run'ıdır.
 - **Provenance:** #168 (`52575268`) Package C/D/E/F'in hepsinden ÖNCE; #170 hepsini İÇERİR
   (zincir: `52575268`→C`5c858cbe`→D`76f57095`→E`12452add`→F`443b2093`→docs`0daab6ec`→#170`b3d3bdb`).
   Delta gerçekten paket etkisini ölçer.
@@ -86,7 +135,7 @@ yok.
   DEĞİŞMEDİ); housekeeping selector-miss notu test-scope `candidates` + `/housekeeping-status`
   route'una hizalandı (status ladder / TTI gate DEĞİŞMEDİ). Folio C4 KOD DEĞİŞTİRİLMEDİ
   (path+shape doğru; charges_empty ayrımı CI detailShapeSnap gerektirir). O tarihte #168 current GREEN
-  BASELINE olarak kaldı; bu Minimal Fix Pack'in etkisi sonradan **Run #171 full stress ile doğrulandı** (current baseline).
+  BASELINE olarak kaldı; bu Minimal Fix Pack'in etkisi sonradan **Run #171 full stress ile doğrulandı** (o tarihte current; current artık #190).
 
 ---
 
