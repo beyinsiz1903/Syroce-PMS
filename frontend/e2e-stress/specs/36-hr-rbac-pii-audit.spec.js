@@ -41,19 +41,26 @@ const MOD = 'hr_rbac_pii';
 // Cross-department roller — tier-bağımsız temel set (spec 30 mirror).
 const ROLES = ['front_desk', 'housekeeping', 'finance', 'sales'];
 
-// HR-sensitive read endpoint matrisi. expectAuthorized:[] = HİÇBİR düşük-priv
-// rol erişmemeli (super_admin only — view_executive_reports / view_hr).
-// Backend'in finance rolüne payroll erişimi VERSE bile, cross-department
-// deny doctrine: HR yüzeyleri tek otorite kanalından (HR yönetici/super_admin)
-// geçer. Sapma → P1 informational + matrix violation kaydı.
+// HR-sensitive read endpoint matrisi. expectAuthorized = bu endpoint'e 2xx
+// (read) ile erişmesi MEŞRU olan düşük-priv roller. Boş [] = yalnız HR
+// yönetici (manage_hr) / super_admin; başka bir düşük-priv rol 2xx alırsa
+// P1 violation.
+//
+// Operatör kararı (Q1 nüans): Finance rolü MEŞRU bordro tüketicisidir —
+// payroll/salary/leave + personel dizinine READ erişimi YETKİLİDİR
+// (expectAuthorized:['finance']). ANCAK personel DİZİNİNDE (staff_list)
+// PII'yi MASKELI görür (backend _mask_hr_pii allow_finance_unmask=False);
+// bu garanti status matrisinde DEĞİL, test B'deki finance-principal PII
+// assert'iyle doğrulanır. perf_list finance dahil hiçbir düşük-priv role
+// kapalıdır (require_op manage_hr) → expectAuthorized:[].
 //
 // {endpoint, dynamic} — dynamic=true ise setup'ta {staff_id} fill edilir.
 const HR_SENSITIVE = [
-    { key: 'staff_list',      path: '/api/hr/staff',                              expectAuthorized: [] },
-    { key: 'salary_history',  path: '/api/hr/staff/{sid}/salary-history',          expectAuthorized: [], dynamic: true },
-    { key: 'payroll_month',   path: '/api/hr/payroll/{month}',                     expectAuthorized: [], dynamic: 'month' },
-    { key: 'payroll_export',  path: '/api/hr/payroll/export?month={month}',         expectAuthorized: [], dynamic: 'month' },
-    { key: 'leave_balance',   path: '/api/hr/leave-balance/{sid}',                  expectAuthorized: [], dynamic: true },
+    { key: 'staff_list',      path: '/api/hr/staff',                              expectAuthorized: ['finance'] },
+    { key: 'salary_history',  path: '/api/hr/staff/{sid}/salary-history',          expectAuthorized: ['finance'], dynamic: true },
+    { key: 'payroll_month',   path: '/api/hr/payroll/{month}',                     expectAuthorized: ['finance'], dynamic: 'month' },
+    { key: 'payroll_export',  path: '/api/hr/payroll/export?month={month}',         expectAuthorized: ['finance'], dynamic: 'month' },
+    { key: 'leave_balance',   path: '/api/hr/leave-balance/{sid}',                  expectAuthorized: ['finance'], dynamic: true },
     { key: 'perf_list',       path: '/api/hr/performance',                          expectAuthorized: [] },
 ];
 
@@ -361,6 +368,33 @@ test.describe('F8D-v2 § 36 — HR Cross-Department RBAC + PII + Audit', () => {
             status: pass ? 'PASS' : 'FAIL',
             endpoint: '/api/hr/staff',
             note: `status=${r.status} items=${items.length} pii_ok=${piiOk} token_ok=${tokOk}` });
+
+        // Operatör kararı (Q1 nüans): Finance personel DİZİNİNİ okuyabilir
+        // (yetkili) AMA TC/telefon/IBAN'ı MASKELI görmeli (backend
+        // _mask_hr_pii allow_finance_unmask=False). manage_hr/super_admin
+        // unmask kararına DOKUNULMAZ (Q2 açık). Finance principal yoksa
+        // honest SKIP. Bu, finance-mask backend değişikliğinin canlı kanıtı.
+        if (roleTokens.finance) {
+            const fr = await callTimed(request, 'get', '/api/hr/staff', undefined, roleTokens.finance);
+            samples.push(fr.ms);
+            if (fr.status >= 200 && fr.status < 300) {
+                const fPiiOk = assertHrPiiMasked(testInfo, MOD, fr.body,
+                    ['national_id', 'identity_number', 'tc_kimlik']);
+                const fTokOk = assertNoTokenLeak(testInfo, MOD, fr.body, 'staff_list_finance');
+                rec(testInfo, { module: MOD, step: 'staff_list_pii_finance',
+                    status: (fPiiOk && fTokOk) ? 'PASS' : 'FAIL',
+                    endpoint: '/api/hr/staff (finance principal)',
+                    note: `status=${fr.status} finance_pii_masked=${fPiiOk} token_ok=${fTokOk}` });
+            } else {
+                rec(testInfo, { module: MOD, step: 'staff_list_pii_finance', status: 'SKIP',
+                    endpoint: '/api/hr/staff (finance principal)',
+                    note: `finance read non-2xx status=${fr.status}` });
+            }
+        } else {
+            rec(testInfo, { module: MOD, step: 'staff_list_pii_finance', status: 'SKIP',
+                endpoint: '/api/hr/staff (finance principal)',
+                note: 'no finance role token (provisioning fail-soft)' });
+        }
     });
 
     test('C) Salary-history token+PII guard — per stress staff sample', async ({ request, stressTokens }, testInfo) => {

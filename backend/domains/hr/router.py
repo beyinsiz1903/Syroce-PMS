@@ -119,6 +119,7 @@ def _mask_hr_pii(
     *,
     self_id: str | None = None,
     self_email: str | None = None,
+    allow_finance_unmask: bool = True,
 ) -> dict | None:
     """Rol-bazlı PII maskeleme — staff/profile/salary serializer'larda kullanılır.
 
@@ -140,13 +141,20 @@ def _mask_hr_pii(
     if not record or not isinstance(record, dict):
         return record
     # Tam görünürlük (Task #264 — strict allowlist, KVKK least-privilege):
-    # yalnız HR Admin (manage_hr perm) + Finance role + super_admin role +
-    # self-service. view_hr_payroll TEK BAŞINA YETMEZ — payroll-view perm'i
-    # tutar görmek içindir, IBAN/TC için ayrı entitlement gerekir.
+    # yalnız HR Admin (manage_hr perm) + super_admin role + self-service.
+    # view_hr_payroll TEK BAŞINA YETMEZ — payroll-view perm'i tutar görmek
+    # içindir, IBAN/TC için ayrı entitlement gerekir.
     if _user_has_hr_op(current_user, "manage_hr"):
         return record
     role_lc = (getattr(current_user, "role", "") or "").lower()
-    if role_lc in ("finance", "super_admin"):
+    if role_lc == "super_admin":
+        return record
+    # Finance rolü bordro tüketicisidir: payroll/salary/leave serializer'larında
+    # unmask görür (allow_finance_unmask=True, varsayılan). Genel personel
+    # DİZİNİ (staff list) çağrısı allow_finance_unmask=False geçer → finance
+    # orada TC/telefon/IBAN'ı MASKELI görür (KVKK least-privilege; operatör
+    # kararı: finance cross-dept dizin PII'sine ihtiyaç duymaz, bordroya duyar).
+    if role_lc == "finance" and allow_finance_unmask:
         return record
     # Self-service: id eşleşmesi.
     rec_id = record.get("id") or record.get("staff_id") or record.get("user_id")
@@ -3032,9 +3040,15 @@ async def get_staff_list(
 
     combined = explicit + derived
     # Rol-bazlı PII maskeleme (post-query, response serializer aşamasında).
+    # Personel DİZİNİ: finance burada PII'yi maskeli görür (operatör kararı —
+    # bordro uçlarında unmask kalır, genel dizinde değil).
     self_id = str(getattr(current_user, 'id', '') or '')
     self_email = str(getattr(current_user, 'email', '') or '')
-    masked = [_mask_hr_pii(s, current_user, self_id=self_id, self_email=self_email) for s in combined]
+    masked = [
+        _mask_hr_pii(s, current_user, self_id=self_id, self_email=self_email,
+                     allow_finance_unmask=False)
+        for s in combined
+    ]
     return {'staff': masked, 'total': len(masked), 'source': source}
 
 

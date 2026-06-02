@@ -34,11 +34,26 @@ the reported count, you've fully explained the finding and can act on only the g
 (`require_op` / `_authorize_staff_access` / none) and the role→permission map. An endpoint with
 no gate sitting next to gated create/detail siblings is the real bug. Match the sibling's gate.
 
+## Finance PII is payroll-scoped, not directory-scoped (operator decision)
+The `finance` role is a legitimate PAYROLL consumer: it keeps UNMASKED PII on
+payroll/salary/leave surfaces (it needs salary + IBAN to run payroll/SGK/tax),
+but it must NOT get cross-department PII from the general staff DIRECTORY.
+`_mask_hr_pii` carries `allow_finance_unmask` (default True at every caller);
+only the staff-list directory caller passes False, so finance is masked there
+and unmasked everywhere else. **Why:** KVKK least-privilege — "finance does
+payroll" is real, "finance browses everyone's TC/phone" is not. **How to apply:**
+when a stress matrix flags finance on an HR surface, decide per-surface: payroll
+surface -> finance authorized + unmasked (don't tighten); generic directory ->
+finance authorized to READ but PII masked (mask, don't deny). Do NOT widen the
+mask to per-staff profile detail or to manage_hr/super_admin without a fresh
+operator call — those were deliberately left out of scope.
+
 ## PII-masking matrix corollary
-`_mask_hr_pii` unmasks for `manage_hr` holders AND `role in ("finance","super_admin")` by design.
-Every base role that can READ `/hr/staff` (admin, supervisor, finance) also unmasks — so the
-masking branch is effectively only exercised by a granted "department manager" (view_hr +
-assigned_department, no manage_hr). A PII-masking assertion run with the tenant ADMIN token
+`_mask_hr_pii` unmasks for `manage_hr` holders, `super_admin`, and self-service. `finance` unmasks
+ONLY where `allow_finance_unmask=True` (the default — payroll/salary/leave); the staff-directory
+caller passes False so finance IS masked there now (see the operator-decision section above).
+On the directory the masking branch is exercised by finance and by any granted "department manager"
+(view_hr + assigned_department, no manage_hr). A PII-masking assertion run with the tenant ADMIN token
 (`stress_token`, role=admin → has manage_hr) is a false positive: admin seeing unmasked PII is
 correct. To assert masking live you must provision a principal that can read the list but lacks
 the unmask gate — which no base role provides; that's a test-design/product question, not a leak.
