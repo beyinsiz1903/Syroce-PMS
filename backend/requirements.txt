@@ -26,7 +26,7 @@ prometheus-client>=0.20
 psutil==7.2.2
 pycountry==26.2.16
 pydantic==2.12.5
-PyJWT==2.12.1
+PyJWT==2.13.0
 pymongo==4.8.0
 pyotp==2.9.0
 pytest==9.0.3
