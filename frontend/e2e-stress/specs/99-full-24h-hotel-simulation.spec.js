@@ -118,13 +118,18 @@ test.describe('F8J § 99 — Full 24h hotel simulation', () => {
 
         bookings = await fetchAllByPrefix(request, stressTokens.stress_token,
             '/api/pms/bookings', 'stress_prefix', prefix,
-            { maxPages: 8, pageSize: 200 });
+            // Use the helper's full safety-net (maxPages default 60). The old
+            // hard-coded maxPages:8 (1600-row window) lost the seed-prefixed
+            // bookings once accumulated walk-ins from earlier specs pushed the
+            // oldest (seed) rows past page 8 → false "data scarcity" SKIP.
+            { maxPages: 60, pageSize: 200 });
         // CI 2026-05-28 NO-GO follow-up (mirror 03/05 fix): `?include_virtual=true`
         // backend `pms_rooms.py:289` use_cache koşulunu false yapar → cache_warmer'ın
         // stress_prefix'siz projection (`cache_warmer.py:176-179`) drop'undan kaçar.
         rooms = await fetchAllByPrefix(request, stressTokens.stress_token,
             '/api/pms/rooms?include_virtual=true', 'stress_prefix', prefix,
-            { maxPages: 8, pageSize: 200 });
+            // Same safety-net as bookings above (maxPages 8→60).
+            { maxPages: 60, pageSize: 200 });
 
         rec(testInfo, { module: MOD, step: 'setup_baseline', status: 'PASS',
             note: `bookings=${bookings.length} rooms=${rooms.length} pilot_before=${pilotBefore?.count} probe_statuses=${JSON.stringify(probeStatuses)}` });

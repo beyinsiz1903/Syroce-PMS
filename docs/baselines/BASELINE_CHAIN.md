@@ -49,6 +49,13 @@ yok.
   auth-gated → #195 gövde REVIEW-toplamı bu oturumda satır-satır re-türetilmedi;
   sınıflandırma operatör raporu + granülarite-modeli + #190 §5'e dayanır.
 - **Drill:** `docs/drill_reports/20260603_stress_full_stress_suite_GREEN_708test_run195.md`.
+- **Post-#195 REVIEW/SKIP Reduction (Option 1, CI-pending; baseline DEĞİŞMEZ):**
+  3 doctrine-safe fix (finance_folio harvest `limit=5→50`; full_24h `maxPages 8→60`
+  helper safety-net override; admin db-stats 500-hardening guarded 200+`degraded[]`)
+  + housekeeping cold-boot TTI JUSTIFY (index fake-green) + ~22 by-design/irreducible
+  tek tek gerekçeli. Beklenen modest düşüş SKIP 11→~9, REVIEW 15→~12/13 (SIFIR DEĞİL);
+  nihai delta sonraki full stress workflow_dispatch ile doğrulanır (agent dispatch
+  ETMEZ). Drill: `docs/drill_reports/20260603_review_skip_reduction_post_run195.md`.
 
 ---
 

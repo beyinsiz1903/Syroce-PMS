@@ -515,46 +515,69 @@ async def get_rate_limit_status(
 async def get_database_stats(
     current_user: User = Depends(get_current_user)
 ):
-    """Get database optimization and performance statistics"""
+    """Get database optimization and performance statistics.
+
+    Degrades gracefully (HTTP 200 + partial payload) when an individual
+    sub-query is unavailable on the deployed tier. Atlas shared tiers restrict
+    the privileged `serverStatus`/`collStats` commands; previously any one of
+    those raising turned the whole endpoint into a 500. Each sub-call is now
+    isolated and failures are surfaced in a `degraded` list rather than
+    collapsing the response — same guarded-return posture as the audit-logs /
+    hr-staff read hardening. (RBAC posture unchanged: any-auth, /system/*.)
+    """
+    degraded: list[str] = []
+
+    index_info = None
+    collection_stats = None
     try:
         from infra.database_optimizer import DatabaseOptimizer
         optimizer = DatabaseOptimizer(db)
+        try:
+            index_info = await optimizer.verify_indexes()
+        except Exception as e:
+            degraded.append(f"indexes: {str(e)[:120]}")
+        try:
+            collection_stats = await optimizer.get_collection_stats()
+        except Exception as e:
+            degraded.append(f"collections: {str(e)[:120]}")
+    except Exception as e:
+        degraded.append(f"optimizer_init: {str(e)[:120]}")
 
-        # Get index info
-        index_info = await optimizer.verify_indexes()
-
-        # Get collection stats
-        collection_stats = await optimizer.get_collection_stats()
-
-        # Get server status
+    connections = {}
+    opcounters = {}
+    uptime_seconds = 0
+    try:
         server_status = await db.command('serverStatus')
         connections = server_status.get('connections', {})
         opcounters = server_status.get('opcounters', {})
-
-        return {
-            'indexes': index_info,
-            'collections': collection_stats,
-            'connections': {
-                'current': connections.get('current', 0),
-                'available': connections.get('available', 0),
-                'total_created': connections.get('totalCreated', 0),
-            },
-            'operations': {
-                'insert': opcounters.get('insert', 0),
-                'query': opcounters.get('query', 0),
-                'update': opcounters.get('update', 0),
-                'delete': opcounters.get('delete', 0),
-            },
-            'pool_config': {
-                'max_pool_size': 500,
-                'min_pool_size': 50,
-                'max_idle_time_ms': 45000,
-            },
-            'uptime_seconds': server_status.get('uptime', 0),
-            'timestamp': datetime.now(UTC).isoformat(),
-        }
+        uptime_seconds = server_status.get('uptime', 0)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get DB stats: {str(e)}")
+        # Atlas shared tiers / restricted DB roles deny serverStatus.
+        degraded.append(f"server_status: {str(e)[:120]}")
+
+    return {
+        'indexes': index_info,
+        'collections': collection_stats,
+        'connections': {
+            'current': connections.get('current', 0),
+            'available': connections.get('available', 0),
+            'total_created': connections.get('totalCreated', 0),
+        },
+        'operations': {
+            'insert': opcounters.get('insert', 0),
+            'query': opcounters.get('query', 0),
+            'update': opcounters.get('update', 0),
+            'delete': opcounters.get('delete', 0),
+        },
+        'pool_config': {
+            'max_pool_size': 500,
+            'min_pool_size': 50,
+            'max_idle_time_ms': 45000,
+        },
+        'uptime_seconds': uptime_seconds,
+        'degraded': degraded or None,
+        'timestamp': datetime.now(UTC).isoformat(),
+    }
 # ── GET /system/errors ──
 @router.get("/system/errors")
 async def get_recent_errors(

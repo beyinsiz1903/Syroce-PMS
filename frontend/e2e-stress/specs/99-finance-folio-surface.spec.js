@@ -108,7 +108,7 @@ test.describe('F9D § 99 — Finance Folio & Guest-Purchase Surface', () => {
         // Module probe — GET /api/folio/list (require_op view_finance_reports).
         // Non-2xx → module/RBAC blocked → A–H SKIP, security probes still run.
         const probe = await callTimed(
-            request, 'get', '/api/folio/list?limit=5', null,
+            request, 'get', '/api/folio/list?limit=50', null,
             stressTokens.stress_token, { timeout: 15_000 },
         );
         if (probe.status !== 200) {
@@ -125,7 +125,10 @@ test.describe('F9D § 99 — Finance Folio & Guest-Purchase Surface', () => {
             rec(testInfo, { module: MOD, step: 'setup_module_probe', status: 'PASS', http: 200 });
         }
 
-        // Harvest a stress-tenant OPEN folio for mutation tests.
+        // Harvest a stress-tenant OPEN folio for mutation tests. The probe
+        // above lists limit=50 (was 5) so the OPEN filter still finds a folio
+        // after earlier specs (04 folio-mass void/checkout) close the first
+        // few — avoids a false no_stress_folio SKIP without seeding.
         if (!moduleBlocked) {
             const items = probe.body?.folios || probe.body?.items || (Array.isArray(probe.body) ? probe.body : []);
             const openFolio = items.find((f) => (f.status || 'open') === 'open' && f.id) || items[0];
@@ -148,7 +151,7 @@ test.describe('F9D § 99 — Finance Folio & Guest-Purchase Surface', () => {
         if (stressTokens.pilot_token) {
             try {
                 const pr = await callTimed(
-                    request, 'get', '/api/folio/list?limit=5', null,
+                    request, 'get', '/api/folio/list?limit=50', null,
                     stressTokens.pilot_token, { timeout: 15_000 },
                 );
                 if (pr.status === 200) {
