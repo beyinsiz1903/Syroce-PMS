@@ -227,13 +227,17 @@ test.describe('F8Q § 45 — Push notification batch dry-run', () => {
         // key'leri taşımaz → harmless; misleading "recipient/message" alan adları
         // EKLENMEDİ (helper onları no-op sayar, sahte kapsam iddiası olur).
         const masked = assertPiiMasked(testInfo, MOD, items, ['phone', 'email']);
-        // Serbest-metin PII: activity message="{recipient} — {use_case}" / title
-        // recipient'i gömer. Demo seed gerçek-domain (@gmail.com) recipient
-        // kullanır (`_get_demo_delivery_logs`) → gerçek-domain email BEKLENEN
-        // olabilir; bu yüzden SOFT REVIEW (hard-fail DEĞİL — false-P0 riski).
-        // Sentetik test domain'leri (.invalid/.test/.example) muaf. NOT: /activity
-        // `view_guest_list` ile gate'li DEĞİL (delivery-logs ise gate'li) →
-        // recipient ifşası Wave 9 RBAC/ürün-kontrat kararı (mask + gate?).
+        // Serbest-metin recipient görünürlüğü RBAC'a bağlıdır: /activity
+        // `view_guest_list` (VIEW_REPORTS) OLMAYAN rolde inline email/phone'u
+        // maskeler, OLAN rolde RAW gösterir (backend messaging.py:1059-1141,
+        // `_can_view_pii` dalı; _mask_freetext_pii + _mask_recipient — Task #213).
+        // Bu adım stress_token (tenant admin = view_guest_list VAR) ile çağırır →
+        // raw recipient BEKLENEN/yetkili çıktıdır, KVKK ihlali DEĞİL. Maskeleme
+        // gate'i (view_guest_list OLMAYAN rol → maskeli) ayrıca § E'de housekeeping
+        // principal ile P0 hard-assert edilir. Bu yüzden burada freetext PII yalnız
+        // GÖZLEM amaçlı sayılır; REVIEW'a DÜŞÜRÜLMEZ (admin için by-design — aksi
+        // halde, /activity artık per-rol maskeli iken, stale over-flag olurdu).
+        // Sentetik test domain'leri (.invalid/.test/.example) zaten muaf.
         const EMAIL_RE = /[^\s@"<>]+@[^\s@"<>]+\.[A-Za-z]{2,}/g;
         let freetextPii = 0;
         for (const it of items.slice(0, 50)) {
@@ -246,10 +250,6 @@ test.describe('F8Q § 45 — Push notification batch dry-run', () => {
                 }
             }
         }
-        if (freetextPii > 0) {
-            recFinding(testInfo, 'P2', MOD, 'activity-feed recipient PII serbest-metinde (REVIEW)',
-                `gerçek-domain email activity message/title'da görünür (count=${freetextPii}). /activity view_guest_list-gated değil → Wave 9 RBAC/ürün-kontrat.`);
-        }
         // Boş feed → PII/leak assertion'ı vacuous (boş kümede trivially-pass).
         // Fake-green önlemek için 2xx+0 item durumunu REVIEW olarak işaretle.
         const feedEmpty = feed.status < 400 && items.length === 0;
@@ -259,8 +259,8 @@ test.describe('F8Q § 45 — Push notification batch dry-run', () => {
         }
         rec(testInfo, { module: MOD, step: 'activity_feed',
             status: feed.status >= 500 || feedLeaks > 0 || !masked ? 'FAIL'
-                : (feedEmpty || freetextPii > 0) ? 'REVIEW' : 'PASS',
-            note: `status=${feed.status} items=${items.length} leaks=${feedLeaks} pii_masked=${masked} freetext_pii=${freetextPii} empty=${feedEmpty}` });
+                : feedEmpty ? 'REVIEW' : 'PASS',
+            note: `status=${feed.status} items=${items.length} leaks=${feedLeaks} pii_masked=${masked} freetext_pii=${freetextPii}(admin=by-design,gate→§E) empty=${feedEmpty}` });
         const extOk = await assertNoExternalCallsPostBatch(testInfo, MOD, 'activity_feed', stressState, request, stressTokens.pilot_token);
         expect(extOk).toBe(true);
         expect(feedLeaks, `activity-feed cross-tenant leak count=${feedLeaks}`).toBe(0);

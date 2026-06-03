@@ -258,12 +258,23 @@ test.describe('F8A § 05 — Reservation lifecycle (create / modify / cancel / n
         // Stress seed checked_in bookings'inden bir tanesi için overbooking-check
         // → conflict raporlanmalı (mevcut booking var).
         // İkinci aşama: aynı oda + aynı tarih için quick-booking POST → reject bekle.
-        const candidate = bookings.find((b) => b.room_id && b.check_in && b.check_out);
-        if (!candidate) { rec(testInfo, { module: MOD, step: 'overbook_setup', status: 'SKIP', note: 'no candidate booking' }); return; }
+        // Candidate ACTIVE olmalı (pending/confirmed/guaranteed/checked_in =
+        // ACTIVE_BOOKING_STATES, reservation_state_machine.py). cancelled/no_show
+        // room_night_lock TUTMAZ (atomic_booking.py:41-43) → ne overbooking-check'te
+        // conflict verir ne de yeni POST'u bloke eder; böyle birini seçmek HER İKİ
+        // alt-kontrolü false-negative yapar (ve dup-POST'u yanlışlıkla guard-yok P0
+        // gibi gösterir). Status-filtresiz find ilk cancelled'ı seçebilirdi.
+        const ACTIVE = ['pending', 'confirmed', 'guaranteed', 'checked_in'];
+        const candidate = bookings.find((b) => b.room_id && b.check_in && b.check_out && ACTIVE.includes(b.status));
+        if (!candidate) { rec(testInfo, { module: MOD, step: 'overbook_setup', status: 'SKIP', note: 'no active candidate booking' }); return; }
 
-        // 1. Pozitif overbooking-check: conflict raporlanmalı.
+        // 1. Pozitif overbooking-check: conflict raporlanmalı. exclude_booking_id
+        // GÖNDERİLMEZ — o param "kendi booking'ini modify et" senaryosu içindir ve
+        // tek aktif booking'i (candidate'ın kendisi) dışlayıp false-negative verir.
+        // Pozitif test: dolu odaya YENİ booking candidate ile çakışmalı. Canlı
+        // kanıt: exclude=self → has_conflict=false; exclude'suz → true (n=1).
         const checkR = await callTimed(request, 'get',
-            `/api/pms-core/overbooking-check?room_id=${encodeURIComponent(candidate.room_id)}&check_in=${encodeURIComponent(candidate.check_in)}&check_out=${encodeURIComponent(candidate.check_out)}&exclude_booking_id=${encodeURIComponent(candidate.id)}`,
+            `/api/pms-core/overbooking-check?room_id=${encodeURIComponent(candidate.room_id)}&check_in=${encodeURIComponent(candidate.check_in)}&check_out=${encodeURIComponent(candidate.check_out)}`,
             undefined, stressTokens.stress_token);
         const hasConflict = checkR.body?.has_conflict === true;
         rec(testInfo, { module: MOD, step: 'overbook_check_positive', status: hasConflict ? 'PASS' : 'REVIEW',

@@ -24,3 +24,18 @@ always exercised, never a vacuous skip.
 from a tenant you cannot mutate, flip the direction — seed in the writable
 tenant, attack from the other token. Guard the block with the seeded-id list and
 fall back to P2 only if the upstream create genuinely returned non-2xx that run.
+
+**Vacuous-404 trap (fake-green):** the flipped victim id MUST be a REAL resource
+owned by the writable tenant, harvested from that tenant's own list/detail
+endpoint. A *synthesized* or wrong-keyed id (e.g. using a booking_id as a
+folio_id when the backend resolves folios strictly by `{id, tenant_id}` and ids
+are uuid4) produces a 404 by non-existence — which the guard-PASS branch happily
+counts as "tenant guard enforced" even though the guard was never exercised.
+Always confirm the harvest endpoint path resolves (probe it) and returns the
+victim collection's real id; `/api/folio/list` returns `{folios:[{id}]}`, while
+`/api/folios` is a dead route (404) that silently yields an empty harvest →
+vacuous SKIP.
+
+**Don't count 5xx/0 as PASS:** a cross-tenant guard PASS branch must require a
+4xx (`>=400 && <500`); classifying *any* non-2xx as PASS lets a 5xx/timeout
+fake-green. Route 5xx/0 to REVIEW, not PASS.

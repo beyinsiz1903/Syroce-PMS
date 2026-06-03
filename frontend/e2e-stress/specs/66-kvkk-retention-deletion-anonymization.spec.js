@@ -118,63 +118,106 @@ test.describe.serial('F8AA KVKK retention/deletion/anonymization', () => {
                     `DELETE http=${rBogus.status} for bogus id; backend should 404.`);
             }
 
-            // B. Cross-tenant single delete: pilot harvest photo_id → stress_token
-            //    DELETE (reason verili, schema-valid). Backend query
-            //    `{photo_id, tenant_id: stress_tenant}` eşleşmeyeceği için 404
-            //    PASS; 2xx + deleted:true = P0 (KVKK + tenant breach).
+            // B. Cross-tenant single delete — flip-seed pattern (memory:
+            //    stress-idor-seed-via-attacker-flip). Pilot tenant TEMİZ
+            //    (drift=0) → pilot foto harvest çoğu kez boş, eski yön vacuous
+            //    SKIP veriyordu. GÜVENİLİR yön: STRESS id-foto harvest (sToken)
+            //    + PILOT bearer DELETE → backend `{photo_id, tenant_id: pilot}`
+            //    eşleşmez → 404 PASS (mutation YOK; foto stress tenant'ta, pilot
+            //    tenant'ta yok). 2xx = P0 (KVKK + tenant breach). Ek olarak
+            //    fırsatçı stress→pilot hard-assert (canlı pilot PII koruması)
+            //    pilot foto varsa korunur.
             if (pToken) {
-                const pilotPhotos = await fetchSingle(request, pToken, '/api/checkin/online/id-photos?limit=5');
-                const items = pilotPhotos?.raw?.photos || pilotPhotos?.raw?.items || pilotPhotos?.list || [];
-                const pilotPhotoId = items[0]?.photo_id || items[0]?.id || items[0]?._id || null;
-                if (pilotPhotoId) {
+                const stressPhotos = await fetchSingle(request, sToken, '/api/checkin/online/id-photos?limit=5');
+                const sItems = stressPhotos?.raw?.photos || stressPhotos?.raw?.items || stressPhotos?.list || [];
+                const stressPhotoId = sItems[0]?.photo_id || sItems[0]?.id || sItems[0]?._id || null;
+                if (stressPhotoId) {
                     const r = await callTimed(request, 'delete',
-                        `/api/checkin/online/id-photos/${pilotPhotoId}?${reasonQS}`,
-                        undefined, sToken);
+                        `/api/checkin/online/id-photos/${stressPhotoId}?${reasonQS}`,
+                        undefined, pToken);
                     if (r.status >= 200 && r.status < 300) {
-                        recFinding(testInfo, 'P0', MOD, 'Cross-tenant ID-photo single delete IDOR',
-                            `stress_token DELETE /api/checkin/online/id-photos/${pilotPhotoId} (reason given) → ${r.status} (PILOT ID photo deleted! KVKK + tenant breach).`);
-                        expect(r.status, 'cross-tenant ID-photo delete must be 403/404').toBeGreaterThanOrEqual(400);
-                    } else {
+                        recFinding(testInfo, 'P0', MOD, 'Cross-tenant ID-photo single delete IDOR (pilot→stress)',
+                            `pilot_token DELETE /api/checkin/online/id-photos/${stressPhotoId} (reason given) → ${r.status} (STRESS ID photo deleted! KVKK + tenant breach).`);
+                        expect(r.status, 'pilot→stress ID-photo delete must be 4xx').toBeGreaterThanOrEqual(400);
+                    } else if (r.status >= 400 && r.status < 500) {
                         rec(testInfo, { module: MOD, step: 'idphoto_xtenant_single_delete', status: 'PASS',
-                            note: `http=${r.status} (tenant guard enforced)` });
+                            note: `http=${r.status} (pilot→stress tenant guard enforced, 4xx)` });
+                    } else {
+                        rec(testInfo, { module: MOD, step: 'idphoto_xtenant_single_delete', status: 'REVIEW',
+                            note: `http=${r.status} (non-4xx; 5xx/0 PASS sayILMAZ)` });
                     }
                 } else {
                     rec(testInfo, { module: MOD, step: 'idphoto_xtenant_single_delete', status: 'SKIP',
-                        note: 'pilot photo harvest empty' });
+                        note: 'stress photo harvest empty' });
+                }
+                // Fırsatçı stress→pilot (canlı pilot PII koruması) — pilot foto
+                // varsa stress_token DELETE ASLA 2xx olmamalı; harvest boşsa atla.
+                const pilotPhotos = await fetchSingle(request, pToken, '/api/checkin/online/id-photos?limit=5');
+                const pItems = pilotPhotos?.raw?.photos || pilotPhotos?.raw?.items || pilotPhotos?.list || [];
+                const pilotPhotoId = pItems[0]?.photo_id || pItems[0]?.id || pItems[0]?._id || null;
+                if (pilotPhotoId) {
+                    const r2 = await callTimed(request, 'delete',
+                        `/api/checkin/online/id-photos/${pilotPhotoId}?${reasonQS}`,
+                        undefined, sToken);
+                    if (r2.status >= 200 && r2.status < 300) {
+                        recFinding(testInfo, 'P0', MOD, 'Cross-tenant ID-photo single delete IDOR (stress→pilot)',
+                            `stress_token DELETE pilot photo ${pilotPhotoId} → ${r2.status} (PILOT ID photo deleted! KVKK breach).`);
+                    }
+                    expect(r2.status, 'stress→pilot ID-photo delete must be 4xx').toBeGreaterThanOrEqual(400);
                 }
 
-                // C. Cross-tenant bulk-delete: pilot booking_id harvest → stress_token
-                //    POST bulk-delete. Backend query `{booking_id, tenant_id:
-                //    stress_tenant}` eşleşmediği için matched=0/deleted_count=0
-                //    PASS (idempotent op). deleted_count>0 = P0.
-                const pilotBookings = await fetchSingle(request, pToken, '/api/pms/bookings?limit=5');
-                const pbItems = pilotBookings?.raw?.bookings || pilotBookings?.raw?.items || pilotBookings?.list || [];
-                const pilotBookingId = pbItems[0]?.id || pbItems[0]?._id || pbItems[0]?.booking_id || null;
-                if (pilotBookingId) {
+                // C. Cross-tenant bulk-delete — flip-seed. GÜVENİLİR yön: STRESS
+                //    booking_id harvest (seed her zaman mevcut) + PILOT bearer
+                //    POST bulk-delete. Backend `{booking_id, tenant_id: pilot}`
+                //    eşleşmez → deleted_count=0 PASS (mutation YOK; booking_id
+                //    global-unique UUID → pilot tenant'ta o foto yok) | 403/404.
+                //    deleted>0 = P0 tenant-scope kırık. Ek fırsatçı stress→pilot
+                //    (pilot booking varsa) canlı pilot koruması.
+                const stressBk = await fetchSingle(request, sToken, '/api/pms/bookings?limit=5');
+                const sbkItems = stressBk?.raw?.bookings || stressBk?.raw?.items || stressBk?.list || [];
+                const stressBookingId = sbkItems[0]?.id || sbkItems[0]?._id || sbkItems[0]?.booking_id || null;
+                if (stressBookingId) {
                     const r = await callTimed(request, 'post', '/api/checkin/online/id-photos/bulk-delete',
-                        { booking_id: pilotBookingId, reason: REASON }, sToken);
+                        { booking_id: stressBookingId, reason: REASON }, pToken);
                     if (r.status >= 200 && r.status < 300) {
                         const deleted = r.body?.deleted_count ?? r.body?.deleted ?? 0;
                         const matched = r.body?.matched ?? null;
                         if (deleted > 0) {
-                            recFinding(testInfo, 'P0', MOD, 'Cross-tenant ID-photo bulk-delete IDOR',
-                                `bulk-delete deleted_count=${deleted} for pilot booking_id=${pilotBookingId} via stress_token. Tenant scope query broken.`);
-                            expect(deleted, 'cross-tenant bulk-delete must return 0 deleted').toBe(0);
+                            recFinding(testInfo, 'P0', MOD, 'Cross-tenant ID-photo bulk-delete IDOR (pilot→stress)',
+                                `bulk-delete deleted_count=${deleted} for stress booking_id=${stressBookingId} via pilot_token. Tenant scope query broken.`);
+                            expect(deleted, 'pilot→stress bulk-delete must return 0 deleted').toBe(0);
                         } else {
                             rec(testInfo, { module: MOD, step: 'idphoto_xtenant_bulk_delete',
                                 status: 'PASS',
-                                note: `http=${r.status} deleted=${deleted} matched=${matched ?? 'n/a'} (tenant-scope guard)` });
+                                note: `http=${r.status} deleted=${deleted} matched=${matched ?? 'n/a'} (pilot→stress tenant-scope guard)` });
                         }
                     } else if (r.status === 403 || r.status === 404) {
                         rec(testInfo, { module: MOD, step: 'idphoto_xtenant_bulk_delete', status: 'PASS',
-                            note: `http=${r.status} (tenant guard rejected before query)` });
+                            note: `http=${r.status} (pilot→stress tenant guard rejected before query)` });
                     } else {
                         rec(testInfo, { module: MOD, step: 'idphoto_xtenant_bulk_delete', status: 'REVIEW',
                             note: `http=${r.status}` });
                     }
                 } else {
                     rec(testInfo, { module: MOD, step: 'idphoto_xtenant_bulk_delete', status: 'SKIP',
-                        note: 'pilot booking harvest empty' });
+                        note: 'stress booking harvest empty' });
+                }
+                // Fırsatçı stress→pilot bulk (canlı pilot koruması) — pilot
+                // booking varsa stress_token bulk-delete deleted=0 olmalı.
+                const pilotBookings = await fetchSingle(request, pToken, '/api/pms/bookings?limit=5');
+                const pbItems = pilotBookings?.raw?.bookings || pilotBookings?.raw?.items || pilotBookings?.list || [];
+                const pilotBookingId = pbItems[0]?.id || pbItems[0]?._id || pbItems[0]?.booking_id || null;
+                if (pilotBookingId) {
+                    const r2 = await callTimed(request, 'post', '/api/checkin/online/id-photos/bulk-delete',
+                        { booking_id: pilotBookingId, reason: REASON }, sToken);
+                    if (r2.status >= 200 && r2.status < 300) {
+                        const deleted2 = r2.body?.deleted_count ?? r2.body?.deleted ?? 0;
+                        if (deleted2 > 0) {
+                            recFinding(testInfo, 'P0', MOD, 'Cross-tenant ID-photo bulk-delete IDOR (stress→pilot)',
+                                `bulk-delete deleted_count=${deleted2} for pilot booking_id=${pilotBookingId} via stress_token. Tenant scope query broken.`);
+                        }
+                        expect(deleted2, 'stress→pilot bulk-delete must return 0 deleted').toBe(0);
+                    }
                 }
             }
         } finally {

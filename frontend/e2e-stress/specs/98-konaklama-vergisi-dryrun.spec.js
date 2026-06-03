@@ -594,8 +594,9 @@ test.describe.serial('F8AD konaklama vergisi dryrun', () => {
                     note: 'stress declaration seed yok (test 1 module-blocked) — pilot→stress decl IDOR target yok' });
             }
 
-            // Pilot folio harvest.
-            const pilotFolios = await fetchSingle(request, pToken, '/api/folios?limit=5');
+            // Pilot folio harvest. Path = /api/folio/list (NOT /api/folios →
+            // 404; eski yanlış path route-404 ile vacuous SKIP üretiyordu).
+            const pilotFolios = await fetchSingle(request, pToken, '/api/folio/list?limit=5');
             const folioItems = pilotFolios?.raw?.folios || pilotFolios?.raw?.items || pilotFolios?.list || [];
             const pilotFolioId = folioItems[0]?.id || folioItems[0]?._id || null;
             if (pilotFolioId) {
@@ -621,9 +622,19 @@ test.describe.serial('F8AD konaklama vergisi dryrun', () => {
             // tenant'ta yok → folio_not_found 404). Bu yön HİÇBİR mutation
             // üretmez: pilot tenant'ta o folio yok (yazma yapılmaz), stress
             // folio'ya da pilot token erişemez (tenant guard). 2xx = P0 breach.
-            const stressBookingsForFolio = await fetchSingle(request, sToken, '/api/pms/bookings?limit=5');
-            const sbItems = stressBookingsForFolio?.raw?.bookings || stressBookingsForFolio?.list || [];
-            const stressFolioId = sbItems[0]?.folio_id || null;
+            // GERÇEK stress folio_id harvest. NOT (architect-iter): konaklama
+            // post-folio backend'i (konaklama_vergisi_core.py) folio'yu SADECE
+            // `{id, folio_id} == {id: folio_id, tenant_id}` ile arar — folio
+            // id'leri uuid4 ve booking_id'den FARKLI; booking_id fallback
+            // "non-existence 404" üretip cross-tenant guard'ı ÖLÇMEDEN vacuous
+            // PASS yapardı (fake-green). `/api/folio/list` tenant-scoped → sToken
+            // ile STRESS folio'larını döner. Pilot bu GERÇEK stress folio'ya
+            // post-folio denediğinde backend `{id: stress_folio, tenant_id:
+            // pilot}` eşleşmez → 404 (NON-vacuous tenant-guard ölçümü). Seed
+            // YOK, mutation YOK (pilot tenant'ta o folio yok → yazma olmaz).
+            const stressFolios = await fetchSingle(request, sToken, '/api/folio/list?limit=5');
+            const sfItems = stressFolios?.raw?.folios || stressFolios?.raw?.items || stressFolios?.list || [];
+            const stressFolioId = sfItems[0]?.id || sfItems[0]?._id || sfItems[0]?.folio_id || null;
             if (stressFolioId) {
                 const r = await callTimed(request, 'post',
                     `${BASE}/post-folio/${stressFolioId}`, {}, pToken);
@@ -632,13 +643,16 @@ test.describe.serial('F8AD konaklama vergisi dryrun', () => {
                         'Cross-tenant Konaklama Vergisi post-folio IDOR (pilot→stress)',
                         `pilot_token POST ${BASE}/post-folio/${stressFolioId} → ${r.status} (STRESS folio'ya pilot token ile konaklama vergisi posting yazıldı). KESIN tenant breach + finansal mutation.`);
                     expect(r.status, 'pilot→stress post-folio must be 4xx').toBeGreaterThanOrEqual(400);
-                } else {
+                } else if (r.status >= 400 && r.status < 500) {
                     rec(testInfo, { module: MOD, step: 'idor_pilot_post_stress_folio', status: 'PASS',
-                        note: `http=${r.status} (tenant guard enforced)` });
+                        note: `http=${r.status} (tenant guard enforced, 4xx)` });
+                } else {
+                    rec(testInfo, { module: MOD, step: 'idor_pilot_post_stress_folio', status: 'REVIEW',
+                        note: `http=${r.status} (non-4xx; 5xx/0 PASS sayILMAZ)` });
                 }
             } else {
                 rec(testInfo, { module: MOD, step: 'idor_pilot_post_stress_folio', status: 'SKIP',
-                    note: 'stress folio harvest empty (booking.folio_id yok)' });
+                    note: 'stress folio harvest empty (no seeded folio)' });
             }
 
             // P0 IDOR — config PUT + finalize. Bu endpoint'ler tenant_id

@@ -258,13 +258,20 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
     // ────────────────────────────────────────────────────────────────────
     test('C) Overbooking oversell guard (duplicate booking reject)', async ({ request, stressTokens }, testInfo) => {
         if (moduleBlocked) { rec(testInfo, { module: MOD, step: 'overbook_oversell', status: 'SKIP' }); test.skip(); return; }
-        const candidate = bookings.find((b) => b.room_id && b.check_in && b.check_out && b.status === 'checked_in');
+        // ACTIVE_BOOKING_STATES — cancelled/no_show room_night_lock tutmaz
+        // (atomic_booking.py:41-43) → ne conflict verir ne bloke eder. checked_in-only
+        // filtre seed'de checked_in yoksa SKIP'e düşer (status dağılımı confirmed/
+        // no_show/cancelled, sıfır checked_in olabilir); aktif-set kullan.
+        const ACTIVE = ['pending', 'confirmed', 'guaranteed', 'checked_in'];
+        const candidate = bookings.find((b) => b.room_id && b.check_in && b.check_out && ACTIVE.includes(b.status));
         if (!candidate) {
-            rec(testInfo, { module: MOD, step: 'overbook_oversell', status: 'SKIP', note: 'no checked_in candidate' });
+            rec(testInfo, { module: MOD, step: 'overbook_oversell', status: 'SKIP', note: 'no active candidate' });
             return;
         }
+        // exclude_booking_id YOK — self-exclude tek aktif booking'i çıkarıp
+        // false-negative verir (canlı kanıt). Pozitif conflict için dahil bırak.
         const checkR = await callTimed(request, 'get',
-            `/api/pms-core/overbooking-check?room_id=${encodeURIComponent(candidate.room_id)}&check_in=${encodeURIComponent(candidate.check_in)}&check_out=${encodeURIComponent(candidate.check_out)}&exclude_booking_id=${encodeURIComponent(candidate.id)}`,
+            `/api/pms-core/overbooking-check?room_id=${encodeURIComponent(candidate.room_id)}&check_in=${encodeURIComponent(candidate.check_in)}&check_out=${encodeURIComponent(candidate.check_out)}`,
             undefined, stressTokens.stress_token);
         const hasConflict = checkR.body?.has_conflict === true;
 
@@ -296,8 +303,12 @@ test.describe('F8N § 95 — Reservation Lifecycle Deep Stress', () => {
     test('D) Overbooking yield guard (room-type sample probe)', async ({ request, stressTokens }, testInfo) => {
         if (moduleBlocked) { rec(testInfo, { module: MOD, step: 'overbook_yield', status: 'SKIP' }); test.skip(); return; }
         // Stress seed checked_in bookings'ten 3 farklı oda için yield probe.
-        const sample = bookings.filter((b) => b.room_id && b.check_in && b.check_out).slice(0, 3);
-        if (sample.length === 0) { rec(testInfo, { module: MOD, step: 'overbook_yield', status: 'SKIP', note: 'no sample' }); return; }
+        // Aktif-only sample — cancelled/no_show lock tutmaz → has_conflict=false
+        // (false-negative), gerçek yield miss DEĞİL. Status-filtresiz slice ilk
+        // 3'e cancelled alıp REVIEW'a düşürüyordu.
+        const ACTIVE = ['pending', 'confirmed', 'guaranteed', 'checked_in'];
+        const sample = bookings.filter((b) => b.room_id && b.check_in && b.check_out && ACTIVE.includes(b.status)).slice(0, 3);
+        if (sample.length === 0) { rec(testInfo, { module: MOD, step: 'overbook_yield', status: 'SKIP', note: 'no active sample' }); return; }
         let conflicts = 0; let probed = 0;
         const samples = [];
         for (const b of sample) {
