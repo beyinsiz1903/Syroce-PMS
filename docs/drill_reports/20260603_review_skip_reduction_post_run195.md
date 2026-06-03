@@ -219,4 +219,5 @@ yazmak yanlış hedefe çalışır — drill projeksiyonu canlı probe ile sağl
   #196'daki db-stats status=0 REVIEW gitti. Yani projeksiyon bu sefer TUTTU çünkü
   fix gerçekten kırık (timeout) failure-mode'u hedefledi (yukarıdaki "Kalıcı ders" (a) maddesi).
   REVIEW -1 + P2 -1 doğrudan bu fix'e atfedilir; RBAC posture DEĞİŞMEDİ.
-- Promote: #197 current GREEN BASELINE (`docs/baselines/BASELINE_CHAIN.md`), #196 historical.
+- ~~Promote: #197 current GREEN BASELINE (`docs/baselines/BASELINE_CHAIN.md`), #196 historical.~~
+- **DÜZELTME (Murat kararı, 2026-06-03): #197 PROMOTE EDİLMEDİ.** Bu satırdaki promote önerisi geçersiz. Yalnızca #196→#197 deltasına (REVIEW -1) bakıyordu; promote-relevant olan **#195 → #197 deltasıdır: REVIEW +5 ARTTI** (15→20). P2 -1 iyileşmesine rağmen WATCH yüzeyi genişlediği için #197 #195 kadar temiz DEĞİL. Resmi CURRENT GREEN BASELINE **#195 olarak KALIR**; #197 (ve #196) post-baseline verification / coverage-expansion run'ı olarak arşivlendi. Tek doğruluk kaynağı: `docs/baselines/BASELINE_CHAIN.md`.

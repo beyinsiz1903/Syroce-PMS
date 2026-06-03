@@ -1,9 +1,11 @@
 # Stress Suite Baseline Chain
 
 Bu dosya, web/backend Full Stress Suite'in resmi baseline zincirinin tek kayıt
-kaynağıdır. **Yalnızca Run #197 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
-run'lar tarihsel referanstır (historical reference) — provenance ve metrikler
-korunur ama "current/official baseline" DEĞİLDİR.
+kaynağıdır. **Yalnızca Run #195 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
+run'lar tarihsel referans veya post-baseline verification run'dır — provenance ve
+metrikler korunur ama "current/official baseline" DEĞİLDİR. #196 ve #197, #195'ten
+SONRA koşulan verification / coverage-expansion run'larıdır; her ikisi de #195'e
+göre REVIEW'i ARTIRDIĞI için PROMOTE EDİLMEDİ (baseline pointer #195'te kalır).
 
 > Kapsam notu: Bu web/backend full stress suite baseline'ıdır, **/100 uygulama
 > kapsamı DEĞİLDİR** — mobile/F10 ayrı ve açıktır (doğrulanmadı). Merkezi kapsam
@@ -17,7 +19,7 @@ yok.
 
 ---
 
-## Run #197 — CURRENT GREEN BASELINE
+## Run #197 — VERIFICATION RUN (NOT PROMOTED, post-#195)
 
 - **Tarih / deploy commit:** 2026-06-03, deploy commit `218054fb` (post-#196:
   db-stats latency fix — her alt-çağrı `asyncio.wait_for` time-bound +
@@ -40,10 +42,23 @@ yok.
   +1 run-variance step (total step 1622→1623), over-claim YOK (`asyncio.wait_for` +
   `maxTimeMS`; RBAC posture DEĞİŞMEDİ). Kalan REVIEW=20 / SKIP=11'in çoğu by-design (409/403/422/
   data-scarcity) — reduction doğası gereği sınırlı.
+- **PROMOTE KARARI (Murat, 2026-06-03): PROMOTE EDİLMEDİ.** #197 güvenli ve
+  başarılı bir verification run'dır (failedTests=0, P0=P1=0, external_calls=[],
+  pilot_drift=0, cleanup#2 idempotent=true, GO WITH WATCH) ama #195'i resmi
+  web/backend GREEN BASELINE olarak DEĞİŞTİRMEZ. **#195 → #197 DELTA
+  (promote-relevant, baseline'a göre):** PASS **+22** (1570→1592), REVIEW **+5
+  ARTTI** (15→20), SKIP 11 SABİT, P2 **-1** (23→22), P3/FAIL/P0/P1 SABİT. P2 -1
+  iyileşmesine rağmen REVIEW +5 ile WATCH yüzeyi genişledi → #197, #195 kadar
+  TEMİZ DEĞİL. Bu nedenle baseline pointer #195'te kalır; #197 post-baseline
+  verification / coverage-expansion olarak arşivlenir. Özellikle full_24h önceki
+  run'lara göre daha fazla gerçek senaryo koştu ama 6 yeni REVIEW üretti:
+  sabah_walkin_20, perf:sabah_walk_in, oglen_inventory_movement,
+  oglen_procurement_pr, aksam_folio_charge, perf:aksam_charge (iyi coverage artışı
+  ama baseline kalitesi #195 kadar temiz değil). Düz "GO" / "/100" iddiası YOK.
 
 ---
 
-## Run #196 — historical reference
+## Run #196 — VERIFICATION RUN (NOT PROMOTED, post-#195)
 
 - **Tarih / deploy commit:** 2026-06-03, deploy commit `2582b14c` (post-#195
   REVIEW/SKIP Reduction pack merge'i içerir: finance_folio harvest `limit=5→50`,
@@ -81,7 +96,7 @@ yok.
 
 ---
 
-## Run #195 — historical reference
+## Run #195 — CURRENT GREEN BASELINE
 
 - **Tarih / commit:** 2026-06-03, commit `a3d43a1cf71dbda61b9795539da127e845727974`
   ("Published your App" — WATCH Reduction Pack'i içerir: parent commit
