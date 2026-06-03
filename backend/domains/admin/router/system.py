@@ -538,13 +538,13 @@ async def get_database_stats(
         optimizer = DatabaseOptimizer(db)
         try:
             index_info = await asyncio.wait_for(optimizer.verify_indexes(), timeout=4.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             degraded.append("indexes: timeout>4s (tier-slow; bounded)")
         except Exception as e:
             degraded.append(f"indexes: {str(e)[:120]}")
         try:
             collection_stats = await asyncio.wait_for(optimizer.get_collection_stats(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             degraded.append("collections: timeout>5s (tier-slow per-collection collStats; bounded)")
         except Exception as e:
             degraded.append(f"collections: {str(e)[:120]}")
@@ -561,7 +561,7 @@ async def get_database_stats(
         connections = server_status.get('connections', {})
         opcounters = server_status.get('opcounters', {})
         uptime_seconds = server_status.get('uptime', 0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         degraded.append("server_status: timeout>4s (tier-slow/restricted; bounded)")
     except Exception as e:
         # Atlas shared tiers / restricted DB roles deny serverStatus.
