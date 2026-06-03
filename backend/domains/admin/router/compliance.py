@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from common.json_safe import json_safe, ts_to_iso
 from core.database import db
 from core.helpers import (
     require_super_admin_guard,
@@ -414,13 +415,32 @@ async def get_security_audit_logs(
     # them on demand). Exclude them here: prevents the conditional 500 and
     # trims list-response PII without changing the visible audit metadata.
     projection = {'_id': 0, 'before_snapshot': 0, 'after_snapshot': 0}
-    logs = await db.audit_logs.find(query, projection).sort('timestamp', -1).limit(100).to_list(100)
-
-    return {
-        'logs': logs,
-        'count': len(logs),
-        'date_range': f'Last {days} days'
-    }
+    try:
+        logs = await db.audit_logs.find(query, projection).sort('timestamp', -1).limit(100).to_list(100)
+        # Mixed-type timestamps (legacy str + new datetime) and stray BSON
+        # types (Decimal128/bytes/ObjectId) on any row would 500 at FastAPI's
+        # encode step (which runs OUTSIDE this try). Normalize the timestamp +
+        # total-serialize so the audit-log list stays 200-stable. RBAC gate and
+        # visible audit metadata are unchanged.
+        for _log in logs:
+            if 'timestamp' in _log:
+                _log['timestamp'] = ts_to_iso(_log['timestamp'])
+        logs = [json_safe(_log) for _log in logs]
+        return {
+            'logs': logs,
+            'count': len(logs),
+            'date_range': f'Last {days} days',
+        }
+    except Exception:
+        # PII-safe: query/exception detail is not logged to message; the
+        # traceback goes to Sentry. Degraded empty response instead of 500.
+        logger.exception("security_audit_logs query failed (degraded fallback)")
+        return {
+            'logs': [],
+            'count': 0,
+            'date_range': f'Last {days} days',
+            'degraded': True,
+        }
 # ── GET /gdpr/data-requests ──
 @router.get("/gdpr/data-requests")
 async def get_gdpr_data_requests(

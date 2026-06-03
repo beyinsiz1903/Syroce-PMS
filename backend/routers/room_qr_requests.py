@@ -369,15 +369,26 @@ async def public_submit_request(
     t: str = Query(...),
 ):
     """Misafir talep gönderir (giriş gerekmez)."""
+    # Rate limit BEFORE token verification. The public submit surface must not
+    # allow an unbounded burst against the HMAC-verify path: previously an
+    # invalid-token flood was rejected at `_verify_token` (403) WITHOUT ever
+    # incrementing the per-room+IP counter, so the throttle never tripped under
+    # a garbage-token burst (DoS sentinel observed no 429). Running `_rl_check`
+    # first bounds repeated invalid submits from the same room+IP to 20/10min.
+    # This does NOT weaken auth — the token is still verified below and an
+    # invalid token still yields 403; legit guests (valid token, <=20/10min)
+    # are unaffected. Redis-backed, shared across instances; fail-open on cache
+    # outage. IP is resolved via trusted-proxy aware `_client_ip`.
+    client_ip = _client_ip(request)
+    # Key namespaced by tenant_id too: room_id is a UUID (cross-tenant collision
+    # is already astronomically unlikely) but tenant-scoping the bucket removes
+    # any theoretical cross-tenant contention behind a shared egress IP.
+    if not _rl_check(f"{tenant_id}:{room_id}:{client_ip}"):
+        raise HTTPException(status_code=429, detail="Çok fazla talep — lütfen sonra deneyin")
+
     salt = await _get_qr_salt(tenant_id)
     if not _verify_token(tenant_id, room_id, t, salt):
         raise HTTPException(status_code=403, detail="Geçersiz QR token")
-
-    # Rate limit: 10 dk içinde aynı oda+IP için 20 submit (Redis-backed,
-    # çoklu instance arasında paylaşımlı). IP'yi trusted-proxy ile al.
-    client_ip = _client_ip(request)
-    if not _rl_check(f"{room_id}:{client_ip}"):
-        raise HTTPException(status_code=429, detail="Çok fazla talep — lütfen sonra deneyin")
 
     if payload.category not in CATEGORY_MAP:
         raise HTTPException(status_code=400, detail=f"Geçersiz kategori: {payload.category}")

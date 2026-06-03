@@ -23,6 +23,7 @@ from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
+from common.json_safe import json_safe
 from core.database import _raw_db, db
 from core.security import get_current_user
 from security.upload_validator import validate_document_bytes
@@ -3049,7 +3050,11 @@ async def get_staff_list(
                      allow_finance_unmask=False)
         for s in combined
     ]
-    return {'staff': masked, 'total': len(masked), 'source': source}
+    # Privileged rows (manage_hr / super_admin / self-service) are returned
+    # UNMASKED and may carry raw BSON types (Decimal128 salary, datetime
+    # hire_date) that 500 at FastAPI's encode step. Total-serialize the page
+    # without changing masking or RBAC.
+    return {'staff': [json_safe(s) for s in masked], 'total': len(masked), 'source': source}
 
 
 @router.get("/hr/system-users")
