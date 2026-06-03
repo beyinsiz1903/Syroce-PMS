@@ -28,3 +28,14 @@ specs gracefully degrade a module-access 403 or empty data-state to REVIEW). So
 "inventory passed but triage says failed" is a granularity artifact, NOT stale
 carryover — confirm by checking the module table's REVIEW distribution sums to the
 report's total REVIEW count before deciding it's real vs stale.
+
+There are actually THREE axes: (1) Playwright case inventory (passed/skipped),
+(2) per-module step PASS/REVIEW/SKIP, (3) severity-triage P0–P3 findings. They are
+independent: a module can read 13/0/0 (clean step axis) and STILL carry a P2 (e.g.
+"audit marker not found") because the P2 is a soft severity finding on a case that
+passes at step level. So "clean module table but a P2 line" is NOT a contradiction
+and NOT stale — it's axis (3) vs axis (2). Artifact ZIP **body** download is
+auth-gated (401, only metadata/digest is anonymous), so a fresh line-by-line body
+re-sum is CI/auth-deferred; when you can't download, say so honestly and rest the
+classification on the structural model + the prior baseline's line-by-line check +
+operator-transcribed counts — never fabricate a "verified the sums" claim.

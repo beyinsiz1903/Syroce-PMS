@@ -1,7 +1,7 @@
 # Stress Suite Baseline Chain
 
 Bu dosya, web/backend Full Stress Suite'in resmi baseline zincirinin tek kayıt
-kaynağıdır. **Yalnızca Run #190 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
+kaynağıdır. **Yalnızca Run #194 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
 run'lar tarihsel referanstır (historical reference) — provenance ve metrikler
 korunur ama "current/official baseline" DEĞİLDİR.
 
@@ -17,7 +17,40 @@ yok.
 
 ---
 
-## Run #190 — CURRENT GREEN BASELINE
+## Run #194 — CURRENT GREEN BASELINE
+
+- **Tarih / commit:** 2026-06-03, commit `9f4b3a74d894f52464e2f0f6a0037387df58f636`
+  ("Update test performance budget to account for increased data size" — seed perf
+  budget 30s→45s recalibration; bu zincirde folio detail + audit timeline + folio
+  activities/operations 500 fix'leri merge edilmiştir).
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1565/0/17/11, P0=P1=0, P2=24 / P3=0,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict
+  **GO WITH WATCH**.
+- **#190 → #194 delta:** PASS +94, REVIEW −4, SKIP −33, P2 −6, P3 −2;
+  FAIL/P0/P1 sabit 0. Güçlü pozitif ilerleme (folio-mass void, HR modülleri,
+  settings_audit artık temiz koşuyor); regresyon yok. En değerli kazanım SKIP 44→11.
+- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26869789889
+  (run #194, run ID 26869789889, job ID 79241995727, event=schedule, branch main).
+- **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı, fabrike EDİLMEDİ):**
+  - stress-drill-report — ID `7379444307` (30627 B) —
+    sha256:`346dec0216b6e00257c4a0c1972317ba411b158ff970e239c2888ed39cf0996f`.
+  - playwright-stress-report — ID `7379443979` (808734 B) —
+    sha256:`5a59046a3245be53bfb4f647dc6a12f21b7c4f0400466c62b5bdeae50c75507e`.
+- **Seed perf notu:** #194 seed total=26097.7ms eski 30s eşiğini de geçer →
+  #194 yeşili budget 30s→45s değişikliğine BAĞLI DEĞİL.
+- **Tutarlılık doğrulaması:** Murat'ın 3 maddesi (settings_audit "audit marker not
+  found", reservation_deep waitlist/city-ledger, finance_folio 409) granülarite
+  artefaktı / legitimate harness annotation'dır (modül-tablosu adım ekseni ≠
+  severity-triage ekseni); stale carryover DEĞİL. Yöntem dürüstlüğü: artifact ZIP
+  gövdesi auth-gated (401) → #194 gövde REVIEW-toplamı bu oturumda satır-satır
+  re-türetilemedi; sınıflandırma granülarite-modeli + #190 §5 (aynı yapı satır-satır
+  doğrulanmış) + operatör-transkript sayılarına dayanır. Detay → drill §5.
+- **Drill:** `docs/drill_reports/20260603_stress_full_stress_suite_GREEN_708test_run194.md`.
+
+---
+
+## Run #190 — historical reference (önceki current; #194 promote'unda indirildi)
 
 - **Tarih / commit:** 2026-06-02, commit `adfa87d39f91bac5221247217f89d3207a08ab4a`
   ("Published your App" — messaging `/send` graceful-delivery 5xx guard + HR
