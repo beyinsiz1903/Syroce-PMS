@@ -1,7 +1,7 @@
 # Stress Suite Baseline Chain
 
 Bu dosya, web/backend Full Stress Suite'in resmi baseline zincirinin tek kayıt
-kaynağıdır. **Yalnızca Run #194 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
+kaynağıdır. **Yalnızca Run #195 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
 run'lar tarihsel referanstır (historical reference) — provenance ve metrikler
 korunur ama "current/official baseline" DEĞİLDİR.
 
@@ -17,7 +17,42 @@ yok.
 
 ---
 
-## Run #194 — CURRENT GREEN BASELINE
+## Run #195 — CURRENT GREEN BASELINE
+
+- **Tarih / commit:** 2026-06-03, commit `a3d43a1cf71dbda61b9795539da127e845727974`
+  ("Published your App" — WATCH Reduction Pack'i içerir: parent commit
+  `c40c277f` `/api/security/audit-logs` + `/api/hr/staff` encode-500 hardening
+  (`backend/common/json_safe.py`) + Room QR submit rate-limit/auth reorder +
+  tenant-scoped limiter key).
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1570/0/15/11, P0=P1=0, P2=23 / P3=0,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true, verdict
+  **GO WITH WATCH**.
+- **#194 → #195 delta:** PASS +5, REVIEW −2, P2 −1; SKIP/FAIL/P0/P1/P3 sabit.
+  Temiz, pozitif, regresyonsuz ilerleme. WATCH pack kanıtı: #194'te görünen
+  audit-logs 500 ve hr/staff 500 yüzeyleri #195 P2/REVIEW listelerinde ARTIK
+  YOK (T001+T002 landed). Not: rate_limit_boundary P2 sürüyor ama detay
+  `qr_submit: skipped no_room` → T003'ün QR fix'i bu run'da stress-exercise
+  EDİLMEDİ (yalnızca canlı probe ile doğrulandı); kalan finding ayrı bir yüzey
+  olan `auth_login` burst'üdür (0 throttled — login-throttle ordering, yeni WATCH
+  adayı). activity-PII (T004) by-design olarak sürüyor (beklenen).
+- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26879084806
+  (run #195, run ID 26879084806, job ID 79274137231, event=workflow_dispatch,
+  run_attempt=1, branch main, süre ~70dk / 1h10m8s).
+- **Artifacts (2) — provenance TAM (GitHub Actions API `digest` alanından doğrulandı, fabrike EDİLMEDİ):**
+  - stress-drill-report (30547 B) —
+    sha256:`d67b9615cf547531da2abc532f7afc3f8a84602aff4884a8fae133e5b67de228`.
+  - playwright-stress-report (809220 B) —
+    sha256:`83160fb57dd4ba012a5ea9b68a5057f28fda157bef692124e4c02fb8deed36c5`.
+- **Yöntem dürüstlüğü:** run/job/artifact metadata anonim public GitHub API'dan
+  doğrulandı (head_sha=a3d43a1c, conclusion=success). Artifact ZIP gövdesi
+  auth-gated → #195 gövde REVIEW-toplamı bu oturumda satır-satır re-türetilmedi;
+  sınıflandırma operatör raporu + granülarite-modeli + #190 §5'e dayanır.
+- **Drill:** `docs/drill_reports/20260603_stress_full_stress_suite_GREEN_708test_run195.md`.
+
+---
+
+## Run #194 — historical reference (önceki current; #195 promote'unda indirildi)
 
 - **Tarih / commit:** 2026-06-03, commit `9f4b3a74d894f52464e2f0f6a0037387df58f636`
   ("Update test performance budget to account for increased data size" — seed perf
