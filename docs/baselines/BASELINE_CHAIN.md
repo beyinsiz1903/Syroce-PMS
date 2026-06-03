@@ -1,7 +1,7 @@
 # Stress Suite Baseline Chain
 
 Bu dosya, web/backend Full Stress Suite'in resmi baseline zincirinin tek kayıt
-kaynağıdır. **Yalnızca Run #196 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
+kaynağıdır. **Yalnızca Run #197 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
 run'lar tarihsel referanstır (historical reference) — provenance ve metrikler
 korunur ama "current/official baseline" DEĞİLDİR.
 
@@ -17,7 +17,33 @@ yok.
 
 ---
 
-## Run #196 — CURRENT GREEN BASELINE
+## Run #197 — CURRENT GREEN BASELINE
+
+- **Tarih / deploy commit:** 2026-06-03, deploy commit `218054fb` (post-#196:
+  db-stats latency fix — her alt-çağrı `asyncio.wait_for` time-bound +
+  collStats/serverStatus `maxTimeMS`; UP041 ruff lint fix `asyncio.TimeoutError`
+  → builtin `TimeoutError`). Murat tarafından manuel workflow_dispatch edildi.
+- **Sonuç:** 708 test, conclusion=success, failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1592/0/20/11, P0=P1=0, P2=22 / P3=0, external_calls=[],
+  pilot_drift=0, verdict **GO WITH WATCH**.
+- **Provenance (anonim GitHub API, fabrike YOK):** repo
+  `beyinsiz1903/emergent-yeni-uygulama`, run #197 (id 26904195621),
+  head_sha=`218054fb`, conclusion=success. Artifacts: stress-drill-report
+  `sha256:ff5ffbb3969fc1788889c39de99b6aef857367953e3692f095f2e450aef0ef73`,
+  playwright-stress-report
+  `sha256:b95dd97d2454bca19152811ae5dd7e3317a16aeb2bae41fb44cd93236dd8ba57`.
+- **#196 → #197 DÜRÜST DELTA:** PASS **+2** (1590→1592), REVIEW **-1** (21→20),
+  P2 **-1** (23→22), SKIP 11 SABİT, FAIL/P0/P1/P3 SABİT, regresyon YOK.
+  **db-stats latency fix DOĞRULANDI (honest win):** admin_rbac modülü artık TAM
+  YEŞİL (21/0/0/0) — #196'daki db-stats status=0 REVIEW gitti; REVIEW -1 + P2 -1
+  doğrudan bu fix'e atfedilir; PASS +2'nin 1'i bu reclassify (REVIEW→PASS), diğer
+  +1 run-variance step (total step 1622→1623), over-claim YOK (`asyncio.wait_for` +
+  `maxTimeMS`; RBAC posture DEĞİŞMEDİ). Kalan REVIEW=20 / SKIP=11'in çoğu by-design (409/403/422/
+  data-scarcity) — reduction doğası gereği sınırlı.
+
+---
+
+## Run #196 — historical reference
 
 - **Tarih / deploy commit:** 2026-06-03, deploy commit `2582b14c` (post-#195
   REVIEW/SKIP Reduction pack merge'i içerir: finance_folio harvest `limit=5→50`,

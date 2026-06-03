@@ -203,3 +203,20 @@ kalemler tanım gereği reclassify EDİLEMEZ. Dolayısıyla "REVIEW/SKIP reducti
 hedefi, kalan kalemlerin çoğu by-design olduğu için doğası gereği SINIRLIDIR.
 Failure-mode'u (timeout vs exception vs status code) kanıtla doğrulamadan fix
 yazmak yanlış hedefe çalışır — drill projeksiyonu canlı probe ile sağlanmalıydı.
+
+---
+
+## OUTCOME — Run #197 (db-stats fix CI-DOĞRULANDI)
+
+- **Provenance (anonim GitHub API, fabrike YOK):** repo `beyinsiz1903/emergent-yeni-uygulama`,
+  run #197 (id 26904195621), head_sha=`218054fb`, conclusion=success.
+  Artifacts: stress-drill-report `sha256:ff5ffbb3…`, playwright-stress-report `sha256:b95dd97d…`.
+- **Sonuç:** 708 test, PASS/FAIL/REVIEW/SKIP=1592/0/20/11, P0=P1=0, P2=22/P3=0,
+  external_calls=[], pilot_drift=0, verdict GO WITH WATCH.
+- **#196 → #197 DÜRÜST DELTA:** PASS +2 (1590→1592), REVIEW -1 (21→20), P2 -1 (23→22),
+  SKIP 11 SABİT, FAIL/P0/P1/P3 SABİT, regresyon YOK.
+- **db-stats latency fix DOĞRULANDI:** admin_rbac modülü artık TAM YEŞİL (21/0/0/0) —
+  #196'daki db-stats status=0 REVIEW gitti. Yani projeksiyon bu sefer TUTTU çünkü
+  fix gerçekten kırık (timeout) failure-mode'u hedefledi (yukarıdaki "Kalıcı ders" (a) maddesi).
+  REVIEW -1 + P2 -1 doğrudan bu fix'e atfedilir; RBAC posture DEĞİŞMEDİ.
+- Promote: #197 current GREEN BASELINE (`docs/baselines/BASELINE_CHAIN.md`), #196 historical.
