@@ -136,3 +136,70 @@ weakening → doctrine-ihlali. Bunlar gerçek-doğru sonuçların informational 
   sonuç. Nihai sayı bir sonraki full stress (workflow_dispatch) ile doğrulanacak;
   agent dispatch ETMEZ.
 - Hiçbir assert/guard/RBAC/PII gevşetilmedi; pilot dokunulmadı; seed eklenmedi.
+
+---
+
+## POST-MORTEM — Run #196 ACTUAL vs PROJECTION (2026-06-03, deploy commit 2582b14c)
+
+Murat reduction pack'i deploy edip (#196) manuel workflow_dispatch etti. Sonuç
+provenance anonim GitHub API'dan doğrulandı: run ID 26891329963, head_sha=2582b14c,
+conclusion=success; artifacts stress-drill-report digest sha256:2018a4255f…,
+playwright-stress-report sha256:56f40a6b08…. Tam rapor:
+`attached_assets/Pasted-Full-Operational-Stress-Suite-CI-one-shot-F8A-F8B-F8C-F_1780505483439.txt`.
+
+### Projeksiyon vs gerçek
+
+| Metrik | #195 | Projeksiyon | #196 GERÇEK | Sonuç |
+|---|---|---|---|---|
+| PASS | 1570 | — | 1590 (+20) | ✓ pozitif |
+| REVIEW | 15 | ~12/13 (düşüş) | **21 (+6 ARTIŞ)** | ✗ TERS |
+| SKIP | 11 | ~9 (düşüş) | 11 (sabit) | ✗ tutmadı |
+| FAIL/P0/P1 | 0 | 0 | 0 | ✓ |
+| P2 / P3 | 23 / 0 | 23 / 0 | 23 / 0 | ✓ sabit |
+| verdict | GO WITH WATCH | — | GO WITH WATCH | ✓ |
+
+**Projeksiyon YANLIŞ çıktı. Spin yok: reduction hedefi tutmadı.** Suite yine de
+GREEN GO WITH WATCH, doctrine-critical regresyon YOK.
+
+### Kök neden (dürüst)
+
+1. **finance_folio (`limit=5→50`) + full_24h (`maxPages 8→60`) harvest fix'leri:**
+   mekanik çalıştı (SKIP'li step'ler artık çalışıyor) ama unblock edilen step'ler
+   by-design REVIEW koşullarına çarptı:
+   - finance_folio A0: 409 "open folio already exists"; D: 409 payment-perm yok.
+   - full_24h: sabah_walkin n=25 ok=0 s400:21, oglen movement 0/3, procurement
+     422, aksam charge s400:5.
+   Bunlar drill'de ZATEN by-design justify edilenlerdi → bir SKIP'i unblock edip
+   by-design REVIEW yüzeyini açığa çıkarmak SKIP→REVIEW dönüşümüdür. **Revert
+   ETMEDİM** çünkü revert = step'i tekrar SKIP'e gizlemek = skip-as-pass (doctrine
+   ihlali). REVIEW artışı dürüst ve doctrine-mandated sonuç.
+
+2. **admin db-stats fix'i YANLIŞ failure-mode hedefledi:** drill'de "serverStatus
+   Atlas-deny 500 → guarded 200" varsaydım. Ama #196'da admin_rbac
+   super_admin_baseline'da `/api/system/db-stats` **status=0** (HTTP yok = timeout),
+   500 değil. Gerçek darboğaz: `get_collection_stats` her koleksiyon için `collStats`
+   döngüsü (Atlas çok-koleksiyon → onlarca saniye). 500-hardening (try/except)
+   timeout'u çözmez — exception fırlamaz, sadece asılır.
+
+### Post-#196 düzeltme (CI-pending #197)
+
+`backend/domains/admin/router/system.py` get_database_stats: her yavaş alt-çağrı
+`asyncio.wait_for` ile time-bounded (verify_indexes 4s / get_collection_stats 5s /
+serverStatus 4s). Bütçe aşılırsa `degraded[]`'e yazılıp 200 dönülür.
+**Canlı read-only probe (localhost:8000, stress-admin token):** önce >95s/status=0
+→ şimdi **HTTP 200, time_total=8.52s**, `degraded:['collections: timeout>5s
+(tier-slow per-collection collStats; bounded)']`, serverStatus çalıştı
+(connections.current=140). RBAC posture (any-auth /system/*) DEĞİŞMEDİ;
+PII/assert/guard dokunulmadı. Bir sonraki workflow_dispatch (#197) admin_rbac
+db-stats'in 2xx'e döndüğünü doğrulamalı — agent dispatch ETMEZ.
+
+### Kalıcı ders (genelleştirilebilir)
+
+**SKIP'i unblock ederek "azaltmak" REVIEW'i azaltmaz** — unblock'lanan step
+büyük olasılıkla by-design bir koşula (409/403/422/data-scarcity) çarpıp
+SKIP→REVIEW'e döner. Gerçek sayım düşüşü yalnızca (a) gerçekten kırık bir şeyi
+onarmaktan (db-stats timeout gibi) veya (b) meşru reclassify'dan gelir; by-design
+kalemler tanım gereği reclassify EDİLEMEZ. Dolayısıyla "REVIEW/SKIP reduction"
+hedefi, kalan kalemlerin çoğu by-design olduğu için doğası gereği SINIRLIDIR.
+Failure-mode'u (timeout vs exception vs status code) kanıtla doğrulamadan fix
+yazmak yanlış hedefe çalışır — drill projeksiyonu canlı probe ile sağlanmalıydı.

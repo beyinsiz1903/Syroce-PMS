@@ -1,7 +1,7 @@
 # Stress Suite Baseline Chain
 
 Bu dosya, web/backend Full Stress Suite'in resmi baseline zincirinin tek kayıt
-kaynağıdır. **Yalnızca Run #195 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
+kaynağıdır. **Yalnızca Run #196 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
 run'lar tarihsel referanstır (historical reference) — provenance ve metrikler
 korunur ama "current/official baseline" DEĞİLDİR.
 
@@ -17,7 +17,45 @@ yok.
 
 ---
 
-## Run #195 — CURRENT GREEN BASELINE
+## Run #196 — CURRENT GREEN BASELINE
+
+- **Tarih / deploy commit:** 2026-06-03, deploy commit `2582b14c` (post-#195
+  REVIEW/SKIP Reduction pack merge'i içerir: finance_folio harvest `limit=5→50`,
+  full_24h `maxPages 8→60`, admin db-stats per-sub-call guard + `degraded[]`).
+  Murat tarafından manuel workflow_dispatch edildi.
+- **Sonuç:** 708 test, conclusion=success, failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1590/0/21/11, P0=P1=0, P2=23 / P3=0, external_calls=[],
+  pilot_drift=0, verdict **GO WITH WATCH**.
+- **#195 → #196 DÜRÜST DELTA:** PASS **+20** (1570→1590), REVIEW **+6 ARTTI**
+  (15→21), SKIP 11 SABİT, FAIL/P0/P1/P2/P3 SABİT, regresyon YOK. **Reduction
+  hedefi TUTMADI** (projeksiyon SKIP→~9 / REVIEW→~12/13 yanlış çıktı). Kök neden
+  (spin yok): (1) finance_folio + full_24h harvest fix'leri SKIP'li step'leri
+  unblock etti ama bunlar by-design REVIEW yüzeylerine düştü (finance_folio A0/D
+  409 open-folio/payment-perm; full_24h sabah_walkin n=25 ok=0 s400, oglen
+  movement 0/3, procurement 422, aksam charge s400) → REVIEW net arttı. Revert
+  EDİLMEDİ (skip-as-pass olurdu). (2) admin db-stats fix'i yanlış failure-mode
+  hedefledi: gerçek sorun serverStatus 500 değil, per-collection collStats
+  timeout/latency (admin_rbac super_admin_baseline db-stats status=0). Post-#196
+  `asyncio.wait_for` latency-bound fix landed (canlı probe 200@8.5s; CI-pending
+  #197), RBAC posture değişmedi.
+- **DÜRÜST META-BULGU:** SKIP'i unblock ederek azaltmak REVIEW'i azaltmaz —
+  unblock'lanan step by-design koşula çarpıp SKIP→REVIEW'e döner. Gerçek sayım
+  düşüşü yalnızca gerçekten kırık şeyi onarmaktan veya meşru reclassify'dan gelir
+  (by-design'lar reclassify EDİLEMEZ).
+- **Run URL:** https://github.com/beyinsiz1903/emergent-yeni-uygulama/actions/runs/26891329963
+  (run #196, run ID 26891329963, event=workflow_dispatch).
+- **Provenance:** anonim GitHub API'dan doğrulandı — head_sha=2582b14c,
+  conclusion=success; artifacts stress-drill-report digest
+  sha256:2018a4255f…, playwright-stress-report sha256:56f40a6b08…. Fabrike
+  EDİLMEDİ (artifact gövdesi auth-gated → gövde re-sum CI-deferred; tutarlılık
+  granülarite-modeli + operatör-rapor'a dayanır).
+- **Rapor:** `attached_assets/Pasted-Full-Operational-Stress-Suite-CI-one-shot-F8A-F8B-F8C-F_1780505483439.txt`
+  (#196 tam rapor, 1029 satır). Post-mortem:
+  `docs/drill_reports/20260603_review_skip_reduction_post_run195.md`.
+
+---
+
+## Run #195 — historical reference
 
 - **Tarih / commit:** 2026-06-03, commit `a3d43a1cf71dbda61b9795539da127e845727974`
   ("Published your App" — WATCH Reduction Pack'i içerir: parent commit

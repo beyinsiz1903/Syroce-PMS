@@ -25,6 +25,20 @@ question; the privileged command is denied, not the user.
 
 **How to apply:** any read endpoint that surfaces DB/server internals must assume
 each privileged command can be denied per-deployment and degrade gracefully.
-Verifying the happy path live in dev can be blocked separately — `get_collection_stats`
-iterating many accumulated dev collections can take >90s; that latency is
-pre-existing and not added by the per-sub-call wrapping.
+
+**CRITICAL correction (verified live): the dominant failure mode is TIMEOUT, not
+a denial-500.** `get_collection_stats` runs per-collection `collStats` in a loop;
+over an Atlas many-collection tenant this takes tens of seconds (>90s in dev). A
+blanket `try/except` does NOT help — no exception is raised, the call just hangs,
+so the stress harness records the route as **status=0** (no HTTP = timeout), which
+reads as a failure even though the code "handles errors." A 500-only hardening
+fixes the wrong failure mode. **You must time-bound each slow sub-call** with
+`asyncio.wait_for(...)` (e.g. verify_indexes 4s / get_collection_stats 5s /
+serverStatus 4s); on `asyncio.TimeoutError` append to `degraded[]` and return 200
+fast. Verified: bounded endpoint returns 200 in ~8.5s with
+`degraded:['collections: timeout>5s …']` instead of hanging >95s.
+
+**Verify the failure mode before writing the fix.** Status=0 (timeout) vs 500
+(exception) vs 4xx (RBAC) are three different bugs; a drill projection that
+assumes the wrong one will target the wrong fix. Confirm with a live read-only
+probe (login + timed curl), not just `py_compile`.

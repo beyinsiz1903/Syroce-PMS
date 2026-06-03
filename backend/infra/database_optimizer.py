@@ -419,7 +419,12 @@ class DatabaseOptimizer:
 
         for collection_name in collections:
             try:
-                collection_stats = await self.db.command("collStats", collection_name)
+                # maxTimeMS bounds server-side execution so a slow collStats aborts
+                # on the server (frees the connection) instead of only being
+                # abandoned client-side by an outer asyncio.wait_for.
+                collection_stats = await self.db.command(
+                    "collStats", collection_name, maxTimeMS=4000
+                )
                 stats[collection_name] = {
                     "count": collection_stats.get("count", 0),
                     "size_mb": round(collection_stats.get("size", 0) / (1024 * 1024), 2),

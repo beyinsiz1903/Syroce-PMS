@@ -518,13 +518,17 @@ async def get_database_stats(
     """Get database optimization and performance statistics.
 
     Degrades gracefully (HTTP 200 + partial payload) when an individual
-    sub-query is unavailable on the deployed tier. Atlas shared tiers restrict
-    the privileged `serverStatus`/`collStats` commands; previously any one of
-    those raising turned the whole endpoint into a 500. Each sub-call is now
-    isolated and failures are surfaced in a `degraded` list rather than
-    collapsing the response — same guarded-return posture as the audit-logs /
-    hr-staff read hardening. (RBAC posture unchanged: any-auth, /system/*.)
+    sub-query is unavailable OR too slow on the deployed tier. Atlas shared
+    tiers restrict the privileged `serverStatus`/`collStats` commands, and
+    per-collection `collStats` over a many-collection tenant can take tens of
+    seconds — previously either an exception OR a timeout turned the whole
+    endpoint into a 500 / harness-timeout (status 0). Each sub-call is now both
+    exception-isolated AND time-bounded (`asyncio.wait_for`); over-budget calls
+    are surfaced in `degraded` rather than collapsing/hanging the response —
+    same guarded-return posture as the audit-logs / hr-staff read hardening.
+    (RBAC posture unchanged: any-auth, /system/*.)
     """
+    import asyncio
     degraded: list[str] = []
 
     index_info = None
@@ -533,11 +537,15 @@ async def get_database_stats(
         from infra.database_optimizer import DatabaseOptimizer
         optimizer = DatabaseOptimizer(db)
         try:
-            index_info = await optimizer.verify_indexes()
+            index_info = await asyncio.wait_for(optimizer.verify_indexes(), timeout=4.0)
+        except asyncio.TimeoutError:
+            degraded.append("indexes: timeout>4s (tier-slow; bounded)")
         except Exception as e:
             degraded.append(f"indexes: {str(e)[:120]}")
         try:
-            collection_stats = await optimizer.get_collection_stats()
+            collection_stats = await asyncio.wait_for(optimizer.get_collection_stats(), timeout=5.0)
+        except asyncio.TimeoutError:
+            degraded.append("collections: timeout>5s (tier-slow per-collection collStats; bounded)")
         except Exception as e:
             degraded.append(f"collections: {str(e)[:120]}")
     except Exception as e:
@@ -547,10 +555,14 @@ async def get_database_stats(
     opcounters = {}
     uptime_seconds = 0
     try:
-        server_status = await db.command('serverStatus')
+        server_status = await asyncio.wait_for(
+            db.command('serverStatus', maxTimeMS=3500), timeout=4.0
+        )
         connections = server_status.get('connections', {})
         opcounters = server_status.get('opcounters', {})
         uptime_seconds = server_status.get('uptime', 0)
+    except asyncio.TimeoutError:
+        degraded.append("server_status: timeout>4s (tier-slow/restricted; bounded)")
     except Exception as e:
         # Atlas shared tiers / restricted DB roles deny serverStatus.
         degraded.append(f"server_status: {str(e)[:120]}")
