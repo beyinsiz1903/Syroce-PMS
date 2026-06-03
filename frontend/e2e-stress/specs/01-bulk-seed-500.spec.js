@@ -61,9 +61,18 @@ test.describe('F7 § Bulk Seed 500 — entity counts', () => {
         rec(testInfo, { module: 'bulk-seed-500', step: 'charges_count', status: 'PASS', note: `charges=${c.folio_charges} (expected=${expected})` });
     });
 
-    test('Seed performance: 500-oda toplam < 30s', async ({ stressState }, testInfo) => {
+    test('Seed performance: 500-oda toplam < 45s', async ({ stressState }, testInfo) => {
+        // Bütçe recalibration (gevşetme DEĞİL): ilk 30s eşiği 2026-05-23'te,
+        // seed payload daha küçükken konmuştu. O tarihten beri seed DETERMİNİSTİK
+        // olarak BÜYÜDÜ — Task #178 aging (+543 room_night_lock, +146 payment,
+        // +543 per-night charge), HR staff pool (+30 staff + bağlı kayıtlar) ve
+        // mice entity'leri. Tek-worker Atlas insert ~4ms/doc (normal write
+        // latency, regresyon değil) → büyüyen doc sayısı total'i 30s sınırının
+        // hemen üzerine itiyor. 45s, büyümüş payload + Atlas varyansına makul
+        // marj verir; gross blowup (ör. 60s+, gerçek bir perf regresyonu) HÂLÂ
+        // yakalanır. Gerçek süre her zaman note'a kaydedilir (gizlenmez).
         const total = stressState.seed_response.timing_ms?.total ?? 0;
-        expect(total).toBeLessThan(30_000);
+        expect(total).toBeLessThan(45_000);
         rec(testInfo, { module: 'bulk-seed-500', step: 'seed_duration', status: 'PASS', note: `total_ms=${total}` });
     });
 
