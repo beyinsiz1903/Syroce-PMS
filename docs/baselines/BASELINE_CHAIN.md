@@ -1,11 +1,14 @@
 # Stress Suite Baseline Chain
 
 Bu dosya, web/backend Full Stress Suite'in resmi baseline zincirinin tek kayıt
-kaynağıdır. **Yalnızca Run #195 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
+kaynağıdır. **Yalnızca Run #198 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
 run'lar tarihsel referans veya post-baseline verification run'dır — provenance ve
-metrikler korunur ama "current/official baseline" DEĞİLDİR. #196 ve #197, #195'ten
-SONRA koşulan verification / coverage-expansion run'larıdır; her ikisi de #195'e
-göre REVIEW'i ARTIRDIĞI için PROMOTE EDİLMEDİ (baseline pointer #195'te kalır).
+metrikler korunur ama "current/official baseline" DEĞİLDİR. #198, #195'e göre HER
+eksende daha temiz (REVIEW −3, SKIP −3, P2 −4, PASS +36, FAIL/P0/P1/P3=0; regresyon
+YOK) olduğu için PROMOTE EDİLDİ (Murat kararı, 2026-06-03); önceki current #195
+historical'a indirildi. #196 ve #197 ise #195'ten SONRA koşulan verification /
+coverage-expansion run'larıydı; her ikisi de #195'e göre REVIEW'i ARTIRDIĞI için
+o dönemde PROMOTE EDİLMEMİŞTİ ve historical olarak kalır.
 
 > Kapsam notu: Bu web/backend full stress suite baseline'ıdır, **/100 uygulama
 > kapsamı DEĞİLDİR** — mobile/F10 ayrı ve açıktır (doğrulanmadı). Merkezi kapsam
@@ -16,6 +19,49 @@ göre REVIEW'i ARTIRDIĞI için PROMOTE EDİLMEDİ (baseline pointer #195'te kal
 pilot mutation=0 · external_calls=[] · failedTests=0 · P0=P1=0 · verdict ≥ GO WITH
 WATCH · assertion gevşetme YOK · skip-as-pass YOK. Asla düz "GO" veya "/100" iddiası
 yok.
+
+---
+
+## Run #198 — CURRENT GREEN BASELINE
+
+- **Tarih / commit:** 2026-06-03, commit `b03557d1` ("Published your App" — post-#197
+  deploy; docs baseline-pointer revert (#195 current'a sabitleme) + CVE-2026-34993
+  aiohttp 3.13.5→3.14.0 legacy aggregate fix'ini içerir; not: api.txt split-pin
+  fix'i bu commit'ten SONRA landed, stress suite dependency-audit koşmadığı için
+  bu run'ı etkilemez).
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1606/0/12/8, P0=P1=0, P2=19 / P3=0, external_calls=[],
+  pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**. Süre 4672.8s.
+  Seed: prefix `E2E_STRESS_F7_1780520814291_`, rooms=500 guests=500 bookings=500
+  folios=500 charges=2293 rnl=1793 hk=500. Cleanup#1 deleted_total=9075,
+  cleanup#2 deleted_total=0 (idempotent=true), pilot baseline_bookings=30
+  after_bookings=30 drift=0.
+- **#195 → #198 DÜRÜST DELTA (promote-relevant, baseline'a göre):** PASS **+36**
+  (1570→1606), REVIEW **−3** (15→12), SKIP **−3** (11→8), P2 **−4** (23→19),
+  FAIL/P0/P1/P3 SABİT (0). **Her eksende iyileşme, regresyon YOK** → #195 kadar
+  değil, ondan DAHA TEMİZ. Bu, #197'nin reddedilme gerekçesinin (REVIEW +5) tersi;
+  #198 promote barını net geçer. Düz "GO" / "/100" iddiası YOK.
+- **Provenance (anonim public GitHub API, fabrike EDİLMEDİ):** repo
+  `beyinsiz1903/emergent-yeni-uygulama`, run #198 (id 26912829694),
+  head_sha=`b03557d1`, conclusion=success, event=workflow_dispatch. Artifacts (2):
+  stress-drill-report (29882 B) —
+  sha256:`1689f90c410ae5f5300118a870b12a871861168eb2e92e5918e3b4331ee07098`,
+  playwright-stress-report (816303 B) —
+  sha256:`1febb066e2a983e764fc7681fdbf8e82dd56c6de900f072d761b405399274cc3`.
+  Run/job/artifact metadata anonim API'dan + operatör ekran görüntüsüyle (IMG_3697,
+  #198 Success, 1h18m59s, 2 artifact, commit b03557d, main) çapraz doğrulandı.
+- **Açık WATCH (P2=19, öncelik sırasız — neredeyse tamamı by-design):** night-audit
+  unresolved exceptions (200), housekeeping rows_50 soft cold-boot TTI (3102/3073ms
+  vs 3000 gate, hard breach YOK), backup posture (BACKUP_ENABLED!=true),
+  settings_audit async marker, reservation_deep waitlist 403 + city-ledger folio=0,
+  digital-key 404 (endpoint_not_deployed), webhook_admin_dlq 404 (module not
+  mounted), rate_limit auth_login 60→0 throttled (login-throttle ordering),
+  RMS/konaklama IDOR vacuous (pilot havuz boş — leak DEĞİL), graphql REST/GraphQL
+  count semantik farkı (leak DEĞİL), mice_execution no payment_schedule (data-state).
+- **PROMOTE KARARI (Murat, 2026-06-03): PROMOTE EDİLDİ.** #198 yeni CURRENT GREEN
+  BASELINE; #195 historical'a indirildi. Gerekçe: #195'e göre her eksende daha
+  temiz, FAIL/P0/P1/P3=0 korunur, external_calls=[], pilot_drift=0, cleanup#2
+  idempotent=true.
 
 ---
 
@@ -96,7 +142,7 @@ yok.
 
 ---
 
-## Run #195 — CURRENT GREEN BASELINE
+## Run #195 — historical reference (önceki current; #198 promote'unda indirildi)
 
 - **Tarih / commit:** 2026-06-03, commit `a3d43a1cf71dbda61b9795539da127e845727974`
   ("Published your App" — WATCH Reduction Pack'i içerir: parent commit
