@@ -96,8 +96,13 @@ No new features. Convert existing shipped code into official proof.
    verifying Round-5 timeout fix. Acceptance: 15× wrong TOTP → 401,
    throttle boundary → 429, `Retry-After` present, no `consumed_jtis`
    write amplification, external_calls=[], pilot_drift=0, P0/P1=0.
-2. **F9C 7/7 targeted rerun** — re-verify after maintenance 500,
-   mobile staff notification 500, and cashier brute-force fixes.
+2. **F9C 7/7 targeted rerun** — 3 root-cause backend P1s now
+   RESOLVED + targeted-verified (2026-06-04): maintenance 500
+   (`test_maintenance_workorder_create.py` 3 passed), mobile staff
+   notification 500 (live probe HTTP 200), cashier PIN brute-force
+   no-429 (Task-51 always_on throttle, `test_cashier_handover_throttle.py`
+   5 passed). Full-suite F9C promotion still needs operator full-stress
+   dispatch (agent cannot dispatch). NOT a baseline move.
 3. **F9D finance targeted** — `99-finance-folio-surface.spec.js`:
    charge/payment/refund/void-charge/void-payment/split/split-by-amount/
    city-ledger-transfer idempotency, closed-folio guard, cross-tenant
