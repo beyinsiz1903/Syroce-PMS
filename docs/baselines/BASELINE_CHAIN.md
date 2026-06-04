@@ -1,14 +1,18 @@
 # Stress Suite Baseline Chain
 
 Bu dosya, web/backend Full Stress Suite'in resmi baseline zincirinin tek kayıt
-kaynağıdır. **Yalnızca Run #198 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
+kaynağıdır. **Yalnızca Run #204 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
 run'lar tarihsel referans veya post-baseline verification run'dır — provenance ve
-metrikler korunur ama "current/official baseline" DEĞİLDİR. #198, #195'e göre HER
-eksende daha temiz (REVIEW −3, SKIP −3, P2 −4, PASS +36, FAIL/P0/P1/P3=0; regresyon
-YOK) olduğu için PROMOTE EDİLDİ (Murat kararı, 2026-06-03); önceki current #195
-historical'a indirildi. #196 ve #197 ise #195'ten SONRA koşulan verification /
-coverage-expansion run'larıydı; her ikisi de #195'e göre REVIEW'i ARTIRDIĞI için
-o dönemde PROMOTE EDİLMEMİŞTİ ve historical olarak kalır.
+metrikler korunur ama "current/official baseline" DEĞİLDİR. #204, #198'e göre HER
+eksende daha temiz veya eşit (PASS +2, REVIEW −3, SKIP =, P2 −2, FAIL/P0/P1/P3=0;
+regresyon YOK) olduğu için PROMOTE EDİLDİ (Murat kararı, 2026-06-04); önceki current
+#198 historical'a indirildi. #204'ün asıl kazancı: `file_upload_security` modülü
+edge-WAF 403'ün hard-reject olarak tanınmasıyla TAM YEŞİL (14/0/0/0) — #203'teki 2
+FAIL + 2 P1 dürüstçe temizlendi (assertion gevşetme YOK). Önceki promote: #198,
+#195'e göre her eksende daha temizdi (REVIEW −3, SKIP −3, P2 −4, PASS +36) →
+PROMOTE EDİLDİ (Murat, 2026-06-03), #195 historical. #196 ve #197 ise #195'ten SONRA
+koşulan verification / coverage-expansion run'larıydı; her ikisi de #195'e göre
+REVIEW'i ARTIRDIĞI için PROMOTE EDİLMEMİŞTİ ve historical olarak kalır.
 
 > Kapsam notu: Bu web/backend full stress suite baseline'ıdır, **/100 uygulama
 > kapsamı DEĞİLDİR** — mobile/F10 ayrı ve açıktır (doğrulanmadı). Merkezi kapsam
@@ -22,7 +26,59 @@ yok.
 
 ---
 
-## Run #198 — CURRENT GREEN BASELINE
+## Run #204 — CURRENT GREEN BASELINE
+
+- **Tarih / commit:** 2026-06-04, commit `0606bef` (head_sha
+  `0606bef9b0a15bf6a89b6da777f285fbe7260bce`) — `file_upload_security` spec'inde
+  edge-proxy WAF 403'ünün markup-içeren (`<script>/<html>/<svg>`) kötü-amaçlı
+  yükleme case'lerinde hard-reject olarak tanınması (svg_mime + html_as_pdf_polyglot
+  [HR docs] ve html_as_png_polyglot + svg_as_image [housekeeping photo]). App-side
+  zaten 400/413 ile reddediyordu (validate_document_bytes / Pillow magic-bytes); 403
+  deploy hedefinin edge katmanından geliyor (daha sıkı dış katman). Yalnızca 4
+  markup-case'e 403 eklendi; 2xx kabul hâlâ FAIL — assertion gevşetme/skip-as-pass YOK.
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1608/0/9/8, P0=P1=0, P2=17 / P3=0, external_calls=[],
+  pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**. Süre 4266.1s.
+  Seed: prefix `E2E_STRESS_F7_1780594484554_`, rooms=500 guests=500 bookings=500
+  folios=500 charges=2293 rnl=1793 hk=500. Cleanup#1 deleted_total=9095,
+  cleanup#2 deleted_total=0 (idempotent=true), pilot baseline_bookings=30
+  after_bookings=30 drift=0.
+- **#198 → #204 DÜRÜST DELTA (promote-relevant, baseline'a göre):** PASS **+2**
+  (1606→1608), REVIEW **−3** (12→9), SKIP **=** (8), P2 **−2** (19→17),
+  FAIL/P0/P1/P3 SABİT (0). **Her eksende iyileşme veya eşit, regresyon YOK.** Asıl
+  kazanç honest: `file_upload_security` 12/2 FAIL → **14/0/0/0 TAM YEŞİL** (#203'teki
+  2 FAIL + 2 P1 kök-nedenle çözüldü: edge-WAF 403 = hard-reject, app validation
+  bağımsız olarak non-markup case'lerde + 18 birim testle kanıtlı). Düz "GO" / "/100"
+  iddiası YOK.
+- **Provenance (anonim public GitHub API, fabrike EDİLMEDİ):** repo
+  `beyinsiz1903/emergent-yeni-uygulama`, run #204 (id 26968589924),
+  head_sha=`0606bef9b0a15bf6a89b6da777f285fbe7260bce`, conclusion=success,
+  event=workflow_dispatch, actor=beyinsiz1903. Artifacts (2): stress-drill-report
+  (29013 B) — sha256:`054512aeb4f108cfa5ac14d9c708fdb02e5219411e3c465b5430ebe7cd1bd325`,
+  playwright-stress-report (814965 B) —
+  sha256:`299424c56e531de8b03c68a3be02a5bbb3367719b4c3c25501a6562ee38ef3a7`.
+  Aynı `0606bef`'te CI #1201 + Frontend Quality Gates #473 de success (önceki
+  aiohttp/postcss gate fix'leri tutuyor). Run/job/artifact metadata anonim API'dan +
+  operatör ekran görüntüsüyle (IMG_3705, #204 Success, 1h12m02s, 2 artifact, commit
+  0606bef, main) çapraz doğrulandı.
+- **Açık WATCH (P2=17, öncelik sırasız — neredeyse tamamı by-design):** night-audit
+  unresolved exceptions (200), backup posture (BACKUP_ENABLED!=true), settings_audit
+  async marker, reservation_deep waitlist 403 + city-ledger folio=0, digital-key 404
+  (endpoint_not_deployed), webhook_admin_dlq 404 (module not mounted), rate_limit
+  auth_login 60→0 throttled (login-throttle ordering), RMS/konaklama IDOR vacuous
+  (pilot havuz boş — leak DEĞİL), graphql REST/GraphQL count semantik farkı (leak
+  DEĞİL), mice_execution no payment_schedule (data-state), marketplace J1 422,
+  cm_exely HR-only N/A. **#198'e göre kapanan REVIEW −3:** çoğunlukla
+  file_upload_security FAIL temizliği + run-variance reclassify; kalan REVIEW=9 /
+  SKIP=8'in çoğu by-design (409/403/422/data-scarcity) — reduction doğası gereği sınırlı.
+- **PROMOTE KARARI (Murat, 2026-06-04): PROMOTE EDİLDİ.** #204 yeni CURRENT GREEN
+  BASELINE; #198 historical'a indirildi. Gerekçe: #198'e göre her eksende daha temiz
+  veya eşit, FAIL/P0/P1/P3=0 korunur, external_calls=[], pilot_drift=0, cleanup#2
+  idempotent=true, provenance doğrulandı.
+
+---
+
+## Run #198 — HISTORICAL (önceki current; #204'e PROMOTE ile indirildi)
 
 - **Tarih / commit:** 2026-06-03, commit `b03557d1` ("Published your App" — post-#197
   deploy; docs baseline-pointer revert (#195 current'a sabitleme) + CVE-2026-34993
@@ -58,10 +114,12 @@ yok.
   mounted), rate_limit auth_login 60→0 throttled (login-throttle ordering),
   RMS/konaklama IDOR vacuous (pilot havuz boş — leak DEĞİL), graphql REST/GraphQL
   count semantik farkı (leak DEĞİL), mice_execution no payment_schedule (data-state).
-- **PROMOTE KARARI (Murat, 2026-06-03): PROMOTE EDİLDİ.** #198 yeni CURRENT GREEN
-  BASELINE; #195 historical'a indirildi. Gerekçe: #195'e göre her eksende daha
-  temiz, FAIL/P0/P1/P3=0 korunur, external_calls=[], pilot_drift=0, cleanup#2
-  idempotent=true.
+- **PROMOTE KARARI (Murat, 2026-06-03): PROMOTE EDİLMİŞTİ; 2026-06-04'te #204
+  tarafından SÜPERSEDE EDİLDİ.** #198 o tarihte CURRENT GREEN BASELINE oldu (#195
+  historical'a indi); gerekçe: #195'e göre her eksende daha temiz, FAIL/P0/P1/P3=0,
+  external_calls=[], pilot_drift=0, cleanup#2 idempotent=true. 2026-06-04: #204 #198'e
+  göre her eksende daha temiz veya eşit (PASS +2, REVIEW −3, P2 −2; regresyon YOK)
+  olduğu için #204 promote edildi, #198 historical'a indi.
 
 ---
 
