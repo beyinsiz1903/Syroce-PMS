@@ -27,7 +27,7 @@
 | 8 | public_kvkk | Digital-key route 404 (endpoint_not_deployed) | C | Evet (deploy) | GET /api/guest/digital-key/<bk> 404 → hedefte mount edilmemiş. Deploy/mount kararı. |
 | 9 | reservation_deep | Waitlist add 403 "Module 'pms' access denied" | E | Olası | Stress tenant'ta pms modül erişimi yok → entitlement. Waitlist'in doğru module-gate altında olup olmadığı doğrulanmalı (by-design entitlement olabilir). |
 | 10 | reservation_deep | City-ledger folio bulunamadı (folios=0) | B | Sınırlı | booking 642cc9c7 için folio seed edilmemiş → transfer test edilemedi. Seed/data-state. |
-| 11 | rate_limit_boundary | Public burst'te 429 yok (auth_login 60→0 throttled) | E | EVET | En değerli aday. Limiter token-verify'dan ÖNCE çalışmıyor → invalid-cred burst 403'te short-circuit, sayaç artmıyor (memory `ratelimit-before-auth-ordering.md` + QR fix paterni #194). Login'e de uygulanabilir. |
+| 11 | rate_limit_boundary | Public burst'te 429 yok (auth_login 60→0 throttled) | E | EVET → **ÇÖZÜLDÜ** | **Hipotez (limiter-before-auth ordering) YANLIŞ çıktı** — gerçek kök neden (a) throttle backend dilution (LOGIN_IP/ACCOUNT non-always_on) + (b) spec payload `.invalid` → EmailStr 422 (handler'a hiç ulaşmıyor). Düzeltildi. Detay → "E#11 RESOLUTION" bölümü. |
 | 12 | accommodation_tax | Declaration pool empty → IDOR vacuously holds | B | Sınırlı | GET declarations list_len=0; cross-tenant decl probe surface yok. Güvenli stress seed + attacker-flip gerekir. Leak DEĞİL. |
 | 13 | marketplace | J1 unexpected status=422 (bogus_tid_fallback) | E | Olası | Bogus tenant-id probe 422 dönüyor — büyük olasılıkla by-design validation reject; mutation/leak OLMADIĞI canlı teyit edilmeli. |
 | 14 | webhook_admin_dlq | /api/webhooks/status 404 (module not mounted) | C | Evet (deploy) | Module hedefte mount değil → suite SKIP. Deploy/mount kararı. |
@@ -58,3 +58,23 @@
 ## Doktrin teyidi
 
 no fake-green (sınıflandırma; hiçbir kalem reclassify edilmedi) · no auth/RBAC/PII weakening (kod değişikliği yok) · pilot_drift=0 (yalnızca rapor analizi) · external_calls=[] · FAIL/P0/P1=0 çizgisi korundu · full stress agent tarafından dispatch EDİLMEDİ.
+
+## E#11 RESOLUTION — rate_limit auth_login (2026-06-04)
+
+**Orijinal hipotez YANLIŞ çıktı (dürüst düzeltme).** Tablo satırı #11 ve "Önerilen sıra" #1, root-cause'u "limiter token-verify'dan ÖNCE çalışmıyor → invalid-cred burst 403'te short-circuit" (memory `ratelimit-before-auth-ordering.md` / #194 QR paterni) olarak varsayıyordu. Login route'unun (`backend/routers/auth.py` login()) canlı incelemesi + targeted read-only probe bunu çürüttü: ordering KASITLI olarak verify-first → drain-on-success → record-on-fail'dir (Task-137) ve `enforce` başarısızlıkta zaten çağrılıyor. Gerçek kök neden İKİ ayrı katmandı:
+
+1. **Backend — throttle backend dilution (gerçek latent açık).** `LOGIN_IP` (20/60s) ve `LOGIN_ACCOUNT` (10/300s), tüm peer login yüzeyleri (AGENCY_LOGIN_*, VENDOR_LOGIN_*, CASHIER_*, TWOFA_*, RESET_CODE_*) F8AH P0 / Task-55 dalgalarında `always_on=True` (Mongo-backed, cross-instance) yapılmışken non-always_on (per-instance Redis → per-process in-memory) backend'de KALMIŞ tek brute-force-kritik login yüzeyiydi. Replit autoscale altında 60'lık fan-out burst her instance/process'e ~60/N < cap düşüyor → 429 ASLA tetiklenmiyor. Dosyanın başındaki 98C-D / 98D-B sistemik dilution notunun login'e uygulanmamış hali. **Fix:** `LOGIN_IP`/`LOGIN_ACCOUNT` → `always_on=True` + stabil `name=` (peer'lerle bire bir aynı pattern). Auth ZAYIFLAMAZ: ordering değişmedi (yanlış cred yine 401, doğru cred hit biriktirmez, drain-on-success korunur), `always_on` yalnızca DISABLE_AUTH_THROTTLE escape'ini yok sayar.
+
+2. **Spec — payload handler'a hiç ulaşmıyordu (vacuous finding).** Spec'in auth_login burst'ü `${prefix}_rl@stress.invalid` gönderiyordu. `.invalid` TLD (RFC 6761 special-use) Pydantic `EmailStr` tarafından **handler'a girmeden 422** ile reddediliyor → `_record_failure_and_raise` içindeki `enforce` HİÇ çağrılmıyor → backend ne olursa olsun throttled=0 GARANTİ. Yani #204'teki "auth_login throttled=0" login yüzeyi için backend açığının kanıtı DEĞİL, request-validation bounce'uydu (vacuous). **Fix:** spec payload'ı `@example.com`'a (RFC 2606 doc domain — geçerli format, var olmayan hesap) çevrildi; istek artık handler'a ulaşıp 401 verir, throttle hit kaydeder, cap tetiklenir. 429 beklentisi DÜŞÜRÜLMEDİ, assertion gevşetilmedi — test artık ölçmesi gereken yüzeye gerçekten ulaşıyor.
+
+**Değişen dosyalar:** `backend/security/auth_throttle.py` (LOGIN_IP/LOGIN_ACCOUNT always_on), `frontend/e2e-stress/specs/97-rate-limit-boundary.spec.js` (login payload `.invalid`→`example.com`), `backend/tests/test_auth_throttle_boundary.py` (regresyon: main login policy always_on+cap+namespace assert).
+
+**Targeted doğrulama (agent full stress dispatch ETMEDİ):**
+- `node --check 97-rate-limit-boundary.spec.js` → OK.
+- `pytest test_auth_throttle_boundary.py test_peer_login_throttle.py` → 15 passed.
+- Canlı read-only probe (localhost:8000, 25× wrong-cred burst, always_on DISABLE'ı yok sayar):
+  - `@stress.invalid` → 25×422 (handler'a hiç ulaşmıyor — eski spec'in neden throttled=0 gördüğünün kanıtı).
+  - `hotel_id+username` (handler'a ulaşan) → 10×401 + **15×429**.
+  - `@example.com` (yeni spec payload) → 10×401 + **15×429**.
+
+**Bir sonraki full stress'te P2 düşer mi?** EVET beklentisi: auth_login burst artık ≥1 429 gözlemleyecek (LOGIN_IP cap=20/60s ya da LOGIN_ACCOUNT cap=10/300s tetiklenir), `throttledAny=true` → #11 P2 recFinding ARTIK FIRE ETMEZ. Doğrulama CI-deferred (operatör dispatch). Diğer 16 P2 etkilenmez. external_calls=[], pilot_drift=0 (login burst anonim, throttle_hits system-scoped, tenant mutasyonu yok).

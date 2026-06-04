@@ -566,8 +566,29 @@ def normalize_identity(value: str | None) -> str:
 
 
 # ── Throttle policies (conservative, can be tuned per tenant tier later) ──
-LOGIN_IP = SlidingWindowThrottle(max_requests=20, window_seconds=60)
-LOGIN_ACCOUNT = SlidingWindowThrottle(max_requests=10, window_seconds=300)
+# WATCH E#11 (Run #204 rate_limit_boundary P2 "no 429 observed on auth_login
+# burst") — LOGIN_IP/LOGIN_ACCOUNT were the LAST brute-force-critical login
+# surfaces still on the non-always_on (Redis→in-memory) backend while every
+# peer (AGENCY_LOGIN_*, VENDOR_LOGIN_*, CASHIER_*, TWOFA_*, RESET_CODE_*) had
+# already been moved to always_on=True (Mongo-backed, cross-instance) by the
+# F8AH P0 / Task-55 waves. Under Replit autoscale (deploymentTarget=autoscale)
+# the per-instance Redis (localhost) / per-process in-memory deque only ever
+# saw a fraction of a fan-out burst, so a 60-request wrong-credential spray
+# distributed across N instances hit each counter with ~60/N < cap(20) and
+# NEVER tripped the 429 — exactly the systemic dilution documented at the top
+# of this module for the 98C-D / 98D-B drills. Promoting these two to
+# always_on routes them through the shared Mongo `throttle_hits` window so the
+# cap is enforced once across all instances. This does NOT weaken auth: the
+# login router keeps its verify-first → drain-on-success → record-on-fail
+# ordering (Task-137), so wrong creds still 401, correct creds never accumulate
+# a hit, and a legitimate user who mistyped is still drained on success. Stable
+# name= so the Mongo/Redis key namespace can't drift with instance ordering.
+LOGIN_IP = SlidingWindowThrottle(
+    max_requests=20, window_seconds=60, always_on=True, name="login_ip"
+)
+LOGIN_ACCOUNT = SlidingWindowThrottle(
+    max_requests=10, window_seconds=300, always_on=True, name="login_account"
+)
 FORGOT_PW_EMAIL = SlidingWindowThrottle(max_requests=3, window_seconds=600)
 FORGOT_PW_IP = SlidingWindowThrottle(max_requests=10, window_seconds=600)
 RESET_TOKEN_IP = SlidingWindowThrottle(max_requests=10, window_seconds=60)

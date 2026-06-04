@@ -14,7 +14,33 @@ for the cap math, and explicitly clear the escape hatch when asserting the
 
 import pytest
 
-from security.auth_throttle import SlidingWindowThrottle, enforce
+from security.auth_throttle import (
+    LOGIN_ACCOUNT,
+    LOGIN_IP,
+    SlidingWindowThrottle,
+    enforce,
+)
+
+
+def test_main_login_policies_are_cross_instance_always_on():
+    """WATCH E#11 regression — the main `/api/auth/login` per-IP and
+    per-account throttles MUST be `always_on=True` (Mongo-backed,
+    cross-instance) so a wrong-credential burst fanned out across Replit
+    autoscale instances still trips the cap. They were the last login
+    surfaces left on the per-instance Redis/in-memory backend while every
+    peer (AGENCY/VENDOR/CASHIER/TWOFA/RESET) had already been promoted; a
+    60-request spray distributed across N instances saw ~60/N < cap and
+    never returned 429 (Run #204 rate_limit_boundary P2). Caps mirror the
+    peer login policies; namespaces are stable + distinct."""
+    assert LOGIN_IP.max == 20
+    assert int(LOGIN_IP.window.total_seconds()) == 60
+    assert LOGIN_ACCOUNT.max == 10
+    assert int(LOGIN_ACCOUNT.window.total_seconds()) == 300
+    assert LOGIN_IP.always_on is True
+    assert LOGIN_ACCOUNT.always_on is True
+    assert LOGIN_IP.name == "login_ip"
+    assert LOGIN_ACCOUNT.name == "login_account"
+    assert LOGIN_IP.name != LOGIN_ACCOUNT.name
 
 
 @pytest.mark.asyncio

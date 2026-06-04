@@ -91,8 +91,18 @@ test.describe('F8Q § 97 — Per-endpoint rate-limit boundary', () => {
         }
 
         // 2) Login burst with wrong creds — expect 401 or 429, 5xx=0.
+        // WATCH E#11: the email MUST be a syntactically-VALID address that
+        // simply doesn't exist. A `.invalid` TLD (RFC 6761 special-use) is
+        // rejected by Pydantic `EmailStr` with a 422 *before* the login
+        // handler runs, so the per-IP/per-account throttle (`enforce` in
+        // `_record_failure_and_raise`) is never reached and the burst can
+        // NEVER observe a 429 — the throttled=0 was a vacuous validation
+        // bounce, not evidence of a missing rate limit. `@example.com`
+        // (RFC 2606 doc domain) parses as a real address yet resolves to no
+        // account, so every attempt reaches the handler, fails creds (401),
+        // records a throttle hit, and the cap (LOGIN_IP=20/60s) trips 429.
         const login = await burst(request, 'post', '/api/auth/login',
-            { email: `${prefix}_rl@stress.invalid`, password: 'wrong_pw_burst' },
+            { email: `${prefix}_rl@example.com`, password: 'wrong_pw_burst' },
             null, BURST_N);
         surfaces.push({ key: 'auth_login', ...login });
 
