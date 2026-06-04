@@ -1,18 +1,23 @@
 # Stress Suite Baseline Chain
 
 Bu dosya, web/backend Full Stress Suite'in resmi baseline zincirinin tek kayıt
-kaynağıdır. **Yalnızca Run #204 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
+kaynağıdır. **Yalnızca Run #205 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
 run'lar tarihsel referans veya post-baseline verification run'dır — provenance ve
-metrikler korunur ama "current/official baseline" DEĞİLDİR. #204, #198'e göre HER
-eksende daha temiz veya eşit (PASS +2, REVIEW −3, SKIP =, P2 −2, FAIL/P0/P1/P3=0;
-regresyon YOK) olduğu için PROMOTE EDİLDİ (Murat kararı, 2026-06-04); önceki current
-#198 historical'a indirildi. #204'ün asıl kazancı: `file_upload_security` modülü
-edge-WAF 403'ün hard-reject olarak tanınmasıyla TAM YEŞİL (14/0/0/0) — #203'teki 2
-FAIL + 2 P1 dürüstçe temizlendi (assertion gevşetme YOK). Önceki promote: #198,
-#195'e göre her eksende daha temizdi (REVIEW −3, SKIP −3, P2 −4, PASS +36) →
-PROMOTE EDİLDİ (Murat, 2026-06-03), #195 historical. #196 ve #197 ise #195'ten SONRA
-koşulan verification / coverage-expansion run'larıydı; her ikisi de #195'e göre
-REVIEW'i ARTIRDIĞI için PROMOTE EDİLMEMİŞTİ ve historical olarak kalır.
+metrikler korunur ama "current/official baseline" DEĞİLDİR. #205, #204'e göre kesin
+temiz iyileşmedir (P2 −1 [17→16: WATCH E#11 rate_limit auth_login bulgusu CI'da
+temizlendi], PASS/REVIEW/SKIP =, FAIL/P0/P1/P3=0; regresyon YOK) olduğu için PROMOTE
+EDİLDİ (2026-06-04); önceki current #204 historical'a indirildi. #205'in asıl kazancı:
+`rate_limit_boundary` modülü 10/0/0/0 tam yeşil — auth_login burst'ünün 429
+gözleyememesinin iki-katmanlı kök nedeni (LOGIN_IP/LOGIN_ACCOUNT non-always_on
+autoscale dilution + spec payload `.invalid` TLD'sinin EmailStr 422'siyle handler'a
+ulaşmaması) onarıldı (auth ZAYIFLAMADAN; assertion gevşetme/skip-as-pass YOK). Önceki
+promote: #204, #198'e göre HER eksende daha temiz veya eşit (PASS +2, REVIEW −3, SKIP
+=, P2 −2, FAIL/P0/P1/P3=0; regresyon YOK) → PROMOTE EDİLDİ (Murat kararı, 2026-06-04),
+#198 historical; #204'ün kazancı `file_upload_security` edge-WAF 403 hard-reject ile
+TAM YEŞİL (14/0/0/0). #198, #195'e göre her eksende daha temizdi (REVIEW −3, SKIP −3,
+P2 −4, PASS +36) → PROMOTE EDİLDİ (Murat, 2026-06-03), #195 historical. #196 ve #197
+ise #195'ten SONRA koşulan verification / coverage-expansion run'larıydı; her ikisi de
+#195'e göre REVIEW'i ARTIRDIĞI için PROMOTE EDİLMEMİŞTİ ve historical olarak kalır.
 
 > Kapsam notu: Bu web/backend full stress suite baseline'ıdır, **/100 uygulama
 > kapsamı DEĞİLDİR** — mobile/F10 ayrı ve açıktır (doğrulanmadı). Merkezi kapsam
@@ -26,7 +31,48 @@ yok.
 
 ---
 
-## Run #204 — CURRENT GREEN BASELINE
+## Run #205 — CURRENT GREEN BASELINE
+
+- **Tarih / commit:** 2026-06-04, commit `6aa53ed` (head_sha
+  `6aa53ed835944d409d237aa66af9cd1955482c66`) — WATCH Reduction Pack Sınıf E #11
+  (rate_limit auth_login) onarımı: (a) `LOGIN_IP` (20/60s) + `LOGIN_ACCOUNT`
+  (10/300s) throttle policy'leri tüm peer login yüzeyleri (agency/vendor/cashier/
+  2FA/reset) zaten `always_on=True` (Mongo cross-instance) iken non-always_on kalan
+  tek brute-force-kritik login yüzeyiydi → Replit autoscale fan-out'unda burst
+  instance/process'lere dağılıp cap tetiklenmiyordu; `always_on=True` + stabil
+  `name=` (peer pattern) yapıldı. (b) `97-rate-limit-boundary.spec.js` auth_login
+  burst payload'ı `@stress.invalid` kullanıyordu → `.invalid` TLD (RFC 6761)
+  Pydantic `EmailStr` ile handler'a girmeden 422 reddediliyordu → `enforce` hiç
+  çağrılmıyor → throttled=0 vacuous; payload `@example.com`'a (geçerli format,
+  var olmayan hesap → yine yanlış-cred 401) çevrildi. Login ordering DEĞİŞMEDİ
+  (verify-first → record-on-fail → drain-on-success, Task-137); auth ZAYIFLAMADI,
+  429 beklentisi düşürülmedi, assertion gevşetilmedi.
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1608/0/9/8, P0=P1=0, P2=16 / P3=0, external_calls=[],
+  pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**. Süre 4333.6s.
+  Seed: prefix `E2E_STRESS_F7_1780604352551_`, rooms=500 guests=500 bookings=500
+  folios=500 charges=2293 rnl=1793 hk=500. Cleanup#1 deleted_total=9095,
+  cleanup#2 deleted_total=0 (idempotent=true), pilot baseline_bookings=30
+  after_bookings=30 drift=0. `rate_limit_boundary` modülü 10/0/0/0 TAM YEŞİL
+  (auth_login P2 listeden kalktı).
+- **#204 → #205 DÜRÜST DELTA (promote-relevant, baseline'a göre):** P2 **−1**
+  (17→16: WATCH E#11 rate_limit auth_login bulgusu temizlendi), PASS **=** (1608),
+  REVIEW **=** (9), SKIP **=** (8), FAIL/P0/P1/P3 SABİT (0). **Tek eksende iyileşme,
+  diğerleri eşit, regresyon YOK.** E#11 fix'in "bir sonraki full stress'te P2 düşer"
+  tahmini doğrulandı. Düz "GO" / "/100" iddiası YOK.
+- **Provenance (anonim public GitHub API, fabrike EDİLMEDİ):** repo
+  `beyinsiz1903/emergent-yeni-uygulama`, run #205 (id 26977075695),
+  head_sha=`6aa53ed835944d409d237aa66af9cd1955482c66`, conclusion=success,
+  event=workflow_dispatch, actor=beyinsiz1903. Artifacts (2): stress-drill-report
+  (28777 B) — sha256:`85e258f89e3f314d324e2b5a241ee3e1f94b38a54048402ed12c55fd16e66d6f`,
+  playwright-stress-report (815210 B) —
+  sha256:`e350d80196e7ecb980c74f1d9be37c2d8221596bf011b9e412bd4338761dbeeb`.
+  Operatör ekran görüntüsüyle (IMG_3707: #205 Success, 1h13m12s, 2 artifact, commit
+  6aa53ed, main) çapraz doğrulandı.
+
+---
+
+## Run #204 — historical (önce CURRENT GREEN BASELINE)
 
 - **Tarih / commit:** 2026-06-04, commit `0606bef` (head_sha
   `0606bef9b0a15bf6a89b6da777f285fbe7260bce`) — `file_upload_security` spec'inde
