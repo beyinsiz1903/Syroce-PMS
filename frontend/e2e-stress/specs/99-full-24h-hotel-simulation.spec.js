@@ -226,9 +226,16 @@ test.describe('F8J § 99 — Full 24h hotel simulation', () => {
             }, stressTokens.stress_token,
             { headers: { 'Idempotency-Key': idemKey('walk_in') } });
             samples.push(r.ms);
-            if (r.ok && r.body?.id) {
+            // walk_in response kontratı (front_desk_service.py:299-305):
+            // {success, booking_id, folio_id, room_number, guest_id} — `id` YOK.
+            // Eski `r.body?.id` koşulu HTTP 200 + success:true dönen gerçek
+            // başarıları (booking_id mevcut) fail sayıyordu → ok=0 fake-RED +
+            // walkInBookingIds boş kalıp downstream akşam zinciri fallback'e
+            // düşüyordu. Gerçek kontrat alanı booking_id okunur (assert gevşetme
+            // YOK; 400/overbooking gerçek redler hâlâ fail sayılır).
+            if (r.ok && r.body?.booking_id) {
                 ok++;
-                walkInBookingIds.push(r.body.id);
+                walkInBookingIds.push(r.body.booking_id);
                 if (r.body.room_id) walkInRoomIds.push(r.body.room_id);
                 else if (room.id) walkInRoomIds.push(room.id);
             } else {
