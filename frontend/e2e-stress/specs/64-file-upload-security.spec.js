@@ -18,9 +18,9 @@
 // Surface contract:
 //   - HR docs: POST /api/hr/staff/{staff_id}/documents — 5 MB hard cap,
 //     ALLOWED_DOC_MIME = {pdf, png, jpeg, webp, doc, docx}. Magic-bytes
-//     verification YOK (text/MIME header-trust); polyglot riski mevcut
-//     (probe: HTML body + Content-Type: application/pdf — server reddetmeli
-//     veya download'da text/html olarak servis etmemeli).
+//     verification VAR (validate_document_bytes → polyglot 400). Ayrıca deploy
+//     edge-proxy WAF, <script>/<html>/<svg> gövdesini app'e ulaşmadan 403 ile
+//     bloklayabilir (daha sıkı dış katman). Her ikisi de hard-reject sayılır.
 //   - Housekeeping photo: POST /api/housekeeping/upload-photo — Pillow
 //     magic-bytes validation + 5 MB cap. Polyglot REJECT beklenir (gerçek
 //     image format zorunlu).
@@ -158,11 +158,17 @@ test.describe('F8S § 64 — File Upload Security', () => {
             { name: 'oversized_pdf', file: { name: 'big.pdf', mimeType: 'application/pdf', buffer: oversize }, expect: (s) => s === 413 || s === 400 || s === 422 },
             // 2) Disallowed MIME (executable).
             { name: 'exe_mime', file: { name: 'shell.exe', mimeType: 'application/x-msdownload', buffer: Buffer.from('MZ\x90\x00') }, expect: (s) => s === 400 || s === 415 || s === 422 },
-            // 3) Disallowed MIME (SVG).
-            { name: 'svg_mime', file: { name: 'icon.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg><script>alert(1)</script></svg>') }, expect: (s) => s === 400 || s === 415 || s === 422 },
-            // 4) HTML masquerading as PDF (polyglot). Backend MIME header'a güveniyor;
-            //    "PDF" başlığı geçer (P2 informational — magic-bytes verification eksik).
-            { name: 'html_as_pdf_polyglot', file: { name: 'evil.pdf', mimeType: 'application/pdf', buffer: Buffer.from('<html><body><script>alert(1)</script></body></html>') }, expect: (s) => s === 400 || s === 415 || s === 422 || (s >= 200 && s < 300) },
+            // 3) Disallowed MIME (SVG). Reject sınıfı: app 400 (ALLOWED_DOC_MIME
+            //    dışı) VEYA deploy edge-proxy WAF 403 (<script>/<svg> gövdesini
+            //    app'e ulaşmadan bloklar — daha sıkı dış katman). 403 hard-reject
+            //    sayılır; spec'in cross-tenant adımları (L275/L296) zaten 403'ü
+            //    "reddedildi" kabul ediyor — burada da tutarlı.
+            { name: 'svg_mime', file: { name: 'icon.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg><script>alert(1)</script></svg>') }, expect: (s) => s === 400 || s === 403 || s === 415 || s === 422 },
+            // 4) HTML masquerading as PDF (polyglot). App artık magic-bytes
+            //    doğruluyor (validate_document_bytes → 400); ayrıca edge-proxy WAF
+            //    <html>/<script> gövdesini 403 ile bloklayabilir. Her ikisi de
+            //    hard-reject; 2xx (kabul) hâlâ P2 informational olarak işaretlenir.
+            { name: 'html_as_pdf_polyglot', file: { name: 'evil.pdf', mimeType: 'application/pdf', buffer: Buffer.from('<html><body><script>alert(1)</script></body></html>') }, expect: (s) => s === 400 || s === 403 || s === 415 || s === 422 || (s >= 200 && s < 300) },
             // 5) Path traversal filename — backend filename'i metadata olarak saklar;
             //    `../../etc/passwd` literal string olarak DB'ye yazılırsa download
             //    response Content-Disposition'da yansıyabilir. Server reject etmeli
@@ -319,12 +325,16 @@ test.describe('F8S § 64 — File Upload Security', () => {
         const cases = [
             // 1) Oversized — 5MB cap.
             { name: 'oversized_png', photo: { name: 'big.png', mimeType: 'image/png', buffer: oversize }, expect: (s) => s === 413 || s === 400 || s === 422 },
-            // 2) HTML masquerade as PNG — Pillow magic-bytes must reject.
-            { name: 'html_as_png_polyglot', photo: { name: 'evil.png', mimeType: 'image/png', buffer: Buffer.from('<html><script>alert(1)</script></html>') }, expect: (s) => s === 400 || s === 415 || s === 422 },
+            // 2) HTML masquerade as PNG — Pillow magic-bytes must reject (app 400).
+            //    Deploy edge-proxy WAF de <html>/<script> gövdesini 403 ile
+            //    bloklayabilir (daha sıkı dış katman) — her ikisi de hard-reject.
+            { name: 'html_as_png_polyglot', photo: { name: 'evil.png', mimeType: 'image/png', buffer: Buffer.from('<html><script>alert(1)</script></html>') }, expect: (s) => s === 400 || s === 403 || s === 415 || s === 422 },
             // 3) PDF as JPEG — magic-bytes reject.
             { name: 'pdf_as_jpeg', photo: { name: 'doc.jpg', mimeType: 'image/jpeg', buffer: TINY_PDF }, expect: (s) => s === 400 || s === 415 || s === 422 },
-            // 4) SVG (script vector) — Pillow image format reddetmeli.
-            { name: 'svg_as_image', photo: { name: 'a.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg><script>alert(1)</script></svg>') }, expect: (s) => s === 400 || s === 415 || s === 422 },
+            // 4) SVG (script vector) — Pillow image format reddetmeli (app 400);
+            //    deploy edge-proxy WAF de <svg>/<script> gövdesini 403 ile
+            //    bloklayabilir (daha sıkı dış katman) — her ikisi de hard-reject.
+            { name: 'svg_as_image', photo: { name: 'a.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg><script>alert(1)</script></svg>') }, expect: (s) => s === 400 || s === 403 || s === 415 || s === 422 },
             // 5) EXE as PNG — magic-bytes reject.
             { name: 'exe_as_png', photo: { name: 'shell.png', mimeType: 'image/png', buffer: Buffer.from('MZ\x90\x00\x03\x00') }, expect: (s) => s === 400 || s === 415 || s === 422 },
             // 6) Empty.
