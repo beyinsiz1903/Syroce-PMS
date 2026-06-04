@@ -1,0 +1,26 @@
+<svg width="200" height="60" viewBox="0 0 200 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Modern Minimal - S harfi + otel çatısı -->
+  <defs>
+    <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2563eb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Otel çatısı + S harfi kombinasyonu -->
+  <g transform="translate(5, 10)">
+    <!-- Çatı -->
+    <path d="M 20 15 L 30 5 L 40 15" stroke="url(#gradient1)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    
+    <!-- S harfi stilize -->
+    <path d="M 25 20 Q 20 20 20 25 Q 20 28 25 28 L 35 28 Q 40 28 40 33 Q 40 38 35 38" 
+          stroke="url(#gradient1)" stroke-width="3" fill="none" stroke-linecap="round"/>
+    
+    <!-- Alt çizgi -->
+    <line x1="18" y1="42" x2="42" y2="42" stroke="url(#gradient1)" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  
+  <!-- Syroce yazısı -->
+  <text x="65" y="35" font-family="Arial, sans-serif" font-size="24" font-weight="700" fill="#1e293b">Syroce</text>
+  <text x="65" y="48" font-family="Arial, sans-serif" font-size="9" font-weight="400" fill="#64748b" letter-spacing="2">HOTEL MANAGEMENT</text>
+</svg>

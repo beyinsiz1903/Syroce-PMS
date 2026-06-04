@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+    <head><script>
+(function() {
+  // Smart reload guard: allows user-initiated reloads, blocks HMR auto-reloads.
+  // User interactions (click, submit, keydown) set a flag for 3 seconds.
+  // location.reload() is only permitted while that flag is active.
+  var _origReload = location.reload;
+  var _userActive = false;
+  var _activeTimer = null;
+
+  function markActive() {
+    _userActive = true;
+    if (_activeTimer) clearTimeout(_activeTimer);
+    _activeTimer = setTimeout(function() { _userActive = false; }, 3000);
+  }
+
+  document.addEventListener('click', markActive, true);
+  document.addEventListener('submit', markActive, true);
+  document.addEventListener('keydown', markActive, true);
+
+  // Programmatic reload API: window.__syroceReload() always works
+  window.__syroceReload = function() {
+    _origReload.call(location);
+  };
+
+  try {
+    Object.defineProperty(Location.prototype, 'reload', {
+      configurable: true,
+      enumerable: true,
+      value: function() {
+        if (_userActive) {
+          _userActive = false;
+          return _origReload.call(this);
+        }
+        console.debug('[Syroce] auto-reload blocked (no user interaction)');
+      }
+    });
+  } catch(e) {
+    // Fallback: simple override if defineProperty fails
+    Location.prototype.reload = function() {
+      if (_userActive) {
+        _userActive = false;
+        return _origReload.call(location);
+      }
+      console.debug('[Syroce] auto-reload blocked (fallback)');
+    };
+  }
+})();
+</script>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#000000" />
+        <meta name="description" content="Syroce - Modern Otel Yönetim Sistemi. AI destekli, ultra hızlı ve kapsamlı hotel PMS çözümü." />
+        <meta name="robots" content="index, follow" />
+        <meta name="googlebot" content="index, follow" />
+        
+        <!-- Favicon & Icons -->
+        <link rel="icon" type="image/png" href="/syroce-circle.png" />
+        <link rel="icon" type="image/webp" sizes="256x256" href="/syroce-circle-256.webp" />
+        <link rel="apple-touch-icon" href="/syroce-circle.png" />
+        
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <!-- Lighthouse: critical-path font CSS preload + async swap (FCP/LCP iyileştirmesi) -->
+        <link
+            rel="preload"
+            as="style"
+            href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap"
+            onload="this.onload=null;this.rel='stylesheet'"
+        />
+        <noscript>
+            <link
+                href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap"
+                rel="stylesheet"
+            />
+        </noscript>
+        <title>Syroce | Modern Otel Yönetim Sistemi</title>
+        <script>
+            // Suppress benign ResizeObserver loop error (triggered by Radix UI Select)
+            window.addEventListener('error', function(e) {
+                if (e.message && e.message.indexOf('ResizeObserver loop') !== -1) {
+                    e.stopImmediatePropagation();
+                    e.stopPropagation();
+                    e.preventDefault();
+                }
+            });
+        </script>
+        <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
+        <!--
+        These two scripts have been added for the testing, please do not edit or remove them
+        -->
+        <script src="https://unpkg.com/rrweb@latest/dist/rrweb.min.js"></script>
+        <script src="https://d2adkz2s9zrlge.cloudfront.net/rrweb-recorder-20250919-1.js"></script>
+      <script type="module" crossorigin src="/js/index-CFSauKCr.js"></script>
+      <link rel="modulepreload" crossorigin href="/js/rolldown-runtime-DW7kkdiz.js">
+      <link rel="modulepreload" crossorigin href="/js/vendor-i18n-C7lUWOfQ.js">
+      <link rel="modulepreload" crossorigin href="/js/vendor-motion-DtDr3HXi.js">
+      <link rel="modulepreload" crossorigin href="/js/vendor-query-ic_pGbtV.js">
+      <link rel="modulepreload" crossorigin href="/js/vendor-radix-BHf6OV3T.js">
+      <link rel="modulepreload" crossorigin href="/js/vendor-react-DQpS_v5C.js">
+      <link rel="modulepreload" crossorigin href="/js/vendor-ui-Bb2dwoYX.js">
+      <link rel="modulepreload" crossorigin href="/js/vendor-icons-D6ItQZGb.js">
+      <link rel="modulepreload" crossorigin href="/js/prefetch-BcWRPxIt.js">
+      <link rel="modulepreload" crossorigin href="/js/utils-DbH9SL_t.js">
+      <link rel="modulepreload" crossorigin href="/js/button-BAmSNFzi.js">
+      <link rel="modulepreload" crossorigin href="/js/alert-dialog-Bb1Pc6QO.js">
+      <link rel="modulepreload" crossorigin href="/js/card-PuWdoRfs.js">
+      <link rel="modulepreload" crossorigin href="/js/input-nnRWgeSE.js">
+      <link rel="modulepreload" crossorigin href="/js/axiosConfig-BjIsUCJu.js">
+      <link rel="modulepreload" crossorigin href="/js/currency-BImlMiRr.js">
+      <link rel="modulepreload" crossorigin href="/js/CurrencyContext-qDBnj0Rl.js">
+      <link rel="modulepreload" crossorigin href="/js/websocket-BIGFKflQ.js">
+      <link rel="modulepreload" crossorigin href="/js/offlineQueueDB-CrIF1spc.js">
+      <link rel="modulepreload" crossorigin href="/js/NotificationContext-BLWkSLPo.js">
+      <link rel="modulepreload" crossorigin href="/js/i18n-C592lO7f.js">
+      <link rel="modulepreload" crossorigin href="/js/dialogs-CkCngYkh.js">
+      <link rel="modulepreload" crossorigin href="/js/routeDefinitions-BPvN6u-n.js">
+      <link rel="modulepreload" crossorigin href="/js/featureFlags-CDxZVCLN.js">
+      <link rel="stylesheet" crossorigin href="/assets/index-BVL5yzaq.css">
+    </head>
+    <body>
+        <noscript>You need to enable JavaScript to run this app.</noscript>
+        <div id="root"></div>
+        <!-- Emergent badge removed for production -->
+        <script>
+            !(function (t, e) {
+                var o, n, p, r;
+                e.__SV ||
+                    ((window.posthog = e),
+                    (e._i = []),
+                    (e.init = function (i, s, a) {
+                        function g(t, e) {
+                            var o = e.split(".");
+                            2 == o.length && ((t = t[o[0]]), (e = o[1])),
+                                (t[e] = function () {
+                                    t.push(
+                                        [e].concat(
+                                            Array.prototype.slice.call(
+                                                arguments,
+                                                0,
+                                            ),
+                                        ),
+                                    );
+                                });
+                        }
+                        ((p = t.createElement("script")).type =
+                            "text/javascript"),
+                            (p.crossOrigin = "anonymous"),
+                            (p.async = !0),
+                            (p.src =
+                                s.api_host.replace(
+                                    ".i.posthog.com",
+                                    "-assets.i.posthog.com",
+                                ) + "/static/array.js"),
+                            (r =
+                                t.getElementsByTagName(
+                                    "script",
+                                )[0]).parentNode.insertBefore(p, r);
+                        var u = e;
+                        for (
+                            void 0 !== a ? (u = e[a] = []) : (a = "posthog"),
+                                u.people = u.people || [],
+                                u.toString = function (t) {
+                                    var e = "posthog";
+                                    return (
+                                        "posthog" !== a && (e += "." + a),
+                                        t || (e += " (stub)"),
+                                        e
+                                    );
+                                },
+                                u.people.toString = function () {
+                                    return u.toString(1) + ".people (stub)";
+                                },
+                                o =
+                                    "init me ws ys ps bs capture je Di ks register register_once register_for_session unregister unregister_for_session Ps getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey canRenderSurveyAsync identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty Es $s createPersonProfile Is opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing Ss debug xs getPageViewId captureTraceFeedback captureTraceMetric".split(
+                                        " ",
+                                    ),
+                                n = 0;
+                            n < o.length;
+                            n++
+                        )
+                            g(u, o[n]);
+                        e._i.push([i, s, a]);
+                    }),
+                    (e.__SV = 1));
+            })(document, window.posthog || []);
+            posthog.init("phc_yJW1VjHGGwmCbbrtczfqqNxgBDbhlhOWcdzcIJEOTFE", {
+                api_host: "https://us.i.posthog.com",
+                person_profiles: "identified_only", // or 'always' to create profiles for anonymous users as well
+            });
+        </script>
+    </body>
+</html>

@@ -1,0 +1,1 @@
+function e(e){if(e?.response?.status!==409)return null;let t=e?.response?.data?.detail;return!t||typeof t!=`object`||!t.conflict_window&&!t.conflicting_booking_id?null:{message:t.message||`Bu oda istenen tarihlerde zaten dolu.`,conflictingBookingId:t.conflicting_booking_id||null,conflictType:t.conflict_type||`booking`,conflictWindow:t.conflict_window||null}}export{e as t};

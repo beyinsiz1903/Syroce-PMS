@@ -195,17 +195,24 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
     async def deployment_health_check():
         return {"status": "healthy"}
 
-    # ── Root probe (Replit autoscale default health path) ───────────
-    # Replit autoscale's default HTTP health probe hits "/" — without
-    # this handler the request falls through to user routers (which
-    # are not yet mounted during warm-up) and returns 503, causing
-    # the deploy to be marked failed. This handler returns 200 cheaply
-    # whether bootstrap is done or still loading. Once the frontend
-    # static bundle is mounted by the deploy publicDir, that mount
-    # takes precedence at request time.
+    # ── Frontend build location (defined early; used by the root route
+    #    and the SPA static serving block further below) ─────────────
+    _backend_dir = Path(__file__).parent
+    frontend_build = Path(os.environ.get("FRONTEND_BUILD_DIR", str(_backend_dir.parent / "frontend" / "build")))
+
+    # ── Root route (Replit autoscale default health path + SPA entry) ─
+    # The autoscale HTTP probe hits "/". When the built frontend is
+    # present we serve index.html so the SPA landing page shows at the
+    # root URL (the HTML response is a 200, so the probe still passes).
+    # When the build is absent (pure-backend dev mode) we return cheap
+    # health JSON so the probe passes during warm-up, before user
+    # routers are mounted.
     @application.get("/", include_in_schema=False)
     @application.head("/", include_in_schema=False)
     async def deploy_root_probe():
+        _index = frontend_build / "index.html"
+        if _index.is_file():
+            return FileResponse(str(_index))
         return {"status": "ok", "service": "syroce-pms"}
 
     # ── Liveness vs Readiness ayrımı (Kubernetes/Replit Deploy uyumlu) ──
@@ -246,7 +253,6 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         return Response(status_code=204)
 
     # ── Screenshots download ────────────────────────────────────────
-    _backend_dir = Path(__file__).parent
     @application.get("/api/download/screenshots", include_in_schema=False)
     async def download_screenshots_zip():
         zip_path = _backend_dir / "Syroce_PMS_AppStore_Screenshots.zip"
@@ -272,9 +278,9 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
     # Replit autoscale: serve built frontend through FastAPI so one URL
     # hosts both API (/api/*, /ws, /docs) and SPA. Skipped when build dir
     # is absent (dev mode uses Vite on a separate port).
-    # Uses a 404 exception handler instead of a catch-all GET route so we
-    # don't shadow trailing-slash redirects or other framework routes.
-    frontend_build = Path(os.environ.get("FRONTEND_BUILD_DIR", str(_backend_dir.parent / "frontend" / "build")))
+    # frontend_build is defined above (near the root route). Deep links use
+    # a 404 exception handler instead of a catch-all GET route so we don't
+    # shadow trailing-slash redirects or other framework routes.
     if frontend_build.is_dir() and (frontend_build / "index.html").is_file():
         from starlette.exceptions import HTTPException as _StarletteHTTPException
         from starlette.requests import Request as _Request

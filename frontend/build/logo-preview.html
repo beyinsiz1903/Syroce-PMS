@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Syroce Logo Konseptleri</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            color: white;
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: rgba(255,255,255,0.9);
+            font-size: 1.1rem;
+            margin-bottom: 50px;
+        }
+        
+        .logo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 30px;
+            margin-bottom: 50px;
+        }
+        
+        .logo-card {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .logo-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 50px rgba(0,0,0,0.3);
+        }
+        
+        .logo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .logo-number {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+        
+        .logo-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1e293b;
+            flex: 1;
+            margin-left: 15px;
+        }
+        
+        .logo-display {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border-radius: 15px;
+            padding: 50px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 20px;
+            min-height: 150px;
+        }
+        
+        .logo-display img {
+            max-width: 100%;
+            height: auto;
+        }
+        
+        .logo-description {
+            color: #64748b;
+            line-height: 1.6;
+            margin-bottom: 15px;
+        }
+        
+        .logo-features {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .feature-tag {
+            background: #f1f5f9;
+            color: #475569;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        
+        .variations {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+        }
+        
+        .variations h2 {
+            color: #1e293b;
+            font-size: 1.8rem;
+            margin-bottom: 25px;
+        }
+        
+        .variation-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        
+        .variation-item {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .variation-item.dark {
+            background: #1e293b;
+        }
+        
+        .variation-item.color {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .variation-label {
+            margin-top: 15px;
+            font-size: 0.9rem;
+            color: #64748b;
+            font-weight: 500;
+        }
+        
+        .variation-item.dark .variation-label,
+        .variation-item.color .variation-label {
+            color: rgba(255,255,255,0.9);
+        }
+        
+        @media (max-width: 768px) {
+            .logo-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .logo-card {
+                padding: 25px;
+            }
+            
+            .logo-display {
+                padding: 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏨 Syroce Logo Konseptleri</h1>
+        <p class="subtitle">4 Farklı Profesyonel Logo Tasarımı</p>
+        
+        <div class="logo-grid">
+            <!-- Logo 1 -->
+            <div class="logo-card">
+                <div class="logo-header">
+                    <div class="logo-number">1</div>
+                    <h3 class="logo-title">Modern Minimal</h3>
+                </div>
+                <div class="logo-display">
+                    <img src="/logos/syroce-logo-1-modern.svg" alt="Syroce Logo 1">
+                </div>
+                <p class="logo-description">
+                    S harfi ve otel çatısının kombinasyonu. Mavi-turkuaz gradyan ile modern ve teknolojik görünüm. Temiz çizgiler ve minimal tasarım. Hem global hem kurumsal kullanıma uygun.
+                </p>
+                <div class="logo-features">
+                    <span class="feature-tag">🎨 Mavi Gradyan</span>
+                    <span class="feature-tag">🏠 Otel Çatısı</span>
+                    <span class="feature-tag">✨ Minimal</span>
+                    <span class="feature-tag">🌐 Modern</span>
+                </div>
+            </div>
+            
+            <!-- Logo 2 -->
+            <div class="logo-card">
+                <div class="logo-header">
+                    <div class="logo-number">2</div>
+                    <h3 class="logo-title">Teknolojik & Dinamik</h3>
+                </div>
+                <div class="logo-display">
+                    <img src="/logos/syroce-logo-2-tech.svg" alt="Syroce Logo 2">
+                </div>
+                <p class="logo-description">
+                    Dijital grid pattern ve mor-pembe gradyan. Next-gen teknoloji hissi veren dinamik tasarım. PMS yazılımının teknolojik doğasını vurgular. Genç ve yenilikçi görünüm.
+                </p>
+                <div class="logo-features">
+                    <span class="feature-tag">💜 Mor-Pembe Gradyan</span>
+                    <span class="feature-tag">⚡ Dijital</span>
+                    <span class="feature-tag">🔮 Tech</span>
+                    <span class="feature-tag">🚀 Dinamik</span>
+                </div>
+            </div>
+            
+            <!-- Logo 3 -->
+            <div class="logo-card">
+                <div class="logo-header">
+                    <div class="logo-number">3</div>
+                    <h3 class="logo-title">Lüks Kurumsal</h3>
+                </div>
+                <div class="logo-display">
+                    <img src="/logos/syroce-logo-3-luxury.svg" alt="Syroce Logo 3">
+                </div>
+                <p class="logo-description">
+                    Taç ve bina kombinasyonu ile premium görünüm. Altın-siyah renk paleti lüks otel segmentine hitap eder. Serif font ile zarif ve kurumsal. 5 yıldız oteller için ideal.
+                </p>
+                <div class="logo-features">
+                    <span class="feature-tag">👑 Premium</span>
+                    <span class="feature-tag">🏛️ Lüks</span>
+                    <span class="feature-tag">🌟 Zarif</span>
+                    <span class="feature-tag">💼 Kurumsal</span>
+                </div>
+            </div>
+            
+            <!-- Logo 4 -->
+            <div class="logo-card">
+                <div class="logo-header">
+                    <div class="logo-number">4</div>
+                    <h3 class="logo-title">Global Modern</h3>
+                </div>
+                <div class="logo-display">
+                    <img src="/logos/syroce-logo-4-global.svg" alt="Syroce Logo 4">
+                </div>
+                <p class="logo-description">
+                    Dünya ve konum pinleri ile global otel yönetimi teması. Yeşil-turkuaz gradyan ile çevreci ve modern görünüm. 8 dil desteğini ve uluslararası kullanımı vurgular.
+                </p>
+                <div class="logo-features">
+                    <span class="feature-tag">🌍 Global</span>
+                    <span class="feature-tag">📍 Konum</span>
+                    <span class="feature-tag">🌿 Yeşil</span>
+                    <span class="feature-tag">🌐 Uluslararası</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Logo Variations -->
+        <div class="variations">
+            <h2>📱 Farklı Kullanım Alanları</h2>
+            <p style="color: #64748b; margin-bottom: 30px;">Logolarınız beyaz, renkli ve koyu arka planlarda nasıl görünüyor:</p>
+            
+            <div class="variation-grid">
+                <div class="variation-item">
+                    <img src="/logos/syroce-logo-1-modern.svg" alt="Logo 1" style="max-width: 150px;">
+                    <div class="variation-label">Beyaz Arka Plan</div>
+                </div>
+                <div class="variation-item dark">
+                    <img src="/logos/syroce-logo-2-tech.svg" alt="Logo 2" style="max-width: 150px;">
+                    <div class="variation-label">Koyu Arka Plan</div>
+                </div>
+                <div class="variation-item color">
+                    <img src="/logos/syroce-logo-3-luxury.svg" alt="Logo 3" style="max-width: 150px;">
+                    <div class="variation-label">Renkli Arka Plan</div>
+                </div>
+                <div class="variation-item">
+                    <img src="/logos/syroce-logo-4-global.svg" alt="Logo 4" style="max-width: 150px;">
+                    <div class="variation-label">Beyaz Arka Plan</div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="background: white; border-radius: 20px; padding: 40px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); text-align: center;">
+            <h2 style="color: #1e293b; margin-bottom: 15px;">🎯 Hangi Logo Sizin Favoriniz?</h2>
+            <p style="color: #64748b; font-size: 1.1rem;">Beğendiğiniz logo numarasını bildirin ve projeye entegre edelim!</p>
+        </div>
+    </div>
+</body>
+</html>
