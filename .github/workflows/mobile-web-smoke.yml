@@ -68,7 +68,6 @@ jobs:
           [ "$missing" -eq 0 ] || exit 1
 
       - name: Install Playwright + browsers
-        working-directory: mobile
         run: |
           set -euo pipefail
           # Playwright is intentionally NOT in mobile/package.json prod deps
