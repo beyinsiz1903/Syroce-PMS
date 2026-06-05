@@ -1,12 +1,18 @@
 # Stress Suite Baseline Chain
 
 Bu dosya, web/backend Full Stress Suite'in resmi baseline zincirinin tek kayıt
-kaynağıdır. **Yalnızca Run #205 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
+kaynağıdır. **Yalnızca Run #206 mevcut (current) GREEN BASELINE'dır.** Diğer tüm
 run'lar tarihsel referans veya post-baseline verification run'dır — provenance ve
-metrikler korunur ama "current/official baseline" DEĞİLDİR. #205, #204'e göre kesin
-temiz iyileşmedir (P2 −1 [17→16: WATCH E#11 rate_limit auth_login bulgusu CI'da
-temizlendi], PASS/REVIEW/SKIP =, FAIL/P0/P1/P3=0; regresyon YOK) olduğu için PROMOTE
-EDİLDİ (2026-06-04); önceki current #204 historical'a indirildi. #205'in asıl kazancı:
+metrikler korunur ama "current/official baseline" DEĞİLDİR. #206, #205 ile TÜM
+eksenlerde birebir EŞİT (708, PASS/FAIL/REVIEW/SKIP=1608/0/9/8, P2=16, P0/P1/P3=0,
+GO WITH WATCH) ama daha YENİ HEAD commit'inde (`d672292` = doc reconciliation
+commit'i; #205 commit'i `6aa53ed` artık HEAD'in gerisinde) zamanlanmış (scheduled)
+koşuldu → metrik iyileşmesi YOK ama bağlayıcı baseline commit'ini HEAD'e re-anchor
+eder ve güncel kodun hâlâ TAM YEŞİL olduğunu kanıtlar (regresyon YOK) olduğu için
+PROMOTE EDİLDİ (2026-06-05); önceki current #205 historical'a indirildi. #205,
+#204'e göre kesin temiz iyileşmedir (P2 −1 [17→16: WATCH E#11 rate_limit auth_login
+bulgusu CI'da temizlendi], PASS/REVIEW/SKIP =, FAIL/P0/P1/P3=0; regresyon YOK) olduğu
+için PROMOTE EDİLMİŞTİ (2026-06-04); önceki current #204 historical'a indirildi. #205'in asıl kazancı:
 `rate_limit_boundary` modülü 10/0/0/0 tam yeşil — auth_login burst'ünün 429
 gözleyememesinin iki-katmanlı kök nedeni (LOGIN_IP/LOGIN_ACCOUNT non-always_on
 autoscale dilution + spec payload `.invalid` TLD'sinin EmailStr 422'siyle handler'a
@@ -31,7 +37,45 @@ yok.
 
 ---
 
-## Run #205 — CURRENT GREEN BASELINE
+## Run #206 — CURRENT GREEN BASELINE
+
+- **Tarih / commit:** 2026-06-05, commit `d672292` (head_sha
+  `d672292f884bc5cfcb6b7c1d3de8968049b240dd`) — bu commit web/backend kodunda
+  davranış değişikliği İÇERMEZ; yalnızca doc reconciliation (F9C 3 mobile/maintenance
+  P1'inin RESOLVED + targeted-verified olarak roadmap/scorecard'a işlenmesi + memory
+  topic). Dolayısıyla #205'e göre metrik değişimi beklenmez ve gözlenmedi.
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=1608/0/9/8, P0=P1=0, P2=16 / P3=0, external_calls=[],
+  pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**. Süre 4377.6s.
+  Seed: prefix `E2E_STRESS_F7_1780642143666_`, rooms=500 guests=500 bookings=500
+  folios=500 charges=2293 rnl=1793 hk=500. Cleanup#1 deleted_total=9095,
+  cleanup#2 deleted_total=0 (idempotent=true), pilot baseline_bookings=30
+  after_bookings=30 drift=0.
+- **#205 → #206 DÜRÜST DELTA (promote-relevant, baseline'a göre):** PASS **=**
+  (1608), REVIEW **=** (9), SKIP **=** (8), P2 **=** (16), FAIL/P0/P1/P3 SABİT (0).
+  **Tüm eksenler EŞİT — metrik iyileşmesi YOK, regresyon da YOK.** Promote gerekçesi
+  metrik değil: bağlayıcı baseline commit'ini `6aa53ed`→`d672292` (güncel HEAD,
+  doc reconciliation içerir) re-anchor eder ve güncel kodun hâlâ TAM YEŞİL olduğunu
+  kanıtlar. REVIEW/SKIP kompozisyonunda küçük data-state jitter var (örn. #205'te
+  full_24h `sabah_walkin` s400 REVIEW'deydi; #206'da `sabah_walkin` temiz, yerine
+  `aksam_folio_charge` s400 10/10 REVIEW — toplam REVIEW=9 değişmedi); tümü
+  by-design/data-state/deploy-gap, yeni gerçek failure YOK. Düz "GO" / "/100"
+  iddiası YOK.
+- **Provenance (anonim public GitHub API, fabrike EDİLMEDİ):** repo
+  `beyinsiz1903/emergent-yeni-uygulama`, run #206 (id 27000015675),
+  head_sha=`d672292f884bc5cfcb6b7c1d3de8968049b240dd`, conclusion=success,
+  event=schedule, actor=beyinsiz1903. Artifacts (2): stress-drill-report
+  (28756 B) — sha256:`e9d88d25fbf2e85c6738a62bddcf4666c12030d328727dbe70e69bafb6128453`,
+  playwright-stress-report (814632 B) —
+  sha256:`37db95cda82ae9f8d6eb5e611dcb96363b09a6db705e63d0abf586ce1d6410bf`.
+  Operatör ekran görüntüsüyle (IMG_3708: #206 Success, 1h14m3s, 2 artifact, commit
+  d672292, main, scheduled) çapraz doğrulandı. Not: #207 (workflow_dispatch,
+  commit `50d8ee2` = deploy) bu doğrulama anında hâlâ koşuyordu (conclusion=None) →
+  baseline'a dahil EDİLMEDİ.
+
+---
+
+## Run #205 — historical (önce CURRENT GREEN BASELINE)
 
 - **Tarih / commit:** 2026-06-04, commit `6aa53ed` (head_sha
   `6aa53ed835944d409d237aa66af9cd1955482c66`) — WATCH Reduction Pack Sınıf E #11
