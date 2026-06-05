@@ -9,9 +9,12 @@
 #   build command : bash mobile/build-web.sh
 #   publicDir     : mobile/dist
 #
-# The exported bundle is a SPA (app.json -> web.output = "single"); Replit
-# static deployments serve index.html as the SPA fallback, so client routes
-# like /login resolve correctly.
+# The exported bundle is a SPA (app.json -> web.output = "single"). Replit
+# static deployments do NOT rewrite unknown routes to index.html - they serve
+# a 404.html (if present) for any path that isn't a real file. Without it a
+# hard navigation to a client route (e.g. /login, /checkin) returns an empty
+# 404 and the SPA never boots. We therefore copy index.html -> 404.html so
+# every deep route falls back to the SPA shell and the client router resolves.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -24,4 +27,6 @@ export CI=1
 
 npm install --no-audit --no-fund
 npx expo export -p web --output-dir dist
-echo "Web bundle exported to mobile/dist"
+# SPA fallback for the Replit static host (see header note).
+cp dist/index.html dist/404.html
+echo "Web bundle exported to mobile/dist (with 404.html SPA fallback)"
