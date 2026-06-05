@@ -48,3 +48,31 @@ registered" comment can hide that an explicit `/` route was later added.
   `application/json` = still broken.
 - After fixing code/gitignore, the user must **re-publish** — autoscale rebuilds
   and repackages; the agent cannot trigger it.
+
+## Cause 3 — the warm-up 503 gate blocks the SPA's static bundles
+Separate from Causes 1/2 (which serve health JSON at `/`), this one serves
+`index.html` at `/` fine (200) but the page is a **blank white screen** because
+the referenced `/js/*` and `/assets/*` bundles return **503
+`{"status":"starting","detail":"Server is warming up"}`** with `Retry-After`.
+
+The warm-up middleware (`_warmup_gate`) sheds all traffic while
+`app.state.routes_ready=False`, allowing only `/health*`, `/favicon.ico`, and
+exactly `/`. With `DEFER_STARTUP_BOOTSTRAP=1`, `routes_ready` flips True only
+after **ALL** startup callbacks finish — including cache warming of every
+booking + scheduler boot. On a cold start that heavy bootstrap can take many
+minutes, so the SPA's JS/CSS stay 503 the whole time and the app never boots.
+
+**Diagnose:** `curl /` is 200 HTML but `curl /js/<bundle>.js` and
+`curl /assets/<file>.css` are `503 application/json` with body
+`{"status":"starting",...}`; deployment logs show bootstrap still running
+(cache_warmer / schedulers) long after `Application startup complete`.
+
+**Fix:** add the eager static mounts' prefixes (`/js/`, `/assets/`, `/logos/`)
+to the gate allow-list. They are public files with no DB/worker dependency, so
+serving them during warm-up lets the SPA shell boot and render a loading/login
+state. `/api`, `/ws`, `/graphql` stay gated (503, fail-closed) so no data is
+served before readiness. Deep links (non-`/` HTML routes) still 503 during
+warm-up — acceptable tradeoff; primary entry is `/`. Regression:
+`backend/tests/test_warmup_gate_static_assets.py`.
+**Why:** gating static bundles makes EVERY cold start a white screen for the
+full (long) warm-up window; only dynamic/data routes need the readiness gate.

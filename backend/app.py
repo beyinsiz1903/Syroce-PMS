@@ -174,13 +174,28 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
     async def _warmup_gate(request, call_next):
         if not getattr(application.state, "routes_ready", True):
             path = request.url.path
-            # Allow lightweight probes during warm-up so platform health
-            # checks pass before bootstrap completes:
+            # Allow lightweight probes AND static SPA assets during warm-up:
             #   - /health* (explicit health endpoints)
             #   - /favicon.ico (browser noise)
             #   - "/" (Replit autoscale default HTTP probe path —
             #     served by the deploy_root_probe handler below)
-            if not (path.startswith("/health") or path == "/favicon.ico" or path == "/"):
+            #   - /js, /assets, /logos (eager StaticFiles mounts below):
+            #     these are public static files with no DB/worker
+            #     dependency, so serving them during warm-up lets the SPA
+            #     shell boot and render a loading/login state instead of a
+            #     white screen. API/WS/GraphQL stay gated (503, fail-closed)
+            #     until bootstrap completes, so no data is served early.
+            _spa_static = (
+                path.startswith("/js/")
+                or path.startswith("/assets/")
+                or path.startswith("/logos/")
+            )
+            if not (
+                path.startswith("/health")
+                or path == "/favicon.ico"
+                or path == "/"
+                or _spa_static
+            ):
                 from fastapi.responses import JSONResponse
                 return JSONResponse(
                     {"status": "starting", "detail": "Server is warming up"},
