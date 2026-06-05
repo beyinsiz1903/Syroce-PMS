@@ -106,6 +106,20 @@ def _unique_operation_id(route: "APIRoute") -> str:
     return f"{_safe(tag)}__{methods}__{_safe(route.path)}"
 
 
+# Public static-asset extensions allowed through the warm-up gate. These are
+# files served by the eager StaticFiles mounts (no DB/worker dependency), so
+# letting them through during cold-start lets the SPA shell render its logo +
+# hero imagery instead of a white screen with broken images. API/WS/GraphQL
+# paths are excluded explicitly (see _warmup_gate), so this only widens the
+# public static surface.
+_WARMUP_STATIC_EXT = frozenset({
+    ".js", ".mjs", ".css", ".map",
+    ".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico", ".avif",
+    ".woff", ".woff2", ".ttf", ".eot", ".otf",
+    ".json", ".webmanifest", ".txt", ".xml",
+})
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application instance."""
 
@@ -179,16 +193,27 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
             #   - /favicon.ico (browser noise)
             #   - "/" (Replit autoscale default HTTP probe path —
             #     served by the deploy_root_probe handler below)
-            #   - /js, /assets, /logos (eager StaticFiles mounts below):
-            #     these are public static files with no DB/worker
-            #     dependency, so serving them during warm-up lets the SPA
-            #     shell boot and render a loading/login state instead of a
-            #     white screen. API/WS/GraphQL stay gated (503, fail-closed)
-            #     until bootstrap completes, so no data is served early.
-            _spa_static = (
+            #   - public static files: the /js, /assets, /logos, /landing
+            #     eager StaticFiles mounts plus any root-level static asset
+            #     (logo svg/png, og images, robots, manifest, fonts, ...).
+            #     These are public files with no DB/worker dependency, so
+            #     serving them during warm-up lets the SPA shell boot AND
+            #     render its logo + hero imagery instead of a white screen
+            #     with broken images. API/WS/GraphQL stay gated below (503,
+            #     fail-closed) until bootstrap completes, so no data is
+            #     served early.
+            _is_dynamic = (
+                path.startswith("/api")
+                or path.startswith("/graphql")
+                or path.startswith("/ws")
+            )
+            _, _ext = os.path.splitext(path)
+            _spa_static = not _is_dynamic and (
                 path.startswith("/js/")
                 or path.startswith("/assets/")
                 or path.startswith("/logos/")
+                or path.startswith("/landing/")
+                or _ext in _WARMUP_STATIC_EXT
             )
             if not (
                 path.startswith("/health")

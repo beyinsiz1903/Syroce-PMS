@@ -76,3 +76,14 @@ warm-up — acceptable tradeoff; primary entry is `/`. Regression:
 `backend/tests/test_warmup_gate_static_assets.py`.
 **Why:** gating static bundles makes EVERY cold start a white screen for the
 full (long) warm-up window; only dynamic/data routes need the readiness gate.
+
+**Follow-up (broken images, not white screen):** allow-listing only `/js`,
+`/assets`, `/logos` is too narrow — the SPA boots but its logo and hero render
+broken. The landing logo is a **root-level** file (`/syroce-logo.svg`) and the
+hero lives under a **different prefix** (`/landing/hero-hotel*.webp|png`), so
+both still 503 during warm-up. Widen the allow-list to the `/landing/` prefix
+AND any **root-level static extension** (`.svg/.png/.webp/.css/.woff/...` via a
+`_WARMUP_STATIC_EXT` set), gated behind an explicit `not (/api|/graphql|/ws)`
+check so the extension rule can never open a dynamic surface (e.g.
+`/api/x.json` stays 503). Lock both invariants with tests (static assets
+non-503, dynamic-prefix+static-ext stays 503).
