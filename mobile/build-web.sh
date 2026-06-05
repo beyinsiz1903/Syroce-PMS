@@ -22,6 +22,6 @@ cd "$(dirname "$0")"
 export EXPO_PUBLIC_API_URL EXPO_PUBLIC_QUICKID_URL
 export CI=1
 
-npm ci --no-audit --no-fund
+npm install --no-audit --no-fund
 npx expo export -p web --output-dir dist
 echo "Web bundle exported to mobile/dist"
