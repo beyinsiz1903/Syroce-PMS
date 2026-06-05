@@ -70,8 +70,44 @@ yok.
   sha256:`37db95cda82ae9f8d6eb5e611dcb96363b09a6db705e63d0abf586ce1d6410bf`.
   Operatör ekran görüntüsüyle (IMG_3708: #206 Success, 1h14m3s, 2 artifact, commit
   d672292, main, scheduled) çapraz doğrulandı. Not: #207 (workflow_dispatch,
-  commit `50d8ee2` = deploy) bu doğrulama anında hâlâ koşuyordu (conclusion=None) →
-  baseline'a dahil EDİLMEDİ.
+  commit `50d8ee2` = deploy-marker) sonradan TAMAMLANDI (success) ama **kod #206 ile
+  özdeş** (git diff boş) + tek delta REVIEW +1 jitter olduğu için **verification-only
+  NOT-PROMOTED** — #206 CURRENT kalır (aşağıdaki "Run #207" bölümüne bakınız).
+
+---
+
+## Run #207 — verification-only (NOT-PROMOTED; #206 CURRENT kalır)
+
+- **Tarih / commit:** 2026-06-05, commit `50d8ee2` ("Published your App", head_sha
+  `50d8ee2fe54f…`), event=workflow_dispatch (manually triggered). **KOD FARKI YOK:**
+  `git diff --stat d672292 50d8ee2` BOŞ — bu deploy-marker commit'i #206'nın commit'i
+  (`d672292`) ile **bit-bit özdeş ağaç**tır. Yani #207, #206 ile **birebir aynı kod**
+  üzerinde koştu.
+- **Sonuç:** 708 test, status=Success (conclusion=success), failedTests=0,
+  PASS/FAIL/REVIEW/SKIP=**1607/0/10/8**, P0=P1=0, **P2=16** / P3=0, external_calls=[],
+  pilot_drift=0, cleanup#2 idempotent=true, verdict **GO WITH WATCH**. Süre 4256.6s.
+  Seed prefix `E2E_STRESS_F7_1780646479523_`.
+- **#206 → #207 DELTA:** PASS **−1** (1608→1607), REVIEW **+1** (9→10), SKIP **=** (8),
+  P2 **=** (16), FAIL/P0/P1/P3 SABİT (0). **Kod özdeş olduğu için bu delta KANITLANABİLİR
+  biçimde saf run-to-run data-state/perf jitter'dır — kod regresyonu DEĞİL.** Bir PASS
+  adımı REVIEW'e döndü: kompozisyon farkı folio-mass `folio_refund_batch` (s400 closed-folio
+  guard, data-state) + perf latency marker'ları (finance_folio perf:A0_open/G_guest_purchase,
+  full_24h perf:aksam_charge — soft latency eşiği jitter). Yeni gerçek failure / yeni
+  P-finding YOK.
+- **NEDEN PROMOTE EDİLMEDİ:** (1) kod #206 ile özdeş → promote hiçbir metrik/kapsam kazancı
+  sağlamaz; (2) tek delta REVIEW +1 jitter → daha kötü sayıyı kabul etmek olur; (3) precedent
+  (#196/#197): REVIEW artışında promote YOK. **#206 (d672292) CURRENT GREEN BASELINE olarak
+  kalır.** #207'nin DEĞERİ: **yayınlanan/deploy edilen commit'in (`50d8ee2` "Published your
+  App") hâlâ TAM YEŞİL** olduğunu (FAIL=0, P0/P1=0, P2=16 değişmedi) bağımsız doğrular →
+  deployment güveni.
+- **Provenance (anonim public GitHub API + IMG_3709, fabrike EDİLMEDİ):** run #207
+  (id 27001198792), head_sha=`50d8ee2fe54f…`, conclusion=success, event=workflow_dispatch,
+  actor=beyinsiz1903. Artifacts (2): stress-drill-report (28801 B) —
+  sha256:`188c09f08ec984756d3f8bcae334a677fd2e8d23041380794bdd6fc5a62426b3`,
+  playwright-stress-report (814926 B) —
+  sha256:`1a64be2296ed3269b9ac0b10a98dca6104277c3ecf40dade397872dee9f40110`.
+  IMG_3709: #207 Success, 1h56m10s (total) / 1h11m (job), 2 artifact, commit 50d8ee2, main,
+  manually triggered. (Aynı SHA üzerinde push event run'ları #1206/#478 de success.)
 
 ---
 
