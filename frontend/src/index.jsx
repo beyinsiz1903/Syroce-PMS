@@ -26,6 +26,37 @@ if (SENTRY_DSN) {
         replaysSessionSampleRate: 0.0,
         replaysOnErrorSampleRate: 1.0,
         sendDefaultPii: false,
+        // Stale-chunk hatalarını düşür: yeni deploy sonrası açık sekmenin eski
+        // chunk'ları istemesi beklenen bir durumdur; index.html'deki self-heal
+        // handler tek seferlik reload ile çözer. SADECE self-heal o anda bu
+        // olayı ele alıyorsa (window.__syroceChunkHealing) düşürülür; reload
+        // sonrası TEKRAR eden chunk hatası (= gerçekten bozuk deploy) latch'i
+        // tetiklemediğinden raporlanır. Spesifik mesaj sınıfları (geniş substring
+        // değil) — gerçek bir bundler/JS hatasını maskelemez.
+        beforeSend(event, hint) {
+          const CHUNK_ERR = [
+            "Importing a module script failed",
+            "Failed to fetch dynamically imported module",
+            "error loading dynamically imported module",
+            "is not a valid JavaScript MIME type",
+            "Unable to preload CSS",
+          ];
+          const ex = hint && hint.originalException;
+          const msg =
+            (ex && (ex.message || (typeof ex === "string" ? ex : ""))) ||
+            event?.message ||
+            event?.exception?.values?.[0]?.value ||
+            "";
+          const isChunk = msg && CHUNK_ERR.some((c) => msg.indexOf(c) !== -1);
+          if (
+            isChunk &&
+            typeof window !== "undefined" &&
+            window.__syroceChunkHealing
+          ) {
+            return null; // self-heal devrede: iyi huylu stale-tab olayı, düşür
+          }
+          return event;
+        },
       });
     }).catch(() => { /* Sentry yüklenemezse uygulama yine çalışsın */ });
   });

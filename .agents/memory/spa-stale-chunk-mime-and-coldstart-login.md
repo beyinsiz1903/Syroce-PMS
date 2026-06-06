@@ -40,3 +40,30 @@ deferred bootstrap marks routes ready (~30-60s). A client that doesn't retry
 - A 30s `waitForURL` can still lose to a 60s cold start, so ALSO pre-warm the
   backend in CI (poll `/api/health` until 200 before the suite). Client retry
   covers real users; CI pre-warm guarantees the test starts warm.
+
+# Client self-heal closes the open-tab-across-deploy gap
+
+The server fix (no-store index + 404 for missing chunks) still leaves ONE gap:
+a tab that was ALREADY OPEN across a redeploy holds the old in-memory index.html,
+requests a now-deleted chunk, gets the clean 404, and its lazy dynamic import
+rejects → "Importing a module script failed" / "Failed to fetch dynamically
+imported module" → app stuck until a MANUAL refresh.
+
+**Heuristic:** add an inline `index.html` handler (registered before the module
+entry, and before lazy Sentry) that on `vite:preloadError` + `error` +
+`unhandledrejection` matching the chunk-error message classes reloads the page
+ONCE to pull the fresh index + new chunk names.
+
+**Loop safety is the trap, not the reload.** A naive cooldown is NOT one-shot.
+Use a real one-shot latch with THREE backends so a genuinely broken deploy can
+never infinite-loop: in-memory (`window.__syroceChunkReloaded`), sessionStorage
+(`syroce_chunk_reload_done`), AND a URL marker (`?_chunkreload=1`) for the
+storage-denied branch (use `location.replace` so the post-reload load sees the
+latch with no storage). If the same error recurs after the one reload, the latch
+short-circuits → no second reload → the error is allowed to surface.
+
+**Sentry beforeSend must be conditional, not global.** Dropping the chunk-error
+classes unconditionally MASKS a genuinely broken deploy (same message). Gate the
+drop on a heal-in-progress flag (`window.__syroceChunkHealing`, set only on the
+first heal path right before reload). A recurrence after reload does NOT set the
+flag → it reports. Match specific message classes, never a broad substring.
