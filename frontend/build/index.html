@@ -85,6 +85,69 @@
                     e.preventDefault();
                 }
             });
+
+            // Stale-chunk self-heal: after a new deploy, an already-open tab still
+            // holds the previous index.html in memory and requests hashed chunks
+            // that no longer exist. The server returns a clean 404 for those, so
+            // the dynamic import rejects with a chunk-load error and the app is
+            // stuck until a manual refresh. Reload ONCE to pull the fresh
+            // index.html + new chunk names. A one-shot latch (sessionStorage +
+            // in-memory + URL-marker fallback) prevents a reload loop if a deploy
+            // is genuinely broken — and lets the recurring error reach Sentry.
+            (function () {
+                var CHUNK_ERR = [
+                    'Importing a module script failed',
+                    'Failed to fetch dynamically imported module',
+                    'error loading dynamically imported module',
+                    'is not a valid JavaScript MIME type',
+                    'Unable to preload CSS'
+                ];
+                function isChunkError(msg) {
+                    if (!msg) return false;
+                    for (var i = 0; i < CHUNK_ERR.length; i++) {
+                        if (msg.indexOf(CHUNK_ERR[i]) !== -1) return true;
+                    }
+                    return false;
+                }
+                // Truly one-shot per tab. If we ALREADY healed once in this tab and
+                // the same chunk error recurs after the reload, the deploy is
+                // genuinely broken — do NOT reload again (no loop) and let the error
+                // surface to Sentry (window.__syroceChunkHealing stays false).
+                function alreadyHealed() {
+                    if (window.__syroceChunkReloaded) return true;
+                    try { if (sessionStorage.getItem('syroce_chunk_reload_done') === '1') return true; } catch (_) {}
+                    // storage-denied fallback: a URL marker survives the reload.
+                    if (window.location.search.indexOf('_chunkreload=1') !== -1) return true;
+                    return false;
+                }
+                function reloadOnce() {
+                    if (alreadyHealed()) return;
+                    window.__syroceChunkReloaded = true;   // in-memory latch (loop-safe even if storage denied)
+                    window.__syroceChunkHealing = true;    // tells Sentry beforeSend this incident is benign
+                    var stored = false;
+                    try { sessionStorage.setItem('syroce_chunk_reload_done', '1'); stored = true; } catch (_) {}
+                    if (stored) {
+                        window.location.reload();
+                    } else {
+                        // No storage: pin the latch in the URL so the next load sees it.
+                        var u = new URL(window.location.href);
+                        u.searchParams.set('_chunkreload', '1');
+                        window.location.replace(u.toString());
+                    }
+                }
+                window.addEventListener('vite:preloadError', function (e) {
+                    if (e && e.preventDefault) e.preventDefault();
+                    reloadOnce();
+                });
+                window.addEventListener('error', function (e) {
+                    if (isChunkError(e && e.message)) reloadOnce();
+                });
+                window.addEventListener('unhandledrejection', function (e) {
+                    var r = e && e.reason;
+                    var msg = r && (r.message || (typeof r === 'string' ? r : ''));
+                    if (isChunkError(msg)) reloadOnce();
+                });
+            })();
         </script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
         <!--
@@ -92,7 +155,7 @@
         -->
         <script src="https://unpkg.com/rrweb@latest/dist/rrweb.min.js"></script>
         <script src="https://d2adkz2s9zrlge.cloudfront.net/rrweb-recorder-20250919-1.js"></script>
-      <script type="module" crossorigin src="/js/index-D-KhEiXZ.js"></script>
+      <script type="module" crossorigin src="/js/index-H-soiiJy.js"></script>
       <link rel="modulepreload" crossorigin href="/js/rolldown-runtime-DW7kkdiz.js">
       <link rel="modulepreload" crossorigin href="/js/vendor-i18n-C7lUWOfQ.js">
       <link rel="modulepreload" crossorigin href="/js/vendor-motion-DtDr3HXi.js">
@@ -101,7 +164,7 @@
       <link rel="modulepreload" crossorigin href="/js/vendor-react-BVaOz5QP.js">
       <link rel="modulepreload" crossorigin href="/js/vendor-ui-Bb2dwoYX.js">
       <link rel="modulepreload" crossorigin href="/js/vendor-icons-D6ItQZGb.js">
-      <link rel="modulepreload" crossorigin href="/js/prefetch-BknrnW4g.js">
+      <link rel="modulepreload" crossorigin href="/js/prefetch-C_DJHVFa.js">
       <link rel="modulepreload" crossorigin href="/js/utils-DbH9SL_t.js">
       <link rel="modulepreload" crossorigin href="/js/button-BAmSNFzi.js">
       <link rel="modulepreload" crossorigin href="/js/alert-dialog-Bb1Pc6QO.js">
@@ -110,12 +173,12 @@
       <link rel="modulepreload" crossorigin href="/js/axiosConfig-BjIsUCJu.js">
       <link rel="modulepreload" crossorigin href="/js/currency-BImlMiRr.js">
       <link rel="modulepreload" crossorigin href="/js/CurrencyContext-qDBnj0Rl.js">
-      <link rel="modulepreload" crossorigin href="/js/websocket-DCEUZfSg.js">
+      <link rel="modulepreload" crossorigin href="/js/websocket-BGJeB7Xu.js">
       <link rel="modulepreload" crossorigin href="/js/offlineQueueDB-CrIF1spc.js">
-      <link rel="modulepreload" crossorigin href="/js/NotificationContext-KQrg2jQ9.js">
-      <link rel="modulepreload" crossorigin href="/js/i18n-B__reoGh.js">
+      <link rel="modulepreload" crossorigin href="/js/NotificationContext-CoJe4oGI.js">
+      <link rel="modulepreload" crossorigin href="/js/i18n-CzVytQkS.js">
       <link rel="modulepreload" crossorigin href="/js/dialogs-CkCngYkh.js">
-      <link rel="modulepreload" crossorigin href="/js/routeDefinitions-CX-lk5Xc.js">
+      <link rel="modulepreload" crossorigin href="/js/routeDefinitions-B3N3k2v2.js">
       <link rel="modulepreload" crossorigin href="/js/featureFlags-CDxZVCLN.js">
       <link rel="stylesheet" crossorigin href="/assets/index-BVL5yzaq.css">
     </head>

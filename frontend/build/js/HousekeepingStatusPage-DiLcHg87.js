@@ -1,0 +1,1 @@
+import{a as e}from"./vendor-motion-DtDr3HXi.js";import{t}from"./HousekeepingRoomGrid-CXBApLlr.js";var n=e(),r=({user:e,tenant:r,onLogout:i})=>(0,n.jsx)(n.Fragment,{children:(0,n.jsx)(t,{embedded:!1})});export{r as default};
