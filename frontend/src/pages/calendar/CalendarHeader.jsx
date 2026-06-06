@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useLayoutEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,12 +38,35 @@ const CalendarHeader = ({
   const openNativePicker = () => {
     const el = dateInputRef.current;
     if (!el) return;
+    // Focus first so the browser ties the native picker to this input's focus;
+    // that way blur() (on selection or on unmount) reliably dismisses it and it
+    // can't linger as a floating overlay after an SPA route change.
+    try { el.focus({ preventScroll: true }); } catch (_) { /* ignore */ }
     if (typeof el.showPicker === 'function') {
       try { el.showPicker(); return; } catch (_) { /* fallback */ }
     }
-    el.focus();
     el.click();
   };
+
+  // SPA navigation unmounts this header; explicitly blur the date input on
+  // unmount so a programmatically-opened native date picker is dismissed and
+  // does not stay visible over whichever page the user navigates to next.
+  // useLayoutEffect cleanup runs synchronously during the unmount commit while
+  // the node is still live (a passive-effect cleanup may run after detach).
+  useLayoutEffect(() => {
+    const el = dateInputRef.current;
+    return () => {
+      try { el?.blur(); } catch (_) { /* ignore */ }
+      // Defensive fallback: if the date input is still the active element
+      // (e.g. ref already detached), blur it directly to close the picker.
+      try {
+        const active = document.activeElement;
+        if (active && active.getAttribute?.('data-testid') === 'go-to-date-input') {
+          active.blur();
+        }
+      } catch (_) { /* ignore */ }
+    };
+  }, []);
 
   const dateRangeLabel = dateRange.length > 0
     ? `${dateRange[0].toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })} – ${dateRange[dateRange.length - 1].toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}`
@@ -156,11 +179,12 @@ const CalendarHeader = ({
             ref={dateInputRef}
             type="date"
             data-testid="go-to-date-input"
-            className="sr-only absolute inset-0 opacity-0 pointer-events-none"
+            className="sr-only"
             tabIndex={-1}
-            aria-hidden="true"
+            aria-label="Tarihe git"
             onChange={(e) => {
               if (e.target.value) onGoToDate(new Date(e.target.value + 'T00:00:00'));
+              try { e.target.blur(); } catch (_) { /* dismiss native picker */ }
             }}
           />
         </div>
