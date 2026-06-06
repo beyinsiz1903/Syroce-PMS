@@ -16,6 +16,11 @@ on:
         description: "Expo Web bundle URL (örn. https://mobile-stress.syroce.com)"
         required: true
         type: string
+      api_url:
+        description: "Backend API base URL (cold-start pre-warm için). Boş bırakılırsa pre-warm atlanır."
+        required: false
+        type: string
+        default: "https://emergent-yeni-uygulama-1.replit.app"
       note:
         description: "Optional note for the run summary (kim/ne için)"
         required: false
@@ -74,6 +79,24 @@ jobs:
           # (RN/Expo bundle would pull it in). Install ad-hoc in CI only.
           npm install --no-save @playwright/test@^1.47.0
           npx playwright install --with-deps chromium
+
+      - name: Pre-warm backend (avoid autoscale cold-start 503)
+        if: ${{ github.event.inputs.api_url != '' }}
+        run: |
+          set -uo pipefail
+          url="${{ github.event.inputs.api_url }}"
+          url="${url%/}"
+          echo "Warming ${url}/api/health (login hits a ready backend, not a cold one)..."
+          deadline=$((SECONDS + 240))
+          until curl -fsS -o /dev/null "${url}/api/health"; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::Backend did not become ready within 240s at ${url}/api/health"
+              exit 1
+            fi
+            echo "  not ready yet (warming up), retrying in 5s..."
+            sleep 5
+          done
+          echo "Backend is warm — proceeding to smoke tests."
 
       - name: Run mobile web smoke
         id: smoke

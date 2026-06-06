@@ -252,7 +252,16 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
     async def deploy_root_probe():
         _index = frontend_build / "index.html"
         if _index.is_file():
-            return FileResponse(str(_index))
+            # index.html must NEVER be cached: it pins the current build's
+            # hashed chunk filenames. A cached copy survives a redeploy and
+            # then points at chunks that no longer exist → those requests
+            # fall through to the SPA fallback and the browser throws
+            # "'text/html' is not a valid JavaScript MIME type". Hashed
+            # assets under /js,/assets,/logos stay immutably cacheable.
+            return FileResponse(
+                str(_index),
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
         return {"status": "ok", "service": "syroce-pms"}
 
     # ── Liveness vs Readiness ayrımı (Kubernetes/Replit Deploy uyumlu) ──
@@ -342,7 +351,20 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
             candidate = frontend_build / path.lstrip("/")
             if path != "/" and candidate.is_file():
                 return _FR(str(candidate))
-            return _FR(str(frontend_build / "index.html"))
+            # A request for a static asset (hashed JS/CSS chunk, image, font,
+            # ...) that does NOT exist must return a real 404 — never the SPA
+            # shell. Otherwise a stale cached index.html requesting a now-
+            # deleted chunk gets index.html (text/html) back and the browser
+            # module loader throws "'text/html' is not a valid JavaScript MIME
+            # type". Only extension-less deep-link routes fall through to
+            # index.html for client-side routing.
+            _, _ext = os.path.splitext(path)
+            if _ext:
+                return _JR({"detail": "Not Found"}, status_code=404)
+            return _FR(
+                str(frontend_build / "index.html"),
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
 
     # ── OpenAPI schema cache ────────────────────────────────────────
     # With ~2435 paths, FastAPI's default openapi() rebuild costs ~1.5s per request

@@ -14,6 +14,15 @@ const BIOMETRIC_PREF_KEY = 'syroce.biometric.enabled';
 const ACCESS_TOKEN_LIFETIME_MS = 15 * 60 * 1000;
 const REFRESH_GRACE_MS = 3 * 60 * 1000; // refresh when <3 min remaining
 
+// Backend autoscale cold-start: the warm-up gate returns 503 "Server is
+// warming up" (with Retry-After) for /api/* until bootstrap finishes. The
+// request is rejected BEFORE it reaches the handler, so retrying is safe for
+// every method (including POST /login). Bounded so a genuine outage still
+// fails fast instead of hanging the UI forever.
+const WARMUP_MAX_RETRIES = 8;
+const WARMUP_DEFAULT_DELAY_MS = 4000;
+const WARMUP_MAX_DELAY_MS = 6000;
+
 type ExpoConfigLike = { hostUri?: string };
 type LegacyManifestLike = { debuggerHost?: string };
 
@@ -186,6 +195,27 @@ async function refreshIfNeeded(force: boolean): Promise<string | null> {
   return _refreshInFlight;
 }
 
+// Sleep that resolves after `ms` OR rejects immediately if the caller's
+// AbortSignal fires — so a warm-up backoff never holds the request open after
+// the consumer (screen unmount / user cancel) has aborted it.
+function warmupBackoff(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new ApiError(0, 'NETWORK', { message: 'aborted' }));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new ApiError(0, 'NETWORK', { message: 'aborted' }));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener?.('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener?.('abort', onAbort, { once: true });
+  });
+}
+
 export async function apiRequest<T = unknown>(path: string, opts: RequestOptions = {}): Promise<T> {
   const url = buildUrl(path, opts.query);
   const headers: Record<string, string> = {
@@ -212,16 +242,40 @@ export async function apiRequest<T = unknown>(path: string, opts: RequestOptions
   }
 
   let res: Response;
-  try {
-    res = await fetch(url, {
-      method: opts.method || 'GET',
-      headers,
-      body,
-      signal: opts.signal,
-    });
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : 'network_error';
-    throw new ApiError(0, 'NETWORK', { message });
+  let text = '';
+  let warmupAttempts = 0;
+  for (;;) {
+    try {
+      res = await fetch(url, {
+        method: opts.method || 'GET',
+        headers,
+        body,
+        signal: opts.signal,
+      });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'network_error';
+      throw new ApiError(0, 'NETWORK', { message });
+    }
+    text = await res.text();
+    // Retry ONLY the backend cold-start warm-up gate, identified by its exact
+    // 503 signature ({"status":"starting", ... "Server is warming up"}). That
+    // response is produced BEFORE the request reaches any handler, so replaying
+    // it is side-effect-free even for POST/PATCH/DELETE. A genuine handler-level
+    // 503 has a different body and is NOT retried — no duplicate side effects.
+    const isWarmupGate =
+      res.status === 503 &&
+      (text.includes('"status":"starting"') || text.includes('warming up'));
+    if (isWarmupGate && warmupAttempts < WARMUP_MAX_RETRIES) {
+      const ra = Number(res.headers.get('retry-after'));
+      const delay =
+        Number.isFinite(ra) && ra > 0
+          ? Math.min(ra * 1000, WARMUP_MAX_DELAY_MS)
+          : WARMUP_DEFAULT_DELAY_MS;
+      warmupAttempts += 1;
+      await warmupBackoff(delay, opts.signal); // rejects immediately on abort
+      continue;
+    }
+    break;
   }
 
   // Reactive refresh: 401 once → rotate → replay original request once.
@@ -238,7 +292,7 @@ export async function apiRequest<T = unknown>(path: string, opts: RequestOptions
     }
   }
 
-  const text = await res.text();
+  // `text` was already read inside the warm-up loop above (body is single-use).
   let data: unknown = null;
   try {
     data = text ? JSON.parse(text) : null;
