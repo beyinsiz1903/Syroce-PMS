@@ -17,6 +17,15 @@ env:
   IMAGE_PREFIX: ${{ github.repository_owner }}/syroce
 
 jobs:
+  # ============ LOCKFILE HOST GUARD (HARD GATE) ============
+  lockfile-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Reject Replit package-firewall URLs in lockfiles
+        run: bash scripts/check-lockfile-hosts.sh
+
   # ============ BACKEND LINTING (HARD GATE) ============
   backend-lint:
     runs-on: ubuntu-latest
