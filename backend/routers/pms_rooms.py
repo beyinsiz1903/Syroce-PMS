@@ -278,6 +278,7 @@ async def get_rooms(
     room_type: str | None = None,
     view: str | None = None,
     amenity: str | None = None,
+    search: str | None = None,
     include_virtual: bool = False,
     current_user: User = Depends(get_current_user),
     _: None = Depends(require_module("pms")),
@@ -285,8 +286,10 @@ async def get_rooms(
     """Get rooms with pagination - Optimized for large properties (550+ rooms)"""
     limit, offset = p.limit, p.offset
 
-    # For small queries with filters, skip cache
-    use_cache = (offset == 0 and not status and not room_type and not view and not amenity and not include_virtual and limit >= 100)
+    # For small queries with filters, skip cache. NOTE: `search` MUST be in this
+    # guard — otherwise a search request would be served the cached FULL list and
+    # the room_number filter below would be silently ignored (global search bug).
+    use_cache = (offset == 0 and not status and not room_type and not view and not amenity and not search and not include_virtual and limit >= 100)
 
     # Try Redis cache first (FASTEST!) - only for full list
     if use_cache:
@@ -351,6 +354,13 @@ async def get_rooms(
         query['view'] = view
     if amenity:
         query['amenities'] = amenity
+    if search and search.strip():
+        # Global search / oda-no araması: room_number üzerinde tenant-scoped
+        # anchored prefix (case-insensitive). Anchored `^` regex (tenant_id,
+        # room_number) index'ini kullanabilir; escape ile regex-injection yok.
+        import re as _re
+        safe_s = _re.escape(search.strip().replace("\x00", ""))
+        query['room_number'] = {'$regex': f'^{safe_s}', '$options': 'i'}
 
     # Fallback: Ultra-minimal projection with pagination
     # cleaning_started_at/current_task_id/assigned_cleaner: HK enrichment için
