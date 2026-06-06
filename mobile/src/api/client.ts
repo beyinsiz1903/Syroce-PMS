@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '../storage/secureStore';
 
 const TOKEN_KEY = 'syroce.auth.token';
 const REFRESH_TOKEN_KEY = 'syroce.auth.refresh_token';
