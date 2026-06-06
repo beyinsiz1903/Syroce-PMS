@@ -3,7 +3,7 @@ import api from '@/api/axios';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, Map as MapIcon, Crown, Calendar, RefreshCw, Info, X as XIcon } from 'lucide-react';
+import { Loader2, Map as MapIcon, Crown, Calendar, RefreshCw, Info, X as XIcon, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 
@@ -94,6 +94,7 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [hintOpen, setHintOpen] = useState(true);
+  const [query, setQuery] = useState('');
 
   // İpucu otomatik kapansın
   useEffect(() => {
@@ -120,15 +121,37 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
     } catch (e) { toast.error('Hata: ' + (e.response?.data?.detail || e.message)); }
   };
 
+  // Arama: misafir adı veya oda numarasına göre filtrele (büyük/küçük harf
+  // duyarsız). Boş sorguda tüm odalar gösterilir.
+  const q = query.trim().toLowerCase();
+  const matchRoom = useCallback((r) => {
+    if (!q) return true;
+    const roomNo = String(r.room_number ?? '').toLowerCase();
+    const guest = (r.booking?.guest_name ?? '').toLowerCase();
+    return roomNo.includes(q) || guest.includes(q);
+  }, [q]);
+
   // Memoize: oda sayısı 200+ olabilen tesislerde her drag-hover render'ında
   // tekrar hesaplama gereksiz idi (RoomCell child state setOver tetikliyor).
   const byFloor = useMemo(() => {
-    return (data?.rooms || []).reduce((acc, r) => {
+    return (data?.rooms || []).filter(matchRoom).reduce((acc, r) => {
       const f = r.floor ?? '—';
       (acc[f] = acc[f] || []).push(r);
       return acc;
     }, {});
-  }, [data]);
+  }, [data, matchRoom]);
+
+  // Atanmamış rezervasyonlar yalnızca misafir adıyla aranır (oda numarası yok).
+  const filteredUnassigned = useMemo(() => {
+    const list = data?.unassigned || [];
+    if (!q) return list;
+    return list.filter(b => (b.guest_name ?? '').toLowerCase().includes(q));
+  }, [data, q]);
+
+  const matchCount = useMemo(
+    () => Object.values(byFloor).reduce((n, rooms) => n + rooms.length, 0),
+    [byFloor]
+  );
 
   return (
     <>
@@ -144,7 +167,28 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
               {data?.rooms && <> · {data.rooms.length} oda</>}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Input
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Misafir adı veya oda no ara"
+                data-testid="room-map-search"
+                className="h-9 w-56 pl-8 pr-8"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                  aria-label="Aramayı temizle"
+                >
+                  <XIcon className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
             <Calendar className="w-4 h-4 text-slate-500" />
             <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-9 w-40" />
             <Button size="sm" variant="outline" onClick={load} className="border-slate-300">
@@ -185,13 +229,13 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
         )}
 
         {/* Atanmamış rezervasyonlar */}
-        {data?.unassigned?.length > 0 && (
+        {filteredUnassigned.length > 0 && (
           <Card className="p-3 bg-sky-50/40 border-sky-200">
             <div className="font-semibold text-sm mb-2 text-sky-900">
-              {t('cm.pages_RoomMapPage.atanmamis_rezervasyonlar')}{data.unassigned.length})
+              {t('cm.pages_RoomMapPage.atanmamis_rezervasyonlar')}{filteredUnassigned.length})
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-              {data.unassigned.map(b => <UnassignedItem key={b.booking_id} b={b} />)}
+              {filteredUnassigned.map(b => <UnassignedItem key={b.booking_id} b={b} />)}
             </div>
           </Card>
         )}
@@ -199,6 +243,12 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
         {loading && (
           <div className="text-center py-10">
             <Loader2 className="inline w-5 h-5 animate-spin text-slate-400" />
+          </div>
+        )}
+
+        {data && !loading && q && matchCount === 0 && filteredUnassigned.length === 0 && (
+          <div className="text-center py-10 text-sm text-slate-500" data-testid="room-map-no-results">
+            "{query.trim()}" için eşleşen oda veya misafir bulunamadı.
           </div>
         )}
 
