@@ -104,6 +104,10 @@ _always_allowed = [
     "http://localhost:3000",
     "http://localhost:5000",
     "https://syroce-b2b-api.syroce.com",
+    # Mobile (Expo Web) production deploy origin. Cross-origin to this API
+    # backend, so it must be enumerated explicitly (single host, NOT a
+    # wildcard — see Bug AL note below) or its CORS preflight is rejected.
+    "https://emergent-yeni-uygulama-1-syroce.replit.app",
 ]
 for origin in _always_allowed:
     if origin not in _cors_origins:
