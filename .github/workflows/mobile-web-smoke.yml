@@ -87,10 +87,12 @@ jobs:
           url="${{ github.event.inputs.api_url }}"
           url="${url%/}"
           echo "Warming ${url}/api/health (login hits a ready backend, not a cold one)..."
-          deadline=$((SECONDS + 240))
+          # VM redeploys rebuild a ~2GB ML stack and restart a single instance,
+          # so a cold backend can take several minutes to answer. Budget for it.
+          deadline=$((SECONDS + 600))
           until curl -fsS -o /dev/null "${url}/api/health"; do
             if [ "$SECONDS" -ge "$deadline" ]; then
-              echo "::error::Backend did not become ready within 240s at ${url}/api/health"
+              echo "::error::Backend did not become ready within 600s at ${url}/api/health"
               exit 1
             fi
             echo "  not ready yet (warming up), retrying in 5s..."
