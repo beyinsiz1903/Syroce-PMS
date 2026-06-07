@@ -108,9 +108,10 @@ localPort = 8099
 externalPort = 8099
 
 [deployment]
-deploymentTarget = "vm"
+deploymentTarget = "static"
 build = ["bash", "-c", "rm -rf /home/runner/workspace/.venv && uv venv -p python3.12 /home/runner/workspace/.venv && source /home/runner/workspace/.venv/bin/activate && uv pip install --no-cache -r backend/requirements.txt && cd frontend && yarn install --ignore-engines --frozen-lockfile && yarn build"]
 run = ["bash", "-c", "PYTHON_BIN=/home/runner/workspace/.venv/bin/python exec bash backend/start.sh"]
+publicDir = "mobile/dist"
 
 [userenv]
 
