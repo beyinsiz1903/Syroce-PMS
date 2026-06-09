@@ -25,3 +25,17 @@ must emit `404.html` in the build. For Expo Web this lives in `mobile/build-web.
 (`cp dist/index.html dist/404.html`). The screenshot tool follows the client redirect
 so it can hide this bug — verify a raw `curl -o /dev/null -w '%{http_code}'` on a deep
 route returns 200 (a real file or fallback), not an empty 404, before trusting render.
+
+**Sequel — the 404.html fallback still serves a 404 STATUS.** Once `404.html`=index.html
+is shipped, a deep-link (`/login`) serves the REAL SPA shell and the app BOOTS and renders
+— but Replit static returns it with `HTTP 404` (no SPA-rewrite-to-200 mode exists; the
+deployment skill confirms "no server-side processing"). So `curl /login` = 404 status with
+the full index.html body. This is harmless to humans but a strict E2E console-error gate
+(`consoleErrors.toHaveLength(0)`) catches the browser's "Failed to load resource: 404" on
+the main-document navigation and fails EVERY role's `page.goto('/<route>')`.
+**Fix is at the test observer, NOT a substring allowlist** (which would also hide real broken
+chunk/asset 404s = fake-green): record main-document 404 URLs from the response stream
+(`resourceType()==='document' && isNavigationRequest()`) and drop ONLY their console twin at
+flush(); also drop 401/403 resource console errors to mirror the network-observer role-gating
+policy. Every other 404/5xx and all page errors still fail, and `inspect.ok` independently
+proves the shell rendered — so it is not fake-green.

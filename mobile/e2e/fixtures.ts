@@ -56,17 +56,36 @@ export async function loginAsRole(page: Page, role: Role): Promise<void> {
     await page.waitForURL((u) => !/\/login(\?|$)/.test(u.pathname), { timeout: 30_000 });
 }
 
-export type ObservedError = { type: string; text: string; location?: string };
+export type ObservedError = { type: string; text: string; location?: string; url?: string };
 export type ObservedNetError = { url: string; status: number; statusText: string };
+
+const RESOURCE_STATUS_RE = /the server responded with a status of (\d{3})/i;
 
 /**
  * Attach console + network observers. Returns a `flush()` that yields
  * filtered errors using CONSOLE_ERROR_ALLOWLIST. Network 4xx/5xx is
  * collected for diagnostic annotations; 401/403 ignored (role gating).
+ *
+ * Two browser-logged "Failed to load resource" console errors are
+ * structurally expected on this deployment and are dropped at flush()
+ * (NOT via the substring allowlist, which would also hide real broken
+ * chunks/assets):
+ *   - 401/403 — role gating. Mirrors the network-observer policy below;
+ *     the same auth-gated fetch must not hard-fail render-only smoke when
+ *     it merely surfaces as a console twin of an already-ignored 401/403.
+ *   - the SPA-shell document 404 — Replit static deployments serve the
+ *     SPA shell (index.html copied to 404.html, see mobile/build-web.sh)
+ *     for any client route that isn't a real file, with a 404 *status*.
+ *     The app boots and renders fine; the 404 is on the main-document
+ *     navigation only. We record those document URLs from the response
+ *     stream and drop ONLY their console twin — every sub-resource /
+ *     chunk / asset 404 still fails, and inspect.ok independently proves
+ *     the shell actually rendered.
  */
 export function attachObservers(page: Page) {
     const consoleErrors: ObservedError[] = [];
     const networkErrors: ObservedNetError[] = [];
+    const spaShellDoc404 = new Set<string>();
 
     page.on('console', (msg) => {
         if (msg.type() !== 'error') return;
@@ -76,6 +95,7 @@ export function attachObservers(page: Page) {
             type: msg.type(),
             text,
             location: `${msg.location()?.url || ''}:${msg.location()?.lineNumber || ''}`,
+            url: msg.location()?.url || '',
         });
     });
 
@@ -85,6 +105,12 @@ export function attachObservers(page: Page) {
 
     page.on('response', (res) => {
         const status = res.status();
+        const req = res.request();
+        // Static-host SPA fallback: a 404 on the main-document navigation
+        // is the index.html→404.html shell, not a broken resource.
+        if (status === 404 && req.resourceType() === 'document' && req.isNavigationRequest()) {
+            spaShellDoc404.add(res.url());
+        }
         if (status < 400) return;
         if (status === 401 || status === 403) return;
         networkErrors.push({ url: res.url(), status, statusText: res.statusText() });
@@ -92,7 +118,17 @@ export function attachObservers(page: Page) {
 
     return {
         flush() {
-            return { consoleErrors, networkErrors };
+            const filtered = consoleErrors.filter((e) => {
+                const m = e.text.match(RESOURCE_STATUS_RE);
+                if (!m) return true; // not a resource-load error → keep
+                const httpStatus = Number(m[1]);
+                // Role gating — twin of the network-observer 401/403 skip.
+                if (httpStatus === 401 || httpStatus === 403) return false;
+                // SPA-shell document 404 (and only that) — keep every other 404.
+                if (httpStatus === 404 && e.url && spaShellDoc404.has(e.url)) return false;
+                return true;
+            });
+            return { consoleErrors: filtered, networkErrors };
         },
     };
 }
