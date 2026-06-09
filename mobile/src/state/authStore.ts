@@ -22,9 +22,22 @@ function normalizeRole(raw: string | undefined): AppRole {
   return 'other';
 }
 
+// All-access roles can browse EVERY role group's screens in the mobile app
+// (not just their normalized home group). `normalizeRole` collapses these
+// into 'gm', so we detect them from the RAW backend role to preserve the
+// distinction. This is a UI-navigation affordance only — backend RBAC
+// already grants super_admin/admin full authority; nothing is weakened here.
+const ALL_ACCESS_ROLES = ['super_admin', 'admin'];
+
+export function isAllAccessRole(raw: string | undefined): boolean {
+  if (!raw) return false;
+  return ALL_ACCESS_ROLES.includes(raw.toLowerCase());
+}
+
 export type AuthState = {
   user: AuthUser | null;
   role: AppRole;
+  allAccess: boolean;
   loading: boolean;
   error: string | null;
   hydrate: () => Promise<void>;
@@ -52,6 +65,7 @@ async function readPersistedUser(): Promise<AuthUser | null> {
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   role: 'other',
+  allAccess: false,
   loading: true,
   error: null,
 
@@ -59,7 +73,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ loading: true, error: null });
     const token = await getToken();
     if (!token) {
-      set({ user: null, role: 'other', loading: false });
+      set({ user: null, role: 'other', allAccess: false, loading: false });
       return;
     }
     let user = await readPersistedUser();
@@ -72,7 +86,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch {
       // keep cached user — `apiMe` may have failed because we're offline
     }
-    set({ user, role: normalizeRole(user?.role), loading: false });
+    set({
+      user,
+      role: normalizeRole(user?.role),
+      allAccess: isAllAccessRole(user?.role),
+      loading: false,
+    });
   },
 
   async login(email, password) {
@@ -86,6 +105,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         user: res.user,
         role: normalizeRole(res.user?.role),
+        allAccess: isAllAccessRole(res.user?.role),
         loading: false,
         error: null,
       });
@@ -114,6 +134,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     // V3: wipe ALL credential / device-id storage so the next user starts
     // clean and a stolen handset cannot resume the previous session.
     await clearAllAuthStorage();
-    set({ user: null, role: 'other' });
+    set({ user: null, role: 'other', allAccess: false });
   },
 }));

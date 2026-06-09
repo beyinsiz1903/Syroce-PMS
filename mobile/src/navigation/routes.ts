@@ -53,3 +53,23 @@ export function groupForRole(role: AppRole): string {
       return '(gm)';
   }
 }
+
+// Expo Router top-level group segments. All-access users (super_admin/admin)
+// are permitted to sit inside ANY of these, unlike single-role users who are
+// pinned to their own group by AuthGate.
+export const GROUP_SEGMENTS = ['(frontdesk)', '(housekeeping)', '(gm)', '(guest)'] as const;
+
+// Roles selectable from the in-app role switcher. Ordered with the manager
+// landing first so the switcher reads top-down from the all-access home.
+export type SwitchableRole = 'gm' | 'front_desk' | 'housekeeping' | 'guest_app';
+
+export const ALL_ROLE_GROUPS: {
+  key: SwitchableRole;
+  route: Href;
+  group: (typeof GROUP_SEGMENTS)[number];
+}[] = [
+  { key: 'gm', route: ROUTES.gm, group: '(gm)' },
+  { key: 'front_desk', route: ROUTES.frontdesk, group: '(frontdesk)' },
+  { key: 'housekeeping', route: ROUTES.housekeeping, group: '(housekeeping)' },
+  { key: 'guest_app', route: ROUTES.guest, group: '(guest)' },
+];

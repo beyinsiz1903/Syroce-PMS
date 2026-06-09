@@ -8,7 +8,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../src/state/authStore';
 import { useSettingsStore } from '../src/state/settingsStore';
 import { useTheme } from '../src/theme';
-import { ROUTES, groupForRole, rootForRole } from '../src/navigation/routes';
+import { GROUP_SEGMENTS, ROUTES, groupForRole, rootForRole } from '../src/navigation/routes';
 import { setupOfflineCache } from '../src/cache/persister';
 import { markSync } from '../src/cache/offlineMeta';
 import { attachPushListeners, registerForPush } from '../src/notifications/push';
@@ -50,7 +50,7 @@ queryClient.getQueryCache().subscribe((event) => {
 function AuthGate({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
-  const { user, role, loading, hydrate } = useAuthStore();
+  const { user, role, allAccess, loading, hydrate } = useAuthStore();
   const hydrateSettings = useSettingsStore((s) => s.hydrate);
 
   useEffect(() => {
@@ -68,11 +68,22 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // All-access users (super_admin/admin) may sit inside ANY role group, so
+    // we only redirect them out of the auth flow or an unknown segment — never
+    // out of a sibling group they intentionally switched into. Single-role
+    // users stay pinned to their own group.
+    if (allAccess) {
+      if (inAuth || !GROUP_SEGMENTS.includes(first as (typeof GROUP_SEGMENTS)[number])) {
+        router.replace(rootForRole(role));
+      }
+      return;
+    }
+
     const expectedGroup = groupForRole(role);
     if (inAuth || first !== expectedGroup) {
       router.replace(rootForRole(role));
     }
-  }, [user, role, loading, segments, router]);
+  }, [user, role, allAccess, loading, segments, router]);
 
   // Push registration runs after sign-in; safe to call repeatedly because
   // the backend treats POST /push/register as upsert by device_id.

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, Switch, View } from 'react-native';
 import { Body, Button, Card, H1, H2, Muted } from '../../src/components/ui';
+import { RoleSwitcher } from '../../src/components/RoleSwitcher';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
@@ -92,6 +93,8 @@ export default function MoreScreen() {
         <Muted>Rol: {user?.role || '—'}</Muted>
         {user?.hotel_id ? <Muted>Otel ID: {user.hotel_id}</Muted> : null}
       </Card>
+
+      <RoleSwitcher />
 
       <Card>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm }}>
