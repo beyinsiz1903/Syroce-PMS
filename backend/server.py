@@ -107,6 +107,9 @@ _always_allowed = [
     # Mobile (Expo Web) production deploy origin. Cross-origin to this API
     # backend, so it must be enumerated explicitly (single host, NOT a
     # wildcard — see Bug AL note below) or its CORS preflight is rejected.
+    # The mobile bundle is published at emergent-yeni-uygulama-1.replit.app;
+    # the -syroce host is this backend's own (web) origin, kept for parity.
+    "https://emergent-yeni-uygulama-1.replit.app",
     "https://emergent-yeni-uygulama-1-syroce.replit.app",
 ]
 for origin in _always_allowed:

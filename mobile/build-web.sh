@@ -20,8 +20,8 @@ cd "$(dirname "$0")"
 
 # Backend the bundled app talks to (the app appends /api itself).
 # Override these via the deployment's environment if the URLs change.
-: "${EXPO_PUBLIC_API_URL:=https://emergent-yeni-uygulama-1.replit.app}"
-: "${EXPO_PUBLIC_QUICKID_URL:=https://emergent-yeni-uygulama-1.replit.app}"
+: "${EXPO_PUBLIC_API_URL:=https://emergent-yeni-uygulama-1-syroce.replit.app}"
+: "${EXPO_PUBLIC_QUICKID_URL:=https://emergent-yeni-uygulama-1-syroce.replit.app}"
 export EXPO_PUBLIC_API_URL EXPO_PUBLIC_QUICKID_URL
 export CI=1
 
