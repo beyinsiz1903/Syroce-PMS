@@ -110,7 +110,7 @@ externalPort = 8099
 
 [deployment]
 deploymentTarget = "static"
-build = ["bash", "-c", "rm -rf /home/runner/workspace/.venv && uv venv -p python3.12 /home/runner/workspace/.venv && source /home/runner/workspace/.venv/bin/activate && uv pip install --no-cache -r backend/requirements.txt && cd frontend && yarn install --ignore-engines --frozen-lockfile && yarn build"]
+build = ["bash", "-c", "cd mobile && npm ci && npx expo export -p web && cp dist/index.html dist/404.html"]
 run = ["bash", "-c", "PYTHON_BIN=/home/runner/workspace/.venv/bin/python exec bash backend/start.sh"]
 publicDir = "mobile/dist"
 
