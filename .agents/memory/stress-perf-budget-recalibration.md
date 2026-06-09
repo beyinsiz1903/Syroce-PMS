@@ -31,3 +31,22 @@ see when the budget was set, (2) confirm the seed payload grew since then,
 with a comment stating the growth drivers + that gross blowups still fail, and
 (5) get the operator's sign-off — this touches the explicit "no assertion
 loosening" doctrine line, so it's a judgment call, not a silent edit.
+
+**Cold-start variance is a SEPARATE failure mode from payload growth — don't
+conflate them.** The stress seed (`/admin/stress/seed` in `stress.py`) inserts
+~50 collections SEQUENTIALLY, each via chunked `insert_many(ordered=False)` at
+`INSERT_CHUNK_SIZE=100`. `timing_ms.insert` measures the whole serial loop, so
+the seed wall-time is ROUND-TRIP-bound (≈ batch_count × per-batch latency), not
+CPU/factory-bound (factory is ~100ms, negligible). When the CI autoscale backend
+cold-starts (warmup shows a long `/health/ready`+`/api/health` 503 storm, e.g.
+~300s), the seed is the first heavy DB workload against a cold Mongo/Atlas
+connection pool → per-batch latency inflates (~500ms/batch vs ~50-150ms warm)
+and can push the gate ~5-10% over budget. Tell-tale: per-batch = insert_ms /
+(total_docs / 100) is the discriminator — warm-normal per-batch + long warmup
+503s = cold-start variance (re-run on a warm backend lands under budget, as
+prior green runs did); elevated per-batch on a WARM run = a real regression
+worth investigating. The insert path is already optimal — do NOT "fix" it by
+switching to insert_one or adding hooks; if you must kill the flake durably,
+the only structural lever is parallelising independent collection inserts with
+asyncio.gather (raises concurrent Atlas shared-tier load — bigger, riskier
+change), otherwise re-run or recalibrate with sign-off.
