@@ -43,21 +43,12 @@ export default function LoginScreen() {
         >
           <View style={{ width: '100%', maxWidth: 420, gap: spacing.xl }}>
             <View style={{ alignItems: 'center', gap: spacing.md }}>
-              <View
-                style={{
-                  backgroundColor: '#ffffff',
-                  borderRadius: radius.xl,
-                  paddingHorizontal: spacing.xl,
-                  paddingVertical: spacing.md,
-                }}
-              >
-                <Image
-                  source={require('../../assets/syroce-logo.png')}
-                  style={{ width: 200, height: 64 }}
-                  resizeMode="contain"
-                  accessibilityLabel={tr.app.name}
-                />
-              </View>
+              <Image
+                source={require('../../assets/syroce-circle.png')}
+                style={{ width: 108, height: 108 }}
+                resizeMode="contain"
+                accessibilityLabel={tr.app.name}
+              />
               <Muted style={{ textAlign: 'center' }}>{tr.auth.title}</Muted>
             </View>
 
