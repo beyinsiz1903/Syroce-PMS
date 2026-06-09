@@ -109,7 +109,7 @@ localPort = 8099
 externalPort = 8099
 
 [deployment]
-deploymentTarget = "static"
+deploymentTarget = "autoscale"
 build = ["bash", "mobile/build-web.sh"]
 run = ["bash", "-c", "PYTHON_BIN=/home/runner/workspace/.venv/bin/python exec bash backend/start.sh"]
 publicDir = "mobile/dist"
