@@ -26,6 +26,21 @@ Don't conflate a screenshot of one with the other.
 **Why:** the mobile static host has no API, so pointing mobile config at itself
 silently breaks login + smoke even though a healthy backend exists elsewhere.
 
+**Copy-repl secrets gap (git-copied backend deploy):** the -syroce backend lives
+in a SEPARATE Replit project that was created by git-copying. Secrets are NOT in
+git, so a fresh copy boots its deploy on an EMPTY local Mongo and EVERY real login
+returns 401 even though infra is fully green (health 200, CORS preflight passes,
+bogus login = clean 401, no 500/timeout). Diagnose by logging the SAME real account
+on the dev backend (this repl, Atlas) vs the -syroce deploy: dev 200+token but
+deploy 401 PROVES the deploy is not on Atlas. Fix is operator-side on the COPY
+repl's Secrets, then **Redeploy** (secret change needs a redeploy to take effect).
+Minimum for login: `MONGO_ATLAS_URI` (real users), `CM_MASTER_KEY_CURRENT`
++ `CM_KEY_VERSION` (EXACT — email login lookup is a `_hash_email` blind-index HMAC
+derived from this key; a wrong/dev-fallback key makes lookup miss => 401 even with
+Mongo connected), and `JWT_SECRET`. DB_NAME not needed (start.sh defaults to
+`syroce-pms` on Atlas). A mobile-smoke run with all `login -> group root` =
+`waitForURL` timeouts is this same 401 (no redirect), not a UI bug.
+
 **CORS:** mobile is cross-origin to the backend, so the mobile origin
 (`https://emergent-yeni-uygulama-1.replit.app`) MUST be in `backend/server.py`
 `_always_allowed` (explicit single host, per the Bug AL note — never `*.replit.app`
