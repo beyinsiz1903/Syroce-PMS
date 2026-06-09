@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Body, Button, Card, Field, H1, Muted } from '../../src/components/ui';
+import { Body, Button, Card, Field, Muted } from '../../src/components/ui';
 import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
@@ -45,28 +45,20 @@ export default function LoginScreen() {
             <View style={{ alignItems: 'center', gap: spacing.md }}>
               <View
                 style={{
-                  width: 76,
-                  height: 76,
+                  backgroundColor: '#ffffff',
                   borderRadius: radius.xl,
-                  backgroundColor: c.surface,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden',
+                  paddingHorizontal: spacing.xl,
+                  paddingVertical: spacing.md,
                 }}
               >
                 <Image
-                  source={require('../../assets/icon.png')}
-                  style={{ width: 76, height: 76 }}
-                  resizeMode="cover"
+                  source={require('../../assets/syroce-logo.png')}
+                  style={{ width: 200, height: 64 }}
+                  resizeMode="contain"
                   accessibilityLabel={tr.app.name}
                 />
               </View>
-              <View style={{ alignItems: 'center', gap: spacing.xs }}>
-                <H1 style={{ fontSize: 28, textAlign: 'center' }}>{tr.app.name}</H1>
-                <Muted style={{ textAlign: 'center' }}>{tr.auth.title}</Muted>
-              </View>
+              <Muted style={{ textAlign: 'center' }}>{tr.auth.title}</Muted>
             </View>
 
             <Card style={{ padding: spacing.xl, borderRadius: radius.lg, gap: spacing.md }}>
