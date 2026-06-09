@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Body, Button, Field, H1, Muted } from '../../src/components/ui';
-import { spacing, useTheme } from '../../src/theme';
+import { Body, Button, Card, Field, H1, Muted } from '../../src/components/ui';
+import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { haptic } from '../../src/hooks/useHaptic';
-import { getApiUrl } from '../../src/api/client';
 
 export default function LoginScreen() {
   const c = useTheme();
@@ -34,49 +33,77 @@ export default function LoginScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1, padding: spacing.xl, justifyContent: 'center' }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            padding: spacing.xl,
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={{ gap: spacing.md }}>
-            <H1>{tr.app.name}</H1>
-            <Muted>{tr.auth.title}</Muted>
-            <View style={{ height: spacing.lg }} />
-            <Field
-              label={tr.auth.email}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
-              accessibilityLabel={tr.auth.email}
-              testID="smoke-login-email"
-              textContentType="emailAddress"
-            />
-            <Field
-              label={tr.auth.password}
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-              accessibilityLabel={tr.auth.password}
-              testID="smoke-login-password"
-              textContentType="password"
-            />
-            {error ? (
-              <Body style={{ color: c.danger }} accessibilityLiveRegion="polite">
-                {error}
-              </Body>
-            ) : null}
-            <View style={{ height: spacing.sm }} />
-            <Button
-              title={tr.auth.submit}
-              loading={submitting || loading}
-              onPress={onSubmit}
-              testID="smoke-login-submit"
-              fullWidth
-            />
-            <Muted style={{ textAlign: 'center', marginTop: spacing.lg }}>
-              API: {getApiUrl()}
-            </Muted>
+          <View style={{ width: '100%', maxWidth: 420, gap: spacing.xl }}>
+            <View style={{ alignItems: 'center', gap: spacing.md }}>
+              <View
+                style={{
+                  width: 76,
+                  height: 76,
+                  borderRadius: radius.xl,
+                  backgroundColor: c.surface,
+                  borderWidth: 1,
+                  borderColor: c.border,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                }}
+              >
+                <Image
+                  source={require('../../assets/icon.png')}
+                  style={{ width: 76, height: 76 }}
+                  resizeMode="cover"
+                  accessibilityLabel={tr.app.name}
+                />
+              </View>
+              <View style={{ alignItems: 'center', gap: spacing.xs }}>
+                <H1 style={{ fontSize: 28, textAlign: 'center' }}>{tr.app.name}</H1>
+                <Muted style={{ textAlign: 'center' }}>{tr.auth.title}</Muted>
+              </View>
+            </View>
+
+            <Card style={{ padding: spacing.xl, borderRadius: radius.lg, gap: spacing.md }}>
+              <Field
+                label={tr.auth.email}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                value={email}
+                onChangeText={setEmail}
+                accessibilityLabel={tr.auth.email}
+                testID="smoke-login-email"
+                textContentType="emailAddress"
+              />
+              <Field
+                label={tr.auth.password}
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+                accessibilityLabel={tr.auth.password}
+                testID="smoke-login-password"
+                textContentType="password"
+              />
+              {error ? (
+                <Body style={{ color: c.danger }} accessibilityLiveRegion="polite">
+                  {error}
+                </Body>
+              ) : null}
+              <View style={{ height: spacing.xs }} />
+              <Button
+                title={tr.auth.submit}
+                loading={submitting || loading}
+                onPress={onSubmit}
+                testID="smoke-login-submit"
+                fullWidth
+              />
+            </Card>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
