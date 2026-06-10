@@ -7,6 +7,7 @@ import {
   Body,
   Button,
   Card,
+  H1,
   H2,
   Muted,
   SkeletonCard,
@@ -90,6 +91,8 @@ export default function TodayScreen() {
         }
       >
         <OfflineBanner visible={offline} />
+
+        <H1>{tr.today.title}</H1>
 
         <View style={{ flexDirection: 'row', gap: spacing.sm }}>
           <View style={{ flex: 1 }}>

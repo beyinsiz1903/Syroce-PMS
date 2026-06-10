@@ -10,8 +10,8 @@ import { haptic } from '../../src/hooks/useHaptic';
 export default function LoginScreen() {
   const c = useTheme();
   const { login, loading, error } = useAuthStore();
-  const [email, setEmail] = useState(__DEV__ ? 'info@syroce.com' : '');
-  const [password, setPassword] = useState(__DEV__ ? 'Syroce2026' : '');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const onSubmit = async () => {

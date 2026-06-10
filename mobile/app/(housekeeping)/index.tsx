@@ -28,6 +28,29 @@ import { isOffline } from '../../src/utils/errors';
 const STATUS_OPTIONS = ['clean', 'dirty', 'inspection', 'out_of_order'] as const;
 type StatusOption = (typeof STATUS_OPTIONS)[number];
 
+type BadgeTone = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'primary';
+
+function roomStatusTone(status: string | undefined): BadgeTone {
+  switch ((status || '').toLowerCase()) {
+    case 'clean':
+    case 'available':
+    case 'inspected':
+      return 'success';
+    case 'dirty':
+      return 'warning';
+    case 'cleaning':
+    case 'inspection':
+      return 'info';
+    case 'out_of_order':
+    case 'maintenance':
+      return 'danger';
+    case 'occupied':
+      return 'primary';
+    default:
+      return 'default';
+  }
+}
+
 export default function RoomsScreen() {
   const c = useTheme();
   const qc = useQueryClient();
@@ -98,7 +121,7 @@ export default function RoomsScreen() {
                 {r.room_type || '—'} · Kat {r.floor ?? '—'}
               </Muted>
             </View>
-            <Badge label={label} tone="info" />
+            <Badge label={label} tone={roomStatusTone(r.status)} />
           </View>
         </Card>
       </Pressable>
@@ -121,6 +144,7 @@ export default function RoomsScreen() {
           title={tr.housekeeping.all}
           variant={floor === 'all' ? 'primary' : 'secondary'}
           onPress={() => setFloor('all')}
+          style={{ flexShrink: 0 }}
         />
         {floors.map((f) => (
           <Button
@@ -128,6 +152,7 @@ export default function RoomsScreen() {
             title={`${tr.housekeeping.floor} ${f}`}
             variant={floor === f ? 'primary' : 'secondary'}
             onPress={() => setFloor(f)}
+            style={{ flexShrink: 0 }}
           />
         ))}
       </ScrollView>
