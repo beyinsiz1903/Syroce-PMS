@@ -23,7 +23,6 @@ const ROLES: Role[] = ['frontdesk', 'gm', 'housekeeping', 'guest'];
 // not include src/. If those copy strings change, update them here too.
 const tr_clearFilters = 'Filtreleri temizle'; // reservations.clearFilters
 const tr_clear = 'Temizle'; // datePicker.clear
-const tr_today = 'Bugün'; // datePicker.today
 const tr_close = 'Kapat'; // datePicker.close
 const tr_rangeCustom = 'Özel'; // manager.rangeCustom
 const tr_rangePick = 'Tarih aralığı seç'; // manager.rangePick
@@ -220,7 +219,14 @@ test.describe.serial('Mobile smoke · frontdesk · reservations + availability',
         await expect(dayCell(todayISO), 'Bugün öncesi takvim açılmadı').toBeVisible({
             timeout: 15_000,
         });
-        await page.getByText(tr_today, { exact: true }).first().click();
+        // Click the picker's OWN "Bugün" preset, not getByText('Bugün'):
+        // the frontdesk bottom-tab label is also "Bugün" (tr.tabs.today) and
+        // sits behind the modal, so .first() resolved to the tab and the modal
+        // backdrop intercepted the tap. The scoped testID targets the footer.
+        await page
+            .locator('[data-testid="smoke-reservations-daterange-today"]')
+            .first()
+            .click();
         await expect(
             dayCell(todayISO),
             '"Bugün" sonrası bugünün günü seçili değil',

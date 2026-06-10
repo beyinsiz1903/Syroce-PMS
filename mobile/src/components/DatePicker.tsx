@@ -363,6 +363,11 @@ export const DatePicker: React.FC<DatePickerProps> = (props) => {
                     setOpen(false);
                   }
                 }}
+                // Scoped e2e anchor: the footer "Bugün" label collides with the
+                // persistent bottom-tab "Bugün" (tr.tabs.today) rendered behind
+                // the modal, so a getByText() match is ambiguous. Derive the id
+                // from the trigger testID so each picker's preset is unique.
+                testID={testID ? `${testID}-today` : undefined}
                 style={{ paddingVertical: spacing.sm, paddingHorizontal: spacing.sm }}
               >
                 <Text style={{ color: c.primary, fontSize: 14, fontWeight: '600' }}>
