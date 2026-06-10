@@ -3,7 +3,7 @@ import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import * as Brightness from 'expo-brightness';
-import { useKeepAwake } from 'expo-keep-awake';
+import { useKeepAwakeSafe } from '../../src/hooks/useKeepAwakeSafe';
 import QRCode from 'react-native-qrcode-svg';
 import { Body, Card, H1, H2, Muted } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
@@ -35,7 +35,7 @@ import { formatDate, formatTime } from '../../src/utils/format';
  */
 export default function GuestDigitalKey() {
   const c = useTheme();
-  useKeepAwake();
+  useKeepAwakeSafe();
   const { id } = useLocalSearchParams<{ id?: string }>();
   // V3 (round 7): track previous brightness via a ref instead of state.
   // The cleanup callback in our mount-only `useEffect([])` would otherwise

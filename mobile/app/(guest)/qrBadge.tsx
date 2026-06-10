@@ -10,7 +10,7 @@ import {
 import { useFocusEffect } from 'expo-router';
 import * as Brightness from 'expo-brightness';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { useKeepAwake } from 'expo-keep-awake';
+import { useKeepAwakeSafe } from '../../src/hooks/useKeepAwakeSafe';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import QRCode from 'react-native-qrcode-svg';
 import { Badge, Body, Button, Card, H1, H2, Muted } from '../../src/components/ui';
@@ -53,7 +53,7 @@ const PENDING_REFRESH_INTERVAL_MS = 5_000;
 export default function GuestQrBadgeScreen() {
   const c = useTheme();
   const qc = useQueryClient();
-  useKeepAwake();
+  useKeepAwakeSafe();
   const previousBrightnessRef = useRef<number | null>(null);
 
   // ── Token (refresh every 30s) ──

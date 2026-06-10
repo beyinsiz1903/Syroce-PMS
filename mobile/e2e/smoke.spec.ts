@@ -196,17 +196,16 @@ test.describe.serial('Mobile smoke · frontdesk · reservations + availability',
             'Yeniden açılışta bitiş günü seçili değil',
         ).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
 
-        // 4) allowClear → "Temizle" wipes the range; the next search request
-        //    must drop both date params (no skip-as-pass on the clear path).
-        const clearedReq = page.waitForRequest(
-            (req) =>
-                req.url().includes(SEARCH) &&
-                !req.url().includes('check_in=') &&
-                !req.url().includes('check_out='),
-            { timeout: 15_000 },
-        );
+        // 4) allowClear → "Temizle" wipes the range. We assert the USER-VISIBLE
+        //    revert, NOT a fresh wire request: clearing reverts the search query
+        //    key back to the no-date list that was already fetched at mount and
+        //    is still inside the 30s staleTime (mobile/app/_layout.tsx) — so
+        //    React Query serves it from cache with NO network round-trip and
+        //    waiting for a request here would be a false negative. The filter
+        //    request in step 2 already wire-proves the picker→query wiring; the
+        //    honest deterministic signal here is the range emptying (modal closes
+        //    + trigger no longer shows the "→" range), not skip-as-pass.
         await page.getByText(tr_clear, { exact: true }).first().click();
-        await clearedReq;
         await expect(dayCell(startISO), 'Temizle sonrası modal kapanmadı').toBeHidden({
             timeout: 10_000,
         });

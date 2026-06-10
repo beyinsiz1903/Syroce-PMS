@@ -78,3 +78,13 @@ regex). The backend's own -syroce origin being listed does NOT cover the mobile
 host. Verify live: OPTIONS preflight must return `Access-Control-Allow-Origin`
 for the mobile origin. The CORS fix only takes effect when the -syroce backend
 deploy runs the updated code (or has `CORS_ORIGINS` env including the mobile host).
+
+**Intermittent CORS in CI vs correct live preflight = cold-start transient:** a
+mobile smoke step that FAILS once with "No 'Access-Control-Allow-Origin'" on an
+`/api/*` fetch but PASSES on another run (Playwright "flaky"), while a live OPTIONS
+preflight to the same path returns 200 + the header consistently, is NOT a code/CORS
+gap. It is the autoscale -syroce deploy cold-starting during the CI window: an inner
+503/5xx (warm-up) escapes WITHOUT CORS headers, so the browser reports it as a CORS
+block. The allowlist is already correct — re-run (or keep the backend warm), do NOT
+loosen the smoke's zero-console-error gate to swallow CORS errors (that hides real
+cross-origin breakage).

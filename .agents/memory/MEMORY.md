@@ -66,3 +66,4 @@
 - [index_backstops registry is per-process](index-backstops-cross-process.md) — a worker/cron monitoring backstop status reads "unknown" cold; it must call the lazy builders first, then persist first_deferred_at in Mongo to alert on deferral duration.
 - [Playwright e2e ESM __dirname trap](playwright-esm-dirname-trap.md) — an e2e subpackage `type:module` makes Playwright load fixtures as ESM where `__dirname` is undefined → whole suite dies; use fileURLToPath(import.meta.url), prove with `--list`.
 - [CORS must be outermost middleware](cors-outermost-429-headers.md) — a rate-limit 429 escaping outside the CORS layer reaches a cross-origin client as status-0 network failure, not a readable 429; register CORSMiddleware LAST.
+- [expo-keep-awake web unhandled rejection](mobile-keepawake-web-unhandled-rejection.md) — useKeepAwake() throws an uncaught wakeLock pageerror in headless web → breaks smoke; use the safe wrapper.
