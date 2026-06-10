@@ -51,7 +51,9 @@ An enterprise-grade, multi-tenant Hotel Property Management System with AI-power
 
 ## User preferences
 
-_Populate as you build_
+- **Dil**: Operatör (Murat) ile tüm iletişim **Türkçe**. Dosyalarda emoji yok.
+- **Proje görevleri (project tasks)**: tüm görev **başlıkları ve açıklamaları Türkçe** yazılır — öneriler/Drafts dâhil. Yeni görev öneren task agent'lar da Türkçe yazmalı.
+- **Sırlar/kimlik bilgileri**: parola/secret değerleri sohbete yazılmaz, gösterilmez; değerler doğrudan GitHub Actions secrets veya Replit Secrets'a girilir. CI testleri için gerçek süper-admin yerine adanmış, en düşük yetkili hesap kullanılır.
 
 ## Gotchas
 
