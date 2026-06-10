@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -43,17 +43,6 @@ function toISODate(input: string): string | undefined {
   }
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   return undefined;
-}
-
-// ISO date / datetime string → YYYY-MM-DD for the availability query. Returns
-// undefined for blank / unparseable input.
-function isoDateOnly(input?: string): string | undefined {
-  if (!input) return undefined;
-  const m = input.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (m) return m[1];
-  const d = new Date(input);
-  if (Number.isNaN(d.getTime())) return undefined;
-  return d.toISOString().slice(0, 10);
 }
 
 // ISO string → DD.MM.YYYY for prefilling the edit fields.
@@ -140,6 +129,16 @@ export default function ReservationDetailScreen() {
   const [adults, setAdults] = useState('');
   const [children, setChildren] = useState('');
   const [specialRequests, setSpecialRequests] = useState('');
+  // Room-change availability window. Defaults to the reservation's own dates
+  // but the operator can edit it to check a different window without first
+  // saving a date change.
+  const [roomCheckIn, setRoomCheckIn] = useState(toDisplayDate(p.check_in));
+  const [roomCheckOut, setRoomCheckOut] = useState(toDisplayDate(p.check_out));
+  const roomDatesValid = (() => {
+    const ci = toISODate(roomCheckIn);
+    const co = toISODate(roomCheckOut);
+    return !!ci && !!co && co > ci;
+  })();
 
   const isCancelled = (p.status || '').toLowerCase() === 'cancelled';
 
@@ -157,19 +156,6 @@ export default function ReservationDetailScreen() {
   const openPanel = (next: 'dates' | 'room' | 'rate' | 'guests') => {
     setActionError(null);
     setPanel((cur) => (cur === next ? '' : next));
-    if (next === 'room' && rooms.length === 0 && !roomsLoading) {
-      const ci = isoDateOnly(p.check_in);
-      const co = isoDateOnly(p.check_out);
-      if (!ci || !co) {
-        setRooms([]);
-        return;
-      }
-      setRoomsLoading(true);
-      getAvailability(ci, co)
-        .then((rs) => setRooms(rs.filter((r) => r.available === true)))
-        .catch(() => setRooms([]))
-        .finally(() => setRoomsLoading(false));
-    }
     if (next === 'guests') {
       // Prefill from the OTA-details payload so an edit to one field never
       // clobbers the others (PUT only writes the fields that changed).
@@ -178,6 +164,35 @@ export default function ReservationDetailScreen() {
       setSpecialRequests(otaData?.special_requests || '');
     }
   };
+
+  // Re-query availability whenever the room panel is open and the selected
+  // window changes. Invalid / inverted dates clear the list instead of firing
+  // a request. A cancel flag avoids a stale response overwriting a newer one.
+  useEffect(() => {
+    if (panel !== 'room') return;
+    const ci = toISODate(roomCheckIn);
+    const co = toISODate(roomCheckOut);
+    if (!ci || !co || co <= ci) {
+      setRooms([]);
+      setRoomsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setRoomsLoading(true);
+    getAvailability(ci, co)
+      .then((rs) => {
+        if (!cancelled) setRooms(rs.filter((r) => r.available === true));
+      })
+      .catch(() => {
+        if (!cancelled) setRooms([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRoomsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [panel, roomCheckIn, roomCheckOut]);
 
   const datesMutation = useMutation({
     mutationFn: () => {
@@ -426,8 +441,22 @@ export default function ReservationDetailScreen() {
 
           {panel === 'room' ? (
             <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
+              <Field
+                label={tr.reservations.checkInLabel}
+                value={roomCheckIn}
+                onChangeText={setRoomCheckIn}
+                keyboardType="numbers-and-punctuation"
+              />
+              <Field
+                label={tr.reservations.checkOutLabel}
+                value={roomCheckOut}
+                onChangeText={setRoomCheckOut}
+                keyboardType="numbers-and-punctuation"
+              />
               <Muted>{tr.reservations.selectRoom}</Muted>
-              {roomsLoading ? (
+              {!roomDatesValid ? (
+                <Body style={{ color: c.textMuted }}>{tr.reservations.invalidDates}</Body>
+              ) : roomsLoading ? (
                 <Body style={{ color: c.textMuted }}>{tr.reservations.loadingRooms}</Body>
               ) : rooms.length === 0 ? (
                 <Body style={{ color: c.textMuted }}>{tr.reservations.noAvailableRooms}</Body>
