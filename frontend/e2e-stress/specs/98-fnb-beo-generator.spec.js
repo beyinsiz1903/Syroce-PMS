@@ -568,6 +568,61 @@ test.describe('F9C § 98 — F&B BEO Generator Lifecycle', () => {
             note: `order=${firstId.slice(0, 8)} replay_same=true dup_count=${dupCount}` });
     });
 
+    // P4) Lifecycle transition — the sent order advances sent → acknowledged
+    // → completed (kitchen ack + close-out). A skip-ahead (sent → completed)
+    // and a transition out of the terminal state are both rejected 409.
+    test('P4) F&B order lifecycle: sent → acknowledged → completed', async ({ request, stressTokens }, testInfo) => {
+        const reason = moduleBlocked ? blockedReason
+            : (createdEventIds.length === 0 ? 'no_event_created'
+                : (!sentFnbOrderId ? 'no_fnb_order_sent' : null));
+        if (reason) {
+            rec(testInfo, { module: MOD, step: 'P4_fnb_lifecycle', status: 'SKIP', note: reason });
+            test.skip(true, reason);
+        }
+        const evId = createdEventIds[0];
+        const base = `/api/mice/events/${evId}/fnb-orders/${sentFnbOrderId}/transition`;
+
+        // Skip-ahead must be rejected (still in `sent`).
+        const skip = await callTimed(
+            request, 'post', base, { status: 'completed' },
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(skip.status, `P4 skip 5xx status=${skip.status}`).toBeLessThan(500);
+        expect(skip.status, `P4 skip-ahead must be 409, got ${skip.status}`).toBe(409);
+
+        // sent → acknowledged.
+        const ack = await callTimed(
+            request, 'post', base, { status: 'acknowledged', note: `${SUB_PREFIX} kitchen ack` },
+            stressTokens.stress_token, { timeout: 15_000 },
+        );
+        recPerf(testInfo, MOD, 'P4_fnb_ack', [ack.ms], ack.status === 200);
+        expect(ack.status, `P4 ack 5xx status=${ack.status}`).toBeLessThan(500);
+        expect(ack.status, `P4 ack non-200 status=${ack.status}`).toBe(200);
+        expect(ack.body?.status, 'P4 ack status != acknowledged').toBe('acknowledged');
+        expect(ack.body?.acknowledged_at, 'P4 acknowledged_at yok').toBeTruthy();
+
+        // acknowledged → completed.
+        const done = await callTimed(
+            request, 'post', base, { status: 'completed' },
+            stressTokens.stress_token, { timeout: 15_000 },
+        );
+        expect(done.status, `P4 complete 5xx status=${done.status}`).toBeLessThan(500);
+        expect(done.status, `P4 complete non-200 status=${done.status}`).toBe(200);
+        expect(done.body?.status, 'P4 complete status != completed').toBe('completed');
+        expect(done.body?.completed_at, 'P4 completed_at yok').toBeTruthy();
+
+        // Out of terminal — no further transition allowed.
+        const after = await callTimed(
+            request, 'post', base, { status: 'completed' },
+            stressTokens.stress_token, { timeout: 10_000 },
+        );
+        expect(after.status, `P4 terminal 5xx status=${after.status}`).toBeLessThan(500);
+        expect(after.status, `P4 terminal transition must be 409, got ${after.status}`).toBe(409);
+
+        rec(testInfo, { module: MOD, step: 'P4_fnb_lifecycle', status: 'PASS', http: done.status,
+            note: `order=${sentFnbOrderId.slice(0, 8)} sent→ack→completed; skip+terminal 409` });
+    });
+
     // ──────────────────────────────────────────────────────────────
     // J) SECURITY: IDOR — cross-tenant status POST (must be no-op or 404/403)
     test('J) IDOR: cross-tenant status POST → no mutation', async ({ request, stressTokens }, testInfo) => {

@@ -191,3 +191,138 @@ class TestMiceFnbOrderSend:
             headers=demo_auth_headers,
         )
         assert lst.status_code == 404, lst.text
+
+
+class TestMiceFnbOrderTransition:
+    """Lifecycle: sent → acknowledged → completed (kitchen ack + close-out)."""
+
+    def _send(self, headers: dict, event_id: str) -> dict:
+        r = requests.post(
+            f"{BASE_URL}/api/mice/events/{event_id}/fnb-order/send",
+            json={"target": "kitchen"},
+            headers={**headers, "Idempotency-Key": str(uuid.uuid4())},
+        )
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def test_full_lifecycle_sent_ack_completed(self, demo_auth_headers):
+        created = _create(
+            demo_auth_headers,
+            _event_payload(name="FNB-Lifecycle", status="tentative",
+                           with_fb=True),
+        )
+        event_id = created["id"]
+        try:
+            order = self._send(demo_auth_headers, event_id)
+            order_id = order["id"]
+            assert order["status"] == "sent"
+
+            ack = requests.post(
+                f"{BASE_URL}/api/mice/events/{event_id}"
+                f"/fnb-orders/{order_id}/transition",
+                json={"status": "acknowledged", "note": "mutfak aldı"},
+                headers=demo_auth_headers,
+            )
+            assert ack.status_code == 200, ack.text
+            ack_body = ack.json()
+            assert ack_body["status"] == "acknowledged"
+            assert ack_body["acknowledged_at"]
+            assert ack_body["acknowledged_by"]
+
+            done = requests.post(
+                f"{BASE_URL}/api/mice/events/{event_id}"
+                f"/fnb-orders/{order_id}/transition",
+                json={"status": "completed"},
+                headers=demo_auth_headers,
+            )
+            assert done.status_code == 200, done.text
+            done_body = done.json()
+            assert done_body["status"] == "completed"
+            assert done_body["completed_at"]
+            assert done_body["completed_by"]
+
+            # List reflects the terminal status.
+            lst = requests.get(
+                f"{BASE_URL}/api/mice/events/{event_id}/fnb-orders",
+                headers=demo_auth_headers,
+            ).json().get("orders", [])
+            match = [o for o in lst if o["id"] == order_id]
+            assert len(match) == 1
+            assert match[0]["status"] == "completed"
+        finally:
+            _delete(demo_auth_headers, event_id)
+
+    def test_skip_ahead_rejected_409(self, demo_auth_headers):
+        created = _create(
+            demo_auth_headers,
+            _event_payload(name="FNB-Skip", status="tentative", with_fb=True),
+        )
+        event_id = created["id"]
+        try:
+            order = self._send(demo_auth_headers, event_id)
+            r = requests.post(
+                f"{BASE_URL}/api/mice/events/{event_id}"
+                f"/fnb-orders/{order['id']}/transition",
+                json={"status": "completed"},  # skip acknowledged
+                headers=demo_auth_headers,
+            )
+            assert r.status_code == 409, r.text
+        finally:
+            _delete(demo_auth_headers, event_id)
+
+    def test_transition_out_of_terminal_rejected_409(self, demo_auth_headers):
+        created = _create(
+            demo_auth_headers,
+            _event_payload(name="FNB-Terminal", status="tentative",
+                           with_fb=True),
+        )
+        event_id = created["id"]
+        try:
+            order = self._send(demo_auth_headers, event_id)
+            order_id = order["id"]
+            for target in ("acknowledged", "completed"):
+                ok = requests.post(
+                    f"{BASE_URL}/api/mice/events/{event_id}"
+                    f"/fnb-orders/{order_id}/transition",
+                    json={"status": target},
+                    headers=demo_auth_headers,
+                )
+                assert ok.status_code == 200, ok.text
+            # Already completed → no further transition allowed.
+            r = requests.post(
+                f"{BASE_URL}/api/mice/events/{event_id}"
+                f"/fnb-orders/{order_id}/transition",
+                json={"status": "completed"},
+                headers=demo_auth_headers,
+            )
+            assert r.status_code == 409, r.text
+        finally:
+            _delete(demo_auth_headers, event_id)
+
+    def test_unknown_order_404(self, demo_auth_headers):
+        created = _create(
+            demo_auth_headers,
+            _event_payload(name="FNB-NoOrder", status="tentative",
+                           with_fb=True),
+        )
+        event_id = created["id"]
+        try:
+            r = requests.post(
+                f"{BASE_URL}/api/mice/events/{event_id}"
+                f"/fnb-orders/{uuid.uuid4()}/transition",
+                json={"status": "acknowledged"},
+                headers=demo_auth_headers,
+            )
+            assert r.status_code == 404, r.text
+        finally:
+            _delete(demo_auth_headers, event_id)
+
+    def test_cross_tenant_event_404(self, demo_auth_headers):
+        bogus = f"cross-tenant-{uuid.uuid4()}"
+        r = requests.post(
+            f"{BASE_URL}/api/mice/events/{bogus}"
+            f"/fnb-orders/{uuid.uuid4()}/transition",
+            json={"status": "acknowledged"},
+            headers=demo_auth_headers,
+        )
+        assert r.status_code == 404, r.text

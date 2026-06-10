@@ -2065,6 +2065,103 @@ async def list_fnb_orders(
     return {"orders": [d async for d in cur]}
 
 
+# ── F&B order lifecycle transition (kitchen ack → complete) ─────
+# Allowed forward transitions: sent → acknowledged → completed.
+# No transition is permitted out of a terminal (`completed`) state and a
+# stage may not be skipped (e.g. sent → completed is rejected).
+_FNB_ORDER_TRANSITIONS: dict[str, str] = {
+    "sent": "acknowledged",
+    "acknowledged": "completed",
+}
+
+
+class FnbOrderTransitionRequest(BaseModel):
+    """Move an F&B production order to the next lifecycle stage.
+
+    `status` is the target stage; it must be the immediate successor of the
+    order's current stage (`sent` → `acknowledged` → `completed`)."""
+    status: str
+    note: str | None = None
+
+
+@router.post("/events/{event_id}/fnb-orders/{order_id}/transition")
+async def transition_fnb_order(
+    event_id: str,
+    order_id: str,
+    body: FnbOrderTransitionRequest,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_sales")),  # DW
+) -> dict:
+    """Advance an F&B production order along its lifecycle so kitchen/banquet
+    staff can acknowledge a received order and then close it out.
+
+    Lifecycle: ``sent`` → ``acknowledged`` → ``completed``.
+
+    Guards:
+      - Tenant-scoped 404 when the event/order belongs to another tenant.
+      - RBAC: MICE ops roles only (`require_mice_ops`).
+      - Status guard: only the immediate successor stage is accepted; any
+        other target (skip-ahead, backward, or out of a terminal state) is
+        rejected 409.
+    """
+    require_mice_ops(current_user)
+    db = get_system_db()
+    tenant_id = current_user.tenant_id
+
+    event = await db.mice_events.find_one(
+        {"id": event_id, "tenant_id": tenant_id}, {"_id": 1})
+    if not event:
+        raise HTTPException(404, "Etkinlik bulunamadı")
+
+    order = await db.mice_fnb_orders.find_one(
+        {"id": order_id, "event_id": event_id, "tenant_id": tenant_id},
+        {"_id": 0})
+    if not order:
+        raise HTTPException(404, "F&B siparişi bulunamadı")
+
+    current = order.get("status", "sent")
+    target = body.status
+    expected = _FNB_ORDER_TRANSITIONS.get(current)
+    if expected is None:
+        raise HTTPException(
+            409,
+            f"'{current}' durumundaki bir F&B siparişi için geçiş yapılamaz.",
+        )
+    if target != expected:
+        raise HTTPException(
+            409,
+            f"Geçersiz durum geçişi: '{current}' → '{target}'. "
+            f"İzin verilen sonraki durum: '{expected}'.",
+        )
+
+    now_iso = datetime.now(UTC).isoformat()
+    set_fields: dict[str, Any] = {"status": target}
+    if target == "acknowledged":
+        set_fields["acknowledged_at"] = now_iso
+        set_fields["acknowledged_by"] = current_user.username
+    elif target == "completed":
+        set_fields["completed_at"] = now_iso
+        set_fields["completed_by"] = current_user.username
+    if body.note is not None:
+        set_fields[f"{target}_note"] = body.note
+
+    await db.mice_fnb_orders.update_one(
+        {"id": order_id, "tenant_id": tenant_id},
+        {"$set": set_fields})
+
+    updated = await db.mice_fnb_orders.find_one(
+        {"id": order_id, "tenant_id": tenant_id}, {"_id": 0})
+    await log_audit_event(
+        tenant_id=tenant_id, user_id=current_user.username,
+        action="fnb_order_transition", entity_type="mice_event",
+        entity_id=event_id,
+        details=(f"F&B siparişi durumu güncellendi: {order_id} "
+                 f"{current} → {target}"),
+        before_value={"status": current},
+        after_value={"status": target}, db=db)
+    return updated
+
+
 # ── Daily operations sheet (banquet team daily ops) ─────────────
 @router.get("/ops-sheet")
 async def ops_sheet(
