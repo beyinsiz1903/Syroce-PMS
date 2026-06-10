@@ -34,10 +34,25 @@ export function isAllAccessRole(raw: string | undefined): boolean {
   return ALL_ACCESS_ROLES.includes(raw.toLowerCase());
 }
 
+// Raw backend roles that hold the `view_finance_reports` permission (see
+// backend ROLE_PERMISSIONS: admin/super_admin grant everything; supervisor
+// and finance hold VIEW_FINANCIAL_REPORTS explicitly). This is a COSMETIC
+// mirror used only to decide whether to surface the manager Reports tab —
+// the backend's require_op("view_finance_reports") remains the real guard,
+// so nothing here weakens RBAC. `normalizeRole` collapses these into 'gm'/
+// 'other', so we derive the capability from the RAW role.
+const FINANCE_REPORTS_ROLES = ['super_admin', 'admin', 'supervisor', 'finance'];
+
+export function canViewFinanceReports(raw: string | undefined): boolean {
+  if (!raw) return false;
+  return FINANCE_REPORTS_ROLES.includes(raw.toLowerCase());
+}
+
 export type AuthState = {
   user: AuthUser | null;
   role: AppRole;
   allAccess: boolean;
+  financeReports: boolean;
   loading: boolean;
   error: string | null;
   hydrate: () => Promise<void>;
@@ -66,6 +81,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   role: 'other',
   allAccess: false,
+  financeReports: false,
   loading: true,
   error: null,
 
@@ -73,7 +89,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ loading: true, error: null });
     const token = await getToken();
     if (!token) {
-      set({ user: null, role: 'other', allAccess: false, loading: false });
+      set({ user: null, role: 'other', allAccess: false, financeReports: false, loading: false });
       return;
     }
     let user = await readPersistedUser();
@@ -90,6 +106,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       user,
       role: normalizeRole(user?.role),
       allAccess: isAllAccessRole(user?.role),
+      financeReports: canViewFinanceReports(user?.role),
       loading: false,
     });
   },
@@ -106,6 +123,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         user: res.user,
         role: normalizeRole(res.user?.role),
         allAccess: isAllAccessRole(res.user?.role),
+        financeReports: canViewFinanceReports(res.user?.role),
         loading: false,
         error: null,
       });
@@ -134,6 +152,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     // V3: wipe ALL credential / device-id storage so the next user starts
     // clean and a stolen handset cannot resume the previous session.
     await clearAllAuthStorage();
-    set({ user: null, role: 'other', allAccess: false });
+    set({ user: null, role: 'other', allAccess: false, financeReports: false });
   },
 }));
