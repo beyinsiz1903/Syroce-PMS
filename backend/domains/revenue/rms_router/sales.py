@@ -11,6 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
+from core.audit import log_audit_event
 from core.cache import cached
 from core.database import db
 from core.security import get_current_user, security
@@ -471,6 +472,37 @@ async def transition_corporate_contract_approval(
             reason=body.reason,
             actor=current_user.username,
         )
+
+        # Audit the notification attempt so finance/sales can later confirm
+        # whether (and to whom) an outcome email was sent. Mirrors the BEO
+        # email audit pattern (action="email"). Best-effort: never let an
+        # audit-write failure roll back the committed approval transition.
+        recipient = (existing.get('contact_email') or '').strip() or None
+        try:
+            await log_audit_event(
+                tenant_id=current_user.tenant_id,
+                user_id=current_user.username,
+                action="email",
+                entity_type="corporate_contract",
+                entity_id=contract_id,
+                details=(
+                    f"Sözleşme onay bildirimi {to_status}: "
+                    f"{'gönderildi' if notified else 'gönderilemedi'} "
+                    f"({recipient or 'alıcı yok'})"
+                ),
+                before_value=None,
+                after_value={
+                    "recipient": recipient,
+                    "outcome": to_status,
+                    "sent": notified,
+                },
+                db=db,
+            )
+        except Exception:  # noqa: BLE001 — audit write is best-effort
+            import logging
+            logging.getLogger(__name__).exception(
+                "[contract-approval] audit log failed for %s", contract_id,
+            )
 
     return {
         'message': 'Contract approval transitioned',

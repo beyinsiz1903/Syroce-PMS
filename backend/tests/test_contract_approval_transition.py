@@ -244,3 +244,86 @@ async def test_update_is_tenant_scoped(env, monkeypatch):
     await _call("pending")
     assert captured["flt"]["tenant_id"] == "t-1"
     assert captured["flt"]["id"] == "c-1"
+
+
+# ── Notification audit trail (Task #236) ─────────────────────────
+
+
+@pytest.fixture
+def audit(monkeypatch):
+    """Capture log_audit_event calls made by the transition endpoint."""
+    calls: list[dict] = []
+
+    async def _capture(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(sales, "log_audit_event", _capture)
+    return calls
+
+
+async def test_approve_writes_email_audit_row(env, audit):
+    env.append(_contract(approval_status="pending",
+                         contact_email="owner@example.com"))
+    await _call("approved")
+
+    assert len(audit) == 1
+    row = audit[0]
+    assert row["action"] == "email"
+    assert row["entity_type"] == "corporate_contract"
+    assert row["entity_id"] == "c-1"
+    assert row["tenant_id"] == "t-1"
+    assert row["user_id"] == "boss"
+    after = row["after_value"]
+    assert after["recipient"] == "owner@example.com"
+    assert after["outcome"] == "approved"
+    assert after["sent"] is True
+
+
+async def test_reject_writes_email_audit_row_with_outcome(env, audit):
+    env.append(_contract(approval_status="pending",
+                         contact_email="owner@example.com"))
+    await _call("rejected", reason="bütçe")
+
+    assert len(audit) == 1
+    after = audit[0]["after_value"]
+    assert after["outcome"] == "rejected"
+    assert after["recipient"] == "owner@example.com"
+
+
+async def test_audit_records_send_failure(env, audit, monkeypatch):
+    """A failed/declined send still writes an audit row with sent=False."""
+    monkeypatch.setattr(
+        sales, "_notify_contract_owner_approval", AsyncMock(return_value=False))
+    env.append(_contract(approval_status="pending",
+                         contact_email="owner@example.com"))
+    await _call("approved")
+
+    assert len(audit) == 1
+    assert audit[0]["after_value"]["sent"] is False
+
+
+async def test_missing_recipient_audited_as_none(env, audit):
+    env.append(_contract(approval_status="pending", contact_email=None))
+    await _call("approved")
+
+    assert len(audit) == 1
+    assert audit[0]["after_value"]["recipient"] is None
+
+
+async def test_non_terminal_transition_writes_no_email_audit(env, audit):
+    """Moving draft → pending sends no email, so no audit row is written."""
+    env.append(_contract(approval_status="draft"))
+    await _call("pending")
+    assert audit == []
+
+
+async def test_audit_failure_does_not_break_transition(env, monkeypatch):
+    """An audit-write failure must never roll back the committed transition."""
+    async def _boom(**kwargs):
+        raise RuntimeError("audit down")
+
+    monkeypatch.setattr(sales, "log_audit_event", _boom)
+    env.append(_contract(approval_status="pending"))
+    res = await _call("approved")
+    assert res["approval_status"] == "approved"
+    assert env[0]["approval_status"] == "approved"
