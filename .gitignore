@@ -35,6 +35,7 @@ dump.rdb
 *.env.*
 # Environment files
 frontend/e2e-stress/.auth/
+mobile/e2e/.auth/
 frontend/playwright-stress-report/
 frontend/test-results-stress/
 frontend/uploads/

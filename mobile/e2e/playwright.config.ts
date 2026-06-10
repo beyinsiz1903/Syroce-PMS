@@ -30,7 +30,6 @@ if (!BASE_URL) {
 
 export default defineConfig({
     testDir: '.',
-    testMatch: /smoke\.spec\.ts$/,
     timeout: 60_000,
     expect: { timeout: 10_000 },
     fullyParallel: false,
@@ -55,9 +54,22 @@ export default defineConfig({
         timezoneId: 'Europe/Istanbul',
     },
     projects: [
+        // One real UI login per role, persisted as storageState. This is also
+        // the per-role login validation (loginAsRole asserts the post-login
+        // redirect). The smoke project depends on it and restores the session,
+        // so no smoke test re-logs-in — keeping total logins (4) far under the
+        // backend auth rate limit (15/60s/IP) that the per-screen login
+        // fan-out used to trip from the single CI runner IP.
+        {
+            name: 'setup',
+            testMatch: /auth\.setup\.ts$/,
+            use: { ...devices['Pixel 7'] },
+        },
         {
             name: 'mobile-pixel7',
+            testMatch: /smoke\.spec\.ts$/,
             use: { ...devices['Pixel 7'] },
+            dependencies: ['setup'],
         },
     ],
 });

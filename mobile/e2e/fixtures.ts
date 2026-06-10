@@ -10,8 +10,27 @@
 //   MOBILE_E2E_GUEST_EMAIL        + MOBILE_E2E_GUEST_PASSWORD
 // ─────────────────────────────────────────────────────────────────────────
 
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, type Page } from '@playwright/test';
 import { CONSOLE_ERROR_ALLOWLIST, type Role } from './routes';
+
+// Saved authenticated sessions (Playwright storageState), one JSON per role,
+// written by auth.setup.ts. Gitignored — they contain live tokens. The smoke
+// specs restore these via `test.use({ storageState: authFile(role) })` instead
+// of re-logging-in per screen, which is what kept the matrix tripping the
+// backend auth rate limit from the single CI runner IP.
+//
+// e2e/package.json declares "type": "module", so Playwright loads this file as
+// a native ES module where __dirname is undefined. Derive the directory from
+// import.meta (same idiom as markdown-reporter.mjs) so AUTH_DIR resolves to
+// e2e/.auth independently of the invoking cwd.
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+export const AUTH_DIR = path.join(HERE, '.auth');
+
+export function authFile(role: Role): string {
+    return path.join(AUTH_DIR, `${role}.json`);
+}
 
 export function requireEnv(name: string): string {
     const v = process.env[name];

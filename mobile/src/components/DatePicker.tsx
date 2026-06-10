@@ -278,6 +278,14 @@ export const DatePicker: React.FC<DatePickerProps> = (props) => {
                     disabled={disabled}
                     accessibilityRole="button"
                     accessibilityState={{ selected: isSelected, disabled }}
+                    // react-native-web 0.19 drops accessibilityState.selected on
+                    // web (it only emits the direct aria-* props), so the selected
+                    // day exposed no aria-selected to screen readers or e2e. Emit
+                    // it explicitly; on native RN 0.74 maps aria-selected back to
+                    // accessibilityState.selected, so there is no native regression.
+                    // (aria-selected on role="button" is a pragmatic pairing; a
+                    // full calendar grid role is a future a11y refinement.)
+                    aria-selected={isSelected}
                     accessibilityLabel={iso}
                     style={{
                       width: `${100 / 7}%`,

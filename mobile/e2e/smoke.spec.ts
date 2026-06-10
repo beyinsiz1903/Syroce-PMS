@@ -14,7 +14,7 @@
 
 import { test, expect } from '@playwright/test';
 import { SCREENS, type Role } from './routes';
-import { attachObservers, inspectPageContent, loginAsRole } from './fixtures';
+import { attachObservers, authFile, inspectPageContent } from './fixtures';
 
 const ROLES: Role[] = ['frontdesk', 'gm', 'housekeeping', 'guest'];
 
@@ -45,9 +45,14 @@ const tr_rangePick = 'Tarih aralığı seç'; // manager.rangePick
 // zero reservations we record an annotation and assert the by-design empty
 // state instead of faking a green tap (no skip-as-pass).
 test.describe.serial('Mobile smoke · frontdesk · reservations + availability', () => {
+    // Session restored from the setup project's saved storageState (one UI
+    // login per role, see auth.setup.ts) — these tests do NOT re-login, which
+    // is what kept the per-screen login fan-out tripping the backend auth-
+    // category rate limit (15/60s/IP) from the single CI runner IP.
+    test.use({ storageState: authFile('frontdesk') });
+
     test('[frontdesk] reservations search renders → tap opens detail', async ({ page }) => {
         const obs = attachObservers(page);
-        await loginAsRole(page, 'frontdesk');
 
         await page.goto('/reservations', { waitUntil: 'domcontentloaded', timeout: 30_000 });
         await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
@@ -125,7 +130,6 @@ test.describe.serial('Mobile smoke · frontdesk · reservations + availability',
     //      the picker stays open to pick the end (range-mode semantics).
     test('[frontdesk] reservations date-range picker filters + clears', async ({ page }) => {
         const obs = attachObservers(page);
-        await loginAsRole(page, 'frontdesk');
 
         await page.goto('/reservations', { waitUntil: 'domcontentloaded', timeout: 30_000 });
         await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
@@ -241,7 +245,6 @@ test.describe.serial('Mobile smoke · frontdesk · reservations + availability',
 
     test('[frontdesk] availability grid renders', async ({ page }) => {
         const obs = attachObservers(page);
-        await loginAsRole(page, 'frontdesk');
 
         await page.goto('/availability', { waitUntil: 'domcontentloaded', timeout: 30_000 });
         await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
@@ -281,9 +284,12 @@ test.describe.serial('Mobile smoke · frontdesk · reservations + availability',
 //   4) Assert the section label reverts from the custom-range label to the
 //      "Tarih aralığı seç" prompt (preset stays custom, range is empty).
 test.describe.serial('Mobile smoke · gm · reports date-range', () => {
+    // Session restored from the setup project's saved storageState (one UI
+    // login per role, see auth.setup.ts) — no re-login here.
+    test.use({ storageState: authFile('gm') });
+
     test('[gm] reports date-range clear → varsayılan aya döner', async ({ page }) => {
         const obs = attachObservers(page);
-        await loginAsRole(page, 'gm');
 
         await page.goto('/reports', { waitUntil: 'domcontentloaded', timeout: 30_000 });
         await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
@@ -302,8 +308,6 @@ test.describe.serial('Mobile smoke · gm · reports date-range', () => {
         const monthPrefix = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
         const customStartISO = `${monthPrefix}-05`;
         const customEndISO = `${monthPrefix}-15`;
-        const monthFirstISO = `${monthPrefix}-01`;
-        const todayISO = `${monthPrefix}-${pad(now.getDate())}`;
 
         const SEGMENT = '/api/reports/market-segment';
         const dayCell = (iso: string) => page.locator(`[aria-label="${iso}"]`).first();
@@ -342,23 +346,24 @@ test.describe.serial('Mobile smoke · gm · reports date-range', () => {
             'Özel aralık seçiliyken prompt hâlâ görünüyor',
         ).toBeHidden({ timeout: 10_000 });
 
-        // 3) allowClear → "Temizle" must reset the range and re-fire the
-        //    market-segment query against the current-month default (1st →
-        //    today). Observing the request on the wire is the honest proof of
-        //    the by-design fallback — no skip-as-pass.
-        const clearedReq = page.waitForRequest(
-            (req) =>
-                req.url().includes(SEGMENT) &&
-                req.url().includes(`start_date=${monthFirstISO}`) &&
-                req.url().includes(`end_date=${todayISO}`),
-            { timeout: 15_000 },
-        );
+        // 3) allowClear → "Temizle" must reset the range back to empty so the
+        //    market-segment query falls back to the current-month default
+        //    (1st → today). We assert the USER-VISIBLE revert, NOT a fresh wire
+        //    request: clearing reverts the segment query key to
+        //    ['report-market-segment', <monthFirst>, <today>], which was already
+        //    fetched at mount and is still inside the 30s staleTime
+        //    (mobile/app/_layout.tsx) — so React Query serves it from cache with
+        //    NO network round-trip. Waiting for a request here would be a false
+        //    negative. The honest, deterministic signals are: the custom-range
+        //    request in step 2 already wire-proves the picker→query wiring, and
+        //    here the range empties (custom-range label → "Tarih aralığı seç"
+        //    prompt) while the preset stays "Özel" and the section re-renders
+        //    without an error/empty state.
         await customPicker.click();
         await expect(dayCell(customStartISO), 'Temizle öncesi takvim açılmadı').toBeVisible({
             timeout: 15_000,
         });
         await page.getByText(tr_clear, { exact: true }).first().click();
-        await clearedReq;
 
         // 4) Modal closed, preset stays "Özel" (picker still rendered) but the
         //    label reverts from the custom-range label to the pick prompt.
@@ -389,9 +394,17 @@ for (const role of ROLES) {
     const screens = SCREENS.filter((s) => s.role === role);
 
     test.describe.serial(`Mobile smoke · ${role}`, () => {
-        test(`[${role}] login → group root`, async ({ page }) => {
+        // Session restored from auth.setup.ts (one UI login per role). The
+        // fresh-login flow itself is validated there (loginAsRole asserts the
+        // post-login redirect); here we verify the restored session lands on
+        // the role's home and every screen renders — without re-logging-in,
+        // which previously fanned out enough logins to trip the backend auth
+        // rate limit from the single CI runner IP.
+        test.use({ storageState: authFile(role) });
+
+        test(`[${role}] oturum geri yükleme → grup kökü render olur`, async ({ page }) => {
             const obs = attachObservers(page);
-            await loginAsRole(page, role);
+            await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
             await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
             const inspect = await inspectPageContent(page);
             const { consoleErrors, networkErrors } = obs.flush();
@@ -411,7 +424,6 @@ for (const role of ROLES) {
         for (const s of screens) {
             test(`[${role}] ${s.crit} ${s.label} (${s.path})`, async ({ page }) => {
                 const obs = attachObservers(page);
-                await loginAsRole(page, role);
 
                 const navStart = Date.now();
                 const navResp = await page

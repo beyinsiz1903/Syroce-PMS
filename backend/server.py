@@ -138,14 +138,12 @@ if not _cors_origins:
     _cors_origins = ["*"]
     _allow_credentials = False  # Cannot combine `*` with credentials per CORS spec.
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=_allow_credentials,
-    allow_origins=_cors_origins,
-    allow_origin_regex=_cors_origin_regex,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# NOTE: CORSMiddleware is registered LAST (after the upload guard, below) so it
+# is the OUTERMOST middleware. Starlette wraps middleware in reverse order of
+# registration, so the final `add_middleware` call wraps every inner layer —
+# including EnhancedRateLimitMiddleware. That is what guarantees a rate-limit
+# 429 (and any other inner short-circuit) still carries the CORS headers. The
+# origin/credentials values computed just above are consumed there.
 
 # APM & rate limiting
 try:
@@ -201,6 +199,23 @@ try:
     logger.info("Upload size-limit middleware activated")
 except Exception as _usl_err:
     logger.warning("Upload size-limit middleware skipped: %s", _usl_err)
+
+# CORS — registered LAST so it is the OUTERMOST middleware (Starlette wraps in
+# reverse registration order). As the outermost layer it (a) answers OPTIONS
+# preflights before they reach the rate limiter, so preflights no longer burn
+# the auth bucket, and (b) decorates EVERY inner response — including the rate
+# limiter's raw 429 and the upload guard's 413 — with Access-Control-Allow-
+# Origin. Without this a throttled login reached the mobile/web client as a
+# CORS-blocked failure (status 0 → "Sunucuya ulaşılamıyor") instead of a
+# readable 429. The rate-limit values themselves are unchanged.
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=_allow_credentials,
+    allow_origins=_cors_origins,
+    allow_origin_regex=_cors_origin_regex,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # PII masking disabled at middleware level to avoid GZip conflicts.
 # Masking is applied at the application layer via security/sensitive_output.py
