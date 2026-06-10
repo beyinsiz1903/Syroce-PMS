@@ -75,6 +75,7 @@ function ReservationRow({ r, onPress }: { r: Reservation; onPress: () => void })
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${r.guest_name || ''} ${r.room_number || ''}`}
+      testID="smoke-reservation-row"
       style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
     >
       <Card>

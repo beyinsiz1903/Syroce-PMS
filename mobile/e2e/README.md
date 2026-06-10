@@ -1,7 +1,7 @@
 # Mobile E2E — F10A Smoke Matrix
 
 > **Status:** scaffold (Task #83 / F10A kickoff, 2026-05-27)
-> **Surface:** Expo Router (`mobile/app/`), 24-25 screens across 5 role groups
+> **Surface:** Expo Router (`mobile/app/`), 27 screens across 5 role groups
 > **Runner:** Playwright Web hitting the Expo Web dev server on port 8080/8081.
 >   Native (iOS/Android) coverage is **out of scope for F10A** — see
 >   `docs/F10_MOBILE_COVERAGE_ROADMAP.md` §4 for the Detox/Maestro plan.
@@ -22,10 +22,13 @@ two suites run on separate CI workflows and share zero credentials.
 Per role (`frontdesk`, `gm`, `housekeeping`, `guest`):
 
 1. UI login via `(auth)/login` (env-driven credentials, no fallbacks).
-2. Visit every screen for that role (25 surfaces total — every file
+2. Visit every screen for that role (27 surfaces total — every file
    under `mobile/app/`).
 3. Per screen: empty/error UI inspection, console error scan, JWT /
    PAN / bearer leak scan against the DOM source.
+4. Front-desk Reservations + Availability tabs are additionally
+   exercised interactively (search box / grid render, and tapping a
+   reservation row opens the detail view).
 
 Acceptance (matches F10_MOBILE_COVERAGE_ROADMAP.md §5 F10A):
 
@@ -83,8 +86,9 @@ Missing any required var → `setup()` throws (env-hijack protection).
 
 ## Files
 
-- `routes.ts` — single source of truth: 25 routes × role group × criticality
-- `smoke.spec.ts` — navigate every route, run console + PII/token scan
+- `routes.ts` — single source of truth: 27 routes × role group × criticality
+- `smoke.spec.ts` — navigate every route, run console + PII/token scan, plus
+  the front-desk reservations/availability interactive flow
 - `playwright.config.ts` — chromium-only, 2 viewports (mobile + tablet)
 
 ## Drill-report (markdown)

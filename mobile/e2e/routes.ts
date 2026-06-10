@@ -25,16 +25,19 @@ export type Screen = {
     crit: 'P0' | 'P1' | 'P2' | 'P3';
 };
 
-// 1 (auth) + 6 (frontdesk) + 2 (gm) + 3 (housekeeping) + 13 (guest) = 25
-// surfaces (roadmap §2.1 heading says "24 ekran"; the table actually
-// enumerates 25 routes once `more` and `index` per group are counted —
-// we faithfully cover every file under `mobile/app/`).
+// 1 (auth) + 8 (frontdesk) + 2 (gm) + 3 (housekeeping) + 13 (guest) = 27
+// surfaces. The frontdesk group gained the Reservations + Availability
+// tabs (Task #255); both are covered render-only here and exercised
+// interactively in smoke.spec.ts. We faithfully cover every file under
+// `mobile/app/`.
 export const SCREENS: Screen[] = [
     // ── (auth) ────────────────────────────────────────────────────────
     { key: 'auth_login', role: 'auth', label: 'Login', path: '/login', crit: 'P0' },
 
     // ── (frontdesk) ───────────────────────────────────────────────────
     { key: 'fd_today',    role: 'frontdesk', label: 'Frontdesk · Bugün',   path: '/',         crit: 'P0' },
+    { key: 'fd_reservations', role: 'frontdesk', label: 'Frontdesk · Rezervasyonlar', path: '/reservations', crit: 'P1' },
+    { key: 'fd_availability', role: 'frontdesk', label: 'Frontdesk · Müsaitlik',      path: '/availability', crit: 'P1' },
     { key: 'fd_checkin',  role: 'frontdesk', label: 'Frontdesk · Check-in',  path: '/checkin',  crit: 'P0' },
     { key: 'fd_checkout', role: 'frontdesk', label: 'Frontdesk · Check-out', path: '/checkout', crit: 'P0' },
     { key: 'fd_guests',   role: 'frontdesk', label: 'Frontdesk · Misafirler',path: '/guests',   crit: 'P1' },
