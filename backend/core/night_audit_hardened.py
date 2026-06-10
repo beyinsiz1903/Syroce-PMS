@@ -114,6 +114,16 @@ async def ensure_night_audit_indexes():
             {"unique": True, "partialFilterExpression": {"business_date": {"$exists": True}, "charge_type": {"$exists": True}}},
         ),
         (
+            # Run-level concurrency lock for the pms-core night audit engine:
+            # at most one active (released=False) lock per (tenant, business_date).
+            # Makes NightAuditEngine._acquire_lock's upsert atomic so two
+            # simultaneous runs cannot both post room charges.
+            "night_audit_locks",
+            [("tenant_id", 1), ("business_date", 1)],
+            "idx_na_locks_active_unique",
+            {"unique": True, "partialFilterExpression": {"released": False}},
+        ),
+        (
             "pending_task_snapshots",
             [("tenant_id", 1), ("snapshot_date", 1)],
             "idx_pending_task_snapshots_unique",

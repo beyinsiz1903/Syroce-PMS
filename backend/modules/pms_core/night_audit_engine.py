@@ -7,92 +7,196 @@ from datetime import UTC, date, datetime, timedelta
 
 from core.database import db
 
+# A night audit completes in well under 5s even at 500 rooms; 900s (the same
+# stale threshold the hardened engine uses) is a very safe window after which a
+# lock abandoned by a SIGKILL'd run is considered stale and may be taken over,
+# so the nightly-critical path can never deadlock permanently.
+NIGHT_AUDIT_LOCK_STALE_SECONDS = 900
+
 
 class NightAuditEngine:
     """Executes nightly audit operations for a hotel property."""
 
-    async def run_night_audit(self, tenant_id: str, business_date: str, started_by: str) -> dict:
-        """Execute complete night audit for a business date."""
-        audit_id = str(uuid.uuid4())
-        now = datetime.now(UTC)
+    _LOCK_COLLECTION = "night_audit_locks"
 
-        audit_record = {
-            "id": audit_id,
+    async def _acquire_lock(self, tenant_id: str, business_date: str) -> str | None:
+        """Acquire an exclusive run-level lock for (tenant_id, business_date).
+
+        Returns a fresh lock_id on success, or None when another run already
+        holds the lock. Atomicity depends on the unique partial index
+        idx_na_locks_active_unique (night_audit_locks: tenant_id+business_date
+        WHERE released=False) built by ensure_night_audit_indexes(): two
+        concurrent upserts can only ever insert ONE document. The loser either
+        raises DuplicateKeyError or is retried by the driver as a plain update
+        (matched=1, upserted_id=None); both paths return None below.
+        """
+        lock_id = str(uuid.uuid4())
+        now = datetime.now(UTC)
+        lock_doc = {
+            "id": lock_id,
             "tenant_id": tenant_id,
-            "audit_date": business_date,
-            "started_at": now.isoformat(),
-            "started_by": started_by,
-            "status": "in_progress",
-            "steps": [],
-            "exceptions": [],
-            "warnings": [],
+            "business_date": business_date,
+            "acquired_at": now.isoformat(),
+            "released": False,
         }
+        try:
+            result = await db[self._LOCK_COLLECTION].update_one(
+                {"tenant_id": tenant_id, "business_date": business_date, "released": False},
+                {"$setOnInsert": lock_doc},
+                upsert=True,
+            )
+            if result.upserted_id is not None:
+                return lock_id
+        except Exception:
+            # DuplicateKeyError (lost the race) or a transient error: fall
+            # through to the stale-takeover check.
+            pass
+
+        # An active lock already exists. Take it over ONLY if it is stale (a
+        # previous run was killed before its finally released it). The
+        # conditional release (acquired_at < cutoff) guarantees a FRESH lock is
+        # never stolen, and the unique index makes concurrent takeovers safe
+        # (only one re-acquire can win).
+        cutoff = (now - timedelta(seconds=NIGHT_AUDIT_LOCK_STALE_SECONDS)).isoformat()
+        takeover = await db[self._LOCK_COLLECTION].update_one(
+            {
+                "tenant_id": tenant_id,
+                "business_date": business_date,
+                "released": False,
+                "acquired_at": {"$lt": cutoff},
+            },
+            {"$set": {"released": True, "released_at": now.isoformat(), "stale_takeover": True}},
+        )
+        if takeover.modified_count:
+            try:
+                result = await db[self._LOCK_COLLECTION].update_one(
+                    {"tenant_id": tenant_id, "business_date": business_date, "released": False},
+                    {"$setOnInsert": lock_doc},
+                    upsert=True,
+                )
+                if result.upserted_id is not None:
+                    return lock_id
+            except Exception:
+                return None
+        return None
+
+    async def _release_lock(self, lock_id: str):
+        """Release the lock held by THIS run, addressed by its lock id.
+
+        Releasing by (tenant_id, business_date) would be unsafe once
+        stale-takeover exists: it could match an older released doc and leave
+        the active lock held, or (after a takeover) release the NEW owner's
+        lock and reopen the double-post window. Always release the exact lock
+        this run acquired.
+        """
+        await db[self._LOCK_COLLECTION].update_one(
+            {"id": lock_id, "released": False},
+            {"$set": {"released": True, "released_at": datetime.now(UTC).isoformat()}},
+        )
+
+    async def run_night_audit(self, tenant_id: str, business_date: str, started_by: str) -> dict:
+        """Execute complete night audit for a business date.
+
+        Concurrency guard: at most one in-flight audit per (tenant_id,
+        business_date). A second concurrent run returns
+        {"success": False, "code": "already_running"} which the route maps to
+        HTTP 409. The unique dedup index on folio_charges is the DB-level
+        backstop that keeps room charges / folio.balance posted exactly once
+        even if the lock is ever bypassed.
+        """
+        lock_id = await self._acquire_lock(tenant_id, business_date)
+        if not lock_id:
+            return {
+                "success": False,
+                "code": "already_running",
+                "tenant_id": tenant_id,
+                "audit_date": business_date,
+                "message": f"Night audit already running for {business_date}",
+            }
 
         try:
-            # Step 1: Pending arrivals control
-            arrivals = await self._check_pending_arrivals(tenant_id, business_date)
-            audit_record["steps"].append({"step": "pending_arrivals", "result": arrivals})
-            audit_record["exceptions"].extend(arrivals.get("exceptions", []))
+            audit_id = str(uuid.uuid4())
+            now = datetime.now(UTC)
 
-            # Step 2: Pending departures control
-            departures = await self._check_pending_departures(tenant_id, business_date)
-            audit_record["steps"].append({"step": "pending_departures", "result": departures})
-            audit_record["exceptions"].extend(departures.get("exceptions", []))
-
-            # Step 3: No-show processing
-            no_shows = await self._process_no_shows(tenant_id, business_date, started_by)
-            audit_record["steps"].append({"step": "no_show_processing", "result": no_shows})
-
-            # Step 4: Room charge posting
-            room_charges = await self._post_room_charges(tenant_id, business_date, started_by)
-            audit_record["steps"].append({"step": "room_charge_posting", "result": room_charges})
-            audit_record["exceptions"].extend(room_charges.get("exceptions", []))
-
-            # Step 5: Unbalanced folio detection
-            unbalanced = await self._detect_unbalanced_folios(tenant_id)
-            audit_record["steps"].append({"step": "unbalanced_folios", "result": unbalanced})
-            audit_record["warnings"].extend(unbalanced.get("warnings", []))
-
-            # Step 6: Tax consistency check
-            tax_check = await self._check_tax_consistency(tenant_id, business_date)
-            audit_record["steps"].append({"step": "tax_consistency", "result": tax_check})
-            audit_record["warnings"].extend(tax_check.get("warnings", []))
-
-            # Step 7: Daily snapshot
-            snapshot = await self._create_daily_snapshot(tenant_id, business_date, room_charges)
-            audit_record["steps"].append({"step": "daily_snapshot", "result": {"snapshot_id": snapshot["id"]}})
-
-            # Step 8: Business date roll
-            await self._roll_business_date(tenant_id, business_date)
-            audit_record["steps"].append({"step": "business_date_roll", "result": {"new_business_date": self._next_date(business_date)}})
-
-            audit_record["status"] = "completed"
-            audit_record["completed_at"] = datetime.now(UTC).isoformat()
-
-        except Exception as e:
-            audit_record["status"] = "failed"
-            audit_record["error"] = str(e)
-            audit_record["completed_at"] = datetime.now(UTC).isoformat()
-
-        await db.night_audit_records.insert_one(audit_record)
-
-        # Store exceptions in queue
-        for exc in audit_record["exceptions"]:
-            await db.audit_exceptions.insert_one({
-                "id": str(uuid.uuid4()),
+            audit_record = {
+                "id": audit_id,
                 "tenant_id": tenant_id,
-                "audit_id": audit_id,
                 "audit_date": business_date,
-                "exception_type": exc.get("type"),
-                "description": exc.get("description"),
-                "entity_type": exc.get("entity_type"),
-                "entity_id": exc.get("entity_id"),
-                "status": "open",
-                "created_at": datetime.now(UTC).isoformat(),
-            })
+                "started_at": now.isoformat(),
+                "started_by": started_by,
+                "status": "in_progress",
+                "steps": [],
+                "exceptions": [],
+                "warnings": [],
+            }
 
-        audit_record.pop("_id", None)
-        return audit_record
+            try:
+                # Step 1: Pending arrivals control
+                arrivals = await self._check_pending_arrivals(tenant_id, business_date)
+                audit_record["steps"].append({"step": "pending_arrivals", "result": arrivals})
+                audit_record["exceptions"].extend(arrivals.get("exceptions", []))
+
+                # Step 2: Pending departures control
+                departures = await self._check_pending_departures(tenant_id, business_date)
+                audit_record["steps"].append({"step": "pending_departures", "result": departures})
+                audit_record["exceptions"].extend(departures.get("exceptions", []))
+
+                # Step 3: No-show processing
+                no_shows = await self._process_no_shows(tenant_id, business_date, started_by)
+                audit_record["steps"].append({"step": "no_show_processing", "result": no_shows})
+
+                # Step 4: Room charge posting
+                room_charges = await self._post_room_charges(tenant_id, business_date, started_by)
+                audit_record["steps"].append({"step": "room_charge_posting", "result": room_charges})
+                audit_record["exceptions"].extend(room_charges.get("exceptions", []))
+
+                # Step 5: Unbalanced folio detection
+                unbalanced = await self._detect_unbalanced_folios(tenant_id)
+                audit_record["steps"].append({"step": "unbalanced_folios", "result": unbalanced})
+                audit_record["warnings"].extend(unbalanced.get("warnings", []))
+
+                # Step 6: Tax consistency check
+                tax_check = await self._check_tax_consistency(tenant_id, business_date)
+                audit_record["steps"].append({"step": "tax_consistency", "result": tax_check})
+                audit_record["warnings"].extend(tax_check.get("warnings", []))
+
+                # Step 7: Daily snapshot
+                snapshot = await self._create_daily_snapshot(tenant_id, business_date, room_charges)
+                audit_record["steps"].append({"step": "daily_snapshot", "result": {"snapshot_id": snapshot["id"]}})
+
+                # Step 8: Business date roll
+                await self._roll_business_date(tenant_id, business_date)
+                audit_record["steps"].append({"step": "business_date_roll", "result": {"new_business_date": self._next_date(business_date)}})
+
+                audit_record["status"] = "completed"
+                audit_record["completed_at"] = datetime.now(UTC).isoformat()
+
+            except Exception as e:
+                audit_record["status"] = "failed"
+                audit_record["error"] = str(e)
+                audit_record["completed_at"] = datetime.now(UTC).isoformat()
+
+            await db.night_audit_records.insert_one(audit_record)
+
+            # Store exceptions in queue
+            for exc in audit_record["exceptions"]:
+                await db.audit_exceptions.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "tenant_id": tenant_id,
+                    "audit_id": audit_id,
+                    "audit_date": business_date,
+                    "exception_type": exc.get("type"),
+                    "description": exc.get("description"),
+                    "entity_type": exc.get("entity_type"),
+                    "entity_id": exc.get("entity_id"),
+                    "status": "open",
+                    "created_at": datetime.now(UTC).isoformat(),
+                })
+
+            audit_record.pop("_id", None)
+            return audit_record
+        finally:
+            await self._release_lock(lock_id)
 
     async def _check_pending_arrivals(self, tenant_id: str, business_date: str) -> dict:
         """Check for expected arrivals that haven't checked in."""
@@ -272,6 +376,12 @@ class NightAuditEngine:
                     "posted_by": "night_audit",
                     "date": now_iso,
                     "night_audit_date": business_date,
+                    # Standardized fields so the hardened unique dedup index
+                    # idx_folio_charges_na_dedup (tenant_id, booking_id,
+                    # business_date, charge_type) covers these room charges and
+                    # blocks double-posting under concurrent runs at the DB level.
+                    "business_date": business_date,
+                    "charge_type": "room_charge",
                     "voided": False,
                 })
                 charge_meta.append({

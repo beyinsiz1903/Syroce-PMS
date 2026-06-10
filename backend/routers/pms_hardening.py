@@ -711,6 +711,10 @@ async def api_run_night_audit(req: NightAuditRequest, current_user: User = Depen
     perm_svc.enforce_permission(current_user.role, "run_night_audit")
     business_date = req.business_date or await night_audit.get_business_date(current_user.tenant_id)
     result = await night_audit.run_night_audit(current_user.tenant_id, business_date, current_user.id)
+    # Concurrency guard: a second simultaneous run for the same business date is
+    # rejected by the engine with code "already_running" -> surface as HTTP 409.
+    if isinstance(result, dict) and result.get("code") == "already_running":
+        raise HTTPException(status_code=409, detail=result)
     return result
 
 @router.get("/night-audit/business-date", tags=["night-audit"])
