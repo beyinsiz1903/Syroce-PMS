@@ -541,7 +541,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
                                 onClick={() => showKitchen(ev.id)}>
                           <ChefHat className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="ghost" title="Mutfağa Gönder"
+                        <Button size="sm" variant="ghost" title="Mutfak Siparişleri"
                                 onClick={() => setFnbOrderEvent(ev)}>
                           <Send className="w-4 h-4" />
                         </Button>
