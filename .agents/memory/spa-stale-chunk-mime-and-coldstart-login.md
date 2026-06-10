@@ -67,3 +67,30 @@ classes unconditionally MASKS a genuinely broken deploy (same message). Gate the
 drop on a heal-in-progress flag (`window.__syroceChunkHealing`, set only on the
 first heal path right before reload). A recurrence after reload does NOT set the
 flag → it reports. Match specific message classes, never a broad substring.
+
+# The window-event self-heal MISSES render-path chunk errors
+
+The `window` `error`/`unhandledrejection`/`vite:preloadError` listeners only see
+chunk failures that bubble to the global scope. A `React.lazy` import that
+rejects DURING render (failed load OR resolved-but-invalid module with no
+`default` export) is caught by the in-app `ErrorBoundary` and rethrown inside
+React's render cycle — it NEVER fires those window events, so the self-heal never
+runs and `ErrorBoundary.componentDidCatch` pages Sentry directly (heal flag
+false). This is the COMMON path: mobile taps, deep links, and post-login route
+loads all go through render, not hover-preload. React.lazy also CACHES the
+rejection, so the fallback's "Retry" rethrows forever.
+
+**Heuristic:** expose the SAME one-shot latch from index.html
+(`window.__syroceChunkReloadOnce` returning true=healing/false=latch-spent, plus
+`window.__syroceIsChunkError`) and call it FIRST in `componentDidCatch`; if it
+heals, `return` before `captureException`. One shared latch keeps the "reload
+once, then surface" guarantee across both the window-event and render paths — a
+broken deploy still pages after the single reload is spent.
+
+**Treat "module resolved but invalid" as a chunk-error class too.** A stale
+deploy can serve a chunk as index.html; the dynamic import RESOLVES but the
+module lacks `.default`, and React.lazy throws an opaque
+`_result.default is undefined` the matchers don't recognize. Normalize it at the
+single lazy chokepoint (`lazyWithPreload`): `guardModule` throws a sentinel
+(`"Dynamically imported module is invalid"`) added to every CHUNK_ERR list, so it
+heals/drops exactly like a fetch-level chunk error.

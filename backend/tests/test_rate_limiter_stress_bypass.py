@@ -118,3 +118,76 @@ def test_has_token_requires_valid_bearer_structure(monkeypatch):
     assert has_token is True
     assert rl._get_category('/api/x', 'GET', has_token) == 'default'
     assert rl._get_category('/api/x', 'POST', has_token) == 'write'
+
+
+def test_static_spa_assets_exempt_from_rate_limit(monkeypatch):
+    """Static SPA assets (the index.html shell, hashed JS/CSS chunks, images,
+    fonts, manifests, ...) must NEVER be rate-limited, even under prod limits.
+
+    Regression: the global limiter previously counted every anonymous static
+    request against the per-IP `anonymous` bucket (60/min in prod). A single
+    React SPA page load fetches the shell plus many hashed chunks, so a couple
+    of loads/refreshes trip a persistent 429 on the published app and the SPA
+    never boots (published `-syroce` 429-on-`/`). Asset serving is exempt;
+    `/api`, `/graphql`, `/ws` stay fully throttled.
+    """
+    import asyncio
+    import importlib
+
+    for k in (
+        "REPLIT_DEPLOYMENT", "E2E_ALLOW_DESTRUCTIVE_STRESS", "TESTING",
+        "CI", "APP_ENV", "REPL_ID", "REPLIT_DEV_DOMAIN",
+    ):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("REPLIT_DEPLOYMENT", "1")  # force prod profile
+
+    import apm_middleware
+    importlib.reload(apm_middleware)
+
+    served = {"count": 0}
+
+    async def _inner_app(scope, receive, send):
+        served["count"] += 1
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+        await send({'type': 'http.response.body', 'body': b'ok'})
+
+    rl = apm_middleware.EnhancedRateLimitMiddleware(app=_inner_app)
+    # Sanity: we are on the prod profile (anonymous bucket = 60/min).
+    assert rl.limits["anonymous"] == (60, 60)
+
+    async def _drive(path: str, n: int) -> list:
+        statuses: list = []
+        for _ in range(n):
+            captured: list = []
+            scope = {
+                'type': 'http', 'path': path, 'method': 'GET',
+                'headers': [], 'client': ('9.9.9.9', 0),
+            }
+
+            async def _recv():
+                return {'type': 'http.request', 'body': b'', 'more_body': False}
+
+            async def _send(message, _store=captured):
+                if message['type'] == 'http.response.start':
+                    _store.append(message['status'])
+
+            await rl(scope, _recv, _send)
+            statuses.append(captured[0] if captured else None)
+        return statuses
+
+    async def _run():
+        # 200 static requests >> the 60/min anonymous budget: ALL must pass.
+        for p in (
+            "/", "/js/index-abc123.js", "/assets/main-xyz.css",
+            "/logos/logo.svg", "/manifest.json", "/robots.txt",
+            "/favicon.ico", "/og-image.png",
+        ):
+            st = await _drive(p, 200)
+            assert all(s == 200 for s in st), f"static {p} throttled: {set(st)}"
+
+        # Regression: anonymous /api/* is STILL throttled (60/min → 429).
+        api_st = await _drive("/api/public/thing", 70)
+        assert api_st[:60] == [200] * 60, "first 60 anonymous /api should pass"
+        assert api_st[60] == 429, "61st anonymous /api request must be 429"
+
+    asyncio.run(_run())

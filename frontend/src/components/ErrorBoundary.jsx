@@ -11,6 +11,28 @@ export class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
+    // Render-path chunk errors (a React.lazy import that resolved-but-invalid or
+    // failed to load, rejecting DURING render) are caught here and NEVER fire the
+    // window 'error'/'unhandledrejection' handlers in index.html, so the stale-
+    // chunk self-heal cannot see them. Route them through the SAME one-shot reload
+    // latch: if it heals (first time) the page reloads with fresh chunks and we
+    // skip Sentry; if the latch is already spent (genuinely broken deploy) we fall
+    // through and page it normally.
+    try {
+      const msg = error && (error.message || (typeof error === "string" ? error : ""));
+      if (
+        typeof window !== "undefined" &&
+        typeof window.__syroceIsChunkError === "function" &&
+        typeof window.__syroceChunkReloadOnce === "function" &&
+        window.__syroceIsChunkError(msg)
+      ) {
+        const healing = window.__syroceChunkReloadOnce();
+        if (healing) return; // reloading now — benign stale-chunk, do not capture
+      }
+    } catch (_) {
+      /* fall through to normal capture */
+    }
+
     console.error("[ErrorBoundary]", error, info);
     if (import.meta.env.VITE_SENTRY_DSN) {
       import("@sentry/react")

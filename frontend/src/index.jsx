@@ -40,6 +40,9 @@ if (SENTRY_DSN) {
             "error loading dynamically imported module",
             "is not a valid JavaScript MIME type",
             "Unable to preload CSS",
+            // Resolved-but-invalid module (no default export) normalized by
+            // lazyWithPreload.js — keep in sync with INVALID_CHUNK_MODULE_MSG.
+            "Dynamically imported module is invalid",
           ];
           const ex = hint && hint.originalException;
           const msg =

@@ -15,6 +15,18 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+# Static SPA assets (the index.html shell + hashed JS/CSS chunks, images,
+# fonts, manifests, ...) are public files with no DB/auth dependency and must
+# NOT consume the per-IP rate-limit budget. Mirrors app.py's
+# `_WARMUP_STATIC_EXT` — keep the two sets in sync.
+_STATIC_EXEMPT_EXT = frozenset({
+    ".js", ".mjs", ".css", ".map",
+    ".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico", ".avif",
+    ".woff", ".woff2", ".ttf", ".eot", ".otf",
+    ".json", ".webmanifest", ".txt", ".xml",
+})
+
+
 class APMMetricsStore:
     """Thread-safe in-memory metrics store for APM data"""
 
@@ -516,24 +528,30 @@ class EnhancedRateLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Only the dynamic API surface is rate-limited. Static SPA assets
-        # (hashed /js + /assets chunks, /logos, /landing, fonts, images, the
-        # index shell) are served directly from disk with no DB/worker cost
-        # and carry no Authorization header, so they would otherwise pile into
-        # the `anonymous` 60/min bucket. This app is heavily code-split: a
-        # single page load fetches dozens of /js chunks, which exhausts that
-        # bucket mid-load and 429s the remaining chunks — the SPA then fails to
-        # boot and the user cannot even reach the login form. Mirrors the
-        # dynamic/static split already used by the warm-up gate in app.py.
-        # API throttling (auth 15/min, anonymous 60/min on /api, ...) is
-        # unchanged — only static file serving bypasses.
-        if not (
+        # Skip static SPA assets (index.html shell, hashed JS/CSS chunks,
+        # images, fonts, manifests, ...). These are public files with no
+        # DB/auth cost; counting them against the per-IP `anonymous` budget
+        # (60/min in prod) trips a 429 on the published app after a couple of
+        # SPA loads/refreshes — one page load fetches the shell plus many
+        # hashed chunks — and the SPA never boots. `/api`, `/graphql`, `/ws`
+        # stay fully throttled below. Mirrors app.py's static/dynamic split.
+        _is_dynamic = (
             path.startswith('/api')
             or path.startswith('/graphql')
             or path.startswith('/ws')
-        ):
-            await self.app(scope, receive, send)
-            return
+        )
+        if not _is_dynamic:
+            _, _ext = os.path.splitext(path)
+            if (
+                path == '/'
+                or path.startswith('/js/')
+                or path.startswith('/assets/')
+                or path.startswith('/logos/')
+                or path.startswith('/landing/')
+                or _ext in _STATIC_EXEMPT_EXT
+            ):
+                await self.app(scope, receive, send)
+                return
 
         method = scope.get('method', 'GET')
         headers = dict(scope.get('headers', []))

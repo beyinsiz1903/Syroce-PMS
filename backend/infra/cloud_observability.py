@@ -155,6 +155,8 @@ def get_sentry_filter_stats() -> dict[str, int]:
         "restart_bind_drops": _RESTART_BIND_DROP_COUNT,
         "nonprod_transient_db_drops": _TRANSIENT_DB_NONPROD_DROP_COUNT,
         "graphql_introspection_denied_drops": _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT,
+        "hotelrunner_pull_rate_limit_drops": _HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT,
+        "static_client_disconnect_drops": _STATIC_CLIENT_DISCONNECT_DROP_COUNT,
     }
 
 
@@ -251,6 +253,134 @@ def _is_graphql_introspection_denied(event: dict) -> bool:
         return False
 
 
+# ── HotelRunner PULL rate-limit (429) noise ────────────────────────
+# Counter for filtered HotelRunner PULL 429 events. Exposed via
+# ``get_sentry_filter_stats()`` so ops can confirm the noise is gone.
+_HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT = 0
+
+# The sync engine logs an ERROR for every PULL page that fails. When that
+# failure is an EXTERNAL HotelRunner 429 (the provider throttling OUR poller),
+# the client layer has ALREADY exhausted its retries (manual=3 / scheduled=2)
+# and the scheduler backs off — the per-attempt ERROR is expected operational
+# backpressure, not a server fault. The real "sync is behind" signal is the
+# separate channel-manager backlog alert, so this per-page 429 ERROR is pure
+# Sentry noise. We anchor on the FULL log template AND the 429 signature in
+# sequence (``re.search`` tolerates a logger prefix) so a genuine non-429 PULL
+# failure (auth / parse / 5xx) still pages. We never lower the source log level
+# — the ERROR stays visible in the workflow console.
+_HOTELRUNNER_PULL_RATE_LIMIT_RE = re.compile(
+    r"\[PULL\] Failed for tenant .+ page \d+:.*Rate limit exceeded \(429\)"
+)
+
+
+def _is_hotelrunner_pull_rate_limited(event: dict) -> bool:
+    """Drop predicate for the EXPECTED HotelRunner PULL 429 backpressure log."""
+    try:
+        le = event.get("logentry") or {}
+        ev_msg = event.get("message")
+        candidates = [
+            le.get("message"),
+            le.get("formatted"),
+            ev_msg if isinstance(ev_msg, str) else None,
+        ]
+        exc = event.get("exception") or {}
+        for val in (exc.get("values") or []):
+            if isinstance(val, dict):
+                candidates.append(val.get("value"))
+        return any(
+            isinstance(c, str) and _HOTELRUNNER_PULL_RATE_LIMIT_RE.search(c)
+            for c in candidates
+        )
+    except Exception:
+        return False
+
+
+# ── Static-asset client-disconnect noise ───────────────────────────
+# Counter for filtered static client-disconnect events.
+_STATIC_CLIENT_DISCONNECT_DROP_COUNT = 0
+
+# uvicorn raises ``RuntimeError("Response content shorter than Content-Length")``
+# when a client disconnects mid-download: StaticFiles set Content-Length from the
+# file size, then the socket closed before all bytes were flushed. Mobile
+# browsers cancel asset requests aggressively (prefetch / fast navigation), so
+# this is benign client backpressure — we cannot stop a client from
+# disconnecting. We drop it ONLY for GET/HEAD requests to static-asset paths, so
+# a genuine Content-Length mismatch on an API endpoint (a real truncation bug)
+# still pages.
+_CONTENT_LENGTH_SHORT_MSG = "Response content shorter than Content-Length"
+_STATIC_PATH_PREFIXES = ("/js/", "/assets/", "/logos/", "/landing/")
+# Deliberately excludes data-ish extensions (json/txt) so a real API truncation
+# never gets silenced — only true asset files qualify.
+_STATIC_EXT_RE = re.compile(
+    r"\.(?:js|mjs|css|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|eot|wasm)"
+    r"(?:[?#]|$)"
+)
+
+
+def _event_request_target(event: dict) -> tuple[str, str]:
+    """Return ``(method, path)`` from a Sentry event, best-effort.
+
+    ``path`` keeps the URL path only (scheme/host/query stripped) when a full
+    URL is present; otherwise the raw value. Empty path if request context is
+    unavailable.
+    """
+    try:
+        req = event.get("request") or {}
+        method = req.get("method")
+        method = method.upper() if isinstance(method, str) else "GET"
+        url = req.get("url")
+        if not isinstance(url, str) or not url:
+            return method, ""
+        m = re.match(r"^[a-zA-Z][\w+.\-]*://[^/]+(/.*)?$", url)
+        target = (m.group(1) or "/") if m else url
+        target = target.split("?", 1)[0].split("#", 1)[0]
+        return method, target
+    except Exception:
+        return "GET", ""
+
+
+def _is_static_asset_target(method: str, path: str) -> bool:
+    if method not in ("GET", "HEAD"):
+        return False
+    if not path:
+        return False
+    # Prefix-anchored (startswith), NOT substring: an API path that merely
+    # contains a static-looking segment (e.g. ``/api/v2/assets/export``) must
+    # NOT be classified static, or a genuine API truncation there is silenced.
+    if any(path.startswith(p) for p in _STATIC_PATH_PREFIXES):
+        return True
+    return bool(_STATIC_EXT_RE.search(path))
+
+
+def _is_static_client_disconnect(event: dict, hint: dict) -> bool:
+    """Drop predicate for benign static-asset client-disconnect RuntimeErrors."""
+    try:
+        msg = ""
+        exc_info = (hint or {}).get("exc_info")
+        if exc_info and len(exc_info) >= 2 and exc_info[1] is not None:
+            msg = str(exc_info[1])
+        if _CONTENT_LENGTH_SHORT_MSG not in msg:
+            candidates = []
+            exc = event.get("exception") or {}
+            for val in (exc.get("values") or []):
+                if isinstance(val, dict):
+                    candidates.append(val.get("value"))
+            le = event.get("logentry") or {}
+            candidates.append(le.get("message"))
+            candidates.append(le.get("formatted"))
+            em = event.get("message")
+            candidates.append(em if isinstance(em, str) else None)
+            if not any(
+                isinstance(c, str) and _CONTENT_LENGTH_SHORT_MSG in c
+                for c in candidates
+            ):
+                return False
+        method, path = _event_request_target(event)
+        return _is_static_asset_target(method, path)
+    except Exception:
+        return False
+
+
 def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     """Sentry SDK ``before_send`` hook — restart-noise filter + PII scrub.
 
@@ -264,12 +394,34 @@ def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     """
     global _RESTART_BIND_DROP_COUNT, _TRANSIENT_DB_NONPROD_DROP_COUNT
     global _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT
+    global _HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT
+    global _STATIC_CLIENT_DISCONNECT_DROP_COUNT
     try:
         if _is_graphql_introspection_denied(event):
             _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT += 1
             logger.info(
                 "sentry before_send dropped expected graphql introspection-denied "
                 f"(cumulative={_GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT})"
+            )
+            return None
+    except Exception:
+        pass
+    try:
+        if _is_hotelrunner_pull_rate_limited(event):
+            _HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT += 1
+            logger.info(
+                "sentry before_send dropped expected hotelrunner PULL 429 backpressure "
+                f"(cumulative={_HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT})"
+            )
+            return None
+    except Exception:
+        pass
+    try:
+        if _is_static_client_disconnect(event, hint):
+            _STATIC_CLIENT_DISCONNECT_DROP_COUNT += 1
+            logger.info(
+                "sentry before_send dropped benign static client-disconnect "
+                f"(cumulative={_STATIC_CLIENT_DISCONNECT_DROP_COUNT})"
             )
             return None
     except Exception:

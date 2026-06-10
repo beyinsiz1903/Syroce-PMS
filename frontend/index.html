@@ -56,7 +56,10 @@
                     'Failed to fetch dynamically imported module',
                     'error loading dynamically imported module',
                     'is not a valid JavaScript MIME type',
-                    'Unable to preload CSS'
+                    'Unable to preload CSS',
+                    // Resolved-but-invalid module (no default export) normalized
+                    // by lazyWithPreload.js — keep in sync with INVALID_CHUNK_MODULE_MSG.
+                    'Dynamically imported module is invalid'
                 ];
                 function isChunkError(msg) {
                     if (!msg) return false;
@@ -76,8 +79,10 @@
                     if (window.location.search.indexOf('_chunkreload=1') !== -1) return true;
                     return false;
                 }
+                // Returns true if it initiated a heal reload, false if the latch
+                // is already spent (genuinely broken deploy → let it surface).
                 function reloadOnce() {
-                    if (alreadyHealed()) return;
+                    if (alreadyHealed()) return false;
                     window.__syroceChunkReloaded = true;   // in-memory latch (loop-safe even if storage denied)
                     window.__syroceChunkHealing = true;    // tells Sentry beforeSend this incident is benign
                     var stored = false;
@@ -90,6 +95,7 @@
                         u.searchParams.set('_chunkreload', '1');
                         window.location.replace(u.toString());
                     }
+                    return true;
                 }
                 window.addEventListener('vite:preloadError', function (e) {
                     if (e && e.preventDefault) e.preventDefault();
@@ -103,6 +109,13 @@
                     var msg = r && (r.message || (typeof r === 'string' ? r : ''));
                     if (isChunkError(msg)) reloadOnce();
                 });
+                // React render-path chunk errors (a React.lazy import that rejects
+                // DURING render) are caught by the in-app ErrorBoundary and never
+                // fire window 'error'/'unhandledrejection', so the listeners above
+                // can't see them. Expose the SAME one-shot latch + matcher for the
+                // ErrorBoundary to call, keeping a single shared "reload once" guarantee.
+                window.__syroceIsChunkError = isChunkError;
+                window.__syroceChunkReloadOnce = reloadOnce;
             })();
         </script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>

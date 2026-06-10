@@ -19,7 +19,9 @@ import pytest
 from infra import cloud_observability as obs
 from infra.cloud_observability import (
     _is_graphql_introspection_denied,
+    _is_hotelrunner_pull_rate_limited,
     _is_nonprod_sustained_transient_db,
+    _is_static_client_disconnect,
     _is_workflow_restart_port_bind,
     _sentry_before_send,
     get_sentry_filter_stats,
@@ -246,3 +248,128 @@ class TestGraphQLIntrospectionDenied:
             ]}}, {}
         )
         assert out is not None
+
+
+class TestHotelRunnerPullRateLimit:
+    """The sync engine logs an ERROR per failed PULL page. An EXTERNAL
+    HotelRunner 429 (the provider throttling our poller, retries already
+    exhausted) is expected backpressure, not a server fault — it must not page.
+    A genuine non-429 PULL failure still pages."""
+
+    _PULL_429 = (
+        "[PULL] Failed for tenant 5bad4a34-6ee3-4566-9053-741b7375a9cf page 1: "
+        "Rate limit exceeded (429) [99ab143f-f9d]"
+    )
+
+    def test_detected_from_logentry(self):
+        assert _is_hotelrunner_pull_rate_limited(
+            {"logentry": {"message": self._PULL_429}}
+        ) is True
+
+    def test_detected_from_exception_value(self):
+        assert _is_hotelrunner_pull_rate_limited(
+            {"exception": {"values": [{"value": self._PULL_429}]}}
+        ) is True
+
+    def test_logger_prefixed_still_detected(self):
+        prefixed = (
+            "domains.channel_manager.providers.sync_engine ERROR " + self._PULL_429
+        )
+        assert _is_hotelrunner_pull_rate_limited(
+            {"logentry": {"formatted": prefixed}}
+        ) is True
+
+    def test_non_429_pull_failure_passes_through(self):
+        """A real PULL failure (auth / parse / 5xx) must still page."""
+        msg = (
+            "[PULL] Failed for tenant 5bad4a34 page 1: "
+            "Invalid credentials (401) [corr]"
+        )
+        assert _is_hotelrunner_pull_rate_limited(
+            {"logentry": {"message": msg}}
+        ) is False
+
+    def test_429_outside_pull_context_passes_through(self):
+        """A 429 that is NOT the PULL backpressure template must still page."""
+        msg = "worker tick: Rate limit exceeded (429) [corr]"
+        assert _is_hotelrunner_pull_rate_limited(
+            {"logentry": {"message": msg}}
+        ) is False
+
+    def test_empty_event_safe(self):
+        assert _is_hotelrunner_pull_rate_limited({}) is False
+
+    def test_before_send_drops_and_counts(self):
+        before = get_sentry_filter_stats()["hotelrunner_pull_rate_limit_drops"]
+        assert _sentry_before_send(
+            {"logentry": {"message": self._PULL_429}}, {}
+        ) is None
+        after = get_sentry_filter_stats()["hotelrunner_pull_rate_limit_drops"]
+        assert after == before + 1
+
+
+class TestStaticClientDisconnect:
+    """uvicorn raises ``RuntimeError('Response content shorter than
+    Content-Length')`` when a client disconnects mid-download of a static asset.
+    Benign client backpressure — dropped ONLY for static-asset GET/HEAD. The
+    same message on an API path (a possible truncation bug) still pages."""
+
+    _MSG = "Response content shorter than Content-Length"
+
+    def _static_event(
+        self,
+        url="https://x.syroce.replit.app/js/js/NotificationContext-CoJe4oGl.js",
+        method="GET",
+    ):
+        return {
+            "request": {"method": method, "url": url},
+            "exception": {"values": [{"value": self._MSG}]},
+        }
+
+    def _hint(self):
+        exc = RuntimeError(self._MSG)
+        return {"exc_info": (RuntimeError, exc, None)}
+
+    def test_detected_from_exc_info_and_static_path(self):
+        assert _is_static_client_disconnect(self._static_event(), self._hint()) is True
+
+    def test_detected_from_event_value_only(self):
+        assert _is_static_client_disconnect(self._static_event(), {}) is True
+
+    def test_static_css_asset_detected(self):
+        ev = self._static_event(url="https://x.syroce.replit.app/assets/index-abc.css")
+        assert _is_static_client_disconnect(ev, {}) is True
+
+    def test_api_path_passes_through(self):
+        """Same message on a real API endpoint is a possible truncation bug — page it."""
+        ev = self._static_event(url="https://x.syroce.replit.app/api/reservations")
+        assert _is_static_client_disconnect(ev, self._hint()) is False
+
+    def test_api_path_with_static_segment_passes_through(self):
+        """Prefix-anchored, not substring: an API path that merely CONTAINS a
+        static-looking segment must still page (real truncation bug)."""
+        ev = self._static_event(url="https://x.syroce.replit.app/api/v2/assets/export")
+        assert _is_static_client_disconnect(ev, self._hint()) is False
+
+    def test_post_method_passes_through(self):
+        assert _is_static_client_disconnect(
+            self._static_event(method="POST"), self._hint()
+        ) is False
+
+    def test_unrelated_message_on_static_path_passes_through(self):
+        ev = {
+            "request": {"method": "GET", "url": "https://x/js/app.js"},
+            "exception": {"values": [{"value": "KeyError: boom"}]},
+        }
+        assert _is_static_client_disconnect(ev, {}) is False
+
+    def test_missing_request_context_passes_through(self):
+        """No request url → cannot prove static → must page."""
+        ev = {"exception": {"values": [{"value": self._MSG}]}}
+        assert _is_static_client_disconnect(ev, self._hint()) is False
+
+    def test_before_send_drops_and_counts(self):
+        before = get_sentry_filter_stats()["static_client_disconnect_drops"]
+        assert _sentry_before_send(self._static_event(), self._hint()) is None
+        after = get_sentry_filter_stats()["static_client_disconnect_drops"]
+        assert after == before + 1
