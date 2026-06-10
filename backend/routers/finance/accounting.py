@@ -1844,11 +1844,18 @@ async def generate_invoice_from_folio(
         'voided': False
     }, {'_id': 0}).to_list(1000)
 
-    # Get booking info
-    booking = await db.bookings.find_one({
-        'folio_id': request.folio_id,
-        'tenant_id': current_user.tenant_id
-    }, {'_id': 0})
+    # Get booking info. Folios reference their booking via folio.booking_id;
+    # the booking document is NOT linked back with a folio_id at check-in /
+    # walk-in, so a reverse {'folio_id': ...} lookup never matches and the
+    # invoice silently loses the customer (falls back to "Guest") and the
+    # booking_id. Resolve via the folio's own booking_id instead.
+    booking = None
+    folio_booking_id = folio.get('booking_id')
+    if folio_booking_id:
+        booking = await db.bookings.find_one({
+            'id': folio_booking_id,
+            'tenant_id': current_user.tenant_id
+        }, {'_id': 0})
 
     # Convert charges to invoice items
     invoice_items = []
@@ -1862,12 +1869,33 @@ async def generate_invoice_from_folio(
         }
         invoice_items.append(item)
 
-    # Get customer info from booking or folio
-    raw_customer_name = booking.get('guest_name') if booking else folio.get('guest_name', 'Guest')
+    # Resolve customer info. Walk-in / check-in store the guest's name on the
+    # GUEST document (booking carries only guest_id), so fall back through
+    # booking -> guest -> folio. Without the guest lookup the validator receives
+    # an empty name and raises 400, which would break invoicing for every
+    # walk-in folio.
+    guest = None
+    guest_id = (booking.get('guest_id') if booking else None) or folio.get('guest_id')
+    if guest_id:
+        guest = await db.guests.find_one({
+            'id': guest_id, 'tenant_id': current_user.tenant_id
+        }, {'_id': 0})
+
+    raw_customer_name = (
+        (booking.get('guest_name') if booking else None)
+        or (guest.get('name') if guest else None)
+        or folio.get('guest_name')
+        or 'Guest'
+    )
     # Apply same validator as manual create — guest_name from booking/folio could
     # have been seeded with HTML/XML payloads in older data; reject those here.
     customer_name = _validate_invoice_customer_name(raw_customer_name)
-    customer_email = booking.get('guest_email') if booking else folio.get('guest_email', '')
+    customer_email = (
+        (booking.get('guest_email') if booking else None)
+        or (guest.get('email') if guest else None)
+        or folio.get('guest_email')
+        or ''
+    )
 
     # Create invoice
     invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
@@ -1963,6 +1991,17 @@ async def generate_invoice_from_folio(
 
         invoice['efatura_uuid'] = efatura_record['efatura_uuid']
         invoice['efatura_status'] = 'generated'
+
+    # v95.1 parity — folio-sourced invoices must invalidate the same caches as
+    # the manual create/update paths, otherwise a freshly generated invoice is
+    # missing from GET /accounting/invoices (5dk cache) for tenants whose list
+    # was already warmed.
+    if cache:
+        cache.invalidate_tenant_cache(current_user.tenant_id, "accounting_invoices_list")
+        try:
+            cache.delete_pattern(f"cache:{current_user.tenant_id}:accounting_dashboard:*")
+        except Exception:
+            pass
 
     return {
         'invoice': invoice,
