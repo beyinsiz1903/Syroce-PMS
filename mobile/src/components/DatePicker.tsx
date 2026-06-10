@@ -3,10 +3,7 @@ import { Modal, Pressable, Text, View } from 'react-native';
 import { radius, spacing, useTheme } from '../theme';
 import { tr } from '../i18n/tr';
 
-type DatePickerProps = {
-  // ISO date (YYYY-MM-DD) or empty/undefined when nothing selected.
-  value?: string;
-  onChange: (iso: string | undefined) => void;
+type SharedProps = {
   placeholder?: string;
   // Optional inclusive lower bound (ISO) — days before it are disabled.
   minimumDate?: string;
@@ -14,6 +11,23 @@ type DatePickerProps = {
   allowClear?: boolean;
   testID?: string;
 };
+
+type SingleProps = SharedProps & {
+  mode?: 'single';
+  // ISO date (YYYY-MM-DD) or empty/undefined when nothing selected.
+  value?: string;
+  onChange: (iso: string | undefined) => void;
+};
+
+type RangeProps = SharedProps & {
+  mode: 'range';
+  // Inclusive range bounds as ISO (YYYY-MM-DD), undefined/empty when unset.
+  startValue?: string;
+  endValue?: string;
+  onRangeChange: (start: string | undefined, end: string | undefined) => void;
+};
+
+type DatePickerProps = SingleProps | RangeProps;
 
 const WEEKDAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 
@@ -60,14 +74,10 @@ function formatDisplay(iso?: string): string | null {
   }
 }
 
-export const DatePicker: React.FC<DatePickerProps> = ({
-  value,
-  onChange,
-  placeholder,
-  minimumDate,
-  allowClear,
-  testID,
-}) => {
+export const DatePicker: React.FC<DatePickerProps> = (props) => {
+  const { placeholder, minimumDate, allowClear, testID } = props;
+  const isRange = props.mode === 'range';
+
   const c = useTheme();
   const [open, setOpen] = useState(false);
 
@@ -76,17 +86,23 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     return { y: now.getFullYear(), m: now.getMonth(), d: now.getDate() };
   }, []);
 
-  const selected = parseISO(value);
+  const singleValue = isRange ? undefined : props.value;
+  const rangeStart = isRange ? props.startValue : undefined;
+  const rangeEnd = isRange ? props.endValue : undefined;
+
+  const selected = parseISO(singleValue);
+  const startParts = parseISO(rangeStart);
+  const endParts = parseISO(rangeEnd);
   const minParts = parseISO(minimumDate);
 
   // Month currently shown in the calendar grid.
   const [view, setView] = useState(() => {
-    const base = selected || today;
+    const base = selected || startParts || today;
     return { y: base.y, m: base.m };
   });
 
   const openPicker = () => {
-    const base = parseISO(value) || today;
+    const base = parseISO(isRange ? rangeStart : singleValue) || today;
     setView({ y: base.y, m: base.m });
     setOpen(true);
   };
@@ -103,12 +119,47 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     return toISO(y, m, d) < toISO(minParts.y, minParts.m, minParts.d);
   };
 
-  const pick = (d: number) => {
-    onChange(toISO(view.y, view.m, d));
+  const pickSingle = (iso: string) => {
+    if (props.mode === 'range') return;
+    props.onChange(iso);
     setOpen(false);
   };
 
-  const display = formatDisplay(value);
+  // Range selection state machine:
+  // - no start, or both bounds set → begin a fresh range at the tapped day.
+  // - start set, no end, day ≥ start → complete the range and close.
+  // - start set, no end, day < start → restart with the earlier day.
+  const pickRange = (iso: string) => {
+    if (props.mode !== 'range') return;
+    const hasStart = !!rangeStart;
+    const hasEnd = !!rangeEnd;
+    if (!hasStart || hasEnd) {
+      props.onRangeChange(iso, undefined);
+      return;
+    }
+    if (iso >= (rangeStart as string)) {
+      props.onRangeChange(rangeStart, iso);
+      setOpen(false);
+    } else {
+      props.onRangeChange(iso, undefined);
+    }
+  };
+
+  const pick = (d: number) => {
+    const iso = toISO(view.y, view.m, d);
+    if (isRange) pickRange(iso);
+    else pickSingle(iso);
+  };
+
+  const display = isRange
+    ? (() => {
+        const s = formatDisplay(rangeStart);
+        const e = formatDisplay(rangeEnd);
+        if (s && e) return `${s} → ${e}`;
+        if (s) return s;
+        return null;
+      })()
+    : formatDisplay(singleValue);
   const monthLabel = useMemo(() => {
     try {
       return new Date(view.y, view.m, 1).toLocaleDateString('tr-TR', {
@@ -227,10 +278,32 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                 if (d == null) {
                   return <View key={`b${i}`} style={{ width: `${100 / 7}%`, height: 40 }} />;
                 }
-                const isSelected =
-                  !!selected && selected.y === view.y && selected.m === view.m && selected.d === d;
+                const iso = toISO(view.y, view.m, d);
                 const isToday = today.y === view.y && today.m === view.m && today.d === d;
                 const disabled = isBeforeMin(view.y, view.m, d);
+
+                // Range endpoints + in-between highlighting.
+                const startISO = startParts
+                  ? toISO(startParts.y, startParts.m, startParts.d)
+                  : null;
+                const endISO = endParts ? toISO(endParts.y, endParts.m, endParts.d) : null;
+                const isRangeStart = isRange && startISO === iso;
+                const isRangeEnd = isRange && endISO === iso;
+                const isInRange =
+                  isRange && !!startISO && !!endISO && iso > startISO && iso < endISO;
+
+                const isSelected = isRange
+                  ? isRangeStart || isRangeEnd
+                  : !!selected &&
+                    selected.y === view.y &&
+                    selected.m === view.m &&
+                    selected.d === d;
+
+                // Connect the endpoints with a tinted band on the in-between days
+                // and on the inner edge of each endpoint.
+                const showLeftBand = isInRange || (isRangeEnd && !!startISO);
+                const showRightBand = isInRange || (isRangeStart && !!endISO);
+
                 return (
                   <Pressable
                     key={`d${d}`}
@@ -238,7 +311,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                     disabled={disabled}
                     accessibilityRole="button"
                     accessibilityState={{ selected: isSelected, disabled }}
-                    accessibilityLabel={toISO(view.y, view.m, d)}
+                    accessibilityLabel={iso}
                     style={{
                       width: `${100 / 7}%`,
                       height: 40,
@@ -246,6 +319,20 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                       justifyContent: 'center',
                     }}
                   >
+                    {/* In-range tint band behind the day */}
+                    {(isInRange || showLeftBand || showRightBand) ? (
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          position: 'absolute',
+                          top: 3,
+                          bottom: 3,
+                          left: showLeftBand ? 0 : '50%',
+                          right: showRightBand ? 0 : '50%',
+                          backgroundColor: c.primary + '22',
+                        }}
+                      />
+                    ) : null}
                     <View
                       style={{
                         width: 34,
@@ -291,8 +378,13 @@ export const DatePicker: React.FC<DatePickerProps> = ({
               <Pressable
                 onPress={() => {
                   setView({ y: today.y, m: today.m });
-                  if (!isBeforeMin(today.y, today.m, today.d)) {
-                    onChange(toISO(today.y, today.m, today.d));
+                  if (isBeforeMin(today.y, today.m, today.d)) return;
+                  const todayISO = toISO(today.y, today.m, today.d);
+                  if (props.mode === 'range') {
+                    // Start a fresh range at today; keep open to pick the end.
+                    props.onRangeChange(todayISO, undefined);
+                  } else {
+                    props.onChange(todayISO);
                     setOpen(false);
                   }
                 }}
@@ -306,7 +398,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                 {allowClear ? (
                   <Pressable
                     onPress={() => {
-                      onChange(undefined);
+                      if (props.mode === 'range') props.onRangeChange(undefined, undefined);
+                      else props.onChange(undefined);
                       setOpen(false);
                     }}
                     style={{ paddingVertical: spacing.sm, paddingHorizontal: spacing.sm }}

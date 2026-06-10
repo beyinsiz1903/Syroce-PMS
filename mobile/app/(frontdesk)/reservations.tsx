@@ -166,26 +166,19 @@ export default function ReservationsScreen() {
       />
       <View style={{ height: spacing.sm }} />
       <FilterChips options={STATUS_OPTIONS} value={status} onChange={setStatus} />
-      <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
-        <View style={{ flex: 1 }}>
-          <DatePicker
-            placeholder={tr.reservations.checkInFrom}
-            value={checkInFrom}
-            onChange={(iso) => setCheckInFrom(iso || '')}
-            allowClear
-            testID="smoke-reservations-checkin"
-          />
-        </View>
-        <View style={{ flex: 1 }}>
-          <DatePicker
-            placeholder={tr.reservations.checkOutTo}
-            value={checkOutTo}
-            onChange={(iso) => setCheckOutTo(iso || '')}
-            minimumDate={checkInFrom || undefined}
-            allowClear
-            testID="smoke-reservations-checkout"
-          />
-        </View>
+      <View style={{ marginTop: spacing.sm }}>
+        <DatePicker
+          mode="range"
+          placeholder={tr.reservations.dateRange}
+          startValue={checkInFrom}
+          endValue={checkOutTo}
+          onRangeChange={(start, end) => {
+            setCheckInFrom(start || '');
+            setCheckOutTo(end || '');
+          }}
+          allowClear
+          testID="smoke-reservations-daterange"
+        />
       </View>
       {hasFilters ? (
         <Pressable onPress={clearFilters} style={{ paddingVertical: spacing.sm }}>
