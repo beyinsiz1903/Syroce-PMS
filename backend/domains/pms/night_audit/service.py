@@ -259,12 +259,29 @@ class NightAuditCoreService:
             ctx.tenant_id, accommodation_tax_rate,
         )
 
-        cursor = self._db.bookings.find({
+        bookings_list = await self._db.bookings.find({
             "tenant_id": ctx.tenant_id,
             "status": "checked_in",
-        }, {"_id": 0})
+        }, {"_id": 0}).to_list(5000)
 
-        async for booking in cursor:
+        # Folio cozumu: booking dokumanina folio_id HIC yazilmiyor (tek
+        # yonlu bag: folio.booking_id -> booking). Folyo bakiyesini dogru
+        # guncellemek icin acik guest folyoyu booking_id uzerinden coz —
+        # hardened engine (core/night_audit_hardened) ile ayni kanonik
+        # sorgu. Eski kod booking.get("folio_id") (=None) okudugu icin
+        # charge'i folio_id=None ile yaziyor + balance $inc'ini atliyordu
+        # (otomatik oda geliri folyoya hic yansimadan kayboluyordu).
+        folio_by_booking: dict = {}
+        if bookings_list:
+            booking_ids = [b.get("id") for b in bookings_list if b.get("id")]
+            async for f in self._db.folios.find(
+                {"booking_id": {"$in": booking_ids}, "tenant_id": ctx.tenant_id,
+                 "folio_type": "guest", "status": "open"},
+                {"_id": 0, "id": 1, "booking_id": 1},
+            ):
+                folio_by_booking[f["booking_id"]] = f["id"]
+
+        for booking in bookings_list:
             rooms_processed += 1
             room_rate = booking.get("room_rate") or booking.get("rate") or 0.0
             if room_rate <= 0:
@@ -273,6 +290,20 @@ class NightAuditCoreService:
                     "booking", booking.get("id"),
                     f"Booking {booking.get('id')} has zero/missing room rate",
                     {"booking_id": booking.get("id"), "room_rate": room_rate},
+                ))
+                continue
+
+            # booking.folio_id varsa onu onurlandir; yoksa folios'tan coz.
+            folio_id = booking.get("folio_id") or folio_by_booking.get(booking.get("id"))
+            if not folio_id:
+                # Acik folyosu olmayan checked-in booking — charge'i orphan
+                # (folio_id=None) yazmak yerine atla ve uyari uret (hardened
+                # engine "no_open_folio" skip semantigi ile ayni).
+                exceptions.append(self._make_exception(
+                    audit_id, ctx.tenant_id, "warning", "room_charge",
+                    "booking", booking.get("id"),
+                    f"Booking {booking.get('id')} has no open guest folio; room charge skipped",
+                    {"booking_id": booking.get("id")},
                 ))
                 continue
 
@@ -286,7 +317,7 @@ class NightAuditCoreService:
                     "id": charge_id,
                     "tenant_id": ctx.tenant_id,
                     "booking_id": booking.get("id"),
-                    "folio_id": booking.get("folio_id"),
+                    "folio_id": folio_id,
                     "charge_category": "room",
                     "description": f"Room charge - {bd}",
                     "date": bd,
@@ -306,12 +337,12 @@ class NightAuditCoreService:
                 }
                 await self._db.folio_charges.insert_one({**charge_doc})
 
-                # Update folio balance
-                if booking.get("folio_id"):
-                    await self._db.folios.update_one(
-                        {"id": booking["folio_id"]},
-                        {"$inc": {"balance": total_charge}},
-                    )
+                # Gelir zinciri: charge -> folio.balance (artik folio_id her
+                # zaman cozulmus durumda).
+                await self._db.folios.update_one(
+                    {"id": folio_id, "tenant_id": ctx.tenant_id},
+                    {"$inc": {"balance": total_charge}},
+                )
 
             charges_posted += 1
             total_revenue += room_rate

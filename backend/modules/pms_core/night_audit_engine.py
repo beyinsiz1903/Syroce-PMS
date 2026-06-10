@@ -350,6 +350,28 @@ class NightAuditEngine:
                 else:
                     failed += 1
 
+            # Gelir zinciri: charge -> folio.balance. Eski kod charge'ı
+            # folio_charges'a yazıyor ama folio.balance'ı HIC artmiyordu →
+            # otomatik oda geliri folyo bakiyesine (ve checkout bakiye
+            # guard'ina) hic yansimiyordu. Hardened engine ($inc total)
+            # semantigini birebir uygula: yalnizca gercekten insert edilmis
+            # charge'larin toplami kadar artir (idempotency guard'lari ayni
+            # business_date'te tekrar insert'i zaten engelliyor).
+            balance_inc_by_folio: dict[str, float] = {}
+            for meta in charge_meta:
+                if meta["id"] not in inserted_ids:
+                    continue
+                line_total = round(meta["amount"] + meta["tax_amount"], 2)
+                balance_inc_by_folio[meta["folio_id"]] = round(
+                    balance_inc_by_folio.get(meta["folio_id"], 0.0) + line_total, 2
+                )
+            for fid, inc in balance_inc_by_folio.items():
+                if inc:
+                    await db.folios.update_one(
+                        {"id": fid, "tenant_id": tenant_id},
+                        {"$inc": {"balance": inc}},
+                    )
+
         return {
             "posted": posted,
             "failed": failed,

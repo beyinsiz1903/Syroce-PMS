@@ -579,11 +579,26 @@ class FinancialService:
         tid = ctx.tenant_id
 
         async def _check1_bookings():
-            return await self._db.bookings.find(
+            bookings = await self._db.bookings.find(
                 {"tenant_id": tid, "status": "checked_in"},
                 {"_id": 0, "id": 1, "folio_id": 1, "guest_name": 1,
                  "room_no": 1, "guest_id": 1, "room_id": 1},
             ).to_list(500)
+            # booking.folio_id dokumana HIC yazilmiyor (tek yonlu bag) →
+            # "folyosu yok" tespitini booking.folio_id yerine folios
+            # koleksiyonundaki acik guest folyo varligi uzerinden yap.
+            # Aksi halde HER checked-in booking yanlislikla "folyosuz"
+            # olarak isaretleniyordu (false-positive seli).
+            open_folio_bids: set = set()
+            bids = [b["id"] for b in bookings if b.get("id")]
+            if bids:
+                async for f in self._db.folios.find(
+                    {"tenant_id": tid, "booking_id": {"$in": bids},
+                     "folio_type": "guest", "status": "open"},
+                    {"_id": 0, "booking_id": 1},
+                ):
+                    open_folio_bids.add(f["booking_id"])
+            return bookings, open_folio_bids
 
         async def _check2_voided():
             q = {"tenant_id": tid, "date": business_date, "voided": True}
@@ -688,14 +703,19 @@ class FinancialService:
                 return default
             return result
 
-        checked_in = _ok(r1, [])
+        checked_in, open_folio_bids = _ok(r1, ([], set()))
         voided_count, voided_raw = _ok(r2, (0, []))
         neg_balance, neg_raw = _ok(r3, (0, []))
         rate_count, rate_raw = _ok(r4, (0, []))
         closed_folio_charges, closed_raw = _ok(r5, (0, []))
         audit_result = _ok(r6, None)
 
-        missing_folios = [b for b in checked_in if not b.get("folio_id")]
+        # Gercekten acik folyosu olmayan checked-in booking'ler (folios
+        # koleksiyonundan cozuldu; booking.folio_id'ye guvenilmez).
+        missing_folios = [
+            b for b in checked_in
+            if not (b.get("folio_id") or b["id"] in open_folio_bids)
+        ]
         mf_items = [{"booking_id": b["id"], "guest_name": b.get("guest_name"),
                      "room_no": b.get("room_no"), "guest_id": b.get("guest_id"),
                      "room_id": b.get("room_id"), "action": "open_booking"}

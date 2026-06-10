@@ -30,20 +30,47 @@ so every folio invoice silently fell back to customer "Guest" with
 the validator). Verified live end-to-end (money chain 23/23) after switching to
 the forward lookup.
 
-## Adjacent UNFIXED bug (night audit room revenue) — separate task
+## Night-audit room revenue → folio.balance (FIXED)
 
-`night_audit/service.py::_post_nightly_room_charges` reads
-`booking.get("folio_id")` (always None, per above) for the auto-posted nightly
-room charge. Consequence: the charge is written with `folio_id=None` AND the
-`folio.balance` `$inc` is **skipped** (it is guarded by `if booking.get("folio_id")`).
-So auto-posted ROOM revenue never lands on the folio balance for ANY checked-in
-booking — and since checkout's outstanding-balance / HTTP-402 guard reads
-`folio.balance`, a guest can check out without the room charge being settled.
-Revenue-integrity (P1-class), affects all bookings not just walk-ins.
+There are THREE night-audit room-charge code paths; know which is reachable:
 
-**Fix direction (do NOT back-link folio_id onto bookings — too cross-cutting):**
-inside night audit resolve the folio via
-`folios.find_one({booking_id, tenant_id, folio_type:'guest', status:'open'})`,
-post the charge against that folio id and `$inc` its balance. Also needs a
-residue check for historical `folio_id=None` room charges. Left as its own
-follow-up (out of scope for the invoice fix).
+- **REACHABLE LEAK** = `modules/pms_core/night_audit_engine.py::_post_room_charges`
+  (route `POST /api/pms-core/night-audit/run`, NOT module-gated). It inserted
+  room `folio_charges` but never `$inc`-ed `folio.balance` → auto-posted room
+  revenue never landed on the balance, so checkout's outstanding-balance / 402
+  guard (reads `folio.balance`) let guests check out unsettled. THIS was the bug.
+- **DEAD** = `domains/pms/night_audit/service.py::_post_room_charges`
+  (`run_scheduled_audit` has zero callers; scheduler imports
+  `core.night_audit_hardened.start_night_audit`). Fixed for consistency only.
+- **CANONICAL SAFE** = `core/night_audit_hardened.py` — already `$inc`s balance;
+  use it as the reference for `$inc` semantics.
+
+**Fix applied:** after inserting room charges, `$inc` each affected folio's
+balance by the sum of ACTUALLY-inserted line totals (`amount+tax_amount`,
+grouped by folio, keyed off `inserted_ids` only), with a tenant-scoped filter
+`{"id": fid, "tenant_id": tenant_id}`. Do NOT back-link `folio_id` onto bookings
+(too cross-cutting); resolve the folio forward via
+`folios.find_one({booking_id, tenant_id, status:'open'})`.
+
+**integrity-check false-positive** (`financial_service.py::get_integrity_check`,
+route `GET /api/night-audit/integrity-check`, module-gated → needs tenant
+`modules.night_audit=true`): because `booking.folio_id` is ALWAYS None (one-way
+link), the old "missing folio" check flagged EVERY checked-in booking. Fix:
+also query the `folios` collection for open guest folios and treat a booking as
+missing only when `not (b.folio_id or b.id in open_folio_bids)`.
+
+**Idempotency:** sequential re-run for the same business date is safe — the
+pre-fetch guard skips folios already carrying `night_audit_date == business_date`
+before any insert/`$inc`, so balance can't double-count.
+
+**Residual (pre-existing, NOT introduced here):** the pms-core engine has no
+run-level lock and the hardened dedup unique index does NOT cover its charge
+docs (engine uses `night_audit_date`/`charge_category`; index wants
+`business_date`/`charge_type`). Two *concurrent* same-date runs could double-post
+charges AND balance. Follow-up candidate: per-(tenant,business_date) lock or
+align the engine's field names with the dedup index.
+
+**Why:** verified live end-to-end on an isolated throwaway tenant (balance went
+0 → exactly 1650.0 for a 3000/2-night stay +10% tax; integrity-check flagged the
+folio-less booking and not the folio-having one). `$inc` (not full recompute) is
+correct here — it mirrors every other write path and won't mask drift.
