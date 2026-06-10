@@ -15,6 +15,7 @@ from core.audit import log_audit_event
 from core.cache import cached
 from core.database import db
 from core.security import get_current_user, security
+from models.enums import ROLE_PERMISSIONS, Permission
 from modules.pms_core.role_permission_service import (
     require_op,
 )
@@ -190,6 +191,28 @@ CONTRACT_APPROVAL_TRANSITIONS: dict[str, set[str]] = {
     'rejected': {'draft'},
     'approved': set(),
 }
+
+
+def _compute_contract_approver_roles() -> list[str]:
+    """Roles authorised to act on a pending corporate contract.
+
+    The approve/reject transition is gated by ``manage_sales`` →
+    ``Permission.VIEW_COMPANIES``. We derive the approver role set directly
+    from ``ROLE_PERMISSIONS`` (rather than hardcoding a list) so it stays in
+    lockstep with the permission model: whoever can approve a contract is
+    exactly who should be told when one re-enters the queue. Returned as plain
+    role string values for ``target_roles`` notification scoping.
+    """
+    roles: list[str] = []
+    for role, perms in ROLE_PERMISSIONS.items():
+        perm_values = {getattr(p, "value", p) for p in perms}
+        if Permission.VIEW_COMPANIES.value in perm_values:
+            roles.append(getattr(role, "value", str(role)))
+    return roles
+
+
+# Snapshot at import time — ROLE_PERMISSIONS is a static mapping.
+CONTRACT_APPROVER_ROLES: list[str] = _compute_contract_approver_roles()
 
 
 # Task #205/#231: unique-index backstops behind ``_assert_contract_unique``.
@@ -504,12 +527,33 @@ async def transition_corporate_contract_approval(
                 "[contract-approval] audit log failed for %s", contract_id,
             )
 
+    # Notify the approver(s) when a previously-rejected contract comes back into
+    # the pending queue via the resubmit cycle (rejected → draft → pending).
+    # We detect a resubmit (vs. a brand-new draft → pending submission) by the
+    # presence of a prior rejection in the contract's history. Best-effort: the
+    # approver alert must never roll back or block the committed transition.
+    approvers_notified = None
+    is_resubmit = (
+        to_status == 'pending'
+        and any(
+            (h or {}).get('to_status') == 'rejected'
+            for h in (existing.get('approval_history') or [])
+        )
+    )
+    if is_resubmit:
+        approvers_notified = await _notify_approvers_of_resubmit(
+            existing,
+            tenant_id=current_user.tenant_id,
+            resubmitter=current_user.username,
+        )
+
     return {
         'message': 'Contract approval transitioned',
         'contract_id': contract_id,
         'from_status': from_status,
         'approval_status': to_status,
         'owner_notified': notified,
+        'approvers_notified': approvers_notified,
     }
 
 
@@ -584,6 +628,141 @@ async def _notify_contract_owner_approval(
             contract.get('id'),
         )
         return False
+
+
+# Frontend route for the corporate-contract approvals queue (see
+# frontend/src/routes/sections/financeReports.js). Surfaced in the in-app
+# notification + the approver e-mail so the link lands on the right page.
+_CONTRACT_APPROVALS_PATH = "/reports/corporate-contract-approvals"
+
+
+def _approvals_page_url() -> str:
+    """Absolute URL to the approvals page, or the bare path if no app URL set."""
+    import os
+    base = (os.environ.get("PUBLIC_APP_URL")
+            or os.environ.get("REPLIT_DEV_DOMAIN") or "").strip().rstrip("/")
+    if not base:
+        return _CONTRACT_APPROVALS_PATH
+    if not base.startswith("http"):
+        base = f"https://{base}"
+    return f"{base}{_CONTRACT_APPROVALS_PATH}"
+
+
+async def _notify_approvers_of_resubmit(
+    contract: dict,
+    *,
+    tenant_id: str,
+    resubmitter: str | None,
+) -> dict:
+    """Alert a tenant's contract approver(s) that a rejected contract is back.
+
+    Two best-effort, mutually isolated channels — neither may raise, since the
+    approval transition has already committed:
+
+      1. In-app bell: one ``db.notifications`` row scoped to ``tenant_id`` and
+         ``target_roles=CONTRACT_APPROVER_ROLES`` so only users who can act on
+         the queue see it (``_visibility_filter`` in notifications_router).
+      2. E-mail: one message per active approver-role user in the tenant. User
+         e-mails are KVKK-encrypted at rest, so each doc is decrypted before the
+         address is used; the resubmitter is skipped (they already know).
+
+    Returns ``{"in_app": bool, "emails_sent": int, "approver_count": int}``.
+    """
+    company = contract.get('company_name') or 'Sözleşme'
+    rate_code = contract.get('rate_code') or '-'
+    contract_id = contract.get('id')
+    by_label = (resubmitter or '').strip() or 'Bir kullanıcı'
+    url = _approvals_page_url()
+
+    result = {"in_app": False, "emails_sent": 0, "approver_count": 0}
+
+    # ── Channel 1: in-app notification (role-targeted) ──────────────
+    try:
+        now_iso = datetime.now(UTC).isoformat()
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "type": "corporate_contract_resubmitted",
+            "severity": "info",
+            "title": f"Sözleşme yeniden onaya gönderildi — {company}",
+            "message": (
+                f"{by_label}, reddedilen \"{company}\" kurumsal sözleşmesini "
+                "düzeltip yeniden onaya gönderdi. Onaylar sayfasından "
+                "inceleyebilirsiniz."
+            ),
+            "target_roles": list(CONTRACT_APPROVER_ROLES),
+            "link": _CONTRACT_APPROVALS_PATH,
+            "related_entity": "corporate_contract",
+            "related_id": contract_id,
+            "read": False,
+            "created_at": now_iso,
+        })
+        result["in_app"] = True
+    except Exception:  # noqa: BLE001 — bell is best-effort
+        import logging
+        logging.getLogger(__name__).exception(
+            "[contract-approval] resubmit in-app notify failed for %s",
+            contract_id,
+        )
+
+    # ── Channel 2: e-mail to approver-role users ────────────────────
+    try:
+        from core.email import _is_valid_email, send_email
+        from core.mailing_safe import safe_html_value
+        from security.encrypted_lookup import decrypt_user_doc
+
+        approvers = await db.users.find(
+            {
+                "tenant_id": tenant_id,
+                "role": {"$in": list(CONTRACT_APPROVER_ROLES)},
+                "is_active": True,
+            },
+            {"_id": 0, "email": 1, "username": 1, "role": 1},
+        ).to_list(100)
+        result["approver_count"] = len(approvers)
+
+        safe_company = safe_html_value(company)
+        safe_by = safe_html_value(by_label)
+        safe_rate = safe_html_value(str(rate_code))
+        subject = f"Onayınız bekleniyor — {company} yeniden gönderildi"
+        html = (
+            "<div style='font-family:Helvetica,Arial,sans-serif;max-width:600px;"
+            "margin:0 auto;padding:18px;color:#0f172a;'>"
+            "<h2 style='margin:0 0 8px;'>Kurumsal Sözleşme "
+            "<span style='color:#2563eb;'>Yeniden Onaya Gönderildi</span></h2>"
+            "<p style='margin:0 0 8px;color:#334155;'>"
+            f"<b>{safe_by}</b>, reddedilen <b>{safe_company}</b> kurumsal "
+            "sözleşmesini düzeltip yeniden onaya gönderdi.</p>"
+            f"<p style='margin:0 0 16px;color:#64748b;'>"
+            f"Rate kodu: <b>{safe_rate}</b></p>"
+            f"<p style='margin:0 0 16px;'><a href='{url}' "
+            "style='background:#0f172a;color:#fff;text-decoration:none;"
+            "padding:10px 16px;border-radius:6px;display:inline-block;'>"
+            "Onaylar Sayfasını Aç</a></p>"
+            "<p style='font-size:11px;color:#94a3b8;margin-top:18px;'>"
+            "Syroce PMS · Otomatik üretilmiş bildirim"
+            "</p></div>"
+        )
+
+        for u in approvers:
+            decoded = decrypt_user_doc(u) or u
+            to_addr = (decoded.get('email') or '').strip()
+            if not _is_valid_email(to_addr):
+                continue
+            # Skip the person who resubmitted — they already know.
+            if resubmitter and (decoded.get('username') or '') == resubmitter:
+                continue
+            res = await send_email(to=to_addr, subject=subject, html=html)
+            if res.get("sent"):
+                result["emails_sent"] += 1
+    except Exception:  # noqa: BLE001 — e-mail is best-effort
+        import logging
+        logging.getLogger(__name__).exception(
+            "[contract-approval] resubmit approver e-mail failed for %s",
+            contract_id,
+        )
+
+    return result
 
 
 @router.get("/sales/corporate-contract/{contract_id}/approval-history")
