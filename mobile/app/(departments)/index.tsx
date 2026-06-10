@@ -16,8 +16,10 @@ export default function DepartmentsHub() {
   const router = useRouter();
   const spaAccess = useAuthStore((s) => s.spaAccess);
   const miceAccess = useAuthStore((s) => s.miceAccess);
+  const accountingAccess = useAuthStore((s) => s.financeReports);
+  const maintenanceAccess = useAuthStore((s) => s.maintenanceAccess);
 
-  const anyAccess = spaAccess || miceAccess;
+  const anyAccess = spaAccess || miceAccess || accountingAccess || maintenanceAccess;
 
   return (
     <ScrollView
@@ -44,6 +46,24 @@ export default function DepartmentsHub() {
           title={tr.departments.mice.title}
           subtitle={tr.departments.mice.tileSubtitle}
           onPress={() => router.push(ROUTES.mice)}
+        />
+      ) : null}
+
+      {accountingAccess ? (
+        <DepartmentTile
+          testID="dept-tile-accounting"
+          title={tr.departments.accounting.title}
+          subtitle={tr.departments.accounting.tileSubtitle}
+          onPress={() => router.push(ROUTES.accounting)}
+        />
+      ) : null}
+
+      {maintenanceAccess ? (
+        <DepartmentTile
+          testID="dept-tile-maintenance"
+          title={tr.departments.maintenance.title}
+          subtitle={tr.departments.maintenance.tileSubtitle}
+          onPress={() => router.push(ROUTES.maintenance)}
         />
       ) : null}
 

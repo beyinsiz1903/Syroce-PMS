@@ -57,6 +57,11 @@ export function canViewFinanceReports(raw: string | undefined): boolean {
 // (e.g. super_admin → gm) and would otherwise lose the distinction.
 const SPA_OPS_ROLES = ['super_admin', 'admin', 'supervisor', 'front_desk', 'staff'];
 const MICE_OPS_ROLES = ['super_admin', 'admin', 'supervisor', 'sales'];
+// Mirrors backend MODULE_ROLES["housekeeping"] in role_permission_service.py —
+// the roles that pass require_module("housekeeping") for the maintenance
+// work-order create + technician-task endpoints. Cosmetic gating only; the
+// backend still enforces every write.
+const MAINTENANCE_OPS_ROLES = ['super_admin', 'admin', 'supervisor', 'housekeeping'];
 
 export function hasSpaAccess(raw: string | undefined): boolean {
   if (!raw) return false;
@@ -68,8 +73,20 @@ export function hasMiceAccess(raw: string | undefined): boolean {
   return MICE_OPS_ROLES.includes(raw.toLowerCase());
 }
 
+export function hasMaintenanceAccess(raw: string | undefined): boolean {
+  if (!raw) return false;
+  return MAINTENANCE_OPS_ROLES.includes(raw.toLowerCase());
+}
+
+// Accounting (read-focused) mirrors the backend require_op("view_finance_reports")
+// guard, so we reuse `canViewFinanceReports` for that department's gate.
 export function hasDepartmentAccess(raw: string | undefined): boolean {
-  return hasSpaAccess(raw) || hasMiceAccess(raw);
+  return (
+    hasSpaAccess(raw) ||
+    hasMiceAccess(raw) ||
+    hasMaintenanceAccess(raw) ||
+    canViewFinanceReports(raw)
+  );
 }
 
 export type AuthState = {
@@ -79,6 +96,7 @@ export type AuthState = {
   financeReports: boolean;
   spaAccess: boolean;
   miceAccess: boolean;
+  maintenanceAccess: boolean;
   deptAccess: boolean;
   loading: boolean;
   error: string | null;
@@ -111,6 +129,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   financeReports: false,
   spaAccess: false,
   miceAccess: false,
+  maintenanceAccess: false,
   deptAccess: false,
   loading: true,
   error: null,
@@ -126,6 +145,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         financeReports: false,
         spaAccess: false,
         miceAccess: false,
+        maintenanceAccess: false,
         deptAccess: false,
         loading: false,
       });
@@ -148,6 +168,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       financeReports: canViewFinanceReports(user?.role),
       spaAccess: hasSpaAccess(user?.role),
       miceAccess: hasMiceAccess(user?.role),
+      maintenanceAccess: hasMaintenanceAccess(user?.role),
       deptAccess: hasDepartmentAccess(user?.role),
       loading: false,
     });
@@ -168,6 +189,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         financeReports: canViewFinanceReports(res.user?.role),
         spaAccess: hasSpaAccess(res.user?.role),
         miceAccess: hasMiceAccess(res.user?.role),
+        maintenanceAccess: hasMaintenanceAccess(res.user?.role),
         deptAccess: hasDepartmentAccess(res.user?.role),
         loading: false,
         error: null,
@@ -204,6 +226,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       financeReports: false,
       spaAccess: false,
       miceAccess: false,
+      maintenanceAccess: false,
       deptAccess: false,
     });
   },

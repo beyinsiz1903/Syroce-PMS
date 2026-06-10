@@ -21,6 +21,8 @@ export default function DepartmentsLayout() {
       <Stack.Screen name="spa" options={{ title: tr.departments.spa.title }} />
       <Stack.Screen name="mice/index" options={{ title: tr.departments.mice.title }} />
       <Stack.Screen name="mice/[id]" options={{ title: tr.departments.mice.eventDetail }} />
+      <Stack.Screen name="accounting" options={{ title: tr.departments.accounting.title }} />
+      <Stack.Screen name="maintenance" options={{ title: tr.departments.maintenance.title }} />
     </Stack>
   );
 }
