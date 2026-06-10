@@ -74,7 +74,11 @@ export default function LoginScreen() {
                 textContentType="password"
               />
               {error ? (
-                <Body style={{ color: c.danger }} accessibilityLiveRegion="polite">
+                <Body
+                  style={{ color: c.danger }}
+                  accessibilityLiveRegion="polite"
+                  testID="smoke-login-error"
+                >
                   {error}
                 </Body>
               ) : null}

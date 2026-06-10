@@ -53,7 +53,32 @@ export async function loginAsRole(page: Page, role: Role): Promise<void> {
     await submit.click();
 
     // AuthGate redirects to the role's root once /api/auth/login resolves.
-    await page.waitForURL((u) => !/\/login(\?|$)/.test(u.pathname), { timeout: 30_000 });
+    // Poll for either the redirect (success) or a rendered auth error, so a
+    // bad/inactive MOBILE_E2E_<ROLE>_* secret fails FAST with the real reason
+    // (e.g. "E-posta veya şifre hatalı") instead of an opaque 30s navigation
+    // timeout. This does NOT mask failures — a genuine 401 still fails; it
+    // only surfaces the cause. A true transient (no redirect AND no error)
+    // still times out at 30s, but with a distinct, diagnostic message.
+    const errorLoc = page.locator('[data-testid="smoke-login-error"]').first();
+    const onLogin = (pathname: string) => /\/login(\?|$)/.test(pathname);
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+        if (!onLogin(new URL(page.url()).pathname)) return; // redirected → success
+        if (await errorLoc.isVisible().catch(() => false)) {
+            const msg = ((await errorLoc.innerText().catch(() => '')) || '(boş hata)').trim();
+            throw new Error(
+                `[mobile-smoke] Login reddedildi (${role}): "${msg}". ` +
+                `Secret'ları (${emailEnv} / ${passwordEnv}) ve hesabın deploy ` +
+                `backend'de aktif olduğunu doğrula.`,
+            );
+        }
+        await page.waitForTimeout(250);
+    }
+    throw new Error(
+        `[mobile-smoke] Login sonrası 30s içinde yönlendirme yok (${role}) ve ` +
+        `auth hatası da görünmedi — olası neden: geçici ağ veya tıklama UI ` +
+        `hydration'dan önce kayboldu (deploy backend login'i ~2s'de yanıtlıyor).`,
+    );
 }
 
 export type ObservedError = { type: string; text: string; location?: string; url?: string };
