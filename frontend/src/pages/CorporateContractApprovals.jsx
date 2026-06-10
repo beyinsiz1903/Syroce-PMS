@@ -144,14 +144,35 @@ const CorporateContractApprovals = () => {
 
   // Approver action: drive a single contract through one approval hop and give
   // toast feedback, disabling its buttons while the request is in flight.
+  // The backend returns `owner_notified` (Task #235): whether the outcome email
+  // actually reached the contract owner. We surface it so approvers can tell the
+  // owner was informed — and warn (without failing the approval) when the email
+  // was skipped because the contact_email is missing/invalid.
   const runApproverAction = async (contract, toStatus, reason) => {
     setActioningId(contract.id);
     try {
-      await postTransition(contract.id, toStatus, reason);
+      const result = await postTransition(contract.id, toStatus, reason);
+      const company = contract.company_name || 'Sözleşme';
+      // Tri-state: true = sent, false = skipped/failed, undefined = older
+      // backend that doesn't report it (stay silent rather than guess).
+      const ownerNotified = result && typeof result.owner_notified === 'boolean'
+        ? result.owner_notified
+        : null;
       toast.success(
         toStatus === 'approved' ? 'Sözleşme onaylandı' : 'Sözleşme reddedildi',
-        { description: contract.company_name || 'Sözleşme' },
+        {
+          description: ownerNotified === true
+            ? `${company} · Sözleşme sahibine bilgilendirme e-postası gönderildi.`
+            : company,
+        },
       );
+      if (ownerNotified === false) {
+        toast.warning('Sözleşme sahibine e-posta gönderilemedi', {
+          description: 'Geçerli bir iletişim e-postası bulunmadığı için bildirim '
+            + 'atlandı. Sözleşmenin iletişim e-postasını güncelleyin.',
+          duration: 8000,
+        });
+      }
       return true;
     } catch (err) {
       console.error('Approval transition failed', err);

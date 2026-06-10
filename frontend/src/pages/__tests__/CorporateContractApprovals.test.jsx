@@ -8,7 +8,7 @@ import CorporateContractApprovals from '@/pages/CorporateContractApprovals';
 // Toast feedback is asserted in the approver-action tests; mock sonner so the
 // success/error calls are observable and don't try to render real toasts.
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
 // Stable token so the component's Authorization header / fetch path resolve.
@@ -18,6 +18,7 @@ beforeEach(() => {
   // calls leaked from a previous test (restoreAllMocks won't reset vi.mock fns).
   toast.success.mockClear();
   toast.error.mockClear();
+  toast.warning.mockClear();
 });
 
 afterEach(() => {
@@ -370,6 +371,82 @@ describe('CorporateContractApprovals — approve / reject buttons', () => {
     // Dialog closes and the list reloads on success.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(getCallCount(fetchSpy)).toBeGreaterThan(getsBefore));
+  });
+
+  it('approve: confirms the owner was emailed in the success toast when owner_notified=true', async () => {
+    mockFetchRouter(PENDING, { body: { owner_notified: true } });
+
+    await renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Onayla' }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(
+      'Sözleşme onaylandı',
+      expect.objectContaining({
+        description: expect.stringContaining('e-postası gönderildi'),
+      }),
+    ));
+    // No skipped-email warning when the email actually went out.
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it('approve: warns (without failing) when owner_notified=false', async () => {
+    const fetchSpy = mockFetchRouter(PENDING, { body: { owner_notified: false } });
+
+    await renderPage();
+    const getsBefore = getCallCount(fetchSpy);
+    fireEvent.click(screen.getByRole('button', { name: 'Onayla' }));
+
+    // Still a success (the transition committed) ...
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(
+      'Sözleşme onaylandı',
+      expect.objectContaining({ description: 'Pending Co' }),
+    ));
+    // ... but a subtle warning that the owner email was skipped.
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(
+      expect.stringContaining('e-posta gönderilemedi'),
+      expect.objectContaining({
+        description: expect.stringContaining('iletişim e-postası'),
+      }),
+    ));
+    // The list still refreshes — a skipped email is not a failure.
+    await waitFor(() => expect(getCallCount(fetchSpy)).toBeGreaterThan(getsBefore));
+  });
+
+  it('approve: stays silent about notification when the backend omits owner_notified', async () => {
+    mockFetchRouter(PENDING, { body: { ok: true } });
+
+    await renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Onayla' }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(
+      'Sözleşme onaylandı',
+      expect.objectContaining({ description: 'Pending Co' }),
+    ));
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it('reject: warns when owner_notified=false on a rejection too', async () => {
+    mockFetchRouter(PENDING, { body: { owner_notified: false } });
+
+    await renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Reddet' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(
+      within(dialog).getByLabelText('Reddetme Gerekçesi'),
+      { target: { value: 'Oran uygun değil' } },
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reddet' }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(
+      'Sözleşme reddedildi',
+      expect.objectContaining({ description: 'Pending Co' }),
+    ));
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(
+      expect.stringContaining('e-posta gönderilemedi'),
+      expect.objectContaining({
+        description: expect.stringContaining('iletişim e-postası'),
+      }),
+    ));
   });
 
   it('reject: keeps the dialog open and toasts an error when the transition fails', async () => {
