@@ -7,6 +7,7 @@ import {
   getBookingStatusColor, getBookingStatus, getSourceColor,
   getUnassignedBookingsForType, computeUnassignedLanes,
   getUnassignedUrgency, getUrgencyBarColors,
+  isBlockedRoomStatus, cellOccupancyStatus, getCellOccupancyTint,
 } from "./calendarHelpers";
 import { useTranslation } from 'react-i18next';
 import OccupancyBand from "./OccupancyBand";
@@ -406,11 +407,20 @@ const CalendarGrid = ({
                     const laneCount = maxLane + 1;
                     const rowHeight = Math.max(CELL_H, laneCount * LANE_BAR_H + 4);
                     const hasBookingToday = roomBookings.some(b => isActiveOn(b, refTodayStr) && b.status !== 'checked_out');
+                    const roomBlockedStatus = isBlockedRoomStatus(room.status);
+                    // Satır göstergesi nokta rengi, hücre tinti ile aynı önceliği izler:
+                    // OOO/OOS (blocked, gri) > bugün dolu (occupied, kırmızı) > boş (yeşil).
+                    const roomDotStatus = roomBlockedStatus ? 'blocked' : hasBookingToday ? 'occupied' : 'free';
+                    const roomDotColor = roomDotStatus === 'blocked' ? 'bg-slate-400' : roomDotStatus === 'occupied' ? 'bg-red-500' : 'bg-green-500';
                     return (
                       <div key={room.id} className="flex border-b border-gray-100 hover:bg-gray-50/50 transition-colors" data-testid="room-row">
                         <div className="w-28 flex-shrink-0 px-2 py-1 border-r border-gray-200 bg-white flex items-center" style={{ height: `${rowHeight}px` }}>
                           <div className="flex items-center gap-1">
-                            <div className={`w-1.5 h-1.5 rounded-full ${hasBookingToday ? 'bg-red-500' : 'bg-green-500'}`}></div>
+                            <div
+                              className={`w-1.5 h-1.5 rounded-full ${roomDotColor}`}
+                              title={roomDotStatus === 'blocked' ? 'Blok (OOO/OOS)' : roomDotStatus === 'occupied' ? 'Bugün dolu' : 'Boş'}
+                              data-testid={`room-status-dot-${roomDotStatus}`}
+                            ></div>
                             <div className="font-bold text-[13px] text-gray-900" data-testid={`room-${room.room_number}`}>{room.room_number}</div>
                           </div>
                         </div>
@@ -427,6 +437,16 @@ const CalendarGrid = ({
                             const blockedForSell = !!roomBlock && roomBlock.allow_sell === false;
                             const invalidDrop = isDragOver && blockedForSell;
                             const canCreate = !covered && !roomBlock && !past;
+                            // Dolu/blok/boş hücre tinti — roomOccupancyStatus ile aynı
+                            // öncelik (OOO/OOS önde, sonra occupied > blocked > free).
+                            // Overlay olarak uygulanır ki past/today/weekend taban tonu,
+                            // blok şeridi ve rezervasyon barları üzerine net binsin.
+                            const occStatus = cellOccupancyStatus({
+                              covered,
+                              blocked: !!roomBlock,
+                              roomStatus: room.status,
+                            });
+                            const occTint = getCellOccupancyTint(occStatus);
 
                             return (
                               <div
@@ -447,6 +467,15 @@ const CalendarGrid = ({
                                 data-testid={`calendar-cell-${room.room_number}-${toDateStringUTC(date)}`}
                                 title={roomBlock ? `${roomBlock.type.toUpperCase()}: ${roomBlock.reason}` : ''}
                               >
+                                {/* Dolu/blok/boş doluluk tinti (en alt katman) */}
+                                {occTint && (
+                                  <div
+                                    className={`absolute inset-0 pointer-events-none ${occTint}`}
+                                    aria-hidden="true"
+                                    data-testid={`cell-occupancy-${occStatus}`}
+                                  />
+                                )}
+
                                 {/* Room Block Indicator */}
                                 {bBlockIsStart && roomBlock && (
                                   <div

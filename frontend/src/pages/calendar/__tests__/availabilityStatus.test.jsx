@@ -8,6 +8,8 @@ import {
   roomOccupancyStatus,
   normalizeOccupancyStatus,
   isBlockedRoomStatus,
+  cellOccupancyStatus,
+  getCellOccupancyTint,
 } from '../calendarHelpers';
 
 describe('normalizeOccupancyStatus', () => {
@@ -61,5 +63,48 @@ describe('roomOccupancyStatus', () => {
   it('müsait oda free döner', () => {
     expect(roomOccupancyStatus({ id: 'r1', available: true })).toBe('free');
     expect(roomOccupancyStatus(null)).toBe('free');
+  });
+});
+
+// Test koruması: cellOccupancyStatus, ana takvim ızgarasının her oda-gün
+// hücresi için doluluk durumunu, roomOccupancyStatus ile AYNI önceliği
+// (OOO/OOS her şeyin önünde, sonra occupied > blocked > free) izleyerek
+// türetir. Böylece ızgara, "Oda Bul" ekranı ve mobil grid tutarlı renklenir.
+describe('cellOccupancyStatus', () => {
+  it('OOO/OOS oda durumu her şeyin önünde gelir (dolu olsa bile blocked)', () => {
+    expect(
+      cellOccupancyStatus({ covered: true, blocked: false, roomStatus: 'out_of_order' }),
+    ).toBe('blocked');
+    expect(
+      cellOccupancyStatus({ covered: true, blocked: true, roomStatus: 'maintenance' }),
+    ).toBe('blocked');
+  });
+
+  it('occupied, blocked önünde gelir (occupied > blocked)', () => {
+    expect(cellOccupancyStatus({ covered: true, blocked: true })).toBe('occupied');
+    expect(cellOccupancyStatus({ covered: true, blocked: false })).toBe('occupied');
+  });
+
+  it('rezervasyon yoksa aktif blok blocked döner', () => {
+    expect(cellOccupancyStatus({ covered: false, blocked: true })).toBe('blocked');
+  });
+
+  it('rezervasyon/blok yoksa free döner', () => {
+    expect(cellOccupancyStatus({ covered: false, blocked: false })).toBe('free');
+    expect(cellOccupancyStatus({})).toBe('free');
+    expect(cellOccupancyStatus()).toBe('free');
+  });
+});
+
+describe('getCellOccupancyTint', () => {
+  it('her duruma ayrı bir tint sınıfı verir, free dahil', () => {
+    expect(getCellOccupancyTint('occupied')).toBe('bg-rose-100/40');
+    expect(getCellOccupancyTint('blocked')).toBe('bg-slate-300/40');
+    expect(getCellOccupancyTint('free')).toBe('bg-emerald-50/40');
+  });
+
+  it('bilinmeyen durumda boş string döner', () => {
+    expect(getCellOccupancyTint('whatever')).toBe('');
+    expect(getCellOccupancyTint()).toBe('');
   });
 });

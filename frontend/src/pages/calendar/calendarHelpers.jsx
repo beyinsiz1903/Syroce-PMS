@@ -102,6 +102,37 @@ export const roomOccupancyStatus = (room) => {
   return 'free';
 };
 
+// Derive a calendar GRID cell's occupancy ('free' | 'occupied' | 'blocked')
+// from the signals the grid already computes per room-day (an active booking
+// covering that day, an active room block on that date, and the room's own
+// OOO/OOS status). Mirrors roomOccupancyStatus önceliğini — OOO/OOS oda durumu
+// her şeyin önünde, sonra occupied > blocked > free — böylece ana takvim
+// ızgarası, "Oda Bul" müsaitlik ekranı ve mobil grid aynı sıralamayı paylaşır.
+export const cellOccupancyStatus = ({ covered, blocked, roomStatus } = {}) => {
+  if (isBlockedRoomStatus(roomStatus)) return 'blocked';
+  if (covered) return 'occupied';
+  if (blocked) return 'blocked';
+  return 'free';
+};
+
+// Subtle background tint classes for a grid cell's occupancy status. Tutulan
+// alfa düşük (/30-/40) ki rezervasyon barları, blok şeridi ve past/today/weekend
+// tonları üzerine net binsin (overlay olarak uygulanır, taban bg ezilmez).
+// Renkler dosyadaki nokta göstergeleriyle tutarlı: free=yeşil, occupied=kırmızı,
+// blocked=gri. emoji yok.
+export const getCellOccupancyTint = (status) => {
+  switch (status) {
+    case 'occupied':
+      return 'bg-rose-100/40';
+    case 'blocked':
+      return 'bg-slate-300/40';
+    case 'free':
+      return 'bg-emerald-50/40';
+    default:
+      return '';
+  }
+};
+
 // Get room block for room on specific date
 export const getRoomBlockForDate = (roomId, date, roomBlocks) => {
   const dayStr = toDateStringUTC(date);
