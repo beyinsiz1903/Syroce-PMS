@@ -392,6 +392,23 @@ class UpdateReservationService:
             update_data.pop("room_id", None)
             update_data.pop("room_number", None)
 
+        # Misafir sayisi tutarliligi: adults veya children degisince guests_count'u
+        # (ve varsa legacy n alanini) sunucu tarafinda yeniden tureterek istemci
+        # gonderiminden bagimsiz tek noktada garanti et.
+        if "adults" in update_data or "children" in update_data:
+            effective_adults = update_data.get("adults", existing_booking.get("adults") or 0) or 0
+            effective_children = update_data.get("children", existing_booking.get("children") or 0) or 0
+            derived_guests_count = max(1, effective_adults + effective_children)
+            if existing_booking.get("guests_count") != derived_guests_count:
+                update_data["guests_count"] = derived_guests_count
+            else:
+                # Istemci yanlis bir guests_count gondermisse, dogru degere geri al.
+                update_data.pop("guests_count", None)
+            # Legacy n alani yalnizca dokumanda zaten varsa senkron tutulur;
+            # boylece yeni dokumanlar bu legacy alanla kirletilmez.
+            if "n" in existing_booking and existing_booking.get("n") != derived_guests_count:
+                update_data["n"] = derived_guests_count
+
         if not update_data:
             return {}
 

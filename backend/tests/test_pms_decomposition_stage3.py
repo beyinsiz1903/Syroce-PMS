@@ -614,3 +614,111 @@ class TestRoomQueueRoutes:
         async with httpx.AsyncClient(base_url=API_URL, timeout=15) as c:
             resp = await c.delete("/api/rooms/queue/nonexistent", headers=auth_headers)
             assert resp.status_code == 404
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Group: Guests-count consistency (update reservation service)
+# ═══════════════════════════════════════════════════════════════════
+
+class TestGuestsCountConsistency:
+    """adults/children degisince guests_count'un (ve legacy n alaninin)
+    sunucu tarafinda yeniden turetildigini dogrular. _build_update_data
+    saf is mantigidir; guest_id/room_id degismedikce repository'ye dokunmaz."""
+
+    def _service(self):
+        from modules.reservations.services.update_reservation_service import (
+            UpdateReservationService,
+        )
+        return UpdateReservationService(repository=object())
+
+    async def test_adults_change_recomputes_guests_count(self):
+        svc = self._service()
+        existing = {"adults": 2, "children": 1, "guests_count": 3}
+        result = await svc._build_update_data(
+            tenant_id="t1",
+            booking_id="b1",
+            existing_booking=existing,
+            booking_data={"adults": 4},
+        )
+        assert result["adults"] == 4
+        assert result["guests_count"] == 5
+
+    async def test_children_change_recomputes_guests_count(self):
+        svc = self._service()
+        existing = {"adults": 2, "children": 0, "guests_count": 2}
+        result = await svc._build_update_data(
+            tenant_id="t1",
+            booking_id="b1",
+            existing_booking=existing,
+            booking_data={"children": 3},
+        )
+        assert result["children"] == 3
+        assert result["guests_count"] == 5
+
+    async def test_client_omits_guests_count_still_derived(self):
+        svc = self._service()
+        existing = {"adults": 1, "children": 0, "guests_count": 1}
+        result = await svc._build_update_data(
+            tenant_id="t1",
+            booking_id="b1",
+            existing_booking=existing,
+            booking_data={"adults": 3},
+        )
+        assert result["guests_count"] == 3
+
+    async def test_client_wrong_guests_count_is_overridden(self):
+        svc = self._service()
+        existing = {"adults": 2, "children": 1, "guests_count": 3}
+        result = await svc._build_update_data(
+            tenant_id="t1",
+            booking_id="b1",
+            existing_booking=existing,
+            booking_data={"adults": 4, "guests_count": 99},
+        )
+        assert result["guests_count"] == 5
+
+    async def test_legacy_n_synced_when_present(self):
+        svc = self._service()
+        existing = {"adults": 2, "children": 1, "guests_count": 3, "n": 3}
+        result = await svc._build_update_data(
+            tenant_id="t1",
+            booking_id="b1",
+            existing_booking=existing,
+            booking_data={"adults": 5},
+        )
+        assert result["guests_count"] == 6
+        assert result["n"] == 6
+
+    async def test_legacy_n_not_added_when_absent(self):
+        svc = self._service()
+        existing = {"adults": 2, "children": 1, "guests_count": 3}
+        result = await svc._build_update_data(
+            tenant_id="t1",
+            booking_id="b1",
+            existing_booking=existing,
+            booking_data={"adults": 5},
+        )
+        assert "n" not in result
+
+    async def test_no_guest_count_change_without_adults_or_children(self):
+        svc = self._service()
+        existing = {"adults": 2, "children": 1, "guests_count": 3}
+        result = await svc._build_update_data(
+            tenant_id="t1",
+            booking_id="b1",
+            existing_booking=existing,
+            booking_data={"special_requests": "late checkout"},
+        )
+        assert result == {"special_requests": "late checkout"}
+        assert "guests_count" not in result
+
+    async def test_guests_count_floor_is_one(self):
+        svc = self._service()
+        existing = {"adults": 2, "children": 0, "guests_count": 2}
+        result = await svc._build_update_data(
+            tenant_id="t1",
+            booking_id="b1",
+            existing_booking=existing,
+            booking_data={"adults": 0},
+        )
+        assert result["guests_count"] == 1
