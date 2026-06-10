@@ -22,9 +22,22 @@ Don't conflate a screenshot of one with the other.
 - `.github/workflows/mobile-web-smoke.yml`: `api_url` default (pre-warm). A
   mobile-host default makes the pre-warm `/api/health` 404 — that exact misroute
   was the original "smoke 404" bug, NOT a missing backend.
+- **Stress CI `E2E_BASE_URL`** (GitHub Actions secret; consumed by
+  `playwright.stress.config.js` global-setup warmup + login). MUST be the
+  -syroce backend host. If set to the mobile `-1` host the warmup hits `/health`
+  → 404 for all 60 attempts ("gave up after 60 attempts") then login fails 404,
+  and the ENTIRE stress suite dies in global-setup. That is the misroute, NOT a
+  backend outage or a spec regression — the backend can be fully green elsewhere.
 
 **Why:** the mobile static host has no API, so pointing mobile config at itself
 silently breaks login + smoke even though a healthy backend exists elsewhere.
+
+**Diagnostic signature (which host am I actually hitting?):** live GET `/health`
+→ `200 application/json {"status":"healthy"}` = the -syroce backend; →
+`404 text/html` SPA shell (`<!DOCTYPE html> <html lang="en"> <head> <meta
+charset=…`) = the mobile static `-1` host (no API, serves its 404.html). Probe
+BOTH hosts read-only before assuming the backend is down — a clean stable 404
+(not 502/connection-refused) means a live but API-less host, i.e. a misroute.
 
 **Copy-repl secrets gap (git-copied backend deploy):** the -syroce backend lives
 in a SEPARATE Replit project that was created by git-copying. Secrets are NOT in
