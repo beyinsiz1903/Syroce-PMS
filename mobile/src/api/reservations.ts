@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, apiRequest } from './client';
 
 // Mirrors the booking documents returned by GET /api/reservations/search.
 // The backend enriches each row with room_number/room_type and the owning
@@ -144,4 +144,55 @@ export async function getReservationOtaDetails(
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Mutations — reuse the same endpoints the web app calls. RBAC / tenant scope
+// is enforced server-side; the mobile UI never short-circuits authorization.
+// ---------------------------------------------------------------------------
+
+export type ReservationUpdate = {
+  check_in?: string;
+  check_out?: string;
+  total_amount?: number;
+  room_id?: string;
+  status?: string;
+  adults?: number;
+  children?: number;
+  special_requests?: string;
+  rate_type?: string;
+  market_segment?: string;
+};
+
+// PUT /api/pms/bookings/{id} — edit dates / fields. Requires `pms` module.
+// A status transition to "cancelled" releases inventory server-side.
+export async function updateReservation(
+  id: string,
+  body: ReservationUpdate,
+): Promise<unknown> {
+  return api.put(`/api/pms/bookings/${encodeURIComponent(id)}`, body);
+}
+
+// Cancel = update status. The backend's UpdateReservationService detects the
+// transition and frees the booked nights + emits EV_RESERVATION_CANCELLED.
+export async function cancelReservation(id: string): Promise<unknown> {
+  return updateReservation(id, { status: 'cancelled' });
+}
+
+// POST /api/reservations/rate-override-panel — booking_id / new_rate /
+// override_reason are query params. Requires the `override_rate` permission
+// (admin / super_admin / supervisor); other roles get a 403 server-side.
+export async function overrideRate(
+  id: string,
+  newRate: number,
+  reason: string,
+): Promise<unknown> {
+  return apiRequest('/api/reservations/rate-override-panel', {
+    method: 'POST',
+    query: {
+      booking_id: id,
+      new_rate: newRate,
+      override_reason: reason,
+    },
+  });
 }

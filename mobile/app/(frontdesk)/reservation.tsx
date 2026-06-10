@@ -1,17 +1,60 @@
-import React from 'react';
-import { ScrollView, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, ScrollView, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, Divider, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Badge,
+  Body,
+  Button,
+  Card,
+  Divider,
+  Field,
+  H1,
+  H2,
+  Muted,
+  SkeletonCard,
+} from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import {
+  cancelReservation,
   getReservationDetailsEnhanced,
   getReservationOtaDetails,
+  overrideRate,
+  updateReservation,
 } from '../../src/api/reservations';
+import { assignRoom } from '../../src/api/bookings';
+import { listRooms, Room } from '../../src/api/rooms';
 import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
-import { isOffline } from '../../src/utils/errors';
+import { errorMessage, isOffline } from '../../src/utils/errors';
+import { haptic } from '../../src/hooks/useHaptic';
+
+const AVAILABLE_ROOM_STATUSES = ['available', 'inspected'];
+
+// DD.MM.YYYY → YYYY-MM-DD (same normaliser the list screen uses). Returns
+// undefined for blank / unparseable input so the caller can reject it.
+function toISODate(input: string): string | undefined {
+  const v = (input || '').trim();
+  if (!v) return undefined;
+  const dm = v.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  if (dm) {
+    const [, d, m, y] = dm;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  return undefined;
+}
+
+// ISO string → DD.MM.YYYY for prefilling the edit fields.
+function toDisplayDate(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}.${mm}.${d.getFullYear()}`;
+}
 
 function Row({ label, value }: { label: string; value?: string | number | null }) {
   if (value === undefined || value === null || value === '') return null;
@@ -71,6 +114,128 @@ export default function ReservationDetailScreen() {
   const policy = enhanced.data?.cancellation_policy;
   const otaData = ota.data;
 
+  const qc = useQueryClient();
+
+  // Which inline action panel is open ('' = none). Only one at a time keeps the
+  // detail screen readable on a phone.
+  const [panel, setPanel] = useState<'' | 'dates' | 'room' | 'rate'>('');
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const [checkIn, setCheckIn] = useState(toDisplayDate(p.check_in));
+  const [checkOut, setCheckOut] = useState(toDisplayDate(p.check_out));
+  const [newRate, setNewRate] = useState(p.total_amount || '');
+  const [reason, setReason] = useState('');
+  const [rooms, setRooms] = useState<Room[]>([]);
+
+  const isCancelled = (p.status || '').toLowerCase() === 'cancelled';
+
+  const refreshAll = () => {
+    qc.invalidateQueries({ queryKey: ['reservations-search'] });
+    qc.invalidateQueries({ queryKey: ['reservation-enhanced', id] });
+    qc.invalidateQueries({ queryKey: ['reservation-ota', id] });
+  };
+
+  const closePanel = () => {
+    setPanel('');
+    setActionError(null);
+  };
+
+  const openPanel = (next: 'dates' | 'room' | 'rate') => {
+    setActionError(null);
+    setPanel((cur) => (cur === next ? '' : next));
+    if (next === 'room' && rooms.length === 0) {
+      listRooms()
+        .then((rs) =>
+          setRooms(
+            rs.filter((r) => AVAILABLE_ROOM_STATUSES.includes((r.status || '').toLowerCase())),
+          ),
+        )
+        .catch(() => setRooms([]));
+    }
+  };
+
+  const datesMutation = useMutation({
+    mutationFn: () => {
+      const ci = toISODate(checkIn);
+      const co = toISODate(checkOut);
+      if (!ci || !co || co <= ci) {
+        return Promise.reject(new Error(tr.reservations.invalidDates));
+      }
+      return updateReservation(id, { check_in: ci, check_out: co });
+    },
+    onSuccess: () => {
+      haptic.success();
+      refreshAll();
+      closePanel();
+      Alert.alert(tr.app.success, tr.reservations.saved);
+    },
+    onError: (e: unknown) => {
+      haptic.error();
+      setActionError(errorMessage(e, tr.reservations.actionError));
+    },
+  });
+
+  const rateMutation = useMutation({
+    mutationFn: () => {
+      const value = parseFloat((newRate || '').replace(',', '.'));
+      if (!Number.isFinite(value) || value < 0) {
+        return Promise.reject(new Error(tr.reservations.invalidRate));
+      }
+      if ((reason || '').trim().length < 3) {
+        return Promise.reject(new Error(tr.reservations.reasonRequired));
+      }
+      return overrideRate(id, value, reason.trim());
+    },
+    onSuccess: () => {
+      haptic.success();
+      refreshAll();
+      closePanel();
+      Alert.alert(tr.app.success, tr.reservations.saved);
+    },
+    onError: (e: unknown) => {
+      haptic.error();
+      setActionError(errorMessage(e, tr.reservations.actionError));
+    },
+  });
+
+  const roomMutation = useMutation({
+    mutationFn: (room: Room) => assignRoom(id, room.id),
+    onSuccess: () => {
+      haptic.success();
+      refreshAll();
+      closePanel();
+      Alert.alert(tr.app.success, tr.reservations.roomChanged);
+    },
+    onError: (e: unknown) => {
+      haptic.error();
+      setActionError(errorMessage(e, tr.reservations.actionError));
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelReservation(id),
+    onSuccess: () => {
+      haptic.success();
+      refreshAll();
+      Alert.alert(tr.app.success, tr.reservations.saved);
+    },
+    onError: (e: unknown) => {
+      haptic.error();
+      Alert.alert(tr.app.error, errorMessage(e, tr.reservations.actionError));
+    },
+  });
+
+  const confirmCancel = () => {
+    Alert.alert(tr.reservations.cancelConfirmTitle, tr.reservations.cancelConfirmBody, [
+      { text: tr.reservations.cancel, style: 'cancel' },
+      {
+        text: tr.reservations.cancelConfirmYes,
+        style: 'destructive',
+        onPress: () => cancelMutation.mutate(),
+      },
+    ]);
+  };
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
@@ -98,6 +263,109 @@ export default function ReservationDetailScreen() {
           </View>
         ) : null}
       </Card>
+
+      {!isCancelled ? (
+        <Card>
+          <H2>{tr.reservations.manage}</H2>
+          {actionError ? (
+            <Body style={{ color: c.danger, marginTop: spacing.sm }}>{actionError}</Body>
+          ) : null}
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md }}>
+            <Button
+              title={tr.reservations.editDates}
+              variant={panel === 'dates' ? 'primary' : 'secondary'}
+              onPress={() => openPanel('dates')}
+            />
+            <Button
+              title={tr.reservations.changeRoom}
+              variant={panel === 'room' ? 'primary' : 'secondary'}
+              onPress={() => openPanel('room')}
+            />
+            <Button
+              title={tr.reservations.overrideRate}
+              variant={panel === 'rate' ? 'primary' : 'secondary'}
+              onPress={() => openPanel('rate')}
+            />
+          </View>
+
+          {panel === 'dates' ? (
+            <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
+              <Field
+                label={tr.reservations.checkInLabel}
+                value={checkIn}
+                onChangeText={setCheckIn}
+                keyboardType="numbers-and-punctuation"
+              />
+              <Field
+                label={tr.reservations.checkOutLabel}
+                value={checkOut}
+                onChangeText={setCheckOut}
+                keyboardType="numbers-and-punctuation"
+              />
+              <Button
+                title={tr.reservations.save}
+                onPress={() => datesMutation.mutate()}
+                loading={datesMutation.isPending}
+                fullWidth
+              />
+            </View>
+          ) : null}
+
+          {panel === 'rate' ? (
+            <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
+              <Field
+                label={tr.reservations.newRate}
+                value={newRate}
+                onChangeText={setNewRate}
+                keyboardType="decimal-pad"
+              />
+              <Field
+                label={tr.reservations.overrideReason}
+                value={reason}
+                onChangeText={setReason}
+              />
+              <Button
+                title={tr.reservations.save}
+                onPress={() => rateMutation.mutate()}
+                loading={rateMutation.isPending}
+                fullWidth
+              />
+            </View>
+          ) : null}
+
+          {panel === 'room' ? (
+            <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
+              <Muted>{tr.reservations.selectRoom}</Muted>
+              {rooms.length === 0 ? (
+                <Body style={{ color: c.textMuted }}>{tr.reservations.noAvailableRooms}</Body>
+              ) : (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                  {rooms.map((room) => (
+                    <Button
+                      key={room.id}
+                      title={`${room.room_number}${room.room_type ? ` · ${room.room_type}` : ''}`}
+                      variant="secondary"
+                      onPress={() => roomMutation.mutate(room)}
+                      disabled={roomMutation.isPending}
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : null}
+
+          <View style={{ marginTop: spacing.md }}>
+            <Button
+              title={tr.reservations.cancelReservation}
+              variant="danger"
+              onPress={confirmCancel}
+              loading={cancelMutation.isPending}
+              fullWidth
+            />
+          </View>
+        </Card>
+      ) : null}
 
       {p.guest_phone || p.guest_email ? (
         <Card>
