@@ -6,12 +6,16 @@
 //      "Tamamla" tıklaması transition uç noktasını status=completed ile çağırır
 //   3) 409 yanıtında backend'in Türkçe detail mesajı toast ile gösterilir ve
 //      sipariş listesi yeniden yüklenir
+//   4) "Mutfağa Gönder" akışı (Görev #312): buton yalnızca uygun koşullarda
+//      etkin; tıklama promptDialog açar, dönen notla Idempotency-Key başlığı
+//      ile POST .../fnb-order/send çağrılır; hata detail'i toast ile gösterilir
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   render, screen, fireEvent, cleanup, waitFor,
 } from '@testing-library/react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { promptDialog } from '@/lib/dialogs';
 import FnbOrderModal from '@/components/mice/modals/FnbOrderModal';
 
 vi.mock('axios', () => ({
@@ -22,9 +26,11 @@ vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }));
 
-// promptDialog tetiklenmesin diye (Mutfağa Gönder akışı bu testlerde kullanılmaz)
+// promptDialog testlerde tek tek kontrol edilir (mockResolvedValueOnce).
+// Varsayılan: null (iptal) → yaşam döngüsü testlerinde sendToKitchen tetiklense
+// bile POST yapılmaz.
 vi.mock('@/lib/dialogs', () => ({
-  promptDialog: vi.fn().mockResolvedValue('not used'),
+  promptDialog: vi.fn().mockResolvedValue(null),
 }));
 
 const event = {
@@ -137,5 +143,117 @@ describe('FnbOrderModal — sipariş yaşam döngüsü', () => {
     // Reload sonrası gerçek durum yansır: artık "Tamamla" görünür, "Onayla" yok
     expect(await screen.findByRole('button', { name: /Tamamla/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Onayla/i })).toBeNull();
+  });
+});
+
+describe('FnbOrderModal — Mutfağa Gönder akışı', () => {
+  it('"Mutfağa Gönder" butonu uygun koşullarda (durum uygun + F&B satırı > 0) etkindir', async () => {
+    axios.get.mockResolvedValue(ordersResponse([]));
+
+    render(<FnbOrderModal event={event} onClose={() => {}} />);
+
+    await screen.findByText('Henüz mutfağa sipariş gönderilmemiş.');
+    expect(screen.getByRole('button', { name: /Mutfağa Gönder/i })).toBeEnabled();
+  });
+
+  it('"Mutfağa Gönder" butonu etkinlik durumu uygun değilse devre dışıdır', async () => {
+    axios.get.mockResolvedValue(ordersResponse([]));
+
+    render(
+      <FnbOrderModal event={{ ...event, status: 'cancelled' }} onClose={() => {}} />,
+    );
+
+    await screen.findByText('Henüz mutfağa sipariş gönderilmemiş.');
+    expect(screen.getByRole('button', { name: /Mutfağa Gönder/i })).toBeDisabled();
+  });
+
+  it('"Mutfağa Gönder" butonu F&B satırı yoksa devre dışıdır', async () => {
+    axios.get.mockResolvedValue(ordersResponse([]));
+
+    render(
+      <FnbOrderModal event={{ ...event, resources: [] }} onClose={() => {}} />,
+    );
+
+    await screen.findByText('Henüz mutfağa sipariş gönderilmemiş.');
+    expect(screen.getByRole('button', { name: /Mutfağa Gönder/i })).toBeDisabled();
+  });
+
+  it('tıklama promptDialog açar, dönen notla Idempotency-Key başlığı ile POST .../fnb-order/send çağırır', async () => {
+    axios.get.mockResolvedValue(ordersResponse([]));
+    axios.post.mockResolvedValueOnce({ data: {} });
+    promptDialog.mockResolvedValueOnce('Servis 19:00, glutensiz 5 pax');
+
+    render(<FnbOrderModal event={event} onClose={() => {}} />);
+
+    const sendBtn = await screen.findByRole('button', { name: /Mutfağa Gönder/i });
+    fireEvent.click(sendBtn);
+
+    await waitFor(() => {
+      expect(promptDialog).toHaveBeenCalledTimes(1);
+    });
+    expect(promptDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Mutfağa Gönder', confirmText: 'Gönder' }),
+    );
+
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledTimes(1);
+    });
+    const [url, body, config] = axios.post.mock.calls[0];
+    expect(url).toBe('/mice/events/evt-1/fnb-order/send');
+    expect(body).toEqual({ target: 'kitchen', note: 'Servis 19:00, glutensiz 5 pax' });
+    expect(config.headers['Idempotency-Key']).toEqual(expect.any(String));
+    expect(config.headers['Idempotency-Key'].length).toBeGreaterThan(0);
+
+    expect(toast.success).toHaveBeenCalledWith('F&B siparişi mutfağa gönderildi');
+  });
+
+  it('boş not girilirse POST body note=null olarak gönderilir', async () => {
+    axios.get.mockResolvedValue(ordersResponse([]));
+    axios.post.mockResolvedValueOnce({ data: {} });
+    promptDialog.mockResolvedValueOnce('');
+
+    render(<FnbOrderModal event={event} onClose={() => {}} />);
+
+    const sendBtn = await screen.findByRole('button', { name: /Mutfağa Gönder/i });
+    fireEvent.click(sendBtn);
+
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledTimes(1);
+    });
+    const [, body] = axios.post.mock.calls[0];
+    expect(body).toEqual({ target: 'kitchen', note: null });
+  });
+
+  it('promptDialog iptal edilirse (null) POST yapılmaz', async () => {
+    axios.get.mockResolvedValue(ordersResponse([]));
+    promptDialog.mockResolvedValueOnce(null);
+
+    render(<FnbOrderModal event={event} onClose={() => {}} />);
+
+    const sendBtn = await screen.findByRole('button', { name: /Mutfağa Gönder/i });
+    fireEvent.click(sendBtn);
+
+    await waitFor(() => {
+      expect(promptDialog).toHaveBeenCalledTimes(1);
+    });
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('hata durumunda backend detail mesajı toast ile gösterilir', async () => {
+    axios.get.mockResolvedValue(ordersResponse([]));
+    promptDialog.mockResolvedValueOnce('acele');
+    axios.post.mockRejectedValueOnce({
+      response: { status: 400, data: { detail: 'Bu etkinlik için sipariş gönderilemez' } },
+    });
+
+    render(<FnbOrderModal event={event} onClose={() => {}} />);
+
+    const sendBtn = await screen.findByRole('button', { name: /Mutfağa Gönder/i });
+    fireEvent.click(sendBtn);
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Bu etkinlik için sipariş gönderilemez');
+    });
   });
 });
