@@ -83,10 +83,23 @@ export default function AvailabilityScreen() {
   const colorFor = useCellColors();
 
   const [startInput, setStartInput] = useState('');
+  const [endInput, setEndInput] = useState('');
   const [days, setDays] = useState('7');
 
   const startDate = startInput || todayISO();
-  const dayCount = Number(days) || 7;
+
+  // When both range bounds are picked, draw the grid straight through to the
+  // end date (inclusive). Otherwise fall back to the 7/14/30 day shortcuts.
+  const rangeDays = useMemo(() => {
+    if (!startInput || !endInput) return null;
+    const a = new Date(`${startInput}T00:00:00`).getTime();
+    const b = new Date(`${endInput}T00:00:00`).getTime();
+    if (Number.isNaN(a) || Number.isNaN(b) || b < a) return null;
+    const n = Math.round((b - a) / 86_400_000) + 1;
+    return Math.min(Math.max(n, 1), 90);
+  }, [startInput, endInput]);
+
+  const dayCount = rangeDays ?? (Number(days) || 7);
 
   const q = useQuery({
     queryKey: ['availability-grid', startDate, dayCount],
@@ -104,14 +117,26 @@ export default function AvailabilityScreen() {
       <H1>{tr.availability.title}</H1>
       <View style={{ height: spacing.sm }} />
       <DatePicker
-        placeholder={tr.availability.startDate}
-        value={startInput}
-        onChange={(iso) => setStartInput(iso || '')}
+        mode="range"
+        placeholder={tr.availability.dateRange}
+        startValue={startInput}
+        endValue={endInput}
+        onRangeChange={(start, end) => {
+          setStartInput(start || '');
+          setEndInput(end || '');
+        }}
         allowClear
         testID="smoke-availability-start"
       />
       <View style={{ height: spacing.sm }} />
-      <FilterChips options={DAY_OPTIONS} value={days} onChange={setDays} />
+      <FilterChips
+        options={DAY_OPTIONS}
+        value={rangeDays ? '' : days}
+        onChange={(v) => {
+          setDays(v);
+          setEndInput('');
+        }}
+      />
       <View style={{ height: spacing.sm }} />
       <Legend />
       <View style={{ height: spacing.md }} />

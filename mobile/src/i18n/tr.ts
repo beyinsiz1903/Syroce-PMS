@@ -265,6 +265,7 @@ export const tr = {
   availability: {
     title: 'Müsaitlik',
     startDate: 'Başlangıç tarihi',
+    dateRange: 'Tarih aralığı',
     days: 'Gün',
     free: 'Boş',
     occupied: 'Dolu',
