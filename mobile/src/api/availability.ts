@@ -20,7 +20,9 @@ export type AvailabilityBlock = {
 };
 
 // GET /api/pms/rooms/availability spreads the full room doc and adds
-// available / reason / blocks for the requested window.
+// available / occupancy_status / reason / blocks for the requested window.
+// `occupancy_status` is the explicit machine-readable discriminator
+// (free / occupied / blocked); `reason` is free text kept only as a fallback.
 export type AvailabilityRoom = {
   id: string;
   room_number?: string;
@@ -28,6 +30,7 @@ export type AvailabilityRoom = {
   floor?: number | string;
   status?: string;
   available?: boolean;
+  occupancy_status?: string;
   reason?: string;
   blocks?: AvailabilityBlock[];
 };

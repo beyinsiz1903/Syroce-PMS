@@ -257,7 +257,8 @@ async def _legacy_check_room_availability(
         if not is_booked and not is_blocked:
             available.append({
                 **room,
-                'available': True
+                'available': True,
+                'occupancy_status': 'free'
             })
         else:
             unavailable_reason = []
@@ -272,7 +273,8 @@ async def _legacy_check_room_availability(
                 **room,
                 'available': False,
                 'reason': ', '.join(unavailable_reason),
-                'blocks': room_blocks
+                'blocks': room_blocks,
+                'occupancy_status': 'occupied' if is_booked else 'blocked'
             })
 
     return available

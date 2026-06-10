@@ -11,6 +11,7 @@ import {
   addDaysISO,
   buildDayList,
   isBlockedRoomStatus,
+  normalizeOccupancyStatus,
   cellStatusFromRoom,
   blockCoversDay,
   buildAvailabilityGrid,
@@ -89,6 +90,82 @@ test('cellStatusFromRoom: OOO/OOS room status wins over the booking calendar', (
       status: 'OOO',
       available: false,
       reason: 'booked',
+    }),
+    'blocked',
+  );
+});
+
+// ── normalizeOccupancyStatus: explicit backend discriminator ───────────────
+test('normalizeOccupancyStatus accepts the known states, case/space tolerant', () => {
+  assert.equal(normalizeOccupancyStatus('free'), 'free');
+  assert.equal(normalizeOccupancyStatus('occupied'), 'occupied');
+  assert.equal(normalizeOccupancyStatus('blocked'), 'blocked');
+  assert.equal(normalizeOccupancyStatus('  Occupied '), 'occupied');
+  assert.equal(normalizeOccupancyStatus('BLOCKED'), 'blocked');
+});
+
+test('normalizeOccupancyStatus returns null for missing / unknown values', () => {
+  assert.equal(normalizeOccupancyStatus(undefined), null);
+  assert.equal(normalizeOccupancyStatus(''), null);
+  assert.equal(normalizeOccupancyStatus('rezerve'), null);
+  assert.equal(normalizeOccupancyStatus('booked'), null);
+});
+
+// ── cellStatusFromRoom: explicit occupancy_status is preferred over text ────
+test('cellStatusFromRoom trusts the explicit occupancy_status field', () => {
+  assert.equal(
+    cellStatusFromRoom({ id: 'r1', available: false, occupancy_status: 'occupied' }),
+    'occupied',
+  );
+  assert.equal(
+    cellStatusFromRoom({ id: 'r1', available: false, occupancy_status: 'blocked' }),
+    'blocked',
+  );
+  // Even when `available` is undefined, an explicit "free" stays free.
+  assert.equal(
+    cellStatusFromRoom({ id: 'r1', occupancy_status: 'free' }),
+    'free',
+  );
+});
+
+test('cellStatusFromRoom: explicit field beats a misleading reason text', () => {
+  // Localized / changed reason text ("rezerve") must NOT downgrade an occupied
+  // room to blocked — the explicit field is authoritative.
+  assert.equal(
+    cellStatusFromRoom({
+      id: 'r1',
+      available: false,
+      reason: 'rezerve',
+      occupancy_status: 'occupied',
+    }),
+    'occupied',
+  );
+});
+
+test('cellStatusFromRoom falls back to reason text when the field is absent/unknown', () => {
+  // No occupancy_status -> legacy heuristic on `reason`.
+  assert.equal(
+    cellStatusFromRoom({ id: 'r1', available: false, reason: 'Booked by guest' }),
+    'occupied',
+  );
+  // Unrecognized occupancy_status value -> also falls back to the text heuristic.
+  assert.equal(
+    cellStatusFromRoom({
+      id: 'r1',
+      available: false,
+      reason: 'booked',
+      occupancy_status: 'rezerve',
+    }),
+    'occupied',
+  );
+});
+
+test('cellStatusFromRoom: OOO/OOS room status still wins over the explicit field', () => {
+  assert.equal(
+    cellStatusFromRoom({
+      id: 'r1',
+      status: 'out_of_order',
+      occupancy_status: 'occupied',
     }),
     'blocked',
   );

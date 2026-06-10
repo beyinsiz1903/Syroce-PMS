@@ -29,7 +29,26 @@ export type GridRoomInput = {
   status?: string;
   available?: boolean;
   reason?: string;
+  // Explicit, machine-readable occupancy discriminator from the availability
+  // endpoint. Preferred over parsing the free-text `reason`.
+  occupancy_status?: string;
 };
+
+// Normalizes the backend's explicit occupancy discriminator to a CellStatus,
+// or null when the field is absent/unrecognized (so callers fall back to the
+// legacy text heuristic). Tolerant of casing/whitespace.
+export function normalizeOccupancyStatus(value?: string): CellStatus | null {
+  switch ((value || '').trim().toLowerCase()) {
+    case 'free':
+      return 'free';
+    case 'occupied':
+      return 'occupied';
+    case 'blocked':
+      return 'blocked';
+    default:
+      return null;
+  }
+}
 
 export type GridBlockInput = {
   room_id?: string;
@@ -68,11 +87,15 @@ export function isBlockedRoomStatus(status?: string): boolean {
 }
 
 // Baseline cell status for a room on a single day, from that day's
-// availability payload. OOO/OOS room status wins over the booking calendar;
-// otherwise an unavailable room is "occupied" only when the reason mentions a
-// booking, else "blocked"; available rooms are "free".
+// availability payload. OOO/OOS room status wins over the booking calendar.
+// Otherwise we trust the backend's explicit `occupancy_status` discriminator
+// (occupied > blocked > free) when present; only when it is missing do we fall
+// back to the legacy free-text `reason` heuristic ("booked" -> occupied, else
+// blocked) for backwards compatibility with older API responses.
 export function cellStatusFromRoom(room: GridRoomInput): CellStatus {
   if (isBlockedRoomStatus(room.status)) return 'blocked';
+  const explicit = normalizeOccupancyStatus(room.occupancy_status);
+  if (explicit) return explicit;
   if (room.available === false) {
     const reason = (room.reason || '').toLowerCase();
     return reason.includes('booked') ? 'occupied' : 'blocked';

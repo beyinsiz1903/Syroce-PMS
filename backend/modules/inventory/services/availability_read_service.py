@@ -27,6 +27,10 @@ class AvailabilityReadService:
             room_projection = dict(room)
             if not is_booked and not is_blocked:
                 room_projection["available"] = True
+                # Explicit, machine-readable occupancy discriminator so clients
+                # never have to parse the free-text `reason`. A booking wins over
+                # a block (occupied > blocked > free).
+                room_projection["occupancy_status"] = "free"
             else:
                 reasons = []
                 if is_booked:
@@ -41,6 +45,7 @@ class AvailabilityReadService:
                         "available": False,
                         "reason": ", ".join(reasons),
                         "blocks": room_blocks,
+                        "occupancy_status": "occupied" if is_booked else "blocked",
                     }
                 )
 
