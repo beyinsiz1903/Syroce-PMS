@@ -25,12 +25,10 @@ import {
   updateReservation,
 } from '../../src/api/reservations';
 import { assignRoom } from '../../src/api/bookings';
-import { listRooms, Room } from '../../src/api/rooms';
+import { getAvailability, AvailabilityRoom } from '../../src/api/availability';
 import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { haptic } from '../../src/hooks/useHaptic';
-
-const AVAILABLE_ROOM_STATUSES = ['available', 'inspected'];
 
 // DD.MM.YYYY → YYYY-MM-DD (same normaliser the list screen uses). Returns
 // undefined for blank / unparseable input so the caller can reject it.
@@ -44,6 +42,17 @@ function toISODate(input: string): string | undefined {
   }
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   return undefined;
+}
+
+// ISO date / datetime string → YYYY-MM-DD for the availability query. Returns
+// undefined for blank / unparseable input.
+function isoDateOnly(input?: string): string | undefined {
+  if (!input) return undefined;
+  const m = input.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  const d = new Date(input);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return d.toISOString().slice(0, 10);
 }
 
 // ISO string → DD.MM.YYYY for prefilling the edit fields.
@@ -125,7 +134,8 @@ export default function ReservationDetailScreen() {
   const [checkOut, setCheckOut] = useState(toDisplayDate(p.check_out));
   const [newRate, setNewRate] = useState(p.total_amount || '');
   const [reason, setReason] = useState('');
-  const [rooms, setRooms] = useState<Room[]>([]);
+  const [rooms, setRooms] = useState<AvailabilityRoom[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState(false);
 
   const isCancelled = (p.status || '').toLowerCase() === 'cancelled';
 
@@ -143,14 +153,18 @@ export default function ReservationDetailScreen() {
   const openPanel = (next: 'dates' | 'room' | 'rate') => {
     setActionError(null);
     setPanel((cur) => (cur === next ? '' : next));
-    if (next === 'room' && rooms.length === 0) {
-      listRooms()
-        .then((rs) =>
-          setRooms(
-            rs.filter((r) => AVAILABLE_ROOM_STATUSES.includes((r.status || '').toLowerCase())),
-          ),
-        )
-        .catch(() => setRooms([]));
+    if (next === 'room' && rooms.length === 0 && !roomsLoading) {
+      const ci = isoDateOnly(p.check_in);
+      const co = isoDateOnly(p.check_out);
+      if (!ci || !co) {
+        setRooms([]);
+        return;
+      }
+      setRoomsLoading(true);
+      getAvailability(ci, co)
+        .then((rs) => setRooms(rs.filter((r) => r.available === true)))
+        .catch(() => setRooms([]))
+        .finally(() => setRoomsLoading(false));
     }
   };
 
@@ -199,7 +213,7 @@ export default function ReservationDetailScreen() {
   });
 
   const roomMutation = useMutation({
-    mutationFn: (room: Room) => assignRoom(id, room.id),
+    mutationFn: (room: AvailabilityRoom) => assignRoom(id, room.id),
     onSuccess: () => {
       haptic.success();
       refreshAll();
@@ -337,7 +351,9 @@ export default function ReservationDetailScreen() {
           {panel === 'room' ? (
             <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
               <Muted>{tr.reservations.selectRoom}</Muted>
-              {rooms.length === 0 ? (
+              {roomsLoading ? (
+                <Body style={{ color: c.textMuted }}>{tr.reservations.loadingRooms}</Body>
+              ) : rooms.length === 0 ? (
                 <Body style={{ color: c.textMuted }}>{tr.reservations.noAvailableRooms}</Body>
               ) : (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
