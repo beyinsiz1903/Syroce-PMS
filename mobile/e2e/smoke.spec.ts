@@ -18,6 +18,14 @@ import { attachObservers, inspectPageContent, loginAsRole } from './fixtures';
 
 const ROLES: Role[] = ['frontdesk', 'gm', 'housekeeping', 'guest'];
 
+// Mirrors of the Turkish labels in mobile/src/i18n/tr.ts. Kept as literals
+// here because the e2e project's tsconfig is scoped to mobile/e2e/ and does
+// not include src/. If those copy strings change, update them here too.
+const tr_clearFilters = 'Filtreleri temizle'; // reservations.clearFilters
+const tr_clear = 'Temizle'; // datePicker.clear
+const tr_today = 'Bugün'; // datePicker.today
+const tr_close = 'Kapat'; // datePicker.close
+
 // ─────────────────────────────────────────────────────────────────────────
 // F10A — Front-desk Reservations + Availability interactive flow.
 // ─────────────────────────────────────────────────────────────────────────
@@ -90,6 +98,142 @@ test.describe.serial('Mobile smoke · frontdesk · reservations + availability',
         expect(
             consoleErrors,
             `Reservations console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
+        ).toHaveLength(0);
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // F10A — Reservations date-range picker (Task #287).
+    // ─────────────────────────────────────────────────────────────────
+    // The two former check-in / check-out single pickers were merged into
+    // one range picker (smoke-reservations-daterange). This step proves
+    // the range actually drives the list filter end-to-end:
+    //   1) Open the picker, pick a start day then an end day in the same
+    //      (current) month — days 10 and 20 always exist and the picker
+    //      opens on today's month, so this is deterministic without month
+    //      navigation. We don't pass minimumDate here so both are tappable.
+    //   2) Assert the SEARCH request actually carries check_in & check_out
+    //      query params for the picked ISO days — that is honest proof the
+    //      list is filtered (row counts depend on live pilot data and are
+    //      not asserted; the request contract is the deterministic signal).
+    //   3) Re-open and assert both endpoints are aria-selected — the range
+    //      state (start + end + highlighted span) round-trips.
+    //   4) allowClear: tap "Temizle" and assert the next search request
+    //      drops check_in/check_out (filter cleared, no fake-green).
+    //   5) "Bugün": tap Today and assert today's cell becomes selected and
+    //      the picker stays open to pick the end (range-mode semantics).
+    test('[frontdesk] reservations date-range picker filters + clears', async ({ page }) => {
+        const obs = attachObservers(page);
+        await loginAsRole(page, 'frontdesk');
+
+        await page.goto('/reservations', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+        const trigger = page.locator('[data-testid="smoke-reservations-daterange"]').first();
+        await expect(trigger, 'Tarih aralığı seçici render olmadı').toBeVisible({
+            timeout: 20_000,
+        });
+
+        // Deterministic in-month days: the picker opens on today's month and
+        // the reservations picker sets no minimumDate, so 10 and 20 always
+        // exist and are tappable regardless of the current date.
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const monthPrefix = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+        const startISO = `${monthPrefix}-10`;
+        const endISO = `${monthPrefix}-20`;
+        const todayISO = `${monthPrefix}-${pad(now.getDate())}`;
+
+        const SEARCH = '/api/reservations/search';
+        const dayCell = (iso: string) => page.locator(`[aria-label="${iso}"]`).first();
+
+        // 1) Open picker → calendar grid visible.
+        await trigger.click();
+        await expect(dayCell(startISO), 'Takvim açılmadı / başlangıç günü yok').toBeVisible({
+            timeout: 15_000,
+        });
+
+        // 2) Pick start, then end — the both-bounds search request is the
+        //    deterministic "list is filtered" proof.
+        await dayCell(startISO).click();
+        const rangeReq = page.waitForRequest(
+            (req) =>
+                req.url().includes(SEARCH) &&
+                req.url().includes(`check_in=${startISO}`) &&
+                req.url().includes(`check_out=${endISO}`),
+            { timeout: 15_000 },
+        );
+        await dayCell(endISO).click();
+        await rangeReq;
+
+        // Range complete → modal closes, trigger shows the range, and the
+        // "clear filters" affordance appears (hasFilters became true).
+        await expect(dayCell(startISO), 'Aralık seçimi sonrası modal kapanmadı').toBeHidden({
+            timeout: 10_000,
+        });
+        await expect(trigger, 'Seçili aralık tetikleyicide görünmüyor').toContainText('→', {
+            timeout: 10_000,
+        });
+        await expect(
+            page.getByText(tr_clearFilters).first(),
+            'Filtre temizleme bağlantısı çıkmadı',
+        ).toBeVisible({ timeout: 10_000 });
+
+        // 3) Re-open → both endpoints round-trip as selected (range state +
+        //    in-between highlighting are driven by these same bounds).
+        await trigger.click();
+        await expect(
+            dayCell(startISO),
+            'Yeniden açılışta başlangıç günü seçili değil',
+        ).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
+        await expect(
+            dayCell(endISO),
+            'Yeniden açılışta bitiş günü seçili değil',
+        ).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
+
+        // 4) allowClear → "Temizle" wipes the range; the next search request
+        //    must drop both date params (no skip-as-pass on the clear path).
+        const clearedReq = page.waitForRequest(
+            (req) =>
+                req.url().includes(SEARCH) &&
+                !req.url().includes('check_in=') &&
+                !req.url().includes('check_out='),
+            { timeout: 15_000 },
+        );
+        await page.getByText(tr_clear, { exact: true }).first().click();
+        await clearedReq;
+        await expect(dayCell(startISO), 'Temizle sonrası modal kapanmadı').toBeHidden({
+            timeout: 10_000,
+        });
+        await expect(trigger, 'Temizle sonrası aralık hâlâ görünüyor').not.toContainText('→', {
+            timeout: 10_000,
+        });
+
+        // 5) "Bugün" → starts a fresh range at today and KEEPS the picker
+        //    open (range mode picks the end next), unlike single mode which
+        //    would close. Assert today is selected and the grid is still up.
+        await trigger.click();
+        await expect(dayCell(todayISO), 'Bugün öncesi takvim açılmadı').toBeVisible({
+            timeout: 15_000,
+        });
+        await page.getByText(tr_today, { exact: true }).first().click();
+        await expect(
+            dayCell(todayISO),
+            '"Bugün" sonrası bugünün günü seçili değil',
+        ).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
+        // Still open (range mode) → close the modal cleanly via "Kapat".
+        await page.getByText(tr_close, { exact: true }).first().click();
+        await expect(dayCell(todayISO), '"Kapat" modalı kapatmadı').toBeHidden({
+            timeout: 10_000,
+        });
+
+        const inspect = await inspectPageContent(page);
+        expect(inspect.ok, `Rezervasyon ekranı boş/hata: ${inspect.reason}`).toBeTruthy();
+        expect(inspect.pii_findings ?? [], 'Tarih aralığı akışında PII leak').toHaveLength(0);
+
+        const { consoleErrors } = obs.flush();
+        expect(
+            consoleErrors,
+            `Date-range console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
         ).toHaveLength(0);
     });
 
