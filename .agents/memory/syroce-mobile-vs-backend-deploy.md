@@ -41,6 +41,23 @@ Mongo connected), and `JWT_SECRET`. DB_NAME not needed (start.sh defaults to
 `syroce-pms` on Atlas). A mobile-smoke run with all `login -> group root` =
 `waitForURL` timeouts is this same 401 (no redirect), not a UI bug.
 
+**This repl's deploy slot IS the mobile static (`-1`) host** (operator-confirmed):
+`.replit` [deployment] = `deploymentTarget="static"`, `build=["bash","mobile/build-web.sh"]`,
+`publicDir="mobile/dist"`. The production PMS web+backend is a SEPARATE Replit project
+(the `-syroce` one) — so `deployConfig` static HERE is correct and does NOT clobber the
+PMS. (The older blanket "never deployConfig in the main repl" warning in
+`mobile/build-web.sh` / expo memory assumed this repl held the PMS slot; for this `-1`
+repl it does not.)
+
+**Deploy-config drift → "Could not find public directory":** the [deployment] section
+can silently drift off static (e.g. to `deploymentTarget="gce"` with the `publicDir`
+line dropped). Publishing then fails with **"Could not find public directory"** because
+a static publish needs `publicDir` and there's none (and `mobile/dist` is gitignored/empty
+in the tree). Fix = `deployConfig({deploymentTarget:"static", build:["bash","mobile/build-web.sh"],
+publicDir:"mobile/dist"})`. The leftover `run` line is harmless (static ignores `run`).
+A static publish runs `build` first, then serves `publicDir`, so the empty tracked
+`mobile/dist` is fine — the deploy builder regenerates it.
+
 **CORS:** mobile is cross-origin to the backend, so the mobile origin
 (`https://emergent-yeni-uygulama-1.replit.app`) MUST be in `backend/server.py`
 `_always_allowed` (explicit single host, per the Bug AL note — never `*.replit.app`
