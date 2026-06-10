@@ -15,6 +15,8 @@
     "src/components/datePickerUtils.ts",
     "src/components/__tests__/datePickerUtils.test.ts",
     "src/utils/availabilityFilters.ts",
-    "src/utils/__tests__/availabilityFilters.test.ts"
+    "src/utils/__tests__/availabilityFilters.test.ts",
+    "src/utils/availabilityGrid.ts",
+    "src/utils/__tests__/availabilityGrid.test.ts"
   ]
 }
