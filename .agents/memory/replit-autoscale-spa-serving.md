@@ -77,6 +77,31 @@ warm-up — acceptable tradeoff; primary entry is `/`. Regression:
 **Why:** gating static bundles makes EVERY cold start a white screen for the
 full (long) warm-up window; only dynamic/data routes need the readiness gate.
 
+## Cause 4 — specific SPA chunks 502 "deployment could not be reached"
+Distinct from Cause 3 (503 warm-up JSON). Here `/`, `/api/health`, the CSS, and
+SOME `/js/*.js` return 200 (uvicorn alive), genuinely-missing files return a
+clean app `404 application/json`, but the SPA entry chunk + most `/js/*.js`
+return **502 `text/plain` "The deployment could not be reached"** (the Replit
+edge, NOT the app). It is **deterministic per path and query-invariant**
+(`?cb=1..N` all 502) — so it is NOT a content/size/timeout issue and NOT a
+build-hash mismatch (a hash mismatch gives app 404, not edge 502).
+
+**Diagnose:** the 35-byte `text/plain` "deployment could not be reached" body
+== edge can't reach the instance for that request. Per-path-deterministic 200
+vs 502 + clean 404 for nonexistent == multiple instances behind path-sticky
+edge routing where some instances are unhealthy/crashed; each chunk URL hashes
+to a good (200) or dead (502) instance. The repo build can be complete and
+tracked and it still happens.
+
+**Fix:** NOT a code change. Re-publish; for a stateful web+backend (local
+Mongo/Redis + in-process workers) deploy on a **single-instance Reserved VM**
+so there is no broken-instance-routing surface (see syroce-deploy-target-vm).
+**Watch the config trap:** one repo, two deployments (mobile static vs
+web+backend) share ONE `.replit [deployment]` block; `getDeploymentInfo()` only
+reports the currently-configured one. If `.replit` is set to the static/mobile
+deploy, a plain Publish re-pushes mobile and does NOT touch the broken
+web+backend host — swap the block to the VM+backend config first.
+
 **Follow-up (broken images, not white screen):** allow-listing only `/js`,
 `/assets`, `/logos` is too narrow — the SPA boots but its logo and hero render
 broken. The landing logo is a **root-level** file (`/syroce-logo.svg`) and the
