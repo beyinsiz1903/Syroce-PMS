@@ -242,87 +242,90 @@ async def get_complaint_management_v2(
     current_user = await get_current_user(credentials)
     return await _build_complaint_management(current_user)
 # ── GET /gm/snapshot-enhanced ──
+async def _compute_period_metrics(tid: str, date, total_rooms: int) -> dict:
+    """Compute real metrics for a single calendar date from bookings/payments/feedback.
+
+    Used identically for today, yesterday and last week so the dashboard's
+    period-over-period deltas reflect actual change rather than fixed offsets.
+    `status` reflects the *current* booking state, so it cannot be used to
+    reconstruct a past day's arrivals/departures (a booking that arrived last
+    week is `checked_out` now); arrivals/departures are therefore counted as
+    the day's scheduled, non-cancelled bookings. Occupancy is derived from
+    bookings spanning the night (no per-date room-status history exists).
+    Date fields are stored as ISO strings, so range/exact string matches hold.
+    """
+    date_iso = date.isoformat()
+    next_iso = (date + timedelta(days=1)).isoformat()
+    occupied, payment_agg, check_ins, check_outs, complaints = await asyncio.gather(
+        db.bookings.count_documents({
+            'tenant_id': tid,
+            'check_in': {'$lte': date_iso},
+            'check_out': {'$gt': date_iso},
+            'status': {'$nin': ['cancelled', 'no_show']},
+        }),
+        db.payments.aggregate([
+            {'$match': {'tenant_id': tid, 'payment_date': {'$gte': date_iso, '$lt': next_iso}}},
+            {'$group': {'_id': None, 't': {'$sum': '$amount'}}},
+        ]).to_list(1),
+        db.bookings.count_documents({
+            'tenant_id': tid, 'check_in': date_iso,
+            'status': {'$nin': ['cancelled', 'no_show']},
+        }),
+        db.bookings.count_documents({
+            'tenant_id': tid, 'check_out': date_iso,
+            'status': {'$nin': ['cancelled', 'no_show']},
+        }),
+        db.feedback.count_documents({
+            'tenant_id': tid, 'rating': {'$lte': 2},
+            'created_at': {'$gte': date_iso, '$lt': next_iso},
+        }),
+    )
+    return {
+        'date': date_iso,
+        'occupancy': round((occupied / total_rooms * 100) if total_rooms > 0 else 0, 1),
+        'revenue': (payment_agg[0]['t'] if payment_agg else 0) or 0,
+        'check_ins': check_ins,
+        'check_outs': check_outs,
+        'complaints': complaints,
+        'pending_tasks': 0,  # filled in by caller (current backlog, no per-date history)
+    }
+
+
 @router.get("/gm/snapshot-enhanced")
 async def get_enhanced_snapshot(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
     Enhanced GM snapshot - all critical metrics in one view
-    Today vs Yesterday vs Last Week
+    Today vs Yesterday vs Last Week (all computed from real historical data).
     """
     current_user = await get_current_user(credentials)
+    tid = current_user.tenant_id
 
     today = datetime.now(UTC).date()
     yesterday = today - timedelta(days=1)
     last_week = today - timedelta(days=7)
 
-    # Get metrics for all three periods
-    def get_metrics_for_date(date):
-        return {
-            'date': date.isoformat(),
-            'occupancy': 0,  # To be calculated
-            'revenue': 0,
-            'check_ins': 0,
-            'check_outs': 0,
-            'complaints': 0,
-            'pending_tasks': 0
-        }
-
-    today_metrics = get_metrics_for_date(today)
-    yesterday_metrics = get_metrics_for_date(yesterday)
-    last_week_metrics = get_metrics_for_date(last_week)
-
-    # 7 bagimsiz read paralel — N+1 fix. Revenue Mongo aggregate ile (truncation yok).
-    tid = current_user.tenant_id
-    today_iso = today.isoformat()
-    total_rooms, occupied_today, payment_agg, check_ins, check_outs, complaints, pending_tasks = await asyncio.gather(
+    # total_rooms + current high/urgent pending backlog are point-in-time reads;
+    # everything else is computed per-date so the comparison is apples-to-apples.
+    total_rooms, pending_tasks = await asyncio.gather(
         db.rooms.count_documents({'tenant_id': tid}),
-        db.rooms.count_documents({'tenant_id': tid, 'status': 'occupied'}),
-        db.payments.aggregate([
-            {'$match': {'tenant_id': tid, 'payment_date': {'$gte': today_iso}}},
-            {'$group': {'_id': None, 't': {'$sum': '$amount'}}},
-        ]).to_list(1),
-        db.bookings.count_documents({
-            'tenant_id': tid, 'check_in': today_iso, 'status': 'checked_in',
-        }),
-        db.bookings.count_documents({
-            'tenant_id': tid, 'check_out': today_iso, 'status': 'checked_out',
-        }),
-        db.feedback.count_documents({
-            'tenant_id': tid, 'rating': {'$lte': 2},
-            'created_at': {'$gte': today_iso},
-        }),
         db.maintenance_tasks.count_documents({
             'tenant_id': tid, 'status': 'pending',
             'priority': {'$in': ['high', 'urgent']},
         }),
     )
 
-    today_metrics['occupancy'] = round((occupied_today / total_rooms * 100) if total_rooms > 0 else 0, 1)
-    today_metrics['revenue'] = (payment_agg[0]['t'] if payment_agg else 0) or 0
-    today_metrics['check_ins'] = check_ins
-    today_metrics['check_outs'] = check_outs
-    today_metrics['complaints'] = complaints
-    today_metrics['pending_tasks'] = pending_tasks
+    today_metrics, yesterday_metrics, last_week_metrics = await asyncio.gather(
+        _compute_period_metrics(tid, today, total_rooms),
+        _compute_period_metrics(tid, yesterday, total_rooms),
+        _compute_period_metrics(tid, last_week, total_rooms),
+    )
 
-    # Simulated yesterday and last week data
-    yesterday_metrics.update({
-        'occupancy': today_metrics['occupancy'] - 3,
-        'revenue': today_metrics['revenue'] * 0.95,
-        'check_ins': today_metrics['check_ins'] - 2,
-        'check_outs': today_metrics['check_outs'] + 1,
-        'complaints': today_metrics['complaints'] + 1,
-        'pending_tasks': today_metrics['pending_tasks'] + 2
-    })
-
-    last_week_metrics.update({
-        'occupancy': today_metrics['occupancy'] - 5,
-        'revenue': today_metrics['revenue'] * 0.92,
-        'check_ins': today_metrics['check_ins'] - 3,
-        'check_outs': today_metrics['check_outs'] - 1,
-        'complaints': today_metrics['complaints'] + 2,
-        'pending_tasks': today_metrics['pending_tasks'] + 3
-    })
+    # pending_tasks has no per-date history; report the current backlog for every
+    # period so the delta is an honest 0 rather than a fabricated offset.
+    for _m in (today_metrics, yesterday_metrics, last_week_metrics):
+        _m['pending_tasks'] = pending_tasks
 
     return {
         'today': today_metrics,
