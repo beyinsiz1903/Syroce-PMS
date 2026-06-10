@@ -8,7 +8,13 @@ import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../src/state/authStore';
 import { useSettingsStore } from '../src/state/settingsStore';
 import { useTheme } from '../src/theme';
-import { GROUP_SEGMENTS, ROUTES, groupForRole, rootForRole } from '../src/navigation/routes';
+import {
+  DEPARTMENTS_SEGMENT,
+  GROUP_SEGMENTS,
+  ROUTES,
+  groupForRole,
+  rootForRole,
+} from '../src/navigation/routes';
 import { setupOfflineCache } from '../src/cache/persister';
 import { markSync } from '../src/cache/offlineMeta';
 import { attachPushListeners, registerForPush } from '../src/notifications/push';
@@ -50,7 +56,7 @@ queryClient.getQueryCache().subscribe((event) => {
 function AuthGate({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
-  const { user, role, allAccess, loading, hydrate } = useAuthStore();
+  const { user, role, allAccess, deptAccess, loading, hydrate } = useAuthStore();
   const hydrateSettings = useSettingsStore((s) => s.hydrate);
 
   useEffect(() => {
@@ -79,11 +85,18 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Single-role users are pinned to their home group, EXCEPT the shared
+    // (departments) area: a user who holds department entitlement may browse it
+    // and stays there until they navigate away. This only ROUTES entitled users
+    // — backend RBAC still enforces every action inside.
+    const inDepartments = first === DEPARTMENTS_SEGMENT;
+    if (inDepartments && deptAccess) return;
+
     const expectedGroup = groupForRole(role);
     if (inAuth || first !== expectedGroup) {
       router.replace(rootForRole(role));
     }
-  }, [user, role, allAccess, loading, segments, router]);
+  }, [user, role, allAccess, deptAccess, loading, segments, router]);
 
   // Push registration runs after sign-in; safe to call repeatedly because
   // the backend treats POST /push/register as upsert by device_id.
@@ -126,6 +139,7 @@ function RootShell() {
         <Stack.Screen name="(housekeeping)" options={{ headerShown: false }} />
         <Stack.Screen name="(gm)" options={{ headerShown: false }} />
         <Stack.Screen name="(guest)" options={{ headerShown: false }} />
+        <Stack.Screen name="(departments)" options={{ headerShown: false }} />
         <Stack.Screen name="index" options={{ headerShown: false }} />
       </Stack>
     </View>

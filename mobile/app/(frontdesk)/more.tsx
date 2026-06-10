@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, Switch, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Body, Button, Card, H1, H2, Muted } from '../../src/components/ui';
 import { RoleSwitcher } from '../../src/components/RoleSwitcher';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
+import { ROUTES } from '../../src/navigation/routes';
 import { useSettingsStore } from '../../src/state/settingsStore';
 import { getApiUrl } from '../../src/api/client';
 import {
@@ -18,7 +20,9 @@ import {
 
 export default function MoreScreen() {
   const c = useTheme();
+  const router = useRouter();
   const { user, logout } = useAuthStore();
+  const deptAccess = useAuthStore((s) => s.deptAccess);
   const biometricLock = useSettingsStore((s) => s.biometricLock);
   const setBiometricLock = useSettingsStore((s) => s.setBiometricLock);
 
@@ -95,6 +99,20 @@ export default function MoreScreen() {
       </Card>
 
       <RoleSwitcher />
+
+      {deptAccess ? (
+        <Card>
+          <H2>{tr.departments.title}</H2>
+          <Muted style={{ marginBottom: spacing.md }}>{tr.departments.subtitle}</Muted>
+          <Button
+            testID="more-departments"
+            title={tr.departments.open}
+            variant="secondary"
+            onPress={() => router.push(ROUTES.departments)}
+            fullWidth
+          />
+        </Card>
+      ) : null}
 
       <Card>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm }}>

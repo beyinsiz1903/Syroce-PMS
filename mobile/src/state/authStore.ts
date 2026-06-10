@@ -48,11 +48,38 @@ export function canViewFinanceReports(raw: string | undefined): boolean {
   return FINANCE_REPORTS_ROLES.includes(raw.toLowerCase());
 }
 
+// ── Department entitlement (cosmetic hub/entry gating) ──────────────────────
+// These mirror the backend authorizers in `core/spa_mice_authz.py`
+// (`require_spa_ops` / `require_mice_ops`) using the canonical UserRole values
+// so the mobile hub only SHOWS what the user could act on. This is gating for
+// navigation/affordances only — the backend still enforces every write. We
+// derive from the RAW role because `normalizeRole` collapses several roles
+// (e.g. super_admin → gm) and would otherwise lose the distinction.
+const SPA_OPS_ROLES = ['super_admin', 'admin', 'supervisor', 'front_desk', 'staff'];
+const MICE_OPS_ROLES = ['super_admin', 'admin', 'supervisor', 'sales'];
+
+export function hasSpaAccess(raw: string | undefined): boolean {
+  if (!raw) return false;
+  return SPA_OPS_ROLES.includes(raw.toLowerCase());
+}
+
+export function hasMiceAccess(raw: string | undefined): boolean {
+  if (!raw) return false;
+  return MICE_OPS_ROLES.includes(raw.toLowerCase());
+}
+
+export function hasDepartmentAccess(raw: string | undefined): boolean {
+  return hasSpaAccess(raw) || hasMiceAccess(raw);
+}
+
 export type AuthState = {
   user: AuthUser | null;
   role: AppRole;
   allAccess: boolean;
   financeReports: boolean;
+  spaAccess: boolean;
+  miceAccess: boolean;
+  deptAccess: boolean;
   loading: boolean;
   error: string | null;
   hydrate: () => Promise<void>;
@@ -82,6 +109,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   role: 'other',
   allAccess: false,
   financeReports: false,
+  spaAccess: false,
+  miceAccess: false,
+  deptAccess: false,
   loading: true,
   error: null,
 
@@ -89,7 +119,16 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ loading: true, error: null });
     const token = await getToken();
     if (!token) {
-      set({ user: null, role: 'other', allAccess: false, financeReports: false, loading: false });
+      set({
+        user: null,
+        role: 'other',
+        allAccess: false,
+        financeReports: false,
+        spaAccess: false,
+        miceAccess: false,
+        deptAccess: false,
+        loading: false,
+      });
       return;
     }
     let user = await readPersistedUser();
@@ -107,6 +146,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       role: normalizeRole(user?.role),
       allAccess: isAllAccessRole(user?.role),
       financeReports: canViewFinanceReports(user?.role),
+      spaAccess: hasSpaAccess(user?.role),
+      miceAccess: hasMiceAccess(user?.role),
+      deptAccess: hasDepartmentAccess(user?.role),
       loading: false,
     });
   },
@@ -124,6 +166,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         role: normalizeRole(res.user?.role),
         allAccess: isAllAccessRole(res.user?.role),
         financeReports: canViewFinanceReports(res.user?.role),
+        spaAccess: hasSpaAccess(res.user?.role),
+        miceAccess: hasMiceAccess(res.user?.role),
+        deptAccess: hasDepartmentAccess(res.user?.role),
         loading: false,
         error: null,
       });
@@ -152,6 +197,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     // V3: wipe ALL credential / device-id storage so the next user starts
     // clean and a stolen handset cannot resume the previous session.
     await clearAllAuthStorage();
-    set({ user: null, role: 'other', allAccess: false, financeReports: false });
+    set({
+      user: null,
+      role: 'other',
+      allAccess: false,
+      financeReports: false,
+      spaAccess: false,
+      miceAccess: false,
+      deptAccess: false,
+    });
   },
 }));

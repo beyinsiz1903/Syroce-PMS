@@ -7,6 +7,9 @@ export const ROUTES = {
   housekeeping: '/(housekeeping)',
   gm: '/(gm)',
   guest: '/(guest)',
+  departments: '/(departments)',
+  spa: '/(departments)/spa',
+  mice: '/(departments)/mice',
   checkin: '/(frontdesk)/checkin',
   checkout: '/(frontdesk)/checkout',
   walkin: '/(frontdesk)/walkin',
@@ -59,8 +62,19 @@ export function groupForRole(role: AppRole): string {
 
 // Expo Router top-level group segments. All-access users (super_admin/admin)
 // are permitted to sit inside ANY of these, unlike single-role users who are
-// pinned to their own group by AuthGate.
-export const GROUP_SEGMENTS = ['(frontdesk)', '(housekeeping)', '(gm)', '(guest)'] as const;
+// pinned to their own group by AuthGate. `(departments)` is a shared cross-role
+// area: AuthGate additionally admits single-role users who hold department
+// entitlement (see `deptAccess`), so it is intentionally NOT a role home.
+export const GROUP_SEGMENTS = [
+  '(frontdesk)',
+  '(housekeeping)',
+  '(gm)',
+  '(guest)',
+  '(departments)',
+] as const;
+
+// Top-level group segment for the shared departments area.
+export const DEPARTMENTS_SEGMENT = '(departments)' as const;
 
 // Roles selectable from the in-app role switcher. Ordered with the manager
 // landing first so the switcher reads top-down from the all-access home.
