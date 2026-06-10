@@ -99,6 +99,25 @@ if [ -n "$REPLIT_DEPLOYMENT" ]; then
 else
   PORT="${PORT:-8000}"
 fi
+
+# WeasyPrint (PDF export) ve diğer native-lib bağımlı paketler libgobject/glib,
+# pango, cairo gibi paylaşımlı kütüphaneleri dlopen ile yükler. Replit dev
+# shell'inde bunlar gcc/NIX_LDFLAGS fallback'i ile bulunur; ancak VM deployment
+# runtime'ında C derleyici yoktur ve LD_LIBRARY_PATH otomatik doldurulmaz ->
+# "OSError: cannot load library 'libgobject-2.0-0'" (/api/reports/builder/export/pdf).
+# Çözüm: native lib dizinlerini NIX_LDFLAGS'taki -L yollarından türet (nix store
+# hash'lerinden bağımsız, nixpkgs bump'larına dayanıklı) ve LD_LIBRARY_PATH'e ekle.
+if [ -n "$NIX_LDFLAGS" ]; then
+  NIX_LIB_DIRS="$(printf '%s\n' $NIX_LDFLAGS | sed -n 's/^-L//p' | paste -sd: -)"
+  if [ -n "$NIX_LIB_DIRS" ]; then
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$NIX_LIB_DIRS"
+    # Deploy loglarından doğrulanabilir olsun: türetme çalıştı mı, kaç dizin?
+    echo "LD_LIBRARY_PATH NIX_LDFLAGS'tan türetildi ($(printf '%s' "$NIX_LIB_DIRS" | tr ':' '\n' | wc -l) dizin; WeasyPrint native lib çözümü)"
+  fi
+else
+  echo "UYARI: NIX_LDFLAGS tanımsız -> LD_LIBRARY_PATH türetilemedi; WeasyPrint PDF export (libgobject) başarısız olabilir."
+fi
+
 # Use explicit .pythonlibs python to avoid PATH ambiguity in deployment.
 PYTHON_BIN="${PYTHON_BIN:-/home/runner/workspace/.pythonlibs/bin/python}"
 if [ ! -x "$PYTHON_BIN" ]; then

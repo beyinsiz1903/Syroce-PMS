@@ -940,29 +940,32 @@ async def export_report_pdf(
 <div class="footer">Syroce PMS - Otomatik Oluşturulmuş Rapor</div>
 </body></html>"""
 
+    # Import the renderer separately so BOTH a missing package (ImportError) and
+    # missing native system libs (OSError: "cannot load library
+    # 'libgobject-2.0-0'") fail LOUD as 503 "renderer unavailable" — an
+    # operator-actionable deploy/env problem — instead of a per-request 500 that
+    # pages Sentry. Silent HTML-as-PDF fallback is a contract regression (200 +
+    # HTML bytes with application/pdf media-type) and leaks rendered HTML through
+    # a PDF-typed response. Caught by stress spec F8H D
+    # (90-reports-analytics-export.spec.js) via %PDF- byte-magic assertion.
     try:
-        from weasyprint import HTML
-
-        def _safe_fetcher(url: str, timeout=10, ssl_context=None):
-            if not url.lower().startswith("https://"):
-                raise ValueError(f"blocked URL scheme: {url[:40]}")
-            from weasyprint import default_url_fetcher  # type: ignore
-            return default_url_fetcher(url, timeout=timeout, ssl_context=ssl_context)
-
-        pdf_bytes = HTML(string=html, url_fetcher=_safe_fetcher).write_pdf()
-        output = io.BytesIO(pdf_bytes)
-    except ImportError as e:
-        # weasyprint missing — fail LOUD (503). Silent HTML-as-PDF fallback
-        # is a contract regression (200 + HTML bytes with application/pdf
-        # media-type) and leaks rendered HTML through a PDF-typed response.
-        # Caught by stress spec F8H D (90-reports-analytics-export.spec.js)
-        # via %PDF- byte-magic assertion.
-        logger.error(f"[PDF EXPORT] weasyprint not installed: {e}")
+        from weasyprint import HTML, default_url_fetcher
+    except (ImportError, OSError) as e:
+        logger.error(f"[PDF EXPORT] weasyprint renderer unavailable: {e}")
         raise HTTPException(
             status_code=503,
             detail="PDF renderer (weasyprint) unavailable on this deployment. "
                    "Install weasyprint + system deps (cairo, pango) or use Excel/CSV export.",
         )
+
+    try:
+        def _safe_fetcher(url: str, timeout=10, ssl_context=None):
+            if not url.lower().startswith("https://"):
+                raise ValueError(f"blocked URL scheme: {url[:40]}")
+            return default_url_fetcher(url, timeout=timeout, ssl_context=ssl_context)
+
+        pdf_bytes = HTML(string=html, url_fetcher=_safe_fetcher).write_pdf()
+        output = io.BytesIO(pdf_bytes)
     except Exception as e:
         # Real rendering failure — propagate as 500, not a fake 200.
         logger.exception(f"[PDF EXPORT] render failed: {e}")
