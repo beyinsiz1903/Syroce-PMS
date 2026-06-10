@@ -85,11 +85,31 @@ export async function getCompanyAging(): Promise<CompanyAgingReport> {
   return api.get<CompanyAgingReport>('/api/reports/company-aging');
 }
 
-// Default market-segment window: first day of the current month → today.
+// Format a Date into a local YYYY-MM-DD string (no timezone shift).
 // The backend coerces date-only ISO strings to midnight, so YYYY-MM-DD is safe.
+function fmtISO(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// Default market-segment window: first day of the current month → today.
 export function currentMonthRange(): { start: string; end: string } {
   const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  return { start: fmt(new Date(now.getFullYear(), now.getMonth(), 1)), end: fmt(now) };
+  return { start: fmtISO(new Date(now.getFullYear(), now.getMonth(), 1)), end: fmtISO(now) };
+}
+
+// Previous calendar month: first day → last day of last month.
+export function lastMonthRange(): { start: string; end: string } {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const end = new Date(now.getFullYear(), now.getMonth(), 0); // day 0 = last day of prev month
+  return { start: fmtISO(start), end: fmtISO(end) };
+}
+
+// Rolling 30-day window ending today (inclusive).
+export function last30DaysRange(): { start: string; end: string } {
+  const now = new Date();
+  const start = new Date(now);
+  start.setDate(start.getDate() - 29);
+  return { start: fmtISO(start), end: fmtISO(now) };
 }

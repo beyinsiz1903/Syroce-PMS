@@ -1,22 +1,50 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Body, Card, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
 import { KpiPill } from '../../src/components/KpiCard';
 import { StatRow } from '../../src/components/StatRow';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { FilterChips, FilterChipOption } from '../../src/components/FilterChips';
+import { DatePicker } from '../../src/components/DatePicker';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import {
   SegmentStat,
   currentMonthRange,
+  lastMonthRange,
+  last30DaysRange,
   getCompanyAging,
   getFinanceSnapshot,
   getMarketSegment,
 } from '../../src/api/reports';
 import { formatCurrency } from '../../src/utils/format';
 import { isOffline } from '../../src/utils/errors';
+
+type RangePreset = 'this_month' | 'last_month' | 'last_30' | 'custom';
+
+const RANGE_OPTIONS: FilterChipOption[] = [
+  { value: 'this_month', label: tr.manager.rangeThisMonth },
+  { value: 'last_month', label: tr.manager.rangeLastMonth },
+  { value: 'last_30', label: tr.manager.rangeLast30 },
+  { value: 'custom', label: tr.manager.rangeCustom },
+];
+
+// Render an ISO (YYYY-MM-DD) range as a human-friendly Turkish label.
+function formatRangeLabel(start: string, end: string): string {
+  const parse = (iso: string): Date | null => {
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  };
+  const fmt = (d: Date) =>
+    d.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' });
+  const s = parse(start);
+  const e = parse(end);
+  if (!s || !e) return `${start} → ${end}`;
+  return `${fmt(s)} → ${fmt(e)}`;
+}
 
 function SectionState({ loading, error }: { loading: boolean; error: boolean }) {
   if (loading) return <SkeletonCard />;
@@ -57,7 +85,24 @@ function SegmentList({ data }: { data: Record<string, SegmentStat> }) {
 export default function ReportsScreen() {
   const c = useTheme();
   const financeReports = useAuthStore((s) => s.financeReports);
-  const range = useMemo(() => currentMonthRange(), []);
+
+  const [preset, setPreset] = useState<RangePreset>('this_month');
+  // Custom-range bounds (ISO YYYY-MM-DD), only used when preset === 'custom'.
+  const [customStart, setCustomStart] = useState<string | undefined>(undefined);
+  const [customEnd, setCustomEnd] = useState<string | undefined>(undefined);
+
+  const range = useMemo(() => {
+    if (preset === 'last_month') return lastMonthRange();
+    if (preset === 'last_30') return last30DaysRange();
+    if (preset === 'custom' && customStart && customEnd) {
+      return { start: customStart, end: customEnd };
+    }
+    return currentMonthRange();
+  }, [preset, customStart, customEnd]);
+
+  // Only query once a custom range is fully chosen; otherwise fall back to the
+  // current-month default so the section never shows a half-applied range.
+  const customReady = preset !== 'custom' || (!!customStart && !!customEnd);
 
   const finance = useQuery({
     queryKey: ['report-finance-snapshot'],
@@ -67,7 +112,7 @@ export default function ReportsScreen() {
   const segment = useQuery({
     queryKey: ['report-market-segment', range.start, range.end],
     queryFn: () => getMarketSegment(range.start, range.end),
-    enabled: financeReports,
+    enabled: financeReports && customReady,
   });
   const aging = useQuery({
     queryKey: ['report-company-aging'],
@@ -147,8 +192,28 @@ export default function ReportsScreen() {
 
         {/* ── Market segment ── */}
         <H2 style={{ marginTop: spacing.sm }}>{tr.manager.marketSegment}</H2>
-        <Muted>{tr.manager.segmentPeriod}</Muted>
-        {segment.isLoading || segment.isError ? (
+        <FilterChips
+          options={RANGE_OPTIONS}
+          value={preset}
+          onChange={(v) => setPreset(v as RangePreset)}
+          testID="report-segment-range"
+        />
+        {preset === 'custom' ? (
+          <DatePicker
+            mode="range"
+            placeholder={tr.manager.rangePick}
+            startValue={customStart}
+            endValue={customEnd}
+            onRangeChange={(start, end) => {
+              setCustomStart(start);
+              setCustomEnd(end);
+            }}
+            allowClear
+            testID="report-segment-custom"
+          />
+        ) : null}
+        <Muted>{customReady ? formatRangeLabel(range.start, range.end) : tr.manager.rangePick}</Muted>
+        {!customReady ? null : segment.isLoading || segment.isError ? (
           <SectionState loading={segment.isLoading} error={segment.isError} />
         ) : (
           <SegmentList data={segment.data?.market_segments ?? {}} />
