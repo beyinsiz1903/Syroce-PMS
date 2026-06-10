@@ -27,6 +27,7 @@ import {
 } from '../../src/api/reservations';
 import { assignRoom } from '../../src/api/bookings';
 import { getAvailability, AvailabilityRoom } from '../../src/api/availability';
+import { roomPanelView } from '../../src/utils/availabilityFilters';
 import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { haptic } from '../../src/hooks/useHaptic';
@@ -140,6 +141,10 @@ export default function ReservationDetailScreen() {
     return !!ci && !!co && co > ci;
   })();
 
+  // Single source of truth for what the room panel renders: only available
+  // rooms are ever offered (no double-booking), plus the loading / empty states.
+  const roomView = roomPanelView(rooms, roomsLoading);
+
   const isCancelled = (p.status || '').toLowerCase() === 'cancelled';
 
   const refreshAll = () => {
@@ -181,7 +186,9 @@ export default function ReservationDetailScreen() {
     setRoomsLoading(true);
     getAvailability(ci, co)
       .then((rs) => {
-        if (!cancelled) setRooms(rs.filter((r) => r.available === true));
+        // Store the raw rooms; roomPanelView() is the single source of truth
+        // that filters down to available === true before they're rendered.
+        if (!cancelled) setRooms(rs);
       })
       .catch(() => {
         if (!cancelled) setRooms([]);
@@ -456,13 +463,13 @@ export default function ReservationDetailScreen() {
               <Muted>{tr.reservations.selectRoom}</Muted>
               {!roomDatesValid ? (
                 <Body style={{ color: c.textMuted }}>{tr.reservations.invalidDates}</Body>
-              ) : roomsLoading ? (
+              ) : roomView.kind === 'loading' ? (
                 <Body style={{ color: c.textMuted }}>{tr.reservations.loadingRooms}</Body>
-              ) : rooms.length === 0 ? (
+              ) : roomView.kind === 'empty' ? (
                 <Body style={{ color: c.textMuted }}>{tr.reservations.noAvailableRooms}</Body>
               ) : (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-                  {rooms.map((room) => (
+                  {roomView.rooms.map((room) => (
                     <Button
                       key={room.id}
                       title={`${room.room_number}${room.room_type ? ` · ${room.room_type}` : ''}`}
