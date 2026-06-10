@@ -1,0 +1,1 @@
+import"./rolldown-runtime-DW7kkdiz.js";import{o as e}from"./vendor-i18n-C7lUWOfQ.js";import{a as t}from"./vendor-motion-DtDr3HXi.js";import{t as n}from"./Layout-DWmAMzK5.js";e();var r=t();function i({embedded:e,children:t,...i}){return e?(0,r.jsx)(r.Fragment,{children:t}):(0,r.jsx)(n,{...i,children:t})}export{i as t};

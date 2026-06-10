@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -32,6 +32,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { parseBookingConflict } from '@/lib/bookingConflict';
+import { getRoomBlockForDate } from './calendar/calendarHelpers';
 
 const ReservationSidebar = lazy(() => import('@/components/ReservationSidebar'));
 const FolioDetailView = lazy(() => import('@/pages/FolioDetailView'));
@@ -39,6 +40,13 @@ const ReservationDetailModal = lazy(() => import('@/pages/ReservationDetailModal
 const BookingConflictDialog = lazy(() => import('@/components/pms/BookingConflictDialog'));
 
 const DEBUG_ROOMS = false;
+
+// YYYY-MM-DD string'e UTC-guvenli gun ekle (tut-surukle cok-gece secimi icin)
+const addDaysToDateStr = (dStr, n) => {
+  const d = new Date(`${dStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().split('T')[0];
+};
 
 const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -90,6 +98,12 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const [dragOverCell, setDragOverCell] = useState(null);
   const [moveData, setMoveData] = useState(null);
   const [moveReason, setMoveReason] = useState('');
+
+  // Tut-surukle ile cok-gece yeni rezervasyon secimi
+  const [dragSelect, setDragSelect] = useState(null); // { roomId, startStr, endStr }
+  const dragSelectRef = useRef(null);
+  const dragJustFinishedRef = useRef(false);
+  const finalizeDragSelectRef = useRef(() => {});
 
   const [showDeluxePanel, setShowDeluxePanel] = useState(false);
   const [showOccupancyPanel, setShowOccupancyPanel] = useState(false);
@@ -336,6 +350,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
 
   // ─── Event Handlers ────────────────────────────────────────
   const handleCellClick = (roomId, date) => {
+    // Tut-surukle ile cok-gece secimi az once tamamlandiysa, hemen ardindan gelen
+    // tek-tik olayini yut (yoksa tek-gecelik dialog da acilir).
+    if (dragJustFinishedRef.current) { dragJustFinishedRef.current = false; return; }
     const room = rooms.find(r => r.id === roomId);
     if (!room) return;
 
@@ -365,6 +382,99 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
     });
     setShowNewBookingDialog(true);
   };
+
+  // ─── Tut-surukle cok-gece secimi ───────────────────────────
+  // Bos bir hucrede mouse'a basip ayni oda satirinda yanlara surukleyince secilen
+  // gece araligi icin yeni rezervasyon dialog'u acilir. Tek tik (surukleme yok) eski
+  // tek-gece davranisini korur. Dolu/bloklu geceye gelince secim oraya kadar kisalir.
+  const isRoomNightAvailable = (roomId, dStr) => {
+    const occupied = bookings.some(b =>
+      b.room_id === roomId &&
+      b.status !== 'cancelled' && b.status !== 'no_show' &&
+      toDateStringUTC(b.check_in) <= dStr && toDateStringUTC(b.check_out) > dStr
+    );
+    if (occupied) return false;
+    const blk = getRoomBlockForDate(roomId, new Date(`${dStr}T00:00:00Z`), roomBlocks);
+    return !blk;
+  };
+
+  const openMultiNightFromSelection = (sel) => {
+    if (!sel) return;
+    const room = rooms.find(r => r.id === sel.roomId);
+    if (!room) return;
+    const lo = sel.startStr <= sel.endStr ? sel.startStr : sel.endStr;
+    const hi = sel.startStr <= sel.endStr ? sel.endStr : sel.startStr;
+
+    const today = new Date().toISOString().split('T')[0];
+    const minDate = hotelBusinessDate && hotelBusinessDate < today ? hotelBusinessDate : today;
+    if (lo < minDate) {
+      toast.error(`Geçmiş tarihe rezervasyon yapilamaz (minimum: ${minDate})`);
+      return;
+    }
+    if (!isRoomNightAvailable(sel.roomId, lo)) {
+      toast.error('Seçilen başlangıç gecesi müsait değil');
+      return;
+    }
+    // lo'dan hi'ye dogru ardisik musait geceler; ilk dolu/bloklu gecede dur.
+    let lastFree = lo;
+    let cur = addDaysToDateStr(lo, 1);
+    while (cur <= hi) {
+      if (!isRoomNightAvailable(sel.roomId, cur)) break;
+      lastFree = cur;
+      cur = addDaysToDateStr(cur, 1);
+    }
+    const checkIn = lo;
+    const checkOut = addDaysToDateStr(lastFree, 1);
+    const nights = Math.max(1, Math.round(
+      (new Date(`${checkOut}T00:00:00Z`) - new Date(`${checkIn}T00:00:00Z`)) / 86400000
+    ));
+    if (lastFree < hi) toast.info('Seçim dolu/bloklu geceye kadar kısaltıldı');
+
+    setSelectedRoom(room);
+    setSelectedDate(new Date(`${checkIn}T00:00:00Z`));
+    setNewBooking({
+      guest_id: '', room_id: sel.roomId,
+      check_in: checkIn, check_out: checkOut,
+      guests_count: 2, adults: 2, children: 0, children_ages: [],
+      total_amount: (room.base_price || 100) * nights, status: 'confirmed'
+    });
+    setShowNewBookingDialog(true);
+  };
+
+  const handleCellMouseDown = (roomId, date) => {
+    const dStr = toDateStringUTC(date);
+    const sel = { roomId, startStr: dStr, endStr: dStr };
+    dragSelectRef.current = sel;
+    setDragSelect(sel);
+  };
+
+  const handleCellMouseEnter = (roomId, date) => {
+    const curSel = dragSelectRef.current;
+    if (!curSel || curSel.roomId !== roomId) return; // yalnizca ayni oda satiri
+    const dStr = toDateStringUTC(date);
+    if (dStr === curSel.endStr) return;
+    const next = { ...curSel, endStr: dStr };
+    dragSelectRef.current = next;
+    setDragSelect(next);
+  };
+
+  // Son finalize fonksiyonunu ref'te tut → pencere mouseup dinleyicisi tek sefer
+  // kaydedilir ama her zaman guncel state'i okur (stale closure yok).
+  useEffect(() => { finalizeDragSelectRef.current = openMultiNightFromSelection; });
+  useEffect(() => {
+    const onUp = () => {
+      const sel = dragSelectRef.current;
+      if (!sel) return;
+      dragSelectRef.current = null;
+      setDragSelect(null);
+      if (sel.startStr === sel.endStr) return; // surukleme yok → tek-tik handler'i isler
+      dragJustFinishedRef.current = true;
+      setTimeout(() => { dragJustFinishedRef.current = false; }, 0);
+      finalizeDragSelectRef.current(sel);
+    };
+    window.addEventListener('mouseup', onUp);
+    return () => window.removeEventListener('mouseup', onUp);
+  }, []);
 
   const handleBookingDoubleClick = async (booking) => {
     setDetailModalBookingId(booking.id);
@@ -756,6 +866,9 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
           groupBookings={groupBookings}
           getOccupancyForDate={getOccupancyForDate}
           onCellClick={handleCellClick}
+          onCellMouseDown={handleCellMouseDown}
+          onCellMouseEnter={handleCellMouseEnter}
+          dragSelect={dragSelect}
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}

@@ -38,6 +38,9 @@ const CalendarGrid = ({
   getOccupancyForDate,
   // Handlers
   onCellClick,
+  onCellMouseDown,
+  onCellMouseEnter,
+  dragSelect,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -447,20 +450,31 @@ const CalendarGrid = ({
                               roomStatus: room.status,
                             });
                             const occTint = getCellOccupancyTint(occStatus);
+                            // Tut-surukle cok-gece secimi: yalnizca ayni odadaki bos
+                            // hucreler vurgulanir; aradaki dolu/bloklu hucreler haric.
+                            const inDragSel = !!dragSelect && dragSelect.roomId === room.id && canCreate && (() => {
+                              const lo = dragSelect.startStr <= dragSelect.endStr ? dragSelect.startStr : dragSelect.endStr;
+                              const hi = dragSelect.startStr <= dragSelect.endStr ? dragSelect.endStr : dragSelect.startStr;
+                              return dStr >= lo && dStr <= hi;
+                            })();
 
                             return (
                               <div
                                 key={idx}
-                                className={`${CELL_CLS} flex-shrink-0 border-r border-gray-100 relative transition-colors group/cell ${
+                                className={`${CELL_CLS} flex-shrink-0 border-r border-gray-100 relative transition-colors group/cell select-none ${
                                   canCreate ? 'cursor-pointer' : 'cursor-default'
                                 } ${
                                   past ? 'bg-gray-100/50' : isToday(date) ? 'bg-blue-50/60' : isWeekend(date) ? 'bg-amber-50/30' : 'bg-white hover:bg-gray-50'
-                                } ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''}`}
+                                } ${roomBlock ? 'bg-gray-100/60 border-dashed' : ''} ${
+                                  inDragSel ? 'bg-indigo-100/70 ring-2 ring-inset ring-indigo-400 z-10' : ''
+                                }`}
                                 style={{
                                   height: `${rowHeight}px`, minHeight: `${rowHeight}px`, overflow: 'visible',
                                   ...(past && !roomBlock ? { backgroundImage: 'repeating-linear-gradient(135deg, transparent, transparent 8px, rgba(0,0,0,0.02) 8px, rgba(0,0,0,0.02) 9px)' } : {})
                                 }}
                                 onClick={() => !covered && !roomBlock && onCellClick(room.id, date)}
+                                onMouseDown={canCreate ? (e) => { if (e.button === 0) { e.preventDefault(); onCellMouseDown?.(room.id, date); } } : undefined}
+                                onMouseEnter={canCreate ? () => onCellMouseEnter?.(room.id, date) : undefined}
                                 onDragOver={(e) => onDragOver(e, room.id, date)}
                                 onDragLeave={onDragLeave}
                                 onDrop={(e) => onDrop(e, room.id, date)}
