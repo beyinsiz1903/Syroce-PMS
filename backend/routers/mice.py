@@ -2065,6 +2065,31 @@ async def list_fnb_orders(
     return {"orders": [d async for d in cur]}
 
 
+@router.get("/fnb-orders/open")
+async def list_open_fnb_orders(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Cross-event kitchen board: all OPEN F&B production orders for the
+    tenant, i.e. those still in `sent` or `acknowledged` status.
+
+    Aggregates orders across every event so kitchen staff can see and work
+    every open ticket from one panel instead of opening each event's modal.
+    Completed (terminal) orders are excluded so they drop off the board once
+    closed. Tenant-scoped — only the caller's own tenant's orders are
+    returned. Sorted oldest-first so the kitchen works the longest-waiting
+    ticket first."""
+    db = get_system_db()
+    cur = db.mice_fnb_orders.find(
+        {
+            "tenant_id": current_user.tenant_id,
+            "status": {"$in": ["sent", "acknowledged"]},
+        },
+        {"_id": 0},
+    ).sort("sent_at", 1)
+    orders = [d async for d in cur]
+    return {"orders": orders, "count": len(orders)}
+
+
 # ── F&B order lifecycle transition (kitchen ack → complete) ─────
 # Allowed forward transitions: sent → acknowledged → completed.
 # No transition is permitted out of a terminal (`completed`) state and a

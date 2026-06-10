@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 const SalesPipelineTab = lazy(() => import('@/components/mice/SalesPipelineTab'));
 const PackagesTab = lazy(() => import('@/components/mice/PackagesTab'));
 const BanquetCompetitorTab = lazy(() => import('@/components/mice/BanquetCompetitorTab'));
+const KitchenBoardTab = lazy(() => import('@/components/mice/KitchenBoardTab'));
 import AccountsView from '@/components/mice/AccountsView';
 import DiaryView from '@/components/mice/DiaryView';
 import ResourcesView from '@/components/mice/ResourcesView';
@@ -478,6 +479,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="events">Etkinlikler</TabsTrigger>
+          <TabsTrigger value="kitchen-board">Mutfak Panosu</TabsTrigger>
           <TabsTrigger value="diary">Function Diary</TabsTrigger>
           <TabsTrigger value="accounts">{t('cm.pages_MicePage.musteriler')}{loadedTabs.has('accounts') ? accounts.length : (counts.accounts ?? '…')})</TabsTrigger>
           <TabsTrigger value="spaces">Mekanlar ({loadedTabs.has('spaces') ? spaces.length : (counts.spaces ?? '…')})</TabsTrigger>
@@ -568,6 +570,14 @@ const MicePage = ({ user, tenant, onLogout }) => {
               </tbody>
             </table>
           </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="kitchen-board">
+          {visitedMiceTabs.has('kitchen-board') && (
+            <Suspense fallback={<div className="p-6 text-sm text-slate-500">{t('cm.pages_MicePage.yukleniyor_b597b')}</div>}>
+              <KitchenBoardTab />
+            </Suspense>
+          )}
         </TabsContent>
 
         <TabsContent value="diary">
