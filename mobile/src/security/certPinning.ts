@@ -105,7 +105,7 @@ function tryLoadPinnedFetch(pins: PinnedHost[]): FetchLike | null {
       if (init?.headers) {
         const h = init.headers as Record<string, string> | Headers;
         if (h instanceof Headers) {
-          h.forEach((v, k) => {
+          h.forEach((v: string, k: string) => {
             headers[k] = v;
           });
         } else {
