@@ -27,6 +27,7 @@ import {
   getRateTypeInfo,
   getUnassignedUrgency,
   sortByUrgency,
+  roomOccupancyStatus,
 } from './calendar';
 import { useTranslation } from 'react-i18next';
 
@@ -527,19 +528,30 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
       toast.error('Please select check-in and check-out dates');
       return;
     }
-    const checkIn = new Date(findRoomCriteria.check_in);
-    const checkOut = new Date(findRoomCriteria.check_out);
-    const available = rooms.filter(room => {
-      if (findRoomCriteria.room_type !== 'all' && room.room_type !== findRoomCriteria.room_type) return false;
-      if (room.capacity < findRoomCriteria.guests_count) return false;
-      const roomBookings = bookings.filter(b => b.room_id === room.id && b.status !== 'cancelled' && b.status !== 'checked_out' && b.status !== 'no_show');
-      return !roomBookings.some(b => {
-        const bStart = new Date(b.check_in);
-        const bEnd = new Date(b.check_out);
-        return checkIn < bEnd && checkOut > bStart;
+    try {
+      // Backend availability uç noktası her oda için açık `occupancy_status`
+      // (free/occupied/blocked) döndürür; bloklu/OOO odalar müsait sayılmaz.
+      // occupancy_status > reason önceliği roomOccupancyStatus yardımcısında.
+      const params = new URLSearchParams({
+        check_in: findRoomCriteria.check_in,
+        check_out: findRoomCriteria.check_out,
       });
-    });
-    setAvailableRooms(available);
+      if (findRoomCriteria.room_type && findRoomCriteria.room_type !== 'all') {
+        params.set('room_type', findRoomCriteria.room_type);
+      }
+      const res = await axios.get(`/pms/rooms/availability?${params.toString()}`);
+      const rows = Array.isArray(res.data) ? res.data : [];
+      const available = rows.filter(room => {
+        if (roomOccupancyStatus(room) !== 'free') return false;
+        if ((room.capacity ?? 0) < findRoomCriteria.guests_count) return false;
+        return true;
+      });
+      setAvailableRooms(available);
+    } catch (error) {
+      console.error('Find room error:', error);
+      toast.error('Müsait oda sorgulanamadı');
+      setAvailableRooms([]);
+    }
   };
 
   // ─── Folio / Sidebar ──────────────────────────────────────

@@ -54,6 +54,54 @@ export const getBookingForRoomOnDate = (roomId, date, bookings) => {
   });
 };
 
+// Room statuses that mark the room itself as unsellable (out of order / out of
+// service / maintenance) regardless of the booking calendar. Mirror of the
+// mobile grid helper so web ve mobil aynı önceliği paylaşır.
+export const BLOCKED_ROOM_STATUSES = new Set([
+  'out_of_order',
+  'out_of_service',
+  'maintenance',
+  'ooo',
+  'oos',
+]);
+
+export const isBlockedRoomStatus = (status) =>
+  BLOCKED_ROOM_STATUSES.has((status || '').toLowerCase());
+
+// Normalizes the backend's explicit occupancy discriminator to a status string,
+// or null when the field is absent/unrecognized (so callers fall back to the
+// legacy free-text `reason` heuristic). Tolerant of casing/whitespace.
+export const normalizeOccupancyStatus = (value) => {
+  switch ((value || '').trim().toLowerCase()) {
+    case 'free':
+      return 'free';
+    case 'occupied':
+      return 'occupied';
+    case 'blocked':
+      return 'blocked';
+    default:
+      return null;
+  }
+};
+
+// Resolve a room's occupancy ('free' | 'occupied' | 'blocked') from an
+// availability payload. OOO/OOS room status wins over everything; otherwise we
+// trust the backend's explicit `occupancy_status` discriminator (occupied >
+// blocked > free) when present. Only when it is missing do we fall back to the
+// legacy free-text `reason` heuristic ("booked" -> occupied, else blocked) so
+// localized reason metni (ör. "rezerve") doluluğu yanlış göstermesin.
+export const roomOccupancyStatus = (room) => {
+  if (!room) return 'free';
+  if (isBlockedRoomStatus(room.status)) return 'blocked';
+  const explicit = normalizeOccupancyStatus(room.occupancy_status);
+  if (explicit) return explicit;
+  if (room.available === false) {
+    const reason = (room.reason || '').toLowerCase();
+    return reason.includes('booked') ? 'occupied' : 'blocked';
+  }
+  return 'free';
+};
+
 // Get room block for room on specific date
 export const getRoomBlockForDate = (roomId, date, roomBlocks) => {
   const dayStr = toDateStringUTC(date);
