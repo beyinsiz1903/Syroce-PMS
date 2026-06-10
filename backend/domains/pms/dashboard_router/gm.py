@@ -322,10 +322,18 @@ async def get_enhanced_snapshot(
         _compute_period_metrics(tid, last_week, total_rooms),
     )
 
-    # pending_tasks has no per-date history; report the current backlog for every
-    # period so the delta is an honest 0 rather than a fabricated offset.
-    for _m in (today_metrics, yesterday_metrics, last_week_metrics):
-        _m['pending_tasks'] = pending_tasks
+    # pending_tasks: today is the live backlog; yesterday/last-week come from the
+    # daily snapshots the night audit records (no per-date backlog history
+    # otherwise). When a snapshot is missing for a period, fall back to today's
+    # backlog so the delta is an honest 0 rather than a fabricated offset.
+    from domains.pms.dashboard_router.snapshots import get_pending_task_snapshot
+    yest_snap, last_week_snap = await asyncio.gather(
+        get_pending_task_snapshot(tid, yesterday.isoformat()),
+        get_pending_task_snapshot(tid, last_week.isoformat()),
+    )
+    today_metrics['pending_tasks'] = pending_tasks
+    yesterday_metrics['pending_tasks'] = yest_snap if yest_snap is not None else pending_tasks
+    last_week_metrics['pending_tasks'] = last_week_snap if last_week_snap is not None else pending_tasks
 
     return {
         'today': today_metrics,

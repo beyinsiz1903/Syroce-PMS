@@ -113,6 +113,12 @@ async def ensure_night_audit_indexes():
             "idx_folio_charges_na_dedup",
             {"unique": True, "partialFilterExpression": {"business_date": {"$exists": True}, "charge_type": {"$exists": True}}},
         ),
+        (
+            "pending_task_snapshots",
+            [("tenant_id", 1), ("snapshot_date", 1)],
+            "idx_pending_task_snapshots_unique",
+            {"unique": True},
+        ),
     ]
     for coll, keys, name, kwargs in idx_defs:
         try:
@@ -404,6 +410,20 @@ async def _posting_and_close(run_id: str, tenant_id: str, bd: str) -> dict:
         "status": S_COMPLETED, "stage": ST_COMPLETED,
         "completed_at": _now_iso(), "updated_at": _now_iso(),
     }})
+
+    # Record the daily high/urgent pending-task backlog snapshot so the GM
+    # dashboard can show a real day-over-day delta for pending tasks. The
+    # backlog is point-in-time only (no per-date history), so the night audit —
+    # the scheduled per-day per-tenant worker — is the natural place to capture
+    # it. Best-effort: never let a snapshot failure affect the close result.
+    try:
+        from domains.pms.dashboard_router.snapshots import (
+            record_pending_task_snapshot,
+        )
+        await record_pending_task_snapshot(tenant_id, db)
+    except Exception as exc:
+        logger.warning("pending-task snapshot skipped for tenant=%s: %s", tenant_id, exc)
+
     final = await db.night_audit_runs.find_one({"id": run_id}, {"_id": 0})
     return {"success": True, "run": final}
 
