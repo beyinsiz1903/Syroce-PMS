@@ -22,12 +22,13 @@ import EventFormModal from '@/components/mice/modals/EventFormModal';
 import MenuFormModal from '@/components/mice/modals/MenuFormModal';
 import BeoModal from '@/components/mice/modals/BeoModal';
 import KitchenModal from '@/components/mice/modals/KitchenModal';
+import FnbOrderModal from '@/components/mice/modals/FnbOrderModal';
 import OpsModal from '@/components/mice/modals/OpsModal';
 import { STATUS } from '@/components/mice/modals/constants';
 import {
   CalendarDays, Plus, Building2, UtensilsCrossed, RefreshCw,
   Trash2, FileText, Sparkles, ClipboardList, ChefHat, Briefcase,
-  History as HistoryIcon, Pencil,
+  History as HistoryIcon, Pencil, Send,
 } from 'lucide-react';
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
 
@@ -64,6 +65,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
   const [beoData, setBeoData] = useState(null);
   const [historyEvent, setHistoryEvent] = useState(null);
   const [kitchenData, setKitchenData] = useState(null);
+  const [fnbOrderEvent, setFnbOrderEvent] = useState(null);
   const [opsData, setOpsData] = useState(null);
   const [opsDate, setOpsDate] = useState(new Date().toISOString().slice(0, 10));
   const [eventTab, setEventTab] = useState('basics');
@@ -539,6 +541,10 @@ const MicePage = ({ user, tenant, onLogout }) => {
                                 onClick={() => showKitchen(ev.id)}>
                           <ChefHat className="w-4 h-4" />
                         </Button>
+                        <Button size="sm" variant="ghost" title="Mutfağa Gönder"
+                                onClick={() => setFnbOrderEvent(ev)}>
+                          <Send className="w-4 h-4" />
+                        </Button>
                         <Button size="sm" variant="ghost" title={t('cm.pages_MicePage.degisiklik_gecmisi')}
                                 onClick={() => setHistoryEvent(ev)}>
                           <HistoryIcon className="w-4 h-4" />
@@ -743,6 +749,11 @@ const MicePage = ({ user, tenant, onLogout }) => {
       {/* Kitchen ticket modal */}
       {kitchenData && (
         <KitchenModal kitchenData={kitchenData} onClose={() => setKitchenData(null)} />
+      )}
+
+      {/* Send F&B order to kitchen modal */}
+      {fnbOrderEvent && (
+        <FnbOrderModal event={fnbOrderEvent} onClose={() => setFnbOrderEvent(null)} />
       )}
 
       {/* Entity history drawer */}
