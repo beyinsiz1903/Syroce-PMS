@@ -25,3 +25,12 @@ gauge, `..._deferred_total` counter) on deferral, throttles retries (60s), and
 powers ops endpoint `GET /api/production-golive/uniqueness-backstops`. The
 non-unique index batch can still be built once; only the unique backstops retry.
 Boot prewarms both ensure fns in server.py `_startup` so deferral surfaces at boot.
+
+**Residue often self-clears:** the ~29 legacy `corporate_contracts.contact_email`
+dup rows that kept `uniq_corp_contract_contact_email` deferred were E2E_STRESS
+residue; the stress CRM residue sweeper (HARD DELETE) removes them, so the
+backstop self-heals on the next boot/ensure call with NO manual dedupe needed.
+Before running `scripts/dedupe_crm_uniqueness`, check live first: dry-run +
+`index_information()` may already show 0 dup groups and the unique index built.
+Run the script against Atlas with `MONGO_URL=$MONGO_ATLAS_URI DB_NAME=syroce-pms`
+(get_system_db reads MONGO_URL; DB_NAME defaults to hotel_pms, not the real DB).
