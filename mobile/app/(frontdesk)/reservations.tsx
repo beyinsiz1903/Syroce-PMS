@@ -3,6 +3,7 @@ import { FlatList, Pressable, RefreshControl, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Badge, Body, Card, Field, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { DatePicker } from '../../src/components/DatePicker';
 import { FilterChips } from '../../src/components/FilterChips';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { spacing, useTheme } from '../../src/theme';
@@ -50,21 +51,6 @@ function nightsBetween(checkIn?: string, checkOut?: string): number | null {
   const b = new Date(checkOut).getTime();
   if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return null;
   return Math.round((b - a) / 86_400_000);
-}
-
-// Lightweight DD.MM.YYYY → YYYY-MM-DD normaliser so the backend gets ISO dates
-// while staff type the familiar Turkish format. Empty / partial input is
-// passed through unchanged (the API simply ignores blank filters).
-function toISODate(input: string): string | undefined {
-  const v = input.trim();
-  if (!v) return undefined;
-  const dm = v.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
-  if (dm) {
-    const [, d, m, y] = dm;
-    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  return undefined;
 }
 
 function ReservationRow({ r, onPress }: { r: Reservation; onPress: () => void }) {
@@ -121,8 +107,8 @@ export default function ReservationsScreen() {
     () => ({
       query: query.trim() || undefined,
       status: status || undefined,
-      check_in: toISODate(checkInFrom),
-      check_out: toISODate(checkOutTo),
+      check_in: checkInFrom || undefined,
+      check_out: checkOutTo || undefined,
     }),
     [query, status, checkInFrom, checkOutTo],
   );
@@ -182,21 +168,22 @@ export default function ReservationsScreen() {
       <FilterChips options={STATUS_OPTIONS} value={status} onChange={setStatus} />
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
         <View style={{ flex: 1 }}>
-          <Field
+          <DatePicker
             placeholder={tr.reservations.checkInFrom}
             value={checkInFrom}
-            onChangeText={setCheckInFrom}
-            autoCapitalize="none"
-            keyboardType="numbers-and-punctuation"
+            onChange={(iso) => setCheckInFrom(iso || '')}
+            allowClear
+            testID="smoke-reservations-checkin"
           />
         </View>
         <View style={{ flex: 1 }}>
-          <Field
+          <DatePicker
             placeholder={tr.reservations.checkOutTo}
             value={checkOutTo}
-            onChangeText={setCheckOutTo}
-            autoCapitalize="none"
-            keyboardType="numbers-and-punctuation"
+            onChange={(iso) => setCheckOutTo(iso || '')}
+            minimumDate={checkInFrom || undefined}
+            allowClear
+            testID="smoke-reservations-checkout"
           />
         </View>
       </View>

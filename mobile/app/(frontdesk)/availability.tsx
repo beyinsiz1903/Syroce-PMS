@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { Body, Card, Field, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { Body, Card, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { DatePicker } from '../../src/components/DatePicker';
 import { FilterChips } from '../../src/components/FilterChips';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { radius, spacing, useTheme } from '../../src/theme';
@@ -20,19 +21,11 @@ const CELL_WIDTH = 40;
 const CELL_HEIGHT = 32;
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function toISODate(input: string): string | undefined {
-  const v = input.trim();
-  if (!v) return undefined;
-  const dm = v.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
-  if (dm) {
-    const [, d, m, y] = dm;
-    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  return undefined;
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function dayHeaderLabel(iso: string): { dow: string; dom: string } {
@@ -92,7 +85,7 @@ export default function AvailabilityScreen() {
   const [startInput, setStartInput] = useState('');
   const [days, setDays] = useState('7');
 
-  const startDate = toISODate(startInput) || todayISO();
+  const startDate = startInput || todayISO();
   const dayCount = Number(days) || 7;
 
   const q = useQuery({
@@ -110,12 +103,11 @@ export default function AvailabilityScreen() {
     <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg }}>
       <H1>{tr.availability.title}</H1>
       <View style={{ height: spacing.sm }} />
-      <Field
+      <DatePicker
         placeholder={tr.availability.startDate}
         value={startInput}
-        onChangeText={setStartInput}
-        autoCapitalize="none"
-        keyboardType="numbers-and-punctuation"
+        onChange={(iso) => setStartInput(iso || '')}
+        allowClear
         testID="smoke-availability-start"
       />
       <View style={{ height: spacing.sm }} />
