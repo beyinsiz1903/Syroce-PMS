@@ -1,6 +1,7 @@
 node_modules/
 .expo/
 dist/
+.unit-build/
 web-build/
 *.log
 .env
