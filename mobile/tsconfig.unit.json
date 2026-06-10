@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "outDir": ".unit-build",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": [
+    "src/components/datePickerUtils.ts",
+    "src/components/__tests__/datePickerUtils.test.ts"
+  ]
+}

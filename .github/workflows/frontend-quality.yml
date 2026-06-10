@@ -50,6 +50,28 @@ jobs:
             - name: Run vitest (hard gate)
               run: cd frontend && yarn test
 
+    # ============ MOBILE UNIT TESTS (HARD GATE) ============
+    # Mobile date-math unit suite (DatePicker) via Node's built-in test
+    # runner — pure TS compiled with the already-pinned `typescript` devDep,
+    # no extra dependencies, no emulator/server. Blocks merges if the picker's
+    # date math regresses. See mobile/src/components/datePickerUtils.ts.
+    mobile-unit:
+        name: Mobile Unit Tests (node:test)
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v5
+            - name: Set up Node.js
+              uses: actions/setup-node@v5
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'npm'
+                  cache-dependency-path: mobile/package-lock.json
+            - name: Install
+              run: cd mobile && npm ci
+            - name: Run mobile unit tests (hard gate)
+              run: cd mobile && npm run test:unit
+
     # ============ E2E SMOKE (HARD GATE on PR) ============
     e2e-smoke:
         runs-on: ubuntu-latest

@@ -9,6 +9,8 @@
     "web": "expo start --web",
     "smoke": "bash scripts/smoke.sh",
     "smoke:doctor": "command -v maestro >/dev/null 2>&1 && maestro --version || (echo 'Maestro CLI missing. See mobile/.maestro/README.md' && exit 127)",
+    "test": "yarn test:unit",
+    "test:unit": "rm -rf .unit-build && tsc -p tsconfig.unit.json && node --test $(find .unit-build -name '*.test.js')",
     "test:e2e:smoke": "playwright test --config=e2e/playwright.config.ts"
   },
   "dependencies": {

@@ -2,6 +2,14 @@ import React, { useMemo, useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
 import { radius, spacing, useTheme } from '../theme';
 import { tr } from '../i18n/tr';
+import {
+  buildMonthCells,
+  isBeforeMinParts,
+  parseISO,
+  toISO,
+  todayParts,
+  todayShortcutISO,
+} from './datePickerUtils';
 
 type SharedProps = {
   placeholder?: string;
@@ -31,35 +39,6 @@ type DatePickerProps = SingleProps | RangeProps;
 
 const WEEKDAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 
-function pad(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
-function toISO(y: number, m: number, d: number): string {
-  return `${y}-${pad(m + 1)}-${pad(d)}`;
-}
-
-// Parse a YYYY-MM-DD string into local Y/M/D parts (no timezone shift).
-function parseISO(iso?: string): { y: number; m: number; d: number } | null {
-  if (!iso) return null;
-  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  const y = Number(match[1]);
-  const m = Number(match[2]) - 1;
-  const d = Number(match[3]);
-  if (m < 0 || m > 11 || d < 1 || d > 31) return null;
-  return { y, m, d };
-}
-
-function daysInMonth(y: number, m: number): number {
-  return new Date(y, m + 1, 0).getDate();
-}
-
-// Monday-based weekday index (0 = Monday … 6 = Sunday).
-function firstWeekdayIndex(y: number, m: number): number {
-  return (new Date(y, m, 1).getDay() + 6) % 7;
-}
-
 function formatDisplay(iso?: string): string | null {
   const parts = parseISO(iso);
   if (!parts) return null;
@@ -81,10 +60,7 @@ export const DatePicker: React.FC<DatePickerProps> = (props) => {
   const c = useTheme();
   const [open, setOpen] = useState(false);
 
-  const today = useMemo(() => {
-    const now = new Date();
-    return { y: now.getFullYear(), m: now.getMonth(), d: now.getDate() };
-  }, []);
+  const today = useMemo(() => todayParts(), []);
 
   const singleValue = isRange ? undefined : props.value;
   const rangeStart = isRange ? props.startValue : undefined;
@@ -114,10 +90,8 @@ export const DatePicker: React.FC<DatePickerProps> = (props) => {
     });
   };
 
-  const isBeforeMin = (y: number, m: number, d: number): boolean => {
-    if (!minParts) return false;
-    return toISO(y, m, d) < toISO(minParts.y, minParts.m, minParts.d);
-  };
+  const isBeforeMin = (y: number, m: number, d: number): boolean =>
+    isBeforeMinParts(minParts, y, m, d);
 
   const pickSingle = (iso: string) => {
     if (props.mode === 'range') return;
@@ -171,14 +145,7 @@ export const DatePicker: React.FC<DatePickerProps> = (props) => {
     }
   }, [view]);
 
-  const cells = useMemo(() => {
-    const lead = firstWeekdayIndex(view.y, view.m);
-    const total = daysInMonth(view.y, view.m);
-    const out: (number | null)[] = [];
-    for (let i = 0; i < lead; i += 1) out.push(null);
-    for (let d = 1; d <= total; d += 1) out.push(d);
-    return out;
-  }, [view]);
+  const cells = useMemo(() => buildMonthCells(view.y, view.m), [view]);
 
   return (
     <View>
@@ -378,8 +345,8 @@ export const DatePicker: React.FC<DatePickerProps> = (props) => {
               <Pressable
                 onPress={() => {
                   setView({ y: today.y, m: today.m });
-                  if (isBeforeMin(today.y, today.m, today.d)) return;
-                  const todayISO = toISO(today.y, today.m, today.d);
+                  const todayISO = todayShortcutISO(today, minimumDate);
+                  if (!todayISO) return;
                   if (props.mode === 'range') {
                     // Start a fresh range at today; keep open to pick the end.
                     props.onRangeChange(todayISO, undefined);
