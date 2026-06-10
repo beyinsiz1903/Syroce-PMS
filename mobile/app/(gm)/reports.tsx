@@ -100,9 +100,14 @@ export default function ReportsScreen() {
     return currentMonthRange();
   }, [preset, customStart, customEnd]);
 
-  // Only query once a custom range is fully chosen; otherwise fall back to the
-  // current-month default so the section never shows a half-applied range.
-  const customReady = preset !== 'custom' || (!!customStart && !!customEnd);
+  // Custom-range selection states. A fully chosen custom range queries those
+  // dates; clearing it (allowClear → both bounds undefined) falls back to the
+  // current-month default (see `range` above) and re-fires the query. Only the
+  // half-applied state (a start without an end) gates the query, so the section
+  // never flickers a partial range while the user is mid-selection.
+  const customComplete = !!customStart && !!customEnd;
+  const customHalfApplied = preset === 'custom' && !!customStart !== !!customEnd;
+  const showRangePrompt = preset === 'custom' && !customComplete;
 
   const finance = useQuery({
     queryKey: ['report-finance-snapshot'],
@@ -112,7 +117,7 @@ export default function ReportsScreen() {
   const segment = useQuery({
     queryKey: ['report-market-segment', range.start, range.end],
     queryFn: () => getMarketSegment(range.start, range.end),
-    enabled: financeReports && customReady,
+    enabled: financeReports && !customHalfApplied,
   });
   const aging = useQuery({
     queryKey: ['report-company-aging'],
@@ -212,8 +217,8 @@ export default function ReportsScreen() {
             testID="report-segment-custom"
           />
         ) : null}
-        <Muted>{customReady ? formatRangeLabel(range.start, range.end) : tr.manager.rangePick}</Muted>
-        {!customReady ? null : segment.isLoading || segment.isError ? (
+        <Muted>{showRangePrompt ? tr.manager.rangePick : formatRangeLabel(range.start, range.end)}</Muted>
+        {customHalfApplied ? null : segment.isLoading || segment.isError ? (
           <SectionState loading={segment.isLoading} error={segment.isError} />
         ) : (
           <SegmentList data={segment.data?.market_segments ?? {}} />

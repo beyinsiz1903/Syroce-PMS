@@ -25,6 +25,8 @@ const tr_clearFilters = 'Filtreleri temizle'; // reservations.clearFilters
 const tr_clear = 'Temizle'; // datePicker.clear
 const tr_today = 'Bugün'; // datePicker.today
 const tr_close = 'Kapat'; // datePicker.close
+const tr_rangeCustom = 'Özel'; // manager.rangeCustom
+const tr_rangePick = 'Tarih aralığı seç'; // manager.rangePick
 
 // ─────────────────────────────────────────────────────────────────────────
 // F10A — Front-desk Reservations + Availability interactive flow.
@@ -257,6 +259,128 @@ test.describe.serial('Mobile smoke · frontdesk · reservations + availability',
         expect(
             consoleErrors,
             `Availability console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
+        ).toHaveLength(0);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// F10A — GM Reports market-segment date-range: clear → default month (Task #307).
+// ─────────────────────────────────────────────────────────────────────────
+// Task #296 covered preset switching + custom-range selection. This step locks
+// in the allowClear fallback that was not yet verified: after a custom range is
+// applied, tapping "Temizle" must reset the range and re-fire the market-segment
+// query against the current-month default (by-design fallback, regression-prone):
+//   1) Switch the range chips to "Özel" → the custom DatePicker renders.
+//   2) Pick a start then an end day in the current month → assert the
+//      market-segment request actually carries those custom ISO dates (honest
+//      proof the custom range drives the query; row counts are live data and
+//      not asserted — the request contract is the deterministic signal).
+//   3) allowClear: tap "Temizle" and assert the NEXT market-segment request
+//      carries the current-month dates (start = 1st → end = today). No
+//      skip-as-pass — the reset must be observed on the wire, not assumed.
+//   4) Assert the section label reverts from the custom-range label to the
+//      "Tarih aralığı seç" prompt (preset stays custom, range is empty).
+test.describe.serial('Mobile smoke · gm · reports date-range', () => {
+    test('[gm] reports date-range clear → varsayılan aya döner', async ({ page }) => {
+        const obs = attachObservers(page);
+        await loginAsRole(page, 'gm');
+
+        await page.goto('/reports', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+        const rangeChips = page.locator('[data-testid="report-segment-range"]').first();
+        await expect(rangeChips, 'Rapor tarih aralığı çipleri render olmadı').toBeVisible({
+            timeout: 20_000,
+        });
+
+        // Deterministic in-month days. The reports picker sets no minimumDate and
+        // opens on today's month, so 05 and 15 always exist and are tappable. They
+        // differ from the current-month default (start = 01 → end = today), so the
+        // custom request and the cleared this-month request are distinguishable.
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const monthPrefix = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+        const customStartISO = `${monthPrefix}-05`;
+        const customEndISO = `${monthPrefix}-15`;
+        const monthFirstISO = `${monthPrefix}-01`;
+        const todayISO = `${monthPrefix}-${pad(now.getDate())}`;
+
+        const SEGMENT = '/api/reports/market-segment';
+        const dayCell = (iso: string) => page.locator(`[aria-label="${iso}"]`).first();
+
+        // 1) Switch to the "Özel" (custom) preset → the DatePicker appears.
+        await rangeChips.getByText(tr_rangeCustom, { exact: true }).first().click();
+        const customPicker = page.locator('[data-testid="report-segment-custom"]').first();
+        await expect(customPicker, 'Özel tarih seçici render olmadı').toBeVisible({
+            timeout: 15_000,
+        });
+
+        // 2) Pick start, then end — the both-bounds segment request with the
+        //    custom ISO dates is the deterministic "custom range drives the
+        //    query" proof.
+        await customPicker.click();
+        await expect(dayCell(customStartISO), 'Takvim açılmadı / başlangıç günü yok').toBeVisible({
+            timeout: 15_000,
+        });
+        await dayCell(customStartISO).click();
+        const customReq = page.waitForRequest(
+            (req) =>
+                req.url().includes(SEGMENT) &&
+                req.url().includes(`start_date=${customStartISO}`) &&
+                req.url().includes(`end_date=${customEndISO}`),
+            { timeout: 15_000 },
+        );
+        await dayCell(customEndISO).click();
+        await customReq;
+
+        // Range complete → modal closes and the section label shows the range.
+        await expect(dayCell(customStartISO), 'Özel aralık sonrası modal kapanmadı').toBeHidden({
+            timeout: 10_000,
+        });
+        await expect(
+            page.getByText(tr_rangePick).first(),
+            'Özel aralık seçiliyken prompt hâlâ görünüyor',
+        ).toBeHidden({ timeout: 10_000 });
+
+        // 3) allowClear → "Temizle" must reset the range and re-fire the
+        //    market-segment query against the current-month default (1st →
+        //    today). Observing the request on the wire is the honest proof of
+        //    the by-design fallback — no skip-as-pass.
+        const clearedReq = page.waitForRequest(
+            (req) =>
+                req.url().includes(SEGMENT) &&
+                req.url().includes(`start_date=${monthFirstISO}`) &&
+                req.url().includes(`end_date=${todayISO}`),
+            { timeout: 15_000 },
+        );
+        await customPicker.click();
+        await expect(dayCell(customStartISO), 'Temizle öncesi takvim açılmadı').toBeVisible({
+            timeout: 15_000,
+        });
+        await page.getByText(tr_clear, { exact: true }).first().click();
+        await clearedReq;
+
+        // 4) Modal closed, preset stays "Özel" (picker still rendered) but the
+        //    label reverts from the custom-range label to the pick prompt.
+        await expect(dayCell(customStartISO), 'Temizle sonrası modal kapanmadı').toBeHidden({
+            timeout: 10_000,
+        });
+        await expect(customPicker, 'Temizle sonrası özel seçici kayboldu').toBeVisible({
+            timeout: 10_000,
+        });
+        await expect(
+            page.getByText(tr_rangePick).first(),
+            'Temizle sonrası "Tarih aralığı seç" promptu dönmedi',
+        ).toBeVisible({ timeout: 10_000 });
+
+        const inspect = await inspectPageContent(page);
+        expect(inspect.ok, `Raporlar ekranı boş/hata: ${inspect.reason}`).toBeTruthy();
+        expect(inspect.pii_findings ?? [], 'Rapor tarih aralığı akışında PII leak').toHaveLength(0);
+
+        const { consoleErrors } = obs.flush();
+        expect(
+            consoleErrors,
+            `Reports date-range console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
         ).toHaveLength(0);
     });
 });
