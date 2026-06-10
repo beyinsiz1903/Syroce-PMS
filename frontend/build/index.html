@@ -103,7 +103,10 @@
                     'Failed to fetch dynamically imported module',
                     'error loading dynamically imported module',
                     'is not a valid JavaScript MIME type',
-                    'Unable to preload CSS'
+                    'Unable to preload CSS',
+                    // Resolved-but-invalid module (no default export) normalized
+                    // by lazyWithPreload.js — keep in sync with INVALID_CHUNK_MODULE_MSG.
+                    'Dynamically imported module is invalid'
                 ];
                 function isChunkError(msg) {
                     if (!msg) return false;
@@ -123,8 +126,10 @@
                     if (window.location.search.indexOf('_chunkreload=1') !== -1) return true;
                     return false;
                 }
+                // Returns true if it initiated a heal reload, false if the latch
+                // is already spent (genuinely broken deploy → let it surface).
                 function reloadOnce() {
-                    if (alreadyHealed()) return;
+                    if (alreadyHealed()) return false;
                     window.__syroceChunkReloaded = true;   // in-memory latch (loop-safe even if storage denied)
                     window.__syroceChunkHealing = true;    // tells Sentry beforeSend this incident is benign
                     var stored = false;
@@ -137,6 +142,7 @@
                         u.searchParams.set('_chunkreload', '1');
                         window.location.replace(u.toString());
                     }
+                    return true;
                 }
                 window.addEventListener('vite:preloadError', function (e) {
                     if (e && e.preventDefault) e.preventDefault();
@@ -150,6 +156,13 @@
                     var msg = r && (r.message || (typeof r === 'string' ? r : ''));
                     if (isChunkError(msg)) reloadOnce();
                 });
+                // React render-path chunk errors (a React.lazy import that rejects
+                // DURING render) are caught by the in-app ErrorBoundary and never
+                // fire window 'error'/'unhandledrejection', so the listeners above
+                // can't see them. Expose the SAME one-shot latch + matcher for the
+                // ErrorBoundary to call, keeping a single shared "reload once" guarantee.
+                window.__syroceIsChunkError = isChunkError;
+                window.__syroceChunkReloadOnce = reloadOnce;
             })();
         </script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
@@ -158,7 +171,7 @@
         -->
         <script src="https://unpkg.com/rrweb@latest/dist/rrweb.min.js"></script>
         <script src="https://d2adkz2s9zrlge.cloudfront.net/rrweb-recorder-20250919-1.js"></script>
-      <script type="module" crossorigin src="/js/index-BGYgTdsd.js"></script>
+      <script type="module" crossorigin src="/js/index-DOQYPKHA.js"></script>
       <link rel="modulepreload" crossorigin href="/js/rolldown-runtime-DW7kkdiz.js">
       <link rel="modulepreload" crossorigin href="/js/vendor-i18n-C7lUWOfQ.js">
       <link rel="modulepreload" crossorigin href="/js/vendor-motion-DtDr3HXi.js">
@@ -167,7 +180,7 @@
       <link rel="modulepreload" crossorigin href="/js/vendor-react-BVaOz5QP.js">
       <link rel="modulepreload" crossorigin href="/js/vendor-ui-Bb2dwoYX.js">
       <link rel="modulepreload" crossorigin href="/js/vendor-icons-D6ItQZGb.js">
-      <link rel="modulepreload" crossorigin href="/js/prefetch-AQaLtibs.js">
+      <link rel="modulepreload" crossorigin href="/js/prefetch-Dqi3AjBt.js">
       <link rel="modulepreload" crossorigin href="/js/utils-DbH9SL_t.js">
       <link rel="modulepreload" crossorigin href="/js/button-BAmSNFzi.js">
       <link rel="modulepreload" crossorigin href="/js/alert-dialog-Bb1Pc6QO.js">
@@ -181,7 +194,7 @@
       <link rel="modulepreload" crossorigin href="/js/NotificationContext-KQrg2jQ9.js">
       <link rel="modulepreload" crossorigin href="/js/i18n-x4ac5oZK.js">
       <link rel="modulepreload" crossorigin href="/js/dialogs-CkCngYkh.js">
-      <link rel="modulepreload" crossorigin href="/js/routeDefinitions-IN3_mn9b.js">
+      <link rel="modulepreload" crossorigin href="/js/routeDefinitions-Cc9neqLZ.js">
       <link rel="modulepreload" crossorigin href="/js/featureFlags-CDxZVCLN.js">
       <link rel="stylesheet" crossorigin href="/assets/index-EJIzb_O2.css">
     </head>
