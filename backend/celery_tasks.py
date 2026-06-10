@@ -1307,6 +1307,23 @@ _RNL_HEARTBEAT_STALE_HOURS = 36
 # Re-alert at most once per day when the heartbeat stays stale.
 _RNL_HEARTBEAT_REALERT_HOURS = 24
 
+# Task #242: duplicate-prevention unique-index backstop deferral monitor.
+# Each backstop self-heals once duplicate residue is cleaned, but while it is
+# deferred the "no duplicate supplier/contract" safeguard is OFF for everyone
+# (the index is global across tenants). This monitor reads the backstop status
+# and emails ops when any backstop stays deferred past a grace window, so the
+# residue is cleaned promptly instead of leaving duplicates possible for days.
+_BACKSTOP_ALERT_COLL = "unique_backstop_alert_state"
+# How long a backstop may stay deferred before we alert. A short grace window
+# avoids paging on transient build contention while still flagging a genuine
+# duplicate-residue deferral the same day. Overridable for ops tuning.
+_BACKSTOP_DEFER_ALERT_HOURS = float(
+    os.environ.get("UNIQUE_BACKSTOP_DEFER_ALERT_HOURS", "6") or "6")
+# Re-alert at most once per this window while a backstop stays deferred, so a
+# multi-day residue does not page on every hourly check.
+_BACKSTOP_REALERT_HOURS = float(
+    os.environ.get("UNIQUE_BACKSTOP_REALERT_HOURS", "24") or "24")
+
 
 async def _maybe_dispatch_rnl_manual_required_alert(
     *,
@@ -1714,6 +1731,230 @@ async def _rnl_duplicate_heartbeat_check_async() -> dict[str, Any]:
         "age_hours": round(age_hours, 2),
         "baseline_field": baseline_field,
         "baseline_at": baseline_iso,
+    }
+
+
+@celery_app.task(name='celery_tasks.unique_backstop_deferral_check_task')
+def unique_backstop_deferral_check_task():
+    """Task #242: alert ops by email when a duplicate-prevention safeguard is off.
+
+    The "no duplicate supplier/contract" guards are race-safe only behind global
+    partial unique indexes (the *backstops*). A build is deferred when legacy
+    duplicate rows exist, silently turning the safeguard OFF for everyone until
+    the residue is cleaned. Task #231 made this observable (metric + ops
+    endpoint) but ops only see it if they look. This periodic check reads the
+    backstop status and emails ops when any backstop has stayed deferred past a
+    grace window, so duplicates do not stay possible for days unnoticed.
+    """
+    return asyncio.run(_unique_backstop_deferral_check_async())
+
+
+async def _unique_backstop_deferral_check_async() -> dict[str, Any]:
+    """Async body: attempt the backstop builds, then alert on lingering deferrals.
+
+    The ``index_backstops`` registry is in-process state, and the Celery worker
+    is a separate process from the API, so its registry starts empty. We touch
+    the same lazy index builders the ops endpoint uses so a build is attempted
+    (and self-heals) here, then read the resulting status. Per-backstop deferral
+    duration + re-alert suppression are persisted in Mongo so we can alert "off
+    for longer than a threshold" and avoid paging on every hourly run.
+    """
+    from core.database import db
+    from shared_kernel import index_backstops
+
+    # Touch the lazy index builders so a not-yet-attempted backstop is attempted
+    # (and self-heals) in this worker process, mirroring the ops endpoint.
+    try:
+        from routers.mice import _ensure_indexes as _mice_ensure_indexes
+        await _mice_ensure_indexes()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("backstop monitor: mice ensure_indexes failed: %s", exc)
+    try:
+        from domains.revenue.rms_router.sales import _ensure_contract_indexes
+        await _ensure_contract_indexes()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "backstop monitor: contract ensure_indexes failed: %s", exc)
+
+    now = datetime.now(UTC)
+    now_iso = now.isoformat()
+
+    backstops = index_backstops.list_status()
+    deferred = [b for b in backstops if b.get("status") == "deferred"]
+    deferred_names = {b["name"] for b in deferred}
+
+    # Clear persisted state for any backstop that is no longer deferred (it
+    # self-healed) so a future deferral starts a fresh grace window and a
+    # resolved one never re-alerts.
+    cleared = []
+    async for st in db[_BACKSTOP_ALERT_COLL].find({}, {"_id": 0}):
+        name = st.get("backstop")
+        if name and name not in deferred_names:
+            await db[_BACKSTOP_ALERT_COLL].delete_one({"backstop": name})
+            cleared.append(name)
+
+    if not deferred:
+        # No noise while all backstops are active.
+        return {
+            "deferred_count": 0,
+            "alert_sent": False,
+            "reason": "all_active",
+            "cleared": cleared,
+        }
+
+    # Stamp first_deferred_at on first sighting; compute how long each has been
+    # off and whether the grace window has elapsed.
+    ripe: list[dict[str, Any]] = []
+    pending: list[dict[str, Any]] = []
+    for b in deferred:
+        name = b["name"]
+        st = await db[_BACKSTOP_ALERT_COLL].find_one(
+            {"backstop": name}, {"_id": 0})
+        if not st or not st.get("first_deferred_at"):
+            await db[_BACKSTOP_ALERT_COLL].update_one(
+                {"backstop": name},
+                {"$setOnInsert": {"backstop": name},
+                 "$set": {
+                     "collection": b.get("collection"),
+                     "fields": b.get("fields"),
+                     "first_deferred_at": now_iso,
+                 }},
+                upsert=True,
+            )
+            pending.append({**b, "deferred_hours": 0.0})
+            continue
+        try:
+            first = datetime.fromisoformat(st["first_deferred_at"])
+            if first.tzinfo is None:
+                first = first.replace(tzinfo=UTC)
+        except Exception:
+            first = now
+        deferred_hours = (now - first).total_seconds() / 3600.0
+        entry = {
+            **b,
+            "deferred_hours": round(deferred_hours, 2),
+            "first_deferred_at": st["first_deferred_at"],
+            "last_alert_at": st.get("last_alert_at"),
+        }
+        if deferred_hours >= _BACKSTOP_DEFER_ALERT_HOURS:
+            ripe.append(entry)
+        else:
+            pending.append(entry)
+
+    # Of the ripe (past-grace) backstops, only those outside the re-alert
+    # suppression window justify a fresh page.
+    to_alert: list[dict[str, Any]] = []
+    for entry in ripe:
+        last_alert_iso = entry.get("last_alert_at")
+        if last_alert_iso:
+            try:
+                last_alert = datetime.fromisoformat(last_alert_iso)
+                if last_alert.tzinfo is None:
+                    last_alert = last_alert.replace(tzinfo=UTC)
+                since = (now - last_alert).total_seconds() / 3600.0
+                if since < _BACKSTOP_REALERT_HOURS:
+                    continue
+            except Exception:
+                pass
+        to_alert.append(entry)
+
+    if not to_alert:
+        return {
+            "deferred_count": len(deferred),
+            "alert_sent": False,
+            "reason": "within_grace_or_suppressed",
+            "ripe_count": len(ripe),
+            "pending_count": len(pending),
+            "cleared": cleared,
+        }
+
+    lines = ", ".join(
+        f"{e['name']} ({e.get('collection')} on {'+'.join(e.get('fields') or [])}; "
+        f"off ~{int(e['deferred_hours'])}h)"
+        for e in to_alert
+    )
+    alert_payload = {
+        "title": (
+            f"Duplicate-prevention safeguard OFF "
+            f"({len(to_alert)} unique-index backstop"
+            f"{'s' if len(to_alert) != 1 else ''} deferred)"
+        ),
+        "severity": "high",
+        "alert_type": "unique_index_backstop_deferred",
+        "provider": "system",
+        "message": (
+            "One or more duplicate-prevention unique-index backstops have been "
+            f"deferred for over {int(_BACKSTOP_DEFER_ALERT_HOURS)}h, leaving the "
+            "no-duplicate safeguard OFF across all tenants (the index is "
+            "global). Pre-existing duplicate rows block the build. Remediation: "
+            "clean the duplicate rows in the named collection(s) — the backstop "
+            "self-heals on the next attempt, no restart needed. Affected: "
+            f"{lines}."
+        ),
+        "runbook_hint": (
+            "Inspect GET /api/production-golive/uniqueness-backstops; clean "
+            "duplicate supplier/contract residue (see Task #231 / index "
+            "backstops in shared_kernel/index_backstops.py)."
+        ),
+        "context": {
+            "deferred_backstops": [
+                {
+                    "backstop": e["name"],
+                    "collection": e.get("collection"),
+                    "fields": e.get("fields"),
+                    "deferred_hours": e["deferred_hours"],
+                    "first_deferred_at": e.get("first_deferred_at"),
+                }
+                for e in to_alert
+            ],
+            "grace_hours": _BACKSTOP_DEFER_ALERT_HOURS,
+            "total_deferred": len(deferred),
+        },
+    }
+
+    sent = False
+    dispatch_error: str | None = None
+    try:
+        from domains.channel_manager.monitoring.alert_dispatch import dispatch_alert
+        dispatch_result = await dispatch_alert(alert_payload, tenant_id="system")
+        sent = bool(
+            dispatch_result.get("slack") or dispatch_result.get("email")
+            or dispatch_result.get("dashboard")
+        )
+    except Exception as exc:  # noqa: BLE001
+        dispatch_error = str(exc)[:200]
+        logger.warning("backstop deferral dispatch_alert failed: %s", exc)
+
+    if not sent:
+        # Don't advance the re-alert suppression clock when delivery fails so
+        # the next check retries.
+        logger.error(
+            "backstop deferral alert NOT delivered count=%d error=%s",
+            len(to_alert), dispatch_error or "no_channel_accepted",
+        )
+        return {
+            "deferred_count": len(deferred),
+            "alert_sent": False,
+            "reason": "dispatch_failed",
+            "dispatch_error": dispatch_error or "no_channel_accepted",
+        }
+
+    for e in to_alert:
+        await db[_BACKSTOP_ALERT_COLL].update_one(
+            {"backstop": e["name"]},
+            {"$set": {"last_alert_at": now_iso,
+                      "last_alert_deferred_hours": e["deferred_hours"]}},
+            upsert=True,
+        )
+    logger.warning(
+        "backstop deferral alert dispatched count=%d backstops=%s",
+        len(to_alert), [e["name"] for e in to_alert],
+    )
+    return {
+        "deferred_count": len(deferred),
+        "alert_sent": True,
+        "alerted": [e["name"] for e in to_alert],
+        "cleared": cleared,
     }
 
 

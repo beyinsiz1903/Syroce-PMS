@@ -143,6 +143,15 @@ celery_app.conf.update(
             'task': 'celery_tasks.rnl_duplicate_heartbeat_check_task',
             'schedule': crontab(minute=15),
         },
+
+        # Task #242 — Alert ops by email when a duplicate-prevention unique-index
+        # backstop stays deferred (safeguard OFF) past a grace window. Runs
+        # hourly at :45; the task attempts the build (self-heal), tracks deferral
+        # duration in Mongo, and emails ops via the shared alert dispatcher.
+        'unique-backstop-deferral-check': {
+            'task': 'celery_tasks.unique_backstop_deferral_check_task',
+            'schedule': crontab(minute=45),
+        },
     }
 )
 
