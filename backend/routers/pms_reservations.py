@@ -432,6 +432,8 @@ async def get_ota_reservation_details(
     return {
         'booking_id': booking_id,
         'special_requests': booking.get('special_requests', ''),
+        'adults': booking.get('adults'),
+        'children': booking.get('children'),
         'remarks': booking.get('notes', ''),
         'source_of_booking': source_of_booking,
         'ota_channel': booking.get('ota_channel'),

@@ -123,6 +123,8 @@ export type MultiRoomInfo = {
 export type ReservationOtaDetails = {
   booking_id: string;
   special_requests?: string;
+  adults?: number | null;
+  children?: number | null;
   remarks?: string;
   source_of_booking?: string;
   ota_channel?: string | null;
@@ -159,6 +161,7 @@ export type ReservationUpdate = {
   status?: string;
   adults?: number;
   children?: number;
+  guests_count?: number;
   special_requests?: string;
   rate_type?: string;
   market_segment?: string;

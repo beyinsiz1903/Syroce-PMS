@@ -22,6 +22,7 @@ import {
   getReservationDetailsEnhanced,
   getReservationOtaDetails,
   overrideRate,
+  ReservationUpdate,
   updateReservation,
 } from '../../src/api/reservations';
 import { assignRoom } from '../../src/api/bookings';
@@ -127,7 +128,7 @@ export default function ReservationDetailScreen() {
 
   // Which inline action panel is open ('' = none). Only one at a time keeps the
   // detail screen readable on a phone.
-  const [panel, setPanel] = useState<'' | 'dates' | 'room' | 'rate'>('');
+  const [panel, setPanel] = useState<'' | 'dates' | 'room' | 'rate' | 'guests'>('');
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [checkIn, setCheckIn] = useState(toDisplayDate(p.check_in));
@@ -136,6 +137,9 @@ export default function ReservationDetailScreen() {
   const [reason, setReason] = useState('');
   const [rooms, setRooms] = useState<AvailabilityRoom[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
+  const [adults, setAdults] = useState('');
+  const [children, setChildren] = useState('');
+  const [specialRequests, setSpecialRequests] = useState('');
 
   const isCancelled = (p.status || '').toLowerCase() === 'cancelled';
 
@@ -150,7 +154,7 @@ export default function ReservationDetailScreen() {
     setActionError(null);
   };
 
-  const openPanel = (next: 'dates' | 'room' | 'rate') => {
+  const openPanel = (next: 'dates' | 'room' | 'rate' | 'guests') => {
     setActionError(null);
     setPanel((cur) => (cur === next ? '' : next));
     if (next === 'room' && rooms.length === 0 && !roomsLoading) {
@@ -165,6 +169,13 @@ export default function ReservationDetailScreen() {
         .then((rs) => setRooms(rs.filter((r) => r.available === true)))
         .catch(() => setRooms([]))
         .finally(() => setRoomsLoading(false));
+    }
+    if (next === 'guests') {
+      // Prefill from the OTA-details payload so an edit to one field never
+      // clobbers the others (PUT only writes the fields that changed).
+      setAdults(otaData?.adults != null ? String(otaData.adults) : '');
+      setChildren(otaData?.children != null ? String(otaData.children) : '');
+      setSpecialRequests(otaData?.special_requests || '');
     }
   };
 
@@ -199,6 +210,37 @@ export default function ReservationDetailScreen() {
         return Promise.reject(new Error(tr.reservations.reasonRequired));
       }
       return overrideRate(id, value, reason.trim());
+    },
+    onSuccess: () => {
+      haptic.success();
+      refreshAll();
+      closePanel();
+      Alert.alert(tr.app.success, tr.reservations.saved);
+    },
+    onError: (e: unknown) => {
+      haptic.error();
+      setActionError(errorMessage(e, tr.reservations.actionError));
+    },
+  });
+
+  const guestsMutation = useMutation({
+    mutationFn: () => {
+      const body: ReservationUpdate = {};
+      const aRaw = (adults || '').trim();
+      const chRaw = (children || '').trim();
+      const a = parseInt(aRaw, 10);
+      const ch = chRaw === '' ? 0 : parseInt(chRaw, 10);
+      if (!Number.isInteger(a) || a < 1 || a > 50) {
+        return Promise.reject(new Error(tr.reservations.invalidGuests));
+      }
+      if (!Number.isInteger(ch) || ch < 0 || ch > 50) {
+        return Promise.reject(new Error(tr.reservations.invalidGuests));
+      }
+      body.adults = a;
+      body.children = ch;
+      body.guests_count = a + ch;
+      body.special_requests = (specialRequests || '').trim();
+      return updateReservation(id, body);
     },
     onSuccess: () => {
       haptic.success();
@@ -301,6 +343,11 @@ export default function ReservationDetailScreen() {
               variant={panel === 'rate' ? 'primary' : 'secondary'}
               onPress={() => openPanel('rate')}
             />
+            <Button
+              title={tr.reservations.editGuests}
+              variant={panel === 'guests' ? 'primary' : 'secondary'}
+              onPress={() => openPanel('guests')}
+            />
           </View>
 
           {panel === 'dates' ? (
@@ -343,6 +390,35 @@ export default function ReservationDetailScreen() {
                 title={tr.reservations.save}
                 onPress={() => rateMutation.mutate()}
                 loading={rateMutation.isPending}
+                fullWidth
+              />
+            </View>
+          ) : null}
+
+          {panel === 'guests' ? (
+            <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
+              <Field
+                label={tr.reservations.adultsLabel}
+                value={adults}
+                onChangeText={setAdults}
+                keyboardType="number-pad"
+              />
+              <Field
+                label={tr.reservations.childrenLabel}
+                value={children}
+                onChangeText={setChildren}
+                keyboardType="number-pad"
+              />
+              <Field
+                label={tr.reservations.specialRequestsLabel}
+                value={specialRequests}
+                onChangeText={setSpecialRequests}
+                multiline
+              />
+              <Button
+                title={tr.reservations.save}
+                onPress={() => guestsMutation.mutate()}
+                loading={guestsMutation.isPending}
                 fullWidth
               />
             </View>
