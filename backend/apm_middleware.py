@@ -516,6 +516,25 @@ class EnhancedRateLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Only the dynamic API surface is rate-limited. Static SPA assets
+        # (hashed /js + /assets chunks, /logos, /landing, fonts, images, the
+        # index shell) are served directly from disk with no DB/worker cost
+        # and carry no Authorization header, so they would otherwise pile into
+        # the `anonymous` 60/min bucket. This app is heavily code-split: a
+        # single page load fetches dozens of /js chunks, which exhausts that
+        # bucket mid-load and 429s the remaining chunks — the SPA then fails to
+        # boot and the user cannot even reach the login form. Mirrors the
+        # dynamic/static split already used by the warm-up gate in app.py.
+        # API throttling (auth 15/min, anonymous 60/min on /api, ...) is
+        # unchanged — only static file serving bypasses.
+        if not (
+            path.startswith('/api')
+            or path.startswith('/graphql')
+            or path.startswith('/ws')
+        ):
+            await self.app(scope, receive, send)
+            return
+
         method = scope.get('method', 'GET')
         headers = dict(scope.get('headers', []))
         # SECURITY: classify as `has_token` only when the Authorization
