@@ -42,3 +42,14 @@ fast. Verified: bounded endpoint returns 200 in ~8.5s with
 (exception) vs 4xx (RBAC) are three different bugs; a drill projection that
 assumes the wrong one will target the wrong fix. Confirm with a live read-only
 probe (login + timed curl), not just `py_compile`.
+
+## Browser symptom: `net::ERR_CONNECTION_CLOSED` on polled dashboard endpoints
+A Control-Plane page that polls many `/api/ops/dashboard/*` endpoints on an
+interval can flood the browser console with `Failed to load resource:
+net::ERR_CONNECTION_CLOSED`. That is NOT a 4xx/5xx — it's the edge proxy DROPPING
+an idle connection because the endpoint hung (stuck Atlas aggregation / privileged
+cmd). Same fix as above: wrap each polled endpoint's computation in
+`asyncio.wait_for` with a few-second budget and return a `degraded`-flagged
+partial payload on `TimeoutError`. **Re-raise `HTTPException` inside the wrapper**
+so auth/validation (e.g. a 403 feature gate) is never masked into a degraded 200.
+Front-end with `Promise.allSettled` + null-tolerant cards already degrades per-card.

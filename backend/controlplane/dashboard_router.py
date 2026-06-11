@@ -24,6 +24,7 @@ Endpoints:
   POST /api/ops/dashboard/drift-alerts/evaluate — Evaluate and fire drift alerts
   POST /api/ops/dashboard/drift-alerts/{alert_id}/acknowledge — Acknowledge a drift alert
 """
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -38,6 +39,55 @@ logger = logging.getLogger("controlplane.dashboard_router")
 
 router = APIRouter(prefix="/api/ops/dashboard", tags=["Control Plane Dashboard"])
 
+# Per-endpoint time budget for the Control Plane polling surface.
+# On Atlas shared tiers a stuck aggregation (or a privileged Mongo command) can
+# hang for tens of seconds; the edge proxy then drops the idle connection, which
+# the browser surfaces as `net::ERR_CONNECTION_CLOSED`. Bound every dashboard
+# endpoint so it always answers within a few seconds — returning a partial /
+# degraded payload on timeout — instead of holding the connection open.
+DASHBOARD_TIMEOUT_S = 8.0
+
+
+async def _bounded(coro, *, fallback, label, timeout: float = DASHBOARD_TIMEOUT_S):
+    """Await ``coro`` under a time budget.
+
+    On timeout (or unexpected error) log it and return a copy of ``fallback``
+    flagged ``degraded`` so the front-end can render an empty/error card instead
+    of the request hanging until the proxy kills the connection. We do NOT
+    swallow errors silently — each failure is logged at the endpoint level.
+    """
+    from fastapi import HTTPException
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except (TimeoutError, asyncio.TimeoutError):
+        logger.warning(
+            "ops dashboard endpoint '%s' exceeded %.1fs budget; returning degraded payload",
+            label, timeout,
+        )
+    except HTTPException:
+        # Auth / validation errors must surface as-is, never masked as degraded 200.
+        raise
+    except Exception:
+        logger.warning(
+            "ops dashboard endpoint '%s' failed; returning degraded payload",
+            label, exc_info=True,
+        )
+    fb = dict(fallback)
+    fb["degraded"] = True
+    return fb
+
+
+def _degraded_dashboard() -> dict:
+    return {
+        "health_score": 0,
+        "health_grade": "F",
+        "metrics": {},
+        "connector_status": [],
+        "pipeline": {"stages": [], "total_in_flight": 0},
+        "recent_failures": [],
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+
 
 @router.get("")
 async def get_dashboard(
@@ -47,7 +97,11 @@ async def get_dashboard(
     Health score, failure counts, pipeline depth, connector status.
     """
     agg = get_dashboard_aggregator()
-    return await agg.compute_dashboard(tenant_id=tenant_id)
+    return await _bounded(
+        agg.compute_dashboard(tenant_id=tenant_id),
+        fallback=_degraded_dashboard(),
+        label="dashboard",
+    )
 
 
 @router.get("/tenant/{tenant_id}")
@@ -65,38 +119,52 @@ async def get_trends(
     """Historical health score trends from snapshots."""
     from core.database import db
 
-    cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
-    query = {
-        "timestamp": {"$gte": cutoff},
-        "snapshot_type": "system",
-    }
-    if tenant_id:
-        query["tenant_id"] = tenant_id
+    async def _work():
+        cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
+        query = {
+            "timestamp": {"$gte": cutoff},
+            "snapshot_type": "system",
+        }
+        if tenant_id:
+            query["tenant_id"] = tenant_id
 
-    snapshots = await db[COLL_SNAPSHOTS].find(
-        query, {"_id": 0, "timestamp": 1, "health_score": 1, "health_grade": 1, "metrics": 1}
-    ).sort("timestamp", 1).to_list(1000)
+        snapshots = await db[COLL_SNAPSHOTS].find(
+            query, {"_id": 0, "timestamp": 1, "health_score": 1, "health_grade": 1, "metrics": 1}
+        ).sort("timestamp", 1).to_list(1000)
 
-    timestamps = []
-    health_scores = []
-    failure_counts = []
-    outbox_depths = []
+        timestamps = []
+        health_scores = []
+        failure_counts = []
+        outbox_depths = []
 
-    for s in snapshots:
-        timestamps.append(s["timestamp"])
-        health_scores.append(s.get("health_score", 0))
-        m = s.get("metrics", {})
-        failure_counts.append(m.get("open_failures", 0))
-        outbox_depths.append(m.get("outbox_pending", 0) + m.get("outbox_stuck", 0))
+        for s in snapshots:
+            timestamps.append(s["timestamp"])
+            health_scores.append(s.get("health_score", 0))
+            m = s.get("metrics", {})
+            failure_counts.append(m.get("open_failures", 0))
+            outbox_depths.append(m.get("outbox_pending", 0) + m.get("outbox_stuck", 0))
 
-    return {
-        "hours": hours,
-        "data_points": len(snapshots),
-        "timestamps": timestamps,
-        "health_scores": health_scores,
-        "failure_counts": failure_counts,
-        "outbox_depths": outbox_depths,
-    }
+        return {
+            "hours": hours,
+            "data_points": len(snapshots),
+            "timestamps": timestamps,
+            "health_scores": health_scores,
+            "failure_counts": failure_counts,
+            "outbox_depths": outbox_depths,
+        }
+
+    return await _bounded(
+        _work(),
+        fallback={
+            "hours": hours,
+            "data_points": 0,
+            "timestamps": [],
+            "health_scores": [],
+            "failure_counts": [],
+            "outbox_depths": [],
+        },
+        label="trends",
+    )
 
 
 @router.get("/connectors")
@@ -127,7 +195,20 @@ async def get_channel_health(
     """Channel Health Dashboard — push latency percentiles, sync rates,
     failure breakdown, reconciliation drift, retry metrics, provider SLA."""
     from .channel_health_aggregator import compute_channel_health
-    return await compute_channel_health(tenant_id=tenant_id, hours=hours)
+    return await _bounded(
+        compute_channel_health(tenant_id=tenant_id, hours=hours),
+        fallback={
+            "push_latency": {},
+            "sync_metrics": {},
+            "failure_breakdown": {},
+            "reconciliation_drift": {},
+            "retry_metrics": {},
+            "provider_summary": {},
+            "provider_sla": {},
+            "period_hours": hours,
+        },
+        label="channel-health",
+    )
 
 
 @router.get("/channel-health/trends")
@@ -138,8 +219,17 @@ async def get_channel_health_trends(
 ):
     """Historical trends for channel health — time-bucketed latency, sync, drift, retry."""
     from .channel_health_aggregator import compute_channel_health_trends
-    return await compute_channel_health_trends(
-        tenant_id=tenant_id, hours=hours, bucket_hours=bucket_hours,
+    return await _bounded(
+        compute_channel_health_trends(
+            tenant_id=tenant_id, hours=hours, bucket_hours=bucket_hours,
+        ),
+        fallback={
+            "buckets": [],
+            "bucket_size_hours": bucket_hours,
+            "period_hours": hours,
+            "total_buckets": 0,
+        },
+        label="channel-health/trends",
     )
 
 
@@ -151,7 +241,19 @@ async def get_channel_health_field_kpis(
     """Operational field KPIs — sync success, drift reduction, MTTR,
     operator interventions, push SLA compliance with period-over-period comparison."""
     from .channel_health_aggregator import compute_field_kpis
-    return await compute_field_kpis(tenant_id=tenant_id, period_hours=period_hours)
+    _empty_kpi = {"current": 0, "previous": 0, "delta": 0, "trend": "flat"}
+    return await _bounded(
+        compute_field_kpis(tenant_id=tenant_id, period_hours=period_hours),
+        fallback={
+            "sync_success": dict(_empty_kpi),
+            "drift_reduction": dict(_empty_kpi),
+            "mttr_hours": dict(_empty_kpi),
+            "operator_interventions": dict(_empty_kpi),
+            "push_sla_compliance": dict(_empty_kpi),
+            "period_hours": period_hours,
+        },
+        label="channel-health/field-kpis",
+    )
 
 
 @router.get("/channel-health/weekly-proof")
@@ -162,7 +264,11 @@ async def get_channel_health_weekly_proof(
     """Week-over-week improvement proof — drift reduction, MTTR improvement,
     SLA compliance trend, sync success trend over N weeks."""
     from .channel_health_aggregator import compute_weekly_proof
-    return await compute_weekly_proof(tenant_id=tenant_id, weeks=weeks)
+    return await _bounded(
+        compute_weekly_proof(tenant_id=tenant_id, weeks=weeks),
+        fallback={"weeks": [], "improvements": {}, "total_weeks": 0},
+        label="channel-health/weekly-proof",
+    )
 
 
 @router.get("/tech-debt")
@@ -188,7 +294,11 @@ async def get_deploys(
 async def get_deploy_stats_endpoint():
     """Deploy statistics — success rates, rollback counts per environment."""
     from .deploy_tracker import get_deploy_stats
-    return await get_deploy_stats()
+    return await _bounded(
+        get_deploy_stats(),
+        fallback={"by_environment": [], "overall": {}},
+        label="deploy-stats",
+    )
 
 
 @router.get("/deploy-trend")
@@ -214,7 +324,20 @@ async def get_inventory_alignment(
     Returns: alignment_status, drift_count, drift_nights, provider breakdown.
     """
     from .inventory_alignment import compute_inventory_alignment
-    return await compute_inventory_alignment(tenant_id=tenant_id, days_ahead=days_ahead)
+    return await _bounded(
+        compute_inventory_alignment(tenant_id=tenant_id, days_ahead=days_ahead),
+        fallback={
+            "alignment_status": "no_data",
+            "freshness": "empty",
+            "drift_count": 0,
+            "drift_nights": 0,
+            "provider_breakdown": [],
+            "inventory_room_type_nights": 0,
+            "connectors_checked": 0,
+            "date_range": {"start": "", "end": ""},
+        },
+        label="inventory-alignment",
+    )
 
 
 @router.get("/dora-metrics")
@@ -224,7 +347,16 @@ async def get_dora_metrics(
 ):
     """DORA release metrics — deployment frequency, change failure rate, MTTR, lead time."""
     from .dora_metrics import compute_dora_metrics
-    return await compute_dora_metrics(days=days, environment=environment)
+    return await _bounded(
+        compute_dora_metrics(days=days, environment=environment),
+        fallback={
+            "period_days": days,
+            "environment": environment or "all",
+            "total_deploys": 0,
+            "metrics": {},
+        },
+        label="dora-metrics",
+    )
 
 
 @router.get("/dora-correlation")
@@ -238,7 +370,11 @@ async def get_dora_correlation(
     deploy frequency vs drift, failure rate vs sync success, MTTR vs import failures.
     """
     from .dora_metrics import compute_dora_channel_correlation
-    return await compute_dora_channel_correlation(days=days, tenant_id=tenant_id)
+    return await _bounded(
+        compute_dora_channel_correlation(days=days, tenant_id=tenant_id),
+        fallback={"period_days": days, "correlations": []},
+        label="dora-correlation",
+    )
 
 
 # ── Drift Alerts ─────────────────────────────────────────────────
@@ -252,11 +388,17 @@ async def get_drift_alerts_endpoint(
 ):
     """Active drift alerts — threshold-based inventory drift warnings."""
     from .drift_alerting import get_drift_alerts
-    alerts = await get_drift_alerts(
-        tenant_id=tenant_id, severity=severity,
-        acknowledged=acknowledged, limit=limit,
+    result = await _bounded(
+        get_drift_alerts(
+            tenant_id=tenant_id, severity=severity,
+            acknowledged=acknowledged, limit=limit,
+        ),
+        fallback={"__alerts__": []},
+        label="drift-alerts",
     )
-    return {"alerts": alerts, "count": len(alerts)}
+    if isinstance(result, dict) and result.get("degraded"):
+        return {"alerts": [], "count": 0, "degraded": True}
+    return {"alerts": result, "count": len(result)}
 
 
 @router.get("/drift-alerts/summary")
@@ -265,7 +407,16 @@ async def get_drift_alert_summary_endpoint(
 ):
     """Drift alert summary for the ops dashboard — quick severity overview."""
     from .drift_alerting import get_drift_alert_summary
-    return await get_drift_alert_summary(tenant_id=tenant_id)
+    return await _bounded(
+        get_drift_alert_summary(tenant_id=tenant_id),
+        fallback={
+            "active_count": 0,
+            "by_severity": {"warning": 0, "critical": 0, "severe": 0},
+            "highest_severity": "none",
+            "recent_alerts": [],
+        },
+        label="drift-alerts-summary",
+    )
 
 
 @router.post("/drift-alerts/evaluate")
@@ -326,60 +477,84 @@ async def get_ops_kpis_endpoint(
     now = datetime.now(UTC)
     cutoff = (now - timedelta(hours=hours)).isoformat()
 
-    # Drift alert stats
-    drift_summary = await get_drift_alert_summary(tenant_id=tenant_id)
+    async def _work():
+        # Drift alert stats
+        drift_summary = await get_drift_alert_summary(tenant_id=tenant_id)
 
-    # Auto-action stats
-    total_actions = await _db[COLL_AUTO_ACTIONS].count_documents(
-        {"executed_at": {"$gte": cutoff}}
-    )
-    success_actions = await _db[COLL_AUTO_ACTIONS].count_documents(
-        {"executed_at": {"$gte": cutoff}, "status": {"$in": ["success", "partial"]}}
-    )
-    failed_actions = await _db[COLL_AUTO_ACTIONS].count_documents(
-        {"executed_at": {"$gte": cutoff}, "status": "failed"}
-    )
+        # Auto-action stats
+        total_actions = await _db[COLL_AUTO_ACTIONS].count_documents(
+            {"executed_at": {"$gte": cutoff}}
+        )
+        success_actions = await _db[COLL_AUTO_ACTIONS].count_documents(
+            {"executed_at": {"$gte": cutoff}, "status": {"$in": ["success", "partial"]}}
+        )
+        failed_actions = await _db[COLL_AUTO_ACTIONS].count_documents(
+            {"executed_at": {"$gte": cutoff}, "status": "failed"}
+        )
 
-    # Evaluation history for drift trend
-    eval_logs = await _db[COLL_DRIFT_EVAL_LOG].find(
-        {"evaluated_at": {"$gte": cutoff}},
-        {"_id": 0, "evaluated_at": 1, "drift_records": 1, "drift_nights": 1, "alignment_status": 1},
-    ).sort("evaluated_at", 1).to_list(500)
+        # Evaluation history for drift trend
+        eval_logs = await _db[COLL_DRIFT_EVAL_LOG].find(
+            {"evaluated_at": {"$gte": cutoff}},
+            {"_id": 0, "evaluated_at": 1, "drift_records": 1, "drift_nights": 1, "alignment_status": 1},
+        ).sort("evaluated_at", 1).to_list(500)
 
-    drift_trend = []
-    for ev in eval_logs:
-        drift_trend.append({
-            "time": ev.get("evaluated_at", ""),
-            "drift_records": ev.get("drift_records", 0),
-            "drift_nights": ev.get("drift_nights", 0),
-            "status": ev.get("alignment_status", "unknown"),
-        })
+        drift_trend = []
+        for ev in eval_logs:
+            drift_trend.append({
+                "time": ev.get("evaluated_at", ""),
+                "drift_records": ev.get("drift_records", 0),
+                "drift_nights": ev.get("drift_nights", 0),
+                "status": ev.get("alignment_status", "unknown"),
+            })
 
-    # Channel health KPIs (sync success, MTTR)
-    try:
-        from .channel_health_aggregator import compute_field_kpis
-        field_kpis = await compute_field_kpis(tenant_id=tenant_id, period_hours=hours)
-    except Exception:
-        field_kpis = {}
+        # Channel health KPIs (sync success, MTTR)
+        try:
+            from .channel_health_aggregator import compute_field_kpis
+            field_kpis = await compute_field_kpis(tenant_id=tenant_id, period_hours=hours)
+        except Exception:
+            field_kpis = {}
 
-    return {
-        "period_hours": hours,
-        "calculated_at": now.isoformat(),
-        "drift_alerts": drift_summary,
-        "auto_actions": {
-            "total": total_actions,
-            "success": success_actions,
-            "failed": failed_actions,
-            "success_rate": round(success_actions / total_actions * 100, 1) if total_actions > 0 else 100.0,
+        return {
+            "period_hours": hours,
+            "calculated_at": now.isoformat(),
+            "drift_alerts": drift_summary,
+            "auto_actions": {
+                "total": total_actions,
+                "success": success_actions,
+                "failed": failed_actions,
+                "success_rate": round(success_actions / total_actions * 100, 1) if total_actions > 0 else 100.0,
+            },
+            "drift_trend": drift_trend[-50:],
+            "field_kpis": {
+                "sync_success": field_kpis.get("sync_success", {}),
+                "mttr_hours": field_kpis.get("mttr_hours", {}),
+                "drift_reduction": field_kpis.get("drift_reduction", {}),
+                "push_sla_compliance": field_kpis.get("push_sla_compliance", {}),
+            },
+        }
+
+    return await _bounded(
+        _work(),
+        fallback={
+            "period_hours": hours,
+            "calculated_at": now.isoformat(),
+            "drift_alerts": {
+                "active_count": 0,
+                "by_severity": {"warning": 0, "critical": 0, "severe": 0},
+                "highest_severity": "none",
+                "recent_alerts": [],
+            },
+            "auto_actions": {"total": 0, "success": 0, "failed": 0, "success_rate": 100.0},
+            "drift_trend": [],
+            "field_kpis": {
+                "sync_success": {},
+                "mttr_hours": {},
+                "drift_reduction": {},
+                "push_sla_compliance": {},
+            },
         },
-        "drift_trend": drift_trend[-50:],
-        "field_kpis": {
-            "sync_success": field_kpis.get("sync_success", {}),
-            "mttr_hours": field_kpis.get("mttr_hours", {}),
-            "drift_reduction": field_kpis.get("drift_reduction", {}),
-            "push_sla_compliance": field_kpis.get("push_sla_compliance", {}),
-        },
-    }
+        label="ops-kpis",
+    )
 
 
 # ── Deploy event ingestion (separate prefix for CI/CD webhook) ───

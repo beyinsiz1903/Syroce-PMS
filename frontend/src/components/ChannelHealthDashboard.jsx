@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import axios from "axios";
 import {
   LineChart, Line, AreaChart, Area, BarChart, Bar,
@@ -266,23 +266,47 @@ export function ChannelHealth() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const failStreak = useRef(0);
+  const cooldownUntil = useRef(0);
+
   const fetchAll = useCallback(async (showToast = false) => {
-    try {
-      const [healthRes, trendsRes, kpisRes] = await Promise.all([
-        axios.get(`/ops/dashboard/channel-health?hours=${hours}`),
-        axios.get(`/ops/dashboard/channel-health/trends?hours=${Math.min(hours * 7, 720)}`),
-        axios.get(`/ops/dashboard/channel-health/field-kpis?period_hours=${hours}`),
-      ]);
-      setData(healthRes.data);
-      setTrends(trendsRes.data);
-      setFieldKpis(kpisRes.data);
-      if (showToast) toast.success("Kanal sağlığı güncellendi");
-    } catch (err) {
-      toast.error("Kanal sağlığı yüklenemedi", { description: err.response?.data?.detail || err.message });
-    } finally {
+    // Per-endpoint backoff: after repeated failures, skip background polls for a
+    // while so a persistent outage does not spam the network/toasts. Manual
+    // refresh (showToast) always runs.
+    if (!showToast && Date.now() < cooldownUntil.current) {
       setLoading(false);
       setRefreshing(false);
+      return;
     }
+    const [healthRes, trendsRes, kpisRes] = await Promise.allSettled([
+      axios.get(`/ops/dashboard/channel-health?hours=${hours}`),
+      axios.get(`/ops/dashboard/channel-health/trends?hours=${Math.min(hours * 7, 720)}`),
+      axios.get(`/ops/dashboard/channel-health/field-kpis?period_hours=${hours}`),
+    ]);
+    // Each section degrades on its own: keep the last good value on failure
+    // instead of collapsing the whole panel.
+    if (healthRes.status === "fulfilled") setData(healthRes.value.data);
+    if (trendsRes.status === "fulfilled") setTrends(trendsRes.value.data);
+    if (kpisRes.status === "fulfilled") setFieldKpis(kpisRes.value.data);
+
+    const failed = [healthRes, trendsRes, kpisRes].filter((r) => r.status === "rejected");
+    if (failed.length === 0) {
+      failStreak.current = 0;
+      cooldownUntil.current = 0;
+      if (showToast) toast.success("Kanal sağlığı güncellendi");
+    } else {
+      failStreak.current += 1;
+      // Exponential-ish backoff capped at 10 minutes after sustained failure.
+      if (failStreak.current >= 3) {
+        cooldownUntil.current = Date.now() + Math.min(failStreak.current * 60000, 600000);
+      }
+      if (showToast || failed.length === 3) {
+        const err = failed[0].reason;
+        toast.error("Kanal sağlığı yüklenemedi", { description: err?.response?.data?.detail || err?.message });
+      }
+    }
+    setLoading(false);
+    setRefreshing(false);
   }, [hours]);
 
   useEffect(() => {
