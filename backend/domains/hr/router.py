@@ -274,6 +274,37 @@ TR_DEFAULT_MONTHLY_HOURS = 195   # 45 sa/hafta × 4.33 hafta
 TR_DEFAULT_OVERTIME_MULTIPLIER = 1.5  # %50 zam (İş K. m.41)
 TR_CURRENCY = "TRY"
 
+# ============= Bordro Kesinti/Vergi Oranları (yüzde) =============
+# Basitleştirilmiş düz-oran TR kesinti modeli. Değerler YÜZDE cinsindendir
+# (ör. 14.0 = %14). KHK ile değişebildiği için tenant bazında
+# tenant_settings.payroll_tax_rates altında override edilebilir.
+TR_PAYROLL_TAX_RATES_DEFAULT: dict[str, float] = {
+    'sgk_employee': 14.0,   # SGK işçi payı
+    'unemployment': 1.0,    # İşsizlik sigortası işçi payı
+    'income_tax': 15.0,     # Gelir vergisi (SGK+işsizlik sonrası matrah)
+    'stamp_tax': 0.759,     # Damga vergisi
+}
+_PAYROLL_TAX_RATE_KEYS = ('sgk_employee', 'unemployment', 'income_tax', 'stamp_tax')
+
+
+async def _get_payroll_tax_rates(tenant_id: str) -> dict[str, float]:
+    """Tenant'a özel bordro kesinti oranlarını (YÜZDE) oku; yoksa varsayılan.
+
+    Eksik/geçersiz tek tek anahtarlar için varsayılana düşülür (kısmi override
+    güvenli). Dönen değerler yüzde cinsindendir (ör. 14.0 = %14)."""
+    s = await db.tenant_settings.find_one(
+        {'tenant_id': tenant_id},
+        {'_id': 0, 'payroll_tax_rates': 1},
+    ) or {}
+    overrides = s.get('payroll_tax_rates') or {}
+    rates = dict(TR_PAYROLL_TAX_RATES_DEFAULT)
+    if isinstance(overrides, dict):
+        for k in _PAYROLL_TAX_RATE_KEYS:
+            v = overrides.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
+                rates[k] = float(v)
+    return rates
+
 # Türkiye saat dilimi (UTC+3, sabit — yaz saati uygulaması yok)
 TR_TZ = timezone(timedelta(hours=3))
 
@@ -1037,7 +1068,9 @@ def _compute_payroll_for_month(
     records: list[dict],
     staff_map: dict[str, dict],
     month: str,
+    rates: dict[str, float] | None = None,
 ) -> list[dict]:
+    rates = rates or TR_PAYROLL_TAX_RATES_DEFAULT
     payroll_rows: dict[str, float] = {}
     for record in records:
         staff_id = record['staff_id']
@@ -1054,13 +1087,14 @@ def _compute_payroll_for_month(
         base_hours = total_hours - overtime_hours
         gross_pay = (base_hours * hourly_rate) + (overtime_hours * overtime_rate)
 
-        # Basitleştirilmiş TR kesinti modeli (yaklaşık):
-        # SGK işçi payı %14, işsizlik %1, gelir vergisi %15 (matrah - SGK), damga %0.759
-        sgk_employee = round(gross_pay * 0.14, 2)
-        unemployment = round(gross_pay * 0.01, 2)
+        # Basitleştirilmiş TR kesinti modeli (yaklaşık). Oranlar tenant'a özel
+        # olabilir (yoksa varsayılan): SGK işçi payı, işsizlik, gelir vergisi
+        # (matrah = brüt - SGK - işsizlik), damga vergisi.
+        sgk_employee = round(gross_pay * rates['sgk_employee'] / 100, 2)
+        unemployment = round(gross_pay * rates['unemployment'] / 100, 2)
         income_tax_base = max(0.0, gross_pay - sgk_employee - unemployment)
-        income_tax = round(income_tax_base * 0.15, 2)
-        stamp_tax = round(gross_pay * 0.00759, 2)
+        income_tax = round(income_tax_base * rates['income_tax'] / 100, 2)
+        stamp_tax = round(gross_pay * rates['stamp_tax'] / 100, 2)
         total_deductions = round(sgk_employee + unemployment + income_tax + stamp_tax, 2)
         net_pay = round(gross_pay - total_deductions, 2)
 
@@ -1100,8 +1134,9 @@ async def _build_payroll(month: str | None, tenant_id: str):
     }
     records = await db.attendance_records.find(query, {'_id': 0}).to_list(5000)
     staff_map = await _get_staff_map(tenant_id)
+    rates = await _get_payroll_tax_rates(tenant_id)
     period_month = start_dt.strftime('%Y-%m')
-    payroll = _compute_payroll_for_month(records, staff_map, period_month)
+    payroll = _compute_payroll_for_month(records, staff_map, period_month, rates)
     return period_month, payroll
 
 
@@ -1224,6 +1259,7 @@ def _payroll_apply_extras_and_overtime(
     extras: list[dict],
     overtime_by_staff: dict[str, dict],
     leaves_by_staff: dict[str, dict] | None = None,
+    rates: dict[str, float] | None = None,
 ) -> list[dict]:
     """Base payroll satırlarına (saat × ücret) ekstra kalemleri ve onaylı
     mesai (overtime_requests) saatlerini uygular; her satıra `line_items`
@@ -1236,6 +1272,7 @@ def _payroll_apply_extras_and_overtime(
       4. = yeni brüt → standart TR kesinti modeli (SGK/işsizlik/vergi/damga)
       5. − advance / deduction → nete kesinti (post-tax)
     """
+    rates = rates or TR_PAYROLL_TAX_RATES_DEFAULT
     extras_by_staff: dict[str, list[dict]] = {}
     for ex in extras:
         extras_by_staff.setdefault(ex['staff_id'], []).append(ex)
@@ -1342,10 +1379,10 @@ def _payroll_apply_extras_and_overtime(
             row['gross_pay'] + ot_added + added_earnings, 2,
         )
 
-        sgk = round(new_gross * 0.14, 2)
-        unemp = round(new_gross * 0.01, 2)
-        income_tax = round(max(0.0, new_gross - sgk - unemp) * 0.15, 2)
-        stamp = round(new_gross * 0.00759, 2)
+        sgk = round(new_gross * rates['sgk_employee'] / 100, 2)
+        unemp = round(new_gross * rates['unemployment'] / 100, 2)
+        income_tax = round(max(0.0, new_gross - sgk - unemp) * rates['income_tax'] / 100, 2)
+        stamp = round(new_gross * rates['stamp_tax'] / 100, 2)
         tax_total = round(sgk + unemp + income_tax + stamp, 2)
         net = round(new_gross - tax_total - post_tax_deductions, 2)
 
@@ -1457,8 +1494,9 @@ async def _build_payroll_v2(
     period_month, base = await _build_payroll(month, tenant_id)
     ot_map = await _payroll_collect_overtime(tenant_id, period_month)
     lv_map = await _payroll_collect_leaves(tenant_id, period_month)
+    rates = await _get_payroll_tax_rates(tenant_id)
     enriched = _payroll_apply_extras_and_overtime(
-        base, extras or [], ot_map, lv_map,
+        base, extras or [], ot_map, lv_map, rates,
     )
     summary = {
         'staff_count': len(enriched),
@@ -5447,6 +5485,79 @@ async def set_severance_cap(
         upsert=True,
     )
     return {'success': True, 'daily_cap': payload.daily_cap}
+
+
+# ============= 6c. Bordro Vergi Oranları Ayarı =============
+
+class PayrollTaxRatesPayload(BaseModel):
+    """Bordro kesinti oranları (YÜZDE). Örn. sgk_employee=14.0 → %14.
+    Üst sınır negatif/aşırı yüksek oranları reddeder (le=100)."""
+    sgk_employee: float = Field(..., ge=0, le=100, description="SGK işçi payı %")
+    unemployment: float = Field(..., ge=0, le=100, description="İşsizlik sigortası işçi payı %")
+    income_tax: float = Field(..., ge=0, le=100, description="Gelir vergisi %")
+    stamp_tax: float = Field(..., ge=0, le=100, description="Damga vergisi %")
+
+
+@router.get("/hr/settings/payroll-tax-rates")
+async def get_payroll_tax_rates(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_hr")),
+):
+    s = await db.tenant_settings.find_one(
+        {'tenant_id': current_user.tenant_id},
+        {'_id': 0, 'payroll_tax_rates': 1, 'payroll_tax_rates_updated_at': 1},
+    ) or {}
+    overrides = s.get('payroll_tax_rates') or {}
+    effective = await _get_payroll_tax_rates(current_user.tenant_id)
+    return {
+        'rates': effective,
+        'defaults': dict(TR_PAYROLL_TAX_RATES_DEFAULT),
+        'is_default': not (isinstance(overrides, dict) and overrides),
+        'updated_at': s.get('payroll_tax_rates_updated_at'),
+        'can_edit': _user_has_hr_op(current_user, 'manage_hr'),
+        'note': (
+            "Oranlar yüzde cinsindendir (ör. 14 = %14). Boş bırakılırsa "
+            "varsayılan oranlar uygulanır. Değişiklik yalnızca ileriye dönük "
+            "yeni hesaplamalarda geçerlidir; kilitli bordrolar değişmez."
+        ),
+    }
+
+
+@router.put("/hr/settings/payroll-tax-rates")
+async def set_payroll_tax_rates(
+    payload: PayrollTaxRatesPayload,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_hr")),
+):
+    new_rates = {
+        'sgk_employee': payload.sgk_employee,
+        'unemployment': payload.unemployment,
+        'income_tax': payload.income_tax,
+        'stamp_tax': payload.stamp_tax,
+    }
+    before = await db.tenant_settings.find_one(
+        {'tenant_id': current_user.tenant_id},
+        {'_id': 0, 'payroll_tax_rates': 1},
+    ) or {}
+    now_iso = datetime.now(UTC).isoformat()
+    await db.tenant_settings.update_one(
+        {'tenant_id': current_user.tenant_id},
+        {'$set': {
+            'payroll_tax_rates': new_rates,
+            'payroll_tax_rates_updated_at': now_iso,
+            'payroll_tax_rates_updated_by': getattr(current_user, 'id', None),
+        }},
+        upsert=True,
+    )
+    await _audit(
+        current_user, 'hr.payroll_tax_rates.update', 'tenant_settings',
+        current_user.tenant_id,
+        "Bordro vergi oranları güncellendi",
+        before=before.get('payroll_tax_rates') or None,
+        after=new_rates,
+        severity='info',
+    )
+    return {'success': True, 'rates': new_rates, 'updated_at': now_iso}
 
 
 # ============= 7. Performans Hedef Check-in =============

@@ -112,6 +112,11 @@ const HRComplete = () => {
   const [severanceCap, setSeveranceCap] = useState(null);
   const [savingSeverance, setSavingSeverance] = useState(false);
 
+  // Bordro vergi/kesinti oranları (tenant ayarı)
+  const [taxRates, setTaxRates] = useState(null);
+  const [taxRatesForm, setTaxRatesForm] = useState(null);
+  const [savingTaxRates, setSavingTaxRates] = useState(false);
+
   // Recruitment / Personel Talebi
   const [jobItems, setJobItems] = useState([]);
   const [jobForm, setJobForm] = useState({
@@ -200,6 +205,14 @@ const HRComplete = () => {
     } catch { /* yetki yoksa sessiz geç */ }
   }, []);
 
+  const loadTaxRates = useCallback(async () => {
+    try {
+      const res = await axios.get('/hr/settings/payroll-tax-rates');
+      setTaxRates(res.data || null);
+      setTaxRatesForm(res.data?.rates ? { ...res.data.rates } : null);
+    } catch { /* yetki yoksa sessiz geç */ }
+  }, []);
+
   const loadCompliance = useCallback(async () => {
     try {
       const [eqRes, trRes] = await Promise.all([
@@ -233,6 +246,30 @@ const HRComplete = () => {
       toast.error(err.response?.data?.detail || 'Güncellenemedi');
     } finally {
       setSavingSeverance(false);
+    }
+  };
+
+  const updateTaxRates = async () => {
+    if (!taxRatesForm) return;
+    const keys = ['sgk_employee', 'unemployment', 'income_tax', 'stamp_tax'];
+    const payload = {};
+    for (const k of keys) {
+      const val = parseFloat(String(taxRatesForm[k] ?? '').replace(',', '.'));
+      if (!Number.isFinite(val) || val < 0 || val > 100) {
+        toast.error('Oranlar 0 ile 100 arasında geçerli yüzde değerleri olmalı');
+        return;
+      }
+      payload[k] = val;
+    }
+    try {
+      setSavingTaxRates(true);
+      await axios.put('/hr/settings/payroll-tax-rates', payload);
+      toast.success('Vergi oranları güncellendi');
+      loadTaxRates();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Güncellenemedi');
+    } finally {
+      setSavingTaxRates(false);
     }
   };
 
@@ -401,11 +438,11 @@ const HRComplete = () => {
   const loadAll = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([loadStaff(), loadAttendance(), loadLeaves(), loadPerformance(), loadJobs(), loadPerfTemplates(), loadOvertimeRequests(), loadSeveranceCap(), loadCompliance()]);
+      await Promise.all([loadStaff(), loadAttendance(), loadLeaves(), loadPerformance(), loadJobs(), loadPerfTemplates(), loadOvertimeRequests(), loadSeveranceCap(), loadTaxRates(), loadCompliance()]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadStaff, loadAttendance, loadLeaves, loadPerformance, loadJobs, loadPerfTemplates, loadOvertimeRequests, loadSeveranceCap, loadCompliance]);
+  }, [loadStaff, loadAttendance, loadLeaves, loadPerformance, loadJobs, loadPerfTemplates, loadOvertimeRequests, loadSeveranceCap, loadTaxRates, loadCompliance]);
 
   useEffect(() => {
     loadAll();
@@ -1011,8 +1048,12 @@ const HRComplete = () => {
                       </ol>
                       <p className="text-xs text-amber-700">
                         <AlertCircle className="w-3 h-3 inline mr-1" />
-                        Kesintiler: %14 SGK + %1 işsizlik + %15 gelir vergisi (matrah − SGK) + %0.759 damga.
-                        Asgari ücret muafiyeti / AGİ / özel kesintiler için muhasebenizle doğrulayın.
+                        {(() => {
+                          const r = taxRates?.rates || { sgk_employee: 14, unemployment: 1, income_tax: 15, stamp_tax: 0.759 };
+                          const fmt = (n) => Number(n).toLocaleString('tr-TR', { maximumFractionDigits: 3 });
+                          return `Kesintiler: %${fmt(r.sgk_employee)} SGK + %${fmt(r.unemployment)} işsizlik + %${fmt(r.income_tax)} gelir vergisi (matrah − SGK) + %${fmt(r.stamp_tax)} damga.`;
+                        })()}
+                        {' '}Asgari ücret muafiyeti / AGİ / özel kesintiler için muhasebenizle doğrulayın.
                       </p>
                     </div>
                   </div>
@@ -1571,6 +1612,71 @@ const HRComplete = () => {
                   </div>
                   <div className="text-[11px] text-slate-500 mt-3">
                     {severanceCap.note}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {taxRates && (
+              <Card className="border-slate-200">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-base">
+                      <AlertCircle className="w-4 h-4" />Vergi Oranlarını Güncelle (Bordro Kesintileri)
+                    </span>
+                    {taxRates.can_edit && (
+                      <Button size="sm" variant="outline" onClick={updateTaxRates} disabled={savingTaxRates}>
+                        {savingTaxRates ? 'Kaydediliyor…' : 'Oranları Kaydet'}
+                      </Button>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 md:grid-cols-4 text-sm">
+                    {[
+                      { key: 'sgk_employee', label: 'SGK İşçi Payı' },
+                      { key: 'unemployment', label: 'İşsizlik Sigortası' },
+                      { key: 'income_tax', label: 'Gelir Vergisi' },
+                      { key: 'stamp_tax', label: 'Damga Vergisi' },
+                    ].map(({ key, label }) => {
+                      const isCustom = taxRatesForm
+                        && Number(taxRatesForm[key]) !== Number(taxRates.defaults?.[key]);
+                      return (
+                        <div key={key} className="rounded border border-slate-200 p-3">
+                          <div className="text-xs text-slate-500">{label}</div>
+                          <div className="flex items-center gap-1 mt-1">
+                            <Input
+                              type="number"
+                              step="0.001"
+                              min="0"
+                              max="100"
+                              className="h-9"
+                              value={taxRatesForm ? (taxRatesForm[key] ?? '') : ''}
+                              disabled={!taxRates.can_edit}
+                              onChange={(e) => setTaxRatesForm((f) => ({ ...(f || {}), [key]: e.target.value }))}
+                            />
+                            <span className="text-slate-500">%</span>
+                          </div>
+                          <div className="text-[11px] mt-1">
+                            {isCustom ? (
+                              <span className="text-sky-600">
+                                Tenant'a özel (varsayılan %{Number(taxRates.defaults?.[key]).toLocaleString('tr-TR', { maximumFractionDigits: 3 })})
+                              </span>
+                            ) : (
+                              <span className="text-amber-600">Varsayılan değer</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
+                    <div className="text-[11px] text-slate-500">
+                      {taxRates.note}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Son güncelleme: {taxRates.updated_at ? taxRates.updated_at.slice(0, 10) : 'Hiç güncellenmemiş'}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
