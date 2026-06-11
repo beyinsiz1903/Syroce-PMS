@@ -74,7 +74,7 @@ export default function NotificationsScreen() {
   const items = feed.data?.items ?? [];
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg }}>
+    <View style={{ flex: 1, backgroundColor: c.bg }} testID="smoke-home-notifications">
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, gap: spacing.md }}
         refreshControl={

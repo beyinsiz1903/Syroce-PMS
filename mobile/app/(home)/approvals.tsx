@@ -45,7 +45,7 @@ export default function ApprovalsScreen() {
   const categories = approvals.data?.categories ?? [];
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg }}>
+    <View style={{ flex: 1, backgroundColor: c.bg }} testID="smoke-home-approvals">
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, gap: spacing.md }}
         refreshControl={

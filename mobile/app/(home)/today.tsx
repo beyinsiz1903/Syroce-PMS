@@ -25,7 +25,7 @@ export default function TodayScreen() {
   const preview = data?.tasks_preview ?? [];
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg }}>
+    <View style={{ flex: 1, backgroundColor: c.bg }} testID="smoke-home-today">
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, gap: spacing.md }}
         refreshControl={

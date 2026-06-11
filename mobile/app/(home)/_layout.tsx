@@ -25,16 +25,38 @@ export default function HomeLayout() {
         headerTitleStyle: { color: c.text },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: tr.tabs.notifications }} />
-      <Tabs.Screen name="today" options={{ title: tr.tabs.today }} />
-      <Tabs.Screen name="tasks" options={{ title: tr.tabs.myTasks }} />
-      <Tabs.Screen name="messages" options={{ title: tr.tabs.messages }} />
+      <Tabs.Screen
+        name="index"
+        options={{ title: tr.tabs.notifications, tabBarTestID: 'smoke-tab-notifications' }}
+      />
+      <Tabs.Screen
+        name="today"
+        options={{ title: tr.tabs.today, tabBarTestID: 'smoke-tab-today' }}
+      />
+      <Tabs.Screen
+        name="tasks"
+        options={{ title: tr.tabs.myTasks, tabBarTestID: 'smoke-tab-tasks' }}
+      />
+      <Tabs.Screen
+        name="messages"
+        options={{ title: tr.tabs.messages, tabBarTestID: 'smoke-tab-messages' }}
+      />
       <Tabs.Screen
         name="approvals"
-        options={{ title: tr.tabs.approvals, href: showApprovals ? undefined : null }}
+        options={{
+          title: tr.tabs.approvals,
+          href: showApprovals ? undefined : null,
+          tabBarTestID: 'smoke-tab-approvals',
+        }}
       />
-      <Tabs.Screen name="search" options={{ title: tr.tabs.search }} />
-      <Tabs.Screen name="profile" options={{ title: tr.tabs.profile }} />
+      <Tabs.Screen
+        name="search"
+        options={{ title: tr.tabs.search, tabBarTestID: 'smoke-tab-search' }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{ title: tr.tabs.profile, tabBarTestID: 'smoke-tab-profile' }}
+      />
     </Tabs>
   );
 }

@@ -10,7 +10,7 @@ import { tr } from '../../src/i18n/tr';
 export default function MessagesScreen() {
   const c = useTheme();
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg }}>
+    <View style={{ flex: 1, backgroundColor: c.bg }} testID="smoke-home-messages">
       <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
         <H1>{tr.hub.messagesTitle}</H1>
         <Card>

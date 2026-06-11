@@ -79,14 +79,15 @@ export default function ProfileScreen() {
         <RoleSwitcher />
 
         <H2 style={{ marginTop: spacing.sm }}>{tr.hub.modules}</H2>
-        <Card>
+        <Card testID="smoke-profile-modules">
           {visibleModules.length === 0 ? (
-            <Muted>{tr.hub.noModules}</Muted>
+            <Muted testID="smoke-no-modules">{tr.hub.noModules}</Muted>
           ) : (
             visibleModules.map((m, i) => (
               <View key={m.key}>
                 {i > 0 ? <Divider /> : null}
                 <Button
+                  testID={`smoke-module-${m.key}`}
                   title={m.label}
                   variant="secondary"
                   onPress={() => router.push(m.route)}
