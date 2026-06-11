@@ -29,16 +29,14 @@ deliberately does NOT mirror the Tier-2 flagship testIDs, so you cannot satisfy
 a Tier-2 spec by landing on today.
 
 **Canonical reconciliation (verified):** drive the REAL in-app path a single-role
-user takes — `goto('/profile')` (a NAMED route inside `(home)`, so its clean URL
-works; proven in `home-shell.spec`), then click the Profile module-grid button
-`smoke-module-housekeeping` / `smoke-module-manager` (note: the GM module key is
-`manager`, testID `smoke-module-manager`, routing to `ROUTES.gm`). Those buttons
-call `router.push(ROUTES.housekeeping|gm)` CLIENT-SIDE — that client push is what
-resolves the parens Href, NOT a fresh-document `goto('/(gm)')`. `hk-gm.spec` uses
-an `openProfileModule(page, testid)` helper for exactly this. For a spec whose
-target endpoint fires on the group-index MOUNT (e.g. GM snapshot), arm the
-`waitForResponse` AFTER `/profile` settles but BEFORE the module click — the
-request fires on the pushed group index, not on the profile landing. Module
-visibility is entitlement-gated (`allAccess || role==='housekeeping'` /
-`role==='gm'`), and `normalizeRole` collapses manager/gm/admin/super_admin → `gm`,
-so a plain-manager or all-access CI account both see the manager module.
+user takes in TWO hops — first `goto` a NAMED route inside `(home)` whose clean
+URL resolves (the Profile screen), then CLICK the Profile module-grid entry for
+the target group. That button's `router.push(parensHref)` runs CLIENT-SIDE, and
+the client push is what resolves the parens Href — a fresh-document
+`goto('/(gm)')` does NOT. So a Tier-2 spec must navigate named-route-goto →
+in-app push, never a single clean goto. For a spec whose target endpoint fires on
+the group-index MOUNT (e.g. the GM snapshot), arm the `waitForResponse` AFTER the
+named route settles but BEFORE the module click — the request fires on the pushed
+group index, not on the landing. (The exact module testIDs/keys and entitlement
+booleans are code-derivable and go stale — grep `smoke-module-` in the Profile
+screen's module list rather than trusting remembered literals.)
