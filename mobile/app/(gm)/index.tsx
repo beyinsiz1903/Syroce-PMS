@@ -91,7 +91,7 @@ function StatRow({ label, value, tone }: { label: string; value: number; tone?: 
 
 function HousekeepingCard({ hk }: { hk: GmHousekeeping }) {
   return (
-    <Card>
+    <Card testID="gm-hk-status">
       <StatRow label={tr.manager.hkReady} value={hk.ready_rooms} tone="success" />
       <StatRow label={tr.manager.hkOccupied} value={hk.occupied} />
       <StatRow label={tr.manager.hkDirty} value={hk.dirty_rooms} tone="warning" />
@@ -289,11 +289,11 @@ export default function GMOverview() {
             <H2 style={{ marginTop: spacing.sm }}>{tr.manager.channelsTitle}</H2>
             <Muted>{tr.manager.last30}</Muted>
             {channels.length === 0 ? (
-              <Card>
+              <Card testID="gm-channels">
                 <Muted>{tr.manager.noChannelData}</Muted>
               </Card>
             ) : (
-              <Card>
+              <Card testID="gm-channels">
                 {channels.map((ch, idx) => (
                   <ChannelRow key={`${ch.source}-${idx}`} ch={ch} />
                 ))}

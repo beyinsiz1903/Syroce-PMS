@@ -278,7 +278,7 @@ export default function RoomsScreen() {
       >
         <Card style={{ borderLeftWidth: 4, borderLeftColor: color }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <View>
+            <View style={{ flex: 1 }}>
               <H2>Oda {r.room_number}</H2>
               <Muted>
                 {r.room_type || '—'} · Kat {r.floor ?? '—'}
@@ -289,6 +289,22 @@ export default function RoomsScreen() {
               {openCount > 0 ? (
                 <Badge label={`${openCount} ${tr.housekeeping.openTasks}`} tone="info" />
               ) : null}
+              {/* Direct tap entry to the assign sheet. The long-press action
+                  menu (above) relies on the native Alert, which is a no-op on
+                  Expo Web — this button keeps the assign flow reachable (and
+                  discoverable) on every platform, and gives the e2e a stable
+                  affordance to open the modal. */}
+              <Button
+                title={tr.housekeeping.assignTask}
+                variant="secondary"
+                onPress={() => openAssign(r)}
+                testID="hk-room-assign"
+                style={{
+                  paddingVertical: spacing.xs,
+                  paddingHorizontal: spacing.sm,
+                  minHeight: 0,
+                }}
+              />
             </View>
           </View>
         </Card>
@@ -451,6 +467,7 @@ export default function RoomsScreen() {
         >
           <Pressable
             onPress={() => {}}
+            testID="hk-assign-modal"
             style={{
               backgroundColor: c.bg,
               borderTopLeftRadius: radius.lg,
@@ -469,7 +486,7 @@ export default function RoomsScreen() {
               {staff.isLoading ? (
                 <SkeletonCard />
               ) : (staff.data || []).length === 0 ? (
-                <Card>
+                <Card testID="hk-no-staff">
                   <Muted>{tr.housekeeping.noStaff}</Muted>
                 </Card>
               ) : (
@@ -481,6 +498,7 @@ export default function RoomsScreen() {
                       <Pressable
                         key={`${keyVal}-${idx}`}
                         onPress={() => setStaffSel(s)}
+                        testID="hk-staff-option"
                         style={{
                           borderWidth: 1,
                           borderColor: sel ? c.primary : c.border,
@@ -512,6 +530,7 @@ export default function RoomsScreen() {
                     title={taskTypeLabel(t)}
                     variant={taskType === t ? 'primary' : 'secondary'}
                     onPress={() => setTaskType(t)}
+                    testID={`hk-task-type-${t}`}
                     style={{ flexShrink: 0 }}
                   />
                 ))}
@@ -525,6 +544,7 @@ export default function RoomsScreen() {
                     title={priorityLabel(p)}
                     variant={priority === p ? 'primary' : 'secondary'}
                     onPress={() => setPriority(p)}
+                    testID={`hk-priority-${p}`}
                     style={{ flexShrink: 0 }}
                   />
                 ))}
@@ -536,6 +556,7 @@ export default function RoomsScreen() {
                 title={tr.app.cancel}
                 variant="secondary"
                 onPress={closeAssign}
+                testID="hk-assign-cancel"
                 style={{ flex: 1 }}
               />
               <Button
@@ -543,6 +564,7 @@ export default function RoomsScreen() {
                 variant="primary"
                 onPress={() => void submitAssign()}
                 disabled={submitting || !staffSel}
+                testID="hk-assign-submit"
                 style={{ flex: 1 }}
               />
             </View>
