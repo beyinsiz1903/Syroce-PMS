@@ -96,3 +96,25 @@ yarn-error.log*
 
 # Auto-generated stress E2E scaffold drill report (regenerated every run)
 docs/drill_reports/*_stress_f7_scaffold.md
+
+# --- Two-repl shared-origin de-conflict (Task #5) ---
+# This GitHub origin is fed by TWO Replit repls: this one (mobile/static,
+# -syroce host) and a separate VM web+backend repl (-1 host). The paths below
+# legitimately DIFFER per repl, so tracking them caused a merge conflict on
+# every GitHub Pull. Each repl now keeps its own local copy.
+#   IMPORTANT: this must be applied in BOTH repls. .gitignore alone does NOT
+#   untrack already-committed files — the operator must run, once per repl:
+#     git rm -r --cached .replit frontend/build .agents/memory && git commit
+#   See docs/ops/TWO_REPL_SYNC_DECONFLICT.md for the full operator procedure.
+#
+# .replit: deployment block / workflows / userenv differ per repl (this repl
+# stays deploymentTarget="static"; the VM repl stays "vm"). Untracking also
+# removes plaintext userenv secrets from future commits.
+.replit
+# frontend/build: generated React SPA build. The VM repl serves it and must
+# regenerate it at deploy time (cd frontend && yarn build); this static repl
+# deploys mobile/dist and does not need it committed.
+frontend/build/
+# .agents/memory: per-repl agent working memory; both repls mutate it
+# independently (the index + topic files), so it must not sync.
+.agents/memory/
