@@ -9,6 +9,7 @@ export type ThemeColors = {
   textMuted: string;
   primary: string;
   primaryText: string;
+  primarySoft: string;
   success: string;
   warning: string;
   danger: string;
@@ -16,6 +17,7 @@ export type ThemeColors = {
   vip: string;
 };
 
+// Marka rengi lacivert (guven). Alert kirmizi/turuncu, success yesil, bg off-white.
 const dark: ThemeColors = {
   bg: '#0b0f1a',
   surface: '#121826',
@@ -23,29 +25,31 @@ const dark: ThemeColors = {
   border: '#243049',
   text: '#f4f6fb',
   textMuted: '#9aa6bf',
-  primary: '#3b82f6',
+  primary: '#3b6fe0',
   primaryText: '#ffffff',
-  success: '#16a34a',
-  warning: '#f59e0b',
-  danger: '#ef4444',
-  info: '#0ea5e9',
-  vip: '#a855f7',
+  primarySoft: '#1b2747',
+  success: '#22c55e',
+  warning: '#fb923c',
+  danger: '#f05252',
+  info: '#38bdf8',
+  vip: '#fbbf24',
 };
 
 const light: ThemeColors = {
-  bg: '#f7f8fb',
+  bg: '#f5f7fa',
   surface: '#ffffff',
   surfaceAlt: '#eef1f7',
-  border: '#dde2ec',
+  border: '#e2e7f0',
   text: '#0f172a',
   textMuted: '#5b6478',
-  primary: '#2563eb',
+  primary: '#1e3a8a',
   primaryText: '#ffffff',
+  primarySoft: '#e6ecf8',
   success: '#15803d',
-  warning: '#b45309',
-  danger: '#b91c1c',
+  warning: '#ea580c',
+  danger: '#dc2626',
   info: '#0369a1',
-  vip: '#7c3aed',
+  vip: '#a16207',
 };
 
 export const spacing = {
@@ -60,8 +64,19 @@ export const spacing = {
 export const radius = {
   sm: 6,
   md: 10,
-  lg: 14,
-  xl: 20,
+  lg: 16,
+  xl: 24,
+  pill: 999,
+};
+
+// Yumusak yukselti (scannability icin kartlari zeminden ayirir). Dark modda
+// golge neredeyse gorunmez, bu yuzden orada sinir tasiyiciligi yapar.
+export const cardShadow = {
+  shadowColor: '#0f172a',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.06,
+  shadowRadius: 8,
+  elevation: 2,
 };
 
 export function useTheme(): ThemeColors {

@@ -1,13 +1,15 @@
-import React, { useCallback } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { Body, Card, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import { useRouter } from 'expo-router';
+import { Body, Button, Card, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
 import { KpiCard, KpiRow, KpiPill } from '../../src/components/KpiCard';
 import { RoleSwitcher } from '../../src/components/RoleSwitcher';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
+import { ROUTES } from '../../src/navigation/routes';
 import {
   Complaint,
   GmChannel,
@@ -16,6 +18,7 @@ import {
   getComplaintManagement,
   getGmSnapshot,
 } from '../../src/api/gm';
+import { getApprovals } from '../../src/api/hub';
 import { formatCurrency } from '../../src/utils/format';
 import { isOffline } from '../../src/utils/errors';
 import type { KpiTrend } from '../../src/components/KpiCard';
@@ -127,6 +130,7 @@ function ChannelRow({ ch }: { ch: GmChannel }) {
 
 export default function GMOverview() {
   const c = useTheme();
+  const router = useRouter();
   const { user } = useAuthStore();
 
   const snapshot = useQuery({ queryKey: ['gm-snapshot'], queryFn: getGmSnapshot });
@@ -134,12 +138,24 @@ export default function GMOverview() {
     queryKey: ['gm-complaints'],
     queryFn: getComplaintManagement,
   });
+  // Reuse the existing RBAC-guarded approvals feed (no new endpoint). The strip
+  // only renders when there is something pending, so a 403/empty result for a
+  // manager who cannot approve simply hides it — no error surface, no console
+  // noise (keeps the zero-console Expo Web gate green).
+  const approvals = useQuery({ queryKey: ['gm-approvals'], queryFn: getApprovals });
+
+  const urgentApprovals = useMemo(() => {
+    const items = (approvals.data?.categories || []).flatMap((cat) => cat.items);
+    const rank = (p: string) => (p === 'urgent' ? 0 : p === 'high' ? 1 : 2);
+    return [...items].sort((a, b) => rank(a.priority) - rank(b.priority)).slice(0, 8);
+  }, [approvals.data]);
 
   const refreshing = snapshot.isFetching && !snapshot.isLoading;
   const onRefresh = useCallback(() => {
     snapshot.refetch();
     complaints.refetch();
-  }, [snapshot, complaints]);
+    approvals.refetch();
+  }, [snapshot, complaints, approvals]);
 
   const offline = snapshot.isError && isOffline(snapshot.error);
 
@@ -176,6 +192,73 @@ export default function GMOverview() {
         </Muted>
 
         <RoleSwitcher />
+
+        {urgentApprovals.length > 0 ? (
+          <View style={{ gap: spacing.sm }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <H2>{tr.manager.urgentApprovalsTitle}</H2>
+              <Button
+                title={tr.manager.viewAllApprovals}
+                variant="ghost"
+                icon="chevron-forward"
+                onPress={() => router.push(ROUTES.homeApprovals)}
+              />
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.xs }}
+            >
+              {urgentApprovals.map((item) => (
+                <Pressable key={item.id} onPress={() => router.push(ROUTES.homeApprovals)}>
+                  <Card
+                    accent={item.priority === 'urgent' ? c.danger : c.warning}
+                    style={{ width: 220 }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: spacing.xs,
+                      }}
+                    >
+                      <Body style={{ flex: 1, fontWeight: '700' }} numberOfLines={1}>
+                        {item.title}
+                      </Body>
+                      {item.priority && item.priority !== 'normal' ? (
+                        <KpiPill
+                          label={
+                            item.priority === 'urgent'
+                              ? tr.hub.priorityUrgent
+                              : tr.hub.priorityHigh
+                          }
+                          tone={item.priority === 'urgent' ? 'danger' : 'warning'}
+                        />
+                      ) : null}
+                    </View>
+                    {item.requested_by ? (
+                      <Muted numberOfLines={1} style={{ marginTop: spacing.xs }}>
+                        {item.requested_by}
+                      </Muted>
+                    ) : null}
+                    {typeof item.amount === 'number' ? (
+                      <Body style={{ fontWeight: '700', marginTop: spacing.xs }}>
+                        {formatCurrency(item.amount)}
+                      </Body>
+                    ) : null}
+                  </Card>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
 
         <H2>{tr.manager.kpis}</H2>
 

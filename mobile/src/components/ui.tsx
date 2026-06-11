@@ -14,7 +14,10 @@ import {
   ViewProps,
   ViewStyle,
 } from 'react-native';
-import { radius, spacing, useTheme } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
+import { cardShadow, radius, spacing, useTheme } from '../theme';
+
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
 export const Screen: React.FC<ViewProps> = ({ style, children, ...rest }) => {
   const c = useTheme();
@@ -25,18 +28,29 @@ export const Screen: React.FC<ViewProps> = ({ style, children, ...rest }) => {
   );
 };
 
-export const Card: React.FC<ViewProps> = ({ style, children, ...rest }) => {
+// Kart: scannability icin yumusak yukselti + radius.lg. `accent` verilirse sol
+// kenarda renkli durum cubugu cizer (urgency / status at-a-glance).
+export const Card: React.FC<ViewProps & { accent?: string; elevated?: boolean; padded?: boolean }> = ({
+  style,
+  children,
+  accent,
+  elevated = true,
+  padded = true,
+  ...rest
+}) => {
   const c = useTheme();
   return (
     <View
       style={[
         {
           backgroundColor: c.surface,
-          borderRadius: radius.md,
-          padding: spacing.lg,
+          borderRadius: radius.lg,
+          padding: padded ? spacing.lg : 0,
           borderWidth: 1,
           borderColor: c.border,
         },
+        accent ? { borderLeftWidth: 4, borderLeftColor: accent } : null,
+        elevated ? cardShadow : null,
         style,
       ]}
       {...rest}
@@ -51,7 +65,7 @@ export const H1: React.FC<TextProps> = ({ style, ...rest }) => {
   return (
     <Text
       accessibilityRole="header"
-      style={[{ color: c.text, fontSize: 24, fontWeight: '700' }, style]}
+      style={[{ color: c.text, fontSize: 26, fontWeight: '800', letterSpacing: -0.3 }, style]}
       {...rest}
     />
   );
@@ -61,7 +75,7 @@ export const H2: React.FC<TextProps> = ({ style, ...rest }) => {
   const c = useTheme();
   return (
     <Text
-      style={[{ color: c.text, fontSize: 18, fontWeight: '600' }, style]}
+      style={[{ color: c.text, fontSize: 18, fontWeight: '700', letterSpacing: -0.2 }, style]}
       {...rest}
     />
   );
@@ -77,11 +91,14 @@ export const Muted: React.FC<TextProps> = ({ style, ...rest }) => {
   return <Text style={[{ color: c.textMuted, fontSize: 13 }, style]} {...rest} />;
 };
 
+type ButtonVariant = 'primary' | 'secondary' | 'success' | 'danger' | 'outline' | 'ghost';
+
 type ButtonProps = PressableProps & {
   title: string;
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  variant?: ButtonVariant;
   loading?: boolean;
   fullWidth?: boolean;
+  icon?: IoniconName;
 };
 
 export const Button: React.FC<ButtonProps> = ({
@@ -89,17 +106,21 @@ export const Button: React.FC<ButtonProps> = ({
   variant = 'primary',
   loading,
   fullWidth,
+  icon,
   style,
   disabled,
   ...rest
 }) => {
   const c = useTheme();
-  const palette = {
+  const palette: Record<ButtonVariant, { bg: string; text: string; border: string }> = {
     primary: { bg: c.primary, text: c.primaryText, border: c.primary },
     secondary: { bg: c.surfaceAlt, text: c.text, border: c.border },
-    danger: { bg: c.danger, text: c.primaryText, border: c.danger },
+    success: { bg: c.success, text: '#ffffff', border: c.success },
+    danger: { bg: c.danger, text: '#ffffff', border: c.danger },
+    outline: { bg: 'transparent', text: c.text, border: c.border },
     ghost: { bg: 'transparent', text: c.primary, border: 'transparent' },
-  }[variant];
+  };
+  const p = palette[variant];
 
   return (
     <Pressable
@@ -108,8 +129,8 @@ export const Button: React.FC<ButtonProps> = ({
       disabled={disabled || loading}
       style={({ pressed }) => [
         {
-          backgroundColor: palette.bg,
-          borderColor: palette.border,
+          backgroundColor: p.bg,
+          borderColor: p.border,
           borderWidth: 1,
           paddingVertical: spacing.md,
           paddingHorizontal: spacing.lg,
@@ -125,9 +146,12 @@ export const Button: React.FC<ButtonProps> = ({
       {...rest}
     >
       {loading ? (
-        <ActivityIndicator color={palette.text} />
+        <ActivityIndicator color={p.text} />
       ) : (
-        <Text style={{ color: palette.text, fontSize: 16, fontWeight: '600' }}>{title}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs }}>
+          {icon ? <Ionicons name={icon} size={18} color={p.text} /> : null}
+          <Text style={{ color: p.text, fontSize: 16, fontWeight: '700' }}>{title}</Text>
+        </View>
       )}
     </Pressable>
   );
@@ -159,14 +183,18 @@ export const Field: React.FC<TextInputProps & { label?: string }> = ({ label, st
   );
 };
 
+type BadgeTone = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'vip' | 'primary';
+
 type BadgeProps = {
   label: string;
-  tone?: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'vip' | 'primary';
+  tone?: BadgeTone;
+  icon?: IoniconName;
 };
 
-export const Badge: React.FC<BadgeProps> = ({ label, tone = 'default' }) => {
+// Durum rozeti: yuvarlak pill, renkli tint zemin + renkli metin (shadcn hissi).
+export const Badge: React.FC<BadgeProps> = ({ label, tone = 'default', icon }) => {
   const c = useTheme();
-  const map = {
+  const map: Record<BadgeTone, string> = {
     default: c.textMuted,
     success: c.success,
     warning: c.warning,
@@ -179,16 +207,18 @@ export const Badge: React.FC<BadgeProps> = ({ label, tone = 'default' }) => {
   return (
     <View
       style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
         paddingHorizontal: spacing.sm,
-        paddingVertical: 2,
-        borderRadius: radius.sm,
-        backgroundColor: color + '22',
-        borderWidth: 1,
-        borderColor: color,
+        paddingVertical: 3,
+        borderRadius: radius.pill,
+        backgroundColor: color + '1f',
         alignSelf: 'flex-start',
       }}
     >
-      <Text style={{ color, fontSize: 11, fontWeight: '600' }}>{label}</Text>
+      {icon ? <Ionicons name={icon} size={12} color={color} /> : null}
+      <Text style={{ color, fontSize: 11, fontWeight: '700', letterSpacing: 0.2 }}>{label}</Text>
     </View>
   );
 };
@@ -228,6 +258,50 @@ export const SkeletonCard: React.FC = () => (
 export const Divider: React.FC = () => {
   const c = useTheme();
   return <View style={{ height: 1, backgroundColor: c.border, marginVertical: spacing.md }} />;
+};
+
+// Bos durum: ikon (yumusak daire icinde) + neseli Turkce metin. Placeholder
+// gorsel KULLANILMAZ (expo doktrini). Istege bagli aksiyon (buton vb.).
+export const EmptyState: React.FC<{
+  icon?: IoniconName;
+  title: string;
+  message?: string;
+  action?: React.ReactNode;
+  testID?: string;
+}> = ({ icon = 'sparkles-outline', title, message, action, testID }) => {
+  const c = useTheme();
+  return (
+    <View
+      testID={testID}
+      style={{
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: spacing.xxl,
+        paddingHorizontal: spacing.xl,
+        gap: spacing.md,
+      }}
+    >
+      <View
+        style={{
+          width: 88,
+          height: 88,
+          borderRadius: radius.pill,
+          backgroundColor: c.primarySoft,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Ionicons name={icon} size={40} color={c.primary} />
+      </View>
+      <Text style={{ color: c.text, fontSize: 18, fontWeight: '700', textAlign: 'center' }}>{title}</Text>
+      {message ? (
+        <Text style={{ color: c.textMuted, fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
+          {message}
+        </Text>
+      ) : null}
+      {action ? <View style={{ marginTop: spacing.sm }}>{action}</View> : null}
+    </View>
+  );
 };
 
 export const styles = StyleSheet.create({});

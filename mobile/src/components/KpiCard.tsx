@@ -1,5 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Card } from './ui';
 import { radius, spacing, useTheme } from '../theme';
 import { Text } from 'react-native';
@@ -28,7 +29,8 @@ export const KpiCard: React.FC<{
   }[tone];
   const trendColor =
     trend === 'up' ? c.success : trend === 'down' ? c.danger : c.textMuted;
-  const marker = trend === 'up' ? '▲' : trend === 'down' ? '▼' : '•';
+  const trendIcon: keyof typeof Ionicons.glyphMap =
+    trend === 'up' ? 'trending-up' : trend === 'down' ? 'trending-down' : 'remove';
 
   return (
     <Card style={{ flex: 1 }} testID={testID}>
@@ -51,7 +53,7 @@ export const KpiCard: React.FC<{
             marginTop: spacing.xs,
           }}
         >
-          <Text style={{ color: trendColor, fontSize: 11 }}>{marker}</Text>
+          <Ionicons name={trendIcon} size={12} color={trendColor} />
           <Text style={{ color: c.textMuted, fontSize: 11 }} numberOfLines={1}>
             {delta}
           </Text>

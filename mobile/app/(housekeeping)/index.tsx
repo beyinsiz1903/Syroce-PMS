@@ -14,6 +14,7 @@ import {
   Badge,
   Button,
   Card,
+  EmptyState,
   H1,
   H2,
   Muted,
@@ -181,6 +182,41 @@ export default function RoomsScreen() {
     return list.filter((r) => String(r.floor) === floor);
   }, [rooms.data, floor]);
 
+  // Urgency-first ordering so the rooms that need action surface at the top
+  // (urgent/high open tasks, then dirty/out-of-order, then the rest). Within an
+  // equal bucket we keep a stable natural room-number order.
+  const sortedRooms = useMemo(() => {
+    const urgency = (r: Room): number => {
+      const tasks = tasksByRoom.get(r.id) || [];
+      let score = tasks.reduce((acc, t) => {
+        const p = (t.priority || '').toLowerCase();
+        return acc + (p === 'urgent' ? 100 : p === 'high' ? 40 : 10);
+      }, 0);
+      const s = (r.status || '').toLowerCase();
+      if (s === 'dirty') score += 30;
+      else if (s === 'out_of_order' || s === 'maintenance') score += 20;
+      else if (s === 'cleaning' || s === 'inspection') score += 10;
+      return score;
+    };
+    return [...filtered].sort((a, b) => {
+      const d = urgency(b) - urgency(a);
+      if (d !== 0) return d;
+      return a.room_number.localeCompare(b.room_number, 'tr', { numeric: true });
+    });
+  }, [filtered, tasksByRoom]);
+
+  // Ready = sellable/clean rooms across the whole property (not floor-filtered)
+  // so the progress hero reflects the full picture.
+  const readyCount = useMemo(
+    () =>
+      (rooms.data || []).filter((r) =>
+        ['available', 'inspected', 'clean'].includes((r.status || '').toLowerCase()),
+      ).length,
+    [rooms.data],
+  );
+  const totalCount = (rooms.data || []).length;
+  const readyPct = totalCount > 0 ? Math.round((readyCount / totalCount) * 100) : 0;
+
   const offline = rooms.isError && isOffline(rooms.error);
 
   // Status flips are applied straight from the status sheet. The success/error
@@ -286,11 +322,35 @@ export default function RoomsScreen() {
               <Muted>
                 {r.room_type || '—'} · Kat {r.floor ?? '—'}
               </Muted>
+              {r.guest_name ? (
+                <Muted numberOfLines={1}>
+                  {tr.housekeeping.guest}: {r.guest_name}
+                </Muted>
+              ) : null}
             </View>
             <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
               <Badge label={label} tone={roomStatusTone(r.status)} />
               {openCount > 0 ? (
                 <Badge label={`${openCount} ${tr.housekeeping.openTasks}`} tone="info" />
+              ) : null}
+              {/* Tap-twin of a swipe-to-clean gesture: dirty rooms get a single
+                  thumb-zone action to flip straight to "Temizleniyor" without
+                  opening the status sheet. (Real Swipeable is intentionally
+                  avoided — no GestureHandlerRootView at the root, and it would
+                  break the zero-console Expo Web gate.) */}
+              {(r.status || '').toLowerCase() === 'dirty' ? (
+                <Button
+                  title={tr.housekeeping.quickClean}
+                  variant="success"
+                  icon="sparkles"
+                  onPress={() => void applyStatus(r, 'cleaning')}
+                  testID="hk-quick-clean"
+                  style={{
+                    paddingVertical: spacing.xs,
+                    paddingHorizontal: spacing.sm,
+                    minHeight: 0,
+                  }}
+                />
               ) : null}
               {/* Direct tap entries to the status + assign sheets. The
                   long-press action menu (above) relies on the native Alert,
@@ -333,6 +393,40 @@ export default function RoomsScreen() {
       <View style={{ height: spacing.md }} />
       <OfflineBanner visible={!!offline} />
 
+      {totalCount > 0 ? (
+        <Card accent={c.primary} style={{ marginBottom: spacing.sm }}>
+          <View
+            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+          >
+            <H2>
+              {readyCount} / {totalCount} {tr.housekeeping.roomsReadyProgress}
+            </H2>
+            <Badge
+              label={`%${readyPct}`}
+              tone={readyPct >= 80 ? 'success' : readyPct >= 50 ? 'warning' : 'danger'}
+            />
+          </View>
+          <View
+            style={{
+              height: 8,
+              borderRadius: radius.pill,
+              backgroundColor: c.surfaceAlt,
+              marginTop: spacing.sm,
+              overflow: 'hidden',
+            }}
+          >
+            <View
+              style={{
+                height: 8,
+                width: `${readyPct}%`,
+                backgroundColor: c.success,
+                borderRadius: radius.pill,
+              }}
+            />
+          </View>
+        </Card>
+      ) : null}
+
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -363,7 +457,7 @@ export default function RoomsScreen() {
         </View>
       ) : (
         <FlatList
-          data={filtered}
+          data={sortedRooms}
           keyExtractor={(r) => r.id}
           renderItem={renderRoom}
           refreshControl={
@@ -380,9 +474,7 @@ export default function RoomsScreen() {
             />
           }
           ListEmptyComponent={
-            <Card>
-              <Muted>{tr.app.empty}</Muted>
-            </Card>
+            <EmptyState icon="bed-outline" title={tr.app.empty} />
           }
         />
       )}

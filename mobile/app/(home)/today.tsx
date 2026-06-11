@@ -12,7 +12,7 @@ import { getToday } from '../../src/api/hub';
 
 export default function TodayScreen() {
   const c = useTheme();
-  const { user } = useAuthStore();
+  const { user, approvalsAccess, allAccess } = useAuthStore();
   const today = useQuery({ queryKey: ['hub-today'], queryFn: getToday });
 
   const refreshing = today.isFetching && !today.isLoading;
@@ -23,6 +23,19 @@ export default function TodayScreen() {
   const offline = today.isError && isOffline(today.error);
   const data = today.data;
   const preview = data?.tasks_preview ?? [];
+
+  // Role-aware framing line: approvers (managers) are steered to pending
+  // approvals first, everyone else to their open tasks. Falls back to an
+  // all-clear note. Cosmetic only — no query/RBAC change, backend still gates.
+  const canApprove = approvalsAccess || allAccess;
+  const pendingApprovals = data?.pending_approvals ?? 0;
+  const openTasks = data?.open_tasks ?? 0;
+  const focusLine =
+    canApprove && pendingApprovals > 0
+      ? tr.hub.focusApprovals
+      : openTasks > 0
+        ? tr.hub.focusTasks
+        : tr.hub.focusAllClear;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }} testID="smoke-home-today">
@@ -35,6 +48,9 @@ export default function TodayScreen() {
         <OfflineBanner visible={offline} />
         <H1>{tr.hub.todayTitle}</H1>
         <Muted>{user?.name || user?.username || user?.email}</Muted>
+        {data ? (
+          <Body style={{ color: c.primary, fontWeight: '600' }}>{focusLine}</Body>
+        ) : null}
 
         {today.isLoading ? (
           <>

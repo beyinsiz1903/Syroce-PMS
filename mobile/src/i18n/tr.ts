@@ -61,6 +61,10 @@ export const tr = {
     unreadFeed: 'Okunmamış bildirim',
     pendingApprovals: 'Bekleyen onay',
     upcomingTasks: 'Yaklaşan görevler',
+    focusApprovals: 'Öncelik: bekleyen onaylar',
+    focusTasks: 'Öncelik: açık görevler',
+    focusAllClear: 'Bugün her şey kontrol altında',
+    amountLabel: 'Tutar',
     approvalsTitle: 'Onaylarım',
     approvalsEmpty: 'Bekleyen onay yok',
     requestedBy: 'Talep eden',
@@ -107,6 +111,7 @@ export const tr = {
     noModules: 'Erişilebilir modül yok',
     priorityUrgent: 'Acil',
     priorityHigh: 'Yüksek',
+    priorityNormal: 'Normal',
   },
   roleSwitch: {
     title: 'Rol Değiştir',
@@ -202,6 +207,9 @@ export const tr = {
     noOpenTasks: 'Açık görev yok',
     unassigned: 'Atanmamış',
     viewTasks: 'Görevleri gör',
+    quickClean: 'Hızlı Temizle',
+    roomsReadyProgress: 'oda hazır',
+    guest: 'Misafir',
   },
   // ── Manager: Live KPI Panel + Reports (Task #256) ──
   manager: {
@@ -268,6 +276,9 @@ export const tr = {
     aging814: '8-14 gün',
     aging1530: '15-30 gün',
     aging30plus: '30+ gün',
+    urgentApprovalsTitle: 'Acil Onaylar',
+    viewAllApprovals: 'Tümünü gör',
+    noUrgentApprovals: 'Bekleyen onay yok',
   },
   more: {
     profile: 'Profil',
