@@ -134,15 +134,54 @@ fi
 # Requires Redis as the broker; skipped (with a clear log) if Redis is absent.
 if [ "${SYROCE_START_CELERY:-1}" = "1" ] && [ -n "$REDIS_URL" ]; then
   CELERY_CONCURRENCY="${CELERY_WORKER_CONCURRENCY:-2}"
-  "$PYTHON_BIN" -m celery -A celery_app worker \
-    --loglevel="${CELERY_LOGLEVEL:-info}" \
-    --concurrency="$CELERY_CONCURRENCY" \
-    --logfile /tmp/celery-worker.log --pidfile /tmp/celery-worker.pid &
-  "$PYTHON_BIN" -m celery -A celery_app beat \
-    --loglevel="${CELERY_LOGLEVEL:-info}" \
-    --logfile /tmp/celery-beat.log --pidfile /tmp/celery-beat.pid \
-    --schedule /tmp/celerybeat-schedule &
-  echo "✅ Celery worker (concurrency=$CELERY_CONCURRENCY) + beat started (night audit dispatcher active)"
+
+  _start_celery() {
+    "$PYTHON_BIN" -m celery -A celery_app worker \
+      --loglevel="${CELERY_LOGLEVEL:-info}" \
+      --concurrency="$CELERY_CONCURRENCY" \
+      --logfile /tmp/celery-worker.log --pidfile /tmp/celery-worker.pid &
+    "$PYTHON_BIN" -m celery -A celery_app beat \
+      --loglevel="${CELERY_LOGLEVEL:-info}" \
+      --logfile /tmp/celery-beat.log --pidfile /tmp/celery-beat.pid \
+      --schedule /tmp/celerybeat-schedule &
+  }
+
+  if [ -n "$REPLIT_DEPLOYMENT" ]; then
+    # In deployment, uvicorn races a platform port-open deadline. Celery's
+    # `-A celery_app` import pulls in the whole app (and ML modules via
+    # importlib); started concurrently it starves uvicorn for CPU on a
+    # constrained deploy VM, roughly tripling the time to open the port
+    # (~7s -> ~21s observed in deploy logs). That occasionally exceeds the
+    # deadline -> "required port 5000 never opened" -> restart loop, during
+    # which the edge proxy serves a bare "Internal Server Error" because no
+    # healthy backend is listening. The night-audit dispatcher runs once a
+    # minute and is NOT boot-critical, so defer the workers until the port is
+    # accepting connections. A bounded fallback still launches Celery if the
+    # port is never observed open, so the audit cannot be silently disabled.
+    # Tune the cap with SYROCE_CELERY_PORT_WAIT (seconds). (Dev has no
+    # port-open deadline, so it keeps the original immediate start below.)
+    CELERY_PORT_WAIT="${SYROCE_CELERY_PORT_WAIT:-120}"
+    (
+      _ready=0
+      for _ in $(seq 1 "$CELERY_PORT_WAIT"); do
+        if ( exec 3<>"/dev/tcp/127.0.0.1/$PORT" ) 2>/dev/null; then
+          _ready=1
+          break
+        fi
+        sleep 1
+      done
+      if [ "$_ready" = "1" ]; then
+        echo "✅ Port $PORT open — starting Celery worker (concurrency=$CELERY_CONCURRENCY) + beat (deferred to protect port-open window)"
+      else
+        echo "⚠️  Port $PORT not observed open after ${CELERY_PORT_WAIT}s — starting Celery anyway (night audit must run)"
+      fi
+      _start_celery
+    ) &
+    echo "ℹ️  Celery startup deferred until port $PORT is open (night audit dispatcher will activate shortly after boot)"
+  else
+    _start_celery
+    echo "✅ Celery worker (concurrency=$CELERY_CONCURRENCY) + beat started (night audit dispatcher active)"
+  fi
 else
   echo "ℹ️  Celery başlatılmadı (Redis yok veya SYROCE_START_CELERY=0); gece denetimi tetiklenmeyecek."
 fi
