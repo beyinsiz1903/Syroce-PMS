@@ -713,6 +713,8 @@ export const tr = {
       total: 'Toplam',
       openOrder: 'Siparişi Aç',
       orderOpened: 'Sipariş açıldı',
+      orderQueued: 'Bağlantı yok — sipariş kuyruğa alındı, internet gelince gönderilecek',
+      pendingSync: 'Gönderim bekleyen',
       activeOrders: 'Aktif Siparişler',
       noActiveOrders: 'Aktif sipariş yok',
       delayed: 'Geciken',

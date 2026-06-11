@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { Redirect } from 'expo-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge, Body, Button, Card, Field, H1, Muted } from '../../src/components/ui';
 import { DepartmentListState, SectionTitle } from '../../src/components/department';
 import { spacing, radius, useTheme } from '../../src/theme';
@@ -29,8 +29,23 @@ import {
   type TableSlot,
 } from '../../src/api/posFnb';
 import { listFolios, type FolioListItem } from '../../src/api/folio';
+import { ApiError } from '../../src/api/client';
 import { formatCurrency } from '../../src/utils/format';
 import { errorMessage } from '../../src/utils/errors';
+import { makeIdempotencyKey } from '../../src/cache/posQueueCore';
+import {
+  enqueueCloseOrder,
+  enqueueQuickOrder,
+  refreshPosQueueCount,
+  usePosQueueCount,
+} from '../../src/cache/posQueue';
+
+// A request that never reached the server (offline / dropped mid-flight) so we
+// can safely move it into the durable queue. ApiError(0, 'NETWORK') is raised
+// by the API client's fetch catch; everything else is a server response.
+function isNetworkError(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 0;
+}
 
 type Tab = 'order' | 'active' | 'tables' | 'folio';
 type CartLine = { item_id: string; quantity: number };
@@ -78,6 +93,14 @@ export default function PosScreen() {
   const c = useTheme();
   const qc = useQueryClient();
   const posAccess = useAuthStore((s) => s.posAccess);
+
+  // Count of POS writes (quick-order / close) waiting on the durable offline
+  // queue. Drives the header badge; re-read from disk on mount so a restart
+  // surfaces anything that was queued before the app was killed.
+  const pendingSync = usePosQueueCount();
+  useEffect(() => {
+    refreshPosQueueCount().catch(() => {});
+  }, []);
 
   const [tab, setTab] = useState<Tab>('order');
   const [outletId, setOutletId] = useState<string>('');
@@ -190,22 +213,46 @@ export default function PosScreen() {
       return;
     }
     setOpening(true);
-    try {
-      await openQuickOrder({
-        outlet_id: activeOutlet,
-        table_number: tableNumber || undefined,
-        items: cart,
-        notes: notes || undefined,
-      });
-      haptic.success();
+    // Stable key generated BEFORE the first attempt so a queued replay (or a
+    // committed-but-response-lost retry) reuses it and the backend dedupes.
+    const idempotencyKey = makeIdempotencyKey('pos_quick_order');
+    const payload = {
+      outlet_id: activeOutlet,
+      table_number: tableNumber || undefined,
+      items: cart,
+      notes: notes || undefined,
+    };
+    const resetForm = () => {
       setCart([]);
       setTableNumber('');
       setNotes('');
+    };
+    try {
+      if (!onlineManager.isOnline()) {
+        // Known offline — persist straight to the durable queue, no failed call.
+        await enqueueQuickOrder(payload, idempotencyKey);
+        haptic.success();
+        resetForm();
+        Alert.alert(tr.app.success, tr.departments.pos.orderQueued);
+        return;
+      }
+      await openQuickOrder({ ...payload, idempotency_key: idempotencyKey });
+      haptic.success();
+      resetForm();
       qc.invalidateQueries({ queryKey: ['pos-active-orders'] });
       Alert.alert(tr.app.success, tr.departments.pos.orderOpened);
     } catch (e: unknown) {
-      setOrderError(errorMessage(e, tr.errors.generic));
-      haptic.error();
+      if (isNetworkError(e)) {
+        // Dropped mid-flight — move it to the durable queue (same key) so the
+        // reconnect replay finishes it exactly once.
+        await enqueueQuickOrder(payload, idempotencyKey);
+        haptic.success();
+        resetForm();
+        Alert.alert(tr.app.success, tr.departments.pos.orderQueued);
+      } else {
+        setOrderError(errorMessage(e, tr.errors.generic));
+        haptic.error();
+      }
     } finally {
       setOpening(false);
     }
@@ -228,10 +275,16 @@ export default function PosScreen() {
 
   const onCloseOrder = async (orderId: string, method: PaymentMethod) => {
     setPayingOrder({ id: orderId, method });
+    // Stable per-order key generated once; reused on a queued replay so a
+    // network retry of this exact close never books a second payment.
+    const idempotencyKey = makeIdempotencyKey('pos_close_order', orderId);
     try {
-      // Per-attempt idempotency key so a warm-up/network replay of this exact
-      // close never books a second payment for the same order.
-      const idempotencyKey = `mob-close-${orderId}-${Date.now()}`;
+      if (!onlineManager.isOnline()) {
+        await enqueueCloseOrder({ order_id: orderId, payment_method: method }, idempotencyKey);
+        haptic.success();
+        Alert.alert(tr.app.success, tr.departments.pos.orderQueued);
+        return;
+      }
       const res = await closeOrder({
         order_id: orderId,
         payment_method: method,
@@ -244,6 +297,12 @@ export default function PosScreen() {
         res?.idempotent ? tr.departments.pos.orderAlreadyClosed : tr.departments.pos.orderClosed,
       );
     } catch (e: unknown) {
+      if (isNetworkError(e)) {
+        await enqueueCloseOrder({ order_id: orderId, payment_method: method }, idempotencyKey);
+        haptic.success();
+        Alert.alert(tr.app.success, tr.departments.pos.orderQueued);
+        return;
+      }
       Alert.alert(tr.app.error, errorMessage(e, tr.errors.generic));
       haptic.error();
     } finally {
@@ -711,6 +770,13 @@ export default function PosScreen() {
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
     >
       <H1>{tr.departments.pos.title}</H1>
+
+      {/* Offline write-queue indicator — how many orders are waiting to sync. */}
+      {pendingSync > 0 ? (
+        <View style={{ flexDirection: 'row', marginTop: spacing.xs, marginBottom: spacing.xs }}>
+          <Badge label={`${tr.departments.pos.pendingSync}: ${pendingSync}`} tone="warning" />
+        </View>
+      ) : null}
 
       {/* Outlet selector */}
       <SectionTitle title={tr.departments.pos.outlet} />

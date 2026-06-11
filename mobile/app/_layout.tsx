@@ -18,6 +18,7 @@ import {
 } from '../src/navigation/routes';
 import { setupOfflineCache } from '../src/cache/persister';
 import { markSync } from '../src/cache/offlineMeta';
+import { flushPosQueue, refreshPosQueueCount } from '../src/cache/posQueue';
 import { attachPushListeners, registerForPush } from '../src/notifications/push';
 import { BiometricLockGate } from '../src/components/BiometricLockGate';
 import { installCertPinning } from '../src/security/certPinning';
@@ -170,8 +171,16 @@ export default function RootLayout() {
     // background, refetched on reconnect even when the screen wasn't
     // visible). onlineManager is the canonical hook for connectivity.
     const netSub = NetInfo.addEventListener((state) => {
-      onlineManager.setOnline(!!state.isConnected);
+      const online = !!state.isConnected;
+      onlineManager.setOnline(online);
+      // Drain the durable POS write queue the moment we come back online so
+      // orders entered offline are sent (server-authoritative, exactly once).
+      if (online) flushPosQueue().catch(() => {});
     });
+    // On cold start: surface any queue persisted before the app was killed and
+    // attempt a flush (no-op when empty / still offline).
+    refreshPosQueueCount().catch(() => {});
+    flushPosQueue().catch(() => {});
     return () => {
       dispose();
       netSub();

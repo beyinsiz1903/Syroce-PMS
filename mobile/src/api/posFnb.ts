@@ -116,11 +116,16 @@ export async function getTableLayout(outletId: string): Promise<TableLayout> {
 }
 
 // POST /api/pos/mobile/quick-order — open a new order (pos_orders/pending).
+// An optional `idempotency_key` rides along so an offline-queue replay (or a
+// "committed but response lost" retry) is deduped server-side by the Phase 1
+// backend idempotency. The backend's QuickOrderRequest ignores extra fields,
+// so sending the key is safe even before that backend dedupe lands.
 export async function openQuickOrder(body: {
   outlet_id: string;
   table_number?: string;
   items: { item_id: string; quantity: number }[];
   notes?: string;
+  idempotency_key?: string;
 }): Promise<{ order_id: string; total: number; items_count: number }> {
   return api.post('/api/pos/mobile/quick-order', body);
 }
