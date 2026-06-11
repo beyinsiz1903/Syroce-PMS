@@ -15,12 +15,19 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field
+from pymongo.errors import DuplicateKeyError
 
+from core.booking_atomicity import (
+    is_replica_set_unavailable,
+    standalone_fallback_allowed,
+    with_resource_locks,
+)
 from core.database import db
 from core.security import (
     get_current_user,
     security,
 )
+from domains.pms.pos_extensions._idem import ensure_compound_unique, ensure_idem_index
 from models.enums import ChargeCategory
 from models.schemas import CreatePOSTransactionRequest, FolioCharge, User
 from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
@@ -93,6 +100,147 @@ async def recalculate_folio_balance(folio_id: str, tenant_id: str) -> float:
     return await calculate_folio_balance(folio_id, tenant_id)
 
 
+async def _folio_balance_in_session(folio_id: str, tenant_id: str, session=None) -> float:
+    """Ledger'dan (charges − payments) bakiye — transaction içinde session ile.
+
+    `core.utils.calculate_folio_balance` ile aynı formül; tek farkı session
+    geçirebilmesi (snapshot okuması transaction'ın gördüğü committed + kendi
+    yazdığı satırları kapsar). Bakiye bir cache'tir, ledger tek doğruluk
+    kaynağıdır — $inc YOK, her zaman ledger'dan türetilir.
+    """
+    ch_pipe = [
+        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}},
+        {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$total", "$amount"]}}}},
+    ]
+    pay_pipe = [
+        {"$match": {"folio_id": folio_id, "tenant_id": tenant_id, "voided": False}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+    ]
+    ch_doc = await db.folio_charges.aggregate(ch_pipe, session=session).to_list(1)
+    pay_doc = await db.payments.aggregate(pay_pipe, session=session).to_list(1)
+    total_charges = float(ch_doc[0]["total"]) if ch_doc else 0.0
+    total_payments = float(pay_doc[0]["total"]) if pay_doc else 0.0
+    return round(total_charges - total_payments, 2)
+
+
+async def _ensure_pos_atomicity_indexes(folio_post: bool) -> None:
+    """POS create-order için gereken benzersiz partial index'leri kur (fail-closed).
+
+    - pos_orders (tenant_id, idempotency_key): retry/çift-dokunmada tek sipariş.
+    - folio_charges (tenant_id, source_pos_order_id, line_no): kısmi-hata
+      sonrası DB seviyesinde çift-postlama engeli.
+
+    Her iki index de PARTIAL: legacy dokümanlar bu alanları taşımaz; partial
+    olmasaydı index kurulumu sessizce patlar (fake-green). Helper gerçek hatada
+    `raise` eder (fail-closed); caller bunu 503'e çevirir — sessizce idempotent
+    olmayan/yaris-guvensiz yazıma DÜŞMEZ.
+    """
+    await ensure_idem_index(db.pos_orders, index_name="ux_pos_orders_tenant_idemp")
+    if folio_post:
+        await ensure_compound_unique(
+            db.folio_charges,
+            [("tenant_id", 1), ("source_pos_order_id", 1), ("line_no", 1)],
+            partial_filter={"source_pos_order_id": {"$type": "string"}},
+            name="ux_folio_charges_pos_source",
+        )
+
+
+async def _persist_pos_order_atomic(
+    *,
+    order_doc: dict,
+    charge_docs: list[dict],
+    folio_id: str | None,
+    tenant_id: str,
+    idempotency_key: str | None,
+) -> tuple[dict, bool]:
+    """Sipariş + folio_charge'lar + bakiye recalc'ını tek transaction'da yazar.
+
+    Dönüş: (effective_order, was_idempotent_replay).
+
+    - Idempotency: pos_orders'a insert; aynı (tenant, idempotency_key) varsa
+      DuplicateKeyError → mevcut sipariş replay olarak döner, charge'lar
+      TEKRAR POSTLANMAZ (önceki başarılı transaction zaten atomik yazdı).
+    - Atomicity: sipariş + charge insert'leri + bakiye $set tek transaction;
+      yarıda hata → hepsi geri alınır (yarım charge kalmaz).
+    - Race-safety: aynı folyoya eşzamanlı POS yazımları folio lock dokümanı
+      üzerinde serileşir (WriteConflict → driver retry), recalc ledger'dan
+      türetildiği için nihai bakiye doğru.
+    """
+
+    async def _txn(session) -> tuple[dict, bool]:
+        # 1. Idempotency gate — order insert.
+        try:
+            await db.pos_orders.insert_one(dict(order_doc), session=session)
+        except DuplicateKeyError:
+            existing = await db.pos_orders.find_one(
+                {"tenant_id": tenant_id, "idempotency_key": idempotency_key},
+                {"_id": 0},
+                session=session,
+            )
+            # Replay: prior order (and its single charge set) already durable.
+            return existing or order_doc, True
+
+        # 2. Charges — each stamped with (source_pos_order_id, line_no); the
+        #    unique partial index dedups any partial-failure re-post.
+        if folio_id and charge_docs:
+            for cdoc in charge_docs:
+                try:
+                    await db.folio_charges.insert_one(dict(cdoc), session=session)
+                except DuplicateKeyError:
+                    # This exact (order, line) already posted — skip, do not
+                    # double-charge. Keeps the charge set idempotent at the DB.
+                    continue
+
+            # 3. Balance — single strategy: recalc from ledger inside the txn.
+            balance = await _folio_balance_in_session(folio_id, tenant_id, session=session)
+            await db.folios.update_one(
+                {"id": folio_id, "tenant_id": tenant_id},
+                {"$set": {"balance": balance, "updated_at": datetime.now(UTC).isoformat()}},
+                session=session,
+            )
+
+        clean = dict(order_doc)
+        clean.pop("_id", None)
+        return clean, False
+
+    # Folyoya yazım yoksa lock'a gerek yok; sadece idempotent sipariş insert'i
+    # de transaction garantisi ister (kısmi hata olmasın) ama tek-doküman insert
+    # zaten atomik — yine de tutarlılık için lock'suz transaction kullanırız.
+    resources: list[tuple[str, str]] = [("folio", folio_id)] if folio_id else []
+    try:
+        return await with_resource_locks(
+            client=db.client,
+            db=db,
+            tenant_id=tenant_id,
+            locks_collection="folio_locks",
+            resources=resources,
+            callback=_txn,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        code = getattr(exc, "code", None)
+        if code == 112 or "WriteConflict" in str(exc):
+            raise HTTPException(
+                status_code=409,
+                detail="Folyo eş zamanlı güncellendi; lütfen tekrar deneyin.",
+            )
+        if not is_replica_set_unavailable(exc):
+            raise
+        if not standalone_fallback_allowed():
+            # Production-safe default: refuse rather than risk a non-atomic,
+            # racy write to the guest folio.
+            raise HTTPException(
+                status_code=503,
+                detail=("POS folyo yazımı atomik garanti sağlayamıyor "
+                        "(Mongo replica set gerekli)."),
+            )
+        # Dev opt-in: best-effort non-transactional fallback. The unique
+        # partial indexes still provide idempotency + dedup, only the
+        # all-or-nothing guarantee is relaxed.
+        return await _txn(None)
+
+
 def get_menu_recommendation(_guest_profile: dict | None = None) -> list[str]:
     """Heuristic menu recommendation stub — to be replaced by ML model."""
     return ['Chef\'s Special', 'Local Wine Pairing', 'Seasonal Dessert']
@@ -151,6 +299,10 @@ class POSOrderCreateRequest(BaseModel):
     booking_id: str | None = None
     folio_id: str | None = None
     order_items: list[POSOrderItemRequest]
+    # Idempotency: client supplies a fresh key per genuine order attempt; the
+    # same key on a retry / double-tap / network replay returns the original
+    # order (and its single charge set) instead of double-posting.
+    idempotency_key: str | None = None
 
 
 class POSOrder(BaseModel):
@@ -165,6 +317,7 @@ class POSOrder(BaseModel):
     tax_amount: float
     total_amount: float
     status: str = "pending"  # pending, completed, cancelled
+    idempotency_key: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -1085,18 +1238,48 @@ async def create_pos_order(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     _perm=Depends(require_module_v92("pos")),  # v92 DW
 ):
-    """Create a POS order with detailed items"""
+    """Create a POS order with detailed items.
+
+    Atomic + idempotent + race-safe folio posting (Task #360):
+    - `idempotency_key` (per genuine attempt) → retry/double-tap/network replay
+      returns the original order + single charge set, never a duplicate.
+    - order insert + folio_charge inserts + balance recalc run in ONE Mongo
+      transaction → no half-posted charges.
+    - concurrent posts to the SAME folio serialize on a folio lock → the final
+      balance (recalculated from the ledger, never $inc) is correct.
+    """
     current_user = await get_current_user(credentials)
+    tenant_id = current_user.tenant_id
 
     if not data.order_items:
         raise HTTPException(status_code=400, detail="Order items required")
 
-    # Get booking and guest info
+    # Normalize idempotency key (bounded so it can't be abused as storage).
+    idem_raw = data.idempotency_key
+    idempotency_key = idem_raw.strip() if isinstance(idem_raw, str) and idem_raw.strip() else None
+    if idempotency_key and len(idempotency_key) > 128:
+        raise HTTPException(status_code=400, detail="idempotency_key too long (max 128)")
+
+    folio_id = data.folio_id
+
+    # Resolve booking + guest. When posting to a folio we need its booking_id
+    # (FolioCharge requires it) and we validate the folio exists for the tenant
+    # so charges can't be orphaned onto a non-existent / cross-tenant folio.
     guest_id = None
+    booking_id = data.booking_id
     if data.booking_id:
-        booking = await db.bookings.find_one({'id': data.booking_id, 'tenant_id': current_user.tenant_id})
+        booking = await db.bookings.find_one({'id': data.booking_id, 'tenant_id': tenant_id})
         if booking:
             guest_id = booking['guest_id']
+
+    folio_booking_id = booking_id
+    if folio_id:
+        folio = await db.folios.find_one({'id': folio_id, 'tenant_id': tenant_id})
+        if not folio:
+            raise HTTPException(status_code=404, detail="Folio not found")
+        folio_booking_id = folio.get('booking_id') or booking_id or ""
+        if guest_id is None and folio.get('guest_id'):
+            guest_id = folio.get('guest_id')
 
     # Build order items
     order_items_list = []
@@ -1106,7 +1289,7 @@ async def create_pos_order(
         # Get menu item
         menu_item = await db.pos_menu_items.find_one({
             'id': item_data.item_id,
-            'tenant_id': current_user.tenant_id
+            'tenant_id': tenant_id
         })
 
         if not menu_item:
@@ -1131,26 +1314,30 @@ async def create_pos_order(
 
     # Create order
     order = POSOrder(
-        tenant_id=current_user.tenant_id,
-        booking_id=data.booking_id,
+        tenant_id=tenant_id,
+        booking_id=booking_id,
         guest_id=guest_id,
-        folio_id=data.folio_id,
+        folio_id=folio_id,
         order_items=order_items_list,
         subtotal=subtotal,
         tax_amount=tax_amount,
         total_amount=total_amount,
-        status="completed"
+        status="completed",
+        idempotency_key=idempotency_key,
     )
+    order_doc = order.model_dump()
 
-    await db.pos_orders.insert_one(order.model_dump())
-
-    # If folio_id provided, post charge to folio
-    if data.folio_id:
-        # Post charge to folio
-        for order_item in order_items_list:
+    # Build folio charge docs, each stamped with (source_pos_order_id, line_no)
+    # so the unique partial index can dedup any partial-failure re-post. These
+    # source fields are NOT on the FolioCharge schema (extra="ignore") so we add
+    # them to the dict after model_dump.
+    charge_docs: list[dict] = []
+    if folio_id:
+        for line_no, order_item in enumerate(order_items_list):
             charge = FolioCharge(
-                tenant_id=current_user.tenant_id,
-                folio_id=data.folio_id,
+                tenant_id=tenant_id,
+                folio_id=folio_id,
+                booking_id=folio_booking_id,
                 charge_category=ChargeCategory.FOOD if order_item.category in ['food', 'dessert', 'appetizer'] else ChargeCategory.BEVERAGE,
                 description=f"POS: {order_item.item_name} x {order_item.quantity}",
                 quantity=order_item.quantity,
@@ -1160,17 +1347,37 @@ async def create_pos_order(
                 total=order_item.total_price * 1.18,
                 voided=False
             )
+            cdoc = charge.model_dump()
+            cdoc["source_pos_order_id"] = order.id
+            cdoc["line_no"] = line_no
+            charge_docs.append(cdoc)
 
-            await db.folio_charges.insert_one(charge.model_dump())
+    # Ensure the unique partial indexes exist (fail-closed). Without them the
+    # idempotency / dedup guarantees this endpoint promises cannot hold, so we
+    # refuse rather than silently fall back to a racy, non-idempotent write.
+    try:
+        await _ensure_pos_atomicity_indexes(folio_post=bool(folio_id))
+    except Exception:
+        logger.exception("POS atomicity index ensure failed")
+        raise HTTPException(
+            status_code=503,
+            detail="POS idempotency koruması geçici olarak kullanılamıyor — biraz sonra tekrar deneyin",
+        )
 
-        # Update folio balance
-        await recalculate_folio_balance(data.folio_id, current_user.tenant_id)
+    effective_order, replay = await _persist_pos_order_atomic(
+        order_doc=order_doc,
+        charge_docs=charge_docs,
+        folio_id=folio_id,
+        tenant_id=tenant_id,
+        idempotency_key=idempotency_key,
+    )
 
     return {
         'success': True,
         'message': 'POS order created',
-        'order_id': order.id,
-        'order': order.model_dump()
+        'idempotent_replay': replay,
+        'order_id': effective_order.get('id'),
+        'order': effective_order,
     }
 # ── GET /pos/menu-engineering ──
 @router.get("/pos/menu-engineering")
