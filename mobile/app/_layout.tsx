@@ -11,6 +11,7 @@ import { useTheme } from '../src/theme';
 import {
   DEPARTMENTS_SEGMENT,
   GROUP_SEGMENTS,
+  HOME_SEGMENT,
   ROUTES,
   groupForRole,
   rootForRole,
@@ -85,17 +86,26 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Single-role users are pinned to their home group, EXCEPT the shared
-    // (departments) area: a user who holds department entitlement may browse it
-    // and stays there until they navigate away. This only ROUTES entitled users
-    // — backend RBAC still enforces every action inside.
+    // Guests keep their dedicated experience, pinned to their own group.
+    if (role === 'guest_app') {
+      if (inAuth || first !== '(guest)') {
+        router.replace(rootForRole(role));
+      }
+      return;
+    }
+
+    // Task #327 — all other staff land in the unified common shell `(home)`
+    // (Tier-1 backbone) and may stay there. They may ALSO browse into:
+    //   * their native Tier-2 group (e.g. front_desk → (frontdesk)), and
+    //   * the shared (departments) area when they hold department entitlement.
+    // Anything else ejects them back to the shell. This is navigation gating
+    // only — backend RBAC still enforces every action inside each surface.
+    if (first === HOME_SEGMENT) return;
     const inDepartments = first === DEPARTMENTS_SEGMENT;
     if (inDepartments && deptAccess) return;
+    if (first === groupForRole(role)) return;
 
-    const expectedGroup = groupForRole(role);
-    if (inAuth || first !== expectedGroup) {
-      router.replace(rootForRole(role));
-    }
+    router.replace(rootForRole(role));
   }, [user, role, allAccess, deptAccess, loading, segments, router]);
 
   // Push registration runs after sign-in; safe to call repeatedly because
@@ -135,6 +145,7 @@ function RootShell() {
         }}
       >
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="(home)" options={{ headerShown: false }} />
         <Stack.Screen name="(frontdesk)" options={{ headerShown: false }} />
         <Stack.Screen name="(housekeeping)" options={{ headerShown: false }} />
         <Stack.Screen name="(gm)" options={{ headerShown: false }} />

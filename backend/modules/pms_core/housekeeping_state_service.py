@@ -114,6 +114,35 @@ class HousekeepingStateService:
         if task_type == "cleaning" and room["status"] == "dirty":
             await self.update_room_status(tenant_id, room_id, "cleaning", user_id, force=True)
 
+        # Task #327: notify the assignee on their mobile device. This reuses the
+        # EXISTING Expo push channel (no new notification type / no stored
+        # notifications doc) — it simply wires the existing assignment event to
+        # the existing transport. Best-effort and fully non-blocking: any
+        # failure here must never affect task creation.
+        if assigned_to:
+            try:
+                assignee = await db.users.find_one(
+                    {"tenant_id": tenant_id, "name": assigned_to},
+                    {"_id": 0, "id": 1},
+                )
+                from services.expo_push import fire_and_forget_expo_push
+                fire_and_forget_expo_push(
+                    tenant_id,
+                    title="Yeni görev atandı",
+                    body=f"Oda {room['room_number']} — {task_type}",
+                    data={
+                        "type": "housekeeping_task",
+                        "task_id": task_id,
+                        "room_id": room_id,
+                        "action_url": "/(home)/tasks",
+                    },
+                    user_ids=[assignee["id"]] if assignee and assignee.get("id") else None,
+                    departments=None if (assignee and assignee.get("id")) else ["housekeeping"],
+                    priority="high" if priority in ("urgent", "high") else "default",
+                )
+            except Exception:
+                pass
+
         task.pop("_id", None)
         return {"success": True, "task": task}
 

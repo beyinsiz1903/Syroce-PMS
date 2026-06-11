@@ -77,3 +77,4 @@
 - [expo-keep-awake web unhandled rejection](mobile-keepawake-web-unhandled-rejection.md) — useKeepAwake() throws an uncaught wakeLock pageerror in headless web → breaks smoke; use the safe wrapper.
 - [Deployed /js 502 = stale image](deployed-js-502-blank-stale-image.md) — blank SPA: GET /js=502 but HEAD /js=200 & /assets=200 & local /js=200 → re-publish the stale/broken deployed build, not a code fix; getDeploymentInfo primary=static mobile -1, not -syroce.
 - [Static assets drain the rate-limit budget](static-assets-rate-limit-budget.md) — outermost global limiter counts SPA shell + ~35 hashed chunks against the per-IP anon bucket (60/min prod) → persistent 429-on-/; exempt static before the check (masked locally by test-env's huge limit).
+- [Mobile tsconfig.unit.json is a tiny allowlist](mobile-tsconfig-unit-scope.md) — running tsc -p tsconfig.unit.json validates only ~6 util files, NOT app/ screens; full type-check needs tsconfig.json.

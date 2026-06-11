@@ -78,6 +78,18 @@ export function hasMaintenanceAccess(raw: string | undefined): boolean {
   return MAINTENANCE_OPS_ROLES.includes(raw.toLowerCase());
 }
 
+// Cosmetic mirror of the backend approval-visibility gates used by the mobile
+// hub `/approvals` endpoint: finance approvals require `manage_approvals` and
+// HR streams require `view_hr`. The union of raw roles that hold either is used
+// only to decide whether to SHOW the "Onaylarım" tab — every approve/reject
+// endpoint still enforces its own RBAC, so nothing here weakens authorization.
+const APPROVALS_ROLES = ['super_admin', 'admin', 'supervisor', 'finance', 'hr', 'hr_manager'];
+
+export function hasApprovalsAccess(raw: string | undefined): boolean {
+  if (!raw) return false;
+  return APPROVALS_ROLES.includes(raw.toLowerCase());
+}
+
 // Accounting (read-focused) mirrors the backend require_op("view_finance_reports")
 // guard, so we reuse `canViewFinanceReports` for that department's gate.
 export function hasDepartmentAccess(raw: string | undefined): boolean {
@@ -98,6 +110,7 @@ export type AuthState = {
   miceAccess: boolean;
   maintenanceAccess: boolean;
   deptAccess: boolean;
+  approvalsAccess: boolean;
   loading: boolean;
   error: string | null;
   hydrate: () => Promise<void>;
@@ -131,6 +144,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   miceAccess: false,
   maintenanceAccess: false,
   deptAccess: false,
+  approvalsAccess: false,
   loading: true,
   error: null,
 
@@ -147,6 +161,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         miceAccess: false,
         maintenanceAccess: false,
         deptAccess: false,
+        approvalsAccess: false,
         loading: false,
       });
       return;
@@ -170,6 +185,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       miceAccess: hasMiceAccess(user?.role),
       maintenanceAccess: hasMaintenanceAccess(user?.role),
       deptAccess: hasDepartmentAccess(user?.role),
+      approvalsAccess: hasApprovalsAccess(user?.role),
       loading: false,
     });
   },
@@ -191,6 +207,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         miceAccess: hasMiceAccess(res.user?.role),
         maintenanceAccess: hasMaintenanceAccess(res.user?.role),
         deptAccess: hasDepartmentAccess(res.user?.role),
+        approvalsAccess: hasApprovalsAccess(res.user?.role),
         loading: false,
         error: null,
       });
@@ -228,6 +245,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       miceAccess: false,
       maintenanceAccess: false,
       deptAccess: false,
+      approvalsAccess: false,
     });
   },
 }));
