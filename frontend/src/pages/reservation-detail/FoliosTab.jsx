@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   CreditCard, ArrowRightLeft, Building2, DollarSign, ArrowDownUp,
-  Plus, Receipt, FileText, Loader2
+  Plus, Receipt, FileText, Loader2, Split
 } from 'lucide-react';
 import { API, fmtTL, fmtTs, SummaryCard, FormField, SelectField, FormPanel } from './helpers';
+import SplitFolioDialog from '@/components/SplitFolioDialog';
 
 export function FoliosTab({ folios, charges, payments, extra_charges, summary, booking, onRefresh, onSwitchTab }) {
   const { t } = useTranslation();
@@ -24,7 +25,41 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
   const [showNewCari, setShowNewCari] = useState(false);
   const [newCariForm, setNewCariForm] = useState({ name: '', account_type: 'agency', tax_id: '', tax_office: '', address: '', phone: '', email: '' });
   const [reconcileForm, setReconcileForm] = useState({ cari_account_id: '', amount: '', description: '' });
+  const [showSplit, setShowSplit] = useState(false);
+  const [splitSourceId, setSplitSourceId] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const folioList = useMemo(() => (Array.isArray(folios) ? folios : []), [folios]);
+
+  // Varsayılan kaynak folyo: önce misafir folyosu, yoksa açık folyo, yoksa ilk folyo.
+  const defaultSourceId = useMemo(() => {
+    if (folioList.length === 0) return '';
+    const guest = folioList.find(f => f.folio_type === 'guest');
+    const open = folioList.find(f => f.status === 'open');
+    return (guest || open || folioList[0]).id;
+  }, [folioList]);
+
+  // SplitFolioDialog tek bir folyo bekler: id, folio_number, balance ve KENDİ kalemleri.
+  // charge_ids backend'de source_folio_id'den taşınır; bu yüzden kalemler folio.id ile AYNI folyoya ait olmalı.
+  const splitFolio = useMemo(() => {
+    const sid = splitSourceId || defaultSourceId;
+    const src = folioList.find(f => f.id === sid);
+    if (!src) return null;
+    return {
+      id: src.id,
+      folio_number: src.folio_number,
+      guest_name: booking?.guest_name,
+      room_number: booking?.room_number,
+      balance: src.balance,
+      charges: (charges || []).filter(c => c.folio_id === src.id && !c.voided),
+    };
+  }, [splitSourceId, defaultSourceId, folioList, charges, booking]);
+
+  const openSplit = () => {
+    if (folioList.length === 0) { toast.error('Bölünecek folyo bulunmuyor'); return; }
+    if (!splitSourceId) setSplitSourceId(defaultSourceId);
+    setShowSplit(s => !s);
+  };
 
   const loadCari = async () => { try { const r = await axios.get(`/pms/cari-accounts`); setCariAccounts(r.data.accounts || []); } catch { /* fetch error */ } };
 
@@ -50,10 +85,33 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
         <Button size="sm" variant="outline" onClick={() => setShowAgency(!showAgency)} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acente-odemesi"><Building2 className="w-3 h-3 mr-1" /> Acente Ödemesi</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowCariTransfer(!showCariTransfer); loadCari(); }} className="h-8 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-testid="btn-acenteye-aktar"><ArrowDownUp className="w-3 h-3 mr-1" /> Acenteye Aktar</Button>
         <Button size="sm" variant="outline" onClick={() => { setShowReconcile(!showReconcile); loadCari(); }} className="h-8 text-xs border-teal-300 text-teal-700 hover:bg-teal-50" data-testid="btn-mahsuplastir"><DollarSign className="w-3 h-3 mr-1" /> Mahsuplaştır</Button>
+        <Button size="sm" variant="outline" onClick={openSplit} className="h-8 text-xs border-sky-300 text-sky-700 hover:bg-sky-50" data-testid="btn-folyo-bol">
+          <Split className="w-3 h-3 mr-1" /> Folyo Böl
+        </Button>
         <Button size="sm" variant="outline" onClick={() => onSwitchTab('invoice')} className="h-8 text-xs border-blue-300 text-blue-700 hover:bg-blue-50" data-testid="btn-fatura-pdf">
           <FileText className="w-3 h-3 mr-1" /> Fatura Olustur
         </Button>
       </div>
+
+      {showSplit && (
+        <div className="border rounded-lg p-4 bg-sky-50/40 space-y-3" data-testid="split-folio-panel">
+          {folioList.length > 1 && (
+            <SelectField
+              label="Kaynak Folyo"
+              value={splitSourceId || defaultSourceId}
+              onChange={setSplitSourceId}
+              options={folioList.map(f => [f.id, `${f.folio_number} (${f.folio_type || ''}) — Bakiye ${fmtTL(f.balance)} TL`])}
+            />
+          )}
+          {splitFolio && (
+            <SplitFolioDialog
+              folio={splitFolio}
+              onClose={() => setShowSplit(false)}
+              onSuccess={() => { setShowSplit(false); onRefresh?.(); }}
+            />
+          )}
+        </div>
+      )}
 
       {showPayment && (
         <FormPanel color="emerald" title={t('common.paymentRecord')} testid="payment-form" onClose={() => setShowPayment(false)} loading={loading}
