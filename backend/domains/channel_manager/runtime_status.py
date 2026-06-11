@@ -53,8 +53,8 @@ class CMRuntimeStatus:
 
         last_recon = recent_recon[0] if recent_recon else None
 
-        # Provider circuit breaker status
-        provider_statuses = provider_failover.get_all_status()
+        # Provider circuit breaker status (fleet-wide shared view)
+        provider_statuses = await provider_failover.get_all_status_shared()
 
         # Overall health
         health = "healthy"
@@ -100,7 +100,7 @@ class CMRuntimeStatus:
         results = []
         for conn in connections:
             channel = conn.get("channel", "unknown")
-            breaker = provider_failover.get_breaker(channel)
+            circuit_state = await provider_failover.get_status_shared(channel)
             last_sync_log = await db.channel_sync_logs.find_one(
                 {"tenant_id": tenant_id, "connection_id": conn.get("id")},
                 {"_id": 0},
@@ -110,7 +110,7 @@ class CMRuntimeStatus:
                 "provider": channel,
                 "connection_id": conn.get("id"),
                 "status": conn.get("status"),
-                "circuit_state": breaker.get_status(),
+                "circuit_state": circuit_state,
                 "last_sync": last_sync_log.get("timestamp") if last_sync_log else None,
                 "last_sync_status": last_sync_log.get("status") if last_sync_log else None,
             })

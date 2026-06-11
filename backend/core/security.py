@@ -81,6 +81,15 @@ def invalidate_user_doc_cache(user_id: str | None = None) -> None:
     The local evict happens unconditionally so single-worker / Redis-down
     deployments stay correct. Cross-worker broadcast is best-effort."""
     _local_evict_user_doc(user_id)
+    # A role change is also a super-admin-cache change. Evict the entitlement
+    # super-admin cache on this worker too (cross-worker handled by the
+    # pub/sub listener, which evicts both caches on receipt). Lazy import to
+    # avoid a load-time cycle (security ↔ entitlement ↔ database).
+    try:
+        from core.entitlement import _local_evict_super_admin
+        _local_evict_super_admin(user_id)
+    except Exception:
+        pass
     # Lazy import: infra.auth_cache_pubsub depends on this module's
     # ``_local_evict_user_doc`` for its listener, so we must not import
     # it at module-load time (circular).

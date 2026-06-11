@@ -18,6 +18,16 @@ async def phase_f_hardening_and_observability(app):
         if connected:
             from infra.distributed_lock import lock_manager
             lock_manager.set_redis(redis_cluster.get_lock_client())
+            # Cross-instance OTA circuit-breaker state (Task #396): share
+            # breaker state + HALF_OPEN admission across pods on the same
+            # pooled client (no parallel Redis client). Best-effort — the
+            # breakers transparently fall back to in-process state if this
+            # is never wired or Redis later drops.
+            try:
+                from infra.circuit_breaker_store import circuit_breaker_store
+                circuit_breaker_store.set_redis(redis_cluster.get_client())
+            except Exception as e:
+                logger.warning(f"Circuit breaker store init warning: {e}")
             import os as _os
             import socket as _socket
             import uuid as _uuid

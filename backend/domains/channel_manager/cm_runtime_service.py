@@ -72,7 +72,7 @@ class CMRuntimeService:
 
             # Provider health aggregation
             provider_health = await self._status.get_provider_health(tid)
-            circuit_states = self._failover.get_all_status()
+            circuit_states = await self._failover.get_all_status_shared()
             healthy_providers = sum(1 for p in provider_health if p.get("circuit_state", {}).get("state") != "open")
             degraded_providers = sum(1 for p in provider_health if p.get("circuit_state", {}).get("state") == "half_open")
             total_providers = len(provider_health)
@@ -278,11 +278,11 @@ class CMRuntimeService:
         return ServiceResult.success({
             "tenant_id": ctx.tenant_id,
             "providers": provider_health,
-            "circuit_breakers": self._failover.get_all_status(),
+            "circuit_breakers": await self._failover.get_all_status_shared(),
         })
 
     async def reset_provider_circuit(self, ctx: OperationContext, provider: str) -> ServiceResult:
-        self._failover.reset_breaker(provider)
+        await self._failover.reset_breaker_shared(provider)
         try:
             from websocket_server import broadcast_system_health_event
             await broadcast_system_health_event(
@@ -293,7 +293,7 @@ class CMRuntimeService:
         return ServiceResult.success({
             "status": "reset",
             "provider": provider,
-            "circuit_state": self._failover.get_breaker(provider).get_status(),
+            "circuit_state": await self._failover.get_status_shared(provider),
         })
 
     async def encrypt_credential(

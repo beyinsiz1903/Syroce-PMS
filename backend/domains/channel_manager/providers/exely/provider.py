@@ -243,7 +243,7 @@ class ExelyProvider:
         """
         start = time.time()
         breaker = provider_failover.get_breaker(_exely_circuit_key(self._connection_id))
-        if not breaker.try_acquire():
+        if not await breaker.try_acquire():
             return ProviderResult(
                 success=False,
                 error=f"circuit_open: Exely breaker is OPEN for connection {self._connection_id or '_default'}",
@@ -312,9 +312,9 @@ class ExelyProvider:
         duration_ms = int((time.time() - start) * 1000)
 
         if errors:
-            breaker.record_failure()
+            await breaker.record_failure()
             return ProviderResult(success=False, error="; ".join(errors), duration_ms=duration_ms)
-        breaker.record_success()
+        await breaker.record_success()
         return ProviderResult(success=True, data={"message": "ARI update applied"}, duration_ms=duration_ms)
 
     # ── Reservation Delivery Confirmation ─────────────────────────────

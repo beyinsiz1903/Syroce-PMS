@@ -118,6 +118,27 @@ _SUPER_ADMIN_TTL_SECONDS = 60.0
 _SUPER_ADMIN_CACHE_MAX = 512
 
 
+def _local_evict_super_admin(user_id: str | None = None) -> None:
+    """Drop super-admin lookup cache entries on THIS worker only.
+
+    Wired into the same user-doc invalidation flow that profile/password/
+    role changes already trigger (``core.security.invalidate_user_doc_cache``
+    locally + the ``auth_cache_pubsub`` listener cross-worker), so a role
+    change is reflected fleet-wide within milliseconds instead of waiting
+    up to ``_SUPER_ADMIN_TTL_SECONDS``.
+
+    Like the user/tenant doc evictors, this is *evict-only* and never
+    re-publishes — the listener calls it on receipt, so it must not loop.
+    Crucially, only eviction crosses Redis: the authoritative super_admin
+    decision is always re-read from the DB by ``_is_super_admin_user`` on
+    the next request (fail-closed — Redis can never assert super_admin=True).
+    """
+    if user_id is None:
+        _SUPER_ADMIN_CACHE.clear()
+    else:
+        _SUPER_ADMIN_CACHE.pop(user_id, None)
+
+
 async def _is_super_admin_user(user_id: str) -> bool:
     """Return True if *user_id* corresponds to a super_admin user.
 

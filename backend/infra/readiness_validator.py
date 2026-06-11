@@ -184,7 +184,7 @@ class ReadinessValidator:
         # Count by state, no per-connection leakage. RBAC drill-down at
         # GET /api/channel-manager/unified-rate-manager/circuit-breakers.
         from infra.cm_observability_check import get_circuit_breaker_status
-        cb = await asyncio.to_thread(get_circuit_breaker_status)
+        cb = await get_circuit_breaker_status()
         return ("cm_circuit_breakers", {
             "status": cb.get("status", "unknown"),
             "total": cb.get("total", 0),
