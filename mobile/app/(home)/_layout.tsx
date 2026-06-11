@@ -1,10 +1,12 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
+import { Pressable, View } from 'react-native';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
+import { ROUTES } from '../../src/navigation/routes';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -18,17 +20,80 @@ function tabIcon(active: IoniconName, inactive: IoniconName) {
   );
 }
 
-// Task #327 — Tier-1 common shell. Every staff role sees the SAME bottom-tab
-// backbone (Slack/WhatsApp style). The only permission-gated tab is
-// "Onaylarım": hidden (`href: null`) when the user holds neither finance nor
-// HR approval visibility. The backend still enforces every approval action, so
-// this is a cosmetic affordance only.
+// Header utility actions (top-right). Notifications + Search live here on every
+// role so the bottom bar stays at a thumb-friendly 4 tabs; Messages joins them
+// only for approver roles, whose 4th bottom tab is "Onaylarım" instead. Plain
+// Pressable + Ionicons keeps it web-safe (no reanimated / no Alert), and the
+// 44x44 targets clear the thumb-zone minimum. Navigation is push-only — these
+// are cosmetic shortcuts; every screen still enforces its own access server-
+// side, so nothing here weakens RBAC.
+function HeaderActions({ showMessages }: { showMessages: boolean }) {
+  const c = useTheme();
+  const router = useRouter();
+  const btn = {
+    width: 44,
+    height: 44,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  };
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+      {showMessages ? (
+        <Pressable
+          onPress={() => router.push(ROUTES.homeMessages)}
+          accessibilityRole="button"
+          accessibilityLabel={tr.tabs.messages}
+          testID="smoke-header-messages"
+          hitSlop={8}
+          style={btn}
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={22} color={c.text} />
+        </Pressable>
+      ) : null}
+      <Pressable
+        onPress={() => router.push(ROUTES.homeNotifications)}
+        accessibilityRole="button"
+        accessibilityLabel={tr.tabs.notifications}
+        testID="smoke-header-notifications"
+        hitSlop={8}
+        style={btn}
+      >
+        <Ionicons name="notifications-outline" size={22} color={c.text} />
+      </Pressable>
+      <Pressable
+        onPress={() => router.push(ROUTES.homeSearch)}
+        accessibilityRole="button"
+        accessibilityLabel={tr.tabs.search}
+        testID="smoke-header-search"
+        hitSlop={8}
+        style={btn}
+      >
+        <Ionicons name="search-outline" size={22} color={c.text} />
+      </Pressable>
+    </View>
+  );
+}
+
+// P5 — role-based bottom tab bar. The single (home) Tabs navigator stays the
+// common shell (every staff role lands here), but the bottom bar is now trimmed
+// to FOUR role-relevant tabs via `href: null`, so Housekeeping and a Manager
+// feel different at a glance:
+//   line staff (HK / front desk / other): Bugün · Görevlerim · Mesajlar · Profil
+//   approvers (GM / all-access):           Bugün · Görevlerim · Onaylarım · Profil
+// Notifications + Search move to the header (always), and Messages moves there
+// too for approvers. Every Tabs.Screen entry — and every smoke-tab-* testID —
+// is kept; `href: null` only hides the tab, the route + screen stay reachable
+// by URL and header shortcut. All gating is cosmetic; the backend enforces
+// every action, so RBAC is unchanged.
 export default function HomeLayout() {
   const c = useTheme();
   const insets = useSafeAreaInsets();
   const approvalsAccess = useAuthStore((s) => s.approvalsAccess);
   const allAccess = useAuthStore((s) => s.allAccess);
   const showApprovals = approvalsAccess || allAccess;
+  // Approvers get "Onaylarım" as their 4th tab, so Messages relocates to the
+  // header for them; line staff keep Messages as their 4th tab.
+  const showMessagesTab = !showApprovals;
 
   return (
     <Tabs
@@ -48,12 +113,15 @@ export default function HomeLayout() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         headerStyle: { backgroundColor: c.surface },
         headerTitleStyle: { color: c.text },
+        headerRight: () => <HeaderActions showMessages={showApprovals} />,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: tr.tabs.notifications,
+          // Notifications moved to the header utility row for all roles.
+          href: null,
           tabBarTestID: 'smoke-tab-notifications',
           tabBarIcon: tabIcon('notifications', 'notifications-outline'),
         }}
@@ -78,6 +146,9 @@ export default function HomeLayout() {
         name="messages"
         options={{
           title: tr.tabs.messages,
+          // Line staff keep Messages in the bar; approvers reach it from the
+          // header (their 4th tab is Onaylarım instead).
+          href: showMessagesTab ? undefined : null,
           tabBarTestID: 'smoke-tab-messages',
           tabBarIcon: tabIcon('chatbubble-ellipses', 'chatbubble-ellipses-outline'),
         }}
@@ -95,6 +166,8 @@ export default function HomeLayout() {
         name="search"
         options={{
           title: tr.tabs.search,
+          // Search moved to the header utility row for all roles.
+          href: null,
           tabBarTestID: 'smoke-tab-search',
           tabBarIcon: tabIcon('search', 'search-outline'),
         }}

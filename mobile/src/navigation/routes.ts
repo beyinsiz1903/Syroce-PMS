@@ -45,16 +45,22 @@ export const ROUTES = {
   guestQrBadge: '/(guest)/qrBadge',
 } as const satisfies Record<string, Href>;
 
-// Task #327 — every staff role now lands in the unified common shell `(home)`
-// (Tier-1 backbone). Guests keep their dedicated experience. The role-specific
-// Tier-2 groups remain reachable from within the shell, but they are no longer
-// the staff landing surface.
+// Every staff role lands in the unified common shell `(home)` (Tier-1
+// backbone). Guests keep their dedicated experience. The role-specific Tier-2
+// groups remain reachable from within the shell, but they are no longer the
+// staff landing surface.
+//
+// P5 — staff land on the "Bugün" tab (a visible bottom tab) rather than the
+// group root, because the role-based bar (see (home)/_layout.tsx) hides the
+// index/notifications tab via `href: null`. Landing on a visible tab keeps the
+// bar highlight correct; the notifications screen stays reachable from the
+// header shortcut and by URL.
 export function rootForRole(role: AppRole): Href {
   switch (role) {
     case 'guest_app':
       return ROUTES.guest;
     default:
-      return ROUTES.home;
+      return ROUTES.homeToday;
   }
 }
 
