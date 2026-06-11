@@ -184,6 +184,11 @@ export const tr = {
     assignSuccess: 'Görev atandı',
     noStaff: 'Personel bulunamadı',
     assignNeedStaff: 'Lütfen personel seçin',
+    openTasks: 'Açık görev',
+    openTasksTitle: 'Açık Görevler',
+    noOpenTasks: 'Açık görev yok',
+    unassigned: 'Atanmamış',
+    viewTasks: 'Görevleri gör',
   },
   // ── Manager: Live KPI Panel + Reports (Task #256) ──
   manager: {

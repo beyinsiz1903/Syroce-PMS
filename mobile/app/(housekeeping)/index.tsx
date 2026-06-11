@@ -27,8 +27,10 @@ import {
   createQuickTask,
   HkStaff,
   listHousekeepingStaff,
+  listRoomTasks,
   listRooms,
   Room,
+  RoomTask,
   updateRoomStatus,
 } from '../../src/api/rooms';
 import { haptic } from '../../src/hooks/useHaptic';
@@ -80,6 +82,22 @@ export default function RoomsScreen() {
   const qc = useQueryClient();
   const [floor, setFloor] = useState<string>('all');
   const rooms = useQuery({ queryKey: ['rooms'], queryFn: listRooms });
+  const roomTasks = useQuery({ queryKey: ['room-tasks'], queryFn: listRoomTasks });
+
+  // Open tasks grouped by room_id → powers the per-card badge + detail sheet.
+  const tasksByRoom = useMemo(() => {
+    const map = new Map<string, RoomTask[]>();
+    (roomTasks.data || []).forEach((t) => {
+      if (!t.room_id) return;
+      const list = map.get(t.room_id);
+      if (list) list.push(t);
+      else map.set(t.room_id, [t]);
+    });
+    return map;
+  }, [roomTasks.data]);
+
+  // ── Open-tasks viewer sheet state ────────────────────────────────────────
+  const [tasksRoom, setTasksRoom] = useState<Room | null>(null);
 
   // ── Task assignment sheet state ──────────────────────────────────────────
   const [assignRoom, setAssignRoom] = useState<Room | null>(null);
@@ -124,6 +142,7 @@ export default function RoomsScreen() {
       // shared "Görevlerim" hub feed so the new task appears immediately.
       qc.invalidateQueries({ queryKey: ['rooms'] });
       qc.invalidateQueries({ queryKey: ['my-tasks'] });
+      qc.invalidateQueries({ queryKey: ['room-tasks'] });
       Alert.alert(tr.app.success, tr.housekeeping.assignSuccess);
     } catch {
       haptic.error();
@@ -198,16 +217,63 @@ export default function RoomsScreen() {
     ]);
   };
 
+  const openTasks = (r: Room) => {
+    haptic.tap();
+    setTasksRoom(r);
+  };
+
+  const taskTypeText = (t?: string): string => {
+    switch ((t || '').toLowerCase()) {
+      case 'cleaning':
+        return tr.housekeeping.taskCleaning;
+      case 'inspection':
+        return tr.housekeeping.taskInspection;
+      case 'maintenance':
+        return tr.housekeeping.taskMaintenance;
+      default:
+        return t || tr.housekeeping.taskCleaning;
+    }
+  };
+  const priorityText = (p?: string): string => {
+    switch ((p || '').toLowerCase()) {
+      case 'high':
+        return tr.housekeeping.priorityHigh;
+      case 'urgent':
+        return tr.housekeeping.priorityUrgent;
+      default:
+        return tr.housekeeping.priorityNormal;
+    }
+  };
+  const priorityTone = (p?: string): BadgeTone => {
+    switch ((p || '').toLowerCase()) {
+      case 'urgent':
+        return 'danger';
+      case 'high':
+        return 'warning';
+      default:
+        return 'default';
+    }
+  };
+
+  const tasksRoomList: RoomTask[] = tasksRoom
+    ? tasksByRoom.get(tasksRoom.id) || []
+    : [];
+
   const renderRoom = ({ item: r }: { item: Room }) => {
     const color = roomStatusColor(r.status, c);
     const key = (r.status || '').toLowerCase() as keyof typeof tr.housekeeping.statuses;
     const label = tr.housekeeping.statuses[key] || r.status || '—';
+    const openCount = (tasksByRoom.get(r.id) || []).length;
     return (
       <Pressable
+        onPress={() => openTasks(r)}
         onLongPress={() => onLongPress(r)}
         delayLongPress={350}
-        accessibilityLabel={`Oda ${r.room_number}, durum ${label}`}
-        accessibilityHint={tr.housekeeping.longPressHint}
+        accessibilityLabel={
+          `Oda ${r.room_number}, durum ${label}` +
+          (openCount ? `, ${openCount} ${tr.housekeeping.openTasks}` : '')
+        }
+        accessibilityHint={tr.housekeeping.viewTasks}
         style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, marginBottom: spacing.sm })}
       >
         <Card style={{ borderLeftWidth: 4, borderLeftColor: color }}>
@@ -218,7 +284,12 @@ export default function RoomsScreen() {
                 {r.room_type || '—'} · Kat {r.floor ?? '—'}
               </Muted>
             </View>
-            <Badge label={label} tone={roomStatusTone(r.status)} />
+            <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
+              <Badge label={label} tone={roomStatusTone(r.status)} />
+              {openCount > 0 ? (
+                <Badge label={`${openCount} ${tr.housekeeping.openTasks}`} tone="info" />
+              ) : null}
+            </View>
           </View>
         </Card>
       </Pressable>
@@ -267,8 +338,14 @@ export default function RoomsScreen() {
           renderItem={renderRoom}
           refreshControl={
             <RefreshControl
-              refreshing={rooms.isFetching && !rooms.isLoading}
-              onRefresh={() => rooms.refetch()}
+              refreshing={
+                (rooms.isFetching && !rooms.isLoading) ||
+                (roomTasks.isFetching && !roomTasks.isLoading)
+              }
+              onRefresh={() => {
+                rooms.refetch();
+                roomTasks.refetch();
+              }}
               tintColor={c.primary}
             />
           }
@@ -279,6 +356,88 @@ export default function RoomsScreen() {
           }
         />
       )}
+
+      <Modal
+        visible={tasksRoom !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setTasksRoom(null)}
+      >
+        <Pressable
+          onPress={() => setTasksRoom(null)}
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
+        >
+          <Pressable
+            onPress={() => {}}
+            style={{
+              backgroundColor: c.bg,
+              borderTopLeftRadius: radius.lg,
+              borderTopRightRadius: radius.lg,
+              padding: spacing.lg,
+              maxHeight: '85%',
+            }}
+          >
+            <H2>
+              {tr.housekeeping.openTasksTitle}
+              {tasksRoom ? ` · Oda ${tasksRoom.room_number}` : ''}
+            </H2>
+
+            <ScrollView style={{ marginTop: spacing.md }}>
+              {tasksRoomList.length === 0 ? (
+                <Card>
+                  <Muted>{tr.housekeeping.noOpenTasks}</Muted>
+                </Card>
+              ) : (
+                <View style={{ gap: spacing.sm }}>
+                  {tasksRoomList.map((t) => (
+                    <Card key={t.id}>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          gap: spacing.sm,
+                        }}
+                      >
+                        <Text style={{ color: c.text, fontWeight: '600', flex: 1 }}>
+                          {taskTypeText(t.task_type)}
+                        </Text>
+                        <Badge label={priorityText(t.priority)} tone={priorityTone(t.priority)} />
+                      </View>
+                      <Muted style={{ marginTop: spacing.xs }}>
+                        {t.assigned_to || tr.housekeeping.unassigned}
+                      </Muted>
+                      {t.notes ? (
+                        <Muted style={{ marginTop: spacing.xs }} numberOfLines={3}>
+                          {t.notes}
+                        </Muted>
+                      ) : null}
+                    </Card>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg }}>
+              <Button
+                title={tr.housekeeping.assignTask}
+                variant="secondary"
+                onPress={() => {
+                  const r = tasksRoom;
+                  setTasksRoom(null);
+                  if (r) openAssign(r);
+                }}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title={tr.app.close}
+                variant="primary"
+                onPress={() => setTasksRoom(null)}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={assignRoom !== null}

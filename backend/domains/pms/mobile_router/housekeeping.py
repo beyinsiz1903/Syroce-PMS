@@ -407,6 +407,50 @@ async def create_quick_task_mobile(
         'priority': priority,
         'assigned_to': assigned_to
     }
+# ── GET /housekeeping/mobile/room-tasks ──
+# Tasks in any of these states are "done" and must NOT count as open. Mirrors
+# the hub my-tasks aggregator's _DONE_TASK_STATUSES so a task that disappears
+# from "Görevlerim" also disappears from the room card badge.
+_DONE_TASK_STATUSES = {"completed", "done", "cancelled", "verified", "closed"}
+
+
+@router.get("/housekeeping/mobile/room-tasks")
+async def list_room_open_tasks(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),  # v89 DW
+):
+    """Open housekeeping tasks for every room, so the room grid can badge each
+    card with its open-task count and list the tasks on tap.
+
+    Returns a flat list of open (non-done) housekeeping tasks scoped to the
+    caller's tenant; the mobile client groups them by `room_id` to build the
+    per-card badge + detail sheet. Includes `task_type`, `assigned_to` and
+    `priority` so the sheet can show who owns each task and how urgent it is.
+    """
+    current_user = await get_current_user(credentials)
+
+    tasks: list[dict[str, Any]] = []
+    async for t in db.housekeeping_tasks.find(
+        {
+            'tenant_id': current_user.tenant_id,
+            'status': {'$nin': list(_DONE_TASK_STATUSES)},
+            'room_id': {'$exists': True, '$ne': None},
+        }
+    ).sort('created_at', -1).limit(500):
+        created_at = t.get('created_at')
+        tasks.append({
+            'id': t.get('id'),
+            'room_id': t.get('room_id'),
+            'room_number': t.get('room_number'),
+            'task_type': t.get('task_type'),
+            'assigned_to': t.get('assigned_to'),
+            'priority': t.get('priority', 'normal'),
+            'status': t.get('status', 'new'),
+            'notes': t.get('notes'),
+            'created_at': created_at.isoformat() if isinstance(created_at, datetime) else created_at,
+        })
+
+    return {'tasks': tasks, 'count': len(tasks)}
 # ── GET /housekeeping/mobile/inspection-checklist ──
 @router.get("/housekeeping/mobile/inspection-checklist")
 async def get_inspection_checklist_template(

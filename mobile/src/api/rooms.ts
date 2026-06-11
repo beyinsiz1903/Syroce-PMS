@@ -76,6 +76,31 @@ export async function listHousekeepingStaff(): Promise<HkStaff[]> {
   }
 }
 
+// ── Open tasks per room (room card badge + detail sheet) ──────────────────
+export type RoomTask = {
+  id: string;
+  room_id: string;
+  room_number?: string;
+  task_type?: string;
+  assigned_to?: string | null;
+  priority?: string;
+  status?: string;
+  notes?: string | null;
+  created_at?: string | null;
+};
+
+// GET /api/housekeeping/mobile/room-tasks — flat list of open (non-done)
+// housekeeping tasks across all rooms; the screen groups them by room_id to
+// build the per-card open-task badge and the on-tap task list.
+export async function listRoomTasks(): Promise<RoomTask[]> {
+  try {
+    const res = await api.get<{ tasks?: RoomTask[] }>('/api/housekeeping/mobile/room-tasks');
+    return Array.isArray(res?.tasks) ? res.tasks : [];
+  } catch {
+    return [];
+  }
+}
+
 export type QuickTaskInput = {
   room_id: string;
   task_type: string;
