@@ -734,6 +734,14 @@ async def ensure_folio(
         booking kapsamındaki orphan masrafları (folio_id boş veya bu booking'e
         ait hiçbir folioya işaret etmeyen) yeni folioya bağlar (orphan backfill).
     Geniş/pilot mutasyon yapılmaz; yalnızca ilgili booking'in masrafları işlenir.
+
+    Kapsam kararı (Task #425): `extra_charges` (booking kapsamlı, folio_id'siz
+    ekstra masraflar) burada KASITLI olarak migrate EDİLMEZ. Bunlar
+    `calculate_folio_balance`'a dâhil değildir; ensure-folio'da topluca
+    folio_charges'a çevirmek, split yapılmasa bile her booking için folio
+    bakiyesi semantiğini değiştirirdi. Bunun yerine ekstra masraflar split
+    motoru tarafından talep üzerine (yalnızca seçilenler) hedef folioya
+    normalize edilip taşınır (bkz. FolioHardeningService.split_folio).
     """
     _enforce_perm(current_user.role, "split_folio")  # Bug CP fix
     _ensure_hotel_context(current_user)

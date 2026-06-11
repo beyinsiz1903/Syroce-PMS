@@ -147,6 +147,44 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
     expect(toast.error).toHaveBeenCalledWith('Bölme sebebini yazın');
   });
 
+  it('ekstra masraf (folio_id yok) bölme listesinde görünür ve charge_ids ile gönderilir (Task #425)', async () => {
+    const onRefresh = vi.fn();
+    render(
+      <FoliosTab
+        {...singleFolioProps({
+          onRefresh,
+          // Booking kapsamlı ekstra masraf — folio_id taşımaz.
+          extra_charges: [
+            { id: 'e1', booking_id: 'bk-1', charge_name: 'Erken Giriş Ücreti', charge_amount: 80 },
+          ],
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId('btn-folyo-bol'));
+    const panel = screen.getByTestId('split-folio-panel');
+
+    // Folio kalemleri + ekstra masraf birlikte listelenir (3 kalem).
+    expect(within(panel).getByText('Oda Ücreti')).toBeInTheDocument();
+    expect(within(panel).getByText('Erken Giriş Ücreti')).toBeInTheDocument();
+    const checkboxes = within(panel).getAllByRole('checkbox');
+    expect(checkboxes).toHaveLength(3); // c1, c2, e1
+
+    // Yalnızca ekstra masrafı seç → backend onu hedef folioya taşır.
+    fireEvent.click(checkboxes[2]); // e1
+    fireEvent.change(within(panel).getByRole('textbox'), {
+      target: { value: 'Ekstra masraf ayrıştırma' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Bölmeyi Onayla/i }));
+
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledTimes(1));
+    const [url, payload] = axiosPost.mock.calls[0];
+    expect(url).toBe('/pms-core/folio/split');
+    expect(payload.source_folio_id).toBe('f1');
+    expect(payload.charge_ids).toEqual(['e1']);
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
   it('birden fazla folyo: kaynak folyo seçimi doğru folio_id ve yalnızca o folyonun kalemlerini iletir', async () => {
     render(<FoliosTab {...multiFolioProps()} />);
 

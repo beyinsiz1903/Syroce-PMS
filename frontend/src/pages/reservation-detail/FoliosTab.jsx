@@ -45,15 +45,20 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     const sid = splitSourceId || defaultSourceId;
     const src = folioList.find(f => f.id === sid);
     if (!src) return null;
+    // Folio kalemleri (folio_id eşleşen) + booking kapsamlı ekstra masraflar.
+    // extra_charges'ın folio_id'si yoktur; bölme sırasında backend bunları
+    // booking_id ile doğrulayıp hedef folioya folio kalemi olarak taşır.
+    const folioItems = (charges || []).filter(c => c.folio_id === src.id && !c.voided);
+    const extraItems = (extra_charges || []).filter(c => !c.voided);
     return {
       id: src.id,
       folio_number: src.folio_number,
       guest_name: booking?.guest_name,
       room_number: booking?.room_number,
       balance: src.balance,
-      charges: (charges || []).filter(c => c.folio_id === src.id && !c.voided),
+      charges: [...folioItems, ...extraItems],
     };
-  }, [splitSourceId, defaultSourceId, folioList, charges, booking]);
+  }, [splitSourceId, defaultSourceId, folioList, charges, extra_charges, booking]);
 
   const hasCharges = useMemo(
     () => (charges || []).some(c => !c.voided) || (extra_charges || []).some(c => !c.voided),

@@ -220,8 +220,59 @@ class FolioHardeningService:
 
     # ── SPLIT FOLIO ──
 
+    @staticmethod
+    def _extra_charge_to_folio_charge(ec: dict, tenant_id: str, folio_id: str, performed_by: str, now: datetime) -> dict:
+        """Normalize a booking-scoped `extra_charges` row into a `folio_charges` doc.
+
+        `extra_charges` belgeleri tek tip değildir: erken giriş/geç çıkış kalemleri
+        yalnızca `charge_name`/`charge_amount` taşır; ek hizmet kalemleri ayrıca
+        `description`/`amount`/`quantity`/`total` taşıyabilir. Bölme sırasında hedef
+        folioya standart bir folio kalemi olarak yazabilmek için alanları normalize
+        eder (eksik tutar alanları charge_amount/amount'tan türetilir).
+        """
+        total = ec.get("total")
+        if total is None:
+            total = ec.get("charge_amount", ec.get("amount", 0))
+        total = round(float(total or 0), 2)
+
+        amount = ec.get("amount")
+        if amount is None:
+            amount = total
+        amount = round(float(amount or 0), 2)
+
+        return {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "folio_id": folio_id,
+            "booking_id": ec.get("booking_id"),
+            "charge_category": ec.get("charge_category") or ec.get("category") or "extra",
+            "description": ec.get("description") or ec.get("charge_name") or "Ekstra masraf",
+            "unit_price": ec.get("unit_price", amount),
+            "quantity": ec.get("quantity", 1.0),
+            "amount": amount,
+            "tax_rate": ec.get("tax_rate", 0),
+            "tax_amount": round(float(ec.get("tax_amount", 0) or 0), 2),
+            "total": total,
+            "department": ec.get("department"),
+            "posted_by": performed_by,
+            "date": now.isoformat(),
+            "voided": False,
+            "split_from_extra_charge_id": ec.get("id"),
+        }
+
     async def split_folio(self, tenant_id: str, source_folio_id: str, charge_ids: list[str], target_folio_type: str, reason: str, performed_by: str) -> dict:
-        """Split charges from one folio to a new folio."""
+        """Split charges from one folio to a new folio.
+
+        Bölünebilir kalemler iki kaynaktan gelir:
+          - `folio_charges`: kaynak folioya bağlı kalemler — folio_id hedefe taşınır.
+          - `extra_charges`: booking kapsamlı, folio'ya bağlı OLMAYAN ekstra
+            masraflar (erken giriş/geç çıkış/ek hizmet). Seçilen ekstra masraf,
+            hedef folioya normalize edilmiş bir `folio_charges` kalemi olarak yazılır
+            ve `extra_charges`'tan silinir; böylece bakiye/vergi/fatura akışları tek
+            tip folio kalemi üzerinden tutarlı çalışır. Kaynak folio bakiyesi
+            etkilenmez (ekstra masraf zaten folio bakiyesine dâhil değildi); booking
+            seviyesi özet çift saymadan korunur.
+        """
         source_folio = await db.folios.find_one({"id": source_folio_id, "tenant_id": tenant_id}, {"_id": 0})
         if not source_folio:
             return {"success": False, "error": "Source folio not found"}
@@ -235,7 +286,18 @@ class FolioHardeningService:
             {"_id": 0}
         ).to_list(100)
 
-        if len(charges) != len(charge_ids):
+        # Ekstra masraflar booking kapsamlıdır (folio_id taşımaz); kaynak folionun
+        # booking'ine ait olan seçili ekstra masrafları da bölünebilir kalem say.
+        extra_charges: list[dict] = []
+        source_booking_id = source_folio.get("booking_id")
+        if source_booking_id:
+            extra_charges = await db.extra_charges.find(
+                {"id": {"$in": charge_ids}, "booking_id": source_booking_id, "tenant_id": tenant_id, "voided": {"$ne": True}},
+                {"_id": 0}
+            ).to_list(100)
+
+        found_ids = {c["id"] for c in charges} | {e["id"] for e in extra_charges}
+        if found_ids != set(charge_ids):
             return {"success": False, "error": "Some charges not found or already voided"}
 
         # Create new folio
@@ -258,7 +320,7 @@ class FolioHardeningService:
         }
         await db.folios.insert_one(new_folio)
 
-        # Move charges to new folio
+        # Move folio charges to new folio
         transferred_total = 0
         for charge in charges:
             await db.folio_charges.update_one(
@@ -266,6 +328,16 @@ class FolioHardeningService:
                 {"$set": {"folio_id": new_folio_id}}
             )
             transferred_total += charge.get("total", 0)
+
+        # Move extra charges → normalize into a folio charge on the new folio,
+        # then remove the original extra_charges row (it's now a folio line).
+        for ec in extra_charges:
+            normalized = self._extra_charge_to_folio_charge(ec, tenant_id, new_folio_id, performed_by, now)
+            await db.folio_charges.insert_one(normalized)
+            await db.extra_charges.delete_one({"id": ec["id"], "tenant_id": tenant_id})
+            transferred_total += normalized["total"]
+
+        moved_count = len(charges) + len(extra_charges)
 
         # Recalculate both folios
         await self._recalculate_folio_balance(tenant_id, source_folio_id)
@@ -286,10 +358,10 @@ class FolioHardeningService:
         })
 
         await self._log_audit(tenant_id, "folio", source_folio_id, "folio_split", performed_by,
-                              {"new_folio_id": new_folio_id, "charge_count": len(charges), "amount": transferred_total})
+                              {"new_folio_id": new_folio_id, "charge_count": moved_count, "amount": transferred_total})
 
         new_folio.pop("_id", None)
-        return {"success": True, "new_folio": new_folio, "transferred_charges": len(charges), "transferred_amount": round(transferred_total, 2)}
+        return {"success": True, "new_folio": new_folio, "transferred_charges": moved_count, "transferred_amount": round(transferred_total, 2)}
 
     # ── SPLIT FOLIO BY AMOUNT (even / custom) ──
 
