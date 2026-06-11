@@ -1,12 +1,13 @@
-import React, { useCallback } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import React, { useCallback, useState } from 'react';
+import { Alert, RefreshControl, ScrollView, View } from 'react-native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Badge, Body, Button, Card, Field, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
-import { isOffline } from '../../src/utils/errors';
-import { ApprovalItem, getApprovals } from '../../src/api/hub';
+import { errorMessage, isOffline } from '../../src/utils/errors';
+import { haptic } from '../../src/hooks/useHaptic';
+import { ApprovalAction, ApprovalItem, actOnApproval, getApprovals } from '../../src/api/hub';
 
 function priorityTone(priority: string): 'danger' | 'warning' | 'default' {
   if (priority === 'urgent') return 'danger';
@@ -15,6 +16,53 @@ function priorityTone(priority: string): 'danger' | 'warning' | 'default' {
 }
 
 function ApprovalRow({ item }: { item: ApprovalItem }) {
+  const qc = useQueryClient();
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: (vars: { action: ApprovalAction; reason?: string }) =>
+      actOnApproval(item, vars.action, vars.reason),
+    onSuccess: (_data, vars) => {
+      haptic.success();
+      Alert.alert(tr.app.success, vars.action === 'approve' ? tr.hub.approved : tr.hub.rejected);
+      setRejecting(false);
+      setReason('');
+      qc.invalidateQueries({ queryKey: ['hub-approvals'] });
+      qc.invalidateQueries({ queryKey: ['hub-today'] });
+    },
+    onError: (e) => {
+      haptic.error();
+      Alert.alert(tr.app.error, errorMessage(e, tr.errors.generic));
+    },
+  });
+
+  const onApprove = () => {
+    haptic.tap();
+    Alert.alert(tr.hub.approveConfirmTitle, item.title, [
+      { text: tr.app.cancel, style: 'cancel' },
+      { text: tr.hub.approve, onPress: () => mutation.mutate({ action: 'approve' }) },
+    ]);
+  };
+
+  const onRejectPress = () => {
+    haptic.tap();
+    setRejecting((v) => !v);
+  };
+
+  const onRejectConfirm = () => {
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      Alert.alert(tr.app.error, tr.hub.rejectReasonRequired);
+      return;
+    }
+    mutation.mutate({ action: 'reject', reason: trimmed });
+  };
+
+  const deptApproved = item.kind === 'leave' && item.status === 'dept_approved';
+  const consentPending =
+    item.kind === 'shift_swap' && item.target_consent_status !== 'approved';
+
   return (
     <Card style={{ marginBottom: spacing.sm }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm }}>
@@ -28,6 +76,63 @@ function ApprovalRow({ item }: { item: ApprovalItem }) {
           {tr.hub.requestedBy}: {item.requested_by}
         </Muted>
       ) : null}
+      {deptApproved ? (
+        <View style={{ marginTop: spacing.xs }}>
+          <Badge label={tr.hub.deptApprovedBadge} tone="info" />
+        </View>
+      ) : null}
+      {consentPending ? (
+        <Muted style={{ marginTop: spacing.xs }}>{tr.hub.consentPending}</Muted>
+      ) : null}
+
+      {rejecting ? (
+        <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
+          <Field
+            label={tr.hub.rejectReasonLabel}
+            placeholder={tr.hub.rejectReasonPlaceholder}
+            value={reason}
+            onChangeText={setReason}
+            multiline
+            editable={!mutation.isPending}
+          />
+          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            <Button
+              title={tr.app.cancel}
+              variant="secondary"
+              onPress={() => {
+                setRejecting(false);
+                setReason('');
+              }}
+              disabled={mutation.isPending}
+              style={{ flex: 1 }}
+            />
+            <Button
+              title={tr.hub.reject}
+              variant="danger"
+              onPress={onRejectConfirm}
+              loading={mutation.isPending}
+              style={{ flex: 1 }}
+            />
+          </View>
+        </View>
+      ) : (
+        <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+          <Button
+            title={tr.hub.reject}
+            variant="ghost"
+            onPress={onRejectPress}
+            disabled={mutation.isPending}
+            style={{ flex: 1 }}
+          />
+          <Button
+            title={tr.hub.approve}
+            variant="primary"
+            onPress={onApprove}
+            loading={mutation.isPending}
+            style={{ flex: 1 }}
+          />
+        </View>
+      )}
     </Card>
   );
 }

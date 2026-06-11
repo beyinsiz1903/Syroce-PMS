@@ -84,13 +84,19 @@ export async function getToday(): Promise<TodayDigest> {
   return api.get<TodayDigest>('/api/mobile/hub/today');
 }
 
+// The per-item kind selects which existing backend approve/reject endpoint
+// the action routes to (see actOnApproval). It is NOT the category key.
+export type ApprovalKind = 'approval' | 'approval_request' | 'leave' | 'shift_swap';
+
 export type ApprovalItem = {
   id: string;
-  kind: string;
+  kind: ApprovalKind | string;
   title: string;
   requested_by?: string | null;
   amount?: number | null;
   priority: string;
+  status?: string | null;
+  target_consent_status?: string | null;
   created_at: string;
 };
 
@@ -109,4 +115,59 @@ export type ApprovalsResponse = {
 // GET /api/mobile/hub/approvals
 export async function getApprovals(): Promise<ApprovalsResponse> {
   return api.get<ApprovalsResponse>('/api/mobile/hub/approvals');
+}
+
+export type ApprovalAction = 'approve' | 'reject';
+
+// Approve or reject a single approval item by delegating to the EXISTING,
+// already RBAC-guarded backend endpoints — no new endpoints, no RBAC change.
+// Routing depends on the item kind because each source collection exposes a
+// different endpoint/method/body shape:
+//   - approval          -> PUT  /api/approvals/{id}/approve|reject  (PMS)
+//   - approval_request  -> POST /api/approvals/{id}/approve|reject  (analytics)
+//   - leave             -> POST /api/hr/leave-request/{id}/decision (2-stage)
+//   - shift_swap        -> POST /api/hr/shift-swap-request/{id}/decision
+export async function actOnApproval(
+  item: ApprovalItem,
+  action: ApprovalAction,
+  reason?: string,
+): Promise<unknown> {
+  const id = item.id;
+  const note = reason ?? '';
+  switch (item.kind) {
+    case 'approval':
+      if (action === 'approve') {
+        return api.put(`/api/approvals/${id}/approve`, { notes: note });
+      }
+      return api.put(`/api/approvals/${id}/reject`, {
+        rejection_reason: note,
+        notes: note,
+      });
+    case 'approval_request':
+      if (action === 'approve') {
+        return api.post(`/api/approvals/${id}/approve`, { note });
+      }
+      return api.post(`/api/approvals/${id}/reject`, { reason: note });
+    case 'leave': {
+      // Honour the backend's 2-stage chain: a pending request can only advance
+      // to dept_approved; a dept_approved one to the final approved state.
+      const decision =
+        action === 'reject'
+          ? 'reject'
+          : item.status === 'dept_approved'
+            ? 'approve'
+            : 'dept_approve';
+      return api.post(`/api/hr/leave-request/${id}/decision`, {
+        decision,
+        note: note || null,
+      });
+    }
+    case 'shift_swap':
+      return api.post(`/api/hr/shift-swap-request/${id}/decision`, {
+        action,
+        note: note || null,
+      });
+    default:
+      throw new Error(`Bilinmeyen onay türü: ${item.kind}`);
+  }
 }

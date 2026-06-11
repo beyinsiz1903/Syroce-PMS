@@ -371,17 +371,23 @@ async def get_unified_approvals(
 
     if _can(current_user, "manage_approvals"):
         finance_items: list[dict[str, Any]] = []
+        # `approval` (PMS approvals collection) and `approval_request` (analytics
+        # approval_requests collection) are BOTH surfaced under the "finance"
+        # category, but they expose DIFFERENT approve/reject endpoints. The item
+        # `kind` carries which one so the action can route to the correct
+        # endpoint without weakening any RBAC.
         async for a in db.approvals.find(
             {"tenant_id": current_user.tenant_id, "status": "pending"}
         ).sort("request_date", -1).limit(200):
             finance_items.append(
                 {
                     "id": a.get("id"),
-                    "kind": "finance",
+                    "kind": "approval",
                     "title": a.get("title") or a.get("type") or "Onay",
                     "requested_by": a.get("requested_by") or a.get("created_by"),
                     "amount": a.get("amount"),
                     "priority": a.get("priority", "normal"),
+                    "status": a.get("status", "pending"),
                     "created_at": _sort_key(a.get("request_date") or a.get("created_at")),
                 }
             )
@@ -391,11 +397,12 @@ async def get_unified_approvals(
             finance_items.append(
                 {
                     "id": a.get("id"),
-                    "kind": "finance",
+                    "kind": "approval_request",
                     "title": a.get("title") or a.get("type") or "Onay",
                     "requested_by": a.get("requested_by") or a.get("created_by"),
                     "amount": a.get("amount"),
                     "priority": a.get("priority", "normal"),
+                    "status": a.get("status", "pending"),
                     "created_at": _sort_key(a.get("created_at")),
                 }
             )
@@ -407,8 +414,15 @@ async def get_unified_approvals(
 
     if _can(current_user, "view_hr"):
         hr_items: list[dict[str, Any]] = []
+        # Leave approval is a 2-stage chain (pending -> dept_approved -> approved).
+        # Both not-yet-final stages are surfaced so a manager can advance the
+        # request the rest of the way from mobile; the item `status` tells the
+        # client which decision to send next.
         async for lr in db.leave_requests.find(
-            {"tenant_id": current_user.tenant_id, "status": "pending"}
+            {
+                "tenant_id": current_user.tenant_id,
+                "status": {"$in": ["pending", "dept_approved"]},
+            }
         ).sort("created_at", -1).limit(200):
             hr_items.append(
                 {
@@ -417,6 +431,7 @@ async def get_unified_approvals(
                     "title": lr.get("leave_type") or "İzin talebi",
                     "requested_by": lr.get("staff_name") or lr.get("staff_id"),
                     "priority": "normal",
+                    "status": lr.get("status", "pending"),
                     "created_at": _sort_key(lr.get("created_at")),
                 }
             )
@@ -430,6 +445,8 @@ async def get_unified_approvals(
                     "title": "Vardiya değişimi",
                     "requested_by": sw.get("from_staff_name") or sw.get("from_staff_id"),
                     "priority": "normal",
+                    "status": sw.get("status", "pending"),
+                    "target_consent_status": sw.get("target_consent_status", "pending"),
                     "created_at": _sort_key(sw.get("requested_at") or sw.get("created_at")),
                 }
             )
