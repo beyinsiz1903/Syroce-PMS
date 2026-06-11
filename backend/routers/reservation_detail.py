@@ -717,6 +717,95 @@ async def split_charge(
     return {"success": True, "new_charge": new_charge, "remaining_amount": round(new_original_amount, 2)}
 
 
+@router.post("/reservations/{booking_id}/ensure-folio")
+async def ensure_folio(
+    booking_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("post_charge")),  # v97 DW
+):
+    """Idempotently ensure an OPEN guest folio exists for the reservation.
+
+    Folyo Böl akışı için: bir rezervasyonda masraf (örn. restoran) bulunsa bile
+    folio belgesi yalnızca ödeme/bölme anında tembel oluşturulduğu için
+    `db.folios` boş kalabilir. Bu uç nokta, aynı record-payment / split-charge
+    yollarındaki "find or create folio" desenini izleyerek:
+      - Zaten AÇIK bir folio varsa onu olduğu gibi döndürür (mutasyon yok).
+      - Aksi halde yeni bir açık misafir folyosu oluşturur ve YALNIZCA bu
+        booking kapsamındaki orphan masrafları (folio_id boş veya bu booking'e
+        ait hiçbir folioya işaret etmeyen) yeni folioya bağlar (orphan backfill).
+    Geniş/pilot mutasyon yapılmaz; yalnızca ilgili booking'in masrafları işlenir.
+    """
+    _enforce_perm(current_user.role, "split_folio")  # Bug CP fix
+    _ensure_hotel_context(current_user)
+    tid = current_user.tenant_id
+
+    booking = await db.bookings.find_one({"id": booking_id, "tenant_id": tid}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
+
+    # Zaten açık folio varsa onu döndür — yeni oluşturma / mutasyon yok.
+    existing = await db.folios.find_one(
+        {"booking_id": booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0}
+    )
+    if existing:
+        return {"success": True, "folio": existing, "created": False, "bound_charges": 0}
+
+    # Bu booking'e ait TÜM folio id'lerini topla (örn. kapanmış folyolar) ki
+    # kapalı bir folyoya bağlı masrafları yanlışlıkla yeniden bağlamayalım.
+    existing_folio_ids: set[str] = set()
+    async for f in db.folios.find({"booking_id": booking_id, "tenant_id": tid}, {"_id": 0, "id": 1}):
+        if f.get("id"):
+            existing_folio_ids.add(f["id"])
+
+    # Yeni açık misafir folyosu oluştur.
+    from core.utils import generate_folio_number
+    folio_id = str(uuid.uuid4())
+    folio = {
+        "id": folio_id,
+        "tenant_id": tid,
+        "booking_id": booking_id,
+        "folio_number": await generate_folio_number(tid),
+        "folio_type": "guest",
+        "status": "open",
+        "guest_id": booking.get("guest_id"),
+        "balance": 0.0,
+        "created_at": datetime.now(UTC).isoformat(),
+    }
+    await db.folios.insert_one({**folio})
+
+    # Orphan backfill — yalnızca bu booking kapsamında: folio_id boş veya bu
+    # booking'e ait mevcut hiçbir folioya işaret etmeyen masrafları bağla.
+    bound = 0
+    async for c in db.folio_charges.find(
+        {"booking_id": booking_id, "tenant_id": tid}, {"_id": 0, "id": 1, "folio_id": 1}
+    ):
+        fid = c.get("folio_id")
+        if not fid or fid not in existing_folio_ids:
+            await db.folio_charges.update_one(
+                {"id": c["id"], "tenant_id": tid},
+                {"$set": {"folio_id": folio_id}},
+            )
+            bound += 1
+
+    # Yeni folyonun bakiyesini bağlanan masraflardan yeniden hesapla.
+    try:
+        from modules.pms_core.folio_hardening_service import FolioHardeningService
+        await FolioHardeningService()._recalculate_folio_balance(tid, folio_id)
+        refreshed = await db.folios.find_one({"id": folio_id, "tenant_id": tid}, {"_id": 0})
+        if refreshed:
+            folio = refreshed
+    except Exception:
+        # Bakiye hesaplaması başarısız olsa bile folio oluştu ve masraflar bağlandı.
+        pass
+
+    await _log_activity(tid, booking_id, "folio_ensured", current_user.name, {
+        "folio_id": folio_id, "bound_charges": bound,
+    })
+
+    folio.pop("_id", None)
+    return {"success": True, "folio": folio, "created": True, "bound_charges": bound}
+
+
 @router.post("/reservations/{booking_id}/add-note")
 async def add_reservation_note(
     booking_id: str,

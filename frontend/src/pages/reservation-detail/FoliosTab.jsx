@@ -55,10 +55,34 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
     };
   }, [splitSourceId, defaultSourceId, folioList, charges, booking]);
 
-  const openSplit = () => {
-    if (folioList.length === 0) { toast.error('Bölünecek folyo bulunmuyor'); return; }
-    if (!splitSourceId) setSplitSourceId(defaultSourceId);
-    setShowSplit(s => !s);
+  const hasCharges = useMemo(
+    () => (charges || []).some(c => !c.voided) || (extra_charges || []).some(c => !c.voided),
+    [charges, extra_charges]
+  );
+
+  const openSplit = async () => {
+    // Folio zaten varsa mevcut akış aynen çalışır.
+    if (folioList.length > 0) {
+      if (!splitSourceId) setSplitSourceId(defaultSourceId);
+      setShowSplit(s => !s);
+      return;
+    }
+    // Folio yok ama masraf var: önce garanti-folio uç noktasını çağır,
+    // veriyi yenile, sonra bölme panelini aç.
+    if (hasCharges) {
+      setLoading(true);
+      try {
+        await axios.post(`/pms/reservations/${booking.id}/ensure-folio`);
+        await onRefresh?.();
+        setShowSplit(true);
+      } catch (e) {
+        toast.error('Folyo hazırlanamadı: ' + (e.response?.data?.detail || e.message));
+      }
+      setLoading(false);
+      return;
+    }
+    // Ne masraf ne folio var: bilgilendirici mesaj.
+    toast.error('Bölünecek folyo bulunmuyor');
   };
 
   const loadCari = async () => { try { const r = await axios.get(`/pms/cari-accounts`); setCariAccounts(r.data.accounts || []); } catch { /* fetch error */ } };

@@ -12,6 +12,7 @@
 //   4) Birden fazla folyo: kaynak folyo seçimiyle doğru folio_id ve yalnızca o
 //      folyoya ait kalemler (folio_id eşleşmesi) iletilir.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useState } from 'react';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { toast } from 'sonner';
 
@@ -180,5 +181,74 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
     expect(url).toBe('/pms-core/folio/split');
     expect(payload.source_folio_id).toBe('f2');
     expect(payload.charge_ids).toEqual(['c3']);
+  });
+});
+
+describe('FoliosTab — masraf var folio yok (Task #423)', () => {
+  // Tam-detay yeniden çekimini simüle eden durumlu sarmalayıcı: ensure-folio
+  // çağrısı sonrası onRefresh tetiklendiğinde props "backfill sonrası" hâle
+  // güncellenir (yeni folio + masraflar artık o folioya bağlı).
+  function StatefulFolios({ before, after }) {
+    const [state, setState] = useState(before);
+    return (
+      <FoliosTab
+        {...state}
+        onRefresh={() => setState(after)}
+        onSwitchTab={() => {}}
+      />
+    );
+  }
+
+  it('folio yok + masraf var: btn-folyo-bol ensure-folio çağırır, refresh sonrası panel açılır ve kalemler görünür', async () => {
+    const before = {
+      folios: [],
+      charges: [{ id: 'c1', folio_id: null, description: 'Restoran', total: 80, voided: false }],
+      payments: [],
+      extra_charges: [],
+      summary: { total_amount: 0, total_charges: 80, total_payments: 0, balance: 80 },
+      booking,
+    };
+    const after = {
+      ...before,
+      folios: [{ id: 'newf', folio_number: 'F-009', folio_type: 'guest', status: 'open', balance: 80 }],
+      charges: [{ id: 'c1', folio_id: 'newf', description: 'Restoran', total: 80, voided: false }],
+    };
+
+    render(<StatefulFolios before={before} after={after} />);
+
+    // Başlangıçta panel kapalı, masraf İşlem Geçmişi'nde görünür.
+    expect(screen.queryByTestId('split-folio-panel')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('btn-folyo-bol'));
+
+    // Garanti-folio uç noktası booking id ile çağrılır.
+    await waitFor(() => expect(axiosPost).toHaveBeenCalledTimes(1));
+    expect(axiosPost.mock.calls[0][0]).toBe('/pms/reservations/bk-1/ensure-folio');
+
+    // Hata yerine bölme paneli açılır ve backfill sonrası kalem listelenir.
+    await waitFor(() => expect(screen.getByTestId('split-folio-panel')).toBeInTheDocument());
+    expect(within(screen.getByTestId('split-folio-panel')).getByText('Restoran')).toBeInTheDocument();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('ne masraf ne folio var: btn-folyo-bol bilgilendirici mesaj gösterir, ensure-folio çağrılmaz', () => {
+    render(
+      <FoliosTab
+        folios={[]}
+        charges={[]}
+        payments={[]}
+        extra_charges={[]}
+        summary={{ total_amount: 0, total_charges: 0, total_payments: 0, balance: 0 }}
+        booking={booking}
+        onRefresh={vi.fn()}
+        onSwitchTab={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId('btn-folyo-bol'));
+
+    expect(axiosPost).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('split-folio-panel')).toBeNull();
+    expect(toast.error).toHaveBeenCalledWith('Bölünecek folyo bulunmuyor');
   });
 });
