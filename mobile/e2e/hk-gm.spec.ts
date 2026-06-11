@@ -35,6 +35,7 @@ import { attachObservers, authFile, inspectPageContent } from './fixtures';
 // Endpoints backing the two surfaces (mirror src/api/rooms.ts & src/api/gm.ts).
 const HK_STAFF = '/api/housekeeping/mobile/staff';
 const HK_QUICK_TASK = '/api/housekeeping/mobile/quick-task';
+const HK_ROOM_STATUS = '/api/housekeeping/room/';
 const GM_SNAPSHOT = '/api/gm/snapshot-enhanced';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -160,6 +161,81 @@ test.describe.serial('Mobile smoke · housekeeping · görev atama', () => {
         expect(
             consoleErrors,
             `HK atama console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
+        ).toHaveLength(0);
+    });
+
+    test('[housekeeping] oda → durum değiştir akışı (durum seç → PUT 2xx)', async ({
+        page,
+    }) => {
+        const obs = attachObservers(page);
+
+        await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+        // The status affordance lives on the same room cards as the assign
+        // button. The room-card long-press menu uses the native Alert, which is
+        // a NO-OP on Expo Web, so the spec drives the dedicated tap affordance
+        // (testID hk-room-status) instead.
+        const statusBtn = page.locator('[data-testid="hk-room-status"]').first();
+        await statusBtn.waitFor({ state: 'visible', timeout: 20_000 }).catch(() => {});
+        const roomCount = await page.locator('[data-testid="hk-room-status"]').count();
+        test.info().annotations.push({ type: 'hk-room-count', description: String(roomCount) });
+
+        if (roomCount === 0) {
+            // Honest data-state assertion: no rooms means there is nothing to
+            // flip. Assert the screen mounted with its empty copy rather than
+            // passing a flow we never reached (no skip-as-pass).
+            await expect(
+                page.getByText('Kayıt bulunamadı').first(),
+                'Oda yokken boş liste durumu render olmadı',
+            ).toBeVisible({ timeout: 15_000 });
+            const inspect = await inspectPageContent(page);
+            expect(inspect.ok, `HK ekranı boş/hata: ${inspect.reason}`).toBeTruthy();
+            const { consoleErrors } = obs.flush();
+            expect(
+                consoleErrors,
+                `HK console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
+            ).toHaveLength(0);
+            return;
+        }
+
+        // 1) Open the status sheet from the first room.
+        await statusBtn.click();
+        await expect(
+            page.locator('[data-testid="hk-status-modal"]').first(),
+            'Durum değiştir modalı açılmadı',
+        ).toBeVisible({ timeout: 15_000 });
+
+        // 2) Pick a status → the PUT /housekeeping/room/{id}/status round-trip
+        //    (2xx) is the deterministic "status changed" signal; the success
+        //    Alert is a web no-op so we do NOT key on a toast. The modal closing
+        //    confirms the apply path ran (setStatusRoom(null)).
+        const statusResp = page.waitForResponse((r) => r.url().includes(HK_ROOM_STATUS), {
+            timeout: 30_000,
+        });
+        await page.locator('[data-testid="hk-status-option-cleaning"]').first().click();
+        const changed = await statusResp;
+        test.info().annotations.push({
+            type: 'hk-room-status-code',
+            description: String(changed.status()),
+        });
+        expect(
+            changed.status(),
+            `oda durumu beklenmeyen durum: ${changed.status()}`,
+        ).toBeLessThan(400);
+        await expect(
+            page.locator('[data-testid="hk-status-modal"]'),
+            'Durum değişiminden sonra modal kapanmadı',
+        ).toHaveCount(0, { timeout: 15_000 });
+
+        const inspect = await inspectPageContent(page);
+        expect(inspect.ok, `HK ekranı boş/hata: ${inspect.reason}`).toBeTruthy();
+        expect(inspect.pii_findings ?? [], 'HK durum akışında PII leak').toHaveLength(0);
+
+        const { consoleErrors } = obs.flush();
+        expect(
+            consoleErrors,
+            `HK durum console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
         ).toHaveLength(0);
     });
 });

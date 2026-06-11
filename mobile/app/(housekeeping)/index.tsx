@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
-  AlertButton,
   FlatList,
   Modal,
   Pressable,
@@ -99,6 +98,9 @@ export default function RoomsScreen() {
   // ── Open-tasks viewer sheet state ────────────────────────────────────────
   const [tasksRoom, setTasksRoom] = useState<Room | null>(null);
 
+  // ── Status-change sheet state ────────────────────────────────────────────
+  const [statusRoom, setStatusRoom] = useState<Room | null>(null);
+
   // ── Task assignment sheet state ──────────────────────────────────────────
   const [assignRoom, setAssignRoom] = useState<Room | null>(null);
   const [staffSel, setStaffSel] = useState<HkStaff | null>(null);
@@ -181,14 +183,21 @@ export default function RoomsScreen() {
 
   const offline = rooms.isError && isOffline(rooms.error);
 
+  // Status flips are applied straight from the status sheet. The success/error
+  // signals use Alert (a no-op on Expo Web) for native polish, but the
+  // deterministic cross-platform signal is the optimistic cache update + the
+  // PUT round-trip itself + the modal closing — so the flow is fully usable and
+  // testable on web, not just native.
   const applyStatus = async (r: Room, s: StatusOption) => {
     const prev = qc.getQueryData<Room[]>(['rooms']) || [];
     qc.setQueryData<Room[]>(['rooms'], (data) =>
       (data || []).map((x) => (x.id === r.id ? { ...x, status: s } : x)),
     );
+    setStatusRoom(null);
     try {
       await updateRoomStatus(r.id, s);
       haptic.success();
+      qc.invalidateQueries({ queryKey: ['rooms'] });
       Alert.alert(tr.app.success, tr.housekeeping.statusUpdated);
     } catch {
       qc.setQueryData<Room[]>(['rooms'], prev);
@@ -197,21 +206,15 @@ export default function RoomsScreen() {
     }
   };
 
-  const promptStatus = (r: Room) => {
-    const buttons: AlertButton[] = STATUS_OPTIONS.map((s) => ({
-      text: tr.housekeeping.statuses[s] || s,
-      onPress: () => {
-        void applyStatus(r, s);
-      },
-    }));
-    buttons.push({ text: tr.app.cancel, style: 'cancel' });
-    Alert.alert(`Oda ${r.room_number}`, tr.housekeeping.changeStatus, buttons);
+  const openStatus = (r: Room) => {
+    haptic.tap();
+    setStatusRoom(r);
   };
 
   const onLongPress = (r: Room) => {
     haptic.tap();
     Alert.alert(`Oda ${r.room_number}`, tr.housekeeping.longPressHint, [
-      { text: tr.housekeeping.changeStatus, onPress: () => promptStatus(r) },
+      { text: tr.housekeeping.changeStatus, onPress: () => openStatus(r) },
       { text: tr.housekeeping.assignTask, onPress: () => openAssign(r) },
       { text: tr.app.cancel, style: 'cancel' },
     ]);
@@ -289,11 +292,22 @@ export default function RoomsScreen() {
               {openCount > 0 ? (
                 <Badge label={`${openCount} ${tr.housekeeping.openTasks}`} tone="info" />
               ) : null}
-              {/* Direct tap entry to the assign sheet. The long-press action
-                  menu (above) relies on the native Alert, which is a no-op on
-                  Expo Web — this button keeps the assign flow reachable (and
-                  discoverable) on every platform, and gives the e2e a stable
-                  affordance to open the modal. */}
+              {/* Direct tap entries to the status + assign sheets. The
+                  long-press action menu (above) relies on the native Alert,
+                  which is a no-op on Expo Web — these buttons keep both flows
+                  reachable (and discoverable) on every platform, and give the
+                  e2e a stable affordance to open each modal. */}
+              <Button
+                title={tr.housekeeping.changeStatus}
+                variant="secondary"
+                onPress={() => openStatus(r)}
+                testID="hk-room-status"
+                style={{
+                  paddingVertical: spacing.xs,
+                  paddingHorizontal: spacing.sm,
+                  minHeight: 0,
+                }}
+              />
               <Button
                 title={tr.housekeeping.assignTask}
                 variant="secondary"
@@ -449,6 +463,64 @@ export default function RoomsScreen() {
                 variant="primary"
                 onPress={() => setTasksRoom(null)}
                 style={{ flex: 1 }}
+              />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={statusRoom !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setStatusRoom(null)}
+      >
+        <Pressable
+          onPress={() => setStatusRoom(null)}
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
+        >
+          <Pressable
+            onPress={() => {}}
+            testID="hk-status-modal"
+            style={{
+              backgroundColor: c.bg,
+              borderTopLeftRadius: radius.lg,
+              borderTopRightRadius: radius.lg,
+              padding: spacing.lg,
+              maxHeight: '85%',
+            }}
+          >
+            <H2>
+              {tr.housekeeping.changeStatus}
+              {statusRoom ? ` · Oda ${statusRoom.room_number}` : ''}
+            </H2>
+
+            <ScrollView style={{ marginTop: spacing.md }}>
+              <View style={{ gap: spacing.xs }}>
+                {STATUS_OPTIONS.map((s) => {
+                  const active = (statusRoom?.status || '').toLowerCase() === s;
+                  return (
+                    <Button
+                      key={s}
+                      title={tr.housekeeping.statuses[s] || s}
+                      variant={active ? 'primary' : 'secondary'}
+                      onPress={() => {
+                        const r = statusRoom;
+                        if (r) void applyStatus(r, s);
+                      }}
+                      testID={`hk-status-option-${s}`}
+                    />
+                  );
+                })}
+              </View>
+            </ScrollView>
+
+            <View style={{ marginTop: spacing.lg }}>
+              <Button
+                title={tr.app.cancel}
+                variant="secondary"
+                onPress={() => setStatusRoom(null)}
+                testID="hk-status-cancel"
               />
             </View>
           </Pressable>
