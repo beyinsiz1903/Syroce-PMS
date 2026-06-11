@@ -24,8 +24,21 @@ Tier-2-only signal (a testID or an endpoint that only the group index fires,
 e.g. housekeeping room-card testIDs `hk-room-assign`/`hk-room-status`, or the GM
 `/api/gm/snapshot-enhanced` snapshot) is STALE — it now lands on the `(home)`
 shell and will fail honestly (timeout / wrong empty-state), it does NOT
-fake-green. To reconcile such a spec, navigate explicitly into the group
-(parens-qualified URL or in-app nav into the group) before asserting; do not
-rely on `goto('/')`. The `(home)/today` rol-branch is only a lightweight KPI
-summary — it deliberately does NOT mirror the Tier-2 flagship testIDs, so you
-cannot satisfy a Tier-2 spec by landing on today.
+fake-green. The `(home)/today` rol-branch is only a lightweight KPI summary — it
+deliberately does NOT mirror the Tier-2 flagship testIDs, so you cannot satisfy
+a Tier-2 spec by landing on today.
+
+**Canonical reconciliation (verified):** drive the REAL in-app path a single-role
+user takes — `goto('/profile')` (a NAMED route inside `(home)`, so its clean URL
+works; proven in `home-shell.spec`), then click the Profile module-grid button
+`smoke-module-housekeeping` / `smoke-module-manager` (note: the GM module key is
+`manager`, testID `smoke-module-manager`, routing to `ROUTES.gm`). Those buttons
+call `router.push(ROUTES.housekeeping|gm)` CLIENT-SIDE — that client push is what
+resolves the parens Href, NOT a fresh-document `goto('/(gm)')`. `hk-gm.spec` uses
+an `openProfileModule(page, testid)` helper for exactly this. For a spec whose
+target endpoint fires on the group-index MOUNT (e.g. GM snapshot), arm the
+`waitForResponse` AFTER `/profile` settles but BEFORE the module click — the
+request fires on the pushed group index, not on the profile landing. Module
+visibility is entitlement-gated (`allAccess || role==='housekeeping'` /
+`role==='gm'`), and `normalizeRole` collapses manager/gm/admin/super_admin → `gm`,
+so a plain-manager or all-access CI account both see the manager module.

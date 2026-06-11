@@ -21,6 +21,10 @@
 //      live pilot data and not asserted; the deterministic signals are the
 //      KPI/section testIDs mounting + the snapshot request succeeding.
 //
+// Both flagships are Tier-2 group indexes entered from the (home) Profile
+// module grid (see openProfileModule) — a plain goto('/') lands on the unified
+// (home) shell after the staff-shell merge, NOT on these screens.
+//
 // Sessions are restored from auth.setup.ts storageState (one UI login per
 // role) exactly like smoke.spec.ts — no per-screen re-login, so the matrix
 // never fans out enough logins to trip the backend auth rate limit from the
@@ -29,7 +33,7 @@
 // dispatch the full mobile suite.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { attachObservers, authFile, inspectPageContent } from './fixtures';
 
 // Endpoints backing the two surfaces (mirror src/api/rooms.ts & src/api/gm.ts).
@@ -37,6 +41,23 @@ const HK_STAFF = '/api/housekeeping/mobile/staff';
 const HK_QUICK_TASK = '/api/housekeeping/mobile/quick-task';
 const HK_ROOM_STATUS = '/api/housekeeping/room/';
 const GM_SNAPSHOT = '/api/gm/snapshot-enhanced';
+
+// Tier-2 group-index screens ((housekeeping)/index, (gm)/index) collide at the
+// bare URL `/` (Expo Router hides the parens group + index), so they are NOT
+// reachable by a clean URL. Since the staff landing was unified into the (home)
+// shell, a plain goto('/') now lands on (home)/today, not these flagships. Enter
+// them the exact way a single-role user does in-app: from the (home) Profile
+// module grid, whose buttons router.push(ROUTES.housekeeping|gm) behind the
+// smoke-module-* testIDs. Returns the (visible) module button so the caller can
+// arm any pre-navigation wait (e.g. the GM snapshot) before clicking.
+async function openProfileModule(page: Page, testid: string) {
+    await page.goto('/profile', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    const mod = page.locator(`[data-testid="${testid}"]`).first();
+    await expect(mod, `Profilde "${testid}" modül girişi görünmeli`).toBeVisible({
+        timeout: 30_000,
+    });
+    return mod;
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // housekeeping — task assignment flow.
@@ -49,7 +70,8 @@ test.describe.serial('Mobile smoke · housekeeping · görev atama', () => {
     }) => {
         const obs = attachObservers(page);
 
-        await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        const hkModule = await openProfileModule(page, 'smoke-module-housekeeping');
+        await hkModule.click();
         await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
 
         // The rooms list query (listRooms) settles into either room cards (each
@@ -169,7 +191,8 @@ test.describe.serial('Mobile smoke · housekeeping · görev atama', () => {
     }) => {
         const obs = attachObservers(page);
 
-        await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        const hkModule = await openProfileModule(page, 'smoke-module-housekeeping');
+        await hkModule.click();
         await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
 
         // The status affordance lives on the same room cards as the assign
@@ -249,13 +272,16 @@ test.describe.serial('Mobile smoke · gm · KPI paneli', () => {
     test('[gm] yeni KPI kartları + bölümler render olur + snapshot çeker', async ({ page }) => {
         const obs = attachObservers(page);
 
-        // The snapshot query fires as the dashboard mounts — wait for the
-        // round-trip and prove it is healthy (2xx), i.e. the KPIs are backed by
-        // live data, not just rendered chrome.
+        // The GM flagship is a Tier-2 group index (collides at `/`), entered the
+        // real in-app way from the (home) Profile module grid. The snapshot query
+        // fires as that dashboard mounts — arm the wait BEFORE the module click so
+        // the round-trip is captured, then prove it is healthy (2xx), i.e. the
+        // KPIs are backed by live data, not just rendered chrome.
+        const gmModule = await openProfileModule(page, 'smoke-module-manager');
         const snapResp = page.waitForResponse((r) => r.url().includes(GM_SNAPSHOT), {
             timeout: 30_000,
         });
-        await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await gmModule.click();
         const snap = await snapResp;
         test.info().annotations.push({
             type: 'gm-snapshot-status',
