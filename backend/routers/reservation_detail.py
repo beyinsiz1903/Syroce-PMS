@@ -1169,14 +1169,20 @@ async def update_reservation_guest(
         raise HTTPException(status_code=400, detail="Misafir bilgisi bulunamadı")
 
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
+    # User-facing field names captured BEFORE companions/encryption so the audit
+    # log never records internal `_hash_*` / `_enc_*` / `*_lower` keys.
+    _logged_fields = list(updates.keys())
     if updates:
         from security.search_normalize import normalized_set_for_update
         from security.search_ngram import (
             ngram_set_for_update_merged,
             NGRAM_SOURCE_FIELDS,
         )
-        # Guest name_lower companion so renames stay prefix-searchable.
-        updates.update(normalized_set_for_update(updates, collection="guests"))
+        from routers.pms_guests import _encrypt_guest
+        # Search companions are computed from the PLAINTEXT update BEFORE
+        # encryption — name fields are NOT encrypted. name_lower keeps renames
+        # prefix-searchable.
+        _norm = normalized_set_for_update(updates, collection="guests")
         # Combined _ng_name must reflect ALL name fields, not just the changed
         # subset, or a name-only edit drops first/last-name infix trigrams.
         if any(f in updates for f in NGRAM_SOURCE_FIELDS.get("guests", [])):
@@ -1184,19 +1190,27 @@ async def update_reservation_guest(
                 {"id": booking["guest_id"], "tenant_id": tid},
                 {"_id": 0, "name": 1, "first_name": 1, "last_name": 1},
             )
-            updates.update(
+            _norm.update(
                 ngram_set_for_update_merged(_g, updates, collection="guests"))
+        # KVKK: encrypt PII fields at rest (email / phone / id_number) and write
+        # their `_hash_<field>` blind-index tokens. Without this, editing a guest
+        # from the reservation screen stored PII as PLAINTEXT and left encrypted
+        # search unable to find them. `name` is not an encrypted field, so it
+        # stays plaintext for the booking guest_name sync below.
+        _plain_name = updates.get("name")
+        updates = _encrypt_guest(updates)
+        updates.update(_norm)
         await db.guests.update_one({"id": booking["guest_id"], "tenant_id": tid}, {"$set": updates})
 
-        if "name" in updates:
-            _norm = normalized_set_for_update(
-                {"guest_name": updates["name"]}, collection="bookings")
+        if _plain_name is not None:
+            _bnorm = normalized_set_for_update(
+                {"guest_name": _plain_name}, collection="bookings")
             await db.bookings.update_one(
                 {"id": booking_id, "tenant_id": tid},
-                {"$set": {"guest_name": updates["name"], **_norm}},
+                {"$set": {"guest_name": _plain_name, **_bnorm}},
             )
 
-    await _log_activity(tid, booking_id, "guest_updated", current_user.name, {"fields": list(updates.keys())})
+    await _log_activity(tid, booking_id, "guest_updated", current_user.name, {"fields": _logged_fields})
 
     return {"success": True}
 
