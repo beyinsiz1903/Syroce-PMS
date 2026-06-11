@@ -180,17 +180,23 @@ async def _booking_pull_async(tenant_id: str):
 
 
 async def ensure_guest_record(db, mapper: BookingReservationMapper, reservation: dict[str, Any]) -> str | None:
-    query = {
-        'tenant_id': mapper.tenant_id,
-        'email': reservation.get('guest_email')
-    }
+    # Dual-read: the insert below encrypts PII, so a plaintext-equality email
+    # lookup would never match an encrypted row → a duplicate guest record on
+    # every repeated OTA sync. Match _hash_email OR legacy plaintext email.
+    from security.encrypted_lookup import build_guest_pii_query
+    guest_email = reservation.get('guest_email')
+    query = {'tenant_id': mapper.tenant_id}
+    if guest_email:
+        query.update(build_guest_pii_query('email', guest_email))
+    else:
+        query['email'] = guest_email
     guest = await db.guests.find_one(query)
     if guest:
         return guest['id']
 
     payload = mapper.to_guest_payload(reservation)
-    from security.search_normalize import apply_collection_normalized_fields
-    apply_collection_normalized_fields(payload, collection="guests")
+    from security.guest_write import encrypt_guest_insert
+    payload = encrypt_guest_insert(payload)
     await db.guests.insert_one(payload)
     return payload['id']
 

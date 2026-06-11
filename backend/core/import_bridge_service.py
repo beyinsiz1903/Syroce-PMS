@@ -409,11 +409,15 @@ async def auto_import_reservation_to_pms(
 
         if guest_name:
             # Try to find existing guest by email or phone
+            # Dual-read: the insert below encrypts PII, so a plaintext-equality
+            # lookup would never match an encrypted row → a duplicate guest record
+            # on every repeated OTA sync. Match _hash_<field> OR legacy plaintext.
+            from security.encrypted_lookup import build_guest_pii_query
             guest_query = {"tenant_id": tenant_id}
             if guest_email:
-                guest_query["email"] = guest_email
+                guest_query.update(build_guest_pii_query("email", guest_email))
             elif guest_phone:
-                guest_query["phone"] = guest_phone
+                guest_query.update(build_guest_pii_query("phone", guest_phone))
             else:
                 guest_query["first_name"] = guest_first
                 guest_query["last_name"] = guest_last

@@ -627,10 +627,11 @@ async def get_overdue_accounts_mobile(
     guest_ids = list({b.get('guest_id') for b in bookings_map.values() if b.get('guest_id')})
     guests_map = {}
     if guest_ids:
+        from security.encrypted_lookup import decrypt_guest_doc
         async for g in db.guests.find(
             {'tenant_id': current_user.tenant_id, 'id': {'$in': guest_ids}}
         ):
-            guests_map[g['id']] = g
+            guests_map[g['id']] = decrypt_guest_doc(g)
 
     for folio in open_folios:
         booking = bookings_map.get(folio.get('booking_id'))
@@ -820,10 +821,11 @@ async def get_suspicious_receivables_mobile(
     g_ids = list({b.get('guest_id') for b in bookings_map.values() if b.get('guest_id')})
     guests_map = {}
     if g_ids:
+        from security.encrypted_lookup import decrypt_guest_doc
         async for g in db.guests.find(
             {'tenant_id': current_user.tenant_id, 'id': {'$in': g_ids}}
         ):
-            guests_map[g['id']] = g
+            guests_map[g['id']] = decrypt_guest_doc(g)
     folio_ids = [f.get('id') for f in folios_list if f.get('id')]
     pay_count_map = {}
     if folio_ids:
@@ -1054,10 +1056,11 @@ async def get_folio_full_extract_mobile(
     # Get guest details
     guest = None
     if booking:
-        guest = await db.guests.find_one({
+        from security.encrypted_lookup import decrypt_guest_doc
+        guest = decrypt_guest_doc(await db.guests.find_one({
             'id': booking.get('guest_id'),
             'tenant_id': current_user.tenant_id
-        })
+        }))
 
     # Get all charges
     charges = []

@@ -534,11 +534,13 @@ async def get_vip_notes(current_user: User = Depends(get_current_user),
 
     _enforce(current_user.role, "view_vip_notes")  # Bug CU
     # Get VIP guests with notes
+    from security.encrypted_lookup import decrypt_guest_doc
     vip_guests = []
     async for guest in db.guests.find({
         'tenant_id': current_user.tenant_id,
         'vip': True
     }).limit(50):
+        guest = decrypt_guest_doc(guest)
         # Get notes
         notes = await db.guest_notes.find({
             'tenant_id': current_user.tenant_id,

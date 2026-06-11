@@ -9,6 +9,7 @@ from core.database import db
 from core.security import get_current_user
 from models.schemas import User, _ensure_hotel_context
 from modules.pms_core.role_permission_service import require_op
+from security.encrypted_lookup import decrypt_guest_doc
 
 from ._common import (
     InvoiceItemSelection,
@@ -63,7 +64,7 @@ async def generate_invoice_pdf(
     # Get guest info
     guest = None
     if booking.get("guest_id"):
-        guest = await db.guests.find_one({"id": booking["guest_id"], "tenant_id": tid}, {"_id": 0})
+        guest = decrypt_guest_doc(await db.guests.find_one({"id": booking["guest_id"], "tenant_id": tid}, {"_id": 0}))
 
     # Build invoice data
     invoice_number = f"INV-{datetime.now(UTC).strftime('%Y%m%d')}-{booking_id[:8].upper()}"
@@ -245,7 +246,7 @@ async def generate_voucher(
 
     guest = None
     if booking.get("guest_id"):
-        guest = await db.guests.find_one({"id": booking["guest_id"], "tenant_id": tid}, {"_id": 0})
+        guest = decrypt_guest_doc(await db.guests.find_one({"id": booking["guest_id"], "tenant_id": tid}, {"_id": 0}))
 
     room = None
     if booking.get("room_id"):
@@ -331,7 +332,7 @@ async def generate_custom_invoice(
 
     guest = None
     if booking.get("guest_id"):
-        guest = await db.guests.find_one({"id": booking["guest_id"], "tenant_id": tid}, {"_id": 0})
+        guest = decrypt_guest_doc(await db.guests.find_one({"id": booking["guest_id"], "tenant_id": tid}, {"_id": 0}))
 
     settings = await db.hotel_settings.find_one({"tenant_id": tid}, {"_id": 0})
     if not settings:

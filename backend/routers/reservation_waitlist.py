@@ -166,8 +166,8 @@ async def promote_waitlist_entry(
             guest_id = None
     if not guest_id:
         guest_id = str(uuid.uuid4())
-        from security.search_normalize import apply_collection_normalized_fields
-        await db.guests.insert_one(apply_collection_normalized_fields({
+        from security.guest_write import encrypt_guest_insert
+        await db.guests.insert_one(encrypt_guest_insert({
             "id": guest_id,
             "tenant_id": tenant_id,
             "name": entry.get("guest_name"),
@@ -175,7 +175,7 @@ async def promote_waitlist_entry(
             "phone": entry.get("guest_phone") or "",
             "id_number": "",
             "created_at": datetime.now(UTC).isoformat(),
-        }, collection="guests"))
+        }))
 
     now = datetime.now(UTC)
     booking = {

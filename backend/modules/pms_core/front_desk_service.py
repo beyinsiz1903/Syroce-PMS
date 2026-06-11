@@ -243,8 +243,8 @@ class FrontDeskService:
         guest_id = guest_data.get("guest_id")
         if not guest_id:
             guest_id = str(uuid.uuid4())
-            from security.search_normalize import apply_collection_normalized_fields
-            await db.guests.insert_one(apply_collection_normalized_fields({
+            from security.guest_write import encrypt_guest_insert
+            await db.guests.insert_one(encrypt_guest_insert({
                 "id": guest_id,
                 "tenant_id": tenant_id,
                 "name": guest_data.get("name", "Walk-in Guest"),
@@ -252,7 +252,7 @@ class FrontDeskService:
                 "phone": guest_data.get("phone", ""),
                 "id_number": guest_data.get("id_number", ""),
                 "created_at": now.isoformat(),
-            }, collection="guests"))
+            }))
 
         booking_id = str(uuid.uuid4())
         total_amount = rate * nights

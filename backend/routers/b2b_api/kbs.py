@@ -510,16 +510,17 @@ async def b2b_kbs_guest_list(
          "status": 1, "confirmation_code": 1},
     ).sort("check_in", 1).to_list(limit)
 
+    from security.encrypted_lookup import decrypt_guest_doc
     for b in bookings:
         # v65 PII fix (architect): guest_id ile join (name-based değil — homonym leak engeli)
         gid = b.get("guest_id")
         if not gid:
             continue
-        guest = await db.guests.find_one(
+        guest = decrypt_guest_doc(await db.guests.find_one(
             {"tenant_id": tenant_id, "id": gid},
             {"_id": 0, "nationality": 1, "id_number": 1, "passport_number": 1,
              "birth_date": 1, "gender": 1},
-        )
+        ))
         if guest:
             b["nationality"] = guest.get("nationality", "")
             b["id_number"] = guest.get("id_number", "")

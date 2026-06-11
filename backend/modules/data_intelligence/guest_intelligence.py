@@ -427,10 +427,12 @@ class GuestIntelligenceDashboard:
         started_at = datetime.now(UTC)
 
         # Get recent active guests
+        from security.encrypted_lookup import decrypt_guest_doc
         guests = await db.guests.find(
             {"tenant_id": tenant_id},
             {"_id": 0, "id": 1, "name": 1, "email": 1, "tags": 1},
         ).sort("created_at", -1).limit(limit).to_list(limit)
+        guests = [decrypt_guest_doc(g) for g in guests]
 
         # Calculate scores for all guests
         value_distribution = {"platinum": 0, "gold": 0, "silver": 0, "bronze": 0}

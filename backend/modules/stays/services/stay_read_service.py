@@ -3,6 +3,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from modules.stays.repository import StaysRepository
+from security.encrypted_lookup import decrypt_booking_doc, decrypt_guest_doc
 
 
 class StayReadService:
@@ -14,9 +15,14 @@ class StayReadService:
         if not reservation:
             raise HTTPException(status_code=404, detail="Stay not found")
 
+        # PII (guest email/phone/id + booking guest_email/guest_phone) is encrypted
+        # at-rest; decrypt before returning to BI/SDK/partner clients so they never
+        # receive AES envelopes or internal blind-index tokens.
+        reservation = decrypt_booking_doc(reservation)
+
         guest = None
         if reservation.get("guest_id"):
-            guest = await self.repository.get_guest(reservation["guest_id"])
+            guest = decrypt_guest_doc(await self.repository.get_guest(reservation["guest_id"]))
 
         room = None
         if reservation.get("room_id"):

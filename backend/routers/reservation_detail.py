@@ -1508,8 +1508,8 @@ async def create_group_booking(
     try:
         for idx, row in enumerate(data.new_bookings, start=1):
             guest_id = str(uuid.uuid4())
-            from security.search_normalize import apply_collection_normalized_fields
-            _guest_doc = apply_collection_normalized_fields({
+            from security.guest_write import encrypt_guest_insert
+            _guest_doc = encrypt_guest_insert({
                 "id": guest_id,
                 "tenant_id": tid,
                 "name": row.guest_name.strip(),
@@ -1521,7 +1521,7 @@ async def create_group_booking(
                 "total_stays": 0,
                 "total_spend": 0.0,
                 "created_at": datetime.now(UTC).isoformat(),
-            }, collection="guests")
+            })
             await db.guests.insert_one(_guest_doc)
             created_guest_ids.append(guest_id)
 
@@ -1657,13 +1657,18 @@ async def get_group_booking_detail(
     if not group:
         raise HTTPException(status_code=404, detail="Grup rezervasyon bulunamadi")
 
+    from security.encrypted_lookup import decrypt_booking_doc, decrypt_guest_doc
     bookings_list = []
     async for b in db.bookings.find(
         {"id": {"$in": group.get("booking_ids", [])}, "tenant_id": tid}, {"_id": 0}
     ):
+        # PII at-rest: decrypt the booking (guest_email/guest_phone) and the joined
+        # guest doc before returning so clients never receive AES envelopes or
+        # internal blind-index tokens.
+        b = decrypt_booking_doc(b)
         guest = None
         if b.get("guest_id"):
-            guest = await db.guests.find_one({"id": b["guest_id"], "tenant_id": tid}, {"_id": 0})
+            guest = decrypt_guest_doc(await db.guests.find_one({"id": b["guest_id"], "tenant_id": tid}, {"_id": 0}))
         b["guest_detail"] = guest
         bookings_list.append(b)
 

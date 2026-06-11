@@ -183,9 +183,11 @@ class AnalyticsExportService:
         return {"headers": headers, "rows": rows}
 
     async def _guest_data(self, tenant_id) -> dict:
+        from security.encrypted_lookup import decrypt_guest_doc
         guests = await self.db.guests.find(
             {"tenant_id": tenant_id}, {"_id": 0, "id": 1, "name": 1, "email": 1, "total_stays": 1, "total_revenue": 1}
         ).to_list(500)
+        guests = [decrypt_guest_doc(g) for g in guests]
         headers = ["Guest ID", "Name", "Email", "Total Stays", "Total Revenue"]
         rows = [[g.get("id", ""), g.get("name", ""), g.get("email", ""), g.get("total_stays", 0), g.get("total_revenue", 0)] for g in guests]
         return {"headers": headers, "rows": rows}

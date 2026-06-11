@@ -303,15 +303,15 @@ async def create_walk_in_booking(data: dict, current_user: User = Depends(get_cu
     guest_id = str(uuid.uuid4())
 
     # Create guest
-    from security.search_normalize import apply_collection_normalized_fields
-    await db.guests.insert_one(apply_collection_normalized_fields({
+    from security.guest_write import encrypt_guest_insert
+    await db.guests.insert_one(encrypt_guest_insert({
         'id': guest_id,
         'tenant_id': current_user.tenant_id,
         'name': data['guest_name'],
         'phone': data['guest_phone'],
         'email': data.get('guest_email'),
         'created_at': datetime.now(UTC).isoformat()
-    }, collection="guests"))
+    }))
 
     # Find available room
     available_room = await db.rooms.find_one({

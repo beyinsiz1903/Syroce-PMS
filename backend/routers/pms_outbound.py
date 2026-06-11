@@ -152,7 +152,8 @@ async def list_guests(
         {"_id": 0, "id": 1, "first_name": 1, "last_name": 1,
          "email": 1, "phone": 1, "loyalty_id": 1, "vip": 1},
     ).limit(limit)
-    items = [_strip_id(d) async for d in cur]
+    from security.encrypted_lookup import decrypt_guest_doc
+    items = [decrypt_guest_doc(_strip_id(d)) async for d in cur]
     return {"guests": items, "count": len(items)}
 
 
@@ -163,10 +164,11 @@ async def get_guest(
 ) -> dict:
     creds = await _auth(authorization)
     db = _db()
-    doc = await db.guests.find_one(
+    from security.encrypted_lookup import decrypt_guest_doc
+    doc = decrypt_guest_doc(await db.guests.find_one(
         {"id": guest_id, "tenant_id": creds["tenant_id"]},
         {"_id": 0},
-    )
+    ))
     if not doc:
         raise HTTPException(status_code=404, detail="Misafir bulunamadı")
     return doc

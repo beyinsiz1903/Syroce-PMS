@@ -1877,9 +1877,10 @@ async def generate_invoice_from_folio(
     guest = None
     guest_id = (booking.get('guest_id') if booking else None) or folio.get('guest_id')
     if guest_id:
-        guest = await db.guests.find_one({
+        from security.encrypted_lookup import decrypt_guest_doc
+        guest = decrypt_guest_doc(await db.guests.find_one({
             'id': guest_id, 'tenant_id': current_user.tenant_id
-        }, {'_id': 0})
+        }, {'_id': 0}))
 
     raw_customer_name = (
         (booking.get('guest_name') if booking else None)

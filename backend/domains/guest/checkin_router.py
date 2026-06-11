@@ -93,8 +93,9 @@ async def _assert_booking_accessible(
 
     role = getattr(current_user.role, "value", str(current_user.role))
     if role == "guest_app":
+        from security.encrypted_lookup import build_guest_pii_query
         guest_doc = await db.guests.find_one(
-            {"email": current_user.email, "tenant_id": current_user.tenant_id},
+            {"tenant_id": current_user.tenant_id, **build_guest_pii_query("email", current_user.email)},
             {"_id": 0, "id": 1},
         )
         if not guest_doc or booking.get("guest_id") != guest_doc.get("id"):

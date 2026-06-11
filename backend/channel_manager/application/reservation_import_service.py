@@ -608,8 +608,10 @@ class ReservationImportService:
 
     async def _find_or_create_guest(self, tenant_id: str, canonical: CanonicalReservation) -> str:
         if canonical.guest.email:
+            from security.encrypted_lookup import build_guest_pii_query
             existing = await db.guests.find_one(
-                {"tenant_id": tenant_id, "email": canonical.guest.email}, {"_id": 0, "id": 1},
+                {"tenant_id": tenant_id, **build_guest_pii_query("email", canonical.guest.email)},
+                {"_id": 0, "id": 1},
             )
             if existing:
                 return existing["id"]
@@ -627,8 +629,8 @@ class ReservationImportService:
             "source": "ota",
             "created_at": datetime.now(UTC).isoformat(),
         }
-        from security.search_normalize import apply_collection_normalized_fields
-        apply_collection_normalized_fields(guest, collection="guests")
+        from security.guest_write import encrypt_guest_insert
+        guest = encrypt_guest_insert(guest)
         await db.guests.insert_one(guest)
         return guest_id
 

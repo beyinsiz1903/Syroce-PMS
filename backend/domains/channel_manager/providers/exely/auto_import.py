@@ -117,8 +117,9 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
     guest_email = channel_res.get("guest_email", "") or f"exely-{external_id}@channel.import"
     guest_phone = channel_res.get("guest_phone", "")
 
+    from security.encrypted_lookup import build_guest_pii_query
     guest = await db.guests.find_one(
-        {"tenant_id": tenant_id, "email": guest_email},
+        {"tenant_id": tenant_id, **build_guest_pii_query("email", guest_email)},
         {"_id": 0},
     )
     if not guest:
@@ -138,8 +139,8 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
             "notes": f"Exely kanal rezervasyonu ({external_id})",
             "created_at": datetime.now(UTC).isoformat(),
         }
-        from security.search_normalize import apply_collection_normalized_fields
-        await db.guests.insert_one(apply_collection_normalized_fields({**guest}, collection="guests"))
+        from security.guest_write import encrypt_guest_insert
+        await db.guests.insert_one(encrypt_guest_insert({**guest}))
         guest.pop("_id", None)
 
     # Build PMS booking (room_id intentionally omitted – user assigns rooms via drag-and-drop)

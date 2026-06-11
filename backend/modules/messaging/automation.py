@@ -96,9 +96,13 @@ async def process_booking_event(tenant_id: str, event_type: str, booking: dict):
         guest = None
         guest_id = booking.get("guest_id")
         if guest_id:
-            guest = await db.guests.find_one(
+            from security.encrypted_lookup import decrypt_guest_doc
+            # Decrypt before deriving recipient_email/recipient_phone — encrypted
+            # guests would otherwise yield AES envelopes as recipients and every
+            # automation (email + SMS) would silently fail for migrated guests.
+            guest = decrypt_guest_doc(await db.guests.find_one(
                 {"id": guest_id, "tenant_id": tenant_id}, {"_id": 0}
-            )
+            ))
 
         room = None
         room_id = booking.get("room_id")
