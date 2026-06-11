@@ -109,10 +109,10 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
 
     fireEvent.click(screen.getByTestId('btn-folyo-bol'));
 
-    // İki kalemden birini seç (hepsini seçmek backend'de reddedilir → orijinalde en az bir kalem kalmalı)
-    const checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes).toHaveLength(2);
-    fireEvent.click(checkboxes[0]); // c1
+    // İki kalemden birini hedef panoya taşı (hepsini taşımak backend'de reddedilir → orijinalde en az bir kalem kalmalı)
+    const cards = screen.getAllByTestId(/^split-charge-/);
+    expect(cards).toHaveLength(2);
+    fireEvent.click(screen.getByTestId('split-charge-c1')); // c1 → hedef
 
     fireEvent.change(screen.getByRole('textbox'), {
       target: { value: 'Şirket faturası ayrıştırma' },
@@ -140,7 +140,7 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
     fireEvent.click(screen.getByTestId('btn-folyo-bol'));
 
     // Kalem seç ama sebebi boş bırak
-    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    fireEvent.click(screen.getByTestId('split-charge-c1'));
     fireEvent.click(screen.getByRole('button', { name: /Bölmeyi Onayla/i }));
 
     expect(axiosPost).not.toHaveBeenCalled();
@@ -167,11 +167,11 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
     // Folio kalemleri + ekstra masraf birlikte listelenir (3 kalem).
     expect(within(panel).getByText('Oda Ücreti')).toBeInTheDocument();
     expect(within(panel).getByText('Erken Giriş Ücreti')).toBeInTheDocument();
-    const checkboxes = within(panel).getAllByRole('checkbox');
-    expect(checkboxes).toHaveLength(3); // c1, c2, e1
+    const cards = within(panel).getAllByTestId(/^split-charge-/);
+    expect(cards).toHaveLength(3); // c1, c2, e1
 
-    // Yalnızca ekstra masrafı seç → backend onu hedef folioya taşır.
-    fireEvent.click(checkboxes[2]); // e1
+    // Yalnızca ekstra masrafı hedefe taşı → backend onu hedef folioya taşır.
+    fireEvent.click(within(panel).getByTestId('split-charge-e1')); // e1
     fireEvent.change(within(panel).getByRole('textbox'), {
       target: { value: 'Ekstra masraf ayrıştırma' },
     });
@@ -204,9 +204,9 @@ describe('FoliosTab — Folyo Böl akışı (Task #419)', () => {
     expect(within(panel).getByText('İkram')).toBeInTheDocument();
     expect(within(panel).queryByText('Oda Ücreti')).toBeNull();
 
-    const checkboxes = within(panel).getAllByRole('checkbox');
-    expect(checkboxes).toHaveLength(2); // c3, c4
-    fireEvent.click(checkboxes[0]); // c3
+    const cards = within(panel).getAllByTestId(/^split-charge-/);
+    expect(cards).toHaveLength(2); // c3, c4
+    fireEvent.click(within(panel).getByTestId('split-charge-c3')); // c3
 
     fireEvent.change(within(panel).getByRole('textbox'), {
       target: { value: 'Şirket folyosu bölme' },

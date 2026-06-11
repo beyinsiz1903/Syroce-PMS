@@ -5,8 +5,18 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
-import { Split, CheckCircle, XCircle, AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import { Split, CheckCircle, XCircle, AlertTriangle, Plus, Trash2, GripVertical } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+
+// Para birimi: uygulamanin geri kalani (FoliosTab/DocumentTabs/PricingTabs) gibi
+// tr-TR bicimli tutar + " TL" goster. Folyolar tek para birimi tasir (varsayilan
+// TRY, open_folio_service); per-kalem doviz/cevrim YOK. Onceki "$"+toFixed(2) ABD
+// bicimi bir gosterim hatasiydi (ana ekran "47.700 TL" iken bolme ekrani
+// minibar kalemini "$100.00" gosteriyordu).
+const fmtTL = (v) => (Number(v) || 0).toLocaleString('tr-TR');
+
+const chargeIdOf = (c) => c.id || c.charge_id;
+const FOLIO_TYPE_LABELS = { guest: 'Misafir', company: 'Şirket', master: 'Master' };
 
 /**
  * SplitFolioDialog
@@ -23,6 +33,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
 
   // by_item
   const [selectedCharges, setSelectedCharges] = useState([]);
+  const [dragOverPane, setDragOverPane] = useState(null); // 'source' | 'target' | null
 
   // even
   const [evenSplits, setEvenSplits] = useState(2);
@@ -50,9 +61,74 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
   );
   const divisibleBalance = folioBalance + extraChargesTotal;
 
-  const toggleCharge = (chargeId) => {
-    setSelectedCharges((prev) =>
-      prev.includes(chargeId) ? prev.filter((c) => c !== chargeId) : [...prev, chargeId]
+  // Mews tarzi iki-bolmeli surukle-birak: sol pano = ana folio (kalir),
+  // sag pano = hedef folio (aktarilacak). Surukle-birak VEYA tikla ile tasinir.
+  const moveToTarget = (cid) =>
+    setSelectedCharges((prev) => (prev.includes(cid) ? prev : [...prev, cid]));
+  const moveToSource = (cid) =>
+    setSelectedCharges((prev) => prev.filter((x) => x !== cid));
+
+  const onChargeDragStart = (e, cid) => {
+    e.dataTransfer.setData('text/plain', cid);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  const onPaneDragOver = (e, pane) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverPane !== pane) setDragOverPane(pane);
+  };
+  const onPaneDrop = (e, pane) => {
+    e.preventDefault();
+    const cid = e.dataTransfer.getData('text/plain');
+    setDragOverPane(null);
+    if (!cid) return;
+    if (pane === 'target') moveToTarget(cid);
+    else moveToSource(cid);
+  };
+
+  const renderChargeCard = (c, side) => {
+    const cid = chargeIdOf(c);
+    return (
+      <div
+        key={cid}
+        draggable
+        role="button"
+        tabIndex={0}
+        aria-label={`${c.description || c.charge_name || 'Kalem'} — ${
+          side === 'source' ? 'hedefe taşı' : 'geri al'
+        }`}
+        onDragStart={(e) => onChargeDragStart(e, cid)}
+        onClick={() => (side === 'source' ? moveToTarget(cid) : moveToSource(cid))}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (side === 'source') moveToTarget(cid);
+            else moveToSource(cid);
+          }
+        }}
+        title={
+          side === 'source'
+            ? 'Hedefe taşımak için sürükleyin veya tıklayın'
+            : 'Geri almak için sürükleyin veya tıklayın'
+        }
+        data-testid={`split-charge-${cid}`}
+        className="flex items-center justify-between gap-2 p-2 bg-white border rounded cursor-grab active:cursor-grabbing hover:border-sky-400 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-400 transition select-none"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <GripVertical className="w-4 h-4 text-gray-400 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-sm font-medium truncate">
+              {c.description || c.charge_name || 'Kalem'}
+            </div>
+            <div className="text-xs text-gray-500 truncate">
+              {c.charge_category || c.category || ''}
+            </div>
+          </div>
+        </div>
+        <span className="font-semibold text-sm whitespace-nowrap">
+          {fmtTL(c.total ?? c.amount ?? c.charge_amount ?? 0)} TL
+        </span>
+      </div>
     );
   };
 
@@ -62,6 +138,23 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
         .filter((c) => selectedCharges.includes(c.id || c.charge_id))
         .reduce((s, c) => s + Number(c.total ?? c.amount ?? c.charge_amount ?? 0), 0),
     [folioCharges, selectedCharges]
+  );
+
+  const sourceCharges = useMemo(
+    () => folioCharges.filter((c) => !selectedCharges.includes(chargeIdOf(c))),
+    [folioCharges, selectedCharges]
+  );
+  const targetCharges = useMemo(
+    () => folioCharges.filter((c) => selectedCharges.includes(chargeIdOf(c))),
+    [folioCharges, selectedCharges]
+  );
+  const stayTotal = useMemo(
+    () =>
+      sourceCharges.reduce(
+        (s, c) => s + Number(c.total ?? c.amount ?? c.charge_amount ?? 0),
+        0
+      ),
+    [sourceCharges]
   );
 
   const evenPerSplit = useMemo(() => {
@@ -101,7 +194,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
           toast.error('En az bir kalem seçin');
           return;
         }
-        if (selectedCharges.length === folioCharges.length) {
+        if (sourceCharges.length === 0) {
           toast.error("Tüm kalemler seçilemez — orijinalde en az bir kalem kalmalı");
           return;
         }
@@ -112,9 +205,9 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
           reason: reason.trim(),
         });
         toast.success(
-          `Folio bölündü — ${res.data?.transferred_charges} kalem · $${Number(
-            res.data?.transferred_amount || 0
-          ).toFixed(2)} aktarıldı`
+          `Folio bölündü — ${res.data?.transferred_charges} kalem · ${fmtTL(
+            res.data?.transferred_amount
+          )} TL aktarıldı`
         );
       } else if (mode === 'even') {
         if (evenSplits < 2) {
@@ -135,9 +228,9 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
           reason: reason.trim(),
         });
         toast.success(
-          `Folio ${evenSplits} eşit parçaya bölündü — ${res.data?.target_count} yeni folio · $${Number(
-            res.data?.transferred_amount || 0
-          ).toFixed(2)} aktarıldı`
+          `Folio ${evenSplits} eşit parçaya bölündü — ${res.data?.target_count} yeni folio · ${fmtTL(
+            res.data?.transferred_amount
+          )} TL aktarıldı`
         );
       } else if (mode === 'custom') {
         const cleaned = customSplits
@@ -149,7 +242,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
         }
         if (customTotal >= divisibleBalance) {
           toast.error(
-            `Toplam (${customTotal.toFixed(2)}) bakiyeden (${divisibleBalance.toFixed(2)}) küçük olmalı`
+            `Toplam (${fmtTL(customTotal)} TL) bakiyeden (${fmtTL(divisibleBalance)} TL) küçük olmalı`
           );
           return;
         }
@@ -159,9 +252,9 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
           reason: reason.trim(),
         });
         toast.success(
-          `${res.data?.target_count} hedefe $${Number(res.data?.transferred_amount || 0).toFixed(
-            2
-          )} aktarıldı`
+          `${res.data?.target_count} hedefe ${fmtTL(
+            res.data?.transferred_amount
+          )} TL aktarıldı`
         );
       }
 
@@ -198,7 +291,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
   );
 
   return (
-    <Card className="border-2 border-blue-500 max-w-2xl mx-auto">
+    <Card className="border-2 border-blue-500 max-w-3xl mx-auto">
       <CardHeader>
         <CardTitle className="flex items-center">
           <Split className="w-5 h-5 mr-2 text-blue-600" />
@@ -222,11 +315,11 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
           </div>
           <div>
             <p className="text-sm text-gray-600">{t('cm.components_SplitFolioDialog.toplam_bakiye')}</p>
-            <p className="font-bold text-green-600">${folioBalance.toFixed(2)}</p>
+            <p className="font-bold text-green-600">{fmtTL(folioBalance)} TL</p>
             {extraChargesTotal > 0 && (
               <p className="text-xs text-gray-500 mt-0.5">
-                + Ekstra masraf ${extraChargesTotal.toFixed(2)} = Bölünebilir{' '}
-                <strong>${divisibleBalance.toFixed(2)}</strong>
+                + Ekstra masraf {fmtTL(extraChargesTotal)} TL = Bölünebilir{' '}
+                <strong>{fmtTL(divisibleBalance)} TL</strong>
               </p>
             )}
           </div>
@@ -269,42 +362,80 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
                 </div>
                 <div>
                   <label className="text-sm font-medium mb-2 block">
-                    {t('cm.components_SplitFolioDialog.yeni_folioya_tasinacak_kalemleri_secin')}
+                    Kalemleri sürükleyip bırakın (veya tıklayın)
                   </label>
-                  <div className="space-y-1 max-h-64 overflow-y-auto border rounded p-2">
-                    {folioCharges.map((c) => {
-                      const cid = c.id || c.charge_id;
-                      const checked = selectedCharges.includes(cid);
-                      return (
-                        <label
-                          key={cid}
-                          className="flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer rounded"
-                        >
-                          <div className="flex items-center gap-2 flex-1">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleCharge(cid)}
-                            />
-                            <div>
-                              <div className="text-sm font-medium">
-                                {c.description || c.charge_name || 'Kalem'}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {c.charge_category || c.category || ''}
-                              </div>
-                            </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Sol pano: Ana folio (kalan kalemler) */}
+                    <div
+                      onDragOver={(e) => onPaneDragOver(e, 'source')}
+                      onDragLeave={() => setDragOverPane(null)}
+                      onDrop={(e) => onPaneDrop(e, 'source')}
+                      data-testid="split-source-pane"
+                      className={`rounded-lg border-2 p-2 transition ${
+                        dragOverPane === 'source'
+                          ? 'border-sky-400 bg-sky-50'
+                          : 'border-gray-200 bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2 px-1">
+                        <span className="text-xs font-semibold text-gray-700">
+                          Ana Folio (kalır)
+                        </span>
+                        <Badge variant="outline" className="text-xs">
+                          {sourceCharges.length}
+                        </Badge>
+                      </div>
+                      <div className="space-y-1 max-h-64 overflow-y-auto min-h-[8rem]">
+                        {sourceCharges.length === 0 ? (
+                          <div className="text-xs text-red-600 p-4 text-center">
+                            Orijinalde en az bir kalem kalmalı
                           </div>
-                          <span className="font-semibold text-sm">
-                            ${Number(c.total ?? c.amount ?? c.charge_amount ?? 0).toFixed(2)}
-                          </span>
-                        </label>
-                      );
-                    })}
+                        ) : (
+                          sourceCharges.map((c) => renderChargeCard(c, 'source'))
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-600 mt-2 px-1">
+                        Kalan: <strong>{fmtTL(stayTotal)} TL</strong>
+                      </div>
+                    </div>
+
+                    {/* Sağ pano: Hedef folio (aktarılacak kalemler) */}
+                    <div
+                      onDragOver={(e) => onPaneDragOver(e, 'target')}
+                      onDragLeave={() => setDragOverPane(null)}
+                      onDrop={(e) => onPaneDrop(e, 'target')}
+                      data-testid="split-target-pane"
+                      className={`rounded-lg border-2 p-2 transition ${
+                        dragOverPane === 'target'
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-blue-200 bg-blue-50/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2 px-1">
+                        <span className="text-xs font-semibold text-blue-800">
+                          Hedef Folio · {FOLIO_TYPE_LABELS[targetFolioType]}
+                        </span>
+                        <Badge variant="outline" className="text-xs">
+                          {targetCharges.length}
+                        </Badge>
+                      </div>
+                      <div className="space-y-1 max-h-64 overflow-y-auto min-h-[8rem]">
+                        {targetCharges.length === 0 ? (
+                          <div className="text-xs text-blue-700/70 p-6 text-center border-2 border-dashed border-blue-200 rounded">
+                            Kalemleri buraya sürükleyin
+                          </div>
+                        ) : (
+                          targetCharges.map((c) => renderChargeCard(c, 'target'))
+                        )}
+                      </div>
+                      <div className="text-xs text-blue-800 mt-2 px-1">
+                        Aktarılacak: <strong>{fmtTL(selectedTotal)} TL</strong>
+                      </div>
+                    </div>
                   </div>
                   <p className="text-xs text-gray-600 mt-2">
                     {t('cm.components_SplitFolioDialog.secilen')} <strong>{selectedCharges.length}</strong> {t('cm.components_SplitFolioDialog.kalem_toplam')}{' '}
-                    <strong>${selectedTotal.toFixed(2)}</strong>
+                    <strong>{fmtTL(selectedTotal)} TL</strong>
                   </p>
                 </div>
               </>
@@ -329,7 +460,7 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
                 onChange={(e) => setEvenSplits(Math.max(2, Math.min(20, Number(e.target.value) || 2)))}
               />
               <p className="text-xs text-gray-600 mt-2">
-                {t('cm.components_SplitFolioDialog.her_parcaya')} <strong>${evenPerSplit.toFixed(2)}</strong> {t('cm.components_SplitFolioDialog.yeni_folio_sayisi')}{' '}
+                {t('cm.components_SplitFolioDialog.her_parcaya')} <strong>{fmtTL(evenPerSplit)} TL</strong> {t('cm.components_SplitFolioDialog.yeni_folio_sayisi')}{' '}
                 <strong>{evenSplits - 1}</strong> {t('cm.components_SplitFolioDialog.orijinal_de_bir_parca_olarak_kalir')}
               </p>
             </div>
@@ -374,8 +505,8 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
               <Plus className="w-4 h-4 mr-1" /> {t('cm.components_SplitFolioDialog.hedef_ekle')}
             </Button>
             <p className="text-xs text-gray-600">
-              {t('cm.components_SplitFolioDialog.toplam_aktarilacak')} <strong>${customTotal.toFixed(2)}</strong> {t('cm.components_SplitFolioDialog.bakiye')}{' '}
-              <strong>${divisibleBalance.toFixed(2)}</strong>
+              {t('cm.components_SplitFolioDialog.toplam_aktarilacak')} <strong>{fmtTL(customTotal)} TL</strong> {t('cm.components_SplitFolioDialog.bakiye')}{' '}
+              <strong>{fmtTL(divisibleBalance)} TL</strong>
               {extraChargesTotal > 0 && (
                 <span className="text-gray-400 ml-1">(ekstra masraf dâhil)</span>
               )}
@@ -411,19 +542,19 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
             {mode === 'by_item' && (
               <div className="flex items-center justify-between font-semibold text-blue-700">
                 <span>{t('cm.components_SplitFolioDialog.aktarilacak_tutar')}</span>
-                <span>${selectedTotal.toFixed(2)}</span>
+                <span>{fmtTL(selectedTotal)} TL</span>
               </div>
             )}
             {mode === 'even' && (
               <div className="flex items-center justify-between font-semibold text-blue-700">
                 <span>{t('cm.components_SplitFolioDialog.aktarilacak_toplam')}</span>
-                <span>${(evenPerSplit * (evenSplits - 1)).toFixed(2)}</span>
+                <span>{fmtTL(evenPerSplit * (evenSplits - 1))} TL</span>
               </div>
             )}
             {mode === 'custom' && (
               <div className="flex items-center justify-between font-semibold text-blue-700">
                 <span>{t('cm.components_SplitFolioDialog.aktarilacak_toplam_03d73')}</span>
-                <span>${customTotal.toFixed(2)}</span>
+                <span>{fmtTL(customTotal)} TL</span>
               </div>
             )}
           </div>

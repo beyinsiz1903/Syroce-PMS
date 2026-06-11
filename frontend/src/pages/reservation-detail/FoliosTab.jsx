@@ -134,6 +134,7 @@ export function FoliosTab({ folios, charges, payments, extra_charges, summary, b
           )}
           {splitFolio && (
             <SplitFolioDialog
+              key={splitFolio.id}
               folio={splitFolio}
               onClose={() => setShowSplit(false)}
               onSuccess={() => { setShowSplit(false); onRefresh?.(); }}
