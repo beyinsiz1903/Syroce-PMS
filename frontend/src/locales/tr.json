@@ -2198,6 +2198,32 @@
           "maintenance": "Bakımda",
           "out_of_order": "Kullanım Dışı"
         }
+      },
+      "filterLabel": "Filtre",
+      "filterAll": "Tümü",
+      "filterUnassigned": "Atanmamış olanlar",
+      "clearFilter": "Filtreyi temizle",
+      "reportFault": "Arıza bildir",
+      "noMatchingTasks": "Filtreye uygun görev yok",
+      "assignSelf": "Bana ata",
+      "availableStaff": "Mevcut personel",
+      "noStaff": "Aktif personel yok",
+      "change": "Değiştir",
+      "assign": "Ata",
+      "roomActions": "Oda işlemleri",
+      "statusLabels": {
+        "available": "Müsait",
+        "occupied": "Dolu",
+        "dirty": "Kirli",
+        "cleaning": "Temizleniyor",
+        "inspected": "Kontrol Edildi",
+        "clean": "Temiz",
+        "ready": "Hazır",
+        "out_of_order": "Kullanım Dışı",
+        "out_of_service": "Servis Dışı",
+        "maintenance": "Bakımda",
+        "reserved": "Rezerve",
+        "blocked": "Bloke"
       }
     },
     "pos": {

@@ -194,7 +194,7 @@ async def delete_housekeeping_task(
     raise HTTPException(status_code=409, detail="Devam eden gorev silinemez")
 
 @router.put("/housekeeping/tasks/{task_id}")
-async def update_housekeeping_task(task_id: str, status: str | None = None, assigned_to: str | None = None, current_user: User = Depends(get_current_user),
+async def update_housekeeping_task(task_id: str, status: str | None = None, assigned_to: str | None = None, assigned_to_user_id: str | None = None, current_user: User = Depends(get_current_user),
     _perm=Depends(require_module_v99("housekeeping")),  # v99 DW
 ):
     updates = {}
@@ -213,8 +213,20 @@ async def update_housekeeping_task(task_id: str, status: str | None = None, assi
                     {'id': task['room_id'], 'tenant_id': current_user.tenant_id},
                     {'$set': {'status': 'inspected', 'last_cleaned': datetime.now(UTC).isoformat()}},
                 )
-    if assigned_to:
-        updates['assigned_to'] = assigned_to
+    # Task #441: relational assignment — bind to an active user in the caller's
+    # tenant (fail-closed). Free-text `assigned_to` is no longer accepted as a
+    # mutation source; the display snapshot is derived from the validated user.
+    if assigned_to_user_id:
+        assignee = await db.users.find_one(
+            {'id': assigned_to_user_id, 'tenant_id': current_user.tenant_id, 'is_active': True},
+            {'_id': 0, 'id': 1, 'name': 1},
+        )
+        if not assignee:
+            raise HTTPException(status_code=400, detail="Geçersiz veya pasif kullanıcı: atama reddedildi")
+        updates['assigned_to_user_id'] = assignee['id']
+        updates['assigned_to'] = assignee.get('name') or 'Personel'
+    if not updates:
+        raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
     await db.housekeeping_tasks.update_one({'id': task_id, 'tenant_id': current_user.tenant_id}, {'$set': updates})
     task = await db.housekeeping_tasks.find_one(
         {'id': task_id, 'tenant_id': current_user.tenant_id}, {'_id': 0}

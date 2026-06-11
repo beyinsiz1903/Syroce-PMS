@@ -2194,6 +2194,32 @@
           "maintenance": "Обслуживание",
           "out_of_order": "Не в строю"
         }
+      },
+      "filterLabel": "Фильтр",
+      "filterAll": "Все",
+      "filterUnassigned": "Не назначенные",
+      "clearFilter": "Сбросить фильтр",
+      "reportFault": "Сообщить о неисправности",
+      "noMatchingTasks": "Нет задач по фильтру",
+      "assignSelf": "Назначить мне",
+      "availableStaff": "Доступный персонал",
+      "noStaff": "Нет активного персонала",
+      "change": "Изменить",
+      "assign": "Назначить",
+      "roomActions": "Действия с номером",
+      "statusLabels": {
+        "available": "Свободен",
+        "occupied": "Занят",
+        "dirty": "Грязный",
+        "cleaning": "Уборка",
+        "inspected": "Проверен",
+        "clean": "Чистый",
+        "ready": "Готов",
+        "out_of_order": "Не работает",
+        "out_of_service": "Выведен из эксплуатации",
+        "maintenance": "Обслуживание",
+        "reserved": "Забронирован",
+        "blocked": "Заблокирован"
       }
     },
     "pos": {

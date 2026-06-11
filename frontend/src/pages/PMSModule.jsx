@@ -590,12 +590,12 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     } catch (error) { toast.error('Failed to create task'); }
   };
 
-  const handleAssignHKTask = async (taskId, assignedTo) => {
+  const handleAssignHKTask = async (taskId, userId) => {
     try {
-      await axios.put(`/housekeeping/tasks/${taskId}`, null, { params: { assigned_to: assignedTo } });
-      toast.success(`Görev ${assignedTo} kişisine atandı`);
+      await axios.put(`/housekeeping/tasks/${taskId}`, null, { params: { assigned_to_user_id: userId } });
+      toast.success('Görev atandı');
       loadHousekeepingData();
-    } catch (error) { toast.error('Atama başarısız'); }
+    } catch (error) { toast.error(error.response?.data?.detail || 'Atama başarısız'); }
   };
 
   const handleUpdateHKTask = async (taskId, status) => {
@@ -856,7 +856,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
             <FrontdeskTab t={t} arrivals={arrivals} departures={departures} inhouse={inhouse} bookings={bookings} rooms={rooms} guests={guests} aiPrediction={aiPrediction} aiPatterns={aiPatterns} handleCheckIn={handleCheckIn} handleCheckOut={handleCheckOut} loadFolio={loadFolio} loadFrontDeskData={loadFrontDeskData} loadData={loadData} loading={fdLoading} error={fdError} tenant={tenant} setReservationDetailId={setReservationDetailId} />
           )}
           {activeTab === 'housekeeping' && (
-            <HousekeepingTab roomBlocks={roomBlocks} roomStatusBoard={roomStatusBoard} dueOutRooms={dueOutRooms} stayoverRooms={stayoverRooms} arrivalRooms={arrivalRooms} housekeepingTasks={housekeepingTasks} quickUpdateRoomStatus={quickUpdateRoomStatus} setOpenDialog={setOpenDialog} setSelectedRoom={setSelectedRoom} setNewBooking={setNewBooking} setMaintenanceForm={setMaintenanceForm} setMaintenanceDialogOpen={setMaintenanceDialogOpen} handleUpdateHKTask={handleUpdateHKTask} handleAssignHKTask={handleAssignHKTask} currentUserName={user?.name} loadHousekeepingData={loadHousekeepingData} onBookingCardClick={async (bookingId) => {
+            <HousekeepingTab roomBlocks={roomBlocks} roomStatusBoard={roomStatusBoard} dueOutRooms={dueOutRooms} stayoverRooms={stayoverRooms} arrivalRooms={arrivalRooms} housekeepingTasks={housekeepingTasks} quickUpdateRoomStatus={quickUpdateRoomStatus} setOpenDialog={setOpenDialog} setSelectedRoom={setSelectedRoom} setNewBooking={setNewBooking} setMaintenanceForm={setMaintenanceForm} setMaintenanceDialogOpen={setMaintenanceDialogOpen} handleUpdateHKTask={handleUpdateHKTask} handleAssignHKTask={handleAssignHKTask} currentUserName={user?.name} currentUserId={user?.id} loadHousekeepingData={loadHousekeepingData} onBookingCardClick={async (bookingId) => {
               let booking = bookings.find(b => b.id === bookingId);
               if (!booking) {
                 try {

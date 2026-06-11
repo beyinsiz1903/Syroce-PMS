@@ -2194,6 +2194,32 @@
           "maintenance": "Manutenção",
           "out_of_order": "Fora de Serviço"
         }
+      },
+      "filterLabel": "Filtro",
+      "filterAll": "Todos",
+      "filterUnassigned": "Não atribuído",
+      "clearFilter": "Limpar filtro",
+      "reportFault": "Reportar avaria",
+      "noMatchingTasks": "Nenhuma tarefa corresponde ao filtro",
+      "assignSelf": "Atribuir a mim",
+      "availableStaff": "Pessoal disponível",
+      "noStaff": "Sem pessoal ativo",
+      "change": "Alterar",
+      "assign": "Atribuir",
+      "roomActions": "Ações do quarto",
+      "statusLabels": {
+        "available": "Disponível",
+        "occupied": "Ocupado",
+        "dirty": "Sujo",
+        "cleaning": "Limpeza",
+        "inspected": "Inspecionado",
+        "clean": "Limpo",
+        "ready": "Pronto",
+        "out_of_order": "Fora de serviço",
+        "out_of_service": "Indisponível",
+        "maintenance": "Manutenção",
+        "reserved": "Reservado",
+        "blocked": "Bloqueado"
       }
     },
     "pos": {

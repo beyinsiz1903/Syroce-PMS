@@ -2194,6 +2194,32 @@
           "maintenance": "Maintenance",
           "out_of_order": "Hors Service"
         }
+      },
+      "filterLabel": "Filtre",
+      "filterAll": "Tous",
+      "filterUnassigned": "Non attribué",
+      "clearFilter": "Effacer le filtre",
+      "reportFault": "Signaler une panne",
+      "noMatchingTasks": "Aucune tâche ne correspond au filtre",
+      "assignSelf": "M'attribuer",
+      "availableStaff": "Personnel disponible",
+      "noStaff": "Aucun personnel actif",
+      "change": "Modifier",
+      "assign": "Attribuer",
+      "roomActions": "Actions de chambre",
+      "statusLabels": {
+        "available": "Disponible",
+        "occupied": "Occupée",
+        "dirty": "Sale",
+        "cleaning": "Nettoyage",
+        "inspected": "Inspectée",
+        "clean": "Propre",
+        "ready": "Prête",
+        "out_of_order": "Hors d'usage",
+        "out_of_service": "Hors service",
+        "maintenance": "Maintenance",
+        "reserved": "Réservée",
+        "blocked": "Bloquée"
       }
     },
     "pos": {

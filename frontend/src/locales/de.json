@@ -2194,6 +2194,32 @@
           "maintenance": "Wartung",
           "out_of_order": "Außer Betrieb"
         }
+      },
+      "filterLabel": "Filter",
+      "filterAll": "Alle",
+      "filterUnassigned": "Nicht zugewiesen",
+      "clearFilter": "Filter zurücksetzen",
+      "reportFault": "Störung melden",
+      "noMatchingTasks": "Keine Aufgaben entsprechen dem Filter",
+      "assignSelf": "Mir zuweisen",
+      "availableStaff": "Verfügbares Personal",
+      "noStaff": "Kein aktives Personal",
+      "change": "Ändern",
+      "assign": "Zuweisen",
+      "roomActions": "Zimmeraktionen",
+      "statusLabels": {
+        "available": "Verfügbar",
+        "occupied": "Belegt",
+        "dirty": "Schmutzig",
+        "cleaning": "Reinigung",
+        "inspected": "Geprüft",
+        "clean": "Sauber",
+        "ready": "Bereit",
+        "out_of_order": "Außer Betrieb",
+        "out_of_service": "Außer Dienst",
+        "maintenance": "Wartung",
+        "reserved": "Reserviert",
+        "blocked": "Gesperrt"
       }
     },
     "pos": {

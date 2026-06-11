@@ -2194,6 +2194,32 @@
           "maintenance": "صيانة",
           "out_of_order": "خارج الخدمة"
         }
+      },
+      "filterLabel": "تصفية",
+      "filterAll": "الكل",
+      "filterUnassigned": "غير المعينة",
+      "clearFilter": "مسح التصفية",
+      "reportFault": "الإبلاغ عن عطل",
+      "noMatchingTasks": "لا توجد مهام مطابقة للتصفية",
+      "assignSelf": "تعيين لي",
+      "availableStaff": "الموظفون المتاحون",
+      "noStaff": "لا يوجد موظفون نشطون",
+      "change": "تغيير",
+      "assign": "تعيين",
+      "roomActions": "إجراءات الغرفة",
+      "statusLabels": {
+        "available": "متاحة",
+        "occupied": "مشغولة",
+        "dirty": "متسخة",
+        "cleaning": "قيد التنظيف",
+        "inspected": "تم الفحص",
+        "clean": "نظيفة",
+        "ready": "جاهزة",
+        "out_of_order": "خارج الخدمة",
+        "out_of_service": "متوقفة عن الخدمة",
+        "maintenance": "صيانة",
+        "reserved": "محجوزة",
+        "blocked": "محظورة"
       }
     },
     "pos": {

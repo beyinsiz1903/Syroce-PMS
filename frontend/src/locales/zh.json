@@ -2194,6 +2194,32 @@
           "maintenance": "维护中",
           "out_of_order": "停用"
         }
+      },
+      "filterLabel": "筛选",
+      "filterAll": "全部",
+      "filterUnassigned": "未分配",
+      "clearFilter": "清除筛选",
+      "reportFault": "报告故障",
+      "noMatchingTasks": "没有符合筛选的任务",
+      "assignSelf": "分配给我",
+      "availableStaff": "可用员工",
+      "noStaff": "没有在职员工",
+      "change": "更改",
+      "assign": "分配",
+      "roomActions": "客房操作",
+      "statusLabels": {
+        "available": "可用",
+        "occupied": "已入住",
+        "dirty": "待清洁",
+        "cleaning": "清洁中",
+        "inspected": "已检查",
+        "clean": "干净",
+        "ready": "就绪",
+        "out_of_order": "停用",
+        "out_of_service": "停止服务",
+        "maintenance": "维护中",
+        "reserved": "已预订",
+        "blocked": "已锁定"
       }
     },
     "pos": {

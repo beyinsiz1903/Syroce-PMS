@@ -58,7 +58,8 @@ class HousekeepingTask(BaseModel):
     tenant_id: str
     room_id: str
     task_type: str  # cleaning, inspection, maintenance
-    assigned_to: str | None = None
+    assigned_to: str | None = None  # display snapshot (name) for list rendering
+    assigned_to_user_id: str | None = None  # relational link to users.id (tenant-scoped)
     status: str = "pending"  # pending, in_progress, completed
     priority: str = "normal"  # low, normal, high, urgent
     notes: str | None = None

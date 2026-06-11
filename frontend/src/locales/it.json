@@ -2194,6 +2194,32 @@
           "maintenance": "Manutenzione",
           "out_of_order": "Fuori Servizio"
         }
+      },
+      "filterLabel": "Filtro",
+      "filterAll": "Tutti",
+      "filterUnassigned": "Non assegnati",
+      "clearFilter": "Cancella filtro",
+      "reportFault": "Segnala guasto",
+      "noMatchingTasks": "Nessuna attività corrisponde al filtro",
+      "assignSelf": "Assegna a me",
+      "availableStaff": "Personale disponibile",
+      "noStaff": "Nessun personale attivo",
+      "change": "Modifica",
+      "assign": "Assegna",
+      "roomActions": "Azioni camera",
+      "statusLabels": {
+        "available": "Disponibile",
+        "occupied": "Occupata",
+        "dirty": "Sporca",
+        "cleaning": "Pulizia",
+        "inspected": "Ispezionata",
+        "clean": "Pulita",
+        "ready": "Pronta",
+        "out_of_order": "Fuori uso",
+        "out_of_service": "Fuori servizio",
+        "maintenance": "Manutenzione",
+        "reserved": "Riservata",
+        "blocked": "Bloccata"
       }
     },
     "pos": {

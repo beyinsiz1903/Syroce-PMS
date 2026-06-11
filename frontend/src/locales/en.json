@@ -2198,6 +2198,32 @@
           "maintenance": "Maintenance",
           "out_of_order": "Out of Order"
         }
+      },
+      "filterLabel": "Filter",
+      "filterAll": "All",
+      "filterUnassigned": "Unassigned",
+      "clearFilter": "Clear filter",
+      "reportFault": "Report fault",
+      "noMatchingTasks": "No tasks match the filter",
+      "assignSelf": "Assign to me",
+      "availableStaff": "Available staff",
+      "noStaff": "No active staff",
+      "change": "Change",
+      "assign": "Assign",
+      "roomActions": "Room actions",
+      "statusLabels": {
+        "available": "Available",
+        "occupied": "Occupied",
+        "dirty": "Dirty",
+        "cleaning": "Cleaning",
+        "inspected": "Inspected",
+        "clean": "Clean",
+        "ready": "Ready",
+        "out_of_order": "Out of Order",
+        "out_of_service": "Out of Service",
+        "maintenance": "Maintenance",
+        "reserved": "Reserved",
+        "blocked": "Blocked"
       }
     },
     "pos": {

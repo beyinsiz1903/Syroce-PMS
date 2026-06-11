@@ -1,61 +1,50 @@
-import React, { memo, useMemo, useState } from 'react';
+import React, { memo, useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { TabsContent } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Input } from '@/components/ui/input';
-import { LogOut, Home, LogIn, Plus, Clock, CheckCircle, UserPlus, Bed, ListChecks } from 'lucide-react';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { LogOut, Home, LogIn, Plus, Clock, CheckCircle, UserPlus, Bed, ListChecks, Wrench, MoreVertical, X } from 'lucide-react';
 import HousekeepingRoomGrid from '@/components/pms/HousekeepingRoomGrid';
 
-const AssignPopover = ({ task, staffOptions, currentUserName, onAssign }) => {
+const AssignPopover = ({ task, staffOptions, currentUserId, currentUserName, onAssign, tc }) => {
   const [open, setOpen] = useState(false);
-  const [newName, setNewName] = useState('');
-  const submit = (name) => {
-    const v = (name || '').trim();
-    if (!v) return;
-    onAssign(task.id, v);
+  const submit = (userId) => {
+    if (!userId) return;
+    onAssign(task.id, userId);
     setOpen(false);
-    setNewName('');
   };
-  const isAssigned = task.assigned_to && task.assigned_to !== 'Unassigned';
+  const isAssigned = task.assigned_to && task.assigned_to.toLowerCase() !== 'unassigned';
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button size="sm" variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50">
           <UserPlus className="w-4 h-4 mr-1" />
-          {isAssigned ? 'Değiştir' : 'Ata'}
+          {isAssigned ? tc('change') : tc('assign')}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-2 space-y-1" align="end">
-        {currentUserName && (
-          <Button size="sm" variant="ghost" className="w-full justify-start" onClick={() => submit(currentUserName)}>
-            Bana ata ({currentUserName})
+        {currentUserId && currentUserName && (
+          <Button size="sm" variant="ghost" className="w-full justify-start" onClick={() => submit(currentUserId)}>
+            {tc('assignSelf')} ({currentUserName})
           </Button>
         )}
-        {staffOptions.length > 0 && (
-          <div className="border-t pt-1 mt-1">
-            <div className="text-xs text-gray-500 px-2 py-1">Mevcut personel</div>
-            {staffOptions.map((s) => (
-              <Button key={s} size="sm" variant="ghost" className="w-full justify-start" onClick={() => submit(s)}>
-                {s}
+        <div className="border-t pt-1 mt-1">
+          <div className="text-xs text-gray-500 px-2 py-1">{tc('availableStaff')}</div>
+          {staffOptions.length === 0 ? (
+            <div className="text-xs text-gray-400 px-2 py-1">{tc('noStaff')}</div>
+          ) : (
+            staffOptions.map((s) => (
+              <Button key={s.id} size="sm" variant="ghost" className="w-full justify-start" onClick={() => submit(s.id)}>
+                {s.name}
               </Button>
-            ))}
-          </div>
-        )}
-        <div className="border-t pt-2 mt-1 space-y-1">
-          <div className="text-xs text-gray-500 px-2">Yeni isim</div>
-          <div className="flex gap-1 px-1">
-            <Input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') submit(newName); }}
-              placeholder="Personel adı"
-              className="h-8 text-sm"
-            />
-            <Button size="sm" onClick={() => submit(newName)} disabled={!newName.trim()}>Ekle</Button>
-          </div>
+            ))
+          )}
         </div>
       </PopoverContent>
     </Popover>
@@ -78,6 +67,7 @@ const HousekeepingTab = ({
   handleUpdateHKTask,
   handleAssignHKTask,
   currentUserName,
+  currentUserId,
   onBookingCardClick,
   toast,
   loading,
@@ -86,15 +76,69 @@ const HousekeepingTab = ({
   const { t } = useTranslation();
   const tc = (k) => t(`pmsComponents.housekeeping.${k}`);
   const [view, setView] = useState('operations');
+  const [taskFilter, setTaskFilter] = useState('all'); // 'all' | 'unassigned' | <assignee value>
 
-  const staffOptions = useMemo(() => {
-    const set = new Set();
-    (housekeepingTasks || []).forEach(t => {
-      const a = (t.assigned_to || '').trim();
-      if (a && a.toLowerCase() !== 'unassigned') set.add(a);
+  // Relational staff source: active tenant users (real user ids), not the
+  // legacy free-text names derived from prior tasks.
+  const [staffOptions, setStaffOptions] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await axios.get('/hr/staff', { params: { source: 'users' } });
+        const rows = (res.data?.staff || [])
+          .filter((s) => s.id && s.name)
+          .map((s) => ({ id: s.id, name: s.name }));
+        const seen = new Set();
+        const unique = rows.filter((r) => (seen.has(r.id) ? false : seen.add(r.id)));
+        unique.sort((a, b) => a.name.localeCompare(b.name));
+        if (!cancelled) setStaffOptions(unique);
+      } catch {
+        if (!cancelled) setStaffOptions([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Translated room-status label with a readable fallback (never raw enum).
+  const statusLabel = (status) => {
+    if (!status) return '';
+    const key = `statusLabels.${status}`;
+    const translated = t(`pmsComponents.housekeeping.${key}`);
+    if (translated && translated !== `pmsComponents.housekeeping.${key}`) return translated;
+    return String(status).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
+  // Assignee options for the task filter — derived from actually-assigned tasks
+  // (keyed by relational user id when present, falling back to the name).
+  const assigneeFilterOptions = useMemo(() => {
+    const map = new Map();
+    (housekeepingTasks || []).forEach((tk) => {
+      const name = (tk.assigned_to || '').trim();
+      if (name && name.toLowerCase() !== 'unassigned') {
+        const value = tk.assigned_to_user_id || name;
+        if (!map.has(value)) map.set(value, name);
+      }
     });
-    return Array.from(set).sort();
+    return Array.from(map, ([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
   }, [housekeepingTasks]);
+
+  const filteredTasks = useMemo(() => {
+    const list = housekeepingTasks || [];
+    if (taskFilter === 'all') return list;
+    if (taskFilter === 'unassigned') {
+      return list.filter((tk) => {
+        const name = (tk.assigned_to || '').trim();
+        return !name || name.toLowerCase() === 'unassigned';
+      });
+    }
+    return list.filter((tk) => {
+      const name = (tk.assigned_to || '').trim();
+      const value = tk.assigned_to_user_id || name;
+      return value === taskFilter;
+    });
+  }, [housekeepingTasks, taskFilter]);
 
   if (loading) {
     return (
@@ -187,7 +231,7 @@ const HousekeepingTab = ({
             }`}>
               <CardContent className="pt-4">
                 <div className="text-3xl font-bold">{count}</div>
-                <div className="text-xs capitalize font-semibold">{status.replace('_', ' ')}</div>
+                <div className="text-xs font-semibold">{statusLabel(status)}</div>
               </CardContent>
             </Card>
           ))}
@@ -284,7 +328,7 @@ const HousekeepingTab = ({
                   <div className="text-sm text-gray-600">{room.guest_name}</div>
                   <div className="text-xs flex items-center justify-between">
                     <span className={room.ready ? 'text-green-600 font-semibold' : 'text-yellow-600'}>
-                      {room.ready ? `${tc('ready')}` : `${room.room_status}`}
+                      {room.ready ? `${tc('ready')}` : statusLabel(room.room_status)}
                     </span>
                   </div>
                 </div>
@@ -317,23 +361,42 @@ const HousekeepingTab = ({
                   occupied: 'bg-indigo-100 border-indigo-300',
                 };
 
+                const openReportFault = () => {
+                  setMaintenanceForm({
+                    room_id: room.id,
+                    room_number: room.room_number,
+                    issue_type: 'housekeeping_damage',
+                    priority: 'normal',
+                    description: '',
+                  });
+                  setMaintenanceDialogOpen(true);
+                };
+
                 return (
                   <Card
                     key={room.id}
-                    className={`cursor-pointer hover:shadow-lg transition-shadow relative ${
+                    className={`hover:shadow-lg transition-shadow relative ${
                       statusColors[room.status] || 'bg-gray-100 border-gray-300'
                     }`}
                   >
+                    {roomBlock && (
+                      <span
+                        className="absolute top-1.5 right-1.5 text-red-600"
+                        title={roomBlock.reason || tc('maintenance')}
+                      >
+                        <Wrench className="w-4 h-4" />
+                      </span>
+                    )}
                     <CardContent className="p-3">
                       <div className="font-bold text-lg">{room.room_number}</div>
                       <div className="text-xs capitalize">{room.room_type}</div>
-                      <div className="text-xs font-semibold mt-1 capitalize">{room.status.replace('_', ' ')}</div>
+                      <div className="text-xs font-semibold mt-1">{statusLabel(room.status)}</div>
                       {roomBlock && (
                         <div className="text-[10px] text-gray-600 mt-1 truncate" title={roomBlock.reason}>
                           {roomBlock.reason}
                         </div>
                       )}
-                      <div className="flex gap-1 mt-2">
+                      <div className="flex gap-1 mt-2 items-center">
                         {room.status === 'dirty' && (
                           <Button
                             size="sm"
@@ -358,24 +421,29 @@ const HousekeepingTab = ({
                             {tc('ready')}
                           </Button>
                         )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-6 text-[10px] ml-auto"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setMaintenanceForm({
-                              room_id: room.id,
-                              room_number: room.room_number,
-                              issue_type: 'housekeeping_damage',
-                              priority: 'normal',
-                              description: '',
-                            });
-                            setMaintenanceDialogOpen(true);
-                          }}
-                        >
-                          {tc('mnt')}
-                        </Button>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 ml-auto"
+                              aria-label={tc('roomActions')}
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-44 p-1" align="end">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="w-full justify-start text-red-700 hover:bg-red-50"
+                              onClick={openReportFault}
+                            >
+                              <Wrench className="w-4 h-4 mr-2" />
+                              {tc('reportFault')}
+                            </Button>
+                          </PopoverContent>
+                        </Popover>
                       </div>
                     </CardContent>
                   </Card>
@@ -419,13 +487,39 @@ const HousekeepingTab = ({
         </Card>
       </div>
 
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm font-medium text-gray-600">{tc('filterLabel')}:</span>
+        <Select value={taskFilter} onValueChange={setTaskFilter}>
+          <SelectTrigger className="w-56 h-9" data-testid="hk-task-filter">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{tc('filterAll')}</SelectItem>
+            <SelectItem value="unassigned">{tc('filterUnassigned')}</SelectItem>
+            {assigneeFilterOptions.map((o) => (
+              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {taskFilter !== 'all' && (
+          <Button size="sm" variant="ghost" className="h-9" onClick={() => setTaskFilter('all')}>
+            <X className="w-4 h-4 mr-1" />
+            {tc('clearFilter')}
+          </Button>
+        )}
+      </div>
+
       <div className="space-y-4">
         {housekeepingTasks.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
             {tc('noTasks')}
           </div>
+        ) : filteredTasks.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            {tc('noMatchingTasks')}
+          </div>
         ) : (
-          housekeepingTasks
+          filteredTasks
             .slice()
             .sort((a, b) => {
               const priorityOrder = { high: 0, medium: 1, low: 2 };
@@ -484,8 +578,10 @@ const HousekeepingTab = ({
                         <AssignPopover
                           task={task}
                           staffOptions={staffOptions}
+                          currentUserId={currentUserId}
                           currentUserName={currentUserName}
                           onAssign={handleAssignHKTask}
+                          tc={tc}
                         />
                       )}
                       {task.status === 'pending' && (
