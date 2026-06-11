@@ -60,10 +60,15 @@ async def idempotent_insert(
     tenant_id: str,
     idempotency_key: str | None,
     doc: dict,
+    index_name: str | None = None,
 ) -> tuple[dict, bool]:
     """Insert `doc` or return prior row if `idempotency_key` already used.
 
     Returns (effective_doc, was_idempotent_replay).
+
+    `index_name` lets a caller reuse an existing (tenant_id, idempotency_key)
+    index by name (e.g. the POS `ux_pos_orders_tenant_idemp` index shared with
+    create-order), avoiding an equivalent-index-different-name conflict.
 
     If the unique index cannot be created (DB perms/transient), the request
     fails closed with the underlying error rather than silently degrading
@@ -75,7 +80,7 @@ async def idempotent_insert(
         doc.pop("_id", None)
         return doc, False
 
-    await ensure_idem_index(collection)  # may raise → fail-closed
+    await ensure_idem_index(collection, index_name=index_name)  # may raise → fail-closed
     try:
         await collection.insert_one(doc)
         doc.pop("_id", None)

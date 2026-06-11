@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -111,6 +111,9 @@ export default function PosScreen() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [opening, setOpening] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+  // Per genuine attempt; retry (timeout/warm-up/double-tap) reuses the SAME key,
+  // cleared only on success → backend never opens/posts a duplicate (Task #373).
+  const postFolioKeyRef = useRef<string | null>(null);
 
   // Active-order lifecycle state.
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
@@ -236,11 +239,16 @@ export default function PosScreen() {
         Alert.alert(tr.app.success, tr.departments.pos.orderQueued);
         return;
       }
-      await openQuickOrder({ ...payload, idempotency_key: idempotencyKey });
+      const res = await openQuickOrder({ ...payload, idempotency_key: idempotencyKey });
       haptic.success();
       resetForm();
       qc.invalidateQueries({ queryKey: ['pos-active-orders'] });
-      Alert.alert(tr.app.success, tr.departments.pos.orderOpened);
+      Alert.alert(
+        tr.app.success,
+        res?.idempotent_replay
+          ? tr.departments.pos.orderAlreadyOpened
+          : tr.departments.pos.orderOpened,
+      );
     } catch (e: unknown) {
       if (isNetworkError(e)) {
         // Dropped mid-flight — move it to the durable queue (same key) so the
@@ -344,13 +352,28 @@ export default function PosScreen() {
     }
     setPosting(true);
     try {
-      await postOrderToFolio({ folio_id: folioId, order_items: cart });
+      if (!postFolioKeyRef.current) {
+        postFolioKeyRef.current = `mob-folio-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      }
+      const res = await postOrderToFolio({
+        folio_id: folioId,
+        order_items: cart,
+        idempotency_key: postFolioKeyRef.current,
+      });
+      // Success → next post gets a fresh key.
+      postFolioKeyRef.current = null;
       haptic.success();
       setCart([]);
       setFolioId('');
       qc.invalidateQueries({ queryKey: ['pos-open-folios'] });
-      Alert.alert(tr.app.success, tr.departments.pos.folioPosted);
+      Alert.alert(
+        tr.app.success,
+        res?.idempotent_replay
+          ? tr.departments.pos.folioAlreadyPosted
+          : tr.departments.pos.folioPosted,
+      );
     } catch (e: unknown) {
+      // Error → keep the key so a retry reuses it.
       Alert.alert(tr.app.error, errorMessage(e, tr.errors.generic));
       haptic.error();
     } finally {

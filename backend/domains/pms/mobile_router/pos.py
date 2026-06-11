@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import get_current_user, security
+from domains.pms.pos_extensions._idem import idempotent_insert
 from modules.pms_core.role_permission_service import (
     require_module,  # v89 DW
     )
@@ -56,6 +57,9 @@ class QuickOrderRequest(BaseModel):
     table_number: str | None = None
     items: list[QuickOrderItem] = []
     notes: str | None = None
+    # Per genuine order attempt; retry/double-tap/network replay with the SAME
+    # key returns the original order instead of creating a duplicate (Task #373).
+    idempotency_key: str | None = None
 
 class MenuPriceUpdateRequest(BaseModel):
     new_price: float
@@ -188,6 +192,12 @@ async def create_quick_order_mobile(
     items = [item.dict() for item in request.items]
     notes = request.notes
 
+    # Normalize idempotency key (bounded so it can't be abused as storage).
+    idem_raw = request.idempotency_key
+    idempotency_key = idem_raw.strip() if isinstance(idem_raw, str) and idem_raw.strip() else None
+    if idempotency_key and len(idempotency_key) > 128:
+        raise HTTPException(status_code=400, detail="idempotency_key too long (max 128)")
+
     # Validate outlet
     outlet = await db.pos_outlets.find_one({
         'id': outlet_id,
@@ -254,19 +264,41 @@ async def create_quick_order_mobile(
         'guest_name': 'Walk-in',
         'status': 'pending',
         'notes': notes,
+        'idempotency_key': idempotency_key,
         'created_at': datetime.now(UTC),
         'created_by': current_user.username
     }
 
-    await db.pos_orders.insert_one(order)
+    # Idempotency gate (Task #373): aynı (tenant, idempotency_key) ile gelen
+    # retry/çift-dokunma yeni sipariş YARATMAZ — mevcut sipariş replay döner.
+    # create-order ile AYNI unique index'i paylaşır (ux_pos_orders_tenant_idemp).
+    if idempotency_key:
+        try:
+            effective_order, replay = await idempotent_insert(
+                db.pos_orders,
+                current_user.tenant_id,
+                idempotency_key,
+                order,
+                index_name="ux_pos_orders_tenant_idemp",
+            )
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail="POS idempotency koruması geçici olarak kullanılamıyor — biraz sonra tekrar deneyin",
+            )
+    else:
+        await db.pos_orders.insert_one(order)
+        order.pop("_id", None)
+        effective_order, replay = order, False
 
     return {
         'message': 'Order created successfully',
-        'order_id': order_id,
+        'order_id': effective_order.get('id', order_id),
+        'idempotent_replay': replay,
         'outlet_name': outlet.get('name'),
         'table_number': table_number,
-        'total': total,
-        'items_count': len(order_items)
+        'total': effective_order.get('grand_total', total),
+        'items_count': len(effective_order.get('order_items', order_items)),
     }
 # ── PUT /pos/mobile/menu-items/{item_id}/price ──
 @router.put("/pos/mobile/menu-items/{item_id}/price")

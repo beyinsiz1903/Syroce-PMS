@@ -21,6 +21,16 @@ whole-order retries; `(tenant_id, source_pos_order_id, line_no)` on
 folio_charges is defense-in-depth that dedups the SAME order's charge lines if
 they're posted twice. Both are PARTIAL (legacy/non-POS docs lack the fields).
 
+**Multiple endpoints write pos_orders idempotently.** The mobile quick-order
+endpoint reuses the SAME `pos_orders` idempotency index — when calling the
+shared `idempotent_insert` helper from a second writer, pass
+`index_name="ux_pos_orders_tenant_idemp"` so its lazy `ensure_idem_index` does
+not try to create an equivalent index under a different default name (would be
+an IndexOptionsConflict). The UI side must generate the key ONCE per genuine
+attempt and reuse it across retries (clear only on success), or the gate is
+moot. `idempotent_insert` propagates index-ensure failures (fail-closed); the
+caller must catch and surface 503.
+
 **Why:** legacy POS path omitted FolioCharge.booking_id (required) — fixed by
 fetching it from the folio (404 if folio missing, blocks orphan/cross-tenant
 charges). `_idem._INDEXES_READY` is a process-global cache keyed by

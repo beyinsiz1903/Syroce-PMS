@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -48,6 +48,9 @@ const MobileFnB = ({ user }) => {
   const [selectedOutlet, setSelectedOutlet] = useState(null);
   const [orderItems, setOrderItems] = useState([]);
   const [tableNumber, setTableNumber] = useState('');
+  // Her gerçek sipariş denemesi için bir kez üretilir; retry'larda aynı anahtar
+  // yeniden kullanılır → backend çift sipariş oluşturmaz (Task #373).
+  const pendingOrderKeyRef = useRef(null);
   const [zReportModalOpen, setZReportModalOpen] = useState(false);
   const [voidReportModalOpen, setVoidReportModalOpen] = useState(false);
   const [menuManagementModalOpen, setMenuManagementModalOpen] = useState(false);
@@ -145,19 +148,34 @@ const MobileFnB = ({ user }) => {
         return;
       }
 
-      await axios.post('/pos/mobile/quick-order', {
+      // İlk denemede anahtar üret; retry'lar (timeout/ağ hatası) aynı anahtarı
+      // yeniden kullanır → backend çift sipariş oluşturmaz (Task #373).
+      if (!pendingOrderKeyRef.current) {
+        pendingOrderKeyRef.current =
+          globalThis.crypto?.randomUUID?.() || `pos-order-${Date.now()}-${Math.random()}`;
+      }
+
+      const res = await axios.post('/pos/mobile/quick-order', {
         outlet_id: selectedOutlet,
         table_number: tableNumber,
         items: orderItems,
-        notes: ''
+        notes: '',
+        idempotency_key: pendingOrderKeyRef.current
       });
 
-      toast.success('Sipariş');
+      // Başarılı → sonraki sipariş yeni anahtar alsın.
+      pendingOrderKeyRef.current = null;
+      if (res?.data?.idempotent_replay) {
+        toast.success('Sipariş zaten oluşturulmuştu — çift hesap kesilmedi');
+      } else {
+        toast.success('Sipariş');
+      }
       setOrderModalOpen(false);
       setOrderItems([]);
       setTableNumber('');
       loadData();
     } catch (error) {
+      // Hata → anahtar korunur; retry aynı anahtarı kullanır.
       toast.error('Sipariş');
     }
   };

@@ -125,8 +125,15 @@ export async function openQuickOrder(body: {
   table_number?: string;
   items: { item_id: string; quantity: number }[];
   notes?: string;
+  // Per-attempt key so a double-tap / warm-up / network replay of this exact
+  // order returns the original instead of opening a duplicate (Task #373).
   idempotency_key?: string;
-}): Promise<{ order_id: string; total: number; items_count: number }> {
+}): Promise<{
+  order_id: string;
+  total: number;
+  items_count: number;
+  idempotent_replay?: boolean;
+}> {
   return api.post('/api/pos/mobile/quick-order', body);
 }
 
@@ -192,7 +199,10 @@ export async function postOrderToFolio(body: {
   folio_id?: string;
   booking_id?: string;
   order_items: { item_id: string; quantity: number }[];
-}): Promise<{ success: boolean; order_id: string }> {
+  // Per-attempt key so a double-tap / warm-up / network replay never posts the
+  // same items as a second folio charge set (Task #373).
+  idempotency_key?: string;
+}): Promise<{ success: boolean; order_id: string; idempotent_replay?: boolean }> {
   return api.post('/api/pos/create-order', body);
 }
 
