@@ -28,6 +28,12 @@ const M = 'split-folio';
 //   4. (UI/HARD) "Folyo Böl" → POST .../ensure-folio 200 +
 //      [data-testid="split-folio-panel"] görünür + "Bölünecek folyo
 //      bulunmuyor" toast'u YOK + bölme listesinde kalem ("[Aktarım]") görünür.
+//   5. (UI/HARD — Task #432) by_item modunda "[Aktarım]" kalemi seçilir, sebep
+//      yazılır, "Bölmeyi Onayla" tıklanır → POST /api/pms-core/folio/split 200.
+//      Sonrasında (API/HARD) full-detail: kaynak folyoda kalem AZALIR + yeni
+//      hedef folyo OLUŞUR + seçilen kalem o yeni folyoya TAŞINIR. Yani bölme
+//      dialogunun kalemleri yalnızca GÖSTERMEKLE kalmayıp gerçekten aktardığı
+//      uçtan uca kanıtlanır (görüntü değil, kalıcı veri taşıması).
 //
 // Doktrin: dış servis yok → SKIP yalnızca pilot ön-koşulu eksikse (oda yok /
 // takvim mount değil). UI sürülemezse (booking-bar/modal render olmazsa)
@@ -241,6 +247,93 @@ test.describe('Scope 5 — Folyo Böl (folio yok + masraf var)', () => {
             });
             expect(itemVisible, 'Bölme dialogunda kalem görünmüyor — "görüntülenebilen masraf kalemi yok" boş uyarısına düşmüş olabilir').toBe(true);
             expect(checkboxCount, 'Bölme dialogu by_item kalem checkbox\'ı render etmedi').toBeGreaterThan(0);
+
+            // ── 13) Bölme ÖNCESİ durumu yakala (API/HARD) ──
+            // ensure-folio orphan folio_charge'ı yeni AÇIK folyoya bağladı; bölme
+            // öncesi tam olarak 1 açık folio olmalı, kaynak kalem o folyoya ait.
+            const pre = await getBookingDetail(api, bookingId);
+            const preCharges = Array.isArray(pre.json?.charges) ? pre.json.charges : [];
+            const preOpenFolios = (Array.isArray(pre.json?.folios) ? pre.json.folios : [])
+                .filter(f => (f.status || '').toLowerCase() === 'open');
+            const sourceFolio = preOpenFolios[0];
+            const sourceFolioId = sourceFolio?.id;
+            const preSourceChargeCount = preCharges
+                .filter(c => c.folio_id === sourceFolioId && !c.voided).length;
+            rec(testInfo, {
+                module: M, scope: 5, step: 'Bölme öncesi: tek açık folio + kaynak kalem var',
+                status: pre.ok && sourceFolioId && preSourceChargeCount > 0 ? PASS : FAIL,
+                endpoint: `/api/pms/reservations/${bookingId}/full-detail`, http: pre.status,
+                note: `open_folios=${preOpenFolios.length} source=${sourceFolioId || 'yok'} source_charges=${preSourceChargeCount}`,
+            });
+            expect(pre.ok, 'bölme öncesi full-detail okunamadı').toBe(true);
+            expect(sourceFolioId, 'ensure-folio sonrası açık kaynak folio bulunamadı').toBeTruthy();
+            expect(preSourceChargeCount, 'Kaynak folyoda bölünebilir kalem yok — ensure-folio kalemi bağlamadı').toBeGreaterThan(0);
+
+            // ── 14) by_item: "[Aktarım]" kalemini seç (kaynak folioya bağlı kalem) ──
+            const aktarimRow = panel.locator('label').filter({ hasText: /Aktar[ıi]m/ }).first();
+            const aktarimCheckbox = aktarimRow.locator('input[type="checkbox"]').first();
+            await aktarimCheckbox.check({ timeout: 8_000 });
+            const isChecked = await aktarimCheckbox.isChecked().catch(() => false);
+            rec(testInfo, {
+                module: M, scope: 5, step: 'by_item: kalem seçildi',
+                status: isChecked ? PASS : FAIL, note: `checked=${isChecked}`,
+            });
+            expect(isChecked, 'by_item kalem checkbox işaretlenemedi').toBe(true);
+
+            // ── 15) Bölme sebebi yaz (boş sebep backend\'e gitmeden reddedilir) ──
+            const reasonInput = panel.locator('input:not([type="checkbox"])').last();
+            await reasonInput.waitFor({ state: 'visible', timeout: 5_000 });
+            await reasonInput.fill('E2E by_item folyo bölme aktarımı');
+
+            // ── 16) "Bölmeyi Onayla" → POST /api/pms-core/folio/split 200 (HARD) ──
+            const splitRespPromise = page.waitForResponse(
+                (r) => /\/pms-core\/folio\/split(\?|$)/.test(r.url())
+                    && !r.url().includes('split-by-amount')
+                    && r.request().method() === 'POST',
+                { timeout: 15_000 },
+            ).catch(() => null);
+            await panel.getByRole('button', { name: 'Bölmeyi Onayla' }).first().click();
+            const splitResp = await splitRespPromise;
+            const splitBody = splitResp ? await splitResp.json().catch(() => null) : null;
+            const newFolioId = splitBody?.new_folio?.id;
+            rec(testInfo, {
+                module: M, scope: 5, step: 'Bölmeyi Onayla → POST /pms-core/folio/split',
+                status: splitResp && splitResp.status() === 200 && splitBody?.success
+                    && (splitBody?.transferred_charges || 0) >= 1 && newFolioId ? PASS : FAIL,
+                endpoint: '/api/pms-core/folio/split',
+                http: splitResp ? splitResp.status() : null,
+                note: splitResp
+                    ? `success=${splitBody?.success} transferred=${splitBody?.transferred_charges} new_folio=${newFolioId || 'yok'}`
+                    : 'split çağrılmadı — by_item Onayla yolu kırık',
+            });
+            expect(splitResp, 'Bölmeyi Onayla /pms-core/folio/split çağırmadı').not.toBeNull();
+            expect(splitResp.status(), `folio/split beklenen 200 değil: ${splitResp.status()}`).toBe(200);
+            expect(splitBody?.success, `folio/split success!=true: ${JSON.stringify(splitBody)?.slice(0, 200)}`).toBe(true);
+            expect(splitBody?.transferred_charges || 0, 'folio/split kalem aktarmadı (transferred_charges<1)').toBeGreaterThanOrEqual(1);
+            expect(newFolioId, 'folio/split yeni hedef folio oluşturmadı (new_folio.id yok)').toBeTruthy();
+
+            // ── 17) Bölme SONRASI durumu doğrula (API/HARD): kalem gerçekten taşındı ──
+            // Kaynak folyoda kalem azalır + yeni hedef folio full-detail\'de görünür +
+            // seçilen kalem artık yeni folioya ait. Bu, "gösterme değil aktarma" kanıtı.
+            const post = await getBookingDetail(api, bookingId);
+            const postCharges = Array.isArray(post.json?.charges) ? post.json.charges : [];
+            const postFolios = Array.isArray(post.json?.folios) ? post.json.folios : [];
+            const postSourceChargeCount = postCharges
+                .filter(c => c.folio_id === sourceFolioId && !c.voided).length;
+            const targetFolioExists = postFolios.some(f => f.id === newFolioId);
+            const transferredCharge = postCharges
+                .find(c => c.folio_id === newFolioId && /Aktar[ıi]m/.test(c.description || '') && !c.voided);
+            rec(testInfo, {
+                module: M, scope: 5, step: 'Bölme sonrası: kaynak kalem azaldı + yeni folioya taşındı',
+                status: post.ok && targetFolioExists && transferredCharge
+                    && postSourceChargeCount < preSourceChargeCount ? PASS : FAIL,
+                endpoint: `/api/pms/reservations/${bookingId}/full-detail`, http: post.status,
+                note: `source_charges ${preSourceChargeCount}→${postSourceChargeCount} target_folio=${targetFolioExists ? 'var' : 'yok'} moved_charge=${transferredCharge ? 'var' : 'yok'}`,
+            });
+            expect(post.ok, 'bölme sonrası full-detail okunamadı').toBe(true);
+            expect(targetFolioExists, 'Yeni hedef folio full-detail folios içinde yok — bölme kalıcı değil').toBe(true);
+            expect(transferredCharge, 'Aktarılan kalem yeni hedef folioya bağlanmadı — taşıma gerçekleşmedi').toBeTruthy();
+            expect(postSourceChargeCount, 'Kaynak folyoda kalem sayısı azalmadı — kalem taşınmamış').toBeLessThan(preSourceChargeCount);
 
             rec(testInfo, {
                 module: M, scope: 5, step: 'Console errors',
