@@ -1,20 +1,28 @@
-"""Task #360 — POS create-order atomic + idempotent folio posting.
+"""Task #389 — POS create-order: atomic order+intent, async idempotent folio post.
+
+Outbox/Compensation contract (supersedes the Task #360 synchronous-folio
+contract): the create-order hot path NO LONGER mutates the folio synchronously.
+It writes the idempotent ``pos_orders`` record and a ``pos.charge.posted.v1`` IC
+outbox event in the SAME transaction (intent durable). The real folio_charge
+insert + balance recalc happen asynchronously, idempotently, and
+guaranteed-at-least-once in ``core.pos_folio_consumer``.
 
 Pinned contract:
   * Same idempotency_key replay (retry / double-tap / network replay) -> one
-    pos_order + one charge set; second response is an idempotent replay.
-  * Concurrent (here: serialized) posts to the SAME folio leave a correct
-    final balance, recalculated from the ledger (never $inc).
-  * A partial-failure re-post of the same source order cannot double-post the
+    pos_order + EXACTLY ONE IC outbox event; the second response is an
+    idempotent replay (the durable intent is not re-enqueued).
+  * The async consumer applies the queued charge(s) and leaves a correct final
+    balance, recalculated from the ledger (charges - payments), never $inc.
+  * A re-delivery / re-post of the same source order cannot double-post the
     same charge line (the (tenant_id, source_pos_order_id, line_no) unique
-    partial index dedups it at the DB layer).
-  * No idempotency_key -> classic behaviour, every call inserts a fresh order.
+    partial index dedups it at the DB layer, inside the consumer).
+  * No idempotency_key -> every call inserts a fresh order (+ its own event).
+  * The closed-folio guard fires BEFORE any order or intent is written.
 
 These run against in-memory fakes that mimic Mongo unique partial indexes,
-sessions and `with_transaction`. Real cross-process snapshot serialization is
-provided by Mongo's folio lock document + driver retry and is not unit-testable
-without a live replica set; the balance-correctness assertion here verifies the
-recalc-from-ledger strategy that the lock makes race-safe.
+sessions and `with_transaction`. To assert the end-to-end balance / dedup
+behaviour we drive the real consumer (`core.pos_folio_consumer`) over the
+enqueued events, wiring its `get_system_db()` to the same fake.
 """
 from __future__ import annotations
 
@@ -23,6 +31,8 @@ from types import SimpleNamespace
 import pytest
 from pymongo.errors import DuplicateKeyError
 
+from core import pos_folio_consumer as cons
+from core.outbox_service import POS_CHARGE_POSTED
 from domains.pms.pos_extensions import _idem
 from domains.pms.pos_fnb_router import pos_core
 
@@ -204,12 +214,35 @@ def _req(items, *, folio_id="F1", idem=None):
     )
 
 
+def _posted_events(fake_db):
+    """The IC POS-charge-posted events currently enqueued on the fake outbox."""
+    return [
+        d for d in fake_db.outbox_events.docs
+        if d.get("event_type") == POS_CHARGE_POSTED
+    ]
+
+
+async def _drain_posted(fake_db, monkeypatch):
+    """Drive the REAL consumer over every enqueued posted event.
+
+    Wires the consumer's `get_system_db()` to the same fake so the async folio
+    apply + ledger recalc + dedup index all act on the in-memory store. Returns
+    the number of events applied (each must report success)."""
+    monkeypatch.setattr(cons, "get_system_db", lambda: fake_db)
+    applied = 0
+    for ev in _posted_events(fake_db):
+        ok, _msg = await cons.handle_ic_pos_event(ev)
+        assert ok is True, _msg
+        applied += 1
+    return applied
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 
 
-async def test_same_key_replay_single_order_and_charge_set(_patch):
+async def test_same_key_replay_single_order_and_one_intent(_patch):
     req = _req([("m1", 1), ("m2", 2)], idem="ORDER-1")
     r1 = await pos_core.create_pos_order(data=req, credentials=None)
     r2 = await pos_core.create_pos_order(data=_req([("m1", 1), ("m2", 2)], idem="ORDER-1"), credentials=None)
@@ -217,60 +250,60 @@ async def test_same_key_replay_single_order_and_charge_set(_patch):
     assert r1["idempotent_replay"] is False
     assert r2["idempotent_replay"] is True
     assert r1["order_id"] == r2["order_id"]
-    # Exactly one order, one charge set (2 lines), not doubled.
+    # Folyo postlaması artık async: hot path sadece sipariş + niyet yazar.
+    assert r1["charge_status"] == "queued"
+    # Exactly one order and EXACTLY ONE durable intent (not re-enqueued on replay).
     assert _patch.pos_orders.insert_calls == 1
-    assert len(_patch.folio_charges.docs) == 2
+    assert len(_posted_events(_patch)) == 1
+    # No synchronous folio mutation in the hot path.
+    assert len(_patch.folio_charges.docs) == 0
 
 
-async def test_concurrent_same_folio_balance_is_correct(_patch):
-    # Two genuine orders (distinct keys) to the SAME folio.
+async def test_async_consumer_applies_charges_and_recalcs_balance(_patch, monkeypatch):
+    # Two genuine orders (distinct keys) to the SAME folio -> two intents.
     await pos_core.create_pos_order(data=_req([("m1", 1)], idem="K1"), credentials=None)
     await pos_core.create_pos_order(data=_req([("m2", 1)], idem="K2"), credentials=None)
+    assert len(_posted_events(_patch)) == 2
+    # Nothing applied to the folio yet (still queued).
+    assert len(_patch.folio_charges.docs) == 0
 
-    # m1: 100 net -> total 118 ; m2: 50 net -> total 59 ; balance = 177.
+    applied = await _drain_posted(_patch, monkeypatch)
+    assert applied == 2
+
+    # m1: 100 net -> total 118 ; m2: 50 net -> total 59 ; balance = 177,
+    # recalculated from the ledger by the consumer (never $inc).
     folio = await _patch.folios.find_one({"id": "F1", "tenant_id": "tenant-A"})
     assert folio["balance"] == pytest.approx(177.0)
     assert len(_patch.folio_charges.docs) == 2
 
 
-async def test_partial_failure_repost_does_not_double_post_charges(_patch):
-    """The (tenant, source_pos_order_id, line_no) unique partial index must
-    dedup a re-post of the same source order's charges at the DB layer."""
-    # Build one order's docs and persist its charges twice with the SAME
-    # source order id (simulating a re-post after a partial failure).
-    charge_docs = [
-        {"id": "c0", "tenant_id": "tenant-A", "folio_id": "F1", "booking_id": "B1",
-         "amount": 100.0, "total": 118.0, "voided": False,
-         "source_pos_order_id": "ORD-X", "line_no": 0},
-        {"id": "c1", "tenant_id": "tenant-A", "folio_id": "F1", "booking_id": "B1",
-         "amount": 50.0, "total": 59.0, "voided": False,
-         "source_pos_order_id": "ORD-X", "line_no": 1},
-    ]
-    await pos_core._ensure_pos_atomicity_indexes(folio_post=True)
+async def test_consumer_redelivery_does_not_double_post(_patch, monkeypatch):
+    """Re-delivery of the same posted event re-inserts nothing: the
+    (tenant, source_pos_order_id, line_no) unique partial index dedups it at
+    the DB layer inside the consumer, and the recalc stays idempotent."""
+    await pos_core.create_pos_order(data=_req([("m1", 1), ("m2", 2)], idem="ORDER-Z"), credentials=None)
+    events = _posted_events(_patch)
+    assert len(events) == 1
 
-    order_a = {"id": "ORD-X", "tenant_id": "tenant-A", "folio_id": "F1"}
-    await pos_core._persist_pos_order_atomic(
-        order_doc=order_a, charge_docs=[dict(c) for c in charge_docs],
-        folio_id="F1", tenant_id="tenant-A", idempotency_key=None,
-    )
-    # Re-post the SAME source order's charges (order doc differs so it isn't a
-    # key replay; the charge source index is what must dedup).
-    order_b = {"id": "ORD-X2", "tenant_id": "tenant-A", "folio_id": "F1"}
-    await pos_core._persist_pos_order_atomic(
-        order_doc=order_b, charge_docs=[dict(c) for c in charge_docs],
-        folio_id="F1", tenant_id="tenant-A", idempotency_key=None,
-    )
+    monkeypatch.setattr(cons, "get_system_db", lambda: _patch)
+    ok1, _ = await cons.handle_ic_pos_event(events[0])
+    ok2, _ = await cons.handle_ic_pos_event(events[0])  # redelivery
+    assert ok1 is True and ok2 is True
 
-    # Only the first charge set survived; the re-post was deduped.
+    # m1 x1 (line 0) + m2 x2 (line 1) = 2 charge lines, NOT doubled.
     assert len(_patch.folio_charges.docs) == 2
+    # 118 (m1) + 2*59 (m2) = 236 ; recalc-from-ledger stays correct on replay.
+    folio = await _patch.folios.find_one({"id": "F1", "tenant_id": "tenant-A"})
+    assert folio["balance"] == pytest.approx(236.0)
 
 
-async def test_no_key_creates_two_orders(_patch):
+async def test_no_key_creates_two_orders_and_two_intents(_patch):
     r1 = await pos_core.create_pos_order(data=_req([("m1", 1)]), credentials=None)
     r2 = await pos_core.create_pos_order(data=_req([("m1", 1)]), credentials=None)
     assert r1["order_id"] != r2["order_id"]
     assert _patch.pos_orders.insert_calls == 2
-    assert len(_patch.folio_charges.docs) == 2
+    assert len(_posted_events(_patch)) == 2
+    assert len(_patch.folio_charges.docs) == 0
 
 
 async def test_index_ensure_failure_is_fail_closed_503(_patch, monkeypatch):
@@ -312,8 +345,9 @@ async def test_closed_folio_rejects_pos_charge(_patch, status):
             data=_req([("m1", 1)], folio_id="FC", idem="K"), credentials=None
         )
     assert exc.value.status_code == 400
-    # Guard fires BEFORE any order / charge is written.
+    # Guard fires BEFORE any order or durable intent is written.
     assert _patch.pos_orders.insert_calls == 0
+    assert len(_posted_events(_patch)) == 0
     assert len(_patch.folio_charges.docs) == 0
 
 
@@ -324,14 +358,18 @@ async def test_open_folio_normal_flow_unaffected(_patch):
     )
     assert r["success"] is True
     assert r["idempotent_replay"] is False
+    assert r["charge_status"] == "queued"
     assert _patch.pos_orders.insert_calls == 1
-    assert len(_patch.folio_charges.docs) == 1
+    assert len(_posted_events(_patch)) == 1
 
 
-async def test_no_folio_order_is_idempotent(_patch):
+async def test_no_folio_order_is_idempotent_no_intent(_patch):
     r1 = await pos_core.create_pos_order(data=_req([("m1", 1)], folio_id=None, idem="NF1"), credentials=None)
     r2 = await pos_core.create_pos_order(data=_req([("m1", 1)], folio_id=None, idem="NF1"), credentials=None)
     assert r1["order_id"] == r2["order_id"]
     assert r2["idempotent_replay"] is True
+    # No folio -> no charge intent enqueued.
+    assert r1["charge_status"] == "none"
     assert _patch.pos_orders.insert_calls == 1
+    assert len(_posted_events(_patch)) == 0
     assert len(_patch.folio_charges.docs) == 0

@@ -23,6 +23,7 @@ from core.booking_atomicity import (
     with_resource_locks,
 )
 from core.database import db
+from core.outbox_service import POS_CHARGE_POSTED, enqueue_outbox_event
 from core.security import (
     get_current_user,
     security,
@@ -152,19 +153,27 @@ async def _persist_pos_order_atomic(
     folio_id: str | None,
     tenant_id: str,
     idempotency_key: str | None,
+    outbox_payload: dict | None = None,
 ) -> tuple[dict, bool]:
-    """Sipariş + folio_charge'lar + bakiye recalc'ını tek transaction'da yazar.
+    """Sipariş kaydı + IC outbox olayını tek transaction'da yazar (intent durable).
 
     Dönüş: (effective_order, was_idempotent_replay).
 
+    Task #389 — Outbox/Compensation: hot path artık folyoyu SENKRON mutasyona
+    UĞRATMAZ. Sadece (a) idempotent sipariş insert'i ve (b) `pos.charge.posted.v1`
+    IC outbox olayını AYNI transaction'da yazar; gerçek folio_charge postlaması +
+    bakiye recalc'ı async, garantili, idempotent consumer (core.pos_folio_consumer)
+    tarafından yapılır.
+
     - Idempotency: pos_orders'a insert; aynı (tenant, idempotency_key) varsa
-      DuplicateKeyError → mevcut sipariş replay olarak döner, charge'lar
-      TEKRAR POSTLANMAZ (önceki başarılı transaction zaten atomik yazdı).
-    - Atomicity: sipariş + charge insert'leri + bakiye $set tek transaction;
-      yarıda hata → hepsi geri alınır (yarım charge kalmaz).
-    - Race-safety: aynı folyoya eşzamanlı POS yazımları folio lock dokümanı
-      üzerinde serileşir (WriteConflict → driver retry), recalc ledger'dan
-      türetildiği için nihai bakiye doğru.
+      DuplicateKeyError → mevcut sipariş replay olarak döner, outbox olayı
+      TEKRAR ENQUEUE EDİLMEZ (ilk başarılı transaction zaten durable yazdı; ayrıca
+      outbox'ın kendi idempotency_key'i çift-enqueue'yu da dedup eder).
+    - Atomicity: sipariş + outbox insert'i tek transaction; yarıda hata → ikisi
+      de geri alınır (sipariş var ama niyet yok / niyet var ama sipariş yok olmaz).
+    - Hot path folyoya yazmadığı için folio lock'a gerek YOK (contention azaltıldı);
+      eşzamanlı postlamaların serileşmesi ve ledger'dan tek-stratejiyle bakiye
+      recalc'ı consumer tarafında ele alınır.
     """
 
     async def _txn(session) -> tuple[dict, bool]:
@@ -177,43 +186,37 @@ async def _persist_pos_order_atomic(
                 {"_id": 0},
                 session=session,
             )
-            # Replay: prior order (and its single charge set) already durable.
+            # Replay: prior order (and its IC outbox event) already durable.
             return existing or order_doc, True
 
-        # 2. Charges — each stamped with (source_pos_order_id, line_no); the
-        #    unique partial index dedups any partial-failure re-post.
+        # 2. Durable intent — enqueue the IC folio-posting event in the SAME
+        #    transaction as the order. The async consumer applies the charges +
+        #    balance recalc idempotently (and guards closed folios at apply time).
         if folio_id and charge_docs:
-            for cdoc in charge_docs:
-                try:
-                    await db.folio_charges.insert_one(dict(cdoc), session=session)
-                except DuplicateKeyError:
-                    # This exact (order, line) already posted — skip, do not
-                    # double-charge. Keeps the charge set idempotent at the DB.
-                    continue
-
-            # 3. Balance — single strategy: recalc from ledger inside the txn.
-            balance = await _folio_balance_in_session(folio_id, tenant_id, session=session)
-            await db.folios.update_one(
-                {"id": folio_id, "tenant_id": tenant_id},
-                {"$set": {"balance": balance, "updated_at": datetime.now(UTC).isoformat()}},
+            await enqueue_outbox_event(
+                db,
                 session=session,
+                tenant_id=tenant_id,
+                event_type=POS_CHARGE_POSTED,
+                entity_type="folio",
+                entity_id=order_doc["id"],
+                payload=outbox_payload or {},
             )
 
         clean = dict(order_doc)
         clean.pop("_id", None)
         return clean, False
 
-    # Folyoya yazım yoksa lock'a gerek yok; sadece idempotent sipariş insert'i
-    # de transaction garantisi ister (kısmi hata olmasın) ama tek-doküman insert
-    # zaten atomik — yine de tutarlılık için lock'suz transaction kullanırız.
-    resources: list[tuple[str, str]] = [("folio", folio_id)] if folio_id else []
+    # Hot path folyoyu mutasyona uğratmadığı için kaynak lock'u gerekmez; yine de
+    # sipariş + outbox insert'inin all-or-nothing olması için lock'suz transaction
+    # kullanırız.
     try:
         return await with_resource_locks(
             client=db.client,
             db=db,
             tenant_id=tenant_id,
             locks_collection="folio_locks",
-            resources=resources,
+            resources=[],
             callback=_txn,
         )
     except HTTPException:
@@ -228,16 +231,16 @@ async def _persist_pos_order_atomic(
         if not is_replica_set_unavailable(exc):
             raise
         if not standalone_fallback_allowed():
-            # Production-safe default: refuse rather than risk a non-atomic,
-            # racy write to the guest folio.
+            # Production-safe default: refuse rather than risk a non-atomic
+            # order/intent write.
             raise HTTPException(
                 status_code=503,
-                detail=("POS folyo yazımı atomik garanti sağlayamıyor "
+                detail=("POS sipariş yazımı atomik garanti sağlayamıyor "
                         "(Mongo replica set gerekli)."),
             )
-        # Dev opt-in: best-effort non-transactional fallback. The unique
-        # partial indexes still provide idempotency + dedup, only the
-        # all-or-nothing guarantee is relaxed.
+        # Dev opt-in: best-effort non-transactional fallback. The pos_orders
+        # unique index still provides idempotency; the outbox idempotency_key
+        # dedups the enqueue. Only the all-or-nothing guarantee is relaxed.
         return await _txn(None)
 
 
@@ -1375,18 +1378,35 @@ async def create_pos_order(
             detail="POS idempotency koruması geçici olarak kullanılamıyor — biraz sonra tekrar deneyin",
         )
 
+    # Task #389 — durable intent payload for the IC outbox event. The async
+    # consumer (core.pos_folio_consumer) applies these exact charge docs to the
+    # folio idempotently and recalculates the balance from the ledger.
+    outbox_payload: dict | None = None
+    if folio_id and charge_docs:
+        outbox_payload = {
+            "tenant_id": tenant_id,
+            "folio_id": folio_id,
+            "source_pos_order_id": order.id,
+            "booking_id": folio_booking_id,
+            "charges": charge_docs,
+        }
+
     effective_order, replay = await _persist_pos_order_atomic(
         order_doc=order_doc,
         charge_docs=charge_docs,
         folio_id=folio_id,
         tenant_id=tenant_id,
         idempotency_key=idempotency_key,
+        outbox_payload=outbox_payload,
     )
 
     return {
         'success': True,
         'message': 'POS order created',
         'idempotent_replay': replay,
+        # Folyoya yazılan POS hesabı artık async (outbox) postlanır; sipariş
+        # kaydı + niyet durable, charge'lar consumer tarafından idempotent uygulanır.
+        'charge_status': 'queued' if (folio_id and charge_docs) else 'none',
         'order_id': effective_order.get('id'),
         'order': effective_order,
     }

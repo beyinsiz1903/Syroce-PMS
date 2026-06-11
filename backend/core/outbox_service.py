@@ -45,6 +45,20 @@ INVENTORY_RELEASED = "inventory.released.v1"
 RESTRICTION_UPDATED = "restriction.updated.v1"
 RATE_UPDATED = "rate.updated.v1"
 
+# ── Internal-Consistency (IC) event types — Task #389 ────────────────
+# These NEVER reach the channel manager / OTA / EventSyncService. They drive
+# the async, guaranteed, idempotent POS -> folio posting (Outbox/Compensation)
+# entirely inside this system. The dispatcher routes them to the local folio
+# consumer BEFORE the CM mapping, so external_calls stays []. They are
+# deliberately NOT added to OTA_OUTBOX_EVENT_TYPES.
+POS_CHARGE_POSTED = "pos.charge.posted.v1"
+POS_CHARGE_REVERSED = "pos.charge.reversed.v1"
+
+IC_OUTBOX_EVENT_TYPES = {
+    POS_CHARGE_POSTED,
+    POS_CHARGE_REVERSED,
+}
+
 OTA_OUTBOX_EVENT_TYPES = {
     BOOKING_CREATED,
     BOOKING_CANCELLED,
