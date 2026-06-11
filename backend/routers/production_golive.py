@@ -62,6 +62,24 @@ async def get_uniqueness_backstops(
     }
 
 
+@router.get("/migrations")
+async def get_migrations_status(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
+):
+    """Versiyonlu DB migration durumunu raporlar (ops görünürlüğü).
+
+    Açılışta indeks fazlarından önce koşan versiyonlu migration sisteminin
+    durumunu döndürür: uygulanan/bekleyen versiyonlar, başarısız/rolled_back
+    kayıtlar, son hata ve advisory lock durumu. ``all_clear=False`` ise bekleyen
+    veya başarısız bir migration vardır ve açılış fail-closed olabilir.
+    """
+    from bootstrap.migrations import get_migration_status
+    from core.database import _raw_db
+
+    return await get_migration_status(_raw_db)
+
+
 @router.get("/summary")
 @cached(ttl=60, key_prefix="golive_summary")
 async def get_golive_summary(

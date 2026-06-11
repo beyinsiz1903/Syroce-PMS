@@ -252,6 +252,48 @@ class SecretsManager:
         identity = self._identity(tenant_id, provider, property_id)
         return await self._provider.get_secret_metadata(identity.path)
 
+    # ── Webhook Signing Secrets ──────────────────────────────────────
+    # Per-property inbound webhook signing secrets are stored under a
+    # dedicated "<provider>_webhook" namespace so rotating the webhook secret
+    # never touches the API credentials (and vice-versa). The value is
+    # encrypted at rest exactly like provider credentials and is never written
+    # to the connection document.
+
+    async def store_webhook_secret(
+        self,
+        tenant_id: str,
+        provider: str,
+        property_id: str,
+        secret: str,
+        actor: str = "system",
+    ) -> str:
+        """Create or overwrite a per-property webhook signing secret."""
+        return await self.store_provider_credentials(
+            tenant_id=tenant_id,
+            provider=f"{provider}_webhook",
+            property_id=property_id,
+            credentials={"webhook_secret": secret},
+            actor=actor,
+        )
+
+    async def get_webhook_secret(
+        self,
+        tenant_id: str,
+        provider: str,
+        property_id: str,
+        actor: str = "system",
+    ) -> str | None:
+        """Retrieve the decrypted per-property webhook signing secret."""
+        creds = await self.get_provider_credentials(
+            tenant_id=tenant_id,
+            provider=f"{provider}_webhook",
+            property_id=property_id,
+            actor=actor,
+        )
+        if not creds:
+            return None
+        return creds.get("webhook_secret")
+
     # ── Masking ──────────────────────────────────────────────────────
 
     @staticmethod

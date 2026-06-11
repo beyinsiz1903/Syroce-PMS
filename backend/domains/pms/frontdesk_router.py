@@ -630,13 +630,13 @@ async def create_walk_in_booking(
         # 2. Create or find guest
         guest_email = request.guest_email or f"walkin_{uuid.uuid4().hex[:8]}@hotel.local"
 
-        # Try to find existing guest by phone or email
+        # Try to find existing guest by phone or email (dual-read: encrypted
+        # _hash_ token OR legacy plaintext for unmigrated rows).
+        from security.encrypted_lookup import guest_pii_or_conditions
         existing_guest = await db.guests.find_one({
             'tenant_id': current_user.tenant_id,
-            '$or': [
-                {'phone': request.guest_phone},
-                {'email': guest_email}
-            ]
+            '$or': guest_pii_or_conditions('phone', request.guest_phone)
+                   + guest_pii_or_conditions('email', guest_email),
         })
 
         if existing_guest:
@@ -654,8 +654,8 @@ async def create_walk_in_booking(
 
             guest_dict = new_guest.model_dump()
             guest_dict['created_at'] = guest_dict['created_at'].isoformat()
-            from security.search_normalize import apply_collection_normalized_fields
-            apply_collection_normalized_fields(guest_dict, collection="guests")
+            from security.guest_write import encrypt_guest_insert
+            guest_dict = encrypt_guest_insert(guest_dict)
             await db.guests.insert_one(guest_dict)
             guest_id = new_guest.id
 
@@ -948,7 +948,8 @@ async def auto_police_notification(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    guest = await db.guests.find_one({'id': booking.get('guest_id'), 'tenant_id': current_user.tenant_id})
+    from security.encrypted_lookup import decrypt_guest_doc
+    guest = decrypt_guest_doc(await db.guests.find_one({'id': booking.get('guest_id'), 'tenant_id': current_user.tenant_id}))
 
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")

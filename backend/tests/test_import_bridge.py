@@ -391,10 +391,28 @@ async def test_unmapped_room_triggers_review():
         assert imp["import_status"] == "review_required"
         assert imp["review_reason"] == "unmapped_room_type"
 
-        count = await db[COLL_BOOKINGS].count_documents({"tenant_id": TEST_TENANT})
-        assert count == 0
+        # Task #394: HARD-FAIL korunur (otomatik kabul YOK) ama overbooking'i
+        # onlemek icin eslesmeyen-tutma (hold) booking + envanter kilidi olusur.
+        # GERCEK (confirmed) booking OLUSMAMALI.
+        real_count = await db[COLL_BOOKINGS].count_documents(
+            {"tenant_id": TEST_TENANT, "status": "confirmed"}
+        )
+        assert real_count == 0
+
+        assert imp.get("hold_booking_id")
+        hold = await db[COLL_BOOKINGS].find_one(
+            {"id": imp["hold_booking_id"], "tenant_id": TEST_TENANT}, {"_id": 0}
+        )
+        assert hold is not None
+        assert hold["booking_source"] == "ota_unmatched_hold"
+        assert hold["status"] == "pending_mapping"
+        assert hold["room_id"] is None
+        assert hold["action_needed"] is True
     finally:
         await _cleanup(db)
+        # Task #394: tutma kaydinin sentinel kilitlerini de temizle (residue YOK)
+        await db["room_night_locks"].delete_many({"tenant_id": TEST_TENANT})
+        await db["notifications"].delete_many({"tenant_id": TEST_TENANT})
         client.close()
 
 

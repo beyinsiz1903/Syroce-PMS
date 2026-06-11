@@ -42,6 +42,70 @@ def _col(provider: str, key: str):
     return db[PROVIDER_COLLECTIONS[provider][key]]
 
 
+async def _create_unmatched_hold_for_reservation(
+    provider: str, tenant_id: str, external_id: str,
+    channel: str, res_doc: dict[str, Any], col,
+) -> None:
+    """Eslestirilemeyen (pending_mapping) rezervasyon icin tutma + alarm.
+
+    Idempotent: shared helper ayni external_id icin tekrar cagrilirsa yeni
+    tutma/alarm uretmez. Tutma kimligi provider rezervasyonuna baglanir.
+    """
+    from .unmatched_hold import create_unmatched_reservation_hold
+
+    rooms = res_doc.get("rooms") or []
+    first = rooms[0] if rooms else {}
+    guest_name = (
+        f"{res_doc.get('guest_firstname', '')} {res_doc.get('guest_lastname', '')}"
+    ).strip()
+    try:
+        hold = await create_unmatched_reservation_hold(
+            provider=provider,
+            tenant_id=tenant_id,
+            external_id=external_id,
+            check_in=res_doc.get("checkin_date", ""),
+            check_out=res_doc.get("checkout_date", ""),
+            guest_name=guest_name,
+            room_type_code=first.get("room_type_code", ""),
+            rate_plan_code=first.get("rate_plan_code", ""),
+            total_amount=float(res_doc.get("total", 0) or 0),
+            currency=res_doc.get("currency", "TRY"),
+            adults=first.get("adults", 1) or 1,
+            children=first.get("children", 0) or 0,
+            channel=channel,
+            property_id=tenant_id,
+        )
+        if hold.get("booking_id"):
+            await col.update_one(
+                {"tenant_id": tenant_id, "external_id": external_id},
+                {"$set": {"pms_booking_id": hold["booking_id"]}},
+            )
+    except Exception as e:  # noqa: BLE001 - tutma asla ingest'i kirmamali
+        logger.exception(
+            f"[{provider.upper()}] unmatched hold olusturma hatasi {external_id}: {e}"
+        )
+
+
+async def _release_unmatched_hold_for_reservation(
+    provider: str, tenant_id: str, external_id: str,
+    reason: str, delete_hold: bool = False,
+) -> None:
+    """Tutmayi serbest birak (rebind icin delete_hold=True, iptal icin False)."""
+    from .unmatched_hold import release_unmatched_reservation_hold
+
+    try:
+        await release_unmatched_reservation_hold(
+            tenant_id=tenant_id,
+            external_id=external_id,
+            reason=reason,
+            delete_hold=delete_hold,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            f"[{provider.upper()}] unmatched hold release hatasi {external_id}: {e}"
+        )
+
+
 async def store_raw_event(
     provider: str, tenant_id: str, event_type: str,
     external_id: str, channel: str, payload: dict[str, Any], source: str = "webhook",
@@ -258,6 +322,10 @@ async def process_reservation(
         res_doc["pms_booking_id"] = None
         res_doc["delivery_confirmed"] = False
         await col.insert_one(res_doc)
+        if not has_mapping:
+            await _create_unmatched_hold_for_reservation(
+                provider, tenant_id, external_id, channel, res_doc, col,
+            )
         await mark_event_processed(provider, event_id, "processed")
         logger.info(f"[{provider.upper()}] Created {external_id} from {channel}")
         return {"action": "created", "external_id": external_id, "pms_status": res_doc["pms_status"]}
@@ -270,6 +338,15 @@ async def process_reservation(
             "$set": res_doc,
             "$inc": {"provider_version": 1},
         })
+        if not has_mapping:
+            await _create_unmatched_hold_for_reservation(
+                provider, tenant_id, external_id, channel, res_doc, col,
+            )
+        else:
+            # Eslestirme cozulmus olabilir -> varsa tutmayi rebind ile serbest birak.
+            await _release_unmatched_hold_for_reservation(
+                provider, tenant_id, external_id, "mapping_resolved", delete_hold=True,
+            )
         await mark_event_processed(provider, event_id, "processed")
         logger.info(f"[{provider.upper()}] Updated {external_id} from {channel}")
         return {"action": "updated", "external_id": external_id}
@@ -284,6 +361,10 @@ async def process_reservation(
                 "provider_last_modified_at": provider_last_modified,
                 "provider_payload_hash": payload_hash,
             }},
+        )
+        # Iptal: varsa eslesmeyen-tutmanin sentinel kilitlerini serbest birak.
+        await _release_unmatched_hold_for_reservation(
+            provider, tenant_id, external_id, "ota_cancelled", delete_hold=False,
         )
         await mark_event_processed(provider, event_id, "processed")
         logger.info(f"[{provider.upper()}] Cancelled {external_id} from {channel}")

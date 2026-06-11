@@ -41,7 +41,8 @@ async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> dict:
 
     guest: dict = {}
     if booking.get("guest_id"):
-        guest = await db.guests.find_one(
+        from security.encrypted_lookup import decrypt_guest_doc
+        guest = decrypt_guest_doc(await db.guests.find_one(
             {"tenant_id": tenant_id, "id": booking["guest_id"]},
             {
                 "_id": 0, "nationality": 1, "id_number": 1,
@@ -49,7 +50,7 @@ async def _build_payload_snapshot(tenant_id: str, booking_id: str) -> dict:
                 "address": 1, "father_name": 1, "mother_name": 1,
                 "birth_place": 1,
             },
-        ) or {}
+        )) or {}
 
     return {
         "guest_name": booking.get("guest_name", ""),

@@ -419,7 +419,7 @@ class HotelRunnerProvider:
         """
         start = time.time()
         breaker = provider_failover.get_breaker(_hr_circuit_key(self._connection_id))
-        if not breaker.try_acquire():
+        if not await breaker.try_acquire():
             return ProviderResult(
                 success=False,
                 error=f"circuit_open: HotelRunner breaker is OPEN for connection {self._connection_id or '_default'}",
@@ -448,9 +448,9 @@ class HotelRunnerProvider:
                 connection_id=self._connection_id,
             )
             if result.success:
-                breaker.record_success()
+                await breaker.record_success()
             else:
-                breaker.record_failure()
+                await breaker.record_failure()
             return ProviderResult(
                 success=result.success,
                 data=result.data,
@@ -458,7 +458,7 @@ class HotelRunnerProvider:
                 duration_ms=duration_ms,
             )
         except HotelRunnerError as e:
-            breaker.record_failure()
+            await breaker.record_failure()
             return self._handle_error(e, start, ep.ROOMS_DAILY)
 
     async def push_date_range_inventory(
@@ -473,7 +473,7 @@ class HotelRunnerProvider:
         """
         start = time.time()
         breaker = provider_failover.get_breaker(_hr_circuit_key(self._connection_id))
-        if not breaker.try_acquire():
+        if not await breaker.try_acquire():
             return ProviderResult(
                 success=False,
                 error=f"circuit_open: HotelRunner breaker is OPEN for connection {self._connection_id or '_default'}",
@@ -502,9 +502,9 @@ class HotelRunnerProvider:
                 connection_id=self._connection_id,
             )
             if result.success:
-                breaker.record_success()
+                await breaker.record_success()
             else:
-                breaker.record_failure()
+                await breaker.record_failure()
             return ProviderResult(
                 success=result.success,
                 data=result.data,
@@ -512,7 +512,7 @@ class HotelRunnerProvider:
                 duration_ms=duration_ms,
             )
         except HotelRunnerError as e:
-            breaker.record_failure()
+            await breaker.record_failure()
             return self._handle_error(e, start, ep.ROOMS_DATERANGE)
 
     # ── Reservation Delivery Confirmation ─────────────────────────────

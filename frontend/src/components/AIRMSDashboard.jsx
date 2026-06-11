@@ -96,13 +96,13 @@ const AIRMSDashboard = () => {
   return (
     <div className="p-6 bg-white">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">AI Revenue Management</h1>
+        <h1 className="text-3xl font-bold">Kural Bazlı Gelir Yönetimi</h1>
         <button
           onClick={autoPublishRates}
           disabled={loading}
           className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 font-semibold text-base inline-flex items-center gap-2"
         >
-          {loading ? 'Yayınlanıyor…' : 'AI Tarifelerini Otomatik Yayınla'}
+          {loading ? 'Yayınlanıyor…' : 'Tarifeleri Otomatik Yayınla'}
         </button>
       </div>
 

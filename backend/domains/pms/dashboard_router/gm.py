@@ -280,10 +280,21 @@ async def _compute_period_metrics(tid: str, date, total_rooms: int) -> dict:
             'created_at': {'$gte': date_iso, '$lt': next_iso},
         }),
     )
+    revenue = (payment_agg[0]['t'] if payment_agg else 0) or 0
+    # ADR (Average Daily Rate) = revenue / rooms sold that night.
+    # RevPAR (Revenue per Available Room) = revenue / total sellable rooms.
+    # Mirrors the executive dashboard convention; RevPAR = ADR * occupancy holds
+    # by construction. `revenue` here is the day's collected payments (same
+    # caveat as the occupancy/check-in figures: derived from real data, not a
+    # dedicated room-revenue ledger).
+    adr = round(revenue / occupied, 2) if occupied > 0 else 0
+    revpar = round(revenue / total_rooms, 2) if total_rooms > 0 else 0
     return {
         'date': date_iso,
         'occupancy': round((occupied / total_rooms * 100) if total_rooms > 0 else 0, 1),
-        'revenue': (payment_agg[0]['t'] if payment_agg else 0) or 0,
+        'revenue': revenue,
+        'adr': adr,
+        'revpar': revpar,
         'check_ins': check_ins,
         'check_outs': check_outs,
         'complaints': complaints,
@@ -308,13 +319,82 @@ async def get_enhanced_snapshot(
 
     # total_rooms + current high/urgent pending backlog are point-in-time reads;
     # everything else is computed per-date so the comparison is apples-to-apples.
-    total_rooms, pending_tasks = await asyncio.gather(
+    # open_faults / housekeeping / channels are also point-in-time ("now") since
+    # no per-date history exists for them.
+    #
+    # Open faults span TWO collections by design (we do not reconcile them here):
+    #   - maintenance_tasks: the dashboard/work-order task system.
+    #   - tasks(department=maintenance): faults filed from the mobile maintenance
+    #     quick-issue flow.
+    # A fault only ever lands in one of them (distinct write paths), so summing
+    # the non-terminal counts is an honest total, not a double-count.
+    NON_TERMINAL_FAULT = ['completed', 'done', 'closed', 'cancelled', 'resolved']
+    today_iso = today.isoformat()
+    last_30_iso = (today - timedelta(days=30)).isoformat()
+    (
+        total_rooms,
+        pending_tasks,
+        open_faults_mt,
+        open_faults_tasks,
+        room_status_rows,
+        channel_rows,
+    ) = await asyncio.gather(
         db.rooms.count_documents({'tenant_id': tid}),
         db.maintenance_tasks.count_documents({
             'tenant_id': tid, 'status': 'pending',
             'priority': {'$in': ['high', 'urgent']},
         }),
+        db.maintenance_tasks.count_documents({
+            'tenant_id': tid, 'status': {'$nin': NON_TERMINAL_FAULT},
+        }),
+        db.tasks.count_documents({
+            'tenant_id': tid, 'department': 'maintenance',
+            'status': {'$nin': NON_TERMINAL_FAULT},
+        }),
+        db.rooms.aggregate([
+            {'$match': {
+                'tenant_id': tid,
+                '$or': [{'is_active': True}, {'is_active': {'$exists': False}}],
+            }},
+            {'$group': {'_id': '$status', 'count': {'$sum': 1}}},
+        ]).to_list(20),
+        db.bookings.aggregate([
+            {'$match': {
+                'tenant_id': tid,
+                'check_in': {'$gte': last_30_iso, '$lte': today_iso},
+                'status': {'$nin': ['cancelled', 'no_show']},
+            }},
+            {'$group': {
+                '_id': {'$ifNull': ['$booking_source', '$channel']},
+                'bookings': {'$sum': 1},
+                'revenue': {'$sum': '$total_amount'},
+            }},
+            {'$sort': {'revenue': -1}},
+        ]).to_list(50),
     )
+    open_faults = open_faults_mt + open_faults_tasks
+
+    rs = {r['_id']: r['count'] for r in room_status_rows}
+    housekeeping = {
+        'total_rooms': sum(rs.values()),
+        'available': rs.get('available', 0),
+        'occupied': rs.get('occupied', 0),
+        'dirty': rs.get('dirty', 0),
+        'cleaning': rs.get('cleaning', 0),
+        'inspected': rs.get('inspected', 0),
+        'out_of_order': rs.get('out_of_order', 0),
+        'maintenance': rs.get('maintenance', 0) + rs.get('out_of_service', 0),
+        'ready_rooms': rs.get('available', 0) + rs.get('inspected', 0),
+        'dirty_rooms': rs.get('dirty', 0) + rs.get('cleaning', 0),
+    }
+    channels = [
+        {
+            'source': (row.get('_id') or 'direct'),
+            'bookings': row.get('bookings', 0),
+            'revenue': round(row.get('revenue', 0) or 0, 2),
+        }
+        for row in channel_rows
+    ]
 
     today_metrics, yesterday_metrics, last_week_metrics = await asyncio.gather(
         _compute_period_metrics(tid, today, total_rooms),
@@ -339,6 +419,9 @@ async def get_enhanced_snapshot(
         'today': today_metrics,
         'yesterday': yesterday_metrics,
         'last_week': last_week_metrics,
+        'open_faults': open_faults,
+        'housekeeping': housekeeping,
+        'channels': channels,
         'trends': {
             'occupancy_trend': 'up' if today_metrics['occupancy'] > yesterday_metrics['occupancy'] else 'down',
             'revenue_trend': 'up' if today_metrics['revenue'] > yesterday_metrics['revenue'] else 'down',

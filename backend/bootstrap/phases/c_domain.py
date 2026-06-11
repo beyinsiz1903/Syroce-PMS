@@ -115,6 +115,16 @@ async def phase_c_domain_indexes_and_workers(app):
     except Exception as e:
         logger.warning(f"Konaklama Vergisi scheduler start error: {e}")
 
+    # Folio bakiye mutabakat backstop scheduler (Task #390)
+    # POS->folio (B) asenkron olduğundan kalan bakiye sapmasını periyodik
+    # tarar; dry-run default, FOLIO_RECON_ALLOW_APPLY=true ile onarır.
+    try:
+        from workers.folio_recon_scheduler import start as _start_folio_recon
+        if _start_folio_recon():
+            logger.info("Folio reconciliation backstop scheduler started")
+    except Exception as e:
+        logger.warning(f"Folio reconciliation scheduler start error: {e}")
+
     # Marketplace indexes + product seed
     try:
         from core.subscriptions import ensure_indexes as _ms_indexes
@@ -174,9 +184,21 @@ async def phase_c_domain_indexes_and_workers(app):
     try:
         from core.database import _raw_db
         from security.field_encryption import get_field_encryption_service
-        created = await get_field_encryption_service().ensure_hash_indexes(_raw_db)
+        svc = get_field_encryption_service()
+        created = await svc.ensure_hash_indexes(_raw_db)
         if created:
             logger.info(f"Encrypted-PII hash indexes ensured ({len(created)} created)")
+        # Fail-closed verification: confirm every searchable `_hash_` index from
+        # ENCRYPTED_FIELDS actually exists. A missing index would silently fall
+        # back to a tenant-wide collection scan; verify_hash_indexes records the
+        # gap (log + metric + module state) so the deep health endpoint reports
+        # "degraded" and the search path becomes observable. Does not raise.
+        verify = await svc.verify_hash_indexes(_raw_db)
+        if not verify.get("ok"):
+            logger.warning(
+                f"Encrypted-PII hash index verification DEGRADED: "
+                f"{len(verify.get('missing', []))} missing"
+            )
     except Exception as e:
         logger.warning(f"Hash index creation error: {e}")
 
@@ -187,7 +209,9 @@ async def phase_c_domain_indexes_and_workers(app):
     # backfill of existing rows. PII-safe: only configured plaintext fields.
     try:
         from bootstrap.phases.search_normalize import (
+            backfill_ngram_fields,
             backfill_search_normalize_fields,
+            ensure_ngram_indexes,
             ensure_search_normalize_indexes,
         )
         from core.database import _raw_db
@@ -197,5 +221,12 @@ async def phase_c_domain_indexes_and_workers(app):
         sn_ran = await backfill_search_normalize_fields(_raw_db)
         if sn_ran:
             logger.info(f"Search-normalize backfill: {sn_ran}")
+        # Trigram INFIX companions (`_ng_<target>`) for substring name search.
+        ng_created = await ensure_ngram_indexes(_raw_db)
+        if ng_created:
+            logger.info(f"Ngram infix indexes ensured ({len(ng_created)} created)")
+        ng_ran = await backfill_ngram_fields(_raw_db)
+        if ng_ran:
+            logger.info(f"Ngram infix backfill: {ng_ran}")
     except Exception as e:
         logger.warning(f"Search-normalize setup error: {e}")

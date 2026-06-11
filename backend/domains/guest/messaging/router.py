@@ -197,8 +197,9 @@ async def send_whatsapp_confirmation(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
-    # Get guest
-    guest = await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0})
+    # Get guest (decrypt PII — phone is the WhatsApp send recipient).
+    from security.encrypted_lookup import decrypt_guest_doc
+    guest = decrypt_guest_doc(await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0}))
 
     if not guest or not guest.get('phone'):
         raise HTTPException(status_code=400, detail="Misafir telefon numarası bulunamadı")
@@ -1652,12 +1653,13 @@ async def trigger_auto_messages(
             tb_guest_ids = [b.get('guest_id') for b in target_bookings if b.get('guest_id')]
             tb_room_ids = [b.get('room_id') for b in target_bookings if b.get('room_id')]
             tb_guests_by_id: dict = {}
+            from security.encrypted_lookup import decrypt_guest_doc
             if tb_guest_ids:
                 async for g in db.guests.find(
                     {'id': {'$in': tb_guest_ids}, 'tenant_id': current_user.tenant_id},
                     {'_id': 0, 'id': 1, 'name': 1, 'phone': 1},
                 ):
-                    tb_guests_by_id[g['id']] = g
+                    tb_guests_by_id[g['id']] = decrypt_guest_doc(g)
             tb_rooms_by_id: dict = {}
             if tb_room_ids:
                 async for r in db.rooms.find(

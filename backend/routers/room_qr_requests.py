@@ -489,7 +489,11 @@ async def public_submit_request(
 
     # WebSocket yayını (opsiyonel — varsa)
     try:
+        from core.ws_rooms import tenant_broadcast_room
         from websocket_server import sio  # type: ignore
+        # Task #367: route to the tenant broadcast room that authenticated
+        # sockets are auto-enrolled into at connect (pms:{tenant_id}), not the
+        # legacy hand-built `tenant:{id}` room that no client ever joins.
         await sio.emit("room_request:new", {
             "id": doc["_id"],
             "tenant_id": tenant_id,
@@ -497,7 +501,7 @@ async def public_submit_request(
             "category": doc["category"],
             "department": doc["department"],
             "priority": doc["priority"],
-        }, room=f"tenant:{tenant_id}")
+        }, room=tenant_broadcast_room(tenant_id))
     except Exception as e:
         logger.debug(f"WS emit atlandı: {e}")
 
@@ -656,10 +660,12 @@ async def update_request(
     )
 
     try:
+        from core.ws_rooms import tenant_broadcast_room
         from websocket_server import sio  # type: ignore
+        # Task #367: same tenant broadcast room as the room_request:new emit.
         await sio.emit("room_request:update", {
             "id": request_id, "status": update.get("status"),
-        }, room=f"tenant:{tenant_id}")
+        }, room=tenant_broadcast_room(tenant_id))
     except Exception:
         pass
 

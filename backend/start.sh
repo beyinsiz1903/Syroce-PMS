@@ -99,9 +99,52 @@ if [ -n "$REPLIT_DEPLOYMENT" ]; then
 else
   PORT="${PORT:-8000}"
 fi
+
+# WeasyPrint (PDF export) ve diğer native-lib bağımlı paketler libgobject/glib,
+# pango, cairo gibi paylaşımlı kütüphaneleri dlopen ile yükler. Replit dev
+# shell'inde bunlar gcc/NIX_LDFLAGS fallback'i ile bulunur; ancak VM deployment
+# runtime'ında C derleyici yoktur ve LD_LIBRARY_PATH otomatik doldurulmaz ->
+# "OSError: cannot load library 'libgobject-2.0-0'" (/api/reports/builder/export/pdf).
+# Çözüm: native lib dizinlerini NIX_LDFLAGS'taki -L yollarından türet (nix store
+# hash'lerinden bağımsız, nixpkgs bump'larına dayanıklı) ve LD_LIBRARY_PATH'e ekle.
+if [ -n "$NIX_LDFLAGS" ]; then
+  NIX_LIB_DIRS="$(printf '%s\n' $NIX_LDFLAGS | sed -n 's/^-L//p' | paste -sd: -)"
+  if [ -n "$NIX_LIB_DIRS" ]; then
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$NIX_LIB_DIRS"
+    # Deploy loglarından doğrulanabilir olsun: türetme çalıştı mı, kaç dizin?
+    echo "LD_LIBRARY_PATH NIX_LDFLAGS'tan türetildi ($(printf '%s' "$NIX_LIB_DIRS" | tr ':' '\n' | wc -l) dizin; WeasyPrint native lib çözümü)"
+  fi
+else
+  echo "UYARI: NIX_LDFLAGS tanımsız -> LD_LIBRARY_PATH türetilemedi; WeasyPrint PDF export (libgobject) başarısız olabilir."
+fi
+
 # Use explicit .pythonlibs python to avoid PATH ambiguity in deployment.
 PYTHON_BIN="${PYTHON_BIN:-/home/runner/workspace/.pythonlibs/bin/python}"
 if [ ! -x "$PYTHON_BIN" ]; then
   PYTHON_BIN="python"
 fi
+
+# Celery worker + beat (Task #362). Night audit now runs as a per-tenant Celery
+# flow: a once-a-minute beat dispatcher (night_audit_dispatch_task) enqueues
+# per-tenant hardened audits at each tenant's LOCAL configured time, executed by
+# the worker (night_audit_for_tenant). In production these run as dedicated K8s /
+# docker-compose worker+beat containers; on Replit (no separate worker process)
+# we start them here so the audit actually fires for the pilot. Without this,
+# retiring the in-process asyncio loop would mean the audit never triggers.
+# Requires Redis as the broker; skipped (with a clear log) if Redis is absent.
+if [ "${SYROCE_START_CELERY:-1}" = "1" ] && [ -n "$REDIS_URL" ]; then
+  CELERY_CONCURRENCY="${CELERY_WORKER_CONCURRENCY:-2}"
+  "$PYTHON_BIN" -m celery -A celery_app worker \
+    --loglevel="${CELERY_LOGLEVEL:-info}" \
+    --concurrency="$CELERY_CONCURRENCY" \
+    --logfile /tmp/celery-worker.log --pidfile /tmp/celery-worker.pid &
+  "$PYTHON_BIN" -m celery -A celery_app beat \
+    --loglevel="${CELERY_LOGLEVEL:-info}" \
+    --logfile /tmp/celery-beat.log --pidfile /tmp/celery-beat.pid \
+    --schedule /tmp/celerybeat-schedule &
+  echo "✅ Celery worker (concurrency=$CELERY_CONCURRENCY) + beat started (night audit dispatcher active)"
+else
+  echo "ℹ️  Celery başlatılmadı (Redis yok veya SYROCE_START_CELERY=0); gece denetimi tetiklenmeyecek."
+fi
+
 exec "$PYTHON_BIN" -m uvicorn server:app --host 0.0.0.0 --port "$PORT"

@@ -1392,10 +1392,12 @@ async def generate_folio_proforma(
     # Misafir ve booking bilgileri
     guest = None
     if folio.get('guest_id'):
-        guest = await db.guests.find_one(
+        # Decrypt PII — email/phone/address feed the e-invoice document.
+        from security.encrypted_lookup import decrypt_guest_doc
+        guest = decrypt_guest_doc(await db.guests.find_one(
             {'id': folio['guest_id'], 'tenant_id': current_user.tenant_id},
             {'_id': 0, 'name': 1, 'email': 1, 'phone': 1, 'tc_no': 1, 'address': 1}
-        )
+        ))
     booking = await db.bookings.find_one(
         {'id': folio['booking_id'], 'tenant_id': current_user.tenant_id},
         {'_id': 0, 'check_in': 1, 'check_out': 1, 'room_id': 1, 'room_number': 1, 'adults': 1, 'children': 1}

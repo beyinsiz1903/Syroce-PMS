@@ -52,6 +52,17 @@ async def dispatch_outbox_event(event: dict[str, Any]) -> tuple[bool, str]:
     if not tenant_id:
         return False, "permanent: missing tenant_id"
 
+    # Internal-Consistency (IC) events — Task #389. These drive the async
+    # POS -> folio posting (Outbox/Compensation) ENTIRELY inside this system and
+    # MUST be routed here BEFORE any channel-manager mapping so they never reach
+    # EventSyncService / OTA (external_calls stays []).
+    from core.outbox_service import IC_OUTBOX_EVENT_TYPES
+
+    if event_type in IC_OUTBOX_EVENT_TYPES:
+        from core.pos_folio_consumer import handle_ic_pos_event
+
+        return await handle_ic_pos_event(event)
+
     # Map outbox event_type to channel manager event name
     cm_event_name = EVENT_TYPE_TO_CM_EVENT.get(event_type)
     if not cm_event_name:

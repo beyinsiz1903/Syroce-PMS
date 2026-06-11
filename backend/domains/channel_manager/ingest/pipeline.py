@@ -600,6 +600,24 @@ async def _propagate_cancellation_to_booking(tenant_id: str, ext_res_id: str) ->
     """Propagate cancellation from lineage to bookings and imported_reservations collections."""
     now = _now()
 
+    # Iptal: varsa eslesmeyen-tutmanin sentinel kilitlerini once serbest birak
+    # (asagidaki toplu update tutmayi cancelled isaretlemeden once cagrilmali,
+    # aksi halde release tutmayi bulamaz). Tutma degilse no-op.
+    try:
+        from domains.channel_manager.providers.unmatched_hold import (
+            release_unmatched_reservation_hold,
+        )
+        await release_unmatched_reservation_hold(
+            tenant_id=tenant_id,
+            external_id=ext_res_id,
+            reason="ota_cancelled",
+            delete_hold=False,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[CANCEL-PROPAGATE] unmatched hold release hatasi %s: %s", ext_res_id, e
+        )
+
     # Get booking info before cancelling (for notification)
     booking = await db.bookings.find_one(
         {"tenant_id": tenant_id, "external_reservation_id": ext_res_id},

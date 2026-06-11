@@ -29,6 +29,17 @@ def register_startup(fn):
     return fn
 
 
+def register_startup_first(fn):
+    """Register a startup coroutine to run BEFORE all others.
+
+    Used by the DB migration runner so versioned schema migrations execute
+    ahead of every index/bootstrap phase. Inserts at the head of the queue;
+    if called multiple times the most-recently registered runs first.
+    """
+    _startup_callbacks.insert(0, fn)
+    return fn
+
+
 def register_shutdown(fn):
     """Register a coroutine to be awaited during application shutdown."""
     _shutdown_callbacks.append(fn)

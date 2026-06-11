@@ -73,6 +73,7 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "budget_configs", "budget_actuals",
     "survey_responses", "external_reviews",
     "companies", "contracts",
+    "pos_late_charges",
 }
 
 # ── Collections that are global (no tenant_id) ──────────────────

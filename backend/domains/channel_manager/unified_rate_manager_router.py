@@ -1361,7 +1361,7 @@ async def get_circuit_breakers(
     from domains.channel_manager.provider_failover import CircuitState, provider_failover
 
     tenant_id = current_user.tenant_id
-    raw = provider_failover.get_all_status()
+    raw = await provider_failover.get_all_status_shared()
 
     severity = {
         CircuitState.CLOSED.value: 0,

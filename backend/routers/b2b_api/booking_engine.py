@@ -742,8 +742,8 @@ async def b2b_create_reservation(
 
     # Create guest
     guest_id = _uuid()
-    from security.search_normalize import apply_collection_normalized_fields
-    await db.guests.insert_one(apply_collection_normalized_fields({
+    from security.guest_write import encrypt_guest_insert
+    await db.guests.insert_one(encrypt_guest_insert({
         "id": guest_id,
         "tenant_id": tenant_id,
         "name": data.guest_name.strip(),
@@ -755,7 +755,7 @@ async def b2b_create_reservation(
         "total_stays": 0,
         "total_spend": 0.0,
         "created_at": _now_iso(),
-    }, collection="guests"))
+    }))
 
     booking_id = _uuid()
     confirmation_code = f"B2B-{booking_id[:8].upper()}"

@@ -99,7 +99,7 @@ const RevenueAutopilot = () => {
           <CardContent className="pt-6 text-center">
             <Zap className="w-12 h-12 text-indigo-600 mx-auto mb-2" />
             <p className="font-bold">Full Auto</p>
-            <p className="text-xs text-gray-600 mt-2">AI her şeyi yapar</p>
+            <p className="text-xs text-gray-600 mt-2">Kural motoru her şeyi yapar</p>
             {status?.mode === 'full_auto' && <Badge className="mt-2 bg-indigo-600">Active</Badge>}
           </CardContent>
         </Card>
@@ -107,7 +107,7 @@ const RevenueAutopilot = () => {
           <CardContent className="pt-6 text-center">
             <Settings className="w-12 h-12 text-blue-600 mx-auto mb-2" />
             <p className="font-bold">Supervised</p>
-            <p className="text-xs text-gray-600 mt-2">AI önerir, siz onayla</p>
+            <p className="text-xs text-gray-600 mt-2">Kural motoru önerir, siz onaylayın</p>
             {status?.mode === 'supervised' && <Badge className="mt-2 bg-blue-600">Active</Badge>}
           </CardContent>
         </Card>

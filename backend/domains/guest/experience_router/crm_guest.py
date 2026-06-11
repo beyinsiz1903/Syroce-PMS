@@ -254,10 +254,11 @@ async def get_guest_360(
 ):
     """Get 360° guest profile with all data"""
     # Get guest basic info
-    guest = await db.guests.find_one({
+    from security.encrypted_lookup import decrypt_guest_doc
+    guest = decrypt_guest_doc(await db.guests.find_one({
         'id': guest_id,
         'tenant_id': current_user.tenant_id
-    }, {'_id': 0})
+    }, {'_id': 0}))
 
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")

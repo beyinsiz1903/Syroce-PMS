@@ -682,10 +682,11 @@ async def get_reservation_detail_mobile(
         raise HTTPException(status_code=404, detail="Booking not found")
 
     # Get guest
-    guest = await db.guests.find_one({
+    from security.encrypted_lookup import decrypt_guest_doc
+    guest = decrypt_guest_doc(await db.guests.find_one({
         'id': booking.get('guest_id'),
         'tenant_id': current_user.tenant_id
-    })
+    }))
 
     # Get room if assigned
     room = None
@@ -778,10 +779,11 @@ async def get_guest_history_mobile(
     """Get guest stay history"""
     current_user = await get_current_user(credentials)
 
-    guest = await db.guests.find_one({
+    from security.encrypted_lookup import decrypt_guest_doc
+    guest = decrypt_guest_doc(await db.guests.find_one({
         'id': guest_id,
         'tenant_id': current_user.tenant_id
-    })
+    }))
 
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
@@ -1277,6 +1279,7 @@ async def get_guest_alerts(
     unique_ids = list({b.get('guest_id') for b in bookings_list if b.get('guest_id')})
 
     # Guest fetch — chunk $in to keep BSON payload safe (chunks of 500).
+    from security.encrypted_lookup import decrypt_guest_doc
     guest_map: dict[str, dict] = {}
     for i in range(0, len(unique_ids), 500):
         chunk = unique_ids[i:i + 500]
@@ -1284,7 +1287,7 @@ async def get_guest_alerts(
             'id': {'$in': chunk},
             'tenant_id': current_user.tenant_id,
         }):
-            guest_map[g['id']] = g
+            guest_map[g['id']] = decrypt_guest_doc(g)
 
     # Repeat counts — gather with semaphore to cap concurrent ops at 25.
     sem = _asyncio.Semaphore(25)

@@ -134,6 +134,22 @@ async def ensure_indexes(user: User = Depends(_require_ops_role)):
     return {"status": "ok", "indexes_created": created}
 
 
+@router.get("/verify-indexes")
+async def verify_indexes(user: User = Depends(_require_ops_role)):
+    """Verify all expected searchable `_hash_` indexes exist (fail-closed check).
+
+    Returns a degraded summary (with the missing index list) when any expected
+    blind-index is absent, so operators can confirm encrypted-PII search is not
+    silently degrading to a tenant-wide collection scan.
+    """
+    svc = get_field_encryption_service()
+    result = await svc.verify_hash_indexes(system_db)
+    return {
+        "status": "ok" if result.get("ok") else "degraded",
+        "verification": result,
+    }
+
+
 @router.get("/audit")
 async def get_encryption_audit(
     limit: int = 50,

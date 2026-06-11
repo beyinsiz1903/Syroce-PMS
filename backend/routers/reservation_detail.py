@@ -1169,21 +1169,48 @@ async def update_reservation_guest(
         raise HTTPException(status_code=400, detail="Misafir bilgisi bulunamadı")
 
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
+    # User-facing field names captured BEFORE companions/encryption so the audit
+    # log never records internal `_hash_*` / `_enc_*` / `*_lower` keys.
+    _logged_fields = list(updates.keys())
     if updates:
+        from routers.pms_guests import _encrypt_guest
+        from security.search_ngram import (
+            NGRAM_SOURCE_FIELDS,
+            ngram_set_for_update_merged,
+        )
         from security.search_normalize import normalized_set_for_update
-        # Guest name_lower companion so renames stay prefix-searchable.
-        updates.update(normalized_set_for_update(updates, collection="guests"))
+        # Search companions are computed from the PLAINTEXT update BEFORE
+        # encryption — name fields are NOT encrypted. name_lower keeps renames
+        # prefix-searchable.
+        _norm = normalized_set_for_update(updates, collection="guests")
+        # Combined _ng_name must reflect ALL name fields, not just the changed
+        # subset, or a name-only edit drops first/last-name infix trigrams.
+        if any(f in updates for f in NGRAM_SOURCE_FIELDS.get("guests", [])):
+            _g = await db.guests.find_one(
+                {"id": booking["guest_id"], "tenant_id": tid},
+                {"_id": 0, "name": 1, "first_name": 1, "last_name": 1},
+            )
+            _norm.update(
+                ngram_set_for_update_merged(_g, updates, collection="guests"))
+        # KVKK: encrypt PII fields at rest (email / phone / id_number) and write
+        # their `_hash_<field>` blind-index tokens. Without this, editing a guest
+        # from the reservation screen stored PII as PLAINTEXT and left encrypted
+        # search unable to find them. `name` is not an encrypted field, so it
+        # stays plaintext for the booking guest_name sync below.
+        _plain_name = updates.get("name")
+        updates = _encrypt_guest(updates)
+        updates.update(_norm)
         await db.guests.update_one({"id": booking["guest_id"], "tenant_id": tid}, {"$set": updates})
 
-        if "name" in updates:
-            _norm = normalized_set_for_update(
-                {"guest_name": updates["name"]}, collection="bookings")
+        if _plain_name is not None:
+            _bnorm = normalized_set_for_update(
+                {"guest_name": _plain_name}, collection="bookings")
             await db.bookings.update_one(
                 {"id": booking_id, "tenant_id": tid},
-                {"$set": {"guest_name": updates["name"], **_norm}},
+                {"$set": {"guest_name": _plain_name, **_bnorm}},
             )
 
-    await _log_activity(tid, booking_id, "guest_updated", current_user.name, {"fields": list(updates.keys())})
+    await _log_activity(tid, booking_id, "guest_updated", current_user.name, {"fields": _logged_fields})
 
     return {"success": True}
 
@@ -1481,8 +1508,8 @@ async def create_group_booking(
     try:
         for idx, row in enumerate(data.new_bookings, start=1):
             guest_id = str(uuid.uuid4())
-            from security.search_normalize import apply_collection_normalized_fields
-            _guest_doc = apply_collection_normalized_fields({
+            from security.guest_write import encrypt_guest_insert
+            _guest_doc = encrypt_guest_insert({
                 "id": guest_id,
                 "tenant_id": tid,
                 "name": row.guest_name.strip(),
@@ -1494,7 +1521,7 @@ async def create_group_booking(
                 "total_stays": 0,
                 "total_spend": 0.0,
                 "created_at": datetime.now(UTC).isoformat(),
-            }, collection="guests")
+            })
             await db.guests.insert_one(_guest_doc)
             created_guest_ids.append(guest_id)
 
@@ -1630,13 +1657,18 @@ async def get_group_booking_detail(
     if not group:
         raise HTTPException(status_code=404, detail="Grup rezervasyon bulunamadi")
 
+    from security.encrypted_lookup import decrypt_booking_doc, decrypt_guest_doc
     bookings_list = []
     async for b in db.bookings.find(
         {"id": {"$in": group.get("booking_ids", [])}, "tenant_id": tid}, {"_id": 0}
     ):
+        # PII at-rest: decrypt the booking (guest_email/guest_phone) and the joined
+        # guest doc before returning so clients never receive AES envelopes or
+        # internal blind-index tokens.
+        b = decrypt_booking_doc(b)
         guest = None
         if b.get("guest_id"):
-            guest = await db.guests.find_one({"id": b["guest_id"], "tenant_id": tid}, {"_id": 0})
+            guest = decrypt_guest_doc(await db.guests.find_one({"id": b["guest_id"], "tenant_id": tid}, {"_id": 0}))
         b["guest_detail"] = guest
         bookings_list.append(b)
 

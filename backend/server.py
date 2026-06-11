@@ -21,7 +21,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 # ── App factory ─────────────────────────────────────────────────────
-from app import create_app, register_shutdown, register_startup  # noqa: E402
+from app import create_app, register_shutdown, register_startup, register_startup_first  # noqa: E402
 
 app = create_app()
 
@@ -47,6 +47,32 @@ except Exception as _log_err:
 
 # ── Core (single-instance DB, auth) ────────────────────────────────
 from core.database import client, db  # noqa: E402
+
+
+# ── DB schema migrations (run FIRST, before any index/bootstrap phase) ──
+# Versiyonlu migration runner indeks fazlarından ÖNCE koşar. Hata/timeout →
+# fail-closed: app.state.startup_failed=True + warm-up gate kapalı kalır.
+@register_startup_first
+async def _db_migrations_startup():
+    from bootstrap.migrations import run_migrations
+    from core.database import _raw_db
+    try:
+        await run_migrations(_raw_db)
+    except Exception as _mig_err:
+        # Şema migration'ı kritik — fail-closed. Lifespan bu istisnayı
+        # yakalayıp gate'i kapalı tutar (defer mod) veya yeniden fırlatır
+        # (eager mod). Bayrakları açıkça da set ederek savunmayı güçlendir.
+        try:
+            app.state.startup_failed = True
+            app.state.routes_ready = False
+        except Exception:
+            pass
+        logging.getLogger(__name__).critical(
+            "DB MIGRATION BAŞARISIZ — açılış fail-closed: %s", _mig_err,
+        )
+        raise
+
+
 from core.helpers import (  # noqa: E402
     require_admin,
     require_feature,

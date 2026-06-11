@@ -544,8 +544,8 @@
     "socialRadarDesc": "Мониторинг в реальном времени",
     "revenueAutopilot": "Revenue Autopilot",
     "revenueAutopilotDesc": "Автоматическая оптимизация доходов",
-    "dynamicPricing": "Динамическое Ценообразование",
-    "dynamicPricingDesc": "Умные цены с ИИ",
+    "dynamicPricing": "Ценообразование на основе правил",
+    "dynamicPricingDesc": "Умное ценообразование на основе правил",
     "sentimentAnalysis": "Анализ Настроений",
     "noShowPrediction": "Прогноз No-Show",
     "demandForecast": "Прогноз Спроса",
@@ -829,7 +829,7 @@
     "managementReports": "Управление и Отчёты",
     "refreshInsights": "Обновить Инсайты",
     "generatingInsights": "Генерация ИИ-инсайтов...",
-    "dynamicPricingModule": "ИИ Динамические Цены",
+    "dynamicPricingModule": "Ценообразование на основе правил",
     "dynamicPricingModuleDesc": "Анализ конкурентов и автоматическое ценообразование",
     "reputationCenterModule": "Центр Репутации",
     "reputationCenterModuleDesc": "Управление онлайн-репутацией",
@@ -1046,7 +1046,7 @@
     "recommendedPrice": "Рекомендуемая цена",
     "occupancyForecast": "Прогноз загруженности",
     "rateParity": "Паритет тарифов",
-    "dynamicPricing": "Динамическое ценообразование"
+    "dynamicPricing": "Ценообразование на основе правил"
   },
   "ai": {
     "dailyBriefing": "Ежедневная сводка",

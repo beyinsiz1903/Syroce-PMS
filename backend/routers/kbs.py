@@ -142,6 +142,7 @@ async def kbs_guest_list(
         guest_ids = [b.get("guest_id") for b in bookings if b.get("guest_id")]
         guest_map: dict[str, dict] = {}
         if guest_ids:
+            from security.encrypted_lookup import decrypt_guest_doc
             async for g in db.guests.find(
                 {"tenant_id": tenant_id, "id": {"$in": guest_ids}},
                 {"_id": 0, "id": 1, "nationality": 1, "id_number": 1,
@@ -149,7 +150,7 @@ async def kbs_guest_list(
                  "address": 1, "father_name": 1, "mother_name": 1,
                  "birth_place": 1},
             ):
-                guest_map[g["id"]] = g
+                guest_map[g["id"]] = decrypt_guest_doc(g)
 
         for b in bookings:
             g = guest_map.get(b.get("guest_id"), {})
@@ -358,7 +359,8 @@ async def _build_payload_snapshot(
 
     guest = {}
     if booking.get("guest_id"):
-        guest = await db.guests.find_one(
+        from security.encrypted_lookup import decrypt_guest_doc
+        guest = decrypt_guest_doc(await db.guests.find_one(
             {"tenant_id": tenant_id, "id": booking["guest_id"]},
             {
                 "_id": 0, "id": 1, "nationality": 1, "id_number": 1,
@@ -366,7 +368,7 @@ async def _build_payload_snapshot(
                 "address": 1, "father_name": 1, "mother_name": 1,
                 "birth_place": 1,
             },
-        ) or {}
+        )) or {}
 
     snapshot = {
         "guest_name": booking.get("guest_name", ""),

@@ -531,7 +531,6 @@ async def search_reservations(
         # Search conditions
         search_conditions = []
 
-        import re as _re
 
         if query:
             # Index-serviceable anchored prefix match on the bookings
@@ -549,19 +548,23 @@ async def search_reservations(
             search_conditions.append({'id': booking_id})
 
         if phone:
-            # Find guest by phone first — MUST be tenant-scoped to prevent IDOR
+            # Find guest by phone first — MUST be tenant-scoped to prevent IDOR.
+            # Dual-read: exact _hash_phone (encrypted) OR legacy plaintext regex.
+            from security.encrypted_lookup import guest_pii_regex_or_conditions
             guest = await db.guests.find_one({
                 'tenant_id': current_user.tenant_id,
-                'phone': {'$regex': _re.escape(phone), '$options': 'i'},
+                '$or': guest_pii_regex_or_conditions('phone', phone),
             })
             if guest:
                 search_conditions.append({'guest_id': guest['id']})
 
         if email:
-            # Find guest by email first — MUST be tenant-scoped to prevent IDOR
+            # Find guest by email first — MUST be tenant-scoped to prevent IDOR.
+            # Dual-read: exact _hash_email (encrypted) OR legacy plaintext regex.
+            from security.encrypted_lookup import guest_pii_regex_or_conditions
             guest = await db.guests.find_one({
                 'tenant_id': current_user.tenant_id,
-                'email': {'$regex': _re.escape(email), '$options': 'i'},
+                '$or': guest_pii_regex_or_conditions('email', email),
             })
             if guest:
                 search_conditions.append({'guest_id': guest['id']})
@@ -589,11 +592,12 @@ async def search_reservations(
 
         guests_map: dict[str, dict] = {}
         if guest_ids:
+            from security.encrypted_lookup import decrypt_guest_doc
             async for g in db.guests.find(
                 {'tenant_id': current_user.tenant_id, 'id': {'$in': list(guest_ids)}},
                 {'_id': 0, 'id': 1, 'phone': 1, 'email': 1},
             ):
-                guests_map[g['id']] = g
+                guests_map[g['id']] = decrypt_guest_doc(g)
 
         rooms_map: dict[str, dict] = {}
         if room_ids:

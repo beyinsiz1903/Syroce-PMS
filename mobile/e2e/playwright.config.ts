@@ -67,7 +67,7 @@ export default defineConfig({
         },
         {
             name: 'mobile-pixel7',
-            testMatch: /smoke\.spec\.ts$/,
+            testMatch: /(smoke|home-shell|hk-gm)\.spec\.ts$/,
             use: { ...devices['Pixel 7'] },
             dependencies: ['setup'],
         },

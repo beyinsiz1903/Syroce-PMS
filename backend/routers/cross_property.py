@@ -107,15 +107,20 @@ async def search_chain_guests(
     safe = re.escape(q.strip())
     rx = {"$regex": safe, "$options": "i"}
 
+    from security.encrypted_lookup import decrypt_guest_doc, guest_pii_regex_or_conditions
+    # Dual-read: email/phone are encrypted at-rest, so a plaintext regex alone can
+    # never match an encrypted row. guest_pii_regex_or_conditions adds the exact
+    # blind-index hash branch (full-value match) while keeping the legacy regex
+    # branch for not-yet-backfilled plaintext rows.
     query = {
         "tenant_id": {"$in": tenant_ids},
         "$or": [
             {"name": rx},
             {"first_name": rx},
             {"last_name": rx},
-            {"email": rx},
-            {"phone": rx},
-        ],
+        ]
+        + guest_pii_regex_or_conditions("email", q.strip())
+        + guest_pii_regex_or_conditions("phone", q.strip()),
     }
     cursor = db.guests.find(
         query,
@@ -127,7 +132,10 @@ async def search_chain_guests(
         },
     ).limit(limit)
 
-    raw = [g async for g in cursor]
+    # Decrypt before the plaintext dedupe key derivation + before returning
+    # email/phone, so the cross-property match counter works on plaintext and
+    # clients never receive AES envelopes.
+    raw = [decrypt_guest_doc(g) async for g in cursor]
     name_map = await _tenant_name_map(tenant_ids)
 
     # cross-property dedupe: count distinct emails/phones appearing in >1 tenant
@@ -184,15 +192,20 @@ async def get_unified_profile(
     if not seed:
         raise HTTPException(status_code=404, detail="Guest not found in chain")
 
+    from security.encrypted_lookup import decrypt_guest_doc, guest_pii_or_conditions
+    # email/phone are encrypted at-rest; decrypt the seed before deriving the
+    # equality keys, then dual-read (exact blind-index hash + plaintext) so the
+    # same person's encrypted records elsewhere in the chain are still located.
+    seed = decrypt_guest_doc(seed)
     email = (seed.get("email") or "").strip().lower()
     phone = (seed.get("phone") or "").strip()
 
     # 2) Locate every guest doc with the same email/phone in the chain
     or_clauses: list[dict[str, Any]] = []
     if email:
-        or_clauses.append({"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}})
+        or_clauses += guest_pii_or_conditions("email", email)
     if phone:
-        or_clauses.append({"phone": phone})
+        or_clauses += guest_pii_or_conditions("phone", phone)
     or_clauses.append({"id": guest_id})
     or_clauses.append({"guest_id": guest_id})
 
@@ -295,7 +308,10 @@ async def loyalty_summary(
             "email": {"$nin": [None, ""]},
         }},
         {"$group": {
-            "_id": {"$toLower": "$email"},
+            # Group encrypted rows by their deterministic _hash_email blind index
+            # (AES-GCM ciphertexts never collide), falling back to lowercased
+            # plaintext email for legacy/unmigrated rows.
+            "_id": {"$ifNull": ["$_hash_email", {"$toLower": "$email"}]},
             "name": {"$first": "$name"},
             "first_name": {"$first": "$first_name"},
             "last_name": {"$first": "$last_name"},
@@ -321,9 +337,11 @@ async def loyalty_summary(
         {"$limit": 100},
     ]
 
+    from security.encrypted_lookup import decrypt_guest_doc
     cursor = db.guests.aggregate(pipeline)
     out: list[dict[str, Any]] = []
     async for row in cursor:
+        row = decrypt_guest_doc(row)  # email may be ciphertext from the $group $first
         row["properties"] = [
             {"tenant_id": t, "name": name_map.get(t, t)}
             for t in row.pop("tenants", [])
@@ -435,8 +453,11 @@ async def merge_guest_profiles(
                 if k in {"name", "first_name", "last_name", "email", "phone",
                          "loyalty_tier", "preferences", "vip", "company"}}
         if safe:
-            from security.search_normalize import normalized_set_for_update
-            safe.update(normalized_set_for_update(safe, collection="guests"))
+            # encrypt_guest_update recomputes the plaintext name companions
+            # (normalized + merged _ng_name from `primary`) AND encrypts PII
+            # fields (email/phone) with their _hash_ tokens before persistence.
+            from security.guest_write import encrypt_guest_update
+            safe = encrypt_guest_update(safe, primary)
             await db.guests.update_one(
                 {"_id": primary["_id"], "tenant_id": primary.get("tenant_id")},
                 {"$set": safe},
@@ -565,7 +586,11 @@ async def scan_duplicates(
          "name": 1, "first_name": 1, "last_name": 1,
          "email": 1, "phone": 1, "loyalty_tier": 1},
     ).limit(20000)
-    all_guests = [g async for g in cursor]
+    from security.encrypted_lookup import decrypt_guest_doc
+    # Decrypt before the _norm_email/_norm_phone blocking + _score_pair + output:
+    # AES-GCM ciphertexts differ per row, so bucketing on ciphertext would make
+    # the cross-property dedupe blind to every migrated guest.
+    all_guests = [decrypt_guest_doc(g) async for g in cursor]
 
     # 2) Blocking — email + phone son 10 hane bucket'ları
     by_email: dict[str, list[int]] = _dd(list)
@@ -661,12 +686,20 @@ async def suggest_duplicates_for(
         raise HTTPException(404, "Misafir zincirde bulunamadı")
     name_map = await _tenant_name_map(tenant_ids)
 
+    from security.encrypted_lookup import decrypt_guest_doc, guest_pii_or_conditions
+    # email/phone are encrypted at-rest; decrypt the seed before deriving blocking
+    # keys so the candidate query is built from plaintext, not ciphertext.
+    seed = decrypt_guest_doc(seed)
     se, sp = _norm_email(seed.get("email")), _norm_phone(seed.get("phone"))
     sl = (seed.get("last_name") or "").strip().lower()
 
     or_clauses: list[dict[str, Any]] = []
     if se:
-        or_clauses.append({"email": {"$regex": f"^{re.escape(se)}$", "$options": "i"}})
+        # Exact email matches encrypted candidates via the blind-index hash; the
+        # plaintext branch still covers legacy not-yet-backfilled rows. (Phone
+        # suffix-matching cannot pre-filter encrypted rows — those are reached via
+        # the email/last_name branches and scored on decrypted candidates below.)
+        or_clauses += guest_pii_or_conditions("email", se)
     if sp:
         # phone son 10 hane benzerliği için son 7 haneye sufix-match deneriz
         # (tam blocking için dataset taraması gerekir; bu pratik bir yaklaşım)
@@ -689,7 +722,7 @@ async def suggest_duplicates_for(
          "name": 1, "first_name": 1, "last_name": 1,
          "email": 1, "phone": 1, "loyalty_tier": 1},
     ).limit(500)
-    candidates_raw = [g async for g in cursor]
+    candidates_raw = [decrypt_guest_doc(g) async for g in cursor]
 
     candidates: list[dict[str, Any]] = []
     for c in candidates_raw:

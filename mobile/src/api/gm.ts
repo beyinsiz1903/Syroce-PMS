@@ -7,6 +7,8 @@ export type GmMetrics = {
   date: string;
   occupancy: number;
   revenue: number;
+  adr: number;
+  revpar: number;
   check_ins: number;
   check_outs: number;
   complaints: number;
@@ -15,10 +17,34 @@ export type GmMetrics = {
 
 export type GmTrend = 'up' | 'down';
 
+// Point-in-time ("now") housekeeping room-status summary.
+export type GmHousekeeping = {
+  total_rooms: number;
+  available: number;
+  occupied: number;
+  dirty: number;
+  cleaning: number;
+  inspected: number;
+  out_of_order: number;
+  maintenance: number;
+  ready_rooms: number;
+  dirty_rooms: number;
+};
+
+// Channel performance over the last 30 days (by booking source).
+export type GmChannel = {
+  source: string;
+  bookings: number;
+  revenue: number;
+};
+
 export type GmSnapshot = {
   today: GmMetrics;
   yesterday: GmMetrics;
   last_week: GmMetrics;
+  open_faults: number;
+  housekeeping: GmHousekeeping;
+  channels: GmChannel[];
   trends: {
     occupancy_trend: GmTrend;
     revenue_trend: GmTrend;

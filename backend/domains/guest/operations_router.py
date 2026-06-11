@@ -299,11 +299,13 @@ async def get_upcoming_celebrations(
     guest_ids = list({c['guest_id'] for c in celebrations if c.get('guest_id')})
     guests_map = {}
     if guest_ids:
+        # Decrypt PII — guest_email is surfaced in the celebration payload.
+        from security.encrypted_lookup import decrypt_guest_doc
         async for g in db.guests.find(
             {'id': {'$in': guest_ids}},
             {'_id': 0, 'id': 1, 'name': 1, 'email': 1, 'phone': 1},
         ):
-            guests_map[g['id']] = g
+            guests_map[g['id']] = decrypt_guest_doc(g)
 
     for celeb in celebrations:
         # Check birthday
@@ -375,8 +377,9 @@ async def send_pre_arrival_welcome(
     if not booking:
         raise HTTPException(status_code=404, detail="Rezervasyon bulunamadı")
 
-    # Get guest
-    guest = await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0})
+    # Get guest (decrypt PII — email is used as the welcome-email recipient).
+    from security.encrypted_lookup import decrypt_guest_doc
+    guest = decrypt_guest_doc(await db.guests.find_one({'id': booking['guest_id']}, {'_id': 0}))
     if not guest:
         raise HTTPException(status_code=404, detail="Misafir bulunamadı")
 
@@ -526,7 +529,12 @@ async def get_guest_bookings_old(
     if current_user.role != UserRole.GUEST:
         raise HTTPException(status_code=403, detail="Only guests can access this endpoint")
 
-    guest_records = await db.guests.find({'email': current_user.email}, {'_id': 0}).to_list(1000)
+    # Dual-read: encrypted _hash_email OR legacy plaintext; tenant-scoped (IDOR).
+    from security.encrypted_lookup import build_guest_pii_query
+    guest_records = await db.guests.find(
+        {'tenant_id': current_user.tenant_id, **build_guest_pii_query('email', current_user.email)},
+        {'_id': 0},
+    ).to_list(1000)
     guest_ids = [g['id'] for g in guest_records]
 
     if not guest_ids:
@@ -576,7 +584,12 @@ async def get_guest_loyalty_old(
     if current_user.role != UserRole.GUEST:
         raise HTTPException(status_code=403, detail="Only guests can access this endpoint")
 
-    guest_records = await db.guests.find({'email': current_user.email}, {'_id': 0}).to_list(1000)
+    # Dual-read: encrypted _hash_email OR legacy plaintext; tenant-scoped (IDOR).
+    from security.encrypted_lookup import build_guest_pii_query
+    guest_records = await db.guests.find(
+        {'tenant_id': current_user.tenant_id, **build_guest_pii_query('email', current_user.email)},
+        {'_id': 0},
+    ).to_list(1000)
     guest_ids = [g['id'] for g in guest_records]
 
     if not guest_ids:
@@ -612,7 +625,11 @@ async def create_room_service_request(request: RoomServiceCreate, current_user: 
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    guest = await db.guests.find_one({'email': current_user.email, 'id': booking['guest_id']}, {'_id': 0})
+    # Dual-read ownership guard: id must match AND email (encrypted or plaintext).
+    from security.encrypted_lookup import build_guest_pii_query
+    guest = await db.guests.find_one(
+        {'id': booking['guest_id'], **build_guest_pii_query('email', current_user.email)}, {'_id': 0}
+    )
     if not guest:
         raise HTTPException(status_code=403, detail="This booking does not belong to you")
 
@@ -723,8 +740,11 @@ async def get_guest_booking_detail(
     {id, check_in, check_out, room_type, room_number, guests_count,
      status, hotel:{...}, guest:{email, phone, name}}
     """
+    from security.encrypted_lookup import build_guest_pii_query
     guest_records = []
-    async for guest in db.guests.find({'email': current_user.email}):
+    async for guest in db.guests.find(
+        {'tenant_id': current_user.tenant_id, **build_guest_pii_query('email', current_user.email)}
+    ):
         guest_records.append(guest)
 
     guest_ids = [g['id'] for g in guest_records]
@@ -737,8 +757,9 @@ async def get_guest_booking_detail(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
+    from security.encrypted_lookup import decrypt_guest_doc
     room = await db.rooms.find_one({'id': booking.get('room_id')}, {'_id': 0}) or {}
-    guest = await db.guests.find_one({'id': booking.get('guest_id')}, {'_id': 0}) or {}
+    guest = decrypt_guest_doc(await db.guests.find_one({'id': booking.get('guest_id')}, {'_id': 0})) or {}
     tenant = await db.tenants.find_one({'id': booking.get('tenant_id')}, {'_id': 0}) or {}
 
     return {
@@ -778,8 +799,11 @@ async def guest_self_checkin(
 ):
     """Complete self check-in process for guest"""
     # Find booking by guest email (multi-tenant support)
+    from security.encrypted_lookup import build_guest_pii_query
     guest_records = []
-    async for guest in db.guests.find({'email': current_user.email}):
+    async for guest in db.guests.find(
+        {'tenant_id': current_user.tenant_id, **build_guest_pii_query('email', current_user.email)}
+    ):
         guest_records.append(guest)
 
     guest_ids = [g['id'] for g in guest_records]
@@ -848,8 +872,11 @@ async def get_digital_key(
 ):
     """Get digital room key for guest"""
     # Find guest's booking (multi-tenant support)
+    from security.encrypted_lookup import build_guest_pii_query
     guest_records = []
-    async for guest in db.guests.find({'email': current_user.email}):
+    async for guest in db.guests.find(
+        {'tenant_id': current_user.tenant_id, **build_guest_pii_query('email', current_user.email)}
+    ):
         guest_records.append(guest)
 
     guest_ids = [g['id'] for g in guest_records]
@@ -959,8 +986,11 @@ async def purchase_upsell(
 ):
     """Purchase an upsell offer for guest"""
     # Find booking by guest email (multi-tenant support)
+    from security.encrypted_lookup import build_guest_pii_query
     guest_records = []
-    async for guest in db.guests.find({'email': current_user.email}):
+    async for guest in db.guests.find(
+        {'tenant_id': current_user.tenant_id, **build_guest_pii_query('email', current_user.email)}
+    ):
         guest_records.append(guest)
 
     guest_ids = [g['id'] for g in guest_records]
@@ -1035,10 +1065,11 @@ async def get_guest_profile_enhanced(
     - Tags (VIP, Honeymoon, etc)
     - Spending pattern
     """
-    guest = await db.guests.find_one({
+    from security.encrypted_lookup import decrypt_guest_doc
+    guest = decrypt_guest_doc(await db.guests.find_one({
         'id': guest_id,
         'tenant_id': current_user.tenant_id
-    })
+    }))
 
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
@@ -1478,7 +1509,8 @@ async def get_complete_guest_profile(
     current_user = await get_current_user(credentials)
 
     # Get guest
-    guest = await db.guests.find_one({'id': guest_id, 'tenant_id': current_user.tenant_id})
+    from security.encrypted_lookup import decrypt_guest_doc
+    guest = decrypt_guest_doc(await db.guests.find_one({'id': guest_id, 'tenant_id': current_user.tenant_id}))
     if not guest:
         raise HTTPException(status_code=404, detail="Guest not found")
 

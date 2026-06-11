@@ -18,6 +18,12 @@ import logging
 
 from pymongo import UpdateOne
 
+from security.search_ngram import (
+    NGRAM_LEADING_KEY,
+    NGRAM_SOURCE_FIELDS,
+    NGRAM_TARGET_FIELD,
+    ngram_tokens_for_doc,
+)
 from security.search_normalize import (
     LEADING_KEY,
     NORMALIZED_SEARCH_FIELDS,
@@ -111,5 +117,91 @@ async def backfill_search_normalize_fields(raw_db) -> dict[str, int]:
         except Exception as e:  # pragma: no cover - defensive
             logger.warning(
                 "search-normalize backfill for %s failed: %s", collection, e
+            )
+    return ran
+
+
+# ── Trigram infix-search companions (`_ng_<target>`) ──────────────────────────
+# Mirrors the prefix-companion index/backfill above for the INFIX (substring)
+# trigram field. PII-safe: only PLAINTEXT name fields, raw (un-hashed) tokens.
+
+_NGRAM_BACKFILL_VERSION = 1
+_NGRAM_PROGRESS_COLLECTION = "ngram_backfill"
+
+
+def ngram_index_name(collection: str) -> str:
+    leading = NGRAM_LEADING_KEY.get(collection, "tenant_id")
+    target = NGRAM_TARGET_FIELD[collection].lstrip("_")
+    return f"ng_{leading}_{target}"
+
+
+async def ensure_ngram_indexes(raw_db) -> list[str]:
+    """Create the ``(<leading>, _ng_<target>)`` multikey indexes. Idempotent."""
+    created: list[str] = []
+    for collection in NGRAM_TARGET_FIELD:
+        leading = NGRAM_LEADING_KEY.get(collection, "tenant_id")
+        target = NGRAM_TARGET_FIELD[collection]
+        name = ngram_index_name(collection)
+        try:
+            await raw_db[collection].create_index(
+                [(leading, 1), (target, 1)], name=name, background=True
+            )
+            created.append(f"{collection}.{name}")
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(
+                "ngram index %s on %s failed: %s", name, collection, e
+            )
+    return created
+
+
+async def _backfill_ngram_collection(
+    raw_db, collection: str, source_fields: list[str]
+) -> int:
+    coll = raw_db[collection]
+    target = NGRAM_TARGET_FIELD[collection]
+    missing_filter = {target: {"$exists": False}}
+    projection = {"_id": 1}
+    for f in source_fields:
+        projection[f] = 1
+
+    updated = 0
+    ops: list[UpdateOne] = []
+    cursor = coll.find(missing_filter, projection)
+    async for doc in cursor:
+        tokens = ngram_tokens_for_doc(doc, collection)
+        if not tokens:
+            continue
+        ops.append(UpdateOne({"_id": doc["_id"]}, {"$set": {target: tokens}}))
+        if len(ops) >= _BATCH:
+            res = await coll.bulk_write(ops, ordered=False)
+            updated += res.modified_count
+            ops = []
+    if ops:
+        res = await coll.bulk_write(ops, ordered=False)
+        updated += res.modified_count
+    return updated
+
+
+async def backfill_ngram_fields(raw_db) -> dict[str, int]:
+    """Marker-gated, idempotent backfill of trigram companions on existing rows."""
+    progress = raw_db[_NGRAM_PROGRESS_COLLECTION]
+    ran: dict[str, int] = {}
+    for collection, source_fields in NGRAM_SOURCE_FIELDS.items():
+        marker_id = f"{collection}:v{_NGRAM_BACKFILL_VERSION}"
+        if await progress.find_one({"_id": marker_id, "done": True}):
+            continue
+        try:
+            updated = await _backfill_ngram_collection(
+                raw_db, collection, source_fields
+            )
+            await progress.update_one(
+                {"_id": marker_id},
+                {"$set": {"done": True, "updated": updated}},
+                upsert=True,
+            )
+            ran[collection] = updated
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(
+                "ngram backfill for %s failed: %s", collection, e
             )
     return ran

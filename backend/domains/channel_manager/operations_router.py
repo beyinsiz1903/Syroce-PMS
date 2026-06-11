@@ -273,10 +273,11 @@ async def import_ota_reservation(
     if ota_res['status'] == 'imported':
         raise HTTPException(status_code=400, detail="Reservation already imported")
 
-    # Find or create guest
+    # Find or create guest (dual-read: encrypted _hash_email OR legacy plaintext)
+    from security.encrypted_lookup import build_guest_pii_query
     guest = await db.guests.find_one({
         'tenant_id': current_user.tenant_id,
-        'email': ota_res['guest_email']
+        **build_guest_pii_query('email', ota_res['guest_email']),
     })
 
     if not guest:
@@ -290,8 +291,8 @@ async def import_ota_reservation(
         guest = Guest(tenant_id=current_user.tenant_id, **guest_create.model_dump())
         guest_dict = guest.model_dump()
         guest_dict['created_at'] = guest_dict['created_at'].isoformat()
-        from security.search_normalize import apply_collection_normalized_fields
-        apply_collection_normalized_fields(guest_dict, collection="guests")
+        from security.guest_write import encrypt_guest_insert
+        guest_dict = encrypt_guest_insert(guest_dict)
         await db.guests.insert_one(guest_dict)
 
     # Find available room of matching type

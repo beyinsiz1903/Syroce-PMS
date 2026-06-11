@@ -49,8 +49,9 @@ async def _assert_guest_owns_booking(booking: dict, current_user: User) -> None:
     # the multi-record lookup in _user_can_subscribe_to_booking) so that a guest
     # with duplicate records is not incorrectly denied access.
     guest_ids: list[str] = []
+    from security.encrypted_lookup import build_guest_pii_query
     async for g in db.guests.find(
-        {"email": current_user.email, "tenant_id": current_user.tenant_id},
+        {"tenant_id": current_user.tenant_id, **build_guest_pii_query("email", current_user.email)},
         {"_id": 0, "id": 1},
     ):
         gid = g.get("id")
@@ -303,8 +304,12 @@ async def get_guest_bookings(
 ):
     """Get guest's bookings across ALL hotels (multi-tenant support)"""
     # Find ALL guest records across all tenants with this email
+    # Dual-read: encrypted _hash_email OR legacy plaintext; tenant-scoped (IDOR).
+    from security.encrypted_lookup import build_guest_pii_query
     guest_records = []
-    async for guest in db.guests.find({'email': current_user.email}):
+    async for guest in db.guests.find(
+        {'tenant_id': current_user.tenant_id, **build_guest_pii_query('email', current_user.email)}
+    ):
         guest_records.append(guest)
 
     guest_ids = [g['id'] for g in guest_records]
@@ -418,8 +423,12 @@ async def get_guest_loyalty(
 ):
     """Get guest loyalty information across ALL hotels (multi-tenant support)"""
     # Find ALL guest records across all tenants with this email
+    # Dual-read: encrypted _hash_email OR legacy plaintext; tenant-scoped (IDOR).
+    from security.encrypted_lookup import build_guest_pii_query
     guest_records = []
-    async for guest in db.guests.find({'email': current_user.email}):
+    async for guest in db.guests.find(
+        {'tenant_id': current_user.tenant_id, **build_guest_pii_query('email', current_user.email)}
+    ):
         guest_records.append(guest)
 
     if not guest_records:
@@ -1053,8 +1062,9 @@ async def _user_can_subscribe_to_booking(identity: dict, booking_id: str) -> boo
     # Tenant-scope the guest lookup so an attacker can't piggy-back a
     # same-email guest record from another tenant onto this booking.
     guest_ids = []
+    from security.encrypted_lookup import build_guest_pii_query
     async for g in db.guests.find(
-        {'email': email, 'tenant_id': tenant_id}, {'_id': 0, 'id': 1}
+        {'tenant_id': tenant_id, **build_guest_pii_query('email', email)}, {'_id': 0, 'id': 1}
     ):
         gid = g.get('id')
         if gid:
@@ -1234,10 +1244,11 @@ async def get_guest_profile(
     current_user: User = Depends(get_current_user)
 ):
     """Get guest profile"""
-    guest = await db.guests.find_one({
-        'email': current_user.email,
-        'tenant_id': current_user.tenant_id
-    })
+    # Dual-read by email (encrypted _hash_email OR plaintext) + decrypt PII for display.
+    from security.encrypted_lookup import build_guest_pii_query, decrypt_guest_doc
+    guest = decrypt_guest_doc(await db.guests.find_one(
+        {'tenant_id': current_user.tenant_id, **build_guest_pii_query('email', current_user.email)}
+    ))
 
     if not guest:
         return {
@@ -1266,10 +1277,12 @@ async def update_guest_profile(
     current_user: User = Depends(get_current_user)
 ):
     """Update guest profile"""
-    guest = await db.guests.find_one({
-        'email': current_user.email,
-        'tenant_id': current_user.tenant_id
-    })
+    # Dual-read by email + decrypt so the existing PII used as update defaults
+    # (and passed to encrypt_guest_update) is plaintext, not ciphertext.
+    from security.encrypted_lookup import build_guest_pii_query, decrypt_guest_doc
+    guest = decrypt_guest_doc(await db.guests.find_one(
+        {'tenant_id': current_user.tenant_id, **build_guest_pii_query('email', current_user.email)}
+    ))
 
     if not guest:
         # Create guest profile
@@ -1285,8 +1298,8 @@ async def update_guest_profile(
             'preferences': profile_data.get('preferences', {}),
             'created_at': datetime.now(UTC).isoformat()
         }
-        from security.search_normalize import apply_collection_normalized_fields
-        apply_collection_normalized_fields(guest_data, collection="guests")
+        from security.guest_write import encrypt_guest_insert
+        guest_data = encrypt_guest_insert(guest_data)
         await db.guests.insert_one(guest_data)
         return {'success': True, 'message': 'Profile created'}
 
@@ -1299,8 +1312,11 @@ async def update_guest_profile(
         'preferences': profile_data.get('preferences', guest.get('preferences', {})),
         'updated_at': datetime.now(UTC).isoformat()
     }
-    from security.search_normalize import normalized_set_for_update
-    update_data.update(normalized_set_for_update(update_data, collection="guests"))
+    # encrypt_guest_update recomputes the plaintext name companions (normalized
+    # + merged _ng_name from the stored `guest`) AND encrypts PII fields
+    # (phone/date_of_birth) with their _hash_ tokens before persistence.
+    from security.guest_write import encrypt_guest_update
+    update_data = encrypt_guest_update(update_data, guest)
 
     await db.guests.update_one(
         {'id': guest['id']},

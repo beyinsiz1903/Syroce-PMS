@@ -83,3 +83,56 @@ export async function listMiceSpaces(): Promise<MiceSpace[]> {
   const res = await api.get<{ spaces?: MiceSpace[] }>('/api/mice/spaces');
   return res?.spaces ?? [];
 }
+
+// ── Sales & Catering CRM (read-only) ───────────────────────────────────────
+// Accounts mirror backend/routers/mice.py (GET /api/mice/accounts, auth only);
+// opportunities mirror backend/routers/sales_catering.py
+// (GET /api/mice/sales/opportunities, auth only). Writes stay gated by
+// require_op("manage_sales") on the backend and are NOT exposed here.
+
+export type MiceAccount = {
+  id: string;
+  name?: string;
+  legal_name?: string | null;
+  tax_no?: string | null;
+  email?: string | null;
+  city?: string | null;
+  industry?: string | null;
+  credit_limit?: number;
+  payment_terms_days?: number;
+  active?: boolean;
+};
+
+export type MiceOpportunity = {
+  id: string;
+  title?: string;
+  account_id?: string | null;
+  event_type?: string | null;
+  stage?: string;
+  estimated_value?: number;
+  currency?: string;
+  probability?: number;
+  expected_start?: string | null;
+  expected_end?: string | null;
+  pax?: number;
+  created_at?: string;
+};
+
+// GET /api/mice/accounts → { accounts: [...] }
+export async function listMiceAccounts(): Promise<MiceAccount[]> {
+  const res = await api.get<{ accounts?: MiceAccount[] }>('/api/mice/accounts');
+  return res?.accounts ?? [];
+}
+
+// GET /api/mice/sales/opportunities?stage=&account_id=&limit=
+export async function listMiceOpportunities(params?: {
+  stage?: string;
+  account_id?: string;
+  limit?: number;
+}): Promise<MiceOpportunity[]> {
+  const res = await api.get<{ opportunities?: MiceOpportunity[] }>(
+    '/api/mice/sales/opportunities',
+    params,
+  );
+  return res?.opportunities ?? [];
+}

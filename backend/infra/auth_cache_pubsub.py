@@ -273,6 +273,15 @@ class AuthCachePubSub:
             if channel == CHANNEL_USER:
                 from core.security import _local_evict_user_doc
                 _local_evict_user_doc(target_id)
+                # A user-doc change (profile/password/role) is also a
+                # super-admin-cache change — evict that cache on this worker
+                # too so a role grant/revoke propagates fleet-wide instantly.
+                # Evict-only (never re-publishes); DB stays authoritative.
+                try:
+                    from core.entitlement import _local_evict_super_admin
+                    _local_evict_super_admin(target_id)
+                except Exception:
+                    pass
                 self._metrics["user_received"] += 1
             elif channel == CHANNEL_TENANT:
                 from core.helpers import _local_evict_tenant_doc

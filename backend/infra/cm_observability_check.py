@@ -163,13 +163,17 @@ async def get_outbox_status(db) -> dict[str, Any]:
         }
 
 
-def get_circuit_breaker_status() -> dict[str, Any]:
-    """Inspect in-process circuit breakers from provider_failover.
+async def get_circuit_breaker_status() -> dict[str, Any]:
+    """Inspect circuit breakers from provider_failover.
 
     Returns counts by state — never the per-connection identifiers
     (those leak tenant + connection_id). For the per-connection drill-
     down, the operator hits ``GET /api/channel-manager/unified-rate-
     manager/circuit-breakers`` (RBAC-gated).
+
+    Reads the fleet-wide shared (Redis-backed) view when enabled so a
+    breaker tripped on any worker is reflected here; falls back to the
+    in-process snapshot when Redis is absent.
     """
     try:
         from domains.channel_manager.provider_failover import provider_failover
@@ -179,7 +183,7 @@ def get_circuit_breaker_status() -> dict[str, Any]:
         # to private internals so a future thread-safe wrapper or LRU
         # eviction can override get_state_counts() without breaking
         # readiness/alerting).
-        counts = provider_failover.get_state_counts()
+        counts = await provider_failover.get_state_counts_shared()
         total           = counts.get("total", 0)
         open_count      = counts.get("open", 0)
         half_open_count = counts.get("half_open", 0)
@@ -224,7 +228,7 @@ def get_circuit_breaker_status() -> dict[str, Any]:
 async def get_cm_observability_snapshot(db) -> dict[str, Any]:
     """Convenience aggregator for the cron alarm script + ad-hoc CLI."""
     outbox = await get_outbox_status(db)
-    breakers = get_circuit_breaker_status()
+    breakers = await get_circuit_breaker_status()
 
     # Worst-of verdict for the snapshot summary.
     severity_order = {"ok": 0, "unknown": 1, "degraded": 2, "fail": 3}

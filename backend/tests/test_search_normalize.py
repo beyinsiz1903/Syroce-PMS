@@ -135,3 +135,139 @@ def test_encrypted_guest_search_uses_hash_branch():
         collection="guests", search_fields=["email"], search_value="a@b.com")
     keys = [k for c in conds for k in c]
     assert "_hash_email" in keys, "encrypted guest email must match via hash index"
+
+
+# ── Encrypted-PII `_hash_` index fail-closed verification (Task 364) ──────────
+
+
+class _FakeCollection:
+    """Minimal async collection that records create_index + reports indexes."""
+
+    def __init__(self):
+        self._indexes: dict[str, dict] = {"_id_": {"key": [("_id", 1)]}}
+
+    async def create_index(self, keys, *, name=None, sparse=False, **kwargs):
+        key_list = [(keys, 1)] if isinstance(keys, str) else list(keys)
+        idx_name = name or "_".join(f"{k}_{d}" for k, d in key_list)
+        self._indexes[idx_name] = {"key": key_list, "sparse": sparse}
+        return idx_name
+
+    async def index_information(self):
+        return dict(self._indexes)
+
+
+class _FakeDB:
+    def __init__(self):
+        self._cols: dict[str, _FakeCollection] = {}
+
+    def __getitem__(self, name):
+        return self._cols.setdefault(name, _FakeCollection())
+
+
+def test_expected_hash_indexes_covers_every_searchable_field():
+    """`expected_hash_indexes()` must list exactly the searchable encrypted
+    fields in ENCRYPTED_FIELDS — adding a searchable field without wiring its
+    index breaks this immediately."""
+    from security.field_encryption import (
+        ENCRYPTED_FIELDS,
+        expected_hash_indexes,
+        hash_index_key,
+        hash_index_name,
+    )
+
+    expected = expected_hash_indexes()
+    for collection, field_configs in ENCRYPTED_FIELDS.items():
+        searchable = {f["field"] for f in field_configs if f.get("searchable")}
+        # Every searchable field has an entry; non-searchable fields do not.
+        got = expected.get(collection, {})
+        assert set(got.keys()) == {hash_index_name(f) for f in searchable}, (
+            f"{collection}: expected_hash_indexes drifted from searchable fields"
+        )
+        for field in searchable:
+            assert got[hash_index_name(field)] == hash_index_key(field)
+
+
+def test_ensure_hash_indexes_creates_exactly_the_expected_indexes():
+    """The indexes `ensure_hash_indexes` actually creates must match
+    `expected_hash_indexes()` 1:1 — the CI guard for "new searchable field,
+    forgotten index"."""
+    import asyncio
+
+    from security.field_encryption import (
+        expected_hash_indexes,
+        get_field_encryption_service,
+    )
+
+    db = _FakeDB()
+    svc = get_field_encryption_service()
+    asyncio.run(svc.ensure_hash_indexes(db))
+
+    expected = expected_hash_indexes()
+    for collection, idx_map in expected.items():
+        info = asyncio.run(db[collection].index_information())
+        created_keys = {
+            meta["key"][0][0]
+            for name, meta in info.items()
+            if name != "_id_"
+        }
+        assert created_keys == set(idx_map.values()), (
+            f"{collection}: ensure_hash_indexes created {created_keys}, "
+            f"expected {set(idx_map.values())}"
+        )
+        # Index names also match the canonical convention.
+        for index_name in idx_map:
+            assert index_name in info, f"{collection}.{index_name} not created"
+
+
+def test_verify_hash_indexes_ok_when_present():
+    import asyncio
+
+    from security.field_encryption import get_field_encryption_service
+
+    db = _FakeDB()
+    svc = get_field_encryption_service()
+    asyncio.run(svc.ensure_hash_indexes(db))
+    result = asyncio.run(svc.verify_hash_indexes(db))
+
+    assert result["ok"] is True
+    assert result["missing"] == []
+    assert result["present"] == result["expected"] > 0
+
+
+def test_verify_hash_indexes_degraded_when_missing():
+    """A missing `_hash_` index must be detected: degraded health + known-missing
+    set + search-path observability counter (no silent full scan)."""
+    import asyncio
+
+    from security import field_encryption as fe
+
+    # Create indexes, then drop one to simulate a missing index in prod.
+    db = _FakeDB()
+    svc = fe.get_field_encryption_service()
+    asyncio.run(svc.ensure_hash_indexes(db))
+    guests = db["guests"]
+    del guests._indexes[fe.hash_index_name("email")]
+
+    result = asyncio.run(svc.verify_hash_indexes(db))
+
+    assert result["ok"] is False
+    missing_pairs = {(m["collection"], m["field"]) for m in result["missing"]}
+    assert ("guests", "email") in missing_pairs
+    assert ("guests", "email") in fe._KNOWN_MISSING_HASH_INDEXES
+
+    # health snapshot reflects the degradation
+    health = fe.get_hash_index_health()
+    assert health["verified"] is True
+    assert health["ok"] is False
+
+    # Search path stays correct AND observable: still emits the hash condition,
+    # and (since the index is known-missing) flags the collection-scan fallback.
+    conds = svc.build_search_query(
+        collection="guests", search_fields=["email"], search_value="a@b.com")
+    keys = [k for c in conds for k in c]
+    assert "_hash_email" in keys, "search must still target the hash index branch"
+
+    # Restore a clean verification so module state doesn't leak to other tests.
+    asyncio.run(svc.ensure_hash_indexes(db))
+    asyncio.run(svc.verify_hash_indexes(db))
+    assert fe.get_hash_index_health()["ok"] is True

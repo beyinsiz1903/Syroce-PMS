@@ -490,6 +490,24 @@ async def deep_health_check(request: Request):
     except Exception as e:
         result["import_bridge"] = {"status": "unknown", "error": str(e)}
 
+    # ── Encrypted-PII `_hash_` blind-index verification (fail-closed signal) ──
+    # If a searchable encrypted field's `_hash_` index is missing, encrypted-PII
+    # search silently degrades to a tenant-wide collection scan. Surface the
+    # startup verification result here as "degraded" so operators get an early
+    # signal. This does NOT gate the readiness probe (live traffic stays up).
+    try:
+        from security.field_encryption import get_hash_index_health
+        hi = get_hash_index_health()
+        if not hi.get("verified"):
+            result["encrypted_hash_indexes"] = {"status": "unknown", **hi}
+        elif hi.get("ok"):
+            result["encrypted_hash_indexes"] = {"status": "ok", **hi}
+        else:
+            result["encrypted_hash_indexes"] = {"status": "degraded", **hi}
+            overall_ok = False
+    except Exception as e:
+        result["encrypted_hash_indexes"] = {"status": "unknown", "error": str(e)}
+
     result["overall"] = "ok" if overall_ok else "degraded"
     sc = status.HTTP_200_OK if overall_ok else status.HTTP_503_SERVICE_UNAVAILABLE
     return ORJSONResponse(status_code=sc, content=result)

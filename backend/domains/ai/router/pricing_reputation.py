@@ -373,11 +373,11 @@ async def get_competitor_rates(
     target_date: str,
     current_user: User = Depends(get_current_user)
 ):
-    """Rakip otel fiyatları"""
-    from dynamic_pricing_engine import get_pricing_engine
+    """Rakip otel fiyatları (yalnızca gerçek competitor_rates kayıtları)"""
+    from domains.ai.dynamic_pricing_engine import get_pricing_engine
 
     engine = get_pricing_engine(db)
-    rates = await engine.get_competitor_rates(target_date, room_type)
+    rates = await engine.get_competitor_rates(current_user.tenant_id, target_date, room_type)
 
     return rates
 # ── GET /reputation/overview ──

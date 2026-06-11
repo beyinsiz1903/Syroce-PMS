@@ -52,10 +52,15 @@ celery_app.conf.update(
 
     # Beat schedule for periodic tasks
     beat_schedule={
-        # Night audit - runs at 2 AM daily
-        'night-audit': {
-            'task': 'celery_tasks.night_audit_task',
-            'schedule': crontab(hour=2, minute=0),
+        # Night audit dispatcher (Task #362) — runs every minute and enqueues a
+        # per-tenant hardened audit when each tenant's LOCAL configured time
+        # arrives (DST-aware). Replaces the old fixed 02:00 UTC global cron that
+        # closed every hotel's financial day at the same instant regardless of
+        # timezone. An atomic per-local-day claim makes it safe even if multiple
+        # beat processes run (autoscale) — at most one dispatch per tenant/day.
+        'night-audit-dispatch': {
+            'task': 'celery_tasks.night_audit_dispatch_task',
+            'schedule': crontab(minute='*'),
         },
 
         # Data archival - runs weekly on Sunday at 3 AM

@@ -150,6 +150,28 @@ async def ensure_performance_indexes():
               "reference": {"$type": "string"},
               "voided": False,
           }}),
+        # Task #360 — POS create-order atomic + idempotent folio posting.
+        #   - pos_orders (tenant_id, idempotency_key): a retry / double-tap /
+        #     network replay carrying the same client key must NOT create a
+        #     second order. PARTIAL on idempotency_key string so legacy orders
+        #     (no key) are exempt — otherwise a unique index over a missing
+        #     field collapses them all into one collision (fake-green).
+        #   - folio_charges (tenant_id, source_pos_order_id, line_no): DB-level
+        #     guard so a partial-failure re-post of the same POS order can't
+        #     double-post the same charge line. PARTIAL on source_pos_order_id
+        #     string so legacy / non-POS charges are exempt.
+        # These are also lazily ensured per-request (fail-closed) in
+        # pos_core._ensure_pos_atomicity_indexes; this entry covers cold start.
+        ("pos_orders",
+         [("tenant_id", 1), ("idempotency_key", 1)],
+         "ux_pos_orders_tenant_idemp",
+         {"unique": True,
+          "partialFilterExpression": {"idempotency_key": {"$type": "string"}}}),
+        ("folio_charges",
+         [("tenant_id", 1), ("source_pos_order_id", 1), ("line_no", 1)],
+         "ux_folio_charges_pos_source",
+         {"unique": True,
+          "partialFilterExpression": {"source_pos_order_id": {"$type": "string"}}}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:

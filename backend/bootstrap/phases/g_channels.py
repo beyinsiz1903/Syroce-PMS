@@ -94,13 +94,10 @@ async def phase_g_channels_and_audit(app):
     except Exception as e:
         logger.warning(f"Night audit hardening indexes error: {e}")
 
-    # Night Audit Scheduler
-    try:
-        from domains.pms.night_audit.scheduler import start_scheduler
-        start_scheduler()
-        logger.info("✅ Night Audit Scheduler started (60s check interval, hardened)")
-    except Exception as e:
-        logger.warning(f"Night Audit Scheduler init warning: {e}")
+    # Night Audit Scheduler — Task #362: retired. The in-process asyncio loop is
+    # replaced by the per-tenant Celery flow (celery_tasks.night_audit_dispatch_task
+    # beat + night_audit_for_tenant worker task). Starting it here would
+    # double-trigger audits, so it is intentionally not started anymore.
 
     # Web Push abonelik temizlik worker'ı
     try:

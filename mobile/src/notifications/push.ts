@@ -210,6 +210,17 @@ function routeForRole(payload: PushPayload, role: AppRole): RouteTarget | null {
       // Only GM receives EOD pushes; for any other role just go home.
       return home;
 
+    case 'housekeeping_task':
+    case 'maintenance_task':
+      // Task #327/#328 — a task-assigned / fault-filed push (existing Expo
+      // channel, no new notification type) takes staff to "Görevlerim" in the
+      // common shell. Guests never receive this; if they somehow do, send them
+      // home.
+      if (role !== 'guest_app') {
+        return ROUTES.homeTasks;
+      }
+      return home;
+
     case 'qr_charge_approval':
     case 'qr_charge_rejected':
       // QR Rozet — misafir telefonuna onay isteği veya personele red

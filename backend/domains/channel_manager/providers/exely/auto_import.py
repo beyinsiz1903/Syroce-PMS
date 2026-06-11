@@ -40,16 +40,75 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
     exely_room_code = first_room.get("room_type_code", "")
 
     pms_room_type = None
+    mapping_resolved = False
     if exely_room_code:
         mapping = await db.exely_room_mappings.find_one(
             {"tenant_id": tenant_id, "exely_room_code": exely_room_code},
             {"_id": 0},
         )
-        if mapping:
+        if mapping and mapping.get("pms_room_type"):
             pms_room_type = mapping.get("pms_room_type")
+            mapping_resolved = True
+
+    # HARD-FAIL korunur: eslestirilemeyen rezervasyonu "Standard" olarak
+    # sessizce iceri ALMAYIZ. Tutma (hold) + ACIL alarm olusturulur,
+    # rezervasyon action-needed kalir; teslimat (delivery) ONAYLANMAZ.
+    if (channel_res.get("pms_status") == "pending_mapping"
+            and exely_room_code and not mapping_resolved):
+        from domains.channel_manager.providers.unmatched_hold import (
+            create_unmatched_reservation_hold,
+        )
+        try:
+            hold = await create_unmatched_reservation_hold(
+                provider="exely",
+                tenant_id=tenant_id,
+                external_id=external_id,
+                check_in=channel_res.get("checkin_date", ""),
+                check_out=channel_res.get("checkout_date", ""),
+                guest_name=channel_res.get("guest_name", ""),
+                room_type_code=exely_room_code,
+                rate_plan_code=first_room.get("rate_plan_code", ""),
+                total_amount=float(channel_res.get("total", 0) or 0),
+                currency=channel_res.get("currency", "TRY"),
+                adults=first_room.get("adults", 1) or 1,
+                children=first_room.get("children", 0) or 0,
+                channel=channel_res.get("channel", "exely"),
+                property_id=tenant_id,
+            )
+            if hold.get("booking_id"):
+                await db.exely_reservations.update_one(
+                    {"tenant_id": tenant_id, "external_id": external_id},
+                    {"$set": {
+                        "pms_booking_id": hold["booking_id"],
+                        "pms_status": "pending_mapping",
+                    }},
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.exception(
+                f"[EXELY-IMPORT] unmatched hold olusturma hatasi {external_id}: {e}"
+            )
+        return {"success": False, "reason": "pending_mapping"}
 
     if not pms_room_type:
         pms_room_type = "Standard"
+
+    # Eslestirme cozuldu -> varsa onceki tutmayi rebind ile serbest birak
+    # (sentinel kilitler + tutma kaydi silinir) ki cift sayim olmasin.
+    if mapping_resolved:
+        from domains.channel_manager.providers.unmatched_hold import (
+            release_unmatched_reservation_hold,
+        )
+        try:
+            await release_unmatched_reservation_hold(
+                tenant_id=tenant_id,
+                external_id=external_id,
+                reason="mapping_resolved",
+                delete_hold=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.exception(
+                f"[EXELY-IMPORT] unmatched hold rebind hatasi {external_id}: {e}"
+            )
 
     # Find or create guest
     guest_name = channel_res.get("guest_name", "")
@@ -58,8 +117,9 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
     guest_email = channel_res.get("guest_email", "") or f"exely-{external_id}@channel.import"
     guest_phone = channel_res.get("guest_phone", "")
 
+    from security.encrypted_lookup import build_guest_pii_query
     guest = await db.guests.find_one(
-        {"tenant_id": tenant_id, "email": guest_email},
+        {"tenant_id": tenant_id, **build_guest_pii_query("email", guest_email)},
         {"_id": 0},
     )
     if not guest:
@@ -79,8 +139,8 @@ async def auto_import_reservation(tenant_id: str, channel_res: dict[str, Any]) -
             "notes": f"Exely kanal rezervasyonu ({external_id})",
             "created_at": datetime.now(UTC).isoformat(),
         }
-        from security.search_normalize import apply_collection_normalized_fields
-        await db.guests.insert_one(apply_collection_normalized_fields({**guest}, collection="guests"))
+        from security.guest_write import encrypt_guest_insert
+        await db.guests.insert_one(encrypt_guest_insert({**guest}))
         guest.pop("_id", None)
 
     # Build PMS booking (room_id intentionally omitted – user assigns rooms via drag-and-drop)
@@ -388,10 +448,28 @@ async def process_pending_cancellations(tenant_id: str) -> int:
     count = 0
     now = datetime.now(UTC).isoformat()
 
+    from domains.channel_manager.providers.unmatched_hold import (
+        release_unmatched_reservation_hold,
+    )
     for res in pending_cancels:
         pms_booking_id = res.get("pms_booking_id")
         if not pms_booking_id:
             continue
+
+        # Iptal: varsa eslesmeyen-tutmanin sentinel kilitlerini serbest birak
+        # (tutma kaydi cancelled olarak isaretlenir). Tutma degilse no-op.
+        try:
+            await release_unmatched_reservation_hold(
+                tenant_id=tenant_id,
+                external_id=res["external_id"],
+                reason="ota_cancelled",
+                delete_hold=False,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                f"[EXELY-IMPORT] unmatched hold iptal release hatasi "
+                f"{res.get('external_id')}: {e}"
+            )
 
         # Get the PMS booking before cancelling
         booking = await db.bookings.find_one(

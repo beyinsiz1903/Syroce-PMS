@@ -265,6 +265,45 @@ async def auto_import_reservation_to_pms(
         room_type = record.get("room_type_code", "")
         property_id = record.get("property_id", tenant_id)
 
+        async def _park_as_unmatched_hold(reason: str, detail: str) -> None:
+            """Eslestirilemeyen rezervasyonu review'a al + tutma + ACIL alarm.
+
+            HARD-FAIL korunur (otomatik kabul YOK). Tutma idempotenttir.
+            """
+            await _mark_review(imported_reservation_id, reason, detail)
+            from domains.channel_manager.providers.unmatched_hold import (
+                create_unmatched_reservation_hold,
+            )
+            try:
+                hold = await create_unmatched_reservation_hold(
+                    provider=provider,
+                    tenant_id=tenant_id,
+                    external_id=ext_res_id,
+                    check_in=record.get("arrival_date", ""),
+                    check_out=record.get("departure_date", ""),
+                    guest_name=record.get("guest_name", ""),
+                    room_type_code=record.get("room_type_code", ""),
+                    rate_plan_code=record.get("rate_plan_code", ""),
+                    total_amount=float(record.get("total_amount", 0) or 0),
+                    currency=record.get("currency", "TRY"),
+                    adults=record.get("adults", 1) or 1,
+                    children=record.get("children", 0) or 0,
+                    channel=record.get("source_system", "") or provider,
+                    property_id=property_id,
+                )
+                if hold.get("booking_id"):
+                    await db[COLL_IMPORTED].update_one(
+                        {"id": imported_reservation_id},
+                        {"$set": {
+                            "hold_booking_id": hold["booking_id"],
+                            "updated_at": _utc_now(),
+                        }},
+                    )
+            except Exception as e:  # noqa: BLE001
+                logger.exception(
+                    f"[IMPORT-BRIDGE] unmatched hold olusturma hatasi {ext_res_id}: {e}"
+                )
+
         if room_type:
             room_mapping = await db.room_mappings.find_one(
                 {
@@ -279,8 +318,7 @@ async def auto_import_reservation_to_pms(
             if room_mapping:
                 room_id = room_mapping.get("pms_room_type_id")
             else:
-                await _mark_review(
-                    imported_reservation_id,
+                await _park_as_unmatched_hold(
                     "unmapped_room_type",
                     f"No room mapping for provider room code: {room_type}",
                 )
@@ -303,14 +341,30 @@ async def auto_import_reservation_to_pms(
             if rate_mapping:
                 rate_plan_id = rate_mapping.get("pms_rate_plan_id")
             else:
-                await _mark_review(
-                    imported_reservation_id,
+                await _park_as_unmatched_hold(
                     "unmapped_rate_plan",
                     f"No rate plan mapping for provider rate code: {rate_code}",
                 )
                 return False, f"Review required: unmapped rate plan {rate_code}"
 
         # ── 5. Build booking document ────────────────────────────
+        # Eslestirme cozuldu -> varsa onceki tutmayi rebind ile serbest birak
+        # (sentinel kilitler + tutma kaydi silinir) ki cift sayim olmasin.
+        from domains.channel_manager.providers.unmatched_hold import (
+            release_unmatched_reservation_hold,
+        )
+        try:
+            await release_unmatched_reservation_hold(
+                tenant_id=tenant_id,
+                external_id=ext_res_id,
+                reason="mapping_resolved",
+                delete_hold=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.exception(
+                f"[IMPORT-BRIDGE] unmatched hold rebind hatasi {ext_res_id}: {e}"
+            )
+
         booking_id = str(uuid.uuid4())
         # Use PMS room type name from mapping, not provider code
         pms_room_type = room_id if room_id else room_type
@@ -355,11 +409,15 @@ async def auto_import_reservation_to_pms(
 
         if guest_name:
             # Try to find existing guest by email or phone
+            # Dual-read: the insert below encrypts PII, so a plaintext-equality
+            # lookup would never match an encrypted row → a duplicate guest record
+            # on every repeated OTA sync. Match _hash_<field> OR legacy plaintext.
+            from security.encrypted_lookup import build_guest_pii_query
             guest_query = {"tenant_id": tenant_id}
             if guest_email:
-                guest_query["email"] = guest_email
+                guest_query.update(build_guest_pii_query("email", guest_email))
             elif guest_phone:
-                guest_query["phone"] = guest_phone
+                guest_query.update(build_guest_pii_query("phone", guest_phone))
             else:
                 guest_query["first_name"] = guest_first
                 guest_query["last_name"] = guest_last

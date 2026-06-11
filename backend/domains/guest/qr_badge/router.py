@@ -95,9 +95,13 @@ async def _resolve_guest_active_booking(
     if not user.tenant_id:
         raise HTTPException(400, "Misafir hesabının tenant'ı yok")
 
-    # Misafir kayıtlarını e-posta + KENDİ tenant'ı içinde ara.
+    # Misafir kayıtlarını e-posta + KENDİ tenant'ı içinde ara (dual-read:
+    # şifreli _hash_email VEYA migre edilmemiş plaintext).
+    from security.encrypted_lookup import build_guest_pii_query
     guest_records = []
-    async for g in db.guests.find({"email": user.email, "tenant_id": user.tenant_id}):
+    async for g in db.guests.find(
+        {"tenant_id": user.tenant_id, **build_guest_pii_query("email", user.email)}
+    ):
         guest_records.append(g)
     if not guest_records:
         raise HTTPException(404, "Bu hesaba bağlı misafir kaydı bulunamadı")

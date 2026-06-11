@@ -46,20 +46,20 @@ class InMemoryCollection:
                 return False
         return True
 
-    async def find_one(self, flt, _proj=None):
+    async def find_one(self, flt, _proj=None, session=None):
         for d in self.docs:
             if self._match(d, flt):
                 return dict(d)
         return None
 
-    def find(self, flt, _proj=None):
+    def find(self, flt, _proj=None, session=None):
         return _Cursor([dict(d) for d in self.docs if self._match(d, flt)])
 
-    async def insert_one(self, doc):
+    async def insert_one(self, doc, session=None):
         self.docs.append(dict(doc))
         return SimpleNamespace(inserted_id="x")
 
-    async def update_one(self, flt, update):
+    async def update_one(self, flt, update, session=None, upsert=False):
         for d in self.docs:
             if self._match(d, flt):
                 for k, v in update.get("$set", {}).items():
@@ -69,7 +69,7 @@ class InMemoryCollection:
                 return SimpleNamespace(modified_count=1, matched_count=1)
         return SimpleNamespace(modified_count=0, matched_count=0)
 
-    async def update_many(self, flt, update):
+    async def update_many(self, flt, update, session=None):
         n = 0
         for d in self.docs:
             if self._match(d, flt):
@@ -77,6 +77,22 @@ class InMemoryCollection:
                     d[k] = v
                 n += 1
         return SimpleNamespace(modified_count=n)
+
+
+class _FakeSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_a):
+        return False
+
+    async def with_transaction(self, cb, **_kw):
+        return await cb(self)
+
+
+class _FakeClient:
+    async def start_session(self):
+        return _FakeSession()
 
 
 def _ctx(tenant_id="t1"):
@@ -91,11 +107,14 @@ def _ctx(tenant_id="t1"):
 
 def _build_db(**overrides):
     db = SimpleNamespace(
+        client=_FakeClient(),
         pos_transactions=InMemoryCollection(),
         pos_orders=InMemoryCollection(),
         kitchen_orders=InMemoryCollection(),
         folios=InMemoryCollection(),
         folio_charges=InMemoryCollection(),
+        folio_locks=InMemoryCollection(),
+        outbox_events=InMemoryCollection(),
         table_layouts=InMemoryCollection(),
         audit_logs=InMemoryCollection(),
         recipes=InMemoryCollection(),

@@ -528,16 +528,26 @@ async def b2b_search_guests(
     if not agency_guest_ids:
         return {"guests": [], "count": 0}
 
+    from security.encrypted_lookup import decrypt_guest_doc, guest_pii_regex_or_conditions
     from security.query_safety import safe_search_term
     _s = safe_search_term(q)
     if not _s:
         return {"guests": [], "count": 0}
     regex = {"$regex": _s, "$options": "i"}
+    # Dual-read: email/phone are encrypted at-rest, so plaintext-regex alone can
+    # never match an encrypted row. guest_pii_regex_or_conditions adds the exact
+    # blind-index hash branch (full-value match) + keeps the legacy plaintext
+    # regex branch for not-yet-backfilled rows.
+    or_conditions = (
+        [{"name": regex}]
+        + guest_pii_regex_or_conditions("email", q)
+        + guest_pii_regex_or_conditions("phone", q)
+    )
     docs = await db.guests.find(
         {
             "tenant_id": tenant_id,
             "id": {"$in": agency_guest_ids},
-            "$or": [{"name": regex}, {"email": regex}, {"phone": regex}],
+            "$or": or_conditions,
         },
         # Exclude PII identity fields — these may have been written by other agencies
         # or by hotel staff and must not leak across agency boundaries.
@@ -547,6 +557,9 @@ async def b2b_search_guests(
             "birth_date": 0, "gender": 0, "nationality": 0,
         },
     ).sort("name", 1).to_list(limit)
+    # Decrypt the retained PII (email/phone) so agencies receive plaintext, never
+    # AES envelopes.
+    docs = [decrypt_guest_doc(d) for d in docs]
     return {"guests": docs, "count": len(docs)}
 # ── GET /guests/{guest_id} ──
 @router.get("/guests/{guest_id}")
@@ -556,7 +569,7 @@ async def b2b_get_guest(guest_id: str, agency: dict = Depends(get_b2b_agency)):
     # v64 Bug DA: cross-agency IDOR guard — sadece kendi rezervasyonu olan misafir
     if not await _agency_owns_guest(tenant_id, agency["agency_id"], guest_id):
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
-    doc = await db.guests.find_one(
+    doc = decrypt_guest_doc(await db.guests.find_one(
         {"tenant_id": tenant_id, "id": guest_id},
         # B2B Agency Isolation: exclude PII identity fields that may have been
         # written by hotel staff or other agencies — prevents cross-agency PII leakage.
@@ -565,7 +578,7 @@ async def b2b_get_guest(guest_id: str, agency: dict = Depends(get_b2b_agency)):
             "id_number": 0, "passport_number": 0,
             "birth_date": 0, "gender": 0, "nationality": 0,
         },
-    )
+    ))
     if not doc:
         raise HTTPException(status_code=404, detail="Misafir bulunamadi")
     return {"guest": doc}

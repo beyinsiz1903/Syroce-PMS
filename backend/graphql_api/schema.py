@@ -133,7 +133,10 @@ class Booking:
         tenant_id = info.context.get("tenant_id")
         if not tenant_id:
             return None
-        guest_doc = await db.guests.find_one({"_id": self.guest_id, "tenant_id": tenant_id})
+        from security.encrypted_lookup import decrypt_guest_doc
+        guest_doc = decrypt_guest_doc(
+            await db.guests.find_one({"_id": self.guest_id, "tenant_id": tenant_id})
+        )
         if not guest_doc or not isinstance(guest_doc, dict):
             return None
         return Guest(

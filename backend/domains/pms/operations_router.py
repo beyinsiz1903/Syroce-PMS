@@ -599,6 +599,10 @@ async def update_guest_preferences(guest_id: str, body: dict = Body(...), curren
         update_fields["birth_date"] = body["birth_date"]
     update_fields["preferences_updated_at"] = datetime.utcnow().isoformat()
 
+    # Encrypt PII (id_number) + _hash_ token before persistence. No name field
+    # in update_fields -> existing doc not required.
+    from security.guest_write import encrypt_guest_update
+    update_fields = encrypt_guest_update(update_fields)
     result = await db.guests.update_one(
         {"_id": guest_id, "tenant_id": current_user.tenant_id},
         {"$set": update_fields}

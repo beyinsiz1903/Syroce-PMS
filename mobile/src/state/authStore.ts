@@ -7,87 +7,42 @@ import {
   me as apiMe,
 } from '../api/auth';
 import { ApiError, clearAllAuthStorage, getToken } from '../api/client';
+import type { AppRole } from './roleAccess';
+import {
+  canViewFinanceReports,
+  hasApprovalsAccess,
+  hasDepartmentAccess,
+  hasHrAccess,
+  hasMaintenanceAccess,
+  hasMiceAccess,
+  hasPosAccess,
+  hasProcurementAccess,
+  hasRevenueAccess,
+  hasSpaAccess,
+  isAllAccessRole,
+  normalizeRole,
+} from './roleAccess';
+
+// The pure role/entitlement helpers live in `roleAccess.ts` (no React/RN/
+// zustand imports) so the plain-Node unit test runner can exercise them. They
+// are re-exported here so existing `state/authStore` import sites keep working.
+export type { AppRole } from './roleAccess';
+export {
+  canViewFinanceReports,
+  hasApprovalsAccess,
+  hasDepartmentAccess,
+  hasHrAccess,
+  hasMaintenanceAccess,
+  hasMiceAccess,
+  hasPosAccess,
+  hasProcurementAccess,
+  hasRevenueAccess,
+  hasSpaAccess,
+  isAllAccessRole,
+  normalizeRole,
+} from './roleAccess';
 
 const USER_KEY = 'syroce.auth.user';
-
-export type AppRole = 'front_desk' | 'housekeeping' | 'gm' | 'guest_app' | 'other';
-
-function normalizeRole(raw: string | undefined): AppRole {
-  if (!raw) return 'other';
-  const r = raw.toLowerCase();
-  if (['front_desk', 'reception', 'frontdesk', 'receptionist'].includes(r)) return 'front_desk';
-  if (['housekeeping', 'housekeeper', 'hk'].includes(r)) return 'housekeeping';
-  if (['gm', 'general_manager', 'manager', 'owner', 'super_admin', 'admin'].includes(r)) return 'gm';
-  if (['guest', 'guest_app'].includes(r)) return 'guest_app';
-  return 'other';
-}
-
-// All-access roles can browse EVERY role group's screens in the mobile app
-// (not just their normalized home group). `normalizeRole` collapses these
-// into 'gm', so we detect them from the RAW backend role to preserve the
-// distinction. This is a UI-navigation affordance only — backend RBAC
-// already grants super_admin/admin full authority; nothing is weakened here.
-const ALL_ACCESS_ROLES = ['super_admin', 'admin'];
-
-export function isAllAccessRole(raw: string | undefined): boolean {
-  if (!raw) return false;
-  return ALL_ACCESS_ROLES.includes(raw.toLowerCase());
-}
-
-// Raw backend roles that hold the `view_finance_reports` permission (see
-// backend ROLE_PERMISSIONS: admin/super_admin grant everything; supervisor
-// and finance hold VIEW_FINANCIAL_REPORTS explicitly). This is a COSMETIC
-// mirror used only to decide whether to surface the manager Reports tab —
-// the backend's require_op("view_finance_reports") remains the real guard,
-// so nothing here weakens RBAC. `normalizeRole` collapses these into 'gm'/
-// 'other', so we derive the capability from the RAW role.
-const FINANCE_REPORTS_ROLES = ['super_admin', 'admin', 'supervisor', 'finance'];
-
-export function canViewFinanceReports(raw: string | undefined): boolean {
-  if (!raw) return false;
-  return FINANCE_REPORTS_ROLES.includes(raw.toLowerCase());
-}
-
-// ── Department entitlement (cosmetic hub/entry gating) ──────────────────────
-// These mirror the backend authorizers in `core/spa_mice_authz.py`
-// (`require_spa_ops` / `require_mice_ops`) using the canonical UserRole values
-// so the mobile hub only SHOWS what the user could act on. This is gating for
-// navigation/affordances only — the backend still enforces every write. We
-// derive from the RAW role because `normalizeRole` collapses several roles
-// (e.g. super_admin → gm) and would otherwise lose the distinction.
-const SPA_OPS_ROLES = ['super_admin', 'admin', 'supervisor', 'front_desk', 'staff'];
-const MICE_OPS_ROLES = ['super_admin', 'admin', 'supervisor', 'sales'];
-// Mirrors backend MODULE_ROLES["housekeeping"] in role_permission_service.py —
-// the roles that pass require_module("housekeeping") for the maintenance
-// work-order create + technician-task endpoints. Cosmetic gating only; the
-// backend still enforces every write.
-const MAINTENANCE_OPS_ROLES = ['super_admin', 'admin', 'supervisor', 'housekeeping'];
-
-export function hasSpaAccess(raw: string | undefined): boolean {
-  if (!raw) return false;
-  return SPA_OPS_ROLES.includes(raw.toLowerCase());
-}
-
-export function hasMiceAccess(raw: string | undefined): boolean {
-  if (!raw) return false;
-  return MICE_OPS_ROLES.includes(raw.toLowerCase());
-}
-
-export function hasMaintenanceAccess(raw: string | undefined): boolean {
-  if (!raw) return false;
-  return MAINTENANCE_OPS_ROLES.includes(raw.toLowerCase());
-}
-
-// Accounting (read-focused) mirrors the backend require_op("view_finance_reports")
-// guard, so we reuse `canViewFinanceReports` for that department's gate.
-export function hasDepartmentAccess(raw: string | undefined): boolean {
-  return (
-    hasSpaAccess(raw) ||
-    hasMiceAccess(raw) ||
-    hasMaintenanceAccess(raw) ||
-    canViewFinanceReports(raw)
-  );
-}
 
 export type AuthState = {
   user: AuthUser | null;
@@ -97,7 +52,12 @@ export type AuthState = {
   spaAccess: boolean;
   miceAccess: boolean;
   maintenanceAccess: boolean;
+  procurementAccess: boolean;
+  hrAccess: boolean;
+  revenueAccess: boolean;
+  posAccess: boolean;
   deptAccess: boolean;
+  approvalsAccess: boolean;
   loading: boolean;
   error: string | null;
   hydrate: () => Promise<void>;
@@ -130,7 +90,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   spaAccess: false,
   miceAccess: false,
   maintenanceAccess: false,
+  procurementAccess: false,
+  hrAccess: false,
+  revenueAccess: false,
+  posAccess: false,
   deptAccess: false,
+  approvalsAccess: false,
   loading: true,
   error: null,
 
@@ -146,7 +111,12 @@ export const useAuthStore = create<AuthState>((set) => ({
         spaAccess: false,
         miceAccess: false,
         maintenanceAccess: false,
+        procurementAccess: false,
+        hrAccess: false,
+        revenueAccess: false,
+        posAccess: false,
         deptAccess: false,
+        approvalsAccess: false,
         loading: false,
       });
       return;
@@ -169,7 +139,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       spaAccess: hasSpaAccess(user?.role),
       miceAccess: hasMiceAccess(user?.role),
       maintenanceAccess: hasMaintenanceAccess(user?.role),
+      procurementAccess: hasProcurementAccess(user?.role),
+      hrAccess: hasHrAccess(user?.role),
+      revenueAccess: hasRevenueAccess(user?.role),
+      posAccess: hasPosAccess(user?.role),
       deptAccess: hasDepartmentAccess(user?.role),
+      approvalsAccess: hasApprovalsAccess(user?.role),
       loading: false,
     });
   },
@@ -190,7 +165,12 @@ export const useAuthStore = create<AuthState>((set) => ({
         spaAccess: hasSpaAccess(res.user?.role),
         miceAccess: hasMiceAccess(res.user?.role),
         maintenanceAccess: hasMaintenanceAccess(res.user?.role),
+        procurementAccess: hasProcurementAccess(res.user?.role),
+        hrAccess: hasHrAccess(res.user?.role),
+        revenueAccess: hasRevenueAccess(res.user?.role),
+        posAccess: hasPosAccess(res.user?.role),
         deptAccess: hasDepartmentAccess(res.user?.role),
+        approvalsAccess: hasApprovalsAccess(res.user?.role),
         loading: false,
         error: null,
       });
@@ -227,7 +207,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       spaAccess: false,
       miceAccess: false,
       maintenanceAccess: false,
+      procurementAccess: false,
+      hrAccess: false,
+      revenueAccess: false,
+      posAccess: false,
       deptAccess: false,
+      approvalsAccess: false,
     });
   },
 }));

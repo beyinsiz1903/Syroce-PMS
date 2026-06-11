@@ -270,6 +270,29 @@ async def create_quick_issue_mobile(
             {'$set': {'status': 'maintenance'}}
         )
 
+    # Task #328: notify the maintenance team on their mobile devices. Quick
+    # issues carry no individual assignee, so we route to the whole maintenance
+    # department (the same fan-out pattern the HK service uses when no specific
+    # assignee resolves). Best-effort and fully non-blocking: any failure here
+    # must never affect issue creation.
+    try:
+        from services.expo_push import fire_and_forget_expo_push
+        fire_and_forget_expo_push(
+            current_user.tenant_id,
+            title="Yeni arıza bildirimi",
+            body=f"Oda {room.get('room_number')} — {issue_type}",
+            data={
+                'type': 'maintenance_task',
+                'task_id': task_id,
+                'room_id': room_id,
+                'action_url': '/(home)/tasks',
+            },
+            departments=['maintenance'],
+            priority='high' if priority in ('urgent', 'high') else 'default',
+        )
+    except Exception:
+        pass
+
     return {
         'message': 'Maintenance issue created successfully',
         'task_id': task_id,

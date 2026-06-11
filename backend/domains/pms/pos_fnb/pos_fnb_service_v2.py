@@ -9,9 +9,21 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
+from fastapi import HTTPException
+
 from common.audit_hook import SEVERITY_CRITICAL, SEVERITY_INFO, SEVERITY_WARNING, audited
 from common.context import OperationContext
 from common.result import ServiceResult
+from core.booking_atomicity import (
+    is_replica_set_unavailable,
+    standalone_fallback_allowed,
+    with_resource_locks,
+)
+from core.outbox_service import (
+    POS_CHARGE_POSTED,
+    POS_CHARGE_REVERSED,
+    enqueue_outbox_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -226,17 +238,21 @@ class PosFnbServiceV2:
             "order_items": order.get("order_items", []),
             "created_at": now.isoformat(),
         }
-        await self._db.pos_transactions.insert_one(txn_doc)
-
-        # Post to guest folio if requested
+        # Task #389 — Outbox/Compensation. Resolve the target folio (if any)
+        # BEFORE the write so the IC folio-posting event is enqueued ATOMICALLY
+        # with the transaction record (intent durable). The async, guaranteed,
+        # idempotent consumer (core.pos_folio_consumer) applies the folio charge
+        # + recalculates the balance from the ledger (single strategy, never
+        # $inc) and guards a non-open folio at apply time.
         folio_charge_id = None
+        outbox_payload = None
         if post_to_folio and booking_id:
             folio = await self._db.folios.find_one(
                 {"booking_id": booking_id, "folio_type": "guest", "status": "open", "tenant_id": ctx.tenant_id}
             )
             if folio:
                 folio_charge_id = str(uuid.uuid4())
-                await self._db.folio_charges.insert_one({
+                charge_doc = {
                     "id": folio_charge_id,
                     "tenant_id": ctx.tenant_id,
                     "booking_id": booking_id,
@@ -252,12 +268,21 @@ class PosFnbServiceV2:
                     "date": now.isoformat(),
                     "posted_by": ctx.actor_id,
                     "created_at": now.isoformat(),
-                })
-                # SECURITY: tenant_id filter required (defense-in-depth).
-                await self._db.folios.update_one(
-                    {"id": folio["id"], "tenant_id": ctx.tenant_id},
-                    {"$inc": {"balance": grand_total}},
-                )
+                    # Dedup key for the consumer's partial unique index
+                    # ux_folio_charges_pos_source (tenant, source_pos_order_id, line_no).
+                    "source_pos_order_id": order_id,
+                    "line_no": 0,
+                }
+                outbox_payload = {
+                    "tenant_id": ctx.tenant_id,
+                    "folio_id": folio["id"],
+                    "source_pos_order_id": order_id,
+                    "booking_id": booking_id,
+                    "charges": [charge_doc],
+                }
+
+        # Atomic intent: transaction record + IC outbox event in ONE Mongo txn.
+        await self._persist_txn_and_intent(ctx.tenant_id, txn_doc, order_id, outbox_payload)
 
         # Close order.
         # SECURITY: tenant_id filter required (defense-in-depth — read above
@@ -309,6 +334,83 @@ class PosFnbServiceV2:
             "folio_charge_id": folio_charge_id,
             "posted_to_folio": post_to_folio and folio_charge_id is not None,
         })
+
+    # ==================================================================
+    # Atomic intent persistence — Task #389
+    # ==================================================================
+    async def _persist_txn_and_intent(
+        self,
+        tenant_id: str,
+        txn_doc: dict,
+        order_id: str,
+        outbox_payload: dict | None,
+    ) -> None:
+        """Write the POS transaction record + IC outbox event in ONE Mongo txn.
+
+        Either both land or neither does — the order's payment record and the
+        durable intent to post the folio charge stay consistent. When there is
+        no folio target (``outbox_payload is None``) only the transaction record
+        is written.
+        """
+
+        async def _txn(session) -> None:
+            await self._db.pos_transactions.insert_one(txn_doc, session=session)
+            if outbox_payload:
+                await enqueue_outbox_event(
+                    self._db,
+                    session=session,
+                    tenant_id=tenant_id,
+                    event_type=POS_CHARGE_POSTED,
+                    entity_type="folio",
+                    entity_id=order_id,
+                    payload=outbox_payload,
+                )
+
+        try:
+            await with_resource_locks(
+                client=self._db.client,
+                db=self._db,
+                tenant_id=tenant_id,
+                locks_collection="folio_locks",
+                resources=[],
+                callback=_txn,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if not is_replica_set_unavailable(exc):
+                raise
+            if not standalone_fallback_allowed():
+                raise HTTPException(
+                    status_code=503,
+                    detail=("POS işlem yazımı atomik garanti sağlayamıyor "
+                            "(Mongo replica set gerekli)."),
+                )
+            # Dev opt-in: best-effort non-transactional fallback. The outbox
+            # idempotency_key still dedups the enqueue; only all-or-nothing is
+            # relaxed.
+            await _txn(None)
+
+    async def _publish_charge_reversal(
+        self,
+        tenant_id: str,
+        order_id: str,
+        folio_id: str | None,
+        reason: str,
+    ) -> None:
+        """Publish the IC compensation event that idempotently reverses a prior
+        POS folio posting for ``order_id`` (Task #389)."""
+        await enqueue_outbox_event(
+            self._db,
+            tenant_id=tenant_id,
+            event_type=POS_CHARGE_REVERSED,
+            entity_type="folio",
+            entity_id=order_id,
+            payload={
+                "tenant_id": tenant_id,
+                "folio_id": folio_id,
+                "source_pos_order_id": order_id,
+                "reason": reason,
+            },
+        )
 
     # ==================================================================
     # Void Order — supervisor only
@@ -380,6 +482,21 @@ class PosFnbServiceV2:
                     {"id": txn["id"], "tenant_id": ctx.tenant_id},
                     {"$set": {"status": "voided", "voided_at": now.isoformat(), "void_reason": reason}},
                 )
+            # Task #389 — Compensation. Publish the IC reversal event so the
+            # async consumer idempotently voids any POS folio charge posted for
+            # this order and recalculates the balance from the ledger
+            # (double-reversal safe). Resolve the folio for the recalc target.
+            folio_id = None
+            booking_id = order.get("booking_id")
+            if booking_id:
+                folio = await self._db.folios.find_one(
+                    {"booking_id": booking_id, "folio_type": "guest", "tenant_id": ctx.tenant_id},
+                    {"_id": 0, "id": 1},
+                )
+                folio_id = folio["id"] if folio else None
+            await self._publish_charge_reversal(
+                ctx.tenant_id, order_id, folio_id, reason or "POS order voided"
+            )
 
         # Restore any ingredient stock this order consumed at close time.
         # Best-effort and idempotent (per-record reversal flag). For the

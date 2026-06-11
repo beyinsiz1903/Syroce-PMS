@@ -707,14 +707,29 @@ def _decl_pdf_bytes(decl: dict) -> bytes:
     şekilde fırlatır — sessiz fallback yok (kullanıcı PDF butonuna
     bastıysa ya PDF gelir ya net hata görür).
     """
+    # weasyprint native libs (libgobject/cairo/pango) load at IMPORT time; a
+    # missing package (ImportError) or missing system lib (OSError "cannot load
+    # library 'libgobject-2.0-0'") is an operator-actionable deploy/env problem,
+    # so surface it as 503 — not a per-request 500 that pages Sentry. Render-time
+    # failures stay 500 (type name only, no internal leak). Mirrors the
+    # report_builder PDF-export split.
     try:
         from weasyprint import HTML  # type: ignore
-    except Exception as exc:  # pragma: no cover
+    except (ImportError, OSError) as exc:
+        logger.error("[KVB PDF] weasyprint renderer unavailable: %s", exc)
         raise HTTPException(
-            500, f"PDF üretimi için weasyprint yüklü değil: {exc}",
+            status_code=503,
+            detail="PDF renderer (weasyprint) unavailable on this deployment. "
+                   "Install weasyprint + system deps (cairo, pango) or use XML/JSON export.",
         ) from exc
     html = _decl_html(decl)
-    return HTML(string=html).write_pdf()
+    try:
+        return HTML(string=html).write_pdf()
+    except Exception as exc:
+        logger.exception("[KVB PDF] render failed: %s", exc)
+        raise HTTPException(
+            status_code=500, detail=f"PDF rendering failed: {type(exc).__name__}",
+        ) from exc
 
 
 @router.get("/declarations/{decl_id}/export")

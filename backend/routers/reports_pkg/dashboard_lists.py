@@ -102,7 +102,8 @@ async def get_official_guest_list(
                 'date_of_birth': 1,
             },
         )
-        guest_docs = await guests_cursor.to_list(5000)
+        from security.encrypted_lookup import decrypt_guest_doc
+        guest_docs = [decrypt_guest_doc(g) for g in await guests_cursor.to_list(5000)]
         guests_by_id = {g['id']: g for g in guest_docs}
 
     rows = []

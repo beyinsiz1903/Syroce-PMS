@@ -1,8 +1,9 @@
 """
-Revenue Autopilot - Tam Otomatik Fiyat Yönetimi
-Otomatik rakip takip, fiyat optimizasyonu, OTA push
+Revenue Autopilot - Tam Otomatik Fiyat Yönetimi (Kural Bazlı)
+Otomatik rakip takip, fiyat optimizasyonu, OTA push.
+Rastgele değer kullanılmaz; rakip fiyatları yalnızca gerçek competitor_rates
+koleksiyonundan, doluluk gerçek rezervasyon/oda verisinden hesaplanır.
 """
-import random
 from datetime import UTC, datetime
 
 
@@ -22,7 +23,7 @@ class RevenueAutopilot:
         }
 
         # Step 1: Scrape competitor rates (06:00)
-        competitor_data = await self.scrape_competitor_rates()
+        competitor_data = await self.scrape_competitor_rates(tenant_id)
         report['actions'].append({
             'time': '06:00',
             'action': 'Competitor rates scraped',
@@ -63,39 +64,67 @@ class RevenueAutopilot:
 
         return report
 
-    async def scrape_competitor_rates(self) -> list[dict]:
-        """Rakip fiyatlarını topla"""
-        # Simulated (gerçekte: Booking.com scraping)
-        competitors = [
-            {'hotel': 'Competitor A', 'rate': random.randint(90, 130)},
-            {'hotel': 'Competitor B', 'rate': random.randint(85, 125)},
-            {'hotel': 'Competitor C', 'rate': random.randint(95, 135)}
-        ]
+    async def scrape_competitor_rates(self, tenant_id: str) -> list[dict]:
+        """Rakip fiyatlarını yalnızca gerçek competitor_rates koleksiyonundan oku.
+
+        Kayıt yoksa boş liste döner; uydurma/rastgele rakip fiyatı üretilmez.
+        """
+        today = datetime.now(UTC).strftime('%Y-%m-%d')
+        docs = await self.db.competitor_rates.find({
+            'tenant_id': tenant_id,
+            'date': today,
+        }, {'_id': 0}).to_list(100)
+
+        competitors = []
+        for d in docs:
+            name = d.get('competitor_name') or d.get('competitor')
+            rate = d.get('rate')
+            if name is None or rate is None:
+                continue
+            competitors.append({'hotel': name, 'rate': round(float(rate), 2)})
         return competitors
 
     async def update_demand_forecast(self, tenant_id: str) -> dict:
-        """Talep tahminini güncelle"""
-        # Simplified
+        """Talep tahminini gerçek doluluk verisinden deterministik hesapla."""
+        total_rooms = await self.db.rooms.count_documents({'tenant_id': tenant_id})
+        occupied = await self.db.rooms.count_documents({
+            'tenant_id': tenant_id,
+            'status': 'occupied',
+        })
+        avg_occupancy = round((occupied / total_rooms) * 100, 1) if total_rooms > 0 else 0.0
+        trend = 'increasing' if avg_occupancy >= 70 else 'stable' if avg_occupancy >= 40 else 'decreasing'
         return {
-            'avg_occupancy': round(random.uniform(60, 85), 1),
-            'trend': 'increasing'
+            'avg_occupancy': avg_occupancy,
+            'trend': trend,
         }
 
     async def calculate_optimal_prices(self, tenant_id: str, competitor_data: list, demand_data: dict) -> list[dict]:
-        """Optimal fiyatları hesapla"""
-        # Get current prices
-        # Calculate optimal based on competition + demand
-
-        competitor_avg = sum([c['rate'] for c in competitor_data]) / len(competitor_data)
+        """Optimal fiyatları kural bazlı (deterministik) hesapla."""
+        base_price = 100
         demand_factor = 1.2 if demand_data['avg_occupancy'] > 75 else 1.0
 
-        optimal_price = competitor_avg * demand_factor
+        if competitor_data:
+            competitor_avg = sum(c['rate'] for c in competitor_data) / len(competitor_data)
+            optimal_price = competitor_avg * demand_factor
+            applied_rule = (
+                f"Rakip ort. {round(competitor_avg, 2)} x talep carpani {demand_factor} "
+                f"(doluluk %{demand_data['avg_occupancy']})"
+            )
+        else:
+            # Rakip verisi yok: yalnızca taban fiyat + talep çarpanı
+            optimal_price = base_price * demand_factor
+            applied_rule = (
+                f"Rakip verisi yok -> taban {base_price} x talep carpani {demand_factor} "
+                f"(doluluk %{demand_data['avg_occupancy']})"
+            )
 
         return [{
             'room_type': 'Standard',
-            'current_price': 100,
+            'current_price': base_price,
             'optimal_price': round(optimal_price, 2),
-            'change_pct': round(((optimal_price - 100) / 100) * 100, 1)
+            'change_pct': round(((optimal_price - base_price) / base_price) * 100, 1),
+            'pricing_method': 'rule_based_deterministic',
+            'applied_rule': applied_rule,
         }]
 
     async def push_rates_to_channels(self, tenant_id: str, optimal_prices: list[dict]) -> dict:

@@ -4,6 +4,7 @@ import { Body, Card, H2, Muted, SkeletonCard } from './ui';
 import { spacing, useTheme } from '../theme';
 import { tr } from '../i18n/tr';
 import { errorMessage, isOffline } from '../utils/errors';
+import { listViewState } from '../utils/departmentScreens';
 
 // Shared widgets for the (departments) area so sibling department screens
 // (Spa, MICE, and the upcoming Accounting / Maintenance task) render loading,
@@ -73,7 +74,10 @@ export function DepartmentListState({
   emptyText?: string;
   skeletonCount?: number;
 }): React.ReactElement | null {
-  if (loading) {
+  // Branch order (loading → error → empty → data) lives in `listViewState` so
+  // it is unit-tested once and shared identically across department screens.
+  const state = listViewState({ loading, error, isEmpty });
+  if (state === 'loading') {
     return (
       <View style={{ gap: spacing.sm }}>
         {Array.from({ length: skeletonCount }).map((_, i) => (
@@ -82,7 +86,7 @@ export function DepartmentListState({
       </View>
     );
   }
-  if (error) {
+  if (state === 'error') {
     const msg = isOffline(error)
       ? tr.app.offline
       : errorMessage(error, tr.departments.loadError);
@@ -92,7 +96,7 @@ export function DepartmentListState({
       </Card>
     );
   }
-  if (isEmpty) {
+  if (state === 'empty') {
     return (
       <Card>
         <Muted>{emptyText ?? tr.app.empty}</Muted>

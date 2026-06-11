@@ -318,8 +318,28 @@ class FrontdeskServiceV2:
                 booking_id, exc,
             )
 
-        # Folio balance check — auto_post yukarıda (L260-319) zaten tamamlandı,
-        # burada sadece güncel balance ile folio'ları yeniden okuyoruz.
+        # ── POS charge drain (Task #389) ───────────────────────────────
+        # POS folyo postlaması artık async (outbox/consumer). Folyoyu kapatmadan
+        # ÖNCE bu booking'in açık folyoları için henüz uygulanmamış POS charge
+        # olaylarını inline drain et; böylece kuyruktaki POS hesabı hâlâ AÇIK
+        # folyoya düşer ve outstanding-balance kontrolünde sayılır (kapanıştan
+        # sonra late-charge/AR'a düşmez). Best-effort + idempotent: eşzamanlı
+        # worker uygulaması DuplicateKey-safe no-op'tur. Hata checkout'u bloklamaz.
+        try:
+            from core.pos_folio_consumer import drain_pending_pos_charges
+            open_folios_predrain = await self._db.folios.find(
+                {"booking_id": booking_id, "tenant_id": ctx.tenant_id, "status": "open"},
+                {"_id": 0, "id": 1},
+            ).to_list(100)
+            for f in open_folios_predrain:
+                await drain_pending_pos_charges(ctx.tenant_id, f["id"])
+        except Exception as exc:
+            logger.warning(
+                "POS charge drain failed for booking=%s: %s", booking_id, exc
+            )
+
+        # Folio balance check — auto_post yukarıda (L260-319) + POS drain zaten
+        # tamamlandı, burada güncel balance ile folio'ları yeniden okuyoruz.
         folios = await self._db.folios.find(
             {"booking_id": booking_id, "tenant_id": ctx.tenant_id, "status": "open"},
             {"_id": 0},
@@ -787,8 +807,8 @@ class FrontdeskServiceV2:
             "source": "walk_in",
             "created_at": now.isoformat(),
         }
-        from security.search_normalize import apply_collection_normalized_fields
-        apply_collection_normalized_fields(guest_doc, collection="guests")
+        from security.guest_write import encrypt_guest_insert
+        guest_doc = encrypt_guest_insert(guest_doc)
         await self._db.guests.insert_one(guest_doc)
 
         # Create booking

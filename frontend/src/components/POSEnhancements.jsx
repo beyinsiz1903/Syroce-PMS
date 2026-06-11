@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -17,6 +17,10 @@ const POSEnhancements = () => {
   const [folioId, setFolioId] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [loading, setLoading] = useState(false);
+  // Her gerçek sipariş denemesi için bir kez üretilir; aynı denemenin
+  // retry'larında (timeout/ağ hatası) AYNI anahtar yeniden kullanılır, böylece
+  // backend çift sipariş / çift folio charge oluşturmaz (Task #373/#360).
+  const pendingIdempotencyKeyRef = useRef(null);
 
   useEffect(() => {
     fetchMenuItems();
@@ -115,6 +119,12 @@ const POSEnhancements = () => {
         quantity: item.quantity
       }));
 
+      // İlk denemede anahtar üret; retry'lar aynı anahtarı yeniden kullanır.
+      if (!pendingIdempotencyKeyRef.current) {
+        pendingIdempotencyKeyRef.current =
+          globalThis.crypto?.randomUUID?.() || `pos-order-${Date.now()}-${Math.random()}`;
+      }
+
       const response = await fetch(
         `/api/pos/create-order`,
         {
@@ -126,20 +136,30 @@ const POSEnhancements = () => {
           body: JSON.stringify({
             booking_id: bookingId || null,
             folio_id: folioId || null,
-            order_items: orderItems
+            order_items: orderItems,
+            idempotency_key: pendingIdempotencyKeyRef.current
           })
         }
       );
 
       if (response.ok) {
-        alertDialog({ message: 'Order created successfully!' });
+        const data = await response.json().catch(() => ({}));
+        // Başarılı → bu deneme tamamlandı; sonraki sipariş yeni anahtar alsın.
+        pendingIdempotencyKeyRef.current = null;
+        if (data.idempotent_replay) {
+          alertDialog({ message: 'Bu sipariş zaten oluşturulmuştu — çift hesap kesilmedi.' });
+        } else {
+          alertDialog({ message: 'Order created successfully!' });
+        }
         setCart([]);
         setBookingId('');
         setFolioId('');
       } else {
+        // Hata → anahtarı KORU; kullanıcı tekrar denerse aynı anahtarla gider.
         alertDialog({ message: 'Sipariş oluşturulamadı' });
       }
     } catch (error) {
+      // Ağ/timeout hatası → anahtar korunur; retry aynı anahtarı kullanır.
       console.error('Error creating order:', error);
       alertDialog({ message: 'Error creating order' });
     } finally {

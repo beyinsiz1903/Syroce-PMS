@@ -13,7 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import {
   Network, CheckCircle, XCircle, RefreshCw, Link2, Unlink,
   Building2, ArrowDownUp, CalendarCheck, Clock, Activity,
-  AlertTriangle, Loader2, Save, Trash2, Plus, Check, Wand2
+  AlertTriangle, Loader2, Save, Trash2, Plus, Check, Wand2,
+  KeyRound, Copy
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -37,6 +38,9 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
   const [autoMapSuggestions, setAutoMapSuggestions] = useState(null);
   const [autoMapLoading, setAutoMapLoading] = useState(false);
   const [mappingStatus, setMappingStatus] = useState(null);
+  const [webhookSecretStatus, setWebhookSecretStatus] = useState(null);
+  const [webhookSecretValue, setWebhookSecretValue] = useState('');
+  const [rotatingSecret, setRotatingSecret] = useState(false);
 
   const [connectForm, setConnectForm] = useState({
     token: '', hr_id: '', property_name: '',
@@ -89,6 +93,40 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   useEffect(() => { if (connection?.connected) fetchMappingStatus(); }, [connection?.connected]);
+
+  const fetchWebhookSecretStatus = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`/channel-manager/hotelrunner/webhook-secret`, { headers });
+      setWebhookSecretStatus(data);
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (connection?.connected) fetchWebhookSecretStatus(); }, [connection?.connected]);
+
+  const handleRotateWebhookSecret = async () => {
+    setRotatingSecret(true);
+    try {
+      const { data } = await axios.post(`/channel-manager/hotelrunner/webhook-secret/rotate`, {}, { headers });
+      setWebhookSecretValue(data.webhook_secret || '');
+      toast.success(data.message || 'Webhook secret olusturuldu');
+      fetchWebhookSecretStatus();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Webhook secret olusturulamadi');
+    } finally {
+      setRotatingSecret(false);
+    }
+  };
+
+  const handleCopyWebhookSecret = async () => {
+    try {
+      await navigator.clipboard.writeText(webhookSecretValue);
+      toast.success('Webhook secret panoya kopyalandi');
+    } catch {
+      toast.error('Kopyalama basarisiz, lutfen manuel secip kopyalayin');
+    }
+  };
 
   const handleAutoMapSuggest = async () => {
     setAutoMapLoading(true);
@@ -382,6 +420,78 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
                         </div>
                       </div>
                     )}
+                  </CardContent>
+                </Card>
+
+                <Card data-testid="hr-webhook-secret-card">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <KeyRound className="w-5 h-5 text-slate-700" /> Webhook Imza Secret'i
+                    </CardTitle>
+                    <CardDescription>
+                      Bu otele ozel webhook imza anahtaridir. HotelRunner panelindeki
+                      "Donus adresi" imza ayarina yapistirin. Gelen rezervasyon, degisiklik
+                      ve iptal bildirimleri bu anahtarla dogrulanir; otel kimligi anahtardan
+                      kriptografik olarak turetilir.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm">
+                      {webhookSecretStatus?.configured ? (
+                        <>
+                          <CheckCircle className="w-4 h-4 text-emerald-600" />
+                          <span className="text-slate-700">
+                            Webhook secret tanimli
+                            {webhookSecretStatus?.rotated_at
+                              ? ` (son guncelleme: ${new Date(webhookSecretStatus.rotated_at).toLocaleString('tr-TR')})`
+                              : ''}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle className="w-4 h-4 text-amber-600" />
+                          <span className="text-slate-700">
+                            Henuz webhook secret tanimlanmadi. Olusturup HotelRunner paneline girin.
+                          </span>
+                        </>
+                      )}
+                    </div>
+
+                    {webhookSecretValue && (
+                      <div className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
+                        <p className="text-sm text-amber-800">
+                          Bu deger yalnizca bir kez gosterilir. Simdi kopyalayip HotelRunner
+                          paneline girin; sayfadan ayrildiginizda tekrar goremezsiniz.
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            data-testid="hr-webhook-secret-value"
+                            readOnly
+                            value={webhookSecretValue}
+                            className="font-mono text-xs"
+                          />
+                          <Button
+                            data-testid="hr-webhook-secret-copy-btn"
+                            variant="outline"
+                            onClick={handleCopyWebhookSecret}
+                          >
+                            <Copy className="w-4 h-4 mr-2" /> Kopyala
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    <Button
+                      data-testid="hr-webhook-secret-rotate-btn"
+                      variant="outline"
+                      onClick={handleRotateWebhookSecret}
+                      disabled={rotatingSecret}
+                    >
+                      {rotatingSecret
+                        ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        : <RefreshCw className="w-4 h-4 mr-2" />}
+                      {webhookSecretStatus?.configured ? 'Secret\'i Yenile' : 'Secret Olustur'}
+                    </Button>
                   </CardContent>
                 </Card>
               </div>

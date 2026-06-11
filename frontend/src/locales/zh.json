@@ -544,8 +544,8 @@
     "socialRadarDesc": "实时社交媒体监控",
     "revenueAutopilot": "收入自动驾驶",
     "revenueAutopilotDesc": "全自动收入优化",
-    "dynamicPricing": "动态定价",
-    "dynamicPricingDesc": "AI驱动的智能定价",
+    "dynamicPricing": "基于规则的定价",
+    "dynamicPricingDesc": "基于规则的智能定价",
     "sentimentAnalysis": "情感分析",
     "noShowPrediction": "未到预测",
     "demandForecast": "需求预测",
@@ -829,7 +829,7 @@
     "managementReports": "管理与报告",
     "refreshInsights": "刷新洞察",
     "generatingInsights": "正在生成AI洞察...",
-    "dynamicPricingModule": "AI动态定价",
+    "dynamicPricingModule": "基于规则的定价",
     "dynamicPricingModuleDesc": "竞争分析和自动定价",
     "reputationCenterModule": "声誉中心",
     "reputationCenterModuleDesc": "在线声誉管理和评论追踪",
@@ -1046,7 +1046,7 @@
     "recommendedPrice": "推荐价格",
     "occupancyForecast": "入住率预测",
     "rateParity": "价格一致性",
-    "dynamicPricing": "动态定价"
+    "dynamicPricing": "基于规则的定价"
   },
   "ai": {
     "dailyBriefing": "每日简报",

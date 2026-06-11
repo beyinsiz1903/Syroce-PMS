@@ -198,49 +198,15 @@ async def _resolve_user_identity(auth: Any) -> dict[str, Any] | None:
     }
 
 
-def _internal_chat_rooms(tenant_id: str, user_id: str, department: str | None) -> list[str]:
-    """Compute the tenant-scoped internal chat rooms a user belongs to."""
-    rooms = [
-        f"internal_chat:{tenant_id}:user:{user_id}",
-        f"internal_chat:{tenant_id}:broadcast",
-    ]
-    if department:
-        rooms.append(f"internal_chat:{tenant_id}:dept:{department}")
-    return rooms
-
-
-def _pms_tenant_room(tenant_id: str) -> str:
-    """Tenant-scoped PMS room used by booking_update / room_status_update.
-
-    Task #43: replaces the previous global ``'pms'`` room which would have
-    leaked another tenant's reservation/room-status changes to every logged-in
-    client. Same routing pattern as ``internal_chat:{tenant_id}:broadcast``.
-    """
-    return f"pms:{tenant_id}"
-
-
-def _is_internal_chat_room(room: str) -> bool:
-    """Whether a room name belongs to the protected internal chat namespace."""
-    return isinstance(room, str) and room.startswith('internal_chat:')
-
-
-def _is_protected_room(room: str) -> bool:
-    """Whether a room name belongs to a tenant-scoped protected namespace.
-
-    Tenant-scoped rooms (``internal_chat:{tenant_id}:*``,
-    ``pms:{tenant_id}``) MUST never be joined manually by the client — the
-    server enrols the socket at ``connect`` time based on the authenticated
-    JWT identity. The legacy global ``'pms'`` room is also blocked so an
-    unauthenticated or cross-tenant client cannot eavesdrop on the
-    backwards-compat fallback.
-    """
-    if not isinstance(room, str):
-        return False
-    return (
-        room.startswith('internal_chat:')
-        or room.startswith('pms:')
-        or room == 'pms'
-    )
+# Task #367: tenant-scoped WebSocket room names are produced in exactly one
+# place — core.ws_rooms — so the connect-time enrolment and every emit point
+# stay byte-for-byte consistent. The thin wrappers below preserve the existing
+# call sites in this module while delegating the actual name construction.
+from core.ws_rooms import internal_chat_rooms as _internal_chat_rooms
+from core.ws_rooms import internal_chat_user_room as _internal_chat_user_room
+from core.ws_rooms import internal_message_targets as _internal_message_targets
+from core.ws_rooms import is_protected_room as _is_protected_room
+from core.ws_rooms import tenant_broadcast_room as _pms_tenant_room
 
 
 @sio.event
@@ -685,7 +651,7 @@ async def broadcast_internal_message_read(
     """
     if not tenant_id or not sender_id:
         return
-    target_room = f"internal_chat:{tenant_id}:user:{sender_id}"
+    target_room = _internal_chat_user_room(tenant_id, sender_id)
     try:
         from infra.ws_redis_adapter import ws_redis_adapter
         await ws_redis_adapter.publish(target_room, 'internal_message_read', {
@@ -732,7 +698,7 @@ async def internal_typing(sid, data):
         to_user_id = data.get('to_user_id')
         if not tenant_id or not from_user_id or not to_user_id:
             return
-        target_room = f"internal_chat:{tenant_id}:user:{to_user_id}"
+        target_room = _internal_chat_user_room(tenant_id, to_user_id)
         from infra.ws_redis_adapter import ws_redis_adapter
         await ws_redis_adapter.publish(target_room, 'internal_user_typing', {
             'from_user_id': from_user_id,
@@ -774,25 +740,8 @@ async def broadcast_cockpit_snapshot(snapshot: dict[str, Any], tenant_id: str = 
         logger.error(f"Failed to broadcast cockpit snapshot: {e}")
 
 # ── Internal Chat Live Events ──
-
-def _internal_message_targets(
-    tenant_id: str,
-    *,
-    to_user_id: str | None,
-    to_department: str | None,
-) -> list[str]:
-    """Resolve the tenant-scoped room set for an internal chat event.
-
-    Routing rules mirror the inbox query in messaging/router.py:
-      - to_user_id provided → DM, deliver only to that user's room
-      - to_department provided → deliver to that department's room
-      - neither → broadcast to all users in the tenant
-    """
-    if to_user_id:
-        return [f"internal_chat:{tenant_id}:user:{to_user_id}"]
-    if to_department:
-        return [f"internal_chat:{tenant_id}:dept:{to_department}"]
-    return [f"internal_chat:{tenant_id}:broadcast"]
+# Room-name construction lives in core.ws_rooms; _internal_message_targets is
+# imported as a thin alias at the top of this module (Task #367).
 
 
 async def broadcast_internal_message(

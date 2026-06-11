@@ -544,8 +544,8 @@
     "socialRadarDesc": "Monitorização de redes sociais em tempo real",
     "revenueAutopilot": "Revenue Autopilot",
     "revenueAutopilotDesc": "Otimização de receita totalmente automatizada",
-    "dynamicPricing": "Preços Dinâmicos",
-    "dynamicPricingDesc": "Preços inteligentes com IA",
+    "dynamicPricing": "Preços Baseados em Regras",
+    "dynamicPricingDesc": "Preços inteligentes baseados em regras",
     "sentimentAnalysis": "Análise de Sentimento",
     "noShowPrediction": "Previsão de No-Show",
     "demandForecast": "Previsão de Procura",
@@ -829,7 +829,7 @@
     "managementReports": "Gestão e Relatórios",
     "refreshInsights": "Atualizar Insights",
     "generatingInsights": "A gerar insights com IA...",
-    "dynamicPricingModule": "Preços Dinâmicos com IA",
+    "dynamicPricingModule": "Preços Baseados em Regras",
     "dynamicPricingModuleDesc": "Análise de concorrentes e preços automáticos",
     "reputationCenterModule": "Centro de Reputação",
     "reputationCenterModuleDesc": "Gestão de reputação online e rastreamento de avaliações",
@@ -1046,7 +1046,7 @@
     "recommendedPrice": "Preço Recomendado",
     "occupancyForecast": "Previsão de Ocupação",
     "rateParity": "Paridade Tarifária",
-    "dynamicPricing": "Preços Dinâmicos"
+    "dynamicPricing": "Preços Baseados em Regras"
   },
   "ai": {
     "dailyBriefing": "Briefing Diário",

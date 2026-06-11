@@ -11,6 +11,7 @@ Mounted under the main `/api/channel-manager/hotelrunner` prefix by the
 parent router.
 """
 import logging
+import secrets
 import uuid
 from datetime import UTC, datetime
 
@@ -165,6 +166,84 @@ async def disconnect(current_user: User = Depends(get_current_user),
         raise HTTPException(status_code=404, detail="Aktif baglanti bulunamadi")
 
     return {"message": "HotelRunner baglantisi kesildi"}
+
+
+# ── Webhook Signing Secret (Task #397) ───────────────────────────────
+
+@router.get("/webhook-secret")
+async def get_webhook_secret_status(current_user: User = Depends(get_current_user)):
+    """Return whether a per-property webhook signing secret is configured.
+
+    The secret VALUE is never returned here — only its configured state and
+    last rotation timestamp.
+    """
+    conn = await db.hotelrunner_connections.find_one(
+        {"tenant_id": current_user.tenant_id},
+        {"_id": 0, "webhook_secret_set": 1, "webhook_secret_rotated_at": 1},
+    )
+    if not conn:
+        return {"configured": False, "rotated_at": None}
+    return {
+        "configured": bool(conn.get("webhook_secret_set")),
+        "rotated_at": conn.get("webhook_secret_rotated_at"),
+    }
+
+
+@router.post("/webhook-secret/rotate")
+async def rotate_webhook_secret(
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("manage_channel_connectors")),
+):
+    """Generate (or rotate) the otel-specific webhook signing secret.
+
+    The new secret is generated server-side, stored encrypted in the
+    SecretsManager (never written to the connection document), and returned in
+    plaintext EXACTLY ONCE — the operator must copy it now and paste it into
+    the HotelRunner panel. It cannot be read again afterwards.
+    """
+    conn = await db.hotelrunner_connections.find_one(
+        {"tenant_id": current_user.tenant_id, "is_active": True},
+        {"_id": 0, "hr_id": 1},
+    )
+    if not conn or not conn.get("hr_id"):
+        raise HTTPException(
+            status_code=404,
+            detail="HotelRunner baglantisi bulunamadi. Lutfen once baglanti kurun.",
+        )
+
+    new_secret = secrets.token_hex(32)
+    sm = get_secrets_manager()
+    await sm.store_webhook_secret(
+        tenant_id=current_user.tenant_id,
+        provider="hotelrunner",
+        property_id=str(conn["hr_id"]),
+        secret=new_secret,
+        actor=current_user.name,
+    )
+
+    now = datetime.now(UTC).isoformat()
+    await db.hotelrunner_connections.update_one(
+        {"tenant_id": current_user.tenant_id},
+        {"$set": {
+            "webhook_secret_set": True,
+            "webhook_secret_rotated_at": now,
+            "webhook_secret_rotated_by": current_user.name,
+        }},
+    )
+
+    logger.info(
+        "[HR-WEBHOOK-SECRET] rotated tenant=%s hr_id=%s by=%s",
+        current_user.tenant_id, conn["hr_id"], current_user.name,
+    )
+
+    return {
+        "message": (
+            "Webhook imza secret'i olusturuldu. Bu degeri simdi kopyalayip "
+            "HotelRunner paneline girin; tekrar gosterilmeyecektir."
+        ),
+        "webhook_secret": new_secret,
+        "rotated_at": now,
+    }
 
 
 # ── Channel Operations ───────────────────────────────────────────────

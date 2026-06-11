@@ -516,6 +516,9 @@ async def b2b_online_checkin(
         if data.nationality:
             guest_update["nationality"] = data.nationality
         if guest_update and booking.get("guest_id"):
+            # Encrypt PII (passport_number) + _hash_ token. No name field here.
+            from security.guest_write import encrypt_guest_update
+            guest_update = encrypt_guest_update(guest_update)
             await db.guests.update_one(
                 {"tenant_id": tenant_id, "id": booking["guest_id"]},
                 {"$set": guest_update},

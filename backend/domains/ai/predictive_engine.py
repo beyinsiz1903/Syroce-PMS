@@ -1,8 +1,9 @@
 """
-Predictive Analytics Engine - AI Oracle
-Geleceği tahmin et: No-show, demand, complaints, inventory
+Predictive Analytics Engine (Kural Bazlı)
+Geleceği tahmin et: No-show, demand, complaints, inventory.
+Rastgele değer kullanılmaz; tahminler gerçek rezervasyon/oda verisinden
+deterministik kurallarla üretilir.
 """
-import random
 from datetime import date, timedelta
 
 
@@ -79,37 +80,63 @@ class PredictiveEngine:
         return factors
 
     async def predict_demand(self, tenant_id: str, days_ahead: int = 30) -> list[dict]:
-        """Talep tahmini (30 gün)"""
+        """Talep tahmini (kural bazlı, deterministik).
+
+        Doluluk = max(taban[hafta sonu] + sezon, gerçek on-the-books doluluk).
+        Rastgelelik yoktur; aynı veri her zaman aynı sonucu verir.
+        """
+        import asyncio as _asyncio
+
         today = date.today()
+        target_dates = [today + timedelta(days=i) for i in range(days_ahead)]
+
+        total_rooms = await self.db.rooms.count_documents({'tenant_id': tenant_id})
+
+        # Gerçek on-the-books doluluk: her tarih için o tarihte konaklayan rezervasyonlar.
+        async def _booked_on(d):
+            ds = d.isoformat()
+            return await self.db.bookings.count_documents({
+                'tenant_id': tenant_id,
+                'check_in': {'$lte': ds},
+                'check_out': {'$gt': ds},
+                'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
+            })
+
+        booked_counts = await _asyncio.gather(*[_booked_on(d) for d in target_dates])
+
         predictions = []
-
-        for i in range(days_ahead):
-            target_date = today + timedelta(days=i)
-
-            # Simplified demand model (gerçekte LSTM kullanılır)
-            # Get historical occupancy for same day of week
+        for i, target_date in enumerate(target_dates):
             day_of_week = target_date.weekday()
 
-            # Weekend vs weekday
+            # Taban (hafta sonu) + sezon
             base_occupancy = 75 if day_of_week >= 4 else 60
+            seasonal = 10 if target_date.month in [6, 7, 8, 12] else 0
+            baseline = min(95, base_occupancy + seasonal)
 
-            # Random variation
-            occupancy_forecast = base_occupancy + random.randint(-10, 15)
+            # Gerçek on-the-books doluluk
+            otb = (booked_counts[i] / total_rooms * 100) if total_rooms > 0 else 0
+
+            # Tahmin = taban ile gerçek on-the-books'un yükseği (deterministik)
+            occupancy_forecast = max(baseline, otb)
             occupancy_forecast = max(20, min(95, occupancy_forecast))  # Clamp 20-95
 
             # Demand level
             demand_level = 'very_high' if occupancy_forecast > 85 else 'high' if occupancy_forecast > 70 else 'medium' if occupancy_forecast > 50 else 'low'
 
-            # Price recommendation
+            # Price recommendation (kural bazlı)
             base_price = 100
             if demand_level == 'very_high':
                 recommended_price = base_price * 1.3
+                applied_rule = 'Cok yuksek talep -> +%30'
             elif demand_level == 'high':
                 recommended_price = base_price * 1.15
+                applied_rule = 'Yuksek talep -> +%15'
             elif demand_level == 'medium':
                 recommended_price = base_price
+                applied_rule = 'Orta talep -> degisiklik yok'
             else:
                 recommended_price = base_price * 0.85
+                applied_rule = 'Dusuk talep -> -%15'
 
             predictions.append({
                 'date': target_date.isoformat(),
@@ -117,7 +144,8 @@ class PredictiveEngine:
                 'occupancy_forecast': round(occupancy_forecast, 1),
                 'demand_level': demand_level,
                 'recommended_price': round(recommended_price, 2),
-                'confidence': 82.0  # Model confidence
+                'pricing_method': 'rule_based_deterministic',
+                'applied_rule': applied_rule,
             })
 
         return predictions

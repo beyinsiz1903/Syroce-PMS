@@ -11,6 +11,7 @@ from core.security import get_current_user
 from models.enums import UserRole
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
+from security.encrypted_lookup import decrypt_guest_doc
 
 logger = logging.getLogger(__name__)
 
@@ -189,10 +190,10 @@ async def _notify_guest_resolved(complaint: dict, resolution_notes: str, actor: 
         return
     try:
         from core.email import send_email
-        guest = await db.guests.find_one(
+        guest = decrypt_guest_doc(await db.guests.find_one(
             {"id": guest_id, "tenant_id": actor.tenant_id},
             {"_id": 0, "name": 1, "email": 1},
-        )
+        ))
     except Exception as exc:
         logger.warning("[complaints] guest lookup failed: %s", exc)
         return
@@ -437,7 +438,7 @@ async def get_complaint_detail(
         if room:
             result["room_detail"] = {"room_number": room.get("room_number"), "room_type": room.get("room_type"), "floor": room.get("floor")}
     if complaint.get("guest_id"):
-        guest = await db.guests.find_one({"id": complaint["guest_id"], "tenant_id": tid}, {"_id": 0})
+        guest = decrypt_guest_doc(await db.guests.find_one({"id": complaint["guest_id"], "tenant_id": tid}, {"_id": 0}))
         if guest:
             result["guest_detail"] = {"name": guest.get("name"), "email": guest.get("email"), "phone": guest.get("phone"), "vip_status": guest.get("vip_status")}
     if complaint.get("booking_id"):
@@ -714,10 +715,10 @@ async def get_guests_for_complaints(
     # "starts typing a name" prefix.
     if q and (cond := prefix_condition("name", q)):
         query.update(cond)
-    guests = await db.guests.find(
+    guests = [decrypt_guest_doc(g) for g in await db.guests.find(
         query,
         {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1, "vip_status": 1}
-    ).sort("name", 1).to_list(100)
+    ).sort("name", 1).to_list(100)]
     return {"guests": guests}
 
 

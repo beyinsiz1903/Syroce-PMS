@@ -376,10 +376,11 @@ async def get_folios_filtered(
         guest_ids = list({b.get('guest_id') for b in bookings_by_id.values() if b.get('guest_id')})
         guests_by_id = {}
         if guest_ids:
+            from security.encrypted_lookup import decrypt_guest_doc
             async for g in db.guests.find(
                 {'tenant_id': current_user.tenant_id, 'id': {'$in': guest_ids}}, {'_id': 0}
             ):
-                guests_by_id[g.get('id')] = g
+                guests_by_id[g.get('id')] = decrypt_guest_doc(g)
 
         # Enrich with booking and guest data (in-memory)
         enriched_folios = []

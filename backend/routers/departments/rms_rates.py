@@ -12,7 +12,6 @@ Extracted from server.py for modularity.
 import logging
 
 logger = logging.getLogger(__name__)
-import random
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -168,12 +167,11 @@ async def get_rate_recommendations(
     for days in range(days_ahead):
         target_date = target_dates[days]
 
-        # Forecast occupancy
+        # Forecast occupancy (deterministik: taban + hafta sonu + sezon)
         base_occ = 65
         weekend_boost = 15 if target_date.weekday() in [4, 5] else 0
         seasonal = 10 if target_date.month in [6, 7, 8, 12] else 0
-        variation = random.randint(-5, 8)
-        forecasted_occ = min(98, base_occ + weekend_boost + seasonal + variation)
+        forecasted_occ = min(98, base_occ + weekend_boost + seasonal)
 
         # Historical bookings (precomputed in parallel above).
         historical = historical_counts[days]
