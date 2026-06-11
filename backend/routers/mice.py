@@ -959,6 +959,31 @@ async def _check_resource_inventory_conflict(
     return None
 
 
+def _event_lock_resources(
+    space_ids: list[str], inv_ids: list[str],
+) -> list[tuple[str, str]]:
+    """Build the deduplicated (kind, resource_id) lock tuple list for an
+    event: function spaces under kind="space" and stocked AV/decor
+    inventory items under kind="resource". Holding the inventory lock
+    inside the transaction serializes concurrent events contending for
+    the same limited equipment, giving AV inventory the same idempotent
+    over-subscription protection as OTA room-night locks.
+    """
+    seen: set[tuple[str, str]] = set()
+    out: list[tuple[str, str]] = []
+    for sid in space_ids:
+        key = ("space", sid)
+        if sid and key not in seen:
+            seen.add(key)
+            out.append(key)
+    for iid in inv_ids:
+        key = ("resource", iid)
+        if iid and key not in seen:
+            seen.add(key)
+            out.append(key)
+    return out
+
+
 async def _check_space_conflict(tenant_id: str, bookings: list[dict],
                                 exclude_event_id: str | None = None,
                                 session=None) -> str | None:
@@ -1103,6 +1128,7 @@ async def create_event(body: EventIn,
 
     holds_active = body.status in {"tentative", "definite", "confirmed"}
     space_ids = [b["space_id"] for b in bookings if b.get("space_id")]
+    inv_ids = [r["inventory_id"] for r in resources if r.get("inventory_id")]
 
     async def _do_insert(session) -> dict:
         if holds_active:
@@ -1125,7 +1151,7 @@ async def create_event(body: EventIn,
             client=db.client, db=db,
             tenant_id=tenant_id,
             locks_collection="mice_locks",
-            resources=[("space", sid) for sid in space_ids] if holds_active else [],
+            resources=_event_lock_resources(space_ids, inv_ids) if holds_active else [],
             callback=_do_insert,
         )
     except HTTPException:
@@ -1144,6 +1170,10 @@ async def create_event(body: EventIn,
             conflict = await _check_space_conflict(tenant_id, bookings)
             if conflict:
                 raise HTTPException(409, conflict)
+            inv_err = await _check_resource_inventory_conflict(
+                tenant_id, resources, bookings)
+            if inv_err:
+                raise HTTPException(409, inv_err)
         await db.mice_events.insert_one(event_doc)
 
     event_doc.pop("_id", None)
@@ -1175,6 +1205,7 @@ async def update_event(event_id: str, body: EventIn,
     _perm=Depends(require_op("manage_sales")),  # v98 DW
 ) -> dict:
     require_mice_ops(current_user)
+    await _ensure_indexes()
     if body.status not in EVENT_STATUSES:
         raise HTTPException(400, "Geçersiz durum")
     db = get_system_db()
@@ -1184,17 +1215,8 @@ async def update_event(event_id: str, body: EventIn,
         b["starts_at"] = b["starts_at"].isoformat() if isinstance(b["starts_at"], datetime) else b["starts_at"]
         b["ends_at"] = b["ends_at"].isoformat() if isinstance(b["ends_at"], datetime) else b["ends_at"]
     await _validate_setup_capacity(tenant_id, bookings)
-    if body.status in {"tentative", "definite", "confirmed"}:
-        conflict = await _check_space_conflict(tenant_id, bookings, exclude_event_id=event_id)
-        if conflict:
-            raise HTTPException(409, conflict)
     resources = await _expand_resource_prices(
         tenant_id, [r.model_dump() for r in body.resources], body.expected_pax)
-    if body.status in {"tentative", "definite", "confirmed"}:
-        inv_err = await _check_resource_inventory_conflict(
-            tenant_id, resources, bookings, exclude_event_id=event_id)
-        if inv_err:
-            raise HTTPException(409, inv_err)
     spaces_by_id = {s["id"]: s async for s in db.mice_spaces.find(
         {"tenant_id": tenant_id})}
     update = {
@@ -1206,14 +1228,77 @@ async def update_event(event_id: str, body: EventIn,
         "updated_at": datetime.now(UTC).isoformat(),
     }
     update["totals"] = _compute_totals(update, spaces_by_id)
-    before = await db.mice_events.find_one(
-        {"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
-    res = await db.mice_events.update_one(
-        {"id": event_id, "tenant_id": tenant_id}, {"$set": update})
-    if not res.matched_count:
-        raise HTTPException(404, "Etkinlik bulunamadı")
-    after = await db.mice_events.find_one(
-        {"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
+
+    holds_active = body.status in {"tentative", "definite", "confirmed"}
+    space_ids = [b["space_id"] for b in bookings if b.get("space_id")]
+    inv_ids = [r["inventory_id"] for r in resources if r.get("inventory_id")]
+    state: dict[str, dict | None] = {"before": None, "after": None}
+
+    async def _do_update(session) -> dict:
+        if holds_active:
+            conflict = await _check_space_conflict(
+                tenant_id, bookings, exclude_event_id=event_id, session=session)
+            if conflict:
+                raise HTTPException(409, conflict)
+            # AV/decor inventory aggregation INSIDE the tx so the lock we
+            # hold serializes concurrent contenders for the same equipment.
+            inv_err = await _check_resource_inventory_conflict(
+                tenant_id, resources, bookings,
+                exclude_event_id=event_id, session=session)
+            if inv_err:
+                raise HTTPException(409, inv_err)
+        before = await db.mice_events.find_one(
+            {"id": event_id, "tenant_id": tenant_id}, {"_id": 0}, session=session)
+        res = await db.mice_events.update_one(
+            {"id": event_id, "tenant_id": tenant_id}, {"$set": update},
+            session=session)
+        if not res.matched_count:
+            raise HTTPException(404, "Etkinlik bulunamadı")
+        after = await db.mice_events.find_one(
+            {"id": event_id, "tenant_id": tenant_id}, {"_id": 0}, session=session)
+        state["before"], state["after"] = before, after
+        return after
+
+    try:
+        await with_resource_locks(
+            client=db.client, db=db,
+            tenant_id=tenant_id,
+            locks_collection="mice_locks",
+            resources=_event_lock_resources(space_ids, inv_ids) if holds_active else [],
+            callback=_do_update,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        if not is_replica_set_unavailable(exc):
+            raise
+        if not standalone_fallback_allowed():
+            raise HTTPException(
+                status_code=503,
+                detail=("Etkinlik servisi şu anda atomik garanti "
+                        "sağlayamıyor (Mongo replica set gerekli)."),
+            )
+        # Dev opt-in: best-effort non-tx fallback (no serialization guarantee).
+        if holds_active:
+            conflict = await _check_space_conflict(
+                tenant_id, bookings, exclude_event_id=event_id)
+            if conflict:
+                raise HTTPException(409, conflict)
+            inv_err = await _check_resource_inventory_conflict(
+                tenant_id, resources, bookings, exclude_event_id=event_id)
+            if inv_err:
+                raise HTTPException(409, inv_err)
+        before = await db.mice_events.find_one(
+            {"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
+        res = await db.mice_events.update_one(
+            {"id": event_id, "tenant_id": tenant_id}, {"$set": update})
+        if not res.matched_count:
+            raise HTTPException(404, "Etkinlik bulunamadı")
+        after = await db.mice_events.find_one(
+            {"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
+        state["before"], state["after"] = before, after
+
+    before, after = state["before"], state["after"]
     await log_audit_event(
         tenant_id=tenant_id, user_id=current_user.username,
         action="update", entity_type="mice_event", entity_id=event_id,
@@ -1234,6 +1319,7 @@ async def change_status(event_id: str, body: StatusUpdate,
     _perm=Depends(require_op("manage_sales")),  # v98 DW
 ) -> dict:
     require_mice_ops(current_user)
+    await _ensure_indexes()
     if body.status == "completed":
         require_finance(current_user)  # folio-impacting transition
     if body.status not in EVENT_STATUSES:
@@ -1248,11 +1334,19 @@ async def change_status(event_id: str, body: StatusUpdate,
     if body.status not in _MICE_TRANSITIONS.get(cur_status, set()):
         raise HTTPException(
             409, f"Geçersiz geçiş: {cur_status} → {body.status}")
-    if body.status in {"definite", "confirmed"} and cur_status not in {"definite", "confirmed"}:
-        conflict = await _check_space_conflict(
-            tenant_id, event.get("space_bookings", []), exclude_event_id=event_id)
-        if conflict:
-            raise HTTPException(409, conflict)
+    # Re-validate space + AV inventory conflicts whenever the target is an
+    # active holding status (tentative/definite/confirmed) — mirrors
+    # create_event's holds_active — so a non-active event promoted to a
+    # holding status cannot over-book a space or over-subscribe limited
+    # AV/decor equipment under a race. The conflict checks exclude this very
+    # event (exclude_event_id), so re-validating a tentative→definite or
+    # definite→confirmed step is self-safe (no false positive on its own hold)
+    # while still serializing concurrent contenders via the resource lock.
+    needs_lock = body.status in {"tentative", "definite", "confirmed"}
+    bookings = event.get("space_bookings", [])
+    resources = event.get("resources", [])
+    space_ids = [b["space_id"] for b in bookings if b.get("space_id")]
+    inv_ids = [r["inventory_id"] for r in resources if r.get("inventory_id")]
     # Lost-business / cancellation requires a reason (≥10 chars) for KPI
     # tracking — mirrors Opera S&C's "lost business" reason code.
     if body.status == "cancelled":
@@ -1270,9 +1364,57 @@ async def change_status(event_id: str, body: StatusUpdate,
     if body.status == "completed":
         update["completed_at"] = datetime.now(UTC).isoformat()
         await _post_event_to_folio(tenant_id, event)
-    # IMPORTANT: tenant_id in write filter (cross-tenant safety).
-    await db.mice_events.update_one(
-        {"id": event_id, "tenant_id": tenant_id}, {"$set": update})
+
+    async def _do_status(session) -> None:
+        conflict = await _check_space_conflict(
+            tenant_id, bookings, exclude_event_id=event_id, session=session)
+        if conflict:
+            raise HTTPException(409, conflict)
+        inv_err = await _check_resource_inventory_conflict(
+            tenant_id, resources, bookings,
+            exclude_event_id=event_id, session=session)
+        if inv_err:
+            raise HTTPException(409, inv_err)
+        # IMPORTANT: tenant_id in write filter (cross-tenant safety).
+        await db.mice_events.update_one(
+            {"id": event_id, "tenant_id": tenant_id}, {"$set": update},
+            session=session)
+
+    if needs_lock:
+        try:
+            await with_resource_locks(
+                client=db.client, db=db,
+                tenant_id=tenant_id,
+                locks_collection="mice_locks",
+                resources=_event_lock_resources(space_ids, inv_ids),
+                callback=_do_status,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            if not is_replica_set_unavailable(exc):
+                raise
+            if not standalone_fallback_allowed():
+                raise HTTPException(
+                    status_code=503,
+                    detail=("Etkinlik servisi şu anda atomik garanti "
+                            "sağlayamıyor (Mongo replica set gerekli)."),
+                )
+            # Dev opt-in: best-effort non-tx fallback.
+            conflict = await _check_space_conflict(
+                tenant_id, bookings, exclude_event_id=event_id)
+            if conflict:
+                raise HTTPException(409, conflict)
+            inv_err = await _check_resource_inventory_conflict(
+                tenant_id, resources, bookings, exclude_event_id=event_id)
+            if inv_err:
+                raise HTTPException(409, inv_err)
+            await db.mice_events.update_one(
+                {"id": event_id, "tenant_id": tenant_id}, {"$set": update})
+    else:
+        # IMPORTANT: tenant_id in write filter (cross-tenant safety).
+        await db.mice_events.update_one(
+            {"id": event_id, "tenant_id": tenant_id}, {"$set": update})
     after = await db.mice_events.find_one(
         {"id": event_id, "tenant_id": tenant_id}, {"_id": 0})
     before_clean = {k: v for k, v in event.items() if k != "_id"}
