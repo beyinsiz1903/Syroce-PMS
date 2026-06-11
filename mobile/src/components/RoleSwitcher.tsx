@@ -1,15 +1,24 @@
 import React from 'react';
 import { View } from 'react-native';
 import { useRouter, useSegments } from 'expo-router';
-import { Button, Card, H2, Muted } from './ui';
+import { Ionicons } from '@expo/vector-icons';
+import { Card, H2, ListRow, Muted } from './ui';
 import { spacing } from '../theme';
 import { tr } from '../i18n/tr';
 import { useAuthStore } from '../state/authStore';
-import { ALL_ROLE_GROUPS } from '../navigation/routes';
+import { ALL_ROLE_GROUPS, type SwitchableRole } from '../navigation/routes';
+
+const ROLE_ICONS: Record<SwitchableRole, keyof typeof Ionicons.glyphMap> = {
+  gm: 'briefcase-outline',
+  front_desk: 'desktop-outline',
+  housekeeping: 'brush-outline',
+  guest_app: 'person-outline',
+};
 
 // All-access role switcher. Renders nothing for single-role users; for
 // super_admin/admin it offers one-tap navigation into every role group's
-// screens. AuthGate permits these users to sit in any group, so switching
+// screens, presented as an Apple "Settings"-style list (active group shows a
+// checkmark). AuthGate permits these users to sit in any group, so switching
 // is a plain `router.replace` to the target group root.
 export function RoleSwitcher() {
   const router = useRouter();
@@ -21,22 +30,21 @@ export function RoleSwitcher() {
   const current = segments[0];
 
   return (
-    <Card>
+    <View style={{ gap: spacing.sm }}>
       <H2>{tr.roleSwitch.title}</H2>
-      <Muted style={{ marginTop: spacing.xs, marginBottom: spacing.sm }}>
-        {tr.roleSwitch.subtitle}
-      </Muted>
-      <View style={{ gap: spacing.sm }}>
-        {ALL_ROLE_GROUPS.map((g) => (
-          <Button
+      <Muted>{tr.roleSwitch.subtitle}</Muted>
+      <Card padded={false} style={{ overflow: 'hidden' }}>
+        {ALL_ROLE_GROUPS.map((g, i) => (
+          <ListRow
             key={g.group}
-            title={tr.roleSwitch.groups[g.key]}
-            variant={current === g.group ? 'primary' : 'secondary'}
+            icon={ROLE_ICONS[g.key]}
+            label={tr.roleSwitch.groups[g.key]}
             onPress={() => router.replace(g.route)}
-            fullWidth
+            active={current === g.group}
+            last={i === ALL_ROLE_GROUPS.length - 1}
           />
         ))}
-      </View>
-    </Card>
+      </Card>
+    </View>
   );
 }

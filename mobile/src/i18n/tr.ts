@@ -59,6 +59,7 @@ export const tr = {
     openTasks: 'Açık görev',
     urgentTasks: 'Acil görev',
     unreadFeed: 'Okunmamış bildirim',
+    feedShort: 'Bildirimler',
     pendingApprovals: 'Bekleyen onay',
     upcomingTasks: 'Yaklaşan görevler',
     focusApprovals: 'Öncelik: bekleyen onaylar',

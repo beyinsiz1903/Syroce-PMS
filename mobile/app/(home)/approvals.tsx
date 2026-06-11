@@ -1,14 +1,17 @@
 import React, { useCallback, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge, Body, Button, Card, EmptyState, Field, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import { Badge, Body, Card, EmptyState, Field, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
-import { spacing, useTheme } from '../../src/theme';
+import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { haptic } from '../../src/hooks/useHaptic';
 import { formatCurrency } from '../../src/utils/format';
 import { ApprovalAction, ApprovalItem, actOnApproval, getApprovals } from '../../src/api/hub';
+
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
 function priorityTone(priority: string): 'danger' | 'warning' | 'default' {
   if (priority === 'urgent') return 'danger';
@@ -20,6 +23,78 @@ function priorityLabel(priority: string): string {
   if (priority === 'urgent') return tr.hub.priorityUrgent;
   if (priority === 'high') return tr.hub.priorityHigh;
   return tr.hub.priorityNormal;
+}
+
+// Basparmak-bolgesi aksiyonu: boslukSUZ %50/%50 segmentli cubugun tek yarisi.
+// Buyuk (52px) dokunma hedefi + ikon + etiket. `loading` icin spinner.
+function ActionHalf({
+  label,
+  icon,
+  onPress,
+  bg,
+  fg,
+  loading,
+  disabled,
+  testID,
+}: {
+  label: string;
+  icon: IoniconName;
+  onPress: () => void;
+  bg: string;
+  fg: string;
+  loading?: boolean;
+  disabled?: boolean;
+  testID?: string;
+}) {
+  return (
+    <Pressable
+      testID={testID}
+      onPress={onPress}
+      disabled={disabled || loading}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => ({
+        flex: 1,
+        minHeight: 52,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.xs,
+        backgroundColor: bg,
+        opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
+      })}
+    >
+      {loading ? (
+        <ActivityIndicator color={fg} />
+      ) : (
+        <>
+          <Ionicons name={icon} size={18} color={fg} />
+          <Text style={{ color: fg, fontSize: 16, fontWeight: '700' }}>{label}</Text>
+        </>
+      )}
+    </Pressable>
+  );
+}
+
+// Iki yariyi araya 1px ayracla, dis kenarlari yuvarlatilmis tek bir segment
+// kontrolu olarak bir araya getirir (yarilar arasinda hic bosluk yok).
+function SegBar({ left, right }: { left: React.ReactNode; right: React.ReactNode }) {
+  const c = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        borderRadius: radius.md,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: c.border,
+      }}
+    >
+      {left}
+      <View style={{ width: 1, backgroundColor: c.border }} />
+      {right}
+    </View>
+  );
 }
 
 function ApprovalRow({ item }: { item: ApprovalItem }) {
@@ -134,66 +209,86 @@ function ApprovalRow({ item }: { item: ApprovalItem }) {
           {reasonError ? (
             <Muted style={{ color: c.danger }}>{tr.hub.rejectReasonRequired}</Muted>
           ) : null}
-          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-            <Button
-              title={tr.app.cancel}
-              variant="secondary"
-              onPress={() => {
-                setRejecting(false);
-                setReason('');
-                setReasonError(false);
-              }}
-              disabled={mutation.isPending}
-              style={{ flex: 1 }}
-            />
-            <Button
-              title={tr.hub.reject}
-              variant="danger"
-              icon="close-circle"
-              onPress={onRejectConfirm}
-              loading={mutation.isPending}
-              style={{ flex: 1 }}
-            />
-          </View>
+          <SegBar
+            left={
+              <ActionHalf
+                label={tr.app.cancel}
+                icon="arrow-undo"
+                onPress={() => {
+                  setRejecting(false);
+                  setReason('');
+                  setReasonError(false);
+                }}
+                bg={c.surfaceAlt}
+                fg={c.text}
+                disabled={mutation.isPending}
+              />
+            }
+            right={
+              <ActionHalf
+                testID="approval-reject-confirm"
+                label={tr.hub.reject}
+                icon="close-circle"
+                onPress={onRejectConfirm}
+                bg={c.danger}
+                fg="#ffffff"
+                loading={mutation.isPending}
+              />
+            }
+          />
         </View>
       ) : confirming ? (
         <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
           <Muted>{tr.hub.approveConfirmTitle}</Muted>
-          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-            <Button
-              title={tr.app.cancel}
-              variant="secondary"
-              onPress={() => setConfirming(false)}
-              disabled={mutation.isPending}
-              style={{ flex: 1 }}
-            />
-            <Button
-              title={tr.hub.approve}
-              variant="success"
-              icon="checkmark-circle"
-              onPress={onApproveConfirm}
-              loading={mutation.isPending}
-              style={{ flex: 1 }}
-            />
-          </View>
+          <SegBar
+            left={
+              <ActionHalf
+                label={tr.app.cancel}
+                icon="arrow-undo"
+                onPress={() => setConfirming(false)}
+                bg={c.surfaceAlt}
+                fg={c.text}
+                disabled={mutation.isPending}
+              />
+            }
+            right={
+              <ActionHalf
+                testID="approval-approve-confirm"
+                label={tr.hub.approve}
+                icon="checkmark-circle"
+                onPress={onApproveConfirm}
+                bg={c.success}
+                fg="#ffffff"
+                loading={mutation.isPending}
+              />
+            }
+          />
         </View>
       ) : (
-        <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
-          <Button
-            title={tr.hub.reject}
-            variant="outline"
-            icon="close-circle"
-            onPress={onRejectPress}
-            disabled={mutation.isPending}
-            style={{ flex: 1 }}
-          />
-          <Button
-            title={tr.hub.approve}
-            variant="success"
-            icon="checkmark-circle"
-            onPress={onApprovePress}
-            disabled={mutation.isPending}
-            style={{ flex: 1 }}
+        <View style={{ marginTop: spacing.sm }}>
+          <SegBar
+            left={
+              <ActionHalf
+                testID="approval-reject"
+                label={tr.hub.reject}
+                icon="close-circle"
+                onPress={onRejectPress}
+                bg={c.danger + '14'}
+                fg={c.danger}
+                disabled={mutation.isPending}
+              />
+            }
+            right={
+              <ActionHalf
+                testID="approval-approve"
+                label={tr.hub.approve}
+                icon="checkmark-circle"
+                onPress={onApprovePress}
+                bg={c.success}
+                fg="#ffffff"
+                disabled={mutation.isPending}
+              />
+            }
           />
         </View>
       )}

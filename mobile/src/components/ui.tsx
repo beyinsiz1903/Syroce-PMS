@@ -304,4 +304,110 @@ export const EmptyState: React.FC<{
   );
 };
 
+// Apple "Ayarlar" tarzi liste satiri: solda yumusak tintli daire icinde ikon,
+// ortada baslik (+ istege bagli alt baslik), sagda istege bagli deger ile
+// chevron (veya `active` ise onay isareti). Bir `Card padded={false}` icine
+// dizilir; satirlar arasi ince, ikon hizasindan baslayan ic-girintili ayrac.
+export const ListRow: React.FC<{
+  icon: IoniconName;
+  iconColor?: string;
+  label: string;
+  sublabel?: string;
+  value?: string;
+  onPress?: () => void;
+  active?: boolean;
+  showChevron?: boolean;
+  last?: boolean;
+  right?: React.ReactNode;
+  testID?: string;
+  accessibilityLabel?: string;
+}> = ({
+  icon,
+  iconColor,
+  label,
+  sublabel,
+  value,
+  onPress,
+  active,
+  showChevron = true,
+  last,
+  right,
+  testID,
+  accessibilityLabel,
+}) => {
+  const c = useTheme();
+  const tint = iconColor ?? c.primary;
+  const inner = (
+    <>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.md,
+          paddingHorizontal: spacing.lg,
+          paddingVertical: 14,
+          minHeight: 56,
+          backgroundColor: active ? c.primarySoft : 'transparent',
+        }}
+      >
+        <View
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: radius.pill,
+            backgroundColor: tint + '1f',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Ionicons name={icon} size={20} color={tint} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: c.text, fontSize: 15, fontWeight: '600' }} numberOfLines={1}>
+            {label}
+          </Text>
+          {sublabel ? (
+            <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 1 }} numberOfLines={1}>
+              {sublabel}
+            </Text>
+          ) : null}
+        </View>
+        {value ? (
+          <Text style={{ color: c.textMuted, fontSize: 14 }} numberOfLines={1}>
+            {value}
+          </Text>
+        ) : null}
+        {right ?? null}
+        {active ? (
+          <Ionicons name="checkmark" size={20} color={c.primary} />
+        ) : showChevron && onPress ? (
+          <Ionicons name="chevron-forward" size={18} color={c.textMuted} />
+        ) : null}
+      </View>
+      {!last ? (
+        <View
+          style={{
+            height: StyleSheet.hairlineWidth,
+            backgroundColor: c.border,
+            marginLeft: spacing.lg + 36 + spacing.md,
+          }}
+        />
+      ) : null}
+    </>
+  );
+
+  if (!onPress) return <View testID={testID}>{inner}</View>;
+  return (
+    <Pressable
+      testID={testID}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+    >
+      {inner}
+    </Pressable>
+  );
+};
+
 export const styles = StyleSheet.create({});

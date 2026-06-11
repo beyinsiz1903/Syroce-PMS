@@ -17,8 +17,9 @@ export const KpiCard: React.FC<{
   delta?: string;
   trend?: KpiTrend;
   tone?: KpiTone;
+  icon?: keyof typeof Ionicons.glyphMap;
   testID?: string;
-}> = ({ label, value, delta, trend, tone = 'default', testID }) => {
+}> = ({ label, value, delta, trend, tone = 'default', icon, testID }) => {
   const c = useTheme();
   const valueColor = {
     default: c.text,
@@ -32,33 +33,69 @@ export const KpiCard: React.FC<{
   const trendIcon: keyof typeof Ionicons.glyphMap =
     trend === 'up' ? 'trending-up' : trend === 'down' ? 'trending-down' : 'remove';
 
+  // Hero (kokpit) modu yalnizca `icon` verildiginde devreye girer: buyuk kalin
+  // sayi USTTE, kucuk soluk label ALTTA, sag-altta dusuk-opaklikli watermark
+  // ikon. `icon` verilmediginde tum davranis birebir korunur (GM dashboard).
+  const hero = !!icon;
+
   return (
-    <Card style={{ flex: 1 }} testID={testID}>
-      <Text style={{ color: c.textMuted, fontSize: 12, fontWeight: '600' }} numberOfLines={1}>
-        {label}
-      </Text>
-      <Text
-        style={{ color: valueColor, fontSize: 22, fontWeight: '700', marginTop: spacing.xs }}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-      >
-        {value}
-      </Text>
-      {delta ? (
+    <Card
+      style={{ flex: 1, ...(hero ? { overflow: 'hidden', minHeight: 116 } : null) }}
+      testID={testID}
+    >
+      {icon ? (
         <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 4,
-            marginTop: spacing.xs,
-          }}
+          pointerEvents="none"
+          style={{ position: 'absolute', right: -8, bottom: -12, opacity: 0.1 }}
         >
-          <Ionicons name={trendIcon} size={12} color={trendColor} />
-          <Text style={{ color: c.textMuted, fontSize: 11 }} numberOfLines={1}>
-            {delta}
-          </Text>
+          <Ionicons name={icon} size={92} color={valueColor} />
         </View>
       ) : null}
+      {hero ? (
+        <>
+          <Text
+            style={{ color: valueColor, fontSize: 40, fontWeight: '800', letterSpacing: -1 }}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {value}
+          </Text>
+          <Text
+            style={{ color: c.textMuted, fontSize: 13, fontWeight: '600', marginTop: spacing.xs }}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        </>
+      ) : (
+        <>
+          <Text style={{ color: c.textMuted, fontSize: 12, fontWeight: '600' }} numberOfLines={1}>
+            {label}
+          </Text>
+          <Text
+            style={{ color: valueColor, fontSize: 22, fontWeight: '700', marginTop: spacing.xs }}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {value}
+          </Text>
+          {delta ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                marginTop: spacing.xs,
+              }}
+            >
+              <Ionicons name={trendIcon} size={12} color={trendColor} />
+              <Text style={{ color: c.textMuted, fontSize: 11 }} numberOfLines={1}>
+                {delta}
+              </Text>
+            </View>
+          ) : null}
+        </>
+      )}
     </Card>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { Body, Card, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import { Body, Card, EmptyState, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
 import { KpiCard, KpiRow } from '../../src/components/KpiCard';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { spacing, useTheme } from '../../src/theme';
@@ -72,12 +72,14 @@ export default function TodayScreen() {
             <KpiRow>
               <KpiCard
                 testID="hub-open-tasks"
+                icon="list"
                 label={tr.hub.openTasks}
                 value={String(data?.open_tasks ?? 0)}
                 tone={(data?.open_tasks ?? 0) > 0 ? 'info' : 'default'}
               />
               <KpiCard
                 testID="hub-urgent-tasks"
+                icon="alert-circle"
                 label={tr.hub.urgentTasks}
                 value={String(data?.urgent_tasks ?? 0)}
                 tone={(data?.urgent_tasks ?? 0) > 0 ? 'danger' : 'default'}
@@ -86,12 +88,14 @@ export default function TodayScreen() {
             <KpiRow>
               <KpiCard
                 testID="hub-unread-feed"
-                label={tr.hub.unreadFeed}
+                icon="notifications"
+                label={tr.hub.feedShort}
                 value={String(data?.unread_feed ?? 0)}
                 tone={(data?.unread_feed ?? 0) > 0 ? 'warning' : 'default'}
               />
               <KpiCard
                 testID="hub-pending-approvals"
+                icon="checkmark-circle"
                 label={tr.hub.pendingApprovals}
                 value={String(data?.pending_approvals ?? 0)}
                 tone={(data?.pending_approvals ?? 0) > 0 ? 'warning' : 'default'}
@@ -101,7 +105,11 @@ export default function TodayScreen() {
             <H2 style={{ marginTop: spacing.sm }}>{tr.hub.upcomingTasks}</H2>
             {preview.length === 0 ? (
               <Card>
-                <Muted>{tr.hub.tasksEmpty}</Muted>
+                <EmptyState
+                  icon="checkmark-done-circle-outline"
+                  title={tr.hub.tasksEmpty}
+                  message={tr.hub.focusAllClear}
+                />
               </Card>
             ) : (
               preview.map((task) => (
