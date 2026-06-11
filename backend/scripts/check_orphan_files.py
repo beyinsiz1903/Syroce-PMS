@@ -32,6 +32,7 @@ ALLOWED_ROOT_FILES = frozenset({
     "health_check.py",
     "materialized_views.py",
     "ml_data_generators.py",
+    "ml_service.py",
     "ml_trainers.py",
     "optimization_endpoints.py",
     "redis_cache.py",
