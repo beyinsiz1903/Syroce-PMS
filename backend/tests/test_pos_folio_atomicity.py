@@ -295,6 +295,39 @@ async def test_missing_folio_is_404(_patch):
     assert exc.value.status_code == 404
 
 
+@pytest.mark.parametrize("status", ["closed", "transferred", "voided"])
+async def test_closed_folio_rejects_pos_charge(_patch, status):
+    """Task #374 — POS create-order must refuse posting to a non-open folio
+    (closed / checked-out / transferred / voided), in parity with the other
+    folio-charge endpoints."""
+    from fastapi import HTTPException
+
+    _patch.folios.docs.append({
+        "id": "FC", "tenant_id": "tenant-A", "status": status,
+        "booking_id": "B2", "guest_id": "G2", "balance": 0.0,
+    })
+
+    with pytest.raises(HTTPException) as exc:
+        await pos_core.create_pos_order(
+            data=_req([("m1", 1)], folio_id="FC", idem="K"), credentials=None
+        )
+    assert exc.value.status_code == 400
+    # Guard fires BEFORE any order / charge is written.
+    assert _patch.pos_orders.insert_calls == 0
+    assert len(_patch.folio_charges.docs) == 0
+
+
+async def test_open_folio_normal_flow_unaffected(_patch):
+    """The closed-folio guard must not break the normal open-folio path."""
+    r = await pos_core.create_pos_order(
+        data=_req([("m1", 1)], idem="OK1"), credentials=None
+    )
+    assert r["success"] is True
+    assert r["idempotent_replay"] is False
+    assert _patch.pos_orders.insert_calls == 1
+    assert len(_patch.folio_charges.docs) == 1
+
+
 async def test_no_folio_order_is_idempotent(_patch):
     r1 = await pos_core.create_pos_order(data=_req([("m1", 1)], folio_id=None, idem="NF1"), credentials=None)
     r2 = await pos_core.create_pos_order(data=_req([("m1", 1)], folio_id=None, idem="NF1"), credentials=None)

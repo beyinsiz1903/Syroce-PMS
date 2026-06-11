@@ -28,7 +28,7 @@ from core.security import (
     security,
 )
 from domains.pms.pos_extensions._idem import ensure_compound_unique, ensure_idem_index
-from models.enums import ChargeCategory
+from models.enums import ChargeCategory, FolioStatus
 from models.schemas import CreatePOSTransactionRequest, FolioCharge, User
 from modules.pms_core.role_permission_service import require_module as require_module_v92  # v92 DW
 from modules.pms_core.role_permission_service import require_module as require_module_v99  # v99 DW
@@ -1277,6 +1277,17 @@ async def create_pos_order(
         folio = await db.folios.find_one({'id': folio_id, 'tenant_id': tenant_id})
         if not folio:
             raise HTTPException(status_code=404, detail="Folio not found")
+        # Closed-folio guard (parity with the other folio-charge endpoints,
+        # e.g. folio_service.post_charge / finance refund-void): a charge must
+        # never be posted to a folio that is no longer open (closed /
+        # checked-out / transferred / voided). Posting to a non-open folio
+        # creates financial inconsistency.
+        folio_status = folio.get('status') or FolioStatus.OPEN.value
+        if folio_status != FolioStatus.OPEN.value:
+            raise HTTPException(
+                status_code=400,
+                detail="Kapalı/çıkışı yapılmış folyoya POS hesabı kesilemez",
+            )
         folio_booking_id = folio.get('booking_id') or booking_id or ""
         if guest_id is None and folio.get('guest_id'):
             guest_id = folio.get('guest_id')
