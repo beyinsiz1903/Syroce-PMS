@@ -59,7 +59,7 @@ async def _bounded(coro, *, fallback, label, timeout: float = DASHBOARD_TIMEOUT_
     from fastapi import HTTPException
     try:
         return await asyncio.wait_for(coro, timeout=timeout)
-    except (TimeoutError, asyncio.TimeoutError):
+    except TimeoutError:
         logger.warning(
             "ops dashboard endpoint '%s' exceeded %.1fs budget; returning degraded payload",
             label, timeout,
