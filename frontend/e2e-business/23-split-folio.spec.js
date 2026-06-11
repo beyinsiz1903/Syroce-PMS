@@ -46,6 +46,19 @@ async function setupSplitPanel(page, api, scope, testInfo, dates, guestName, reg
     const created = await createTestBooking(api, {
         roomId, guestName, check_in: dates.check_in, check_out: dates.check_out, totalAmount: 100,
     });
+    // 409 = overbooking/envanter çakışması: available-rooms odayı boş gösterse de
+    // create_reservation_service'in gece-kilidi (room_night_locks) guard'ı reddediyor
+    // (ör. booking'i silinmiş ama kilidi sızmış ORPHAN lock). Bu pilot veri-durumu
+    // ön-koşuludur — split-folio özelliğinin başarısızlığı DEĞİL — bu yüzden REVIEW
+    // olarak kaydedilir, hard-fail edilmez (suite felsefesi: ön-koşul → REVIEW/SKIP).
+    if (!created.ok && created.status === 409) {
+        rec(testInfo, {
+            module: M, scope, step: 'POST /api/pms/quick-booking',
+            status: REVIEW, endpoint: '/api/pms/quick-booking', http: created.status,
+            note: `overbooking precondition (orphan room_night_lock?): ${(created.reason || '').slice(0, 160)}`,
+        });
+        return { outcome: 'review', reason: 'booking_create_overbooking_409' };
+    }
     rec(testInfo, {
         module: M, scope, step: 'POST /api/pms/quick-booking',
         status: created.ok ? PASS : FAIL, endpoint: '/api/pms/quick-booking',

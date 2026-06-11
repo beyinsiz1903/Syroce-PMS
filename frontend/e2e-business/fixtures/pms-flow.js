@@ -71,13 +71,17 @@ export async function fetchCalendarBookings(api, { start_date, end_date }) {
  * yazılır → registry'e track et. Cleanup 20-recap'te /api/pms-core/cancel ile.
  */
 export async function createTestBooking(api, { roomId, guestName, check_in, check_out, totalAmount = 100 }) {
+    // /api/pms/quick-booking, create_reservation_service üzerinden Idempotency-Key
+    // başlığını ZORUNLU kılar (required=True); başlık yoksa 400 "Missing
+    // Idempotency-Key header" döner. Üretim UI'ı (RoomsTab) her çağrıda benzersiz
+    // bir anahtar gönderir; bu yardımcı da aynısını yapar (retry-güvenli, replay yok).
     const r = await safePost(api, '/api/pms/quick-booking', {
         guest_name: guestName,
         room_id: roomId,
         check_in,
         check_out,
         total_amount: totalAmount,
-    });
+    }, { headers: { 'Idempotency-Key': `e2e-${crypto.randomUUID()}` } });
     if (!r.ok || !r.json) return { ok: false, status: r.status, reason: r.body?.slice(0, 200) || `HTTP ${r.status}` };
     // create_reservation_service.create return shape: booking_dict (id, ...).
     // /quick-booking ayrıca guest_name + room_number ekliyor.
