@@ -269,6 +269,7 @@ async def release_unmatched_reservation_hold(
         return {"released": False, "booking_id": None, "nights_released": 0}
 
     booking_id = hold["id"]
+    release_ok = True
     try:
         released = await release_booking_nights(tenant_id, booking_id, reason=reason)
     except Exception as exc:
@@ -277,10 +278,21 @@ async def release_unmatched_reservation_hold(
             external_id, booking_id, exc,
         )
         released = 0
+        release_ok = False
 
     now = _now()
-    if delete_hold:
+    deleted = False
+    if delete_hold and not release_ok:
+        # Task #437: kilit serbest bırakılamadıysa hold booking'i SİLME — kilit
+        # sahipsiz (orphan) kalmasın, boş oda yanlışlıkla 'dolu' görünmesin.
+        # Sahibi kalan hold daha sonra script/tekrar deneme ile temizlenebilir.
+        await db.bookings.update_one(
+            {"id": booking_id, "tenant_id": tenant_id},
+            {"$set": {"action_needed": True, "updated_at": now}},
+        )
+    elif delete_hold:
         await db.bookings.delete_one({"id": booking_id, "tenant_id": tenant_id})
+        deleted = True
     else:
         await db.bookings.update_one(
             {"id": booking_id, "tenant_id": tenant_id},
@@ -299,10 +311,10 @@ async def release_unmatched_reservation_hold(
         external_id, booking_id, released, delete_hold, reason,
     )
     return {
-        "released": True,
+        "released": release_ok,
         "booking_id": booking_id,
         "nights_released": released,
-        "deleted": delete_hold,
+        "deleted": deleted,
     }
 
 

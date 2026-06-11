@@ -779,7 +779,11 @@ async def create_multi_room_booking(
     created_bookings: list[Booking] = []
 
     async def _rollback_group(reason: str):
-        """Saga compensation: delete all bookings+folios in this group and release locks.
+        """Saga compensation: release locks FIRST, then delete bookings+folios.
+
+        Task #437 fix: gece kilitleri HER ZAMAN booking silinmeden ÖNCE bırakılır.
+        release patlarsa booking SİLİNMEZ — kilit sahipsiz (orphan) kalmasın, böylece
+        boş oda yanlışlıkla 'dolu' görünmez ve sonraki rezervasyon 409 ile reddedilmez.
         Bug Y fix: rollback failures artık sessiz yutulmuyor, logger ile rapor ediliyor."""
         from core.atomic_booking import release_booking_nights
         compensation_errors = []
@@ -788,11 +792,18 @@ async def create_multi_room_booking(
             if not bid:
                 continue
             try:
-                await db.bookings.delete_one({"id": bid, "tenant_id": current_user.tenant_id})
-                await db.folios.delete_many({"booking_id": bid, "tenant_id": current_user.tenant_id})
+                # 1) Önce kilitleri bırak — bu başarısız olursa booking'i SİLME.
                 await release_booking_nights(current_user.tenant_id, bid, reason=reason)
             except Exception as ce:
-                compensation_errors.append(f"booking={bid}: {ce}")
+                # Kilit bırakılamadı: booking'i silmeyi atla ki kilit sahipsiz kalmasın.
+                compensation_errors.append(f"booking={bid} release_failed (booking KORUNDU): {ce}")
+                continue
+            try:
+                # 2) Kilitler bırakıldıktan sonra booking + folio'ları sil.
+                await db.bookings.delete_one({"id": bid, "tenant_id": current_user.tenant_id})
+                await db.folios.delete_many({"booking_id": bid, "tenant_id": current_user.tenant_id})
+            except Exception as ce:
+                compensation_errors.append(f"booking={bid} delete_failed: {ce}")
         if compensation_errors:
             logger.error("SAGA COMPENSATION PARTIAL FAILURE group=%s reason=%s errors=%s",
                          group_id, reason, compensation_errors)
@@ -887,13 +898,15 @@ async def create_multi_room_booking(
               folio_dict["created_at"] = folio_dict["created_at"].isoformat()
               await db.folios.insert_one(folio_dict)
           except Exception as e:
-              # Az önceki booking henüz created_bookings'e eklenmedi — onu da temizle
+              # Az önceki booking henüz created_bookings'e eklenmedi — onu da temizle.
+              # Task #437: kilitleri ÖNCE bırak, sonra booking'i sil; release patlarsa
+              # booking SİLİNMEZ ki kilit sahipsiz (orphan) kalmasın.
+              from core.atomic_booking import release_booking_nights
               try:
-                  from core.atomic_booking import release_booking_nights
-                  await db.bookings.delete_one({"id": booking_id, "tenant_id": current_user.tenant_id})
                   await release_booking_nights(current_user.tenant_id, booking_id, reason="folio_insert_failed")
-              except Exception:
-                  pass
+                  await db.bookings.delete_one({"id": booking_id, "tenant_id": current_user.tenant_id})
+              except Exception as ce:
+                  logger.error("Folio-fail cleanup partial failure booking=%s: %s (booking kilit sahipliği korunarak bırakıldı)", booking_id, ce)
               await _rollback_group(reason="folio_insert_failed")
               logger.exception("Multi-room folio insert failed group=%s booking=%s: %s", group_id, booking_id, e)
               raise HTTPException(status_code=500, detail="Folio creation failed; group rolled back")
