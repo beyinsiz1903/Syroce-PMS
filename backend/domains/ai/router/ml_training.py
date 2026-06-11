@@ -308,6 +308,45 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["AI / ML"])
 
 
+# ── ML training dispatch boundary ──
+# Agir ML egitimi API surecinde CALISMAZ. Tum /ml/*/train uc noktalari isi
+# `ml` Celery kuyruguna gonderir; agir ML yigini (sklearn/xgboost/numpy/pandas)
+# yalnizca ml.txt kurulu ML worker surecinde yuklenir. Broker/worker erisilemezse
+# uc nokta kontrollu sekilde 503 dondurur (sessiz cokme yok); kritik PMS akislari
+# etkilenmez. Egitim sonuclari GET /ml/jobs/{task_id} ile tuketilir.
+def _dispatch_ml_training(model: str, params: dict) -> dict:
+    """ML egitimini 'ml' worker kuyruguna gonderir.
+
+    Basarili gonderim: kuyruga-alindi zarfi + task_id dondurur.
+    Broker/worker erisilemezse HTTPException 503 (temiz degrade) firlatir.
+    """
+    try:
+        from celery_app import celery_app
+        async_result = celery_app.send_task(
+            "celery_tasks.ml_training_task",
+            args=[model, params],
+            queue="ml",
+        )
+    except Exception as e:  # noqa: BLE001 - broker/worker unavailable → degrade
+        logger.warning("[ai/ml] training dispatch failed for model=%s: %s", model, e)
+        raise HTTPException(
+            status_code=503,
+            detail="ML worker queue unavailable; training could not be dispatched",
+        )
+
+    return {
+        "success": True,
+        "status": "queued",
+        "queued": True,
+        "model": model,
+        "params": params,
+        "task_id": async_result.id,
+        "queue": "ml",
+        "message": f"{model} training dispatched to ML worker queue",
+        "status_url": f"/api/ml/jobs/{async_result.id}",
+    }
+
+
 # ── POST /ml/rms/train ──
 @router.post("/ml/rms/train")
 async def train_rms_model(
@@ -316,47 +355,13 @@ async def train_rms_model(
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """
-    Train RMS (Revenue Management System) ML Model
-    - Generates 2 years of synthetic training data
-    - Trains XGBoost models for occupancy prediction and dynamic pricing
-    - Saves models to disk for production use
+    Dispatch RMS (Revenue Management System) ML training to the ML worker queue.
+    - Heavy training (XGBoost / data generation) runs out-of-process on the ML worker.
+    - Returns a queued-job envelope; poll GET /ml/jobs/{task_id} for the result.
     """
-    try:
-        from ml_data_generators import RMSDataGenerator
-        from ml_trainers import RMSModelTrainer
+    return _dispatch_ml_training("rms", {"historical_days": historical_days})
 
-        # Generate training data
-        logger.info(f"Generating {historical_days} days of RMS training data...")
-        data_df = RMSDataGenerator.generate(days=historical_days)
 
-        # Train models
-        trainer = RMSModelTrainer(model_dir='ml_models')
-        metrics = trainer.train(data_df)
-
-        return {
-            'success': True,
-            'message': 'RMS models trained successfully',
-            'metrics': metrics,
-            'data_summary': {
-                'total_samples': len(data_df),
-                'date_range': {
-                    'start': data_df['date'].min(),
-                    'end': data_df['date'].max()
-                },
-                'occupancy_range': {
-                    'min': float(data_df['occupancy_rate'].min()),
-                    'max': float(data_df['occupancy_rate'].max()),
-                    'mean': float(data_df['occupancy_rate'].mean())
-                },
-                'price_range': {
-                    'min': float(data_df['optimal_price'].min()),
-                    'max': float(data_df['optimal_price'].max()),
-                    'mean': float(data_df['optimal_price'].mean())
-                }
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Training failed: {str(e)}")
 # ── POST /ml/persona/train ──
 @router.post("/ml/persona/train")
 async def train_persona_model(
@@ -365,36 +370,13 @@ async def train_persona_model(
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """
-    Train Guest Persona ML Model
-    - Generates 300-500 synthetic guest profiles
-    - Trains Random Forest classifier for persona segmentation
-    - Saves model to disk for production use
+    Dispatch Guest Persona ML training to the ML worker queue.
+    - Heavy training (Random Forest / data generation) runs out-of-process.
+    - Returns a queued-job envelope; poll GET /ml/jobs/{task_id} for the result.
     """
-    try:
-        from ml_data_generators import PersonaDataGenerator
-        from ml_trainers import PersonaModelTrainer
+    return _dispatch_ml_training("persona", {"num_guests": num_guests})
 
-        # Generate training data
-        logger.info(f"Generating {num_guests} guest persona training samples...")
-        data_df = PersonaDataGenerator.generate(num_guests=num_guests)
 
-        # Train model
-        trainer = PersonaModelTrainer(model_dir='ml_models')
-        metrics = trainer.train(data_df)
-
-        return {
-            'success': True,
-            'message': 'Persona model trained successfully',
-            'metrics': metrics,
-            'data_summary': {
-                'total_guests': len(data_df),
-                'persona_distribution': data_df['persona_type'].value_counts().to_dict(),
-                'avg_stays': float(data_df['total_stays'].mean()),
-                'avg_spend': float(data_df['avg_spend'].mean())
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Training failed: {str(e)}")
 # ── POST /ml/predictive-maintenance/train ──
 @router.post("/ml/predictive-maintenance/train")
 async def train_predictive_maintenance_model(
@@ -403,37 +385,13 @@ async def train_predictive_maintenance_model(
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """
-    Train Predictive Maintenance ML Model
-    - Generates IoT sensor simulation data
-    - Trains XGBoost classifier for failure risk prediction
-    - Trains Gradient Boosting for days-until-failure prediction
-    - Saves models to disk for production use
+    Dispatch Predictive Maintenance ML training to the ML worker queue.
+    - Heavy training (XGBoost / Gradient Boosting) runs out-of-process.
+    - Returns a queued-job envelope; poll GET /ml/jobs/{task_id} for the result.
     """
-    try:
-        from ml_data_generators import PredictiveMaintenanceDataGenerator
-        from ml_trainers import PredictiveMaintenanceModelTrainer
+    return _dispatch_ml_training("predictive_maintenance", {"num_samples": num_samples})
 
-        # Generate training data
-        logger.info(f"Generating {num_samples} predictive maintenance training samples...")
-        data_df = PredictiveMaintenanceDataGenerator.generate(num_samples=num_samples)
 
-        # Train models
-        trainer = PredictiveMaintenanceModelTrainer(model_dir='ml_models')
-        metrics = trainer.train(data_df)
-
-        return {
-            'success': True,
-            'message': 'Predictive maintenance models trained successfully',
-            'metrics': metrics,
-            'data_summary': {
-                'total_samples': len(data_df),
-                'equipment_distribution': data_df['equipment_type'].value_counts().to_dict(),
-                'risk_distribution': data_df['failure_risk'].value_counts().to_dict(),
-                'avg_days_until_failure': float(data_df['days_until_failure'].mean())
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Training failed: {str(e)}")
 # ── POST /ml/hk-scheduler/train ──
 @router.post("/ml/hk-scheduler/train")
 async def train_hk_scheduler_model(
@@ -442,37 +400,13 @@ async def train_hk_scheduler_model(
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """
-    Train Housekeeping Scheduler ML Model
-    - Generates occupancy-based staffing data
-    - Trains Random Forest regressors for staff and hours prediction
-    - Saves models to disk for production use
+    Dispatch Housekeeping Scheduler ML training to the ML worker queue.
+    - Heavy training (Random Forest regressors) runs out-of-process.
+    - Returns a queued-job envelope; poll GET /ml/jobs/{task_id} for the result.
     """
-    try:
-        from ml_data_generators import HKSchedulerDataGenerator
-        from ml_trainers import HKSchedulerModelTrainer
+    return _dispatch_ml_training("hk_scheduler", {"num_days": num_days})
 
-        # Generate training data
-        logger.info(f"Generating {num_days} days of HK scheduler training data...")
-        data_df = HKSchedulerDataGenerator.generate(num_days=num_days)
 
-        # Train models
-        trainer = HKSchedulerModelTrainer(model_dir='ml_models')
-        metrics = trainer.train(data_df)
-
-        return {
-            'success': True,
-            'message': 'HK scheduler models trained successfully',
-            'metrics': metrics,
-            'data_summary': {
-                'total_days': len(data_df),
-                'avg_occupancy': float(data_df['occupancy_rate'].mean()),
-                'avg_staff_needed': float(data_df['staff_needed'].mean()),
-                'avg_hours': float(data_df['estimated_hours'].mean()),
-                'peak_staff_needed': int(data_df['staff_needed'].max())
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Training failed: {str(e)}")
 # ── POST /ml/train-all ──
 @router.post("/ml/train-all")
 async def train_all_models(
@@ -480,82 +414,47 @@ async def train_all_models(
     _perm=Depends(require_op("view_system_diagnostics")),  # v98 DW
 ):
     """
-    Train ALL ML Models in sequence
-    - RMS (Revenue Management)
-    - Persona (Guest Segmentation)
-    - Predictive Maintenance
-    - HK Scheduler
+    Dispatch ALL ML model training (RMS, Persona, Predictive Maintenance,
+    HK Scheduler) to the ML worker queue as a single job.
+    - Heavy training runs out-of-process on the ML worker.
+    - Returns a queued-job envelope; poll GET /ml/jobs/{task_id} for the result.
     """
-    results = {}
-    errors = []
+    return _dispatch_ml_training("all", {})
 
+
+# ── GET /ml/jobs/{task_id} ──
+@router.get("/ml/jobs/{task_id}")
+async def get_ml_training_job(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    _perm=Depends(require_op("view_system_diagnostics")),
+):
+    """
+    Poll the status/result of a dispatched ML training job.
+    Consumes results over the worker-queue boundary (Celery result backend).
+    """
     try:
-        # Import all required modules
-        from ml_data_generators import HKSchedulerDataGenerator, PersonaDataGenerator, PredictiveMaintenanceDataGenerator, RMSDataGenerator
-        from ml_trainers import HKSchedulerModelTrainer, PersonaModelTrainer, PredictiveMaintenanceModelTrainer, RMSModelTrainer
+        from celery_app import celery_app
+        async_result = celery_app.AsyncResult(task_id)
+        state = async_result.state
+        ready = async_result.ready()
+    except Exception as e:  # noqa: BLE001 - result backend unavailable → degrade
+        logger.warning("[ai/ml] job status lookup failed for task_id=%s: %s", task_id, e)
+        raise HTTPException(
+            status_code=503,
+            detail="ML result backend unavailable; job status could not be retrieved",
+        )
 
-        # 1. Train RMS Model
-        try:
-            logger.info("\n=== Training RMS Model ===")
-            data_df = RMSDataGenerator.generate(days=730)
-            trainer = RMSModelTrainer(model_dir='ml_models')
-            results['rms'] = trainer.train(data_df)
-            results['rms']['status'] = 'success'
-        except Exception as e:
-            results['rms'] = {'status': 'failed', 'error': str(e)}
-            errors.append(f"RMS: {str(e)}")
+    payload = {"task_id": task_id, "state": state, "ready": ready}
+    if ready:
+        if async_result.successful():
+            payload["result"] = async_result.result
+        else:
+            payload["success"] = False
+            payload["error"] = str(async_result.result)
+    return payload
 
-        # 2. Train Persona Model
-        try:
-            logger.info("\n=== Training Persona Model ===")
-            data_df = PersonaDataGenerator.generate(num_guests=400)
-            trainer = PersonaModelTrainer(model_dir='ml_models')
-            results['persona'] = trainer.train(data_df)
-            results['persona']['status'] = 'success'
-        except Exception as e:
-            results['persona'] = {'status': 'failed', 'error': str(e)}
-            errors.append(f"Persona: {str(e)}")
 
-        # 3. Train Predictive Maintenance Model
-        try:
-            logger.info("\n=== Training Predictive Maintenance Model ===")
-            data_df = PredictiveMaintenanceDataGenerator.generate(num_samples=1000)
-            trainer = PredictiveMaintenanceModelTrainer(model_dir='ml_models')
-            results['predictive_maintenance'] = trainer.train(data_df)
-            results['predictive_maintenance']['status'] = 'success'
-        except Exception as e:
-            results['predictive_maintenance'] = {'status': 'failed', 'error': str(e)}
-            errors.append(f"Predictive Maintenance: {str(e)}")
-
-        # 4. Train HK Scheduler Model
-        try:
-            logger.info("\n=== Training HK Scheduler Model ===")
-            data_df = HKSchedulerDataGenerator.generate(num_days=365)
-            trainer = HKSchedulerModelTrainer(model_dir='ml_models')
-            results['hk_scheduler'] = trainer.train(data_df)
-            results['hk_scheduler']['status'] = 'success'
-        except Exception as e:
-            results['hk_scheduler'] = {'status': 'failed', 'error': str(e)}
-            errors.append(f"HK Scheduler: {str(e)}")
-
-        # Summary
-        successful = sum(1 for r in results.values() if r.get('status') == 'success')
-        total = len(results)
-
-        return {
-            'success': len(errors) == 0,
-            'message': f'Training complete: {successful}/{total} models trained successfully',
-            'results': results,
-            'errors': errors if errors else None,
-            'summary': {
-                'total_models': total,
-                'successful': successful,
-                'failed': len(errors)
-            }
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Bulk training failed: {str(e)}")
 # ── GET /ml/models/status ──
 @router.get("/ml/models/status")
 async def get_ml_models_status(

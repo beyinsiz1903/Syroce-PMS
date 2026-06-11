@@ -37,6 +37,24 @@ def get_db():
     return client[db_name], client
 
 
+# ============= ML TRAINING TASKS =============
+# ML egitimi yalnizca 'ml' kuyrugunda (ml.txt kurulu worker) calisir.
+# Agir ML yigini (sklearn/xgboost/numpy/pandas) bu modulun statik import
+# grafigine girmesin diye `ml_service` TEMBEL + DINAMIK olarak yuklenir;
+# boylece API imaji ve varsayilan worker imaji bu bagimliliklari tasimaz.
+
+@celery_app.task(name='celery_tasks.ml_training_task', bind=True)
+def ml_training_task(self, model: str = 'all', params: dict[str, Any] | None = None):
+    """ML model(ler)ini ML worker surecinde egitir.
+
+    model: 'rms' | 'persona' | 'predictive_maintenance' | 'hk_scheduler' | 'all'
+    params: modele ozel parametreler (historical_days, num_guests, ...).
+    """
+    import importlib
+    ml_service = importlib.import_module('ml_service')
+    return ml_service.run_training(model, params or {})
+
+
 # ============= NIGHT AUDIT TASKS =============
 # ============= BOOKING.COM INTEGRATION TASKS =============
 
