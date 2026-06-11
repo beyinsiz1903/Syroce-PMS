@@ -24,6 +24,7 @@ export const ROUTES = {
   procurement: '/(departments)/procurement',
   hr: '/(departments)/hr',
   revenue: '/(departments)/revenue',
+  pos: '/(departments)/pos',
   checkin: '/(frontdesk)/checkin',
   checkout: '/(frontdesk)/checkout',
   walkin: '/(frontdesk)/walkin',

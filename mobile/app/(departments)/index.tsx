@@ -21,6 +21,7 @@ export default function DepartmentsHub() {
   const procurementAccess = useAuthStore((s) => s.procurementAccess);
   const hrAccess = useAuthStore((s) => s.hrAccess);
   const revenueAccess = useAuthStore((s) => s.revenueAccess);
+  const posAccess = useAuthStore((s) => s.posAccess);
 
   const anyAccess =
     spaAccess ||
@@ -29,7 +30,8 @@ export default function DepartmentsHub() {
     maintenanceAccess ||
     procurementAccess ||
     hrAccess ||
-    revenueAccess;
+    revenueAccess ||
+    posAccess;
 
   return (
     <ScrollView
@@ -110,6 +112,15 @@ export default function DepartmentsHub() {
           title={tr.departments.revenue.title}
           subtitle={tr.departments.revenue.tileSubtitle}
           onPress={() => router.push(ROUTES.revenue)}
+        />
+      ) : null}
+
+      {posAccess ? (
+        <DepartmentTile
+          testID="dept-tile-pos"
+          title={tr.departments.pos.title}
+          subtitle={tr.departments.pos.tileSubtitle}
+          onPress={() => router.push(ROUTES.pos)}
         />
       ) : null}
 
