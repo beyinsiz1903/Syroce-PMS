@@ -436,7 +436,11 @@ async def merge_guest_profiles(
                          "loyalty_tier", "preferences", "vip", "company"}}
         if safe:
             from security.search_normalize import normalized_set_for_update
+            from security.search_ngram import ngram_set_for_update_merged
             safe.update(normalized_set_for_update(safe, collection="guests"))
+            # Recompute combined _ng_name from the MERGED name fields so a
+            # name-only override doesn't drop the other name fields' trigrams.
+            safe.update(ngram_set_for_update_merged(primary, safe, collection="guests"))
             await db.guests.update_one(
                 {"_id": primary["_id"], "tenant_id": primary.get("tenant_id")},
                 {"$set": safe},

@@ -133,23 +133,37 @@ def apply_normalized_fields(doc: dict, fields: list[str]) -> dict:
 
 
 def apply_collection_normalized_fields(doc: dict, *, collection: str) -> dict:
-    """Convenience wrapper: normalize a doc using the configured field list."""
+    """Convenience wrapper: normalize a doc using the configured field list.
+
+    Also writes the trigram infix-search companion (``_ng_<target>``) for
+    collections configured in ``search_ngram`` — folded in here so every writer
+    already producing ``<field>_lower`` gets infix tokens for free (no-op for
+    collections without ngram config).
+    """
     fields = NORMALIZED_SEARCH_FIELDS.get(collection)
-    if not fields:
-        return doc
-    return apply_normalized_fields(doc, fields)
+    if fields:
+        apply_normalized_fields(doc, fields)
+    # Trigram infix companion (plaintext names only; raw, un-hashed tokens).
+    from security.search_ngram import apply_ngram_fields
+    apply_ngram_fields(doc, collection=collection)
+    return doc
 
 
 def normalized_set_for_update(update_source: dict, *, collection: str) -> dict:
     """Companion ``$set`` entries for fields present in an update payload.
 
     Pass the (already-allowlisted) fields the caller is about to ``$set``; only
-    those that are configured search fields produce companion updates.
+    those that are configured search fields produce companion updates. Trigram
+    infix tokens (``_ng_<target>``) are recomputed alongside the ``<field>_lower``
+    companions when a name field is part of the update.
     """
+    out: dict = {}
     fields = NORMALIZED_SEARCH_FIELDS.get(collection)
-    if not fields:
-        return {}
-    return build_normalized_updates(update_source, fields)
+    if fields:
+        out.update(build_normalized_updates(update_source, fields))
+    from security.search_ngram import ngram_set_for_update
+    out.update(ngram_set_for_update(update_source, collection=collection))
+    return out
 
 
 def _prefix_upper_bound(prefix: str) -> str:

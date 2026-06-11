@@ -199,7 +199,9 @@ async def phase_c_domain_indexes_and_workers(app):
     # backfill of existing rows. PII-safe: only configured plaintext fields.
     try:
         from bootstrap.phases.search_normalize import (
+            backfill_ngram_fields,
             backfill_search_normalize_fields,
+            ensure_ngram_indexes,
             ensure_search_normalize_indexes,
         )
         from core.database import _raw_db
@@ -209,5 +211,12 @@ async def phase_c_domain_indexes_and_workers(app):
         sn_ran = await backfill_search_normalize_fields(_raw_db)
         if sn_ran:
             logger.info(f"Search-normalize backfill: {sn_ran}")
+        # Trigram INFIX companions (`_ng_<target>`) for substring name search.
+        ng_created = await ensure_ngram_indexes(_raw_db)
+        if ng_created:
+            logger.info(f"Ngram infix indexes ensured ({len(ng_created)} created)")
+        ng_ran = await backfill_ngram_fields(_raw_db)
+        if ng_ran:
+            logger.info(f"Ngram infix backfill: {ng_ran}")
     except Exception as e:
         logger.warning(f"Search-normalize setup error: {e}")

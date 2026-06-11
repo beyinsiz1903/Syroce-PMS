@@ -1171,8 +1171,21 @@ async def update_reservation_guest(
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
     if updates:
         from security.search_normalize import normalized_set_for_update
+        from security.search_ngram import (
+            ngram_set_for_update_merged,
+            NGRAM_SOURCE_FIELDS,
+        )
         # Guest name_lower companion so renames stay prefix-searchable.
         updates.update(normalized_set_for_update(updates, collection="guests"))
+        # Combined _ng_name must reflect ALL name fields, not just the changed
+        # subset, or a name-only edit drops first/last-name infix trigrams.
+        if any(f in updates for f in NGRAM_SOURCE_FIELDS.get("guests", [])):
+            _g = await db.guests.find_one(
+                {"id": booking["guest_id"], "tenant_id": tid},
+                {"_id": 0, "name": 1, "first_name": 1, "last_name": 1},
+            )
+            updates.update(
+                ngram_set_for_update_merged(_g, updates, collection="guests"))
         await db.guests.update_one({"id": booking["guest_id"], "tenant_id": tid}, {"$set": updates})
 
         if "name" in updates:

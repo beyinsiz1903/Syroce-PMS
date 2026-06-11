@@ -1300,7 +1300,11 @@ async def update_guest_profile(
         'updated_at': datetime.now(UTC).isoformat()
     }
     from security.search_normalize import normalized_set_for_update
+    from security.search_ngram import ngram_set_for_update_merged
     update_data.update(normalized_set_for_update(update_data, collection="guests"))
+    # Recompute combined _ng_name from the MERGED name fields so a name-only
+    # self-service edit doesn't drop other name fields' infix trigrams.
+    update_data.update(ngram_set_for_update_merged(guest, update_data, collection="guests"))
 
     await db.guests.update_one(
         {'id': guest['id']},

@@ -47,7 +47,11 @@ def _encrypt_guest(doc: dict) -> dict:
 def _decrypt_guest(doc: dict) -> dict:
     """Decrypt PII fields after DB read."""
     if _fenc and doc:
-        return _fenc.decrypt_document(doc, collection=_GUEST_COLLECTION)
+        doc = _fenc.decrypt_document(doc, collection=_GUEST_COLLECTION)
+    if doc:
+        # Never surface the internal trigram token array in API responses.
+        from security.search_ngram import strip_ngram_fields
+        strip_ngram_fields(doc)
     return doc
 
 
@@ -207,7 +211,33 @@ async def search_guests(
             ],
         }
 
-    guests_raw = await db.guests.find(query, {"_id": 0}).sort("name", 1).limit(limit).to_list(limit)
+    # Primary precise query: name PREFIX range + encrypted-PII hash/dual-read.
+    primary = await db.guests.find(query, {"_id": 0}).sort("name", 1).limit(limit).to_list(limit)
+
+    # Secondary INFIX (substring) query on the plaintext-name trigram companion
+    # `_ng_name` (>= 3 chars). Trigram `$all` is index-served by the
+    # (tenant_id, _ng_name) multikey index but can over-match (it ignores
+    # adjacency / word order), so every candidate is re-verified with a
+    # contiguous substring check before being merged in. This is what lets a
+    # receptionist type the MIDDLE of a name ("ladi" -> "Vladimir") — the prefix
+    # path above only catches "starts typing".
+    from security.search_ngram import ngram_all_condition, ngram_match
+    ng_cond = ngram_all_condition(q, collection=_GUEST_COLLECTION)
+    guests_raw = primary
+    if ng_cond:
+        seen = {g.get("id") for g in primary}
+        ng_rows = await db.guests.find(
+            {"tenant_id": tenant_id, **ng_cond}, {"_id": 0}
+        ).sort("name", 1).limit(limit).to_list(limit)
+        extras = [
+            r for r in ng_rows
+            if r.get("id") not in seen
+            and ngram_match(r, q, collection=_GUEST_COLLECTION)
+        ]
+        if extras:
+            guests_raw = primary + extras
+            guests_raw.sort(key=lambda g: (g.get("name") or "").lower())
+            guests_raw = guests_raw[:limit]
 
     results = []
     for g in guests_raw:
@@ -282,7 +312,12 @@ async def update_guest(
     # Companion name_lower updates (computed from the plaintext name before
     # encryption — name is NOT encrypted). Keeps prefix search consistent on rename.
     from security.search_normalize import normalized_set_for_update
+    from security.search_ngram import ngram_set_for_update_merged
     _norm = normalized_set_for_update(update_fields, collection="guests")
+    # The combined _ng_name must reflect ALL name fields, not just the changed
+    # subset, or a name-only rename drops the other name fields' infix trigrams
+    # (guest stops being findable by surname). Recompute from the merged doc.
+    _norm.update(ngram_set_for_update_merged(guest, update_fields, collection="guests"))
 
     # Encrypt PII fields in the update
     update_fields = _encrypt_guest(update_fields)

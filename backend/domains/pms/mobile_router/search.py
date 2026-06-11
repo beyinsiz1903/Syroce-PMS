@@ -83,6 +83,30 @@ async def _search_guests(tenant_id: str, q: str) -> list[dict]:
         .limit(_PER_ENTITY_LIMIT)
         .to_list(_PER_ENTITY_LIMIT)
     )
+
+    # INFIX (substring) match on the plaintext-name trigram companion `_ng_name`
+    # (>= 3 chars), re-verified with a contiguous substring check — mirrors the
+    # guest-search endpoint so "type the middle of a name" works here too.
+    from security.search_ngram import ngram_all_condition, ngram_match
+    ng_cond = ngram_all_condition(q, collection=_GUEST_COLLECTION)
+    if ng_cond:
+        seen = {g.get("id") for g in raw}
+        ng_rows = (
+            await db.guests.find({"tenant_id": tenant_id, **ng_cond}, {"_id": 0})
+            .sort("name", 1)
+            .limit(_PER_ENTITY_LIMIT)
+            .to_list(_PER_ENTITY_LIMIT)
+        )
+        extras = [
+            r for r in ng_rows
+            if r.get("id") not in seen
+            and ngram_match(r, q, collection=_GUEST_COLLECTION)
+        ]
+        if extras:
+            raw = raw + extras
+            raw.sort(key=lambda g: (g.get("name") or "").lower())
+            raw = raw[:_PER_ENTITY_LIMIT]
+
     results = []
     for g in raw:
         g = _decrypt_guest(g)
