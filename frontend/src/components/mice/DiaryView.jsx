@@ -20,12 +20,29 @@ const DAYS_TR = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 const MONTHS_TR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
                    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 
+const GANTT_START_HOUR = 6;
+const GANTT_END_HOUR = 24;
+const GANTT_SPAN = GANTT_END_HOUR - GANTT_START_HOUR;
+const LANE_HEIGHT = 28;
+
+const fmtDate = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const hhmm = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
 const DiaryView = ({ spaceById, spaces }) => {
   const { t } = useTranslation();
   const today = new Date();
   const [view, setView] = useState('calendar');
   const [calMonth, setCalMonth] = useState({ year: today.getFullYear(), month: today.getMonth() });
   const [selectedDate, setSelectedDate] = useState(null);
+  const [ganttDate, setGanttDate] = useState(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+  const [selectedBar, setSelectedBar] = useState(null);
   const [items, setItems] = useState([]);
 
   const monthRange = useMemo(() => {
@@ -81,6 +98,68 @@ const DiaryView = ({ spaceById, spaces }) => {
   const nextMonth = () => setCalMonth((p) => p.month === 11 ? { year: p.year + 1, month: 0 } : { ...p, month: p.month + 1 });
   const goToday = () => { setCalMonth({ year: today.getFullYear(), month: today.getMonth() }); setSelectedDate(todayStr); };
 
+  const changeGanttDay = (delta) => {
+    setSelectedBar(null);
+    setGanttDate((prev) => {
+      const nd = new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + delta);
+      if (nd.getMonth() !== calMonth.month || nd.getFullYear() !== calMonth.year) {
+        setCalMonth({ year: nd.getFullYear(), month: nd.getMonth() });
+      }
+      return nd;
+    });
+  };
+  const goGanttToday = () => {
+    setSelectedBar(null);
+    const nd = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    setGanttDate(nd);
+    setCalMonth({ year: nd.getFullYear(), month: nd.getMonth() });
+  };
+
+  const ganttLabel = useMemo(() => {
+    const wd = DAYS_TR[(ganttDate.getDay() + 6) % 7];
+    return `${ganttDate.getDate()} ${MONTHS_TR[ganttDate.getMonth()]} ${ganttDate.getFullYear()}, ${wd}`;
+  }, [ganttDate]);
+
+  const ganttHours = useMemo(() => {
+    const arr = [];
+    for (let h = GANTT_START_HOUR; h <= GANTT_END_HOUR; h++) arr.push(h);
+    return arr;
+  }, []);
+
+  const ganttRows = useMemo(() => {
+    const y = ganttDate.getFullYear();
+    const m = ganttDate.getMonth();
+    const d = ganttDate.getDate();
+    const dayStart = new Date(y, m, d, 0, 0, 0, 0);
+    const dayEnd = new Date(y, m, d + 1, 0, 0, 0, 0);
+    const bySpace = {};
+    items.forEach((ev) => {
+      (ev.space_bookings || []).forEach((sb) => {
+        if (!sb.starts_at || !sb.ends_at) return;
+        const s = new Date(sb.starts_at);
+        const e = new Date(sb.ends_at);
+        if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return;
+        if (!(s < dayEnd && e > dayStart)) return;
+        const startH = (s - dayStart) / 3600000;
+        const endH = (e - dayStart) / 3600000;
+        (bySpace[sb.space_id] || (bySpace[sb.space_id] = [])).push({ ev, sb, startH, endH });
+      });
+    });
+    return (spaces || []).map((sp) => {
+      const bookings = (bySpace[sp.id] || []).slice().sort((a, b) => a.startH - b.startH);
+      const laneEnds = [];
+      bookings.forEach((b) => {
+        let lane = laneEnds.findIndex((end) => end <= b.startH + 1e-9);
+        if (lane === -1) { lane = laneEnds.length; laneEnds.push(b.endH); }
+        else laneEnds[lane] = b.endH;
+        b.lane = lane;
+      });
+      return { space: sp, bookings, lanes: Math.max(1, laneEnds.length) };
+    });
+  }, [items, ganttDate, spaces]);
+
+  const ganttBookedCount = ganttRows.filter((r) => r.bookings.length > 0).length;
+
   const selectedDayEvents = selectedDate ? (eventsByDate[selectedDate] || []) : [];
   const selectedDayBookedIds = new Set();
   selectedDayEvents.forEach((ev) => (ev.space_bookings || []).forEach((sb) => selectedDayBookedIds.add(sb.space_id)));
@@ -91,20 +170,40 @@ const DiaryView = ({ spaceById, spaces }) => {
     <Card><CardContent className="p-3">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={prevMonth}>‹</Button>
-          <div className="font-semibold min-w-[140px] text-center">
-            {MONTHS_TR[calMonth.month]} {calMonth.year}
-          </div>
-          <Button variant="outline" size="sm" onClick={nextMonth}>›</Button>
-          <Button variant="outline" size="sm" onClick={goToday}>{t('cm.components_mice_DiaryView.bugun')}</Button>
+          {view === 'gantt' ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => changeGanttDay(-1)}>‹</Button>
+              <div className="font-semibold min-w-[200px] text-center">{ganttLabel}</div>
+              <Button variant="outline" size="sm" onClick={() => changeGanttDay(1)}>›</Button>
+              <Button variant="outline" size="sm" onClick={goGanttToday}>{t('cm.components_mice_DiaryView.bugun')}</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={prevMonth}>‹</Button>
+              <div className="font-semibold min-w-[140px] text-center">
+                {MONTHS_TR[calMonth.month]} {calMonth.year}
+              </div>
+              <Button variant="outline" size="sm" onClick={nextMonth}>›</Button>
+              <Button variant="outline" size="sm" onClick={goToday}>{t('cm.components_mice_DiaryView.bugun')}</Button>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 text-xs">
-            <span className="inline-block w-3 h-3 rounded bg-indigo-100 border border-indigo-300" /> Etkinlik
-            <span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-300 ml-2" /> {t('cm.components_mice_DiaryView.musait')}
-          </div>
+          {view === 'gantt' ? (
+            <div className="flex flex-wrap items-center gap-1">
+              {Object.entries(STATUS).map(([k, v]) => (
+                <span key={k} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ${v.cls}`}>{v.label}</span>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-xs">
+              <span className="inline-block w-3 h-3 rounded bg-indigo-100 border border-indigo-300" /> Etkinlik
+              <span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-300 ml-2" /> {t('cm.components_mice_DiaryView.musait')}
+            </div>
+          )}
           <Button variant={view === 'calendar' ? 'default' : 'outline'} size="sm" onClick={() => setView('calendar')}>Takvim</Button>
           <Button variant={view === 'list' ? 'default' : 'outline'} size="sm" onClick={() => setView('list')}>{t('cm.components_mice_DiaryView.liste')}</Button>
+          <Button variant={view === 'gantt' ? 'default' : 'outline'} size="sm" onClick={() => setView('gantt')}>Gantt</Button>
         </div>
       </div>
 
@@ -212,6 +311,109 @@ const DiaryView = ({ spaceById, spaces }) => {
             )}
           </div>
         </div>
+      ) : view === 'gantt' ? (
+        (spaces?.length || 0) === 0 ? (
+          <p className="text-sm text-gray-500 p-4 text-center">Henüz tanımlı mekan yok.</p>
+        ) : (
+          <>
+            <div className="text-xs text-gray-600 mb-2">
+              {ganttBookedCount} dolu • {Math.max(0, spaces.length - ganttBookedCount)} müsait salon
+            </div>
+            <div className="overflow-x-auto">
+              <div className="min-w-[760px]">
+                <div className="flex">
+                  <div className="w-40 shrink-0" />
+                  <div className="flex-1 relative h-6 border-b">
+                    {ganttHours.map((h) => (
+                      <div
+                        key={h}
+                        className="absolute top-0 bottom-0 flex items-center"
+                        style={{ left: `${((h - GANTT_START_HOUR) / GANTT_SPAN) * 100}%` }}
+                      >
+                        <span className="text-[10px] text-gray-400 -translate-x-1/2">{String(h % 24).padStart(2, '0')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {ganttRows.map((row) => {
+                  const rowHeight = row.lanes * LANE_HEIGHT + 8;
+                  return (
+                    <div key={row.space.id} className="flex border-b last:border-b-0">
+                      <div className="w-40 shrink-0 pr-2 py-2 text-xs font-medium text-gray-700 flex items-center">
+                        <span className="truncate" title={row.space.name}>{row.space.name}</span>
+                      </div>
+                      <div className="flex-1 relative" style={{ height: `${rowHeight}px` }}>
+                        {ganttHours.map((h) => (
+                          <div
+                            key={h}
+                            className="absolute top-0 bottom-0 w-px bg-slate-100"
+                            style={{ left: `${((h - GANTT_START_HOUR) / GANTT_SPAN) * 100}%` }}
+                          />
+                        ))}
+                        {row.bookings.map((b, bi) => {
+                          const clampedStart = Math.max(GANTT_START_HOUR, Math.min(GANTT_END_HOUR, b.startH));
+                          const clampedEnd = Math.max(GANTT_START_HOUR, Math.min(GANTT_END_HOUR, b.endH));
+                          const left = ((clampedStart - GANTT_START_HOUR) / GANTT_SPAN) * 100;
+                          const width = Math.max(2, ((clampedEnd - clampedStart) / GANTT_SPAN) * 100);
+                          const overflowLeft = b.startH < GANTT_START_HOUR;
+                          const overflowRight = b.endH > GANTT_END_HOUR;
+                          const cls = STATUS[b.ev.status]?.cls || 'bg-slate-100 text-slate-700';
+                          const total = (b.ev.totals?.grand_total || 0).toLocaleString('tr-TR');
+                          const range = `${hhmm(b.sb.starts_at)}–${hhmm(b.sb.ends_at)}`;
+                          const isSel = selectedBar
+                            && selectedBar.ev.id === b.ev.id
+                            && selectedBar.sb.space_id === b.sb.space_id
+                            && selectedBar.sb.starts_at === b.sb.starts_at;
+                          return (
+                            <button
+                              key={`${b.ev.id}-${bi}`}
+                              type="button"
+                              onClick={() => setSelectedBar(isSel ? null : b)}
+                              title={`${b.ev.name} — ${b.ev.client_name || '—'} • ${range} • ${b.ev.expected_pax || 0} pax • ₺${total}`}
+                              className={`absolute rounded border border-black/10 px-1 overflow-hidden text-left text-[10px] leading-tight transition hover:brightness-95 ${cls} ${isSel ? 'ring-2 ring-indigo-400' : ''}`}
+                              style={{
+                                left: `${left}%`,
+                                width: `${width}%`,
+                                top: `${4 + b.lane * LANE_HEIGHT}px`,
+                                height: `${LANE_HEIGHT - 4}px`,
+                              }}
+                            >
+                              <span className="block truncate font-semibold">
+                                {overflowLeft ? '‹ ' : ''}{b.ev.name}{overflowRight ? ' ›' : ''}
+                              </span>
+                              <span className="block truncate opacity-80">{range}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {selectedBar && (
+              <div className="mt-3 border rounded-lg p-3 bg-slate-50/50">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-semibold text-sm">{selectedBar.ev.name}</div>
+                  <Badge className={`${STATUS[selectedBar.ev.status]?.cls || ''} border-0 text-[10px]`}>
+                    {STATUS[selectedBar.ev.status]?.label}
+                  </Badge>
+                </div>
+                <div className="text-[11px] text-gray-600 mt-1">
+                  {spaceById[selectedBar.sb.space_id]?.name || '—'} • {hhmm(selectedBar.sb.starts_at)}–{hhmm(selectedBar.sb.ends_at)}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-0.5">
+                  {selectedBar.ev.client_name || '—'} • {selectedBar.ev.expected_pax || 0} pax
+                </div>
+                <div className="text-[11px] font-semibold mt-0.5">
+                  ₺{(selectedBar.ev.totals?.grand_total || 0).toLocaleString('tr-TR')}
+                </div>
+              </div>
+            )}
+          </>
+        )
       ) : (
         items.length === 0 ? (
           <p className="text-sm text-gray-500 p-4 text-center">Bu ayda etkinlik yok.</p>
