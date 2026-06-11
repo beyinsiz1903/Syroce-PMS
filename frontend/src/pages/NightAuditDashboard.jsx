@@ -304,6 +304,12 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
   const lastRun = history.length > 0 ? history[0] : null;
   const todayCompleted = lastRun?.business_date === businessDate && lastRun?.status?.startsWith("completed");
 
+  // Engelleyici sorun varken ve "Doğrulamaları Atla" seçili değilken
+  // backend hem gerçek çalıştırmayı hem de simülasyonu (doğrulama kapısı
+  // simülasyondan önce çalışır) BLOCKED ile reddeder. Buton bu durumda
+  // görsel olarak da kilitli olmalı.
+  const runBlocked = (previewData?.blockers?.length > 0) && !runOptions.skip_validations;
+
   const ctx = {
     t,
     StatusBadge, SeverityBadge, StatCard, IntegrityBadge,
@@ -717,14 +723,21 @@ const NightAuditDashboard = ({ user, tenant, onLogout }) => {
                 </div>
               )}
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setShowRunDialog(false)} disabled={running}>
+              {runBlocked && (
+                <p className="text-xs text-rose-700 pt-1" data-testid="run-blocked-hint">
+                  Engelleyici sorunlar çözülmeden denetim başlatılamaz. Hazırlık sekmesinden çözün veya &quot;Doğrulamaları Atla&quot; seçeneğini işaretleyin.
+                </p>
+              )}
+
+              <div className="flex items-center justify-between gap-3 pt-2 border-t mt-1">
+                <Button variant="ghost" onClick={() => setShowRunDialog(false)} disabled={running}>
                   İptal
                 </Button>
                 <Button
                   data-testid="confirm-run-btn"
                   onClick={handleRunAudit}
-                  disabled={running}
+                  disabled={running || runBlocked}
+                  title={runBlocked ? 'Engelleyici sorunlar var. Önce Hazırlık sekmesinden çözün ya da "Doğrulamaları Atla" seçeneğini işaretleyin.' : undefined}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white"
                 >
                   {running ? (

@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { DollarSign, FileText, Loader2, Save, X, XCircle } from 'lucide-react';
+import { DollarSign, FileText, Loader2, LogIn, Save, UserX, X, XCircle } from 'lucide-react';
 import { confirmDialog } from '@/lib/dialogs';
 import { formatCurrency } from '@/lib/currency';
 
@@ -19,6 +19,8 @@ const toDateInput = (val) => {
 const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies, onViewFolio, onBookingUpdated }) => {
   const { t } = useTranslation();
   const [cancelling, setCancelling] = useState(false);
+  const [checkingIn, setCheckingIn] = useState(false);
+  const [markingNoShow, setMarkingNoShow] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(null);
@@ -87,6 +89,49 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
       toast.error(msg);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Bekleyen geliş (geçmiş giriş tarihli, henüz check-in yapılmamış)
+  // rezervasyonlar confirmed/guaranteed durumdadır. Gece denetimi
+  // "Bekleyen geliş" engelleyicisi bu ekrana yönlendirir; operatör buradan
+  // check-in / no-show / iptal yapabilmelidir.
+  const isPendingArrival = booking.status === 'confirmed' || booking.status === 'guaranteed';
+
+  const handleCheckIn = async () => {
+    if (!await confirmDialog({ message: 'Bu rezervasyon için check-in yapılsın mı?' })) return;
+    setCheckingIn(true);
+    try {
+      await axios.post(`/frontdesk/checkin/${booking.id}?create_folio=true`);
+      toast.success('Check-in tamamlandı');
+      if (onBookingUpdated) onBookingUpdated();
+      onClose();
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : detail?.error || 'Check-in başarısız';
+      toast.error(msg);
+    } finally {
+      setCheckingIn(false);
+    }
+  };
+
+  const handleNoShow = async () => {
+    if (!await confirmDialog({ message: 'Bu rezervasyon no-show olarak işaretlensin mi?', variant: 'danger' })) return;
+    setMarkingNoShow(true);
+    try {
+      await axios.post('/pms/bookings/no-show-virtual', {
+        booking_id: booking.id,
+        no_show_reason: 'misafir_gelmedi',
+      });
+      toast.success('Rezervasyon no-show olarak işaretlendi');
+      if (onBookingUpdated) onBookingUpdated();
+      onClose();
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : detail?.error || 'No-show işlemi başarısız';
+      toast.error(msg);
+    } finally {
+      setMarkingNoShow(false);
     }
   };
 
@@ -244,7 +289,33 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-2">
+            <div className="space-y-2">
+              {isPendingArrival && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleCheckIn}
+                    disabled={checkingIn || markingNoShow}
+                    className="bg-emerald-600 hover:bg-emerald-700"
+                    data-testid="detail-checkin-btn"
+                  >
+                    {checkingIn ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <LogIn className="w-4 h-4 mr-1" />}
+                    Check-in
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleNoShow}
+                    disabled={checkingIn || markingNoShow}
+                    className="border-amber-400 text-amber-700 hover:bg-amber-50"
+                    data-testid="detail-noshow-btn"
+                  >
+                    {markingNoShow ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <UserX className="w-4 h-4 mr-1" />}
+                    No-show işaretle
+                  </Button>
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-2">
               <Button 
                 size="sm"
                 onClick={() => { onViewFolio(booking.id); onClose(); }}
@@ -291,6 +362,7 @@ const BookingDetailDialog = ({ open, onClose, booking, guests, rooms, companies,
                 {cancelling ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <XCircle className="w-4 h-4 mr-1" />}
                 {booking.status === 'cancelled' ? 'İptal Edildi' : t('booking.cancelBooking')}
               </Button>
+              </div>
             </div>
           )}
         </div>

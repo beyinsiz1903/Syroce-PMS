@@ -21,8 +21,20 @@ const ACTION_LABELS = {
 
 function bookingHref(item) {
   if (item.run_id) return null;
-  if (item.id) return `/pms?edit=${item.id}#bookings`;
+  if (item.id) return `/app/pms?edit=${item.id}#bookings`;
   return null;
+}
+
+// Rezervasyon detay ekranına deep-link ile git. Örneklem kaydı
+// sessionStorage'a koyarak detay diyaloğunun, rezervasyon PMS modülünün
+// yüklü tarih aralığı dışında olsa bile (geçmiş tarihli bekleyen gelişler)
+// açılmasını garanti et.
+function goToBookingDetail(item, navigate) {
+  if (!item?.id) return;
+  try {
+    window.sessionStorage?.setItem('pms_edit_booking', JSON.stringify(item));
+  } catch { /* sessionStorage erişilemezse yine de deep-link dene */ }
+  navigate(`/app/pms?edit=${item.id}#bookings`);
 }
 
 async function openFolioForBooking(bookingId, navigate) {
@@ -250,14 +262,15 @@ export default function PreparationTab({ onStartRun, onPreviewLoaded, refreshKey
                                   size="sm" variant="ghost"
                                   className="h-7 px-2 text-indigo-700 hover:text-indigo-900"
                                   onClick={() => {
-                                    // checkout_or_extend ve checkin_or_no_show:
-                                    // doğrudan rezervasyonun folyosunu aç (kullanıcı
-                                    // listeye atılmasın, hemen işlem yapsın).
-                                    if (
-                                      it.id
-                                      && (b.action === 'checkout_or_extend'
-                                        || b.action === 'checkin_or_no_show')
-                                    ) {
+                                    if (it.id && b.action === 'checkin_or_no_show') {
+                                      // Bekleyen geliş: henüz check-in yapılmadığı
+                                      // için folyo YOK (folyo check-in anında
+                                      // oluşur). Folyo açma akışına değil,
+                                      // rezervasyon detayına yönlendir — oradan
+                                      // check-in / no-show / iptal yapılabilir.
+                                      goToBookingDetail(it, navigate);
+                                    } else if (it.id && b.action === 'checkout_or_extend') {
+                                      // Geç çıkış: folyosu var, doğrudan aç.
                                       openFolioForBooking(it.id, navigate);
                                     } else if (href) {
                                       navigate(href);
