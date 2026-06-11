@@ -36,6 +36,20 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
   const folioCharges = Array.isArray(folio.charges) ? folio.charges : [];
   const folioBalance = Number(folio.balance) || 0;
 
+  // Booking kapsamlı ekstra masraflar folio_id taşımaz ve folio.balance'a
+  // dâhil DEĞİLDİR (Task #426). Tutar tabanlı bölmede (eşit/özel) backend bu
+  // ekstra masrafları kaynak folioya absorbe ettiğinden, bölünebilir bakiye =
+  // folio bakiyesi + ekstra masraf toplamıdır. Aşağıdaki hesaplar bu artırılmış
+  // bakiyeyi kullanır; "Kaleme Göre" akışı değişmez (kalem tek tek seçilir).
+  const extraChargesTotal = useMemo(
+    () =>
+      folioCharges
+        .filter((c) => !c.folio_id)
+        .reduce((s, c) => s + Number(c.total ?? c.amount ?? c.charge_amount ?? 0), 0),
+    [folioCharges]
+  );
+  const divisibleBalance = folioBalance + extraChargesTotal;
+
   const toggleCharge = (chargeId) => {
     setSelectedCharges((prev) =>
       prev.includes(chargeId) ? prev.filter((c) => c !== chargeId) : [...prev, chargeId]
@@ -51,13 +65,13 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
   );
 
   const evenPerSplit = useMemo(() => {
-    if (!folioBalance || evenSplits < 2) return 0;
+    if (!divisibleBalance || evenSplits < 2) return 0;
     // Reserve at least 0.01 in source so it doesn't drain to zero;
-    // backend rejects total >= source_balance.
-    const transferable = Math.max(0, folioBalance - 0.01);
+    // backend rejects total >= source_balance (ekstra masraflar dâhil).
+    const transferable = Math.max(0, divisibleBalance - 0.01);
     const each = transferable / evenSplits;
     return Math.floor(each * 100) / 100;
-  }, [folioBalance, evenSplits]);
+  }, [divisibleBalance, evenSplits]);
 
   const customTotal = useMemo(
     () => customSplits.reduce((s, x) => s + (Number(x.amount) || 0), 0),
@@ -133,9 +147,9 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
           toast.error('En az bir tutar girin');
           return;
         }
-        if (customTotal >= folioBalance) {
+        if (customTotal >= divisibleBalance) {
           toast.error(
-            `Toplam (${customTotal.toFixed(2)}) bakiyeden (${folioBalance.toFixed(2)}) küçük olmalı`
+            `Toplam (${customTotal.toFixed(2)}) bakiyeden (${divisibleBalance.toFixed(2)}) küçük olmalı`
           );
           return;
         }
@@ -209,6 +223,12 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
           <div>
             <p className="text-sm text-gray-600">{t('cm.components_SplitFolioDialog.toplam_bakiye')}</p>
             <p className="font-bold text-green-600">${folioBalance.toFixed(2)}</p>
+            {extraChargesTotal > 0 && (
+              <p className="text-xs text-gray-500 mt-0.5">
+                + Ekstra masraf ${extraChargesTotal.toFixed(2)} = Bölünebilir{' '}
+                <strong>${divisibleBalance.toFixed(2)}</strong>
+              </p>
+            )}
           </div>
         </div>
 
@@ -355,8 +375,11 @@ const SplitFolioDialog = ({ folio, onClose, onSuccess }) => {
             </Button>
             <p className="text-xs text-gray-600">
               {t('cm.components_SplitFolioDialog.toplam_aktarilacak')} <strong>${customTotal.toFixed(2)}</strong> {t('cm.components_SplitFolioDialog.bakiye')}{' '}
-              <strong>${folioBalance.toFixed(2)}</strong>
-              {customTotal >= folioBalance && folioBalance > 0 && (
+              <strong>${divisibleBalance.toFixed(2)}</strong>
+              {extraChargesTotal > 0 && (
+                <span className="text-gray-400 ml-1">(ekstra masraf dâhil)</span>
+              )}
+              {customTotal >= divisibleBalance && divisibleBalance > 0 && (
                 <span className="text-red-600 ml-2">
                   {t('cm.components_SplitFolioDialog.bakiyeden_kucuk_olmali_orijinalde_bir_mi')}
                 </span>

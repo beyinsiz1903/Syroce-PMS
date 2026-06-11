@@ -105,6 +105,8 @@ class _FakeDB:
     def __init__(self):
         self.folios = _Coll()
         self.folio_charges = _Coll()
+        self.extra_charges = _Coll()
+        self.payments = _Coll()
         self.folio_operations = _Coll()
         self.pms_audit_trail = _Coll()
         self.idempotency_keys = _Coll()

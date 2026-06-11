@@ -365,6 +365,41 @@ class FolioHardeningService:
 
     # ── SPLIT FOLIO BY AMOUNT (even / custom) ──
 
+    async def _read_booking_extra_charges(self, tenant_id: str, booking_id: str | None) -> list[dict]:
+        """Read a booking's voided-olmayan ekstra masraf satırlarını (read-only)."""
+        if not booking_id:
+            return []
+        return await db.extra_charges.find(
+            {"booking_id": booking_id, "tenant_id": tenant_id, "voided": {"$ne": True}},
+            {"_id": 0}
+        ).to_list(None)
+
+    async def _absorb_extra_charges(self, tenant_id: str, source_folio_id: str,
+                                    extras: list[dict], performed_by: str, now: datetime) -> float:
+        """Normalize given `extra_charges` onto the source folio.
+
+        Tutar tabanlı bölme (eşit/özel) `folio.balance` üzerinden çalışır;
+        `extra_charges` ise booking kapsamlıdır ve `calculate_folio_balance`'a
+        dâhil DEĞİLDİR (Task #426). Bölünebilir bakiye ekstra masrafları da
+        kapsasın diye, kaynak booking'in voided olmayan ekstra masrafları —
+        by_item akışındaki normalizasyonun aynısıyla — kaynak folioya birer
+        `folio_charges` kalemi olarak yazılır ve `extra_charges`'tan silinir.
+
+        Çift sayım olmaz: ekstra masraf artık folio bakiyesine (folio_charges)
+        dâhildir; booking özetinde `total_extra` 0'a düşer, aynı tutar
+        `total_charges`'a geçer → booking seviyesi net bakiye değişmez.
+
+        Yalnızca bölme kabul edildikten SONRA çağrılır; reddedilen bölme DB'yi
+        değiştirmez. Döndürülen değer: absorbe edilen ekstra masraf toplam tutarı.
+        """
+        absorbed_total = 0.0
+        for ec in extras:
+            normalized = self._extra_charge_to_folio_charge(ec, tenant_id, source_folio_id, performed_by, now)
+            await db.folio_charges.insert_one(normalized)
+            await db.extra_charges.delete_one({"id": ec["id"], "tenant_id": tenant_id})
+            absorbed_total += normalized["total"]
+        return round(absorbed_total, 2)
+
     async def split_folio_by_amounts(self, tenant_id: str, source_folio_id: str,
                                      splits: list[dict], reason: str, performed_by: str) -> dict:
         """Split a folio by transferring monetary amounts (not specific charges).
@@ -374,6 +409,11 @@ class FolioHardeningService:
         A single negative adjustment charge is posted on the source folio for
         the total transferred amount, so balances reconcile via the standard
         recalculation pipeline.
+
+        Bölmeden önce kaynak booking'in ekstra masrafları kaynak folioya
+        absorbe edilir (Task #426) — böylece tutar tabanlı bölme, ekstra masraf
+        toplamını da kapsayan bir bölünebilir bakiye üzerinden çalışır ve çift
+        sayım oluşmaz (bkz. `_absorb_booking_extra_charges`).
         """
         from core.utils import generate_folio_number
 
@@ -386,6 +426,18 @@ class FolioHardeningService:
         if not splits:
             return {"success": False, "error": "En az bir hedef folio gerekli"}
 
+        # Ekstra masrafları (booking kapsamlı, folio.balance'a dâhil DEĞİL) önce
+        # read-only oku; bölünebilir bakiye = folio.balance + ekstra masraf toplamı
+        # (Task #426). Absorbe (DB mutasyonu) yalnızca bölme KABUL edildikten sonra
+        # yapılır; reddedilen bölme DB'yi değiştirmez.
+        now = datetime.now(UTC)
+        extras = await self._read_booking_extra_charges(tenant_id, source_folio.get("booking_id"))
+        extra_total = round(
+            sum(self._extra_charge_to_folio_charge(ec, tenant_id, source_folio_id, performed_by, now)["total"]
+                for ec in extras),
+            2,
+        )
+
         # Validate amounts
         cleaned: list[dict] = []
         for s in splits:
@@ -395,7 +447,8 @@ class FolioHardeningService:
             cleaned.append({"amount": amt, "target_folio_type": s.get("target_folio_type") or "guest"})
 
         total_transfer = round(sum(s["amount"] for s in cleaned), 2)
-        source_balance = round(float(source_folio.get("balance", 0) or 0), 2)
+        folio_balance = round(float(source_folio.get("balance", 0) or 0), 2)
+        source_balance = round(folio_balance + extra_total, 2)
 
         if source_balance <= 0:
             return {"success": False, "error": "Kaynak folio bakiyesi 0 veya negatif, bölünemez"}
@@ -408,7 +461,19 @@ class FolioHardeningService:
                 ),
             }
 
-        now = datetime.now(UTC)
+        # Bölme kabul edildi → ekstra masrafları kaynak folioya absorbe et +
+        # bakiyeyi yeniden hesapla, böylece negatif düzeltme ekstrayı da kapsar.
+        absorbed_extra_total = 0.0
+        if extras:
+            absorbed_extra_total = await self._absorb_extra_charges(
+                tenant_id, source_folio_id, extras, performed_by, now
+            )
+            if absorbed_extra_total > 0:
+                await self._recalculate_folio_balance(tenant_id, source_folio_id)
+                source_folio = await db.folios.find_one(
+                    {"id": source_folio_id, "tenant_id": tenant_id}, {"_id": 0}
+                )
+
         new_folios: list[dict] = []
 
         # 1) Create target folios + positive adjustment charges
@@ -483,18 +548,21 @@ class FolioHardeningService:
             "from_folio_id": source_folio_id,
             "to_folio_ids": [f["id"] for f in new_folios],
             "amount": total_transfer,
+            "absorbed_extra_total": absorbed_extra_total,
             "reason": reason,
             "performed_by": performed_by,
             "performed_at": now.isoformat(),
         })
         await self._log_audit(tenant_id, "folio", source_folio_id, "folio_split_by_amount", performed_by,
-                              {"target_count": len(new_folios), "total_transferred": total_transfer})
+                              {"target_count": len(new_folios), "total_transferred": total_transfer,
+                               "absorbed_extra_total": absorbed_extra_total})
 
         return {
             "success": True,
             "new_folios": new_folios,
             "transferred_amount": total_transfer,
             "target_count": len(new_folios),
+            "absorbed_extra_total": absorbed_extra_total,
         }
 
     # ── TAX BREAKDOWN ──
