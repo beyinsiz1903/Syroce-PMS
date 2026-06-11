@@ -118,12 +118,8 @@ async def shutdown_all(app):
         except Exception as e:
             logger.warning(f"HotelRunner Push Queue Worker shutdown warning: {e}")
 
-    # Night Audit Scheduler
-    try:
-        from domains.pms.night_audit.scheduler import stop_scheduler
-        stop_scheduler()
-    except Exception as e:
-        logger.warning(f"Night Audit Scheduler shutdown warning: {e}")
+    # Night Audit Scheduler — Task #362: retired (now a Celery beat/worker flow),
+    # so there is no in-process loop to stop here anymore.
 
     # Web Push cleanup worker
     try:

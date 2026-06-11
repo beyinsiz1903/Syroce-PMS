@@ -6,6 +6,7 @@ All long-running and periodic tasks
 import asyncio
 import logging
 import os
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -187,91 +188,221 @@ async def find_room_for_reservation(db, tenant_id: str, room_type: str | None) -
     return room['id'] if room else None
 
 
-@celery_app.task(name='celery_tasks.night_audit_task')
-def night_audit_task():
-    """Run night audit for all tenants"""
-    return asyncio.run(_night_audit_async())
+# ============= NIGHT AUDIT (Task #362) =============
+# Per-tenant, local-time, hardened night audit driven by Celery.
+#
+# The legacy `night_audit_task` (a fixed 02:00 UTC global cron that posted
+# simple, un-hardened room charges for every tenant at once) has been removed:
+# it closed Tokyo's and London's financial day at the same instant and
+# bypassed the hardened state machine. Audits are now triggered per tenant at
+# each tenant's own configured LOCAL time by `night_audit_dispatch_task` (beat)
+# and executed by `night_audit_for_tenant` (worker).
 
-async def _night_audit_async():
-    """Async night audit implementation"""
-    db, client = get_db()
 
+def _now_utc() -> datetime:
+    """Current UTC time. Isolated in a helper so tests can pin the wall clock
+    deterministically when exercising the local-time dispatch matching."""
+    return datetime.now(UTC)
+
+
+def _fresh_mongo():
+    """Create a throwaway Motor client bound to the CURRENT event loop.
+
+    Celery executes each task body via ``asyncio.run()``, which creates a fresh
+    loop and closes it afterwards. A module-level Motor client (e.g.
+    ``core.database.client``) binds to the first loop it touches and then raises
+    ``RuntimeError: Event loop is closed`` on every later task. So night-audit
+    tasks build a per-call client bound to the live loop — the same pattern the
+    Booking.com / archival tasks already use via ``get_db()``.
+
+    The connection string / DB name are resolved from ``core.database`` so the
+    worker always reads/writes the exact same database as the rest of the app.
+    """
+    from core.database import db_name, mongo_url
+    client = AsyncIOMotorClient(mongo_url)
+    return client, client[db_name]
+
+
+@celery_app.task(name='celery_tasks.night_audit_dispatch_task')
+def night_audit_dispatch_task():
+    """Beat dispatcher (every minute): enqueue per-tenant audits at local time.
+
+    Reads every enabled night-audit schedule, converts ``now`` into each
+    tenant's local wall-clock with DST-aware zoneinfo, and when the local
+    ``hour:minute`` matches the configured time, atomically claims the tenant
+    for today's local day and enqueues ``night_audit_for_tenant``. The claim
+    (``find_one_and_update`` on ``last_auto_run``) closes the read-then-write
+    race, so a tenant is dispatched at most once per local day even across
+    overlapping/duplicate beat ticks.
+    """
+    return asyncio.run(_night_audit_dispatch_async())
+
+
+async def _night_audit_dispatch_async() -> dict[str, Any]:
+    from domains.pms.night_audit.scheduler import utc_to_local
+
+    client, db = _fresh_mongo()
+    queued: list[str] = []
+    scanned = 0
     try:
-        # Get all active tenants
-        tenants = await db.users.distinct('tenant_id', {'active': True})
+        now_utc = _now_utc()
+        schedules = await db.night_audit_schedules.find(
+            {"enabled": True}, {"_id": 0}
+        ).to_list(1000)
 
-        results = []
-        for tenant_id in tenants:
-            try:
-                # Post room charges for all checked-in bookings
-                bookings = await db.bookings.find({
-                    'tenant_id': tenant_id,
-                    'status': 'checked_in'
-                }).to_list(1000)
+        for schedule in schedules:
+            scanned += 1
+            tenant_id = schedule.get("tenant_id")
+            if not tenant_id:
+                continue
+            sched_hour = int(schedule.get("scheduled_hour", 0) or 0)
+            sched_minute = int(schedule.get("scheduled_minute", 0) or 0)
+            tz_name = schedule.get("timezone") or "UTC"
 
-                charges_posted = 0
-                for booking in bookings:
-                    # Get room rate
-                    room_rate = booking.get('total_amount', 0) / max(1, booking.get('nights', 1))
+            local_now = utc_to_local(now_utc, tz_name)
+            if local_now.hour != sched_hour or local_now.minute != sched_minute:
+                continue
 
-                    # Find guest folio
-                    folio = await db.folios.find_one({
-                        'tenant_id': tenant_id,
-                        'booking_id': booking['booking_id'],
-                        'folio_type': 'guest',
-                        'status': 'open'
-                    })
+            # Atomic per-local-day claim. The tenant's local day starts at local
+            # midnight; expressed as a UTC instant it gives an ISO-8601 string
+            # that sorts lexicographically by time (same +00:00 suffix as the
+            # values we write). A tenant whose `last_auto_run` predates this
+            # boundary (or is unset) has not run today → we win the claim.
+            local_day_start = local_now.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            boundary = local_day_start.astimezone(UTC).isoformat()
+            now_iso = now_utc.isoformat()
 
-                    if folio:
-                        # Post room charge
-                        charge = {
-                            'charge_id': f"CHG-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{charges_posted}",
-                            'tenant_id': tenant_id,
-                            'folio_id': folio['folio_id'],
-                            'charge_category': 'room',
-                            'description': f"Room charge - {booking.get('room_number', 'N/A')}",
-                            'amount': room_rate,
-                            'quantity': 1,
-                            'unit_price': room_rate,
-                            'tax_rate': 0.10,
-                            'tax_amount': room_rate * 0.10,
-                            'total': room_rate * 1.10,
-                            'voided': False,
-                            'created_at': datetime.now(UTC)
-                        }
+            claim = await db.night_audit_schedules.find_one_and_update(
+                {
+                    "tenant_id": tenant_id,
+                    "enabled": True,
+                    "$or": [
+                        {"last_auto_run": {"$exists": False}},
+                        {"last_auto_run": None},
+                        {"last_auto_run": {"$lt": boundary}},
+                    ],
+                },
+                {"$set": {
+                    "last_auto_run": now_iso,
+                    "last_auto_run_status": "dispatched",
+                }},
+            )
+            if claim is None:
+                # Already claimed for today's local day (race lost / re-tick).
+                continue
 
-                        await db.folio_charges.insert_one(charge)
-                        charges_posted += 1
+            night_audit_for_tenant.delay(tenant_id)
+            queued.append(tenant_id)
+            logger.info(
+                "Night audit dispatch: queued tenant=%s at local %02d:%02d (%s)",
+                tenant_id, sched_hour, sched_minute, tz_name,
+            )
 
-                results.append({
-                    'tenant_id': tenant_id,
-                    'bookings_processed': len(bookings),
-                    'charges_posted': charges_posted
-                })
+        return {"success": True, "scanned": scanned, "queued": queued}
+    except Exception as exc:
+        logger.exception("Night audit dispatch error: %s", exc)
+        return {"success": False, "error": str(exc), "scanned": scanned, "queued": queued}
+    finally:
+        client.close()
 
-                logger.info(f"Night audit completed for tenant {tenant_id}: {charges_posted} charges posted")
 
-            except Exception as e:
-                logger.error(f"Night audit error for tenant {tenant_id}: {e}")
-                results.append({
-                    'tenant_id': tenant_id,
-                    'error': str(e)
-                })
+@celery_app.task(
+    name='celery_tasks.night_audit_for_tenant',
+    bind=True,
+    max_retries=2,
+    default_retry_delay=300,
+)
+def night_audit_for_tenant(self, tenant_id: str):
+    """Run the hardened night audit for a single tenant (Task #362).
 
+    Executes ``core.night_audit_hardened.start_night_audit`` under
+    ``tenant_context`` and records the outcome in ``night_audit_schedule_logs``
+    and ``night_audit_schedules.last_auto_run``. The hardened engine's state
+    machine and ``business_date`` dedup unique index remain the final
+    idempotency safety net, so a Celery retry after an *unexpected* error
+    (e.g. a transient DB blip) cannot double-post charges.
+    """
+    try:
+        return asyncio.run(_night_audit_for_tenant_async(tenant_id))
+    except Exception as exc:  # noqa: BLE001 — infra-level; engine dedup makes retry safe
+        logger.exception("Night audit task crashed for tenant=%s: %s", tenant_id, exc)
+        raise self.retry(exc=exc)
+
+
+async def _night_audit_for_tenant_async(tenant_id: str) -> dict[str, Any]:
+    import core.night_audit_hardened as engine
+    from core.tenant_db import TenantAwareDBProxy, tenant_context
+
+    client, raw_db = _fresh_mongo()
+    proxy = TenantAwareDBProxy(raw_db)
+
+    # The hardened engine captured `core.database.{client,db}` at import time;
+    # under Celery those are bound to a now-dead loop. Point them at this
+    # loop-fresh client for the duration of the run: engine transactions use
+    # `engine.client`, all reads/writes use `engine.db`, and the (best-effort)
+    # snapshot hook receives `db` explicitly. Celery's default prefork pool runs
+    # one task per process at a time, so this process-global rebind is safe.
+    saved_client, saved_db = engine.client, engine.db
+    engine.client, engine.db = client, proxy
+    try:
+        settings = await raw_db.tenant_settings.find_one(
+            {"tenant_id": tenant_id}, {"_id": 0, "business_date": 1}
+        )
+        bd = (settings or {}).get("business_date") or datetime.now(UTC).date().isoformat()
+
+        with tenant_context(tenant_id):
+            result = await engine.start_night_audit(
+                tenant_id=tenant_id,
+                business_date=bd,
+                trigger_source="scheduler",
+                actor={"id": "system_scheduler", "email": "system"},
+            )
+
+        success = bool(result.get("success"))
+        status = "completed" if success else "failed"
+        error_msg = None if success else result.get("error")
+        run_id = None
+        if success and result.get("run"):
+            run_id = result["run"].get("id")
+        elif result.get("run_id"):
+            run_id = result.get("run_id")
+
+        now_iso = datetime.now(UTC).isoformat()
+        await raw_db.night_audit_schedule_logs.insert_one({
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "triggered_at": now_iso,
+            "business_date": bd,
+            "trigger_type": "automatic",
+            "status": status,
+            "run_id": run_id,
+            "error": error_msg,
+            "completed_at": now_iso,
+        })
+        await raw_db.night_audit_schedules.update_one(
+            {"tenant_id": tenant_id},
+            {"$set": {
+                "last_auto_run": now_iso,
+                "last_auto_run_status": status,
+            }},
+        )
+
+        logger.info(
+            "Night audit tenant=%s: %s (run=%s, business_date=%s)",
+            tenant_id, status, run_id, bd,
+        )
         return {
-            'success': True,
-            'timestamp': datetime.now(UTC).isoformat(),
-            'results': results
-        }
-
-    except Exception as e:
-        logger.error(f"Night audit task failed: {e}")
-        return {
-            'success': False,
-            'error': str(e)
+            "success": success,
+            "tenant_id": tenant_id,
+            "status": status,
+            "run_id": run_id,
+            "business_date": bd,
         }
     finally:
-        await client.close()
+        engine.client, engine.db = saved_client, saved_db
+        client.close()
 
 
 # ============= DATA ARCHIVAL TASKS =============

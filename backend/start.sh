@@ -123,4 +123,28 @@ PYTHON_BIN="${PYTHON_BIN:-/home/runner/workspace/.pythonlibs/bin/python}"
 if [ ! -x "$PYTHON_BIN" ]; then
   PYTHON_BIN="python"
 fi
+
+# Celery worker + beat (Task #362). Night audit now runs as a per-tenant Celery
+# flow: a once-a-minute beat dispatcher (night_audit_dispatch_task) enqueues
+# per-tenant hardened audits at each tenant's LOCAL configured time, executed by
+# the worker (night_audit_for_tenant). In production these run as dedicated K8s /
+# docker-compose worker+beat containers; on Replit (no separate worker process)
+# we start them here so the audit actually fires for the pilot. Without this,
+# retiring the in-process asyncio loop would mean the audit never triggers.
+# Requires Redis as the broker; skipped (with a clear log) if Redis is absent.
+if [ "${SYROCE_START_CELERY:-1}" = "1" ] && [ -n "$REDIS_URL" ]; then
+  CELERY_CONCURRENCY="${CELERY_WORKER_CONCURRENCY:-2}"
+  "$PYTHON_BIN" -m celery -A celery_app worker \
+    --loglevel="${CELERY_LOGLEVEL:-info}" \
+    --concurrency="$CELERY_CONCURRENCY" \
+    --logfile /tmp/celery-worker.log --pidfile /tmp/celery-worker.pid &
+  "$PYTHON_BIN" -m celery -A celery_app beat \
+    --loglevel="${CELERY_LOGLEVEL:-info}" \
+    --logfile /tmp/celery-beat.log --pidfile /tmp/celery-beat.pid \
+    --schedule /tmp/celerybeat-schedule &
+  echo "✅ Celery worker (concurrency=$CELERY_CONCURRENCY) + beat started (night audit dispatcher active)"
+else
+  echo "ℹ️  Celery başlatılmadı (Redis yok veya SYROCE_START_CELERY=0); gece denetimi tetiklenmeyecek."
+fi
+
 exec "$PYTHON_BIN" -m uvicorn server:app --host 0.0.0.0 --port "$PORT"
