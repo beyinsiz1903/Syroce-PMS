@@ -86,7 +86,12 @@ export async function getToday(): Promise<TodayDigest> {
 
 // The per-item kind selects which existing backend approve/reject endpoint
 // the action routes to (see actOnApproval). It is NOT the category key.
-export type ApprovalKind = 'approval' | 'approval_request' | 'leave' | 'shift_swap';
+export type ApprovalKind =
+  | 'approval'
+  | 'approval_request'
+  | 'leave'
+  | 'shift_swap'
+  | 'pr_status';
 
 export type ApprovalItem = {
   id: string;
@@ -101,7 +106,7 @@ export type ApprovalItem = {
 };
 
 export type ApprovalCategory = {
-  key: 'finance' | 'hr';
+  key: 'finance' | 'hr' | 'procurement';
   label: string;
   items: ApprovalItem[];
   count: number;
@@ -127,6 +132,7 @@ export type ApprovalAction = 'approve' | 'reject';
 //   - approval_request  -> POST /api/approvals/{id}/approve|reject  (analytics)
 //   - leave             -> POST /api/hr/leave-request/{id}/decision (2-stage)
 //   - shift_swap        -> POST /api/hr/shift-swap-request/{id}/decision
+//   - pr_status         -> POST /api/procurement/purchase-requests/{id}/status
 export async function actOnApproval(
   item: ApprovalItem,
   action: ApprovalAction,
@@ -166,6 +172,15 @@ export async function actOnApproval(
       return api.post(`/api/hr/shift-swap-request/${id}/decision`, {
         action,
         note: note || null,
+      });
+    case 'pr_status':
+      // The PR-status endpoint maps a submitted request to approved|rejected.
+      // A rejection reason is mandatory (backend requires reason >= 5 chars for
+      // reject/cancel); approvals send no reason. Backend still enforces
+      // require_op("manage_sales") + require_procurement on the decision.
+      return api.post(`/api/procurement/purchase-requests/${id}/status`, {
+        status: action === 'approve' ? 'approved' : 'rejected',
+        ...(action === 'reject' ? { reason: note } : {}),
       });
     default:
       throw new Error(`Bilinmeyen onay türü: ${item.kind}`);

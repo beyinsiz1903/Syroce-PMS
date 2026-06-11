@@ -78,6 +78,37 @@ export function hasMaintenanceAccess(raw: string | undefined): boolean {
   return MAINTENANCE_OPS_ROLES.includes(raw.toLowerCase());
 }
 
+// Task #330 (Faz 3) cosmetic gates. Each mirrors a backend authorizer using
+// the canonical UserRole values so the hub only SHOWS what the user could act
+// on; the backend still enforces every read/write, so nothing here weakens RBAC.
+// Derived from the RAW role because `normalizeRole` collapses several roles.
+//
+// Procurement: mirrors PROCUREMENT_ROLES in core/spa_mice_authz.py (the roles
+// that pass require_procurement for PR/PO state changes).
+const PROCUREMENT_ROLES = ['super_admin', 'admin', 'supervisor', 'finance', 'procurement'];
+// HR: mirrors the raw roles that hold the VIEW_HR permission in backend
+// ROLE_PERMISSIONS (admin/super_admin everything; supervisor + finance hold it
+// explicitly). `hr`/`hr_manager` kept defensively (same union as APPROVALS_ROLES).
+const HR_VIEW_ROLES = ['super_admin', 'admin', 'supervisor', 'finance', 'hr', 'hr_manager'];
+// Revenue: mirrors require_op("view_revenue") which maps to VIEW_FINANCIAL_REPORTS
+// (see role_permission_service.py) — same raw-role set as the finance reports gate.
+const REVENUE_ROLES = ['super_admin', 'admin', 'supervisor', 'finance'];
+
+export function hasProcurementAccess(raw: string | undefined): boolean {
+  if (!raw) return false;
+  return PROCUREMENT_ROLES.includes(raw.toLowerCase());
+}
+
+export function hasHrAccess(raw: string | undefined): boolean {
+  if (!raw) return false;
+  return HR_VIEW_ROLES.includes(raw.toLowerCase());
+}
+
+export function hasRevenueAccess(raw: string | undefined): boolean {
+  if (!raw) return false;
+  return REVENUE_ROLES.includes(raw.toLowerCase());
+}
+
 // Cosmetic mirror of the backend approval-visibility gates used by the mobile
 // hub `/approvals` endpoint: finance approvals require `manage_approvals` and
 // HR streams require `view_hr`. The union of raw roles that hold either is used
@@ -97,7 +128,10 @@ export function hasDepartmentAccess(raw: string | undefined): boolean {
     hasSpaAccess(raw) ||
     hasMiceAccess(raw) ||
     hasMaintenanceAccess(raw) ||
-    canViewFinanceReports(raw)
+    canViewFinanceReports(raw) ||
+    hasProcurementAccess(raw) ||
+    hasHrAccess(raw) ||
+    hasRevenueAccess(raw)
   );
 }
 
@@ -109,6 +143,9 @@ export type AuthState = {
   spaAccess: boolean;
   miceAccess: boolean;
   maintenanceAccess: boolean;
+  procurementAccess: boolean;
+  hrAccess: boolean;
+  revenueAccess: boolean;
   deptAccess: boolean;
   approvalsAccess: boolean;
   loading: boolean;
@@ -143,6 +180,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   spaAccess: false,
   miceAccess: false,
   maintenanceAccess: false,
+  procurementAccess: false,
+  hrAccess: false,
+  revenueAccess: false,
   deptAccess: false,
   approvalsAccess: false,
   loading: true,
@@ -160,6 +200,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         spaAccess: false,
         miceAccess: false,
         maintenanceAccess: false,
+        procurementAccess: false,
+        hrAccess: false,
+        revenueAccess: false,
         deptAccess: false,
         approvalsAccess: false,
         loading: false,
@@ -184,6 +227,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       spaAccess: hasSpaAccess(user?.role),
       miceAccess: hasMiceAccess(user?.role),
       maintenanceAccess: hasMaintenanceAccess(user?.role),
+      procurementAccess: hasProcurementAccess(user?.role),
+      hrAccess: hasHrAccess(user?.role),
+      revenueAccess: hasRevenueAccess(user?.role),
       deptAccess: hasDepartmentAccess(user?.role),
       approvalsAccess: hasApprovalsAccess(user?.role),
       loading: false,
@@ -206,6 +252,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         spaAccess: hasSpaAccess(res.user?.role),
         miceAccess: hasMiceAccess(res.user?.role),
         maintenanceAccess: hasMaintenanceAccess(res.user?.role),
+        procurementAccess: hasProcurementAccess(res.user?.role),
+        hrAccess: hasHrAccess(res.user?.role),
+        revenueAccess: hasRevenueAccess(res.user?.role),
         deptAccess: hasDepartmentAccess(res.user?.role),
         approvalsAccess: hasApprovalsAccess(res.user?.role),
         loading: false,
@@ -244,6 +293,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       spaAccess: false,
       miceAccess: false,
       maintenanceAccess: false,
+      procurementAccess: false,
+      hrAccess: false,
+      revenueAccess: false,
       deptAccess: false,
       approvalsAccess: false,
     });

@@ -18,8 +18,18 @@ export default function DepartmentsHub() {
   const miceAccess = useAuthStore((s) => s.miceAccess);
   const accountingAccess = useAuthStore((s) => s.financeReports);
   const maintenanceAccess = useAuthStore((s) => s.maintenanceAccess);
+  const procurementAccess = useAuthStore((s) => s.procurementAccess);
+  const hrAccess = useAuthStore((s) => s.hrAccess);
+  const revenueAccess = useAuthStore((s) => s.revenueAccess);
 
-  const anyAccess = spaAccess || miceAccess || accountingAccess || maintenanceAccess;
+  const anyAccess =
+    spaAccess ||
+    miceAccess ||
+    accountingAccess ||
+    maintenanceAccess ||
+    procurementAccess ||
+    hrAccess ||
+    revenueAccess;
 
   return (
     <ScrollView
@@ -73,6 +83,33 @@ export default function DepartmentsHub() {
           title={tr.departments.maintenance.title}
           subtitle={tr.departments.maintenance.tileSubtitle}
           onPress={() => router.push(ROUTES.maintenance)}
+        />
+      ) : null}
+
+      {procurementAccess ? (
+        <DepartmentTile
+          testID="dept-tile-procurement"
+          title={tr.departments.procurement.title}
+          subtitle={tr.departments.procurement.tileSubtitle}
+          onPress={() => router.push(ROUTES.procurement)}
+        />
+      ) : null}
+
+      {hrAccess ? (
+        <DepartmentTile
+          testID="dept-tile-hr"
+          title={tr.departments.hr.title}
+          subtitle={tr.departments.hr.tileSubtitle}
+          onPress={() => router.push(ROUTES.hr)}
+        />
+      ) : null}
+
+      {revenueAccess ? (
+        <DepartmentTile
+          testID="dept-tile-revenue"
+          title={tr.departments.revenue.title}
+          subtitle={tr.departments.revenue.tileSubtitle}
+          onPress={() => router.push(ROUTES.revenue)}
         />
       ) : null}
 

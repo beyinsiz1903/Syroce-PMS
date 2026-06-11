@@ -154,3 +154,47 @@ async def test_approvals_visible_for_admin():
     assert "finance" in keys
     assert "hr" in keys
     assert isinstance(body["total"], int)
+
+
+@pytest.fixture
+async def seeded_pr():
+    """Seed one submitted purchase request; yield ids; clean up.
+
+    Demo admin is in PROCUREMENT_ROLES, so the procurement approval category
+    must surface this PR with kind "pr_status".
+    """
+    _, user = await _login()
+    tid = user["tenant_id"]
+    pr_id = f"hub-test-pr-{uuid.uuid4().hex[:10]}"
+    await db.proc_purchase_requests.insert_one({
+        "id": pr_id, "tenant_id": tid, "pr_no": "PR-HUBTEST",
+        "status": "submitted", "department": "kitchen",
+        "requester": "hub tester", "lines": [], "lines_total": 1234.0,
+        "created_at": _now(),
+    })
+    yield {"tenant_id": tid, "pr_id": pr_id}
+    await db.proc_purchase_requests.delete_one({"id": pr_id})
+
+
+async def test_approvals_includes_submitted_procurement(seeded_pr):
+    """A submitted PR surfaces in the procurement category as kind pr_status."""
+    headers, _ = await _login()
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.get(f"{HUB}/approvals", headers=headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    proc = next((cat for cat in body["categories"] if cat["key"] == "procurement"), None)
+    assert proc is not None, "procurement category missing for procurement-capable user"
+    item = next((it for it in proc["items"] if it["id"] == seeded_pr["pr_id"]), None)
+    assert item is not None, "seeded submitted PR not surfaced in procurement approvals"
+    assert item["kind"] == "pr_status"
+    assert item["status"] == "submitted"
+
+
+async def test_today_digest_counts_submitted_pr(seeded_pr):
+    """Pending-approval count includes submitted PRs for procurement roles."""
+    headers, _ = await _login()
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.get(f"{HUB}/today", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["pending_approvals"] >= 1

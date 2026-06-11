@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from core.database import db
 from core.security import _is_super_admin, get_current_user, security
+from core.spa_mice_authz import PROCUREMENT_ROLES, _user_role
 from models.schemas import User
 from modules.pms_core.role_permission_service import RolePermissionService
 
@@ -62,6 +63,22 @@ def _can(user: User, operation: str) -> bool:
         operation,
         granted_permissions=getattr(user, "granted_permissions", None),
     )
+
+
+def _can_procurement(user: User) -> bool:
+    """Imperative probe mirroring require_procurement (super-admin bypass).
+
+    Deliberately role-based (PROCUREMENT_ROLES) rather than the ``manage_sales``
+    operation the PR-status endpoint also requires: that operation is held by
+    SALES too, and we must NOT surface satınalma approvals to sales. The
+    underlying /purchase-requests/{id}/status endpoint still enforces BOTH
+    require_op("manage_sales") AND require_procurement, so this only narrows
+    visibility — it never widens it.
+    """
+    if _is_super_admin(user):
+        return True
+    role = _user_role(user)
+    return role is not None and role in PROCUREMENT_ROLES
 
 
 # ── 1. Unified notification feed ────────────────────────────────────────────
@@ -338,6 +355,10 @@ async def get_today_digest(
         pending_approvals += await db.shift_swap_requests.count_documents(
             {"tenant_id": current_user.tenant_id, "status": "pending"}
         )
+    if _can_procurement(current_user):
+        pending_approvals += await db.proc_purchase_requests.count_documents(
+            {"tenant_id": current_user.tenant_id, "status": "submitted"}
+        )
 
     urgent_tasks = [t for t in tasks if t.get("priority") in ("urgent", "high")]
 
@@ -454,6 +475,39 @@ async def get_unified_approvals(
         total += len(hr_items)
         categories.append(
             {"key": "hr", "label": "İnsan Kaynakları", "items": hr_items, "count": len(hr_items)}
+        )
+
+    if _can_procurement(current_user):
+        proc_items: list[dict[str, Any]] = []
+        # Purchase requests awaiting an approve/reject decision. The PR-status
+        # endpoint (POST /purchase-requests/{id}/status) only allows the
+        # submitted -> approved|rejected transition, so only "submitted" PRs are
+        # actionable from here. Visibility is gated by PROCUREMENT_ROLES; the
+        # endpoint still enforces its own RBAC on the decision.
+        async for pr in db.proc_purchase_requests.find(
+            {"tenant_id": current_user.tenant_id, "status": "submitted"}
+        ).sort("created_at", -1).limit(200):
+            proc_items.append(
+                {
+                    "id": pr.get("id"),
+                    "kind": "pr_status",
+                    "title": pr.get("pr_no") or "Satın alma talebi",
+                    "requested_by": pr.get("requester"),
+                    "amount": pr.get("lines_total"),
+                    "priority": "normal",
+                    "status": pr.get("status", "submitted"),
+                    "created_at": _sort_key(pr.get("created_at")),
+                }
+            )
+        proc_items.sort(key=lambda x: x["created_at"], reverse=True)
+        total += len(proc_items)
+        categories.append(
+            {
+                "key": "procurement",
+                "label": "Satın Alma",
+                "items": proc_items,
+                "count": len(proc_items),
+            }
         )
 
     return {"categories": categories, "total": total}

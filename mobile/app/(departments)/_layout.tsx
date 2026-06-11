@@ -24,6 +24,9 @@ export default function DepartmentsLayout() {
       <Stack.Screen name="cashier" options={{ title: tr.departments.cashier.title }} />
       <Stack.Screen name="accounting" options={{ title: tr.departments.accounting.title }} />
       <Stack.Screen name="maintenance" options={{ title: tr.departments.maintenance.title }} />
+      <Stack.Screen name="procurement" options={{ title: tr.departments.procurement.title }} />
+      <Stack.Screen name="hr" options={{ title: tr.departments.hr.title }} />
+      <Stack.Screen name="revenue" options={{ title: tr.departments.revenue.title }} />
     </Stack>
   );
 }
