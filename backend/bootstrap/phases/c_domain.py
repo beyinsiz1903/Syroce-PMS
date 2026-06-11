@@ -174,9 +174,21 @@ async def phase_c_domain_indexes_and_workers(app):
     try:
         from core.database import _raw_db
         from security.field_encryption import get_field_encryption_service
-        created = await get_field_encryption_service().ensure_hash_indexes(_raw_db)
+        svc = get_field_encryption_service()
+        created = await svc.ensure_hash_indexes(_raw_db)
         if created:
             logger.info(f"Encrypted-PII hash indexes ensured ({len(created)} created)")
+        # Fail-closed verification: confirm every searchable `_hash_` index from
+        # ENCRYPTED_FIELDS actually exists. A missing index would silently fall
+        # back to a tenant-wide collection scan; verify_hash_indexes records the
+        # gap (log + metric + module state) so the deep health endpoint reports
+        # "degraded" and the search path becomes observable. Does not raise.
+        verify = await svc.verify_hash_indexes(_raw_db)
+        if not verify.get("ok"):
+            logger.warning(
+                f"Encrypted-PII hash index verification DEGRADED: "
+                f"{len(verify.get('missing', []))} missing"
+            )
     except Exception as e:
         logger.warning(f"Hash index creation error: {e}")
 
