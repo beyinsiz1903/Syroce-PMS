@@ -74,6 +74,55 @@ function normalizeFolio(res: FolioResponse | null): Folio | null {
   return null;
 }
 
+// ── Finance folio listing (read-only) ──────────────────────────────────────
+// Mirrors backend/routers/finance/folio.py. The list read only needs auth; the
+// dashboard-stats read is gated by require_op("view_finance_reports") — the
+// mobile (departments) finance entitlement decides whether we show the screen.
+
+export type FolioListItem = {
+  id: string;
+  folio_number?: string;
+  status?: string;
+  balance?: number;
+  guest_name?: string;
+  room_number?: string;
+  check_in?: string;
+  check_out?: string;
+};
+
+export type FolioListResponse = {
+  folios: FolioListItem[];
+  total: number;
+};
+
+export type FolioDashboardStats = {
+  total_open_folios: number;
+  total_outstanding_balance: number;
+  recent_charges_24h?: number;
+  recent_payments_24h?: number;
+};
+
+// GET /api/folio/list?status=&limit=&offset=
+export async function listFolios(params?: {
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<FolioListResponse> {
+  const res = await api.get<Partial<FolioListResponse>>('/api/folio/list', params);
+  return { folios: res?.folios ?? [], total: res?.total ?? 0 };
+}
+
+// GET /api/folio/dashboard-stats
+export async function getFolioDashboardStats(): Promise<FolioDashboardStats> {
+  const res = await api.get<Partial<FolioDashboardStats>>('/api/folio/dashboard-stats');
+  return {
+    total_open_folios: res?.total_open_folios ?? 0,
+    total_outstanding_balance: res?.total_outstanding_balance ?? 0,
+    recent_charges_24h: res?.recent_charges_24h ?? 0,
+    recent_payments_24h: res?.recent_payments_24h ?? 0,
+  };
+}
+
 // GET /api/frontdesk/folio/{booking_id} (frontdesk_router.py:514)
 export async function getFolioForBooking(bookingId: string): Promise<Folio | null> {
   try {

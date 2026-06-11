@@ -51,6 +51,15 @@ export default function DepartmentsHub() {
 
       {accountingAccess ? (
         <DepartmentTile
+          testID="dept-tile-cashier"
+          title={tr.departments.cashier.title}
+          subtitle={tr.departments.cashier.tileSubtitle}
+          onPress={() => router.push(ROUTES.cashier)}
+        />
+      ) : null}
+
+      {accountingAccess ? (
+        <DepartmentTile
           testID="dept-tile-accounting"
           title={tr.departments.accounting.title}
           subtitle={tr.departments.accounting.tileSubtitle}

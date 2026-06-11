@@ -51,6 +51,12 @@ export default function ProfileScreen() {
     { key: 'spa', label: tr.hub.moduleSpa, route: ROUTES.spa, visible: allAccess || spaAccess },
     { key: 'mice', label: tr.hub.moduleMice, route: ROUTES.mice, visible: allAccess || miceAccess },
     {
+      key: 'cashier',
+      label: tr.hub.moduleCashier,
+      route: ROUTES.cashier,
+      visible: allAccess || financeReports,
+    },
+    {
       key: 'accounting',
       label: tr.hub.moduleAccounting,
       route: ROUTES.accounting,
