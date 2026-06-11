@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, apiRequest } from './client';
 
 // Mirrors backend/domains/pms/mobile_router/hub.py
 // Person-centric aggregation for the common mobile shell (Task #327, Faz 0).
@@ -170,4 +170,110 @@ export async function actOnApproval(
     default:
       throw new Error(`Bilinmeyen onay türü: ${item.kind}`);
   }
+}
+
+// ── Staff-to-staff messaging (Task #333) ────────────────────────────────────
+// Reuses the EXISTING internal-messaging backend (`/api/messaging/internal/*`)
+// — no new collection or notification type is introduced. Every endpoint is
+// tenant-scoped server-side via the authenticated user.
+
+export type Conversation = {
+  user_id: string;
+  user_name: string;
+  user_role?: string;
+  last_message: string;
+  last_message_at?: string | null;
+  last_from_me: boolean;
+  last_priority: string;
+  last_deleted: boolean;
+  unread_count: number;
+  time_ago: string;
+};
+
+export type ConversationsResponse = {
+  conversations: Conversation[];
+  total_count: number;
+};
+
+// GET /api/messaging/internal/conversations
+export async function getConversations(): Promise<ConversationsResponse> {
+  return api.get<ConversationsResponse>('/api/messaging/internal/conversations');
+}
+
+export type ThreadMessage = {
+  id: string;
+  from_user_id: string;
+  from_user_name?: string;
+  to_user_id?: string | null;
+  to_user_name?: string | null;
+  message: string;
+  priority: string;
+  created_at?: string;
+  time_ago: string;
+  is_from_me: boolean;
+  read: boolean;
+  deleted: boolean;
+  edited: boolean;
+};
+
+export type ThreadResponse = {
+  user_id: string;
+  message_count: number;
+  messages: ThreadMessage[];
+};
+
+// GET /api/messaging/internal/conversation/{user_id}
+export async function getConversationThread(userId: string): Promise<ThreadResponse> {
+  return api.get<ThreadResponse>(
+    `/api/messaging/internal/conversation/${encodeURIComponent(userId)}`,
+  );
+}
+
+// PUT /api/messaging/internal/conversation/{user_id}/mark-read
+export async function markConversationRead(
+  userId: string,
+): Promise<{ success: boolean; updated_count?: number }> {
+  return api.put<{ success: boolean; updated_count?: number }>(
+    `/api/messaging/internal/conversation/${encodeURIComponent(userId)}/mark-read`,
+    {},
+  );
+}
+
+// POST /api/messaging/internal/send — the backend declares these as QUERY
+// params (no request-body model), so they must be sent on the query string.
+export async function sendInternalMessage(
+  toUserId: string,
+  message: string,
+): Promise<unknown> {
+  return apiRequest('/api/messaging/internal/send', {
+    method: 'POST',
+    query: { message, to_user_id: toUserId, priority: 'normal', message_type: 'text' },
+  });
+}
+
+// ── Unified cross-entity search (Task #333) ─────────────────────────────────
+
+export type GuestHit = { id: string; name: string; vip_status: boolean };
+export type ReservationHit = {
+  id: string;
+  booking_number: string;
+  guest_name: string;
+  room_number?: string | null;
+  status: string;
+  check_in?: string | null;
+  check_out?: string | null;
+};
+export type RoomHit = { id: string; room_number: string; room_type: string; status: string };
+
+export type SearchResponse = {
+  query: string;
+  guests: GuestHit[];
+  reservations: ReservationHit[];
+  rooms: RoomHit[];
+  total: number;
+};
+
+// GET /api/mobile/hub/search
+export async function unifiedSearch(q: string): Promise<SearchResponse> {
+  return api.get<SearchResponse>('/api/mobile/hub/search', { q });
 }

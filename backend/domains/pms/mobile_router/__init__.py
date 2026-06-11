@@ -11,6 +11,7 @@ from .hub import router as _hub_r
 from .maintenance import router as _maintenance_r
 from .notifications import router as _notifications_r
 from .pos import router as _pos_r
+from .search import router as _search_r
 
 router = APIRouter()
 router.include_router(_dashboard_r)
@@ -20,3 +21,4 @@ router.include_router(_housekeeping_r)
 router.include_router(_maintenance_r)
 router.include_router(_pos_r)
 router.include_router(_hub_r)
+router.include_router(_search_r)
