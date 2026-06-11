@@ -735,6 +735,7 @@ export const tr = {
       statusUpdated: 'Sipariş durumu güncellendi',
       payCash: 'Nakit ile Kapat',
       payCard: 'Kart ile Kapat',
+      amountDue: 'Tahsil edilecek (vergi dâhil)',
       orderClosed: 'Sipariş kapatıldı, tahsilat alındı',
       orderAlreadyClosed: 'Sipariş zaten kapatılmış',
       tableLayout: 'Masa Düzeni',

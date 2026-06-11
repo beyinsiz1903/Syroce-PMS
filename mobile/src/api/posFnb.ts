@@ -42,6 +42,9 @@ export type ActiveOrder = {
   guest_name?: string;
   items_count?: number;
   total_amount?: number;
+  // Tax-inclusive amount collected at close (close_order reads grand_total).
+  // Absent on legacy docs; clients fall back to total_amount for display.
+  grand_total?: number;
   time_elapsed_minutes?: number;
   is_delayed?: boolean;
   created_at?: string;

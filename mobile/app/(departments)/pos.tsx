@@ -500,21 +500,36 @@ export default function PosScreen() {
         ) : null}
       </View>
       {o.status !== 'cancelled' ? (
-        <View
-          style={{ marginTop: spacing.sm, flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}
-        >
-          <Button
-            title={tr.departments.pos.payCash}
-            variant="secondary"
-            onPress={() => onCloseOrder(o.id, 'cash')}
-            loading={payingOrder?.id === o.id && payingOrder.method === 'cash'}
-          />
-          <Button
-            title={tr.departments.pos.payCard}
-            variant="secondary"
-            onPress={() => onCloseOrder(o.id, 'card')}
-            loading={payingOrder?.id === o.id && payingOrder.method === 'card'}
-          />
+        <View style={{ marginTop: spacing.sm }}>
+          {(() => {
+            const due = typeof o.grand_total === 'number' ? o.grand_total : o.total_amount;
+            return typeof due === 'number' ? (
+              <Muted>
+                {tr.departments.pos.amountDue}: {formatCurrency(due)}
+              </Muted>
+            ) : null;
+          })()}
+          <View
+            style={{
+              marginTop: spacing.sm,
+              flexDirection: 'row',
+              gap: spacing.sm,
+              flexWrap: 'wrap',
+            }}
+          >
+            <Button
+              title={tr.departments.pos.payCash}
+              variant="secondary"
+              onPress={() => onCloseOrder(o.id, 'cash')}
+              loading={payingOrder?.id === o.id && payingOrder.method === 'cash'}
+            />
+            <Button
+              title={tr.departments.pos.payCard}
+              variant="secondary"
+              onPress={() => onCloseOrder(o.id, 'card')}
+              loading={payingOrder?.id === o.id && payingOrder.method === 'card'}
+            />
+          </View>
         </View>
       ) : null}
     </Card>

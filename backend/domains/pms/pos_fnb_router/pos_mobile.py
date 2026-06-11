@@ -590,6 +590,10 @@ async def get_active_orders(
             'guest_name': order.get('guest_name', 'Walk-in'),
             'items_count': len(order.get('order_items', [])),
             'total_amount': order.get('total_amount', 0),
+            # Tax-inclusive amount actually collected at close (close_order
+            # reads grand_total). Additive; legacy docs without it stay absent
+            # so the client falls back to total_amount.
+            'grand_total': order.get('grand_total'),
             'time_elapsed_minutes': int(time_elapsed),
             'is_delayed': is_delayed,
             'created_at': order.get('created_at'),
