@@ -545,8 +545,8 @@
     "socialRadarDesc": "Real-time social media monitoring",
     "revenueAutopilot": "Revenue Autopilot",
     "revenueAutopilotDesc": "Fully automated revenue optimization",
-    "dynamicPricing": "Dynamic Pricing",
-    "dynamicPricingDesc": "AI-powered smart pricing",
+    "dynamicPricing": "Rule-Based Pricing",
+    "dynamicPricingDesc": "Rule-based smart pricing",
     "sentimentAnalysis": "Sentiment Analysis",
     "noShowPrediction": "No-Show Prediction",
     "demandForecast": "Demand Forecast",
@@ -830,7 +830,7 @@
     "managementReports": "Management & Reports",
     "refreshInsights": "Refresh Insights",
     "generatingInsights": "Generating AI insights...",
-    "dynamicPricingModule": "AI Dynamic Pricing",
+    "dynamicPricingModule": "Rule-Based Pricing",
     "dynamicPricingModuleDesc": "Competitor analysis and automatic pricing",
     "reputationCenterModule": "Reputation Center",
     "reputationCenterModuleDesc": "Online reputation management and review tracking",
@@ -1047,7 +1047,7 @@
     "recommendedPrice": "Recommended Price",
     "occupancyForecast": "Occupancy Forecast",
     "rateParity": "Rate Parity",
-    "dynamicPricing": "Dynamic Pricing"
+    "dynamicPricing": "Rule-Based Pricing"
   },
   "ai": {
     "dailyBriefing": "Daily Briefing",

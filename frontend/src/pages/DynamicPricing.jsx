@@ -140,13 +140,29 @@ const DynamicPricing = () => {
             </CardContent>
           </Card>
 
-          {/* Competitor Data */}
-          {recommendation.competitor_data && (
+          {/* Uygulanan Kurallar */}
+          {recommendation.applied_rules && recommendation.applied_rules.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Rakip Fiyat Analizi</CardTitle>
+                <CardTitle>Uygulanan Kurallar</CardTitle>
               </CardHeader>
               <CardContent>
+                <ul className="space-y-2 list-disc list-inside">
+                  {recommendation.applied_rules.map((rule, idx) => (
+                    <li key={idx} className="text-sm text-gray-700">{rule}</li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Competitor Data */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Rakip Fiyat Analizi</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {recommendation.competitor_data && recommendation.competitor_data.available ? (
                 <div className="space-y-3">
                   {Object.entries(recommendation.competitor_data.competitors).map(([name, price]) => (
                     <div key={name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -159,9 +175,11 @@ const DynamicPricing = () => {
                     <span className="text-lg font-bold text-blue-600">€{recommendation.competitor_data.average}</span>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              ) : (
+                <p className="text-sm text-gray-500">Rakip verisi yok</p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Demand Factors */}
           {recommendation.demand_factors && (

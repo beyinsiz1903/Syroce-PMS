@@ -544,8 +544,8 @@
     "socialRadarDesc": "مراقبة فورية",
     "revenueAutopilot": "الطيار الآلي للإيرادات",
     "revenueAutopilotDesc": "تحسين إيرادات مؤتمت",
-    "dynamicPricing": "التسعير الديناميكي",
-    "dynamicPricingDesc": "تسعير ذكي بالذكاء الاصطناعي",
+    "dynamicPricing": "التسعير القائم على القواعد",
+    "dynamicPricingDesc": "تسعير ذكي قائم على القواعد",
     "sentimentAnalysis": "تحليل المشاعر",
     "noShowPrediction": "توقع عدم الحضور",
     "demandForecast": "توقع الطلب",
@@ -829,7 +829,7 @@
     "managementReports": "الإدارة والتقارير",
     "refreshInsights": "تحديث الرؤى",
     "generatingInsights": "جارٍ إنشاء رؤى ذكية...",
-    "dynamicPricingModule": "التسعير الديناميكي",
+    "dynamicPricingModule": "التسعير القائم على القواعد",
     "dynamicPricingModuleDesc": "تحليل المنافسين وتسعير تلقائي",
     "reputationCenterModule": "مركز السمعة",
     "reputationCenterModuleDesc": "إدارة السمعة الإلكترونية",
@@ -1046,7 +1046,7 @@
     "recommendedPrice": "السعر الموصى به",
     "occupancyForecast": "توقعات الإشغال",
     "rateParity": "تكافؤ الأسعار",
-    "dynamicPricing": "التسعير الديناميكي"
+    "dynamicPricing": "التسعير القائم على القواعد"
   },
   "ai": {
     "dailyBriefing": "الإحاطة اليومية",

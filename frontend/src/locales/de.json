@@ -544,8 +544,8 @@
     "socialRadarDesc": "Echtzeit Social Media Monitoring",
     "revenueAutopilot": "Revenue Autopilot",
     "revenueAutopilotDesc": "Vollautomatische Umsatzoptimierung",
-    "dynamicPricing": "Dynamische Preisgestaltung",
-    "dynamicPricingDesc": "KI-gestützte Preisgestaltung",
+    "dynamicPricing": "Regelbasierte Preisgestaltung",
+    "dynamicPricingDesc": "Regelbasierte intelligente Preisgestaltung",
     "sentimentAnalysis": "Stimmungsanalyse",
     "noShowPrediction": "No-Show-Vorhersage",
     "demandForecast": "Nachfrageprognose",
@@ -829,7 +829,7 @@
     "managementReports": "Management & Berichte",
     "refreshInsights": "Einblicke aktualisieren",
     "generatingInsights": "KI-Einblicke werden generiert...",
-    "dynamicPricingModule": "KI Dynamische Preise",
+    "dynamicPricingModule": "Regelbasierte Preisgestaltung",
     "dynamicPricingModuleDesc": "Wettbewerbsanalyse und automatische Preisgestaltung",
     "reputationCenterModule": "Reputationscenter",
     "reputationCenterModuleDesc": "Online-Reputationsmanagement",
@@ -1046,7 +1046,7 @@
     "recommendedPrice": "Empfohlener Preis",
     "occupancyForecast": "Auslastungsprognose",
     "rateParity": "Tarifparität",
-    "dynamicPricing": "Dynamische Preisgestaltung"
+    "dynamicPricing": "Regelbasierte Preisgestaltung"
   },
   "ai": {
     "dailyBriefing": "Tägliches Briefing",

@@ -23,11 +23,12 @@ class FakeCollection:
 
 
 class FakeDB:
-    def __init__(self, rooms=None, bookings=None, reviews=None, service_complaints=None):
+    def __init__(self, rooms=None, bookings=None, reviews=None, service_complaints=None, competitor_rates=None):
         self.rooms = FakeCollection(rooms or [])
         self.bookings = FakeCollection(bookings or [])
         self.reviews = FakeCollection(reviews or [])
         self.service_complaints = FakeCollection(service_complaints or [])
+        self.competitor_rates = FakeCollection(competitor_rates or [])
 
 
 class TestDynamicPricingEngine:
@@ -36,6 +37,11 @@ class TestDynamicPricingEngine:
         self.db = FakeDB(
             rooms=[{"tenant_id": "t1"} for _ in range(100)],
             bookings=[{"tenant_id": "t1", "status": "confirmed"} for _ in range(70)],
+            competitor_rates=[
+                {"tenant_id": "t1", "competitor_name": "Comp A", "rate": 100},
+                {"tenant_id": "t1", "competitor_name": "Comp B", "rate": 110},
+                {"tenant_id": "t1", "competitor_name": "Comp C", "rate": 120},
+            ],
         )
         self.engine = DynamicPricingEngine(self.db)
 
@@ -48,7 +54,8 @@ class TestDynamicPricingEngine:
 
     @pytest.mark.asyncio
     async def test_get_competitor_rates_structure(self):
-        result = await self.engine.get_competitor_rates("2026-04-20", "Standard")
+        result = await self.engine.get_competitor_rates("t1", "2026-04-20", "Standard")
+        assert result["available"] is True
         assert "competitors" in result
         assert "average" in result
         assert "min" in result
@@ -57,10 +64,19 @@ class TestDynamicPricingEngine:
         assert result["min"] <= result["average"] <= result["max"]
 
     @pytest.mark.asyncio
-    async def test_competitor_rates_vary_by_room_type(self):
-        std = await self.engine.get_competitor_rates("2026-04-20", "Standard")
-        suite = await self.engine.get_competitor_rates("2026-04-20", "Suite")
-        assert suite["average"] > std["average"] * 1.5
+    async def test_competitor_rates_empty_returns_unavailable(self):
+        from domains.ai.dynamic_pricing_engine import DynamicPricingEngine
+        empty_engine = DynamicPricingEngine(FakeDB())
+        result = await empty_engine.get_competitor_rates("t1", "2026-04-20", "Standard")
+        assert result["available"] is False
+        assert result["competitors"] == {}
+        assert result["average"] is None
+
+    @pytest.mark.asyncio
+    async def test_competitor_rates_deterministic(self):
+        first = await self.engine.get_competitor_rates("t1", "2026-04-20", "Standard")
+        second = await self.engine.get_competitor_rates("t1", "2026-04-20", "Standard")
+        assert first == second
 
     @pytest.mark.asyncio
     async def test_calculate_demand_factors_structure(self):
@@ -72,6 +88,8 @@ class TestDynamicPricingEngine:
         assert "occupancy_forecast" in result
         assert result["weekend_factor"] >= 1.0
         assert result["demand_factor"] >= 0.9
+        # Etkinlik faktoru gercek veri entegre edilene kadar notr (deterministik)
+        assert result["event_factor"] == 1.0
 
     @pytest.mark.asyncio
     async def test_weekend_factor_higher(self):
@@ -87,18 +105,29 @@ class TestDynamicPricingEngine:
         assert "recommended_price" in result
         assert "min_price" in result
         assert "max_price" in result
-        assert "confidence_score" in result
+        assert "pricing_method" in result
+        assert "applied_rules" in result
         assert "competitor_data" in result
         assert "demand_factors" in result
         assert "current_price" in result
         assert "price_change_pct" in result
+        assert "confidence_score" not in result
         assert result["min_price"] <= result["recommended_price"] <= result["max_price"]
 
     @pytest.mark.asyncio
     async def test_recommend_price_positive(self):
         result = await self.engine.recommend_price("t1", "Standard", "2026-04-20")
         assert result["recommended_price"] > 0
-        assert result["confidence_score"] > 0
+        assert result["pricing_method"] == "rule_based_deterministic"
+        assert isinstance(result["applied_rules"], list)
+        assert len(result["applied_rules"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_recommend_price_deterministic(self):
+        first = await self.engine.recommend_price("t1", "Standard", "2026-04-20")
+        second = await self.engine.recommend_price("t1", "Standard", "2026-04-20")
+        assert first["recommended_price"] == second["recommended_price"]
+        assert first["applied_rules"] == second["applied_rules"]
 
     @pytest.mark.asyncio
     async def test_recommend_price_not_deviate_too_much(self):
@@ -106,6 +135,18 @@ class TestDynamicPricingEngine:
         competitor_avg = result["competitor_data"]["average"]
         assert result["recommended_price"] < competitor_avg * 1.5
         assert result["recommended_price"] > competitor_avg * 0.5
+
+    @pytest.mark.asyncio
+    async def test_recommend_price_no_competitor_data(self):
+        from domains.ai.dynamic_pricing_engine import DynamicPricingEngine
+        engine = DynamicPricingEngine(FakeDB(
+            rooms=[{"tenant_id": "t1"} for _ in range(10)],
+            bookings=[{"tenant_id": "t1", "status": "confirmed"} for _ in range(5)],
+        ))
+        result = await engine.recommend_price("t1", "Standard", "2026-04-20")
+        assert result["competitor_data"]["available"] is False
+        assert result["recommended_price"] > 0
+        assert any("Rakip verisi yok" in r for r in result["applied_rules"])
 
 
 class TestPredictiveEngine:

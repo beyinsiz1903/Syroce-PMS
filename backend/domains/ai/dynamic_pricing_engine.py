@@ -1,13 +1,14 @@
 """
-AI Dynamic Pricing Engine
-Competitor rate tracking, ML-powered pricing recommendations
+Rule-Based Pricing Engine (Kural Bazlı Fiyatlandırma)
+Deterministik fiyat önerisi: gerçek doluluk + hafta sonu + aciliyet kuralları.
+Rakip fiyatları yalnızca gerçek competitor_rates koleksiyonundan okunur.
+Rastgele (random) değer kullanılmaz; aynı girdi her zaman aynı çıktıyı verir.
 """
-import random
 from datetime import UTC, datetime
 
 
 class DynamicPricingEngine:
-    """AI-powered dynamic pricing"""
+    """Kural bazlı (deterministik) fiyatlandırma motoru"""
 
     def __init__(self, db):
         self.db = db
@@ -17,26 +18,46 @@ class DynamicPricingEngine:
             'Suite': 250
         }
 
-    async def get_competitor_rates(self, date: str, room_type: str) -> dict:
-        """Rakip otel fiyatlarını getir (simulated - gerçekte web scraping)"""
-        # Gerçek implementasyonda: Booking.com, Expedia scraping
-        competitors = {
-            'Competitor A': round(self.base_prices[room_type] * random.uniform(0.9, 1.2), 2),
-            'Competitor B': round(self.base_prices[room_type] * random.uniform(0.85, 1.15), 2),
-            'Competitor C': round(self.base_prices[room_type] * random.uniform(0.95, 1.25), 2)
-        }
+    async def get_competitor_rates(self, tenant_id: str, date: str, room_type: str) -> dict:
+        """Rakip otel fiyatlarını yalnızca gerçek competitor_rates koleksiyonundan getir.
 
-        avg_competitor = sum(competitors.values()) / len(competitors)
+        Kayıt yoksa available=False döner; uydurma/rastgele rakip fiyatı üretilmez.
+        """
+        docs = await self.db.competitor_rates.find({
+            'tenant_id': tenant_id,
+            'date': date,
+            'room_type': room_type,
+        }, {'_id': 0}).to_list(50)
 
+        competitors = {}
+        for d in docs:
+            name = d.get('competitor_name') or d.get('competitor')
+            rate = d.get('rate')
+            if name is None or rate is None:
+                continue
+            competitors[name] = round(float(rate), 2)
+
+        if not competitors:
+            return {
+                'available': False,
+                'competitors': {},
+                'average': None,
+                'min': None,
+                'max': None,
+            }
+
+        values = list(competitors.values())
+        avg_competitor = sum(values) / len(values)
         return {
+            'available': True,
             'competitors': competitors,
             'average': round(avg_competitor, 2),
-            'min': round(min(competitors.values()), 2),
-            'max': round(max(competitors.values()), 2)
+            'min': round(min(values), 2),
+            'max': round(max(values), 2),
         }
 
     async def calculate_demand_factors(self, tenant_id: str, target_date: str) -> dict:
-        """Talep faktörlerini hesapla"""
+        """Talep faktörlerini gerçek girdilerden deterministik hesapla."""
         # Parse target date with timezone
         if 'T' in target_date:
             target = datetime.fromisoformat(target_date.replace('Z', '+00:00'))
@@ -47,7 +68,7 @@ class DynamicPricingEngine:
         day_of_week = target.weekday()
         weekend_factor = 1.3 if day_of_week >= 4 else 1.0  # Fri-Sun
 
-        # Occupancy forecast
+        # Occupancy forecast (gerçek on-the-books)
         total_rooms = await self.db.rooms.count_documents({'tenant_id': tenant_id})
         booked = await self.db.bookings.count_documents({
             'tenant_id': tenant_id,
@@ -63,8 +84,8 @@ class DynamicPricingEngine:
         days_until = (target - datetime.now(UTC)).days
         urgency_factor = 1.3 if days_until <= 3 else 1.1 if days_until <= 7 else 1.0
 
-        # Event factor (simulated)
-        event_factor = 1.2 if random.random() > 0.8 else 1.0  # 20% chance of event
+        # Etkinlik faktörü: gerçek etkinlik verisi entegre edilene kadar nötr (1.0).
+        event_factor = 1.0
 
         return {
             'weekend_factor': weekend_factor,
@@ -74,17 +95,34 @@ class DynamicPricingEngine:
             'occupancy_forecast': round(occupancy * 100, 2)
         }
 
+    def _describe_rules(self, demand: dict) -> list[str]:
+        """Uygulanan kuralları insan-okur biçimde açıkla."""
+        rules = []
+        occ = demand['occupancy_forecast']
+        df = demand['demand_factor']
+        if df > 1.0:
+            rules.append(f"Doluluk %{occ} -> talep carpani x{df}")
+        elif df < 1.0:
+            rules.append(f"Dusuk doluluk %{occ} -> talep carpani x{df}")
+        else:
+            rules.append(f"Doluluk %{occ} -> talep carpani x{df}")
+        if demand['weekend_factor'] > 1.0:
+            rules.append(f"Hafta sonu -> x{demand['weekend_factor']}")
+        if demand['urgency_factor'] > 1.0:
+            rules.append(f"Yaklasan tarih -> aciliyet x{demand['urgency_factor']}")
+        return rules
+
     async def recommend_price(self, tenant_id: str, room_type: str, target_date: str) -> dict:
-        """AI fiyat önerisi"""
+        """Kural bazlı (deterministik) fiyat önerisi."""
         base_price = self.base_prices.get(room_type, 100)
 
-        # Get competitor rates
-        comp_data = await self.get_competitor_rates(target_date, room_type)
+        # Rakip verisi (yalnızca gerçek kayıtlardan)
+        comp_data = await self.get_competitor_rates(tenant_id, target_date, room_type)
 
-        # Get demand factors
+        # Talep faktörleri
         demand = await self.calculate_demand_factors(tenant_id, target_date)
 
-        # Calculate recommended price
+        # Önerilen fiyatı hesapla
         total_factor = (
             demand['weekend_factor'] *
             demand['demand_factor'] *
@@ -94,11 +132,16 @@ class DynamicPricingEngine:
 
         recommended = base_price * total_factor
 
-        # Adjust based on competitor avg
-        competitor_avg = comp_data['average']
-        if abs(recommended - competitor_avg) > competitor_avg * 0.3:
-            # Don't deviate more than 30% from market
+        applied_rules = self._describe_rules(demand)
+
+        # Rakip ortalamasına göre ayarla (yalnızca gerçek rakip verisi varsa)
+        competitor_avg = comp_data['average'] if comp_data.get('available') else None
+        if competitor_avg is not None and abs(recommended - competitor_avg) > competitor_avg * 0.3:
+            # Piyasadan %30'dan fazla sapma
             recommended = (recommended + competitor_avg) / 2
+            applied_rules.append(f"Rakip ortalamasi {competitor_avg} -> piyasaya yaklastirildi (%30 sapma siniri)")
+        elif competitor_avg is None:
+            applied_rules.append("Rakip verisi yok -> rakip ayari uygulanmadi")
 
         min_price = recommended * 0.85
         max_price = recommended * 1.25
@@ -109,7 +152,8 @@ class DynamicPricingEngine:
             'recommended_price': round(recommended, 2),
             'min_price': round(min_price, 2),
             'max_price': round(max_price, 2),
-            'confidence_score': 0.82,
+            'pricing_method': 'rule_based_deterministic',
+            'applied_rules': applied_rules,
             'competitor_data': comp_data,
             'demand_factors': demand,
             'current_price': base_price,

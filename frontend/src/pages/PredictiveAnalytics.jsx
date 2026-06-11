@@ -65,8 +65,8 @@ const PredictiveAnalytics = () => {
             <Home className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">Predictive Analytics - AI Oracle</h1>
-            <p className="text-gray-600">Geleceği görün: No-show, talep, şikayet tahminleri</p>
+            <h1 className="text-3xl font-bold">Tahmine Dayalı Analiz</h1>
+            <p className="text-gray-600">Kural bazlı tahminler: No-show, talep, şikayet</p>
           </div>
         </div>
       </div>
@@ -180,7 +180,7 @@ const PredictiveAnalytics = () => {
           <div className="mt-4 p-4 bg-sky-50 rounded-lg">
             <p className="text-sm text-sky-800 flex items-start gap-1.5">
               <Lightbulb className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
-              <span><strong>AI Recommendation:</strong> Peak demand days detected. Consider increasing rates by 15-20%.</span>
+              <span><strong>Kural Bazlı Öneri:</strong> Yüksek talep günleri tespit edildi. Fiyatları %15-20 artırmayı değerlendirin.</span>
             </p>
           </div>
         </CardContent>

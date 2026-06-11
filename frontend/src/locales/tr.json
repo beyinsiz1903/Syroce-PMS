@@ -545,8 +545,8 @@
     "socialRadarDesc": "Gerçek zamanlı sosyal medya izleme",
     "revenueAutopilot": "Gelir Otopilot",
     "revenueAutopilotDesc": "Tam otomatik gelir optimizasyonu",
-    "dynamicPricing": "Dinamik Fiyatlandırma",
-    "dynamicPricingDesc": "AI destekli akıllı fiyatlandırma",
+    "dynamicPricing": "Kural Bazlı Fiyatlandırma",
+    "dynamicPricingDesc": "Kural bazlı akıllı fiyatlandırma",
     "sentimentAnalysis": "Duygu Analizi",
     "noShowPrediction": "No-Show Tahmini",
     "demandForecast": "Talep Tahmini",
@@ -830,7 +830,7 @@
     "managementReports": "Yönetim ve Raporlar",
     "refreshInsights": "İçgörüleri Yenile",
     "generatingInsights": "AI içgörüleri oluşturuluyor...",
-    "dynamicPricingModule": "AI Dinamik Fiyatlandırma",
+    "dynamicPricingModule": "Kural Bazlı Fiyatlandırma",
     "dynamicPricingModuleDesc": "Rakip analizi ve otomatik fiyatlandırma",
     "reputationCenterModule": "İtibar Merkezi",
     "reputationCenterModuleDesc": "Online itibar yönetimi ve yorum takibi",
@@ -1047,7 +1047,7 @@
     "recommendedPrice": "Önerilen Fiyat",
     "occupancyForecast": "Doluluk Tahmini",
     "rateParity": "Fiyat Paritesi",
-    "dynamicPricing": "Dinamik Fiyatlandırma"
+    "dynamicPricing": "Kural Bazlı Fiyatlandırma"
   },
   "ai": {
     "dailyBriefing": "Günlük Brifing",

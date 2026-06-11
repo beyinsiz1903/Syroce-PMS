@@ -131,19 +131,26 @@ class PricingService:
         })
         total_rooms = await self._db.rooms.count_documents({"tenant_id": ctx.tenant_id, "room_type": room_type})
         occupancy = bookings_on_date / total_rooms if total_rooms > 0 else 0
+        occ_pct = round(occupancy * 100, 1)
         multiplier = 1.0
         if occupancy > 0.9:
             multiplier = 1.3
+            applied_rule = f"Doluluk %{occ_pct} > %90 -> +%30"
         elif occupancy > 0.7:
             multiplier = 1.15
+            applied_rule = f"Doluluk %{occ_pct} > %70 -> +%15"
         elif occupancy < 0.3:
             multiplier = 0.85
+            applied_rule = f"Doluluk %{occ_pct} < %30 -> -%15"
+        else:
+            applied_rule = f"Doluluk %{occ_pct} -> degisiklik yok"
         suggested_rate = round(base_rate * multiplier, 2)
         return ServiceResult.success({
             "room_type": room_type, "target_date": target_date,
-            "base_rate": base_rate, "occupancy": round(occupancy * 100, 1),
+            "base_rate": base_rate, "occupancy": occ_pct,
             "multiplier": multiplier, "suggested_rate": suggested_rate,
-            "confidence": 0.82,
+            "pricing_method": "rule_based_deterministic",
+            "applied_rule": applied_rule,
         })
 
 
