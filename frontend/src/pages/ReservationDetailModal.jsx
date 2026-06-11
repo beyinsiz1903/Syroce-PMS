@@ -110,7 +110,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
 
   return (
     <div className="fixed inset-0 z-[60]" data-testid="reservation-detail-modal">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="absolute inset-2 md:inset-4 lg:inset-6 bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header — sade, marka rengiyle */}
         <div className="flex items-center justify-between px-6 py-3 border-b bg-gradient-to-r from-slate-900 to-slate-800">
@@ -387,7 +387,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                       <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-70" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuContent align="end" className="w-56 z-[70]">
                     {moreTabs.map(tab => (
                       <DropdownMenuItem
                         key={tab.id}
