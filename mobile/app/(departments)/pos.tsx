@@ -18,12 +18,14 @@ import {
   openQuickOrder,
   outletLabel,
   postOrderToFolio,
+  closeOrder,
   transferTable,
   updateOrderStatus,
   type ActiveOrder,
   type MenuItem,
   type Outlet,
   type OrderStatus,
+  type PaymentMethod,
   type TableSlot,
 } from '../../src/api/posFnb';
 import { listFolios, type FolioListItem } from '../../src/api/folio';
@@ -89,6 +91,11 @@ export default function PosScreen() {
 
   // Active-order lifecycle state.
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
+  // Close-and-pay state — tracks (order, method) so only the tapped button
+  // shows its spinner.
+  const [payingOrder, setPayingOrder] = useState<{ id: string; method: PaymentMethod } | null>(
+    null,
+  );
 
   // Table-transfer state.
   const [fromTable, setFromTable] = useState('');
@@ -216,6 +223,31 @@ export default function PosScreen() {
       haptic.error();
     } finally {
       setBusyOrderId(null);
+    }
+  };
+
+  const onCloseOrder = async (orderId: string, method: PaymentMethod) => {
+    setPayingOrder({ id: orderId, method });
+    try {
+      // Per-attempt idempotency key so a warm-up/network replay of this exact
+      // close never books a second payment for the same order.
+      const idempotencyKey = `mob-close-${orderId}-${Date.now()}`;
+      const res = await closeOrder({
+        order_id: orderId,
+        payment_method: method,
+        idempotency_key: idempotencyKey,
+      });
+      haptic.success();
+      qc.invalidateQueries({ queryKey: ['pos-active-orders'] });
+      Alert.alert(
+        tr.app.success,
+        res?.idempotent ? tr.departments.pos.orderAlreadyClosed : tr.departments.pos.orderClosed,
+      );
+    } catch (e: unknown) {
+      Alert.alert(tr.app.error, errorMessage(e, tr.errors.generic));
+      haptic.error();
+    } finally {
+      setPayingOrder(null);
     }
   };
 
@@ -467,6 +499,24 @@ export default function PosScreen() {
           />
         ) : null}
       </View>
+      {o.status !== 'cancelled' ? (
+        <View
+          style={{ marginTop: spacing.sm, flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}
+        >
+          <Button
+            title={tr.departments.pos.payCash}
+            variant="secondary"
+            onPress={() => onCloseOrder(o.id, 'cash')}
+            loading={payingOrder?.id === o.id && payingOrder.method === 'cash'}
+          />
+          <Button
+            title={tr.departments.pos.payCard}
+            variant="secondary"
+            onPress={() => onCloseOrder(o.id, 'card')}
+            loading={payingOrder?.id === o.id && payingOrder.method === 'card'}
+          />
+        </View>
+      ) : null}
     </Card>
   );
 

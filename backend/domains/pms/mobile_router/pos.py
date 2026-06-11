@@ -236,9 +236,22 @@ async def create_quick_order_mobile(
         'outlet_name': outlet.get('name'),
         'table_number': table_number,
         'items': order_items,
+        'order_items': order_items,
         'subtotal': subtotal,
         'tax': tax,
         'total': total,
+        # Canonical POS fields so the shared close-order / active-orders /
+        # split-check paths read consistent amounts. Without these the
+        # quick-order doc only carried `total`, so `close_order` (which reads
+        # `grand_total`) would have written a 0-amount transaction and
+        # active-orders (which reads `total_amount`) showed 0. We do NOT
+        # change the existing `total`/`tax`/`subtotal` keys — just add the
+        # canonical aliases the rest of the POS system already expects.
+        'total_amount': subtotal,
+        'tax_amount': tax,
+        'grand_total': total,
+        'payment_status': 'unpaid',
+        'guest_name': 'Walk-in',
         'status': 'pending',
         'notes': notes,
         'created_at': datetime.now(UTC),

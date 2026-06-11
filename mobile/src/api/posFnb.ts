@@ -153,6 +153,31 @@ export async function transferTable(params: {
   });
 }
 
+export type PaymentMethod = 'cash' | 'card';
+
+// POST /api/pos/v2/orders/close — close an active order and take payment,
+// writing a pos_transactions/completed row (the canonical close-order
+// contract). The backend resolves the amount from the order's grand_total,
+// enforces require_module("pos"), and is idempotent on idempotency_key +
+// terminal-state (voided→409, already-closed/paid→idempotent success). We do
+// not weaken any of that here — the mobile client only supplies the order id,
+// payment method and a per-attempt idempotency key so a network/warm-up retry
+// can never double-charge the same order.
+export async function closeOrder(body: {
+  order_id: string;
+  payment_method: PaymentMethod;
+  tip_amount?: number;
+  idempotency_key?: string;
+}): Promise<{
+  order_id: string;
+  transaction_id?: string;
+  amount_paid?: number;
+  payment_method?: string;
+  idempotent?: boolean;
+}> {
+  return api.post('/api/pos/v2/orders/close', body);
+}
+
 // POST /api/pos/create-order — posts the items as folio charges when a
 // folio_id (or booking_id) is supplied (payment / room-folio transfer path).
 export async function postOrderToFolio(body: {
