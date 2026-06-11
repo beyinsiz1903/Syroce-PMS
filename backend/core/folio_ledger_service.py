@@ -65,6 +65,11 @@ async def ensure_folio_ledger_indexes():
         [("tenant_id", 1), ("business_date", 1)],
         name="idx_recon_tenant_date",
     )
+    # Folio balance reconciliation backstop metric rows (Task #390)
+    await db.folio_balance_recon_scans.create_index(
+        [("tenant_id", 1), ("scanned_at", -1)],
+        name="idx_folio_balance_recon_tenant_scanned",
+    )
     logger.info("Folio ledger indexes ensured")
 
 

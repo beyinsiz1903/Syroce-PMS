@@ -115,6 +115,16 @@ async def phase_c_domain_indexes_and_workers(app):
     except Exception as e:
         logger.warning(f"Konaklama Vergisi scheduler start error: {e}")
 
+    # Folio bakiye mutabakat backstop scheduler (Task #390)
+    # POS->folio (B) asenkron olduğundan kalan bakiye sapmasını periyodik
+    # tarar; dry-run default, FOLIO_RECON_ALLOW_APPLY=true ile onarır.
+    try:
+        from workers.folio_recon_scheduler import start as _start_folio_recon
+        if _start_folio_recon():
+            logger.info("Folio reconciliation backstop scheduler started")
+    except Exception as e:
+        logger.warning(f"Folio reconciliation scheduler start error: {e}")
+
     # Marketplace indexes + product seed
     try:
         from core.subscriptions import ensure_indexes as _ms_indexes
