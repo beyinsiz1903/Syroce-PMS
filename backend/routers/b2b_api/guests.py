@@ -528,8 +528,8 @@ async def b2b_search_guests(
     if not agency_guest_ids:
         return {"guests": [], "count": 0}
 
-    from security.query_safety import safe_search_term
     from security.encrypted_lookup import decrypt_guest_doc, guest_pii_regex_or_conditions
+    from security.query_safety import safe_search_term
     _s = safe_search_term(q)
     if not _s:
         return {"guests": [], "count": 0}

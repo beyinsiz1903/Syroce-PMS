@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import logging
 
+from security.search_ngram import NGRAM_SOURCE_FIELDS, ngram_set_for_update_merged
 from security.search_normalize import (
     apply_collection_normalized_fields,
     normalized_set_for_update,
 )
-from security.search_ngram import NGRAM_SOURCE_FIELDS, ngram_set_for_update_merged
 
 logger = logging.getLogger("security.guest_write")
 

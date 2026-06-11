@@ -205,7 +205,6 @@ async def _resolve_user_identity(auth: Any) -> dict[str, Any] | None:
 from core.ws_rooms import internal_chat_rooms as _internal_chat_rooms
 from core.ws_rooms import internal_chat_user_room as _internal_chat_user_room
 from core.ws_rooms import internal_message_targets as _internal_message_targets
-from core.ws_rooms import is_internal_chat_room as _is_internal_chat_room
 from core.ws_rooms import is_protected_room as _is_protected_room
 from core.ws_rooms import tenant_broadcast_room as _pms_tenant_room
 

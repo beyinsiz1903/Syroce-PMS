@@ -18,17 +18,17 @@ import logging
 
 from pymongo import UpdateOne
 
-from security.search_normalize import (
-    LEADING_KEY,
-    NORMALIZED_SEARCH_FIELDS,
-    build_normalized_updates,
-    companion_field,
-)
 from security.search_ngram import (
     NGRAM_LEADING_KEY,
     NGRAM_SOURCE_FIELDS,
     NGRAM_TARGET_FIELD,
     ngram_tokens_for_doc,
+)
+from security.search_normalize import (
+    LEADING_KEY,
+    NORMALIZED_SEARCH_FIELDS,
+    build_normalized_updates,
+    companion_field,
 )
 
 logger = logging.getLogger(__name__)

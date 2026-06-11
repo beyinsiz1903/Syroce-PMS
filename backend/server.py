@@ -54,8 +54,8 @@ from core.database import client, db  # noqa: E402
 # fail-closed: app.state.startup_failed=True + warm-up gate kapalı kalır.
 @register_startup_first
 async def _db_migrations_startup():
-    from core.database import _raw_db
     from bootstrap.migrations import run_migrations
+    from core.database import _raw_db
     try:
         await run_migrations(_raw_db)
     except Exception as _mig_err:

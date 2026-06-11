@@ -143,7 +143,7 @@ async def scan(tenant_id: str | None) -> dict:
 
     total_scanned = 0
     candidates: list[dict] = []
-    per_field: dict[str, int] = {f: 0 for f in GUEST_PII_FIELDS}
+    per_field: dict[str, int] = dict.fromkeys(GUEST_PII_FIELDS, 0)
 
     cursor = db[_GUESTS].find(query, projection).batch_size(500)
     async for doc in cursor:

@@ -311,8 +311,8 @@ async def update_guest(
 
     # Companion name_lower updates (computed from the plaintext name before
     # encryption — name is NOT encrypted). Keeps prefix search consistent on rename.
-    from security.search_normalize import normalized_set_for_update
     from security.search_ngram import ngram_set_for_update_merged
+    from security.search_normalize import normalized_set_for_update
     _norm = normalized_set_for_update(update_fields, collection="guests")
     # The combined _ng_name must reflect ALL name fields, not just the changed
     # subset, or a name-only rename drops the other name fields' infix trigrams

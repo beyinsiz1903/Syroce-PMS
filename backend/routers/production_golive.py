@@ -74,8 +74,8 @@ async def get_migrations_status(
     kayıtlar, son hata ve advisory lock durumu. ``all_clear=False`` ise bekleyen
     veya başarısız bir migration vardır ve açılış fail-closed olabilir.
     """
-    from core.database import _raw_db
     from bootstrap.migrations import get_migration_status
+    from core.database import _raw_db
 
     return await get_migration_status(_raw_db)
 

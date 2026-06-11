@@ -1173,12 +1173,12 @@ async def update_reservation_guest(
     # log never records internal `_hash_*` / `_enc_*` / `*_lower` keys.
     _logged_fields = list(updates.keys())
     if updates:
-        from security.search_normalize import normalized_set_for_update
-        from security.search_ngram import (
-            ngram_set_for_update_merged,
-            NGRAM_SOURCE_FIELDS,
-        )
         from routers.pms_guests import _encrypt_guest
+        from security.search_ngram import (
+            NGRAM_SOURCE_FIELDS,
+            ngram_set_for_update_merged,
+        )
+        from security.search_normalize import normalized_set_for_update
         # Search companions are computed from the PLAINTEXT update BEFORE
         # encryption — name fields are NOT encrypted. name_lower keeps renames
         # prefix-searchable.

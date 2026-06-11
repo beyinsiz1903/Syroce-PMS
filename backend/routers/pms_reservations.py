@@ -531,7 +531,6 @@ async def search_reservations(
         # Search conditions
         search_conditions = []
 
-        import re as _re
 
         if query:
             # Index-serviceable anchored prefix match on the bookings
