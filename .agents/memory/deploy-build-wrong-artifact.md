@@ -1,51 +1,48 @@
 ---
-name: Two-repl deploy topology (this repl = MOBILE static, other = VM backend/web)
-description: This GitHub repo is deployed from TWO Replit repls. THIS repl is the static Expo mobile bundle; the OTHER repl is the VM that serves React web + FastAPI backend. Getting the deployment target wrong here breaks login.
+name: Two-repl deploy topology — agent's repl = VM backend (-1 host), copy repl = mobile static (-syroce host)
+description: This GitHub repo deploys from TWO Replit repls sharing one origin. The agent's repl owns the -1 slot = Reserved VM serving FastAPI backend + React SPA. A SEPARATE copy repl owns the -syroce slot = static Expo mobile. GitHub merges drift the agent-repl's [deployment] block to mobile/static — re-assert vm.
 ---
 
 This repo (`github.com/beyinsiz1903/emergent-yeni-uygulama`, branch `main`) is
 deployed from **two separate Replit repls** that share the same GitHub origin.
+Anchor on the HOSTNAME, never on "this/other repl" (that label kept getting
+inverted in older notes and caused a near-miss that would have flipped the
+backend to mobile/static):
 
-- **OTHER repl — VM — `https://emergent-yeni-uygulama-1.replit.app`**
-  Serves the React web app **and** the FastAPI backend. `/api/health/` returns
-  `{"status":"healthy","service":"hotel_pms"}`. This is the only live backend.
-- **THIS repl — static — `https://emergent-yeni-uygulama-1-syroce.replit.app`**
-  Serves the **Expo mobile web bundle only** (`mobile/build-web.sh` → `mobile/dist`).
-  No backend runs here. Deployment config: `deploymentTarget="static"`,
-  `build=["bash","mobile/build-web.sh"]`, `publicDir="mobile/dist"`.
+- **`https://emergent-yeni-uygulama-1.replit.app`** — **Reserved VM**, serves the
+  FastAPI backend **and** the React SPA (`frontend/build`, via FastAPI
+  `FRONTEND_BUILD_DIR`). `/api/health/` → `200 {"service":"hotel_pms"}`. This is
+  the only live backend. **The agent's working repl OWNS this slot** — confirmed
+  2026-06-11 by `getDeploymentInfo()` (primaryUrl = this `-1` URL, type `vm`,
+  healthy) AND by the operator ("bu deployment = Ana PMS backend; mobil ayrı
+  kopya repl'de"). So `deployConfig` here MUST be `vm`, NOT static/mobile.
+- **`https://emergent-yeni-uygulama-1-syroce.replit.app`** — **static**, serves the
+  Expo **mobile** web bundle only (`mobile/build-web.sh` → `mobile/dist`). No
+  backend; `/api/*` 404s (react-native-web `<!DOCTYPE html>` 404.html). A SEPARATE
+  "copy" Replit project owns this slot — the operator manages mobile from there.
 
-**Operator intent (authoritative):** THIS repl must stay the MOBILE static app.
-Do NOT set it to `vm` — VM makes it serve the web site, which is the OTHER repl's
-job ("vm olursa web sitesine yönlendirir ... diğer replit sayfam zaten vm"). An
-earlier VM change here was wrong and was reverted.
+**Correct VM config for the agent's repl (.replit `[deployment]`):**
+`deploymentTarget="vm"`,
+`build=["bash","-c","cd frontend && yarn install --frozen-lockfile && yarn build"]`,
+`run=["bash","-c","PYTHON_BIN=/home/runner/workspace/.venv/bin/python exec bash backend/start.sh"]`,
+no `publicDir`. `yarn build` passes (~1m40s); VM has the disk for it (autoscale
+SIGKILLed on the heavy ML install — see syroce-deploy-target-vm).
 
-**The login `request_failed` trap:** `mobile/build-web.sh` defaults
-`EXPO_PUBLIC_API_URL` (and `EXPO_PUBLIC_QUICKID_URL`) to `...-syroce.replit.app`
-— i.e. the mobile app points at ITSELF, which has no backend, so every `/api/*`
-call 404s and login shows `request_failed`. EXPO_PUBLIC_* vars are baked into the
-static bundle at BUILD time, so they must be set before the deploy build runs.
-**Fix:** set `EXPO_PUBLIC_API_URL` + `EXPO_PUBLIC_QUICKID_URL` =
-`https://emergent-yeni-uygulama-1.replit.app` in THIS repl's **production** env
-(`setEnvVars(..., environment:"production")`), which overrides the script's
-self-pointing default. Prefer the production env var over editing the script's
-default, because the operator also pushes `mobile/build-web.sh` from a mobile-dev
-repl and a GitHub merge can revert an in-file edit; the repl-scoped env var is not
-in the shared code.
+**The drift trap (why this keeps breaking):** GitHub merges/syncs from the
+mobile-dev/copy repl drag the `.replit` `[deployment]` block along, silently
+flipping the agent-repl's slot to the mobile/static config
+(`deploymentTarget="static"`, `build=["bash","mobile/build-web.sh"]`,
+`publicDir="mobile/dist"`). The LIVE deploy keeps serving the last good VM build,
+so nothing looks broken until the next republish — which would then publish the
+mobile bundle onto the backend slot and break login/API.
+**How to apply:** after every GitHub sync, re-check `.replit` `[deployment]`; if
+it shows static/`mobile/build-web.sh`/`mobile/dist`, restore the VM config above
+(use git history — the block just before the drift commit is the known-good VM
+config). Verify with `getDeploymentInfo()` (type should be `vm`, primaryUrl the
+`-1` host) and `curl .../api/health/` → `hotel_pms`.
 
-**CORS is already fine:** the VM backend allows the mobile origin — a preflight to
-`-1/api/auth/login` with `Origin: https://...-syroce.replit.app` returns
-`access-control-allow-origin: https://...-syroce.replit.app` + `allow-credentials:true`.
-No cross-repl CORS change is needed (don't go chasing it).
-
-**How to apply:** if THIS repl's published site shows `request_failed` on login or
-serves a `react-native-web` bundle whose `/api/*` 404s, do NOT flip it to VM.
-Confirm `deploymentTarget="static"` + `publicDir="mobile/dist"`, confirm THIS repl's
-production `EXPO_PUBLIC_API_URL` points at the OTHER repl's VM URL, then have the
-user republish. `curl https://emergent-yeni-uygulama-1.replit.app/api/health/`
-should be the healthy `hotel_pms` backend; `-syroce` is mobile-only. Re-verify the
-deployment target after every GitHub sync from the mobile-dev repl — merges drag
-the `.replit` deployment block along.
-
-**Note (for the OTHER/VM repl only):** there, build must be the React vite build
-(`cd frontend && yarn build`, serves `frontend/build` via FastAPI `FRONTEND_BUILD_DIR`),
-never `mobile/build-web.sh`. That rule is about the VM repl, not this one.
+**Mobile-side note (the -syroce copy repl only):** the mobile bundle bakes
+`EXPO_PUBLIC_API_URL`/`EXPO_PUBLIC_QUICKID_URL` at BUILD time; they MUST point at
+the `-1` backend host, never at the mobile host itself (self-pointing → every
+`/api/*` 404s → login `request_failed`). The backend already allows the mobile
+origin in CORS (explicit single host, not `*.replit.app`).
