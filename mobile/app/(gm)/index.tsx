@@ -10,6 +10,8 @@ import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import {
   Complaint,
+  GmChannel,
+  GmHousekeeping,
   GmMetrics,
   getComplaintManagement,
   getGmSnapshot,
@@ -68,6 +70,61 @@ function ComplaintRow({ comp }: { comp: Complaint }) {
   );
 }
 
+// Compact label/value row used by the housekeeping-status breakdown.
+function StatRow({ label, value, tone }: { label: string; value: number; tone?: 'warning' | 'danger' | 'success' }) {
+  const c = useTheme();
+  const color = tone === 'danger' ? c.danger : tone === 'warning' ? c.warning : tone === 'success' ? c.success : c.text;
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: spacing.xs,
+      }}
+    >
+      <Muted>{label}</Muted>
+      <Body style={{ color, fontWeight: '700' }}>{value}</Body>
+    </View>
+  );
+}
+
+function HousekeepingCard({ hk }: { hk: GmHousekeeping }) {
+  return (
+    <Card>
+      <StatRow label={tr.manager.hkReady} value={hk.ready_rooms} tone="success" />
+      <StatRow label={tr.manager.hkOccupied} value={hk.occupied} />
+      <StatRow label={tr.manager.hkDirty} value={hk.dirty_rooms} tone="warning" />
+      <StatRow label={tr.manager.hkMaintenance} value={hk.maintenance} tone="danger" />
+      <StatRow label={tr.manager.hkOutOfOrder} value={hk.out_of_order} tone="danger" />
+    </Card>
+  );
+}
+
+function ChannelRow({ ch }: { ch: GmChannel }) {
+  const c = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: spacing.xs,
+      }}
+    >
+      <View style={{ flex: 1 }}>
+        <Body style={{ fontWeight: '600' }} numberOfLines={1}>
+          {ch.source}
+        </Body>
+        <Muted>
+          {ch.bookings} {tr.manager.bookings.toLowerCase()}
+        </Muted>
+      </View>
+      <Body style={{ color: c.success, fontWeight: '700' }}>{formatCurrency(ch.revenue)}</Body>
+    </View>
+  );
+}
+
 export default function GMOverview() {
   const c = useTheme();
   const { user } = useAuthStore();
@@ -91,11 +148,16 @@ export default function GMOverview() {
 
   const occ = buildDelta(today?.occupancy ?? 0, yest?.occupancy ?? 0, 'percent');
   const rev = buildDelta(today?.revenue ?? 0, yest?.revenue ?? 0, 'currency');
+  const adr = buildDelta(today?.adr ?? 0, yest?.adr ?? 0, 'currency');
+  const revpar = buildDelta(today?.revpar ?? 0, yest?.revpar ?? 0, 'currency');
   const arr = buildDelta(today?.check_ins ?? 0, yest?.check_ins ?? 0, 'count');
   const dep = buildDelta(today?.check_outs ?? 0, yest?.check_outs ?? 0, 'count');
   const tasks = buildDelta(today?.pending_tasks ?? 0, yest?.pending_tasks ?? 0, 'count', false);
   const comp = buildDelta(today?.complaints ?? 0, yest?.complaints ?? 0, 'count', false);
 
+  const openFaults = snapshot.data?.open_faults ?? 0;
+  const hk = snapshot.data?.housekeeping;
+  const channels = snapshot.data?.channels ?? [];
   const activeComplaints = complaints.data?.active_complaints ?? [];
 
   return (
@@ -154,6 +216,24 @@ export default function GMOverview() {
             </KpiRow>
             <KpiRow>
               <KpiCard
+                testID="kpi-adr"
+                label={tr.manager.adr}
+                value={formatCurrency(today?.adr ?? 0)}
+                delta={adr.delta}
+                trend={adr.trend}
+                tone="info"
+              />
+              <KpiCard
+                testID="kpi-revpar"
+                label={tr.manager.revpar}
+                value={formatCurrency(today?.revpar ?? 0)}
+                delta={revpar.delta}
+                trend={revpar.trend}
+                tone="info"
+              />
+            </KpiRow>
+            <KpiRow>
+              <KpiCard
                 testID="kpi-arrivals"
                 label={tr.manager.arrivals}
                 value={String(today?.check_ins ?? 0)}
@@ -178,6 +258,14 @@ export default function GMOverview() {
                 tone={(today?.pending_tasks ?? 0) > 0 ? 'warning' : 'default'}
               />
               <KpiCard
+                testID="kpi-open-faults"
+                label={tr.manager.openFaults}
+                value={String(openFaults)}
+                tone={openFaults > 0 ? 'danger' : 'default'}
+              />
+            </KpiRow>
+            <KpiRow>
+              <KpiCard
                 testID="kpi-complaints"
                 label={tr.manager.complaints}
                 value={String(today?.complaints ?? 0)}
@@ -188,6 +276,31 @@ export default function GMOverview() {
             </KpiRow>
           </>
         )}
+
+        {!snapshot.isLoading && !snapshot.isError && hk ? (
+          <>
+            <H2 style={{ marginTop: spacing.sm }}>{tr.manager.hkStatusTitle}</H2>
+            <HousekeepingCard hk={hk} />
+          </>
+        ) : null}
+
+        {!snapshot.isLoading && !snapshot.isError ? (
+          <>
+            <H2 style={{ marginTop: spacing.sm }}>{tr.manager.channelsTitle}</H2>
+            <Muted>{tr.manager.last30}</Muted>
+            {channels.length === 0 ? (
+              <Card>
+                <Muted>{tr.manager.noChannelData}</Muted>
+              </Card>
+            ) : (
+              <Card>
+                {channels.map((ch, idx) => (
+                  <ChannelRow key={`${ch.source}-${idx}`} ch={ch} />
+                ))}
+              </Card>
+            )}
+          </>
+        ) : null}
 
         <H2 style={{ marginTop: spacing.sm }}>{tr.manager.alertsTitle}</H2>
         {complaints.isLoading ? (

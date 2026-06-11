@@ -3,9 +3,11 @@ import {
   Alert,
   AlertButton,
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
+  Text,
   View,
 } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -19,14 +21,36 @@ import {
   SkeletonCard,
 } from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
-import { spacing, useTheme, roomStatusColor } from '../../src/theme';
+import { spacing, radius, useTheme, roomStatusColor } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
-import { listRooms, Room, updateRoomStatus } from '../../src/api/rooms';
+import {
+  createQuickTask,
+  HkStaff,
+  listHousekeepingStaff,
+  listRooms,
+  Room,
+  updateRoomStatus,
+} from '../../src/api/rooms';
 import { haptic } from '../../src/hooks/useHaptic';
 import { isOffline } from '../../src/utils/errors';
 
-const STATUS_OPTIONS = ['clean', 'dirty', 'inspection', 'out_of_order'] as const;
+// Valid backend room statuses (housekeeping room/status endpoint):
+// available, occupied, dirty, cleaning, inspected, maintenance, out_of_order.
+// We expose the ones a housekeeper flips by hand.
+const STATUS_OPTIONS = [
+  'available',
+  'dirty',
+  'cleaning',
+  'inspected',
+  'maintenance',
+  'out_of_order',
+] as const;
 type StatusOption = (typeof STATUS_OPTIONS)[number];
+
+const TASK_TYPES = ['cleaning', 'inspection', 'maintenance'] as const;
+type TaskType = (typeof TASK_TYPES)[number];
+const PRIORITIES = ['normal', 'high', 'urgent'] as const;
+type Priority = (typeof PRIORITIES)[number];
 
 type BadgeTone = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'primary';
 
@@ -56,6 +80,71 @@ export default function RoomsScreen() {
   const qc = useQueryClient();
   const [floor, setFloor] = useState<string>('all');
   const rooms = useQuery({ queryKey: ['rooms'], queryFn: listRooms });
+
+  // ── Task assignment sheet state ──────────────────────────────────────────
+  const [assignRoom, setAssignRoom] = useState<Room | null>(null);
+  const [staffSel, setStaffSel] = useState<HkStaff | null>(null);
+  const [taskType, setTaskType] = useState<TaskType>('cleaning');
+  const [priority, setPriority] = useState<Priority>('normal');
+  const [submitting, setSubmitting] = useState(false);
+  const staff = useQuery({
+    queryKey: ['hk-staff'],
+    queryFn: listHousekeepingStaff,
+    enabled: assignRoom !== null,
+  });
+
+  const openAssign = (r: Room) => {
+    setAssignRoom(r);
+    setStaffSel(null);
+    setTaskType('cleaning');
+    setPriority('normal');
+  };
+  const closeAssign = () => {
+    if (submitting) return;
+    setAssignRoom(null);
+  };
+
+  const submitAssign = async () => {
+    if (!assignRoom) return;
+    if (!staffSel) {
+      Alert.alert(tr.app.error, tr.housekeeping.assignNeedStaff);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await createQuickTask({
+        room_id: assignRoom.id,
+        task_type: taskType,
+        priority,
+        assigned_to: staffSel.name,
+      });
+      haptic.success();
+      setAssignRoom(null);
+      // Refresh rooms (cleaning assignment may flip room → cleaning) + the
+      // shared "Görevlerim" hub feed so the new task appears immediately.
+      qc.invalidateQueries({ queryKey: ['rooms'] });
+      qc.invalidateQueries({ queryKey: ['my-tasks'] });
+      Alert.alert(tr.app.success, tr.housekeeping.assignSuccess);
+    } catch {
+      haptic.error();
+      Alert.alert(tr.app.error, tr.errors.generic);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const taskTypeLabel = (t: TaskType): string =>
+    t === 'cleaning'
+      ? tr.housekeeping.taskCleaning
+      : t === 'inspection'
+        ? tr.housekeeping.taskInspection
+        : tr.housekeeping.taskMaintenance;
+  const priorityLabel = (p: Priority): string =>
+    p === 'normal'
+      ? tr.housekeeping.priorityNormal
+      : p === 'high'
+        ? tr.housekeeping.priorityHigh
+        : tr.housekeeping.priorityUrgent;
 
   const floors = useMemo(() => {
     const set = new Set<string>();
@@ -89,8 +178,7 @@ export default function RoomsScreen() {
     }
   };
 
-  const onLongPress = (r: Room) => {
-    haptic.tap();
+  const promptStatus = (r: Room) => {
     const buttons: AlertButton[] = STATUS_OPTIONS.map((s) => ({
       text: tr.housekeeping.statuses[s] || s,
       onPress: () => {
@@ -98,7 +186,16 @@ export default function RoomsScreen() {
       },
     }));
     buttons.push({ text: tr.app.cancel, style: 'cancel' });
-    Alert.alert(`Oda ${r.room_number}`, tr.housekeeping.longPressHint, buttons);
+    Alert.alert(`Oda ${r.room_number}`, tr.housekeeping.changeStatus, buttons);
+  };
+
+  const onLongPress = (r: Room) => {
+    haptic.tap();
+    Alert.alert(`Oda ${r.room_number}`, tr.housekeeping.longPressHint, [
+      { text: tr.housekeeping.changeStatus, onPress: () => promptStatus(r) },
+      { text: tr.housekeeping.assignTask, onPress: () => openAssign(r) },
+      { text: tr.app.cancel, style: 'cancel' },
+    ]);
   };
 
   const renderRoom = ({ item: r }: { item: Room }) => {
@@ -182,6 +279,117 @@ export default function RoomsScreen() {
           }
         />
       )}
+
+      <Modal
+        visible={assignRoom !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={closeAssign}
+      >
+        <Pressable
+          onPress={closeAssign}
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
+        >
+          <Pressable
+            onPress={() => {}}
+            style={{
+              backgroundColor: c.bg,
+              borderTopLeftRadius: radius.lg,
+              borderTopRightRadius: radius.lg,
+              padding: spacing.lg,
+              maxHeight: '85%',
+            }}
+          >
+            <H2>
+              {tr.housekeeping.assignTitle}
+              {assignRoom ? ` · Oda ${assignRoom.room_number}` : ''}
+            </H2>
+
+            <ScrollView style={{ marginTop: spacing.md }}>
+              <Muted>{tr.housekeeping.selectStaff}</Muted>
+              {staff.isLoading ? (
+                <SkeletonCard />
+              ) : (staff.data || []).length === 0 ? (
+                <Card>
+                  <Muted>{tr.housekeeping.noStaff}</Muted>
+                </Card>
+              ) : (
+                <View style={{ gap: spacing.xs, marginTop: spacing.xs }}>
+                  {(staff.data || []).map((s, idx) => {
+                    const keyVal = s.id || s.name;
+                    const sel = (staffSel?.id || staffSel?.name) === keyVal;
+                    return (
+                      <Pressable
+                        key={`${keyVal}-${idx}`}
+                        onPress={() => setStaffSel(s)}
+                        style={{
+                          borderWidth: 1,
+                          borderColor: sel ? c.primary : c.border,
+                          backgroundColor: sel ? c.primary : c.surface,
+                          borderRadius: radius.md,
+                          paddingVertical: spacing.sm,
+                          paddingHorizontal: spacing.md,
+                        }}
+                      >
+                        <Text style={{ color: sel ? c.primaryText : c.text, fontWeight: '600' }}>
+                          {s.name}
+                        </Text>
+                        {s.role ? (
+                          <Text style={{ color: sel ? c.primaryText : c.textMuted, fontSize: 12 }}>
+                            {s.role}
+                          </Text>
+                        ) : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+
+              <Muted style={{ marginTop: spacing.md }}>{tr.housekeeping.taskType}</Muted>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs }}>
+                {TASK_TYPES.map((t) => (
+                  <Button
+                    key={t}
+                    title={taskTypeLabel(t)}
+                    variant={taskType === t ? 'primary' : 'secondary'}
+                    onPress={() => setTaskType(t)}
+                    style={{ flexShrink: 0 }}
+                  />
+                ))}
+              </View>
+
+              <Muted style={{ marginTop: spacing.md }}>{tr.housekeeping.priority}</Muted>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs }}>
+                {PRIORITIES.map((p) => (
+                  <Button
+                    key={p}
+                    title={priorityLabel(p)}
+                    variant={priority === p ? 'primary' : 'secondary'}
+                    onPress={() => setPriority(p)}
+                    style={{ flexShrink: 0 }}
+                  />
+                ))}
+              </View>
+            </ScrollView>
+
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg }}>
+              <Button
+                title={tr.app.cancel}
+                variant="secondary"
+                onPress={closeAssign}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title={tr.housekeeping.assignSubmit}
+                variant="primary"
+                onPress={() => void submitAssign()}
+                disabled={submitting || !staffSel}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }

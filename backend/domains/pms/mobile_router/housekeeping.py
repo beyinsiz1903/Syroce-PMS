@@ -288,6 +288,38 @@ async def get_team_assignments_mobile(
         'team_assignments': list(staff_assignments.values()),
         'total_staff': len(staff_assignments)
     }
+# ── GET /housekeeping/mobile/staff ──
+@router.get("/housekeeping/mobile/staff")
+async def list_housekeeping_staff(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(require_module("housekeeping")),  # v89 DW
+):
+    """List tenant staff who can receive a housekeeping task assignment.
+
+    Returns each staff member's `name` (the exact string the quick-task
+    `assigned_to` must carry so the assignment lands in that person's
+    "Görevlerim" hub feed) plus role for display. Scoped to the caller's
+    tenant; guests and deactivated accounts are excluded.
+    """
+    current_user = await get_current_user(credentials)
+    staff: list[dict[str, Any]] = []
+    cursor = db.users.find(
+        {
+            'tenant_id': current_user.tenant_id,
+            'role': {'$nin': ['guest', 'super_admin']},
+            '$or': [{'is_active': True}, {'is_active': {'$exists': False}}],
+        },
+        {'_id': 0, 'id': 1, 'name': 1, 'username': 1, 'role': 1},
+    )
+    async for u in cursor:
+        # `name` is the join key for the hub my-tasks aggregator; skip rows that
+        # have no name (assignment to them could never surface in their feed).
+        name = u.get('name') or u.get('username')
+        if not name:
+            continue
+        staff.append({'id': u.get('id'), 'name': name, 'role': u.get('role')})
+    staff.sort(key=lambda s: (s.get('name') or '').lower())
+    return {'staff': staff, 'total': len(staff)}
 # ── POST /housekeeping/mobile/quick-task ──
 @router.post("/housekeeping/mobile/quick-task")
 async def create_quick_task_mobile(
@@ -336,6 +368,36 @@ async def create_quick_task_mobile(
             {'id': room_id, 'tenant_id': current_user.tenant_id},
             {'$set': {'status': 'cleaning'}}
         )
+
+    # Task #328: notify the assignee on their mobile device (mirrors the
+    # HousekeepingStateService.create_housekeeping_task push). Reuses the
+    # EXISTING Expo push channel — best-effort, fully non-blocking: any failure
+    # here must never affect task creation. Assignment also syncs to the
+    # assignee's "Görevlerim" feed via the hub my-tasks aggregator (matches on
+    # assigned_to name), so the push and the in-app list stay consistent.
+    if assigned_to:
+        try:
+            assignee = await db.users.find_one(
+                {'tenant_id': current_user.tenant_id, 'name': assigned_to},
+                {'_id': 0, 'id': 1},
+            )
+            from services.expo_push import fire_and_forget_expo_push
+            fire_and_forget_expo_push(
+                current_user.tenant_id,
+                title="Yeni görev atandı",
+                body=f"Oda {room.get('room_number')} — {task_type}",
+                data={
+                    'type': 'housekeeping_task',
+                    'task_id': task_id,
+                    'room_id': room_id,
+                    'action_url': '/(home)/tasks',
+                },
+                user_ids=[assignee['id']] if assignee and assignee.get('id') else None,
+                departments=None if (assignee and assignee.get('id')) else ['housekeeping'],
+                priority='high' if priority in ('urgent', 'high') else 'default',
+            )
+        except Exception:
+            pass
 
     return {
         'message': 'Task created successfully',

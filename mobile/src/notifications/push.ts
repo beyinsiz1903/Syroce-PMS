@@ -211,9 +211,11 @@ function routeForRole(payload: PushPayload, role: AppRole): RouteTarget | null {
       return home;
 
     case 'housekeeping_task':
-      // Task #327 — a task-assigned push (existing Expo channel, no new
-      // notification type) takes staff to "Görevlerim" in the common shell.
-      // Guests never receive this; if they somehow do, send them home.
+    case 'maintenance_task':
+      // Task #327/#328 — a task-assigned / fault-filed push (existing Expo
+      // channel, no new notification type) takes staff to "Görevlerim" in the
+      // common shell. Guests never receive this; if they somehow do, send them
+      // home.
       if (role !== 'guest_app') {
         return ROUTES.homeTasks;
       }
