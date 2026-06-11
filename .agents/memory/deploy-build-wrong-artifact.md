@@ -26,3 +26,17 @@ serve it regardless, but the build step should regenerate the same artifact.
 **How to apply:** if a publish-build fails, check that the `[deployment].build`
 command produces the artifact the run command serves. For this repo that is the
 React `frontend/` vite build, never the mobile expo export.
+
+**Recurrence via GitHub merge (worse failure mode):** the operator also pushes
+from a SEPARATE mobile-dev repl to the same GitHub `origin/main`. That repl's
+`.replit` deployment block is `deploymentTarget="static"` + `build=mobile/build-web.sh`
++ `publicDir="mobile/dist"`. When `origin/main` is merged into this repo, that
+static/mobile deployment config comes along and silently overrides ours. Symptom:
+published site serves the Expo `react-native-web` bundle (root `/` 200, but every
+`/api/*` returns the SPA index.html 404), so login shows `request_failed` — the
+FastAPI backend isn't running at all. Confirm with `curl <prod>/api/health/`: if it
+returns HTML containing `expo-reset`/`react-native-web` instead of
+`{"status":"healthy","service":"hotel_pms"}`, the deployment reverted to static.
+**Fix:** re-run `deployConfig({deploymentTarget:"vm", run:[backend/start.sh], build:[frontend yarn build]})`,
+then the user must republish. A leftover `publicDir="mobile/dist"` line is inert
+under `vm` (ignored). Watch for this after every GitHub sync from the mobile repl.

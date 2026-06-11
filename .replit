@@ -109,8 +109,8 @@ localPort = 8099
 externalPort = 8099
 
 [deployment]
-deploymentTarget = "static"
-build = ["bash", "mobile/build-web.sh"]
+deploymentTarget = "vm"
+build = ["bash", "-c", "cd frontend && yarn install --frozen-lockfile && yarn build"]
 run = ["bash", "-c", "PYTHON_BIN=/home/runner/workspace/.venv/bin/python exec bash backend/start.sh"]
 publicDir = "mobile/dist"
 
