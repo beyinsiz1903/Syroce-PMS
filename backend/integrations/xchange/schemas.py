@@ -35,6 +35,8 @@ class MessageType(str, Enum):
     ROOM_STATUS_CHANGE = "OTA_HotelRoomStatusRQ"
     # Night audit close (SAP, ERP)
     NIGHT_AUDIT_CLOSE = "Syroce.NightAuditClose"
+    # Folio close — e-Fatura readiness (reference-based; PII pulled via signed URL)
+    FOLIO_CLOSE = "Syroce.FolioClose"
 
 
 class Direction(str, Enum):

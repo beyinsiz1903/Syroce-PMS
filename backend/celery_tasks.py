@@ -429,6 +429,189 @@ async def _night_audit_for_tenant_async(tenant_id: str) -> dict[str, Any]:
         client.close()
 
 
+# ============= FOLIO CLOSE EVENT (e-Fatura readiness) =============
+# Reference-based folio.closed.v1: when a folio is closed, publish a PII-free SXI
+# event (identifiers + light monetary context + a signed, time-limited fetch URL)
+# to every subscriber tenant. Delivery is an OFF-HOT-PATH outbox sweep keyed off
+# the folio document itself (the source of truth) — no folio-close request path is
+# touched. Idempotency: a stable message_id (folio_id + closed_at) plus the bus'
+# (tenant, message_id, partner) unique index dedup any re-publish after a crash.
+
+
+def _parse_iso_utc(value: str):
+    """Parse an ISO-8601 string to a tz-aware UTC datetime; None on failure.
+
+    A naive timestamp (the mobile auto-close path stores BSON datetimes that can
+    surface naive) is treated as UTC so the watermark comparison is consistent.
+    """
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt
+
+
+@celery_app.task(name='celery_tasks.folio_closed_event_sweep_task')
+def folio_closed_event_sweep_task():
+    """Beat task (every 5 min): emit folio.closed.v1 for newly-closed folios."""
+    return asyncio.run(_folio_closed_event_sweep_async())
+
+
+async def _folio_closed_event_sweep_async() -> dict[str, Any]:
+    # No-op unless BOTH the public base URL (for the signed fetch URL) and the
+    # emit watermark are configured. The watermark is mandatory so enabling the
+    # feature on an existing DB never floods middleware with the entire history.
+    base_url = os.environ.get("PUBLIC_APP_URL")
+    watermark_raw = os.environ.get("FOLIO_EVENT_EMIT_SINCE")
+    if not base_url or not watermark_raw:
+        return {"skipped": "unconfigured", "base_url": bool(base_url),
+                "watermark": bool(watermark_raw)}
+
+    watermark_dt = _parse_iso_utc(watermark_raw)
+    if watermark_dt is None:
+        logger.warning(
+            "[folio_close_sweep] FOLIO_EVENT_EMIT_SINCE not ISO-8601: %r", watermark_raw
+        )
+        return {"skipped": "bad_watermark"}
+
+    # Fail-closed: without a signing secret we cannot mint fetch tokens at all.
+    from core.folio_close_event import (
+        FetchSecretMissing,
+        _fetch_secret,
+        build_event_payload,
+        build_message_id,
+        normalize_closed_at,
+    )
+    try:
+        _fetch_secret()
+    except FetchSecretMissing:
+        logger.warning(
+            "[folio_close_sweep] no signing secret (FOLIO_FETCH_SECRET/JWT_SECRET); skipping"
+        )
+        return {"skipped": "no_secret"}
+
+    from integrations.xchange.bus import bus
+    from integrations.xchange.registry import PARTNERS
+    from integrations.xchange.schemas import Direction, MessageType
+
+    # Only sweep for tenants that have at least one enabled partner whose
+    # capability set actually carries FOLIO_CLOSE OUTBOUND (generic_webhook does).
+    supported = [
+        code for code, p in PARTNERS.items()
+        if any(
+            c.message_type == MessageType.FOLIO_CLOSE and c.direction == Direction.OUTBOUND
+            for c in p.capabilities
+        )
+    ]
+    if not supported:
+        return {"skipped": "no_supporting_partner"}
+
+    try:
+        batch = int(os.environ.get("FOLIO_EVENT_SWEEP_BATCH", "200"))
+    except (TypeError, ValueError):
+        batch = 200
+    if batch <= 0:
+        batch = 200
+
+    # The bus resolves its DB via get_system_db() -> core.database._raw_db. Under
+    # Celery the module-level client is bound to a dead loop, so rebind the
+    # core.database globals to a fresh loop-bound client for the run, then restore.
+    import core.database as coredb
+    from core.tenant_db import TenantAwareDBProxy
+
+    client, raw_db = _fresh_mongo()
+    saved = (coredb.client, coredb._raw_db, coredb.db)
+    coredb.client, coredb._raw_db, coredb.db = client, raw_db, TenantAwareDBProxy(raw_db)
+    published = tombstoned = scanned = 0
+    try:
+        # Best-effort sweep index (idempotent; the $expr filter is in-memory but
+        # the equality/exists prefix is index-served).
+        try:
+            await raw_db.folios.create_index(
+                [("tenant_id", 1), ("status", 1), ("closed_at", 1)],
+                name="folio_close_sweep", background=True,
+            )
+        except Exception as e:  # noqa: BLE001 — index is an optimization, not required
+            logger.debug("[folio_close_sweep] index ensure skipped: %s", e)
+
+        tenant_ids = await raw_db.xchange_partner_configs.distinct(
+            "tenant_id", {"enabled": True, "partner_code": {"$in": supported}}
+        )
+        budget = batch
+        for tid in tenant_ids:
+            if budget <= 0:
+                break
+            # Marker = the RAW closed_at value; $expr $ne handles never-emitted
+            # (missing marker => null) AND reopen/reclose (new closed_at != marker)
+            # without a cross-type datetime/string comparison.
+            query = {
+                "tenant_id": tid,
+                "status": "closed",
+                "closed_at": {"$exists": True},
+                "$expr": {"$ne": ["$closed_at", "$folio_closed_event_emitted_for"]},
+            }
+            cursor = raw_db.folios.find(query, {"_id": 0}).limit(budget)
+            async for folio in cursor:
+                if budget <= 0:
+                    break
+                budget -= 1
+                scanned += 1
+                raw_closed_at = folio.get("closed_at")
+                closed_at_norm = normalize_closed_at(raw_closed_at)
+                parsed = _parse_iso_utc(closed_at_norm)
+                # Pre-watermark / unparseable closed_at => tombstone WITHOUT
+                # publishing (stamp the marker so it is never re-scanned).
+                emit = parsed is not None and parsed >= watermark_dt
+
+                if emit:
+                    try:
+                        payload = build_event_payload(folio, base_url=base_url)
+                        msg_id = build_message_id(folio["id"], closed_at_norm)
+                        await bus.publish(
+                            tenant_id=tid,
+                            message_type=MessageType.FOLIO_CLOSE,
+                            payload=payload,
+                            message_id=msg_id,
+                        )
+                    except Exception as e:  # noqa: BLE001 — leave UNMARKED to retry
+                        logger.warning(
+                            "[folio_close_sweep] publish failed folio=%s: %s",
+                            folio.get("id"), e,
+                        )
+                        continue
+
+                # EMIT-then-MARK: only stamp the marker after a successful publish
+                # (or a tombstone), guarded on the same closed_at so a concurrent
+                # reopen/reclose is not silently masked.
+                try:
+                    await raw_db.folios.update_one(
+                        {"id": folio["id"], "tenant_id": tid, "status": "closed",
+                         "closed_at": raw_closed_at},
+                        {"$set": {"folio_closed_event_emitted_for": raw_closed_at}},
+                    )
+                    if emit:
+                        published += 1
+                    else:
+                        tombstoned += 1
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "[folio_close_sweep] mark failed folio=%s: %s", folio.get("id"), e
+                    )
+        result = {
+            "published": published, "tombstoned": tombstoned,
+            "scanned": scanned, "tenants": len(tenant_ids),
+        }
+        logger.info("[folio_close_sweep] %s", result)
+        return result
+    finally:
+        coredb.client, coredb._raw_db, coredb.db = saved
+        client.close()
+
+
 # ============= DATA ARCHIVAL TASKS =============
 
 @celery_app.task(name='celery_tasks.archive_old_data_task')

@@ -63,6 +63,15 @@ celery_app.conf.update(
             'schedule': crontab(minute='*'),
         },
 
+        # Folio close event (e-Fatura readiness) — off-hot-path outbox sweep that
+        # emits the reference-based folio.closed.v1 SXI event for newly-closed
+        # folios. No-op unless PUBLIC_APP_URL + FOLIO_EVENT_EMIT_SINCE are set and
+        # a subscriber tenant has a partner supporting FOLIO_CLOSE OUTBOUND.
+        'folio-closed-event-sweep': {
+            'task': 'celery_tasks.folio_closed_event_sweep_task',
+            'schedule': crontab(minute='*/5'),
+        },
+
         # Data archival - runs weekly on Sunday at 3 AM
         'archive-old-data': {
             'task': 'celery_tasks.archive_old_data_task',
