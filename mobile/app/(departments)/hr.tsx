@@ -12,6 +12,11 @@ import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
 import {
+  HR_TABS,
+  screenRedirectsToHub,
+  type HrTab,
+} from '../../src/utils/departmentScreens';
+import {
   listShifts,
   listLeaveRequests,
   listAttendanceRecords,
@@ -21,7 +26,7 @@ import {
 } from '../../src/api/hr';
 import { formatDate } from '../../src/utils/format';
 
-type Tab = 'shifts' | 'leave' | 'attendance';
+type Tab = HrTab;
 
 function statusTone(status?: string):
   | 'default'
@@ -81,7 +86,8 @@ function clockTime(value?: string | null): string {
 // backend-gated by require_op("manage_hr").
 export default function HrScreen() {
   const c = useTheme();
-  const hrAccess = useAuthStore((s) => s.hrAccess);
+  const rawRole = useAuthStore((s) => s.user?.role);
+  const hrAccess = !screenRedirectsToHub('hr', rawRole);
   const [tab, setTab] = useState<Tab>('shifts');
 
   const shiftsQ = useQuery({
@@ -100,7 +106,15 @@ export default function HrScreen() {
     enabled: hrAccess && tab === 'attendance',
   });
 
-  if (!hrAccess) return <Redirect href={ROUTES.departments} />;
+  if (screenRedirectsToHub('hr', rawRole)) {
+    return <Redirect href={ROUTES.departments} />;
+  }
+
+  const tabLabels: Record<Tab, string> = {
+    shifts: tr.departments.hr.tabShifts,
+    leave: tr.departments.hr.tabLeave,
+    attendance: tr.departments.hr.tabAttendance,
+  };
 
   const TabButton: React.FC<{ value: Tab; label: string }> = ({ value, label }) => {
     const active = tab === value;
@@ -220,9 +234,9 @@ export default function HrScreen() {
       <H1>{tr.departments.hr.title}</H1>
 
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
-        <TabButton value="shifts" label={tr.departments.hr.tabShifts} />
-        <TabButton value="leave" label={tr.departments.hr.tabLeave} />
-        <TabButton value="attendance" label={tr.departments.hr.tabAttendance} />
+        {HR_TABS.map((value) => (
+          <TabButton key={value} value={value} label={tabLabels[value]} />
+        ))}
       </View>
 
       {tab === 'shifts' ? (

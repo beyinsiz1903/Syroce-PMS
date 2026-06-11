@@ -11,6 +11,7 @@ import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
+import { screenRedirectsToHub } from '../../src/utils/departmentScreens';
 import {
   getPricingStrategy,
   listPriceAdjustments,
@@ -55,7 +56,8 @@ function confidenceLabel(level?: string): string {
 // mutations stay backend-gated by require_op("manage_rates").
 export default function RevenueScreen() {
   const c = useTheme();
-  const revenueAccess = useAuthStore((s) => s.revenueAccess);
+  const rawRole = useAuthStore((s) => s.user?.role);
+  const revenueAccess = !screenRedirectsToHub('revenue', rawRole);
 
   const strategyQ = useQuery({
     queryKey: ['rms-strategy'],

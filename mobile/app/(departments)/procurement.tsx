@@ -12,6 +12,11 @@ import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
 import {
+  PROCUREMENT_TABS,
+  screenRedirectsToHub,
+  type ProcurementTab,
+} from '../../src/utils/departmentScreens';
+import {
   listPurchaseRequests,
   listPurchaseOrders,
   type PurchaseRequest,
@@ -19,7 +24,7 @@ import {
 } from '../../src/api/procurement';
 import { formatCurrency, formatDate } from '../../src/utils/format';
 
-type Tab = 'requests' | 'orders';
+type Tab = ProcurementTab;
 
 function statusTone(status?: string):
   | 'default'
@@ -63,7 +68,8 @@ function poStatusLabel(status?: string): string {
 // backend-gated by require_procurement.
 export default function ProcurementScreen() {
   const c = useTheme();
-  const procurementAccess = useAuthStore((s) => s.procurementAccess);
+  const rawRole = useAuthStore((s) => s.user?.role);
+  const procurementAccess = !screenRedirectsToHub('procurement', rawRole);
   const [tab, setTab] = useState<Tab>('requests');
 
   const prQ = useQuery({
@@ -77,7 +83,14 @@ export default function ProcurementScreen() {
     enabled: procurementAccess && tab === 'orders',
   });
 
-  if (!procurementAccess) return <Redirect href={ROUTES.departments} />;
+  if (screenRedirectsToHub('procurement', rawRole)) {
+    return <Redirect href={ROUTES.departments} />;
+  }
+
+  const tabLabels: Record<Tab, string> = {
+    requests: tr.departments.procurement.tabRequests,
+    orders: tr.departments.procurement.tabOrders,
+  };
 
   const TabButton: React.FC<{ value: Tab; label: string }> = ({ value, label }) => {
     const active = tab === value;
@@ -190,8 +203,9 @@ export default function ProcurementScreen() {
       <H1>{tr.departments.procurement.title}</H1>
 
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
-        <TabButton value="requests" label={tr.departments.procurement.tabRequests} />
-        <TabButton value="orders" label={tr.departments.procurement.tabOrders} />
+        {PROCUREMENT_TABS.map((value) => (
+          <TabButton key={value} value={value} label={tabLabels[value]} />
+        ))}
       </View>
 
       {tab === 'requests' ? (
