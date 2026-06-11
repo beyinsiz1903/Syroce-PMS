@@ -109,8 +109,8 @@ localPort = 8099
 externalPort = 8099
 
 [deployment]
-deploymentTarget = "vm"
-build = ["bash", "-c", "cd frontend && yarn install --frozen-lockfile && yarn build"]
+deploymentTarget = "static"
+build = ["bash", "mobile/build-web.sh"]
 run = ["bash", "-c", "PYTHON_BIN=/home/runner/workspace/.venv/bin/python exec bash backend/start.sh"]
 publicDir = "mobile/dist"
 
@@ -133,6 +133,8 @@ SENTRY_ENVIRONMENT = "replit-dev"
 
 [userenv.production]
 SENTRY_ENVIRONMENT = "pilot"
+EXPO_PUBLIC_API_URL = "https://emergent-yeni-uygulama-1.replit.app"
+EXPO_PUBLIC_QUICKID_URL = "https://emergent-yeni-uygulama-1.replit.app"
 
 [postMerge]
 path = "scripts/post-merge.sh"

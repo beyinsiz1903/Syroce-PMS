@@ -1,42 +1,51 @@
 ---
-name: Main-app deploy build pointed at the wrong artifact
-description: The gce/VM deployment build was set to the Expo mobile export instead of the React frontend it actually serves, causing publish-build failures.
+name: Two-repl deploy topology (this repl = MOBILE static, other = VM backend/web)
+description: This GitHub repo is deployed from TWO Replit repls. THIS repl is the static Expo mobile bundle; the OTHER repl is the VM that serves React web + FastAPI backend. Getting the deployment target wrong here breaks login.
 ---
 
-The main-app deployment (Reserved VM / gce, run = `backend/start.sh`) serves the
-committed React `frontend/build` (FastAPI `app.py` -> `FRONTEND_BUILD_DIR`,
-default `frontend/build`). It does NOT serve `mobile/dist`.
+This repo (`github.com/beyinsiz1903/emergent-yeni-uygulama`, branch `main`) is
+deployed from **two separate Replit repls** that share the same GitHub origin.
 
-The deployment `build` command had been set to `bash mobile/build-web.sh`, which
-runs `npx expo export -p web` into `mobile/dist`. That script's own header says
-it is for a SEPARATE static repl, not the main app. Symptoms: deployment build
-fails to publish (expo export is heavy/flaky), while the artifact it produces is
-irrelevant to what the backend serves.
+- **OTHER repl — VM — `https://emergent-yeni-uygulama-1.replit.app`**
+  Serves the React web app **and** the FastAPI backend. `/api/health/` returns
+  `{"status":"healthy","service":"hotel_pms"}`. This is the only live backend.
+- **THIS repl — static — `https://emergent-yeni-uygulama-1-syroce.replit.app`**
+  Serves the **Expo mobile web bundle only** (`mobile/build-web.sh` → `mobile/dist`).
+  No backend runs here. Deployment config: `deploymentTarget="static"`,
+  `build=["bash","mobile/build-web.sh"]`, `publicDir="mobile/dist"`.
 
-**Fix:** point the deployment build at the frontend the backend actually serves:
-`cd frontend && yarn install --frozen-lockfile && yarn build` (vite build, ~12s).
-Change it via the deployment skill's `deployConfig()` — direct `.replit` edits are
-blocked. Keep target `vm` and the existing `backend/start.sh` run command.
+**Operator intent (authoritative):** THIS repl must stay the MOBILE static app.
+Do NOT set it to `vm` — VM makes it serve the web site, which is the OTHER repl's
+job ("vm olursa web sitesine yönlendirir ... diğer replit sayfam zaten vm"). An
+earlier VM change here was wrong and was reverted.
 
-**Why:** the served build and the build step must match. Building an unrelated
-(and flaky) target wastes the deploy and can fail the publish even though the app
-itself is fine. `frontend/build` is committed (~414 files), so the run command can
-serve it regardless, but the build step should regenerate the same artifact.
+**The login `request_failed` trap:** `mobile/build-web.sh` defaults
+`EXPO_PUBLIC_API_URL` (and `EXPO_PUBLIC_QUICKID_URL`) to `...-syroce.replit.app`
+— i.e. the mobile app points at ITSELF, which has no backend, so every `/api/*`
+call 404s and login shows `request_failed`. EXPO_PUBLIC_* vars are baked into the
+static bundle at BUILD time, so they must be set before the deploy build runs.
+**Fix:** set `EXPO_PUBLIC_API_URL` + `EXPO_PUBLIC_QUICKID_URL` =
+`https://emergent-yeni-uygulama-1.replit.app` in THIS repl's **production** env
+(`setEnvVars(..., environment:"production")`), which overrides the script's
+self-pointing default. Prefer the production env var over editing the script's
+default, because the operator also pushes `mobile/build-web.sh` from a mobile-dev
+repl and a GitHub merge can revert an in-file edit; the repl-scoped env var is not
+in the shared code.
 
-**How to apply:** if a publish-build fails, check that the `[deployment].build`
-command produces the artifact the run command serves. For this repo that is the
-React `frontend/` vite build, never the mobile expo export.
+**CORS is already fine:** the VM backend allows the mobile origin — a preflight to
+`-1/api/auth/login` with `Origin: https://...-syroce.replit.app` returns
+`access-control-allow-origin: https://...-syroce.replit.app` + `allow-credentials:true`.
+No cross-repl CORS change is needed (don't go chasing it).
 
-**Recurrence via GitHub merge (worse failure mode):** the operator also pushes
-from a SEPARATE mobile-dev repl to the same GitHub `origin/main`. That repl's
-`.replit` deployment block is `deploymentTarget="static"` + `build=mobile/build-web.sh`
-+ `publicDir="mobile/dist"`. When `origin/main` is merged into this repo, that
-static/mobile deployment config comes along and silently overrides ours. Symptom:
-published site serves the Expo `react-native-web` bundle (root `/` 200, but every
-`/api/*` returns the SPA index.html 404), so login shows `request_failed` — the
-FastAPI backend isn't running at all. Confirm with `curl <prod>/api/health/`: if it
-returns HTML containing `expo-reset`/`react-native-web` instead of
-`{"status":"healthy","service":"hotel_pms"}`, the deployment reverted to static.
-**Fix:** re-run `deployConfig({deploymentTarget:"vm", run:[backend/start.sh], build:[frontend yarn build]})`,
-then the user must republish. A leftover `publicDir="mobile/dist"` line is inert
-under `vm` (ignored). Watch for this after every GitHub sync from the mobile repl.
+**How to apply:** if THIS repl's published site shows `request_failed` on login or
+serves a `react-native-web` bundle whose `/api/*` 404s, do NOT flip it to VM.
+Confirm `deploymentTarget="static"` + `publicDir="mobile/dist"`, confirm THIS repl's
+production `EXPO_PUBLIC_API_URL` points at the OTHER repl's VM URL, then have the
+user republish. `curl https://emergent-yeni-uygulama-1.replit.app/api/health/`
+should be the healthy `hotel_pms` backend; `-syroce` is mobile-only. Re-verify the
+deployment target after every GitHub sync from the mobile-dev repl — merges drag
+the `.replit` deployment block along.
+
+**Note (for the OTHER/VM repl only):** there, build must be the React vite build
+(`cd frontend && yarn build`, serves `frontend/build` via FastAPI `FRONTEND_BUILD_DIR`),
+never `mobile/build-web.sh`. That rule is about the VM repl, not this one.
