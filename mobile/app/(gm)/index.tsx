@@ -21,32 +21,6 @@ import {
 import { getApprovals } from '../../src/api/hub';
 import { formatCurrency } from '../../src/utils/format';
 import { isOffline } from '../../src/utils/errors';
-import type { KpiTrend } from '../../src/components/KpiCard';
-
-type DeltaKind = 'count' | 'currency' | 'percent';
-
-// Build the at-a-glance comparison line + trend marker from today vs.
-// yesterday. `higherIsBetter=false` flips colour semantics for metrics like
-// complaints / pending tasks where a rise is bad.
-function buildDelta(
-  today: number,
-  yesterday: number,
-  kind: DeltaKind,
-  higherIsBetter = true,
-): { delta: string; trend: KpiTrend } {
-  const diff = Math.round((today - yesterday) * 100) / 100;
-  let trend: KpiTrend = 'flat';
-  if (diff > 0) trend = higherIsBetter ? 'up' : 'down';
-  else if (diff < 0) trend = higherIsBetter ? 'down' : 'up';
-
-  const sign = diff > 0 ? '+' : '';
-  let body: string;
-  if (kind === 'currency') body = `${sign}${formatCurrency(diff)}`;
-  else if (kind === 'percent') body = `${sign}${diff.toFixed(1)}%`;
-  else body = `${sign}${diff}`;
-
-  return { delta: `${body} ${tr.manager.vsYesterday}`, trend };
-}
 
 function ComplaintRow({ comp }: { comp: Complaint }) {
   const c = useTheme();
@@ -159,17 +133,12 @@ export default function GMOverview() {
 
   const offline = snapshot.isError && isOffline(snapshot.error);
 
+  // Only today's figures are real, live values. The snapshot's `yesterday` /
+  // `last_week` are arithmetic simulations on the backend (see task note), so
+  // we no longer render "vs. yesterday" deltas as if they were genuine
+  // day-over-day movement. The cockpit (hero) KpiCards mirror the unified
+  // staff "Bugün" cockpit: big colour-coded value + watermark icon, no delta.
   const today: GmMetrics | undefined = snapshot.data?.today;
-  const yest: GmMetrics | undefined = snapshot.data?.yesterday;
-
-  const occ = buildDelta(today?.occupancy ?? 0, yest?.occupancy ?? 0, 'percent');
-  const rev = buildDelta(today?.revenue ?? 0, yest?.revenue ?? 0, 'currency');
-  const adr = buildDelta(today?.adr ?? 0, yest?.adr ?? 0, 'currency');
-  const revpar = buildDelta(today?.revpar ?? 0, yest?.revpar ?? 0, 'currency');
-  const arr = buildDelta(today?.check_ins ?? 0, yest?.check_ins ?? 0, 'count');
-  const dep = buildDelta(today?.check_outs ?? 0, yest?.check_outs ?? 0, 'count');
-  const tasks = buildDelta(today?.pending_tasks ?? 0, yest?.pending_tasks ?? 0, 'count', false);
-  const comp = buildDelta(today?.complaints ?? 0, yest?.complaints ?? 0, 'count', false);
 
   const openFaults = snapshot.data?.open_faults ?? 0;
   const hk = snapshot.data?.housekeeping;
@@ -261,6 +230,7 @@ export default function GMOverview() {
         ) : null}
 
         <H2>{tr.manager.kpis}</H2>
+        <Muted>{tr.manager.kpisHint}</Muted>
 
         {snapshot.isLoading ? (
           <>
@@ -282,66 +252,60 @@ export default function GMOverview() {
             <KpiRow>
               <KpiCard
                 testID="kpi-occupancy"
+                icon="bed-outline"
                 label={tr.manager.occupancy}
                 value={`%${(today?.occupancy ?? 0).toFixed(1)}`}
-                delta={occ.delta}
-                trend={occ.trend}
                 tone="info"
               />
               <KpiCard
                 testID="kpi-revenue"
+                icon="cash-outline"
                 label={tr.manager.revenue}
                 value={formatCurrency(today?.revenue ?? 0)}
-                delta={rev.delta}
-                trend={rev.trend}
                 tone="success"
               />
             </KpiRow>
             <KpiRow>
               <KpiCard
                 testID="kpi-adr"
+                icon="pricetag-outline"
                 label={tr.manager.adr}
                 value={formatCurrency(today?.adr ?? 0)}
-                delta={adr.delta}
-                trend={adr.trend}
                 tone="info"
               />
               <KpiCard
                 testID="kpi-revpar"
+                icon="stats-chart-outline"
                 label={tr.manager.revpar}
                 value={formatCurrency(today?.revpar ?? 0)}
-                delta={revpar.delta}
-                trend={revpar.trend}
                 tone="info"
               />
             </KpiRow>
             <KpiRow>
               <KpiCard
                 testID="kpi-arrivals"
+                icon="enter-outline"
                 label={tr.manager.arrivals}
                 value={String(today?.check_ins ?? 0)}
-                delta={arr.delta}
-                trend={arr.trend}
               />
               <KpiCard
                 testID="kpi-departures"
+                icon="exit-outline"
                 label={tr.manager.departures}
                 value={String(today?.check_outs ?? 0)}
-                delta={dep.delta}
-                trend={dep.trend}
               />
             </KpiRow>
             <KpiRow>
               <KpiCard
                 testID="kpi-pending-tasks"
+                icon="list-outline"
                 label={tr.manager.pendingTasks}
                 value={String(today?.pending_tasks ?? 0)}
-                delta={tasks.delta}
-                trend={tasks.trend}
                 tone={(today?.pending_tasks ?? 0) > 0 ? 'warning' : 'default'}
               />
               <KpiCard
                 testID="kpi-open-faults"
+                icon="construct-outline"
                 label={tr.manager.openFaults}
                 value={String(openFaults)}
                 tone={openFaults > 0 ? 'danger' : 'default'}
@@ -350,12 +314,12 @@ export default function GMOverview() {
             <KpiRow>
               <KpiCard
                 testID="kpi-complaints"
+                icon="chatbox-ellipses-outline"
                 label={tr.manager.complaints}
                 value={String(today?.complaints ?? 0)}
-                delta={comp.delta}
-                trend={comp.trend}
                 tone={(today?.complaints ?? 0) > 0 ? 'danger' : 'default'}
               />
+              <View style={{ flex: 1 }} />
             </KpiRow>
           </>
         )}

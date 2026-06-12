@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { Body, Card, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import { Body, Card, H1, H2, Muted, SectionTitle, SkeletonCard } from '../../src/components/ui';
 import { KpiPill } from '../../src/components/KpiCard';
 import { StatRow } from '../../src/components/StatRow';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -162,7 +162,7 @@ export default function ReportsScreen() {
         <H1>{tr.manager.reportsTitle}</H1>
 
         {/* ── Finance snapshot ── */}
-        <H2>{tr.manager.financeSnapshot}</H2>
+        <SectionTitle title={tr.manager.financeSnapshot} />
         {finance.isLoading || finance.isError ? (
           <SectionState loading={finance.isLoading} error={finance.isError} />
         ) : fin ? (
@@ -196,7 +196,7 @@ export default function ReportsScreen() {
         ) : null}
 
         {/* ── Market segment ── */}
-        <H2 style={{ marginTop: spacing.sm }}>{tr.manager.marketSegment}</H2>
+        <SectionTitle title={tr.manager.marketSegment} />
         <FilterChips
           options={RANGE_OPTIONS}
           value={preset}
@@ -226,13 +226,13 @@ export default function ReportsScreen() {
 
         {segment.data && Object.keys(segment.data.rate_types ?? {}).length > 0 ? (
           <>
-            <H2 style={{ marginTop: spacing.sm }}>{tr.manager.rateTypes}</H2>
+            <SectionTitle title={tr.manager.rateTypes} />
             <SegmentList data={segment.data.rate_types} />
           </>
         ) : null}
 
         {/* ── Company aging ── */}
-        <H2 style={{ marginTop: spacing.sm }}>{tr.manager.companyAging}</H2>
+        <SectionTitle title={tr.manager.companyAging} />
         {aging.isLoading || aging.isError ? (
           <SectionState loading={aging.isLoading} error={aging.isError} />
         ) : (

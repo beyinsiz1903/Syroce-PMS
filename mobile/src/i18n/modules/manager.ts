@@ -2,6 +2,7 @@ export const manager = {
   dashboardTitle: 'Yönetici Paneli',
   welcome: 'Hoş geldiniz',
   kpis: 'Günün Özeti',
+  kpisHint: 'Bugünün canlı değerleri',
   occupancy: 'Doluluk',
   revenue: 'Gelir',
   arrivals: 'Bugün Giriş',
@@ -65,4 +66,14 @@ export const manager = {
   urgentApprovalsTitle: 'Acil Onaylar',
   viewAllApprovals: 'Tümünü gör',
   noUrgentApprovals: 'Bekleyen onay yok',
+  // "More" (Yönetim) ekrani — Ayarlar-tarzi kisayol + ayar listesi.
+  moreTitle: 'Yönetim',
+  shortcutsTitle: 'Yönetim Kısayolları',
+  shortcutDepartments: 'Departmanlar',
+  shortcutRevenue: 'Gelir Yönetimi',
+  shortcutHr: 'İnsan Kaynakları',
+  shortcutProcurement: 'Satın Alma',
+  shortcutPos: 'POS / Satış',
+  noShortcuts: 'Erişebileceğiniz yönetim ekranı yok',
+  settingsTitle: 'Ayarlar',
 };
