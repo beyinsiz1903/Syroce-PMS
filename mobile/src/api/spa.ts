@@ -236,3 +236,15 @@ export async function updateSpaAppointmentStatus(
     { status },
   );
 }
+
+// POST /api/activities/bookings/{booking_id}/cancel — flips status to
+// "cancelled" (frees the resource slot). Allowed to throw so the UI can surface
+// a 404 (booking not found / wrong tenant) inline.
+export async function cancelActivityBooking(
+  bookingId: string,
+): Promise<{ ok: boolean }> {
+  return api.post<{ ok: boolean }>(
+    `/api/activities/bookings/${bookingId}/cancel`,
+    {},
+  );
+}

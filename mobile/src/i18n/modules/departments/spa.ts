@@ -79,6 +79,11 @@ export const spa = {
     created: 'Aktivite planlandı',
     createError: 'Aktivite planlanamadı',
     validationMissing: 'Aktivite, kaynak, misafir, tarih ve saat zorunlu',
+    cancel: 'İptal Et',
+    cancelConfirm: 'Bu planlamayı iptal etmek istiyor musunuz?',
+    keep: 'Vazgeç',
+    cancelled: 'Planlama iptal edildi',
+    cancelError: 'Planlama iptal edilemedi',
     capacity: 'Kapasite',
     statuses: {
       booked: 'Planlandı',

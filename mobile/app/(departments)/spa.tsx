@@ -26,6 +26,7 @@ import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
 import {
+  cancelActivityBooking,
   createActivityBooking,
   createSpaAppointment,
   getSpaAvailability,
@@ -47,6 +48,7 @@ import { searchGuests, type Guest } from '../../src/api/guests';
 import { listViewState } from '../../src/utils/departmentScreens';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
+import { haptic } from '../../src/hooks/useHaptic';
 
 type Range = 'today' | 'week' | 'date';
 
@@ -188,6 +190,121 @@ function slotTimeValue(iso: string): string {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
+}
+
+// Activity-booking card. Shows the activity / resource / time and — for a still
+// "booked" planning — an inline two-step cancel (Alert.alert is a no-op on Expo
+// Web, the e2e target, so we confirm in-card like the HR leave decisions). On
+// success it invalidates the 'activity-bookings' query so the list refreshes and
+// the status badge flips to "İptal". The backend re-enforces auth on the cancel.
+function BookingCard({
+  booking,
+  activityLabel,
+  resourceLabel,
+}: {
+  booking: ActivityBooking;
+  activityLabel: string;
+  resourceLabel: string;
+}) {
+  const c = useTheme();
+  const qc = useQueryClient();
+  const A = tr.departments.spa.activities;
+  const [confirming, setConfirming] = useState(false);
+
+  const cancellable = (booking.status || 'booked') === 'booked';
+
+  const cancelMut = useMutation({
+    mutationFn: () => cancelActivityBooking(booking.id),
+    onSuccess: () => {
+      haptic.success();
+      setConfirming(false);
+      qc.invalidateQueries({ queryKey: ['activity-bookings'] });
+    },
+    onError: () => {
+      haptic.error();
+    },
+  });
+
+  return (
+    <Card style={{ marginBottom: spacing.sm }} accent={c.primary}>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+        }}
+      >
+        <View style={{ flex: 1, paddingRight: spacing.sm }}>
+          <Body style={{ fontWeight: '600' }}>{activityLabel}</Body>
+          {booking.guest_name ? <Muted>{booking.guest_name}</Muted> : null}
+          <Muted>
+            {A.resource}: {resourceLabel}
+          </Muted>
+        </View>
+        <Badge
+          label={activityStatusLabel(booking.status)}
+          tone={activityStatusTone(booking.status)}
+        />
+      </View>
+      <View style={{ marginTop: spacing.sm, gap: 2 }}>
+        <Muted>
+          {formatDate(booking.starts_at)} · {formatTime(booking.starts_at)}
+          {booking.ends_at ? ` – ${formatTime(booking.ends_at)}` : ''}
+        </Muted>
+        {booking.note ? <Muted>{booking.note}</Muted> : null}
+      </View>
+
+      {cancelMut.isError ? (
+        <Muted style={{ marginTop: spacing.xs, color: c.danger }}>
+          {errorMessage(cancelMut.error, A.cancelError)}
+        </Muted>
+      ) : null}
+
+      {cancellable ? (
+        confirming ? (
+          <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
+            <Muted>{A.cancelConfirm}</Muted>
+            <SegmentedActions>
+              <ActionButton
+                label={A.keep}
+                icon="arrow-undo"
+                onPress={() => setConfirming(false)}
+                bg={c.surfaceAlt}
+                fg={c.text}
+                disabled={cancelMut.isPending}
+              />
+              <ActionButton
+                testID={`activity-booking-cancel-confirm-${booking.id}`}
+                label={A.cancel}
+                icon="close-circle"
+                onPress={() => cancelMut.mutate()}
+                bg={c.danger}
+                fg="#ffffff"
+                loading={cancelMut.isPending}
+              />
+            </SegmentedActions>
+          </View>
+        ) : (
+          <View style={{ marginTop: spacing.sm }}>
+            <SegmentedActions>
+              <ActionButton
+                testID={`activity-booking-cancel-${booking.id}`}
+                label={A.cancel}
+                icon="close-circle"
+                onPress={() => {
+                  haptic.tap();
+                  if (cancelMut.isError) cancelMut.reset();
+                  setConfirming(true);
+                }}
+                bg={c.danger + '14'}
+                fg={c.danger}
+              />
+            </SegmentedActions>
+          </View>
+        )
+      ) : null}
+    </Card>
+  );
 }
 
 // Spa & Wellness screen. Reads (appointments / services / therapists) are open
@@ -555,33 +672,12 @@ export default function SpaScreen() {
   };
 
   const renderBooking = (b: ActivityBooking) => (
-    <Card key={b.id} style={{ marginBottom: spacing.sm }} accent={c.primary}>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-        }}
-      >
-        <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>
-            {activityName.get(b.activity_id) || A.activity}
-          </Body>
-          {b.guest_name ? <Muted>{b.guest_name}</Muted> : null}
-          <Muted>
-            {A.resource}: {resourceName.get(b.resource_id) || '—'}
-          </Muted>
-        </View>
-        <Badge label={activityStatusLabel(b.status)} tone={activityStatusTone(b.status)} />
-      </View>
-      <View style={{ marginTop: spacing.sm, gap: 2 }}>
-        <Muted>
-          {formatDate(b.starts_at)} · {formatTime(b.starts_at)}
-          {b.ends_at ? ` – ${formatTime(b.ends_at)}` : ''}
-        </Muted>
-        {b.note ? <Muted>{b.note}</Muted> : null}
-      </View>
-    </Card>
+    <BookingCard
+      key={b.id}
+      booking={b}
+      activityLabel={activityName.get(b.activity_id) || A.activity}
+      resourceLabel={resourceName.get(b.resource_id) || '—'}
+    />
   );
 
   const ViewTab: React.FC<{ value: 'spa' | 'activities'; label: string }> = ({
