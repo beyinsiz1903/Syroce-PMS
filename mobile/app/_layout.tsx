@@ -3,6 +3,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../src/state/authStore';
@@ -190,15 +191,17 @@ export default function RootLayout() {
   // Memoise so React doesn't recreate the providers on every render.
   const tree = useMemo(
     () => (
-      <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          <BiometricLockGate>
-            <AuthGate>
-              <RootShell />
-            </AuthGate>
-          </BiometricLockGate>
-        </QueryClientProvider>
-      </SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <QueryClientProvider client={queryClient}>
+            <BiometricLockGate>
+              <AuthGate>
+                <RootShell />
+              </AuthGate>
+            </BiometricLockGate>
+          </QueryClientProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
     ),
     [],
   );

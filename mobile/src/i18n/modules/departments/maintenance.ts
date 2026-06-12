@@ -26,6 +26,21 @@ export const maintenance = {
   markCompleted: 'Tamamlandı',
   markNeedsParts: 'Parça Gerekli',
   room: 'Oda',
+  assigned: 'Atanan',
+  unassigned: 'Atanmadı',
+  photoAlt: 'Arıza fotoğrafı',
+  columns: {
+    open: 'Yeni',
+    in_progress: 'Devam Ediyor',
+    on_hold: 'Bekliyor',
+    completed: 'Tamamlandı',
+  },
+  kanban: {
+    empty: 'Kart yok',
+    moved: 'Arıza durumu güncellendi',
+    moveError: 'Durum güncellenemedi, kart geri alındı',
+    dragHint: 'Kartı taşımak için basılı tutup başka kolona sürükleyin',
+  },
   issueTypes: {
     plumbing: 'Tesisat',
     hvac: 'İklimlendirme',

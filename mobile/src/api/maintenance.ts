@@ -18,7 +18,25 @@ export type WorkOrder = {
   description?: string | null;
   reported_by_role?: string | null;
   created_at?: string;
+  // Optional enrichment fields — rendered on the kanban card only when the
+  // backend actually returns them (no placeholder data is fabricated).
+  assigned_to?: string | null;
+  assigned_to_name?: string | null;
+  photo_url?: string | null;
+  photos?: string[] | null;
 };
+
+// PATCH /api/maintenance/work-orders/{id}?status= — drag-drop status change.
+// Scalar query params, no body. Returns { updated: boolean }.
+export async function updateWorkOrderStatus(
+  workOrderId: string,
+  status: string,
+): Promise<{ updated: boolean }> {
+  return apiRequest(`/api/maintenance/work-orders/${workOrderId}`, {
+    method: 'PATCH',
+    query: { status },
+  });
+}
 
 export type MaintenanceTask = {
   id: string;

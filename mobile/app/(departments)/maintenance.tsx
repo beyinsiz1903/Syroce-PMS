@@ -28,10 +28,11 @@ import {
   listMaintenanceTasks,
   listWorkOrders,
   submitTechnicianTask,
+  updateWorkOrderStatus,
   type MaintenanceTask,
   type WorkOrder,
 } from '../../src/api/maintenance';
-import { formatDate } from '../../src/utils/format';
+import { MaintenanceKanban } from '../../src/components/MaintenanceKanban';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 
 const ISSUE_TYPES = [
@@ -43,7 +44,6 @@ const ISSUE_TYPES = [
   'other',
 ] as const;
 const PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const;
-const STATUS_FILTERS = ['open', 'in_progress', 'completed'] as const;
 
 function issueTypeLabel(t?: string): string {
   const map = tr.departments.maintenance.issueTypes as Record<string, string>;
@@ -58,19 +58,6 @@ function priorityLabel(p?: string): string {
 function statusLabel(s?: string): string {
   const map = tr.departments.maintenance.statuses as Record<string, string>;
   return (s && map[s]) || s || '—';
-}
-
-function priorityTone(p?: string): 'default' | 'warning' | 'danger' | 'info' {
-  switch (p) {
-    case 'urgent':
-      return 'danger';
-    case 'high':
-      return 'warning';
-    case 'low':
-      return 'info';
-    default:
-      return 'default';
-  }
 }
 
 function statusTone(s?: string): 'default' | 'success' | 'info' | 'warning' {
@@ -97,14 +84,8 @@ export default function MaintenanceScreen() {
   const qc = useQueryClient();
   const maintenanceAccess = useAuthStore((s) => s.maintenanceAccess);
 
-  // Accent colours give the field technician an at-a-glance read of the card's
-  // left edge — urgency for work orders, progress for assigned tasks.
-  const priorityAccent: Record<string, string> = {
-    urgent: c.danger,
-    high: c.warning,
-    normal: c.primary,
-    low: c.info,
-  };
+  // Accent colour gives the field technician an at-a-glance read of the
+  // assigned-task card's left edge — progress state.
   const statusAccent: Record<string, string> = {
     completed: c.success,
     in_progress: c.info,
@@ -112,8 +93,6 @@ export default function MaintenanceScreen() {
     needs_parts: c.warning,
     open: c.primary,
   };
-
-  const [statusFilter, setStatusFilter] = useState<string>('');
 
   // Create-work-order sheet + form state.
   const [createOpen, setCreateOpen] = useState(false);
@@ -130,9 +109,11 @@ export default function MaintenanceScreen() {
   const [taskTime, setTaskTime] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // The kanban needs every fault regardless of status so each column can fill,
+  // so we fetch the full list (the board buckets client-side by status).
   const workOrdersQ = useQuery({
-    queryKey: ['maint-work-orders', statusFilter],
-    queryFn: () => listWorkOrders(statusFilter ? { status: statusFilter } : undefined),
+    queryKey: ['maint-work-orders'],
+    queryFn: () => listWorkOrders(),
     enabled: maintenanceAccess,
   });
   const tasksQ = useQuery({
@@ -241,65 +222,30 @@ export default function MaintenanceScreen() {
     </Pressable>
   );
 
-  const StatusFilterChip: React.FC<{ value: string; label: string }> = ({ value, label }) => {
-    const active = statusFilter === value;
-    return (
-      <Pressable
-        onPress={() => setStatusFilter(value)}
-        accessibilityRole="button"
-        accessibilityState={{ selected: active }}
-        style={{
-          paddingVertical: spacing.sm,
-          paddingHorizontal: spacing.md,
-          borderRadius: radius.lg,
-          backgroundColor: active ? c.primary : c.surface,
-          borderWidth: 1,
-          borderColor: active ? c.primary : c.border,
-          minHeight: 36,
-          justifyContent: 'center',
-        }}
-      >
-        <Body style={{ color: active ? c.primaryText : c.text, fontWeight: '600', fontSize: 13 }}>
-          {label}
-        </Body>
-      </Pressable>
-    );
+  // Drag-drop drop handler — moves a fault between kanban columns by PATCHing
+  // its status. Returns true only when the backend confirmed the change; on
+  // failure the card stays in its source column (no optimistic move, no fake
+  // success) and the operator sees an error. The backend re-validates RBAC.
+  const onMoveWorkOrder = async (w: WorkOrder, targetStatus: string): Promise<boolean> => {
+    try {
+      const res = await updateWorkOrderStatus(w.id, targetStatus);
+      if (!res?.updated) {
+        haptic.warning();
+        Alert.alert(tr.app.error, tr.departments.maintenance.kanban.moveError);
+        return false;
+      }
+      haptic.success();
+      await qc.invalidateQueries({ queryKey: ['maint-work-orders'] });
+      return true;
+    } catch (e: unknown) {
+      haptic.error();
+      Alert.alert(
+        tr.app.error,
+        errorMessage(e, tr.departments.maintenance.kanban.moveError),
+      );
+      return false;
+    }
   };
-
-  const renderWorkOrder = (w: WorkOrder) => (
-    <Card key={w.id} accent={priorityAccent[w.priority || ''] ?? c.border} style={{ marginBottom: spacing.sm }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-        }}
-      >
-        <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{issueTypeLabel(w.issue_type)}</Body>
-          {w.description ? <Muted>{w.description}</Muted> : null}
-        </View>
-        <Badge label={statusLabel(w.status)} tone={statusTone(w.status)} />
-      </View>
-      <View
-        style={{
-          marginTop: spacing.sm,
-          flexDirection: 'row',
-          gap: spacing.sm,
-          alignItems: 'center',
-          flexWrap: 'wrap',
-        }}
-      >
-        <Badge label={priorityLabel(w.priority)} tone={priorityTone(w.priority)} />
-        {w.room_number ? (
-          <Muted>
-            {tr.departments.maintenance.room}: {w.room_number}
-          </Muted>
-        ) : null}
-        {w.created_at ? <Muted>{formatDate(w.created_at)}</Muted> : null}
-      </View>
-    </Card>
-  );
 
   const renderTask = (t: MaintenanceTask) => (
     <Card key={t.id} accent={statusAccent[t.status || ''] ?? c.border} style={{ marginBottom: spacing.sm }}>
@@ -378,29 +324,26 @@ export default function MaintenanceScreen() {
         />
       </View>
 
-      {/* Work orders list with status filter */}
+      {/* Work orders — Trello/Linear style kanban board (drag to update status) */}
       <SectionTitle title={tr.departments.maintenance.workOrders} />
-      <View
-        style={{
-          flexDirection: 'row',
-          flexWrap: 'wrap',
-          gap: spacing.sm,
-          marginBottom: spacing.md,
-        }}
-      >
-        <StatusFilterChip value="" label={tr.departments.maintenance.filterAll} />
-        {STATUS_FILTERS.map((s) => (
-          <StatusFilterChip key={s} value={s} label={statusLabel(s)} />
-        ))}
-      </View>
-      {renderList(
-        workOrdersQ,
-        {
-          icon: 'construct-outline',
-          emptyTitle: tr.departments.maintenance.noWorkOrders,
-          emptyHint: tr.departments.maintenance.noWorkOrdersHint,
-        },
-        renderWorkOrder,
+      {workOrdersQ.isLoading ? (
+        <View style={{ gap: spacing.sm }}>
+          <SkeletonCard />
+          <SkeletonCard />
+        </View>
+      ) : workOrdersQ.error ? (
+        <Card>
+          <Body>
+            {isOffline(workOrdersQ.error)
+              ? tr.app.offline
+              : errorMessage(workOrdersQ.error, tr.departments.maintenance.loadError)}
+          </Body>
+        </Card>
+      ) : (
+        <MaintenanceKanban
+          workOrders={workOrdersQ.data || []}
+          onMove={onMoveWorkOrder}
+        />
       )}
 
       {/* Technician tasks */}
