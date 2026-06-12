@@ -48,7 +48,7 @@ def _guest_display_name(doc: dict) -> str | None:
 
 async def _guest_names_by_id(tenant_id: str, guest_ids: list[str]) -> dict[str, str]:
     """Resolve a batch of guest_ids to display names in a single tenant-scoped query."""
-    ids = [gid for gid in {g for g in guest_ids if g}]
+    ids = list({g for g in guest_ids if g})
     if not ids:
         return {}
     db = get_system_db()

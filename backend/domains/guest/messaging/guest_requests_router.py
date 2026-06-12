@@ -17,10 +17,9 @@ from pydantic import BaseModel, Field
 
 from core.database import _raw_db as raw_db
 from core.security import get_current_user
+from domains.guest.messaging import guest_requests as gr
 from models.schemas import User
 from modules.pms_core.role_permission_service import require_op
-
-from domains.guest.messaging import guest_requests as gr
 
 logger = logging.getLogger("guest_requests_router")
 
