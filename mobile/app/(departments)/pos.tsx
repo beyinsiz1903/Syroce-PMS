@@ -20,6 +20,7 @@ import {
   ActionSheet,
 } from '../../src/components/ui';
 import { DepartmentListState } from '../../src/components/department';
+import { KpiCard, KpiRow } from '../../src/components/KpiCard';
 import { spacing, radius, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { haptic } from '../../src/hooks/useHaptic';
@@ -66,7 +67,7 @@ function isNetworkError(e: unknown): boolean {
   return e instanceof ApiError && e.status === 0;
 }
 
-type Tab = 'order' | 'active' | 'tables' | 'folio' | 'beo';
+type Tab = 'tables' | 'order' | 'kitchen' | 'folio' | 'reports';
 type CartLine = { item_id: string; quantity: number };
 
 function statusLabel(s?: string): string {
@@ -89,16 +90,18 @@ function statusTone(s?: string): 'default' | 'success' | 'info' | 'warning' | 'd
   }
 }
 
-function tableTone(s?: string): 'default' | 'success' | 'info' | 'warning' {
+// Concrete colour (not a tone token) for the touch table-plan cells so the grid
+// can tint backgrounds/borders directly by reservation status.
+function tableStatusColor(s: string | undefined, c: ReturnType<typeof useTheme>): string {
   switch (s) {
     case 'available':
-      return 'success';
+      return c.success;
     case 'occupied':
-      return 'warning';
+      return c.warning;
     case 'reserved':
-      return 'info';
+      return c.info;
     default:
-      return 'default';
+      return c.textMuted;
   }
 }
 
@@ -161,7 +164,7 @@ export default function PosScreen() {
     refreshPosQueueCount().catch(() => {});
   }, []);
 
-  const [tab, setTab] = useState<Tab>('order');
+  const [tab, setTab] = useState<Tab>('tables');
   const [outletId, setOutletId] = useState<string>('');
 
   // Order-open form state.
@@ -207,6 +210,7 @@ export default function PosScreen() {
   // Default to the first outlet once outlets load.
   const outlets = outletsQ.data || [];
   const activeOutlet = outletId || outlets[0]?.id || '';
+  const activeOutletObj = outlets.find((o) => o.id === activeOutlet);
 
   const menuQ = useQuery({
     queryKey: ['pos-menu', activeOutlet],
@@ -216,12 +220,13 @@ export default function PosScreen() {
   const ordersQ = useQuery({
     queryKey: ['pos-active-orders', activeOutlet],
     queryFn: () => listActiveOrders(activeOutlet ? { outlet_id: activeOutlet } : undefined),
-    enabled: posAccess && tab === 'active',
+    enabled:
+      posAccess && (tab === 'order' || tab === 'kitchen' || tab === 'folio' || tab === 'reports'),
   });
   const tablesQ = useQuery({
     queryKey: ['pos-tables', activeOutlet],
     queryFn: () => getTableLayout(activeOutlet),
-    enabled: posAccess && tab === 'tables' && !!activeOutlet,
+    enabled: posAccess && (tab === 'tables' || tab === 'reports') && !!activeOutlet,
   });
   const foliosQ = useQuery({
     queryKey: ['pos-open-folios'],
@@ -231,7 +236,7 @@ export default function PosScreen() {
   const beoEventsQ = useQuery({
     queryKey: ['pos-beo-events'],
     queryFn: () => listBeoEvents(),
-    enabled: posAccess && tab === 'beo',
+    enabled: posAccess && tab === 'reports',
   });
   const beoDetailQ = useQuery({
     queryKey: ['pos-beo', selectedBeoId],
@@ -459,23 +464,30 @@ export default function PosScreen() {
 
   // Compact pill toggle reused for the outlet picker and the tab bar; both rows
   // scroll horizontally so 5 tabs / many outlets stay reachable on small phones.
-  const Chip: React.FC<{ active: boolean; label: string; onPress: () => void }> = ({
-    active,
-    label,
-    onPress,
-  }) => (
+  const Chip: React.FC<{
+    active: boolean;
+    label: string;
+    onPress: () => void;
+    icon?: React.ComponentProps<typeof Ionicons>['name'];
+  }> = ({ active, label, onPress, icon }) => (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.xs,
         paddingVertical: spacing.sm,
         paddingHorizontal: spacing.md,
-        borderRadius: radius.md,
+        borderRadius: radius.pill,
         backgroundColor: active ? c.primary : c.surfaceAlt,
         borderWidth: 1,
         borderColor: active ? c.primary : c.border,
       }}
     >
+      {icon ? (
+        <Ionicons name={icon} size={15} color={active ? c.primaryText : c.textMuted} />
+      ) : null}
       <Body style={{ color: active ? c.primaryText : c.text, fontWeight: '600' }}>{label}</Body>
     </Pressable>
   );
@@ -630,6 +642,8 @@ export default function PosScreen() {
 
       <SectionTitle title={tr.departments.pos.menu} />
       {renderMenu()}
+
+      {renderActiveTab()}
     </View>
   );
 
@@ -637,7 +651,7 @@ export default function PosScreen() {
     const data = ordersQ.data?.orders || [];
     const showList = !ordersQ.isLoading && !ordersQ.error && data.length > 0;
     return (
-      <View>
+      <View style={{ marginTop: spacing.md }}>
         <SectionTitle title={tr.departments.pos.activeOrders} />
         {!showList ? (
           <DepartmentListState
@@ -682,52 +696,210 @@ export default function PosScreen() {
     );
   };
 
+  // Kitchen Display: the same active-orders feed, filtered to the prep pipeline
+  // (pending/preparing/ready) with one fast inline "advance" action per ticket.
+  // Uses the SAME onUpdateStatus handler — no new business logic.
+  const renderKitchenTab = () => {
+    const all = ordersQ.data?.orders || [];
+    const queue = all.filter(
+      (o) => o.status === 'pending' || o.status === 'preparing' || o.status === 'ready',
+    );
+    const advance: Record<string, { next: OrderStatus; label: string }> = {
+      pending: { next: 'preparing', label: tr.departments.pos.actions.preparing },
+      preparing: { next: 'ready', label: tr.departments.pos.actions.ready },
+      ready: { next: 'served', label: tr.departments.pos.actions.served },
+    };
+    const showList = !ordersQ.isLoading && !ordersQ.error && queue.length > 0;
+    return (
+      <View>
+        <SectionTitle title={tr.departments.pos.kitchenTitle} />
+        <Muted>{tr.departments.pos.kitchenHint}</Muted>
+        <View style={{ height: spacing.sm }} />
+        {!showList ? (
+          <DepartmentListState
+            loading={ordersQ.isLoading}
+            error={ordersQ.error}
+            isEmpty={queue.length === 0}
+            emptyText={tr.departments.pos.noKitchenOrders}
+          />
+        ) : (
+          <View style={{ gap: spacing.sm }}>
+            {queue.map((o) => {
+              const step = advance[o.status as string];
+              const accent =
+                o.status === 'ready' ? c.success : o.status === 'preparing' ? c.warning : c.info;
+              return (
+                <Card key={o.id} accent={o.is_delayed ? c.danger : accent}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: spacing.sm,
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Body style={{ fontWeight: '700', color: c.text }}>
+                        {o.order_number || o.outlet_name || tr.departments.pos.title}
+                      </Body>
+                      <Muted style={{ fontSize: 12 }}>
+                        {o.table_number
+                          ? `${tr.departments.pos.tableNumber}: ${o.table_number}`
+                          : tr.departments.pos.emptyTable}
+                      </Muted>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          gap: spacing.xs,
+                          marginTop: spacing.xs,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        {o.is_delayed ? (
+                          <Badge label={tr.departments.pos.delayed} tone="danger" />
+                        ) : null}
+                        <Badge label={statusLabel(o.status)} tone={statusTone(o.status)} />
+                      </View>
+                    </View>
+                    {step ? (
+                      <Button
+                        title={step.label}
+                        icon="arrow-forward-circle-outline"
+                        onPress={() => onUpdateStatus(o.id, step.next)}
+                        loading={busyOrderId === o.id}
+                        disabled={busyOrderId === o.id}
+                      />
+                    ) : null}
+                  </View>
+                </Card>
+              );
+            })}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  // Tap a table to drive the transfer flow without typing: first tap picks the
+  // source, second tap the destination; tapping again restarts from a new
+  // source. Feeds the SAME fromTable/toTable state the manual fields use, so
+  // the backend transferTable call is unchanged.
+  const onTableTap = (num?: string) => {
+    if (!num) return;
+    haptic.tap();
+    if (!fromTable || (fromTable && toTable)) {
+      setFromTable(num);
+      setToTable('');
+      return;
+    }
+    if (num === fromTable) {
+      setFromTable('');
+      return;
+    }
+    setToTable(num);
+  };
+
   const renderTablesTab = () => {
     const layout = tablesQ.data;
     const tables = layout?.tables || [];
     const showList = !tablesQ.isLoading && !tablesQ.error && tables.length > 0;
     return (
       <View>
-        <SectionTitle title={tr.departments.pos.transferTable} />
-        <Card>
-          <Field
-            label={tr.departments.pos.fromTable}
-            value={fromTable}
-            onChangeText={setFromTable}
-            placeholder={tr.departments.pos.transferTablePlaceholder}
-          />
-          <View style={{ height: spacing.sm }} />
-          <Field
-            label={tr.departments.pos.toTable}
-            value={toTable}
-            onChangeText={setToTable}
-            placeholder={tr.departments.pos.transferTablePlaceholder}
-          />
+        <SectionTitle title={tr.departments.pos.tablePlan} />
+        <Muted>{tr.departments.pos.tablePlanHint}</Muted>
+
+        {/* Live occupancy summary across the selected outlet's floor. */}
+        {layout ? (
+          <KpiRow>
+            <KpiCard
+              label={tr.departments.pos.available}
+              value={String(layout.available)}
+              tone="success"
+              icon="checkmark-circle-outline"
+            />
+            <KpiCard
+              label={tr.departments.pos.occupied}
+              value={String(layout.occupied)}
+              tone="warning"
+              icon="people-outline"
+            />
+            <KpiCard
+              label={tr.departments.pos.reserved}
+              value={String(layout.reserved)}
+              tone="info"
+              icon="bookmark-outline"
+            />
+          </KpiRow>
+        ) : null}
+
+        {/* Transfer selection — driven by tapping tables OR manual entry. */}
+        <View style={{ height: spacing.md }} />
+        <Card accent={fromTable ? c.primary : undefined}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <Muted>{tr.departments.pos.transferSelection}</Muted>
+            {fromTable || toTable ? (
+              <Pressable
+                onPress={() => {
+                  setFromTable('');
+                  setToTable('');
+                }}
+                accessibilityRole="button"
+              >
+                <Body style={{ color: c.primary, fontWeight: '700' }}>
+                  {tr.departments.pos.clearSelection}
+                </Body>
+              </Pressable>
+            ) : null}
+          </View>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: spacing.sm,
+              marginTop: spacing.sm,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Field
+                label={tr.departments.pos.fromTable}
+                value={fromTable}
+                onChangeText={setFromTable}
+                placeholder={tr.departments.pos.transferTablePlaceholder}
+              />
+            </View>
+            <Ionicons
+              name="arrow-forward"
+              size={18}
+              color={c.textMuted}
+              style={{ marginTop: spacing.lg }}
+            />
+            <View style={{ flex: 1 }}>
+              <Field
+                label={tr.departments.pos.toTable}
+                value={toTable}
+                onChangeText={setToTable}
+                placeholder={tr.departments.pos.transferTablePlaceholder}
+              />
+            </View>
+          </View>
           <View style={{ height: spacing.md }} />
           <Button
             title={tr.departments.pos.doTransfer}
             icon="swap-horizontal-outline"
             onPress={onTransferTable}
             loading={transferring}
+            disabled={!fromTable || !toTable}
             fullWidth
           />
         </Card>
 
         <SectionTitle title={tr.departments.pos.tableLayout} />
-        {layout ? (
-          <View
-            style={{
-              flexDirection: 'row',
-              gap: spacing.sm,
-              flexWrap: 'wrap',
-              marginBottom: spacing.md,
-            }}
-          >
-            <Badge label={`${tr.departments.pos.available}: ${layout.available}`} tone="success" />
-            <Badge label={`${tr.departments.pos.occupied}: ${layout.occupied}`} tone="warning" />
-            <Badge label={`${tr.departments.pos.reserved}: ${layout.reserved}`} tone="info" />
-          </View>
-        ) : null}
         {!showList ? (
           <DepartmentListState
             loading={tablesQ.isLoading}
@@ -736,29 +908,77 @@ export default function PosScreen() {
             emptyText={tr.departments.pos.noTables}
           />
         ) : (
-          <ListGroup>
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              gap: spacing.sm,
+            }}
+          >
             {tables.map((t: TableSlot, idx) => {
-              const sub = [
-                typeof t.seats === 'number' ? `${t.seats} ${tr.departments.pos.seats}` : null,
-                typeof t.current_bill === 'number' && t.current_bill > 0
-                  ? formatCurrency(t.current_bill)
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(' · ');
+              const color = tableStatusColor(t.status, c);
+              const num = t.table_number;
+              const selectedFrom = !!num && num === fromTable;
+              const selectedTo = !!num && num === toTable;
+              const selected = selectedFrom || selectedTo;
               return (
-                <ListRow
+                <Pressable
                   key={t.id || t.table_number || String(idx)}
-                  icon="grid-outline"
-                  label={`${tr.departments.pos.tableNumber} ${t.table_number ?? '—'}`}
-                  sublabel={sub || undefined}
-                  showChevron={false}
-                  last={idx === tables.length - 1}
-                  right={<Badge label={statusLabel(t.status)} tone={tableTone(t.status)} />}
-                />
+                  onPress={() => onTableTap(num)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${tr.departments.pos.tableNumber} ${num ?? '—'} · ${statusLabel(t.status)}`}
+                  style={({ pressed }) => ({
+                    width: '31%',
+                    minWidth: 96,
+                    flexGrow: 1,
+                    borderRadius: radius.lg,
+                    borderWidth: selected ? 2 : 1,
+                    borderColor: selected ? c.primary : color + '55',
+                    backgroundColor: color + (selected ? '33' : '14'),
+                    padding: spacing.md,
+                    gap: 4,
+                    opacity: pressed ? 0.75 : 1,
+                  })}
+                >
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <Body style={{ fontWeight: '800', fontSize: 18, color: c.text }}>
+                      {num ?? '—'}
+                    </Body>
+                    <View
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: radius.pill,
+                        backgroundColor: color,
+                      }}
+                    />
+                  </View>
+                  <Muted style={{ fontSize: 11 }}>{statusLabel(t.status)}</Muted>
+                  {typeof t.seats === 'number' ? (
+                    <Muted style={{ fontSize: 11 }}>
+                      {t.seats} {tr.departments.pos.seats}
+                    </Muted>
+                  ) : null}
+                  {typeof t.current_bill === 'number' && t.current_bill > 0 ? (
+                    <Body style={{ fontSize: 12, fontWeight: '700', color }}>
+                      {formatCurrency(t.current_bill)}
+                    </Body>
+                  ) : null}
+                  {selectedFrom ? (
+                    <Badge label={tr.departments.pos.fromTable} tone="primary" />
+                  ) : selectedTo ? (
+                    <Badge label={tr.departments.pos.toTable} tone="primary" />
+                  ) : null}
+                </Pressable>
               );
             })}
-          </ListGroup>
+          </View>
         )}
       </View>
     );
@@ -767,8 +987,78 @@ export default function PosScreen() {
   const renderFolioTab = () => {
     const data = foliosQ.data?.folios || [];
     const showList = !foliosQ.isLoading && !foliosQ.error && data.length > 0;
+    const orders = ordersQ.data?.orders || [];
+    const collectQueue = orders.filter((o) => o.status !== 'cancelled');
+    const showCollect = !ordersQ.isLoading && !ordersQ.error && collectQueue.length > 0;
     return (
       <View>
+        <SectionTitle title={tr.departments.pos.collectTitle} />
+        <Muted>{tr.departments.pos.collectHint}</Muted>
+        <View style={{ height: spacing.sm }} />
+        {!showCollect ? (
+          <DepartmentListState
+            loading={ordersQ.isLoading}
+            error={ordersQ.error}
+            isEmpty={collectQueue.length === 0}
+            emptyText={tr.departments.pos.noCollectOrders}
+          />
+        ) : (
+          <View style={{ gap: spacing.sm }}>
+            {collectQueue.map((o) => {
+              const due = typeof o.grand_total === 'number' ? o.grand_total : o.total_amount;
+              return (
+                <Card key={o.id} accent={o.status === 'served' ? c.success : undefined}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: spacing.sm,
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Body style={{ fontWeight: '700', color: c.text }}>
+                        {o.order_number || o.outlet_name || tr.departments.pos.title}
+                      </Body>
+                      <Muted style={{ fontSize: 12 }}>
+                        {[
+                          o.table_number
+                            ? `${tr.departments.pos.tableNumber}: ${o.table_number}`
+                            : null,
+                          typeof due === 'number' ? formatCurrency(due) : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </Muted>
+                    </View>
+                    <Badge label={statusLabel(o.status)} tone={statusTone(o.status)} />
+                  </View>
+                  <SegmentedActions>
+                    <ActionButton
+                      label={tr.departments.pos.payCash}
+                      icon="cash-outline"
+                      bg={c.success}
+                      fg="#ffffff"
+                      onPress={() => onCloseOrder(o.id, 'cash')}
+                      loading={payingOrder?.id === o.id && payingOrder.method === 'cash'}
+                      disabled={!!payingOrder && payingOrder.id === o.id}
+                    />
+                    <ActionButton
+                      label={tr.departments.pos.payCard}
+                      icon="card-outline"
+                      bg={c.primary}
+                      fg={c.primaryText}
+                      onPress={() => onCloseOrder(o.id, 'card')}
+                      loading={payingOrder?.id === o.id && payingOrder.method === 'card'}
+                      disabled={!!payingOrder && payingOrder.id === o.id}
+                    />
+                  </SegmentedActions>
+                </Card>
+              );
+            })}
+          </View>
+        )}
+
         <SectionTitle title={tr.departments.pos.folioTransfer} />
         <Muted>{tr.departments.pos.folioTransferHint}</Muted>
 
@@ -810,6 +1100,58 @@ export default function PosScreen() {
           loading={posting}
           fullWidth
         />
+      </View>
+    );
+  };
+
+  // Reports: at-a-glance operational KPIs from the live outlet/table/order
+  // feeds, then the read-only BEO (banquet) event list folded in.
+  const renderReportsTab = () => {
+    const layout = tablesQ.data;
+    const orders = ordersQ.data?.orders || [];
+    const activeCount = orders.length;
+    const delayedCount = orders.filter((o) => o.is_delayed).length;
+    const todayTx =
+      typeof activeOutletObj?.today_transactions === 'number'
+        ? activeOutletObj.today_transactions
+        : null;
+    const occupancy = layout ? `${layout.occupied}/${layout.total_tables}` : '—';
+    return (
+      <View>
+        <SectionTitle title={tr.departments.pos.reportsTitle} />
+        <Muted>{tr.departments.pos.reportsHint}</Muted>
+        <View style={{ height: spacing.sm }} />
+        <KpiRow>
+          <KpiCard
+            label={tr.departments.pos.kpiTodayTx}
+            value={todayTx !== null ? String(todayTx) : '—'}
+            icon="receipt-outline"
+          />
+          <KpiCard
+            label={tr.departments.pos.kpiOccupancy}
+            value={occupancy}
+            tone="info"
+            icon="grid-outline"
+          />
+        </KpiRow>
+        <View style={{ height: spacing.sm }} />
+        <KpiRow>
+          <KpiCard
+            label={tr.departments.pos.kpiActive}
+            value={String(activeCount)}
+            tone="warning"
+            icon="restaurant-outline"
+          />
+          <KpiCard
+            label={tr.departments.pos.kpiDelayed}
+            value={String(delayedCount)}
+            tone={delayedCount > 0 ? 'danger' : 'default'}
+            icon="alarm-outline"
+          />
+        </KpiRow>
+
+        <SectionTitle title={tr.departments.pos.banquetSection} />
+        {renderBeoTab()}
       </View>
     );
   };
@@ -1210,37 +1552,42 @@ export default function PosScreen() {
         style={{ marginBottom: spacing.md }}
       >
         <Chip
-          active={tab === 'order'}
-          label={tr.departments.pos.tabs.order}
-          onPress={() => setTab('order')}
-        />
-        <Chip
-          active={tab === 'active'}
-          label={tr.departments.pos.tabs.active}
-          onPress={() => setTab('active')}
-        />
-        <Chip
           active={tab === 'tables'}
+          icon="grid-outline"
           label={tr.departments.pos.tabs.tables}
           onPress={() => setTab('tables')}
         />
         <Chip
+          active={tab === 'order'}
+          icon="restaurant-outline"
+          label={tr.departments.pos.tabs.order}
+          onPress={() => setTab('order')}
+        />
+        <Chip
+          active={tab === 'kitchen'}
+          icon="flame-outline"
+          label={tr.departments.pos.tabs.kitchen}
+          onPress={() => setTab('kitchen')}
+        />
+        <Chip
           active={tab === 'folio'}
+          icon="card-outline"
           label={tr.departments.pos.tabs.folio}
           onPress={() => setTab('folio')}
         />
         <Chip
-          active={tab === 'beo'}
-          label={tr.departments.pos.tabs.beo}
-          onPress={() => setTab('beo')}
+          active={tab === 'reports'}
+          icon="stats-chart-outline"
+          label={tr.departments.pos.tabs.reports}
+          onPress={() => setTab('reports')}
         />
       </ScrollView>
 
-      {tab === 'order' ? renderOrderTab() : null}
-      {tab === 'active' ? renderActiveTab() : null}
       {tab === 'tables' ? renderTablesTab() : null}
+      {tab === 'order' ? renderOrderTab() : null}
+      {tab === 'kitchen' ? renderKitchenTab() : null}
       {tab === 'folio' ? renderFolioTab() : null}
-      {tab === 'beo' ? renderBeoTab() : null}
+      {tab === 'reports' ? renderReportsTab() : null}
 
       {/* Active-order detail + actions sheet. */}
       <ActionSheet
