@@ -247,18 +247,26 @@ code {
     border-color: hsl(var(--border));
 }
 
-/* --- Hover arka planlari -> muted --- */
+/* --- Hover arka planlari -> accent --- */
+/* Tum notr hover arka planlari shadcn'in adanmis etkilesim/hover token'i
+   `accent`e eslenir (zemin ailesinden bir tik acik): boylece base yuzey
+   card/muted/secondary'den hangisine eslenirse eslensin hover HER ZAMAN
+   gorunur ve tutarli kalir. (Onceki `muted` esleme `bg-gray-100 hover:bg-
+   gray-200` gibi base'i de muted'a dusen ciftlerde gorunmez hover yaratiyordu.) */
 .dark .hover\:bg-white:hover,
 .dark .hover\:bg-gray-50:hover,
 .dark .hover\:bg-gray-100:hover,
 .dark .hover\:bg-gray-200:hover,
 .dark .hover\:bg-slate-50:hover,
 .dark .hover\:bg-slate-100:hover,
+.dark .hover\:bg-slate-200:hover,
 .dark .hover\:bg-neutral-50:hover,
 .dark .hover\:bg-neutral-100:hover,
+.dark .hover\:bg-neutral-200:hover,
 .dark .hover\:bg-zinc-50:hover,
-.dark .hover\:bg-zinc-100:hover {
-    background-color: hsl(var(--muted));
+.dark .hover\:bg-zinc-100:hover,
+.dark .hover\:bg-zinc-200:hover {
+    background-color: hsl(var(--accent));
 }
 
 /* --- Hover metin -> foreground --- */
