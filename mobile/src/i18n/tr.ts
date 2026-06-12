@@ -27,6 +27,7 @@ import { reservations } from './modules/reservations';
 import { datePicker } from './modules/datePicker';
 import { availability } from './modules/availability';
 import { rooms } from './modules/rooms';
+import { calendar } from './modules/calendar';
 import { departmentsCommon } from './modules/departments/common';
 import { spa } from './modules/departments/spa';
 import { mice } from './modules/departments/mice';
@@ -58,6 +59,7 @@ export const tr = {
   datePicker,
   availability,
   rooms,
+  calendar,
   departments: {
     ...departmentsCommon,
     spa,

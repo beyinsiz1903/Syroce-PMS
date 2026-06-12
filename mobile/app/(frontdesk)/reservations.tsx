@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Badge, Body, Card, EmptyState, Field, H1, Muted, SkeletonCard } from '../../src/components/ui';
 import { DatePicker } from '../../src/components/DatePicker';
 import { FilterChips } from '../../src/components/FilterChips';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
-import { spacing, useTheme } from '../../src/theme';
+import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { Reservation, searchReservations } from '../../src/api/reservations';
 import { formatCurrency, formatDate } from '../../src/utils/format';
@@ -162,7 +163,30 @@ export default function ReservationsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg }}>
-      <H1>{tr.reservations.title}</H1>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm }}>
+        <H1>{tr.reservations.title}</H1>
+        <Pressable
+          testID="reservations-open-calendar"
+          accessibilityRole="button"
+          accessibilityLabel={tr.calendar.title}
+          onPress={() => router.push(ROUTES.reservationCalendar)}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing.xs,
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.sm,
+            borderRadius: radius.pill,
+            backgroundColor: c.primary,
+            opacity: pressed ? 0.85 : 1,
+          })}
+        >
+          <Ionicons name="calendar-outline" size={16} color={c.primaryText} />
+          <Body style={{ color: c.primaryText, fontWeight: '700', fontSize: 13 }}>
+            {tr.calendar.openCta}
+          </Body>
+        </Pressable>
+      </View>
       <View style={{ height: spacing.sm }} />
       <Field
         placeholder={tr.reservations.search}

@@ -18,6 +18,8 @@
     "src/utils/__tests__/availabilityFilters.test.ts",
     "src/utils/availabilityGrid.ts",
     "src/utils/__tests__/availabilityGrid.test.ts",
+    "src/utils/reservationCalendar.ts",
+    "src/utils/__tests__/reservationCalendar.test.ts",
     "src/state/roleAccess.ts",
     "src/state/__tests__/roleAccess.test.ts",
     "src/utils/departmentScreens.ts",

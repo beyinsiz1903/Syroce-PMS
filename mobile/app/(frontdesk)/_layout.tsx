@@ -75,6 +75,7 @@ export default function FrontDeskLayout() {
       <Tabs.Screen name="checkout" options={{ href: null, title: tr.checkout.title }} />
       <Tabs.Screen name="walkin" options={{ href: null, title: tr.walkin.title }} />
       <Tabs.Screen name="reservation" options={{ href: null, title: tr.reservations.detailTitle }} />
+      <Tabs.Screen name="calendar" options={{ href: null, title: tr.calendar.title }} />
     </Tabs>
   );
 }
