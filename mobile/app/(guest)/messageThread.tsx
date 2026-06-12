@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Body, Card, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { Body, EmptyState, H1, Muted, SkeletonCard } from '../../src/components/ui';
 import { spacing, useTheme, radius } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import {
@@ -93,9 +93,11 @@ export default function MessageThreadScreen() {
         {q.isLoading ? (
           <SkeletonCard />
         ) : messages.length === 0 ? (
-          <Card>
-            <Muted>{tr.guest.noMessages}</Muted>
-          </Card>
+          <EmptyState
+            icon="chatbubble-ellipses-outline"
+            title={tr.guest.noMessages}
+            message={tr.guest.noMessagesMessage}
+          />
         ) : (
           messages.map((m) => {
             const isMe = m.sender === 'guest';

@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import * as Brightness from 'expo-brightness';
 import { useKeepAwakeSafe } from '../../src/hooks/useKeepAwakeSafe';
 import QRCode from 'react-native-qrcode-svg';
-import { Body, Card, H1, H2, Muted } from '../../src/components/ui';
+import { Body, Card, EmptyState, H1, H2, Muted } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { getGuestBookings, GuestBooking } from '../../src/api/guestBookings';
@@ -115,12 +115,12 @@ export default function GuestDigitalKey() {
 
   if (!booking) {
     return (
-      <View
-        testID="smoke-digital-key"
-        style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg, gap: spacing.md }}
-      >
-        <H1>{tr.guest.digitalKeyTitle}</H1>
-        <Muted>{tr.guest.digitalKeyNoBooking}</Muted>
+      <View testID="smoke-digital-key" style={{ flex: 1, backgroundColor: c.bg }}>
+        <EmptyState
+          icon="key-outline"
+          title={tr.guest.digitalKeyNoBookingTitle}
+          message={tr.guest.digitalKeyNoBooking}
+        />
       </View>
     );
   }

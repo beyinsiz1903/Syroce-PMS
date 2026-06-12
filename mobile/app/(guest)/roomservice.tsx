@@ -2,7 +2,17 @@ import React, { useMemo } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Button, Card, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import {
+  Badge,
+  Body,
+  Button,
+  Card,
+  EmptyState,
+  H1,
+  H2,
+  Muted,
+  SkeletonCard,
+} from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { getRoomServiceMenu, MenuItem } from '../../src/api/guestRoomService';
@@ -35,10 +45,12 @@ export default function RoomServiceScreen() {
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: 140 }}
       >
         <H1>{tr.guest.roomServiceTitle}</H1>
+        <Muted>{tr.guest.roomServiceIntro}</Muted>
 
         {!activeCheckedIn ? (
-          <Card>
-            <Muted>{tr.guest.selectActiveBooking}</Muted>
+          <Card accent={c.warning}>
+            <Body style={{ fontWeight: '600' }}>{tr.guest.selectActiveBookingTitle}</Body>
+            <Muted style={{ marginTop: spacing.xs }}>{tr.guest.selectActiveBooking}</Muted>
           </Card>
         ) : null}
 
@@ -46,6 +58,7 @@ export default function RoomServiceScreen() {
           <Button
             title={tr.guest.orderHistory}
             variant="ghost"
+            icon="receipt-outline"
             onPress={() => router.push(ROUTES.guestOrders)}
           />
         </View>
@@ -53,8 +66,12 @@ export default function RoomServiceScreen() {
         {menuQ.isLoading ? (
           <SkeletonCard />
         ) : (menuQ.data?.categories || []).length === 0 ? (
-          <Card>
-            <Muted>{tr.app.empty}</Muted>
+          <Card padded={false}>
+            <EmptyState
+              icon="restaurant-outline"
+              title={tr.guest.menuEmptyTitle}
+              message={tr.guest.menuEmptyMessage}
+            />
           </Card>
         ) : (
           (menuQ.data?.categories || []).map((cat) => (

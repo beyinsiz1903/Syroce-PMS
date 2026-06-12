@@ -1,8 +1,20 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import {
+  Badge,
+  Body,
+  Card,
+  EmptyState,
+  H1,
+  H2,
+  ListGroup,
+  ListRow,
+  Muted,
+  SectionTitle,
+  SkeletonCard,
+} from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -93,10 +105,21 @@ export default function GuestBookingsScreen() {
   const active = q.data?.active_bookings || [];
   const past = q.data?.past_bookings || [];
 
+  // En alakali rezervasyon: once konaklayan (checked_in), yoksa ilk aktif.
+  // Ust kisimdaki ozet + hizli aksiyonlar bu rezervasyona gore kurulur.
+  const focus = useMemo<GuestBooking | null>(() => {
+    return active.find((b) => b.status === 'checked_in') || active[0] || null;
+  }, [active]);
+
+  const isCheckedIn = focus?.status === 'checked_in';
+  const checkinOpen = !!focus?.can_checkin && !isCheckedIn;
+
+  const noBookings = !q.isLoading && active.length === 0 && past.length === 0;
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl }}
+      contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />
       }
@@ -104,44 +127,130 @@ export default function GuestBookingsScreen() {
       <OfflineBanner visible={offline} />
       <H1>{tr.guest.bookingsTitle}</H1>
 
-      <H2>{tr.guest.activeBookings}</H2>
       {q.isLoading ? (
         <SkeletonCard />
-      ) : active.length === 0 ? (
-        <Card>
-          <Muted>{tr.guest.noBookings}</Muted>
+      ) : noBookings ? (
+        <Card padded={false}>
+          <EmptyState
+            icon="bed-outline"
+            title={tr.guest.noBookings}
+            message={tr.guest.noBookingsMessage}
+          />
         </Card>
       ) : (
-        active.map((b) => (
-          <View key={b.id} style={{ marginBottom: spacing.sm }}>
-            <BookingCard
-              b={b}
-              onPress={() =>
-                router.push({ pathname: ROUTES.guestBookingDetail, params: { id: b.id } })
-              }
-            />
-          </View>
-        ))
-      )}
+        <>
+          {focus ? (
+            <>
+              <Card accent={statusTone(focus.status) === 'success' ? c.success : c.primary}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    gap: spacing.sm,
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Muted>{tr.guest.currentStay}</Muted>
+                    <H2 style={{ marginTop: 2 }}>
+                      {focus.hotel?.property_name || focus.hotel?.hotel_name || 'Otel'}
+                    </H2>
+                    <Body style={{ color: c.text, marginTop: spacing.xs }}>
+                      {formatDate(focus.check_in)} → {formatDate(focus.check_out)}
+                    </Body>
+                    <Muted>
+                      Oda {focus.room?.room_number || 'TBA'}
+                      {focus.room?.room_type ? ` · ${focus.room.room_type}` : ''}
+                    </Muted>
+                  </View>
+                  <Badge label={statusLabel(focus.status)} tone={statusTone(focus.status)} />
+                </View>
+              </Card>
 
-      <H2>{tr.guest.pastBookings}</H2>
-      {q.isLoading ? (
-        <SkeletonCard />
-      ) : past.length === 0 ? (
-        <Card>
-          <Muted>{tr.guest.noBookings}</Muted>
-        </Card>
-      ) : (
-        past.map((b) => (
-          <View key={b.id} style={{ marginBottom: spacing.sm }}>
-            <BookingCard
-              b={b}
-              onPress={() =>
-                router.push({ pathname: ROUTES.guestBookingDetail, params: { id: b.id } })
-              }
-            />
-          </View>
-        ))
+              <ListGroup title={tr.guest.quickActions}>
+                {checkinOpen ? (
+                  <ListRow
+                    icon="create-outline"
+                    label={tr.guest.onlineCheckinTitle}
+                    onPress={() =>
+                      router.push({
+                        pathname: ROUTES.guestOnlineCheckin,
+                        params: { bookingId: focus.id },
+                      })
+                    }
+                  />
+                ) : null}
+                {isCheckedIn ? (
+                  <ListRow
+                    icon="key-outline"
+                    label={tr.guest.digitalKeyTitle}
+                    onPress={() =>
+                      router.push({ pathname: ROUTES.guestDigitalKey, params: { id: focus.id } })
+                    }
+                  />
+                ) : null}
+                {isCheckedIn ? (
+                  <ListRow
+                    icon="restaurant-outline"
+                    label={tr.guest.roomServiceTitle}
+                    onPress={() => router.push(ROUTES.guestRoomService)}
+                  />
+                ) : null}
+                <ListRow
+                  icon="time-outline"
+                  label={tr.guest.earlyLateTitle}
+                  onPress={() =>
+                    router.push({ pathname: ROUTES.guestEarlyLate, params: { bookingId: focus.id } })
+                  }
+                />
+                <ListRow
+                  icon="chatbubbles-outline"
+                  label={tr.guest.messagesTitle}
+                  onPress={() => router.push(ROUTES.guestMessages)}
+                />
+                <ListRow
+                  icon="receipt-outline"
+                  label={tr.guest.viewBookingDetail}
+                  onPress={() =>
+                    router.push({ pathname: ROUTES.guestBookingDetail, params: { id: focus.id } })
+                  }
+                  last
+                />
+              </ListGroup>
+            </>
+          ) : null}
+
+          {active.length > 0 ? (
+            <>
+              <SectionTitle title={tr.guest.activeBookings} />
+              {active.map((b) => (
+                <View key={b.id} style={{ marginBottom: spacing.sm }}>
+                  <BookingCard
+                    b={b}
+                    onPress={() =>
+                      router.push({ pathname: ROUTES.guestBookingDetail, params: { id: b.id } })
+                    }
+                  />
+                </View>
+              ))}
+            </>
+          ) : null}
+
+          {past.length > 0 ? (
+            <>
+              <SectionTitle title={tr.guest.pastBookings} />
+              {past.map((b) => (
+                <View key={b.id} style={{ marginBottom: spacing.sm }}>
+                  <BookingCard
+                    b={b}
+                    onPress={() =>
+                      router.push({ pathname: ROUTES.guestBookingDetail, params: { id: b.id } })
+                    }
+                  />
+                </View>
+              ))}
+            </>
+          ) : null}
+        </>
       )}
     </ScrollView>
   );

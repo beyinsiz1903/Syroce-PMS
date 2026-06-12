@@ -1,19 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as Brightness from 'expo-brightness';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useKeepAwakeSafe } from '../../src/hooks/useKeepAwakeSafe';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import QRCode from 'react-native-qrcode-svg';
-import { Badge, Body, Button, Card, H1, H2, Muted } from '../../src/components/ui';
+import {
+  ActionButton,
+  Badge,
+  Body,
+  Button,
+  Card,
+  EmptyState,
+  H1,
+  H2,
+  Muted,
+  SegmentedActions,
+} from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import {
@@ -250,8 +254,8 @@ export default function GuestQrBadgeScreen() {
         </View>
 
         {charges.length === 0 ? (
-          <Card>
-            <Muted>{tr.guest.qrBadgePendingEmpty}</Muted>
+          <Card padded={false}>
+            <EmptyState icon="receipt-outline" title={tr.guest.qrBadgePendingEmpty} />
           </Card>
         ) : (
           charges.map((ch) => (
@@ -310,36 +314,23 @@ function PendingChargeCard({
         </Body>
 
         {isPending ? (
-          <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
-            <Pressable
-              onPress={onReject}
-              style={{
-                flex: 1,
-                paddingVertical: spacing.md,
-                borderRadius: 8,
-                borderWidth: 1,
-                borderColor: c.danger || c.border,
-                alignItems: 'center',
-              }}
-            >
-              <Body style={{ color: c.danger || c.text, fontWeight: '600' }}>
-                {tr.guest.qrBadgeReject}
-              </Body>
-            </Pressable>
-            <Pressable
-              onPress={onApprove}
-              style={{
-                flex: 1,
-                paddingVertical: spacing.md,
-                borderRadius: 8,
-                backgroundColor: c.primary,
-                alignItems: 'center',
-              }}
-            >
-              <Body style={{ color: '#ffffff', fontWeight: '600' }}>
-                {tr.guest.qrBadgeApprove}
-              </Body>
-            </Pressable>
+          <View style={{ marginTop: spacing.sm }}>
+            <SegmentedActions>
+              <ActionButton
+                label={tr.guest.qrBadgeReject}
+                icon="close"
+                bg={c.surfaceAlt}
+                fg={c.danger}
+                onPress={onReject}
+              />
+              <ActionButton
+                label={tr.guest.qrBadgeApprove}
+                icon="checkmark"
+                bg={c.primary}
+                fg={c.primaryText}
+                onPress={onApprove}
+              />
+            </SegmentedActions>
           </View>
         ) : null}
       </View>

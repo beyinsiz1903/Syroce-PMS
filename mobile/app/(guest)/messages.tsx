@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import { Badge, Body, Card, EmptyState, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { getGuestMessages } from '../../src/api/guestMessaging';
@@ -37,8 +37,12 @@ export default function MessagesListScreen() {
       {q.isLoading ? (
         <SkeletonCard />
       ) : conversations.length === 0 ? (
-        <Card>
-          <Muted>{tr.guest.noMessages}</Muted>
+        <Card padded={false}>
+          <EmptyState
+            icon="chatbubbles-outline"
+            title={tr.guest.noMessages}
+            message={tr.guest.noMessagesMessage}
+          />
         </Card>
       ) : (
         conversations.map((conv) => {
@@ -55,6 +59,7 @@ export default function MessagesListScreen() {
               }
               accessibilityRole="button"
               accessibilityLabel={`${conv.guest_name || 'Misafir'}, ${conv.unread_count} okunmamış mesaj`}
+              style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
             >
               <Card>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm }}>

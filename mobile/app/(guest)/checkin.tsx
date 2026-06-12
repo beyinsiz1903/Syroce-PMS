@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, Switch, View } from 'react-native';
+import { Pressable, ScrollView, Switch, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
@@ -150,7 +150,6 @@ export default function OnlineCheckinScreen() {
       setPhotoUri(null);
       setDone(true);
       haptic.success();
-      Alert.alert(tr.app.success, tr.guest.onlineCheckinCompleted);
     } catch (e) {
       setError(errorMessage(e, tr.errors.generic));
       haptic.error();

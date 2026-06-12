@@ -2,12 +2,54 @@ import React, { useMemo } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Button, Card, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  DetailHeader,
+  DetailRow,
+  EmptyState,
+  ListGroup,
+  ListRow,
+  SectionTitle,
+  SkeletonCard,
+} from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { getGuestBookings } from '../../src/api/guestBookings';
 import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
 import { ROUTES } from '../../src/navigation/routes';
+
+function statusTone(status?: string): 'success' | 'warning' | 'info' | 'default' {
+  switch ((status || '').toLowerCase()) {
+    case 'checked_in':
+      return 'success';
+    case 'confirmed':
+    case 'guaranteed':
+      return 'info';
+    case 'checked_out':
+      return 'default';
+    default:
+      return 'warning';
+  }
+}
+
+function statusLabel(status?: string): string {
+  switch ((status || '').toLowerCase()) {
+    case 'checked_in':
+      return 'Konaklıyor';
+    case 'confirmed':
+      return 'Onaylı';
+    case 'guaranteed':
+      return 'Garantili';
+    case 'checked_out':
+      return 'Tamamlandı';
+    case 'cancelled':
+      return 'İptal';
+    default:
+      return status || '—';
+  }
+}
 
 export default function GuestBookingDetail() {
   const c = useTheme();
@@ -29,8 +71,12 @@ export default function GuestBookingDetail() {
   }
   if (!booking) {
     return (
-      <View style={{ flex: 1, padding: spacing.lg, backgroundColor: c.bg, gap: spacing.md }}>
-        <Muted>{tr.guest.noBookings}</Muted>
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <EmptyState
+          icon="bed-outline"
+          title={tr.guest.noBookings}
+          message={tr.guest.noBookingsMessage}
+        />
       </View>
     );
   }
@@ -43,79 +89,86 @@ export default function GuestBookingDetail() {
       style={{ flex: 1, backgroundColor: c.bg }}
       contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }}
     >
-      <H1>{booking.hotel?.property_name || 'Otel'}</H1>
-      <Muted>{booking.hotel?.address || ''}</Muted>
+      <DetailHeader
+        title={booking.hotel?.property_name || 'Otel'}
+        subtitle={booking.hotel?.address || undefined}
+        badges={
+          <>
+            <Badge label={statusLabel(booking.status)} tone={statusTone(booking.status)} />
+            {booking.confirmation_number ? (
+              <Badge label={`#${booking.confirmation_number}`} tone="default" />
+            ) : null}
+          </>
+        }
+      />
 
       <Card>
-        <H2>Konaklama</H2>
-        <Body>
-          {formatDate(booking.check_in)} {formatTime(booking.check_in)} →{' '}
-          {formatDate(booking.check_out)} {formatTime(booking.check_out)}
-        </Body>
-        <Muted>
-          Oda {booking.room?.room_number || 'TBA'} · {booking.room?.room_type || ''}
-        </Muted>
-        <Muted>
-          {booking.guests_count || 1} {tr.guest.guests}
-        </Muted>
-        <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
-          <Badge label={booking.status || '—'} tone="info" />
-          {booking.confirmation_number ? (
-            <Badge label={`#${booking.confirmation_number}`} tone="default" />
-          ) : null}
-        </View>
+        <DetailRow
+          label={tr.guest.stayLabel}
+          value={`${formatDate(booking.check_in)} ${formatTime(booking.check_in)} → ${formatDate(
+            booking.check_out,
+          )} ${formatTime(booking.check_out)}`}
+        />
+        <DetailRow
+          label="Oda"
+          value={`${booking.room?.room_number || 'TBA'}${
+            booking.room?.room_type ? ` · ${booking.room.room_type}` : ''
+          }`}
+        />
+        <DetailRow label={tr.guest.guests} value={`${booking.guests_count || 1}`} />
       </Card>
 
       <Card>
-        <H2>{tr.checkout.folio} özeti</H2>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Muted>Toplam</Muted>
-          <Body>{formatCurrency(booking.total_amount || 0)}</Body>
-        </View>
+        <DetailRow
+          label={tr.guest.folioSummary}
+          value={formatCurrency(booking.total_amount || 0)}
+        />
       </Card>
 
-      <View style={{ gap: spacing.sm }}>
-        {checkInOpen && !isCheckedIn ? (
-          <Button
-            title={tr.guest.onlineCheckinTitle}
-            onPress={() =>
-              router.push({ pathname: ROUTES.guestOnlineCheckin, params: { bookingId: booking.id } })
-            }
-            fullWidth
-          />
-        ) : null}
-        {isCheckedIn ? (
-          <Button
-            title={tr.guest.digitalKeyOpen}
-            onPress={() =>
-              router.push({ pathname: ROUTES.guestDigitalKey, params: { id: booking.id } })
-            }
-            fullWidth
-          />
-        ) : null}
+      {checkInOpen && !isCheckedIn ? (
         <Button
-          title={tr.guest.earlyLateTitle}
-          variant="secondary"
+          title={tr.guest.onlineCheckinTitle}
+          icon="create-outline"
           onPress={() =>
-            router.push({ pathname: ROUTES.guestEarlyLate, params: { bookingId: booking.id } })
+            router.push({ pathname: ROUTES.guestOnlineCheckin, params: { bookingId: booking.id } })
           }
           fullWidth
         />
-        {isCheckedIn ? (
-          <Button
-            title={tr.guest.roomServiceTitle}
-            variant="secondary"
-            onPress={() => router.push(ROUTES.guestRoomService)}
-            fullWidth
-          />
-        ) : null}
+      ) : null}
+      {isCheckedIn ? (
         <Button
-          title={tr.guest.messagesTitle}
-          variant="ghost"
-          onPress={() => router.push(ROUTES.guestMessages)}
+          title={tr.guest.digitalKeyOpen}
+          icon="key-outline"
+          onPress={() =>
+            router.push({ pathname: ROUTES.guestDigitalKey, params: { id: booking.id } })
+          }
           fullWidth
         />
-      </View>
+      ) : null}
+
+      <SectionTitle title={tr.guest.quickActions} />
+      <ListGroup>
+        <ListRow
+          icon="time-outline"
+          label={tr.guest.earlyLateTitle}
+          onPress={() =>
+            router.push({ pathname: ROUTES.guestEarlyLate, params: { bookingId: booking.id } })
+          }
+        />
+        {isCheckedIn ? (
+          <ListRow
+            icon="restaurant-outline"
+            label={tr.guest.roomServiceTitle}
+            onPress={() => router.push(ROUTES.guestRoomService)}
+          />
+        ) : null}
+        <ListRow
+          icon="chatbubbles-outline"
+          label={tr.guest.messagesTitle}
+          onPress={() => router.push(ROUTES.guestMessages)}
+          last
+        />
+      </ListGroup>
     </ScrollView>
   );
 }

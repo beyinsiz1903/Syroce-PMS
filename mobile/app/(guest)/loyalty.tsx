@@ -1,7 +1,20 @@
-import React from 'react';
-import { Alert, RefreshControl, ScrollView, View } from 'react-native';
+import React, { useState } from 'react';
+import { RefreshControl, ScrollView, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Button, Card, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import {
+  ActionButton,
+  Badge,
+  Body,
+  Card,
+  DetailRow,
+  EmptyState,
+  H1,
+  H2,
+  Muted,
+  SectionTitle,
+  SegmentedActions,
+  SkeletonCard,
+} from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { getGuestLoyalty } from '../../src/api/guestLoyalty';
@@ -19,13 +32,10 @@ export default function LoyaltyScreen() {
   const c = useTheme();
   const { user, logout } = useAuthStore();
   const q = useQuery({ queryKey: ['guest-loyalty'], queryFn: getGuestLoyalty });
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
 
-  const onLogout = () => {
-    Alert.alert(tr.more.logout, '', [
-      { text: tr.app.cancel, style: 'cancel' },
-      { text: tr.more.logout, style: 'destructive', onPress: () => logout() },
-    ]);
-  };
+  const programs = q.data?.loyalty_programs || [];
+  const rewards = q.data?.upcoming_rewards || [];
 
   return (
     <ScrollView
@@ -44,7 +54,7 @@ export default function LoyaltyScreen() {
       {q.isLoading ? (
         <SkeletonCard />
       ) : (
-        <Card>
+        <Card accent={c.primary}>
           <Muted>{tr.guest.totalPoints}</Muted>
           <H1 style={{ fontSize: 36 }}>{q.data?.total_points || 0}</H1>
           <View style={{ marginTop: spacing.sm }}>
@@ -56,46 +66,42 @@ export default function LoyaltyScreen() {
         </Card>
       )}
 
-      {(q.data?.loyalty_programs || []).map((p) => (
-        <Card key={p.id}>
-          <H2>{p.hotel_name || 'Otel'}</H2>
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              marginTop: spacing.xs,
-            }}
-          >
-            <Muted>Seviye</Muted>
-            <Body>{p.tier || '—'}</Body>
-          </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Muted>Puan</Muted>
-            <Body>{p.points}</Body>
-          </View>
-          {p.next_tier ? (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Muted>{tr.guest.nextTier}</Muted>
-              <Body>
-                {p.next_tier} ({p.points_to_next_tier} {tr.guest.pointsToNext})
-              </Body>
-            </View>
-          ) : null}
-          {p.tier_benefits && p.tier_benefits.length > 0 ? (
-            <View style={{ marginTop: spacing.sm }}>
-              <Muted>{tr.guest.benefits}</Muted>
-              {p.tier_benefits.map((b, i) => (
-                <Body key={i}>• {b}</Body>
-              ))}
-            </View>
-          ) : null}
+      {!q.isLoading && programs.length === 0 ? (
+        <Card padded={false}>
+          <EmptyState
+            icon="ribbon-outline"
+            title={tr.guest.loyaltyEmptyTitle}
+            message={tr.guest.loyaltyEmptyMessage}
+          />
         </Card>
-      ))}
+      ) : (
+        programs.map((p) => (
+          <Card key={p.id}>
+            <H2>{p.hotel_name || 'Otel'}</H2>
+            <DetailRow label="Seviye" value={p.tier || '—'} />
+            <DetailRow label="Puan" value={String(p.points)} />
+            {p.next_tier ? (
+              <DetailRow
+                label={tr.guest.nextTier}
+                value={`${p.next_tier} (${p.points_to_next_tier} ${tr.guest.pointsToNext})`}
+              />
+            ) : null}
+            {p.tier_benefits && p.tier_benefits.length > 0 ? (
+              <View style={{ marginTop: spacing.sm }}>
+                <Muted>{tr.guest.benefits}</Muted>
+                {p.tier_benefits.map((b, i) => (
+                  <Body key={i}>• {b}</Body>
+                ))}
+              </View>
+            ) : null}
+          </Card>
+        ))
+      )}
 
-      {(q.data?.upcoming_rewards || []).length > 0 ? (
+      {rewards.length > 0 ? (
         <Card>
           <H2>{tr.guest.upcomingRewards}</H2>
-          {(q.data?.upcoming_rewards || []).map((r, i) => (
+          {rewards.map((r, i) => (
             <View
               key={i}
               style={{
@@ -115,14 +121,41 @@ export default function LoyaltyScreen() {
         </Card>
       ) : null}
 
+      <SectionTitle title={tr.guest.profileTitle} />
       <Card>
-        <H2>{tr.more.profile}</H2>
-        <Body>{user?.name || user?.email || '—'}</Body>
-        <Muted>{user?.email}</Muted>
-        <Muted>API: {getApiUrl()}</Muted>
+        <DetailRow label="Ad" value={user?.name || user?.email || '—'} />
+        <DetailRow label="E-posta" value={user?.email || '—'} />
+        <DetailRow label="API" value={getApiUrl()} />
       </Card>
 
-      <Button title={tr.more.logout} variant="danger" onPress={onLogout} fullWidth />
+      {confirmingLogout ? (
+        <SegmentedActions>
+          <ActionButton
+            label={tr.app.cancel}
+            icon="close"
+            bg={c.surfaceAlt}
+            fg={c.text}
+            onPress={() => setConfirmingLogout(false)}
+          />
+          <ActionButton
+            label={tr.more.logout}
+            icon="log-out-outline"
+            bg={c.danger}
+            fg="#ffffff"
+            onPress={() => logout()}
+          />
+        </SegmentedActions>
+      ) : (
+        <SegmentedActions>
+          <ActionButton
+            label={tr.more.logout}
+            icon="log-out-outline"
+            bg={c.danger}
+            fg="#ffffff"
+            onPress={() => setConfirmingLogout(true)}
+          />
+        </SegmentedActions>
+      )}
     </ScrollView>
   );
 }

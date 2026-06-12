@@ -1,8 +1,18 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Button, Card, Field, H1, H2, Muted } from '../../src/components/ui';
+import {
+  Badge,
+  Body,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  H1,
+  H2,
+  Muted,
+} from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import {
@@ -35,6 +45,7 @@ export default function EarlyLateScreen() {
   const [calc, setCalc] = useState<EarlyLateCalcResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
 
   const onCalc = async () => {
     if (!booking) return;
@@ -70,9 +81,7 @@ export default function EarlyLateScreen() {
         calc.currency || 'TRY',
       );
       haptic.success();
-      Alert.alert(tr.app.success, tr.guest.requestSent, [
-        { text: tr.app.close, onPress: () => router.back() },
-      ]);
+      setDone(true);
     } catch (e) {
       setError(errorMessage(e, tr.errors.generic));
       haptic.error();
@@ -81,6 +90,20 @@ export default function EarlyLateScreen() {
     }
   };
 
+  if (done) {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <EmptyState
+          icon="checkmark-circle-outline"
+          title={tr.guest.requestSent}
+          action={
+            <Button title={tr.app.close} variant="secondary" onPress={() => router.back()} />
+          }
+        />
+      </View>
+    );
+  }
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
@@ -88,15 +111,21 @@ export default function EarlyLateScreen() {
     >
       <H1>{tr.guest.earlyLateTitle}</H1>
       {!booking ? (
-        <Card>
-          <Muted>{tr.guest.noBookings}</Muted>
+        <Card padded={false}>
+          <EmptyState
+            icon="bed-outline"
+            title={tr.guest.noBookings}
+            message={tr.guest.noBookingsMessage}
+          />
         </Card>
       ) : (
         <Card>
           <H2>
             {booking.hotel?.property_name || 'Otel'} · Oda {booking.room?.room_number || 'TBA'}
           </H2>
-          <Muted>Onay no: {booking.confirmation_number || '—'}</Muted>
+          <Muted>
+            {tr.guest.confirmation}: {booking.confirmation_number || '—'}
+          </Muted>
         </Card>
       )}
 

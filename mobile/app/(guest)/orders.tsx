@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge, Body, Card, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { Badge, Body, Card, EmptyState, H1, Muted, SkeletonCard } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { getGuestBookings } from '../../src/api/guestBookings';
@@ -156,7 +156,7 @@ export default function GuestOrdersScreen() {
         <H1>{tr.guest.orderHistory}</H1>
         {activeBooking ? (
           streamConnected ? (
-            <Badge label="Canlı" tone="success" />
+            <Badge label={tr.guest.liveBadge} tone="success" />
           ) : (
             <Pressable
               onPress={handleRetryStream}
@@ -164,20 +164,28 @@ export default function GuestOrdersScreen() {
               accessibilityLabel="Çevrimdışı, yeniden bağlanmak için dokun"
               hitSlop={8}
             >
-              <Badge label="Çevrimdışı • Yenile" tone="warning" />
+              <Badge label={tr.guest.offlineRetry} tone="warning" />
             </Pressable>
           )
         ) : null}
       </View>
       {!activeBooking ? (
-        <Card>
-          <Muted>{tr.guest.selectActiveBooking}</Muted>
+        <Card padded={false}>
+          <EmptyState
+            icon="bed-outline"
+            title={tr.guest.selectActiveBookingTitle}
+            message={tr.guest.selectActiveBooking}
+          />
         </Card>
       ) : ordersQ.isLoading ? (
         <SkeletonCard />
       ) : (ordersQ.data || []).length === 0 ? (
-        <Card>
-          <Muted>{tr.app.empty}</Muted>
+        <Card padded={false}>
+          <EmptyState
+            icon="receipt-outline"
+            title={tr.guest.ordersEmptyTitle}
+            message={tr.guest.ordersEmptyMessage}
+          />
         </Card>
       ) : (
         (ordersQ.data || []).map((o) => (

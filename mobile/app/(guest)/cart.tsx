@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Body, Button, Card, Field, H1, H2, Muted } from '../../src/components/ui';
+import { Body, Button, Card, EmptyState, Field, H1, H2, Muted } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useCartStore } from '../../src/state/cartStore';
@@ -43,12 +43,9 @@ export default function CartScreen() {
       );
       haptic.success();
       clear();
-      Alert.alert(tr.app.success, tr.guest.orderPlaced, [
-        {
-          text: tr.app.close,
-          onPress: () => router.replace(ROUTES.guestOrders),
-        },
-      ]);
+      // Alert.alert web'de (e2e hedefi) no-op olduğundan callback'le yönlendirme
+      // yerine doğrudan sipariş ekranına geç.
+      router.replace(ROUTES.guestOrders);
     } catch (e) {
       setError(errorMessage(e, tr.errors.generic));
       haptic.error();
@@ -64,8 +61,19 @@ export default function CartScreen() {
     >
       <H1>{tr.guest.cart}</H1>
       {lines.length === 0 ? (
-        <Card>
-          <Muted>{tr.guest.cartEmpty}</Muted>
+        <Card padded={false}>
+          <EmptyState
+            icon="cart-outline"
+            title={tr.guest.cartEmpty}
+            message={tr.guest.cartEmptyMessage}
+            action={
+              <Button
+                title={tr.guest.goToMenu}
+                icon="restaurant-outline"
+                onPress={() => router.replace(ROUTES.guestRoomService)}
+              />
+            }
+          />
         </Card>
       ) : (
         lines.map((l) => (
@@ -75,9 +83,7 @@ export default function CartScreen() {
                 <Body style={{ fontWeight: '600' }}>{l.name}</Body>
                 <Muted>{formatCurrency(l.price)}</Muted>
               </View>
-              <View
-                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}
-              >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
                 <Pressable
                   onPress={() => setQty(l.itemId, l.quantity - 1)}
                   accessibilityRole="button"
@@ -135,22 +141,26 @@ export default function CartScreen() {
         </Card>
       ) : null}
 
-      <Card>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <H2>{tr.guest.orderTotal}</H2>
-          <H2>{formatCurrency(total())}</H2>
-        </View>
-      </Card>
+      {lines.length > 0 ? (
+        <Card>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <H2>{tr.guest.orderTotal}</H2>
+            <H2>{formatCurrency(total())}</H2>
+          </View>
+        </Card>
+      ) : null}
 
       {error ? <Body style={{ color: c.danger }}>{error}</Body> : null}
 
-      <Button
-        title={tr.guest.placeOrder}
-        onPress={onPlace}
-        loading={busy}
-        disabled={lines.length === 0 || !activeBooking}
-        fullWidth
-      />
+      {lines.length > 0 ? (
+        <Button
+          title={tr.guest.placeOrder}
+          onPress={onPlace}
+          loading={busy}
+          disabled={!activeBooking}
+          fullWidth
+        />
+      ) : null}
     </ScrollView>
   );
 }
