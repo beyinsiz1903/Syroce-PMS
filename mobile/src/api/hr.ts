@@ -116,6 +116,71 @@ export async function getPerformanceSummary(params?: {
   };
 }
 
+// Personel dizini — GET /api/hr/staff (require_op("view_hr")). PII alanları
+// (phone/email/maaş/TC) backend serializer'ında rol-bazlı MASKELENİR; ekran
+// yalnızca dizin görünümünü cilalar, hiçbir yetki/maskeyi gevşetmez.
+export type StaffMember = {
+  id: string;
+  name?: string;
+  email?: string | null;
+  phone?: string | null;
+  department?: string | null;
+  position?: string | null;
+  employment_type?: string | null;
+  hire_date?: string | null;
+  performance_score?: number | null;
+  active?: boolean;
+};
+
+export type StaffList = {
+  staff: StaffMember[];
+  total: number;
+};
+
+// GET /api/hr/staff → { staff, total, source }. source='hr' (varsayılan): yalnız
+// HR-managed personel; sistem kullanıcıları hariç. Aktif kayıtlar (backend
+// include_inactive=false varsayılanı).
+export async function listStaff(params?: {
+  department?: string;
+}): Promise<StaffList> {
+  const res = await api.get<{ staff?: StaffMember[]; total?: number }>(
+    '/api/hr/staff',
+    params,
+  );
+  const staff = res?.staff ?? [];
+  return { staff, total: res?.total ?? staff.length };
+}
+
+// Duyurular — GET /api/notifications/list. Tenant-broadcast bildirimler her
+// kullanıcıya görünür (target_roles taşıyanlar role göre filtrelenir; bu filtre
+// backend tarafında uygulanır). Salt-okunur duyuru akışı.
+export type Announcement = {
+  id: string;
+  type?: string;
+  title?: string;
+  message?: string;
+  priority?: string;
+  read?: boolean;
+  action_url?: string | null;
+  created_at?: string;
+};
+
+export type AnnouncementList = {
+  items: Announcement[];
+  unreadCount: number;
+};
+
+export async function listAnnouncements(params?: {
+  limit?: number;
+}): Promise<AnnouncementList> {
+  const res = await api.get<{
+    notifications?: Announcement[];
+    unread_count?: number;
+  }>('/api/notifications/list', { limit: params?.limit ?? 20 });
+  const items = res?.notifications ?? [];
+  return { items, unreadCount: res?.unread_count ?? 0 };
+}
+
 // The backend's 2-stage leave state machine (Task #263):
 //   pending → dept_approve → dept_approved → approve → approved
 //   pending | dept_approved → reject → rejected (note ZORUNLU)

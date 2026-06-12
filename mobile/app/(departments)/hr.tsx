@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Redirect } from 'expo-router';
 import {
   useMutation,
@@ -15,6 +16,8 @@ import {
   EmptyState,
   Field,
   H1,
+  ListGroup,
+  ListRow,
   Muted,
   SegmentedActions,
 } from '../../src/components/ui';
@@ -34,18 +37,26 @@ import {
   listShifts,
   listLeaveRequests,
   listAttendanceRecords,
+  listStaff,
+  listAnnouncements,
   getPerformanceSummary,
   decideLeaveRequest,
   type Shift,
   type LeaveRequest,
   type AttendanceRecord,
+  type StaffMember,
+  type StaffList,
+  type Announcement,
+  type AnnouncementList,
   type PerformanceReview,
   type PerformanceSummary,
   type LeaveDecisionAction,
 } from '../../src/api/hr';
 import { formatDate } from '../../src/utils/format';
 
-type Tab = 'shifts' | 'leave' | 'attendance' | 'performance';
+type IoniconName = keyof typeof Ionicons.glyphMap;
+
+type Tab = 'staff' | 'shifts' | 'leave' | 'attendance' | 'performance' | 'announcements';
 
 // Cosmetic mirror of the backend require_op("manage_hr") gate (the SAME gate
 // that protects the leave-request decision + performance endpoints). View-only
@@ -118,6 +129,61 @@ function clockTime(value?: string | null): string {
   return t ? t.slice(0, 5) : '—';
 }
 
+function employmentLabel(value?: string | null): string {
+  if (!value) return '';
+  const map = tr.departments.hr.employmentTypes;
+  return map[value] || value;
+}
+
+// Map a semantic tone to its theme colour (for Card accent bars).
+function toneColor(
+  c: ReturnType<typeof useTheme>,
+  tone: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'primary',
+): string {
+  switch (tone) {
+    case 'success':
+      return c.success;
+    case 'warning':
+      return c.warning;
+    case 'danger':
+      return c.danger;
+    case 'info':
+      return c.info;
+    case 'primary':
+      return c.primary;
+    default:
+      return c.border;
+  }
+}
+
+function priorityLabel(value?: string | null): string {
+  if (!value) return '';
+  const map = tr.departments.hr.priorities;
+  return map[value.toLowerCase()] || value;
+}
+
+function priorityTone(value?: string):
+  | 'default'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'info'
+  | 'primary' {
+  switch ((value || '').toLowerCase()) {
+    case 'critical':
+    case 'urgent':
+    case 'high':
+      return 'danger';
+    case 'medium':
+    case 'normal':
+      return 'warning';
+    case 'low':
+      return 'info';
+    default:
+      return 'default';
+  }
+}
+
 // Read-only HR screen with manager actions. Four tabs: shifts (vardiyalar),
 // leave requests (izinler), attendance (devam) and — for manage_hr roles —
 // performance (performans, kokpit). Backend GET reads only require auth; the
@@ -129,8 +195,18 @@ export default function HrScreen() {
   const rawRole = useAuthStore((s) => s.user?.role);
   const hrAccess = !screenRedirectsToHub('hr', rawRole);
   const manageHr = canManageHr(rawRole);
-  const [tab, setTab] = useState<Tab>('shifts');
+  const [tab, setTab] = useState<Tab>('staff');
 
+  const staffQ = useQuery({
+    queryKey: ['hr-staff'],
+    queryFn: () => listStaff(),
+    enabled: hrAccess && tab === 'staff',
+  });
+  const announcementsQ = useQuery({
+    queryKey: ['hr-announcements'],
+    queryFn: () => listAnnouncements(),
+    enabled: hrAccess && tab === 'announcements',
+  });
   const shiftsQ = useQuery({
     queryKey: ['hr-shifts'],
     queryFn: () => listShifts(),
@@ -156,32 +232,44 @@ export default function HrScreen() {
     return <Redirect href={ROUTES.departments} />;
   }
 
-  const tabs: { value: Tab; label: string }[] = [
-    { value: 'shifts', label: tr.departments.hr.tabShifts },
-    { value: 'leave', label: tr.departments.hr.tabLeave },
-    { value: 'attendance', label: tr.departments.hr.tabAttendance },
+  const tabs: { value: Tab; label: string; icon: IoniconName }[] = [
+    { value: 'staff', label: tr.departments.hr.tabStaff, icon: 'people-outline' },
+    { value: 'shifts', label: tr.departments.hr.tabShifts, icon: 'time-outline' },
+    { value: 'leave', label: tr.departments.hr.tabLeave, icon: 'airplane-outline' },
+    { value: 'attendance', label: tr.departments.hr.tabAttendance, icon: 'log-in-outline' },
     ...(manageHr
-      ? [{ value: 'performance' as Tab, label: tr.departments.hr.tabPerformance }]
+      ? [{ value: 'performance' as Tab, label: tr.departments.hr.tabPerformance, icon: 'ribbon-outline' as IoniconName }]
       : []),
+    { value: 'announcements', label: tr.departments.hr.tabAnnouncements, icon: 'megaphone-outline' },
   ];
 
-  const TabButton: React.FC<{ value: Tab; label: string }> = ({ value, label }) => {
+  const TabButton: React.FC<{ value: Tab; label: string; icon: IoniconName }> = ({
+    value,
+    label,
+    icon,
+  }) => {
     const active = tab === value;
     return (
       <Pressable
-        onPress={() => setTab(value)}
+        onPress={() => {
+          haptic.tap();
+          setTab(value);
+        }}
         accessibilityRole="button"
+        accessibilityState={{ selected: active }}
         style={{
-          flex: 1,
-          paddingVertical: spacing.sm,
-          paddingHorizontal: spacing.xs,
-          borderRadius: radius.md,
+          flexDirection: 'row',
           alignItems: 'center',
+          gap: 6,
+          paddingVertical: spacing.sm,
+          paddingHorizontal: spacing.md,
+          borderRadius: radius.pill,
           backgroundColor: active ? c.primary : c.surfaceAlt,
           borderWidth: 1,
           borderColor: active ? c.primary : c.border,
         }}
       >
+        <Ionicons name={icon} size={15} color={active ? c.primaryText : c.textMuted} />
         <Body
           style={{ color: active ? c.primaryText : c.text, fontWeight: '600', fontSize: 13 }}
           numberOfLines={1}
@@ -192,64 +280,85 @@ export default function HrScreen() {
     );
   };
 
-  const renderShift = (s: Shift) => (
-    <Card key={s.id} style={{ marginBottom: spacing.sm }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-        }}
-      >
-        <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{s.staff_name || '—'}</Body>
-          {s.shift_date ? (
-            <Muted>
-              {tr.departments.hr.shiftDate}: {formatDate(s.shift_date)}
-            </Muted>
-          ) : null}
+  const renderShift = (s: Shift) => {
+    const tone = statusTone(s.status);
+    return (
+      <Card key={s.id} style={{ marginBottom: spacing.sm }} accent={toneColor(c, tone)}>
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+          }}
+        >
+          <View style={{ flex: 1, paddingRight: spacing.sm }}>
+            <Body style={{ fontWeight: '700', fontSize: 16 }}>{s.staff_name || '—'}</Body>
+            {s.shift_date ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                <Ionicons name="calendar-outline" size={13} color={c.textMuted} />
+                <Muted>{formatDate(s.shift_date)}</Muted>
+              </View>
+            ) : null}
+          </View>
+          <Badge label={shiftStatusLabel(s.status)} tone={tone} />
         </View>
-        <Badge label={shiftStatusLabel(s.status)} tone={statusTone(s.status)} />
-      </View>
-      <View style={{ marginTop: spacing.sm, gap: 2 }}>
         {s.start_time || s.end_time ? (
-          <Muted>
-            {tr.departments.hr.time}: {s.start_time || '—'} – {s.end_time || '—'}
-            {s.crosses_midnight ? ` (${tr.departments.hr.overnight})` : ''}
-          </Muted>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              marginTop: spacing.md,
+            }}
+          >
+            <Ionicons name="time-outline" size={15} color={c.primary} />
+            <Body style={{ fontWeight: '600' }}>
+              {s.start_time || '—'} – {s.end_time || '—'}
+            </Body>
+            {s.crosses_midnight ? (
+              <Badge label={tr.departments.hr.overnight} tone="info" icon="moon-outline" />
+            ) : null}
+          </View>
         ) : null}
-      </View>
-    </Card>
-  );
+      </Card>
+    );
+  };
 
-  const renderAttendance = (a: AttendanceRecord) => (
-    <Card key={a.id} style={{ marginBottom: spacing.sm }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-        }}
-      >
-        <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{a.staff_name || '—'}</Body>
-          {a.department ? (
-            <Muted>
-              {tr.departments.hr.department}: {a.department}
-            </Muted>
-          ) : null}
+  const renderAttendance = (a: AttendanceRecord) => {
+    const tone = statusTone(a.status);
+    return (
+      <Card key={a.id} style={{ marginBottom: spacing.sm }} accent={toneColor(c, tone)}>
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+          }}
+        >
+          <View style={{ flex: 1, paddingRight: spacing.sm }}>
+            <Body style={{ fontWeight: '700', fontSize: 16 }}>{a.staff_name || '—'}</Body>
+            {a.department ? <Muted style={{ marginTop: 2 }}>{a.department}</Muted> : null}
+          </View>
+          <Badge label={attendanceStatusLabel(a.status)} tone={tone} />
         </View>
-        <Badge label={attendanceStatusLabel(a.status)} tone={statusTone(a.status)} />
-      </View>
-      <View style={{ marginTop: spacing.sm, gap: 2 }}>
-        {a.date ? <Muted>{formatDate(a.date)}</Muted> : null}
-        <Muted>
-          {tr.departments.hr.clockIn}: {clockTime(a.clock_in)} · {tr.departments.hr.clockOut}:{' '}
-          {clockTime(a.clock_out)}
-        </Muted>
-      </View>
-    </Card>
-  );
+        {a.date ? <Muted style={{ marginTop: spacing.sm }}>{formatDate(a.date)}</Muted> : null}
+        <View style={{ flexDirection: 'row', gap: spacing.lg, marginTop: spacing.sm }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="log-in-outline" size={14} color={c.success} />
+            <Muted>
+              {tr.departments.hr.clockIn}: {clockTime(a.clock_in)}
+            </Muted>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="log-out-outline" size={14} color={c.danger} />
+            <Muted>
+              {tr.departments.hr.clockOut}: {clockTime(a.clock_out)}
+            </Muted>
+          </View>
+        </View>
+      </Card>
+    );
+  };
 
   return (
     <ScrollView
@@ -257,12 +366,26 @@ export default function HrScreen() {
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
     >
       <H1>{tr.departments.hr.title}</H1>
+      <Muted style={{ marginTop: 2 }}>{tr.departments.hr.subtitle}</Muted>
 
-      <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
-        {tabs.map(({ value, label }) => (
-          <TabButton key={value} value={value} label={label} />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ marginTop: spacing.md, marginHorizontal: -spacing.lg }}
+        contentContainerStyle={{
+          flexDirection: 'row',
+          gap: spacing.sm,
+          paddingHorizontal: spacing.lg,
+        }}
+      >
+        {tabs.map(({ value, label, icon }) => (
+          <TabButton key={value} value={value} label={label} icon={icon} />
         ))}
-      </View>
+      </ScrollView>
+
+      {tab === 'staff' ? <StaffPanel query={staffQ} /> : null}
+
+      {tab === 'announcements' ? <AnnouncementsPanel query={announcementsQ} /> : null}
 
       {tab === 'shifts' ? (
         <>
@@ -322,6 +445,191 @@ export default function HrScreen() {
 
       {tab === 'performance' ? <PerformancePanel query={performanceQ} /> : null}
     </ScrollView>
+  );
+}
+
+// ── Personel dizini ─────────────────────────────────────────────────────────
+// KPI özeti (toplam personel + departman sayısı + aktif/pasif) ardından gruplu
+// premium personel satırları. Veriler GET /api/hr/staff (PII backend'de maskeli).
+function StaffPanel({ query }: { query: UseQueryResult<StaffList> }) {
+  const c = useTheme();
+  const data = query.data;
+  const staff = data?.staff ?? [];
+
+  const { departments, activeCount, passiveCount } = useMemo(() => {
+    const deptSet = new Set<string>();
+    let active = 0;
+    let passive = 0;
+    for (const s of staff) {
+      if (s.department) deptSet.add(s.department);
+      if (s.active === false) passive += 1;
+      else active += 1;
+    }
+    return { departments: deptSet.size, activeCount: active, passiveCount: passive };
+  }, [staff]);
+
+  const empty = staff.length === 0;
+
+  return (
+    <>
+      <SectionTitle title={tr.departments.hr.staffDirectory} />
+      {query.isLoading ? (
+        <DepartmentListState loading error={null} isEmpty={false} />
+      ) : query.error ? (
+        <DepartmentListState loading={false} error={query.error} isEmpty={false} />
+      ) : empty ? (
+        <EmptyState icon="people-outline" title={tr.departments.hr.noStaff} />
+      ) : (
+        <View style={{ gap: spacing.md }}>
+          <KpiRow>
+            <KpiCard
+              label={tr.departments.hr.staffTotal}
+              value={String(data?.total ?? staff.length)}
+              icon="people"
+              tone="info"
+            />
+            <KpiCard
+              label={tr.departments.hr.staffDepartments}
+              value={String(departments)}
+              icon="business"
+              tone="info"
+            />
+          </KpiRow>
+          <KpiRow>
+            <KpiCard
+              label={tr.departments.hr.staffActive}
+              value={String(activeCount)}
+              icon="checkmark-circle"
+              tone="success"
+            />
+            <KpiCard
+              label={tr.departments.hr.staffPassive}
+              value={String(passiveCount)}
+              icon="pause-circle"
+              tone={passiveCount > 0 ? 'warning' : 'default'}
+            />
+          </KpiRow>
+
+          <ListGroup>
+            {staff.map((s, i) => {
+              const sub = [s.position, s.department].filter(Boolean).join(' · ');
+              return (
+                <ListRow
+                  key={s.id}
+                  icon="person-circle-outline"
+                  iconColor={s.active === false ? c.textMuted : c.primary}
+                  label={s.name || '—'}
+                  sublabel={sub || undefined}
+                  showChevron={false}
+                  last={i === staff.length - 1}
+                  right={
+                    s.employment_type ? (
+                      <Badge
+                        label={employmentLabel(s.employment_type)}
+                        tone={s.active === false ? 'default' : 'info'}
+                      />
+                    ) : undefined
+                  }
+                />
+              );
+            })}
+          </ListGroup>
+        </View>
+      )}
+    </>
+  );
+}
+
+// ── Duyurular akışı ─────────────────────────────────────────────────────────
+// Tenant geneli yayınlanan bildirimler (GET /api/notifications/list). Önceliğe
+// göre renkli accent + okunmamışlar için "Yeni" rozeti. Salt-okunur.
+function AnnouncementsPanel({ query }: { query: UseQueryResult<AnnouncementList> }) {
+  const c = useTheme();
+  const data = query.data;
+  const items = data?.items ?? [];
+  const empty = items.length === 0;
+
+  return (
+    <>
+      <SectionTitle title={tr.departments.hr.announcements} />
+      {query.isLoading ? (
+        <DepartmentListState loading error={null} isEmpty={false} />
+      ) : query.error ? (
+        <DepartmentListState loading={false} error={query.error} isEmpty={false} />
+      ) : empty ? (
+        <EmptyState icon="megaphone-outline" title={tr.departments.hr.noAnnouncements} />
+      ) : (
+        <View style={{ gap: spacing.md }}>
+          <KpiRow>
+            <KpiCard
+              label={tr.departments.hr.announcementsTotal}
+              value={String(items.length)}
+              icon="megaphone"
+              tone="info"
+            />
+            <KpiCard
+              label={tr.departments.hr.announcementsUnread}
+              value={String(data?.unreadCount ?? 0)}
+              icon="mail-unread"
+              tone={(data?.unreadCount ?? 0) > 0 ? 'warning' : 'default'}
+            />
+          </KpiRow>
+
+          <View>
+            {items.map((a) => {
+              const tone = priorityTone(a.priority);
+              const unread = a.read === false;
+              return (
+                <Card
+                  key={a.id}
+                  style={{ marginBottom: spacing.sm }}
+                  accent={toneColor(c, tone)}
+                >
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      gap: spacing.sm,
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Body style={{ fontWeight: '700', fontSize: 16 }}>
+                        {a.title || '—'}
+                      </Body>
+                      {a.message ? (
+                        <Muted style={{ marginTop: 4 }}>{a.message}</Muted>
+                      ) : null}
+                    </View>
+                    {unread ? <Badge label={tr.departments.hr.newBadge} tone="primary" /> : null}
+                  </View>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginTop: spacing.md,
+                    }}
+                  >
+                    {a.created_at ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Ionicons name="time-outline" size={13} color={c.textMuted} />
+                        <Muted>{formatDate(a.created_at)}</Muted>
+                      </View>
+                    ) : (
+                      <View />
+                    )}
+                    {a.priority ? (
+                      <Badge label={priorityLabel(a.priority)} tone={tone} />
+                    ) : null}
+                  </View>
+                </Card>
+              );
+            })}
+          </View>
+        </View>
+      )}
+    </>
   );
 }
 
