@@ -136,7 +136,7 @@ function RootShell() {
   const c = useTheme();
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
-      <StatusBar style="auto" />
+      <StatusBar style="light" />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: c.surface },

@@ -1,9 +1,9 @@
-import { useColorScheme } from 'react-native';
-
 export type ThemeColors = {
   bg: string;
   surface: string;
   surfaceAlt: string;
+  surfaceGlass: string;
+  glassHighlight: string;
   border: string;
   text: string;
   textMuted: string;
@@ -17,41 +17,53 @@ export type ThemeColors = {
   vip: string;
 };
 
-// Marka rengi lacivert (guven). Alert kirmizi/turuncu, success yesil, bg off-white.
-const dark: ThemeColors = {
-  bg: '#0b0f1a',
-  surface: '#121826',
-  surfaceAlt: '#1a2236',
-  border: '#243049',
-  text: '#f4f6fb',
-  textMuted: '#9aa6bf',
-  primary: '#3b6fe0',
-  primaryText: '#ffffff',
-  primarySoft: '#1b2747',
-  success: '#22c55e',
-  warning: '#fb923c',
-  danger: '#f05252',
-  info: '#38bdf8',
-  vip: '#fbbf24',
+// Koyu premium kimlik (2030 / Apple seviyesi operasyon merkezi). Bu palet
+// uygulamanin VARSAYILAN kimligidir: zemin neredeyse siyah-lacivert, kartlar
+// uzerine katmanlanan acik yuzeyler, primary canli mavi, durum renkleri net.
+// surfaceGlass + glassHighlight cam efekti hissini (saydam yuzey + ust isik
+// cizgisi) blur kutuphanesi gerektirmeden tasir.
+export const darkTheme: ThemeColors = {
+  bg: '#060B17',
+  surface: '#101827',
+  surfaceAlt: '#172033',
+  surfaceGlass: 'rgba(23,32,51,0.72)',
+  glassHighlight: 'rgba(255,255,255,0.10)',
+  border: 'rgba(255,255,255,0.08)',
+  text: '#FFFFFF',
+  textMuted: '#94A3B8',
+  primary: '#2563EB',
+  primaryText: '#FFFFFF',
+  primarySoft: '#16223D',
+  success: '#10B981',
+  warning: '#F59E0B',
+  danger: '#EF4444',
+  info: '#38BDF8',
+  vip: '#FBBF24',
 };
 
-const light: ThemeColors = {
+// Ikincil acik tema — su an uygulamada aktif degil (koyu premium kimlik
+// varsayilan). Ileride opt-in tema secimi icin korunuyor; hicbir ekran buna
+// dogrudan bagimli degil.
+export const lightTheme: ThemeColors = {
   bg: '#f5f7fa',
   surface: '#ffffff',
   surfaceAlt: '#eef1f7',
+  surfaceGlass: 'rgba(255,255,255,0.72)',
+  glassHighlight: 'rgba(255,255,255,0.65)',
   border: '#e2e7f0',
   text: '#0f172a',
   textMuted: '#5b6478',
-  primary: '#1e3a8a',
+  primary: '#2563EB',
   primaryText: '#ffffff',
   primarySoft: '#e6ecf8',
-  success: '#15803d',
-  warning: '#ea580c',
+  success: '#0f9d6b',
+  warning: '#d97706',
   danger: '#dc2626',
   info: '#0369a1',
   vip: '#a16207',
 };
 
+// 8px tabanli bosluk olcegi (premium nefes alani icin).
 export const spacing = {
   xs: 4,
   sm: 8,
@@ -61,27 +73,38 @@ export const spacing = {
   xxl: 32,
 };
 
+// Premium yuvarlama: kartlar 20-24px (Apple Wallet hissi), buton/alanlar 12px.
 export const radius = {
-  sm: 6,
-  md: 10,
-  lg: 16,
+  sm: 8,
+  md: 12,
+  lg: 20,
   xl: 24,
   pill: 999,
 };
 
-// Yumusak yukselti (scannability icin kartlari zeminden ayirir). Dark modda
-// golge neredeyse gorunmez, bu yuzden orada sinir tasiyiciligi yapar.
+// Premium yumusak golge: koyu zeminde kartlari yukseltir, derinlik/katman
+// hissi verir. Web'de RN bunu box-shadow'a cevirir, native'de elevation.
 export const cardShadow = {
-  shadowColor: '#0f172a',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.06,
-  shadowRadius: 8,
-  elevation: 2,
+  shadowColor: '#000000',
+  shadowOffset: { width: 0, height: 12 },
+  shadowOpacity: 0.35,
+  shadowRadius: 24,
+  elevation: 10,
 };
 
+// Hareket katmani: tek kaynaktan sure/easing. Skeleton shimmer, basari
+// animasyonu ve yumusak gecisler bu degerleri kullanir (web-guvenli).
+export const motion = {
+  fast: 150,
+  base: 240,
+  slow: 420,
+};
+
+// Koyu premium kimlik her cihazda hakim olsun diye useTheme her zaman koyu
+// temayi dondurur (OS acik/koyu ayarindan bagimsiz). Acik tema ileride opt-in
+// olarak baglanabilir; simdilik lightTheme yalnizca referans olarak duruyor.
 export function useTheme(): ThemeColors {
-  const scheme = useColorScheme();
-  return scheme === 'light' ? light : dark;
+  return darkTheme;
 }
 
 export const roomStatusColor = (status: string | undefined, c: ThemeColors): string => {

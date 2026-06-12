@@ -1,8 +1,12 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Animated,
   DimensionValue,
+  Easing,
+  GestureResponderEvent,
   Modal,
+  Platform,
   Pressable,
   PressableProps,
   ScrollView,
@@ -17,9 +21,18 @@ import {
   ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { cardShadow, radius, spacing, useTheme } from '../theme';
+import { cardShadow, motion, radius, spacing, useTheme } from '../theme';
+import { haptic } from '../hooks/useHaptic';
+
+// Hareket/haptik temelleri tek yerden cagrilabilsin diye kit bunlari yeniden
+// ihrac eder (ekranlar `import { haptic, motion } from '../../src/components/ui'`).
+export { haptic, motion };
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
+
+// useNativeDriver web'de uyari uretir; transform/opacity icin native'de acik,
+// web'de kapali calistir (animasyonlar her iki hedefte de guvenli).
+const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 export const Screen: React.FC<ViewProps> = ({ style, children, ...rest }) => {
   const c = useTheme();
@@ -30,23 +43,20 @@ export const Screen: React.FC<ViewProps> = ({ style, children, ...rest }) => {
   );
 };
 
-// Kart: scannability icin yumusak yukselti + radius.lg. `accent` verilirse sol
-// kenarda renkli durum cubugu cizer (urgency / status at-a-glance).
-export const Card: React.FC<ViewProps & { accent?: string; elevated?: boolean; padded?: boolean }> = ({
-  style,
-  children,
-  accent,
-  elevated = true,
-  padded = true,
-  ...rest
-}) => {
+// Premium cam kart: 24px radius, yumusak yukseltili golge, ince beyaz kenarlik
+// ve ust kenarda ince isik cizgisi (cam rim hissi) ile zeminden ayrilir.
+// `accent` verilirse sol kenarda renkli durum cubugu cizer (status at-a-glance).
+// `glass=false` ile rim isik cizgisi kapatilabilir (ic ice kartlar icin).
+export const Card: React.FC<
+  ViewProps & { accent?: string; elevated?: boolean; padded?: boolean; glass?: boolean }
+> = ({ style, children, accent, elevated = true, padded = true, glass = true, ...rest }) => {
   const c = useTheme();
   return (
     <View
       style={[
         {
           backgroundColor: c.surface,
-          borderRadius: radius.lg,
+          borderRadius: radius.xl,
           padding: padded ? spacing.lg : 0,
           borderWidth: 1,
           borderColor: c.border,
@@ -57,6 +67,21 @@ export const Card: React.FC<ViewProps & { accent?: string; elevated?: boolean; p
       ]}
       {...rest}
     >
+      {glass ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: accent ? 4 : 0,
+            right: 0,
+            height: 1,
+            backgroundColor: c.glassHighlight,
+            borderTopLeftRadius: radius.xl,
+            borderTopRightRadius: radius.xl,
+          }}
+        />
+      ) : null}
       {children}
     </View>
   );
@@ -67,7 +92,10 @@ export const H1: React.FC<TextProps> = ({ style, ...rest }) => {
   return (
     <Text
       accessibilityRole="header"
-      style={[{ color: c.text, fontSize: 26, fontWeight: '800', letterSpacing: -0.3 }, style]}
+      style={[
+        { color: c.text, fontSize: 30, fontWeight: '800', letterSpacing: -0.6, lineHeight: 36 },
+        style,
+      ]}
       {...rest}
     />
   );
@@ -77,7 +105,10 @@ export const H2: React.FC<TextProps> = ({ style, ...rest }) => {
   const c = useTheme();
   return (
     <Text
-      style={[{ color: c.text, fontSize: 18, fontWeight: '700', letterSpacing: -0.2 }, style]}
+      style={[
+        { color: c.text, fontSize: 20, fontWeight: '700', letterSpacing: -0.3, lineHeight: 26 },
+        style,
+      ]}
       {...rest}
     />
   );
@@ -101,6 +132,8 @@ type ButtonProps = PressableProps & {
   loading?: boolean;
   fullWidth?: boolean;
   icon?: IoniconName;
+  // Dokunusta hafif haptik geri bildirim (varsayilan acik). Web'de no-op.
+  haptics?: boolean;
 };
 
 export const Button: React.FC<ButtonProps> = ({
@@ -111,6 +144,8 @@ export const Button: React.FC<ButtonProps> = ({
   icon,
   style,
   disabled,
+  onPress,
+  haptics = true,
   ...rest
 }) => {
   const c = useTheme();
@@ -123,12 +158,29 @@ export const Button: React.FC<ButtonProps> = ({
     ghost: { bg: 'transparent', text: c.primary, border: 'transparent' },
   };
   const p = palette[variant];
+  // Dolu (solid) varyantlarda primary renkten beslenen yumusak premium golge.
+  const solid = variant === 'primary' || variant === 'success' || variant === 'danger';
+  const glow = solid
+    ? {
+        shadowColor: p.bg,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.35,
+        shadowRadius: 12,
+        elevation: 4,
+      }
+    : null;
+
+  const handlePress = (e: GestureResponderEvent) => {
+    if (haptics) haptic.tap();
+    onPress?.(e);
+  };
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ disabled: !!disabled || !!loading }}
       disabled={disabled || loading}
+      onPress={handlePress}
       style={({ pressed }) => [
         {
           backgroundColor: p.bg,
@@ -139,10 +191,12 @@ export const Button: React.FC<ButtonProps> = ({
           borderRadius: radius.md,
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
+          opacity: disabled ? 0.5 : pressed ? 0.9 : 1,
+          transform: [{ scale: pressed ? 0.98 : 1 }],
           minHeight: 48,
           width: fullWidth ? '100%' : undefined,
         },
+        disabled ? null : glow,
         typeof style === 'function' ? style({ pressed }) : style,
       ]}
       {...rest}
@@ -168,7 +222,7 @@ export const Field: React.FC<TextInputProps & { label?: string }> = ({ label, st
         placeholderTextColor={c.textMuted}
         style={[
           {
-            backgroundColor: c.surface,
+            backgroundColor: c.surfaceAlt,
             color: c.text,
             borderColor: c.border,
             borderWidth: 1,
@@ -225,21 +279,46 @@ export const Badge: React.FC<BadgeProps> = ({ label, tone = 'default', icon }) =
   );
 };
 
+// Yukleme iskeletI: surekli yumusak shimmer (opaklik nefesi) ile veri bekleyen
+// yuzeyi premium gosterir. RN Animated kullanir (reanimated/babel-plugin'e
+// bagimli degil) → Expo Web + native'de guvenli calisir.
 export const Skeleton: React.FC<{
   height?: number;
   width?: DimensionValue;
   style?: StyleProp<ViewStyle>;
 }> = ({ height = 16, width = '100%', style }) => {
   const c = useTheme();
+  const shimmer = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, {
+          toValue: 1,
+          duration: motion.slow,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: USE_NATIVE_DRIVER,
+        }),
+        Animated.timing(shimmer, {
+          toValue: 0,
+          duration: motion.slow,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: USE_NATIVE_DRIVER,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [shimmer]);
+  const opacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.85] });
   return (
-    <View
+    <Animated.View
       style={[
         {
           height,
           width,
           backgroundColor: c.surfaceAlt,
           borderRadius: radius.sm,
-          opacity: 0.7,
+          opacity,
         },
         style,
       ]}
@@ -256,6 +335,92 @@ export const SkeletonCard: React.FC = () => (
     <Skeleton height={14} width="40%" />
   </Card>
 );
+
+// Basari animasyonu: yesil daire icinde onay isareti, yumusak yay (spring) ile
+// olceklenip belirir. Aksiyon tamamlandiginda (kayit/onay) tek yerden cagrilir.
+// `onDone` animasyon bittiginde tetiklenir (ornegin sheet kapatmak icin).
+// RN Animated → Expo Web + native'de guvenli.
+export const SuccessCheck: React.FC<{
+  size?: number;
+  label?: string;
+  onDone?: () => void;
+  testID?: string;
+}> = ({ size = 72, label, onDone, testID }) => {
+  const c = useTheme();
+  const scale = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    const anim = Animated.spring(scale, {
+      toValue: 1,
+      friction: 6,
+      tension: 90,
+      useNativeDriver: USE_NATIVE_DRIVER,
+    });
+    anim.start(() => onDone?.());
+    return () => anim.stop();
+  }, [scale]);
+  return (
+    <View testID={testID} style={{ alignItems: 'center', justifyContent: 'center', gap: spacing.md }}>
+      <Animated.View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: radius.pill,
+          backgroundColor: c.success + '22',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transform: [{ scale }],
+        }}
+      >
+        <View
+          style={{
+            width: size * 0.66,
+            height: size * 0.66,
+            borderRadius: radius.pill,
+            backgroundColor: c.success,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Ionicons name="checkmark" size={size * 0.4} color="#ffffff" />
+        </View>
+      </Animated.View>
+      {label ? (
+        <Text style={{ color: c.text, fontSize: 16, fontWeight: '700', textAlign: 'center' }}>
+          {label}
+        </Text>
+      ) : null}
+    </View>
+  );
+};
+
+// Yumusak giris: cocugu hafif asagidan yukari + opaklikla belirtir. Liste/karti
+// monte ederken premium "yumusak gecis" hissi verir. RN Animated → web-guvenli.
+export const FadeInView: React.FC<ViewProps & { delay?: number; offsetY?: number }> = ({
+  delay = 0,
+  offsetY = 8,
+  style,
+  children,
+  ...rest
+}) => {
+  const t = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    const anim = Animated.timing(t, {
+      toValue: 1,
+      duration: motion.base,
+      delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: USE_NATIVE_DRIVER,
+    });
+    anim.start();
+    return () => anim.stop();
+  }, [t, delay]);
+  const translateY = t.interpolate({ inputRange: [0, 1], outputRange: [offsetY, 0] });
+  return (
+    <Animated.View style={[{ opacity: t, transform: [{ translateY }] }, style]} {...rest}>
+      {children}
+    </Animated.View>
+  );
+};
 
 export const Divider: React.FC = () => {
   const c = useTheme();
@@ -526,7 +691,10 @@ export const ActionButton: React.FC<{
 }> = ({ label, icon, onPress, bg, fg, loading, disabled, testID }) => (
   <Pressable
     testID={testID}
-    onPress={onPress}
+    onPress={() => {
+      haptic.tap();
+      onPress();
+    }}
     disabled={disabled || loading}
     accessibilityRole="button"
     accessibilityLabel={label}
