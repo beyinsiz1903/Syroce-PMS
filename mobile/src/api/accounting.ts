@@ -55,6 +55,31 @@ export type InventorySummary = {
   total_value: number;
 };
 
+export type FinancialSummary = {
+  business_date?: string;
+  revenue: {
+    total: number;
+    total_with_tax: number;
+    by_category: Record<
+      string,
+      { amount: number; tax: number; total: number; count: number }
+    >;
+    charges_count: number;
+  };
+  tax: { total: number; breakdown: Record<string, number> };
+  payments: {
+    total: number;
+    by_method: Record<string, { amount: number; count: number }>;
+    payments_count: number;
+  };
+  open_folios: {
+    count: number;
+    balance: { total: number; receivable: number; overpayment: number };
+  };
+  net_position: number;
+  audit_status: string;
+};
+
 // GET /api/accounting/expenses?start_date=&end_date=&category=
 export async function listExpenses(params?: {
   start_date?: string;
@@ -83,5 +108,48 @@ export async function getInventory(): Promise<InventorySummary> {
     items: res?.items ?? [],
     low_stock_count: res?.low_stock_count ?? 0,
     total_value: res?.total_value ?? 0,
+  };
+}
+
+// GET /api/night-audit/financial-summary?date= → daily financial summary.
+// NOTE: the canonical route is /api/night-audit (the router declares that
+// prefix); there is no /api/pms/night-audit mount. Backend-gated by
+// require_op("view_finance_reports") — the same finance entitlement that
+// gates this whole screen. `date` defaults server-side to the business date.
+export async function getFinancialSummary(
+  date?: string,
+): Promise<FinancialSummary | null> {
+  const res = await api.get<Partial<FinancialSummary>>(
+    '/api/night-audit/financial-summary',
+    date ? { date } : undefined,
+  );
+  if (!res) return null;
+  return {
+    business_date: res.business_date,
+    revenue: {
+      total: res.revenue?.total ?? 0,
+      total_with_tax: res.revenue?.total_with_tax ?? 0,
+      by_category: res.revenue?.by_category ?? {},
+      charges_count: res.revenue?.charges_count ?? 0,
+    },
+    tax: {
+      total: res.tax?.total ?? 0,
+      breakdown: res.tax?.breakdown ?? {},
+    },
+    payments: {
+      total: res.payments?.total ?? 0,
+      by_method: res.payments?.by_method ?? {},
+      payments_count: res.payments?.payments_count ?? 0,
+    },
+    open_folios: {
+      count: res.open_folios?.count ?? 0,
+      balance: {
+        total: res.open_folios?.balance?.total ?? 0,
+        receivable: res.open_folios?.balance?.receivable ?? 0,
+        overpayment: res.open_folios?.balance?.overpayment ?? 0,
+      },
+    },
+    net_position: res.net_position ?? 0,
+    audit_status: res.audit_status ?? 'not_run',
   };
 }

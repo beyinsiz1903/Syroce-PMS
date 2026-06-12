@@ -1,17 +1,29 @@
-import React from 'react';
-import { ScrollView, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Pressable, ScrollView, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, H1, Muted } from '../../src/components/ui';
 import {
-  DepartmentListState,
+  ActionSheet,
+  Badge,
+  Body,
+  Card,
+  DetailHeader,
+  DetailRow,
+  EmptyState,
+  Field,
+  H1,
+  Muted,
   SectionTitle,
-} from '../../src/components/department';
-import { spacing, useTheme } from '../../src/theme';
+} from '../../src/components/ui';
+import { KpiCard, KpiRow } from '../../src/components/KpiCard';
+import { FilterChips, type FilterChipOption } from '../../src/components/FilterChips';
+import { DepartmentListState } from '../../src/components/department';
+import { spacing, radius, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
 import {
+  getFinancialSummary,
   getInventory,
   listExpenses,
   listInvoices,
@@ -20,6 +32,9 @@ import {
   type InventoryItem,
 } from '../../src/api/accounting';
 import { formatCurrency, formatDate } from '../../src/utils/format';
+
+type Tab = 'summary' | 'expenses' | 'invoices' | 'inventory';
+const TABS: Tab[] = ['summary', 'expenses', 'invoices', 'inventory'];
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -33,7 +48,8 @@ function monthRange(): { start_date: string; end_date: string } {
   return { start_date: isoDate(start), end_date: isoDate(end) };
 }
 
-function invoiceTone(status?: string):
+// PaymentStatus tone — shared by expense.payment_status and invoice.status.
+function statusTone(status?: string):
   | 'default'
   | 'success'
   | 'warning'
@@ -51,20 +67,69 @@ function invoiceTone(status?: string):
   }
 }
 
-function invoiceStatusLabel(status?: string): string {
-  const map = tr.departments.accounting.statuses as Record<string, string>;
+function statusLabel(status?: string): string {
+  const map = tr.departments.accounting.statuses;
   return (status && map[status]) || status || '—';
 }
 
-// Read-only Accounting screen: month-to-date expenses, invoices and a stock
-// summary. Backend GET reads only need auth; the (departments) entitlement
+function invoiceTypeLabel(type?: string): string {
+  const map = tr.departments.accounting.invoiceTypes;
+  return (type && map[type]) || type || '—';
+}
+
+function auditTone(status?: string):
+  | 'default'
+  | 'success'
+  | 'warning'
+  | 'danger' {
+  switch (status) {
+    case 'completed':
+      return 'success';
+    case 'in_progress':
+    case 'running':
+      return 'warning';
+    case 'failed':
+      return 'danger';
+    default:
+      return 'default';
+  }
+}
+
+function auditLabel(status?: string): string {
+  const map = tr.departments.accounting.auditStatuses;
+  return (status && map[status]) || status || '—';
+}
+
+// An invoice counts as "pending" (awaiting collection) when it is neither paid
+// nor cancelled — drives the cockpit "Bekleyen Fatura" KPI.
+function isPendingInvoice(inv: AccountingInvoice): boolean {
+  return inv.status !== 'paid' && inv.status !== 'cancelled';
+}
+
+// Read-only Accounting screen. Cockpit (Özet) tab surfaces the daily financial
+// summary KPIs; the Giderler / Faturalar tabs are searchable, status-coded
+// lists; invoices open a read-only detail sheet (e-Fatura / fatura readout).
+// Backend GET reads only need auth; the (departments) entitlement
 // (view_finance_reports roles) decides whether we show this screen at all.
 export default function AccountingScreen() {
   const c = useTheme();
+  const a = tr.departments.accounting;
   const financeReports = useAuthStore((s) => s.financeReports);
+
+  const [tab, setTab] = useState<Tab>('summary');
+  const [expenseSearch, setExpenseSearch] = useState('');
+  const [invoiceSearch, setInvoiceSearch] = useState('');
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [invoiceStatus, setInvoiceStatus] = useState('all');
+  const [selectedInvoice, setSelectedInvoice] = useState<AccountingInvoice | null>(null);
 
   const range = monthRange();
 
+  const summaryQ = useQuery({
+    queryKey: ['acc-financial-summary'],
+    queryFn: () => getFinancialSummary(),
+    enabled: financeReports,
+  });
   const expensesQ = useQuery({
     queryKey: ['acc-expenses', range.start_date, range.end_date],
     queryFn: () => listExpenses(range),
@@ -85,6 +150,107 @@ export default function AccountingScreen() {
   // entitlement is sent to the hub. Cosmetic — the backend still enforces reads.
   if (!financeReports) return <Redirect href={ROUTES.departments} />;
 
+  const expenses = expensesQ.data || [];
+  const invoices = invoicesQ.data || [];
+  const inventoryItems = inventoryQ.data?.items || [];
+
+  const monthExpenseTotal = expenses.reduce(
+    (sum, e) => sum + (e.total_amount ?? e.amount ?? 0),
+    0,
+  );
+  const pendingInvoiceCount = invoices.filter(isPendingInvoice).length;
+
+  const filteredExpenses = useMemo(() => {
+    const q = expenseSearch.trim().toLocaleLowerCase('tr-TR');
+    if (!q) return expenses;
+    return expenses.filter((e) =>
+      [e.description, e.category, e.expense_number]
+        .filter(Boolean)
+        .some((v) => v!.toLocaleLowerCase('tr-TR').includes(q)),
+    );
+  }, [expenses, expenseSearch]);
+
+  const filteredInvoices = useMemo(() => {
+    const q = invoiceSearch.trim().toLocaleLowerCase('tr-TR');
+    return invoices.filter((inv) => {
+      if (invoiceStatus !== 'all' && inv.status !== invoiceStatus) return false;
+      if (!q) return true;
+      return [inv.invoice_number, inv.customer_name]
+        .filter(Boolean)
+        .some((v) => v!.toLocaleLowerCase('tr-TR').includes(q));
+    });
+  }, [invoices, invoiceSearch, invoiceStatus]);
+
+  const filteredInventory = useMemo(() => {
+    const q = inventorySearch.trim().toLocaleLowerCase('tr-TR');
+    if (!q) return inventoryItems;
+    return inventoryItems.filter((it) =>
+      [it.name, it.category, it.sku]
+        .filter(Boolean)
+        .some((v) => v!.toLocaleLowerCase('tr-TR').includes(q)),
+    );
+  }, [inventoryItems, inventorySearch]);
+
+  const invoiceStatusOptions: FilterChipOption[] = [
+    { value: 'all', label: a.filterAll },
+    { value: 'pending', label: a.statuses.pending },
+    { value: 'paid', label: a.statuses.paid },
+    { value: 'partial', label: a.statuses.partial },
+    { value: 'overdue', label: a.statuses.overdue },
+    { value: 'cancelled', label: a.statuses.cancelled },
+  ];
+
+  const tabLabels: Record<Tab, string> = {
+    summary: a.tabSummary,
+    expenses: a.tabExpenses,
+    invoices: a.tabInvoices,
+    inventory: a.tabInventory,
+  };
+
+  const TabButton: React.FC<{ value: Tab; label: string }> = ({ value, label }) => {
+    const active = tab === value;
+    return (
+      <Pressable
+        onPress={() => setTab(value)}
+        accessibilityRole="button"
+        accessibilityState={{ selected: active }}
+        style={{
+          flex: 1,
+          paddingVertical: spacing.sm,
+          borderRadius: radius.md,
+          alignItems: 'center',
+          backgroundColor: active ? c.primary : c.surfaceAlt,
+          borderWidth: 1,
+          borderColor: active ? c.primary : c.border,
+        }}
+      >
+        <Body
+          style={{ color: active ? c.primaryText : c.text, fontWeight: '600' }}
+          numberOfLines={1}
+        >
+          {label}
+        </Body>
+      </Pressable>
+    );
+  };
+
+  // Render a list section: loading/error first (skeletons / error card), then
+  // a rich EmptyState when empty, otherwise the list. DepartmentListState only
+  // covers loading+error here (isEmpty=false) so the empty branch is ours.
+  const listSection = (
+    q: { isLoading: boolean; error: unknown },
+    isEmpty: boolean,
+    empty: React.ReactNode,
+    list: React.ReactNode,
+  ): React.ReactNode => {
+    if (q.isLoading || q.error) {
+      return (
+        <DepartmentListState loading={q.isLoading} error={q.error} isEmpty={false} />
+      );
+    }
+    return isEmpty ? empty : list;
+  };
+
   const renderExpense = (e: Expense) => (
     <Card key={e.id} style={{ marginBottom: spacing.sm }}>
       <View
@@ -95,43 +261,79 @@ export default function AccountingScreen() {
         }}
       >
         <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{e.description || e.expense_number || '—'}</Body>
+          <Body style={{ fontWeight: '600' }}>
+            {e.description || e.expense_number || '—'}
+          </Body>
           {e.category ? <Muted>{e.category}</Muted> : null}
         </View>
-        <Body>{formatCurrency(e.total_amount ?? e.amount, 'TRY')}</Body>
+        <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
+          <Body style={{ fontWeight: '600' }}>
+            {formatCurrency(e.total_amount ?? e.amount, 'TRY')}
+          </Body>
+          {e.payment_status ? (
+            <Badge
+              label={statusLabel(e.payment_status)}
+              tone={statusTone(e.payment_status)}
+            />
+          ) : null}
+        </View>
       </View>
       <Muted style={{ marginTop: spacing.xs }}>{formatDate(e.date)}</Muted>
     </Card>
   );
 
   const renderInvoice = (inv: AccountingInvoice) => (
-    <Card key={inv.id} style={{ marginBottom: spacing.sm }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-        }}
-      >
-        <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{inv.invoice_number || '—'}</Body>
-          {inv.customer_name ? (
-            <Muted>
-              {tr.departments.accounting.customer}: {inv.customer_name}
-            </Muted>
-          ) : null}
+    <Pressable
+      key={inv.id}
+      onPress={() => setSelectedInvoice(inv)}
+      accessibilityRole="button"
+      accessibilityLabel={inv.invoice_number || a.invoiceDetail}
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+    >
+      <Card style={{ marginBottom: spacing.sm }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+          }}
+        >
+          <View style={{ flex: 1, paddingRight: spacing.sm }}>
+            <Body style={{ fontWeight: '600' }}>{inv.invoice_number || '—'}</Body>
+            {inv.customer_name ? (
+              <Muted>
+                {a.customer}: {inv.customer_name}
+              </Muted>
+            ) : null}
+          </View>
+          <Badge label={statusLabel(inv.status)} tone={statusTone(inv.status)} />
         </View>
-        <Badge label={invoiceStatusLabel(inv.status)} tone={invoiceTone(inv.status)} />
-      </View>
-      <View style={{ marginTop: spacing.sm, gap: 2 }}>
-        <Muted>{formatCurrency(inv.total, 'TRY')}</Muted>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginTop: spacing.sm,
+            gap: spacing.sm,
+          }}
+        >
+          {inv.invoice_type ? (
+            <Badge
+              label={invoiceTypeLabel(inv.invoice_type)}
+              tone={inv.invoice_type === 'e_invoice' ? 'info' : 'default'}
+            />
+          ) : (
+            <View />
+          )}
+          <Body style={{ fontWeight: '600' }}>{formatCurrency(inv.total, 'TRY')}</Body>
+        </View>
         {inv.due_date ? (
-          <Muted>
-            {tr.departments.accounting.due}: {formatDate(inv.due_date)}
+          <Muted style={{ marginTop: spacing.xs }}>
+            {a.due}: {formatDate(inv.due_date)}
           </Muted>
         ) : null}
-      </View>
-    </Card>
+      </Card>
+    </Pressable>
   );
 
   const renderInventoryItem = (it: InventoryItem) => {
@@ -152,90 +354,351 @@ export default function AccountingScreen() {
             <Body style={{ fontWeight: '600' }}>{it.name || '—'}</Body>
             {it.category ? <Muted>{it.category}</Muted> : null}
           </View>
-          {low ? (
-            <Badge label={tr.departments.accounting.lowStock} tone="danger" />
-          ) : null}
+          {low ? <Badge label={a.lowStock} tone="danger" /> : null}
         </View>
         <Muted style={{ marginTop: spacing.xs }}>
-          {tr.departments.accounting.quantity}: {it.quantity ?? 0} {it.unit || ''}
+          {a.quantity}: {it.quantity ?? 0} {it.unit || ''}
           {typeof it.reorder_level === 'number'
-            ? ` · ${tr.departments.accounting.reorderLevel}: ${it.reorder_level}`
+            ? ` · ${a.reorderLevel}: ${it.reorder_level}`
             : ''}
         </Muted>
       </Card>
     );
   };
 
+  const summary = summaryQ.data;
+  const revenueCategories = summary
+    ? Object.entries(summary.revenue.by_category).sort(
+        (x, y) => (y[1]?.total ?? 0) - (x[1]?.total ?? 0),
+      )
+    : [];
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
     >
-      <H1>{tr.departments.accounting.title}</H1>
+      <H1>{a.title}</H1>
 
-      <SectionTitle title={tr.departments.accounting.expenses} />
-      {(() => {
-        const state = (
-          <DepartmentListState
-            loading={expensesQ.isLoading}
-            error={expensesQ.error}
-            isEmpty={(expensesQ.data || []).length === 0}
-            emptyText={tr.departments.accounting.noExpenses}
-          />
-        );
-        return state ?? <View>{(expensesQ.data || []).map(renderExpense)}</View>;
-      })()}
+      <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+        {TABS.map((value) => (
+          <TabButton key={value} value={value} label={tabLabels[value]} />
+        ))}
+      </View>
 
-      <SectionTitle title={tr.departments.accounting.invoices} />
-      {(() => {
-        const state = (
-          <DepartmentListState
-            loading={invoicesQ.isLoading}
-            error={invoicesQ.error}
-            isEmpty={(invoicesQ.data || []).length === 0}
-            emptyText={tr.departments.accounting.noInvoices}
-          />
-        );
-        return state ?? <View>{(invoicesQ.data || []).map(renderInvoice)}</View>;
-      })()}
-
-      <SectionTitle title={tr.departments.accounting.inventory} />
-      {inventoryQ.data ? (
-        <Card style={{ marginBottom: spacing.sm }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <Muted>{tr.departments.accounting.totalValue}</Muted>
-            <Body style={{ fontWeight: '600' }}>
-              {formatCurrency(inventoryQ.data.total_value, 'TRY')}
-            </Body>
-          </View>
-          {inventoryQ.data.low_stock_count > 0 ? (
-            <View style={{ marginTop: spacing.sm }}>
-              <Badge
-                label={`${tr.departments.accounting.lowStock}: ${inventoryQ.data.low_stock_count}`}
-                tone="danger"
+      {/* ── Özet (cockpit) ── */}
+      {tab === 'summary' ? (
+        <>
+          <View style={{ gap: spacing.md, marginTop: spacing.md }}>
+            <KpiRow>
+              <KpiCard
+                label={a.todayRevenue}
+                value={formatCurrency(summary?.revenue.total_with_tax, 'TRY')}
+                icon="cash-outline"
+                tone="success"
               />
-            </View>
+              <KpiCard
+                label={a.collections}
+                value={formatCurrency(summary?.payments.total, 'TRY')}
+                icon="card-outline"
+                tone="info"
+              />
+            </KpiRow>
+            <KpiRow>
+              <KpiCard
+                label={a.netPosition}
+                value={formatCurrency(summary?.net_position, 'TRY')}
+                icon="trending-up-outline"
+                tone={(summary?.net_position ?? 0) >= 0 ? 'default' : 'danger'}
+              />
+              <KpiCard
+                label={a.openFolios}
+                value={String(summary?.open_folios.count ?? 0)}
+                icon="folder-open-outline"
+                tone={(summary?.open_folios.count ?? 0) > 0 ? 'warning' : 'default'}
+              />
+            </KpiRow>
+            <KpiRow>
+              <KpiCard
+                label={`${a.monthExpenses} · ${a.monthRange}`}
+                value={formatCurrency(monthExpenseTotal, 'TRY')}
+                icon="receipt-outline"
+                tone="default"
+              />
+              <KpiCard
+                label={a.pendingInvoices}
+                value={String(pendingInvoiceCount)}
+                icon="document-text-outline"
+                tone={pendingInvoiceCount > 0 ? 'warning' : 'default'}
+              />
+            </KpiRow>
+          </View>
+
+          <SectionTitle title={a.dailySummary} />
+          {summaryQ.isLoading || summaryQ.error ? (
+            <DepartmentListState
+              loading={summaryQ.isLoading}
+              error={summaryQ.error}
+              isEmpty={false}
+              skeletonCount={1}
+            />
+          ) : summary ? (
+            <Card>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: spacing.sm,
+                }}
+              >
+                <Muted>
+                  {a.businessDate}: {formatDate(summary.business_date)}
+                </Muted>
+                <Badge
+                  label={auditLabel(summary.audit_status)}
+                  tone={auditTone(summary.audit_status)}
+                />
+              </View>
+              <SummaryRow label={a.revenueWithTax} value={formatCurrency(summary.revenue.total_with_tax, 'TRY')} />
+              <SummaryRow label={a.tax} value={formatCurrency(summary.tax.total, 'TRY')} />
+              <SummaryRow label={a.payments} value={formatCurrency(summary.payments.total, 'TRY')} />
+              <SummaryRow label={a.netPosition} value={formatCurrency(summary.net_position, 'TRY')} />
+              <SummaryRow
+                label={a.openFolioBalance}
+                value={`${formatCurrency(summary.open_folios.balance.total, 'TRY')} · ${summary.open_folios.count}`}
+              />
+            </Card>
+          ) : (
+            <EmptyState
+              icon="stats-chart-outline"
+              title={a.noFinancialSummary}
+            />
+          )}
+
+          {revenueCategories.length > 0 ? (
+            <>
+              <SectionTitle title={a.revenueByCategory} />
+              <Card>
+                {revenueCategories.map(([cat, v], idx) => (
+                  <SummaryRow
+                    key={cat}
+                    label={cat}
+                    value={formatCurrency(v?.total ?? 0, 'TRY')}
+                    last={idx === revenueCategories.length - 1}
+                  />
+                ))}
+              </Card>
+            </>
           ) : null}
-        </Card>
+        </>
       ) : null}
-      {(() => {
-        const items = inventoryQ.data?.items || [];
-        const state = (
-          <DepartmentListState
-            loading={inventoryQ.isLoading}
-            error={inventoryQ.error}
-            isEmpty={items.length === 0}
-            emptyText={tr.departments.accounting.noInventory}
-          />
-        );
-        return state ?? <View>{items.map(renderInventoryItem)}</View>;
-      })()}
+
+      {/* ── Giderler ── */}
+      {tab === 'expenses' ? (
+        <>
+          <View style={{ marginTop: spacing.md }}>
+            <Field
+              placeholder={a.searchExpenses}
+              value={expenseSearch}
+              onChangeText={setExpenseSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+          <SectionTitle title={a.expenses} />
+          {listSection(
+            expensesQ,
+            filteredExpenses.length === 0,
+            <EmptyState
+              icon="receipt-outline"
+              title={expenseSearch ? a.noExpensesSearch : a.noExpenses}
+            />,
+            <View>{filteredExpenses.map(renderExpense)}</View>,
+          )}
+        </>
+      ) : null}
+
+      {/* ── Faturalar ── */}
+      {tab === 'invoices' ? (
+        <>
+          <View style={{ marginTop: spacing.md }}>
+            <Field
+              placeholder={a.searchInvoices}
+              value={invoiceSearch}
+              onChangeText={setInvoiceSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+          <View style={{ marginTop: spacing.sm }}>
+            <FilterChips
+              options={invoiceStatusOptions}
+              value={invoiceStatus}
+              onChange={setInvoiceStatus}
+            />
+          </View>
+          <SectionTitle title={a.invoices} />
+          {listSection(
+            invoicesQ,
+            filteredInvoices.length === 0,
+            <EmptyState
+              icon="document-text-outline"
+              title={
+                invoiceSearch || invoiceStatus !== 'all'
+                  ? a.noInvoicesSearch
+                  : a.noInvoices
+              }
+            />,
+            <View>{filteredInvoices.map(renderInvoice)}</View>,
+          )}
+        </>
+      ) : null}
+
+      {/* ── Stok ── */}
+      {tab === 'inventory' ? (
+        <>
+          <View style={{ marginTop: spacing.md }}>
+            <Field
+              placeholder={a.searchInventory}
+              value={inventorySearch}
+              onChangeText={setInventorySearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+          {inventoryQ.data ? (
+            <Card style={{ marginTop: spacing.sm, marginBottom: spacing.sm }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <Muted>{a.totalValue}</Muted>
+                <Body style={{ fontWeight: '600' }}>
+                  {formatCurrency(inventoryQ.data.total_value, 'TRY')}
+                </Body>
+              </View>
+              {inventoryQ.data.low_stock_count > 0 ? (
+                <View style={{ marginTop: spacing.sm }}>
+                  <Badge
+                    label={`${a.lowStock}: ${inventoryQ.data.low_stock_count}`}
+                    tone="danger"
+                  />
+                </View>
+              ) : null}
+            </Card>
+          ) : null}
+          <SectionTitle title={a.inventory} />
+          {listSection(
+            inventoryQ,
+            filteredInventory.length === 0,
+            <EmptyState
+              icon="cube-outline"
+              title={inventorySearch ? a.noInventorySearch : a.noInventory}
+            />,
+            <View>{filteredInventory.map(renderInventoryItem)}</View>,
+          )}
+        </>
+      ) : null}
+
+      {/* ── Invoice detail (list → detail) ── */}
+      <ActionSheet
+        visible={!!selectedInvoice}
+        onClose={() => setSelectedInvoice(null)}
+        title={a.invoiceDetail}
+      >
+        {selectedInvoice ? (
+          <View>
+            <DetailHeader
+              title={selectedInvoice.invoice_number || '—'}
+              subtitle={selectedInvoice.customer_name || undefined}
+              badges={
+                <>
+                  <Badge
+                    label={statusLabel(selectedInvoice.status)}
+                    tone={statusTone(selectedInvoice.status)}
+                  />
+                  {selectedInvoice.invoice_type ? (
+                    <Badge
+                      label={invoiceTypeLabel(selectedInvoice.invoice_type)}
+                      tone={
+                        selectedInvoice.invoice_type === 'e_invoice'
+                          ? 'info'
+                          : 'default'
+                      }
+                    />
+                  ) : null}
+                </>
+              }
+            />
+            <Card>
+              <DetailRow
+                label={a.invoiceType}
+                value={invoiceTypeLabel(selectedInvoice.invoice_type)}
+              />
+              <DetailRow
+                label={a.subtotal}
+                value={formatCurrency(selectedInvoice.subtotal, 'TRY')}
+              />
+              <DetailRow
+                label={a.vat}
+                value={formatCurrency(selectedInvoice.total_vat, 'TRY')}
+              />
+              <DetailRow
+                label={a.total}
+                value={formatCurrency(selectedInvoice.total, 'TRY')}
+              />
+              <DetailRow
+                label={a.issueDate}
+                value={formatDate(selectedInvoice.issue_date)}
+              />
+              <DetailRow
+                label={a.due}
+                value={formatDate(selectedInvoice.due_date)}
+              />
+              {selectedInvoice.payment_date ? (
+                <DetailRow
+                  label={a.paymentDate}
+                  value={formatDate(selectedInvoice.payment_date)}
+                />
+              ) : null}
+              {selectedInvoice.notes ? (
+                <DetailRow label={a.notes} value={selectedInvoice.notes} />
+              ) : null}
+            </Card>
+          </View>
+        ) : null}
+      </ActionSheet>
     </ScrollView>
   );
 }
+
+// Compact label/value line for the daily-summary card. Optional trailing
+// divider so a list of rows reads cleanly inside one Card.
+const SummaryRow: React.FC<{ label: string; value: string; last?: boolean }> = ({
+  label,
+  value,
+  last,
+}) => {
+  const c = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: spacing.xs,
+        borderBottomWidth: last ? 0 : 1,
+        borderBottomColor: c.border,
+      }}
+    >
+      <Muted style={{ flex: 1, paddingRight: spacing.sm }} numberOfLines={1}>
+        {label}
+      </Muted>
+      <Body style={{ fontWeight: '600' }}>{value}</Body>
+    </View>
+  );
+};
