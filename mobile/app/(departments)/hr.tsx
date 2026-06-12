@@ -22,6 +22,7 @@ import {
   SegmentedActions,
 } from '../../src/components/ui';
 import { KpiCard, KpiRow } from '../../src/components/KpiCard';
+import { FilterChips } from '../../src/components/FilterChips';
 import {
   DepartmentListState,
   SectionTitle,
@@ -45,8 +46,6 @@ import {
   type Shift,
   type LeaveRequest,
   type AttendanceRecord,
-  type StaffMember,
-  type StaffList,
   type Announcement,
   type AnnouncementList,
   type PerformanceReview,
@@ -198,11 +197,6 @@ export default function HrScreen() {
   const manageHr = canManageHr(rawRole);
   const [tab, setTab] = useState<Tab>('staff');
 
-  const staffQ = useQuery({
-    queryKey: ['hr-staff'],
-    queryFn: () => listStaff(),
-    enabled: hrAccess && tab === 'staff',
-  });
   const announcementsQ = useQuery({
     queryKey: ['hr-announcements'],
     queryFn: () => listAnnouncements(),
@@ -384,7 +378,7 @@ export default function HrScreen() {
         ))}
       </ScrollView>
 
-      {tab === 'staff' ? <StaffPanel query={staffQ} /> : null}
+      {tab === 'staff' ? <StaffPanel enabled={hrAccess} /> : null}
 
       {tab === 'announcements' ? <AnnouncementsPanel query={announcementsQ} /> : null}
 
@@ -452,40 +446,77 @@ export default function HrScreen() {
 // ── Personel dizini ─────────────────────────────────────────────────────────
 // KPI özeti (toplam personel + departman sayısı + aktif/pasif) ardından gruplu
 // premium personel satırları. Veriler GET /api/hr/staff (PII backend'de maskeli).
-function StaffPanel({ query }: { query: UseQueryResult<StaffList> }) {
+// İsme göre arama istemci tarafında; departman filtresi backend'in `department`
+// query parametresini kullanır. Departman çipleri + KPI'lar her zaman tam
+// dizinden (baseQ) türetilir, böylece filtre seçili olsa da sabit kalır.
+function StaffPanel({ enabled }: { enabled: boolean }) {
   const c = useTheme();
-  const data = query.data;
-  const staff = data?.staff ?? [];
+  const [search, setSearch] = useState('');
+  const [dept, setDept] = useState('');
 
-  const { departments, activeCount, passiveCount } = useMemo(() => {
+  // Tam dizin: departman çiplerinin ve KPI özetinin kaynağı (filtreden bağımsız).
+  const baseQ = useQuery({
+    queryKey: ['hr-staff'],
+    queryFn: () => listStaff(),
+    enabled,
+  });
+  // Filtreli liste: yalnızca bir departman seçiliyken backend'e parametre gider.
+  const filteredQ = useQuery({
+    queryKey: ['hr-staff', dept],
+    queryFn: () => listStaff({ department: dept }),
+    enabled: enabled && dept !== '',
+  });
+
+  const baseStaff = baseQ.data?.staff ?? [];
+
+  const { deptOptions, departments, activeCount, passiveCount } = useMemo(() => {
     const deptSet = new Set<string>();
     let active = 0;
     let passive = 0;
-    for (const s of staff) {
+    for (const s of baseStaff) {
       if (s.department) deptSet.add(s.department);
       if (s.active === false) passive += 1;
       else active += 1;
     }
-    return { departments: deptSet.size, activeCount: active, passiveCount: passive };
-  }, [staff]);
+    const sorted = Array.from(deptSet).sort((a, b) => a.localeCompare(b, 'tr'));
+    const options = [
+      { value: '', label: tr.departments.hr.staffAllDepartments },
+      ...sorted.map((d) => ({ value: d, label: d })),
+    ];
+    return {
+      deptOptions: options,
+      departments: deptSet.size,
+      activeCount: active,
+      passiveCount: passive,
+    };
+  }, [baseStaff]);
 
-  const empty = staff.length === 0;
+  // Görüntülenecek liste: departman seçiliyse filtreli sorgu, değilse tam dizin.
+  const sourceStaff = dept === '' ? baseStaff : filteredQ.data?.staff ?? [];
+  const q = search.trim().toLowerCase();
+  const visibleStaff = q
+    ? sourceStaff.filter((s) => (s.name || '').toLowerCase().includes(q))
+    : sourceStaff;
+
+  const directoryEmpty = baseStaff.length === 0;
+  const listLoading = dept !== '' && filteredQ.isLoading;
+  const listError = dept !== '' ? filteredQ.error : null;
 
   return (
     <>
       <SectionTitle title={tr.departments.hr.staffDirectory} />
-      {query.isLoading ? (
+      {baseQ.isLoading ? (
         <DepartmentListState loading error={null} isEmpty={false} />
-      ) : query.error ? (
-        <DepartmentListState loading={false} error={query.error} isEmpty={false} />
-      ) : empty ? (
+      ) : baseQ.error ? (
+        <DepartmentListState loading={false} error={baseQ.error} isEmpty={false} />
+      ) : directoryEmpty ? (
         <EmptyState icon="people-outline" title={tr.departments.hr.noStaff} />
       ) : (
         <View style={{ gap: spacing.md }}>
           <KpiRow>
             <KpiCard
               label={tr.departments.hr.staffTotal}
-              value={String(data?.total ?? staff.length)}
+              value={String(baseQ.data?.total ?? baseStaff.length)}
               icon="people"
               tone="info"
             />
@@ -511,30 +542,57 @@ function StaffPanel({ query }: { query: UseQueryResult<StaffList> }) {
             />
           </KpiRow>
 
-          <ListGroup>
-            {staff.map((s, i) => {
-              const sub = [s.position, s.department].filter(Boolean).join(' · ');
-              return (
-                <ListRow
-                  key={s.id}
-                  icon="person-circle-outline"
-                  iconColor={s.active === false ? c.textMuted : c.primary}
-                  label={s.name || '—'}
-                  sublabel={sub || undefined}
-                  showChevron={false}
-                  last={i === staff.length - 1}
-                  right={
-                    s.employment_type ? (
-                      <Badge
-                        label={employmentLabel(s.employment_type)}
-                        tone={s.active === false ? 'default' : 'info'}
-                      />
-                    ) : undefined
-                  }
-                />
-              );
-            })}
-          </ListGroup>
+          <Field
+            value={search}
+            onChangeText={setSearch}
+            placeholder={tr.departments.hr.staffSearchPlaceholder}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            testID="staff-search"
+          />
+
+          {deptOptions.length > 1 ? (
+            <FilterChips
+              options={deptOptions}
+              value={dept}
+              onChange={setDept}
+              testID="staff-dept-filter"
+            />
+          ) : null}
+
+          {listLoading ? (
+            <DepartmentListState loading error={null} isEmpty={false} />
+          ) : listError ? (
+            <DepartmentListState loading={false} error={listError} isEmpty={false} />
+          ) : visibleStaff.length === 0 ? (
+            <EmptyState icon="search-outline" title={tr.departments.hr.noStaffMatch} />
+          ) : (
+            <ListGroup>
+              {visibleStaff.map((s, i) => {
+                const sub = [s.position, s.department].filter(Boolean).join(' · ');
+                return (
+                  <ListRow
+                    key={s.id}
+                    icon="person-circle-outline"
+                    iconColor={s.active === false ? c.textMuted : c.primary}
+                    label={s.name || '—'}
+                    sublabel={sub || undefined}
+                    showChevron={false}
+                    last={i === visibleStaff.length - 1}
+                    right={
+                      s.employment_type ? (
+                        <Badge
+                          label={employmentLabel(s.employment_type)}
+                          tone={s.active === false ? 'default' : 'info'}
+                        />
+                      ) : undefined
+                    }
+                  />
+                );
+              })}
+            </ListGroup>
+          )}
         </View>
       )}
     </>

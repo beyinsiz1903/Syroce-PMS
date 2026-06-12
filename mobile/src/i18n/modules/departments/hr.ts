@@ -19,6 +19,9 @@ export const hr = {
   // Personel dizini.
   staffDirectory: 'Personel Dizini',
   noStaff: 'Personel kaydı bulunamadı',
+  staffSearchPlaceholder: 'İsme göre ara',
+  staffAllDepartments: 'Tümü',
+  noStaffMatch: 'Aramanıza uygun personel bulunamadı',
   staffTotal: 'Toplam Personel',
   staffDepartments: 'Departman',
   staffActive: 'Aktif',
