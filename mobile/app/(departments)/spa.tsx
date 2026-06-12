@@ -24,14 +24,22 @@ import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
 import {
+  createActivityBooking,
   createSpaAppointment,
   getSpaAvailability,
+  listActivities,
+  listActivityBookings,
+  listActivityResources,
   listSpaAppointments,
   listSpaServices,
   listSpaTherapists,
+  type Activity,
+  type ActivityBooking,
+  type ActivityResource,
   type SpaAppointment,
   type SpaAvailabilitySlot,
 } from '../../src/api/spa';
+import { searchGuests, type Guest } from '../../src/api/guests';
 import { listViewState } from '../../src/utils/departmentScreens';
 import { errorMessage, isOffline } from '../../src/utils/errors';
 import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
@@ -93,6 +101,40 @@ function statusLabel(status?: string): string {
   return (status && map[status]) || status || '—';
 }
 
+function activityStatusTone(status?: string):
+  | 'default'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'info' {
+  switch (status) {
+    case 'completed':
+      return 'success';
+    case 'cancelled':
+    case 'no_show':
+      return 'danger';
+    case 'booked':
+      return 'info';
+    default:
+      return 'default';
+  }
+}
+
+function activityStatusLabel(status?: string): string {
+  const map = tr.departments.spa.activities.statuses as Record<string, string>;
+  return (status && map[status]) || status || '—';
+}
+
+function activityTypeLabel(type?: string): string {
+  const map = tr.departments.spa.activities.types as Record<string, string>;
+  return (type && map[type]) || type || '';
+}
+
+function resourceKindLabel(kind?: string): string {
+  const map = tr.departments.spa.activities.kinds as Record<string, string>;
+  return (kind && map[kind]) || kind || '';
+}
+
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 // Combine a YYYY-MM-DD day and a HH:MM wall time into an ISO instant. The
@@ -124,6 +166,8 @@ export default function SpaScreen() {
   const spaAccess = useAuthStore((s) => s.spaAccess);
   const S = tr.departments.spa;
 
+  const [view, setView] = useState<'spa' | 'activities'>('spa');
+
   const [range, setRange] = useState<Range>('today');
   const [customDate, setCustomDate] = useState<string | undefined>(undefined);
 
@@ -141,6 +185,110 @@ export default function SpaScreen() {
     (therapistsQ.data || []).forEach((t) => m.set(t.id, t.name));
     return m;
   }, [therapistsQ.data]);
+
+  // ── Activity scheduler state ──────────────────────────────────────────────
+  const A = S.activities;
+  // Bookings are queried for a single day; the catalogue / resources are global.
+  const [activityDate, setActivityDate] = useState<string>(() => isoDate(new Date()));
+
+  const bookingsQ = useQuery({
+    queryKey: ['activity-bookings', activityDate],
+    queryFn: () => listActivityBookings({ date: activityDate }),
+    enabled: view === 'activities',
+  });
+  const activitiesQ = useQuery({
+    queryKey: ['activities'],
+    queryFn: () => listActivities(),
+    enabled: view === 'activities',
+  });
+  const resourcesQ = useQuery({
+    queryKey: ['activity-resources'],
+    queryFn: () => listActivityResources(),
+    enabled: view === 'activities',
+  });
+
+  const activityName = useMemo(() => {
+    const m = new Map<string, string>();
+    (activitiesQ.data || []).forEach((a) => m.set(a.id, a.name));
+    return m;
+  }, [activitiesQ.data]);
+  const resourceName = useMemo(() => {
+    const m = new Map<string, string>();
+    (resourcesQ.data || []).forEach((r) => m.set(r.id, r.name));
+    return m;
+  }, [resourcesQ.data]);
+
+  // ── New-activity-booking form state ───────────────────────────────────────
+  const [actFormOpen, setActFormOpen] = useState(false);
+  const [aActivity, setAActivity] = useState<string | undefined>(undefined);
+  const [aResource, setAResource] = useState<string | undefined>(undefined);
+  const [aGuest, setAGuest] = useState<Guest | null>(null);
+  const [aGuestQuery, setAGuestQuery] = useState('');
+  const [aDate, setADate] = useState<string | undefined>(undefined);
+  const [aTime, setATime] = useState('');
+  const [aNote, setANote] = useState('');
+  const [actFormError, setActFormError] = useState<string | null>(null);
+
+  const guestSearchQ = useQuery({
+    queryKey: ['activity-guest-search', aGuestQuery.trim()],
+    queryFn: () => searchGuests(aGuestQuery.trim()),
+    enabled: actFormOpen && !aGuest && aGuestQuery.trim().length >= 2,
+    staleTime: 30_000,
+  });
+
+  const resetActForm = () => {
+    setAActivity(undefined);
+    setAResource(undefined);
+    setAGuest(null);
+    setAGuestQuery('');
+    setADate(undefined);
+    setATime('');
+    setANote('');
+    setActFormError(null);
+  };
+
+  const openActForm = () => {
+    resetActForm();
+    setADate(activityDate);
+    setActFormOpen(true);
+  };
+
+  const createBookingMut = useMutation({
+    mutationFn: createActivityBooking,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['activity-bookings'] });
+      setActFormOpen(false);
+      resetActForm();
+      Alert.alert(tr.app.success, A.created);
+    },
+    onError: (e: unknown) => setActFormError(errorMessage(e, A.createError)),
+  });
+
+  const submitActForm = () => {
+    setActFormError(null);
+    if (!aActivity || !aResource || !aGuest || !aDate || !aTime.trim()) {
+      setActFormError(A.validationMissing);
+      return;
+    }
+    if (!TIME_RE.test(aTime.trim())) {
+      setActFormError(S.validationTime);
+      return;
+    }
+    createBookingMut.mutate({
+      activity_id: aActivity,
+      resource_id: aResource,
+      guest_id: aGuest.id,
+      starts_at: buildStartsAt(aDate, aTime.trim()),
+      note: aNote.trim() || null,
+    });
+  };
+
+  const guestLabel = (g: Guest): string =>
+    [g.first_name, g.last_name].filter(Boolean).join(' ').trim() ||
+    g.full_name ||
+    g.email ||
+    g.phone ||
+    g.id;
 
   // ── New-appointment form state ────────────────────────────────────────────
   const [formOpen, setFormOpen] = useState(false);
@@ -318,6 +466,62 @@ export default function SpaScreen() {
     </Card>
   );
 
+  const renderBooking = (b: ActivityBooking) => (
+    <Card key={b.id} style={{ marginBottom: spacing.sm }} accent={c.primary}>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+        }}
+      >
+        <View style={{ flex: 1, paddingRight: spacing.sm }}>
+          <Body style={{ fontWeight: '600' }}>
+            {activityName.get(b.activity_id) || A.activity}
+          </Body>
+          <Muted>
+            {A.resource}: {resourceName.get(b.resource_id) || '—'}
+          </Muted>
+        </View>
+        <Badge label={activityStatusLabel(b.status)} tone={activityStatusTone(b.status)} />
+      </View>
+      <View style={{ marginTop: spacing.sm, gap: 2 }}>
+        <Muted>
+          {formatDate(b.starts_at)} · {formatTime(b.starts_at)}
+          {b.ends_at ? ` – ${formatTime(b.ends_at)}` : ''}
+        </Muted>
+        {b.note ? <Muted>{b.note}</Muted> : null}
+      </View>
+    </Card>
+  );
+
+  const ViewTab: React.FC<{ value: 'spa' | 'activities'; label: string }> = ({
+    value,
+    label,
+  }) => {
+    const active = view === value;
+    return (
+      <Pressable
+        onPress={() => setView(value)}
+        accessibilityRole="button"
+        testID={`spa-view-${value}`}
+        style={{
+          flex: 1,
+          paddingVertical: spacing.sm,
+          borderRadius: radius.md,
+          alignItems: 'center',
+          backgroundColor: active ? c.primary : c.surfaceAlt,
+          borderWidth: 1,
+          borderColor: active ? c.primary : c.border,
+        }}
+      >
+        <Body style={{ color: active ? c.primaryText : c.text, fontWeight: '600' }}>
+          {label}
+        </Body>
+      </Pressable>
+    );
+  };
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
@@ -325,6 +529,15 @@ export default function SpaScreen() {
     >
       <H1>{S.title}</H1>
 
+      {/* ── View switch: Spa appointments vs Activity scheduler ─────────────── */}
+      <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+        <ViewTab value="spa" label={S.viewSpa} />
+        <ViewTab value="activities" label={S.viewActivities} />
+      </View>
+      <View style={{ height: spacing.md }} />
+
+      {view === 'spa' ? (
+        <>
       {/* ── Appointments (date-selectable) ─────────────────────────────────── */}
       <SectionTitle title={S.appointments} />
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm }}>
@@ -419,6 +632,96 @@ export default function SpaScreen() {
             ))}
           </ListGroup>
         ),
+      )}
+        </>
+      ) : (
+        <>
+      {/* ── Activity bookings (date-based list) ─────────────────────────────── */}
+      <SectionTitle title={A.schedule} />
+      <View style={{ marginBottom: spacing.md }}>
+        <DatePicker
+          value={activityDate}
+          placeholder={S.pickDate}
+          testID="activity-date-picker"
+          onChange={(iso) => setActivityDate(iso || isoDate(new Date()))}
+        />
+      </View>
+
+      <Button
+        title={A.newBooking}
+        icon="add"
+        onPress={openActForm}
+        fullWidth
+        style={{ marginBottom: spacing.md }}
+      />
+
+      {renderSection(
+        bookingsQ,
+        { icon: 'calendar-outline', title: A.noBookings },
+        (items) => <View>{items.map(renderBooking)}</View>,
+      )}
+
+      {/* ── Activity catalogue (list pattern) ──────────────────────────────── */}
+      <SectionTitle title={A.catalog} />
+      {renderSection(
+        activitiesQ,
+        { icon: 'bicycle-outline', title: A.noActivities },
+        (items) => (
+          <ListGroup>
+            {items.map((a, idx) => (
+              <ListRow
+                key={a.id}
+                icon="bicycle-outline"
+                label={a.name}
+                sublabel={[
+                  activityTypeLabel(a.type),
+                  typeof a.duration_min === 'number'
+                    ? `${a.duration_min} ${S.minutes}`
+                    : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                value={
+                  typeof a.price === 'number' && a.price > 0
+                    ? formatCurrency(a.price)
+                    : undefined
+                }
+                showChevron={false}
+                last={idx === items.length - 1}
+              />
+            ))}
+          </ListGroup>
+        ),
+      )}
+
+      {/* ── Activity resources (list pattern) ──────────────────────────────── */}
+      <SectionTitle title={A.resources} />
+      {renderSection(
+        resourcesQ,
+        { icon: 'people-outline', title: A.noResources },
+        (items) => (
+          <ListGroup>
+            {items.map((r, idx) => (
+              <ListRow
+                key={r.id}
+                icon="person-outline"
+                label={r.name}
+                sublabel={[
+                  resourceKindLabel(r.kind),
+                  typeof r.capacity === 'number'
+                    ? `${A.capacity}: ${r.capacity}`
+                    : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                showChevron={false}
+                last={idx === items.length - 1}
+              />
+            ))}
+          </ListGroup>
+        ),
+      )}
+        </>
       )}
 
       {/* ── New-appointment form (standard form pattern) ───────────────────── */}
@@ -598,6 +901,149 @@ export default function SpaScreen() {
             onPress={() => setFormOpen(false)}
           />
           <Button title={S.create} onPress={submitForm} loading={createMut.isPending} />
+        </FormActions>
+      </ActionSheet>
+
+      {/* ── New-activity-booking form (standard form pattern) ──────────────── */}
+      <ActionSheet
+        visible={actFormOpen}
+        onClose={() => setActFormOpen(false)}
+        title={A.newBookingTitle}
+        testID="activity-new-booking-sheet"
+      >
+        <Muted>{A.activity}</Muted>
+        <Card padded={false}>
+          {(activitiesQ.data || []).length === 0 ? (
+            <View style={{ padding: spacing.md }}>
+              <Muted>{A.noActivities}</Muted>
+            </View>
+          ) : (
+            (activitiesQ.data || []).map((a, idx, arr) => (
+              <ListRow
+                key={a.id}
+                icon="bicycle-outline"
+                label={a.name}
+                sublabel={activityTypeLabel(a.type) || undefined}
+                active={aActivity === a.id}
+                showChevron={false}
+                last={idx === arr.length - 1}
+                onPress={() => setAActivity(a.id)}
+              />
+            ))
+          )}
+        </Card>
+
+        <Muted>{A.resource}</Muted>
+        <Card padded={false}>
+          {(resourcesQ.data || []).length === 0 ? (
+            <View style={{ padding: spacing.md }}>
+              <Muted>{A.noResources}</Muted>
+            </View>
+          ) : (
+            (resourcesQ.data || []).map((r, idx, arr) => (
+              <ListRow
+                key={r.id}
+                icon="person-outline"
+                label={r.name}
+                sublabel={resourceKindLabel(r.kind) || undefined}
+                active={aResource === r.id}
+                showChevron={false}
+                last={idx === arr.length - 1}
+                onPress={() => setAResource(r.id)}
+              />
+            ))
+          )}
+        </Card>
+
+        <Muted>{A.guest}</Muted>
+        {aGuest ? (
+          <Card padded={false}>
+            <ListRow
+              icon="person-circle-outline"
+              label={guestLabel(aGuest)}
+              sublabel={aGuest.phone || aGuest.email || undefined}
+              showChevron={false}
+              last
+              onPress={() => {
+                setAGuest(null);
+                setAGuestQuery('');
+              }}
+            />
+          </Card>
+        ) : (
+          <>
+            <Field
+              value={aGuestQuery}
+              onChangeText={setAGuestQuery}
+              placeholder={A.guestSearchPlaceholder}
+              autoCapitalize="none"
+            />
+            {aGuestQuery.trim().length < 2 ? (
+              <Muted>{A.guestSearchHint}</Muted>
+            ) : guestSearchQ.isLoading ? (
+              <SkeletonCard />
+            ) : (guestSearchQ.data || []).length === 0 ? (
+              <Muted>{A.guestNoResults}</Muted>
+            ) : (
+              <Card padded={false}>
+                {(guestSearchQ.data || []).slice(0, 8).map((g, idx, arr) => (
+                  <ListRow
+                    key={g.id}
+                    icon="person-outline"
+                    label={guestLabel(g)}
+                    sublabel={g.phone || g.email || undefined}
+                    showChevron={false}
+                    last={idx === arr.length - 1}
+                    onPress={() => {
+                      setAGuest(g);
+                      setAGuestQuery('');
+                    }}
+                  />
+                ))}
+              </Card>
+            )}
+          </>
+        )}
+
+        <Muted>{S.dateLabel}</Muted>
+        <DatePicker
+          value={aDate}
+          placeholder={S.pickDate}
+          testID="activity-form-date"
+          onChange={(iso) => setADate(iso)}
+        />
+
+        <Field
+          label={S.time}
+          value={aTime}
+          onChangeText={setATime}
+          placeholder={S.timePlaceholder}
+          keyboardType="numbers-and-punctuation"
+          autoCapitalize="none"
+        />
+        <Field
+          label={A.note}
+          value={aNote}
+          onChangeText={setANote}
+          placeholder={A.notePlaceholder}
+          multiline
+        />
+
+        {actFormError ? (
+          <Body style={{ color: c.danger }}>{actFormError}</Body>
+        ) : null}
+
+        <FormActions>
+          <Button
+            title={tr.app.cancel}
+            variant="secondary"
+            onPress={() => setActFormOpen(false)}
+          />
+          <Button
+            title={A.create}
+            onPress={submitActForm}
+            loading={createBookingMut.isPending}
+          />
         </FormActions>
       </ActionSheet>
     </ScrollView>

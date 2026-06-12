@@ -127,3 +127,87 @@ export async function createSpaAppointment(
 ): Promise<SpaAppointment> {
   return api.post<SpaAppointment>('/api/spa/appointments', input);
 }
+
+// ── Activity Scheduler ──────────────────────────────────────────────────────
+// Mirror of backend/domains/pms/activity_scheduler_router.py (prefix
+// /api/activities). These cover general (non-spa) activities such as golf,
+// tennis or yoga: a catalogue of activities, the resources (instructor / venue
+// / equipment) they consume, and the date-based bookings that schedule them.
+// Reads require any authenticated user; the create posts to a backend that
+// re-enforces authorization, so a non-privileged user just sees the error.
+
+export type Activity = {
+  id: string;
+  name: string;
+  type?: string;
+  duration_min?: number;
+  price?: number;
+  capacity?: number;
+  description?: string | null;
+  active?: boolean;
+};
+
+export type ActivityResource = {
+  id: string;
+  name: string;
+  kind?: 'instructor' | 'venue' | 'equipment' | string;
+  activity_types?: string[];
+  capacity?: number;
+  active?: boolean;
+};
+
+export type ActivityBooking = {
+  id: string;
+  activity_id: string;
+  resource_id: string;
+  guest_id: string;
+  starts_at: string;
+  ends_at?: string;
+  duration_min?: number;
+  note?: string | null;
+  status?: string;
+};
+
+// GET /api/activities
+export async function listActivities(type?: string): Promise<Activity[]> {
+  const res = await api.get<Activity[]>('/api/activities', type ? { type } : undefined);
+  return res ?? [];
+}
+
+// GET /api/activities/resources
+export async function listActivityResources(kind?: string): Promise<ActivityResource[]> {
+  const res = await api.get<ActivityResource[]>(
+    '/api/activities/resources',
+    kind ? { kind } : undefined,
+  );
+  return res ?? [];
+}
+
+// GET /api/activities/bookings?date=YYYY-MM-DD
+export async function listActivityBookings(params?: {
+  date?: string;
+  resource_id?: string;
+}): Promise<ActivityBooking[]> {
+  const res = await api.get<ActivityBooking[]>('/api/activities/bookings', params);
+  return res ?? [];
+}
+
+// Payload for POST /api/activities/bookings. The backend derives ends_at and
+// the effective duration from the chosen activity, so the client sends the
+// activity, resource, guest, the start instant and an optional note.
+export type CreateActivityBookingInput = {
+  activity_id: string;
+  resource_id: string;
+  guest_id: string;
+  // ISO-8601 datetime (local wall time → ISO). Backend treats naive as UTC.
+  starts_at: string;
+  note?: string | null;
+};
+
+// POST /api/activities/bookings — allowed to throw so the form can surface a
+// 409 (resource busy in that slot) or 404 (activity not found) inline.
+export async function createActivityBooking(
+  input: CreateActivityBookingInput,
+): Promise<ActivityBooking> {
+  return api.post<ActivityBooking>('/api/activities/bookings', input);
+}
