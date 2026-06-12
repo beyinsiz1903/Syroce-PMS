@@ -18,6 +18,10 @@ class OperationContext:
     property_id: str | None = None
     idempotency_key: str | None = None
     correlation_id: str | None = None
+    # Per-request audit attribution — captured at the ASGI boundary and read
+    # back here so service-layer audit writes record the real client.
+    ip_address: str | None = None
+    user_agent: str | None = None
     timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     @classmethod
@@ -29,6 +33,15 @@ class OperationContext:
             is_sa = _is_super_admin(user)
         except Exception:
             is_sa = False
+        # Pull client IP / user-agent from the per-request contextvars unless
+        # the caller explicitly supplied them via overrides.
+        if "ip_address" not in overrides or "user_agent" not in overrides:
+            try:
+                from common.request_context import get_client_ip, get_user_agent
+                overrides.setdefault("ip_address", get_client_ip())
+                overrides.setdefault("user_agent", get_user_agent())
+            except Exception:
+                pass
         return cls(
             tenant_id=getattr(user, "tenant_id", ""),
             actor_id=getattr(user, "id", ""),

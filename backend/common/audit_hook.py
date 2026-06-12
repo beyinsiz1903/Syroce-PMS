@@ -19,9 +19,11 @@ SEVERITY_CRITICAL = "critical"
 
 
 async def _write_audit(db, entry: dict):
-    """Persist audit entry. Silently log on failure — never break the caller."""
+    """Persist audit entry (tamper-evident chain). Silently log on failure —
+    never break the caller."""
     try:
-        await db.audit_logs.insert_one(entry)
+        from core.audit_chain import append_audit_log
+        await append_audit_log(db, entry)
     except Exception as exc:
         logger.warning("audit_hook: write failed — %s", exc)
 
@@ -111,6 +113,8 @@ def audited(
                 "override_reason": kwargs.get("reason"),
                 "correlation_id": correlation_id,
                 "duration_ms": duration_ms,
+                "ip_address": getattr(ctx, "ip_address", None),
+                "user_agent": getattr(ctx, "user_agent", None),
                 "timestamp": datetime.now(UTC).isoformat(),
             }
 

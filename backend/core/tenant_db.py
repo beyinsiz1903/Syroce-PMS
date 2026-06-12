@@ -76,6 +76,19 @@ TENANT_SCOPED_COLLECTIONS: set[str] = {
     "pos_late_charges",
 }
 
+# ── Append-only audit collections (Task #568) ───────────────────
+# Records in these collections are immutable: app code may INSERT and READ but
+# must never update/delete/replace them. The single sanctioned removal from the
+# hot collection is the controlled retention MOVE into the immutable archive,
+# which runs under audit_retention_context() (or a raw system client in Celery).
+APPEND_ONLY_COLLECTIONS: set[str] = {"audit_logs", "audit_logs_archive"}
+
+# The hot collection is the single canonical destination for new audit records.
+# Every insert into it (regardless of call site) is auto-attributed (client
+# IP / user-agent) and tamper-evidently chained at this DB layer, so the chain
+# stays complete even for call sites that bypass append_audit_log().
+HOT_AUDIT_COLLECTION: str = "audit_logs"
+
 # ── Collections that are global (no tenant_id) ──────────────────
 GLOBAL_COLLECTIONS: set[str] = {
     "tenants", "hotel_chains", "system_config", "system_logs",
@@ -87,6 +100,26 @@ GLOBAL_COLLECTIONS: set[str] = {
 
 class TenantViolationError(Exception):
     """Raised when a cross-tenant access attempt is detected."""
+
+
+class AuditImmutabilityError(Exception):
+    """Raised when app code attempts to update/delete an append-only audit record."""
+
+
+# Set True only inside audit_retention_context() — the controlled retention move.
+_audit_retention_ctx: ContextVar[bool] = ContextVar("audit_retention", default=False)
+
+
+@contextmanager
+def audit_retention_context():
+    """Permit the immutability-guarded audit collections to be mutated for the
+    duration of the controlled retention move (archive copy-then-delete). All
+    other code paths through the `db` proxy / get_db() stay append-only."""
+    token = _audit_retention_ctx.set(True)
+    try:
+        yield
+    finally:
+        _audit_retention_ctx.reset(token)
 
 
 # ── Context Management ──────────────────────────────────────────
@@ -342,9 +375,15 @@ class TenantScopedDB:
         coll = raw_db[name]
         if name in GLOBAL_COLLECTIONS:
             if name in _AUTH_CACHE_TENANT_COLLECTIONS:
-                return GlobalCachedCollection(coll, name)
-            return coll
-        return TenantScopedCollection(coll, tenant_id, name)
+                inner = GlobalCachedCollection(coll, name)
+            else:
+                inner = coll
+        else:
+            inner = TenantScopedCollection(coll, tenant_id, name)
+        # Immutability guard: audit collections are append-only for app code.
+        if name in APPEND_ONLY_COLLECTIONS:
+            return AppendOnlyCollection(inner, name)
+        return inner
 
     def __getitem__(self, name: str):
         return self.__getattr__(name)
@@ -386,6 +425,126 @@ class GlobalCachedCollection:
                 _invalidate_auth_caches_for(self._name, payload)
             return result
         return _wrapped
+
+
+class AppendOnlyCollection:
+    """
+    Immutability + canonical-write guard (Task #568). Wraps an audit collection
+    handle and:
+
+    - BLOCKS every update/delete/replace from application code (records are
+      immutable). The only sanctioned mutation is the controlled retention move,
+      which runs inside audit_retention_context().
+    - Makes every insert into the hot audit collection the single canonical write
+      path: it auto-stamps the request's client IP / user-agent (when the caller
+      omitted them) and tamper-evidently chains the record, so call sites that
+      insert directly (bypassing append_audit_log) still produce attributed,
+      chained records. This keeps the chain verifier trustworthy — there are no
+      silently-unchained post-genesis rows from normal flows.
+
+    Chaining is idempotent: a record already carrying `record_hash` (linked by
+    append_audit_log) is passed straight through, never re-chained.
+    """
+
+    __slots__ = ("_inner", "_name")
+
+    _BLOCKED_OPS = frozenset({
+        "update_one", "update_many",
+        "delete_one", "delete_many",
+        "find_one_and_update", "find_one_and_delete", "find_one_and_replace",
+        "replace_one", "drop", "rename",
+    })
+
+    def __init__(self, inner, name: str):
+        self._inner = inner
+        self._name = name
+
+    def _resolve_tenant_id(self, document) -> str | None:
+        """Best-effort tenant_id for chaining: explicit on the doc, otherwise the
+        scoped collection's tenant, otherwise the current request context."""
+        if isinstance(document, dict):
+            tid = document.get("tenant_id")
+            if tid:
+                return tid
+        tid = getattr(self._inner, "_tenant_id", None)
+        if tid:
+            return tid
+        return _tenant_ctx.get()
+
+    async def _prepare_audit_doc(self, document):
+        """Attribute + chain a hot-collection audit record before it is written.
+
+        No-op for the archive (records are copied verbatim during the retention
+        move and must keep their original chain fields) and while inside
+        audit_retention_context()."""
+        if (
+            self._name != HOT_AUDIT_COLLECTION
+            or _audit_retention_ctx.get()
+            or not isinstance(document, dict)
+        ):
+            return document
+
+        # Attribution: stamp client IP + user-agent when the caller omitted them.
+        try:
+            from common.request_context import get_client_ip, get_user_agent
+            if not document.get("ip_address"):
+                ip = get_client_ip()
+                if ip:
+                    document["ip_address"] = ip
+            if not document.get("user_agent"):
+                ua = get_user_agent()
+                if ua:
+                    document["user_agent"] = ua
+        except Exception:
+            logger.debug("audit attribution fill failed", exc_info=True)
+
+        # Tamper-evident chaining. Idempotent: append_audit_log may already have
+        # linked the record (record_hash present) → leave it untouched.
+        if "record_hash" not in document:
+            tenant_id = self._resolve_tenant_id(document)
+            if tenant_id:
+                document.setdefault("tenant_id", tenant_id)
+                try:
+                    from core.audit_chain import _link_chain
+                    seq, prev_hash, record_hash = await _link_chain(tenant_id, document)
+                    document["seq"] = seq
+                    document["prev_hash"] = prev_hash
+                    document["record_hash"] = record_hash
+                except Exception as exc:
+                    # Best-effort (mirrors append_audit_log): never lose the audit
+                    # event over a chain hiccup. A genuinely unchained post-genesis
+                    # row is surfaced by verify_chain, not hidden.
+                    logger.warning(
+                        "audit chain link failed at DB layer (writing unchained): %s",
+                        exc,
+                    )
+
+        return document
+
+    async def insert_one(self, document, *args, **kwargs):
+        document = await self._prepare_audit_doc(document)
+        return await self._inner.insert_one(document, *args, **kwargs)
+
+    async def insert_many(self, documents, *args, **kwargs):
+        documents = [await self._prepare_audit_doc(d) for d in documents]
+        return await self._inner.insert_many(documents, *args, **kwargs)
+
+    def __getattr__(self, attr: str):
+        if attr in AppendOnlyCollection._BLOCKED_OPS and not _audit_retention_ctx.get():
+            logger.critical(
+                "AUDIT IMMUTABILITY VIOLATION: blocked '%s' on append-only collection '%s'",
+                attr, self._name,
+            )
+            raise AuditImmutabilityError(
+                f"Mutation '{attr}' on append-only audit collection '{self._name}' is "
+                f"forbidden. Audit records are immutable; only inserts and the controlled "
+                f"retention move (audit_retention_context) may alter them."
+            )
+        return getattr(self._inner, attr)
+
+    @property
+    def name(self):
+        return self._inner.name
 
 
 class SchemaOnlyCollection:
@@ -461,25 +620,29 @@ class TenantAwareDBProxy:
         # the in-process tenant doc cache, so wrap it.
         if name in GLOBAL_COLLECTIONS:
             if name in _AUTH_CACHE_TENANT_COLLECTIONS:
-                return GlobalCachedCollection(raw_coll, name)
-            return raw_coll
+                inner = GlobalCachedCollection(raw_coll, name)
+            else:
+                inner = raw_coll
+        else:
+            # Check tenant context
+            tenant_id = _tenant_ctx.get()
+            if tenant_id:
+                inner = TenantScopedCollection(raw_coll, tenant_id, name)
+            elif name in TENANT_SCOPED_COLLECTIONS:
+                if STRICT_TENANT_MODE:
+                    # Schema-only wrapper: allows indexes, blocks data ops
+                    inner = SchemaOnlyCollection(raw_coll, name)
+                else:
+                    # Soft mode: warn but allow (for startup, health, auth)
+                    inner = raw_coll
+            else:
+                # Unknown collection without context → treat as raw
+                inner = raw_coll
 
-        # Check tenant context
-        tenant_id = _tenant_ctx.get()
-
-        if tenant_id:
-            return TenantScopedCollection(raw_coll, tenant_id, name)
-
-        # No tenant context
-        if name in TENANT_SCOPED_COLLECTIONS:
-            if STRICT_TENANT_MODE:
-                # Return schema-only wrapper: allows indexes, blocks data ops
-                return SchemaOnlyCollection(raw_coll, name)
-            # Soft mode: warn but allow (for startup, health, auth)
-            return raw_coll
-
-        # Unknown collection without context → treat as raw
-        return raw_coll
+        # Immutability guard: audit collections are append-only for app code.
+        if name in APPEND_ONLY_COLLECTIONS:
+            return AppendOnlyCollection(inner, name)
+        return inner
 
     def __getitem__(self, name: str):
         return self.__getattr__(name)
@@ -513,13 +676,44 @@ def get_db_for_tenant(tenant_id: str) -> TenantScopedDB:
     return TenantScopedDB(_raw_db, tenant_id)
 
 
+class _SystemAuditGuardDB:
+    """Thin view over the raw system db that keeps the audit collections
+    append-only + canonical (auto-attributed, chained) even on the unscoped
+    system path. Everything else passes straight through to the raw Motor db, so
+    startup indexes, health checks and cross-tenant admin queries are unchanged.
+
+    Without this, call sites that hold a raw system handle (e.g. routers/auth.py
+    does `db = get_system_db()`) would bypass the proxy guard and write
+    unattributed, unchained audit records.
+    """
+
+    __slots__ = ("_raw",)
+
+    def __init__(self, raw):
+        self._raw = raw
+
+    def __getattr__(self, name: str):
+        if name in APPEND_ONLY_COLLECTIONS:
+            return AppendOnlyCollection(self._raw[name], name)
+        return getattr(self._raw, name)
+
+    def __getitem__(self, name: str):
+        if name in APPEND_ONLY_COLLECTIONS:
+            return AppendOnlyCollection(self._raw[name], name)
+        return self._raw[name]
+
+
 def get_system_db():
     """
-    Get the raw (unscoped) database for system operations.
+    Get the (unscoped) database for system operations.
     Only use for: startup indexes, health checks, cross-tenant admin queries.
+
+    The audit collections are still returned append-only + canonical (the
+    immutability guard + auto-attribution/chaining apply); all other collections
+    pass through to the raw Motor db unchanged.
     """
     from core.database import _raw_db
-    return _raw_db
+    return _SystemAuditGuardDB(_raw_db)
 
 
 # ── Descriptor for repository class-level collection access ────

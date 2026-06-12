@@ -22,9 +22,12 @@ def _ts() -> str:
 
 async def _cleanup(tenant_id: str) -> None:
     from core.database import db
+    from core.tenant_db import audit_retention_context
     await db.bookings.delete_many({"tenant_id": tenant_id})
     await db.room_night_locks.delete_many({"tenant_id": tenant_id})
-    await db.audit_logs.delete_many({"tenant_id": tenant_id})
+    # audit_logs is append-only (Task #568); test teardown uses the sanctioned escape.
+    with audit_retention_context():
+        await db.audit_logs.delete_many({"tenant_id": tenant_id})
 
 
 async def _reset_alert_state() -> None:

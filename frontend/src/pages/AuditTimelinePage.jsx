@@ -8,7 +8,8 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
   ArrowLeft, Clock, Filter, Search, User, Shield, AlertTriangle,
-  ChevronDown, ChevronRight, RefreshCw, Loader2, FileText, Eye
+  ChevronDown, ChevronRight, RefreshCw, Loader2, FileText, Eye,
+  Globe, Monitor, ShieldCheck, ShieldAlert
 } from "lucide-react";
 
 const API = "";
@@ -62,10 +63,20 @@ function TimelineEvent({ event, expanded, onToggle }) {
               {event.result_status}
             </Badge>
           </div>
-          <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500">
+          <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500 flex-wrap">
             <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{time}</span>
             <span className="flex items-center gap-1"><User className="w-3 h-3" />{event.actor_role || "system"}</span>
             {event.target_id && <span className="font-mono">{event.target_id.substring(0, 8)}...</span>}
+            {event.ip_address && (
+              <span data-testid="event-ip" className="flex items-center gap-1 font-mono" title="IP adresi">
+                <Globe className="w-3 h-3" />{event.ip_address}
+              </span>
+            )}
+            {event.user_agent && (
+              <span data-testid="event-device" className="flex items-center gap-1 max-w-[220px] truncate" title={event.user_agent}>
+                <Monitor className="w-3 h-3 shrink-0" /><span className="truncate">{event.user_agent}</span>
+              </span>
+            )}
             {event.duration_ms && <span>{event.duration_ms}ms</span>}
           </div>
         </div>
@@ -84,8 +95,9 @@ export default function AuditTimelinePage({ user, tenant, onLogout }) {
   const navigate = useNavigate();
   const [events, setEvents] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [chain, setChain] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ severity: "", actor: "", entity_type: "", limit: 50 });
+  const [filters, setFilters] = useState({ severity: "", actor: "", entity_type: "", ip_address: "", user_agent: "", limit: 50 });
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [searchEntity, setSearchEntity] = useState({ type: "", id: "" });
   const [entityTrail, setEntityTrail] = useState(null);
@@ -102,12 +114,17 @@ export default function AuditTimelinePage({ user, tenant, onLogout }) {
       if (filters.entity_type) params.append("entity_type", filters.entity_type);
       params.append("limit", filters.limit);
 
-      const [timelineRes, summaryRes] = await Promise.all([
+      if (filters.ip_address) params.append("ip_address", filters.ip_address);
+      if (filters.user_agent) params.append("user_agent", filters.user_agent);
+
+      const [timelineRes, summaryRes, chainRes] = await Promise.all([
         axios.get(`/audit/timeline?${params}`, { headers }),
         axios.get(`/audit/summary?period=24h`, { headers }),
+        axios.get(`/audit/chain/verify`, { headers }).catch(() => null),
       ]);
       setEvents(timelineRes.data?.events || timelineRes.data?.data?.events || []);
       setSummary(summaryRes.data?.data || summaryRes.data || null);
+      setChain(chainRes ? (chainRes.data?.data || chainRes.data || null) : null);
     } catch (err) {
       console.error("Failed to fetch timeline:", err);
     }
@@ -151,6 +168,31 @@ export default function AuditTimelinePage({ user, tenant, onLogout }) {
             Refresh
           </Button>
         </div>
+
+        {/* Tamper-evidence: hash-chain integrity status (read-only) */}
+        {chain && (
+          <div
+            data-testid="chain-status"
+            className={`flex items-center gap-2 mb-4 px-3 py-2 rounded border text-sm ${
+              chain.degraded
+                ? "bg-amber-50 border-amber-300 text-amber-800"
+                : chain.ok
+                ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+                : "bg-red-50 border-red-300 text-red-800"
+            }`}
+          >
+            {chain.degraded ? (
+              <><AlertTriangle className="w-4 h-4" /> Zincir doğrulanamadı (geçici hata). Lütfen yenileyin.</>
+            ) : chain.ok ? (
+              <><ShieldCheck className="w-4 h-4" /> Denetim zinciri bütünlüğü doğrulandı — {chain.checked || 0} kayıt, kurcalama tespit edilmedi.</>
+            ) : (
+              <><ShieldAlert className="w-4 h-4" /> UYARI: Denetim zinciri kırık — {(chain.breaks || []).length} kayıt değiştirilmiş/silinmiş olabilir
+                {(chain.breaks || []).length > 0 && (
+                  <span className="font-mono ml-1">(seq: {(chain.breaks || []).slice(0, 5).map((b) => b.seq).join(", ")})</span>
+                )}.</>
+            )}
+          </div>
+        )}
 
         {/* Summary Cards */}
         {summary && (
@@ -210,6 +252,12 @@ export default function AuditTimelinePage({ user, tenant, onLogout }) {
                   <Input data-testid="filter-actor" placeholder="Actor..." value={filters.actor}
                     onChange={(e) => setFilters(p => ({...p, actor: e.target.value}))}
                     className="text-xs h-7 w-32" />
+                  <Input data-testid="filter-ip" placeholder="IP adresi..." value={filters.ip_address}
+                    onChange={(e) => setFilters(p => ({...p, ip_address: e.target.value}))}
+                    className="text-xs h-7 w-32" />
+                  <Input data-testid="filter-device" placeholder="Cihaz/tarayıcı..." value={filters.user_agent}
+                    onChange={(e) => setFilters(p => ({...p, user_agent: e.target.value}))}
+                    className="text-xs h-7 w-40" />
                 </div>
               </CardContent>
             </Card>

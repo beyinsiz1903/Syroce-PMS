@@ -785,19 +785,45 @@ async def _archive_old_data_async():
             results['archived']['bookings'] = len(old_bookings)
             logger.info(f"Archived {len(old_bookings)} old bookings")
 
-        # Archive old audit logs (> 1 year)
+        # Archive old audit logs (> 1 year).
+        #
+        # Audit immutability invariant (Task #568): audit records are
+        # append-only. The ONLY sanctioned removal from the hot `audit_logs`
+        # collection is this controlled retention MOVE into the immutable
+        # `audit_logs_archive` collection — and only AFTER the copy is proven
+        # durable. We never blind-delete: each record is removed from the hot
+        # collection one-by-one keyed on the SAME `_id` we just confirmed
+        # archived, so a partial/failed copy can never lose an audit row.
         audit_cutoff = datetime.now(UTC) - timedelta(days=365)
         old_logs = await db.audit_logs.find({
             'timestamp': {'$lt': audit_cutoff}
         }).to_list(50000)
 
         if old_logs:
-            await db.audit_logs_archive.insert_many(old_logs)
-            log_ids = [log['_id'] for log in old_logs]
-            await db.audit_logs.delete_many({'_id': {'$in': log_ids}})
+            from core.tenant_db import audit_retention_context
+            archived_count = 0
+            # The append-only immutability guard (Task #568) forbids deleting an
+            # audit row anywhere EXCEPT this controlled retention move; declare it
+            # explicitly so the sanctioned escape is auditable and future-proof
+            # even if this handle is ever routed through the guarded proxy.
+            with audit_retention_context():
+                for log in old_logs:
+                    _id = log.get('_id')
+                    if _id is None:
+                        continue
+                    # Idempotent copy: skip if this record is already in the
+                    # immutable archive (re-run safety), else insert it.
+                    already = await db.audit_logs_archive.find_one({'_id': _id}, {'_id': 1})
+                    if already is None:
+                        await db.audit_logs_archive.insert_one(log)
+                    # Verify the archive copy is durable before removing the hot row.
+                    confirmed = await db.audit_logs_archive.find_one({'_id': _id}, {'_id': 1})
+                    if confirmed is not None:
+                        await db.audit_logs.delete_one({'_id': _id})
+                        archived_count += 1
 
-            results['archived']['audit_logs'] = len(old_logs)
-            logger.info(f"Archived {len(old_logs)} old audit logs")
+            results['archived']['audit_logs'] = archived_count
+            logger.info(f"Archived {archived_count} old audit logs (immutable move)")
 
         # Archive old closed folios
         old_folios = await db.folios.find({

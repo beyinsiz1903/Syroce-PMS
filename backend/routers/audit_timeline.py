@@ -88,6 +88,8 @@ async def get_audit_timeline(
     action: str | None = None,
     severity: str | None = None,
     entity_type: str | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     cursor: str | None = None,
     current_user: User = Depends(get_current_user),
@@ -130,6 +132,14 @@ async def get_audit_timeline(
         query["severity"] = severity
     if entity_type:
         query["target_type"] = entity_type
+    if ip_address:
+        from security.query_safety import safe_search_term
+        if (_ip := safe_search_term(ip_address)):
+            query["ip_address"] = {"$regex": _ip, "$options": "i"}
+    if user_agent:
+        from security.query_safety import safe_search_term
+        if (_ua := safe_search_term(user_agent)):
+            query["user_agent"] = {"$regex": _ua, "$options": "i"}
 
     try:
         # Exclude the heavy before/after entity-diff snapshots from this flat
@@ -292,6 +302,39 @@ async def get_audit_summary(
         "by_actor": {d["_id"]: d["count"] for d in data.get("by_actor", []) if d["_id"]},
         "by_result": {d["_id"]: d["count"] for d in data.get("by_result", []) if d["_id"]},
     }
+
+
+@router.get("/chain/verify")
+async def verify_audit_chain(
+    limit: int = Query(default=5000, ge=1, le=50000),
+    current_user: User = Depends(get_current_user),
+    # Tamper-evidence is an operator/admin concern — gate behind the same
+    # audit-log permission used by the sensitive message reports.
+    _perm=Depends(require_op("view_audit_log")),
+):
+    """Task #568 — Denetim zinciri bütünlük doğrulaması.
+
+    Çağıranın tenant'ına ait append-only audit kayıtlarının hash zincirini
+    (`record_hash` / `prev_hash`) doğrular. Herhangi bir kayıt silinmiş ya da
+    değiştirilmişse zincir yeniden hesaplandığında uyuşmaz ve `ok=false` +
+    kırılma noktaları (`breaks`) döner. Sadece okuma; hiçbir kaydı değiştirmez.
+    """
+    ctx = OperationContext.from_user(current_user)
+    try:
+        from core.audit_chain import verify_chain
+        result = await verify_chain(ctx.tenant_id, limit=limit)
+        return result
+    except Exception:
+        logger.exception("audit chain verification failed")
+        # Fail visible-but-safe: report degraded so the UI can warn the
+        # operator rather than silently implying a healthy chain.
+        return {
+            "ok": False,
+            "checked": 0,
+            "breaks": [],
+            "last_seq": None,
+            "degraded": True,
+        }
 
 
 @router.get("/urgent-message-report")

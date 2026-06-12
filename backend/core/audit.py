@@ -27,6 +27,15 @@ async def log_audit_event(
     mesaj kötüye kullanımının izlenmesi). Mevcut çağıranlar için davranış
     değişmez.
     """
+    # Capture the real client IP + device for this request (best-effort).
+    try:
+        from common.request_context import get_client_ip, get_user_agent
+        ip_address = get_client_ip()
+        user_agent = get_user_agent()
+    except Exception:
+        ip_address = None
+        user_agent = None
+
     timestamp = datetime.now(UTC).isoformat()
     audit_log = {
         "id": str(uuid.uuid4()),
@@ -52,10 +61,17 @@ async def log_audit_event(
         "severity": severity,
         "duration_ms": None,
         "override_reason": None,
-        "ip_address": None,
-        "user_agent": None,
+        "ip_address": ip_address,
+        "user_agent": user_agent,
         "timestamp": timestamp,
     }
     audit_copy = audit_log.copy()
-    await db.audit_logs.insert_one(audit_copy)
+    # Callers may omit `db` (e.g. router handlers that just want a guaranteed
+    # audit record). Fall back to the shared handle so append_audit_log never
+    # dereferences None and silently drops a critical-mutation audit entry.
+    if db is None:
+        from core.database import db as _default_db
+        db = _default_db
+    from core.audit_chain import append_audit_log
+    await append_audit_log(db, audit_copy)
     return audit_log

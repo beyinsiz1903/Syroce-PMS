@@ -95,6 +95,24 @@ async def void_payment(
         {'$set': {'balance': balance}}
     )
 
+    # Task #568 — kritik finansal mutasyon: tamper-evident audit trail'e
+    # before/after snapshot ile yaz (IP/UA + hash zinciri otomatik eklenir).
+    try:
+        from core.audit import log_audit_event
+        await log_audit_event(
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            action="folio_payment_voided",
+            entity_type="payment",
+            entity_id=payment_id,
+            details=f"Payment voided on folio {folio_id}: {void_reason}",
+            before_value={"voided": False, "amount": payment.get('amount')},
+            after_value={"voided": True, "void_reason": void_reason, "voided_by": current_user.id, "new_balance": balance},
+            severity="warning",
+        )
+    except Exception:
+        logger.exception("audit log for void_payment failed")
+
     return {"message": "Payment voided successfully"}
 
 # ── Folio by Booking ID (used by ReservationCalendar sidebar) ──

@@ -32,6 +32,11 @@ _AUDIT_INDEXES: list[tuple[str, list[tuple[str, int]], str, dict]] = [
     ("tenant_settings", [("tenant_id", 1)], "idx_tenant_settings_tenant", {}),
     ("kbs_reports", [("tenant_id", 1), ("report_date", -1)], "idx_kbs_reports_tenant_date", {}),
     ("room_blocks", [("tenant_id", 1), ("start_date", 1), ("end_date", 1)], "idx_room_blocks_tenant_range", {}),
+    # Task #568 — tamper-evident audit chain walk: ordered by per-tenant `seq`.
+    # Backs both the chain verifier and the chained-record reads.
+    ("audit_logs", [("tenant_id", 1), ("seq", 1)], "idx_audit_logs_tenant_seq", {}),
+    # IP filter on the audit timeline.
+    ("audit_logs", [("tenant_id", 1), ("ip_address", 1)], "idx_audit_logs_tenant_ip", {}),
 ]
 
 

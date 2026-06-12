@@ -14,6 +14,12 @@ import logging
 
 import jwt
 
+from common.request_context import (
+    clear_request_context,
+    client_ip_from_headers,
+    set_request_context,
+    user_agent_from_headers,
+)
 from core.tenant_db import clear_tenant_context, set_tenant_context
 
 logger = logging.getLogger("core.tenant_middleware")
@@ -56,14 +62,26 @@ class TenantContextMiddleware:
             return
 
         path = scope.get("path", "")
+        raw_headers = scope.get("headers", [])
 
-        # Skip public/auth endpoints
+        # Capture client IP + user-agent for the audit trail on EVERY request
+        # (including public/auth paths — failed logins must be attributable).
+        set_request_context(
+            client_ip_from_headers(raw_headers, scope.get("client")),
+            user_agent_from_headers(raw_headers),
+        )
+
+        # Skip tenant scoping for public/auth endpoints, but keep the request
+        # context set above so any audit write there still records IP/device.
         if any(path.startswith(p) for p in _PUBLIC_PREFIXES + _AUTH_PATHS):
-            await self.app(scope, receive, send)
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                clear_request_context()
             return
 
         # Extract JWT and set tenant context
-        tenant_id = self._extract_tenant_id(scope.get("headers", []))
+        tenant_id = self._extract_tenant_id(raw_headers)
         if tenant_id:
             set_tenant_context(tenant_id)
 
@@ -71,6 +89,7 @@ class TenantContextMiddleware:
             await self.app(scope, receive, send)
         finally:
             clear_tenant_context()
+            clear_request_context()
 
     def _extract_tenant_id(self, raw_headers: list) -> str:
         for key, value in raw_headers:
