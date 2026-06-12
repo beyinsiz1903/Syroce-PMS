@@ -1,16 +1,9 @@
 import React, { useMemo, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert,
-  FlatList,
-  Modal,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
+  ActionButton,
+  ActionSheet,
   Badge,
   Button,
   Card,
@@ -18,8 +11,10 @@ import {
   H1,
   H2,
   Muted,
+  SegmentedActions,
   SkeletonCard,
 } from '../../src/components/ui';
+import { FilterChips } from '../../src/components/FilterChips';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { spacing, radius, useTheme, roomStatusColor } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -33,6 +28,7 @@ import {
   RoomTask,
   updateRoomStatus,
 } from '../../src/api/rooms';
+import { completeTask, startTask } from '../../src/api/housekeeping';
 import { haptic } from '../../src/hooks/useHaptic';
 import { isOffline } from '../../src/utils/errors';
 
@@ -48,6 +44,31 @@ const STATUS_OPTIONS = [
   'out_of_order',
 ] as const;
 type StatusOption = (typeof STATUS_OPTIONS)[number];
+
+// Status filter chips — some chips fold several backend statuses into one
+// scannable bucket (ready = sellable, attention = needs an engineer).
+const STATUS_FILTERS = [
+  { value: 'all', label: tr.housekeeping.all },
+  { value: 'dirty', label: tr.housekeeping.statuses.dirty },
+  { value: 'cleaning', label: tr.housekeeping.statuses.cleaning },
+  { value: 'ready', label: tr.housekeeping.filterReady },
+  { value: 'occupied', label: tr.housekeeping.statuses.occupied },
+  { value: 'attention', label: tr.housekeeping.filterAttention },
+];
+
+function statusMatches(room: Room, filter: string): boolean {
+  const s = (room.status || '').toLowerCase();
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'ready':
+      return ['available', 'inspected', 'clean'].includes(s);
+    case 'attention':
+      return ['maintenance', 'out_of_order'].includes(s);
+    default:
+      return s === filter;
+  }
+}
 
 const TASK_TYPES = ['cleaning', 'inspection', 'maintenance'] as const;
 type TaskType = (typeof TASK_TYPES)[number];
@@ -81,6 +102,7 @@ export default function RoomsScreen() {
   const c = useTheme();
   const qc = useQueryClient();
   const [floor, setFloor] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const rooms = useQuery({ queryKey: ['rooms'], queryFn: listRooms });
   const roomTasks = useQuery({ queryKey: ['room-tasks'], queryFn: listRoomTasks });
 
@@ -128,7 +150,6 @@ export default function RoomsScreen() {
   const submitAssign = async () => {
     if (!assignRoom) return;
     if (!staffSel) {
-      Alert.alert(tr.app.error, tr.housekeeping.assignNeedStaff);
       return;
     }
     setSubmitting(true);
@@ -146,14 +167,62 @@ export default function RoomsScreen() {
       qc.invalidateQueries({ queryKey: ['rooms'] });
       qc.invalidateQueries({ queryKey: ['my-tasks'] });
       qc.invalidateQueries({ queryKey: ['room-tasks'] });
-      Alert.alert(tr.app.success, tr.housekeeping.assignSuccess);
     } catch {
       haptic.error();
-      Alert.alert(tr.app.error, tr.errors.generic);
     } finally {
       setSubmitting(false);
     }
   };
+
+  // ── One-tap start / complete with optimistic ['room-tasks'] cache update ──
+  // Start flips the task → in_progress in-place; complete drops it from the
+  // open list (a completed task is no longer "open"). Both roll back on error
+  // and re-sync rooms + the shared hub feed on settle.
+  const startMut = useMutation({
+    mutationFn: (taskId: string) => startTask(taskId),
+    onMutate: async (taskId: string) => {
+      haptic.tap();
+      await qc.cancelQueries({ queryKey: ['room-tasks'] });
+      const prev = qc.getQueryData<RoomTask[]>(['room-tasks']);
+      qc.setQueryData<RoomTask[]>(['room-tasks'], (data) =>
+        (data || []).map((t) => (t.id === taskId ? { ...t, status: 'in_progress' } : t)),
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['room-tasks'], ctx.prev);
+      haptic.error();
+    },
+    onSuccess: () => haptic.success(),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['room-tasks'] });
+      qc.invalidateQueries({ queryKey: ['rooms'] });
+      qc.invalidateQueries({ queryKey: ['my-tasks'] });
+    },
+  });
+
+  const completeMut = useMutation({
+    mutationFn: (taskId: string) => completeTask(taskId),
+    onMutate: async (taskId: string) => {
+      haptic.tap();
+      await qc.cancelQueries({ queryKey: ['room-tasks'] });
+      const prev = qc.getQueryData<RoomTask[]>(['room-tasks']);
+      qc.setQueryData<RoomTask[]>(['room-tasks'], (data) =>
+        (data || []).filter((t) => t.id !== taskId),
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['room-tasks'], ctx.prev);
+      haptic.error();
+    },
+    onSuccess: () => haptic.success(),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['room-tasks'] });
+      qc.invalidateQueries({ queryKey: ['rooms'] });
+      qc.invalidateQueries({ queryKey: ['my-tasks'] });
+    },
+  });
 
   const taskTypeLabel = (t: TaskType): string =>
     t === 'cleaning'
@@ -176,11 +245,20 @@ export default function RoomsScreen() {
     return Array.from(set).sort();
   }, [rooms.data]);
 
+  const floorFilters = useMemo(
+    () => [
+      { value: 'all', label: tr.housekeeping.all },
+      ...floors.map((f) => ({ value: f, label: `${tr.housekeeping.floor} ${f}` })),
+    ],
+    [floors],
+  );
+
   const filtered = useMemo(() => {
-    const list = rooms.data || [];
-    if (floor === 'all') return list;
-    return list.filter((r) => String(r.floor) === floor);
-  }, [rooms.data, floor]);
+    let list = rooms.data || [];
+    if (floor !== 'all') list = list.filter((r) => String(r.floor) === floor);
+    if (statusFilter !== 'all') list = list.filter((r) => statusMatches(r, statusFilter));
+    return list;
+  }, [rooms.data, floor, statusFilter]);
 
   // Urgency-first ordering so the rooms that need action surface at the top
   // (urgent/high open tasks, then dirty/out-of-order, then the rest). Within an
@@ -219,11 +297,10 @@ export default function RoomsScreen() {
 
   const offline = rooms.isError && isOffline(rooms.error);
 
-  // Status flips are applied straight from the status sheet. The success/error
-  // signals use Alert (a no-op on Expo Web) for native polish, but the
-  // deterministic cross-platform signal is the optimistic cache update + the
-  // PUT round-trip itself + the modal closing — so the flow is fully usable and
-  // testable on web, not just native.
+  // Status flips are applied straight from the status sheet. The deterministic
+  // cross-platform signal is the optimistic cache update + the PUT round-trip
+  // itself + the sheet closing — so the flow is fully usable and testable on
+  // web (no reliance on the native success Alert).
   const applyStatus = async (r: Room, s: StatusOption) => {
     const prev = qc.getQueryData<Room[]>(['rooms']) || [];
     qc.setQueryData<Room[]>(['rooms'], (data) =>
@@ -234,26 +311,15 @@ export default function RoomsScreen() {
       await updateRoomStatus(r.id, s);
       haptic.success();
       qc.invalidateQueries({ queryKey: ['rooms'] });
-      Alert.alert(tr.app.success, tr.housekeeping.statusUpdated);
     } catch {
       qc.setQueryData<Room[]>(['rooms'], prev);
       haptic.error();
-      Alert.alert(tr.app.error, tr.errors.generic);
     }
   };
 
   const openStatus = (r: Room) => {
     haptic.tap();
     setStatusRoom(r);
-  };
-
-  const onLongPress = (r: Room) => {
-    haptic.tap();
-    Alert.alert(`Oda ${r.room_number}`, tr.housekeeping.longPressHint, [
-      { text: tr.housekeeping.changeStatus, onPress: () => openStatus(r) },
-      { text: tr.housekeeping.assignTask, onPress: () => openAssign(r) },
-      { text: tr.app.cancel, style: 'cancel' },
-    ]);
   };
 
   const openTasks = (r: Room) => {
@@ -294,9 +360,7 @@ export default function RoomsScreen() {
     }
   };
 
-  const tasksRoomList: RoomTask[] = tasksRoom
-    ? tasksByRoom.get(tasksRoom.id) || []
-    : [];
+  const tasksRoomList: RoomTask[] = tasksRoom ? tasksByRoom.get(tasksRoom.id) || [] : [];
 
   const renderRoom = ({ item: r }: { item: Room }) => {
     const color = roomStatusColor(r.status, c);
@@ -306,8 +370,6 @@ export default function RoomsScreen() {
     return (
       <Pressable
         onPress={() => openTasks(r)}
-        onLongPress={() => onLongPress(r)}
-        delayLongPress={350}
         accessibilityLabel={
           `Oda ${r.room_number}, durum ${label}` +
           (openCount ? `, ${openCount} ${tr.housekeeping.openTasks}` : '')
@@ -335,9 +397,7 @@ export default function RoomsScreen() {
               ) : null}
               {/* Tap-twin of a swipe-to-clean gesture: dirty rooms get a single
                   thumb-zone action to flip straight to "Temizleniyor" without
-                  opening the status sheet. (Real Swipeable is intentionally
-                  avoided — no GestureHandlerRootView at the root, and it would
-                  break the zero-console Expo Web gate.) */}
+                  opening the status sheet. */}
               {(r.status || '').toLowerCase() === 'dirty' ? (
                 <Button
                   title={tr.housekeeping.quickClean}
@@ -352,11 +412,9 @@ export default function RoomsScreen() {
                   }}
                 />
               ) : null}
-              {/* Direct tap entries to the status + assign sheets. The
-                  long-press action menu (above) relies on the native Alert,
-                  which is a no-op on Expo Web — these buttons keep both flows
-                  reachable (and discoverable) on every platform, and give the
-                  e2e a stable affordance to open each modal. */}
+              {/* Direct tap entries to the status + assign sheets — discoverable
+                  on every platform and a stable e2e affordance to open each
+                  sheet. */}
               <Button
                 title={tr.housekeeping.changeStatus}
                 variant="secondary"
@@ -427,27 +485,9 @@ export default function RoomsScreen() {
         </Card>
       ) : null}
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.sm }}
-      >
-        <Button
-          title={tr.housekeeping.all}
-          variant={floor === 'all' ? 'primary' : 'secondary'}
-          onPress={() => setFloor('all')}
-          style={{ flexShrink: 0 }}
-        />
-        {floors.map((f) => (
-          <Button
-            key={f}
-            title={`${tr.housekeeping.floor} ${f}`}
-            variant={floor === f ? 'primary' : 'secondary'}
-            onPress={() => setFloor(f)}
-            style={{ flexShrink: 0 }}
-          />
-        ))}
-      </ScrollView>
+      <FilterChips options={floorFilters} value={floor} onChange={setFloor} />
+      <FilterChips options={STATUS_FILTERS} value={statusFilter} onChange={setStatusFilter} />
+      <View style={{ height: spacing.sm }} />
 
       {rooms.isLoading ? (
         <View style={{ gap: spacing.sm }}>
@@ -460,6 +500,7 @@ export default function RoomsScreen() {
           data={sortedRooms}
           keyExtractor={(r) => r.id}
           renderItem={renderRoom}
+          contentContainerStyle={{ paddingBottom: spacing.xxl }}
           refreshControl={
             <RefreshControl
               refreshing={
@@ -473,268 +514,226 @@ export default function RoomsScreen() {
               tintColor={c.primary}
             />
           }
-          ListEmptyComponent={
-            <EmptyState icon="bed-outline" title={tr.app.empty} />
-          }
+          ListEmptyComponent={<EmptyState icon="bed-outline" title={tr.app.empty} />}
         />
       )}
 
-      <Modal
+      {/* ── Open-tasks viewer + one-tap start/complete ────────────────────── */}
+      <ActionSheet
         visible={tasksRoom !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setTasksRoom(null)}
+        onClose={() => setTasksRoom(null)}
+        title={
+          tr.housekeeping.openTasksTitle + (tasksRoom ? ` · Oda ${tasksRoom.room_number}` : '')
+        }
+        testID="hk-tasks-modal"
       >
-        <Pressable
-          onPress={() => setTasksRoom(null)}
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
-        >
-          <Pressable
-            onPress={() => {}}
-            style={{
-              backgroundColor: c.bg,
-              borderTopLeftRadius: radius.lg,
-              borderTopRightRadius: radius.lg,
-              padding: spacing.lg,
-              maxHeight: '85%',
-            }}
-          >
-            <H2>
-              {tr.housekeeping.openTasksTitle}
-              {tasksRoom ? ` · Oda ${tasksRoom.room_number}` : ''}
-            </H2>
-
-            <ScrollView style={{ marginTop: spacing.md }}>
-              {tasksRoomList.length === 0 ? (
-                <Card>
-                  <Muted>{tr.housekeeping.noOpenTasks}</Muted>
-                </Card>
-              ) : (
-                <View style={{ gap: spacing.sm }}>
-                  {tasksRoomList.map((t) => (
-                    <Card key={t.id}>
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          justifyContent: 'space-between',
-                          gap: spacing.sm,
-                        }}
-                      >
-                        <Text style={{ color: c.text, fontWeight: '600', flex: 1 }}>
-                          {taskTypeText(t.task_type)}
-                        </Text>
-                        <Badge label={priorityText(t.priority)} tone={priorityTone(t.priority)} />
-                      </View>
-                      <Muted style={{ marginTop: spacing.xs }}>
-                        {t.assigned_to || tr.housekeeping.unassigned}
-                      </Muted>
-                      {t.notes ? (
-                        <Muted style={{ marginTop: spacing.xs }} numberOfLines={3}>
-                          {t.notes}
-                        </Muted>
-                      ) : null}
-                    </Card>
-                  ))}
+        {tasksRoomList.length === 0 ? (
+          <EmptyState icon="checkmark-done-circle-outline" title={tr.housekeeping.noOpenTasks} />
+        ) : (
+          tasksRoomList.map((t) => {
+            const inProgress = (t.status || '').toLowerCase() === 'in_progress';
+            const pending = startMut.isPending && startMut.variables === t.id;
+            const finishing = completeMut.isPending && completeMut.variables === t.id;
+            return (
+              <Card key={t.id}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    gap: spacing.sm,
+                  }}
+                >
+                  <Text style={{ color: c.text, fontWeight: '600', flex: 1 }}>
+                    {taskTypeText(t.task_type)}
+                  </Text>
+                  {inProgress ? (
+                    <Badge label={tr.housekeeping.taskInProgress} tone="info" />
+                  ) : (
+                    <Badge label={priorityText(t.priority)} tone={priorityTone(t.priority)} />
+                  )}
                 </View>
-              )}
-            </ScrollView>
-
-            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg }}>
-              <Button
-                title={tr.housekeeping.assignTask}
-                variant="secondary"
-                onPress={() => {
-                  const r = tasksRoom;
-                  setTasksRoom(null);
-                  if (r) openAssign(r);
-                }}
-                style={{ flex: 1 }}
-              />
-              <Button
-                title={tr.app.close}
-                variant="primary"
-                onPress={() => setTasksRoom(null)}
-                style={{ flex: 1 }}
-              />
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal
-        visible={statusRoom !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setStatusRoom(null)}
-      >
-        <Pressable
-          onPress={() => setStatusRoom(null)}
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
-        >
-          <Pressable
-            onPress={() => {}}
-            testID="hk-status-modal"
-            style={{
-              backgroundColor: c.bg,
-              borderTopLeftRadius: radius.lg,
-              borderTopRightRadius: radius.lg,
-              padding: spacing.lg,
-              maxHeight: '85%',
-            }}
-          >
-            <H2>
-              {tr.housekeeping.changeStatus}
-              {statusRoom ? ` · Oda ${statusRoom.room_number}` : ''}
-            </H2>
-
-            <ScrollView style={{ marginTop: spacing.md }}>
-              <View style={{ gap: spacing.xs }}>
-                {STATUS_OPTIONS.map((s) => {
-                  const active = (statusRoom?.status || '').toLowerCase() === s;
-                  return (
-                    <Button
-                      key={s}
-                      title={tr.housekeeping.statuses[s] || s}
-                      variant={active ? 'primary' : 'secondary'}
-                      onPress={() => {
-                        const r = statusRoom;
-                        if (r) void applyStatus(r, s);
-                      }}
-                      testID={`hk-status-option-${s}`}
+                <Muted style={{ marginTop: spacing.xs }}>
+                  {t.assigned_to || tr.housekeeping.unassigned}
+                </Muted>
+                {t.notes ? (
+                  <Muted style={{ marginTop: spacing.xs }} numberOfLines={3}>
+                    {t.notes}
+                  </Muted>
+                ) : null}
+                <View style={{ marginTop: spacing.sm }}>
+                  <SegmentedActions>
+                    {!inProgress ? (
+                      <ActionButton
+                        testID={`hk-task-start-${t.id}`}
+                        label={tr.housekeeping.startTask}
+                        icon="play"
+                        onPress={() => startMut.mutate(t.id)}
+                        bg={c.primary}
+                        fg={c.primaryText}
+                        loading={pending}
+                        disabled={finishing}
+                      />
+                    ) : null}
+                    <ActionButton
+                      testID={`hk-task-complete-${t.id}`}
+                      label={tr.housekeeping.completeTask}
+                      icon="checkmark-done"
+                      onPress={() => completeMut.mutate(t.id)}
+                      bg={c.success}
+                      fg="#ffffff"
+                      loading={finishing}
+                      disabled={pending}
                     />
-                  );
-                })}
-              </View>
-            </ScrollView>
-
-            <View style={{ marginTop: spacing.lg }}>
-              <Button
-                title={tr.app.cancel}
-                variant="secondary"
-                onPress={() => setStatusRoom(null)}
-                testID="hk-status-cancel"
-              />
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal
-        visible={assignRoom !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={closeAssign}
-      >
-        <Pressable
-          onPress={closeAssign}
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
-        >
-          <Pressable
-            onPress={() => {}}
-            testID="hk-assign-modal"
-            style={{
-              backgroundColor: c.bg,
-              borderTopLeftRadius: radius.lg,
-              borderTopRightRadius: radius.lg,
-              padding: spacing.lg,
-              maxHeight: '85%',
-            }}
-          >
-            <H2>
-              {tr.housekeeping.assignTitle}
-              {assignRoom ? ` · Oda ${assignRoom.room_number}` : ''}
-            </H2>
-
-            <ScrollView style={{ marginTop: spacing.md }}>
-              <Muted>{tr.housekeeping.selectStaff}</Muted>
-              {staff.isLoading ? (
-                <SkeletonCard />
-              ) : (staff.data || []).length === 0 ? (
-                <Card testID="hk-no-staff">
-                  <Muted>{tr.housekeeping.noStaff}</Muted>
-                </Card>
-              ) : (
-                <View style={{ gap: spacing.xs, marginTop: spacing.xs }}>
-                  {(staff.data || []).map((s, idx) => {
-                    const keyVal = s.id || s.name;
-                    const sel = (staffSel?.id || staffSel?.name) === keyVal;
-                    return (
-                      <Pressable
-                        key={`${keyVal}-${idx}`}
-                        onPress={() => setStaffSel(s)}
-                        testID="hk-staff-option"
-                        style={{
-                          borderWidth: 1,
-                          borderColor: sel ? c.primary : c.border,
-                          backgroundColor: sel ? c.primary : c.surface,
-                          borderRadius: radius.md,
-                          paddingVertical: spacing.sm,
-                          paddingHorizontal: spacing.md,
-                        }}
-                      >
-                        <Text style={{ color: sel ? c.primaryText : c.text, fontWeight: '600' }}>
-                          {s.name}
-                        </Text>
-                        {s.role ? (
-                          <Text style={{ color: sel ? c.primaryText : c.textMuted, fontSize: 12 }}>
-                            {s.role}
-                          </Text>
-                        ) : null}
-                      </Pressable>
-                    );
-                  })}
+                  </SegmentedActions>
                 </View>
-              )}
+              </Card>
+            );
+          })
+        )}
 
-              <Muted style={{ marginTop: spacing.md }}>{tr.housekeeping.taskType}</Muted>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs }}>
-                {TASK_TYPES.map((t) => (
-                  <Button
-                    key={t}
-                    title={taskTypeLabel(t)}
-                    variant={taskType === t ? 'primary' : 'secondary'}
-                    onPress={() => setTaskType(t)}
-                    testID={`hk-task-type-${t}`}
-                    style={{ flexShrink: 0 }}
-                  />
-                ))}
-              </View>
+        <View style={{ marginTop: spacing.sm }}>
+          <Button
+            title={tr.housekeeping.assignTask}
+            variant="secondary"
+            onPress={() => {
+              const r = tasksRoom;
+              setTasksRoom(null);
+              if (r) openAssign(r);
+            }}
+            fullWidth
+          />
+        </View>
+      </ActionSheet>
 
-              <Muted style={{ marginTop: spacing.md }}>{tr.housekeeping.priority}</Muted>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs }}>
-                {PRIORITIES.map((p) => (
-                  <Button
-                    key={p}
-                    title={priorityLabel(p)}
-                    variant={priority === p ? 'primary' : 'secondary'}
-                    onPress={() => setPriority(p)}
-                    testID={`hk-priority-${p}`}
-                    style={{ flexShrink: 0 }}
-                  />
-                ))}
-              </View>
-            </ScrollView>
+      {/* ── Status-change sheet ───────────────────────────────────────────── */}
+      <ActionSheet
+        visible={statusRoom !== null}
+        onClose={() => setStatusRoom(null)}
+        title={
+          tr.housekeeping.changeStatus + (statusRoom ? ` · Oda ${statusRoom.room_number}` : '')
+        }
+        testID="hk-status-modal"
+      >
+        {STATUS_OPTIONS.map((s) => {
+          const active = (statusRoom?.status || '').toLowerCase() === s;
+          return (
+            <Button
+              key={s}
+              title={tr.housekeeping.statuses[s] || s}
+              variant={active ? 'primary' : 'secondary'}
+              onPress={() => {
+                const r = statusRoom;
+                if (r) void applyStatus(r, s);
+              }}
+              testID={`hk-status-option-${s}`}
+              fullWidth
+            />
+          );
+        })}
+        <View style={{ marginTop: spacing.sm }}>
+          <Button
+            title={tr.app.cancel}
+            variant="secondary"
+            onPress={() => setStatusRoom(null)}
+            testID="hk-status-cancel"
+            fullWidth
+          />
+        </View>
+      </ActionSheet>
 
-            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg }}>
-              <Button
-                title={tr.app.cancel}
-                variant="secondary"
-                onPress={closeAssign}
-                testID="hk-assign-cancel"
-                style={{ flex: 1 }}
-              />
-              <Button
-                title={tr.housekeeping.assignSubmit}
-                variant="primary"
-                onPress={() => void submitAssign()}
-                disabled={submitting || !staffSel}
-                testID="hk-assign-submit"
-                style={{ flex: 1 }}
-              />
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {/* ── Task assignment sheet ─────────────────────────────────────────── */}
+      <ActionSheet
+        visible={assignRoom !== null}
+        onClose={closeAssign}
+        title={tr.housekeeping.assignTitle + (assignRoom ? ` · Oda ${assignRoom.room_number}` : '')}
+        testID="hk-assign-modal"
+      >
+        <Muted>{tr.housekeeping.selectStaff}</Muted>
+        {staff.isLoading ? (
+          <SkeletonCard />
+        ) : (staff.data || []).length === 0 ? (
+          <Card testID="hk-no-staff">
+            <Muted>{tr.housekeeping.noStaff}</Muted>
+          </Card>
+        ) : (
+          <View style={{ gap: spacing.xs }}>
+            {(staff.data || []).map((s, idx) => {
+              const keyVal = s.id || s.name;
+              const sel = (staffSel?.id || staffSel?.name) === keyVal;
+              return (
+                <Pressable
+                  key={`${keyVal}-${idx}`}
+                  onPress={() => setStaffSel(s)}
+                  testID="hk-staff-option"
+                  style={{
+                    borderWidth: 1,
+                    borderColor: sel ? c.primary : c.border,
+                    backgroundColor: sel ? c.primary : c.surface,
+                    borderRadius: radius.md,
+                    paddingVertical: spacing.sm,
+                    paddingHorizontal: spacing.md,
+                  }}
+                >
+                  <Text style={{ color: sel ? c.primaryText : c.text, fontWeight: '600' }}>
+                    {s.name}
+                  </Text>
+                  {s.role ? (
+                    <Text style={{ color: sel ? c.primaryText : c.textMuted, fontSize: 12 }}>
+                      {s.role}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        <Muted style={{ marginTop: spacing.md }}>{tr.housekeeping.taskType}</Muted>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
+          {TASK_TYPES.map((t) => (
+            <Button
+              key={t}
+              title={taskTypeLabel(t)}
+              variant={taskType === t ? 'primary' : 'secondary'}
+              onPress={() => setTaskType(t)}
+              testID={`hk-task-type-${t}`}
+              style={{ flexShrink: 0 }}
+            />
+          ))}
+        </View>
+
+        <Muted style={{ marginTop: spacing.md }}>{tr.housekeeping.priority}</Muted>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
+          {PRIORITIES.map((p) => (
+            <Button
+              key={p}
+              title={priorityLabel(p)}
+              variant={priority === p ? 'primary' : 'secondary'}
+              onPress={() => setPriority(p)}
+              testID={`hk-priority-${p}`}
+              style={{ flexShrink: 0 }}
+            />
+          ))}
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg }}>
+          <Button
+            title={tr.app.cancel}
+            variant="secondary"
+            onPress={closeAssign}
+            testID="hk-assign-cancel"
+            style={{ flex: 1 }}
+          />
+          <Button
+            title={tr.housekeeping.assignSubmit}
+            variant="primary"
+            onPress={() => void submitAssign()}
+            disabled={submitting || !staffSel}
+            testID="hk-assign-submit"
+            style={{ flex: 1 }}
+          />
+        </View>
+      </ActionSheet>
     </View>
   );
 }
