@@ -354,6 +354,94 @@ test.describe.serial('Mobile smoke · frontdesk · reservations + availability',
             `Calendar console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
         ).toHaveLength(0);
     });
+
+    // ─────────────────────────────────────────────────────────────────
+    // F10A — Reservation calendar: day/week/month view switch (Task #555).
+    // ─────────────────────────────────────────────────────────────────
+    // Task #547's step only used the month tab incidentally (to widen the
+    // window for a bar tap). This step verifies the view toggle itself: each
+    // of the three tabs (calendar-view-day/week/month) must (a) become the
+    // ONLY aria-selected tab when tapped, and (b) drive the grid to re-render
+    // at that view's density — the number of day columns must change to match
+    // VIEW_PRESETS (day=1, week=7, month=31). The column count is the honest
+    // deterministic signal that the grid genuinely re-rendered at the new
+    // horizon, not just that the tab highlighted.
+    //
+    // Day columns exist in the DOM only when the grid is drawn (the pilot has
+    // at least one room). When there are no rooms the grid is replaced by an
+    // empty state, so we still verify the selected-tab state (always present)
+    // and record an annotation instead of faking a density assertion we cannot
+    // make (no skip-as-pass).
+    test('[frontdesk] calendar view tabs → density + selected state', async ({ page }) => {
+        const obs = attachObservers(page);
+
+        await page.goto('/calendar', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+        const screen = page.locator('[data-testid="calendar-screen"]').first();
+        await expect(screen, 'Takvim ekranı render olmadı').toBeVisible({ timeout: 20_000 });
+
+        const dayTab = page.locator('[data-testid="calendar-view-day"]').first();
+        await expect(dayTab, 'Görünüm sekmeleri render olmadı').toBeVisible({ timeout: 15_000 });
+
+        // VIEW_PRESETS density (mobile/src/utils/reservationCalendar.ts): day=1,
+        // week=7, month=31 columns. Mirrored here as literals because the e2e
+        // project's tsconfig is scoped to mobile/e2e/ and does not include src/.
+        const VIEW_COLS: Record<'day' | 'week' | 'month', number> = { day: 1, week: 7, month: 31 };
+        const dayCols = page.locator('[data-testid^="calendar-daycol-"]');
+
+        // The grid is drawn iff at least one day column is in the DOM. Wait for
+        // the room/reservation queries to settle before deciding.
+        await dayCols
+            .first()
+            .waitFor({ state: 'attached', timeout: 15_000 })
+            .catch(() => {});
+        const gridDrawn = (await dayCols.count()) > 0;
+        test.info().annotations.push({
+            type: 'calendar-grid-drawn',
+            description: String(gridDrawn),
+        });
+
+        const VIEWS = ['day', 'week', 'month'] as const;
+        for (const v of VIEWS) {
+            await page.locator(`[data-testid="calendar-view-${v}"]`).first().click();
+
+            // Exactly one tab selected: the tapped one is aria-selected, the
+            // other two are not. (.not aria-selected=true is robust whether
+            // react-native-web emits aria-selected="false" or omits it.)
+            await expect(
+                page.locator(`[data-testid="calendar-view-${v}"]`).first(),
+                `${v} sekmesi seçili olarak vurgulanmadı`,
+            ).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
+            for (const other of VIEWS.filter((o) => o !== v)) {
+                await expect(
+                    page.locator(`[data-testid="calendar-view-${other}"]`).first(),
+                    `${other} sekmesi yanlışlıkla seçili kaldı`,
+                ).not.toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
+            }
+
+            // Grid density: when drawn, the day-column count must match this
+            // view's preset — the proof the grid re-rendered at the new horizon.
+            if (gridDrawn) {
+                await expect
+                    .poll(() => page.locator('[data-testid^="calendar-daycol-"]').count(), {
+                        message: `${v} görünümünde ızgara yoğunluğu (${VIEW_COLS[v]} gün) yeniden render olmadı`,
+                        timeout: 10_000,
+                    })
+                    .toBe(VIEW_COLS[v]);
+            }
+        }
+
+        const inspect = await inspectPageContent(page);
+        expect(inspect.ok, `Takvim boş/hata ekranı: ${inspect.reason}`).toBeTruthy();
+        expect(inspect.pii_findings ?? [], 'Takvim görünüm geçişinde PII leak').toHaveLength(0);
+
+        const { consoleErrors } = obs.flush();
+        expect(
+            consoleErrors,
+            `Calendar view-switch console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
+        ).toHaveLength(0);
+    });
 });
 
 // ─────────────────────────────────────────────────────────────────────────

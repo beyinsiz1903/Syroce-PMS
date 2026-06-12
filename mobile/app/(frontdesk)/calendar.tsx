@@ -539,6 +539,12 @@ export default function ReservationCalendarScreen() {
                 testID={`calendar-view-${v}`}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
+                // react-native-web 0.19 drops accessibilityState.selected on web
+                // (it only emits the direct aria-* props), so the active view tab
+                // exposed no aria-selected to screen readers or e2e. Emit it
+                // explicitly; on native RN 0.74 aria-selected maps back to
+                // accessibilityState.selected, so there is no native regression.
+                aria-selected={active}
                 onPress={() => {
                   haptic.tap();
                   setView(v);
@@ -723,6 +729,7 @@ export default function ReservationCalendarScreen() {
                     return (
                       <View
                         key={d}
+                        testID={`calendar-daycol-${i}`}
                         style={{
                           width: dayWidth,
                           alignItems: 'center',
