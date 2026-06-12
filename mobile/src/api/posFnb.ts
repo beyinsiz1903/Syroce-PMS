@@ -206,6 +206,122 @@ export async function postOrderToFolio(body: {
   return api.post('/api/pos/create-order', body);
 }
 
+// ── BEO (Banquet Event Order) — read-only ──────────────────────────────────
+// The F&B / banquet team needs a readable hand sheet for catered events. These
+// mirror backend/routers/mice.py: GET /api/mice/events (list, auth only) and
+// GET /api/mice/events/{id}/beo (the BEO summary, auth only). Both are reads —
+// no event write surface is exposed here; banquet writes stay gated by
+// require_mice_ops / require_catalog on the backend.
+
+export type BeoEventSummary = {
+  id: string;
+  name?: string;
+  client_name?: string;
+  event_type?: string;
+  status?: string;
+  expected_pax?: number;
+  start_date?: string;
+  end_date?: string;
+};
+
+export type BeoSpaceLine = {
+  space_name?: string;
+  starts_at?: string;
+  ends_at?: string;
+  setup_style?: string | null;
+  expected_pax?: number | null;
+};
+
+export type BeoResourceLine = {
+  name?: string;
+  type?: string;
+  quantity?: number;
+  unit_price?: number;
+};
+
+export type BeoAgendaItem = {
+  starts_at?: string;
+  ends_at?: string;
+  title?: string;
+  kind?: string;
+  owner?: string | null;
+};
+
+export type BeoPaymentMilestone = {
+  due_date?: string;
+  label?: string;
+  amount?: number;
+  paid?: boolean;
+  reference?: string | null;
+};
+
+export type BeoStaffAssignment = {
+  role?: string;
+  name?: string;
+  user?: string;
+  notes?: string;
+};
+
+export type BeoTechnicalRequirements = {
+  projector?: boolean;
+  screen?: boolean;
+  microphone_wired?: number;
+  microphone_wireless?: number;
+  sound_system?: boolean;
+  stage?: boolean;
+  lighting?: boolean;
+  livestream?: boolean;
+  internet_mbps?: number;
+  translation_booths?: number;
+  notes?: string | null;
+};
+
+export type BeoTotals = {
+  space_total?: number;
+  resources_total?: number;
+  subtotal?: number;
+  tax?: number;
+  grand_total?: number;
+  currency?: string;
+};
+
+export type BeoSummary = {
+  event: {
+    id: string;
+    name?: string;
+    client_name?: string;
+    client_email?: string | null;
+    client_phone?: string | null;
+    organizer_user?: string | null;
+    event_type?: string;
+    status?: string;
+    expected_pax?: number;
+    start_date?: string;
+    end_date?: string;
+    notes?: string | null;
+    totals?: BeoTotals;
+  };
+  spaces: BeoSpaceLine[];
+  resources: BeoResourceLine[];
+  agenda: BeoAgendaItem[];
+  payment_schedule: BeoPaymentMilestone[];
+  technical_requirements?: BeoTechnicalRequirements | null;
+  staff_assignments?: BeoStaffAssignment[];
+  entertainment?: Record<string, unknown> | null;
+};
+
+// GET /api/mice/events?status= → { events, count }. Read-only event list that
+// feeds the BEO picker (most-recent catered events).
+export async function listBeoEvents(params?: { status?: string }): Promise<BeoEventSummary[]> {
+  const res = await api.get<{ events?: BeoEventSummary[] }>('/api/mice/events', params);
+  return res?.events ?? [];
+}
+
+// GET /api/mice/events/{id}/beo → the full Banquet Event Order summary.
+export async function getBeo(eventId: string): Promise<BeoSummary> {
+  return api.get<BeoSummary>(`/api/mice/events/${encodeURIComponent(eventId)}/beo`);
+}
+
 // Display helpers — the backend stores outlet/menu names under inconsistent
 // keys across legacy and newer writers, so prefer the canonical field and
 // fall back gracefully rather than showing a blank label.

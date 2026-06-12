@@ -1,17 +1,35 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { Redirect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge, Body, Button, Card, Field, H1, Muted } from '../../src/components/ui';
-import { DepartmentListState, SectionTitle } from '../../src/components/department';
+import {
+  ActionButton,
+  Badge,
+  Body,
+  Button,
+  Card,
+  DetailRow,
+  Field,
+  H1,
+  ListGroup,
+  ListRow,
+  Muted,
+  SectionTitle,
+  SegmentedActions,
+  ActionSheet,
+} from '../../src/components/ui';
+import { DepartmentListState } from '../../src/components/department';
 import { spacing, radius, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { haptic } from '../../src/hooks/useHaptic';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
 import {
+  getBeo,
   getTableLayout,
   listActiveOrders,
+  listBeoEvents,
   listMenuItems,
   listOutlets,
   menuItemLabel,
@@ -22,6 +40,7 @@ import {
   transferTable,
   updateOrderStatus,
   type ActiveOrder,
+  type BeoSummary,
   type MenuItem,
   type Outlet,
   type OrderStatus,
@@ -47,7 +66,7 @@ function isNetworkError(e: unknown): boolean {
   return e instanceof ApiError && e.status === 0;
 }
 
-type Tab = 'order' | 'active' | 'tables' | 'folio';
+type Tab = 'order' | 'active' | 'tables' | 'folio' | 'beo';
 type CartLine = { item_id: string; quantity: number };
 
 function statusLabel(s?: string): string {
@@ -83,12 +102,52 @@ function tableTone(s?: string): 'default' | 'success' | 'info' | 'warning' {
   }
 }
 
-// POS / F&B department screen (Task #331, Faz 4). Four flows over a selected
-// outlet: open an order (quick-order), advance/close active orders, view the
-// table layout + transfer a table, and post an order to a room folio. Every
-// write is gated server-side by require_module("pos") / require_op; the mobile
+function eventStatusLabel(s?: string): string {
+  const map = tr.departments.pos.eventStatus as Record<string, string>;
+  return (s && map[s]) || s || '—';
+}
+
+function eventStatusTone(s?: string): 'default' | 'success' | 'info' | 'warning' | 'danger' {
+  switch (s) {
+    case 'confirmed':
+    case 'definite':
+    case 'completed':
+      return 'success';
+    case 'tentative':
+      return 'warning';
+    case 'inquiry':
+      return 'info';
+    case 'cancelled':
+    case 'lost':
+      return 'danger';
+    default:
+      return 'default';
+  }
+}
+
+// Trim an ISO timestamp down to "YYYY-MM-DD HH:MM" for compact space lines.
+function shortStamp(value?: string | null): string {
+  if (!value) return '—';
+  return value.replace('T', ' ').slice(0, 16);
+}
+
+// Agenda items show only the clock window (HH:MM–HH:MM).
+function agendaWindow(a: { starts_at?: string; ends_at?: string }): string {
+  const s = (a.starts_at || '').slice(11, 16);
+  const e = (a.ends_at || '').slice(11, 16);
+  if (!s && !e) return '—';
+  return `${s || '—'}–${e || '—'}`;
+}
+
+// POS / F&B department screen (Task #331, Faz 4; design-system migration Task
+// #463). Five flows over a selected outlet: open an order (quick-order),
+// advance/close active orders, view the table layout + transfer a table, post
+// an order to a room folio, and read a banquet event's BEO summary. Every write
+// is gated server-side by require_module("pos") / require_op; the mobile
 // `posAccess` entitlement mirrors that role set. Cosmetic only — the backend
-// still enforces. Order/transaction status semantics are not changed here.
+// still enforces. Order/transaction status semantics are not changed here. The
+// offline durable write queue + per-attempt idempotency keys are preserved
+// exactly; only the presentation migrated to the shared ui.tsx kit.
 export default function PosScreen() {
   const c = useTheme();
   const qc = useQueryClient();
@@ -122,6 +181,10 @@ export default function PosScreen() {
   const [payingOrder, setPayingOrder] = useState<{ id: string; method: PaymentMethod } | null>(
     null,
   );
+  // Active-order detail sheet — derived live from the query so a status change
+  // refresh keeps the sheet in sync (and auto-closes when the order leaves the
+  // active list).
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
   // Table-transfer state.
   const [fromTable, setFromTable] = useState('');
@@ -131,6 +194,9 @@ export default function PosScreen() {
   // Folio-transfer state.
   const [folioId, setFolioId] = useState<string>('');
   const [posting, setPosting] = useState(false);
+
+  // BEO read state — the tapped event opens a read-only summary sheet.
+  const [selectedBeoId, setSelectedBeoId] = useState<string | null>(null);
 
   const outletsQ = useQuery({
     queryKey: ['pos-outlets'],
@@ -161,6 +227,16 @@ export default function PosScreen() {
     queryKey: ['pos-open-folios'],
     queryFn: () => listFolios({ status: 'open', limit: 50 }),
     enabled: posAccess && tab === 'folio',
+  });
+  const beoEventsQ = useQuery({
+    queryKey: ['pos-beo-events'],
+    queryFn: () => listBeoEvents(),
+    enabled: posAccess && tab === 'beo',
+  });
+  const beoDetailQ = useQuery({
+    queryKey: ['pos-beo', selectedBeoId],
+    queryFn: () => getBeo(selectedBeoId as string),
+    enabled: posAccess && !!selectedBeoId,
   });
 
   const menuItems = menuQ.data || [];
@@ -381,6 +457,8 @@ export default function PosScreen() {
     }
   };
 
+  // Compact pill toggle reused for the outlet picker and the tab bar; both rows
+  // scroll horizontally so 5 tabs / many outlets stay reachable on small phones.
   const Chip: React.FC<{ active: boolean; label: string; onPress: () => void }> = ({
     active,
     label,
@@ -390,7 +468,7 @@ export default function PosScreen() {
       onPress={onPress}
       accessibilityRole="button"
       style={{
-        paddingVertical: spacing.xs,
+        paddingVertical: spacing.sm,
         paddingHorizontal: spacing.md,
         borderRadius: radius.md,
         backgroundColor: active ? c.primary : c.surfaceAlt,
@@ -402,83 +480,116 @@ export default function PosScreen() {
     </Pressable>
   );
 
-  const renderCart = () => (
-    <Card style={{ marginTop: spacing.md }}>
-      <Muted>{tr.departments.pos.selectedItems}</Muted>
-      {cart.length === 0 ? (
-        <Body style={{ marginTop: spacing.sm }}>{tr.departments.pos.noItemsSelected}</Body>
-      ) : (
-        <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
-          {cart.map((line) => {
-            const it = menuById.get(line.item_id);
-            return (
-              <View
-                key={line.item_id}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <View style={{ flex: 1, paddingRight: spacing.sm }}>
-                  <Body style={{ fontWeight: '600' }}>{it ? menuItemLabel(it) : line.item_id}</Body>
-                  <Muted>{formatCurrency((it?.price ?? 0) * line.quantity)}</Muted>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                  <Button title="-" variant="secondary" onPress={() => decFromCart(line.item_id)} />
-                  <Body style={{ fontWeight: '600', minWidth: 20, textAlign: 'center' }}>
-                    {line.quantity}
-                  </Body>
-                  <Button title="+" variant="secondary" onPress={() => addToCart(line.item_id)} />
-                </View>
-              </View>
-            );
-          })}
+  // Quantity stepper for cart rows — two 32px hit targets around the count.
+  const Stepper: React.FC<{ itemId: string; quantity: number }> = ({ itemId, quantity }) => {
+    const stepStyle = {
+      width: 32,
+      height: 32,
+      borderRadius: radius.sm,
+      backgroundColor: c.surfaceAlt,
+      borderWidth: 1,
+      borderColor: c.border,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+    };
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+        <Pressable
+          onPress={() => decFromCart(itemId)}
+          accessibilityRole="button"
+          accessibilityLabel="-"
+          hitSlop={6}
+          style={stepStyle}
+        >
+          <Ionicons name="remove" size={18} color={c.text} />
+        </Pressable>
+        <Body style={{ fontWeight: '700', minWidth: 20, textAlign: 'center' }}>{quantity}</Body>
+        <Pressable
+          onPress={() => addToCart(itemId)}
+          accessibilityRole="button"
+          accessibilityLabel="+"
+          hitSlop={6}
+          style={stepStyle}
+        >
+          <Ionicons name="add" size={18} color={c.text} />
+        </Pressable>
+      </View>
+    );
+  };
+
+  const renderCart = () => {
+    if (cart.length === 0) {
+      return (
+        <Card style={{ marginTop: spacing.md }}>
+          <Muted>{tr.departments.pos.selectedItems}</Muted>
+          <Body style={{ marginTop: spacing.sm }}>{tr.departments.pos.noItemsSelected}</Body>
+        </Card>
+      );
+    }
+    return (
+      <ListGroup
+        title={tr.departments.pos.selectedItems}
+        footer={
           <View
             style={{
               flexDirection: 'row',
               justifyContent: 'space-between',
-              marginTop: spacing.sm,
+              paddingHorizontal: spacing.lg,
+              paddingVertical: spacing.md,
+              borderTopWidth: 1,
+              borderTopColor: c.border,
             }}
           >
             <Body style={{ fontWeight: '700' }}>{tr.departments.pos.total}</Body>
             <Body style={{ fontWeight: '700' }}>{formatCurrency(cartTotal)}</Body>
           </View>
-        </View>
-      )}
-    </Card>
-  );
+        }
+      >
+        {cart.map((line, idx) => {
+          const it = menuById.get(line.item_id);
+          const unit = it?.price ?? 0;
+          return (
+            <ListRow
+              key={line.item_id}
+              icon="fast-food-outline"
+              label={it ? menuItemLabel(it) : line.item_id}
+              sublabel={formatCurrency(unit * line.quantity)}
+              showChevron={false}
+              last={idx === cart.length - 1}
+              right={<Stepper itemId={line.item_id} quantity={line.quantity} />}
+            />
+          );
+        })}
+      </ListGroup>
+    );
+  };
 
   const renderMenu = () => {
-    const state = (
-      <DepartmentListState
-        loading={menuQ.isLoading}
-        error={menuQ.error}
-        isEmpty={menuItems.length === 0}
-        emptyText={tr.departments.pos.noMenuItems}
-      />
-    );
+    const showList = !menuQ.isLoading && !menuQ.error && menuItems.length > 0;
     return (
-      state ?? (
-        <View style={{ gap: spacing.sm }}>
-          {menuItems.map((m) => (
-            <Card key={m.id}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <View style={{ flex: 1, paddingRight: spacing.sm }}>
-                  <Body style={{ fontWeight: '600' }}>{menuItemLabel(m)}</Body>
-                  <Muted>{formatCurrency(m.price)}</Muted>
-                </View>
-                <Button title={tr.departments.pos.addItem} onPress={() => addToCart(m.id)} />
-              </View>
-            </Card>
+      !showList ? (
+        <DepartmentListState
+          loading={menuQ.isLoading}
+          error={menuQ.error}
+          isEmpty={menuItems.length === 0}
+          emptyText={tr.departments.pos.noMenuItems}
+        />
+      ) : (
+        <ListGroup>
+          {menuItems.map((m, idx) => (
+            <ListRow
+              key={m.id}
+              icon="restaurant-outline"
+              label={menuItemLabel(m)}
+              value={formatCurrency(m.price)}
+              onPress={() => addToCart(m.id)}
+              showChevron={false}
+              last={idx === menuItems.length - 1}
+              right={<Ionicons name="add-circle" size={24} color={c.primary} />}
+              accessibilityLabel={`${menuItemLabel(m)} ${tr.departments.pos.addItem}`}
+            />
           ))}
-        </View>
+        </ListGroup>
       )
     );
   };
@@ -511,6 +622,7 @@ export default function PosScreen() {
       <View style={{ height: spacing.md }} />
       <Button
         title={tr.departments.pos.openOrder}
+        icon="checkmark-circle-outline"
         onPress={onOpenOrder}
         loading={opening}
         fullWidth
@@ -521,154 +633,59 @@ export default function PosScreen() {
     </View>
   );
 
-  const renderActiveOrder = (o: ActiveOrder) => (
-    <Card key={o.id} style={{ marginBottom: spacing.sm }}>
-      <View
-        style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}
-      >
-        <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>
-            {o.order_number || o.outlet_name || tr.departments.pos.title}
-          </Body>
-          {o.table_number ? (
-            <Muted>
-              {tr.departments.pos.tableNumber}: {o.table_number}
-            </Muted>
-          ) : null}
-          {typeof o.total_amount === 'number' ? (
-            <Muted>{formatCurrency(o.total_amount)}</Muted>
-          ) : null}
-        </View>
-        <Badge label={statusLabel(o.status)} tone={statusTone(o.status)} />
-      </View>
-      {o.is_delayed ? (
-        <View style={{ marginTop: spacing.sm }}>
-          <Badge label={tr.departments.pos.delayed} tone="danger" />
-        </View>
-      ) : null}
-      <View
-        style={{ marginTop: spacing.md, flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}
-      >
-        {o.status === 'pending' ? (
-          <Button
-            title={tr.departments.pos.actions.preparing}
-            variant="secondary"
-            onPress={() => onUpdateStatus(o.id, 'preparing')}
-            loading={busyOrderId === o.id}
-          />
-        ) : null}
-        {o.status === 'preparing' ? (
-          <Button
-            title={tr.departments.pos.actions.ready}
-            variant="secondary"
-            onPress={() => onUpdateStatus(o.id, 'ready')}
-            loading={busyOrderId === o.id}
-          />
-        ) : null}
-        {o.status !== 'served' && o.status !== 'cancelled' ? (
-          <Button
-            title={tr.departments.pos.actions.served}
-            onPress={() => onUpdateStatus(o.id, 'served')}
-            loading={busyOrderId === o.id}
-          />
-        ) : null}
-        {o.status !== 'served' && o.status !== 'cancelled' ? (
-          <Button
-            title={tr.departments.pos.actions.cancelled}
-            variant="danger"
-            onPress={() => onUpdateStatus(o.id, 'cancelled')}
-            loading={busyOrderId === o.id}
-          />
-        ) : null}
-      </View>
-      {o.status !== 'cancelled' ? (
-        <View style={{ marginTop: spacing.sm }}>
-          {(() => {
-            const due = typeof o.grand_total === 'number' ? o.grand_total : o.total_amount;
-            return typeof due === 'number' ? (
-              <Muted>
-                {tr.departments.pos.amountDue}: {formatCurrency(due)}
-              </Muted>
-            ) : null;
-          })()}
-          <View
-            style={{
-              marginTop: spacing.sm,
-              flexDirection: 'row',
-              gap: spacing.sm,
-              flexWrap: 'wrap',
-            }}
-          >
-            <Button
-              title={tr.departments.pos.payCash}
-              variant="secondary"
-              onPress={() => onCloseOrder(o.id, 'cash')}
-              loading={payingOrder?.id === o.id && payingOrder.method === 'cash'}
-            />
-            <Button
-              title={tr.departments.pos.payCard}
-              variant="secondary"
-              onPress={() => onCloseOrder(o.id, 'card')}
-              loading={payingOrder?.id === o.id && payingOrder.method === 'card'}
-            />
-          </View>
-        </View>
-      ) : null}
-    </Card>
-  );
-
   const renderActiveTab = () => {
     const data = ordersQ.data?.orders || [];
-    const state = (
-      <DepartmentListState
-        loading={ordersQ.isLoading}
-        error={ordersQ.error}
-        isEmpty={data.length === 0}
-        emptyText={tr.departments.pos.noActiveOrders}
-      />
-    );
+    const showList = !ordersQ.isLoading && !ordersQ.error && data.length > 0;
     return (
       <View>
         <SectionTitle title={tr.departments.pos.activeOrders} />
-        {state ?? <View>{data.map(renderActiveOrder)}</View>}
+        {!showList ? (
+          <DepartmentListState
+            loading={ordersQ.isLoading}
+            error={ordersQ.error}
+            isEmpty={data.length === 0}
+            emptyText={tr.departments.pos.noActiveOrders}
+          />
+        ) : (
+          <ListGroup>
+            {data.map((o, idx) => {
+              const due = typeof o.grand_total === 'number' ? o.grand_total : o.total_amount;
+              const sub = [
+                o.table_number ? `${tr.departments.pos.tableNumber}: ${o.table_number}` : null,
+                typeof due === 'number' ? formatCurrency(due) : null,
+              ]
+                .filter(Boolean)
+                .join(' · ');
+              return (
+                <ListRow
+                  key={o.id}
+                  icon="receipt-outline"
+                  iconColor={o.is_delayed ? c.danger : undefined}
+                  label={o.order_number || o.outlet_name || tr.departments.pos.title}
+                  sublabel={sub || undefined}
+                  last={idx === data.length - 1}
+                  onPress={() => setSelectedOrderId(o.id)}
+                  right={
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+                      {o.is_delayed ? (
+                        <Badge label={tr.departments.pos.delayed} tone="danger" />
+                      ) : null}
+                      <Badge label={statusLabel(o.status)} tone={statusTone(o.status)} />
+                    </View>
+                  }
+                />
+              );
+            })}
+          </ListGroup>
+        )}
       </View>
     );
   };
 
-  const renderTableSlot = (t: TableSlot) => (
-    <Card key={t.id || t.table_number} style={{ marginBottom: spacing.sm }}>
-      <View
-        style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
-      >
-        <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>
-            {tr.departments.pos.tableNumber} {t.table_number}
-          </Body>
-          {typeof t.seats === 'number' ? (
-            <Muted>
-              {t.seats} {tr.departments.pos.seats}
-            </Muted>
-          ) : null}
-          {typeof t.current_bill === 'number' && t.current_bill > 0 ? (
-            <Muted>{formatCurrency(t.current_bill)}</Muted>
-          ) : null}
-        </View>
-        <Badge label={statusLabel(t.status)} tone={tableTone(t.status)} />
-      </View>
-    </Card>
-  );
-
   const renderTablesTab = () => {
     const layout = tablesQ.data;
     const tables = layout?.tables || [];
-    const state = (
-      <DepartmentListState
-        loading={tablesQ.isLoading}
-        error={tablesQ.error}
-        isEmpty={tables.length === 0}
-        emptyText={tr.departments.pos.noTables}
-      />
-    );
+    const showList = !tablesQ.isLoading && !tablesQ.error && tables.length > 0;
     return (
       <View>
         <SectionTitle title={tr.departments.pos.transferTable} />
@@ -689,6 +706,7 @@ export default function PosScreen() {
           <View style={{ height: spacing.md }} />
           <Button
             title={tr.departments.pos.doTransfer}
+            icon="swap-horizontal-outline"
             onPress={onTransferTable}
             loading={transferring}
             fullWidth
@@ -705,64 +723,50 @@ export default function PosScreen() {
               marginBottom: spacing.md,
             }}
           >
-            <Badge
-              label={`${tr.departments.pos.available}: ${layout.available}`}
-              tone="success"
-            />
+            <Badge label={`${tr.departments.pos.available}: ${layout.available}`} tone="success" />
             <Badge label={`${tr.departments.pos.occupied}: ${layout.occupied}`} tone="warning" />
             <Badge label={`${tr.departments.pos.reserved}: ${layout.reserved}`} tone="info" />
           </View>
         ) : null}
-        {state ?? <View>{tables.map(renderTableSlot)}</View>}
+        {!showList ? (
+          <DepartmentListState
+            loading={tablesQ.isLoading}
+            error={tablesQ.error}
+            isEmpty={tables.length === 0}
+            emptyText={tr.departments.pos.noTables}
+          />
+        ) : (
+          <ListGroup>
+            {tables.map((t: TableSlot, idx) => {
+              const sub = [
+                typeof t.seats === 'number' ? `${t.seats} ${tr.departments.pos.seats}` : null,
+                typeof t.current_bill === 'number' && t.current_bill > 0
+                  ? formatCurrency(t.current_bill)
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' · ');
+              return (
+                <ListRow
+                  key={t.id || t.table_number || String(idx)}
+                  icon="grid-outline"
+                  label={`${tr.departments.pos.tableNumber} ${t.table_number ?? '—'}`}
+                  sublabel={sub || undefined}
+                  showChevron={false}
+                  last={idx === tables.length - 1}
+                  right={<Badge label={statusLabel(t.status)} tone={tableTone(t.status)} />}
+                />
+              );
+            })}
+          </ListGroup>
+        )}
       </View>
-    );
-  };
-
-  const renderFolioRow = (f: FolioListItem) => {
-    const selected = folioId === f.id;
-    return (
-      <Pressable key={f.id} onPress={() => setFolioId(selected ? '' : f.id)}>
-        <Card
-          style={{
-            marginBottom: spacing.sm,
-            borderColor: selected ? c.primary : c.border,
-            borderWidth: selected ? 2 : 1,
-          }}
-        >
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <View style={{ flex: 1, paddingRight: spacing.sm }}>
-              <Body style={{ fontWeight: '600' }}>{f.guest_name || f.folio_number || f.id}</Body>
-              {f.room_number ? (
-                <Muted>
-                  {tr.departments.pos.room}: {f.room_number}
-                </Muted>
-              ) : null}
-            </View>
-            <Body style={{ fontWeight: '600' }}>
-              {tr.departments.pos.balance}: {formatCurrency(f.balance)}
-            </Body>
-          </View>
-        </Card>
-      </Pressable>
     );
   };
 
   const renderFolioTab = () => {
     const data = foliosQ.data?.folios || [];
-    const state = (
-      <DepartmentListState
-        loading={foliosQ.isLoading}
-        error={foliosQ.error}
-        isEmpty={data.length === 0}
-        emptyText={tr.departments.pos.noOpenFolios}
-      />
-    );
+    const showList = !foliosQ.isLoading && !foliosQ.error && data.length > 0;
     return (
       <View>
         <SectionTitle title={tr.departments.pos.folioTransfer} />
@@ -774,15 +778,382 @@ export default function PosScreen() {
         {renderMenu()}
 
         <SectionTitle title={tr.departments.pos.selectFolio} />
-        {state ?? <View>{data.map(renderFolioRow)}</View>}
+        {!showList ? (
+          <DepartmentListState
+            loading={foliosQ.isLoading}
+            error={foliosQ.error}
+            isEmpty={data.length === 0}
+            emptyText={tr.departments.pos.noOpenFolios}
+          />
+        ) : (
+          <ListGroup>
+            {data.map((f: FolioListItem, idx) => (
+              <ListRow
+                key={f.id}
+                icon="bed-outline"
+                label={f.guest_name || f.folio_number || f.id}
+                sublabel={f.room_number ? `${tr.departments.pos.room}: ${f.room_number}` : undefined}
+                value={`${tr.departments.pos.balance}: ${formatCurrency(f.balance)}`}
+                active={folioId === f.id}
+                last={idx === data.length - 1}
+                onPress={() => setFolioId(folioId === f.id ? '' : f.id)}
+              />
+            ))}
+          </ListGroup>
+        )}
 
         <View style={{ height: spacing.md }} />
         <Button
           title={tr.departments.pos.postToFolio}
+          icon="arrow-forward-circle-outline"
           onPress={onPostToFolio}
           loading={posting}
           fullWidth
         />
+      </View>
+    );
+  };
+
+  const renderBeoTab = () => {
+    const events = beoEventsQ.data || [];
+    const showList = !beoEventsQ.isLoading && !beoEventsQ.error && events.length > 0;
+    return (
+      <View>
+        <SectionTitle title={tr.departments.pos.beo.listTitle} />
+        <Muted>{tr.departments.pos.beo.hint}</Muted>
+        <View style={{ height: spacing.sm }} />
+        {!showList ? (
+          <DepartmentListState
+            loading={beoEventsQ.isLoading}
+            error={beoEventsQ.error}
+            isEmpty={events.length === 0}
+            emptyText={tr.departments.pos.beo.noEvents}
+          />
+        ) : (
+          <ListGroup>
+            {events.map((ev, idx) => {
+              const sub = [
+                ev.client_name || null,
+                ev.start_date
+                  ? `${ev.start_date}${ev.end_date && ev.end_date !== ev.start_date ? ` → ${ev.end_date}` : ''}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' · ');
+              return (
+                <ListRow
+                  key={ev.id}
+                  icon="calendar-outline"
+                  label={ev.name || ev.id}
+                  sublabel={sub || undefined}
+                  last={idx === events.length - 1}
+                  onPress={() => setSelectedBeoId(ev.id)}
+                  right={
+                    <Badge label={eventStatusLabel(ev.status)} tone={eventStatusTone(ev.status)} />
+                  }
+                />
+              );
+            })}
+          </ListGroup>
+        )}
+      </View>
+    );
+  };
+
+  const renderBeoDetail = (beo: BeoSummary) => {
+    const ev = beo.event;
+    const totals = ev.totals || {};
+    const tech = beo.technical_requirements;
+    const staff = beo.staff_assignments || [];
+    const ent = beo.entertainment || null;
+    const yn = (v: unknown) => (v ? tr.departments.pos.beo.yes : tr.departments.pos.beo.no);
+    return (
+      <View style={{ gap: spacing.md }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
+          <Badge label={eventStatusLabel(ev.status)} tone={eventStatusTone(ev.status)} />
+          {typeof ev.expected_pax === 'number' ? (
+            <Badge label={`${tr.departments.pos.beo.pax}: ${ev.expected_pax}`} tone="info" />
+          ) : null}
+        </View>
+
+        <Card>
+          <DetailRow label={tr.departments.pos.beo.client} value={ev.client_name} />
+          <DetailRow label={tr.departments.pos.beo.eventType} value={ev.event_type} />
+          <DetailRow
+            label={tr.departments.pos.beo.dates}
+            value={
+              ev.start_date
+                ? `${ev.start_date}${ev.end_date && ev.end_date !== ev.start_date ? ` → ${ev.end_date}` : ''}`
+                : '—'
+            }
+          />
+          <DetailRow label={tr.departments.pos.beo.organizer} value={ev.organizer_user ?? undefined} />
+          <DetailRow label={tr.departments.pos.beo.email} value={ev.client_email ?? undefined} />
+          <DetailRow label={tr.departments.pos.beo.phone} value={ev.client_phone ?? undefined} />
+          {ev.notes ? <DetailRow label={tr.departments.pos.beo.notes} value={ev.notes} /> : null}
+        </Card>
+
+        <SectionTitle title={tr.departments.pos.beo.spaces} />
+        {beo.spaces.length === 0 ? (
+          <Card>
+            <Muted>{tr.departments.pos.beo.noSpaces}</Muted>
+          </Card>
+        ) : (
+          <ListGroup>
+            {beo.spaces.map((s, idx) => {
+              const sub = [
+                s.setup_style ? `${tr.departments.pos.beo.setup}: ${s.setup_style}` : null,
+                `${shortStamp(s.starts_at)} – ${shortStamp(s.ends_at)}`,
+              ]
+                .filter(Boolean)
+                .join(' · ');
+              return (
+                <ListRow
+                  key={`${s.space_name ?? 'space'}-${idx}`}
+                  icon="business-outline"
+                  label={s.space_name || '—'}
+                  sublabel={sub}
+                  value={
+                    typeof s.expected_pax === 'number'
+                      ? `${s.expected_pax} ${tr.departments.pos.beo.pax}`
+                      : undefined
+                  }
+                  showChevron={false}
+                  last={idx === beo.spaces.length - 1}
+                />
+              );
+            })}
+          </ListGroup>
+        )}
+
+        <SectionTitle title={tr.departments.pos.beo.agenda} />
+        {beo.agenda.length === 0 ? (
+          <Card>
+            <Muted>{tr.departments.pos.beo.noAgenda}</Muted>
+          </Card>
+        ) : (
+          <ListGroup>
+            {beo.agenda.map((a, idx) => (
+              <ListRow
+                key={`agenda-${idx}`}
+                icon="time-outline"
+                label={a.title || '—'}
+                sublabel={[a.kind || null, a.owner || null].filter(Boolean).join(' · ') || undefined}
+                value={agendaWindow(a)}
+                showChevron={false}
+                last={idx === beo.agenda.length - 1}
+              />
+            ))}
+          </ListGroup>
+        )}
+
+        <SectionTitle title={tr.departments.pos.beo.resources} />
+        {beo.resources.length === 0 ? (
+          <Card>
+            <Muted>{tr.departments.pos.beo.noResources}</Muted>
+          </Card>
+        ) : (
+          <ListGroup>
+            {beo.resources.map((r, idx) => (
+              <ListRow
+                key={`res-${idx}`}
+                icon="cube-outline"
+                label={r.name || '—'}
+                sublabel={r.type || undefined}
+                value={
+                  typeof r.quantity === 'number'
+                    ? `${tr.departments.pos.beo.qty}: ${r.quantity}`
+                    : undefined
+                }
+                showChevron={false}
+                last={idx === beo.resources.length - 1}
+              />
+            ))}
+          </ListGroup>
+        )}
+
+        <SectionTitle title={tr.departments.pos.beo.paymentSchedule} />
+        {beo.payment_schedule.length === 0 ? (
+          <Card>
+            <Muted>{tr.departments.pos.beo.noPaymentSchedule}</Muted>
+          </Card>
+        ) : (
+          <ListGroup>
+            {beo.payment_schedule.map((p, idx) => (
+              <ListRow
+                key={`pay-${idx}`}
+                icon="card-outline"
+                label={p.label || '—'}
+                sublabel={p.due_date || undefined}
+                value={formatCurrency(p.amount)}
+                showChevron={false}
+                last={idx === beo.payment_schedule.length - 1}
+                right={
+                  <Badge
+                    label={p.paid ? tr.departments.pos.beo.paid : tr.departments.pos.beo.pending}
+                    tone={p.paid ? 'success' : 'warning'}
+                  />
+                }
+              />
+            ))}
+          </ListGroup>
+        )}
+
+        <SectionTitle title={tr.departments.pos.beo.technical} />
+        {tech ? (
+          <Card>
+            <DetailRow label="Projeksiyon" value={yn(tech.projector)} />
+            <DetailRow label="Perde / Ekran" value={yn(tech.screen)} />
+            <DetailRow label="Kablolu Mikrofon" value={`${tech.microphone_wired ?? 0} adet`} />
+            <DetailRow label="Kablosuz Mikrofon" value={`${tech.microphone_wireless ?? 0} adet`} />
+            <DetailRow label="Ses Sistemi" value={yn(tech.sound_system)} />
+            <DetailRow label="Sahne" value={yn(tech.stage)} />
+            <DetailRow label="Aydınlatma" value={yn(tech.lighting)} />
+            <DetailRow label="Canlı Yayın" value={yn(tech.livestream)} />
+            <DetailRow label="İnternet" value={`${tech.internet_mbps ?? 0} Mbps`} />
+            <DetailRow label="Çeviri Kabini" value={`${tech.translation_booths ?? 0} adet`} />
+            {tech.notes ? <DetailRow label={tr.departments.pos.beo.notes} value={tech.notes} /> : null}
+          </Card>
+        ) : (
+          <Card>
+            <Muted>{tr.departments.pos.beo.noTechnical}</Muted>
+          </Card>
+        )}
+
+        <SectionTitle title={tr.departments.pos.beo.staff} />
+        {staff.length === 0 ? (
+          <Card>
+            <Muted>{tr.departments.pos.beo.noStaff}</Muted>
+          </Card>
+        ) : (
+          <ListGroup>
+            {staff.map((s, idx) => (
+              <ListRow
+                key={`staff-${idx}`}
+                icon="person-outline"
+                label={s.role || '—'}
+                sublabel={s.name || s.user || undefined}
+                value={s.notes || undefined}
+                showChevron={false}
+                last={idx === staff.length - 1}
+              />
+            ))}
+          </ListGroup>
+        )}
+
+        {ent && Object.keys(ent).length > 0 ? (
+          <Card>
+            {Object.entries(ent).map(([k, v]) => (
+              <DetailRow key={k} label={k} value={v == null ? '—' : String(v)} />
+            ))}
+          </Card>
+        ) : null}
+
+        <SectionTitle title={tr.departments.pos.beo.totals} />
+        <Card>
+          <DetailRow
+            label={tr.departments.pos.beo.spaceTotal}
+            value={formatCurrency(totals.space_total)}
+          />
+          <DetailRow
+            label={tr.departments.pos.beo.resourcesTotal}
+            value={formatCurrency(totals.resources_total)}
+          />
+          <DetailRow
+            label={tr.departments.pos.beo.grandTotal}
+            value={formatCurrency(totals.grand_total)}
+          />
+        </Card>
+      </View>
+    );
+  };
+
+  // Active order resolved live from the query so the detail sheet tracks status
+  // changes and closes itself once the order leaves the active list.
+  const selectedOrder = (ordersQ.data?.orders || []).find((o) => o.id === selectedOrderId) || null;
+
+  const renderOrderActions = (o: ActiveOrder) => {
+    const lifecycle: { label: string; status: OrderStatus; bg: string; fg: string }[] = [];
+    if (o.status === 'pending') {
+      lifecycle.push({
+        label: tr.departments.pos.actions.preparing,
+        status: 'preparing',
+        bg: c.surfaceAlt,
+        fg: c.text,
+      });
+    }
+    if (o.status === 'preparing') {
+      lifecycle.push({
+        label: tr.departments.pos.actions.ready,
+        status: 'ready',
+        bg: c.surfaceAlt,
+        fg: c.text,
+      });
+    }
+    if (o.status !== 'served' && o.status !== 'cancelled') {
+      lifecycle.push({
+        label: tr.departments.pos.actions.served,
+        status: 'served',
+        bg: c.primary,
+        fg: c.primaryText,
+      });
+      lifecycle.push({
+        label: tr.departments.pos.actions.cancelled,
+        status: 'cancelled',
+        bg: c.danger,
+        fg: '#ffffff',
+      });
+    }
+    const due = typeof o.grand_total === 'number' ? o.grand_total : o.total_amount;
+    return (
+      <View style={{ gap: spacing.md }}>
+        <Card>
+          {o.table_number ? (
+            <DetailRow label={tr.departments.pos.tableNumber} value={o.table_number} />
+          ) : null}
+          {typeof due === 'number' ? (
+            <DetailRow label={tr.departments.pos.amountDue} value={formatCurrency(due)} />
+          ) : null}
+        </Card>
+
+        {lifecycle.length > 0 ? (
+          <SegmentedActions>
+            {lifecycle.map((a) => (
+              <ActionButton
+                key={a.status}
+                label={a.label}
+                bg={a.bg}
+                fg={a.fg}
+                onPress={() => onUpdateStatus(o.id, a.status)}
+                loading={busyOrderId === o.id}
+                disabled={busyOrderId === o.id}
+              />
+            ))}
+          </SegmentedActions>
+        ) : null}
+
+        {o.status !== 'cancelled' ? (
+          <SegmentedActions>
+            <ActionButton
+              label={tr.departments.pos.payCash}
+              icon="cash-outline"
+              bg={c.success}
+              fg="#ffffff"
+              onPress={() => onCloseOrder(o.id, 'cash')}
+              loading={payingOrder?.id === o.id && payingOrder.method === 'cash'}
+              disabled={!!payingOrder && payingOrder.id === o.id}
+            />
+            <ActionButton
+              label={tr.departments.pos.payCard}
+              icon="card-outline"
+              bg={c.primary}
+              fg={c.primaryText}
+              onPress={() => onCloseOrder(o.id, 'card')}
+              loading={payingOrder?.id === o.id && payingOrder.method === 'card'}
+              disabled={!!payingOrder && payingOrder.id === o.id}
+            />
+          </SegmentedActions>
+        ) : null}
       </View>
     );
   };
@@ -797,7 +1168,11 @@ export default function PosScreen() {
       {/* Offline write-queue indicator — how many orders are waiting to sync. */}
       {pendingSync > 0 ? (
         <View style={{ flexDirection: 'row', marginTop: spacing.xs, marginBottom: spacing.xs }}>
-          <Badge label={`${tr.departments.pos.pendingSync}: ${pendingSync}`} tone="warning" />
+          <Badge
+            label={`${tr.departments.pos.pendingSync}: ${pendingSync}`}
+            tone="warning"
+            icon="cloud-offline-outline"
+          />
         </View>
       ) : null}
 
@@ -810,13 +1185,11 @@ export default function PosScreen() {
           <Muted>{tr.departments.pos.noOutlets}</Muted>
         </Card>
       ) : (
-        <View
-          style={{
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            gap: spacing.sm,
-            marginBottom: spacing.md,
-          }}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: spacing.sm, paddingVertical: spacing.xs }}
+          style={{ marginBottom: spacing.sm }}
         >
           {outlets.map((o: Outlet) => (
             <Chip
@@ -826,17 +1199,15 @@ export default function PosScreen() {
               onPress={() => setOutletId(o.id)}
             />
           ))}
-        </View>
+        </ScrollView>
       )}
 
       {/* Tab selector */}
-      <View
-        style={{
-          flexDirection: 'row',
-          flexWrap: 'wrap',
-          gap: spacing.sm,
-          marginBottom: spacing.md,
-        }}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: spacing.sm, paddingVertical: spacing.xs }}
+        style={{ marginBottom: spacing.md }}
       >
         <Chip
           active={tab === 'order'}
@@ -858,12 +1229,49 @@ export default function PosScreen() {
           label={tr.departments.pos.tabs.folio}
           onPress={() => setTab('folio')}
         />
-      </View>
+        <Chip
+          active={tab === 'beo'}
+          label={tr.departments.pos.tabs.beo}
+          onPress={() => setTab('beo')}
+        />
+      </ScrollView>
 
       {tab === 'order' ? renderOrderTab() : null}
       {tab === 'active' ? renderActiveTab() : null}
       {tab === 'tables' ? renderTablesTab() : null}
       {tab === 'folio' ? renderFolioTab() : null}
+      {tab === 'beo' ? renderBeoTab() : null}
+
+      {/* Active-order detail + actions sheet. */}
+      <ActionSheet
+        visible={!!selectedOrder}
+        onClose={() => setSelectedOrderId(null)}
+        title={
+          selectedOrder
+            ? selectedOrder.order_number || selectedOrder.outlet_name || tr.departments.pos.title
+            : undefined
+        }
+      >
+        {selectedOrder ? renderOrderActions(selectedOrder) : null}
+      </ActionSheet>
+
+      {/* Read-only BEO summary sheet. */}
+      <ActionSheet
+        visible={!!selectedBeoId}
+        onClose={() => setSelectedBeoId(null)}
+        title={beoDetailQ.data?.event?.name || tr.departments.pos.beo.title}
+      >
+        {beoDetailQ.isLoading || beoDetailQ.error ? (
+          <DepartmentListState
+            loading={beoDetailQ.isLoading}
+            error={beoDetailQ.error}
+            isEmpty={false}
+            emptyText={tr.departments.pos.beo.loadError}
+          />
+        ) : beoDetailQ.data ? (
+          renderBeoDetail(beoDetailQ.data)
+        ) : null}
+      </ActionSheet>
     </ScrollView>
   );
 }
