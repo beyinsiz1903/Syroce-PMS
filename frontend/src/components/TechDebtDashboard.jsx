@@ -242,7 +242,7 @@ export function TechDebtDashboard() {
           <Bug className="h-3.5 w-3.5" /> {t('cm.components_TechDebtDashboard.kategori_bazli_dagilim')}
         </h2>
         <div className="space-y-3" data-testid="debt-categories">
-          {data.categories.map((cat) => (
+          {(data.categories || []).map((cat) => (
             <CategoryCard key={cat.key} cat={cat} />
           ))}
         </div>

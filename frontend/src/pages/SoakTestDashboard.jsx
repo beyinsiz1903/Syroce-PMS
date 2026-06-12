@@ -374,7 +374,7 @@ export default function SoakTestDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.locust_stats.map((s, i) => (
+                  {(data.locust_stats || []).map((s, i) => (
                     <tr key={i} className="border-b border-slate-800/50">
                       <td className="py-1.5 px-3 font-mono text-xs text-slate-300">{s.Name}</td>
                       <td className="py-1.5 px-3 text-right text-slate-400">{s['Request Count']}</td>

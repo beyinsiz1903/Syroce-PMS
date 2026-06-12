@@ -394,7 +394,7 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
                 <CardContent className="px-4 pb-4">
                   {data?.city_ledger_history?.length ? (
                     <div className="space-y-2">
-                      {data.city_ledger_history.map((tr, i) => (
+                      {(data.city_ledger_history || []).map((tr, i) => (
                         <div key={i} className="flex items-center justify-between p-2 rounded bg-gray-50 border border-gray-200 text-xs">
                           <div>
                             <span className="text-gray-700">{tr.description?.slice(0, 60)}</span>
@@ -415,7 +415,7 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
                 <CardContent className="px-4 pb-4">
                   {data?.audit_trail?.length ? (
                     <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {data.audit_trail.map((e, i) => (
+                      {(data.audit_trail || []).map((e, i) => (
                         <div key={i} className="text-xs bg-gray-50 p-2 rounded border border-gray-200 flex items-start gap-2">
                           <ShieldCheck className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
                           <div>
@@ -437,7 +437,7 @@ export default function FolioDetailView({ user, tenant, onLogout, folioId: propF
               <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm text-gray-500">{t("folio.associatedInvoices")} ({data.invoices.length})</CardTitle></CardHeader>
               <CardContent className="px-4 pb-4">
                 <div className="space-y-2">
-                  {data.invoices.map((inv, i) => (
+                  {(data.invoices || []).map((inv, i) => (
                     <div key={i} className="flex items-center justify-between p-2 rounded bg-gray-50 border border-gray-200 text-xs">
                       <div className="flex items-center gap-2">
                         <FileText className="w-3.5 h-3.5 text-gray-400" />

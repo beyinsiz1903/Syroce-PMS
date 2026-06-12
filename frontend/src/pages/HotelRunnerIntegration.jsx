@@ -60,7 +60,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
   const fetchAll = useCallback(async () => {
     if (!connection?.connected) return;
     try {
-      const [roomsRes, mappingsRes, logsRes, localRes, pmsTypesRes, cachedRoomsRes] = await Promise.all([
+      const [mappingsRes, logsRes, reservationsRes, channelsRes, pmsTypesRes, cachedRoomsRes] = await Promise.all([
         axios.get(`/channel-manager/hotelrunner/room-mappings`, { headers }).catch(() => ({ data: { mappings: [] } })),
         axios.get(`/channel-manager/hotelrunner/sync-logs?limit=20`, { headers }).catch(() => ({ data: { logs: [] } })),
         axios.get(`/channel-manager/hotelrunner/reservations/local`, { headers }).catch(() => ({ data: { reservations: [] } })),
@@ -68,10 +68,10 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
         axios.get(`/channel-manager/hotelrunner/pms-room-types`, { headers }).catch(() => ({ data: { room_types: [] } })),
         axios.get(`/channel-manager/hotelrunner/cached-rooms`, { headers }).catch(() => ({ data: { rooms: [] } })),
       ]);
-      setMappings(roomsRes.data.mappings || []);
+      setMappings(mappingsRes.data.mappings || []);
       setSyncLogs(logsRes.data.logs || []);
-      setReservations(localRes.data.reservations || []);
-      setChannels(mappingsRes.data.channels || []);
+      setReservations(reservationsRes.data.reservations || []);
+      setChannels(channelsRes.data.channels || []);
       setPmsRoomTypes(pmsTypesRes.data.room_types || []);
       if (cachedRoomsRes.data.rooms?.length > 0 && rooms.length === 0) {
         setRooms(cachedRoomsRes.data.rooms);

@@ -399,7 +399,7 @@ const OverbookingHeatmapTab = ({ period }) => {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
-              {data.channel_overlay.map((ch, i) => {
+              {(data.channel_overlay || []).map((ch, i) => {
                 const clr = getChColor(ch.channel);
                 return (
                   <div key={ch.channel} className={`rounded-lg border p-3 ${clr.light} min-w-[120px]`} data-testid={`ob-ch-${i}`}>
@@ -744,7 +744,7 @@ const PredictionTab = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.predictions.map((p, i) => {
+                  {(data.predictions || []).map((p, i) => {
                     const rs = RISK_STYLES[p.risk_level] || RISK_STYLES.low;
                     return (
                       <tr key={p.booking_id} className={`border-b last:border-0 ${rs.bg}`} data-testid={`pred-row-${i}`}>

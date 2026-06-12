@@ -51,12 +51,14 @@ const PendingAR = ({ user, tenant, onLogout }) => {
         const companiesRes = await axios.get('/companies');
         const companies = companiesRes.data || [];
         
-        // For each company, get their folios and calculate outstanding balance
-        const arPromises = companies.map(async (company) => {
+        // For each company, get their folios and calculate outstanding balance.
+        // Concurrency-limited (chunked) to avoid an N+1 request storm when the
+        // aggregated endpoint is unavailable and there are many companies.
+        const fetchCompanyAR = async (company) => {
           try {
             const foliosRes = await axios.get(`/folio/booking/company/${company.id}`);
             const folios = foliosRes.data || [];
-            
+
             const totalOutstanding = folios.reduce((sum, folio) => {
               if (folio.status === 'open' && folio.balance > 0) {
                 return sum + folio.balance;
@@ -91,13 +93,21 @@ const PendingAR = ({ user, tenant, onLogout }) => {
           } catch (err) {
             return null;
           }
-        });
+        };
 
-        const arResults = await Promise.all(arPromises);
-        const validAR = arResults.filter(ar => ar !== null);
+        const CONCURRENCY = 5;
+        const validAR = [];
+        for (let i = 0; i < companies.length; i += CONCURRENCY) {
+          const batch = companies.slice(i, i + CONCURRENCY);
+          const batchResults = await Promise.all(batch.map(fetchCompanyAR));
+          for (const ar of batchResults) {
+            if (ar !== null) validAR.push(ar);
+          }
+        }
         setArData(validAR);
       } catch (fallbackError) {
         console.error('Fallback also failed:', fallbackError);
+        toast.error('AR verileri yüklenemedi');
         setArData([]);
       }
     } finally {

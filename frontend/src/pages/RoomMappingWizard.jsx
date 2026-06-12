@@ -138,7 +138,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
       setRoomData(data);
       // Initialize selections from suggestions
       setRoomSelections(
-        data.suggestions.map((s) => ({
+        (data.suggestions || []).map((s) => ({
           pms_entity_id: s.pms_entity_id,
           pms_entity_name: s.pms_entity_name,
           pms_room_count: s.pms_room_count || 0,
@@ -172,7 +172,7 @@ const RoomMappingWizard = ({ user, tenant, onLogout }) => {
       );
       setRateData(data);
       setRateSelections(
-        data.suggestions.map((s) => ({
+        (data.suggestions || []).map((s) => ({
           pms_entity_id: s.pms_entity_id,
           pms_entity_name: s.pms_entity_name,
           external_entity_id: s.external_entity_id,

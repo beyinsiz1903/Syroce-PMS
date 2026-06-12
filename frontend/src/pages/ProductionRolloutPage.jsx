@@ -571,7 +571,7 @@ function MonitoringTab({ data, onGenerateReport, running }) {
         <Card className="bg-zinc-900/50 border-zinc-800">
           <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-xs">Active Alerts</CardTitle></CardHeader>
           <CardContent className="px-4 pb-3 space-y-1">
-            {data.alerts.map((alert, i) => (
+            {(data.alerts || []).map((alert, i) => (
               <div key={i} className="flex items-center gap-2 text-xs bg-zinc-800/50 rounded px-2 py-1">
                 <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
                 <span className="text-zinc-300">{alert.rule_name || alert.alert_type || "Alert"}</span>

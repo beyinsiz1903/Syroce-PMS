@@ -28,7 +28,7 @@ const RevenueBreakdownChart = () => {
   if (loading) return <div>Loading...</div>;
   if (!data) return null;
 
-  const chartData = data.breakdown.map(item => ({
+  const chartData = (data.breakdown || []).map(item => ({
     name: item.category,
     value: item.amount
   }));
@@ -74,7 +74,7 @@ const RevenueBreakdownChart = () => {
         </ResponsiveContainer>
 
         <div className="mt-4 space-y-2">
-          {data.breakdown.map((item, idx) => (
+          {(data.breakdown || []).map((item, idx) => (
             <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded">
               <div className="flex items-center">
                 <div

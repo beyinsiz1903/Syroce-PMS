@@ -85,7 +85,7 @@ const MarketOverviewTab = ({ user, tenant, onLogout } = {}) => {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {data.channel_mix.map((ch, i) => (
+              {(data.channel_mix || []).map((ch, i) => (
                 <div key={i} className="flex items-center gap-3 p-3 rounded-lg border bg-white">
                   <div className="w-2 h-10 rounded-full bg-blue-500" style={{ opacity: 0.3 + (ch.share_pct / 100) * 0.7 }} />
                   <div className="flex-1 min-w-0">

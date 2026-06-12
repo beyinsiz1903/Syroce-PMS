@@ -175,7 +175,7 @@ const PickupPaceReport = () => {
       {/* Channel breakdown */}
       {summary && summary.total_bookings > 0 && data?.channels_summary && data.channels_summary.length > 0 && (
         <div className="grid grid-cols-3 gap-4 mb-2 text-sm">
-          {data.channels_summary.map((ch) => {
+          {(data.channels_summary || []).map((ch) => {
             const share = (ch.bookings / summary.total_bookings) * 100;
             return (
               <Card key={ch.channel}>

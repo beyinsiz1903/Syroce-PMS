@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PlayCircle, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle, RotateCcw, Server, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 const API = "";
 
@@ -43,7 +44,8 @@ export default function ImportJobsTab() {
       ]);
       if (jobsRes.ok) { const d = await jobsRes.json(); setJobs(d.jobs || []); }
       if (envsRes.ok) { const d = await envsRes.json(); setEnvironments(d.environments || {}); }
-    } catch (e) { console.error(e); }
+      if (!jobsRes.ok) toast.error('Import işleri yüklenemedi');
+    } catch (e) { console.error(e); toast.error('Import işleri yüklenemedi'); }
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [token]);
@@ -53,26 +55,32 @@ export default function ImportJobsTab() {
   const runAll = async () => {
     setRunning(true);
     try {
-      await fetch(`/api/channel-manager/v2/import-jobs/run-all`, { method: 'POST', headers });
+      const res = await fetch(`/api/channel-manager/v2/import-jobs/run-all`, { method: 'POST', headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success('Tüm import işleri tetiklendi');
       await fetchData();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); toast.error('Import işleri çalıştırılamadı'); }
     setRunning(false);
   };
 
   const runSafetyNet = async () => {
     setRunningSafety(true);
     try {
-      await fetch(`/api/channel-manager/v2/safety-net/inventory-sync`, { method: 'POST', headers });
+      const res = await fetch(`/api/channel-manager/v2/safety-net/inventory-sync`, { method: 'POST', headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success('Envanter güvenlik ağı senkronizasyonu tetiklendi');
       await fetchData();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); toast.error('Güvenlik ağı senkronizasyonu çalıştırılamadı'); }
     setRunningSafety(false);
   };
 
   const retryJob = async (jobId) => {
     try {
-      await fetch(`/api/channel-manager/v2/import-jobs/${jobId}/retry`, { method: 'POST', headers });
+      const res = await fetch(`/api/channel-manager/v2/import-jobs/${jobId}/retry`, { method: 'POST', headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success('İş yeniden denemeye alındı');
       await fetchData();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); toast.error('İş yeniden denenemedi'); }
   };
 
   if (loading) return <div className="flex justify-center py-12"><RefreshCw size={24} className="animate-spin text-slate-400" /></div>;
