@@ -38,6 +38,7 @@ import {
   outletLabel,
   postOrderToFolio,
   closeOrder,
+  checkSplit,
   transferTable,
   updateOrderStatus,
   type ActiveOrder,
@@ -179,11 +180,16 @@ export default function PosScreen() {
 
   // Active-order lifecycle state.
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
-  // Close-and-pay state — tracks (order, method) so only the tapped button
-  // shows its spinner.
-  const [payingOrder, setPayingOrder] = useState<{ id: string; method: PaymentMethod } | null>(
-    null,
-  );
+  // Close-and-pay state. The collect flow opens a sheet (`payOrder`) where the
+  // operator picks a method and an optional split before confirming, instead of
+  // closing inline at full cash/card. `paying` drives the confirm spinner.
+  const [payOrder, setPayOrder] = useState<ActiveOrder | null>(null);
+  const [payMethod, setPayMethod] = useState<PaymentMethod>('cash');
+  const [payMode, setPayMode] = useState<'full' | 'equal' | 'custom'>('full');
+  const [splitCount, setSplitCount] = useState(2);
+  const [customAmounts, setCustomAmounts] = useState<string[]>(['', '']);
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
   // Active-order detail sheet — derived live from the query so a status change
   // refresh keeps the sheet in sync (and auto-closes when the order leaves the
   // active list).
@@ -362,40 +368,147 @@ export default function PosScreen() {
     }
   };
 
-  const onCloseOrder = async (orderId: string, method: PaymentMethod) => {
-    setPayingOrder({ id: orderId, method });
+  // Open the collect sheet for an order, resetting it to a full single payment.
+  const openPaySheet = (o: ActiveOrder) => {
+    setPayOrder(o);
+    setPayMethod('cash');
+    setPayMode('full');
+    setSplitCount(2);
+    setCustomAmounts(['', '']);
+    setPayError(null);
+  };
+  const closePaySheet = () => {
+    if (paying) return;
+    setPayOrder(null);
+  };
+
+  // Drives both the equal-split person count and the number of custom-amount
+  // rows so the two modes stay in lockstep; clamped to 2..8 payers.
+  const setPayerCount = (n: number) => {
+    const clamped = Math.max(2, Math.min(8, n));
+    setSplitCount(clamped);
+    setCustomAmounts((prev) => {
+      const next = prev.slice(0, clamped);
+      while (next.length < clamped) next.push('');
+      return next;
+    });
+  };
+
+  const parseAmount = (s: string): number => {
+    const n = parseFloat((s || '').replace(',', '.'));
+    return Number.isFinite(n) ? n : NaN;
+  };
+
+  const onConfirmPayment = async () => {
+    if (!payOrder) return;
+    const orderId = payOrder.id;
+    const due =
+      typeof payOrder.grand_total === 'number'
+        ? payOrder.grand_total
+        : (payOrder.total_amount ?? 0);
+    setPayError(null);
+
+    // For a custom split, validate the per-payer amounts reconcile to the
+    // collected total BEFORE taking any money so a mismatch can never leave a
+    // paid order with a rejected split.
+    let splitDetails: Record<string, number> | undefined;
+    if (payMode === 'custom') {
+      const parsed = customAmounts.map(parseAmount);
+      if (parsed.some((n) => !Number.isFinite(n) || n < 0)) {
+        setPayError(tr.departments.pos.invalidAmounts);
+        haptic.warning();
+        return;
+      }
+      const sum = parsed.reduce((acc, n) => acc + n, 0);
+      if (Math.abs(sum - due) > 0.01) {
+        setPayError(tr.departments.pos.splitMismatch);
+        haptic.warning();
+        return;
+      }
+      splitDetails = {};
+      parsed.forEach((n, i) => {
+        splitDetails![String(i + 1)] = Math.round(n * 100) / 100;
+      });
+    }
+
+    setPaying(true);
     // Stable per-order key generated once; reused on a queued replay so a
     // network retry of this exact close never books a second payment.
     const idempotencyKey = makeIdempotencyKey('pos_close_order', orderId);
     try {
       if (!onlineManager.isOnline()) {
-        await enqueueCloseOrder({ order_id: orderId, payment_method: method }, idempotencyKey);
+        // The COLLECTION is durable via the offline queue exactly as before.
+        // A split is online-only bookkeeping (it needs the closed transaction
+        // id), so it cannot be recorded now — say so rather than dropping it
+        // silently.
+        await enqueueCloseOrder(
+          { order_id: orderId, payment_method: payMethod },
+          idempotencyKey,
+        );
         haptic.success();
-        Alert.alert(tr.app.success, tr.departments.pos.orderQueued);
+        closePaySheet();
+        Alert.alert(
+          tr.app.success,
+          payMode === 'full'
+            ? tr.departments.pos.orderQueued
+            : tr.departments.pos.orderQueuedSplitSkipped,
+        );
         return;
       }
       const res = await closeOrder({
         order_id: orderId,
-        payment_method: method,
+        payment_method: payMethod,
         idempotency_key: idempotencyKey,
       });
+      // Record the split breakdown only when a fresh transaction was created
+      // (an idempotent replay already closed it — never re-split it).
+      let splitOk = false;
+      if (payMode !== 'full' && !res?.idempotent && res?.transaction_id) {
+        try {
+          const sp = await checkSplit({
+            transaction_id: res.transaction_id,
+            split_type: payMode === 'equal' ? 'equal' : 'custom',
+            split_count: payMode === 'equal' ? splitCount : undefined,
+            split_details: splitDetails,
+          });
+          // Equal splits can carry an inherent rounding remainder, so trust the
+          // backend `success`; a custom split was already balanced above.
+          splitOk = !!sp?.success;
+        } catch {
+          splitOk = false;
+        }
+      }
       haptic.success();
+      closePaySheet();
       qc.invalidateQueries({ queryKey: ['pos-active-orders'] });
-      Alert.alert(
-        tr.app.success,
-        res?.idempotent ? tr.departments.pos.orderAlreadyClosed : tr.departments.pos.orderClosed,
-      );
+      const msg = res?.idempotent
+        ? tr.departments.pos.orderAlreadyClosed
+        : payMode === 'full'
+          ? tr.departments.pos.orderClosed
+          : splitOk
+            ? tr.departments.pos.orderClosedSplit
+            : tr.departments.pos.orderClosedSplitFailed;
+      Alert.alert(tr.app.success, msg);
     } catch (e: unknown) {
       if (isNetworkError(e)) {
-        await enqueueCloseOrder({ order_id: orderId, payment_method: method }, idempotencyKey);
+        await enqueueCloseOrder(
+          { order_id: orderId, payment_method: payMethod },
+          idempotencyKey,
+        );
         haptic.success();
-        Alert.alert(tr.app.success, tr.departments.pos.orderQueued);
+        closePaySheet();
+        Alert.alert(
+          tr.app.success,
+          payMode === 'full'
+            ? tr.departments.pos.orderQueued
+            : tr.departments.pos.orderQueuedSplitSkipped,
+        );
         return;
       }
-      Alert.alert(tr.app.error, errorMessage(e, tr.errors.generic));
+      setPayError(errorMessage(e, tr.errors.generic));
       haptic.error();
     } finally {
-      setPayingOrder(null);
+      setPaying(false);
     }
   };
 
@@ -1035,22 +1148,13 @@ export default function PosScreen() {
                   </View>
                   <SegmentedActions>
                     <ActionButton
-                      label={tr.departments.pos.payCash}
+                      label={tr.departments.pos.collect}
                       icon="cash-outline"
-                      bg={c.success}
-                      fg="#ffffff"
-                      onPress={() => onCloseOrder(o.id, 'cash')}
-                      loading={payingOrder?.id === o.id && payingOrder.method === 'cash'}
-                      disabled={!!payingOrder && payingOrder.id === o.id}
-                    />
-                    <ActionButton
-                      label={tr.departments.pos.payCard}
-                      icon="card-outline"
                       bg={c.primary}
                       fg={c.primaryText}
-                      onPress={() => onCloseOrder(o.id, 'card')}
-                      loading={payingOrder?.id === o.id && payingOrder.method === 'card'}
-                      disabled={!!payingOrder && payingOrder.id === o.id}
+                      onPress={() => openPaySheet(o)}
+                      disabled={paying}
+                      testID={`pos-collect-${o.id}`}
                     />
                   </SegmentedActions>
                 </Card>
@@ -1477,25 +1581,188 @@ export default function PosScreen() {
         {o.status !== 'cancelled' ? (
           <SegmentedActions>
             <ActionButton
-              label={tr.departments.pos.payCash}
+              label={tr.departments.pos.collect}
               icon="cash-outline"
-              bg={c.success}
-              fg="#ffffff"
-              onPress={() => onCloseOrder(o.id, 'cash')}
-              loading={payingOrder?.id === o.id && payingOrder.method === 'cash'}
-              disabled={!!payingOrder && payingOrder.id === o.id}
-            />
-            <ActionButton
-              label={tr.departments.pos.payCard}
-              icon="card-outline"
               bg={c.primary}
               fg={c.primaryText}
-              onPress={() => onCloseOrder(o.id, 'card')}
-              loading={payingOrder?.id === o.id && payingOrder.method === 'card'}
-              disabled={!!payingOrder && payingOrder.id === o.id}
+              onPress={() => openPaySheet(o)}
+              disabled={paying}
+              testID={`pos-detail-collect-${o.id}`}
             />
           </SegmentedActions>
         ) : null}
+      </View>
+    );
+  };
+
+  // Collect sheet — pick a payment method and optionally split the bill before
+  // closing. The money is always taken in full by closeOrder (the backend has
+  // no leave-open partial close); "Eşit Böl" / "Özel Tutar" additionally record
+  // how that full payment was divided via check-split.
+  const renderPaySheet = () => {
+    if (!payOrder) return null;
+    const due =
+      typeof payOrder.grand_total === 'number'
+        ? payOrder.grand_total
+        : (payOrder.total_amount ?? 0);
+    const perPerson = splitCount > 0 ? due / splitCount : due;
+    const customSum = customAmounts.reduce((acc, s) => {
+      const n = parseAmount(s);
+      return acc + (Number.isFinite(n) ? n : 0);
+    }, 0);
+    const customMatches = Math.abs(customSum - due) <= 0.01;
+
+    const methods: {
+      key: PaymentMethod;
+      label: string;
+      icon: keyof typeof Ionicons.glyphMap;
+    }[] = [
+      { key: 'cash', label: tr.departments.pos.methodCash, icon: 'cash-outline' },
+      { key: 'card', label: tr.departments.pos.methodCard, icon: 'card-outline' },
+      { key: 'transfer', label: tr.departments.pos.methodTransfer, icon: 'swap-horizontal-outline' },
+    ];
+    const modes: { key: 'full' | 'equal' | 'custom'; label: string }[] = [
+      { key: 'full', label: tr.departments.pos.modeFull },
+      { key: 'equal', label: tr.departments.pos.modeEqual },
+      { key: 'custom', label: tr.departments.pos.modeCustom },
+    ];
+
+    return (
+      <View style={{ gap: spacing.md }}>
+        <Card>
+          <DetailRow label={tr.departments.pos.amountDue} value={formatCurrency(due)} />
+        </Card>
+
+        <Muted>{tr.departments.pos.paymentMethod}</Muted>
+        <SegmentedActions>
+          {methods.map((m) => (
+            <ActionButton
+              key={m.key}
+              label={m.label}
+              icon={m.icon}
+              bg={payMethod === m.key ? c.primary : c.surfaceAlt}
+              fg={payMethod === m.key ? c.primaryText : c.text}
+              onPress={() => setPayMethod(m.key)}
+              testID={`pos-method-${m.key}`}
+            />
+          ))}
+        </SegmentedActions>
+
+        <Muted>{tr.departments.pos.collectMode}</Muted>
+        <SegmentedActions>
+          {modes.map((m) => (
+            <ActionButton
+              key={m.key}
+              label={m.label}
+              bg={payMode === m.key ? c.primary : c.surfaceAlt}
+              fg={payMode === m.key ? c.primaryText : c.text}
+              onPress={() => setPayMode(m.key)}
+              testID={`pos-mode-${m.key}`}
+            />
+          ))}
+        </SegmentedActions>
+
+        {payMode === 'equal' ? (
+          <Card>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <Body style={{ color: c.text }}>{tr.departments.pos.personCount}</Body>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                <ActionButton
+                  label="−"
+                  bg={c.surfaceAlt}
+                  fg={c.text}
+                  onPress={() => setPayerCount(splitCount - 1)}
+                  disabled={splitCount <= 2}
+                  testID="pos-split-dec"
+                />
+                <Body style={{ color: c.text, fontWeight: '700', minWidth: 24, textAlign: 'center' }}>
+                  {splitCount}
+                </Body>
+                <ActionButton
+                  label="+"
+                  bg={c.surfaceAlt}
+                  fg={c.text}
+                  onPress={() => setPayerCount(splitCount + 1)}
+                  disabled={splitCount >= 8}
+                  testID="pos-split-inc"
+                />
+              </View>
+            </View>
+            <DetailRow label={tr.departments.pos.perPerson} value={formatCurrency(perPerson)} />
+          </Card>
+        ) : null}
+
+        {payMode === 'custom' ? (
+          <Card>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: spacing.sm,
+              }}
+            >
+              <Body style={{ color: c.text }}>{tr.departments.pos.personCount}</Body>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+                <ActionButton
+                  label="−"
+                  bg={c.surfaceAlt}
+                  fg={c.text}
+                  onPress={() => setPayerCount(splitCount - 1)}
+                  disabled={splitCount <= 2}
+                  testID="pos-custom-dec"
+                />
+                <Body style={{ color: c.text, fontWeight: '700', minWidth: 24, textAlign: 'center' }}>
+                  {splitCount}
+                </Body>
+                <ActionButton
+                  label="+"
+                  bg={c.surfaceAlt}
+                  fg={c.text}
+                  onPress={() => setPayerCount(splitCount + 1)}
+                  disabled={splitCount >= 8}
+                  testID="pos-custom-inc"
+                />
+              </View>
+            </View>
+            {customAmounts.map((amt, i) => (
+              <Field
+                key={i}
+                label={`${tr.departments.pos.payer} ${i + 1}`}
+                value={amt}
+                onChangeText={(t) =>
+                  setCustomAmounts((prev) => prev.map((v, idx) => (idx === i ? t : v)))
+                }
+                keyboardType="numeric"
+                placeholder="0"
+                testID={`pos-custom-amount-${i}`}
+              />
+            ))}
+            <DetailRow
+              label={tr.departments.pos.enteredTotal}
+              value={`${formatCurrency(customSum)} / ${formatCurrency(due)}`}
+            />
+            {!customMatches ? (
+              <Muted style={{ color: c.danger }}>{tr.departments.pos.splitMismatch}</Muted>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {payError ? <Muted style={{ color: c.danger }}>{payError}</Muted> : null}
+
+        <Button
+          title={tr.departments.pos.confirmPayment}
+          onPress={onConfirmPayment}
+          loading={paying}
+          disabled={paying || (payMode === 'custom' && !customMatches)}
+          testID="pos-confirm-payment"
+        />
       </View>
     );
   };
@@ -1600,6 +1867,16 @@ export default function PosScreen() {
         }
       >
         {selectedOrder ? renderOrderActions(selectedOrder) : null}
+      </ActionSheet>
+
+      {/* Collect / split-payment sheet. */}
+      <ActionSheet
+        visible={!!payOrder}
+        onClose={closePaySheet}
+        title={tr.departments.pos.payTitle}
+        testID="pos-pay-sheet"
+      >
+        {renderPaySheet()}
       </ActionSheet>
 
       {/* Read-only BEO summary sheet. */}

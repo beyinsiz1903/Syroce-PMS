@@ -168,7 +168,32 @@ export async function transferTable(params: {
   });
 }
 
-export type PaymentMethod = 'cash' | 'card';
+// The backend stores the close-order `payment_method` as a free string
+// (pos_transactions.payment_method) — it neither validates against an enum nor
+// changes the amount, so widening the mobile union to add bank transfer is
+// purely additive and never weakens the close contract.
+export type PaymentMethod = 'cash' | 'card' | 'transfer';
+
+export type SplitType = 'equal' | 'custom';
+
+export type SplitLine = {
+  split_number: number;
+  amount: number;
+  items?: unknown;
+};
+
+export type SplitResult = {
+  success: boolean;
+  original_transaction_id: string;
+  original_amount: number;
+  split_type: string;
+  split_count: number;
+  splits: SplitLine[];
+  // The backend re-sums the parts and reports whether they reconcile to the
+  // collected total (delta within 1 kuruş). We surface `match` so the UI can
+  // refuse to record a custom split that does not add up.
+  total_validation: { expected: number; actual: number; delta: number; match: boolean };
+};
 
 // POST /api/pos/v2/orders/close — close an active order and take payment,
 // writing a pos_transactions/completed row (the canonical close-order
@@ -191,6 +216,33 @@ export async function closeOrder(body: {
   idempotent?: boolean;
 }> {
   return api.post('/api/pos/v2/orders/close', body);
+}
+
+// POST /api/pos/check-split — record how a CLOSED order's payment was divided
+// (backend pos_fnb_router/pos_core.split_check). The order is already paid in
+// full by closeOrder, which writes the canonical pos_transactions row; this
+// only annotates that transaction with the agreed breakdown and re-validates
+// that the parts reconcile to the collected total. It collects no money and
+// never changes the close / idempotency contract — it is pure post-close
+// bookkeeping for the receipt / who-paid split. `transaction_id`, `split_type`
+// and `split_count` are scalar query params; the custom per-payer amounts ride
+// in the embedded `{ split_details }` body the backend expects.
+export async function checkSplit(params: {
+  transaction_id: string;
+  split_type: SplitType;
+  split_count?: number;
+  // custom split only — { "1": amount, "2": amount, ... } keyed by payer number.
+  split_details?: Record<string, number>;
+}): Promise<SplitResult> {
+  return apiRequest('/api/pos/check-split', {
+    method: 'POST',
+    query: {
+      transaction_id: params.transaction_id,
+      split_type: params.split_type,
+      ...(params.split_count ? { split_count: params.split_count } : {}),
+    },
+    body: params.split_details ? { split_details: params.split_details } : undefined,
+  });
 }
 
 // POST /api/pos/create-order — posts the items as folio charges when a
