@@ -136,3 +136,76 @@ export async function listMiceOpportunities(params?: {
   );
   return res?.opportunities ?? [];
 }
+
+// ── Groups / Blocks & Corporate Contracts (read-only) ──────────────────────
+// Group reservations mirror backend/domains/pms/groups_router.py
+// (GET /api/group-reservations), group blocks (GET /api/groups/blocks) and
+// corporate contracts (GET /api/corporate/contracts) all require auth only on
+// the backend. Writes (create-block, assign-rooms, release) stay gated by
+// require_module_v101("frontdesk") and are NOT exposed here.
+
+export type GroupReservation = {
+  id: string;
+  group_name?: string;
+  group_type?: string;
+  contact_person?: string | null;
+  check_in_date?: string;
+  check_out_date?: string;
+  total_rooms?: number;
+  rooms_assigned?: number;
+  status?: string;
+};
+
+export type GroupBlock = {
+  id: string;
+  group_name?: string;
+  organization?: string;
+  contact_name?: string | null;
+  check_in?: string;
+  check_out?: string;
+  total_rooms?: number;
+  rooms_picked_up?: number;
+  room_type?: string;
+  group_rate?: number;
+  status?: string;
+};
+
+export type CorporateContract = {
+  id: string;
+  company_name?: string;
+  contract_type?: string;
+  start_date?: string;
+  end_date?: string;
+  room_nights_committed?: number;
+  room_nights_used?: number;
+  contracted_rate?: number;
+  discount_percentage?: number;
+  contact_person?: string | null;
+  status?: string;
+  days_until_expiry?: number;
+};
+
+// GET /api/group-reservations → { groups: [...] }
+export async function listGroupReservations(): Promise<GroupReservation[]> {
+  const res = await api.get<{ groups?: GroupReservation[] }>('/api/group-reservations');
+  return res?.groups ?? [];
+}
+
+// GET /api/groups/blocks?status= → { blocks: [...] }
+export async function listGroupBlocks(params?: {
+  status?: string;
+}): Promise<GroupBlock[]> {
+  const res = await api.get<{ blocks?: GroupBlock[] }>('/api/groups/blocks', params);
+  return res?.blocks ?? [];
+}
+
+// GET /api/corporate/contracts?status= → { contracts: [...] }
+export async function listCorporateContracts(params?: {
+  status?: string;
+}): Promise<CorporateContract[]> {
+  const res = await api.get<{ contracts?: CorporateContract[] }>(
+    '/api/corporate/contracts',
+    params,
+  );
+  return res?.contracts ?? [];
+}
