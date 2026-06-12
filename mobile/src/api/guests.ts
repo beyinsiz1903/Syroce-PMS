@@ -34,15 +34,14 @@ export async function searchGuests(q: string): Promise<Guest[]> {
     const list = unwrap(res);
     if (list.length) return list;
   } catch {
-    // fall through
+    // Primary search endpoint failed — fall through to the full-list fallback
+    // below, which is the alternate data source (not an error swallow).
   }
-  // Fallback: full list with backend search param
-  try {
-    const res = await api.get<GuestListResponse>('/api/pms/guests', { search: q, limit: 50 });
-    return unwrap(res);
-  } catch {
-    return [];
-  }
+  // Fallback: full list with backend search param. Errors here propagate so a
+  // genuine backend failure surfaces as a visible error instead of an empty
+  // (and misleading) "no guests found" result.
+  const res = await api.get<GuestListResponse>('/api/pms/guests', { search: q, limit: 50 });
+  return unwrap(res);
 }
 
 // POST /api/pms/guests

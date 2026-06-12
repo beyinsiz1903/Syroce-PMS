@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Badge,
   Body,
+  Button,
   Card,
   EmptyState,
   H1,
@@ -149,6 +150,11 @@ export default function TodayScreen() {
   }, [arrivals, departures, inhouse, noshows]);
 
   const offline = arrivals.isError && isOffline(arrivals.error);
+  // Surface non-offline load failures so the operator never reads empty
+  // sections / zeroed KPIs as "nothing today" when the data simply failed.
+  const anyError =
+    !offline &&
+    (arrivals.isError || departures.isError || inhouse.isError || noshows.isError);
 
   const arrivalsData = arrivals.data || [];
   const departuresData = departures.data || [];
@@ -191,6 +197,20 @@ export default function TodayScreen() {
         <OfflineBanner visible={offline} />
 
         <H1>{tr.today.title}</H1>
+
+        {anyError ? (
+          <Card accent={c.danger}>
+            <Muted>{tr.today.loadError}</Muted>
+            <View style={{ height: spacing.sm }} />
+            <Button
+              title={tr.app.retry}
+              icon="refresh"
+              variant="outline"
+              onPress={onRefresh}
+              fullWidth
+            />
+          </Card>
+        ) : null}
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
           {summary.map((s) => (
@@ -238,6 +258,10 @@ export default function TodayScreen() {
         <SectionTitle title={tr.today.arrivals} />
         {arrivals.isLoading ? (
           <SkeletonCard />
+        ) : arrivals.isError && !offline ? (
+          <Card accent={c.danger}>
+            <Muted>{tr.today.loadError}</Muted>
+          </Card>
         ) : arrivalsData.length === 0 ? (
           <EmptyState icon="bed-outline" title={tr.today.noArrivals} />
         ) : (
@@ -256,6 +280,10 @@ export default function TodayScreen() {
         <SectionTitle title={tr.today.departures} />
         {departures.isLoading ? (
           <SkeletonCard />
+        ) : departures.isError && !offline ? (
+          <Card accent={c.danger}>
+            <Muted>{tr.today.loadError}</Muted>
+          </Card>
         ) : departuresData.length === 0 ? (
           <EmptyState icon="walk-outline" title={tr.today.noDepartures} />
         ) : (

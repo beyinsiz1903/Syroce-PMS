@@ -73,20 +73,20 @@ export type RoomBlock = {
 type RoomBlockResponse = RoomBlock[] | { blocks?: RoomBlock[]; items?: RoomBlock[] };
 
 // GET /api/pms/room-blocks — active blocks overlapping the requested window.
+// CRITICAL (overbooking guard): errors must propagate. If a failed block load
+// were swallowed into [], the availability grid would paint blocked rooms as
+// free and a room could be double-booked. Throwing makes getAvailabilityGrid
+// reject so the calendar shows a visible error instead of phantom availability.
 export async function getRoomBlocks(fromDate?: string, toDate?: string): Promise<RoomBlock[]> {
-  try {
-    const res = await api.get<RoomBlockResponse>('/api/pms/room-blocks', {
-      status: 'active',
-      from_date: fromDate || undefined,
-      to_date: toDate || undefined,
-    });
-    if (Array.isArray(res)) return res;
-    if (Array.isArray(res?.blocks)) return res.blocks;
-    if (Array.isArray(res?.items)) return res.items;
-    return [];
-  } catch {
-    return [];
-  }
+  const res = await api.get<RoomBlockResponse>('/api/pms/room-blocks', {
+    status: 'active',
+    from_date: fromDate || undefined,
+    to_date: toDate || undefined,
+  });
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res?.blocks)) return res.blocks;
+  if (Array.isArray(res?.items)) return res.items;
+  return [];
 }
 
 // Builds a room-by-day grid by querying availability for each day in the

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { Body, Card, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { Body, Button, Card, H1, Muted, SkeletonCard } from '../../src/components/ui';
 import { DatePicker } from '../../src/components/DatePicker';
 import { FilterChips } from '../../src/components/FilterChips';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -149,8 +149,16 @@ export default function AvailabilityScreen() {
           <SkeletonCard />
         </View>
       ) : q.isError && !offline ? (
-        <Card>
+        <Card accent={c.danger}>
           <Muted>{errorMessage(q.error, tr.availability.loadError)}</Muted>
+          <View style={{ height: spacing.sm }} />
+          <Button
+            title={tr.app.retry}
+            icon="refresh"
+            variant="outline"
+            onPress={() => q.refetch()}
+            fullWidth
+          />
         </Card>
       ) : !grid || grid.rooms.length === 0 ? (
         <Card>

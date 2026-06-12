@@ -9,4 +9,5 @@ export const guests = {
   nationality: 'Uyruk',
   searchHint: 'Aramak için en az 2 karakter girin',
   contact: 'İletişim',
+  loadError: 'Misafir araması yapılamadı, tekrar dene',
 };

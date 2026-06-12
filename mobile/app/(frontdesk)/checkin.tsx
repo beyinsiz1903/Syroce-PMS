@@ -49,6 +49,7 @@ export default function CheckinScreen() {
   const [parsed, setParsed] = useState<QuickIdResult | null>(null);
   const [bookingId, setBookingId] = useState<string | null>(params.bookingId ?? null);
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [roomsError, setRoomsError] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
 
   useEffect(() => {
@@ -56,9 +57,22 @@ export default function CheckinScreen() {
   }, [permission, requestPermission]);
 
   useEffect(() => {
-    listRooms().then((rs) => {
-      setRooms(rs.filter((r) => AVAILABLE_STATUSES.includes((r.status || '').toLowerCase())));
-    });
+    let cancelled = false;
+    setRoomsError(false);
+    listRooms()
+      .then((rs) => {
+        if (!cancelled) {
+          setRooms(rs.filter((r) => AVAILABLE_STATUSES.includes((r.status || '').toLowerCase())));
+        }
+      })
+      .catch(() => {
+        // Surface the failure in the room picker instead of showing an empty
+        // list that looks like "no rooms available".
+        if (!cancelled) setRoomsError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const onBarcodeScanned = async ({ data }: BarcodeScanningResult) => {
@@ -69,8 +83,13 @@ export default function CheckinScreen() {
     if (trimmed.startsWith('booking:')) {
       setBookingId(trimmed.split(':')[1] || null);
     } else if (/^\d{1,4}$/.test(trimmed)) {
-      const list = await searchBookingByRoom(trimmed);
-      if (list.length) setBookingId(list[0].id);
+      try {
+        const list = await searchBookingByRoom(trimmed);
+        if (list.length) setBookingId(list[0].id);
+      } catch {
+        // Best-effort room->booking lookup; continue to the ID scan even if it
+        // fails so a lookup error never aborts the scan flow.
+      }
     } else {
       setBookingId(trimmed);
     }
@@ -268,7 +287,9 @@ export default function CheckinScreen() {
           {rooms.length} {tr.checkin.roomsAvailable}
         </Muted>
         <View style={{ height: spacing.sm }} />
-        {rooms.length === 0 ? (
+        {roomsError ? (
+          <Muted style={{ color: c.danger }}>{tr.rooms.loadError}</Muted>
+        ) : rooms.length === 0 ? (
           <Muted>{tr.checkin.noRooms}</Muted>
         ) : (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>

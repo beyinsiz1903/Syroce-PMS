@@ -18,12 +18,10 @@ export type MenuResponse = {
   categories: MenuCategory[];
 };
 
+// Errors propagate so a failed menu load surfaces as a visible error + retry
+// instead of an empty menu that looks like "nothing available".
 export async function getRoomServiceMenu(): Promise<MenuResponse> {
-  try {
-    return await api.get<MenuResponse>('/api/guest/room-service-menu');
-  } catch {
-    return { categories: [] };
-  }
+  return api.get<MenuResponse>('/api/guest/room-service-menu');
 }
 
 export type OrderItemPayload = {
@@ -64,14 +62,10 @@ export type RoomServiceOrder = {
 };
 
 export async function listRoomServiceOrders(bookingId: string): Promise<RoomServiceOrder[]> {
-  try {
-    const res = await api.get<{ orders: RoomServiceOrder[] }>(
-      `/api/guest/room-service-orders/${bookingId}`,
-    );
-    return res?.orders || [];
-  } catch {
-    return [];
-  }
+  const res = await api.get<{ orders: RoomServiceOrder[] }>(
+    `/api/guest/room-service-orders/${bookingId}`,
+  );
+  return res?.orders || [];
 }
 
 export type RoomServiceOrderEvent = {

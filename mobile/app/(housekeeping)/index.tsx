@@ -43,7 +43,7 @@ import {
 } from '../../src/api/rooms';
 import { completeTask, reportIssue, startTask } from '../../src/api/housekeeping';
 import { haptic } from '../../src/hooks/useHaptic';
-import { isOffline } from '../../src/utils/errors';
+import { errorMessage, isOffline } from '../../src/utils/errors';
 
 // Animasyon native driver yalniz native'de; Expo Web'de false (RN web kurali).
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
@@ -746,12 +746,43 @@ export default function RoomsScreen() {
       <FilterChips options={floorFilters} value={floor} onChange={setFloor} />
       <View style={{ height: spacing.sm }} />
 
+      {/* Room data loads fine but task fetch failed: surface it instead of
+          silently showing rooms with no task badges. */}
+      {roomTasks.isError && !rooms.isError && !isOffline(roomTasks.error) ? (
+        <Card accent={c.danger}>
+          <Muted>{tr.housekeeping.tasksLoadError}</Muted>
+          <View style={{ height: spacing.sm }} />
+          <Button
+            title={tr.app.retry}
+            icon="refresh"
+            variant="outline"
+            onPress={() => roomTasks.refetch()}
+            fullWidth
+          />
+        </Card>
+      ) : null}
+
       {rooms.isLoading ? (
         <View style={{ gap: spacing.sm }}>
           <SkeletonCard />
           <SkeletonCard />
           <SkeletonCard />
         </View>
+      ) : rooms.isError && !offline ? (
+        <Card accent={c.danger}>
+          <Muted>{errorMessage(rooms.error, tr.rooms.loadError)}</Muted>
+          <View style={{ height: spacing.sm }} />
+          <Button
+            title={tr.app.retry}
+            icon="refresh"
+            variant="outline"
+            onPress={() => {
+              rooms.refetch();
+              roomTasks.refetch();
+            }}
+            fullWidth
+          />
+        </Card>
       ) : totalCount === 0 ? (
         <EmptyState icon="bed-outline" title={tr.app.empty} />
       ) : (
@@ -944,6 +975,18 @@ export default function RoomsScreen() {
         <Muted>{tr.housekeeping.selectStaff}</Muted>
         {staff.isLoading ? (
           <SkeletonCard />
+        ) : staff.isError ? (
+          <Card accent={c.danger} testID="hk-staff-error">
+            <Muted>{errorMessage(staff.error, tr.housekeeping.staffLoadError)}</Muted>
+            <View style={{ height: spacing.sm }} />
+            <Button
+              title={tr.app.retry}
+              icon="refresh"
+              variant="outline"
+              onPress={() => staff.refetch()}
+              fullWidth
+            />
+          </Card>
         ) : (staff.data || []).length === 0 ? (
           <Card testID="hk-no-staff">
             <Muted>{tr.housekeeping.noStaff}</Muted>

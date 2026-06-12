@@ -38,20 +38,14 @@ export type QrPendingChargesResponse = {
   pending_count: number;
 };
 
+// Errors propagate so react-query's isError fires and the QR screen shows the
+// "no active booking / retry" path instead of a silently blank badge.
 export async function fetchMyQrToken(): Promise<QrTokenResponse | null> {
-  try {
-    return await api.get<QrTokenResponse>('/api/guest/qr/me');
-  } catch {
-    return null;
-  }
+  return api.get<QrTokenResponse>('/api/guest/qr/me');
 }
 
 export async function fetchMyPendingCharges(): Promise<QrPendingChargesResponse> {
-  try {
-    return await api.get<QrPendingChargesResponse>('/api/guest/qr/charges/pending');
-  } catch {
-    return { charges: [], pending_count: 0 };
-  }
+  return api.get<QrPendingChargesResponse>('/api/guest/qr/charges/pending');
 }
 
 export async function approveQrCharge(chargeId: string): Promise<void> {

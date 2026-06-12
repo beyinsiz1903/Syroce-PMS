@@ -20,13 +20,11 @@ function unwrapRooms(res: RoomListResponse): Room[] {
 }
 
 // GET /api/pms/rooms (pms_rooms.py)
+// Errors propagate so react-query's isError fires and the screen shows a
+// visible error + retry instead of a misleading empty room list.
 export async function listRooms(): Promise<Room[]> {
-  try {
-    const res = await api.get<RoomListResponse>('/api/pms/rooms');
-    return unwrapRooms(res);
-  } catch {
-    return [];
-  }
+  const res = await api.get<RoomListResponse>('/api/pms/rooms');
+  return unwrapRooms(res);
 }
 
 export async function findAvailableRoomByType(roomType: string): Promise<Room | null> {
@@ -67,13 +65,11 @@ export type HkStaff = {
 };
 
 // GET /api/housekeeping/mobile/staff — roster eligible for task assignment.
+// Errors propagate so a failed roster load surfaces as a visible error rather
+// than an empty (and misleading) assignee list.
 export async function listHousekeepingStaff(): Promise<HkStaff[]> {
-  try {
-    const res = await api.get<{ staff?: HkStaff[] }>('/api/housekeeping/mobile/staff');
-    return Array.isArray(res?.staff) ? res.staff : [];
-  } catch {
-    return [];
-  }
+  const res = await api.get<{ staff?: HkStaff[] }>('/api/housekeeping/mobile/staff');
+  return Array.isArray(res?.staff) ? res.staff : [];
 }
 
 // ── Open tasks per room (room card badge + detail sheet) ──────────────────
@@ -93,12 +89,8 @@ export type RoomTask = {
 // housekeeping tasks across all rooms; the screen groups them by room_id to
 // build the per-card open-task badge and the on-tap task list.
 export async function listRoomTasks(): Promise<RoomTask[]> {
-  try {
-    const res = await api.get<{ tasks?: RoomTask[] }>('/api/housekeeping/mobile/room-tasks');
-    return Array.isArray(res?.tasks) ? res.tasks : [];
-  } catch {
-    return [];
-  }
+  const res = await api.get<{ tasks?: RoomTask[] }>('/api/housekeeping/mobile/room-tasks');
+  return Array.isArray(res?.tasks) ? res.tasks : [];
 }
 
 export type QuickTaskInput = {

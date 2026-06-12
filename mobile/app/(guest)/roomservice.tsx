@@ -21,6 +21,7 @@ import { useCartStore } from '../../src/state/cartStore';
 import { formatCurrency } from '../../src/utils/format';
 import { ROUTES } from '../../src/navigation/routes';
 import { haptic } from '../../src/hooks/useHaptic';
+import { errorMessage } from '../../src/utils/errors';
 
 export default function RoomServiceScreen() {
   const c = useTheme();
@@ -65,6 +66,19 @@ export default function RoomServiceScreen() {
 
         {menuQ.isLoading ? (
           <SkeletonCard />
+        ) : menuQ.isError ? (
+          <Card accent={c.danger}>
+            <Body style={{ fontWeight: '600' }}>
+              {errorMessage(menuQ.error, tr.guest.menuLoadError)}
+            </Body>
+            <View style={{ height: spacing.sm }} />
+            <Button
+              title={tr.app.retry}
+              icon="refresh"
+              variant="outline"
+              onPress={() => menuQ.refetch()}
+            />
+          </Card>
         ) : (menuQ.data?.categories || []).length === 0 ? (
           <Card padded={false}>
             <EmptyState

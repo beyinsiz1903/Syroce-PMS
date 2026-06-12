@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge, Body, Card, EmptyState, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { Badge, Body, Button, Card, EmptyState, H1, Muted, SkeletonCard } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { getGuestBookings } from '../../src/api/guestBookings';
@@ -11,6 +11,7 @@ import {
   type RoomServiceOrder,
 } from '../../src/api/guestRoomService';
 import { formatCurrency, formatTime } from '../../src/utils/format';
+import { errorMessage } from '../../src/utils/errors';
 
 const STATUS_TONE: Record<string, 'success' | 'warning' | 'info' | 'default' | 'danger'> = {
   pending: 'warning',
@@ -179,6 +180,19 @@ export default function GuestOrdersScreen() {
         </Card>
       ) : ordersQ.isLoading ? (
         <SkeletonCard />
+      ) : ordersQ.isError ? (
+        <Card accent={c.danger}>
+          <Body style={{ fontWeight: '600' }}>
+            {errorMessage(ordersQ.error, tr.guest.ordersLoadError)}
+          </Body>
+          <View style={{ height: spacing.sm }} />
+          <Button
+            title={tr.app.retry}
+            icon="refresh"
+            variant="outline"
+            onPress={() => ordersQ.refetch()}
+          />
+        </Card>
       ) : (ordersQ.data || []).length === 0 ? (
         <Card padded={false}>
           <EmptyState

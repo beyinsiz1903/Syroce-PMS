@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, EmptyState, Field, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { Badge, Body, Button, Card, EmptyState, Field, H1, Muted, SkeletonCard } from '../../src/components/ui';
 import { KpiPill } from '../../src/components/KpiCard';
 import { FilterChips, FilterChipOption } from '../../src/components/FilterChips';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -320,8 +320,16 @@ export default function RoomsScreen() {
           <SkeletonCard />
         </View>
       ) : roomsQ.isError && !offline ? (
-        <Card>
+        <Card accent={c.danger}>
           <Muted>{errorMessage(roomsQ.error, tr.rooms.loadError)}</Muted>
+          <View style={{ height: spacing.sm }} />
+          <Button
+            title={tr.app.retry}
+            icon="refresh"
+            variant="outline"
+            onPress={() => roomsQ.refetch()}
+            fullWidth
+          />
         </Card>
       ) : (
         <FlatList

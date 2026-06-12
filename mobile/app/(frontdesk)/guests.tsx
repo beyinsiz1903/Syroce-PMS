@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Badge,
   Body,
+  Button,
   Card,
   DetailRow,
   EmptyState,
@@ -16,7 +17,7 @@ import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { Guest, checkBlacklist, searchGuests } from '../../src/api/guests';
-import { isOffline } from '../../src/utils/errors';
+import { errorMessage, isOffline } from '../../src/utils/errors';
 
 export default function GuestsScreen() {
   const c = useTheme();
@@ -98,6 +99,18 @@ export default function GuestsScreen() {
 
       {tooShort ? (
         <EmptyState icon="search-outline" title={tr.guests.searchHint} />
+      ) : guests.isError && !offline ? (
+        <Card accent={c.danger}>
+          <Muted>{errorMessage(guests.error, tr.guests.loadError)}</Muted>
+          <View style={{ height: spacing.sm }} />
+          <Button
+            title={tr.app.retry}
+            icon="refresh"
+            variant="outline"
+            onPress={() => guests.refetch()}
+            fullWidth
+          />
+        </Card>
       ) : showSkeleton ? (
         <SkeletonCard />
       ) : (

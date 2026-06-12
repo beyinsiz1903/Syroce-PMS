@@ -28,6 +28,7 @@ import {
   type QrPendingCharge,
 } from '../../src/api/guestQrBadge';
 import { formatCurrency } from '../../src/utils/format';
+import { errorMessage, errorStatus } from '../../src/utils/errors';
 import { haptic } from '../../src/hooks/useHaptic';
 
 /**
@@ -186,11 +187,15 @@ export default function GuestQrBadgeScreen() {
     }
   }
 
-  const tokenError = tokenQ.isError || (tokenQ.isSuccess && !tokenQ.data);
+  // Backend returns 404 for both no-active-booking and missing guest record.
+  // Any other failure (5xx / network) is a transport error, not "no booking".
+  const tokenStatus = errorStatus(tokenQ.error);
+  const isTokenFetchError = !tokenQ.isLoading && tokenQ.isError && tokenStatus !== 404;
   const isNoBookingError =
     !tokenQ.isLoading &&
     !tokenQ.data &&
-    tokenError; // generic — backend returns 404 for both no-active-booking and missing guest record
+    !isTokenFetchError &&
+    (tokenStatus === 404 || tokenQ.isSuccess);
 
   const charges: QrPendingCharge[] = pendingQ.data?.charges || [];
   const pendingCount = pendingQ.data?.pending_count || 0;
@@ -219,10 +224,22 @@ export default function GuestQrBadgeScreen() {
               <ActivityIndicator size="large" color={c.primary} />
               <Body style={{ marginTop: spacing.sm }}>{tr.guest.qrBadgeRefreshing}</Body>
             </View>
+          ) : isTokenFetchError ? (
+            <View style={{ padding: spacing.md, gap: spacing.sm }}>
+              <Body style={{ color: c.danger || c.text }}>
+                {errorMessage(tokenQ.error, tr.guest.qrBadgeError)}
+              </Body>
+              <Button
+                title={tr.app.retry}
+                icon="refresh"
+                variant="outline"
+                onPress={() => tokenQ.refetch()}
+              />
+            </View>
           ) : isNoBookingError ? (
             <View style={{ padding: spacing.md, gap: spacing.sm }}>
               <Body style={{ color: c.danger || c.text }}>{tr.guest.qrBadgeNoBooking}</Body>
-              <Button title="Tekrar dene" onPress={() => tokenQ.refetch()} variant="ghost" />
+              <Button title={tr.app.retry} onPress={() => tokenQ.refetch()} variant="ghost" />
             </View>
           ) : qrPayload ? (
             <View style={{ alignItems: 'center', padding: spacing.md, gap: spacing.sm }}>
@@ -253,7 +270,20 @@ export default function GuestQrBadgeScreen() {
           {pendingCount > 0 ? <Badge label={String(pendingCount)} tone="warning" /> : null}
         </View>
 
-        {charges.length === 0 ? (
+        {pendingQ.isError ? (
+          <Card accent={c.danger}>
+            <Body style={{ fontWeight: '600' }}>
+              {errorMessage(pendingQ.error, tr.guest.qrBadgePendingError)}
+            </Body>
+            <View style={{ height: spacing.sm }} />
+            <Button
+              title={tr.app.retry}
+              icon="refresh"
+              variant="outline"
+              onPress={() => pendingQ.refetch()}
+            />
+          </Card>
+        ) : charges.length === 0 ? (
           <Card padded={false}>
             <EmptyState icon="receipt-outline" title={tr.guest.qrBadgePendingEmpty} />
           </Card>

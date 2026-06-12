@@ -49,6 +49,8 @@ export const housekeeping = {
   assignSubmit: 'Ata',
   assignSuccess: 'Görev atandı',
   noStaff: 'Personel bulunamadı',
+  staffLoadError: 'Personel listesi yüklenemedi, tekrar dene',
+  tasksLoadError: 'Görevler yüklenemedi, tekrar dene',
   assignNeedStaff: 'Lütfen personel seçin',
   openTasks: 'Açık görev',
   openTasksTitle: 'Açık Görevler',

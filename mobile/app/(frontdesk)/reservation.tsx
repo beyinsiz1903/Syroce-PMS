@@ -549,6 +549,11 @@ export default function ReservationDetailScreen() {
       ) : (
         <Card>
           <H2>{tr.reservations.rateBreakdown}</H2>
+          {enhanced.isError && !offline ? (
+            <Muted style={{ marginTop: spacing.xs, color: c.danger }}>
+              {errorMessage(enhanced.error, tr.reservations.loadError)}
+            </Muted>
+          ) : null}
           <Row
             label={tr.reservations.baseRate}
             value={rate?.base_rate != null ? formatCurrency(rate.base_rate) : undefined}
@@ -610,9 +615,15 @@ export default function ReservationDetailScreen() {
       ) : (
         <Card>
           <H2>{tr.reservations.specialRequests}</H2>
-          <Body style={{ marginTop: spacing.xs }}>
-            {otaData?.special_requests || tr.reservations.none}
-          </Body>
+          {ota.isError && !offline ? (
+            <Muted style={{ marginTop: spacing.xs, color: c.danger }}>
+              {errorMessage(ota.error, tr.reservations.loadError)}
+            </Muted>
+          ) : (
+            <Body style={{ marginTop: spacing.xs }}>
+              {otaData?.special_requests || tr.reservations.none}
+            </Body>
+          )}
           {otaData?.remarks ? (
             <>
               <Muted style={{ marginTop: spacing.sm }}>{tr.reservations.remarks}</Muted>

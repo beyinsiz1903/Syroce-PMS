@@ -3,7 +3,7 @@ import { FlatList, Pressable, RefreshControl, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, EmptyState, Field, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { Badge, Body, Button, Card, EmptyState, Field, H1, Muted, SkeletonCard } from '../../src/components/ui';
 import { DatePicker } from '../../src/components/DatePicker';
 import { FilterChips } from '../../src/components/FilterChips';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -228,8 +228,16 @@ export default function ReservationsScreen() {
           <SkeletonCard />
         </View>
       ) : q.isError && !offline ? (
-        <Card>
+        <Card accent={c.danger}>
           <Muted>{errorMessage(q.error, tr.reservations.loadError)}</Muted>
+          <View style={{ height: spacing.sm }} />
+          <Button
+            title={tr.app.retry}
+            icon="refresh"
+            variant="outline"
+            onPress={() => q.refetch()}
+            fullWidth
+          />
         </Card>
       ) : (
         <FlatList

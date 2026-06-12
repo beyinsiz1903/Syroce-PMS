@@ -129,12 +129,8 @@ export async function getFolioDashboardStats(): Promise<FolioDashboardStats> {
 
 // GET /api/frontdesk/folio/{booking_id} (frontdesk_router.py:514)
 export async function getFolioForBooking(bookingId: string): Promise<Folio | null> {
-  try {
-    const res = await api.get<FolioResponse>(`/api/frontdesk/folio/${bookingId}`);
-    return normalizeFolio(res);
-  } catch {
-    return null;
-  }
+  const res = await api.get<FolioResponse>(`/api/frontdesk/folio/${bookingId}`);
+  return normalizeFolio(res);
 }
 
 // POST /api/frontdesk/folio/{booking_id}/payment (frontdesk_router.py:427)

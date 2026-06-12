@@ -67,12 +67,8 @@ export async function getTodayArrivals(): Promise<Booking[]> {
 
 // GET /api/unified/today-departures (frontdesk_router.py)
 export async function getTodayDepartures(): Promise<Booking[]> {
-  try {
-    const res = await api.get<BookingListResponse>('/api/unified/today-departures');
-    return unwrap(res, ['departures', 'bookings', 'items', 'data.departures']);
-  } catch {
-    return [];
-  }
+  const res = await api.get<BookingListResponse>('/api/unified/today-departures');
+  return unwrap(res, ['departures', 'bookings', 'items', 'data.departures']);
 }
 
 // GET /api/unified/in-house (frontdesk_router.py) → { in_house: [...], count }
@@ -80,12 +76,8 @@ export async function getTodayDepartures(): Promise<Booking[]> {
 // so today's walk-ins surface here tagged source==='walk_in' (set server-side by
 // the walk-in service) — used for the dashboard Walk-in summary count.
 export async function getInHouse(): Promise<Booking[]> {
-  try {
-    const res = await api.get<BookingListResponse>('/api/unified/in-house');
-    return unwrap(res, ['in_house', 'bookings', 'items']);
-  } catch {
-    return [];
-  }
+  const res = await api.get<BookingListResponse>('/api/unified/in-house');
+  return unwrap(res, ['in_house', 'bookings', 'items']);
 }
 
 export type NoShowRiskEntry = {
@@ -99,58 +91,46 @@ export type NoShowRiskEntry = {
 // POST /api/pms/no-show-risk/bulk  body: { booking_ids: [...] }
 // Scores today's arrivals and returns medium/high risk entries enriched with arrival info.
 export async function getNoShowRisk(): Promise<NoShowRiskEntry[]> {
-  try {
-    const arrivals = await getTodayArrivals();
-    const ids = arrivals.map((a) => a.id).filter(Boolean);
-    if (ids.length === 0) return [];
-    const res = await api.post<{ results?: Record<string, { score: number; level: string }> }>(
-      '/api/pms/no-show-risk/bulk',
-      { booking_ids: ids },
-    );
-    const results = res?.results || {};
-    const out: NoShowRiskEntry[] = [];
-    for (const a of arrivals) {
-      const r = results[a.id];
-      if (!r) continue;
-      if (r.level === 'medium' || r.level === 'high') {
-        out.push({
-          booking_id: a.id,
-          score: r.score,
-          level: r.level,
-          guest_name: a.guest_name,
-          room_number: a.room_number,
-        });
-      }
+  const arrivals = await getTodayArrivals();
+  const ids = arrivals.map((a) => a.id).filter(Boolean);
+  if (ids.length === 0) return [];
+  const res = await api.post<{ results?: Record<string, { score: number; level: string }> }>(
+    '/api/pms/no-show-risk/bulk',
+    { booking_ids: ids },
+  );
+  const results = res?.results || {};
+  const out: NoShowRiskEntry[] = [];
+  for (const a of arrivals) {
+    const r = results[a.id];
+    if (!r) continue;
+    if (r.level === 'medium' || r.level === 'high') {
+      out.push({
+        booking_id: a.id,
+        score: r.score,
+        level: r.level,
+        guest_name: a.guest_name,
+        room_number: a.room_number,
+      });
     }
-    out.sort((x, y) => y.score - x.score);
-    return out;
-  } catch {
-    return [];
   }
+  out.sort((x, y) => y.score - x.score);
+  return out;
 }
 
 // GET /api/pms/bookings (pms_bookings.py)
 export async function searchBookingByRoom(roomNumber: string): Promise<Booking[]> {
-  try {
-    const res = await api.get<BookingListResponse>('/api/pms/bookings', {
-      room_number: roomNumber,
-      status: 'checked_in',
-    });
-    return unwrap(res, ['bookings', 'items']);
-  } catch {
-    return [];
-  }
+  const res = await api.get<BookingListResponse>('/api/pms/bookings', {
+    room_number: roomNumber,
+    status: 'checked_in',
+  });
+  return unwrap(res, ['bookings', 'items']);
 }
 
 // GET /api/pms/bookings?id=<id> (no per-id GET; use list filter as best-effort)
 export async function getBooking(id: string): Promise<Booking | null> {
-  try {
-    const res = await api.get<BookingListResponse>('/api/pms/bookings', { id });
-    const items = unwrap(res, ['bookings', 'items']);
-    return items.find((b) => b.id === id) || items[0] || null;
-  } catch {
-    return null;
-  }
+  const res = await api.get<BookingListResponse>('/api/pms/bookings', { id });
+  const items = unwrap(res, ['bookings', 'items']);
+  return items.find((b) => b.id === id) || items[0] || null;
 }
 
 // POST /api/frontdesk/checkin/{booking_id}

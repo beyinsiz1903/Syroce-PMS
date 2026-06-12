@@ -91,13 +91,9 @@ export type ReservationDetailsEnhanced = {
 export async function getReservationDetailsEnhanced(
   id: string,
 ): Promise<ReservationDetailsEnhanced | null> {
-  try {
-    return await api.get<ReservationDetailsEnhanced>(
-      `/api/reservations/${encodeURIComponent(id)}/details-enhanced`,
-    );
-  } catch {
-    return null;
-  }
+  return api.get<ReservationDetailsEnhanced>(
+    `/api/reservations/${encodeURIComponent(id)}/details-enhanced`,
+  );
 }
 
 export type ExtraCharge = {
@@ -139,13 +135,9 @@ export type ReservationOtaDetails = {
 export async function getReservationOtaDetails(
   id: string,
 ): Promise<ReservationOtaDetails | null> {
-  try {
-    return await api.get<ReservationOtaDetails>(
-      `/api/reservations/${encodeURIComponent(id)}/ota-details`,
-    );
-  } catch {
-    return null;
-  }
+  return api.get<ReservationOtaDetails>(
+    `/api/reservations/${encodeURIComponent(id)}/ota-details`,
+  );
 }
 
 // ---------------------------------------------------------------------------

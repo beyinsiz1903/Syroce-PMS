@@ -21,4 +21,5 @@ export const today = {
   actionNewReservation: 'Yeni Rezervasyon',
   actionWalkin: 'Walk-in',
   actionGuestSearch: 'Misafir Ara',
+  loadError: 'Bugünün verileri yüklenemedi, tekrar dene',
 };
