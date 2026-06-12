@@ -1,7 +1,17 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { Badge, Body, Card, Field, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import {
+  Badge,
+  Body,
+  Card,
+  EmptyState,
+  Field,
+  H1,
+  Muted,
+  SectionTitle,
+  SkeletonCard,
+} from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -106,9 +116,11 @@ export default function SearchScreen() {
         />
 
         {!enabled ? (
-          <Card>
-            <Muted>{tr.hub.searchHint}</Muted>
-          </Card>
+          <EmptyState
+            icon="search-outline"
+            title={tr.hub.searchHintTitle}
+            message={tr.hub.searchHint}
+          />
         ) : search.isLoading ? (
           <>
             <SkeletonCard />
@@ -119,16 +131,18 @@ export default function SearchScreen() {
             <Muted>{tr.hub.loadError}</Muted>
           </Card>
         ) : !hasResults ? (
-          <Card>
-            <Muted>{tr.hub.searchEmpty}</Muted>
-          </Card>
+          <EmptyState
+            icon="file-tray-outline"
+            title={tr.hub.searchEmpty}
+            message={tr.hub.searchEmptyHint}
+          />
         ) : (
           <>
             {data!.guests.length > 0 ? (
-              <View style={{ gap: spacing.xs }}>
-                <H2>
-                  {tr.hub.searchGuests} ({data!.guests.length})
-                </H2>
+              <View>
+                <SectionTitle
+                  title={`${tr.hub.searchGuests} (${data!.guests.length})`}
+                />
                 {data!.guests.map((g) => (
                   <GuestCard key={g.id} g={g} />
                 ))}
@@ -136,10 +150,10 @@ export default function SearchScreen() {
             ) : null}
 
             {data!.reservations.length > 0 ? (
-              <View style={{ gap: spacing.xs }}>
-                <H2>
-                  {tr.hub.searchReservations} ({data!.reservations.length})
-                </H2>
+              <View>
+                <SectionTitle
+                  title={`${tr.hub.searchReservations} (${data!.reservations.length})`}
+                />
                 {data!.reservations.map((r) => (
                   <ReservationCard key={r.id} r={r} />
                 ))}
@@ -147,10 +161,8 @@ export default function SearchScreen() {
             ) : null}
 
             {data!.rooms.length > 0 ? (
-              <View style={{ gap: spacing.xs }}>
-                <H2>
-                  {tr.hub.searchRooms} ({data!.rooms.length})
-                </H2>
+              <View>
+                <SectionTitle title={`${tr.hub.searchRooms} (${data!.rooms.length})`} />
                 {data!.rooms.map((r) => (
                   <RoomCard key={r.id} r={r} />
                 ))}

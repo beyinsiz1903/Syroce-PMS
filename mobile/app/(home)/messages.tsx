@@ -9,7 +9,16 @@ import {
   View,
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge, Body, Button, Card, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import {
+  Badge,
+  Body,
+  Button,
+  Card,
+  EmptyState,
+  H1,
+  Muted,
+  SkeletonCard,
+} from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -27,6 +36,34 @@ import {
 // backend. The tab toggles between a conversation list and a single thread view;
 // no navigation route is added so the bottom-tab backbone stays unchanged.
 
+// Derive 1–2 letter initials for the conversation avatar (mirrors the Profile
+// avatar treatment) so the list scans like a familiar inbox.
+function initialsFor(name: string): string {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '—';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function Avatar({ name, unread }: { name: string; unread: boolean }) {
+  const c = useTheme();
+  const tint = unread ? c.primary : c.textMuted;
+  return (
+    <View
+      style={{
+        width: 44,
+        height: 44,
+        borderRadius: radius.pill,
+        backgroundColor: tint + '1f',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Body style={{ color: tint, fontWeight: '700' }}>{initialsFor(name)}</Body>
+    </View>
+  );
+}
+
 function ConversationRow({
   item,
   onPress,
@@ -36,34 +73,45 @@ function ConversationRow({
 }) {
   const c = useTheme();
   const preview = item.last_deleted ? tr.hub.messageDeleted : item.last_message;
+  const unread = item.unread_count > 0;
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={item.user_name}
       onPress={() => onPress(item)}
       style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, marginBottom: spacing.sm })}
     >
-      <Card>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm }}>
-          <Body style={{ flex: 1, fontWeight: '600' }} numberOfLines={1}>
-            {item.user_name}
-          </Body>
-          {item.unread_count > 0 ? (
-            <Badge label={String(item.unread_count)} tone="info" />
-          ) : null}
-        </View>
-        <View
-          style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            gap: spacing.sm,
-            marginTop: spacing.xs,
-          }}
-        >
-          <Muted style={{ flex: 1 }} numberOfLines={1}>
-            {item.last_from_me ? '↗ ' : ''}
-            {preview}
-          </Muted>
-          {item.time_ago ? <Muted style={{ color: c.textMuted }}>{item.time_ago}</Muted> : null}
+      <Card accent={unread ? c.primary : undefined}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+          <Avatar name={item.user_name} unread={unread} />
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+              <Body style={{ flex: 1, fontWeight: unread ? '700' : '600' }} numberOfLines={1}>
+                {item.user_name}
+              </Body>
+              {item.time_ago ? (
+                <Muted style={{ color: c.textMuted }}>{item.time_ago}</Muted>
+              ) : null}
+            </View>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: spacing.sm,
+                marginTop: spacing.xs,
+              }}
+            >
+              <Muted
+                style={{ flex: 1, color: unread ? c.text : c.textMuted }}
+                numberOfLines={1}
+              >
+                {item.last_from_me ? '↗ ' : ''}
+                {preview}
+              </Muted>
+              {unread ? <Badge label={String(item.unread_count)} tone="info" /> : null}
+            </View>
+          </View>
         </View>
       </Card>
     </Pressable>
@@ -166,9 +214,11 @@ function ThreadView({ partner, onBack }: { partner: Conversation; onBack: () => 
             <Muted>{tr.hub.loadError}</Muted>
           </Card>
         ) : messages.length === 0 ? (
-          <Card>
-            <Muted>{tr.hub.messagesThreadEmpty}</Muted>
-          </Card>
+          <EmptyState
+            icon="chatbubble-ellipses-outline"
+            title={tr.hub.messagesThreadEmpty}
+            message={tr.hub.messagesThreadEmptyHint}
+          />
         ) : (
           messages.map((m) => <MessageBubble key={m.id} msg={m} />)
         )}
@@ -259,9 +309,11 @@ export default function MessagesScreen() {
             <Muted>{tr.hub.loadError}</Muted>
           </Card>
         ) : rows.length === 0 ? (
-          <Card>
-            <Muted>{tr.hub.messagesEmpty}</Muted>
-          </Card>
+          <EmptyState
+            icon="chatbubbles-outline"
+            title={tr.hub.messagesEmpty}
+            message={tr.hub.messagesEmptyHint}
+          />
         ) : (
           rows.map((item) => (
             <ConversationRow key={item.user_id} item={item} onPress={setActive} />
