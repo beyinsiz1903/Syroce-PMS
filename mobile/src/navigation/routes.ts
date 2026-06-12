@@ -47,7 +47,7 @@ import type { AppRole } from '../state/authStore';
 export const ROUTES = {
   login: '/(auth)/login',
   home: '/(home)',
-  homeNotifications: '/(home)',
+  homeNotifications: '/(home)/notifications',
   homeTasks: '/(home)/tasks',
   homeToday: '/(home)/today',
   homeApprovals: '/(home)/approvals',
@@ -96,17 +96,16 @@ export const ROUTES = {
 // groups remain reachable from within the shell, but they are no longer the
 // staff landing surface.
 //
-// P5 — staff land on the "Bugün" tab (a visible bottom tab) rather than the
-// group root, because the role-based bar (see (home)/_layout.tsx) hides the
-// index/notifications tab via `href: null`. Landing on a visible tab keeps the
-// bar highlight correct; the notifications screen stays reachable from the
-// header shortcut and by URL.
+// Task #507 — staff land on the HUB "Ana Sayfa" (the (home) group index), an
+// operations center with the live "Bugün" KPI card, a smart notification feed,
+// and permission-filtered department shortcuts. It is the first visible bottom
+// tab, so the bar highlight stays correct. Guests keep their dedicated area.
 export function rootForRole(role: AppRole): Href {
   switch (role) {
     case 'guest_app':
       return ROUTES.guest;
     default:
-      return ROUTES.homeToday;
+      return ROUTES.home;
   }
 }
 

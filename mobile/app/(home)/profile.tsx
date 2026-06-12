@@ -105,7 +105,7 @@ export default function ProfileScreen() {
   const displayName = user?.name || user?.username || user?.email || '—';
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg }}>
+    <View style={{ flex: 1, backgroundColor: c.bg }} testID="smoke-home-profile">
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, gap: spacing.md }}>
         <H1>{tr.hub.profileTitle}</H1>
 

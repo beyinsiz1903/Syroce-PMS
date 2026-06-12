@@ -14,6 +14,7 @@ export const tabs = {
   qrBadge: 'Rozet',
   notifications: 'Bildirimler',
   myTasks: 'Görevlerim',
+  tasks: 'Görevler',
   approvals: 'Onaylarım',
   search: 'Arama',
   profile: 'Profil',

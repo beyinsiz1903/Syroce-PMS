@@ -77,6 +77,14 @@ export type TodayDigest = {
   unread_feed: number;
   pending_approvals: number;
   tasks_preview: MyTask[];
+  // HUB "Bugün" operasyon KPI'ları (Task #507) — backend gerçek veriden hesaplar.
+  occupancy_pct: number;
+  occupied_rooms: number;
+  total_rooms: number;
+  check_ins: number;
+  check_outs: number;
+  open_faults: number;
+  hotel_name: string | null;
 };
 
 // GET /api/mobile/hub/today

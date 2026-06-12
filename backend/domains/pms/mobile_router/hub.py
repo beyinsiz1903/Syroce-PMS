@@ -13,6 +13,7 @@ All endpoints are tenant-scoped via the authenticated user and reuse the
 existing collections + read-state semantics. Approval visibility is gated
 with the SAME RolePermissionService used elsewhere, so nothing weakens RBAC.
 """
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -362,13 +363,73 @@ async def get_today_digest(
 
     urgent_tasks = [t for t in tasks if t.get("priority") in ("urgent", "high")]
 
+    # ── HUB "Bugün" operasyon KPI'ları (Task #507) ──────────────────────────
+    # Doluluk / giriş / çıkış / açık arıza, GM snapshot'ı (dashboard_router/gm.py
+    # `_compute_period_metrics` + snapshot) ile birebir aynı mantıkla, ama
+    # tenant-scoped ve tek tarih (bugün) için hesaplanır. SADECE gerçek veri:
+    # uydurma/placeholder yok. Açık arıza iki koleksiyona yayılır (maintenance_
+    # tasks + tasks(department=maintenance)) — gm.py ile aynı non-terminal küme.
+    # Otel adı tenant doc'undaki property_name (kimlik alanı için).
+    tid = current_user.tenant_id
+    today_iso = datetime.now(UTC).date().isoformat()
+    NON_TERMINAL_FAULT = ["completed", "done", "closed", "cancelled", "resolved"]
+    (
+        total_rooms,
+        occupied_rooms,
+        check_ins,
+        check_outs,
+        open_faults_mt,
+        open_faults_tasks,
+        tenant_doc,
+    ) = await asyncio.gather(
+        db.rooms.count_documents({"tenant_id": tid}),
+        db.bookings.count_documents({
+            "tenant_id": tid,
+            "check_in": {"$lte": today_iso},
+            "check_out": {"$gt": today_iso},
+            "status": {"$nin": ["cancelled", "no_show"]},
+        }),
+        db.bookings.count_documents({
+            "tenant_id": tid,
+            "check_in": today_iso,
+            "status": {"$nin": ["cancelled", "no_show"]},
+        }),
+        db.bookings.count_documents({
+            "tenant_id": tid,
+            "check_out": today_iso,
+            "status": {"$nin": ["cancelled", "no_show"]},
+        }),
+        db.maintenance_tasks.count_documents({
+            "tenant_id": tid,
+            "status": {"$nin": NON_TERMINAL_FAULT},
+        }),
+        db.tasks.count_documents({
+            "tenant_id": tid,
+            "department": "maintenance",
+            "status": {"$nin": NON_TERMINAL_FAULT},
+        }),
+        db.tenants.find_one({"id": tid}, {"_id": 0, "property_name": 1}),
+    )
+    open_faults = open_faults_mt + open_faults_tasks
+    occupancy_pct = round(
+        (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0, 1
+    )
+    hotel_name = (tenant_doc or {}).get("property_name") or None
+
     return {
-        "date": datetime.now(UTC).date().isoformat(),
+        "date": today_iso,
         "open_tasks": len(tasks),
         "urgent_tasks": len(urgent_tasks),
         "unread_feed": notif_unread + alert_unread,
         "pending_approvals": pending_approvals,
         "tasks_preview": tasks[:5],
+        "occupancy_pct": occupancy_pct,
+        "occupied_rooms": occupied_rooms,
+        "total_rooms": total_rooms,
+        "check_ins": check_ins,
+        "check_outs": check_outs,
+        "open_faults": open_faults,
+        "hotel_name": hotel_name,
     }
 
 

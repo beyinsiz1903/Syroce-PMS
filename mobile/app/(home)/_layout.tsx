@@ -20,14 +20,15 @@ function tabIcon(active: IoniconName, inactive: IoniconName) {
   );
 }
 
-// Header utility actions (top-right). Notifications + Search live here on every
-// role so the bottom bar stays at a thumb-friendly 4 tabs; Messages joins them
-// only for approver roles, whose 4th bottom tab is "Onaylarım" instead. Plain
+// Header utility actions (top-right). Arama lives here for every role so it is
+// always one tap away; "Onaylarım" joins it only for approver roles so they can
+// reach pending approvals from any (home) tab. Bildirimler + Mesajlar are now
+// first-class BOTTOM tabs (Task #507), so they no longer appear here. Plain
 // Pressable + Ionicons keeps it web-safe (no reanimated / no Alert), and the
 // 44x44 targets clear the thumb-zone minimum. Navigation is push-only — these
 // are cosmetic shortcuts; every screen still enforces its own access server-
 // side, so nothing here weakens RBAC.
-function HeaderActions({ showMessages }: { showMessages: boolean }) {
+function HeaderActions({ showApprovals }: { showApprovals: boolean }) {
   const c = useTheme();
   const router = useRouter();
   const btn = {
@@ -38,28 +39,18 @@ function HeaderActions({ showMessages }: { showMessages: boolean }) {
   };
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
-      {showMessages ? (
+      {showApprovals ? (
         <Pressable
-          onPress={() => router.push(ROUTES.homeMessages)}
+          onPress={() => router.push(ROUTES.homeApprovals)}
           accessibilityRole="button"
-          accessibilityLabel={tr.tabs.messages}
-          testID="smoke-header-messages"
+          accessibilityLabel={tr.tabs.approvals}
+          testID="smoke-header-approvals"
           hitSlop={8}
           style={btn}
         >
-          <Ionicons name="chatbubble-ellipses-outline" size={22} color={c.text} />
+          <Ionicons name="checkmark-done-circle-outline" size={22} color={c.text} />
         </Pressable>
       ) : null}
-      <Pressable
-        onPress={() => router.push(ROUTES.homeNotifications)}
-        accessibilityRole="button"
-        accessibilityLabel={tr.tabs.notifications}
-        testID="smoke-header-notifications"
-        hitSlop={8}
-        style={btn}
-      >
-        <Ionicons name="notifications-outline" size={22} color={c.text} />
-      </Pressable>
       <Pressable
         onPress={() => router.push(ROUTES.homeSearch)}
         accessibilityRole="button"
@@ -74,26 +65,22 @@ function HeaderActions({ showMessages }: { showMessages: boolean }) {
   );
 }
 
-// P5 — role-based bottom tab bar. The single (home) Tabs navigator stays the
-// common shell (every staff role lands here), but the bottom bar is now trimmed
-// to FOUR role-relevant tabs via `href: null`, so Housekeeping and a Manager
-// feel different at a glance:
-//   line staff (HK / front desk / other): Bugün · Görevlerim · Mesajlar · Profil
-//   approvers (GM / all-access):           Bugün · Görevlerim · Onaylarım · Profil
-// Notifications + Search move to the header (always), and Messages moves there
-// too for approvers. Every Tabs.Screen entry — and every smoke-tab-* testID —
-// is kept; `href: null` only hides the tab, the route + screen stay reachable
-// by URL and header shortcut. All gating is cosmetic; the backend enforces
-// every action, so RBAC is unchanged.
+// Task #507 — the (home) bottom tab bar is the unified operations backbone for
+// EVERY staff role: Ana Sayfa (HUB) · Görevler · Bildirimler · Mesajlar · Profil.
+// Staff land on the HUB ("Ana Sayfa"), an operations center with the live
+// "Bugün" KPI card, a smart notification feed, and permission-filtered
+// department shortcuts. The bar is identical for all roles (no approver / line-
+// staff branching); "Onaylarım", "Bugün" (digest) and "Arama" stay reachable
+// but are hidden from the bar via `href: null` (route + screen remain mounted by
+// URL / header shortcut / HUB). Approvers additionally get an "Onaylarım"
+// header shortcut. All gating is cosmetic; the backend enforces every action,
+// so RBAC is unchanged.
 export default function HomeLayout() {
   const c = useTheme();
   const insets = useSafeAreaInsets();
   const approvalsAccess = useAuthStore((s) => s.approvalsAccess);
   const allAccess = useAuthStore((s) => s.allAccess);
   const showApprovals = approvalsAccess || allAccess;
-  // Approvers get "Onaylarım" as their 4th tab, so Messages relocates to the
-  // header for them; line staff keep Messages as their 4th tab.
-  const showMessagesTab = !showApprovals;
 
   return (
     <Tabs
@@ -113,63 +100,40 @@ export default function HomeLayout() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         headerStyle: { backgroundColor: c.surface },
         headerTitleStyle: { color: c.text },
-        headerRight: () => <HeaderActions showMessages={showApprovals} />,
+        headerRight: () => <HeaderActions showApprovals={showApprovals} />,
       }}
     >
+      {/* 5 visible tabs — identical for every staff role. */}
       <Tabs.Screen
         name="index"
         options={{
-          title: tr.tabs.notifications,
-          // Notifications moved to the header utility row for all roles.
-          href: null,
-          tabBarTestID: 'smoke-tab-notifications',
-          tabBarIcon: tabIcon('notifications', 'notifications-outline'),
-        }}
-      />
-      <Tabs.Screen
-        name="today"
-        options={{
-          title: tr.tabs.today,
-          tabBarTestID: 'smoke-tab-today',
-          tabBarIcon: tabIcon('today', 'today-outline'),
+          title: tr.tabs.home,
+          tabBarTestID: 'smoke-tab-home',
+          tabBarIcon: tabIcon('home', 'home-outline'),
         }}
       />
       <Tabs.Screen
         name="tasks"
         options={{
-          title: tr.tabs.myTasks,
+          title: tr.tabs.tasks,
           tabBarTestID: 'smoke-tab-tasks',
           tabBarIcon: tabIcon('checkbox', 'checkbox-outline'),
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: tr.tabs.notifications,
+          tabBarTestID: 'smoke-tab-notifications',
+          tabBarIcon: tabIcon('notifications', 'notifications-outline'),
         }}
       />
       <Tabs.Screen
         name="messages"
         options={{
           title: tr.tabs.messages,
-          // Line staff keep Messages in the bar; approvers reach it from the
-          // header (their 4th tab is Onaylarım instead).
-          href: showMessagesTab ? undefined : null,
           tabBarTestID: 'smoke-tab-messages',
           tabBarIcon: tabIcon('chatbubble-ellipses', 'chatbubble-ellipses-outline'),
-        }}
-      />
-      <Tabs.Screen
-        name="approvals"
-        options={{
-          title: tr.tabs.approvals,
-          href: showApprovals ? undefined : null,
-          tabBarTestID: 'smoke-tab-approvals',
-          tabBarIcon: tabIcon('checkmark-done-circle', 'checkmark-done-circle-outline'),
-        }}
-      />
-      <Tabs.Screen
-        name="search"
-        options={{
-          title: tr.tabs.search,
-          // Search moved to the header utility row for all roles.
-          href: null,
-          tabBarTestID: 'smoke-tab-search',
-          tabBarIcon: tabIcon('search', 'search-outline'),
         }}
       />
       <Tabs.Screen
@@ -178,6 +142,36 @@ export default function HomeLayout() {
           title: tr.tabs.profile,
           tabBarTestID: 'smoke-tab-profile',
           tabBarIcon: tabIcon('person-circle', 'person-circle-outline'),
+        }}
+      />
+
+      {/* Hidden from the bar (href: null) but still reachable by URL / shortcut.
+          Every smoke-tab-* testID is kept so the smoke matrix keeps resolving. */}
+      <Tabs.Screen
+        name="today"
+        options={{
+          title: tr.tabs.today,
+          href: null,
+          tabBarTestID: 'smoke-tab-today',
+          tabBarIcon: tabIcon('today', 'today-outline'),
+        }}
+      />
+      <Tabs.Screen
+        name="approvals"
+        options={{
+          title: tr.tabs.approvals,
+          href: null,
+          tabBarTestID: 'smoke-tab-approvals',
+          tabBarIcon: tabIcon('checkmark-done-circle', 'checkmark-done-circle-outline'),
+        }}
+      />
+      <Tabs.Screen
+        name="search"
+        options={{
+          title: tr.tabs.search,
+          href: null,
+          tabBarTestID: 'smoke-tab-search',
+          tabBarIcon: tabIcon('search', 'search-outline'),
         }}
       />
     </Tabs>
