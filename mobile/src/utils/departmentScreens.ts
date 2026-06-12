@@ -91,7 +91,7 @@ export function listViewState(input: {
 
 // Tab values each multi-tab department screen renders, in display order. The
 // screens map over these so the tab set lives in one place.
-export const PROCUREMENT_TABS = ['requests', 'orders'] as const;
+export const PROCUREMENT_TABS = ['requests', 'pending', 'orders', 'deliveries'] as const;
 export type ProcurementTab = (typeof PROCUREMENT_TABS)[number];
 
 export const HR_TABS = ['shifts', 'leave', 'attendance'] as const;

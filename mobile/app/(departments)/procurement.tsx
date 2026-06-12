@@ -8,6 +8,7 @@ import {
   Body,
   Card,
   EmptyState,
+  FadeInView,
   Field,
   H1,
   Muted,
@@ -75,6 +76,25 @@ function prStatusLabel(status?: string): string {
 function poStatusLabel(status?: string): string {
   const map = tr.departments.procurement.poStatuses as Record<string, string>;
   return (status && map[status]) || status || '—';
+}
+
+// Maps a status to its theme accent color so each list card carries a coloured
+// left bar (status at-a-glance) that matches its badge tone.
+function toneColor(c: ReturnType<typeof useTheme>, status?: string): string {
+  switch (statusTone(status)) {
+    case 'success':
+      return c.success;
+    case 'danger':
+      return c.danger;
+    case 'warning':
+      return c.warning;
+    case 'info':
+      return c.info;
+    case 'primary':
+      return c.primary;
+    default:
+      return c.border;
+  }
 }
 
 // label/value detail row, mirrors the sibling MICE detail screen layout.
@@ -191,10 +211,12 @@ function DecisionBar({
   poId,
   prId,
   decisions,
+  testIDPrefix = 'proc-decision',
 }: {
   poId?: string;
   prId?: string;
   decisions: Decision[];
+  testIDPrefix?: string;
 }) {
   const c = useTheme();
   const qc = useQueryClient();
@@ -297,7 +319,7 @@ function DecisionBar({
               disabled={mutation.isPending}
             />
             <ActionButton
-              testID={`proc-decision-confirm-${active.key}`}
+              testID={`${testIDPrefix}-confirm-${active.key}`}
               label={active.label}
               icon={active.icon}
               onPress={onConfirm}
@@ -312,7 +334,7 @@ function DecisionBar({
           {decisions.map((d) => (
             <ActionButton
               key={d.key}
-              testID={`proc-decision-${d.key}`}
+              testID={`${testIDPrefix}-${d.key}`}
               label={d.label}
               icon={d.icon}
               onPress={() => onPick(d)}
@@ -651,10 +673,14 @@ function DetailScaffold({
   );
 }
 
-// Read+approve Procurement screen. Two tabs (talepler / siparişler) drill into a
-// detail with permission-gated two-step approve/reject (PR) and send/cancel/close
-// (PO) actions. All writes stay backend-gated by require_op("manage_sales") +
-// require_procurement; the credit-limit warning is view-only.
+// Read+approve Procurement screen. Four sections (Talepler / Onay Bekleyenler /
+// Siparişler / Teslimatlar) presented as a scrollable premium pill bar. Each
+// list card carries a status-coloured accent and drills into a detail with
+// permission-gated two-step approve/reject (PR) and send/cancel/close (PO)
+// actions; the "Onay Bekleyenler" section also surfaces the big thumb-zone
+// approve/reject inline on every card. All writes stay backend-gated by
+// require_op("manage_sales") + require_procurement; the credit-limit warning is
+// view-only.
 export default function ProcurementScreen() {
   const c = useTheme();
   const rawRole = useAuthStore((s) => s.user?.role);
@@ -664,15 +690,19 @@ export default function ProcurementScreen() {
   const [selected, setSelected] = useState<Selected | null>(null);
   const p = tr.departments.procurement;
 
+  // Both lists feed two sections each (PRs → Talepler + Onay Bekleyenler, POs →
+  // Siparişler + Teslimatlar), so fetch each once whenever the list is shown
+  // rather than per-tab. Reads stay backend-gated; this just makes tab switches
+  // instant and keeps the pending/delivery counts live.
   const prQ = useQuery({
     queryKey: ['proc-prs'],
     queryFn: () => listPurchaseRequests(),
-    enabled: procurementAccess && tab === 'requests' && !selected,
+    enabled: procurementAccess && !selected,
   });
   const poQ = useQuery({
     queryKey: ['proc-pos'],
     queryFn: () => listPurchaseOrders(),
-    enabled: procurementAccess && tab === 'orders' && !selected,
+    enabled: procurementAccess && !selected,
   });
 
   if (screenRedirectsToHub('procurement', rawRole)) {
@@ -693,130 +723,329 @@ export default function ProcurementScreen() {
     );
   }
 
-  const tabLabels: Record<Tab, string> = {
-    requests: p.tabRequests,
-    orders: p.tabOrders,
-  };
+  const prs = prQ.data || [];
+  const pos = poQ.data || [];
+  // Onay Bekleyenler = submitted PRs (the only PR state that carries an
+  // approve/reject decision). Teslimatlar = POs whose goods have started or
+  // finished arriving.
+  const pendingPrs = prs.filter((pr) => pr.status === 'submitted');
+  const deliveries = pos.filter((po) =>
+    ['partially_received', 'received', 'closed'].includes(po.status || ''),
+  );
 
-  const TabButton: React.FC<{ value: Tab; label: string }> = ({ value, label }) => {
+  // Label + live count per section, keyed by tab. The rendered order/set is
+  // derived from PROCUREMENT_TABS (single source of truth the unit test guards),
+  // not a second hardcoded list.
+  const tabMeta: Record<ProcurementTab, { label: string; count: number }> = {
+    requests: { label: p.tabRequests, count: prs.length },
+    pending: { label: p.tabPending, count: pendingPrs.length },
+    orders: { label: p.tabOrders, count: pos.length },
+    deliveries: { label: p.tabDeliveries, count: deliveries.length },
+  };
+  const tabs = PROCUREMENT_TABS.map((value) => ({ value, ...tabMeta[value] }));
+
+  const TabPill: React.FC<{ value: Tab; label: string; count: number }> = ({
+    value,
+    label,
+    count,
+  }) => {
     const active = tab === value;
     return (
       <Pressable
-        onPress={() => setTab(value)}
+        onPress={() => {
+          haptic.tap();
+          setTab(value);
+        }}
         accessibilityRole="button"
+        accessibilityState={{ selected: active }}
+        testID={`proc-tab-${value}`}
         style={{
-          flex: 1,
-          paddingVertical: spacing.sm,
-          borderRadius: radius.md,
+          flexDirection: 'row',
           alignItems: 'center',
+          gap: spacing.xs,
+          paddingVertical: spacing.sm,
+          paddingHorizontal: spacing.lg,
+          borderRadius: radius.pill,
           backgroundColor: active ? c.primary : c.surfaceAlt,
           borderWidth: 1,
           borderColor: active ? c.primary : c.border,
         }}
       >
-        <Body style={{ color: active ? c.primaryText : c.text, fontWeight: '600' }}>
+        <Body
+          style={{ color: active ? c.primaryText : c.text, fontWeight: '600' }}
+          numberOfLines={1}
+        >
           {label}
         </Body>
+        {count > 0 ? (
+          <View
+            style={{
+              minWidth: 20,
+              paddingHorizontal: 6,
+              paddingVertical: 1,
+              borderRadius: radius.pill,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: active ? 'rgba(255,255,255,0.22)' : c.primarySoft,
+            }}
+          >
+            <Body
+              style={{
+                color: active ? c.primaryText : c.primary,
+                fontSize: 12,
+                fontWeight: '700',
+              }}
+            >
+              {count}
+            </Body>
+          </View>
+        ) : null}
       </Pressable>
     );
   };
 
-  const renderRequest = (pr: PurchaseRequest) => (
-    <Pressable
-      key={pr.id}
-      onPress={() => setSelected({ type: 'pr', id: pr.id })}
-      accessibilityRole="button"
-      testID={`proc-pr-${pr.id}`}
-    >
-      {({ pressed }) => (
-        <Card style={{ marginBottom: spacing.sm, opacity: pressed ? 0.85 : 1 }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-            }}
+  const renderRequest = (pr: PurchaseRequest, i: number) => (
+    <FadeInView key={pr.id} delay={Math.min(i, 6) * 40}>
+      <Pressable
+        onPress={() => setSelected({ type: 'pr', id: pr.id })}
+        accessibilityRole="button"
+        testID={`proc-pr-${pr.id}`}
+      >
+        {({ pressed }) => (
+          <Card
+            accent={toneColor(c, pr.status)}
+            style={{ marginBottom: spacing.sm, opacity: pressed ? 0.85 : 1 }}
           >
-            <View style={{ flex: 1, paddingRight: spacing.sm }}>
-              <Body style={{ fontWeight: '600' }}>{pr.pr_no || '—'}</Body>
-              {pr.department ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+              }}
+            >
+              <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                <Body style={{ fontWeight: '600' }}>{pr.pr_no || '—'}</Body>
+                {pr.department ? (
+                  <Muted>
+                    {p.department}: {pr.department}
+                  </Muted>
+                ) : null}
+              </View>
+              <Badge label={prStatusLabel(pr.status)} tone={statusTone(pr.status)} />
+            </View>
+            <View style={{ marginTop: spacing.sm, gap: 2 }}>
+              {pr.requester ? (
                 <Muted>
-                  {p.department}: {pr.department}
+                  {p.requester}: {pr.requester}
+                </Muted>
+              ) : null}
+              {pr.needed_by ? (
+                <Muted>
+                  {p.neededBy}: {formatDate(pr.needed_by)}
+                </Muted>
+              ) : null}
+              <Muted>
+                {p.lines}: {(pr.lines || []).length}
+              </Muted>
+              {typeof pr.lines_total === 'number' ? (
+                <Muted>
+                  {p.total}: {formatCurrency(pr.lines_total)}
                 </Muted>
               ) : null}
             </View>
-            <Badge label={prStatusLabel(pr.status)} tone={statusTone(pr.status)} />
-          </View>
-          <View style={{ marginTop: spacing.sm, gap: 2 }}>
-            {pr.requester ? (
-              <Muted>
-                {p.requester}: {pr.requester}
-              </Muted>
-            ) : null}
-            {pr.needed_by ? (
-              <Muted>
-                {p.neededBy}: {formatDate(pr.needed_by)}
-              </Muted>
-            ) : null}
-            <Muted>
-              {p.lines}: {(pr.lines || []).length}
-            </Muted>
-            {typeof pr.lines_total === 'number' ? (
-              <Muted>
-                {p.total}: {formatCurrency(pr.lines_total)}
-              </Muted>
-            ) : null}
-          </View>
-        </Card>
-      )}
-    </Pressable>
+          </Card>
+        )}
+      </Pressable>
+    </FadeInView>
   );
 
-  const renderOrder = (po: PurchaseOrder) => (
-    <Pressable
-      key={po.id}
-      onPress={() => setSelected({ type: 'po', id: po.id })}
-      accessibilityRole="button"
-      testID={`proc-po-${po.id}`}
-    >
-      {({ pressed }) => (
-        <Card style={{ marginBottom: spacing.sm, opacity: pressed ? 0.85 : 1 }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-            }}
+  // Onay Bekleyenler card: same summary as a request, but the big thumb-zone
+  // approve/reject (DecisionBar) is surfaced inline so an approver acts without
+  // opening the detail; tapping the summary still drills in for line items.
+  // Writes stay backend-gated (require_op manage_sales + require_procurement);
+  // canManage mirrors the detail screen's gate. A namespaced testIDPrefix keeps
+  // each card's decision buttons unique (the detail keeps proc-decision-*).
+  const renderPending = (pr: PurchaseRequest, i: number) => (
+    <FadeInView key={pr.id} delay={Math.min(i, 6) * 40}>
+      <Card accent={toneColor(c, pr.status)} style={{ marginBottom: spacing.sm }}>
+        <Pressable
+          onPress={() => setSelected({ type: 'pr', id: pr.id })}
+          accessibilityRole="button"
+          testID={`proc-pending-${pr.id}`}
+        >
+          {({ pressed }) => (
+            <View style={{ opacity: pressed ? 0.85 : 1 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                }}
+              >
+                <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                  <Body style={{ fontWeight: '600' }}>{pr.pr_no || '—'}</Body>
+                  {pr.department ? (
+                    <Muted>
+                      {p.department}: {pr.department}
+                    </Muted>
+                  ) : null}
+                </View>
+                <Badge label={prStatusLabel(pr.status)} tone={statusTone(pr.status)} />
+              </View>
+              <View style={{ marginTop: spacing.sm, gap: 2 }}>
+                {pr.requester ? (
+                  <Muted>
+                    {p.requester}: {pr.requester}
+                  </Muted>
+                ) : null}
+                {pr.needed_by ? (
+                  <Muted>
+                    {p.neededBy}: {formatDate(pr.needed_by)}
+                  </Muted>
+                ) : null}
+                {typeof pr.lines_total === 'number' ? (
+                  <Muted>
+                    {p.total}: {formatCurrency(pr.lines_total)}
+                  </Muted>
+                ) : null}
+              </View>
+            </View>
+          )}
+        </Pressable>
+        {procurementAccess ? (
+          <DecisionBar
+            prId={pr.id}
+            decisions={prDecisions(pr)}
+            testIDPrefix={`proc-pending-${pr.id}-decision`}
+          />
+        ) : null}
+      </Card>
+    </FadeInView>
+  );
+
+  const renderOrder = (po: PurchaseOrder, i: number) => (
+    <FadeInView key={po.id} delay={Math.min(i, 6) * 40}>
+      <Pressable
+        onPress={() => setSelected({ type: 'po', id: po.id })}
+        accessibilityRole="button"
+        testID={`proc-po-${po.id}`}
+      >
+        {({ pressed }) => (
+          <Card
+            accent={toneColor(c, po.status)}
+            style={{ marginBottom: spacing.sm, opacity: pressed ? 0.85 : 1 }}
           >
-            <View style={{ flex: 1, paddingRight: spacing.sm }}>
-              <Body style={{ fontWeight: '600' }}>{po.po_no || '—'}</Body>
-              {po.supplier_name ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+              }}
+            >
+              <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                <Body style={{ fontWeight: '600' }}>{po.po_no || '—'}</Body>
+                {po.supplier_name ? (
+                  <Muted>
+                    {p.supplier}: {po.supplier_name}
+                  </Muted>
+                ) : null}
+              </View>
+              <Badge label={poStatusLabel(po.status)} tone={statusTone(po.status)} />
+            </View>
+            <View style={{ marginTop: spacing.sm, gap: 2 }}>
+              {po.expected_delivery ? (
                 <Muted>
-                  {p.supplier}: {po.supplier_name}
+                  {p.expectedDelivery}: {formatDate(po.expected_delivery)}
+                </Muted>
+              ) : null}
+              <Muted>
+                {p.lines}: {(po.lines || []).length}
+              </Muted>
+              {typeof po.grand_total === 'number' ? (
+                <Muted>
+                  {p.total}: {formatCurrency(po.grand_total, po.currency)}
                 </Muted>
               ) : null}
             </View>
-            <Badge label={poStatusLabel(po.status)} tone={statusTone(po.status)} />
-          </View>
-          <View style={{ marginTop: spacing.sm, gap: 2 }}>
-            {po.expected_delivery ? (
-              <Muted>
-                {p.expectedDelivery}: {formatDate(po.expected_delivery)}
-              </Muted>
-            ) : null}
-            <Muted>
-              {p.lines}: {(po.lines || []).length}
-            </Muted>
-            {typeof po.grand_total === 'number' ? (
-              <Muted>
-                {p.total}: {formatCurrency(po.grand_total, po.currency)}
-              </Muted>
-            ) : null}
-          </View>
-        </Card>
-      )}
-    </Pressable>
+          </Card>
+        )}
+      </Pressable>
+    </FadeInView>
   );
+
+  // Teslimatlar card: a PO in a delivery state, emphasising received progress
+  // (kaç kalem teslim alındı) over financials; drills into the PO detail which
+  // lists the goods-receipt records.
+  const renderDelivery = (po: PurchaseOrder, i: number) => {
+    const lines = po.lines || [];
+    const receivedCount = lines.filter((l) => (l.received_qty || 0) > 0).length;
+    return (
+      <FadeInView key={po.id} delay={Math.min(i, 6) * 40}>
+        <Pressable
+          onPress={() => setSelected({ type: 'po', id: po.id })}
+          accessibilityRole="button"
+          testID={`proc-delivery-${po.id}`}
+        >
+          {({ pressed }) => (
+            <Card
+              accent={toneColor(c, po.status)}
+              style={{ marginBottom: spacing.sm, opacity: pressed ? 0.85 : 1 }}
+            >
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                }}
+              >
+                <View style={{ flex: 1, paddingRight: spacing.sm }}>
+                  <Body style={{ fontWeight: '600' }}>{po.po_no || '—'}</Body>
+                  {po.supplier_name ? (
+                    <Muted>
+                      {p.supplier}: {po.supplier_name}
+                    </Muted>
+                  ) : null}
+                </View>
+                <Badge label={poStatusLabel(po.status)} tone={statusTone(po.status)} />
+              </View>
+              <View style={{ marginTop: spacing.sm, gap: 2 }}>
+                {po.expected_delivery ? (
+                  <Muted>
+                    {p.expectedDelivery}: {formatDate(po.expected_delivery)}
+                  </Muted>
+                ) : null}
+                {lines.length > 0 ? (
+                  <Muted>
+                    {p.receivedItems}: {receivedCount} / {lines.length}
+                  </Muted>
+                ) : null}
+              </View>
+            </Card>
+          )}
+        </Pressable>
+      </FadeInView>
+    );
+  };
+
+  // Shared loading/error/empty/data wrapper so the four sections resolve their
+  // state machine identically.
+  const renderSection = (
+    query: { isLoading: boolean; error: unknown },
+    rows: React.ReactNode,
+    isEmpty: boolean,
+    emptyIcon: React.ComponentProps<typeof EmptyState>['icon'],
+    emptyTitle: string,
+  ) => {
+    if (query.isLoading || query.error) {
+      return (
+        <DepartmentListState loading={query.isLoading} error={query.error} isEmpty={false} />
+      );
+    }
+    if (isEmpty) {
+      return <EmptyState icon={emptyIcon} title={emptyTitle} />;
+    }
+    return <View>{rows}</View>;
+  };
 
   return (
     <ScrollView
@@ -825,25 +1054,39 @@ export default function ProcurementScreen() {
     >
       <H1>{p.title}</H1>
 
-      <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
-        {PROCUREMENT_TABS.map((value) => (
-          <TabButton key={value} value={value} label={tabLabels[value]} />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ marginTop: spacing.md }}
+        contentContainerStyle={{ gap: spacing.sm, paddingVertical: spacing.xs }}
+      >
+        {tabs.map(({ value, label, count }) => (
+          <TabPill key={value} value={value} label={label} count={count} />
         ))}
-      </View>
+      </ScrollView>
 
       {tab === 'requests' ? (
         <>
           <SectionTitle title={p.requests} />
-          {prQ.isLoading || prQ.error ? (
-            <DepartmentListState
-              loading={prQ.isLoading}
-              error={prQ.error}
-              isEmpty={false}
-            />
-          ) : (prQ.data || []).length === 0 ? (
-            <EmptyState icon="document-text-outline" title={p.noRequests} />
-          ) : (
-            <View>{(prQ.data || []).map(renderRequest)}</View>
+          {renderSection(
+            prQ,
+            prs.map(renderRequest),
+            prs.length === 0,
+            'document-text-outline',
+            p.noRequests,
+          )}
+        </>
+      ) : null}
+
+      {tab === 'pending' ? (
+        <>
+          <SectionTitle title={p.pending} />
+          {renderSection(
+            prQ,
+            pendingPrs.map(renderPending),
+            pendingPrs.length === 0,
+            'hourglass-outline',
+            p.noPending,
           )}
         </>
       ) : null}
@@ -851,16 +1094,25 @@ export default function ProcurementScreen() {
       {tab === 'orders' ? (
         <>
           <SectionTitle title={p.orders} />
-          {poQ.isLoading || poQ.error ? (
-            <DepartmentListState
-              loading={poQ.isLoading}
-              error={poQ.error}
-              isEmpty={false}
-            />
-          ) : (poQ.data || []).length === 0 ? (
-            <EmptyState icon="cart-outline" title={p.noOrders} />
-          ) : (
-            <View>{(poQ.data || []).map(renderOrder)}</View>
+          {renderSection(
+            poQ,
+            pos.map(renderOrder),
+            pos.length === 0,
+            'cart-outline',
+            p.noOrders,
+          )}
+        </>
+      ) : null}
+
+      {tab === 'deliveries' ? (
+        <>
+          <SectionTitle title={p.deliveries} />
+          {renderSection(
+            poQ,
+            deliveries.map(renderDelivery),
+            deliveries.length === 0,
+            'cube-outline',
+            p.noDeliveries,
           )}
         </>
       ) : null}

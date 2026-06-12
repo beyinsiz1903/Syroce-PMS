@@ -151,8 +151,8 @@ test('listViewState reports data when loaded with rows present', () => {
 });
 
 // ── Tab sets: the screens render exactly these, in order ────────────────────
-test('PROCUREMENT_TABS lists the two procurement tabs in order', () => {
-  assert.deepEqual([...PROCUREMENT_TABS], ['requests', 'orders']);
+test('PROCUREMENT_TABS lists the four procurement sections in order', () => {
+  assert.deepEqual([...PROCUREMENT_TABS], ['requests', 'pending', 'orders', 'deliveries']);
 });
 
 test('HR_TABS lists the three HR tabs in order', () => {
