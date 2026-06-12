@@ -1,8 +1,24 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { Redirect } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, H1, Muted } from '../../src/components/ui';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from '@tanstack/react-query';
+import {
+  ActionButton,
+  Badge,
+  Body,
+  Card,
+  EmptyState,
+  Field,
+  H1,
+  Muted,
+  SegmentedActions,
+} from '../../src/components/ui';
+import { KpiCard, KpiRow } from '../../src/components/KpiCard';
 import {
   DepartmentListState,
   SectionTitle,
@@ -11,22 +27,45 @@ import { spacing, radius, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
-import {
-  HR_TABS,
-  screenRedirectsToHub,
-  type HrTab,
-} from '../../src/utils/departmentScreens';
+import { screenRedirectsToHub } from '../../src/utils/departmentScreens';
+import { haptic } from '../../src/hooks/useHaptic';
+import { errorMessage } from '../../src/utils/errors';
 import {
   listShifts,
   listLeaveRequests,
   listAttendanceRecords,
+  getPerformanceSummary,
+  decideLeaveRequest,
   type Shift,
   type LeaveRequest,
   type AttendanceRecord,
+  type PerformanceReview,
+  type PerformanceSummary,
+  type LeaveDecisionAction,
 } from '../../src/api/hr';
 import { formatDate } from '../../src/utils/format';
 
-type Tab = HrTab;
+type Tab = 'shifts' | 'leave' | 'attendance' | 'performance';
+
+// Cosmetic mirror of the backend require_op("manage_hr") gate (the SAME gate
+// that protects the leave-request decision + performance endpoints). View-only
+// HR roles such as `finance` (which hold view_hr but NOT manage_hr) must not
+// see the performance cockpit or the leave approve/reject controls. This is a
+// navigation/affordance gate only — the backend still enforces every write, so
+// nothing here weakens RBAC. Derived from the RAW role because normalizeRole
+// collapses several roles (e.g. super_admin → gm) and would lose the distinction.
+const MANAGE_HR_ROLES = [
+  'super_admin',
+  'admin',
+  'supervisor',
+  'hr',
+  'hr_manager',
+];
+
+function canManageHr(rawRole: string | undefined): boolean {
+  if (!rawRole) return false;
+  return MANAGE_HR_ROLES.includes(rawRole.toLowerCase());
+}
 
 function statusTone(status?: string):
   | 'default'
@@ -79,15 +118,17 @@ function clockTime(value?: string | null): string {
   return t ? t.slice(0, 5) : '—';
 }
 
-// Read-only HR screen. Three tabs: shifts (vardiyalar), leave requests
-// (izinler) and attendance (devam). Backend GET reads only require auth; the
-// (departments) HR entitlement decides whether we show the screen. Leave /
-// shift-swap decisions flow through the unified approvals backbone; writes stay
-// backend-gated by require_op("manage_hr").
+// Read-only HR screen with manager actions. Four tabs: shifts (vardiyalar),
+// leave requests (izinler), attendance (devam) and — for manage_hr roles —
+// performance (performans, kokpit). Backend GET reads only require auth; the
+// (departments) HR entitlement decides whether we show the screen. Leave
+// decisions flow through the 2-stage state machine and stay backend-gated by
+// require_op("manage_hr").
 export default function HrScreen() {
   const c = useTheme();
   const rawRole = useAuthStore((s) => s.user?.role);
   const hrAccess = !screenRedirectsToHub('hr', rawRole);
+  const manageHr = canManageHr(rawRole);
   const [tab, setTab] = useState<Tab>('shifts');
 
   const shiftsQ = useQuery({
@@ -105,16 +146,24 @@ export default function HrScreen() {
     queryFn: () => listAttendanceRecords(),
     enabled: hrAccess && tab === 'attendance',
   });
+  const performanceQ = useQuery({
+    queryKey: ['hr-performance'],
+    queryFn: () => getPerformanceSummary(),
+    enabled: hrAccess && manageHr && tab === 'performance',
+  });
 
   if (screenRedirectsToHub('hr', rawRole)) {
     return <Redirect href={ROUTES.departments} />;
   }
 
-  const tabLabels: Record<Tab, string> = {
-    shifts: tr.departments.hr.tabShifts,
-    leave: tr.departments.hr.tabLeave,
-    attendance: tr.departments.hr.tabAttendance,
-  };
+  const tabs: { value: Tab; label: string }[] = [
+    { value: 'shifts', label: tr.departments.hr.tabShifts },
+    { value: 'leave', label: tr.departments.hr.tabLeave },
+    { value: 'attendance', label: tr.departments.hr.tabAttendance },
+    ...(manageHr
+      ? [{ value: 'performance' as Tab, label: tr.departments.hr.tabPerformance }]
+      : []),
+  ];
 
   const TabButton: React.FC<{ value: Tab; label: string }> = ({ value, label }) => {
     const active = tab === value;
@@ -125,6 +174,7 @@ export default function HrScreen() {
         style={{
           flex: 1,
           paddingVertical: spacing.sm,
+          paddingHorizontal: spacing.xs,
           borderRadius: radius.md,
           alignItems: 'center',
           backgroundColor: active ? c.primary : c.surfaceAlt,
@@ -132,7 +182,10 @@ export default function HrScreen() {
           borderColor: active ? c.primary : c.border,
         }}
       >
-        <Body style={{ color: active ? c.primaryText : c.text, fontWeight: '600' }}>
+        <Body
+          style={{ color: active ? c.primaryText : c.text, fontWeight: '600', fontSize: 13 }}
+          numberOfLines={1}
+        >
           {label}
         </Body>
       </Pressable>
@@ -166,34 +219,6 @@ export default function HrScreen() {
           </Muted>
         ) : null}
       </View>
-    </Card>
-  );
-
-  const renderLeave = (l: LeaveRequest) => (
-    <Card key={l.id} style={{ marginBottom: spacing.sm }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-        }}
-      >
-        <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{l.staff_name || '—'}</Body>
-          {l.leave_type ? (
-            <Muted>
-              {tr.departments.hr.leaveType}: {l.leave_type}
-            </Muted>
-          ) : null}
-        </View>
-        <Badge label={leaveStatusLabel(l.status)} tone={statusTone(l.status)} />
-      </View>
-      {l.start_date ? (
-        <Muted style={{ marginTop: spacing.sm }}>
-          {tr.departments.hr.dates}: {formatDate(l.start_date)}
-          {l.end_date && l.end_date !== l.start_date ? ` – ${formatDate(l.end_date)}` : ''}
-        </Muted>
-      ) : null}
     </Card>
   );
 
@@ -234,8 +259,8 @@ export default function HrScreen() {
       <H1>{tr.departments.hr.title}</H1>
 
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
-        {HR_TABS.map((value) => (
-          <TabButton key={value} value={value} label={tabLabels[value]} />
+        {tabs.map(({ value, label }) => (
+          <TabButton key={value} value={value} label={label} />
         ))}
       </View>
 
@@ -243,14 +268,15 @@ export default function HrScreen() {
         <>
           <SectionTitle title={tr.departments.hr.shifts} />
           {(() => {
-            const state = (
-              <DepartmentListState
-                loading={shiftsQ.isLoading}
-                error={shiftsQ.error}
-                isEmpty={(shiftsQ.data || []).length === 0}
-                emptyText={tr.departments.hr.noShifts}
-              />
-            );
+            // DepartmentListState is CALLED (not <JSX/>) so it can return null
+            // when there is data — a rendered element would always be truthy and
+            // the `?? list` fallback would never fire (list would never show).
+            const state = DepartmentListState({
+              loading: shiftsQ.isLoading,
+              error: shiftsQ.error,
+              isEmpty: (shiftsQ.data || []).length === 0,
+              emptyText: tr.departments.hr.noShifts,
+            });
             return state ?? <View>{(shiftsQ.data || []).map(renderShift)}</View>;
           })()}
         </>
@@ -260,15 +286,21 @@ export default function HrScreen() {
         <>
           <SectionTitle title={tr.departments.hr.leave} />
           {(() => {
-            const state = (
-              <DepartmentListState
-                loading={leaveQ.isLoading}
-                error={leaveQ.error}
-                isEmpty={(leaveQ.data || []).length === 0}
-                emptyText={tr.departments.hr.noLeave}
-              />
+            const state = DepartmentListState({
+              loading: leaveQ.isLoading,
+              error: leaveQ.error,
+              isEmpty: (leaveQ.data || []).length === 0,
+              emptyText: tr.departments.hr.noLeave,
+            });
+            return (
+              state ?? (
+                <View>
+                  {(leaveQ.data || []).map((l) => (
+                    <LeaveRow key={l.id} leave={l} canDecide={manageHr} />
+                  ))}
+                </View>
+              )
             );
-            return state ?? <View>{(leaveQ.data || []).map(renderLeave)}</View>;
           })()}
         </>
       ) : null}
@@ -277,18 +309,353 @@ export default function HrScreen() {
         <>
           <SectionTitle title={tr.departments.hr.attendance} />
           {(() => {
-            const state = (
-              <DepartmentListState
-                loading={attendanceQ.isLoading}
-                error={attendanceQ.error}
-                isEmpty={(attendanceQ.data || []).length === 0}
-                emptyText={tr.departments.hr.noAttendance}
-              />
-            );
+            const state = DepartmentListState({
+              loading: attendanceQ.isLoading,
+              error: attendanceQ.error,
+              isEmpty: (attendanceQ.data || []).length === 0,
+              emptyText: tr.departments.hr.noAttendance,
+            });
             return state ?? <View>{(attendanceQ.data || []).map(renderAttendance)}</View>;
           })()}
         </>
       ) : null}
+
+      {tab === 'performance' ? <PerformancePanel query={performanceQ} /> : null}
     </ScrollView>
+  );
+}
+
+// ── Performans kokpiti ──────────────────────────────────────────────────────
+// Üst-üste: dört KPI hero kartı (toplam / ortalama puan / yüksek / gelişim) +
+// son değerlendirmelerin listesi. Puanlar 0-10 ölçeğinde (backend: ge=0 le=10).
+function PerformancePanel({
+  query,
+}: {
+  query: UseQueryResult<PerformanceSummary>;
+}) {
+  const data = query.data;
+  const items = data?.items ?? [];
+
+  const { high, needsWork } = useMemo(() => {
+    let h = 0;
+    let n = 0;
+    for (const r of items) {
+      const score = typeof r.overall_score === 'number' ? r.overall_score : null;
+      if (score === null) continue;
+      if (score >= 8) h += 1;
+      else if (score < 5) n += 1;
+    }
+    return { high: h, needsWork: n };
+  }, [items]);
+
+  const empty = items.length === 0;
+
+  return (
+    <>
+      <SectionTitle title={tr.departments.hr.performance} />
+      {query.isLoading ? (
+        <DepartmentListState loading error={null} isEmpty={false} />
+      ) : query.error ? (
+        <DepartmentListState loading={false} error={query.error} isEmpty={false} />
+      ) : empty ? (
+        <EmptyState
+          icon="ribbon-outline"
+          title={tr.departments.hr.noPerformance}
+          testID="hr-performance-empty"
+        />
+      ) : (
+        <View style={{ gap: spacing.md }}>
+          <KpiRow>
+            <KpiCard
+              label={tr.departments.hr.perfTotal}
+              value={String(data?.total ?? items.length)}
+              icon="document-text"
+              tone="info"
+              testID="hr-kpi-total"
+            />
+            <KpiCard
+              label={tr.departments.hr.perfAvgScore}
+              value={`${(data?.avg_score ?? 0).toFixed(1)} / 10`}
+              icon="star"
+              tone="info"
+              testID="hr-kpi-avg"
+            />
+          </KpiRow>
+          <KpiRow>
+            <KpiCard
+              label={tr.departments.hr.perfHigh}
+              value={String(high)}
+              icon="trophy"
+              tone="success"
+              testID="hr-kpi-high"
+            />
+            <KpiCard
+              label={tr.departments.hr.perfNeedsWork}
+              value={String(needsWork)}
+              icon="trending-down"
+              tone={needsWork > 0 ? 'warning' : 'default'}
+              testID="hr-kpi-needswork"
+            />
+          </KpiRow>
+
+          <SectionTitle title={tr.departments.hr.perfRecent} />
+          <View>
+            {items.map((r) => (
+              <PerformanceCard key={r.id} review={r} />
+            ))}
+          </View>
+        </View>
+      )}
+    </>
+  );
+}
+
+function PerformanceCard({ review }: { review: PerformanceReview }) {
+  const score = typeof review.overall_score === 'number' ? review.overall_score : null;
+  const tone =
+    score === null ? 'default' : score >= 8 ? 'success' : score < 5 ? 'danger' : 'warning';
+  return (
+    <Card style={{ marginBottom: spacing.sm }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+        }}
+      >
+        <View style={{ flex: 1, paddingRight: spacing.sm }}>
+          <Body style={{ fontWeight: '600' }}>{review.staff_name || '—'}</Body>
+          {review.period ? (
+            <Muted>
+              {tr.departments.hr.perfPeriod}: {review.period}
+            </Muted>
+          ) : null}
+        </View>
+        {score !== null ? (
+          <Badge label={`${tr.departments.hr.perfScore}: ${score} / 10`} tone={tone} />
+        ) : null}
+      </View>
+      <View style={{ marginTop: spacing.sm, gap: 2 }}>
+        {review.reviewer_name ? (
+          <Muted>
+            {tr.departments.hr.perfReviewer}: {review.reviewer_name}
+          </Muted>
+        ) : null}
+        {review.strengths ? (
+          <Muted>
+            {tr.departments.hr.perfStrengths}: {review.strengths}
+          </Muted>
+        ) : null}
+        {review.improvement_areas ? (
+          <Muted>
+            {tr.departments.hr.perfImprovement}: {review.improvement_areas}
+          </Muted>
+        ) : null}
+        {review.reviewed_at ? <Muted>{formatDate(review.reviewed_at)}</Muted> : null}
+      </View>
+    </Card>
+  );
+}
+
+// ── İzin satırı + 2-aşamalı onay/red aksiyonları ────────────────────────────
+// Standart aksiyon deseni (ActionButton + SegmentedActions) — Onayla/Reddet
+// aksiyonu Alert.alert DEĞİL inline iki-adım onaydır (Expo Web'de Alert no-op).
+// Backend state machine: pending → dept_approve → dept_approved → approve →
+// approved; pending|dept_approved → reject (gerekçe ZORUNLU). Tüm kararlar
+// backend tarafında require_op("manage_hr") ile yeniden zorlanır.
+function LeaveRow({ leave, canDecide }: { leave: LeaveRequest; canDecide: boolean }) {
+  const c = useTheme();
+  const qc = useQueryClient();
+  const [rejecting, setRejecting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState(false);
+
+  const status = leave.status || 'pending';
+  const isPending = status === 'pending';
+  const isDeptApproved = status === 'dept_approved';
+  const actionable = canDecide && (isPending || isDeptApproved);
+
+  // pending → dept_approve (departman onayı); dept_approved → approve (final).
+  const approveAction: LeaveDecisionAction = isDeptApproved ? 'approve' : 'dept_approve';
+  const approveLabel = isDeptApproved
+    ? tr.departments.hr.approve
+    : tr.departments.hr.deptApprove;
+
+  const mutation = useMutation({
+    mutationFn: (vars: { action: LeaveDecisionAction; note?: string }) =>
+      decideLeaveRequest(leave.id, vars.action, vars.note),
+    onSuccess: () => {
+      haptic.success();
+      setRejecting(false);
+      setConfirming(false);
+      setReason('');
+      setReasonError(false);
+      qc.invalidateQueries({ queryKey: ['hr-leave'] });
+    },
+    onError: () => {
+      haptic.error();
+    },
+  });
+
+  const onApprovePress = () => {
+    haptic.tap();
+    if (mutation.isError) mutation.reset();
+    setRejecting(false);
+    setConfirming((v) => !v);
+  };
+
+  const onApproveConfirm = () => {
+    mutation.mutate({ action: approveAction });
+  };
+
+  const onRejectPress = () => {
+    haptic.tap();
+    if (mutation.isError) mutation.reset();
+    setReasonError(false);
+    setConfirming(false);
+    setRejecting((v) => !v);
+  };
+
+  const onRejectConfirm = () => {
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      setReasonError(true);
+      return;
+    }
+    mutation.mutate({ action: 'reject', note: trimmed });
+  };
+
+  return (
+    <Card style={{ marginBottom: spacing.sm }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+        }}
+      >
+        <View style={{ flex: 1, paddingRight: spacing.sm }}>
+          <Body style={{ fontWeight: '600' }}>{leave.staff_name || '—'}</Body>
+          {leave.leave_type ? (
+            <Muted>
+              {tr.departments.hr.leaveType}: {leave.leave_type}
+            </Muted>
+          ) : null}
+        </View>
+        <Badge label={leaveStatusLabel(status)} tone={statusTone(status)} />
+      </View>
+      {leave.start_date ? (
+        <Muted style={{ marginTop: spacing.sm }}>
+          {tr.departments.hr.dates}: {formatDate(leave.start_date)}
+          {leave.end_date && leave.end_date !== leave.start_date
+            ? ` – ${formatDate(leave.end_date)}`
+            : ''}
+        </Muted>
+      ) : null}
+      {isDeptApproved ? (
+        <View style={{ marginTop: spacing.xs }}>
+          <Badge label={tr.departments.hr.deptApprovedBadge} tone="info" />
+        </View>
+      ) : null}
+
+      {mutation.isError ? (
+        <Muted style={{ marginTop: spacing.xs, color: c.danger }}>
+          {errorMessage(mutation.error, tr.departments.hr.decisionError)}
+        </Muted>
+      ) : null}
+
+      {actionable ? (
+        rejecting ? (
+          <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
+            <Field
+              label={tr.departments.hr.rejectReasonLabel}
+              placeholder={tr.departments.hr.rejectReasonPlaceholder}
+              value={reason}
+              onChangeText={(t) => {
+                setReason(t);
+                if (reasonError) setReasonError(false);
+              }}
+              multiline
+              editable={!mutation.isPending}
+            />
+            {reasonError ? (
+              <Muted style={{ color: c.danger }}>
+                {tr.departments.hr.rejectReasonRequired}
+              </Muted>
+            ) : null}
+            <SegmentedActions>
+              <ActionButton
+                label={tr.departments.hr.cancel}
+                icon="arrow-undo"
+                onPress={() => {
+                  setRejecting(false);
+                  setReason('');
+                  setReasonError(false);
+                }}
+                bg={c.surfaceAlt}
+                fg={c.text}
+                disabled={mutation.isPending}
+              />
+              <ActionButton
+                testID="hr-leave-reject-confirm"
+                label={tr.departments.hr.reject}
+                icon="close-circle"
+                onPress={onRejectConfirm}
+                bg={c.danger}
+                fg="#ffffff"
+                loading={mutation.isPending}
+              />
+            </SegmentedActions>
+          </View>
+        ) : confirming ? (
+          <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
+            <Muted>{tr.departments.hr.approveConfirm}</Muted>
+            <SegmentedActions>
+              <ActionButton
+                label={tr.departments.hr.cancel}
+                icon="arrow-undo"
+                onPress={() => setConfirming(false)}
+                bg={c.surfaceAlt}
+                fg={c.text}
+                disabled={mutation.isPending}
+              />
+              <ActionButton
+                testID="hr-leave-approve-confirm"
+                label={approveLabel}
+                icon="checkmark-circle"
+                onPress={onApproveConfirm}
+                bg={c.success}
+                fg="#ffffff"
+                loading={mutation.isPending}
+              />
+            </SegmentedActions>
+          </View>
+        ) : (
+          <View style={{ marginTop: spacing.sm }}>
+            <SegmentedActions>
+              <ActionButton
+                testID="hr-leave-reject"
+                label={tr.departments.hr.reject}
+                icon="close-circle"
+                onPress={onRejectPress}
+                bg={c.danger + '14'}
+                fg={c.danger}
+                disabled={mutation.isPending}
+              />
+              <ActionButton
+                testID="hr-leave-approve"
+                label={approveLabel}
+                icon="checkmark-circle"
+                onPress={onApprovePress}
+                bg={c.success}
+                fg="#ffffff"
+                disabled={mutation.isPending}
+              />
+            </SegmentedActions>
+          </View>
+        )
+      ) : null}
+    </Card>
   );
 }

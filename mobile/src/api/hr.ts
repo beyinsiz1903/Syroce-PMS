@@ -77,3 +77,59 @@ export async function listAttendanceRecords(params?: {
   );
   return res?.records ?? [];
 }
+
+export type PerformanceReview = {
+  id: string;
+  staff_id?: string;
+  staff_name?: string;
+  reviewer_name?: string | null;
+  period?: string | null;
+  overall_score?: number;
+  goals?: string | null;
+  strengths?: string | null;
+  improvement_areas?: string | null;
+  competency_scores?: Record<string, number>;
+  reviewed_at?: string;
+};
+
+export type PerformanceSummary = {
+  items: PerformanceReview[];
+  total: number;
+  avg_score: number;
+};
+
+// GET /api/hr/performance → { items, total, avg_score }. Backend gates this
+// surface with require_op("manage_hr") — the SAME gate as its sibling endpoints
+// (POST /hr/performance, leave-request decision). The screen mirrors that with
+// a cosmetic manage-HR check so view-only roles (e.g. finance) never see it.
+export async function getPerformanceSummary(params?: {
+  staff_id?: string;
+}): Promise<PerformanceSummary> {
+  const res = await api.get<Partial<PerformanceSummary>>(
+    '/api/hr/performance',
+    params,
+  );
+  return {
+    items: res?.items ?? [],
+    total: res?.total ?? 0,
+    avg_score: res?.avg_score ?? 0,
+  };
+}
+
+// The backend's 2-stage leave state machine (Task #263):
+//   pending → dept_approve → dept_approved → approve → approved
+//   pending | dept_approved → reject → rejected (note ZORUNLU)
+export type LeaveDecisionAction = 'dept_approve' | 'approve' | 'reject';
+
+// POST /api/hr/leave-request/{id}/decision — RBAC: require_op("manage_hr").
+// A rejection note is mandatory server-side (>= 1 non-blank char).
+export async function decideLeaveRequest(
+  leaveId: string,
+  decision: LeaveDecisionAction,
+  note?: string,
+): Promise<{ success: boolean; status: string }> {
+  return api.post<{ success: boolean; status: string }>(
+    `/api/hr/leave-request/${encodeURIComponent(leaveId)}/decision`,
+    { decision, note: note || null },
+  );
+}
