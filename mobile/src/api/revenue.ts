@@ -71,3 +71,60 @@ export async function getPricingInsights(date?: string): Promise<PricingInsights
   const res = await api.get<PricingInsights>('/api/rms/pricing-insights', { date });
   return { ...res, insights: res?.insights ?? [] };
 }
+
+// Revenue engine dashboard — ADR / RevPAR / occupancy cockpit metrics.
+// backend/routers/revenue_management.py GET /api/revenue-engine/dashboard only
+// requires auth (computes real 30-day metrics from folio_charges + bookings).
+export type RevenueOpportunity = {
+  date?: string;
+  type?: string;
+  message?: string;
+  potential_revenue?: number;
+};
+
+export type RevenueDashboard = {
+  total_rooms?: number;
+  today_occupancy_pct?: number;
+  today_booked?: number;
+  period_30d?: {
+    total_revenue?: number;
+    room_revenue?: number;
+    room_nights_sold?: number;
+    adr?: number;
+    revpar?: number;
+  };
+  opportunities: RevenueOpportunity[];
+};
+
+// GET /api/revenue-engine/dashboard → comprehensive ADR/RevPAR/occupancy snapshot
+export async function getRevenueDashboard(): Promise<RevenueDashboard> {
+  const res = await api.get<RevenueDashboard>('/api/revenue-engine/dashboard');
+  return { ...res, opportunities: res?.opportunities ?? [] };
+}
+
+// Forward-looking occupancy forecast. High occupancy days carry the highest
+// displacement risk (accepting discounted/group business crowds out higher
+// rated demand), so `demand_level` doubles as the displacement-risk signal.
+export type ForecastDay = {
+  date?: string;
+  total_rooms?: number;
+  booked?: number;
+  blocked?: number;
+  available?: number;
+  occupancy_pct?: number;
+  demand_level?: string;
+};
+
+export type OccupancyForecast = {
+  total_rooms?: number;
+  forecast: ForecastDay[];
+};
+
+// GET /api/revenue-engine/occupancy-forecast?days= → { total_rooms, forecast }
+export async function getOccupancyForecast(days = 7): Promise<OccupancyForecast> {
+  const res = await api.get<OccupancyForecast>(
+    '/api/revenue-engine/occupancy-forecast',
+    { days },
+  );
+  return { ...res, forecast: res?.forecast ?? [] };
+}
