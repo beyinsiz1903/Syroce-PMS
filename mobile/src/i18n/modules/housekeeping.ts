@@ -1,8 +1,24 @@
 export const housekeeping = {
-  title: 'Odalar',
+  title: 'Kat Hizmetleri',
   floor: 'Kat',
   all: 'Tümü',
-  longPressHint: 'Oda kartına dokunarak görevleri görün; durum değiştirin veya görev atayın',
+  longPressHint: 'Tek dokunuşla işlem yapın; görevleri görmek için kartın üzerine dokunun',
+  // Three lifecycle sections (Task #510 redesign).
+  sectionTodo: 'Temizlenecek Odalar',
+  sectionProgress: 'Devam Edenler',
+  sectionDone: 'Tamamlananlar',
+  sectionEmpty: 'Bu bölümde oda yok',
+  // One-tap room actions.
+  markClean: 'Temizlendi',
+  markCleanCelebrate: 'Temizlendi',
+  minibarMissing: 'Minibar Eksik',
+  reportDamage: 'Hasar Bildir',
+  reportFault: 'Arıza Bildir',
+  reported: 'Bildirildi',
+  actionError: 'İşlem tamamlanamadı, tekrar deneyin',
+  durationLabel: 'Süre',
+  minutesShort: 'dk',
+  hoursShort: 'sa',
   statuses: {
     clean: 'Temiz',
     dirty: 'Kirli',

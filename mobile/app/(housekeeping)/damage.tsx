@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import {
   Body,
@@ -32,7 +33,12 @@ const PRIORITIES = [
 
 export default function DamageScreen() {
   const c = useTheme();
-  const [roomId, setRoomId] = useState('');
+  // Kat Hizmetleri listesinden "Hasar Bildir" ile gelindiyse oda onceden
+  // doldurulur (housekeeper UUID yazmak zorunda kalmaz).
+  const params = useLocalSearchParams<{ roomId?: string; roomNumber?: string }>();
+  const prefillRoomId = typeof params.roomId === 'string' ? params.roomId : '';
+  const roomNumber = typeof params.roomNumber === 'string' ? params.roomNumber : '';
+  const [roomId, setRoomId] = useState(prefillRoomId);
   const [issueType, setIssueType] = useState('damage');
   const [priority, setPriority] = useState('high');
   const [description, setDescription] = useState('');
@@ -71,7 +77,7 @@ export default function DamageScreen() {
   };
 
   const clearForm = () => {
-    setRoomId('');
+    setRoomId(prefillRoomId);
     setIssueType('damage');
     setPriority('high');
     setDescription('');
@@ -140,6 +146,9 @@ export default function DamageScreen() {
       ) : null}
 
       <Card>
+        {roomNumber ? (
+          <Muted style={{ marginBottom: spacing.xs }}>Oda {roomNumber}</Muted>
+        ) : null}
         <Field
           label={tr.housekeeping.roomIdLabel}
           value={roomId}

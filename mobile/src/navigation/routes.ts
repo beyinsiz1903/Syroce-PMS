@@ -56,6 +56,7 @@ export const ROUTES = {
   homeProfile: '/(home)/profile',
   frontdesk: '/(frontdesk)',
   housekeeping: '/(housekeeping)',
+  hkDamage: '/(housekeeping)/damage',
   gm: '/(gm)',
   guest: '/(guest)',
   departments: '/(departments)',
