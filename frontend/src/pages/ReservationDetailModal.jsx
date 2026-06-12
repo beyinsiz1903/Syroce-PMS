@@ -9,10 +9,10 @@ import {
   X, Calendar, DollarSign, FileText, Users, Receipt,
   History, MessageSquare, Star, AlertTriangle,
   LogIn, LogOut, Repeat2, Shield, Mail, Loader2, CreditCard,
-  ChevronDown, DoorOpen, Globe, Clock,
+  ChevronDown, DoorOpen, Globe, Clock, Layers, Eye, BedDouble,
 } from 'lucide-react';
 
-import { API, fmtTL, fmtDateTime, statusLabel, translateValue, bookingRef, Avatar } from './reservation-detail/helpers';
+import { API, fmtTL, fmtDateTime, statusLabel, translateValue, translateView, bookingRef, Avatar } from './reservation-detail/helpers';
 import { GeneralInfoTab, GuestsTab } from './reservation-detail/InfoTabs';
 import { FoliosTab } from './reservation-detail/FoliosTab';
 import { DailyRatesTab, ExtraChargesTab } from './reservation-detail/PricingTabs';
@@ -29,14 +29,14 @@ import { useTranslation } from 'react-i18next';
 
 // Statü için pill rengi (sıkı palet: amber/emerald/rose/slate)
 const STATUS_PILL = {
-  confirmed: 'bg-emerald-500/15 text-emerald-100 border border-emerald-400/30',
-  guaranteed: 'bg-emerald-500/15 text-emerald-100 border border-emerald-400/30',
-  checked_in: 'bg-amber-500/20 text-amber-100 border border-amber-400/30',
-  in_house: 'bg-amber-500/20 text-amber-100 border border-amber-400/30',
-  checked_out: 'bg-slate-400/20 text-slate-100 border border-slate-300/30',
-  cancelled: 'bg-rose-500/20 text-rose-100 border border-rose-400/30',
-  no_show: 'bg-rose-500/20 text-rose-100 border border-rose-400/30',
-  pending: 'bg-slate-400/20 text-slate-100 border border-slate-300/30',
+  confirmed: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  guaranteed: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  checked_in: 'bg-amber-50 text-amber-700 border border-amber-200',
+  in_house: 'bg-amber-50 text-amber-700 border border-amber-200',
+  checked_out: 'bg-slate-100 text-slate-600 border border-slate-200',
+  cancelled: 'bg-rose-50 text-rose-700 border border-rose-200',
+  no_show: 'bg-rose-50 text-rose-700 border border-rose-200',
+  pending: 'bg-slate-100 text-slate-600 border border-slate-200',
 };
 
 export default function ReservationDetailModal({ bookingId, onClose, allBookings }) {
@@ -113,27 +113,27 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="absolute inset-2 md:inset-4 lg:inset-6 bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header — sade, marka rengiyle */}
-        <div className="flex items-center justify-between px-6 py-3 border-b bg-gradient-to-r from-slate-900 to-slate-800">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 bg-white">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex items-baseline gap-2 min-w-0">
-              <h2 className="text-white font-semibold text-base whitespace-nowrap">{t('cm.pages_ReservationDetailModal.rezervasyon')}</h2>
-              <span className="text-amber-300 font-mono text-sm tracking-wide truncate">{refLabel}</span>
+              <h2 className="text-slate-800 font-semibold text-base whitespace-nowrap">{t('cm.pages_ReservationDetailModal.rezervasyon')}</h2>
+              <span className="text-amber-700 font-mono text-sm tracking-wide truncate">{refLabel}</span>
             </div>
             <Badge className={`text-[11px] h-5 px-2 ${STATUS_PILL[booking?.status] || STATUS_PILL.pending}`}>
               {statusLabel(booking?.status)}
             </Badge>
             {booking?.group_booking_id && (
-              <Badge className="bg-amber-400/20 text-amber-100 border border-amber-400/30 text-[11px] h-5 px-2">Grup</Badge>
+              <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[11px] h-5 px-2">Grup</Badge>
             )}
             {hasOpenBalance && (
-              <Badge className="bg-rose-500/20 text-rose-100 border border-rose-400/30 text-[11px] h-5 px-2 hidden md:inline-flex">
+              <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[11px] h-5 px-2 hidden md:inline-flex">
                 <AlertTriangle className="w-3 h-3 mr-1" /> {t('cm.pages_ReservationDetailModal.bakiye')} {fmtTL(balance)} TL
               </Badge>
             )}
           </div>
           <button
             onClick={onClose}
-            className="text-white/70 hover:text-white hover:bg-white/10 rounded-full p-2 transition-colors"
+            className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full p-2 transition-colors"
             data-testid="close-reservation-detail"
             aria-label={t('cm.pages_ReservationDetailModal.kapat')}
           ><X className="w-5 h-5" /></button>
@@ -156,13 +156,62 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 </div>
               </div>
 
-              {/* Anahtar bilgiler — kompakt, şık */}
+              {/* Fiyat & Bakiye — bakiye vurgulu */}
+              <div className={`rounded-xl p-4 space-y-3 shadow-sm ${
+                hasOpenBalance ? 'bg-rose-50 border-2 border-rose-200' : 'bg-white border border-slate-200'
+              }`} data-testid="financial-summary-card">
+                <div>
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('cm.pages_ReservationDetailModal.bakiye_33769')}</p>
+                  <div className={`text-2xl font-bold leading-tight ${hasOpenBalance ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtTL(balance)} TL</div>
+                  <p className="text-[11px] text-slate-500">{hasOpenBalance ? 'Kalan bakiye' : 'Bakiye kapalı'}</p>
+                </div>
+                <div className={`pt-3 border-t space-y-1.5 ${hasOpenBalance ? 'border-rose-200' : 'border-slate-200'}`}>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.toplam')}</span>
+                    <span className="font-semibold text-slate-800">{fmtTL(summary?.total_amount)} TL</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.odenen')}</span>
+                    <span className="font-semibold text-emerald-600">{fmtTL(summary?.total_payments)} TL</span>
+                  </div>
+                  {(summary?.total_deposits || 0) > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Depozito</span>
+                      <span className="font-semibold text-sky-600">{fmtTL(summary?.total_deposits)} TL</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Oda Bilgisi — yalnızca gerçek alanlar */}
               <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2.5 shadow-sm">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Oda Bilgisi</p>
                 <div className="flex items-center gap-2 text-xs">
                   <DoorOpen className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.oda')}</span>
                   <span className="ml-auto font-semibold text-slate-800">{booking?.room_number || room?.room_number || '—'}</span>
                 </div>
+                {room?.room_type && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <BedDouble className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="text-slate-500">Oda Tipi</span>
+                    <span className="ml-auto font-medium text-slate-700 truncate">{room.room_type}</span>
+                  </div>
+                )}
+                {Number.isFinite(room?.floor) && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <Layers className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="text-slate-500">Kat</span>
+                    <span className="ml-auto font-medium text-slate-700">{room.floor}. Kat</span>
+                  </div>
+                )}
+                {translateView(room?.view) && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="text-slate-500">Manzara</span>
+                    <span className="ml-auto font-medium text-slate-700 truncate">{translateView(room.view)}</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-2 text-xs">
                   <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   <span className="text-slate-500">Kanal</span>
@@ -209,6 +258,49 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 )}
               </div>
 
+              {/* Hızlı İşlemler */}
+              <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-1.5 shadow-sm">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Hızlı İşlemler</p>
+                <IdPhotoViewerButton
+                  bookingId={bookingId}
+                  guestName={guestName}
+                  onlineCheckinCompleted={booking?.online_checkin_completed}
+                  idPhotoUploaded={booking?.online_checkin_id_photo_uploaded}
+                  className="w-full h-8 text-xs justify-start bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                />
+                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giriş yapıldı')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
+                  <LogIn className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.erken_giris')}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Geç çıkış kaydedildi')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
+                  <LogOut className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.gec_cikis')}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab('room_change')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
+                  <DoorOpen className="w-3 h-3 mr-2" /> Oda Değiştir
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab('notes')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
+                  <FileText className="w-3 h-3 mr-2" /> Not Ekle
+                </Button>
+                <Button size="sm" variant="outline" onClick={async () => {
+                  const vip = data?.guest?.vip_status || false;
+                  try {
+                    await axios.put(`/pms/reservations/${bookingId}/vip-status?vip=${!vip}`);
+                    toast.success(vip ? 'VIP kaldırıldı' : 'VIP yapıldı');
+                    loadData();
+                  } catch (_e) { toast.error('Hata'); }
+                }} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
+                  <Star className="w-3 h-3 mr-2" /> {data?.guest?.vip_status ? 'VIP Kaldır' : 'VIP Yap'}
+                </Button>
+                <Button size="sm" variant="outline" onClick={async () => { if (await confirmDialog({ message: 'No-show olarak işaretlensin mi?', variant: 'danger' })) action(`/api/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi'); }} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50">
+                  <AlertTriangle className="w-3 h-3 mr-2" /> No-Show
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50" data-testid="btn-cancel-reservation">
+                  <X className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.iptal_et')}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab('voucher')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-voucher">
+                  <FileText className="w-3 h-3 mr-2" /> Voucher
+                </Button>
+              </div>
+
               {/* Operasyonel Durum — yalnızca anlamlı olanlar */}
               <div className="space-y-1.5" data-testid="reservation-ops-panel">
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('cm.pages_ReservationDetailModal.operasyonel_durum')}</p>
@@ -253,66 +345,6 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                     </div>
                   </div>
                 )}
-              </div>
-
-              {/* Finansal özet — bakiye vurgulu */}
-              <div className={`rounded-xl p-3 space-y-1.5 shadow-sm ${
-                hasOpenBalance ? 'bg-rose-50 border-2 border-rose-300' : 'bg-white border border-slate-200'
-              }`} data-testid="financial-summary-card">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.toplam')}</span>
-                  <span className="font-semibold text-slate-800">{fmtTL(summary?.total_amount)} TL</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">{t('cm.pages_ReservationDetailModal.odenen')}</span>
-                  <span className="font-semibold text-emerald-600">{fmtTL(summary?.total_payments)} TL</span>
-                </div>
-                {(summary?.total_deposits || 0) > 0 && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Depozito</span>
-                    <span className="font-semibold text-sky-600">{fmtTL(summary?.total_deposits)} TL</span>
-                  </div>
-                )}
-                <div className={`pt-2 border-t flex justify-between items-baseline ${hasOpenBalance ? 'border-rose-200' : 'border-slate-200'}`}>
-                  <span className={`text-[11px] font-semibold uppercase tracking-wider ${hasOpenBalance ? 'text-rose-700' : 'text-slate-500'}`}>{t('cm.pages_ReservationDetailModal.bakiye_33769')}</span>
-                  <span className={`text-base font-bold ${hasOpenBalance ? 'text-rose-700' : 'text-emerald-600'}`}>{fmtTL(balance)} TL</span>
-                </div>
-              </div>
-
-              {/* İkincil eylemler */}
-              <div className="space-y-1.5">
-                <IdPhotoViewerButton
-                  bookingId={bookingId}
-                  guestName={guestName}
-                  onlineCheckinCompleted={booking?.online_checkin_completed}
-                  idPhotoUploaded={booking?.online_checkin_id_photo_uploaded}
-                  className="w-full h-8 text-xs justify-start bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                />
-                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/early-checkin`, { extra_charge: 0 }, 'Erken giriş yapıldı')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
-                  <LogIn className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.erken_giris')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => action(`/api/pms/reservations/${bookingId}/late-checkout`, { extra_charge: 0 }, 'Geç çıkış kaydedildi')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
-                  <LogOut className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.gec_cikis')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={async () => {
-                  const vip = data?.guest?.vip_status || false;
-                  try {
-                    await axios.put(`/pms/reservations/${bookingId}/vip-status?vip=${!vip}`);
-                    toast.success(vip ? 'VIP kaldırıldı' : 'VIP yapıldı');
-                    loadData();
-                  } catch (_e) { toast.error('Hata'); }
-                }} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50">
-                  <Star className="w-3 h-3 mr-2" /> {data?.guest?.vip_status ? 'VIP Kaldır' : 'VIP Yap'}
-                </Button>
-                <Button size="sm" variant="outline" onClick={async () => { if (await confirmDialog({ message: 'No-show olarak işaretlensin mi?', variant: 'danger' })) action(`/api/pms/reservations/${bookingId}/mark-noshow`, {}, 'No-show işaretlendi'); }} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50">
-                  <AlertTriangle className="w-3 h-3 mr-2" /> No-Show
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setActiveTab('cancel')} className="w-full h-8 text-xs justify-start text-rose-600 border-rose-200 hover:bg-rose-50" data-testid="btn-cancel-reservation">
-                  <X className="w-3 h-3 mr-2" /> {t('cm.pages_ReservationDetailModal.iptal_et')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setActiveTab('voucher')} className="w-full h-8 text-xs justify-start bg-white border-slate-300 hover:bg-slate-50" data-testid="btn-voucher">
-                  <FileText className="w-3 h-3 mr-2" /> Voucher
-                </Button>
               </div>
             </div>
 
@@ -401,7 +433,7 @@ export default function ReservationDetailModal({ bookingId, onClose, allBookings
                 </DropdownMenu>
               </TabsList>
               <div className="flex-1 overflow-y-auto p-6">
-                <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} /></TabsContent>
+                <TabsContent value="general" className="mt-0"><GeneralInfoTab booking={booking} guest={guest} room={room} company={company} onGuestUpdate={loadData} notes={notes} history={history} summary={summary} payments={payments} deposits={deposits} onSwitchTab={setActiveTab} /></TabsContent>
                 <TabsContent value="guests" className="mt-0"><GuestsTab guests={guests} booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="online_payment" className="mt-0"><OnlinePaymentTab booking={booking} onRefresh={loadData} /></TabsContent>
                 <TabsContent value="vcc" className="mt-0"><VCCTab booking={booking} onRefresh={loadData} /></TabsContent>

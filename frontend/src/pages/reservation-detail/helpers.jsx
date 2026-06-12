@@ -169,3 +169,54 @@ export function SectionHeader({ icon: Icon, title }) {
     </div>
   );
 }
+
+// Oda manzarası (teknik değer -> Türkçe gösterim). Değer yoksa null döner — render edilmez.
+export function translateView(v) {
+  if (!v) return null;
+  const s = String(v).toLowerCase().trim();
+  const map = {
+    sea: 'Deniz Manzaralı',
+    ocean: 'Deniz Manzaralı',
+    city: 'Şehir Manzaralı',
+    garden: 'Bahçe Manzaralı',
+    mountain: 'Dağ Manzaralı',
+    pool: 'Havuz Manzaralı',
+    lake: 'Göl Manzaralı',
+    forest: 'Orman Manzaralı',
+    street: 'Cadde Manzaralı',
+    courtyard: 'İç Avlu Manzaralı',
+  };
+  return map[s] || v;
+}
+
+// İkon + etiket + değer kartı (kart grid'lerinde kullanılır)
+export function StatCard({ icon: Icon, label, value, sub, tone = 'slate' }) {
+  const tones = {
+    slate: 'text-slate-400',
+    amber: 'text-amber-500',
+    emerald: 'text-emerald-500',
+    sky: 'text-sky-500',
+    indigo: 'text-indigo-500',
+    rose: 'text-rose-500',
+  };
+  return (
+    <div className="border border-slate-200 rounded-xl bg-white px-3.5 py-3 shadow-sm">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        {Icon && <Icon className={`w-3.5 h-3.5 ${tones[tone] || tones.slate}`} />}
+        <span className="text-[11px] font-medium text-slate-500">{label}</span>
+      </div>
+      <div className="text-sm font-semibold text-slate-800 leading-snug">{value}</div>
+      {sub && <div className="text-[11px] text-slate-400 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+// İki sütunlu anahtar/değer satırı (Oda & Tarife, Ödeme Bilgileri listelerinde)
+export function InfoLine({ label, value }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1.5 border-b border-slate-100 last:border-b-0">
+      <span className="text-[11px] text-slate-500 shrink-0">{label}</span>
+      <span className="text-xs font-medium text-slate-800 text-right">{value}</span>
+    </div>
+  );
+}

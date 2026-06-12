@@ -7,8 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Loader2, ScanLine, Crown, AlertTriangle, ShieldAlert, Cake, Repeat, BedDouble, CalendarDays, UserCircle2 } from 'lucide-react';
-import { fmtDate, InfoField, Avatar, EmptyState, translateValue, SectionHeader } from './helpers';
+import { Pencil, Check, Globe, Phone, Star, Building2, Users, X, Mail, CreditCard, Loader2, ScanLine, Crown, AlertTriangle, ShieldAlert, Cake, Repeat, BedDouble, CalendarDays, UserCircle2, CalendarClock, Clock, Moon, Wallet, StickyNote, Tag, CheckCircle2, Activity } from 'lucide-react';
+import { fmtDate, fmtDateTime, fmtTL, Avatar, EmptyState, translateValue, translateView, SectionHeader, StatCard, InfoLine } from './helpers';
 import QuickIdScanDialog from '@/components/QuickIdScanDialog';
 import api from '@/api/axios';
 
@@ -20,7 +20,25 @@ const ALERT_LEVEL_BG = {
 };
 const ALERT_ICON = { vip: Crown, repeat: Repeat, blacklist: ShieldAlert, allergy: AlertTriangle, note: AlertTriangle, special_date: Cake };
 
-export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate }) {
+const PAYMENT_METHOD_LABELS = {
+  cash: 'Nakit', card: 'Kredi Kartı', credit_card: 'Kredi Kartı', debit_card: 'Banka Kartı',
+  bank_transfer: 'Havale/EFT', transfer: 'Havale/EFT', online: 'Online Ödeme',
+  pos: 'POS', cari: 'Cari Hesap', virtual_card: 'Sanal Kart', vcc: 'Sanal Kart',
+};
+const ACTIVITY_LABELS = {
+  reservation_created: 'Rezervasyon oluşturuldu', payment_recorded: 'Ödeme kaydedildi',
+  transferred_to_cari: 'Cariye aktarıldı', agency_payment_recorded: 'Acente ödemesi',
+  charge_split: 'Masraf bölündü', note_added: 'Not eklendi', room_changed: 'Oda değiştirildi',
+  early_checkin: 'Erken giriş', late_checkout: 'Geç çıkış', marked_noshow: 'No-show işaretlendi',
+  vip_status_changed: 'VIP durumu güncellendi', deposit_recorded: 'Depozito alındı',
+  deposit_refunded: 'Depozito iade edildi', extra_charge_added: 'Ekstra ücret eklendi',
+  daily_rates_updated: 'Fiyat güncellendi', guest_updated: 'Misafir güncellendi',
+  communication_logged: 'İletişim kaydedildi', group_checkin: 'Grup giriş', group_checkout: 'Grup çıkış',
+  checked_in: 'Giriş yapıldı', checked_out: 'Çıkış yapıldı', confirmed: 'Onaylandı',
+};
+const activityLabel = (a) => ACTIVITY_LABELS[a] || (a ? String(a).replace(/_/g, ' ') : 'İşlem');
+
+export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate, notes, history, summary, payments, deposits, onSwitchTab }) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [guestForm, setGuestForm] = useState({});
@@ -51,6 +69,21 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
   const nights = booking?.check_in && booking?.check_out
     ? Math.max(1, Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000 * 60 * 60 * 24)))
     : 1;
+
+  const balance = summary?.balance || 0;
+  const hasOpenBalance = balance > 0;
+  const lastPayment = (payments || []).filter(p => !p.voided).slice(-1)[0];
+  const depositAmt = summary?.total_deposits || 0;
+  const hasDeposit = depositAmt > 0 || (deposits && deposits.length > 0);
+  const roomImg = room?.images && room.images.length > 0 ? room.images[0] : null;
+  const totalGuests = booking?.guests_count || ((booking?.adults || 0) + (booking?.children || 0)) || 1;
+  const flow = [
+    { key: 'created', label: 'Rezervasyon Oluşturuldu', ts: booking?.created_at, done: !!booking?.created_at },
+    { key: 'checkin', label: booking?.checked_in_at ? 'Giriş Yapıldı' : 'Planlanan Giriş', ts: booking?.checked_in_at || booking?.check_in, done: !!booking?.checked_in_at },
+    { key: 'checkout', label: booking?.checked_out_at ? 'Çıkış Yapıldı' : 'Planlanan Çıkış', ts: booking?.checked_out_at || booking?.check_out, done: !!booking?.checked_out_at },
+  ].filter(s => s.ts);
+  const recentNotes = (notes || []).slice(0, 2);
+  const recentHistory = (history || []).slice(0, 3);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" data-testid="general-info-tab">
@@ -87,53 +120,101 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
             })}
           </div>
         )}
+        {guest?.total_stays > 1 && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-sky-50 border-sky-200 text-sky-800 text-sm">
+            <Repeat className="w-4 h-4 shrink-0" />
+            <span className="font-medium">Tekrar misafir — {guest.total_stays}. ziyareti</span>
+          </div>
+        )}
 
-        {/* Bölüm 1: Tarih & Süre */}
+        {/* Bölüm 1: Konaklama Bilgileri */}
         <section className="space-y-3">
-          <SectionHeader icon={CalendarDays} title="Tarih & Süre" />
-          <div className="grid grid-cols-2 gap-4">
-            <InfoField label="Giriş Tarihi" value={fmtDate(booking?.check_in)} />
-            <InfoField label="Giriş Saati" value={booking?.check_in_time || booking?.checkin_time || '14:00'} />
-            <InfoField label="Çıkış Tarihi" value={fmtDate(booking?.check_out)} />
-            <InfoField label="Çıkış Saati" value={booking?.check_out_time || booking?.checkout_time || '12:00'} />
-            {booking?.checked_in_at && (
-              <InfoField label="Gerçekleşen Giriş" value={new Date(booking.checked_in_at).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })} />
+          <SectionHeader icon={CalendarDays} title="Konaklama Bilgileri" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatCard icon={CalendarDays} label="Giriş Tarihi" value={fmtDate(booking?.check_in)} sub={booking?.check_in_time || booking?.checkin_time || '14:00'} tone="emerald" />
+            <StatCard icon={CalendarClock} label="Çıkış Tarihi" value={fmtDate(booking?.check_out)} sub={booking?.check_out_time || booking?.checkout_time || '12:00'} tone="amber" />
+            <StatCard icon={Moon} label="Konaklama Süresi" value={`${nights} gece`} tone="indigo" />
+            {booking?.created_at && (
+              <StatCard icon={Clock} label="Rezervasyon Tarihi" value={fmtDate(booking.created_at)} sub={new Date(booking.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })} tone="slate" />
             )}
-            {booking?.checked_out_at && (
-              <InfoField label="Gerçekleşen Çıkış" value={new Date(booking.checked_out_at).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })} />
-            )}
-            <InfoField label="Konaklama Süresi" value={`${nights} gece`} />
+          </div>
+          {(booking?.checked_in_at || booking?.checked_out_at) && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {booking?.checked_in_at && (
+                <StatCard icon={CheckCircle2} label="Gerçekleşen Giriş" value={new Date(booking.checked_in_at).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })} tone="emerald" />
+              )}
+              {booking?.checked_out_at && (
+                <StatCard icon={CheckCircle2} label="Gerçekleşen Çıkış" value={new Date(booking.checked_out_at).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })} tone="slate" />
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* Bölüm 2: Konuk Bilgileri */}
+        <section className="space-y-3">
+          <SectionHeader icon={UserCircle2} title="Konuk Bilgileri" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatCard icon={Users} label="Yetişkin" value={booking?.adults ?? booking?.guests_count ?? 1} tone="sky" />
+            <StatCard icon={Users} label="Çocuk" value={booking?.children ?? 0} tone="sky" />
+            <StatCard icon={UserCircle2} label="Toplam Konuk" value={totalGuests} tone="indigo" />
+            <StatCard icon={Tag} label="Tarife Planı" value={translateValue(booking?.rate_plan) || 'Standart'} tone="amber" />
           </div>
         </section>
 
-        {/* Bölüm 2: Konuk Sayısı */}
+        {/* Bölüm 3: Oda & Tarife Bilgileri */}
         <section className="space-y-3">
-          <SectionHeader icon={UserCircle2} title="Konuk Sayısı" />
-          <div className="grid grid-cols-2 gap-4">
-            <InfoField label="Yetişkin" value={booking?.adults || booking?.guests_count || 1} />
-            <InfoField label="Çocuk" value={booking?.children || 0} />
-          </div>
-        </section>
-
-        {/* Bölüm 3: Oda & Tarife */}
-        <section className="space-y-3">
-          <SectionHeader icon={BedDouble} title="Oda & Tarife" />
-          <div className="grid grid-cols-2 gap-4">
-            <InfoField label="Oda Tipi" value={room?.room_type || '-'} />
-            <InfoField label="Oda No" value={booking?.room_number || room?.room_number || '-'} />
-            <InfoField label="Konaklama Türü" value={translateValue(booking?.rate_plan) || 'Standart'} />
-            <InfoField label={t('common.cancellationPolicy')} value={translateValue(booking?.cancellation_policy) || t('common.flexible')} />
+          <SectionHeader icon={BedDouble} title="Oda & Tarife Bilgileri" />
+          <div className={`grid gap-4 ${roomImg ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
+            <div className="border border-slate-200 rounded-xl bg-white px-4 py-2 shadow-sm">
+              <InfoLine label="Oda Tipi" value={room?.room_type || '-'} />
+              <InfoLine label="Oda No" value={booking?.room_number || room?.room_number || '-'} />
+              {Number.isFinite(room?.floor) && <InfoLine label="Kat" value={`${room.floor}. Kat`} />}
+              {translateView(room?.view) && <InfoLine label="Manzara" value={translateView(room.view)} />}
+              {room?.bed_type && <InfoLine label="Yatak Tipi" value={room.bed_type} />}
+              <InfoLine label="Konaklama Türü" value={translateValue(booking?.rate_plan) || 'Standart'} />
+              <InfoLine label={t('common.cancellationPolicy')} value={translateValue(booking?.cancellation_policy) || t('common.flexible')} />
+            </div>
+            {roomImg && (
+              <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm min-h-[10rem]">
+                <img
+                  src={roomImg}
+                  alt={room?.room_type || 'Oda'}
+                  className="w-full h-full max-h-52 object-cover"
+                  onError={(e) => { e.currentTarget.parentElement.style.display = 'none'; }}
+                />
+              </div>
+            )}
           </div>
         </section>
 
         {booking?.special_requests && (
-          <InfoField label="Özel İstekler" value={booking.special_requests} className="bg-amber-50 border-amber-200" />
+          <section className="space-y-2">
+            <SectionHeader icon={StickyNote} title="Özel İstekler" />
+            <div className="border border-amber-200 bg-amber-50 rounded-xl px-4 py-3 text-sm text-amber-900">{booking.special_requests}</div>
+          </section>
+        )}
+
+        {/* Bölüm 4: Ödeme Bilgileri */}
+        {summary && (
+          <section className="space-y-3">
+            <SectionHeader icon={Wallet} title="Ödeme Bilgileri" />
+            <div className="border border-slate-200 rounded-xl bg-white px-4 py-2 shadow-sm grid grid-cols-1 sm:grid-cols-2 sm:gap-x-6">
+              <InfoLine label="Ödeme Durumu" value={<span className={hasOpenBalance ? 'text-rose-600' : 'text-emerald-600'}>{hasOpenBalance ? 'Ödeme bekleniyor' : 'Ödeme tamamlandı'}</span>} />
+              <InfoLine label="Para Birimi" value="TL" />
+              <InfoLine label="Toplam Tutar" value={`${fmtTL(summary.total_amount)} TL`} />
+              <InfoLine label="Ödenen" value={`${fmtTL(summary.total_payments)} TL`} />
+              <InfoLine label="Kalan Bakiye" value={<span className={`font-semibold ${hasOpenBalance ? 'text-rose-600' : 'text-emerald-600'}`}>{fmtTL(balance)} TL</span>} />
+              {lastPayment?.method && <InfoLine label="Ödeme Yöntemi" value={PAYMENT_METHOD_LABELS[String(lastPayment.method).toLowerCase()] || lastPayment.method} />}
+              {hasDeposit && <InfoLine label="Depozito Durumu" value={depositAmt > 0 ? 'Depozito alındı' : 'Depozito alınmadı'} />}
+              {depositAmt > 0 && <InfoLine label="Depozito Tutarı" value={`${fmtTL(depositAmt)} TL`} />}
+            </div>
+          </section>
         )}
       </div>
       <div className="space-y-4">
         <div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ana Kontak</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Misafir & İletişim</span>
             <Button variant="ghost" size="sm" onClick={() => setEditing(!editing)} className="h-7 px-2">
               <Pencil className="w-3 h-3 mr-1" /> {editing ? 'İptal' : 'Düzenle'}
             </Button>
@@ -177,9 +258,14 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
                 <Avatar name={guest?.name || booking?.guest_name} size="lg" />
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold text-slate-800 truncate">{guest?.name || booking?.guest_name || '—'}</div>
-                  {guest?.vip_status && (
-                    <Badge className="mt-0.5 bg-amber-100 text-amber-700 border-amber-200 text-[10px] h-4 px-1.5"><Star className="w-2.5 h-2.5 mr-0.5" /> VIP</Badge>
-                  )}
+                  <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                    {guest?.vip_status && (
+                      <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] h-4 px-1.5"><Star className="w-2.5 h-2.5 mr-0.5" /> VIP</Badge>
+                    )}
+                    {guest?.total_stays > 1 && (
+                      <Badge className="bg-sky-100 text-sky-700 border-sky-200 text-[10px] h-4 px-1.5"><Repeat className="w-2.5 h-2.5 mr-0.5" /> Tekrar Misafir</Badge>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="space-y-1.5 pt-1 border-t border-slate-100">
@@ -212,6 +298,67 @@ export function GeneralInfoTab({ booking, guest, room, company, onGuestUpdate })
             </div>
           )}
         </div>
+
+        {/* Konaklama Akışı — gerçek zaman damgaları */}
+        {flow.length > 0 && (
+          <div className="border border-slate-200 rounded-xl bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Konaklama Akışı</div>
+            <div className="relative">
+              {flow.map((s, i) => (
+                <div key={s.key} className="relative flex gap-3 pb-3 last:pb-0">
+                  {i < flow.length - 1 && <div className="absolute left-[5px] top-4 bottom-0 w-px bg-slate-200" />}
+                  <div className={`mt-1 w-2.5 h-2.5 rounded-full border-2 z-10 shrink-0 ${s.done ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-slate-300'}`} />
+                  <div className="flex-1 -mt-0.5 min-w-0">
+                    <div className="text-xs font-medium text-slate-800">{s.label}</div>
+                    <div className="text-[11px] text-slate-400">{s.done ? fmtDateTime(s.ts) : fmtDate(s.ts)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Notlar — son kayıtlar */}
+        {recentNotes.length > 0 && (
+          <div className="border border-slate-200 rounded-xl bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Notlar</span>
+              <button type="button" onClick={() => onSwitchTab?.('notes')} className="text-[11px] font-medium text-amber-700 hover:underline">Tümünü Gör</button>
+            </div>
+            <div className="space-y-2">
+              {recentNotes.map((n, i) => (
+                <div key={n.id || i} className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                  <p className="text-xs text-slate-700 whitespace-pre-wrap break-words">{n.content}</p>
+                  <div className="text-[10px] text-slate-400 mt-1">{n.created_at ? fmtDateTime(n.created_at) : ''}{n.created_by ? ` · ${n.created_by}` : ''}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* İşlemler — son geçmiş */}
+        {recentHistory.length > 0 && (
+          <div className="border border-slate-200 rounded-xl bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">İşlemler</span>
+              <button type="button" onClick={() => onSwitchTab?.('history')} className="text-[11px] font-medium text-amber-700 hover:underline">Tüm Geçmiş</button>
+            </div>
+            <div className="space-y-2.5">
+              {recentHistory.map((h, i) => (
+                <div key={h.id || i} className="flex items-start gap-2">
+                  <div className="mt-0.5 w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                    <Activity className="w-3 h-3 text-slate-500" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium text-slate-800">{activityLabel(h.action)}</div>
+                    <div className="text-[10px] text-slate-400">{h.created_at ? fmtDateTime(h.created_at) : ''}{h.actor ? ` · ${h.actor}` : ''}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {company && (
           <div className="border border-slate-200 rounded-xl bg-white p-4 space-y-2 shadow-sm">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Şirket</span>
