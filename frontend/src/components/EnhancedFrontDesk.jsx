@@ -259,7 +259,7 @@ const EnhancedFrontDesk = () => {
         <h2 className="text-xl font-semibold mb-4">{t('frontDeskEnhanced.todayArrivals', { count: arrivals.length })}</h2>
         <div className="space-y-4">
           {arrivals.map(booking => (
-            <div key={booking.id} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
+            <div key={booking.id} data-testid={`fd-arrival-${booking.id}`} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <div className="flex items-center gap-4 mb-2">
@@ -297,6 +297,7 @@ const EnhancedFrontDesk = () => {
                   />
                   {booking.status === 'confirmed' && (
                     <button
+                      data-testid={`fd-checkin-${booking.id}`}
                       onClick={() => handleQuickCheckin(booking.id)}
                       className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
                     >

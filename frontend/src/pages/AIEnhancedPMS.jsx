@@ -38,6 +38,7 @@ const AIEnhancedPMS = () => {
           {modules.map(module => (
             <button
               key={module.id}
+              data-testid={`ai-pms-tab-${module.id}`}
               onClick={() => setActiveModule(module.id)}
               className={`px-6 py-3 rounded-lg font-medium transition-all whitespace-nowrap ${
                 activeModule === module.id
