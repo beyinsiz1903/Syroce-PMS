@@ -882,6 +882,7 @@ export default function ReservationCalendarScreen() {
             }}
           >
             <View
+              testID="calendar-toast"
               style={{
                 backgroundColor: toast.tone === 'success' ? c.success : c.danger,
                 borderRadius: radius.md,

@@ -27,6 +27,52 @@ const tr_close = 'Kapat'; // datePicker.close
 const tr_rangeCustom = 'Özel'; // manager.rangeCustom
 const tr_rangePick = 'Tarih aralığı seç'; // manager.rangePick
 
+// Calendar drag-move toast copy (mirrors mobile/src/i18n/modules/calendar.ts).
+// A successful room move surfaces `moveRoom`; a date move `moveDates`; both
+// changed at once `moveSuccess`; a partial (one of the two backend calls
+// landed) `movePartial`. `moveFailed` is the clean-rollback path. The first
+// four are the accepted success/warning outcomes for Task #554.
+const tr_moveSuccess = 'Rezervasyon taşındı'; // calendar.moveSuccess
+const tr_moveRoom = 'Oda değiştirildi'; // calendar.moveRoom
+const tr_moveDates = 'Tarihler güncellendi'; // calendar.moveDates
+const tr_movePartial = 'Taşıma kısmen uygulandı — takvim güncellendi'; // calendar.movePartial
+
+// Row height of one room lane in the calendar grid (mirror of ROW_HEIGHT in
+// mobile/src/utils/reservationCalendar.ts). A vertical drag of exactly one row
+// re-targets the dropped bar to the adjacent room — a date-width-independent
+// "neighbouring cell" move that works in every view density.
+const CAL_ROW_HEIGHT = 56;
+
+// Long-press a draggable calendar bar, then translate it by (dx, dy). The
+// reservation bar arms its pan only after a 160ms long-press (so quick
+// taps/scrolls are not hijacked), so we press, hold past that threshold WITHOUT
+// moving, then translate in small increments (each move fires the gesture's
+// onUpdate so the translation accumulates), then release to trigger onDrop.
+async function longPressDragBy(
+    page: import('@playwright/test').Page,
+    handle: import('@playwright/test').Locator,
+    dx: number,
+    dy: number,
+): Promise<void> {
+    await handle.scrollIntoViewIfNeeded().catch(() => {});
+    const box = await handle.boundingBox();
+    if (!box) throw new Error('calendar-bar boundingBox null (sürüklenemedi)');
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    // Hold still past the 160ms long-press arm (and past the tap's 250ms max so
+    // the pan, not the tap, wins the Gesture.Race → detail bubble stays closed).
+    await page.waitForTimeout(360);
+    const steps = 10;
+    for (let i = 1; i <= steps; i += 1) {
+        await page.mouse.move(cx + (dx * i) / steps, cy + (dy * i) / steps);
+        await page.waitForTimeout(20);
+    }
+    await page.waitForTimeout(90);
+    await page.mouse.up();
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // F10A — Front-desk Reservations + Availability interactive flow.
 // ─────────────────────────────────────────────────────────────────────────
@@ -352,6 +398,179 @@ test.describe.serial('Mobile smoke · frontdesk · reservations + availability',
         expect(
             consoleErrors,
             `Calendar console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
+        ).toHaveLength(0);
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // F10A — Reservation calendar: drag-to-move a bar (Task #554).
+    // ─────────────────────────────────────────────────────────────────
+    // Task #547 proved tap→detail. This step exercises the calendar's core
+    // operator power: long-press a reservation bar and DRAG it to a
+    // neighbouring cell. A move re-targets the booking to the adjacent room,
+    // which the screen commits through the real POST /frontdesk/assign-room
+    // endpoint (RBAC + double-booking enforced server-side) and then
+    // re-syncs the grid — so a regression anywhere in gesture → backend →
+    // resync surfaces here, not silently in production.
+    //
+    // We drag exactly one room lane (CAL_ROW_HEIGHT, dx=0) so the move is a
+    // pure room change (a single backend call — no partial-mutation path) and
+    // is independent of the per-view day-column width. Direction is chosen by
+    // the bar's viewport position and falls back to the opposite lane if the
+    // first try lands off-grid (clamped) and issues no request.
+    //
+    // PILOT SAFETY: the forward move is always REVERTED by dragging the bar
+    // back to its original lane. The revert targets the booking's ORIGINAL
+    // room, which the booking just vacated, so it is guaranteed conflict-free
+    // (<400) and leaves pilot data exactly as found (no permanent mutation).
+    //
+    // When the pilot has zero reservation bars in the window we assert the
+    // by-design empty state honestly (same as the tap test) — no skip-as-pass.
+    test('[frontdesk] calendar barı sürükle → oda taşı (assign-room 2xx) → geri al', async ({
+        page,
+    }) => {
+        const obs = attachObservers(page);
+
+        await page.goto('/calendar', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+        const screen = page.locator('[data-testid="calendar-screen"]').first();
+        await expect(screen, 'Takvim ekranı render olmadı').toBeVisible({ timeout: 20_000 });
+
+        // Widen to the month view so a booking on any of ~30 days is reachable
+        // (shared cached query, just re-placed — no extra fetch).
+        const monthTab = page.locator('[data-testid="calendar-view-month"]').first();
+        await expect(monthTab, 'Aylık görünüm sekmesi render olmadı').toBeVisible({
+            timeout: 15_000,
+        });
+        await monthTab.click();
+
+        const bars = page.locator('[data-testid^="calendar-bar-"]');
+        await bars
+            .first()
+            .waitFor({ state: 'visible', timeout: 15_000 })
+            .catch(() => {});
+        const barCount = await bars.count();
+        test.info().annotations.push({ type: 'calendar-bars', description: String(barCount) });
+
+        if (barCount === 0) {
+            // Honest empty-state: no reservation bar to drag. Assert the
+            // calendar reached a real rendered state and did NOT error — we do
+            // NOT pass a drag we never performed (no skip-as-pass).
+            await expect(
+                page.locator('[data-testid="calendar-error"]'),
+                'Takvim hata durumunda',
+            ).toHaveCount(0);
+            await expect(
+                page.locator('[data-testid="calendar-legend"]').first(),
+                'Takvim chrome render olmadı',
+            ).toBeVisible({ timeout: 15_000 });
+            const inspect = await inspectPageContent(page);
+            expect(inspect.ok, `Takvim boş/hata ekranı: ${inspect.reason}`).toBeTruthy();
+            const { consoleErrors } = obs.flush();
+            expect(
+                consoleErrors,
+                `Calendar console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
+            ).toHaveLength(0);
+            return;
+        }
+
+        // Pin to a stable handle by reservation id so we can re-find the same
+        // bar after it re-renders in its new lane (for the revert).
+        const barTestId = await bars.first().getAttribute('data-testid');
+        expect(barTestId, 'calendar-bar testID okunamadı').toBeTruthy();
+        const barSel = `[data-testid="${barTestId}"]`;
+        const bar = page.locator(barSel).first();
+
+        // Choose the first drag direction from the bar's viewport position so we
+        // do not immediately clamp at the grid's top/bottom edge.
+        await bar.scrollIntoViewIfNeeded().catch(() => {});
+        const startBox = await bar.boundingBox();
+        const vh = page.viewportSize()?.height ?? 800;
+        const firstDown = (startBox?.y ?? 0) + (startBox?.height ?? 0) / 2 < vh * 0.55;
+        const order = firstDown ? [CAL_ROW_HEIGHT, -CAL_ROW_HEIGHT] : [-CAL_ROW_HEIGHT, CAL_ROW_HEIGHT];
+
+        const ASSIGN_ROOM = '/frontdesk/assign-room';
+
+        // Forward move: drag one lane; if the first direction lands off-grid
+        // (clamped → no request issued), try the opposite lane once.
+        let moveResp: import('@playwright/test').Response | null = null;
+        let usedDy = 0;
+        for (const dy of order) {
+            const respP = page
+                .waitForResponse(
+                    (r) => r.url().includes(ASSIGN_ROOM) && r.request().method() === 'POST',
+                    { timeout: 9_000 },
+                )
+                .catch(() => null);
+            await longPressDragBy(page, page.locator(barSel).first(), 0, dy);
+            const resp = await respP;
+            if (resp) {
+                moveResp = resp;
+                usedDy = dy;
+                break;
+            }
+        }
+
+        // With a real bar and a multi-room pilot, at least one lane is a valid
+        // neighbour. No request from EITHER direction means the drag gesture
+        // never reached the backend — that is the regression this test exists
+        // to catch, so fail loudly (never fake-green).
+        expect(
+            moveResp,
+            'Sürükle-bırak hiçbir yönde assign-room isteği üretmedi (gesture → backend kopuk?)',
+        ).toBeTruthy();
+        const moveStatus = moveResp!.status();
+        test.info().annotations.push({
+            type: 'calendar-move-status',
+            description: String(moveStatus),
+        });
+        expect(moveStatus, `oda taşıma beklenmeyen durum: ${moveStatus}`).toBeLessThan(400);
+
+        // The success/warning toast confirms the resync path ran end-to-end.
+        const toast = page.locator('[data-testid="calendar-toast"]').first();
+        await expect(toast, 'Taşıma sonrası toast görünmedi').toBeVisible({ timeout: 10_000 });
+        const toastText = ((await toast.innerText().catch(() => '')) || '').trim();
+        test.info().annotations.push({ type: 'calendar-move-toast', description: toastText });
+        expect(
+            [tr_moveSuccess, tr_moveRoom, tr_moveDates, tr_movePartial],
+            `Beklenmeyen taşıma toast metni: "${toastText}"`,
+        ).toContain(toastText);
+
+        const inspect = await inspectPageContent(page);
+        expect(inspect.pii_findings ?? [], 'Takvim taşıma akışında PII leak').toHaveLength(0);
+
+        // Let the toast auto-dismiss and the resync settle so the reverted drag
+        // starts from the moved bar's new, stable lane.
+        await expect(toast, 'Taşıma toast kapanmadı').toBeHidden({ timeout: 6_000 });
+
+        // REVERT: drag the bar back to its original lane. The original room was
+        // just vacated by this same booking, so the reverse assign-room is
+        // guaranteed conflict-free — pilot data is restored to its initial state.
+        const revertBar = page.locator(barSel).first();
+        await revertBar.waitFor({ state: 'visible', timeout: 15_000 });
+        const revertRespP = page
+            .waitForResponse(
+                (r) => r.url().includes(ASSIGN_ROOM) && r.request().method() === 'POST',
+                { timeout: 12_000 },
+            )
+            .catch(() => null);
+        await longPressDragBy(page, revertBar, 0, -usedDy);
+        const revertResp = await revertRespP;
+        expect(revertResp, 'Geri alma assign-room isteği üretmedi').toBeTruthy();
+        const revertStatus = revertResp!.status();
+        test.info().annotations.push({
+            type: 'calendar-revert-status',
+            description: String(revertStatus),
+        });
+        expect(
+            revertStatus,
+            `oda geri alma beklenmeyen durum: ${revertStatus} (pilot verisi taşınmış kalmış olabilir)`,
+        ).toBeLessThan(400);
+
+        const { consoleErrors } = obs.flush();
+        expect(
+            consoleErrors,
+            `Calendar drag console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
         ).toHaveLength(0);
     });
 
