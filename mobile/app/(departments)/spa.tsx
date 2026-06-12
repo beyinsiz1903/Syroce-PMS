@@ -1,36 +1,68 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { Redirect } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, H1, Muted } from '../../src/components/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  DepartmentListState,
+  ActionSheet,
+  Badge,
+  Body,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  FormActions,
+  H1,
+  ListGroup,
+  ListRow,
+  Muted,
   SectionTitle,
-} from '../../src/components/department';
+  SkeletonCard,
+} from '../../src/components/ui';
+import { DatePicker } from '../../src/components/DatePicker';
 import { spacing, radius, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
 import {
+  createSpaAppointment,
   listSpaAppointments,
   listSpaServices,
   listSpaTherapists,
   type SpaAppointment,
 } from '../../src/api/spa';
+import { listViewState } from '../../src/utils/departmentScreens';
+import { errorMessage, isOffline } from '../../src/utils/errors';
 import { formatCurrency, formatDate, formatTime } from '../../src/utils/format';
 
-type Range = 'today' | 'week';
+type Range = 'today' | 'week' | 'date';
+
+type EmptyIcon = React.ComponentProps<typeof EmptyState>['icon'];
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function rangeParams(range: Range): { date_from: string; date_to: string } {
+// The backend filters `starts_at` with string $gte/$lte against stored ISO
+// datetimes (e.g. "2026-06-12T11:30:00+00:00"). A bare YYYY-MM-DD upper bound
+// sorts lexicographically *before* same-day datetimes, so it would silently
+// drop that day's appointments. We therefore send full day boundaries
+// (00:00:00 .. 23:59:59) so the inclusive range covers the whole day.
+function rangeParams(
+  range: Range,
+  customDate: string | undefined,
+): { date_from: string; date_to: string } {
+  const dayBounds = (fromDay: string, toDay: string) => ({
+    date_from: `${fromDay}T00:00:00`,
+    date_to: `${toDay}T23:59:59`,
+  });
+  if (range === 'date' && customDate) {
+    return dayBounds(customDate, customDate);
+  }
   const now = new Date();
-  const from = isoDate(now);
+  const fromDay = isoDate(now);
   const to = new Date(now);
   if (range === 'week') to.setDate(to.getDate() + 6);
-  return { date_from: from, date_to: isoDate(to) };
+  return dayBounds(fromDay, isoDate(to));
 }
 
 function appointmentTone(status?: string):
@@ -59,15 +91,30 @@ function statusLabel(status?: string): string {
   return (status && map[status]) || status || '—';
 }
 
-// Read-only Spa & Wellness screen: appointments (today / 7-day), service
-// catalogue and therapists. Backend reads are open to any authenticated user;
-// the (departments) entitlement just decides whether we show this screen.
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+// Combine a YYYY-MM-DD day and a HH:MM wall time into an ISO instant. The
+// backend treats the value as the appointment start; we send an explicit ISO
+// (with offset) so there is no naive-vs-UTC ambiguity on the wire.
+function buildStartsAt(dateISO: string, hhmm: string): string {
+  return new Date(`${dateISO}T${hhmm}:00`).toISOString();
+}
+
+// Spa & Wellness screen. Reads (appointments / services / therapists) are open
+// to any authenticated user; the (departments) entitlement just decides whether
+// the screen is shown. The "new appointment" form posts to a backend that still
+// enforces require_spa_ops + manage_sales, so a non-privileged user simply gets
+// a 403 surfaced inline.
 export default function SpaScreen() {
   const c = useTheme();
+  const qc = useQueryClient();
   const spaAccess = useAuthStore((s) => s.spaAccess);
-  const [range, setRange] = useState<Range>('today');
+  const S = tr.departments.spa;
 
-  const params = useMemo(() => rangeParams(range), [range]);
+  const [range, setRange] = useState<Range>('today');
+  const [customDate, setCustomDate] = useState<string | undefined>(undefined);
+
+  const params = useMemo(() => rangeParams(range, customDate), [range, customDate]);
 
   const apptsQ = useQuery({
     queryKey: ['spa-appointments', params.date_from, params.date_to],
@@ -82,9 +129,106 @@ export default function SpaScreen() {
     return m;
   }, [therapistsQ.data]);
 
+  // ── New-appointment form state ────────────────────────────────────────────
+  const [formOpen, setFormOpen] = useState(false);
+  const [fService, setFService] = useState<string | undefined>(undefined);
+  const [fTherapist, setFTherapist] = useState<string | undefined>(undefined);
+  const [fDate, setFDate] = useState<string | undefined>(undefined);
+  const [fTime, setFTime] = useState('');
+  const [fGuest, setFGuest] = useState('');
+  const [fPhone, setFPhone] = useState('');
+  const [fNotes, setFNotes] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const resetForm = () => {
+    setFService(undefined);
+    setFTherapist(undefined);
+    setFDate(undefined);
+    setFTime('');
+    setFGuest('');
+    setFPhone('');
+    setFNotes('');
+    setFormError(null);
+  };
+
+  const openForm = () => {
+    resetForm();
+    setFDate(customDate || isoDate(new Date()));
+    setFormOpen(true);
+  };
+
+  const createMut = useMutation({
+    mutationFn: createSpaAppointment,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['spa-appointments'] });
+      setFormOpen(false);
+      resetForm();
+      Alert.alert(tr.app.success, S.created);
+    },
+    onError: (e: unknown) => setFormError(errorMessage(e, S.createError)),
+  });
+
+  const submitForm = () => {
+    setFormError(null);
+    if (!fService || !fDate || !fTime.trim() || !fGuest.trim()) {
+      setFormError(S.validationMissing);
+      return;
+    }
+    if (!TIME_RE.test(fTime.trim())) {
+      setFormError(S.validationTime);
+      return;
+    }
+    createMut.mutate({
+      service_id: fService,
+      starts_at: buildStartsAt(fDate, fTime.trim()),
+      guest_name: fGuest.trim(),
+      therapist_id: fTherapist || null,
+      guest_phone: fPhone.trim() || null,
+      notes: fNotes.trim() || null,
+    });
+  };
+
   // Hard guard: a user who somehow lands here without spa entitlement is sent
   // to the hub. This is cosmetic only — the backend still enforces every write.
   if (!spaAccess) return <Redirect href={ROUTES.departments} />;
+
+  // Shared loading / error / empty / data renderer so each section presents
+  // states identically. Uses EmptyState for the empty branch per the design kit.
+  const renderSection = <T,>(
+    q: { isLoading: boolean; error: unknown; data?: T[] },
+    empty: { icon: EmptyIcon; title: string; message?: string },
+    render: (items: T[]) => React.ReactNode,
+  ): React.ReactNode => {
+    const items = q.data || [];
+    const state = listViewState({
+      loading: q.isLoading,
+      error: q.error,
+      isEmpty: items.length === 0,
+    });
+    if (state === 'loading') {
+      return (
+        <View style={{ gap: spacing.sm }}>
+          {[0, 1, 2].map((i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </View>
+      );
+    }
+    if (state === 'error') {
+      const msg = isOffline(q.error)
+        ? tr.app.offline
+        : errorMessage(q.error, tr.departments.loadError);
+      return (
+        <Card>
+          <Body>{msg}</Body>
+        </Card>
+      );
+    }
+    if (state === 'empty') {
+      return <EmptyState icon={empty.icon} title={empty.title} message={empty.message} />;
+    }
+    return render(items);
+  };
 
   const RangeTab: React.FC<{ value: Range; label: string }> = ({ value, label }) => {
     const active = range === value;
@@ -110,7 +254,7 @@ export default function SpaScreen() {
   };
 
   const renderAppointment = (a: SpaAppointment) => (
-    <Card key={a.id} style={{ marginBottom: spacing.sm }}>
+    <Card key={a.id} style={{ marginBottom: spacing.sm }} accent={c.primary}>
       <View
         style={{
           flexDirection: 'row',
@@ -130,9 +274,8 @@ export default function SpaScreen() {
           {a.ends_at ? ` – ${formatTime(a.ends_at)}` : ''}
         </Muted>
         <Muted>
-          {tr.departments.spa.withTherapist}:{' '}
-          {(a.therapist_id && therapistName.get(a.therapist_id)) ||
-            tr.departments.spa.unassigned}
+          {S.withTherapist}:{' '}
+          {(a.therapist_id && therapistName.get(a.therapist_id)) || S.unassigned}
         </Muted>
         {typeof a.price === 'number' ? (
           <Muted>{formatCurrency(a.price, a.currency)}</Muted>
@@ -146,99 +289,210 @@ export default function SpaScreen() {
       style={{ flex: 1, backgroundColor: c.bg }}
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
     >
-      <H1>{tr.departments.spa.title}</H1>
+      <H1>{S.title}</H1>
 
-      <SectionTitle title={tr.departments.spa.appointments} />
-      <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md }}>
-        <RangeTab value="today" label={tr.departments.spa.today} />
-        <RangeTab value="week" label={tr.departments.spa.week} />
+      {/* ── Appointments (date-selectable) ─────────────────────────────────── */}
+      <SectionTitle title={S.appointments} />
+      <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm }}>
+        <RangeTab value="today" label={S.today} />
+        <RangeTab value="week" label={S.week} />
       </View>
-      {(() => {
-        const state = (
-          <DepartmentListState
-            loading={apptsQ.isLoading}
-            error={apptsQ.error}
-            isEmpty={(apptsQ.data || []).length === 0}
-            emptyText={tr.departments.spa.noAppointments}
-          />
-        );
-        return state ?? <View>{(apptsQ.data || []).map(renderAppointment)}</View>;
-      })()}
+      <View style={{ marginBottom: spacing.md }}>
+        <DatePicker
+          value={range === 'date' ? customDate : undefined}
+          placeholder={S.pickDate}
+          allowClear
+          testID="spa-date-picker"
+          onChange={(iso) => {
+            setCustomDate(iso);
+            setRange(iso ? 'date' : 'today');
+          }}
+        />
+      </View>
 
-      <SectionTitle title={tr.departments.spa.services} />
-      {(() => {
-        const state = (
-          <DepartmentListState
-            loading={servicesQ.isLoading}
-            error={servicesQ.error}
-            isEmpty={(servicesQ.data || []).length === 0}
-            emptyText={tr.departments.spa.noServices}
-          />
-        );
-        return (
-          state ?? (
-            <View>
-              {(servicesQ.data || []).map((s) => (
-                <Card key={s.id} style={{ marginBottom: spacing.sm }}>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
-                    }}
-                  >
-                    <View style={{ flex: 1, paddingRight: spacing.sm }}>
-                      <Body style={{ fontWeight: '600' }}>{s.name}</Body>
-                      {s.category ? <Muted>{s.category}</Muted> : null}
-                    </View>
-                    {typeof s.price === 'number' ? (
-                      <Body>{formatCurrency(s.price, s.currency)}</Body>
-                    ) : null}
-                  </View>
-                  {typeof s.duration_minutes === 'number' ? (
-                    <Muted style={{ marginTop: spacing.xs }}>
-                      {s.duration_minutes} {tr.departments.spa.minutes}
-                    </Muted>
-                  ) : null}
-                </Card>
-              ))}
-            </View>
-          )
-        );
-      })()}
+      <Button
+        title={S.newAppointment}
+        icon="add"
+        onPress={openForm}
+        fullWidth
+        style={{ marginBottom: spacing.md }}
+      />
 
-      <SectionTitle title={tr.departments.spa.therapists} />
-      {(() => {
-        const state = (
-          <DepartmentListState
-            loading={therapistsQ.isLoading}
-            error={therapistsQ.error}
-            isEmpty={(therapistsQ.data || []).length === 0}
-            emptyText={tr.departments.spa.noTherapists}
-          />
-        );
-        return (
-          state ?? (
-            <View>
-              {(therapistsQ.data || []).map((t) => (
-                <Card key={t.id} style={{ marginBottom: spacing.sm }}>
-                  <Body style={{ fontWeight: '600' }}>{t.name}</Body>
-                  {t.specialties && t.specialties.length > 0 ? (
-                    <Muted style={{ marginTop: spacing.xs }}>
-                      {tr.departments.spa.specialties}: {t.specialties.join(', ')}
-                    </Muted>
-                  ) : null}
-                  {t.work_start && t.work_end ? (
-                    <Muted style={{ marginTop: 2 }}>
-                      {tr.departments.spa.workingHours}: {t.work_start} – {t.work_end}
-                    </Muted>
-                  ) : null}
-                </Card>
-              ))}
+      {renderSection(
+        apptsQ,
+        { icon: 'calendar-outline', title: S.noAppointments },
+        (items) => <View>{items.map(renderAppointment)}</View>,
+      )}
+
+      {/* ── Service catalogue (list pattern) ───────────────────────────────── */}
+      <SectionTitle title={S.services} />
+      {renderSection(
+        servicesQ,
+        { icon: 'flower-outline', title: S.noServices },
+        (items) => (
+          <ListGroup>
+            {items.map((s, idx) => (
+              <ListRow
+                key={s.id}
+                icon="flower-outline"
+                label={s.name}
+                sublabel={[
+                  s.category,
+                  typeof s.duration_minutes === 'number'
+                    ? `${s.duration_minutes} ${S.minutes}`
+                    : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                value={
+                  typeof s.price === 'number'
+                    ? formatCurrency(s.price, s.currency)
+                    : undefined
+                }
+                showChevron={false}
+                last={idx === items.length - 1}
+              />
+            ))}
+          </ListGroup>
+        ),
+      )}
+
+      {/* ── Therapists (list pattern) ──────────────────────────────────────── */}
+      <SectionTitle title={S.therapists} />
+      {renderSection(
+        therapistsQ,
+        { icon: 'people-outline', title: S.noTherapists },
+        (items) => (
+          <ListGroup>
+            {items.map((t, idx) => (
+              <ListRow
+                key={t.id}
+                icon="person-outline"
+                label={t.name}
+                sublabel={[
+                  t.specialties && t.specialties.length > 0
+                    ? t.specialties.join(', ')
+                    : undefined,
+                  t.work_start && t.work_end
+                    ? `${t.work_start} – ${t.work_end}`
+                    : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                showChevron={false}
+                last={idx === items.length - 1}
+              />
+            ))}
+          </ListGroup>
+        ),
+      )}
+
+      {/* ── New-appointment form (standard form pattern) ───────────────────── */}
+      <ActionSheet
+        visible={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={S.newAppointmentTitle}
+        testID="spa-new-appointment-sheet"
+      >
+        <Muted>{S.service}</Muted>
+        <Card padded={false}>
+          {(servicesQ.data || []).length === 0 ? (
+            <View style={{ padding: spacing.md }}>
+              <Muted>{S.noServices}</Muted>
             </View>
-          )
-        );
-      })()}
+          ) : (
+            (servicesQ.data || []).map((s, idx, arr) => (
+              <ListRow
+                key={s.id}
+                icon="flower-outline"
+                label={s.name}
+                sublabel={
+                  typeof s.price === 'number'
+                    ? formatCurrency(s.price, s.currency)
+                    : undefined
+                }
+                active={fService === s.id}
+                showChevron={false}
+                last={idx === arr.length - 1}
+                onPress={() => setFService(s.id)}
+              />
+            ))
+          )}
+        </Card>
+
+        <Muted>{S.therapist}</Muted>
+        <Card padded={false}>
+          <ListRow
+            icon="shuffle-outline"
+            label={S.therapistAuto}
+            active={!fTherapist}
+            showChevron={false}
+            onPress={() => setFTherapist(undefined)}
+            last={(therapistsQ.data || []).length === 0}
+          />
+          {(therapistsQ.data || []).map((t, idx, arr) => (
+            <ListRow
+              key={t.id}
+              icon="person-outline"
+              label={t.name}
+              active={fTherapist === t.id}
+              showChevron={false}
+              last={idx === arr.length - 1}
+              onPress={() => setFTherapist(t.id)}
+            />
+          ))}
+        </Card>
+
+        <Muted>{S.dateLabel}</Muted>
+        <DatePicker
+          value={fDate}
+          placeholder={S.pickDate}
+          testID="spa-form-date"
+          onChange={(iso) => setFDate(iso)}
+        />
+
+        <Field
+          label={S.time}
+          value={fTime}
+          onChangeText={setFTime}
+          placeholder={S.timePlaceholder}
+          keyboardType="numbers-and-punctuation"
+          autoCapitalize="none"
+        />
+        <Field
+          label={S.guestName}
+          value={fGuest}
+          onChangeText={setFGuest}
+          placeholder={S.guestNamePlaceholder}
+        />
+        <Field
+          label={S.guestPhone}
+          value={fPhone}
+          onChangeText={setFPhone}
+          placeholder={S.guestPhonePlaceholder}
+          keyboardType="phone-pad"
+        />
+        <Field
+          label={S.notes}
+          value={fNotes}
+          onChangeText={setFNotes}
+          placeholder={S.notesPlaceholder}
+          multiline
+        />
+
+        {formError ? (
+          <Body style={{ color: c.danger }}>{formError}</Body>
+        ) : null}
+
+        <FormActions>
+          <Button
+            title={tr.app.cancel}
+            variant="secondary"
+            onPress={() => setFormOpen(false)}
+          />
+          <Button title={S.create} onPress={submitForm} loading={createMut.isPending} />
+        </FormActions>
+      </ActionSheet>
     </ScrollView>
   );
 }

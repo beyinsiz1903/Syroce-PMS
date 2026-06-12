@@ -68,3 +68,24 @@ export async function listSpaAppointments(params?: {
   );
   return res?.appointments ?? [];
 }
+
+// Payload for POST /api/spa/appointments. The backend derives ends_at, price,
+// currency and service_name from the chosen service, so the client only sends
+// the service, the start instant, the guest and the optional therapist / notes.
+export type CreateSpaAppointmentInput = {
+  service_id: string;
+  // ISO-8601 datetime (local wall time → ISO). Backend treats naive as UTC.
+  starts_at: string;
+  guest_name: string;
+  therapist_id?: string | null;
+  guest_phone?: string | null;
+  notes?: string | null;
+};
+
+// POST /api/spa/appointments — staff-only on the backend (require_spa_ops +
+// manage_sales). Allowed to throw so the form can surface 403 / 409 conflicts.
+export async function createSpaAppointment(
+  input: CreateSpaAppointmentInput,
+): Promise<SpaAppointment> {
+  return api.post<SpaAppointment>('/api/spa/appointments', input);
+}
