@@ -206,7 +206,7 @@ async def api_room_move(req: RoomMoveRequest, current_user: User = Depends(get_c
     perm_svc.enforce_permission(current_user.role, "room_move")
     result = await front_desk.room_move(current_user.tenant_id, req.booking_id, req.new_room_id, req.reason, current_user.id, current_user.name)
     if not result["success"]:
-        raise HTTPException(status_code=400, detail=result)
+        raise HTTPException(status_code=409 if result.get("conflict") else 400, detail=result)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
     schedule_emit_reservation_updated(
         current_user.tenant_id, req.booking_id, "room_moved",
@@ -220,7 +220,7 @@ async def api_room_upgrade(req: RoomUpgradeRequest, current_user: User = Depends
     perm_svc.enforce_permission(current_user.role, "room_upgrade")
     result = await front_desk.room_upgrade(current_user.tenant_id, req.booking_id, req.new_room_id, req.reason, req.rate_adjustment, current_user.id, current_user.name)
     if not result["success"]:
-        raise HTTPException(status_code=400, detail=result)
+        raise HTTPException(status_code=409 if result.get("conflict") else 400, detail=result)
     from routers.webhook_retry_service import schedule_emit_reservation_updated
     schedule_emit_reservation_updated(
         current_user.tenant_id, req.booking_id, "room_upgraded",

@@ -162,19 +162,20 @@ class FrontDeskService:
         has_conflict, _ = await rsm.check_overbooking(
             tenant_id, new_room_id, booking["check_in"], booking["check_out"], exclude_booking_id=booking_id)
         if has_conflict:
-            return {"success": False, "error": "New room has conflicting bookings"}
+            return {"success": False, "error": "New room has conflicting bookings", "conflict": True}
 
         now = datetime.now(UTC)
 
         # F8A tur-22 / CI #37 P1 race fix: target room → occupied via atomic CAS
-        # FIRST (before booking/old-room mutations). Pre-check at line 158 is
-        # TOCTOU vs the unconditional update_one that used to follow; two
+        # FIRST (before booking/old-room mutations). The status pre-check above
+        # is TOCTOU vs the unconditional update_one that used to follow; two
         # parallel room-moves targeting the same vacant room both read
         # status="available" and both succeed under the old write pattern
         # (CI #37 03-D: r1=200 r2=200, double-occupancy). With CAS, the
         # second writer's filter does not match (status is already
         # "occupied"), modified_count==0 → return error before any other
         # mutation. Mirrors V2 frontdesk_service_v2 fix from tur-19.
+        prior_new_room_status = new_room["status"]
         new_room_cas = await db.rooms.update_one(
             {
                 "id": new_room_id,
@@ -184,9 +185,53 @@ class FrontDeskService:
             {"$set": {"status": "occupied", "current_booking_id": booking_id}},
         )
         if new_room_cas.modified_count == 0:
-            return {"success": False, "error": "New room is not available (concurrent state mutation)"}
+            return {"success": False, "error": "New room is not available (concurrent state mutation)", "conflict": True}
 
-        # Update booking (target now atomically claimed)
+        # Authoritative atomic gate — claim the target room's date-range through
+        # the SAME room_night_locks structure assign-room uses. assign_room_atomic
+        # inserts one unique-index lock row per night on the new room and, only
+        # after every night is secured, releases this booking's locks held on the
+        # previous room (acquire-new-then-release-old). A night already held by
+        # another booking or an OOO/OOS/maintenance block raises
+        # BookingConflictError BEFORE the old-room locks are touched, so the move
+        # is rejected as a conflict (HTTP 409) and the previous room keeps its
+        # locks — fail-closed, no double-occupancy, no leaked locks.
+        from core.atomic_booking import BookingConflictError, assign_room_atomic
+        try:
+            await assign_room_atomic(
+                tenant_id=tenant_id,
+                booking_id=booking_id,
+                room_id=new_room_id,
+                check_in=booking["check_in"],
+                check_out=booking["check_out"],
+                correlation_id=booking_id,
+            )
+        except BookingConflictError as exc:
+            # Undo the physical CAS so the target room is not stranded as
+            # "occupied"; the old room is untouched (its locks were never
+            # released because the conflict raised before Step 3).
+            await db.rooms.update_one(
+                {"id": new_room_id, "tenant_id": tenant_id, "current_booking_id": booking_id},
+                {"$set": {"status": prior_new_room_status, "current_booking_id": None}},
+            )
+            return {
+                "success": False,
+                "error": str(exc),
+                "conflict": True,
+                "conflict_type": getattr(exc, "conflict_type", "booking"),
+            }
+        except Exception:
+            # Any other failure during lock acquisition: roll back the physical
+            # CAS so the room is not left falsely occupied, then propagate.
+            await db.rooms.update_one(
+                {"id": new_room_id, "tenant_id": tenant_id, "current_booking_id": booking_id},
+                {"$set": {"status": prior_new_room_status, "current_booking_id": None}},
+            )
+            raise
+
+        # Locks held on the new room; the booking's locks on the previous room
+        # were released inside assign_room_atomic. Update booking (atomically
+        # claimed target).
         await db.bookings.update_one(
             {"id": booking_id, "tenant_id": tenant_id},
             {"$set": {"room_id": new_room_id, "updated_at": now.isoformat()}}
