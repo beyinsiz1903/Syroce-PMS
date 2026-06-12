@@ -50,3 +50,34 @@ export function expectedCash(shift: CashierShift | null): number {
     (shift.opening_amount ?? 0) + (shift.cash_in ?? 0) - (shift.cash_out ?? 0)
   );
 }
+
+// Today's collection broken down by payment family, computed from the open
+// shift's REAL transactions (direction === 'in'). The backend records every
+// method into the shift's embedded `transactions` array, so this is the same
+// money the close-shift reconciliation sees — no fabricated values.
+//   - cash  → Nakit
+//   - card  → Kart
+//   - cari  → everything else (bank_transfer / online / havale): on-account.
+export type CollectionBreakdown = {
+  total: number;
+  cash: number;
+  card: number;
+  cari: number;
+};
+
+export function collectionBreakdown(
+  transactions: CashierTransaction[],
+): CollectionBreakdown {
+  const acc: CollectionBreakdown = { total: 0, cash: 0, card: 0, cari: 0 };
+  for (const t of transactions) {
+    if ((t.direction || '').toLowerCase() !== 'in') continue;
+    const amt = Math.abs(typeof t.amount === 'number' ? t.amount : 0);
+    if (!amt) continue;
+    acc.total += amt;
+    const m = (t.method || '').toLowerCase();
+    if (m === 'cash') acc.cash += amt;
+    else if (m === 'card') acc.card += amt;
+    else acc.cari += amt;
+  }
+  return acc;
+}

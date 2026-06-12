@@ -88,6 +88,10 @@ export type FolioListItem = {
   room_number?: string;
   check_in?: string;
   check_out?: string;
+  // Raw folio-doc timestamps passed through by /folio/list. `updated_at` (when
+  // present) reflects the last folio mutation; we fall back to `created_at`.
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type FolioListResponse = {

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -112,10 +112,16 @@ export default function FolioDetailScreen() {
   const c = useTheme();
   const qc = useQueryClient();
   const financeReports = useAuthStore((s) => s.financeReports);
-  const params = useLocalSearchParams<{ id: string; guest?: string; room?: string }>();
+  const params = useLocalSearchParams<{
+    id: string;
+    guest?: string;
+    room?: string;
+    pay?: string;
+  }>();
   const folioId = Array.isArray(params.id) ? params.id[0] : params.id;
   const headerGuest = Array.isArray(params.guest) ? params.guest[0] : params.guest;
   const headerRoom = Array.isArray(params.room) ? params.room[0] : params.room;
+  const wantsPay = (Array.isArray(params.pay) ? params.pay[0] : params.pay) === '1';
 
   const [chargeOpen, setChargeOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -203,6 +209,24 @@ export default function FolioDetailScreen() {
       setPaymentError(status === 404 ? d.closedError : errorMessage(e, tr.errors.generic));
     },
   });
+
+  // Quick-collection deep link: the cashier "Tahsilat Al" CTA links here with
+  // ?pay=1 to prime the payment sheet straight away. Fire once, only for an
+  // open folio — the actual write still runs through the shared payment flow.
+  const autoPayRef = useRef(false);
+  useEffect(() => {
+    if (autoPayRef.current || !wantsPay) return;
+    const f = folioQ.data;
+    if (!f || (f.status || '').toLowerCase() !== 'open') return;
+    autoPayRef.current = true;
+    setPaymentStep('form');
+    setPaymentAmount(f.balance && f.balance > 0 ? String(f.balance) : '');
+    setPaymentMethod('cash');
+    setPaymentError('');
+    paymentKeyRef.current = null;
+    haptic.tap();
+    setPaymentOpen(true);
+  }, [folioQ.data, wantsPay]);
 
   // Hard guard: a user without the finance entitlement is bounced to the hub.
   // Cosmetic only — the backend still enforces every read/write.
@@ -344,6 +368,14 @@ export default function FolioDetailScreen() {
 
   const charges = folio?.charges ?? [];
   const payments = folio?.payments ?? [];
+  const balance = folio?.balance ?? 0;
+  const owes = balance > 0;
+  const balanceAccent = owes ? c.danger : c.success;
+  const chargesTotal = charges.reduce(
+    (s, ch) => s + (typeof ch.total === 'number' ? ch.total : ch.amount ?? 0),
+    0,
+  );
+  const paymentsTotal = payments.reduce((s, pm) => s + (pm.amount ?? 0), 0);
 
   return (
     <ScrollView
@@ -364,20 +396,47 @@ export default function FolioDetailScreen() {
         badges={<Badge label={statusLabel(folio?.status)} tone={statusTone(folio?.status)} />}
       />
 
-      {/* Balance at a glance. */}
-      <Card>
-        <DetailRow label={tr.departments.cashier.balance}>
-          <Text
-            style={{
-              color: (folio?.balance ?? 0) > 0 ? c.danger : c.success,
-              fontSize: 24,
-              fontWeight: '800',
-              marginTop: 2,
-            }}
-          >
-            {formatCurrency(folio?.balance ?? 0)}
-          </Text>
-        </DetailRow>
+      {/* Balance hero — accent-coded, with charge/payment totals beneath. */}
+      <Card accent={balanceAccent} style={{ marginTop: spacing.md }}>
+        <Muted style={{ fontSize: 12, fontWeight: '600' }}>{tr.departments.cashier.balance}</Muted>
+        <Text
+          style={{
+            color: balanceAccent,
+            fontSize: 34,
+            fontWeight: '800',
+            letterSpacing: -0.8,
+            marginTop: 2,
+          }}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+        >
+          {formatCurrency(balance)}
+        </Text>
+        <Muted style={{ fontSize: 12, marginTop: 2 }}>
+          {owes ? d.balanceDue : d.balanceSettled}
+        </Muted>
+        <View
+          style={{
+            flexDirection: 'row',
+            marginTop: spacing.md,
+            borderTopWidth: 1,
+            borderTopColor: c.border,
+            paddingTop: spacing.md,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Muted style={{ fontSize: 11 }}>{d.charges}</Muted>
+            <Body style={{ fontWeight: '700', marginTop: 1 }}>
+              {formatCurrency(chargesTotal)}
+            </Body>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Muted style={{ fontSize: 11 }}>{d.payments}</Muted>
+            <Body style={{ fontWeight: '700', color: c.success, marginTop: 1 }}>
+              {formatCurrency(paymentsTotal)}
+            </Body>
+          </View>
+        </View>
       </Card>
 
       {/* Charges */}

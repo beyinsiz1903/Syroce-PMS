@@ -22,6 +22,16 @@ export const cashier = {
   directionOut: 'Ödeme',
   searchFolios: 'Misafir, oda veya folyo no ara',
   noFolioMatch: 'Aramayla eşleşen folyo yok',
+  // ── Bugünkü tahsilat (vardiya işlemlerinden hesaplanır) ──────────────────
+  todayCollection: 'Bugünkü Tahsilat',
+  collectionTotal: 'Toplam tahsilat',
+  collectionHint: 'Açık vardiyada alınan ödemeler',
+  noCollection: 'Henüz tahsilat yok',
+  cari: 'Cari',
+  // Folyo kartı
+  collect: 'Tahsilat Al',
+  lastActivity: 'Son hareket',
+  openedAtShort: 'Açıldı',
   methods: {
     cash: 'Nakit',
     card: 'Kart',
@@ -45,6 +55,8 @@ export const cashier = {
       cancelled: 'İptal',
     },
     closedNotice: 'Bu folyo kapalı. Harcama veya ödeme eklenemez.',
+    balanceDue: 'Tahsil edilecek tutar',
+    balanceSettled: 'Bakiye kapandı',
     addCharge: 'Harcama ekle',
     takePayment: 'Ödeme al',
     // Charge action sheet
