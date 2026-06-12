@@ -759,12 +759,14 @@ const InternalChatTab = ({ currentUser }) => {
               </Button>
               <Button
                 type="button"
-                size="sm"
-                className="h-8 px-2.5"
+                size="icon"
+                className="h-8 w-8"
                 onClick={() => setComposeOpen(true)}
                 data-testid="button-open-compose"
+                title={t('cm.components_pms_InternalChatTab.yeni_mesaj')}
+                aria-label={t('cm.components_pms_InternalChatTab.yeni_mesaj')}
               >
-                <Plus className="h-4 w-4 mr-1" /> {t('cm.components_pms_InternalChatTab.yeni_mesaj')}
+                <Plus className="h-4 w-4" />
               </Button>
             </div>
           </div>
