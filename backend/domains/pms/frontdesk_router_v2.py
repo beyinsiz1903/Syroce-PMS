@@ -81,7 +81,13 @@ async def checkin(req: CheckinRequest, user=Depends(get_current_user),
         ctx, req.booking_id, req.create_folio, idempotency_key=req.idempotency_key
     )
     if not result.ok:
-        raise HTTPException(status_code=400, detail=from_service_result(result))
+        # Çevrimdışı kuyruk replay'i hatayı çakışma şeridine çevirirken
+        # makine-okunur `code`'a göre yerelleştirilmiş mesaj seçer (ör.
+        # ROOM_OCCUPIED -> "Oda baskasi tarafindan dolduruldu."). from_service_result
+        # yalnızca human-message taşıdığından code'u ayrıca yüzeye çıkarıyoruz.
+        detail = from_service_result(result)
+        detail["code"] = result.code
+        raise HTTPException(status_code=400, detail=detail)
     return from_service_result(result)
 
 @router.post("/checkout")

@@ -5,7 +5,7 @@ import { makeApi } from './fixtures/api.js';
 import { factory, trackEntity } from './fixtures/data-factory.js';
 import {
     pickAvailableRoom, createTestBooking, checkoutBooking, cancelBooking,
-    getBookingDetail, todayDates,
+    checkInBooking, getBookingDetail, todayDates, farFutureDates,
 } from './fixtures/pms-flow.js';
 
 // Scope 24 — Cevrimdisi check-in (offline -> kuyruk -> online -> otomatik eslesme)
@@ -235,6 +235,139 @@ test.describe('Scope 24 — Cevrimdisi check-in', () => {
         rec(testInfo, { module: M, scope: 24, step: '"Anladim" -> cakisma seridi temizlendi', status: PASS });
 
         rec(testInfo, { module: M, scope: 24, step: 'Console errors (cakisma)', status: obs.consoleErrors.length === 0 ? PASS : REVIEW, note: `count=${obs.consoleErrors.length}` });
+        await api.dispose();
+    });
+
+    // ── E2E (regression-catching): oda dolu cakisma -> kirmizi serit -> "Anladim" temizler ──
+    // Iptal-tabanli cakisma (INVALID_STATUS) yolundan FARKLI bir operasyonel senaryo:
+    // odanin kuyruk beklerken BASKA bir misafir tarafindan doldurulmasi. Backend
+    // bunu ayri bir kod yolu ile (frontdesk/v2/checkin -> ROOM_OCCUPIED) reddeder,
+    // kirmizi serit "Oda baskasi tarafindan dolduruldu." mesajini gosterir.
+    // Hard-fails:
+    //   1. Booking A + B create 2xx + id
+    //   2. Cevrimdisi check-in (A) -> kuyruk gostergesi
+    //   3. Kuyrukta beklerken B online check-in -> oda 'occupied' olur (ROOM_OCCUPIED ön kosulu)
+    //   4. online'a don -> offline-conflict-bar + item (mesaj oda-dolu kodunu yansitir)
+    //   5. "Anladim" tikla -> offline-conflict-bar kaybolur
+    test('E2E: cakisma (oda baskasi tarafindan dolduruldu) -> kirmizi serit -> Anladim temizler', async ({ page, baseURL }, testInfo) => {
+        const obs = attachObservers(page);
+        const api = await makeApi(baseURL);
+        const dates = todayDates(1);
+
+        // Bugun-girisli oda sec — A bu odaya cevrimdisi check-in icin kuyruga girer.
+        const pick = await pickAvailableRoom(api, dates);
+        if (!pick.ok) {
+            rec(testInfo, { module: M, scope: 24, step: 'Musait oda (oda-dolu cakisma)', status: SKIP, note: pick.reason });
+            await api.dispose();
+            test.skip(true, `Pilot pre-condition eksik: ${pick.reason}`);
+            return;
+        }
+        rec(testInfo, { module: M, scope: 24, step: 'Musait oda (oda-dolu cakisma)', status: PASS, note: `room=${pick.room.room_number || pick.room.id}` });
+
+        const guestA = factory.guestName();
+        const createdA = await createTestBooking(api, {
+            roomId: pick.room.id, guestName: guestA,
+            check_in: dates.check_in, check_out: dates.check_out, totalAmount: 1,
+        });
+        rec(testInfo, {
+            module: M, scope: 24, step: 'POST /api/pms/quick-booking (A — kuyruk adayi)',
+            status: createdA.ok ? PASS : FAIL, endpoint: '/api/pms/quick-booking', http: createdA.status,
+            note: createdA.ok ? `id=${createdA.bookingId}` : (createdA.reason || ''),
+        });
+        expect(createdA.ok, `Booking A create FAILED: ${createdA.reason || createdA.status}`).toBe(true);
+        expect(createdA.bookingId, 'No booking A id returned').toBeTruthy();
+        trackEntity({ kind: 'booking', id: createdA.bookingId, label: guestA, cleanup: 'pending', endpoint: '/api/pms-core/cancel' });
+
+        const nav = await openFrontDeskArrival(page, createdA.bookingId);
+        if (!nav.ok) {
+            rec(testInfo, { module: M, scope: 24, step: 'On Buro varis satiri (oda-dolu cakisma)', status: SKIP, note: nav.reason });
+            await api.dispose();
+            test.skip(true, `Pilot pre-condition eksik: ${nav.reason}`);
+            return;
+        }
+        rec(testInfo, { module: M, scope: 24, step: 'On Buro varis satiri (oda-dolu cakisma)', status: PASS, note: `booking=${createdA.bookingId}` });
+
+        // ── Cevrimdisi + check-in (A) kuyruga al ──
+        await page.context().setOffline(true);
+        await expect(page.getByTestId('offline-indicator')).toBeVisible({ timeout: 10000 });
+        await nav.checkinBtn.click();
+        await expect(page.getByTestId('offline-pending-count'), 'Kuyruk gostergesi gorunmedi').toBeVisible({ timeout: 10000 });
+        rec(testInfo, { module: M, scope: 24, step: 'Cevrimdisi check-in -> kuyruk gostergesi (oda-dolu)', status: PASS });
+
+        // ── Kuyrukta beklerken: ayni odayi BASKA bir misafir (B) doldursun.
+        //    B'yi cakismayan (uzak) tarihlerle ayni odaya olustur (gece-tarihi
+        //    cakismaz -> atomic booking conflict YOK), sonra ayri API context'i
+        //    ile ONLINE check-in -> oda status='occupied'. A'nin replay'i bu
+        //    odayi dolu bulup ROOM_OCCUPIED ile reddedilir. ──
+        const farDates = farFutureDates();
+        const guestB = factory.guestName();
+        const createdB = await createTestBooking(api, {
+            roomId: pick.room.id, guestName: guestB,
+            check_in: farDates.check_in, check_out: farDates.check_out, totalAmount: 1,
+        });
+        rec(testInfo, {
+            module: M, scope: 24, step: 'POST /api/pms/quick-booking (B — odayi dolduran)',
+            status: createdB.ok ? PASS : SKIP, endpoint: '/api/pms/quick-booking', http: createdB.status,
+            note: createdB.ok ? `id=${createdB.bookingId}` : (createdB.reason || ''),
+        });
+        if (!createdB.ok) {
+            await api.dispose();
+            test.skip(true, `Pilot pre-condition eksik: ikinci booking olusturulamadi (${createdB.reason || createdB.status})`);
+            return;
+        }
+        trackEntity({ kind: 'booking', id: createdB.bookingId, label: guestB, cleanup: 'pending', endpoint: '/api/pms-core/cancel' });
+
+        const ciB = await checkInBooking(api, createdB.bookingId, 'E2E oda-dolu cakisma tetikleme');
+        rec(testInfo, {
+            module: M, scope: 24, step: 'POST /api/pms-core/check-in (B — odayi occupied yapar)',
+            status: ciB.ok ? PASS : SKIP, endpoint: '/api/pms-core/check-in', http: ciB.status,
+            note: ciB.ok ? 'occupied' : (ciB.body?.slice(0, 200) || ''),
+        });
+        if (!ciB.ok) {
+            // Oda B ile occupied'a cekilemediyse A'nin replay'i ROOM_OCCUPIED
+            // yerine basarili olur -> senaryo dogrulanamaz, hard-fail degil SKIP.
+            await api.dispose();
+            test.skip(true, `Pilot pre-condition eksik: oda occupied'a cekilemedi (HTTP ${ciB.status})`);
+            return;
+        }
+
+        // ── Online'a don: replay 400 ROOM_OCCUPIED -> kirmizi cakisma seridi ──
+        await page.context().setOffline(false);
+        const conflictBar = page.getByTestId('offline-conflict-bar');
+        await expect(conflictBar, 'Kirmizi cakisma seridi (offline-conflict-bar) gorunmedi').toBeVisible({ timeout: 30000 });
+        const conflictItem = page.getByTestId('offline-conflict-item');
+        await expect(conflictItem.first(), 'Cakisma kalemi gorunmedi').toBeVisible({ timeout: 5000 });
+
+        // Mesaj oda-dolu kodunu yansitmali. Backend code yuzeye ciktiginda
+        // yerellestirilmis "Oda baskasi tarafindan dolduruldu." gosterilir; eski
+        // deploy'da human-message ("...is currently occupied") gosterilebilir.
+        // Her iki halde de bu, iptal-tabanli INVALID_STATUS yolundan AYRI bir
+        // oda-dolu kod yolunu kanitlar (deploy-lag'a toleransli).
+        const itemText = (await conflictItem.first().innerText()).trim();
+        const isRoomOccupied = /dolduruldu|occupied/i.test(itemText);
+        rec(testInfo, {
+            module: M, scope: 24, step: 'online -> kirmizi cakisma seridi (ROOM_OCCUPIED)',
+            status: isRoomOccupied ? PASS : REVIEW,
+            note: `msg="${itemText.slice(0, 120)}"`,
+        });
+        expect(isRoomOccupied, `Cakisma mesaji oda-dolu yolunu yansitmiyor: "${itemText}"`).toBe(true);
+
+        // ── "Anladim" -> dismiss -> serit temizlenir ──
+        await page.getByTestId('offline-conflict-dismiss').first().click();
+        await expect(conflictBar, '"Anladim" sonrasi cakisma seridi temizlenmedi').toBeHidden({ timeout: 10000 });
+        rec(testInfo, { module: M, scope: 24, step: '"Anladim" -> cakisma seridi temizlendi (oda-dolu)', status: PASS });
+
+        rec(testInfo, { module: M, scope: 24, step: 'Console errors (oda-dolu cakisma)', status: obs.consoleErrors.length === 0 ? PASS : REVIEW, note: `count=${obs.consoleErrors.length}` });
+
+        // ── Cleanup: A kuyrukta cakisma olarak kaldi -> iptal et; B checked_in -> force checkout ──
+        const cancelA = await cancelBooking(api, createdA.bookingId, 'E2E oda-dolu cakisma cleanup');
+        if (cancelA.ok) {
+            trackEntity({ kind: 'booking', id: createdA.bookingId, label: `${guestA} (cancelled)`, cleanup: 'completed', endpoint: '/api/pms-core/cancel' });
+        }
+        const coB = await checkoutBooking(api, createdB.bookingId, true);
+        if (coB.ok && coB.json?.success !== false) {
+            trackEntity({ kind: 'booking', id: createdB.bookingId, label: `${guestB} (checked_out)`, cleanup: 'completed', endpoint: '/api/pms-core/checkout' });
+        }
         await api.dispose();
     });
 });
