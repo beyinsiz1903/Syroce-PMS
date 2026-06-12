@@ -137,6 +137,56 @@ export async function listMiceOpportunities(params?: {
   return res?.opportunities ?? [];
 }
 
+// ── Sales pipeline (kanban) ────────────────────────────────────────────────
+// Canonical sales pipeline stages — mirrors STAGES in
+// backend/routers/sales_catering.py. Order is the funnel order.
+export const OPP_STAGES = [
+  'lead',
+  'qualified',
+  'proposal',
+  'contract',
+  'won',
+  'lost',
+] as const;
+export type OppStage = (typeof OPP_STAGES)[number];
+
+export type PipelineStageSummary = {
+  stage: string;
+  count: number;
+  total_value: number;
+  weighted_value: number;
+  total_pax: number;
+};
+
+export type SalesPipeline = {
+  stages: PipelineStageSummary[];
+  open_value: number;
+  weighted_open_value: number;
+  won_value: number;
+  lost_value: number;
+  win_rate_pct: number;
+};
+
+// GET /api/mice/sales/pipeline → aggregate count/value per stage. Auth only.
+export async function getSalesPipeline(): Promise<SalesPipeline> {
+  return api.get<SalesPipeline>('/api/mice/sales/pipeline');
+}
+
+// POST /api/mice/sales/opportunities/{id}/transition
+// Moves an opportunity to a new stage. The backend enforces
+// require_op("manage_sales"); a caller without that permission gets a 403 the
+// UI surfaces verbatim — there is NO client-side optimistic/fake success.
+export async function transitionOpportunity(
+  oppId: string,
+  toStage: OppStage,
+  reason?: string,
+): Promise<{ ok: boolean; stage?: string; unchanged?: boolean }> {
+  return api.post(`/api/mice/sales/opportunities/${oppId}/transition`, {
+    to_stage: toStage,
+    ...(reason ? { reason } : {}),
+  });
+}
+
 // ── Groups / Blocks & Corporate Contracts (read-only) ──────────────────────
 // Group reservations mirror backend/domains/pms/groups_router.py
 // (GET /api/group-reservations), group blocks (GET /api/groups/blocks) and

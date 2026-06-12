@@ -2,8 +2,16 @@ import React, { useMemo } from 'react';
 import { ScrollView, View } from 'react-native';
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, H1, Muted, SkeletonCard } from '../../../src/components/ui';
-import { DepartmentListState, SectionTitle } from '../../../src/components/department';
+import {
+  Badge,
+  Body,
+  Card,
+  DetailHeader,
+  DetailRow,
+  Muted,
+  SkeletonCard,
+} from '../../../src/components/ui';
+import { SectionTitle } from '../../../src/components/department';
 import { spacing, useTheme } from '../../../src/theme';
 import { tr } from '../../../src/i18n/tr';
 import { useAuthStore } from '../../../src/state/authStore';
@@ -11,13 +19,9 @@ import { ROUTES } from '../../../src/navigation/routes';
 import { getMiceEvent, listMiceSpaces } from '../../../src/api/mice';
 import { formatCurrency, formatDate } from '../../../src/utils/format';
 
-function eventTone(status?: string):
-  | 'default'
-  | 'success'
-  | 'warning'
-  | 'danger'
-  | 'info'
-  | 'primary' {
+type Tone = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'primary';
+
+function eventTone(status?: string): Tone {
   switch (status) {
     case 'confirmed':
     case 'definite':
@@ -40,28 +44,13 @@ function statusLabel(status?: string): string {
   return (status && map[status]) || status || '—';
 }
 
-const Row: React.FC<{ label: string; value?: string | number | null }> = ({
-  label,
-  value,
-}) => {
-  if (value === undefined || value === null || value === '') return null;
-  return (
-    <View
-      style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 }}
-    >
-      <Muted>{label}</Muted>
-      <Body style={{ flexShrink: 1, textAlign: 'right', paddingLeft: spacing.md }}>
-        {String(value)}
-      </Body>
-    </View>
-  );
-};
-
 // Read-only MICE event detail. Loads the single event plus the space catalogue
-// to resolve booked-space names.
+// to resolve booked-space names. Premium detail language: masthead with status
+// badge, label/value rows, accented section cards.
 export default function MiceDetailScreen() {
   const c = useTheme();
   const miceAccess = useAuthStore((s) => s.miceAccess);
+  const M = tr.departments.mice;
   const { id } = useLocalSearchParams<{ id: string }>();
   const eventId = Array.isArray(id) ? id[0] : id;
 
@@ -95,24 +84,19 @@ export default function MiceDetailScreen() {
         </Card>
       ) : (
         <>
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-              gap: spacing.sm,
-            }}
-          >
-            <H1 style={{ flex: 1 }}>{e.name || tr.departments.mice.eventDetail}</H1>
-            <Badge label={statusLabel(e.status)} tone={eventTone(e.status)} />
-          </View>
+          <DetailHeader
+            title={e.name || M.eventDetail}
+            subtitle={e.client_name || undefined}
+            badges={<Badge label={statusLabel(e.status)} tone={eventTone(e.status)} />}
+            testID="mice-event-header"
+          />
 
-          <Card style={{ marginTop: spacing.md }}>
-            <Row label={tr.departments.mice.client} value={e.client_name} />
-            <Row label={tr.departments.mice.organizer} value={e.organizer_user} />
-            <Row label={tr.departments.mice.type} value={e.event_type} />
-            <Row
-              label={tr.departments.mice.dates}
+          <Card accent={c.primary}>
+            <DetailRow label={M.client} value={e.client_name} />
+            <DetailRow label={M.organizer} value={e.organizer_user} />
+            <DetailRow label={M.type} value={e.event_type} />
+            <DetailRow
+              label={M.dates}
               value={
                 e.start_date
                   ? `${formatDate(e.start_date)}${
@@ -123,9 +107,12 @@ export default function MiceDetailScreen() {
                   : undefined
               }
             />
-            <Row label={tr.departments.mice.pax} value={e.expected_pax} />
-            <Row
-              label={tr.departments.mice.total}
+            <DetailRow
+              label={M.pax}
+              value={typeof e.expected_pax === 'number' ? String(e.expected_pax) : undefined}
+            />
+            <DetailRow
+              label={M.total}
               value={
                 typeof e.totals?.grand_total === 'number'
                   ? formatCurrency(e.totals.grand_total, e.totals.currency)
@@ -134,31 +121,35 @@ export default function MiceDetailScreen() {
             />
           </Card>
 
-          <SectionTitle title={tr.departments.mice.bookedSpaces} />
+          <SectionTitle title={M.bookedSpaces} />
           {(e.space_bookings || []).length === 0 ? (
             <Card>
-              <Muted>{tr.departments.mice.noSpaces}</Muted>
+              <Muted>{M.noSpaces}</Muted>
             </Card>
           ) : (
             (e.space_bookings || []).map((b, i) => (
-              <Card key={`${b.space_id}-${i}`} style={{ marginBottom: spacing.sm }}>
-                <Body style={{ fontWeight: '600' }}>
+              <Card
+                key={`${b.space_id}-${i}`}
+                accent={c.info}
+                style={{ marginBottom: spacing.sm }}
+              >
+                <Body style={{ fontWeight: '700' }}>
                   {(b.space_id && spaceName.get(b.space_id)) || b.space_id || '—'}
                 </Body>
                 {b.setup_style ? <Muted>{b.setup_style}</Muted> : null}
                 {typeof b.expected_pax === 'number' ? (
                   <Muted>
-                    {tr.departments.mice.pax}: {b.expected_pax}
+                    {M.pax}: {b.expected_pax}
                   </Muted>
                 ) : null}
               </Card>
             ))
           )}
 
-          <SectionTitle title={tr.departments.mice.resources} />
+          <SectionTitle title={M.resources} />
           {(e.resources || []).length === 0 ? (
             <Card>
-              <Muted>{tr.departments.mice.noResources}</Muted>
+              <Muted>{M.noResources}</Muted>
             </Card>
           ) : (
             (e.resources || []).map((r, i) => (
@@ -171,7 +162,7 @@ export default function MiceDetailScreen() {
                   }}
                 >
                   <View style={{ flex: 1, paddingRight: spacing.sm }}>
-                    <Body style={{ fontWeight: '600' }}>{r.name || '—'}</Body>
+                    <Body style={{ fontWeight: '700' }}>{r.name || '—'}</Body>
                     {r.type ? <Muted>{r.type}</Muted> : null}
                   </View>
                   {typeof r.quantity === 'number' ? (
@@ -187,7 +178,7 @@ export default function MiceDetailScreen() {
 
           {e.notes ? (
             <>
-              <SectionTitle title={tr.departments.mice.notes} />
+              <SectionTitle title={M.notes} />
               <Card>
                 <Body>{e.notes}</Body>
               </Card>

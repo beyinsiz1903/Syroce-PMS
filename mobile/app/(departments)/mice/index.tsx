@@ -1,16 +1,30 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { Redirect, useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, EmptyState, H1, Muted } from '../../../src/components/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  ActionSheet,
+  Badge,
+  Body,
+  Button,
+  Card,
+  EmptyState,
+  FadeInView,
+  H1,
+  H2,
+  ListRow,
+  Muted,
+  haptic,
+} from '../../../src/components/ui';
 import {
   DepartmentListState,
   SectionTitle,
 } from '../../../src/components/department';
-import { spacing, radius, useTheme } from '../../../src/theme';
+import { spacing, radius, useTheme, ThemeColors } from '../../../src/theme';
 import { tr } from '../../../src/i18n/tr';
 import { useAuthStore } from '../../../src/state/authStore';
 import { ROUTES } from '../../../src/navigation/routes';
+import { errorMessage } from '../../../src/utils/errors';
 import {
   listMiceEvents,
   listMiceSpaces,
@@ -19,6 +33,10 @@ import {
   listGroupReservations,
   listGroupBlocks,
   listCorporateContracts,
+  getSalesPipeline,
+  transitionOpportunity,
+  OPP_STAGES,
+  type OppStage,
   type MiceEvent,
   type MiceAccount,
   type MiceOpportunity,
@@ -28,17 +46,30 @@ import {
 } from '../../../src/api/mice';
 import { formatCurrency, formatDate } from '../../../src/utils/format';
 
-type Tab = 'events' | 'accounts' | 'opportunities' | 'groups';
+type Tab = 'pipeline' | 'events' | 'opportunities' | 'accounts' | 'groups';
 
 type Tone = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'primary';
 
-function eventTone(status?: string):
-  | 'default'
-  | 'success'
-  | 'warning'
-  | 'danger'
-  | 'info'
-  | 'primary' {
+// Maps a Badge tone to its theme colour so cards can echo their status with a
+// left accent stripe (the Card `accent` prop) — status at-a-glance, premium.
+function toneColor(tone: Tone, c: ThemeColors): string {
+  switch (tone) {
+    case 'success':
+      return c.success;
+    case 'warning':
+      return c.warning;
+    case 'danger':
+      return c.danger;
+    case 'info':
+      return c.info;
+    case 'primary':
+      return c.primary;
+    default:
+      return c.textMuted;
+  }
+}
+
+function eventTone(status?: string): Tone {
   switch (status) {
     case 'confirmed':
     case 'definite':
@@ -61,13 +92,7 @@ function statusLabel(status?: string): string {
   return (status && map[status]) || status || '—';
 }
 
-function stageTone(stage?: string):
-  | 'default'
-  | 'success'
-  | 'warning'
-  | 'danger'
-  | 'info'
-  | 'primary' {
+function stageTone(stage?: string): Tone {
   switch (stage) {
     case 'won':
       return 'success';
@@ -132,29 +157,44 @@ function contractStatusLabel(status?: string): string {
   return (status && map[status]) || status || '—';
 }
 
-// Read-only MICE / Sales & Catering screen. Four tabs: events (with the
-// function-space catalogue + availability), CRM accounts (hesaplar),
-// opportunities/proposals (teklifler) and groups (grup/blok rezervasyonları +
-// kurumsal sözleşme durumu). All backend reads only require auth; the
-// (departments) MICE entitlement decides whether we show the screen. Writes
-// stay backend-gated.
+// MICE / Sales & Catering screen. Five tabs: a sales pipeline (kanban) of
+// opportunities, events (with the function-space catalogue), CRM accounts
+// (müşteriler), the opportunity list (teklifler) and groups / corporate
+// contracts (kontratlar). All reads require auth only; the kanban stage move is
+// the one write here and stays backend-gated by require_op("manage_sales") —
+// a caller without the permission gets a 403 surfaced inline (no fake success).
 export default function MiceListScreen() {
   const c = useTheme();
   const router = useRouter();
+  const qc = useQueryClient();
   const miceAccess = useAuthStore((s) => s.miceAccess);
-  const [tab, setTab] = useState<Tab>('events');
+  const [tab, setTab] = useState<Tab>('pipeline');
+  const M = tr.departments.mice;
 
-  const eventsQ = useQuery({ queryKey: ['mice-events'], queryFn: () => listMiceEvents() });
-  const spacesQ = useQuery({ queryKey: ['mice-spaces'], queryFn: listMiceSpaces });
+  const eventsQ = useQuery({
+    queryKey: ['mice-events'],
+    queryFn: () => listMiceEvents(),
+    enabled: tab === 'events',
+  });
+  const spacesQ = useQuery({
+    queryKey: ['mice-spaces'],
+    queryFn: listMiceSpaces,
+    enabled: tab === 'events',
+  });
   const accountsQ = useQuery({
     queryKey: ['mice-accounts'],
     queryFn: listMiceAccounts,
-    enabled: tab === 'accounts',
+    enabled: tab === 'accounts' || tab === 'pipeline',
   });
   const oppsQ = useQuery({
     queryKey: ['mice-opportunities'],
-    queryFn: () => listMiceOpportunities({ limit: 100 }),
-    enabled: tab === 'opportunities',
+    queryFn: () => listMiceOpportunities({ limit: 200 }),
+    enabled: tab === 'opportunities' || tab === 'pipeline',
+  });
+  const pipelineQ = useQuery({
+    queryKey: ['mice-pipeline'],
+    queryFn: getSalesPipeline,
+    enabled: tab === 'pipeline',
   });
   const groupsQ = useQuery({
     queryKey: ['mice-group-reservations'],
@@ -178,18 +218,58 @@ export default function MiceListScreen() {
     return m;
   }, [accountsQ.data]);
 
+  // ── Pipeline stage-move sheet ──────────────────────────────────────────────
+  // Tapping an opportunity card opens this sheet listing every target stage but
+  // the current one. The backend re-validates and enforces manage_sales; any
+  // 403/4xx is surfaced inline. On success the queries refetch and the card
+  // visibly moves columns — that move IS the success signal (no toast faking).
+  const [activeOpp, setActiveOpp] = useState<MiceOpportunity | null>(null);
+  const [stageError, setStageError] = useState<string | null>(null);
+
+  const transitionMut = useMutation({
+    mutationFn: (vars: { id: string; to: OppStage }) =>
+      transitionOpportunity(vars.id, vars.to),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mice-opportunities'] });
+      qc.invalidateQueries({ queryKey: ['mice-pipeline'] });
+      setActiveOpp(null);
+      setStageError(null);
+      haptic.success();
+    },
+    onError: (e: unknown) => {
+      haptic.error();
+      setStageError(errorMessage(e, M.stageUpdateError));
+    },
+  });
+
+  const openStageSheet = (o: MiceOpportunity) => {
+    setStageError(null);
+    setActiveOpp(o);
+  };
+
+  const submitStage = (to: OppStage) => {
+    if (!activeOpp) return;
+    setStageError(null);
+    transitionMut.mutate({ id: activeOpp.id, to });
+  };
+
   if (!miceAccess) return <Redirect href={ROUTES.departments} />;
 
   const TabButton: React.FC<{ value: Tab; label: string }> = ({ value, label }) => {
     const active = tab === value;
     return (
       <Pressable
-        onPress={() => setTab(value)}
+        testID={`mice-tab-${value}`}
+        onPress={() => {
+          haptic.tap();
+          setTab(value);
+        }}
         accessibilityRole="button"
+        accessibilityState={{ selected: active }}
         style={{
-          flex: 1,
           paddingVertical: spacing.sm,
-          borderRadius: radius.md,
+          paddingHorizontal: spacing.lg,
+          borderRadius: radius.pill,
           alignItems: 'center',
           backgroundColor: active ? c.primary : c.surfaceAlt,
           borderWidth: 1,
@@ -203,14 +283,211 @@ export default function MiceListScreen() {
     );
   };
 
+  // ── Pipeline (kanban) renderers ────────────────────────────────────────────
+  const StatTile: React.FC<{ label: string; value: string; tint?: string }> = ({
+    label,
+    value,
+    tint,
+  }) => (
+    <View
+      style={{
+        flexGrow: 1,
+        flexBasis: '47%',
+        backgroundColor: c.surfaceAlt,
+        borderRadius: radius.lg,
+        borderWidth: 1,
+        borderColor: c.border,
+        padding: spacing.md,
+      }}
+    >
+      <Muted style={{ fontSize: 12 }}>{label}</Muted>
+      <Body style={{ fontWeight: '800', fontSize: 18, marginTop: 2, color: tint ?? c.text }}>
+        {value}
+      </Body>
+    </View>
+  );
+
+  const renderKanbanCard = (o: MiceOpportunity) => (
+    <Pressable
+      key={o.id}
+      testID={`mice-opp-card-${o.id}`}
+      onPress={() => openStageSheet(o)}
+      accessibilityRole="button"
+      accessibilityLabel={`${o.title || ''} — ${M.moveStage}`}
+    >
+      {({ pressed }) => (
+        <Card
+          accent={toneColor(stageTone(o.stage), c)}
+          style={{ marginBottom: spacing.sm, opacity: pressed ? 0.85 : 1 }}
+        >
+          <Body style={{ fontWeight: '700' }} numberOfLines={2}>
+            {o.title || '—'}
+          </Body>
+          {o.account_id && accountName.get(o.account_id) ? (
+            <Muted numberOfLines={1}>{accountName.get(o.account_id)}</Muted>
+          ) : null}
+          <View style={{ marginTop: spacing.sm, gap: 2 }}>
+            {typeof o.estimated_value === 'number' && o.estimated_value > 0 ? (
+              <Body style={{ fontWeight: '700' }}>
+                {formatCurrency(o.estimated_value, o.currency)}
+              </Body>
+            ) : null}
+            {typeof o.probability === 'number' ? (
+              <Muted>
+                {M.probability}: %{o.probability}
+              </Muted>
+            ) : null}
+          </View>
+          <View style={{ marginTop: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Badge label={M.moveStage} tone="primary" icon="swap-horizontal-outline" />
+          </View>
+        </Card>
+      )}
+    </Pressable>
+  );
+
+  const renderPipeline = (): React.ReactNode => {
+    if (oppsQ.isLoading || oppsQ.error) {
+      return (
+        <DepartmentListState
+          loading={oppsQ.isLoading}
+          error={oppsQ.error}
+          isEmpty={false}
+        />
+      );
+    }
+    const opps = oppsQ.data || [];
+    const p = pipelineQ.data;
+
+    if (opps.length === 0) {
+      return (
+        <EmptyState
+          icon="trending-up-outline"
+          title={M.noPipeline}
+          message={M.noPipelineMsg}
+        />
+      );
+    }
+
+    const summaryByStage = new Map(
+      (p?.stages || []).map((s) => [s.stage, s] as const),
+    );
+
+    return (
+      <FadeInView>
+        {/* KPI strip */}
+        <View
+          style={{
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            gap: spacing.sm,
+            marginBottom: spacing.md,
+          }}
+        >
+          <StatTile
+            label={M.openValue}
+            value={formatCurrency(p?.open_value ?? 0)}
+          />
+          <StatTile
+            label={M.weightedValue}
+            value={formatCurrency(p?.weighted_open_value ?? 0)}
+            tint={c.info}
+          />
+          <StatTile
+            label={M.wonValue}
+            value={formatCurrency(p?.won_value ?? 0)}
+            tint={c.success}
+          />
+          <StatTile
+            label={M.winRate}
+            value={`%${p?.win_rate_pct ?? 0}`}
+          />
+        </View>
+
+        {/* Kanban board: horizontal scroll of stage columns (web-safe — the
+            outer page scrolls vertically, this scrolls horizontally). */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.sm }}
+          testID="mice-kanban"
+        >
+          {OPP_STAGES.map((stage) => {
+            const colOpps = opps.filter((o) => (o.stage || 'lead') === stage);
+            const s = summaryByStage.get(stage);
+            const count = s?.count ?? colOpps.length;
+            const value = s?.total_value ?? 0;
+            const tint = toneColor(stageTone(stage), c);
+            return (
+              <View
+                key={stage}
+                testID={`mice-kanban-col-${stage}`}
+                style={{ width: 280 }}
+              >
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingHorizontal: spacing.xs,
+                    paddingBottom: spacing.sm,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                    <View
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: radius.pill,
+                        backgroundColor: tint,
+                      }}
+                    />
+                    <H2 style={{ fontSize: 16 }}>{stageLabel(stage)}</H2>
+                    <Badge label={String(count)} tone={stageTone(stage)} />
+                  </View>
+                </View>
+                {value > 0 ? (
+                  <Muted style={{ paddingHorizontal: spacing.xs, marginBottom: spacing.sm }}>
+                    {formatCurrency(value)}
+                  </Muted>
+                ) : null}
+                {colOpps.length === 0 ? (
+                  <View
+                    style={{
+                      borderRadius: radius.lg,
+                      borderWidth: 1,
+                      borderStyle: 'dashed',
+                      borderColor: c.border,
+                      paddingVertical: spacing.lg,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Muted>{tr.app.empty}</Muted>
+                  </View>
+                ) : (
+                  colOpps.map(renderKanbanCard)
+                )}
+              </View>
+            );
+          })}
+        </ScrollView>
+      </FadeInView>
+    );
+  };
+
+  // ── List renderers (premium cards with status accent) ──────────────────────
   const renderEvent = (e: MiceEvent) => (
     <Pressable
       key={e.id}
+      testID={`mice-event-${e.id}`}
       onPress={() => router.push(`${ROUTES.mice}/${e.id}`)}
       accessibilityRole="button"
     >
       {({ pressed }) => (
-        <Card style={{ marginBottom: spacing.sm, opacity: pressed ? 0.85 : 1 }}>
+        <Card
+          accent={toneColor(eventTone(e.status), c)}
+          style={{ marginBottom: spacing.sm, opacity: pressed ? 0.85 : 1 }}
+        >
           <View
             style={{
               flexDirection: 'row',
@@ -219,7 +496,7 @@ export default function MiceListScreen() {
             }}
           >
             <View style={{ flex: 1, paddingRight: spacing.sm }}>
-              <Body style={{ fontWeight: '600' }}>{e.name || '—'}</Body>
+              <Body style={{ fontWeight: '700' }}>{e.name || '—'}</Body>
               {e.client_name ? <Muted>{e.client_name}</Muted> : null}
             </View>
             <Badge label={statusLabel(e.status)} tone={eventTone(e.status)} />
@@ -231,14 +508,13 @@ export default function MiceListScreen() {
             </Muted>
             {typeof e.expected_pax === 'number' ? (
               <Muted>
-                {tr.departments.mice.pax}: {e.expected_pax}
+                {M.pax}: {e.expected_pax}
               </Muted>
             ) : null}
             {typeof e.totals?.grand_total === 'number' ? (
-              <Muted>
-                {tr.departments.mice.total}:{' '}
+              <Body style={{ fontWeight: '700', marginTop: 2 }}>
                 {formatCurrency(e.totals.grand_total, e.totals.currency)}
-              </Muted>
+              </Body>
             ) : null}
           </View>
         </Card>
@@ -247,7 +523,12 @@ export default function MiceListScreen() {
   );
 
   const renderAccount = (a: MiceAccount) => (
-    <Card key={a.id} style={{ marginBottom: spacing.sm }}>
+    <Card
+      key={a.id}
+      testID={`mice-account-${a.id}`}
+      accent={a.active === false ? c.textMuted : c.primary}
+      style={{ marginBottom: spacing.sm }}
+    >
       <View
         style={{
           flexDirection: 'row',
@@ -256,28 +537,28 @@ export default function MiceListScreen() {
         }}
       >
         <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{a.name || '—'}</Body>
+          <Body style={{ fontWeight: '700' }}>{a.name || '—'}</Body>
           {a.industry ? <Muted>{a.industry}</Muted> : null}
         </View>
         {a.active === false ? (
-          <Badge label={tr.departments.mice.inactive} tone="default" />
+          <Badge label={M.inactive} tone="default" />
         ) : null}
       </View>
       <View style={{ marginTop: spacing.sm, gap: 2 }}>
         {a.tax_no ? (
           <Muted>
-            {tr.departments.mice.taxNo}: {a.tax_no}
+            {M.taxNo}: {a.tax_no}
           </Muted>
         ) : null}
         {a.email ? <Muted>{a.email}</Muted> : null}
         {typeof a.credit_limit === 'number' && a.credit_limit > 0 ? (
           <Muted>
-            {tr.departments.mice.creditLimit}: {formatCurrency(a.credit_limit)}
+            {M.creditLimit}: {formatCurrency(a.credit_limit)}
           </Muted>
         ) : null}
         {typeof a.payment_terms_days === 'number' && a.payment_terms_days > 0 ? (
           <Muted>
-            {tr.departments.mice.paymentTerms}: {a.payment_terms_days}
+            {M.paymentTerms}: {a.payment_terms_days}
           </Muted>
         ) : null}
       </View>
@@ -285,50 +566,70 @@ export default function MiceListScreen() {
   );
 
   const renderOpportunity = (o: MiceOpportunity) => (
-    <Card key={o.id} style={{ marginBottom: spacing.sm }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-        }}
-      >
-        <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{o.title || '—'}</Body>
-          {o.account_id && accountName.get(o.account_id) ? (
-            <Muted>
-              {tr.departments.mice.account}: {accountName.get(o.account_id)}
-            </Muted>
-          ) : null}
-        </View>
-        <Badge label={stageLabel(o.stage)} tone={stageTone(o.stage)} />
-      </View>
-      <View style={{ marginTop: spacing.sm, gap: 2 }}>
-        {typeof o.estimated_value === 'number' && o.estimated_value > 0 ? (
-          <Muted>
-            {tr.departments.mice.estimatedValue}:{' '}
-            {formatCurrency(o.estimated_value, o.currency)}
-          </Muted>
-        ) : null}
-        {typeof o.probability === 'number' ? (
-          <Muted>
-            {tr.departments.mice.probability}: %{o.probability}
-          </Muted>
-        ) : null}
-        {o.expected_start ? (
-          <Muted>
-            {formatDate(o.expected_start)}
-            {o.expected_end && o.expected_end !== o.expected_start
-              ? ` – ${formatDate(o.expected_end)}`
-              : ''}
-          </Muted>
-        ) : null}
-      </View>
-    </Card>
+    <Pressable
+      key={o.id}
+      testID={`mice-opp-list-${o.id}`}
+      onPress={() => openStageSheet(o)}
+      accessibilityRole="button"
+      accessibilityLabel={`${o.title || ''} — ${M.moveStage}`}
+    >
+      {({ pressed }) => (
+        <Card
+          accent={toneColor(stageTone(o.stage), c)}
+          style={{ marginBottom: spacing.sm, opacity: pressed ? 0.85 : 1 }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+            }}
+          >
+            <View style={{ flex: 1, paddingRight: spacing.sm }}>
+              <Body style={{ fontWeight: '700' }}>{o.title || '—'}</Body>
+              {o.account_id && accountName.get(o.account_id) ? (
+                <Muted>
+                  {M.account}: {accountName.get(o.account_id)}
+                </Muted>
+              ) : null}
+            </View>
+            <Badge label={stageLabel(o.stage)} tone={stageTone(o.stage)} />
+          </View>
+          <View style={{ marginTop: spacing.sm, gap: 2 }}>
+            {typeof o.estimated_value === 'number' && o.estimated_value > 0 ? (
+              <Body style={{ fontWeight: '700' }}>
+                {formatCurrency(o.estimated_value, o.currency)}
+              </Body>
+            ) : null}
+            {typeof o.probability === 'number' ? (
+              <Muted>
+                {M.probability}: %{o.probability}
+              </Muted>
+            ) : null}
+            {o.expected_start ? (
+              <Muted>
+                {formatDate(o.expected_start)}
+                {o.expected_end && o.expected_end !== o.expected_start
+                  ? ` – ${formatDate(o.expected_end)}`
+                  : ''}
+              </Muted>
+            ) : null}
+          </View>
+          <View style={{ marginTop: spacing.sm }}>
+            <Badge label={M.moveStage} tone="primary" icon="swap-horizontal-outline" />
+          </View>
+        </Card>
+      )}
+    </Pressable>
   );
 
   const renderGroup = (g: GroupReservation) => (
-    <Card key={g.id} style={{ marginBottom: spacing.sm }}>
+    <Card
+      key={g.id}
+      testID={`mice-group-${g.id}`}
+      accent={toneColor(groupTone(g.status), c)}
+      style={{ marginBottom: spacing.sm }}
+    >
       <View
         style={{
           flexDirection: 'row',
@@ -337,10 +638,10 @@ export default function MiceListScreen() {
         }}
       >
         <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{g.group_name || '—'}</Body>
+          <Body style={{ fontWeight: '700' }}>{g.group_name || '—'}</Body>
           {g.contact_person ? (
             <Muted>
-              {tr.departments.mice.contact}: {g.contact_person}
+              {M.contact}: {g.contact_person}
             </Muted>
           ) : null}
         </View>
@@ -357,8 +658,8 @@ export default function MiceListScreen() {
         ) : null}
         {typeof g.total_rooms === 'number' ? (
           <Muted>
-            {tr.departments.mice.rooms}: {g.rooms_assigned ?? 0}/{g.total_rooms}{' '}
-            ({tr.departments.mice.roomsAssigned})
+            {M.rooms}: {g.rooms_assigned ?? 0}/{g.total_rooms}{' '}
+            ({M.roomsAssigned})
           </Muted>
         ) : null}
       </View>
@@ -366,7 +667,12 @@ export default function MiceListScreen() {
   );
 
   const renderBlock = (b: GroupBlock) => (
-    <Card key={b.id} style={{ marginBottom: spacing.sm }}>
+    <Card
+      key={b.id}
+      testID={`mice-block-${b.id}`}
+      accent={toneColor(groupTone(b.status), c)}
+      style={{ marginBottom: spacing.sm }}
+    >
       <View
         style={{
           flexDirection: 'row',
@@ -375,7 +681,7 @@ export default function MiceListScreen() {
         }}
       >
         <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{b.group_name || '—'}</Body>
+          <Body style={{ fontWeight: '700' }}>{b.group_name || '—'}</Body>
           {b.organization ? <Muted>{b.organization}</Muted> : null}
         </View>
         <Badge label={groupStatusLabel(b.status)} tone={groupTone(b.status)} />
@@ -391,18 +697,18 @@ export default function MiceListScreen() {
         ) : null}
         {typeof b.total_rooms === 'number' ? (
           <Muted>
-            {tr.departments.mice.rooms}: {b.rooms_picked_up ?? 0}/{b.total_rooms}{' '}
-            ({tr.departments.mice.roomsPickedUp})
+            {M.rooms}: {b.rooms_picked_up ?? 0}/{b.total_rooms}{' '}
+            ({M.roomsPickedUp})
           </Muted>
         ) : null}
         {b.room_type ? (
           <Muted>
-            {tr.departments.mice.roomType}: {b.room_type}
+            {M.roomType}: {b.room_type}
           </Muted>
         ) : null}
         {typeof b.group_rate === 'number' && b.group_rate > 0 ? (
           <Muted>
-            {tr.departments.mice.groupRate}: {formatCurrency(b.group_rate)}
+            {M.groupRate}: {formatCurrency(b.group_rate)}
           </Muted>
         ) : null}
       </View>
@@ -410,7 +716,12 @@ export default function MiceListScreen() {
   );
 
   const renderContract = (k: CorporateContract) => (
-    <Card key={k.id} style={{ marginBottom: spacing.sm }}>
+    <Card
+      key={k.id}
+      testID={`mice-contract-${k.id}`}
+      accent={toneColor(contractTone(k.status), c)}
+      style={{ marginBottom: spacing.sm }}
+    >
       <View
         style={{
           flexDirection: 'row',
@@ -419,10 +730,10 @@ export default function MiceListScreen() {
         }}
       >
         <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{k.company_name || '—'}</Body>
+          <Body style={{ fontWeight: '700' }}>{k.company_name || '—'}</Body>
           {k.contact_person ? (
             <Muted>
-              {tr.departments.mice.contact}: {k.contact_person}
+              {M.contact}: {k.contact_person}
             </Muted>
           ) : null}
         </View>
@@ -437,24 +748,23 @@ export default function MiceListScreen() {
         ) : null}
         {typeof k.room_nights_committed === 'number' ? (
           <Muted>
-            {tr.departments.mice.roomNights}: {k.room_nights_used ?? 0}/
+            {M.roomNights}: {k.room_nights_used ?? 0}/
             {k.room_nights_committed}
           </Muted>
         ) : null}
         {typeof k.discount_percentage === 'number' && k.discount_percentage > 0 ? (
           <Muted>
-            {tr.departments.mice.discount}: %{k.discount_percentage}
+            {M.discount}: %{k.discount_percentage}
           </Muted>
         ) : null}
         {typeof k.contracted_rate === 'number' && k.contracted_rate > 0 ? (
           <Muted>
-            {tr.departments.mice.contractRate}: {formatCurrency(k.contracted_rate)}
+            {M.contractRate}: {formatCurrency(k.contracted_rate)}
           </Muted>
         ) : null}
         {typeof k.days_until_expiry === 'number' && k.days_until_expiry > 0 ? (
           <Muted>
-            {tr.departments.mice.expiresIn}: {k.days_until_expiry}{' '}
-            {tr.departments.mice.days}
+            {M.expiresIn}: {k.days_until_expiry} {M.days}
           </Muted>
         ) : null}
       </View>
@@ -462,7 +772,12 @@ export default function MiceListScreen() {
   );
 
   const renderSpace = (s: import('../../../src/api/mice').MiceSpace) => (
-    <Card key={s.id} style={{ marginBottom: spacing.sm }}>
+    <Card
+      key={s.id}
+      testID={`mice-space-${s.id}`}
+      accent={s.active === false ? c.textMuted : c.success}
+      style={{ marginBottom: spacing.sm }}
+    >
       <View
         style={{
           flexDirection: 'row',
@@ -471,36 +786,32 @@ export default function MiceListScreen() {
         }}
       >
         <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{s.name}</Body>
+          <Body style={{ fontWeight: '700' }}>{s.name}</Body>
           {s.location ? (
             <Muted>
-              {tr.departments.mice.location}: {s.location}
+              {M.location}: {s.location}
             </Muted>
           ) : null}
         </View>
         <Badge
-          label={
-            s.active === false
-              ? tr.departments.mice.unavailable
-              : tr.departments.mice.available
-          }
+          label={s.active === false ? M.unavailable : M.available}
           tone={s.active === false ? 'default' : 'success'}
         />
       </View>
       <View style={{ marginTop: spacing.xs, gap: 2 }}>
         {typeof s.area_m2 === 'number' ? (
           <Muted>
-            {tr.departments.mice.area}: {s.area_m2} m²
+            {M.area}: {s.area_m2} m²
           </Muted>
         ) : null}
         {typeof s.capacity_theatre === 'number' ? (
           <Muted>
-            {tr.departments.mice.capacity}: {s.capacity_theatre}
+            {M.capacity}: {s.capacity_theatre}
           </Muted>
         ) : null}
         {typeof s.daily_rate === 'number' ? (
           <Muted>
-            {tr.departments.mice.dailyRate}: {formatCurrency(s.daily_rate, s.currency)}
+            {M.dailyRate}: {formatCurrency(s.daily_rate, s.currency)}
           </Muted>
         ) : null}
       </View>
@@ -525,91 +836,136 @@ export default function MiceListScreen() {
     return <View>{data.map(render)}</View>;
   }
 
+  const stageOptions = activeOpp
+    ? OPP_STAGES.filter((s) => s !== (activeOpp.stage || 'lead'))
+    : [];
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
     >
-      <H1>{tr.departments.mice.title}</H1>
+      <H1>{M.title}</H1>
 
-      <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
-        <TabButton value="events" label={tr.departments.mice.tabEvents} />
-        <TabButton value="accounts" label={tr.departments.mice.tabAccounts} />
-        <TabButton value="opportunities" label={tr.departments.mice.tabOpportunities} />
-        <TabButton value="groups" label={tr.departments.mice.tabGroups} />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: spacing.sm, marginTop: spacing.md, paddingRight: spacing.lg }}
+      >
+        <TabButton value="pipeline" label={M.tabPipeline} />
+        <TabButton value="events" label={M.tabEvents} />
+        <TabButton value="opportunities" label={M.tabOpportunities} />
+        <TabButton value="accounts" label={M.tabCustomers} />
+        <TabButton value="groups" label={M.tabContracts} />
+      </ScrollView>
+
+      <View style={{ marginTop: spacing.md }}>
+        {tab === 'pipeline' ? (
+          <>
+            <SectionTitle title={M.pipeline} />
+            {renderPipeline()}
+          </>
+        ) : null}
+
+        {tab === 'events' ? (
+          <>
+            <SectionTitle title={M.events} />
+            {listBlock(eventsQ, 'calendar-outline', M.noEvents, renderEvent)}
+
+            <SectionTitle title={M.spaces} />
+            {listBlock(spacesQ, 'business-outline', M.noSpaces, renderSpace)}
+          </>
+        ) : null}
+
+        {tab === 'accounts' ? (
+          <>
+            <SectionTitle title={M.accounts} />
+            {listBlock(accountsQ, 'people-outline', M.noAccounts, renderAccount)}
+          </>
+        ) : null}
+
+        {tab === 'opportunities' ? (
+          <>
+            <SectionTitle title={M.opportunities} />
+            {listBlock(
+              oppsQ,
+              'briefcase-outline',
+              M.noOpportunities,
+              renderOpportunity,
+            )}
+          </>
+        ) : null}
+
+        {tab === 'groups' ? (
+          <>
+            <SectionTitle title={M.groupReservations} />
+            {listBlock(groupsQ, 'people-circle-outline', M.noGroups, renderGroup)}
+
+            <SectionTitle title={M.groupBlocks} />
+            {listBlock(blocksQ, 'grid-outline', M.noBlocks, renderBlock)}
+
+            <SectionTitle title={M.corporateContracts} />
+            {listBlock(
+              contractsQ,
+              'document-text-outline',
+              M.noContracts,
+              renderContract,
+            )}
+          </>
+        ) : null}
       </View>
 
-      {tab === 'events' ? (
-        <>
-          <SectionTitle title={tr.departments.mice.events} />
-          {listBlock(
-            eventsQ,
-            'calendar-outline',
-            tr.departments.mice.noEvents,
-            renderEvent,
-          )}
+      {/* ── Stage-move sheet (kanban + opportunity list) ──────────────────── */}
+      <ActionSheet
+        visible={activeOpp !== null}
+        onClose={() => setActiveOpp(null)}
+        title={activeOpp?.title || M.changeStage}
+        testID="mice-stage-sheet"
+      >
+        {activeOpp ? (
+          <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+              <Muted>{M.currentStage}:</Muted>
+              <Badge label={stageLabel(activeOpp.stage)} tone={stageTone(activeOpp.stage)} />
+            </View>
 
-          <SectionTitle title={tr.departments.mice.spaces} />
-          {listBlock(
-            spacesQ,
-            'business-outline',
-            tr.departments.mice.noSpaces,
-            renderSpace,
-          )}
-        </>
-      ) : null}
+            {stageError ? (
+              <Body style={{ color: c.danger, marginTop: spacing.sm }} testID="mice-stage-error">
+                {stageError}
+              </Body>
+            ) : null}
 
-      {tab === 'accounts' ? (
-        <>
-          <SectionTitle title={tr.departments.mice.accounts} />
-          {listBlock(
-            accountsQ,
-            'people-outline',
-            tr.departments.mice.noAccounts,
-            renderAccount,
-          )}
-        </>
-      ) : null}
+            <Muted style={{ marginTop: spacing.md }}>{M.changeStage}</Muted>
+            {stageOptions.length === 0 ? (
+              <Body style={{ marginTop: spacing.sm }}>{M.noStageOptions}</Body>
+            ) : (
+              <Card padded={false} style={{ marginTop: spacing.sm }}>
+                {stageOptions.map((s, i) => (
+                  <ListRow
+                    key={s}
+                    testID={`mice-stage-opt-${s}`}
+                    icon="flag-outline"
+                    iconColor={toneColor(stageTone(s), c)}
+                    label={stageLabel(s)}
+                    onPress={() => submitStage(s)}
+                    showChevron={!transitionMut.isPending}
+                    last={i === stageOptions.length - 1}
+                  />
+                ))}
+              </Card>
+            )}
 
-      {tab === 'opportunities' ? (
-        <>
-          <SectionTitle title={tr.departments.mice.opportunities} />
-          {listBlock(
-            oppsQ,
-            'briefcase-outline',
-            tr.departments.mice.noOpportunities,
-            renderOpportunity,
-          )}
-        </>
-      ) : null}
-
-      {tab === 'groups' ? (
-        <>
-          <SectionTitle title={tr.departments.mice.groupReservations} />
-          {listBlock(
-            groupsQ,
-            'people-circle-outline',
-            tr.departments.mice.noGroups,
-            renderGroup,
-          )}
-
-          <SectionTitle title={tr.departments.mice.groupBlocks} />
-          {listBlock(
-            blocksQ,
-            'grid-outline',
-            tr.departments.mice.noBlocks,
-            renderBlock,
-          )}
-
-          <SectionTitle title={tr.departments.mice.corporateContracts} />
-          {listBlock(
-            contractsQ,
-            'document-text-outline',
-            tr.departments.mice.noContracts,
-            renderContract,
-          )}
-        </>
-      ) : null}
+            <View style={{ marginTop: spacing.lg }}>
+              <Button
+                title={tr.app.cancel}
+                variant="secondary"
+                onPress={() => setActiveOpp(null)}
+                fullWidth
+              />
+            </View>
+          </>
+        ) : null}
+      </ActionSheet>
     </ScrollView>
   );
 }
