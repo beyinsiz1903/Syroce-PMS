@@ -27,6 +27,7 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import LanguageSelector from '@/components/LanguageSelector';
 import NotificationBell from '@/components/NotificationBell';
+import NightScreen from '@/components/NightScreen';
 import PushSubscriptionManager from '@/components/PushSubscriptionManager';
 import PMSDateBadge from '@/components/PMSDateBadge';
 import { NAV_ITEMS, NAV_GROUPS } from '@/config/navItems';
@@ -448,6 +449,7 @@ const Layout = ({ children, user, tenant, onLogout, currentModule }) => {
               </div>
               <PushSubscriptionManager />
               <NotificationBell />
+              <NightScreen />
 
               {/* Mobile hamburger */}
               <Button
