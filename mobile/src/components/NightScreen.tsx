@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../state/authStore';
@@ -59,12 +60,33 @@ const NightOverlayBody: React.FC<{ onExit: () => void }> = ({ onExit }) => {
   );
 };
 
+const NIGHT_SCREEN_KEY = 'night_screen_active';
+
 export const NightScreen: React.FC = () => {
   const c = useTheme();
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const role = useAuthStore((s) => s.role);
-  const [active, setActive] = useState(false);
+  const [active, setActiveState] = useState(false);
+
+  // Kalicilik: uygulama yeniden acildiginda gece ekrani acik kalsin (web ile
+  // ayni davranis). Cosmetic tercih -> AsyncStorage (sir degil, SecureStore degil).
+  useEffect(() => {
+    let alive = true;
+    AsyncStorage.getItem(NIGHT_SCREEN_KEY)
+      .then((v) => {
+        if (alive && v === '1') setActiveState(true);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const setActive = useCallback((v: boolean) => {
+    setActiveState(v);
+    AsyncStorage.setItem(NIGHT_SCREEN_KEY, v ? '1' : '0').catch(() => {});
+  }, []);
 
   // Giris yapilmadan (login ekrani) ve misafir deneyiminde gosterme — web'de de
   // gece ekrani yalnizca kimlik dogrulanmis PERSONEL kabugunda bulunur.

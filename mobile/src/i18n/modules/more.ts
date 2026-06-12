@@ -12,4 +12,9 @@ export const more = {
   pushPending: 'Bekleniyor',
   pushDenied: 'İzin reddedildi',
   pushError: 'Kayıt hatası',
+  theme: 'Tema',
+  themeHint: 'Açık, koyu veya cihaz ayarını izle',
+  themeLight: 'Açık',
+  themeDark: 'Koyu',
+  themeSystem: 'Sistem',
 };

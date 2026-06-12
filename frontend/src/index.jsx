@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "@/index.css";
 import { initI18n } from "@/i18n";
+import { ThemeProvider } from "next-themes";
 import App from "@/App";
 
 // Sentry lazy: DSN yoksa hiç indirme; varsa render'ı bloklamadan arka planda
@@ -80,7 +81,15 @@ initI18n().finally(() => {
   const root = ReactDOM.createRoot(document.getElementById("root"));
   root.render(
     <React.StrictMode>
-      <App />
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="light"
+        enableSystem
+        storageKey="syroce-theme"
+        disableTransitionOnChange
+      >
+        <App />
+      </ThemeProvider>
     </React.StrictMode>,
   );
 });

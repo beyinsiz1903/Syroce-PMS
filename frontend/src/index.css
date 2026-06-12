@@ -45,27 +45,31 @@ code {
         --chart-5: 27 87% 67%;
         --radius: 0.5rem;
     }
+    /* Marka koyu paleti: mobil "koyu premium" kimligi (#060B17 zemin ailesi)
+       HSL token'larina cevrildi. Zemin neredeyse siyah-lacivert, kartlar uzerine
+       katmanlanan acik yuzeyler, primary canli mavi (#2563EB ~ 217 91% 60%).
+       Acik tema (:root) DEGISMEZ. */
     .dark {
-        --background: 0 0% 3.9%;
-        --foreground: 0 0% 98%;
-        --card: 0 0% 3.9%;
-        --card-foreground: 0 0% 98%;
-        --popover: 0 0% 3.9%;
-        --popover-foreground: 0 0% 98%;
-        --primary: 0 0% 98%;
-        --primary-foreground: 0 0% 9%;
-        --secondary: 0 0% 14.9%;
-        --secondary-foreground: 0 0% 98%;
-        --muted: 0 0% 14.9%;
-        --muted-foreground: 0 0% 63.9%;
-        --accent: 0 0% 14.9%;
-        --accent-foreground: 0 0% 98%;
-        --destructive: 0 62.8% 30.6%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 14.9%;
-        --input: 0 0% 14.9%;
-        --ring: 0 0% 83.1%;
-        --chart-1: 220 70% 50%;
+        --background: 222 60% 6%;
+        --foreground: 0 0% 100%;
+        --card: 220 36% 12%;
+        --card-foreground: 0 0% 100%;
+        --popover: 220 36% 12%;
+        --popover-foreground: 0 0% 100%;
+        --primary: 217 91% 60%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 220 30% 18%;
+        --secondary-foreground: 0 0% 100%;
+        --muted: 220 28% 16%;
+        --muted-foreground: 215 20% 70%;
+        --accent: 220 30% 20%;
+        --accent-foreground: 0 0% 100%;
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 217 26% 20%;
+        --input: 217 26% 22%;
+        --ring: 217 91% 60%;
+        --chart-1: 217 91% 60%;
         --chart-2: 160 60% 45%;
         --chart-3: 30 80% 55%;
         --chart-4: 280 65% 60%;
@@ -143,4 +147,137 @@ code {
     .animate-fade-in {
         animation: fadeIn 0.2s ease-out forwards;
     }
+}
+
+/* ============================================================================
+   FAZ 3 — Koyu mod gecis uyumluluk katmani
+   ----------------------------------------------------------------------------
+   Uygulamanin buyuk cogunlugu (~510 dosya) shadcn token'lari yerine sabit gri
+   Tailwind siniflari (bg-white, text-gray-700, border-gray-200 ...) kullaniyor.
+   shadcn bilesenleri (bg-card/bg-background/text-foreground) zaten otomatik
+   adapte olur; asagidaki kurallar baskin notr gri ailelerini koyu modda marka
+   token'larina esler. Ozgulluk `.dark .class` (0,2,0) -> tek-sinif utility'yi
+   (0,1,0) gecersiz kilar; hover/placeholder varyantlarinda da bir derece yuksek.
+
+   Bilincli KAPSAM DISI (Faz 4 modul-modul sweep): JSX hex/inline style,
+   gradient'ler, arbitrary (`bg-[#...]`), responsive on-ek (`md:bg-white`),
+   ve semantik durum rozetleri (bg-green-100/text-red-700 vb.) korunur.
+   ============================================================================ */
+
+/* --- Yuzey arka planlari -> card --- */
+.dark .bg-white {
+    background-color: hsl(var(--card));
+}
+
+/* --- Hafif notr arka planlar -> muted --- */
+.dark .bg-gray-50,
+.dark .bg-gray-100,
+.dark .bg-slate-50,
+.dark .bg-slate-100,
+.dark .bg-neutral-50,
+.dark .bg-neutral-100,
+.dark .bg-zinc-50,
+.dark .bg-zinc-100 {
+    background-color: hsl(var(--muted));
+}
+
+/* --- Biraz daha belirgin notr arka planlar -> secondary --- */
+.dark .bg-gray-200,
+.dark .bg-slate-200,
+.dark .bg-neutral-200,
+.dark .bg-zinc-200 {
+    background-color: hsl(var(--secondary));
+}
+
+/* --- Birincil/koyu metin -> foreground --- */
+.dark .text-black,
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-gray-700,
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700,
+.dark .text-neutral-900,
+.dark .text-neutral-800,
+.dark .text-neutral-700,
+.dark .text-zinc-900,
+.dark .text-zinc-800,
+.dark .text-zinc-700 {
+    color: hsl(var(--foreground));
+}
+
+/* --- Ikincil/soluk metin -> muted-foreground --- */
+.dark .text-gray-600,
+.dark .text-gray-500,
+.dark .text-gray-400,
+.dark .text-slate-600,
+.dark .text-slate-500,
+.dark .text-slate-400,
+.dark .text-neutral-600,
+.dark .text-neutral-500,
+.dark .text-neutral-400,
+.dark .text-zinc-600,
+.dark .text-zinc-500,
+.dark .text-zinc-400 {
+    color: hsl(var(--muted-foreground));
+}
+
+/* --- Kenarliklar -> border --- */
+.dark .border-gray-100,
+.dark .border-gray-200,
+.dark .border-gray-300,
+.dark .border-slate-100,
+.dark .border-slate-200,
+.dark .border-slate-300,
+.dark .border-neutral-100,
+.dark .border-neutral-200,
+.dark .border-neutral-300,
+.dark .border-zinc-100,
+.dark .border-zinc-200,
+.dark .border-zinc-300 {
+    border-color: hsl(var(--border));
+}
+
+/* --- divide-* (kardes ayraci kenarliklari) -> border --- */
+.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-neutral-200 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-zinc-200 > :not([hidden]) ~ :not([hidden]) {
+    border-color: hsl(var(--border));
+}
+
+/* --- Hover arka planlari -> muted --- */
+.dark .hover\:bg-white:hover,
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-gray-100:hover,
+.dark .hover\:bg-gray-200:hover,
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-slate-100:hover,
+.dark .hover\:bg-neutral-50:hover,
+.dark .hover\:bg-neutral-100:hover,
+.dark .hover\:bg-zinc-50:hover,
+.dark .hover\:bg-zinc-100:hover {
+    background-color: hsl(var(--muted));
+}
+
+/* --- Hover metin -> foreground --- */
+.dark .hover\:text-gray-900:hover,
+.dark .hover\:text-gray-800:hover,
+.dark .hover\:text-gray-700:hover,
+.dark .hover\:text-black:hover {
+    color: hsl(var(--foreground));
+}
+
+/* --- Hover kenarlik -> border --- */
+.dark .hover\:border-gray-200:hover,
+.dark .hover\:border-gray-300:hover {
+    border-color: hsl(var(--border));
+}
+
+/* --- Placeholder metni -> muted-foreground --- */
+.dark .placeholder-gray-300::placeholder,
+.dark .placeholder-gray-400::placeholder,
+.dark .placeholder-gray-500::placeholder {
+    color: hsl(var(--muted-foreground));
 }

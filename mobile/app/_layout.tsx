@@ -8,7 +8,7 @@ import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react
 import NetInfo from '@react-native-community/netinfo';
 import { useAuthStore } from '../src/state/authStore';
 import { useSettingsStore } from '../src/state/settingsStore';
-import { useTheme } from '../src/theme';
+import { useTheme, useResolvedScheme } from '../src/theme';
 import {
   DEPARTMENTS_SEGMENT,
   GROUP_SEGMENTS,
@@ -136,9 +136,10 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function RootShell() {
   const c = useTheme();
+  const scheme = useResolvedScheme();
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
-      <StatusBar style="light" />
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: c.surface },

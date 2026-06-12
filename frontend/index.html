@@ -4,6 +4,22 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#000000" />
+        <!-- Tema FOUC engeli: ilk paint'ten ONCE localStorage tercihini
+             (next-themes storageKey="syroce-theme") okuyup .dark sinifini uygula.
+             'system' ise OS prefers-color-scheme izlenir. next-themes SPA'da
+             pre-paint enjekte edemez; bu inline script o boslugu kapatir. -->
+        <script>
+            (function () {
+                try {
+                    var pref = localStorage.getItem('syroce-theme') || 'light';
+                    var prefersDark =
+                        window.matchMedia &&
+                        window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    var useDark = pref === 'dark' || (pref === 'system' && prefersDark);
+                    if (useDark) document.documentElement.classList.add('dark');
+                } catch (e) {}
+            })();
+        </script>
         <meta name="description" content="Syroce - Modern Otel Yönetim Sistemi. AI destekli, ultra hızlı ve kapsamlı hotel PMS çözümü." />
         <meta name="robots" content="index, follow" />
         <meta name="googlebot" content="index, follow" />

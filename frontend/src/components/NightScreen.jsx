@@ -13,12 +13,34 @@ import {
 // tum gorunumu kaplayan siyah bir katman. Uzerinde sadece dim bir saat ve
 // cikis ipucu gosterilir; herhangi bir yere dokunmak veya ESC'e basmak ile
 // aninda calismaya geri donulur. Hicbir veri/oturum durumu degismez.
+const NIGHT_SCREEN_KEY = 'night_screen_active';
+
 const NightScreen = () => {
-  const [active, setActive] = useState(false);
+  // Kalicilik: gece ekrani acik durumu localStorage'da tutulur; sayfa
+  // yenilenince / kapatip acilinca ekran siyah kalir, dokununca normale doner.
+  const [active, setActiveState] = useState(() => {
+    try {
+      return (
+        typeof window !== 'undefined' &&
+        window.localStorage.getItem(NIGHT_SCREEN_KEY) === '1'
+      );
+    } catch {
+      return false;
+    }
+  });
   const [visible, setVisible] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
-  const exit = useCallback(() => setActive(false), []);
+  const setActive = useCallback((v) => {
+    setActiveState(v);
+    try {
+      window.localStorage.setItem(NIGHT_SCREEN_KEY, v ? '1' : '0');
+    } catch {
+      // localStorage erisilemezse durum yalnizca bellek-ici kalir
+    }
+  }, []);
+
+  const exit = useCallback(() => setActive(false), [setActive]);
 
   // Katman acikken: saati her saniye guncelle + ESC ile cikis.
   useEffect(() => {
@@ -87,10 +109,14 @@ const NightScreen = () => {
           }`}
           data-testid="night-screen-overlay"
         >
-          <div className="text-neutral-600 text-7xl md:text-8xl font-light tabular-nums tracking-wider">
+          {/* Loş renkler arbitrary deger ile sabitlendi: gece-ekrani her zaman
+              siyah zemin uzerinde los kalmali; Faz-3 .dark compat katmani
+              arbitrary (bg-[#...]/text-[#...]) siniflarini bilincli olarak ezmez,
+              boylece text-neutral-600/700 -> parlak token remap'inden korunur. */}
+          <div className="text-[#525252] text-7xl md:text-8xl font-light tabular-nums tracking-wider">
             {hh}:{mm}
           </div>
-          <p className="mt-6 text-neutral-700 text-xs uppercase tracking-[0.3em]">
+          <p className="mt-6 text-[#404040] text-xs uppercase tracking-[0.3em]">
             Çıkmak için dokunun veya ESC
           </p>
         </div>,

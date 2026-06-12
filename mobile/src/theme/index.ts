@@ -1,3 +1,6 @@
+import { useColorScheme } from 'react-native';
+import { useSettingsStore } from '../state/settingsStore';
+
 export type ThemeColors = {
   bg: string;
   surface: string;
@@ -41,9 +44,9 @@ export const darkTheme: ThemeColors = {
   vip: '#FBBF24',
 };
 
-// Ikincil acik tema — su an uygulamada aktif degil (koyu premium kimlik
-// varsayilan). Ileride opt-in tema secimi icin korunuyor; hicbir ekran buna
-// dogrudan bagimli degil.
+// Acik tema — Light/System tema secimi ile aktif (koyu premium kimlik hala
+// varsayilan: themeMode default 'dark'). useResolvedScheme() === 'light' iken
+// useTheme() bu paleti dondurur; secici (ThemeModeSelector) ile opt-in.
 export const lightTheme: ThemeColors = {
   bg: '#f5f7fa',
   surface: '#ffffff',
@@ -100,11 +103,19 @@ export const motion = {
   slow: 420,
 };
 
-// Koyu premium kimlik her cihazda hakim olsun diye useTheme her zaman koyu
-// temayi dondurur (OS acik/koyu ayarindan bagimsiz). Acik tema ileride opt-in
-// olarak baglanabilir; simdilik lightTheme yalnizca referans olarak duruyor.
+// Cozulmus tema semasi: kullanici tercihini (settingsStore.themeMode) okur;
+// 'system' ise cihazin OS acik/koyu ayarini (useColorScheme) izler. Tek
+// dogruluk kaynagi burasi -> useTheme()'i cagiran tum ekranlar tercih degisince
+// otomatik yeniden render olur (zustand secici + RN Appearance aboneligi).
+export function useResolvedScheme(): 'light' | 'dark' {
+  const mode = useSettingsStore((s) => s.themeMode);
+  const system = useColorScheme();
+  if (mode === 'system') return system === 'light' ? 'light' : 'dark';
+  return mode;
+}
+
 export function useTheme(): ThemeColors {
-  return darkTheme;
+  return useResolvedScheme() === 'light' ? lightTheme : darkTheme;
 }
 
 export const roomStatusColor = (status: string | undefined, c: ThemeColors): string => {
