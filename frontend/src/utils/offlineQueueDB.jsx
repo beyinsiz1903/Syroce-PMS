@@ -4,22 +4,32 @@
  */
 
 const DB_NAME = 'SyroceOffline';
-const DB_VERSION = 1;
+// v2: çevrimdışı check-in kuyruğu (checkinQueue) eklendi. SW ile ortak DB
+// olduğundan iki taraf da aynı versiyonu açmalı (frontend/public/service-worker.js).
+const DB_VERSION = 2;
 
 const STORES = {
   MEDIA_QUEUE: 'mediaQueue',
   TASK_QUEUE: 'taskQueue',
-  NOTIFICATION_LOG: 'notificationLog'
+  NOTIFICATION_LOG: 'notificationLog',
+  CHECKIN_QUEUE: 'checkinQueue'
 };
 
 class OfflineDB {
   constructor() {
     this.db = null;
+    // IndexedDB yoksa (SSR / test ortami) cokmeyi onle: initPromise reject
+    // olursa bile islenmemis-rejection uretmemesi icin sessiz catch ekle.
     this.initPromise = this.init();
+    this.initPromise.catch(() => {});
   }
 
   init() {
     return new Promise((resolve, reject) => {
+      if (typeof indexedDB === 'undefined') {
+        reject(new Error('IndexedDB unavailable'));
+        return;
+      }
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => reject(request.error);
@@ -44,6 +54,11 @@ class OfflineDB {
         if (!db.objectStoreNames.contains(STORES.NOTIFICATION_LOG)) {
           const notifStore = db.createObjectStore(STORES.NOTIFICATION_LOG, { keyPath: 'id' });
           notifStore.createIndex('createdAt', 'createdAt', { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains(STORES.CHECKIN_QUEUE)) {
+          const checkinStore = db.createObjectStore(STORES.CHECKIN_QUEUE, { keyPath: 'id' });
+          checkinStore.createIndex('createdAt', 'createdAt', { unique: false });
         }
       };
     });
@@ -74,6 +89,48 @@ class OfflineDB {
 
   async remove(storeName, id) {
     return this.withStore(storeName, 'readwrite', (store) => store.delete(id));
+  }
+
+  async get(storeName, id) {
+    await this.initPromise;
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction([storeName], 'readonly');
+      const store = tx.objectStore(storeName);
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async update(storeName, id, patch) {
+    await this.initPromise;
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction([storeName], 'readwrite');
+      const store = tx.objectStore(storeName);
+      const getReq = store.get(id);
+      getReq.onsuccess = () => {
+        const existing = getReq.result;
+        if (!existing) {
+          resolve(null);
+          return;
+        }
+        const merged = { ...existing, ...patch, updatedAt: Date.now() };
+        store.put(merged);
+        resolve(merged);
+      };
+      getReq.onerror = () => reject(getReq.error);
+    });
+  }
+
+  async count(storeName) {
+    await this.initPromise;
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction([storeName], 'readonly');
+      const store = tx.objectStore(storeName);
+      const request = store.count();
+      request.onsuccess = () => resolve(request.result || 0);
+      request.onerror = () => reject(request.error);
+    });
   }
 
   async list(storeName, limit = 100) {
@@ -128,6 +185,31 @@ export async function removeQueuedTask(id) {
   return offlineDB.remove(STORES.TASK_QUEUE, id);
 }
 
+// Check-in queue helpers (çevrimdışı ön büro girişleri)
+export async function enqueueCheckin(entry) {
+  return offlineDB.add(STORES.CHECKIN_QUEUE, entry);
+}
+
+export async function listQueuedCheckins(limit = 200) {
+  return offlineDB.list(STORES.CHECKIN_QUEUE, limit);
+}
+
+export async function getQueuedCheckin(id) {
+  return offlineDB.get(STORES.CHECKIN_QUEUE, id);
+}
+
+export async function updateQueuedCheckin(id, patch) {
+  return offlineDB.update(STORES.CHECKIN_QUEUE, id, patch);
+}
+
+export async function removeQueuedCheckin(id) {
+  return offlineDB.remove(STORES.CHECKIN_QUEUE, id);
+}
+
+export async function countQueuedCheckins() {
+  return offlineDB.count(STORES.CHECKIN_QUEUE);
+}
+
 // Notification log
 export async function logNotification(event) {
   return offlineDB.add(STORES.NOTIFICATION_LOG, event);
@@ -148,6 +230,12 @@ export default {
   enqueueTaskUpdate,
   listQueuedTasks,
   removeQueuedTask,
+  enqueueCheckin,
+  listQueuedCheckins,
+  getQueuedCheckin,
+  updateQueuedCheckin,
+  removeQueuedCheckin,
+  countQueuedCheckins,
   logNotification,
   listNotifications,
   clearNotification

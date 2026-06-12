@@ -3,6 +3,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import IdPhotoViewerButton from '@/components/IdPhotoViewerButton';
+import { performCheckin } from '@/utils/offlineCheckin';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || '';
 
@@ -139,16 +140,27 @@ const EnhancedFrontDesk = () => {
   const handleQuickCheckin = async (bookingId) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post(
-        `/mobile/staff/quick-checkin`,
-        { booking_id: bookingId },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      toast.success(t('frontDeskEnhanced.toasts.checkedIn'));
+      // Cevrimici sicak yol degismeden korunur (regresyon yok); yalniz AG
+      // hatasinda performCheckin kuyruga alip otomatik eslestirir.
+      const result = await performCheckin(bookingId, {
+        onlineRequest: () =>
+          axios.post(
+            `/mobile/staff/quick-checkin`,
+            { booking_id: bookingId },
+            { headers: { Authorization: `Bearer ${token}` } }
+          ),
+      });
+      if (result.offlineQueued) {
+        toast.info(t('frontDeskEnhanced.toasts.checkinQueued', 'Cevrimdisi: check-in kuyruga alindi, baglanti gelince gonderilecek.'));
+      } else {
+        toast.success(t('frontDeskEnhanced.toasts.checkedIn'));
+      }
       fetchTodayArrivals();
     } catch (error) {
       console.error('Error checking in:', error);
-      toast.error(t('frontDeskEnhanced.toasts.checkinFailed'));
+      const detail = error.response?.data?.detail;
+      const msg = (typeof detail === 'object' && detail?.message) || (typeof detail === 'string' ? detail : null);
+      toast.error(msg || t('frontDeskEnhanced.toasts.checkinFailed'));
     }
   };
 

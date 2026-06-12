@@ -13,6 +13,7 @@ import { CurrencyProvider } from "@/context/CurrencyContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/sonner";
 import DialogHost from "@/components/DialogHost";
+import OfflineStatusBar from "@/components/OfflineStatusBar";
 
 import {
   AuthPage, Dashboard, LandingPage, PrivacyPolicy, GuestPortal, getRouteConfigs,
@@ -303,6 +304,7 @@ function App() {
         <div className="App">
           <Toaster position="top-right" />
           <DialogHost />
+          {isAuthenticated && <OfflineStatusBar />}
           <BrowserRouter>
             <ErrorBoundary>
               <PlanRouteGuard tenant={tenant} user={user}>

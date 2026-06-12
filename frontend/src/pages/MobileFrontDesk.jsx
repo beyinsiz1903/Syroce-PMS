@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { performCheckin } from '@/utils/offlineCheckin';
 import { 
   ArrowLeft, 
   Users, 
@@ -121,11 +122,19 @@ const MobileFrontDesk = ({ user }) => {
 
   const handleCheckIn = async (bookingId) => {
     try {
-      await axios.post(`/frontdesk/checkin/${bookingId}`);
-      toast.success('Check-in');
+      const result = await performCheckin(bookingId, {
+        onlineRequest: () => axios.post(`/frontdesk/checkin/${bookingId}`),
+      });
+      if (result.offlineQueued) {
+        toast.info('Cevrimdisi: check-in kuyruga alindi, baglanti gelince gonderilecek.');
+      } else {
+        toast.success('Check-in tamamlandi');
+      }
       loadData();
     } catch (error) {
-      toast.error('Check-in');
+      const detail = error.response?.data?.detail;
+      const msg = (typeof detail === 'object' && detail?.message) || (typeof detail === 'string' ? detail : null);
+      toast.error(msg || 'Check-in basarisiz');
     }
   };
 

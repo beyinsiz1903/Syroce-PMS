@@ -10,13 +10,19 @@ const CACHE_NAME = `hotel-pms-${CACHE_VERSION}`;
 // Auth ayrımı: kullanıcı değişimi sonrası tüm cache'i drop edebilmek için
 // client'lar `postMessage({ type: 'AUTH_CHANGED' })` gönderir → SW siler.
 const OFFLINE_DB_NAME = 'SyroceOffline';
-const OFFLINE_DB_VERSION = 1;
+// v2: checkinQueue store eklendi (çevrimdışı ön büro girişleri). Frontend
+// tarafı (src/utils/offlineQueueDB.jsx) ile aynı versiyon olmalı.
+const OFFLINE_DB_VERSION = 2;
 const MEDIA_QUEUE_STORE = 'mediaQueue';
 const TASK_QUEUE_STORE = 'taskQueue';
 const NOTIFICATION_LOG_STORE = 'notificationLog';
+const CHECKIN_QUEUE_STORE = 'checkinQueue';
 const MEDIA_SYNC_TAG = 'sync-media-uploads';
 const TASK_SYNC_TAG = 'sync-task-updates';
 const NOTIFICATION_SYNC_TAG = 'sync-notification-log';
+const CHECKIN_SYNC_TAG = 'sync-checkins';
+// Çevrimdışı kuyruğun tekrar oynatılacağı tek idempotent uç.
+const CHECKIN_SYNC_ENDPOINT = '/api/frontdesk/v2/checkin';
 
 // Assets to cache immediately on install
 const PRECACHE_ASSETS = [
@@ -73,6 +79,13 @@ const ROUTE_STRATEGIES = [
   },
   {
     pattern: /\/api\/(pms|bookings)/,
+    strategy: CACHE_STRATEGIES.NETWORK_FIRST,
+    cacheDuration: 5 * 60 * 1000,
+  },
+  // Ön büro okuma listeleri (arrivals/departures/in-house/oda durumu): çevrimdışı
+  // okunabilirlik için son taze yanıtı cache'le, internet varken ağ-öncelikli.
+  {
+    pattern: /\/api\/(unified|housekeeping|frontdesk)\//,
     strategy: CACHE_STRATEGIES.NETWORK_FIRST,
     cacheDuration: 5 * 60 * 1000,
   },
@@ -348,6 +361,11 @@ self.addEventListener('message', (event) => {
   if (data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+  // Sayfa bağlamından tetiklenen yedek senkronizasyon (Background Sync API
+  // desteklenmeyen tarayıcılar / 'online' olayı için).
+  if (data.type === 'PROCESS_CHECKIN_QUEUE') {
+    event.waitUntil(processCheckinQueue());
+  }
 });
 
 // Background sync for offline actions
@@ -358,6 +376,8 @@ self.addEventListener('sync', (event) => {
     event.waitUntil(processMediaQueue());
   } else if (event.tag === TASK_SYNC_TAG) {
     event.waitUntil(processTaskQueue());
+  } else if (event.tag === CHECKIN_SYNC_TAG) {
+    event.waitUntil(processCheckinQueue());
   } else if (event.tag === NOTIFICATION_SYNC_TAG || event.tag === 'sync-offline-actions') {
     event.waitUntil(broadcastClientMessage({ type: 'SYNC_NOTIFICATION_LOG' }));
   }
@@ -397,6 +417,10 @@ async function openOfflineDB() {
       }
       if (!db.objectStoreNames.contains(NOTIFICATION_LOG_STORE)) {
         const store = db.createObjectStore(NOTIFICATION_LOG_STORE, { keyPath: 'id' });
+        store.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(CHECKIN_QUEUE_STORE)) {
+        const store = db.createObjectStore(CHECKIN_QUEUE_STORE, { keyPath: 'id' });
         store.createIndex('createdAt', 'createdAt', { unique: false });
       }
     };
@@ -588,6 +612,75 @@ async function processTaskQueue() {
     }
   } catch (error) {
     console.error('[SW] processTaskQueue error', error);
+  }
+}
+
+async function processCheckinQueue() {
+  try {
+    const items = await getAllFromStore(CHECKIN_QUEUE_STORE);
+    if (!items.length) {
+      return;
+    }
+
+    for (const item of items) {
+      // Operatör müdahalesi bekleyen çakışmaları tekrar denemeyiz.
+      if (item.status === 'conflict') {
+        continue;
+      }
+      if (!item.bookingId) {
+        await removeFromStore(CHECKIN_QUEUE_STORE, item.id);
+        continue;
+      }
+
+      const key = item.idempotencyKey || item.id;
+      try {
+        const response = await fetch(CHECKIN_SYNC_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': key,
+            ...buildAuthHeader(item.authToken)
+          },
+          body: JSON.stringify({ booking_id: item.bookingId, idempotency_key: key })
+        });
+
+        if (response.ok) {
+          await removeFromStore(CHECKIN_QUEUE_STORE, item.id);
+          await broadcastClientMessage({
+            type: 'CHECKIN_SYNCED',
+            payload: { id: item.id, bookingId: item.bookingId }
+          });
+        } else if (response.status === 401 || response.status >= 500) {
+          // 401: token tazelenmesi gerek (sayfa bağlamı axios silent-refresh ile
+          // halleder); 5xx: geçici. Kuyrukta bırak, sonraki sync denesin.
+          console.warn('[SW] Check-in sync transient, will retry', response.status);
+        } else {
+          // 4xx iş hatası (oda dolu / geçersiz durum / yetki) → çakışma.
+          let detail = null;
+          try {
+            const data = await response.json();
+            detail = data?.detail ?? data;
+          } catch (err) {
+            detail = null;
+          }
+          item.status = 'conflict';
+          item.error = detail;
+          item.httpStatus = response.status;
+          item.updatedAt = Date.now();
+          await updateStoreEntry(CHECKIN_QUEUE_STORE, item);
+          await broadcastClientMessage({
+            type: 'CHECKIN_CONFLICT',
+            payload: { id: item.id, bookingId: item.bookingId, status: response.status, detail }
+          });
+        }
+      } catch (err) {
+        // Ağ hatası → hâlâ çevrimdışı; döngüyü durdur, sonraki sync denesin.
+        console.warn('[SW] Check-in sync network error, still offline', err);
+        break;
+      }
+    }
+  } catch (error) {
+    console.error('[SW] processCheckinQueue error', error);
   }
 }
 
