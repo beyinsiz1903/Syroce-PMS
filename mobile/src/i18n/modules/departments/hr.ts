@@ -37,6 +37,7 @@ export const hr = {
   announcementsUnread: 'Okunmamış',
   announcementsTotal: 'Toplam Duyuru',
   newBadge: 'Yeni',
+  markReadHint: 'Okundu olarak işaretlemek için dokunun',
   priorities: {
     high: 'Yüksek',
     urgent: 'Acil',

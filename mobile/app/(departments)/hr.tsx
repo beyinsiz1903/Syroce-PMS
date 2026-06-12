@@ -39,6 +39,7 @@ import {
   listAttendanceRecords,
   listStaff,
   listAnnouncements,
+  markAnnouncementRead,
   getPerformanceSummary,
   decideLeaveRequest,
   type Shift,
@@ -545,9 +546,56 @@ function StaffPanel({ query }: { query: UseQueryResult<StaffList> }) {
 // göre renkli accent + okunmamışlar için "Yeni" rozeti. Salt-okunur.
 function AnnouncementsPanel({ query }: { query: UseQueryResult<AnnouncementList> }) {
   const c = useTheme();
+  const qc = useQueryClient();
   const data = query.data;
   const items = data?.items ?? [];
   const empty = items.length === 0;
+
+  // Tap-to-read: optimistically flip the tapped item to read and decrement the
+  // unread counter so the "Yeni" badge clears instantly. The backend caches the
+  // list per-user for a few seconds, so a plain invalidate could refetch the
+  // stale (still-unread) snapshot — the optimistic patch keeps the UI correct
+  // until the cache expires; we still invalidate so the server stays the source
+  // of truth on the next fetch.
+  const markRead = useMutation({
+    mutationFn: (id: string) => markAnnouncementRead(id),
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['hr-announcements'] });
+      const prev = qc.getQueryData<AnnouncementList>(['hr-announcements']);
+      qc.setQueryData<AnnouncementList>(['hr-announcements'], (curr) => {
+        if (!curr) return curr;
+        let cleared = false;
+        const next = curr.items.map((a) => {
+          if (a.id === id && a.read === false) {
+            cleared = true;
+            return { ...a, read: true };
+          }
+          return a;
+        });
+        return {
+          items: next,
+          unreadCount: cleared
+            ? Math.max(0, curr.unreadCount - 1)
+            : curr.unreadCount,
+        };
+      });
+      return { prev };
+    },
+    onError: (_err, _id, ctx) => {
+      haptic.error();
+      if (ctx?.prev) qc.setQueryData(['hr-announcements'], ctx.prev);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['hr-announcements'] });
+    },
+  });
+
+  const onAnnouncementPress = (a: Announcement) => {
+    haptic.tap();
+    if (a.read === false && !markRead.isPending) {
+      markRead.mutate(a.id);
+    }
+  };
 
   return (
     <>
@@ -580,50 +628,65 @@ function AnnouncementsPanel({ query }: { query: UseQueryResult<AnnouncementList>
               const tone = priorityTone(a.priority);
               const unread = a.read === false;
               return (
-                <Card
+                <Pressable
                   key={a.id}
-                  style={{ marginBottom: spacing.sm }}
-                  accent={toneColor(c, tone)}
+                  onPress={unread ? () => onAnnouncementPress(a) : undefined}
+                  disabled={!unread}
+                  accessibilityRole={unread ? 'button' : undefined}
+                  accessibilityState={unread ? { selected: false } : undefined}
+                  accessibilityHint={
+                    unread ? tr.departments.hr.markReadHint : undefined
+                  }
+                  style={({ pressed }) => ({
+                    opacity: pressed && unread ? 0.7 : 1,
+                  })}
                 >
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
-                      gap: spacing.sm,
-                    }}
+                  <Card
+                    style={{ marginBottom: spacing.sm }}
+                    accent={toneColor(c, tone)}
                   >
-                    <View style={{ flex: 1 }}>
-                      <Body style={{ fontWeight: '700', fontSize: 16 }}>
-                        {a.title || '—'}
-                      </Body>
-                      {a.message ? (
-                        <Muted style={{ marginTop: 4 }}>{a.message}</Muted>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: spacing.sm,
+                      }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Body style={{ fontWeight: '700', fontSize: 16 }}>
+                          {a.title || '—'}
+                        </Body>
+                        {a.message ? (
+                          <Muted style={{ marginTop: 4 }}>{a.message}</Muted>
+                        ) : null}
+                      </View>
+                      {unread ? (
+                        <Badge label={tr.departments.hr.newBadge} tone="primary" />
                       ) : null}
                     </View>
-                    {unread ? <Badge label={tr.departments.hr.newBadge} tone="primary" /> : null}
-                  </View>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginTop: spacing.md,
-                    }}
-                  >
-                    {a.created_at ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Ionicons name="time-outline" size={13} color={c.textMuted} />
-                        <Muted>{formatDate(a.created_at)}</Muted>
-                      </View>
-                    ) : (
-                      <View />
-                    )}
-                    {a.priority ? (
-                      <Badge label={priorityLabel(a.priority)} tone={tone} />
-                    ) : null}
-                  </View>
-                </Card>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginTop: spacing.md,
+                      }}
+                    >
+                      {a.created_at ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Ionicons name="time-outline" size={13} color={c.textMuted} />
+                          <Muted>{formatDate(a.created_at)}</Muted>
+                        </View>
+                      ) : (
+                        <View />
+                      )}
+                      {a.priority ? (
+                        <Badge label={priorityLabel(a.priority)} tone={tone} />
+                      ) : null}
+                    </View>
+                  </Card>
+                </Pressable>
               );
             })}
           </View>

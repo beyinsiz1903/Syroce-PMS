@@ -181,6 +181,18 @@ export async function listAnnouncements(params?: {
   return { items, unreadCount: res?.unread_count ?? 0 };
 }
 
+// PUT /api/notifications/{id}/mark-read — auth-only; the backend scopes the
+// update to the caller's own user_id / tenant_id, so a user can only flip the
+// read state of a notification addressed to them. RBAC is unchanged.
+export async function markAnnouncementRead(
+  notificationId: string,
+): Promise<{ notification_id: string }> {
+  return api.put<{ notification_id: string }>(
+    `/api/notifications/${encodeURIComponent(notificationId)}/mark-read`,
+    {},
+  );
+}
+
 // The backend's 2-stage leave state machine (Task #263):
 //   pending → dept_approve → dept_approved → approve → approved
 //   pending | dept_approved → reject → rejected (note ZORUNLU)
