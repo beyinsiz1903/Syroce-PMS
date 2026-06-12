@@ -57,6 +57,10 @@ export default function FrontDeskLayout() {
         options={{ title: tr.availability.title, tabBarIcon: tabIcon('grid', 'grid-outline') }}
       />
       <Tabs.Screen
+        name="rooms"
+        options={{ title: tr.tabs.rooms, tabBarIcon: tabIcon('bed', 'bed-outline') }}
+      />
+      <Tabs.Screen
         name="guests"
         options={{ title: tr.tabs.guests, tabBarIcon: tabIcon('people', 'people-outline') }}
       />

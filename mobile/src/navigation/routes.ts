@@ -75,6 +75,8 @@ export const ROUTES = {
   reservations: '/(frontdesk)/reservations',
   reservationDetail: '/(frontdesk)/reservation',
   availability: '/(frontdesk)/availability',
+  frontdeskRooms: '/(frontdesk)/rooms',
+  frontdeskGuests: '/(frontdesk)/guests',
   guestBookings: '/(guest)',
   guestOnlineCheckin: '/(guest)/checkin',
   guestRoomService: '/(guest)/roomservice',

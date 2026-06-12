@@ -1,11 +1,11 @@
 import React, { useCallback } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import {
   Badge,
   Body,
-  Button,
   Card,
   EmptyState,
   H1,
@@ -13,12 +13,13 @@ import {
   SectionTitle,
   SkeletonCard,
 } from '../../src/components/ui';
-import { KpiCard, KpiRow } from '../../src/components/KpiCard';
+import { KpiCard } from '../../src/components/KpiCard';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
-import { spacing, useTheme } from '../../src/theme';
+import { radius, spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import {
   Booking,
+  getInHouse,
   getNoShowRisk,
   getTodayArrivals,
   getTodayDepartures,
@@ -26,6 +27,63 @@ import {
 import { formatCurrency, formatTime } from '../../src/utils/format';
 import { isOffline } from '../../src/utils/errors';
 import { ROUTES } from '../../src/navigation/routes';
+
+type IoniconName = keyof typeof Ionicons.glyphMap;
+
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+// A large, thumb-friendly quick-action tile: tinted icon disc over a bold
+// label inside a premium card. Pressed state mirrors the kit Button (scale +
+// fade) so the dashboard feels of-a-piece.
+function QuickAction({
+  icon,
+  label,
+  tone,
+  onPress,
+  testID,
+}: {
+  icon: IoniconName;
+  label: string;
+  tone: string;
+  onPress: () => void;
+  testID?: string;
+}) {
+  const c = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => ({
+        width: '48%',
+        opacity: pressed ? 0.9 : 1,
+        transform: [{ scale: pressed ? 0.98 : 1 }],
+      })}
+    >
+      <Card style={{ minHeight: 100, justifyContent: 'space-between' }}>
+        <View
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: radius.pill,
+            backgroundColor: tone + '1f',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Ionicons name={icon} size={22} color={tone} />
+        </View>
+        <Text
+          style={{ color: c.text, fontSize: 15, fontWeight: '700', marginTop: spacing.md }}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+      </Card>
+    </Pressable>
+  );
+}
 
 function BookingRow({
   b,
@@ -79,25 +137,53 @@ export default function TodayScreen() {
 
   const arrivals = useQuery({ queryKey: ['arrivals-today'], queryFn: getTodayArrivals });
   const departures = useQuery({ queryKey: ['departures-today'], queryFn: getTodayDepartures });
+  const inhouse = useQuery({ queryKey: ['inhouse'], queryFn: getInHouse });
   const noshows = useQuery({ queryKey: ['noshow-today'], queryFn: getNoShowRisk });
 
   const refreshing = arrivals.isFetching && !arrivals.isLoading;
   const onRefresh = useCallback(() => {
     arrivals.refetch();
     departures.refetch();
+    inhouse.refetch();
     noshows.refetch();
-  }, [arrivals, departures, noshows]);
+  }, [arrivals, departures, inhouse, noshows]);
 
   const offline = arrivals.isError && isOffline(arrivals.error);
 
   const arrivalsData = arrivals.data || [];
   const departuresData = departures.data || [];
+  const inhouseData = inhouse.data || [];
   const noshowsData = noshows.data || [];
+
+  // Walk-in summary = today's walk-ins, derived from real in-house data
+  // (walk-ins auto-check-in and are tagged source==='walk_in' server-side).
+  const today = todayISO();
+  const walkinCount = inhouseData.filter(
+    (b) => (b.source || '').toLowerCase() === 'walk_in' && (b.check_in || '').slice(0, 10) === today,
+  ).length;
+
+  const summary: {
+    label: string;
+    value: number;
+    tone: 'info' | 'default' | 'success' | 'danger' | 'warning';
+    icon: IoniconName;
+  }[] = [
+    { label: tr.today.summaryArrivals, value: arrivalsData.length, tone: 'info', icon: 'log-in-outline' },
+    { label: tr.today.summaryDepartures, value: departuresData.length, tone: 'default', icon: 'log-out-outline' },
+    { label: tr.today.summaryInhouse, value: inhouseData.length, tone: 'success', icon: 'bed-outline' },
+    {
+      label: tr.today.summaryNoShow,
+      value: noshowsData.length,
+      tone: noshowsData.length > 0 ? 'danger' : 'success',
+      icon: 'alert-circle-outline',
+    },
+    { label: tr.today.summaryWalkin, value: walkinCount, tone: 'warning', icon: 'person-add-outline' },
+  ];
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, gap: spacing.md }}
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />
         }
@@ -106,46 +192,47 @@ export default function TodayScreen() {
 
         <H1>{tr.today.title}</H1>
 
-        <KpiRow>
-          <KpiCard
-            label={tr.today.summaryArrivals}
-            value={String(arrivalsData.length)}
-            tone="info"
-            icon="log-in-outline"
-          />
-          <KpiCard
-            label={tr.today.summaryDepartures}
-            value={String(departuresData.length)}
-            tone="default"
-            icon="log-out-outline"
-          />
-          <KpiCard
-            label={tr.today.summaryNoShow}
-            value={String(noshowsData.length)}
-            tone={noshowsData.length > 0 ? 'danger' : 'success'}
-            icon="alert-circle-outline"
-          />
-        </KpiRow>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+          {summary.map((s) => (
+            <View key={s.label} style={{ width: '48%' }}>
+              <KpiCard label={s.label} value={String(s.value)} tone={s.tone} icon={s.icon} />
+            </View>
+          ))}
+        </View>
 
-        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-          <View style={{ flex: 1 }}>
-            <Button
-              title={tr.today.quickCheckin}
-              icon="enter-outline"
-              onPress={() => router.push(ROUTES.checkin)}
-              testID="smoke-today-quick-checkin"
-              fullWidth
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button
-              title={tr.today.quickCheckout}
-              icon="exit-outline"
-              variant="secondary"
-              onPress={() => router.push(ROUTES.checkout)}
-              fullWidth
-            />
-          </View>
+        <SectionTitle title={tr.today.quickActions} />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }}>
+          <QuickAction
+            icon="enter-outline"
+            label={tr.today.actionCheckin}
+            tone={c.success}
+            onPress={() => router.push(ROUTES.checkin)}
+            testID="smoke-today-quick-checkin"
+          />
+          <QuickAction
+            icon="exit-outline"
+            label={tr.today.actionCheckout}
+            tone={c.info}
+            onPress={() => router.push(ROUTES.checkout)}
+          />
+          <QuickAction
+            icon="calendar-outline"
+            label={tr.today.actionNewReservation}
+            tone={c.primary}
+            onPress={() => router.push(ROUTES.reservations)}
+          />
+          <QuickAction
+            icon="person-add-outline"
+            label={tr.today.actionWalkin}
+            tone={c.warning}
+            onPress={() => router.push(ROUTES.walkin)}
+          />
+          <QuickAction
+            icon="search-outline"
+            label={tr.today.actionGuestSearch}
+            tone={c.vip}
+            onPress={() => router.push(ROUTES.frontdeskGuests)}
+          />
         </View>
 
         <SectionTitle title={tr.today.arrivals} />
@@ -217,10 +304,6 @@ export default function TodayScreen() {
           </>
         ) : null}
       </ScrollView>
-
-      <View style={{ position: 'absolute', right: spacing.lg, bottom: spacing.xl }}>
-        <Button title={tr.today.walkin} icon="person-add-outline" onPress={() => router.push(ROUTES.walkin)} />
-      </View>
     </View>
   );
 }

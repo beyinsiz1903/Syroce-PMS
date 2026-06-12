@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-// F10A — Mobile smoke matrix (24 screens, render-only).
+// F10A — Mobile smoke matrix (28 screens, render-only).
 // ─────────────────────────────────────────────────────────────────────────
 // Inventory source of truth: docs/F10_MOBILE_COVERAGE_ROADMAP.md §2.1
 // File source of truth:      mobile/app/**/*.tsx (Expo Router file-based)
@@ -25,11 +25,11 @@ export type Screen = {
     crit: 'P0' | 'P1' | 'P2' | 'P3';
 };
 
-// 1 (auth) + 8 (frontdesk) + 2 (gm) + 3 (housekeeping) + 13 (guest) = 27
+// 1 (auth) + 9 (frontdesk) + 2 (gm) + 3 (housekeeping) + 13 (guest) = 28
 // surfaces. The frontdesk group gained the Reservations + Availability
-// tabs (Task #255); both are covered render-only here and exercised
-// interactively in smoke.spec.ts. We faithfully cover every file under
-// `mobile/app/`.
+// tabs (Task #255) and the Rooms board (Task #508); each is covered
+// render-only here and exercised interactively in smoke.spec.ts. We
+// faithfully cover every file under `mobile/app/`.
 export const SCREENS: Screen[] = [
     // ── (auth) ────────────────────────────────────────────────────────
     { key: 'auth_login', role: 'auth', label: 'Login', path: '/login', crit: 'P0' },
@@ -38,6 +38,7 @@ export const SCREENS: Screen[] = [
     { key: 'fd_today',    role: 'frontdesk', label: 'Frontdesk · Bugün',   path: '/',         crit: 'P0' },
     { key: 'fd_reservations', role: 'frontdesk', label: 'Frontdesk · Rezervasyonlar', path: '/reservations', crit: 'P1' },
     { key: 'fd_availability', role: 'frontdesk', label: 'Frontdesk · Müsaitlik',      path: '/availability', crit: 'P1' },
+    { key: 'fd_rooms',    role: 'frontdesk', label: 'Frontdesk · Odalar',     path: '/rooms',    crit: 'P1' },
     { key: 'fd_checkin',  role: 'frontdesk', label: 'Frontdesk · Check-in',  path: '/checkin',  crit: 'P0' },
     { key: 'fd_checkout', role: 'frontdesk', label: 'Frontdesk · Check-out', path: '/checkout', crit: 'P0' },
     { key: 'fd_guests',   role: 'frontdesk', label: 'Frontdesk · Misafirler',path: '/guests',   crit: 'P1' },

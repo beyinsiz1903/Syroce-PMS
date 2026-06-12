@@ -16,6 +16,7 @@ export type Booking = {
   vip_status?: boolean;
   special_requests?: string;
   no_show_risk?: number;
+  source?: string;
 };
 
 type BookingListResponse =
@@ -23,6 +24,7 @@ type BookingListResponse =
   | {
       arrivals?: Booking[];
       departures?: Booking[];
+      in_house?: Booking[];
       bookings?: Booking[];
       items?: Booking[];
       data?: { arrivals?: Booking[]; departures?: Booking[] };
@@ -31,6 +33,7 @@ type BookingListResponse =
 type UnwrapKey =
   | 'arrivals'
   | 'departures'
+  | 'in_house'
   | 'bookings'
   | 'items'
   | 'data.arrivals'
@@ -67,6 +70,19 @@ export async function getTodayDepartures(): Promise<Booking[]> {
   try {
     const res = await api.get<BookingListResponse>('/api/unified/today-departures');
     return unwrap(res, ['departures', 'bookings', 'items', 'data.departures']);
+  } catch {
+    return [];
+  }
+}
+
+// GET /api/unified/in-house (frontdesk_router.py) → { in_house: [...], count }
+// Currently checked-in guests ("Konaklayanlar"). Walk-in bookings auto-check-in,
+// so today's walk-ins surface here tagged source==='walk_in' (set server-side by
+// the walk-in service) — used for the dashboard Walk-in summary count.
+export async function getInHouse(): Promise<Booking[]> {
+  try {
+    const res = await api.get<BookingListResponse>('/api/unified/in-house');
+    return unwrap(res, ['in_house', 'bookings', 'items']);
   } catch {
     return [];
   }
