@@ -23,6 +23,8 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Badge, Body, EmptyState, FadeInView, H1, H2, Muted } from '../../src/components/ui';
+import { DatePicker } from '../../src/components/DatePicker';
+import { FilterChips, type FilterChipOption } from '../../src/components/FilterChips';
 import { cardShadow, radius, spacing, useTheme, type ThemeColors } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { listRooms, type Room } from '../../src/api/rooms';
@@ -45,6 +47,8 @@ import {
   buildDayList,
   computeDropTarget,
   diffDays,
+  distinctRoomTypes,
+  filterCalendarRooms,
   hasMove,
   nextViewFromZoom,
   placeReservations,
@@ -52,6 +56,7 @@ import {
   roomCalStatus,
   toDateOnly,
   type CalendarView,
+  type OccupancyFilter,
   type PlacedBar,
   type RoomCalStatus,
 } from '../../src/utils/reservationCalendar';
@@ -259,6 +264,8 @@ export default function ReservationCalendarScreen() {
   const [selected, setSelected] = useState<PlacedBar | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [roomTypeFilter, setRoomTypeFilter] = useState<string>('all');
+  const [occupancyFilter, setOccupancyFilter] = useState<OccupancyFilter>('all');
 
   const headerScrollRef = useRef<ScrollView>(null);
 
@@ -286,7 +293,8 @@ export default function ReservationCalendarScreen() {
   }, [roomsQuery.data]);
 
   // Resolve every reservation to a real room row (prefer room_id, fall back to
-  // matching room_number) so a bar always lands on the right line.
+  // matching room_number) so a bar always lands on the right line. Built from
+  // the FULL room set so resolution is independent of the active filter.
   const numberToId = useMemo(() => {
     const m = new Map<string, string>();
     rooms.forEach((r) => {
@@ -295,24 +303,66 @@ export default function ReservationCalendarScreen() {
     return m;
   }, [rooms]);
 
-  const roomIdToIndex = useMemo(() => {
-    const m = new Map<string, number>();
-    rooms.forEach((r, i) => m.set(r.id, i));
-    return m;
-  }, [rooms]);
+  const fullRoomIds = useMemo(() => new Set(rooms.map((r) => r.id)), [rooms]);
 
-  const bars = useMemo(() => {
+  // All bars across every room in the window — the basis for both occupancy
+  // detection (which rooms to keep under the "Dolu/Müsait" chip) and the drawn
+  // bars after row filtering.
+  const allBars = useMemo(() => {
     const resolved: Reservation[] = (reservationsQuery.data ?? []).map((r) => {
-      if (r.room_id && roomIdToIndex.has(r.room_id)) return r;
+      if (r.room_id && fullRoomIds.has(r.room_id)) return r;
       if (r.room_number && numberToId.has(r.room_number)) {
         return { ...r, room_id: numberToId.get(r.room_number) };
       }
       return r;
     });
-    return placeReservations(resolved, dayList).filter((b) => roomIdToIndex.has(b.roomId));
-  }, [reservationsQuery.data, dayList, roomIdToIndex, numberToId]);
+    return placeReservations(resolved, dayList).filter((b) => fullRoomIds.has(b.roomId));
+  }, [reservationsQuery.data, dayList, fullRoomIds, numberToId]);
 
-  // Per-(room,day) occupancy from the placed bars — used so an empty cell can
+  // Rooms with at least one reservation bar anywhere in the visible window.
+  const occupiedRoomIds = useMemo(() => {
+    const s = new Set<string>();
+    allBars.forEach((b) => s.add(b.roomId));
+    return s;
+  }, [allBars]);
+
+  // Distinct room types → filter chip options (locale-sorted, plus "Tümü").
+  const roomTypeOptions = useMemo<FilterChipOption[]>(
+    () => [
+      { value: 'all', label: tr.calendar.filterAll },
+      ...distinctRoomTypes(rooms).map((t) => ({ value: t, label: t })),
+    ],
+    [rooms],
+  );
+
+  const occupancyOptions = useMemo<FilterChipOption[]>(
+    () => [
+      { value: 'all', label: tr.calendar.filterAll },
+      { value: 'occupied', label: tr.calendar.filterOccupied },
+      { value: 'available', label: tr.calendar.filterAvailable },
+    ],
+    [],
+  );
+
+  // Visible rows after applying the type + occupancy chips. The filter only
+  // narrows what is drawn; the backend query is untouched.
+  const visibleRooms = useMemo(
+    () => filterCalendarRooms(rooms, occupiedRoomIds, roomTypeFilter, occupancyFilter),
+    [rooms, occupiedRoomIds, roomTypeFilter, occupancyFilter],
+  );
+
+  const roomIdToIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    visibleRooms.forEach((r, i) => m.set(r.id, i));
+    return m;
+  }, [visibleRooms]);
+
+  const bars = useMemo(
+    () => allBars.filter((b) => roomIdToIndex.has(b.roomId)),
+    [allBars, roomIdToIndex],
+  );
+
+  // Per-(room,day) occupancy from the drawn bars — used so an empty cell can
   // tell "müsait" from "dolu" without re-deriving the overlap.
   const occupied = useMemo(() => {
     const s = new Set<string>();
@@ -356,7 +406,7 @@ export default function ReservationCalendarScreen() {
         dayWidth,
         rowHeight: ROW_HEIGHT,
         dayCount,
-        roomCount: rooms.length,
+        roomCount: visibleRooms.length,
         nights: bar.nights,
       });
       const trueNights = (() => {
@@ -365,7 +415,7 @@ export default function ReservationCalendarScreen() {
         if (ci && co) return Math.max(1, diffDays(ci, co));
         return bar.nights;
       })();
-      const targetRoom = rooms[target.roomIndex];
+      const targetRoom = visibleRooms[target.roomIndex];
       const plan = planMove({
         changedRoom: target.changedRoom,
         changedDay: target.changedDay,
@@ -441,7 +491,7 @@ export default function ReservationCalendarScreen() {
         }
       })();
     },
-    [roomIdToIndex, dayWidth, dayCount, rooms, dayList, queryClient, flashToast],
+    [roomIdToIndex, dayWidth, dayCount, visibleRooms, dayList, queryClient, flashToast],
   );
 
   const onBodyScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -460,7 +510,8 @@ export default function ReservationCalendarScreen() {
   const loading = roomsQuery.isLoading || reservationsQuery.isLoading;
   const errored = roomsQuery.isError || reservationsQuery.isError;
   const gridWidth = dayCount * dayWidth;
-  const gridHeight = rooms.length * ROW_HEIGHT;
+  const gridHeight = visibleRooms.length * ROW_HEIGHT;
+  const filtered = roomTypeFilter !== 'all' || occupancyFilter !== 'all';
   const compact = view === 'month';
 
   const shiftWindow = (dir: number) => setStartDate(addDaysISO(startDate, dir * dayCount));
@@ -560,6 +611,20 @@ export default function ReservationCalendarScreen() {
           </Pressable>
         </View>
 
+        {/* Jump to an arbitrary date (besides the Today shortcut above) */}
+        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.sm }}>
+          <DatePicker
+            testID="calendar-jump-date"
+            value={startDate}
+            placeholder={tr.calendar.jumpToDate}
+            onChange={(iso) => {
+              if (!iso) return;
+              haptic.tap();
+              setStartDate(iso);
+            }}
+          />
+        </View>
+
         {/* Legend */}
         <View
           testID="calendar-legend"
@@ -587,6 +652,27 @@ export default function ReservationCalendarScreen() {
           ))}
         </View>
 
+        {/* Visible-grid filters (room type + occupancy). These only narrow the
+            drawn rows; the backend search is never re-issued. */}
+        {!loading && !errored && rooms.length > 0 ? (
+          <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.sm, gap: spacing.xs }}>
+            {roomTypeOptions.length > 2 ? (
+              <FilterChips
+                testID="calendar-filter-roomtype"
+                options={roomTypeOptions}
+                value={roomTypeFilter}
+                onChange={setRoomTypeFilter}
+              />
+            ) : null}
+            <FilterChips
+              testID="calendar-filter-occupancy"
+              options={occupancyOptions}
+              value={occupancyFilter}
+              onChange={(v) => setOccupancyFilter(v as OccupancyFilter)}
+            />
+          </View>
+        ) : null}
+
         <View style={{ height: spacing.sm }} />
 
         {/* Grid */}
@@ -602,6 +688,12 @@ export default function ReservationCalendarScreen() {
           />
         ) : rooms.length === 0 ? (
           <EmptyState testID="calendar-empty" icon="bed-outline" title={tr.calendar.empty} />
+        ) : visibleRooms.length === 0 ? (
+          <EmptyState
+            testID="calendar-filter-empty"
+            icon="filter-outline"
+            title={tr.calendar.filterNoMatch}
+          />
         ) : (
           <View style={{ flex: 1 }}>
             {/* Sticky header row: corner + day columns (synced to body scroll) */}
@@ -614,7 +706,8 @@ export default function ReservationCalendarScreen() {
                 }}
               >
                 <Muted style={{ fontSize: 11, fontWeight: '700' }}>
-                  {rooms.length} {tr.calendar.rooms}
+                  {visibleRooms.length}
+                  {filtered ? `/${rooms.length}` : ''} {tr.calendar.rooms}
                 </Muted>
               </View>
               <ScrollView
@@ -662,7 +755,7 @@ export default function ReservationCalendarScreen() {
                 <View style={{ flexDirection: 'row' }}>
                   {/* Room label column (scrolls vertically with the grid) */}
                   <View style={{ width: ROOM_COL_WIDTH }}>
-                    {rooms.map((room, idx) => (
+                    {visibleRooms.map((room, idx) => (
                       <FadeInView
                         key={room.id}
                         delay={Math.min(idx * 18, 240)}
@@ -706,7 +799,7 @@ export default function ReservationCalendarScreen() {
                   >
                     <View style={{ width: gridWidth, height: gridHeight }}>
                       {/* Background cells */}
-                      {rooms.map((room, ri) => (
+                      {visibleRooms.map((room, ri) => (
                         <View
                           key={room.id}
                           style={{

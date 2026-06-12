@@ -10,6 +10,8 @@ import assert from 'node:assert/strict';
 import {
   buildDayList,
   computeDropTarget,
+  distinctRoomTypes,
+  filterCalendarRooms,
   hasMove,
   isActiveReservation,
   nextViewFromZoom,
@@ -210,4 +212,71 @@ test('planMove: room change only emits an assign, date change preserves nights',
   });
   assert.deepEqual(none, {});
   assert.equal(hasMove(none), false);
+});
+
+// ── distinctRoomTypes ──────────────────────────────────────────────────────
+test('distinctRoomTypes: unique, locale-sorted, blanks dropped', () => {
+  const rooms = [
+    { room_type: 'Suite' },
+    { room_type: 'Standart' },
+    { room_type: 'Suite' },
+    { room_type: '  ' },
+    {},
+    { room_type: 'Çift Kişilik' },
+  ];
+  assert.deepEqual(distinctRoomTypes(rooms), ['Çift Kişilik', 'Standart', 'Suite']);
+});
+
+test('distinctRoomTypes: empty list yields no options', () => {
+  assert.deepEqual(distinctRoomTypes([]), []);
+});
+
+// ── filterCalendarRooms ────────────────────────────────────────────────────
+test('filterCalendarRooms: "all"/"all" returns every room unchanged', () => {
+  const rooms = [
+    { id: 'a', room_type: 'Suite' },
+    { id: 'b', room_type: 'Standart' },
+  ];
+  assert.deepEqual(filterCalendarRooms(rooms, new Set(['a']), 'all', 'all'), rooms);
+});
+
+test('filterCalendarRooms: room type narrows rows', () => {
+  const rooms = [
+    { id: 'a', room_type: 'Suite' },
+    { id: 'b', room_type: 'Standart' },
+    { id: 'c', room_type: 'Suite' },
+  ];
+  const out = filterCalendarRooms(rooms, new Set(), 'Suite', 'all');
+  assert.deepEqual(out.map((r) => r.id), ['a', 'c']);
+});
+
+test('filterCalendarRooms: occupancy partitions by occupied set', () => {
+  const rooms = [
+    { id: 'a', room_type: 'Suite' },
+    { id: 'b', room_type: 'Standart' },
+    { id: 'c', room_type: 'Suite' },
+  ];
+  const occupied = new Set(['a', 'c']);
+  assert.deepEqual(
+    filterCalendarRooms(rooms, occupied, 'all', 'occupied').map((r) => r.id),
+    ['a', 'c'],
+  );
+  assert.deepEqual(
+    filterCalendarRooms(rooms, occupied, 'all', 'available').map((r) => r.id),
+    ['b'],
+  );
+});
+
+test('filterCalendarRooms: type + occupancy combine (AND)', () => {
+  const rooms = [
+    { id: 'a', room_type: 'Suite' },
+    { id: 'b', room_type: 'Suite' },
+    { id: 'c', room_type: 'Standart' },
+  ];
+  const occupied = new Set(['a', 'c']);
+  // Suite AND occupied -> only 'a'
+  assert.deepEqual(
+    filterCalendarRooms(rooms, occupied, 'Suite', 'occupied').map((r) => r.id),
+    ['a'],
+  );
 });

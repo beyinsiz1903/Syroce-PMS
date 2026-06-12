@@ -91,6 +91,42 @@ export type PlacedBar = {
   clippedEnd: boolean;
 };
 
+// ── Visible-grid filters (room type + occupancy) ────────────────────────────
+// The calendar always loads the same rooms + recent reservations; these helpers
+// only narrow what is DRAWN so the operator can focus a large property. They
+// never change the backend query (occupancy is derived from the bars already on
+// screen). Kept pure so they run under the node:test unit harness.
+
+export type OccupancyFilter = 'all' | 'occupied' | 'available';
+
+// Distinct, locale-sorted room types present in the list — feeds the type chips.
+export function distinctRoomTypes<T extends { room_type?: string }>(rooms: T[]): string[] {
+  const types = new Set<string>();
+  for (const r of rooms) {
+    const t = (r.room_type || '').trim();
+    if (t) types.add(t);
+  }
+  return [...types].sort((a, b) => a.localeCompare(b, 'tr'));
+}
+
+// Narrow the room rows by selected type ('all' = no type filter) and occupancy
+// within the visible window. `occupiedRoomIds` is the set of rooms that have at
+// least one reservation bar on screen, so 'occupied' / 'available' partition the
+// rooms by whether they are booked anywhere in the current date window.
+export function filterCalendarRooms<T extends { id: string; room_type?: string }>(
+  rooms: T[],
+  occupiedRoomIds: Set<string>,
+  roomType: string,
+  occupancy: OccupancyFilter,
+): T[] {
+  return rooms.filter((room) => {
+    if (roomType !== 'all' && (room.room_type || '').trim() !== roomType) return false;
+    if (occupancy === 'occupied' && !occupiedRoomIds.has(room.id)) return false;
+    if (occupancy === 'available' && occupiedRoomIds.has(room.id)) return false;
+    return true;
+  });
+}
+
 // Reservation statuses that no longer hold inventory and must not draw a bar.
 const RELEASED_STATUSES = new Set(['cancelled', 'canceled', 'no_show', 'voided']);
 
