@@ -25,10 +25,12 @@ import { useAuthStore } from '../../src/state/authStore';
 import { ROUTES } from '../../src/navigation/routes';
 import {
   createSpaAppointment,
+  getSpaAvailability,
   listSpaAppointments,
   listSpaServices,
   listSpaTherapists,
   type SpaAppointment,
+  type SpaAvailabilitySlot,
 } from '../../src/api/spa';
 import { listViewState } from '../../src/utils/departmentScreens';
 import { errorMessage, isOffline } from '../../src/utils/errors';
@@ -100,6 +102,17 @@ function buildStartsAt(dateISO: string, hhmm: string): string {
   return new Date(`${dateISO}T${hhmm}:00`).toISOString();
 }
 
+// Render a slot's UTC ISO start as a local HH:MM. This is the same wall time the
+// user sees in the appointment list (formatTime), and feeding it back through
+// buildStartsAt reconstructs the identical UTC instant — so selecting a slot and
+// submitting round-trips to the very window availability reported as free.
+function slotTimeValue(iso: string): string {
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
 // Spa & Wellness screen. Reads (appointments / services / therapists) are open
 // to any authenticated user; the (departments) entitlement just decides whether
 // the screen is shown. The "new appointment" form posts to a backend that still
@@ -155,6 +168,27 @@ export default function SpaScreen() {
     resetForm();
     setFDate(customDate || isoDate(new Date()));
     setFormOpen(true);
+  };
+
+  // Live availability: once a service + date are chosen we ask the backend for
+  // the therapist x slot grid so staff can pick a free slot instead of typing.
+  // Kept disabled until both are present (the endpoint requires a date and the
+  // service drives the block duration).
+  const availabilityQ = useQuery({
+    queryKey: ['spa-availability', fService, fDate],
+    queryFn: () => getSpaAvailability({ date: fDate!, service_id: fService }),
+    enabled: formOpen && !!fService && !!fDate,
+  });
+
+  // A slot is offered when the chosen therapist is free in it; with no therapist
+  // selected ("auto") we fall back to the any-therapist summary.
+  const slotOpen = (slot: SpaAvailabilitySlot): boolean => {
+    if (fTherapist) {
+      return slot.therapists.some(
+        (t) => t.therapist_id === fTherapist && t.available,
+      );
+    }
+    return slot.any_available;
   };
 
   const createMut = useMutation({
@@ -459,6 +493,79 @@ export default function SpaScreen() {
           keyboardType="numbers-and-punctuation"
           autoCapitalize="none"
         />
+
+        {/* Live availability slots — picking one fills the time field above. */}
+        <Muted>{S.availableSlots}</Muted>
+        {!fService || !fDate ? (
+          <Muted style={{ marginBottom: spacing.sm }}>{S.availabilityHint}</Muted>
+        ) : availabilityQ.isLoading ? (
+          <Muted style={{ marginBottom: spacing.sm }}>{S.availabilityLoading}</Muted>
+        ) : availabilityQ.error ? (
+          <Muted style={{ marginBottom: spacing.sm, color: c.danger }}>
+            {isOffline(availabilityQ.error)
+              ? tr.app.offline
+              : errorMessage(availabilityQ.error, S.availabilityError)}
+          </Muted>
+        ) : (() => {
+            const all = availabilityQ.data?.slots || [];
+            if (all.length === 0 || !all.some(slotOpen)) {
+              return (
+                <Muted style={{ marginBottom: spacing.sm }}>
+                  {S.noAvailableSlots}
+                </Muted>
+              );
+            }
+            return (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  gap: spacing.sm,
+                  marginBottom: spacing.sm,
+                }}
+              >
+                {all.map((slot) => {
+                  const label = slotTimeValue(slot.starts_at);
+                  const open = slotOpen(slot);
+                  const active = open && fTime === label;
+                  return (
+                    <Pressable
+                      key={slot.starts_at}
+                      onPress={() => open && setFTime(label)}
+                      disabled={!open}
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: !open, selected: active }}
+                      testID={`spa-slot-${label}`}
+                      style={{
+                        paddingVertical: spacing.sm,
+                        paddingHorizontal: spacing.md,
+                        borderRadius: radius.md,
+                        opacity: open ? 1 : 0.4,
+                        backgroundColor: active
+                          ? c.primary
+                          : open
+                            ? c.surfaceAlt
+                            : c.surface,
+                        borderWidth: 1,
+                        borderColor: active ? c.primary : c.border,
+                      }}
+                    >
+                      <Body
+                        style={{
+                          color: active ? c.primaryText : c.text,
+                          fontWeight: '600',
+                          textDecorationLine: open ? 'none' : 'line-through',
+                        }}
+                      >
+                        {label}
+                      </Body>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            );
+          })()}
+
         <Field
           label={S.guestName}
           value={fGuest}

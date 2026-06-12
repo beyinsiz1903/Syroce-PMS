@@ -35,6 +35,12 @@ export const spa = {
   therapistAuto: 'Otomatik ata',
   time: 'Saat',
   timePlaceholder: 'SS:DD (örn. 14:30)',
+  // Live availability slots
+  availableSlots: 'Müsait saatler',
+  availabilityHint: 'Hizmet ve tarih seçince müsait saatler listelenir',
+  availabilityLoading: 'Müsait saatler yükleniyor...',
+  availabilityError: 'Müsaitlik bilgisi alınamadı',
+  noAvailableSlots: 'Seçili gün için müsait saat yok',
   guestName: 'Misafir adı',
   guestNamePlaceholder: 'Ad Soyad',
   guestPhone: 'Telefon',

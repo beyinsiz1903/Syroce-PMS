@@ -69,6 +69,44 @@ export async function listSpaAppointments(params?: {
   return res?.appointments ?? [];
 }
 
+// GET /api/spa/availability — therapist x time-slot grid for a given day.
+// Each slot carries per-therapist availability plus an `any_available` summary
+// so the UI can offer free slots for quick selection and disable full ones.
+export type SpaAvailabilityTherapistSlot = {
+  therapist_id: string;
+  therapist_name?: string;
+  color?: string;
+  available: boolean;
+};
+
+export type SpaAvailabilitySlot = {
+  starts_at: string;
+  ends_at: string;
+  therapists: SpaAvailabilityTherapistSlot[];
+  any_available: boolean;
+};
+
+export type SpaAvailability = {
+  date: string;
+  duration_minutes?: number;
+  therapists: { id: string; name?: string; color?: string }[];
+  slots: SpaAvailabilitySlot[];
+  stats?: Record<string, number>;
+};
+
+// `date` is YYYY-MM-DD. `service_id` lets the backend block-check the slot for
+// the service's real duration instead of the default slot size.
+export async function getSpaAvailability(params: {
+  date: string;
+  service_id?: string;
+  slot_minutes?: number;
+}): Promise<SpaAvailability> {
+  const res = await api.get<SpaAvailability>('/api/spa/availability', params);
+  return (
+    res ?? { date: params.date, therapists: [], slots: [] }
+  );
+}
+
 // Payload for POST /api/spa/appointments. The backend derives ends_at, price,
 // currency and service_name from the chosen service, so the client only sends
 // the service, the start instant, the guest and the optional therapist / notes.
