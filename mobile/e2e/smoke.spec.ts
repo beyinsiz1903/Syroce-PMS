@@ -269,6 +269,91 @@ test.describe.serial('Mobile smoke · frontdesk · reservations + availability',
             `Availability console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
         ).toHaveLength(0);
     });
+
+    // ─────────────────────────────────────────────────────────────────
+    // F10A — Reservation calendar: tap a bar → detail bubble (Task #547).
+    // ─────────────────────────────────────────────────────────────────
+    // Task #541's smoke step only proved the calendar screen + chrome
+    // (view tabs, date nav, grid) render. This step exercises the real
+    // operator gesture: tapping a reservation bar (calendar-bar-<id>) must
+    // open the detail bubble (calendar-detail), the same way /reservations
+    // and /reports verify their tap-throughs above — so a regression in the
+    // tap→detail wiring surfaces here, not silently in production.
+    //
+    // The bar set depends on live pilot data overlapping the visible window,
+    // so we widen the window to the month view (same cached reservation
+    // query, just placed over ~30 days) to maximise the chance a real
+    // booking is reachable. When the pilot has zero reservations near today
+    // we assert the by-design state honestly — the calendar mounted and did
+    // NOT error — instead of faking a tap we never performed (no skip-as-pass).
+    test('[frontdesk] calendar bar tap → detail bubble açılır', async ({ page }) => {
+        const obs = attachObservers(page);
+
+        await page.goto('/calendar', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+        // Chrome assertion: the calendar screen mounted unconditionally.
+        const screen = page.locator('[data-testid="calendar-screen"]').first();
+        await expect(screen, 'Takvim ekranı render olmadı').toBeVisible({ timeout: 20_000 });
+
+        // Widen the visible window to the month view so a booking placed on
+        // any of ~30 days is reachable (the reservation query is shared and
+        // cached, so this re-places the same data — no extra fetch).
+        const monthTab = page.locator('[data-testid="calendar-view-month"]').first();
+        await expect(monthTab, 'Aylık görünüm sekmesi render olmadı').toBeVisible({
+            timeout: 15_000,
+        });
+        await monthTab.click();
+
+        // Let the room/reservation queries settle into bars before deciding
+        // whether a tap-through is exercisable.
+        const bars = page.locator('[data-testid^="calendar-bar-"]');
+        await bars
+            .first()
+            .waitFor({ state: 'visible', timeout: 15_000 })
+            .catch(() => {});
+        const barCount = await bars.count();
+        test.info().annotations.push({
+            type: 'calendar-bars',
+            description: String(barCount),
+        });
+
+        if (barCount > 0) {
+            // Tap the first reservation bar → the detail bubble opens.
+            await bars.first().click();
+            const detail = page.locator('[data-testid="calendar-detail"]').first();
+            await expect(detail, 'Rezervasyon barına dokununca detay balonu açılmadı').toBeVisible({
+                timeout: 15_000,
+            });
+
+            const inspect = await inspectPageContent(page);
+            expect(inspect.pii_findings ?? [], 'Takvim detayında PII leak').toHaveLength(0);
+
+            // Close cleanly so the bubble does not leak into later steps.
+            await page.locator('[data-testid="calendar-detail-close"]').first().click();
+            await expect(detail, 'Detay balonu kapanmadı').toBeHidden({ timeout: 10_000 });
+        } else {
+            // Honest empty-state: no reservation bar in the visible window.
+            // Assert the calendar reached a real rendered state and did NOT
+            // error out — we do NOT pass a tap that had no target.
+            await expect(
+                page.locator('[data-testid="calendar-error"]'),
+                'Takvim hata durumunda',
+            ).toHaveCount(0);
+            await expect(
+                page.locator('[data-testid="calendar-legend"]').first(),
+                'Takvim chrome render olmadı',
+            ).toBeVisible({ timeout: 15_000 });
+            const inspect = await inspectPageContent(page);
+            expect(inspect.ok, `Takvim boş/hata ekranı: ${inspect.reason}`).toBeTruthy();
+        }
+
+        const { consoleErrors } = obs.flush();
+        expect(
+            consoleErrors,
+            `Calendar console error: ${JSON.stringify(consoleErrors.slice(0, 3))}`,
+        ).toHaveLength(0);
+    });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
