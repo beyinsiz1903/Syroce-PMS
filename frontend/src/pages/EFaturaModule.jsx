@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { FileText, Send, Download, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { FileText, Download, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const EFaturaModule = () => {
@@ -38,13 +38,22 @@ const EFaturaModule = () => {
     }
   };
 
-  const handleSendEFatura = async (invoiceId) => {
+  const handleDownloadXml = async (invoiceId) => {
     try {
-      await axios.post(`/efatura/send/${invoiceId}`);
-      toast.success('E-Fatura sent successfully');
-      loadData();
+      const response = await axios.get(`/accounting/invoices/${invoiceId}/efatura-xml`, { responseType: 'blob' });
+      const disposition = response.headers['content-disposition'] || '';
+      const match = /filename="?([^"]+)"?/.exec(disposition);
+      const filename = match ? match[1] : `efatura-${invoiceId}.xml`;
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/xml' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
     } catch (error) {
-      toast.error('E-fatura gönderilemedi');
+      toast.error(t('invoice.efatura.downloadFailed') || 'XML indirilemedi');
     }
   };
 
@@ -60,18 +69,16 @@ const EFaturaModule = () => {
 
   const getStatusBadge = (status) => {
     const configs = {
-      pending: { color: 'bg-yellow-100 text-yellow-700', icon: <Clock className="w-3 h-3" /> },
-      generated: { color: 'bg-green-100 text-green-700', icon: <CheckCircle className="w-3 h-3" /> },
-      sent: { color: 'bg-blue-100 text-blue-700', icon: <Send className="w-3 h-3" /> },
-      accepted: { color: 'bg-green-100 text-green-700', icon: <CheckCircle className="w-3 h-3" /> },
-      rejected: { color: 'bg-red-100 text-red-700', icon: <XCircle className="w-3 h-3" /> },
-      error: { color: 'bg-red-100 text-red-700', icon: <XCircle className="w-3 h-3" /> }
+      pending: { color: 'bg-yellow-100 text-yellow-700', icon: <Clock className="w-3 h-3" />, label: t('invoice.efatura.statusPending') || 'Kuyrukta' },
+      xml_ready: { color: 'bg-blue-100 text-blue-700', icon: <FileText className="w-3 h-3" />, label: t('invoice.efatura.statusXmlReady') || 'XML Hazır' },
+      reported_externally: { color: 'bg-green-100 text-green-700', icon: <CheckCircle className="w-3 h-3" />, label: t('invoice.efatura.statusReportedExternally') || 'Harici Bildirildi' },
+      error: { color: 'bg-red-100 text-red-700', icon: <XCircle className="w-3 h-3" />, label: t('invoice.efatura.statusError') || 'Hata' }
     };
     const config = configs[status] || configs.pending;
     return (
       <Badge className={config.color}>
         {config.icon}
-        <span className="ml-1">{status}</span>
+        <span className="ml-1">{config.label}</span>
       </Badge>
     );
   };
@@ -158,16 +165,12 @@ const EFaturaModule = () => {
                     <td className="p-2">{getStatusBadge(invoice.efatura_status)}</td>
                     <td className="p-2">
                       <div className="flex gap-2">
-                        {invoice.efatura_status === 'pending' && (
-                          <Button size="sm" onClick={() => handleSendEFatura(invoice.id)}>
-                            <Send className="w-3 h-3 mr-1" />
-                            Send
+                        {(invoice.efatura_status === 'xml_ready' || invoice.efatura_status === 'reported_externally') && (
+                          <Button size="sm" variant="outline" onClick={() => handleDownloadXml(invoice.id)}>
+                            <Download className="w-3 h-3 mr-1" />
+                            {t('invoice.efatura.downloadXml') || 'UBL XML İndir'}
                           </Button>
                         )}
-                        <Button size="sm" variant="outline">
-                          <Download className="w-3 h-3 mr-1" />
-                          PDF
-                        </Button>
                       </div>
                     </td>
                   </tr>

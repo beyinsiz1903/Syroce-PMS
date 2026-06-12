@@ -1,22 +1,19 @@
-"""Real Turkish e-Fatura / e-Arsiv provider integration.
+"""Turkish e-Fatura / e-Arsiv UBL-TR document generation.
 
 Replaces the previous mock that wrote a fake ``EFATURA-{no}`` UUID at check-out.
 The PMS is the authoritative data source: this module turns a closed-folio sales
-invoice into a UBL-TR (TR-customised UBL 2.1) document and transmits it to the
-operator-configured provider (Uyumsoft / Fit Solutions / GIB-compatible REST
-gateway).
+invoice into a flawless UBL-TR (TR-customised UBL 2.1) document and persists it.
+There is NO automatic transmission to an integrator/GIB any more — the accountant
+downloads the XML from the screen, files it through their own program
+(Logo/Zirve/Uyumsoft etc.), then marks the invoice "reported externally".
 
-Fail-closed principle: if provider credentials are not configured we refuse to
-"generate" anything. NO fake success is ever written. Transmission failures are
-surfaced as :class:`EFaturaSubmissionError` so the caller can retry and alert.
-
-Outbound HTTP always goes through the SSRF-safe, DNS-rebinding-protected
-``safe_post_async`` helper so an operator-supplied provider URL cannot be abused
-to reach internal infrastructure.
+Fail-closed principle: if the supplier identity (``EFATURA_SUPPLIER_VKN``) is not
+configured we refuse to "generate" anything. NO fake success is ever written and
+no invalid document is produced. Generation failures (missing/corrupt data) are
+surfaced so the caller can retry and, after a cap, alert ops.
 """
 from __future__ import annotations
 
-import base64
 import os
 from datetime import UTC, datetime
 from typing import Any
@@ -25,51 +22,33 @@ from xml.sax.saxutils import quoteattr as _qa
 
 
 class EFaturaConfigError(RuntimeError):
-    """Raised (fail-closed) when provider credentials are not configured."""
+    """Raised (fail-closed) when the supplier identity is not configured."""
 
 
-class EFaturaSubmissionError(RuntimeError):
-    """Raised when a provider call fails (transport or business error).
-
-    Retryable: the caller keeps the invoice ``pending`` and retries on the next
-    sweep until a max-attempts cap is reached, then alerts ops.
-    """
-
-
-# Minimum env vars required before we will attempt a real cut. Without any of
-# these the integration stays fail-closed (no mock fallback).
+# Minimum env vars required before we will generate a real document. Only the
+# supplier identity (VKN) is needed now — provider POST credentials are gone.
+# Without the VKN the integration stays fail-closed (no mock fallback).
 _REQUIRED_ENV = (
-    "EFATURA_PROVIDER_URL",
-    "EFATURA_PROVIDER_API_KEY",
     "EFATURA_SUPPLIER_VKN",
 )
 
 
 def is_configured() -> bool:
-    """True only when every required provider credential is present."""
+    """True only when the supplier identity (VKN) is present."""
     return all(os.environ.get(k) for k in _REQUIRED_ENV)
 
 
 def provider_config() -> dict[str, Any]:
-    """Resolve provider config from env; raise EFaturaConfigError if incomplete."""
+    """Resolve supplier config from env; raise EFaturaConfigError if incomplete."""
     missing = [k for k in _REQUIRED_ENV if not os.environ.get(k)]
     if missing:
         raise EFaturaConfigError(
-            "e-Fatura provider not configured; missing env: " + ", ".join(missing)
+            "e-Fatura supplier not configured; missing env: " + ", ".join(missing)
         )
-    try:
-        timeout = float(os.environ.get("EFATURA_PROVIDER_TIMEOUT_SECONDS", "20") or "20")
-    except (TypeError, ValueError):
-        timeout = 20.0
     return {
         "provider": os.environ.get("EFATURA_PROVIDER", "generic"),
-        "url": os.environ["EFATURA_PROVIDER_URL"],
-        "api_key": os.environ["EFATURA_PROVIDER_API_KEY"],
         "supplier_vkn": os.environ["EFATURA_SUPPLIER_VKN"],
         "supplier_name": os.environ.get("EFATURA_SUPPLIER_NAME", "") or "",
-        "test_mode": (os.environ.get("EFATURA_PROVIDER_TEST_MODE", "").strip().lower()
-                      in {"1", "true", "yes", "on"}),
-        "timeout": timeout,
     }
 
 
@@ -238,70 +217,16 @@ def build_ubl_tr_document(
     )
 
 
-async def submit_document(
-    *,
-    ubl_xml: str,
-    ettn: str,
-    invoice_number: str,
-    document_profile: str,
-    config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Transmit a UBL-TR document to the configured provider.
+def safe_xml_filename(invoice_number: str, customer_name: str | None = None) -> str:
+    """Build an HTTP-header-safe ``.xml`` filename from invoice/customer fields.
 
-    Returns ``{official_id, status, provider, raw}`` on success. Raises
-    :class:`EFaturaSubmissionError` on any transport or non-2xx provider
-    response (retryable by the caller).
+    Only ASCII ``[A-Za-z0-9._-]`` survive; everything else (including the CR/LF
+    used for header injection and non-ASCII guest names) collapses to ``-``.
     """
-    cfg = config or provider_config()
-    from integrations.xchange.safety import EgressDenied, safe_post_async
-
-    payload = {
-        "documentType": "EARSIV" if document_profile == "EARSIVFATURA" else "EFATURA",
-        "profile": document_profile,
-        "ettn": ettn,
-        "invoiceNumber": invoice_number,
-        "supplierVkn": cfg["supplier_vkn"],
-        "testMode": cfg["test_mode"],
-        "ublXmlBase64": base64.b64encode(ubl_xml.encode("utf-8")).decode("ascii"),
-    }
-    headers = {
-        "Authorization": f"Bearer {cfg['api_key']}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-    try:
-        resp = await safe_post_async(
-            cfg["url"], json=payload, headers=headers, timeout=cfg["timeout"]
-        )
-    except EgressDenied as e:
-        raise EFaturaSubmissionError(f"provider egress blocked: {e}") from e
-    except Exception as e:  # noqa: BLE001 - httpx/network errors are retryable
-        raise EFaturaSubmissionError(f"provider transport error: {e}") from e
-
-    if resp.status_code >= 400:
-        raise EFaturaSubmissionError(
-            f"provider returned HTTP {resp.status_code}: {str(resp.text)[:300]}"
-        )
-
-    try:
-        data = resp.json()
-    except Exception:  # noqa: BLE001 - tolerate non-JSON bodies
-        data = {}
-    if not isinstance(data, dict):
-        data = {}
-
-    official = (
-        data.get("ettn")
-        or data.get("uuid")
-        or data.get("invoiceUuid")
-        or data.get("documentId")
-        or data.get("id")
-        or ettn
-    )
-    status = str(data.get("status") or "generated")
-    return {
-        "official_id": str(official),
-        "status": status,
-        "provider": cfg["provider"],
-        "raw": data,
-    }
+    parts = [str(invoice_number or "").strip()]
+    if customer_name:
+        parts.append(str(customer_name).strip())
+    raw = "-".join(p for p in parts if p) or "efatura"
+    safe = "".join(c if (c.isascii() and (c.isalnum() or c in "._-")) else "-" for c in raw)
+    safe = safe.strip("-._") or "efatura"
+    return f"efatura-{safe}.xml"

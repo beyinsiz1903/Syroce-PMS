@@ -756,8 +756,19 @@
     "efatura": {
       "pending": "E-Fatura: Kuyrukta",
       "generated": "E-Fatura: Kesildi",
+      "xmlReady": "E-Fatura: XML Hazır",
+      "reportedExternally": "E-Fatura: Harici Bildirildi",
       "error": "E-Fatura: Hata",
-      "no": "No"
+      "no": "No",
+      "downloadXml": "UBL XML İndir",
+      "reportExternal": "Harici Bildirildi İşaretle",
+      "downloadFailed": "XML indirilemedi",
+      "reportedSuccess": "E-Fatura harici olarak bildirildi",
+      "reportFailed": "İşaretlenemedi",
+      "statusPending": "Kuyrukta",
+      "statusXmlReady": "XML Hazır",
+      "statusReportedExternally": "Harici Bildirildi",
+      "statusError": "Hata"
     },
     "kpi": {
       "collected": "Tahsil Edilen",

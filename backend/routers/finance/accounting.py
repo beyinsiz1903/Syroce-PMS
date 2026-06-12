@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -2021,8 +2021,10 @@ async def get_invoice_efatura_status(
             'efatura_error': invoice.get('efatura_last_error'),
             'efatura_attempts': invoice.get('efatura_attempts', 0),
             'message': (
-                'E-Fatura kuyruga alindi, kesim bekleniyor' if inv_status == 'pending'
-                else 'E-Fatura kesimi basarisiz oldu' if inv_status == 'error'
+                'E-Fatura kuyruga alindi, XML uretimi bekleniyor' if inv_status == 'pending'
+                else 'E-Fatura XML hazir, indirilebilir' if inv_status == 'xml_ready'
+                else 'E-Fatura harici olarak bildirildi' if inv_status == 'reported_externally'
+                else 'E-Fatura XML uretimi basarisiz oldu' if inv_status == 'error'
                 else 'E-Fatura has not been generated for this invoice'
             ),
         }
@@ -2070,36 +2072,31 @@ async def generate_efatura_for_invoice(
             'status': existing_efatura.get('status')
         }
 
-    # Real cut against the configured provider. Fail-closed: with no provider
-    # credentials we refuse instead of writing a fake "generated" document. The
-    # provider helper escapes every user-controlled field (customer name, charge
-    # descriptions) before it reaches the UBL-TR tree.
+    # Generate a flawless UBL-TR document and persist it. There is NO automatic
+    # transmission to an integrator/GIB; the accountant downloads the XML and
+    # files it themselves. Fail-closed: with no supplier identity we refuse
+    # instead of writing a fake "generated" document. The helper escapes every
+    # user-controlled field (customer name, charge descriptions) before it
+    # reaches the UBL-TR tree.
     from core import efatura_provider as ep
 
     if not ep.is_configured():
         raise HTTPException(
             status_code=503,
-            detail="E-Fatura saglayicisi yapilandirilmamis (fail-closed)",
+            detail="E-Fatura tedarikci kimligi (VKN) yapilandirilmamis (fail-closed)",
         )
     cfg = ep.provider_config()
     ettn = invoice.get('efatura_ettn') or str(uuid.uuid4())
     profile = ep.document_profile(invoice)
-    efatura_xml = ep.build_ubl_tr_document(
-        invoice,
-        supplier_vkn=cfg['supplier_vkn'],
-        supplier_name=cfg['supplier_name'],
-        ettn=ettn,
-        profile=profile,
-    )
     try:
-        result = await ep.submit_document(
-            ubl_xml=efatura_xml,
+        efatura_xml = ep.build_ubl_tr_document(
+            invoice,
+            supplier_vkn=cfg['supplier_vkn'],
+            supplier_name=cfg['supplier_name'],
             ettn=ettn,
-            invoice_number=invoice.get('invoice_number'),
-            document_profile=profile,
-            config=cfg,
+            profile=profile,
         )
-    except ep.EFaturaSubmissionError as e:
+    except Exception as e:  # noqa: BLE001 - bad invoice data -> error, no fake doc
         attempts = int(invoice.get('efatura_attempts') or 0) + 1
         await db.accounting_invoices.update_one(
             {'id': invoice_id, 'tenant_id': current_user.tenant_id},
@@ -2111,7 +2108,7 @@ async def generate_efatura_for_invoice(
             }},
         )
         raise HTTPException(
-            status_code=502, detail="E-Fatura saglayiciya gonderilemedi",
+            status_code=422, detail="E-Fatura XML uretilemedi (gecersiz fatura verisi)",
         ) from e
 
     now_iso = datetime.now(UTC).isoformat()
@@ -2120,13 +2117,12 @@ async def generate_efatura_for_invoice(
         'tenant_id': current_user.tenant_id,
         'invoice_id': invoice_id,
         'invoice_number': invoice.get('invoice_number'),
-        'efatura_uuid': result['official_id'],
-        'official_number': result['official_id'],
+        'efatura_uuid': ettn,
         'ettn': ettn,
         'profile': profile,
-        'provider': result['provider'],
+        'provider': cfg['provider'],
         'xml_content': efatura_xml,
-        'status': result['status'] or 'generated',
+        'status': 'xml_ready',
         'error': None,
         'generated_at': now_iso,
     }
@@ -2139,12 +2135,11 @@ async def generate_efatura_for_invoice(
         {'id': invoice_id, 'tenant_id': current_user.tenant_id},
         {
             '$set': {
-                'efatura_uuid': result['official_id'],
-                'efatura_official_number': result['official_id'],
+                'efatura_uuid': ettn,
                 'efatura_ettn': ettn,
-                'efatura_provider': result['provider'],
+                'efatura_provider': cfg['provider'],
                 'efatura_profile': profile,
-                'efatura_status': 'generated',
+                'efatura_status': 'xml_ready',
                 'efatura_generated_at': now_iso,
                 'efatura_last_error': None,
             }
@@ -2152,9 +2147,9 @@ async def generate_efatura_for_invoice(
     )
 
     return {
-        'message': 'E-Fatura generated successfully',
-        'efatura_uuid': result['official_id'],
-        'official_number': result['official_id'],
+        'message': 'E-Fatura XML uretildi',
+        'efatura_uuid': ettn,
+        'efatura_status': 'xml_ready',
         'invoice_number': invoice.get('invoice_number')
     }
 
@@ -2179,130 +2174,78 @@ async def get_efatura_settings(current_user: User = Depends(get_current_user)):
     return settings or {'vkn': '1234567890', 'enabled': True, 'auto_send': False, 'last_sync': None}
 
 
-@router.post("/efatura/send/{invoice_id}")
-async def send_efatura(
+@router.get("/accounting/invoices/{invoice_id}/efatura-xml")
+async def download_efatura_xml(
     invoice_id: str,
     current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("post_charge")),  # v94 DW
+    _perm=Depends(require_op("view_finance_reports")),  # v94 DW
 ):
-    # Tenant-scoped update; prevents cross-tenant IDOR via guessed invoice_id.
-    result = await db.invoices.update_one(
-        {'id': invoice_id, 'tenant_id': current_user.tenant_id},
-        {'$set': {
-            'efatura_status': 'sent',
-            'efatura_sent_at': datetime.now(UTC).isoformat()
-        }}
+    """Download the generated UBL-TR XML for an invoice.
+
+    Tenant-scoped (cross-tenant IDOR safe). Returns the raw XML document as an
+    ``application/xml`` attachment so the accountant can file it through their
+    own program. The download filename is sanitised against HTTP header
+    injection.
+    """
+    efatura = await db.efatura_records.find_one(
+        {'invoice_id': invoice_id, 'tenant_id': current_user.tenant_id},
+        {'_id': 0},
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail='Invoice not found')
-    return {'message': 'E-Fatura sent successfully'}
+    if not efatura or not efatura.get('xml_content'):
+        raise HTTPException(status_code=404, detail="E-Fatura XML bulunamadi")
+
+    from core import efatura_provider as ep
+    filename = ep.safe_xml_filename(
+        efatura.get('invoice_number') or invoice_id,
+        efatura.get('customer_name'),
+    )
+    return Response(
+        content=efatura['xml_content'],
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
-@router.post("/efatura/generate/{invoice_id}")
-async def generate_efatura(
+@router.post("/accounting/invoices/{invoice_id}/report-efatura-external")
+async def report_efatura_external(
     invoice_id: str,
     current_user: User = Depends(get_current_user),
     _perm=Depends(require_op("post_charge")),  # v94 DW
 ):
-    """Generate E-Fatura XML for GIB"""
+    """Mark an e-Fatura as reported externally (filed via the accountant's own
+    program). Only allowed once the document is ``xml_ready``; deliberately
+    refuses otherwise so the lifecycle stays honest."""
     invoice = await db.accounting_invoices.find_one(
         {'id': invoice_id, 'tenant_id': current_user.tenant_id},
-        {'_id': 0}
+        {'_id': 0},
     )
-
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # Generate E-Fatura XML (simplified) — XML injection guard with escape
-    from xml.sax.saxutils import escape as _xml_escape
-    _inv_no = _xml_escape(str(invoice.get('invoice_number', '')))
-    _inv_date = _xml_escape(str(invoice.get('invoice_date', '')))
-    _line_count = int(len(invoice.get('items', [])))
-    try:
-        _subtotal = float(invoice.get('subtotal', 0) or 0)
-        _grand = float(invoice.get('grand_total', 0) or 0)
-    except (TypeError, ValueError):
-        _subtotal, _grand = 0.0, 0.0
-    efatura_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
-    <ID>{_inv_no}</ID>
-    <IssueDate>{_inv_date}</IssueDate>
-    <InvoiceTypeCode>SATIS</InvoiceTypeCode>
-    <LineCountNumeric>{_line_count}</LineCountNumeric>
-    <LegalMonetaryTotal>
-        <TaxExclusiveAmount>{_subtotal:.2f}</TaxExclusiveAmount>
-        <TaxInclusiveAmount>{_grand:.2f}</TaxInclusiveAmount>
-    </LegalMonetaryTotal>
-</Invoice>"""
+    if invoice.get('efatura_status') != 'xml_ready':
+        raise HTTPException(
+            status_code=409,
+            detail="Yalnizca 'XML Hazir' durumundaki fatura harici bildirilebilir",
+        )
 
-    # Save E-Fatura record
-    efatura_record = {
-        'id': str(uuid.uuid4()),
-        'tenant_id': current_user.tenant_id,
-        'invoice_id': invoice_id,
-        'invoice_number': invoice['invoice_number'],
-        'efatura_uuid': str(uuid.uuid4()),
-        'xml_content': efatura_xml,
-        'status': 'generated',
-        'generated_at': datetime.now(UTC).isoformat()
-    }
-
-    efatura_copy = efatura_record.copy()
-    await db.efatura_records.insert_one(efatura_copy)
-
-    # Update invoice status
+    now_iso = datetime.now(UTC).isoformat()
     await db.accounting_invoices.update_one(
-        {'id': invoice_id},
-        {'$set': {'efatura_status': 'generated', 'efatura_uuid': efatura_record['efatura_uuid']}}
+        {'id': invoice_id, 'tenant_id': current_user.tenant_id},
+        {'$set': {
+            'efatura_status': 'reported_externally',
+            'efatura_reported_at': now_iso,
+        }},
+    )
+    await db.efatura_records.update_one(
+        {'invoice_id': invoice_id, 'tenant_id': current_user.tenant_id},
+        {'$set': {'status': 'reported_externally', 'reported_at': now_iso}},
     )
 
     return {
-        'message': 'E-Fatura generated successfully',
-        'efatura_uuid': efatura_record['efatura_uuid'],
-        'xml_content': efatura_xml
+        'message': 'E-Fatura harici olarak bildirildi',
+        'efatura_status': 'reported_externally',
+        'invoice_number': invoice.get('invoice_number'),
     }
-
-
-@router.post("/efatura/send-to-gib/{invoice_id}")
-async def send_efatura_to_gib(
-    invoice_id: str,
-    current_user: User = Depends(get_current_user),
-    _perm=Depends(require_op("post_charge")),  # v94 DW
-):
-    """Send E-Fatura to GIB (Turkish Revenue Administration)"""
-    efatura = await db.efatura_records.find_one(
-        {'invoice_id': invoice_id, 'tenant_id': current_user.tenant_id},
-        {'_id': 0}
-    )
-
-    if not efatura:
-        raise HTTPException(status_code=404, detail="E-Fatura not found")
-
-    # Mock GIB integration (in production, use actual GIB API)
-    gib_response = {
-        'status': 'success',
-        'gib_id': str(uuid.uuid4()),
-        'timestamp': datetime.now(UTC).isoformat()
-    }
-
-    # Update E-Fatura status
-    await db.efatura_records.update_one(
-        {'id': efatura['id']},
-        {
-            '$set': {
-                'status': 'sent_to_gib',
-                'gib_response': gib_response,
-                'sent_at': datetime.now(UTC).isoformat()
-            }
-        }
-    )
-
-    await db.accounting_invoices.update_one(
-        {'id': invoice_id},
-        {'$set': {'efatura_status': 'sent', 'efatura_sent_at': datetime.now(UTC).isoformat()}}
-    )
-
-    return {'message': 'E-Fatura sent to GIB successfully', 'gib_response': gib_response}
 
 
 @router.post("/accounting/send-statement")

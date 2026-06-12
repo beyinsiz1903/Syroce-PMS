@@ -1,24 +1,18 @@
-"""Task #571 — real e-Fatura/e-Arsiv provider integration.
+"""Task #584 — e-Fatura/e-Arsiv UBL-TR document generation (no transmission).
 
-Unit tests for ``core.efatura_provider``: fail-closed config gate, UBL-TR
-document generation (incl. XML-injection escaping + e-Fatura vs e-Arsiv profile
-selection), and the SSRF-safe submission helper. No network or DB required —
-``safe_post_async`` is monkeypatched.
+Unit tests for ``core.efatura_provider``: fail-closed config gate (supplier VKN
+only), UBL-TR document generation (incl. XML-injection escaping + e-Fatura vs
+e-Arsiv profile selection), and the HTTP-header-safe download filename helper.
+No network or DB required — the module no longer transmits to any provider.
 """
-from types import SimpleNamespace
-
 import pytest
 
 from core import efatura_provider as ep
 
 _ENV_KEYS = (
     "EFATURA_PROVIDER",
-    "EFATURA_PROVIDER_URL",
-    "EFATURA_PROVIDER_API_KEY",
     "EFATURA_SUPPLIER_VKN",
     "EFATURA_SUPPLIER_NAME",
-    "EFATURA_PROVIDER_TEST_MODE",
-    "EFATURA_PROVIDER_TIMEOUT_SECONDS",
     "EFATURA_MAX_ATTEMPTS",
 )
 
@@ -32,14 +26,12 @@ def _clean_env(monkeypatch):
 
 def _configure(monkeypatch):
     monkeypatch.setenv("EFATURA_PROVIDER", "uyumsoft")
-    monkeypatch.setenv("EFATURA_PROVIDER_URL", "https://provider.example.com/cut")
-    monkeypatch.setenv("EFATURA_PROVIDER_API_KEY", "k-123")
     monkeypatch.setenv("EFATURA_SUPPLIER_VKN", "1234567890")
     monkeypatch.setenv("EFATURA_SUPPLIER_NAME", "Test Otel AS")
 
 
 # --------------------------------------------------------------------------- #
-# Fail-closed config gate
+# Fail-closed config gate (supplier VKN only)
 # --------------------------------------------------------------------------- #
 
 def test_not_configured_by_default(_clean_env):
@@ -48,22 +40,33 @@ def test_not_configured_by_default(_clean_env):
         ep.provider_config()
 
 
-def test_partial_config_still_fail_closed(_clean_env):
-    _clean_env.setenv("EFATURA_PROVIDER_URL", "https://x.example.com")
-    # api key + vkn missing -> still not configured
+def test_provider_set_but_no_vkn_still_fail_closed(_clean_env):
+    _clean_env.setenv("EFATURA_PROVIDER", "uyumsoft")
+    # supplier VKN missing -> still not configured
     assert ep.is_configured() is False
     with pytest.raises(ep.EFaturaConfigError):
         ep.provider_config()
 
 
-def test_full_config_resolves(_clean_env):
+def test_vkn_only_resolves(_clean_env):
     _configure(_clean_env)
     assert ep.is_configured() is True
     cfg = ep.provider_config()
     assert cfg["provider"] == "uyumsoft"
-    assert cfg["url"].startswith("https://")
     assert cfg["supplier_vkn"] == "1234567890"
-    assert cfg["test_mode"] is False
+    assert cfg["supplier_name"] == "Test Otel AS"
+    # provider POST credentials are gone
+    assert "url" not in cfg
+    assert "api_key" not in cfg
+    assert "test_mode" not in cfg
+    assert "timeout" not in cfg
+
+
+def test_provider_defaults_to_generic(_clean_env):
+    _clean_env.setenv("EFATURA_SUPPLIER_VKN", "1234567890")
+    cfg = ep.provider_config()
+    assert cfg["provider"] == "generic"
+    assert cfg["supplier_name"] == ""
 
 
 def test_max_attempts_default_and_override(_clean_env):
@@ -145,73 +148,30 @@ def test_ubl_earsiv_profile_for_individual():
 
 
 # --------------------------------------------------------------------------- #
-# Submission helper
+# HTTP-header-safe download filename
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.asyncio
-async def test_submit_success(monkeypatch, _clean_env):
-    _configure(_clean_env)
-
-    async def fake_post(url, **kw):
-        assert url == "https://provider.example.com/cut"
-        assert kw["headers"]["Authorization"] == "Bearer k-123"
-        return SimpleNamespace(
-            status_code=200,
-            json=lambda: {"ettn": "OFFICIAL-9", "status": "accepted"},
-            text="ok",
-        )
-
-    monkeypatch.setattr("integrations.xchange.safety.safe_post_async", fake_post)
-    out = await ep.submit_document(
-        ubl_xml="<x/>", ettn="E", invoice_number="INV-1",
-        document_profile="TICARIFATURA",
-    )
-    assert out["official_id"] == "OFFICIAL-9"
-    assert out["status"] == "accepted"
-    assert out["provider"] == "uyumsoft"
+def test_safe_xml_filename_basic():
+    fn = ep.safe_xml_filename("INV-1", "Ali Veli")
+    assert fn == "efatura-INV-1-Ali-Veli.xml"
+    assert fn.endswith(".xml")
 
 
-@pytest.mark.asyncio
-async def test_submit_http_error_raises(monkeypatch, _clean_env):
-    _configure(_clean_env)
-
-    async def fake_post(url, **kw):
-        return SimpleNamespace(status_code=500, json=lambda: {}, text="boom")
-
-    monkeypatch.setattr("integrations.xchange.safety.safe_post_async", fake_post)
-    with pytest.raises(ep.EFaturaSubmissionError):
-        await ep.submit_document(
-            ubl_xml="<x/>", ettn="E", invoice_number="INV-1",
-            document_profile="EARSIVFATURA",
-        )
+def test_safe_xml_filename_strips_header_injection():
+    fn = ep.safe_xml_filename('INV-1"\r\nSet-Cookie: x=1', "Guest")
+    assert "\r" not in fn and "\n" not in fn
+    assert '"' not in fn
+    assert fn.endswith(".xml")
+    assert fn.startswith("efatura-")
 
 
-@pytest.mark.asyncio
-async def test_submit_transport_error_raises(monkeypatch, _clean_env):
-    _configure(_clean_env)
-
-    async def fake_post(url, **kw):
-        raise RuntimeError("connection reset")
-
-    monkeypatch.setattr("integrations.xchange.safety.safe_post_async", fake_post)
-    with pytest.raises(ep.EFaturaSubmissionError):
-        await ep.submit_document(
-            ubl_xml="<x/>", ettn="E", invoice_number="INV-1",
-            document_profile="EARSIVFATURA",
-        )
+def test_safe_xml_filename_non_ascii_collapses():
+    fn = ep.safe_xml_filename("FT-2026", "Çağrı Şükrü")
+    # non-ASCII guest name characters collapse to '-'
+    assert all(c.isascii() for c in fn)
+    assert fn.endswith(".xml")
 
 
-@pytest.mark.asyncio
-async def test_submit_falls_back_to_local_ettn(monkeypatch, _clean_env):
-    _configure(_clean_env)
-
-    async def fake_post(url, **kw):
-        return SimpleNamespace(status_code=200, json=lambda: {}, text="")
-
-    monkeypatch.setattr("integrations.xchange.safety.safe_post_async", fake_post)
-    out = await ep.submit_document(
-        ubl_xml="<x/>", ettn="LOCAL-ETTN", invoice_number="INV-1",
-        document_profile="TICARIFATURA",
-    )
-    assert out["official_id"] == "LOCAL-ETTN"
-    assert out["status"] == "generated"
+def test_safe_xml_filename_empty_fallback():
+    fn = ep.safe_xml_filename("", None)
+    assert fn == "efatura-efatura.xml"

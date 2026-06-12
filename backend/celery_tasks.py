@@ -1404,14 +1404,16 @@ async def _dispatch_efatura_alert(invoice: dict, error: str, attempts: int) -> N
                 "alert_type": "efatura_cut_failed",
                 "severity": "high",
                 "provider": "system",
-                "title": "e-Fatura kesimi kalici olarak basarisiz",
+                "title": "e-Fatura XML uretimi kalici olarak basarisiz",
                 "message": (
                     f"Fatura {invoice.get('invoice_number')} {attempts} denemeden "
-                    "sonra saglayiciya gonderilemedi; durumu 'error' olarak isaretlendi."
+                    "sonra UBL-TR XML olarak uretilemedi; durumu 'error' olarak "
+                    "isaretlendi."
                 ),
                 "runbook_hint": (
-                    "Saglayici kimlik bilgilerini/baglantiyi dogrulayin, sorunu "
-                    "giderdikten sonra faturayi yeniden 'pending' yapip kuyruga alin."
+                    "Fatura verisini (musteri/kalem/tutar) kontrol edin, eksik/bozuk "
+                    "alanlari duzeltin, sonra faturayi yeniden 'pending' yapip "
+                    "kuyruga alin."
                 ),
                 "context": {
                     "invoice_id": invoice.get("id"),
@@ -1426,9 +1428,14 @@ async def _dispatch_efatura_alert(invoice: dict, error: str, attempts: int) -> N
         logger.warning("efatura alert dispatch failed: %s", exc)
 
 
-async def _upsert_efatura_record(db, invoice: dict, ettn: str, result: dict,
+async def _upsert_efatura_record(db, invoice: dict, ettn: str,
                                  xml_content: str, profile: str) -> None:
-    """Mirror a successful cut into ``efatura_records`` for the status endpoint."""
+    """Mirror a generated UBL-TR document into ``efatura_records``.
+
+    Stores the XML body (downloaded later by the accountant) and the
+    ``xml_ready`` lifecycle state. There is no official GIB id at this point —
+    the document is filed externally — so the ETTN is the only document UUID.
+    """
     now_iso = datetime.now(UTC).isoformat()
     await db.efatura_records.update_one(
         {"invoice_id": invoice.get("id"), "tenant_id": invoice.get("tenant_id")},
@@ -1437,13 +1444,11 @@ async def _upsert_efatura_record(db, invoice: dict, ettn: str, result: dict,
                 "tenant_id": invoice.get("tenant_id"),
                 "invoice_id": invoice.get("id"),
                 "invoice_number": invoice.get("invoice_number"),
-                "efatura_uuid": result["official_id"],
-                "official_number": result["official_id"],
+                "efatura_uuid": ettn,
                 "ettn": ettn,
                 "profile": profile,
-                "provider": result.get("provider"),
                 "xml_content": xml_content,
-                "status": result.get("status") or "generated",
+                "status": "xml_ready",
                 "error": None,
                 "generated_at": now_iso,
             },
@@ -1454,19 +1459,20 @@ async def _upsert_efatura_record(db, invoice: dict, ettn: str, result: dict,
 
 
 async def _process_pending_efaturas_async():
-    """Cut real e-Fatura/e-Arsiv documents for pending sales invoices.
+    """Generate UBL-TR documents for pending sales invoices (no transmission).
 
-    Fail-closed: if no provider is configured we write NOTHING (no fake
-    success). For each pending invoice we build a UBL-TR document and transmit
-    it to the configured provider; success stores the official ETTN/UUID, a
-    transient failure is retried on the next sweep, and a persistent failure
-    flips the invoice to ``error`` and alerts ops.
+    Fail-closed: if the supplier identity is not configured we write NOTHING
+    (no fake success). For each pending invoice we build a UBL-TR document,
+    persist the XML, and flip the invoice to ``xml_ready`` so the accountant can
+    download it and file it through their own program. A generation failure
+    (missing/corrupt invoice data) is retried on the next sweep, and a
+    persistent failure flips the invoice to ``error`` and alerts ops.
     """
     from core import efatura_provider as ep
 
     if not ep.is_configured():
         logger.warning(
-            "e-Fatura provider not configured; skipping cut (fail-closed, "
+            "e-Fatura supplier not configured; skipping generation (fail-closed, "
             "no fake success written)"
         )
         return {
@@ -1503,14 +1509,7 @@ async def _process_pending_efaturas_async():
                     ettn=ettn,
                     profile=profile,
                 )
-                result = await ep.submit_document(
-                    ubl_xml=xml,
-                    ettn=ettn,
-                    invoice_number=inv_no,
-                    document_profile=profile,
-                    config=cfg,
-                )
-            except ep.EFaturaSubmissionError as e:
+            except Exception as e:  # noqa: BLE001 - bad invoice data is retryable
                 attempts = int(invoice.get('efatura_attempts') or 0) + 1
                 update = {
                     'efatura_attempts': attempts,
@@ -1525,23 +1524,22 @@ async def _process_pending_efaturas_async():
                     failed += 1
                 await db.accounting_invoices.update_one(inv_filter, {'$set': update})
                 logger.error(
-                    "e-Fatura cut failed for %s (attempt %d/%d): %s",
+                    "e-Fatura XML generation failed for %s (attempt %d/%d): %s",
                     inv_no, attempts, cap, e,
                 )
                 continue
 
             await db.accounting_invoices.update_one(inv_filter, {'$set': {
-                'efatura_status': 'generated',
-                'efatura_uuid': result['official_id'],
-                'efatura_official_number': result['official_id'],
+                'efatura_status': 'xml_ready',
+                'efatura_uuid': ettn,
                 'efatura_ettn': ettn,
-                'efatura_provider': result['provider'],
+                'efatura_provider': cfg['provider'],
                 'efatura_profile': profile,
                 'efatura_generated_at': datetime.now(UTC).isoformat(),
                 'efatura_last_error': None,
             }})
             try:
-                await _upsert_efatura_record(db, invoice, ettn, result, xml, profile)
+                await _upsert_efatura_record(db, invoice, ettn, xml, profile)
             except Exception as exc:  # noqa: BLE001 - record mirror is best-effort
                 logger.warning("efatura_records upsert failed for %s: %s", inv_no, exc)
             processed += 1

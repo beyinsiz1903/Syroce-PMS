@@ -170,6 +170,37 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
     }
   };
 
+  const downloadEfaturaXml = async (invoiceId) => {
+    try {
+      const response = await axios.get(`/accounting/invoices/${invoiceId}/efatura-xml`, { responseType: 'blob' });
+      const disposition = response.headers['content-disposition'] || '';
+      const match = /filename="?([^"]+)"?/.exec(disposition);
+      const filename = match ? match[1] : `efatura-${invoiceId}.xml`;
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/xml' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error(t('invoice.efatura.downloadFailed') || 'XML indirilemedi');
+    }
+  };
+
+  const reportEfaturaExternal = async (invoiceId) => {
+    const previous = invoices;
+    setInvoices(prev => prev.map(inv => (inv.id === invoiceId ? { ...inv, efatura_status: 'reported_externally' } : inv)));
+    try {
+      await axios.post(`/accounting/invoices/${invoiceId}/report-efatura-external`);
+      toast.success(t('invoice.efatura.reportedSuccess') || 'E-Fatura harici olarak bildirildi');
+    } catch (error) {
+      setInvoices(previous);
+      toast.error(t('invoice.efatura.reportFailed') || 'İşaretlenemedi');
+    }
+  };
+
   if (!user || !tenant) {
     return (
       <>
@@ -301,17 +332,32 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                         {invoice.efatura_status && (() => {
                           const cfg = {
                             pending: { cls: 'bg-yellow-100 text-yellow-700', label: t('invoice.efatura.pending') || 'E-Fatura: Kuyrukta' },
-                            generated: { cls: 'bg-green-100 text-green-700', label: t('invoice.efatura.generated') || 'E-Fatura: Kesildi' },
+                            xml_ready: { cls: 'bg-blue-100 text-blue-700', label: t('invoice.efatura.xmlReady') || 'E-Fatura: XML Hazır' },
+                            reported_externally: { cls: 'bg-green-100 text-green-700', label: t('invoice.efatura.reportedExternally') || 'E-Fatura: Harici Bildirildi' },
                             error: { cls: 'bg-red-100 text-red-700', label: t('invoice.efatura.error') || 'E-Fatura: Hata' },
                           }[invoice.efatura_status] || { cls: 'bg-gray-100 text-gray-600', label: `E-Fatura: ${invoice.efatura_status}` };
                           return (
                             <div className="mt-2">
                               <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${cfg.cls}`}>{cfg.label}</span>
-                              {invoice.efatura_official_number && (
-                                <span className="ml-2 text-xs text-gray-500">{t('invoice.efatura.no') || 'No'}: {invoice.efatura_official_number}</span>
-                              )}
                               {invoice.efatura_status === 'error' && invoice.efatura_last_error && (
                                 <div className="text-xs text-red-600 mt-1 break-all">{invoice.efatura_last_error}</div>
+                              )}
+                              {invoice.efatura_status === 'xml_ready' && (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <Button size="sm" variant="outline" onClick={() => downloadEfaturaXml(invoice.id)} data-testid={`efatura-download-${invoice.id}`}>
+                                    {t('invoice.efatura.downloadXml') || 'UBL XML İndir'}
+                                  </Button>
+                                  <Button size="sm" onClick={() => reportEfaturaExternal(invoice.id)} data-testid={`efatura-report-${invoice.id}`}>
+                                    {t('invoice.efatura.reportExternal') || 'Harici Bildirildi İşaretle'}
+                                  </Button>
+                                </div>
+                              )}
+                              {invoice.efatura_status === 'reported_externally' && (
+                                <div className="mt-2">
+                                  <Button size="sm" variant="outline" onClick={() => downloadEfaturaXml(invoice.id)} data-testid={`efatura-download-${invoice.id}`}>
+                                    {t('invoice.efatura.downloadXml') || 'UBL XML İndir'}
+                                  </Button>
+                                </div>
                               )}
                             </div>
                           );

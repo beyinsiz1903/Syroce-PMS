@@ -1,12 +1,13 @@
-"""Task #571 — process_pending_efaturas_task real-cut behaviour.
+"""Task #584 — process_pending_efaturas_task XML-generation behaviour.
 
 Direct-call tests for the async body ``_process_pending_efaturas_async`` with a
-fake Mongo + monkeypatched provider. Verifies the doctrine:
+fake Mongo. There is no provider transmission any more — the sweep only builds
+and persists UBL-TR XML. Verifies the doctrine:
 
-* not configured -> fail-closed, NO writes (no fake success),
-* success -> official ETTN stored + status 'generated' + record mirrored,
-* transient failure -> kept 'pending', attempts incremented, no alert,
-* persistent failure (>= cap) -> status 'error' + ops alert dispatched.
+* not configured (no supplier VKN) -> fail-closed, NO writes (no fake success),
+* success -> XML stored + status 'xml_ready' + ETTN + record mirrored,
+* transient build failure -> kept 'pending', attempts incremented, no alert,
+* persistent build failure (>= cap) -> status 'error' + ops alert dispatched.
 """
 from unittest.mock import AsyncMock
 
@@ -69,8 +70,6 @@ def _patch_db(monkeypatch, invoices):
 
 def _configure(monkeypatch):
     monkeypatch.setenv("EFATURA_PROVIDER", "generic")
-    monkeypatch.setenv("EFATURA_PROVIDER_URL", "https://p.example.com/cut")
-    monkeypatch.setenv("EFATURA_PROVIDER_API_KEY", "k")
     monkeypatch.setenv("EFATURA_SUPPLIER_VKN", "1234567890")
     monkeypatch.setenv("EFATURA_SUPPLIER_NAME", "Otel")
     monkeypatch.setenv("EFATURA_MAX_ATTEMPTS", "3")
@@ -97,8 +96,7 @@ def _invoice(**over):
 
 
 async def test_fail_closed_when_not_configured(monkeypatch):
-    for k in ("EFATURA_PROVIDER_URL", "EFATURA_PROVIDER_API_KEY", "EFATURA_SUPPLIER_VKN"):
-        monkeypatch.delenv(k, raising=False)
+    monkeypatch.delenv("EFATURA_SUPPLIER_VKN", raising=False)
     db = _patch_db(monkeypatch, [_invoice()])
 
     out = await celery_tasks._process_pending_efaturas_async()
@@ -111,36 +109,35 @@ async def test_fail_closed_when_not_configured(monkeypatch):
     assert db.accounting_invoices.docs[0]["efatura_status"] == "pending"
 
 
-async def test_success_stores_official_ettn(monkeypatch):
+async def test_success_stores_xml_ready(monkeypatch):
     _configure(monkeypatch)
     db = _patch_db(monkeypatch, [_invoice()])
-
-    async def fake_submit(**kw):
-        return {"official_id": "OFFICIAL-42", "status": "accepted", "provider": "generic", "raw": {}}
-
-    monkeypatch.setattr(ep, "submit_document", fake_submit)
 
     out = await celery_tasks._process_pending_efaturas_async()
 
     assert out["success"] is True
     assert out["processed"] == 1
     doc = db.accounting_invoices.docs[0]
-    assert doc["efatura_status"] == "generated"
-    assert doc["efatura_uuid"] == "OFFICIAL-42"
-    assert doc["efatura_official_number"] == "OFFICIAL-42"
+    assert doc["efatura_status"] == "xml_ready"
+    assert doc["efatura_ettn"]
+    assert doc["efatura_uuid"] == doc["efatura_ettn"]
     assert doc["efatura_last_error"] is None
-    # Mirror written to efatura_records.
+    # Mirror written to efatura_records, carrying the XML body + xml_ready state.
     assert len(db.efatura_records.upserts) == 1
+    _filt, upd = db.efatura_records.upserts[0]
+    record = upd["$set"]
+    assert record["status"] == "xml_ready"
+    assert "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" in record["xml_content"]
 
 
 async def test_transient_failure_keeps_pending_no_alert(monkeypatch):
     _configure(monkeypatch)
     db = _patch_db(monkeypatch, [_invoice(efatura_attempts=0)])
 
-    async def fake_submit(**kw):
-        raise ep.EFaturaSubmissionError("provider HTTP 503")
+    def fake_build(*a, **kw):
+        raise ValueError("bad invoice data 503")
 
-    monkeypatch.setattr(ep, "submit_document", fake_submit)
+    monkeypatch.setattr(ep, "build_ubl_tr_document", fake_build)
     alert = AsyncMock()
     monkeypatch.setattr(celery_tasks, "_dispatch_efatura_alert", alert)
 
@@ -159,10 +156,10 @@ async def test_persistent_failure_marks_error_and_alerts(monkeypatch):
     _configure(monkeypatch)  # cap = 3
     db = _patch_db(monkeypatch, [_invoice(efatura_attempts=2)])
 
-    async def fake_submit(**kw):
-        raise ep.EFaturaSubmissionError("provider HTTP 500")
+    def fake_build(*a, **kw):
+        raise ValueError("bad invoice data 500")
 
-    monkeypatch.setattr(ep, "submit_document", fake_submit)
+    monkeypatch.setattr(ep, "build_ubl_tr_document", fake_build)
     alert = AsyncMock()
     monkeypatch.setattr(celery_tasks, "_dispatch_efatura_alert", alert)
 
