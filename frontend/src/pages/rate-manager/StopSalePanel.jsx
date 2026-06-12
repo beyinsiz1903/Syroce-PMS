@@ -312,7 +312,7 @@ export const StopSalePanel = ({ roomTypes, ratePlans, fetchGrid, loading: parent
   return (
     <div className="space-y-6" data-testid="stop-sale-panel">
       {/* Holiday Quick Select + Date Range */}
-      <Card className="border-indigo-200 bg-gradient-to-br from-indigo-50/50 to-white">
+      <Card className="border-indigo-200 bg-gradient-to-br from-indigo-50/50 to-white dark:bg-none dark:bg-card">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold flex items-center gap-2" data-testid="holiday-selector-title">
             <Palmtree className="w-4 h-4 text-indigo-600" />

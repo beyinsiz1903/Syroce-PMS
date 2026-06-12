@@ -384,7 +384,7 @@ const MobileSecurity = ({ user }) => {
         )}
 
         {/* Info Banner */}
-        <Card className="bg-gradient-to-r from-gray-50 to-slate-50">
+        <Card className="bg-gradient-to-r from-gray-50 to-slate-50 dark:bg-none dark:bg-card">
           <CardContent className="p-4">
             <div className="flex items-start space-x-3">
               <div className="bg-gray-200 p-2 rounded-full">

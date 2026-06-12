@@ -289,3 +289,60 @@ code {
 .dark .placeholder-gray-500::placeholder {
     color: hsl(var(--muted-foreground));
 }
+
+/* ============================================================================
+   FAZ 4 — Opacity-onekli notr yuzeyler + variant-onekli notrler
+   ----------------------------------------------------------------------------
+   Tailwind `bg-white/90` -> AYRI bir sinif (`.bg-white\/90`); ust `.dark .bg-white`
+   kurali bunu ESLEMEZ. Bu yuzden yari-opak (>=/50) acik notr yuzeyleri ayrica
+   koyu token'lara esliyoruz. Saydamlik koyu modda opak token'a duser (kabul
+   edilir). Cok saydam olanlar (/5../40 ve arbitrary `bg-white/[0.04]`) KORUNUR:
+   bunlar bilincli cam/overlay efektleridir.
+
+   NOT (ozgulluk tuzagi): Bu compat kurallari `@tailwind utilities`ten SONRA
+   geldigi icin, esit ozgullukteki gelecek notr `dark:` utility'lerini (orn.
+   `dark:bg-white`) SESSIZCE yener. Koyu-mod override'i gerekiyorsa ya bu katmana
+   ekleyin ya da daha yuksek ozgulluk kullanin.
+   ============================================================================ */
+
+/* --- Yari-opak beyaz yuzeyler -> card --- */
+.dark .bg-white\/60,
+.dark .bg-white\/70,
+.dark .bg-white\/80,
+.dark .bg-white\/85,
+.dark .bg-white\/90,
+.dark .bg-white\/95 {
+    background-color: hsl(var(--card));
+}
+
+/* --- Yari-opak hafif notr yuzeyler -> muted --- */
+.dark .bg-gray-50\/50,
+.dark .bg-gray-50\/60,
+.dark .bg-gray-50\/80,
+.dark .bg-gray-100\/50,
+.dark .bg-gray-100\/60,
+.dark .bg-gray-100\/70,
+.dark .bg-gray-100\/80,
+.dark .bg-slate-50\/50,
+.dark .bg-slate-50\/60,
+.dark .bg-slate-50\/80 {
+    background-color: hsl(var(--muted));
+}
+
+/* --- Yari-opak notr hover yuzeyleri -> accent --- */
+.dark .hover\:bg-gray-50\/50:hover,
+.dark .hover\:bg-gray-50\/60:hover,
+.dark .hover\:bg-slate-50\/50:hover,
+.dark .hover\:bg-slate-50\/60:hover {
+    background-color: hsl(var(--accent));
+}
+
+/* --- Variant-onekli notrler (disabled/group-hover) --- */
+.dark .disabled\:bg-gray-300:disabled {
+    background-color: hsl(var(--muted));
+}
+.dark .group:hover .group-hover\:text-gray-500,
+.dark .group:hover .group-hover\:text-gray-600,
+.dark .group:hover .group-hover\:text-slate-600 {
+    color: hsl(var(--foreground));
+}

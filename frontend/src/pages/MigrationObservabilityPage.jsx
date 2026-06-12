@@ -21,17 +21,17 @@ const HEALTH_SCORE_STYLES = {
   green: {
     badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
     glow: 'shadow-emerald-200/60',
-    panel: 'from-emerald-50 to-white',
+    panel: 'from-emerald-50 to-white dark:from-card dark:to-card',
   },
   yellow: {
     badge: 'bg-amber-100 text-amber-700 border-amber-200',
     glow: 'shadow-amber-200/60',
-    panel: 'from-amber-50 to-white',
+    panel: 'from-amber-50 to-white dark:from-card dark:to-card',
   },
   red: {
     badge: 'bg-rose-100 text-rose-700 border-rose-200',
     glow: 'shadow-rose-200/60',
-    panel: 'from-rose-50 to-white',
+    panel: 'from-rose-50 to-white dark:from-card dark:to-card',
   },
 };
 

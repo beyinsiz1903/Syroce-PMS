@@ -62,7 +62,7 @@ const PublicReviewPage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 dark:bg-none dark:bg-background p-4">
         <div className="flex flex-col items-center gap-3 text-gray-600">
           <Loader2 className="w-8 h-8 animate-spin" />
           <p>{t('cm.pages_PublicReviewPage.yukleniyor')}</p>
@@ -73,7 +73,7 @@ const PublicReviewPage = () => {
 
   if (error && !invite) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 dark:bg-none dark:bg-background p-4">
         <Card className="w-full max-w-md">
           <CardContent className="p-8 text-center">
             <AlertCircle className="w-14 h-14 mx-auto mb-3 text-red-400" />
@@ -87,7 +87,7 @@ const PublicReviewPage = () => {
 
   if (done) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 dark:bg-none dark:bg-background p-4">
         <Card className="w-full max-w-md">
           <CardContent className="p-8 text-center">
             <CheckCircle2 className="w-16 h-16 mx-auto mb-4 text-green-500" />
@@ -102,7 +102,7 @@ const PublicReviewPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100 p-4 py-12">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100 dark:bg-none dark:bg-background p-4 py-12">
       <div className="max-w-xl mx-auto">
         <Card>
           <CardHeader className="border-b">

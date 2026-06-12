@@ -150,8 +150,8 @@ function TrendGraph({ title, data, dataKey = "count", color = "#3b82f6", type = 
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#6b7280" }} />
             <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} />
             <Tooltip
-              contentStyle={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12 }}
-              labelStyle={{ color: "#6b7280" }}
+              contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12, color: "hsl(var(--foreground))" }}
+              labelStyle={{ color: "hsl(var(--muted-foreground))" }}
             />
             {type === "bar" ? (
               <Bar dataKey={dataKey} fill={color} radius={[3, 3, 0, 0]} />

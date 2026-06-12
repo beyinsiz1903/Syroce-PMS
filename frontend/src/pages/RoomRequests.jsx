@@ -346,7 +346,7 @@ function EmptyState({ hotelName }) {
   const categories = DEPARTMENTS.filter((d) => d.id !== ALL_DEPTS);
 
   return (
-    <Card className="border-dashed border-2 border-slate-200 bg-gradient-to-br from-white to-slate-50">
+    <Card className="border-dashed border-2 border-slate-200 bg-gradient-to-br from-white to-slate-50 dark:bg-none dark:bg-card">
       <CardContent className="p-8 md:p-12">
         <div className="max-w-3xl mx-auto text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 mb-4">

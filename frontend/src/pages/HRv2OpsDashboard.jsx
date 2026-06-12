@@ -503,7 +503,7 @@ export default function HRv2OpsDashboard({ tenant }) {
 
   return (
     <TooltipProvider>
-      <div data-testid="ops-dashboard" className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+      <div data-testid="ops-dashboard" className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:bg-none dark:bg-background">
         {/* Header */}
         <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-xl border-b border-slate-100">
           <div className="max-w-[1440px] mx-auto px-6 py-4 flex items-center justify-between">

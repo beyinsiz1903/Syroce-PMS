@@ -64,11 +64,11 @@ export default function FolioRoutingPage() {
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
       <h2>{t('cm.pages_FolioRoutingPage.folio_yonlendirme_kurallari')}</h2>
-      <p style={{ color: "#666" }}>
+      <p style={{ color: "hsl(var(--muted-foreground))" }}>
         {t('cm.pages_FolioRoutingPage.bir_oda_folio_sundaki_belirli_ucretleri_')}
       </p>
 
-      <form onSubmit={submit} style={{ display: "grid", gap: 8, marginTop: 16, padding: 16, background: "#f7f7f7", borderRadius: 8 }}>
+      <form onSubmit={submit} style={{ display: "grid", gap: 8, marginTop: 16, padding: 16, background: "hsl(var(--muted))", borderRadius: 8 }}>
         <h3 style={{ margin: 0 }}>{t('cm.pages_FolioRoutingPage.yeni_kural')}</h3>
         <input placeholder="Kaynak folio ID (oda misafiri)"
           value={form.source_folio_id}
@@ -88,11 +88,11 @@ export default function FolioRoutingPage() {
       <h3 style={{ marginTop: 24 }}>Mevcut Kurallar</h3>
       {err && <div style={{ color: "crimson" }}>{err}</div>}
       {loading ? <div>{t('cm.pages_FolioRoutingPage.yukleniyor')}</div> : rules.length === 0 ? (
-        <div style={{ color: "#888" }}>{t('cm.pages_FolioRoutingPage.henuz_kural_yok')}</div>
+        <div style={{ color: "hsl(var(--muted-foreground))" }}>{t('cm.pages_FolioRoutingPage.henuz_kural_yok')}</div>
       ) : (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ background: "#eee" }}>
+            <tr style={{ background: "hsl(var(--muted))" }}>
               <th style={{ textAlign: "left", padding: 8 }}>Kaynak</th>
               <th style={{ textAlign: "left", padding: 8 }}>Hedef</th>
               <th style={{ textAlign: "left", padding: 8 }}>{t('cm.pages_FolioRoutingPage.ucret_kodlari')}</th>
@@ -102,7 +102,7 @@ export default function FolioRoutingPage() {
           </thead>
           <tbody>
             {rules.map(r => (
-              <tr key={r.id} style={{ borderBottom: "1px solid #eee" }}>
+              <tr key={r.id} style={{ borderBottom: "1px solid hsl(var(--border))" }}>
                 <td style={{ padding: 8, fontFamily: "monospace" }}>{r.source_folio_id}</td>
                 <td style={{ padding: 8, fontFamily: "monospace" }}>{r.dest_folio_id}</td>
                 <td style={{ padding: 8 }}>{(r.charge_codes || []).join(", ") || "TÜM"}</td>

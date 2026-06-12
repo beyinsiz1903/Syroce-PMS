@@ -134,7 +134,7 @@ const CalendarDateScrubber = ({ currentDate, daysToShow = 14, onChange, business
       <div
         ref={trackRef}
         onPointerDown={onTrackPointerDown}
-        className="relative h-7 rounded-md bg-gradient-to-r from-gray-100 via-gray-50 to-gray-100 border border-gray-200 cursor-pointer overflow-hidden"
+        className="relative h-7 rounded-md bg-gradient-to-r from-gray-100 via-gray-50 to-gray-100 dark:bg-none dark:bg-muted border border-gray-200 cursor-pointer overflow-hidden"
         data-testid="scrubber-track"
         role="slider"
         aria-label="Tarih zaman çizelgesi"

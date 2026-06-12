@@ -279,7 +279,7 @@ export default function RoomRequestPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 dark:bg-none dark:bg-background">
         <Loader2 className="w-10 h-10 animate-spin text-slate-400" />
       </div>
     );
@@ -302,7 +302,7 @@ export default function RoomRequestPage() {
   const accent = meta?.primary_color || "#0ea5e9";
 
   return (
-    <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-200 pb-24">
+    <div dir={rtl ? "rtl" : "ltr"} className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-200 dark:bg-none dark:bg-background pb-24">
       {/* Header */}
       <div className="text-white p-6 pb-10 rounded-b-3xl shadow-lg"
            style={{ background: `linear-gradient(135deg, ${accent} 0%, ${accent}dd 100%)` }}>

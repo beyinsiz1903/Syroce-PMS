@@ -110,14 +110,14 @@ export default function LoyaltyAdminPage() {
             <button type="submit">{t('cm.pages_LoyaltyAdminPage.ekle')}</button>
           </form>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr style={{ background: "#eee" }}>
+            <thead><tr style={{ background: "hsl(var(--muted))" }}>
               <th style={{ padding: 8, textAlign: "left" }}>Ad</th>
               <th style={{ padding: 8 }}>Min Puan</th>
               <th style={{ padding: 8 }}>{t('cm.pages_LoyaltyAdminPage.carpan_592f5')}</th>
               <th style={{ padding: 8, textAlign: "left" }}>Avantajlar</th>
             </tr></thead>
             <tbody>{tiers.map(t => (
-              <tr key={t.id} style={{ borderBottom: "1px solid #eee" }}>
+              <tr key={t.id} style={{ borderBottom: "1px solid hsl(var(--border))" }}>
                 <td style={{ padding: 8 }}><span style={{ background: t.color, color: "white", padding: "2px 8px", borderRadius: 4 }}>{t.name}</span></td>
                 <td style={{ padding: 8, textAlign: "center" }}>{t.min_points}</td>
                 <td style={{ padding: 8, textAlign: "center" }}>{t.earn_multiplier}x</td>
@@ -143,14 +143,14 @@ export default function LoyaltyAdminPage() {
             </form>
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr style={{ background: "#eee" }}>
+            <thead><tr style={{ background: "hsl(var(--muted))" }}>
               <th style={{ padding: 8, textAlign: "left" }}>{t('cm.pages_LoyaltyAdminPage.misafir')}</th>
               <th style={{ padding: 8 }}>Tier</th>
               <th style={{ padding: 8 }}>{t('cm.pages_LoyaltyAdminPage.bakiye')}</th>
               <th style={{ padding: 8 }}>Lifetime</th>
             </tr></thead>
             <tbody>{members.map(m => (
-              <tr key={m.id} style={{ borderBottom: "1px solid #eee" }}>
+              <tr key={m.id} style={{ borderBottom: "1px solid hsl(var(--border))" }}>
                 <td style={{ padding: 8, fontFamily: "monospace" }}>{m.guest_id}</td>
                 <td style={{ padding: 8, textAlign: "center" }}>{m.tier_name || "-"}</td>
                 <td style={{ padding: 8, textAlign: "right" }}>{m.points_balance}</td>
@@ -174,7 +174,7 @@ export default function LoyaltyAdminPage() {
             <button type="submit">{t('cm.pages_LoyaltyAdminPage.ekle_b9fc4')}</button>
           </form>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr style={{ background: "#eee" }}>
+            <thead><tr style={{ background: "hsl(var(--muted))" }}>
               <th style={{ padding: 8, textAlign: "left" }}>Ad</th>
               <th style={{ padding: 8 }}>Tip</th>
               <th style={{ padding: 8 }}>Puan</th>
@@ -183,7 +183,7 @@ export default function LoyaltyAdminPage() {
               <th style={{ padding: 8 }}>Aksiyon</th>
             </tr></thead>
             <tbody>{rewards.map(r => (
-              <tr key={r.id} style={{ borderBottom: "1px solid #eee", opacity: r.active ? 1 : 0.5 }}>
+              <tr key={r.id} style={{ borderBottom: "1px solid hsl(var(--border))", opacity: r.active ? 1 : 0.5 }}>
                 <td style={{ padding: 8 }}>{r.name}</td>
                 <td style={{ padding: 8, textAlign: "center" }}>{r.type}</td>
                 <td style={{ padding: 8, textAlign: "right" }}>{r.points_cost}</td>
