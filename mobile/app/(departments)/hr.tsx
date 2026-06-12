@@ -41,6 +41,7 @@ import {
   listStaff,
   listAnnouncements,
   markAnnouncementRead,
+  markAllAnnouncementsRead,
   getPerformanceSummary,
   decideLeaveRequest,
   type Shift,
@@ -655,6 +656,42 @@ function AnnouncementsPanel({ query }: { query: UseQueryResult<AnnouncementList>
     }
   };
 
+  // Bulk "mark all read": optimistically flip every visible item to read and
+  // zero the unread counter so the "Yeni" badges clear at once. Same cache
+  // discipline as the per-item path — invalidate on settle so the server stays
+  // the source of truth once its own per-user list cache expires.
+  const markAllRead = useMutation({
+    mutationFn: () => markAllAnnouncementsRead(),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: ['hr-announcements'] });
+      const prev = qc.getQueryData<AnnouncementList>(['hr-announcements']);
+      qc.setQueryData<AnnouncementList>(['hr-announcements'], (curr) => {
+        if (!curr) return curr;
+        return {
+          items: curr.items.map((a) =>
+            a.read === false ? { ...a, read: true } : a,
+          ),
+          unreadCount: 0,
+        };
+      });
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      haptic.error();
+      if (ctx?.prev) qc.setQueryData(['hr-announcements'], ctx.prev);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['hr-announcements'] });
+    },
+  });
+
+  const unreadCount = data?.unreadCount ?? 0;
+  const onMarkAllRead = () => {
+    if (unreadCount > 0 && !markAllRead.isPending) {
+      markAllRead.mutate();
+    }
+  };
+
   return (
     <>
       <SectionTitle title={tr.departments.hr.announcements} />
@@ -675,11 +712,23 @@ function AnnouncementsPanel({ query }: { query: UseQueryResult<AnnouncementList>
             />
             <KpiCard
               label={tr.departments.hr.announcementsUnread}
-              value={String(data?.unreadCount ?? 0)}
+              value={String(unreadCount)}
               icon="mail-unread"
-              tone={(data?.unreadCount ?? 0) > 0 ? 'warning' : 'default'}
+              tone={unreadCount > 0 ? 'warning' : 'default'}
             />
           </KpiRow>
+
+          {unreadCount > 0 ? (
+            <ActionButton
+              label={tr.departments.hr.markAllRead}
+              icon="checkmark-done"
+              onPress={onMarkAllRead}
+              bg={c.primary}
+              fg={c.primaryText}
+              loading={markAllRead.isPending}
+              testID="hr-announcements-mark-all-read"
+            />
+          ) : null}
 
           <View>
             {items.map((a) => {

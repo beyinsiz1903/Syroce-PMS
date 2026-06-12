@@ -41,6 +41,8 @@ export const hr = {
   announcementsTotal: 'Toplam Duyuru',
   newBadge: 'Yeni',
   markReadHint: 'Okundu olarak işaretlemek için dokunun',
+  markAllRead: 'Tümünü okundu işaretle',
+  markAllReadError: 'Duyurular okundu işaretlenemedi',
   priorities: {
     high: 'Yüksek',
     urgent: 'Acil',

@@ -743,6 +743,46 @@ async def mark_notification_read(
     }
 
 
+# 4b. PUT /api/notifications/mark-all-read - Bulk mark all visible unread as read
+
+
+@router.put("/notifications/mark-all-read")
+async def mark_all_notifications_read(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    _perm=Depends(get_current_user),  # auth-only
+):
+    """Mark every unread notification visible to the caller as read in one call.
+
+    Scope mirrors GET /notifications/list exactly: the caller's own
+    notifications plus tenant-wide system notifications (user_id is None).
+    This is the bulk counterpart of the per-id mark-read endpoint — it never
+    touches notifications addressed to another specific user, and RBAC is
+    unchanged (auth-only, like the single mark-read).
+    """
+    current_user = await get_current_user(credentials)
+
+    result = await db.notifications.update_many(
+        {
+            'read': False,
+            '$or': [
+                {'user_id': current_user.id},
+                {'tenant_id': current_user.tenant_id, 'user_id': None},
+            ],
+        },
+        {'$set': {'read': True, 'read_at': datetime.now(UTC).isoformat()}},
+    )
+
+    # Drop this user's cached list snapshots so the next poll reflects the
+    # cleared state immediately instead of waiting out the 10s TTL.
+    for key in [k for k in _NOTIF_LIST_CACHE if k[0] == current_user.id]:
+        _NOTIF_LIST_CACHE.pop(key, None)
+
+    return {
+        'message': 'Tüm bildirimler okundu olarak işaretlendi',
+        'updated_count': result.modified_count,
+    }
+
+
 # 5. POST /api/notifications/send-system-alert - Send system alert (internal use)
 
 

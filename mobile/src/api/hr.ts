@@ -193,6 +193,19 @@ export async function markAnnouncementRead(
   );
 }
 
+// PUT /api/notifications/mark-all-read — auth-only bulk counterpart of the
+// per-id mark-read. The backend scopes the update to the caller's own
+// notifications plus tenant-wide system notifications (same scope as the list),
+// so it never flips another specific user's read state. RBAC is unchanged.
+export async function markAllAnnouncementsRead(): Promise<{
+  updated_count: number;
+}> {
+  return api.put<{ updated_count: number }>(
+    '/api/notifications/mark-all-read',
+    {},
+  );
+}
+
 // The backend's 2-stage leave state machine (Task #263):
 //   pending → dept_approve → dept_approved → approve → approved
 //   pending | dept_approved → reject → rejected (note ZORUNLU)
