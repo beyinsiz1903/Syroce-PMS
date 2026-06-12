@@ -11,6 +11,8 @@ import {
 import {
   processQueuedCheckins,
   requeueCheckin,
+  requeueCheckins,
+  cancelQueuedCheckins,
   CHECKIN_QUEUE_EVENT,
   STALE_CHECKIN_AGE_MS,
 } from '@/utils/offlineCheckin';
@@ -72,6 +74,30 @@ export default function useOfflineCheckins() {
       sync();
     },
     [refresh, sync],
+  );
+
+  // Toplu "tümünü yeniden dene": verilen girişleri pending'e çevirir, sayaçları
+  // sıfırlar ve tek seferde eşitlemeyi tetikler.
+  const retryMany = useCallback(
+    async (ids) => {
+      const list = (Array.isArray(ids) ? ids : []).filter(Boolean);
+      if (!list.length) return;
+      await requeueCheckins(list);
+      await refresh();
+      sync();
+    },
+    [refresh, sync],
+  );
+
+  // Toplu "tümünü iptal": verilen girişleri kuyruktan kaldırır.
+  const cancelMany = useCallback(
+    async (ids) => {
+      const list = (Array.isArray(ids) ? ids : []).filter(Boolean);
+      if (!list.length) return;
+      await cancelQueuedCheckins(list);
+      await refresh();
+    },
+    [refresh],
   );
 
   useEffect(() => {
@@ -151,7 +177,9 @@ export default function useOfflineCheckins() {
     syncing,
     sync,
     retry,
+    retryMany,
     cancel,
+    cancelMany,
     dismiss,
     refresh,
   };

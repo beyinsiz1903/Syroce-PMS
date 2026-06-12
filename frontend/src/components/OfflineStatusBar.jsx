@@ -22,9 +22,17 @@ const OfflineStatusBar = () => {
     syncing,
     sync,
     retry,
+    retryMany,
     cancel,
+    cancelMany,
     dismiss,
   } = useOfflineCheckins();
+
+  // Toplu eylem hedefleri: takılan bekleyen girişlerin tümü; çakışanlardan ise
+  // yalnızca yeniden-denenebilir olanlar (gerçek iş çakışmaları tekrar denenmez).
+  const stalePendingIds = stalePending.map((item) => item.id);
+  const retryableConflictIds = conflicts.filter(isRetryableConflict).map((item) => item.id);
+  const conflictIds = conflicts.map((item) => item.id);
 
   const hasQueue = pendingCount > 0 || conflictCount > 0;
 
@@ -97,6 +105,31 @@ const OfflineStatusBar = () => {
               {stalePendingCount} check-in uzun suredir eşitlenemedi — kontrol edin.
             </span>
           </div>
+          {stalePendingCount > 1 && (
+            <div
+              className="mx-auto mt-1 flex max-w-3xl items-center justify-end gap-2"
+              data-testid="offline-stale-bulk-actions"
+            >
+              <button
+                type="button"
+                onClick={() => retryMany(stalePendingIds)}
+                className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-0.5 text-xs font-medium hover:bg-white/10"
+                data-testid="offline-stale-retry-all"
+              >
+                <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                Tümünü yeniden dene
+              </button>
+              <button
+                type="button"
+                onClick={() => cancelMany(stalePendingIds)}
+                className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-0.5 text-xs font-medium hover:bg-white/10"
+                data-testid="offline-stale-cancel-all"
+              >
+                <X className="h-3 w-3" aria-hidden="true" />
+                Tümünü iptal
+              </button>
+            </div>
+          )}
           <ul className="mx-auto mt-1 max-w-3xl space-y-1">
             {stalePending.map((item) => (
               <li
@@ -144,6 +177,33 @@ const OfflineStatusBar = () => {
             <AlertTriangle className="h-4 w-4" aria-hidden="true" />
             <span>{conflictCount} check-in eşitlenemedi (cakisma) — operatör islemi gerekiyor.</span>
           </div>
+          {conflictCount > 1 && (
+            <div
+              className="mx-auto mt-1 flex max-w-3xl items-center justify-end gap-2"
+              data-testid="offline-conflict-bulk-actions"
+            >
+              {retryableConflictIds.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => retryMany(retryableConflictIds)}
+                  className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-0.5 text-xs font-medium hover:bg-white/10"
+                  data-testid="offline-conflict-retry-all"
+                >
+                  <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                  Tümünü yeniden dene
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => cancelMany(conflictIds)}
+                className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-0.5 text-xs font-medium hover:bg-white/10"
+                data-testid="offline-conflict-dismiss-all"
+              >
+                <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                Tümünü temizle
+              </button>
+            </div>
+          )}
           <ul className="mx-auto mt-1 max-w-3xl space-y-1">
             {conflicts.map((item) => (
               <li

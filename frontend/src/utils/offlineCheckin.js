@@ -142,6 +142,42 @@ export async function cancelQueuedCheckin(id) {
 }
 
 /**
+ * Toplu "tümünü yeniden dene": verilen kimliklerdeki girişleri pending'e çevirir,
+ * deneme sayacını sıfırlar ve hata izini temizler. Tek bir kuyruk-değişti olayı
+ * yayar (N ayrı tazeleme yerine). Çağıran (hook) ardından eşitlemeyi tetikler.
+ * @param {string[]} ids
+ * @returns {Promise<number>} işlenen giriş sayısı
+ */
+export async function requeueCheckins(ids) {
+  const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
+  for (const id of list) {
+    await updateQueuedCheckin(id, {
+      status: 'pending',
+      error: null,
+      httpStatus: null,
+      attempts: 0,
+    });
+  }
+  if (list.length) emitQueueChanged({ requeuedAll: true, count: list.length });
+  return list.length;
+}
+
+/**
+ * Toplu "tümünü iptal": verilen kimliklerdeki girişleri kuyruktan kaldırır.
+ * Tek bir kuyruk-değişti olayı yayar.
+ * @param {string[]} ids
+ * @returns {Promise<number>} kaldırılan giriş sayısı
+ */
+export async function cancelQueuedCheckins(ids) {
+  const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
+  for (const id of list) {
+    await removeQueuedCheckin(id);
+  }
+  if (list.length) emitQueueChanged({ cancelledAll: true, count: list.length });
+  return list.length;
+}
+
+/**
  * Sayfa bağlamı yedek eşitleyici. Idempotent v2 ucuna replay eder; axios
  * interceptor'ları token enjekte eder + 401'de sessiz yeniler.
  * @returns {Promise<{synced: number, conflicts: number, remaining: number}>}

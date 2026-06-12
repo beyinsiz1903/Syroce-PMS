@@ -20,6 +20,8 @@ import {
   processQueuedCheckins,
   requeueCheckin,
   cancelQueuedCheckin,
+  requeueCheckins,
+  cancelQueuedCheckins,
   MAX_CHECKIN_ATTEMPTS,
 } from '@/utils/offlineCheckin';
 
@@ -159,5 +161,47 @@ describe('requeueCheckin / cancelQueuedCheckin — operatör eylemleri', () => {
   it('cancel girisi kuyruktan kaldirir', async () => {
     await cancelQueuedCheckin('checkin-y');
     expect(removeQueuedCheckin).toHaveBeenCalledWith('checkin-y');
+  });
+});
+
+describe('requeueCheckins / cancelQueuedCheckins — toplu operatör eylemleri', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    updateQueuedCheckin.mockResolvedValue(undefined);
+    removeQueuedCheckin.mockResolvedValue(undefined);
+  });
+
+  it('requeueCheckins her girisi pending yapar ve sayaci sifirlar', async () => {
+    const count = await requeueCheckins(['checkin-1', 'checkin-2']);
+    expect(count).toBe(2);
+    expect(updateQueuedCheckin).toHaveBeenCalledTimes(2);
+    expect(updateQueuedCheckin).toHaveBeenCalledWith('checkin-1', {
+      status: 'pending',
+      error: null,
+      httpStatus: null,
+      attempts: 0,
+    });
+    expect(updateQueuedCheckin).toHaveBeenCalledWith('checkin-2', {
+      status: 'pending',
+      error: null,
+      httpStatus: null,
+      attempts: 0,
+    });
+  });
+
+  it('cancelQueuedCheckins her girisi kuyruktan kaldirir', async () => {
+    const count = await cancelQueuedCheckins(['checkin-a', 'checkin-b', 'checkin-c']);
+    expect(count).toBe(3);
+    expect(removeQueuedCheckin).toHaveBeenCalledTimes(3);
+    expect(removeQueuedCheckin).toHaveBeenCalledWith('checkin-a');
+    expect(removeQueuedCheckin).toHaveBeenCalledWith('checkin-c');
+  });
+
+  it('bos veya gecersiz liste no-op olur (cokmez)', async () => {
+    expect(await requeueCheckins([])).toBe(0);
+    expect(await requeueCheckins(undefined)).toBe(0);
+    expect(await cancelQueuedCheckins([null, undefined])).toBe(0);
+    expect(updateQueuedCheckin).not.toHaveBeenCalled();
+    expect(removeQueuedCheckin).not.toHaveBeenCalled();
   });
 });
