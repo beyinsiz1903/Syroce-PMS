@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, Field, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { Badge, Body, Card, EmptyState, Field, H1, Muted, SkeletonCard } from '../../src/components/ui';
 import { DatePicker } from '../../src/components/DatePicker';
 import { FilterChips } from '../../src/components/FilterChips';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -56,6 +56,13 @@ function nightsBetween(checkIn?: string, checkOut?: string): number | null {
 function ReservationRow({ r, onPress }: { r: Reservation; onPress: () => void }) {
   const c = useTheme();
   const nights = nightsBetween(r.check_in, r.check_out);
+  const accentMap: Record<ReturnType<typeof statusTone>, string> = {
+    success: c.success,
+    warning: c.warning,
+    info: c.info,
+    danger: c.danger,
+    default: c.border,
+  };
   return (
     <Pressable
       onPress={onPress}
@@ -64,12 +71,12 @@ function ReservationRow({ r, onPress }: { r: Reservation; onPress: () => void })
       testID="smoke-reservation-row"
       style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
     >
-      <Card>
+      <Card accent={accentMap[statusTone(r.status)]}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm }}>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
               <Body style={{ fontWeight: '600', flexShrink: 1 }}>{r.guest_name || '—'}</Body>
-              {r.vip_status ? <Badge label="VIP" tone="vip" /> : null}
+              {r.vip_status ? <Badge label={tr.guests.vip} tone="vip" icon="star" /> : null}
             </View>
             <Muted>
               {tr.reservations.room} {r.room_number || '—'} · {r.room_type || ''}
@@ -214,9 +221,7 @@ export default function ReservationsScreen() {
             />
           }
           ListEmptyComponent={
-            <Card>
-              <Muted>{tr.reservations.noResults}</Muted>
-            </Card>
+            <EmptyState icon="calendar-outline" title={tr.reservations.noResults} />
           }
           renderItem={({ item }) => (
             <ReservationRow r={item} onPress={() => openDetail(item)} />

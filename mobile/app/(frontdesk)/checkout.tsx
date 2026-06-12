@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, Share, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { ScrollView, Share, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
+  ActionButton,
   Badge,
   Body,
   Button,
   Card,
+  EmptyState,
   Field,
   H1,
   H2,
   Muted,
+  SegmentedActions,
   Skeleton,
 } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
@@ -22,12 +25,15 @@ import { errorMessage } from '../../src/utils/errors';
 
 export default function CheckoutScreen() {
   const c = useTheme();
+  const router = useRouter();
   const params = useLocalSearchParams<{ bookingId?: string }>();
   const [roomNo, setRoomNo] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [booking, setBooking] = useState<Booking | null>(null);
   const [folio, setFolio] = useState<Folio | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
     if (params.bookingId) {
@@ -56,7 +62,7 @@ export default function CheckoutScreen() {
     try {
       const list = await searchBookingByRoom(roomNo);
       if (!list.length) {
-        setError('Oda için aktif rezervasyon bulunamadı');
+        setError(tr.checkout.notFound);
         haptic.warning();
         return;
       }
@@ -91,13 +97,23 @@ export default function CheckoutScreen() {
     }
   };
 
-  const onCheckout = async () => {
+  // Inline two-step confirm (NOT Alert.alert — a no-op on Expo Web). Tapping
+  // "Çıkış yap" reveals an inline confirm row; tapping "Evet, çıkış yap" fires.
+  const onCheckoutPress = () => {
+    if (!booking) return;
+    haptic.tap();
+    setError(null);
+    setConfirming((v) => !v);
+  };
+
+  const onCheckoutConfirm = async () => {
     if (!booking) return;
     setBusy(true);
     try {
       await checkout(booking.id, false);
       haptic.success();
-      Alert.alert(tr.app.success, tr.checkout.success);
+      setConfirming(false);
+      setDone(true);
     } catch (e: unknown) {
       setError(errorMessage(e, tr.errors.generic));
       haptic.error();
@@ -109,12 +125,12 @@ export default function CheckoutScreen() {
   const onShare = async () => {
     if (!folio) return;
     const lines = [
-      `Folio ${folio.folio_number || folio.id}`,
-      `Oda: ${booking?.room_number || roomNo}`,
-      `Bakiye: ${formatCurrency(folio.balance)}`,
+      `${tr.checkout.folio} ${folio.folio_number || folio.id}`,
+      `${tr.checkout.room}: ${booking?.room_number || roomNo}`,
+      `${tr.checkout.balance}: ${formatCurrency(folio.balance)}`,
       ...(folio.charges || []).map(
         (ch) =>
-          `${ch.description || ch.charge_category || 'Charge'}: ${formatCurrency(
+          `${ch.description || ch.charge_category || tr.checkout.charge}: ${formatCurrency(
             ch.total ?? ch.amount,
           )}`,
       ),
@@ -125,6 +141,34 @@ export default function CheckoutScreen() {
       // user cancelled
     }
   };
+
+  const resetForNext = () => {
+    setDone(false);
+    setBooking(null);
+    setFolio(null);
+    setRoomNo('');
+    setError(null);
+  };
+
+  if (done) {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg, justifyContent: 'center' }}>
+        <EmptyState
+          icon="checkmark-circle"
+          title={tr.checkout.success}
+          message={tr.checkout.successHint}
+          action={
+            <View style={{ gap: spacing.sm, alignItems: 'stretch' }}>
+              <Button title={tr.checkout.newCheckout} icon="refresh" variant="secondary" onPress={resetForNext} />
+              <Button title={tr.checkout.done} icon="arrow-back" onPress={() => router.back()} />
+            </View>
+          }
+        />
+      </View>
+    );
+  }
+
+  const balanceDue = (folio?.balance || 0) > 0;
 
   return (
     <ScrollView
@@ -147,10 +191,14 @@ export default function CheckoutScreen() {
           onSubmitEditing={onLookup}
         />
         <View style={{ height: spacing.sm }} />
-        <Button title="Bul" onPress={onLookup} loading={busy} fullWidth />
+        <Button title={tr.checkout.lookup} icon="search" onPress={onLookup} loading={busy} fullWidth />
       </Card>
 
-      {error ? <Body style={{ color: c.danger }}>{error}</Body> : null}
+      {error ? (
+        <Card accent={c.danger}>
+          <Body style={{ color: c.danger }}>{error}</Body>
+        </Card>
+      ) : null}
 
       {busy && !folio ? (
         <Card>
@@ -163,14 +211,16 @@ export default function CheckoutScreen() {
       ) : null}
 
       {folio ? (
-        <Card>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Card accent={balanceDue ? c.warning : c.success}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <H2>{tr.checkout.folio}</H2>
             <Badge
               label={`${tr.checkout.balance}: ${formatCurrency(folio.balance)}`}
-              tone={(folio.balance || 0) > 0 ? 'warning' : 'success'}
+              tone={balanceDue ? 'warning' : 'success'}
             />
           </View>
+          <Muted style={{ marginTop: spacing.xs }}>{tr.checkout.folioNote}</Muted>
+          <View style={{ height: spacing.sm }} />
           {(folio.charges || []).slice(0, 8).map((ch) => (
             <View
               key={ch.id}
@@ -184,21 +234,47 @@ export default function CheckoutScreen() {
         </Card>
       ) : null}
 
-      {folio && (folio.balance || 0) > 0 ? (
-        <Button title={tr.checkout.pay} onPress={onPay} loading={busy} fullWidth />
+      {folio && balanceDue ? (
+        <Button title={tr.checkout.pay} icon="cash-outline" variant="secondary" onPress={onPay} loading={busy} fullWidth />
       ) : null}
 
       {folio ? (
-        <Button title={tr.checkout.share} variant="secondary" onPress={onShare} fullWidth />
+        <Button title={tr.checkout.share} icon="share-outline" variant="outline" onPress={onShare} fullWidth />
       ) : null}
 
       {booking ? (
-        <Button
-          title={`${tr.app.confirm} · ${tr.checkout.title}`}
-          onPress={onCheckout}
-          loading={busy}
-          fullWidth
-        />
+        confirming ? (
+          <View style={{ gap: spacing.sm }}>
+            <Muted>{tr.checkout.confirmTitle}</Muted>
+            <SegmentedActions>
+              <ActionButton
+                label={tr.app.cancel}
+                icon="arrow-undo"
+                onPress={() => setConfirming(false)}
+                bg={c.surfaceAlt}
+                fg={c.text}
+                disabled={busy}
+              />
+              <ActionButton
+                label={tr.checkout.confirmYes}
+                icon="exit-outline"
+                onPress={onCheckoutConfirm}
+                bg={c.success}
+                fg="#ffffff"
+                loading={busy}
+              />
+            </SegmentedActions>
+          </View>
+        ) : (
+          <Button
+            title={`${tr.app.confirm} · ${tr.checkout.title}`}
+            icon="exit-outline"
+            variant="success"
+            onPress={onCheckoutPress}
+            loading={busy}
+            fullWidth
+          />
+        )
       ) : null}
     </ScrollView>
   );

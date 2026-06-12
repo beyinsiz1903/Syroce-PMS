@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Body, Button, Card, Field, H1, H2, Muted } from '../../src/components/ui';
+import { Badge, Body, Button, Card, EmptyState, Field, H1, H2, Muted } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { haptic } from '../../src/hooks/useHaptic';
@@ -22,6 +22,7 @@ export default function WalkInScreen() {
   const [suggested, setSuggested] = useState<Room | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
     listRooms().then((rs) => {
@@ -41,7 +42,7 @@ export default function WalkInScreen() {
 
   const onConfirm = async () => {
     if (!name || !suggested) {
-      setError('Ad ve oda gerekli');
+      setError(tr.walkin.needNameRoom);
       haptic.warning();
       return;
     }
@@ -57,9 +58,8 @@ export default function WalkInScreen() {
         payment_method: 'cash',
       });
       haptic.success();
-      Alert.alert(tr.app.success, tr.walkin.success, [
-        { text: tr.app.close, onPress: () => router.back() },
-      ]);
+      // Inline success state (NOT Alert.alert — a no-op on Expo Web).
+      setDone(true);
     } catch (e: unknown) {
       setError(errorMessage(e, tr.errors.generic));
       haptic.error();
@@ -67,6 +67,21 @@ export default function WalkInScreen() {
       setBusy(false);
     }
   };
+
+  if (done) {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg, justifyContent: 'center' }}>
+        <EmptyState
+          icon="checkmark-circle"
+          title={tr.walkin.success}
+          message={tr.walkin.successHint}
+          action={
+            <Button title={tr.walkin.done} icon="arrow-back" onPress={() => router.back()} />
+          }
+        />
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -78,7 +93,11 @@ export default function WalkInScreen() {
       }}
     >
       <H1>{tr.walkin.title}</H1>
-      {error ? <Body style={{ color: c.danger }}>{error}</Body> : null}
+      {error ? (
+        <Card accent={c.danger}>
+          <Body style={{ color: c.danger }}>{error}</Body>
+        </Card>
+      ) : null}
 
       <Card>
         <Field label={tr.walkin.name} value={name} onChangeText={setName} autoCapitalize="words" />
@@ -88,27 +107,31 @@ export default function WalkInScreen() {
 
       <Card>
         <H2>{tr.walkin.roomType}</H2>
-        <View
-          style={{
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            gap: spacing.sm,
-            marginTop: spacing.sm,
-          }}
-        >
-          {types.map((t) => (
-            <Button
-              key={t}
-              title={t}
-              variant={roomType === t ? 'primary' : 'secondary'}
-              onPress={() => onSuggest(t)}
-            />
-          ))}
-        </View>
+        {types.length === 0 ? (
+          <Muted style={{ marginTop: spacing.sm }}>{tr.walkin.noRooms}</Muted>
+        ) : (
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              gap: spacing.sm,
+              marginTop: spacing.sm,
+            }}
+          >
+            {types.map((t) => (
+              <Button
+                key={t}
+                title={t}
+                variant={roomType === t ? 'primary' : 'secondary'}
+                onPress={() => onSuggest(t)}
+              />
+            ))}
+          </View>
+        )}
         {suggested ? (
-          <View style={{ marginTop: spacing.md }}>
-            <Muted>{tr.walkin.suggested}</Muted>
-            <H2>Oda {suggested.room_number}</H2>
+          <View style={{ marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <Muted>{tr.walkin.suggested}:</Muted>
+            <Badge label={`${tr.walkin.room} ${suggested.room_number}`} tone="success" icon="bed" />
           </View>
         ) : null}
       </Card>
@@ -122,7 +145,14 @@ export default function WalkInScreen() {
         />
       </Card>
 
-      <Button title={tr.walkin.confirm} onPress={onConfirm} loading={busy} fullWidth />
+      <Button
+        title={tr.walkin.confirm}
+        icon="checkmark-circle"
+        variant="success"
+        onPress={onConfirm}
+        loading={busy}
+        fullWidth
+      />
     </ScrollView>
   );
 }

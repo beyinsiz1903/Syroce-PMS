@@ -5,9 +5,10 @@ import {
   Badge,
   Body,
   Card,
+  DetailRow,
+  EmptyState,
   Field,
   H1,
-  H2,
   Muted,
   SkeletonCard,
 } from '../../src/components/ui';
@@ -49,6 +50,7 @@ export default function GuestsScreen() {
   const offline = guests.isError && isOffline(guests.error);
   const showSkeleton = guests.isLoading && q.trim().length >= 2;
   const data = guests.data || [];
+  const tooShort = q.trim().length < 2;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg }}>
@@ -65,7 +67,7 @@ export default function GuestsScreen() {
       <OfflineBanner visible={offline} />
 
       {selected ? (
-        <Card>
+        <Card accent={blacklisted ? c.danger : selected.vip_status ? c.vip : c.primary}>
           <View
             style={{
               flexDirection: 'row',
@@ -74,25 +76,29 @@ export default function GuestsScreen() {
               flexWrap: 'wrap',
             }}
           >
-            <H2>
+            <Body style={{ fontWeight: '700', fontSize: 17, flexShrink: 1 }}>
               {selected.first_name || ''} {selected.last_name || selected.full_name || ''}
-            </H2>
-            {selected.vip_status ? <Badge label={tr.guests.vip} tone="vip" /> : null}
-            {blacklisted ? <Badge label={tr.guests.blacklist} tone="danger" /> : null}
+            </Body>
+            {selected.vip_status ? <Badge label={tr.guests.vip} tone="vip" icon="star" /> : null}
+            {blacklisted ? <Badge label={tr.guests.blacklist} tone="danger" icon="ban" /> : null}
           </View>
-          {selected.phone ? <Muted>Tel: {selected.phone}</Muted> : null}
-          {selected.email ? <Muted>{selected.email}</Muted> : null}
-          {selected.nationality ? <Muted>Uyruk: {selected.nationality}</Muted> : null}
+          <View style={{ height: spacing.sm }} />
+          {selected.phone ? <DetailRow label={tr.guests.phone} value={selected.phone} /> : null}
+          {selected.email ? <DetailRow label={tr.guests.contact} value={selected.email} /> : null}
+          {selected.nationality ? (
+            <DetailRow label={tr.guests.nationality} value={selected.nationality} />
+          ) : null}
           {selected.notes ? (
-            <View style={{ marginTop: spacing.sm }}>
-              <Muted>{tr.guests.preferences}</Muted>
-              <Body>{selected.notes}</Body>
-            </View>
+            <DetailRow label={tr.guests.preferences} value={selected.notes} />
           ) : null}
         </Card>
       ) : null}
 
-      {showSkeleton ? (
+      {selected ? <View style={{ height: spacing.md }} /> : null}
+
+      {tooShort ? (
+        <EmptyState icon="search-outline" title={tr.guests.searchHint} />
+      ) : showSkeleton ? (
         <SkeletonCard />
       ) : (
         <FlatList
@@ -107,14 +113,12 @@ export default function GuestsScreen() {
             />
           }
           ListEmptyComponent={
-            q.trim().length >= 2 && !guests.isLoading ? (
-              <Card>
-                <Muted>{tr.guests.noResults}</Muted>
-              </Card>
+            !guests.isLoading ? (
+              <EmptyState icon="person-outline" title={tr.guests.noResults} />
             ) : null
           }
           renderItem={({ item }) => (
-            <Pressable onPress={() => setSelected(item)}>
+            <Pressable onPress={() => setSelected(item)} accessibilityRole="button">
               <Card>
                 <View
                   style={{
@@ -124,13 +128,13 @@ export default function GuestsScreen() {
                   }}
                 >
                   <View style={{ flex: 1 }}>
-                    <Body>
+                    <Body style={{ fontWeight: '600' }}>
                       {item.first_name || ''} {item.last_name || item.full_name || ''}
                     </Body>
                     <Muted>{item.phone || item.email || item.id_number || ''}</Muted>
                   </View>
                   <View style={{ flexDirection: 'row', gap: spacing.xs }}>
-                    {item.vip_status ? <Badge label="VIP" tone="vip" /> : null}
+                    {item.vip_status ? <Badge label={tr.guests.vip} tone="vip" icon="star" /> : null}
                     {item.blacklisted ? <Badge label="!" tone="danger" /> : null}
                   </View>
                 </View>

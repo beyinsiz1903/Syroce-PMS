@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   CameraView,
@@ -12,6 +12,7 @@ import {
   Body,
   Button,
   Card,
+  EmptyState,
   Field,
   H1,
   H2,
@@ -44,6 +45,7 @@ export default function CheckinScreen() {
   const scannedRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
   const [parsed, setParsed] = useState<QuickIdResult | null>(null);
   const [bookingId, setBookingId] = useState<string | null>(params.bookingId ?? null);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -106,7 +108,7 @@ export default function CheckinScreen() {
   const onConfirm = async () => {
     if (!parsed) return;
     if (!bookingId && !selectedRoom) {
-      setError('Rezervasyon yoksa walk-in için oda seçin');
+      setError(tr.checkin.needRoom);
       haptic.warning();
       return;
     }
@@ -149,9 +151,9 @@ export default function CheckinScreen() {
       }
 
       haptic.success();
-      Alert.alert(tr.app.success, tr.checkin.success, [
-        { text: tr.app.close, onPress: () => router.back() },
-      ]);
+      // Inline success state (NOT Alert.alert — a no-op on Expo Web, which left
+      // check-in silently broken there). The operator taps "Bitti" to return.
+      setDone(true);
     } catch (e: unknown) {
       setError(errorMessage(e, tr.errors.generic));
       haptic.error();
@@ -159,6 +161,21 @@ export default function CheckinScreen() {
       setBusy(false);
     }
   };
+
+  if (done) {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg, justifyContent: 'center' }}>
+        <EmptyState
+          icon="checkmark-circle"
+          title={tr.checkin.success}
+          message={tr.checkin.successHint}
+          action={
+            <Button title={tr.checkin.done} icon="arrow-back" onPress={() => router.back()} />
+          }
+        />
+      </View>
+    );
+  }
 
   if (step === 'scan' && permission?.granted) {
     return (
@@ -171,7 +188,7 @@ export default function CheckinScreen() {
         />
         <View style={{ padding: spacing.lg, gap: spacing.sm, backgroundColor: c.surface }}>
           <Muted>{tr.checkin.scan}</Muted>
-          <Button title={tr.checkin.photo} onPress={pickAndScanId} loading={busy} />
+          <Button title={tr.checkin.photo} icon="camera" onPress={pickAndScanId} loading={busy} fullWidth />
         </View>
       </View>
     );
@@ -181,13 +198,17 @@ export default function CheckinScreen() {
     return (
       <View style={{ flex: 1, padding: spacing.lg, backgroundColor: c.bg, gap: spacing.md }}>
         <H1>{tr.checkin.title}</H1>
-        <Muted>{tr.errors.permissionCamera}</Muted>
-        <Button title={tr.app.retry} onPress={() => requestPermission()} />
+        <Card accent={c.warning}>
+          <Muted>{tr.errors.permissionCamera}</Muted>
+        </Card>
+        <Button title={tr.app.retry} icon="refresh" onPress={() => requestPermission()} fullWidth />
         <Button
           title={tr.checkin.photo}
+          icon="camera"
           variant="secondary"
           onPress={pickAndScanId}
           loading={busy}
+          fullWidth
         />
       </View>
     );
@@ -203,53 +224,80 @@ export default function CheckinScreen() {
       }}
     >
       <H1>{tr.checkin.title}</H1>
-      {bookingId ? <Muted>Rezervasyon: {bookingId}</Muted> : <Muted>Walk-in akışı</Muted>}
-      {error ? <Body style={{ color: c.danger }}>{error}</Body> : null}
+      {bookingId ? (
+        <Badge label={`${tr.checkin.reservationLabel}: ${bookingId}`} tone="info" icon="bookmark" />
+      ) : (
+        <Badge label={tr.checkin.walkinFlow} tone="primary" icon="walk" />
+      )}
+      {error ? (
+        <Card accent={c.danger}>
+          <Body style={{ color: c.danger }}>{error}</Body>
+        </Card>
+      ) : null}
 
       <Card>
-        <H2>Misafir</H2>
+        <H2>{tr.checkin.guest}</H2>
+        <View style={{ height: spacing.sm }} />
         <Field
-          label="Ad"
+          label={tr.checkin.firstName}
           value={parsed?.first_name || ''}
           onChangeText={(t) => setParsed((p) => ({ ...(p || {}), first_name: t }))}
         />
         <View style={{ height: spacing.sm }} />
         <Field
-          label="Soyad"
+          label={tr.checkin.lastName}
           value={parsed?.last_name || ''}
           onChangeText={(t) => setParsed((p) => ({ ...(p || {}), last_name: t }))}
         />
         <View style={{ height: spacing.sm }} />
         <Field
-          label="Kimlik / Pasaport"
+          label={tr.checkin.idOrPassport}
           value={parsed?.id_number || parsed?.passport_number || ''}
           onChangeText={(t) => setParsed((p) => ({ ...(p || {}), id_number: t }))}
         />
-        {parsed?.nationality ? <Badge label={parsed.nationality} tone="info" /> : null}
+        {parsed?.nationality ? (
+          <View style={{ marginTop: spacing.sm }}>
+            <Badge label={parsed.nationality} tone="info" />
+          </View>
+        ) : null}
       </Card>
 
       <Card>
         <H2>{tr.checkin.pickRoom}</H2>
-        <Muted>{rooms.length} uygun oda</Muted>
+        <Muted style={{ marginTop: spacing.xs }}>
+          {rooms.length} {tr.checkin.roomsAvailable}
+        </Muted>
         <View style={{ height: spacing.sm }} />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-          {rooms.slice(0, 12).map((r) => (
-            <Button
-              key={r.id}
-              title={r.room_number}
-              variant={selectedRoom?.id === r.id ? 'primary' : 'secondary'}
-              onPress={() => setSelectedRoom(r)}
-            />
-          ))}
-        </View>
+        {rooms.length === 0 ? (
+          <Muted>{tr.checkin.noRooms}</Muted>
+        ) : (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+            {rooms.slice(0, 12).map((r) => (
+              <Button
+                key={r.id}
+                title={r.room_number}
+                variant={selectedRoom?.id === r.id ? 'primary' : 'secondary'}
+                onPress={() => setSelectedRoom(r)}
+              />
+            ))}
+          </View>
+        )}
         {selectedRoom ? (
           <Muted style={{ marginTop: spacing.sm }}>
-            Seçildi: Oda {selectedRoom.room_number} ({selectedRoom.room_type || ''})
+            {tr.checkin.selected}: {tr.today.room} {selectedRoom.room_number}
+            {selectedRoom.room_type ? ` (${selectedRoom.room_type})` : ''}
           </Muted>
         ) : null}
       </Card>
 
-      <Button title={tr.checkin.confirm} onPress={onConfirm} loading={busy} fullWidth />
+      <Button
+        title={tr.checkin.confirm}
+        icon="checkmark-circle"
+        variant="success"
+        onPress={onConfirm}
+        loading={busy}
+        fullWidth
+      />
     </ScrollView>
   );
 }

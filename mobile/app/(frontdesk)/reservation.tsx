@@ -1,17 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ActionButton,
   Badge,
   Body,
   Button,
   Card,
+  DetailHeader,
   Divider,
   Field,
-  H1,
   H2,
   Muted,
+  SegmentedActions,
   SkeletonCard,
 } from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -120,6 +122,11 @@ export default function ReservationDetailScreen() {
   // detail screen readable on a phone.
   const [panel, setPanel] = useState<'' | 'dates' | 'room' | 'rate' | 'guests'>('');
   const [actionError, setActionError] = useState<string | null>(null);
+  // Inline success banner (NOT Alert.alert — a no-op on Expo Web). Cleared when
+  // a new panel opens or another action starts.
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  // Inline two-step cancel confirm (Alert-based confirm is broken on web).
+  const [cancelConfirming, setCancelConfirming] = useState(false);
 
   const [checkIn, setCheckIn] = useState(toDisplayDate(p.check_in));
   const [checkOut, setCheckOut] = useState(toDisplayDate(p.check_out));
@@ -160,6 +167,8 @@ export default function ReservationDetailScreen() {
 
   const openPanel = (next: 'dates' | 'room' | 'rate' | 'guests') => {
     setActionError(null);
+    setSuccessMsg(null);
+    setCancelConfirming(false);
     setPanel((cur) => (cur === next ? '' : next));
     if (next === 'guests') {
       // Prefill from the OTA-details payload so an edit to one field never
@@ -214,7 +223,7 @@ export default function ReservationDetailScreen() {
       haptic.success();
       refreshAll();
       closePanel();
-      Alert.alert(tr.app.success, tr.reservations.saved);
+      setSuccessMsg(tr.reservations.saved);
     },
     onError: (e: unknown) => {
       haptic.error();
@@ -237,7 +246,7 @@ export default function ReservationDetailScreen() {
       haptic.success();
       refreshAll();
       closePanel();
-      Alert.alert(tr.app.success, tr.reservations.saved);
+      setSuccessMsg(tr.reservations.saved);
     },
     onError: (e: unknown) => {
       haptic.error();
@@ -268,7 +277,7 @@ export default function ReservationDetailScreen() {
       haptic.success();
       refreshAll();
       closePanel();
-      Alert.alert(tr.app.success, tr.reservations.saved);
+      setSuccessMsg(tr.reservations.saved);
     },
     onError: (e: unknown) => {
       haptic.error();
@@ -282,7 +291,7 @@ export default function ReservationDetailScreen() {
       haptic.success();
       refreshAll();
       closePanel();
-      Alert.alert(tr.app.success, tr.reservations.roomChanged);
+      setSuccessMsg(tr.reservations.roomChanged);
     },
     onError: (e: unknown) => {
       haptic.error();
@@ -295,23 +304,22 @@ export default function ReservationDetailScreen() {
     onSuccess: () => {
       haptic.success();
       refreshAll();
-      Alert.alert(tr.app.success, tr.reservations.saved);
+      setCancelConfirming(false);
+      setActionError(null);
+      setSuccessMsg(tr.reservations.saved);
     },
     onError: (e: unknown) => {
       haptic.error();
-      Alert.alert(tr.app.error, errorMessage(e, tr.reservations.actionError));
+      setCancelConfirming(false);
+      setActionError(errorMessage(e, tr.reservations.actionError));
     },
   });
 
-  const confirmCancel = () => {
-    Alert.alert(tr.reservations.cancelConfirmTitle, tr.reservations.cancelConfirmBody, [
-      { text: tr.reservations.cancel, style: 'cancel' },
-      {
-        text: tr.reservations.cancelConfirmYes,
-        style: 'destructive',
-        onPress: () => cancelMutation.mutate(),
-      },
-    ]);
+  const onCancelPress = () => {
+    haptic.tap();
+    setActionError(null);
+    setSuccessMsg(null);
+    setCancelConfirming((v) => !v);
   };
 
   return (
@@ -321,10 +329,24 @@ export default function ReservationDetailScreen() {
     >
       <OfflineBanner visible={offline} />
 
-      <View>
-        <H1>{p.guest_name || tr.reservations.guest}</H1>
-        {p.booking_number ? <Muted>#{p.booking_number}</Muted> : null}
-      </View>
+      <DetailHeader
+        title={p.guest_name || tr.reservations.guest}
+        subtitle={p.booking_number ? `#${p.booking_number}` : undefined}
+        badges={
+          <>
+            {p.status ? <Badge label={p.status} tone={isCancelled ? 'danger' : 'info'} /> : null}
+            {p.room_number ? (
+              <Badge label={`${tr.reservations.room} ${p.room_number}`} tone="default" icon="bed" />
+            ) : null}
+          </>
+        }
+      />
+
+      {successMsg ? (
+        <Card accent={c.success}>
+          <Body style={{ color: c.success }}>{successMsg}</Body>
+        </Card>
+      ) : null}
 
       <Card>
         <H2>{tr.reservations.stay}</H2>
@@ -335,11 +357,6 @@ export default function ReservationDetailScreen() {
         <Muted style={{ marginTop: 2 }}>
           {tr.reservations.room} {p.room_number || '—'} · {p.room_type || ''}
         </Muted>
-        {p.status ? (
-          <View style={{ flexDirection: 'row', marginTop: spacing.sm }}>
-            <Badge label={p.status} tone="info" />
-          </View>
-        ) : null}
       </Card>
 
       {!isCancelled ? (
@@ -484,13 +501,37 @@ export default function ReservationDetailScreen() {
           ) : null}
 
           <View style={{ marginTop: spacing.md }}>
-            <Button
-              title={tr.reservations.cancelReservation}
-              variant="danger"
-              onPress={confirmCancel}
-              loading={cancelMutation.isPending}
-              fullWidth
-            />
+            {cancelConfirming ? (
+              <View style={{ gap: spacing.sm }}>
+                <Muted>{tr.reservations.cancelConfirmBody}</Muted>
+                <SegmentedActions>
+                  <ActionButton
+                    label={tr.reservations.cancel}
+                    icon="arrow-undo"
+                    onPress={() => setCancelConfirming(false)}
+                    bg={c.surfaceAlt}
+                    fg={c.text}
+                    disabled={cancelMutation.isPending}
+                  />
+                  <ActionButton
+                    label={tr.reservations.cancelConfirmYes}
+                    icon="trash-outline"
+                    onPress={() => cancelMutation.mutate()}
+                    bg={c.danger}
+                    fg="#ffffff"
+                    loading={cancelMutation.isPending}
+                  />
+                </SegmentedActions>
+              </View>
+            ) : (
+              <Button
+                title={tr.reservations.cancelReservation}
+                variant="danger"
+                icon="close-circle-outline"
+                onPress={onCancelPress}
+                fullWidth
+              />
+            )}
           </View>
         </Card>
       ) : null}
@@ -498,8 +539,8 @@ export default function ReservationDetailScreen() {
       {p.guest_phone || p.guest_email ? (
         <Card>
           <H2>{tr.reservations.contact}</H2>
-          <Row label="Tel" value={p.guest_phone} />
-          <Row label="E-posta" value={p.guest_email} />
+          <Row label={tr.guests.phone} value={p.guest_phone} />
+          <Row label={tr.guests.contact} value={p.guest_email} />
         </Card>
       ) : null}
 

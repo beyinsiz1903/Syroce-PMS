@@ -7,11 +7,13 @@ import {
   Body,
   Button,
   Card,
+  EmptyState,
   H1,
-  H2,
   Muted,
+  SectionTitle,
   SkeletonCard,
 } from '../../src/components/ui';
+import { KpiCard, KpiRow } from '../../src/components/KpiCard';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -21,7 +23,7 @@ import {
   getTodayArrivals,
   getTodayDepartures,
 } from '../../src/api/bookings';
-import { formatTime } from '../../src/utils/format';
+import { formatCurrency, formatTime } from '../../src/utils/format';
 import { isOffline } from '../../src/utils/errors';
 import { ROUTES } from '../../src/navigation/routes';
 
@@ -35,29 +37,35 @@ function BookingRow({
   showCheckIn?: boolean;
 }) {
   const c = useTheme();
+  const hasBalance = !!b.balance && b.balance > 0;
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
+      accessibilityLabel={`${b.guest_name || ''} ${b.room_number || ''}`}
       style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, marginBottom: spacing.sm })}
     >
-      <Card>
+      <Card accent={showCheckIn ? c.info : c.primary}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm }}>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
-              <H2>{b.guest_name || '—'}</H2>
-              {b.vip_status ? <Badge label="VIP" tone="vip" /> : null}
+              <Body style={{ fontWeight: '700', flexShrink: 1 }}>{b.guest_name || '—'}</Body>
+              {b.vip_status ? <Badge label={tr.guests.vip} tone="vip" icon="star" /> : null}
             </View>
             <Muted>
-              Oda {b.room_number || '—'} · {b.room_type || ''}
+              {tr.today.room} {b.room_number || '—'} · {b.room_type || ''}
             </Muted>
-            <Muted>{showCheckIn ? formatTime(b.check_in) : formatTime(b.check_out)}</Muted>
+            <Muted style={{ marginTop: 2 }}>
+              {showCheckIn ? formatTime(b.check_in) : formatTime(b.check_out)}
+            </Muted>
           </View>
           <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
-            {b.balance && b.balance > 0 ? (
-              <Badge label={`${b.balance.toFixed(0)} ₺`} tone="warning" />
+            {hasBalance ? (
+              <Badge label={formatCurrency(b.balance)} tone="warning" />
             ) : null}
-            <Body style={{ color: c.textMuted, fontSize: 12 }}>{b.status}</Body>
+            {b.status ? (
+              <Body style={{ color: c.textMuted, fontSize: 12 }}>{b.status}</Body>
+            ) : null}
           </View>
         </View>
       </Card>
@@ -82,6 +90,10 @@ export default function TodayScreen() {
 
   const offline = arrivals.isError && isOffline(arrivals.error);
 
+  const arrivalsData = arrivals.data || [];
+  const departuresData = departures.data || [];
+  const noshowsData = noshows.data || [];
+
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <ScrollView
@@ -94,10 +106,32 @@ export default function TodayScreen() {
 
         <H1>{tr.today.title}</H1>
 
+        <KpiRow>
+          <KpiCard
+            label={tr.today.summaryArrivals}
+            value={String(arrivalsData.length)}
+            tone="info"
+            icon="log-in-outline"
+          />
+          <KpiCard
+            label={tr.today.summaryDepartures}
+            value={String(departuresData.length)}
+            tone="default"
+            icon="log-out-outline"
+          />
+          <KpiCard
+            label={tr.today.summaryNoShow}
+            value={String(noshowsData.length)}
+            tone={noshowsData.length > 0 ? 'danger' : 'success'}
+            icon="alert-circle-outline"
+          />
+        </KpiRow>
+
         <View style={{ flexDirection: 'row', gap: spacing.sm }}>
           <View style={{ flex: 1 }}>
             <Button
               title={tr.today.quickCheckin}
+              icon="enter-outline"
               onPress={() => router.push(ROUTES.checkin)}
               testID="smoke-today-quick-checkin"
               fullWidth
@@ -106,6 +140,7 @@ export default function TodayScreen() {
           <View style={{ flex: 1 }}>
             <Button
               title={tr.today.quickCheckout}
+              icon="exit-outline"
               variant="secondary"
               onPress={() => router.push(ROUTES.checkout)}
               fullWidth
@@ -113,15 +148,13 @@ export default function TodayScreen() {
           </View>
         </View>
 
-        <H2>{tr.today.arrivals}</H2>
+        <SectionTitle title={tr.today.arrivals} />
         {arrivals.isLoading ? (
           <SkeletonCard />
-        ) : (arrivals.data || []).length === 0 ? (
-          <Card>
-            <Muted>{tr.today.nothingToday}</Muted>
-          </Card>
+        ) : arrivalsData.length === 0 ? (
+          <EmptyState icon="bed-outline" title={tr.today.noArrivals} />
         ) : (
-          (arrivals.data || []).map((b) => (
+          arrivalsData.map((b) => (
             <BookingRow
               key={b.id}
               b={b}
@@ -133,15 +166,13 @@ export default function TodayScreen() {
           ))
         )}
 
-        <H2>{tr.today.departures}</H2>
+        <SectionTitle title={tr.today.departures} />
         {departures.isLoading ? (
           <SkeletonCard />
-        ) : (departures.data || []).length === 0 ? (
-          <Card>
-            <Muted>{tr.today.nothingToday}</Muted>
-          </Card>
+        ) : departuresData.length === 0 ? (
+          <EmptyState icon="walk-outline" title={tr.today.noDepartures} />
         ) : (
-          (departures.data || []).map((b) => (
+          departuresData.map((b) => (
             <BookingRow
               key={b.id}
               b={b}
@@ -152,12 +183,13 @@ export default function TodayScreen() {
           ))
         )}
 
-        {(noshows.data || []).length > 0 ? (
+        {noshowsData.length > 0 ? (
           <>
-            <H2>{tr.today.noShowRisk}</H2>
-            {(noshows.data || []).map((r) => (
+            <SectionTitle title={tr.today.noShowRisk} />
+            {noshowsData.map((r) => (
               <Pressable
                 key={r.booking_id}
+                accessibilityRole="button"
                 onPress={() =>
                   router.push({ pathname: ROUTES.checkin, params: { bookingId: r.booking_id } })
                 }
@@ -166,11 +198,13 @@ export default function TodayScreen() {
                   marginBottom: spacing.sm,
                 })}
               >
-                <Card>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <View>
-                      <H2>{r.guest_name || '—'}</H2>
-                      <Muted>Oda {r.room_number || '—'}</Muted>
+                <Card accent={r.level === 'high' ? c.danger : c.warning}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flex: 1 }}>
+                      <Body style={{ fontWeight: '700' }}>{r.guest_name || '—'}</Body>
+                      <Muted>
+                        {tr.today.room} {r.room_number || '—'}
+                      </Muted>
                     </View>
                     <Badge
                       label={`${tr.today.noShowRisk} · ${Math.round(r.score)}`}
@@ -185,7 +219,7 @@ export default function TodayScreen() {
       </ScrollView>
 
       <View style={{ position: 'absolute', right: spacing.lg, bottom: spacing.xl }}>
-        <Button title={tr.today.walkin} onPress={() => router.push(ROUTES.walkin)} />
+        <Button title={tr.today.walkin} icon="person-add-outline" onPress={() => router.push(ROUTES.walkin)} />
       </View>
     </View>
   );

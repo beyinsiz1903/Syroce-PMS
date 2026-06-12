@@ -7,4 +7,10 @@ export const today = {
   quickCheckin: 'Hızlı check-in',
   quickCheckout: 'Hızlı check-out',
   nothingToday: 'Bugün için kayıt yok',
+  room: 'Oda',
+  summaryArrivals: 'Giriş',
+  summaryDepartures: 'Çıkış',
+  summaryNoShow: 'Risk',
+  noArrivals: 'Bugün giriş bekleyen misafir yok',
+  noDepartures: 'Bugün çıkış yapacak misafir yok',
 };

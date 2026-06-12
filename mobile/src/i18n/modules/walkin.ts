@@ -7,4 +7,9 @@ export const walkin = {
   rate: 'Fiyat',
   confirm: 'Check-in yap',
   success: 'Walk-in tamamlandı',
+  needNameRoom: 'Misafir adı ve oda gerekli',
+  room: 'Oda',
+  noRooms: 'Şu an uygun oda yok',
+  done: 'Bitti',
+  successHint: 'Walk-in girişi kaydedildi.',
 };
