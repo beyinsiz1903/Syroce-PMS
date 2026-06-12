@@ -10,7 +10,9 @@ import {
 } from '@/utils/offlineQueueDB';
 import {
   processQueuedCheckins,
+  requeueCheckin,
   CHECKIN_QUEUE_EVENT,
+  STALE_CHECKIN_AGE_MS,
 } from '@/utils/offlineCheckin';
 
 const isOnline = () =>
@@ -20,6 +22,9 @@ export default function useOfflineCheckins() {
   const [online, setOnline] = useState(isOnline());
   const [items, setItems] = useState([]);
   const [syncing, setSyncing] = useState(false);
+  // Yaş hesaplamasının canlı kalması için periyodik bir "tik" — uzun süredir
+  // bekleyen girişler için süre dolunca uyarı kendiliğinden belirsin.
+  const [now, setNow] = useState(() => Date.now());
 
   const refresh = useCallback(async () => {
     try {
@@ -53,6 +58,20 @@ export default function useOfflineCheckins() {
       await refresh();
     },
     [refresh],
+  );
+
+  // Operatörün manuel iptali (bekleyen veya çakışan girişi kuyruktan kaldır).
+  const cancel = dismiss;
+
+  // Operatörün manuel "yeniden dene"si: girişi pending'e çevir, sayacı sıfırla,
+  // ardından eşitlemeyi tetikle.
+  const retry = useCallback(
+    async (id) => {
+      await requeueCheckin(id);
+      await refresh();
+      sync();
+    },
+    [refresh, sync],
   );
 
   useEffect(() => {
@@ -104,18 +123,35 @@ export default function useOfflineCheckins() {
     };
   }, [refresh, sync]);
 
+  // Bekleyen giriş varsa yaşın güncel kalması için dakikada bir tik at.
+  useEffect(() => {
+    const hasPending = items.some((it) => it.status !== 'conflict');
+    if (!hasPending) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 30 * 1000);
+    return () => clearInterval(timer);
+  }, [items]);
+
   const pending = items.filter((it) => it.status !== 'conflict');
   const conflicts = items.filter((it) => it.status === 'conflict');
+  // Uzun süredir bekleyen (eşik yaşı aşan) girişler — operatör uyarısı için.
+  const stalePending = pending.filter(
+    (it) => now - (it.createdAt || now) >= STALE_CHECKIN_AGE_MS,
+  );
 
   return {
     online,
     items,
     pending,
     conflicts,
+    stalePending,
     pendingCount: pending.length,
     conflictCount: conflicts.length,
+    stalePendingCount: stalePending.length,
+    now,
     syncing,
     sync,
+    retry,
+    cancel,
     dismiss,
     refresh,
   };

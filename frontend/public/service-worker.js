@@ -23,6 +23,10 @@ const NOTIFICATION_SYNC_TAG = 'sync-notification-log';
 const CHECKIN_SYNC_TAG = 'sync-checkins';
 // Çevrimdışı kuyruğun tekrar oynatılacağı tek idempotent uç.
 const CHECKIN_SYNC_ENDPOINT = '/api/frontdesk/v2/checkin';
+// Geçici (401/5xx) hatalar bu sayıya ulaşınca sonsuza dek tekrar denenmez;
+// operatör müdahalesi için çakışmaya dönüştürülür. src/utils/offlineCheckin.js
+// içindeki MAX_CHECKIN_ATTEMPTS ile aynı tutulmalı.
+const MAX_CHECKIN_ATTEMPTS = 8;
 
 // Assets to cache immediately on install
 const PRECACHE_ASSETS = [
@@ -653,9 +657,26 @@ async function processCheckinQueue() {
         } else if (response.status === 401 || response.status >= 500) {
           // 401: token tazelenmesi gerek (sayfa bağlamı axios silent-refresh ile
           // halleder); 5xx: geçici. Kuyrukta bırak, sonraki sync denesin.
-          console.warn('[SW] Check-in sync transient, will retry', response.status);
+          // Ancak deneme tavanına ulaşıldıysa sonsuz tekrarı durdur.
+          const attempts = (item.attempts || 0) + 1;
+          item.attempts = attempts;
+          item.updatedAt = Date.now();
+          if (attempts >= MAX_CHECKIN_ATTEMPTS) {
+            item.status = 'conflict';
+            item.error = { code: 'MAX_RETRIES_EXCEEDED', httpStatus: response.status };
+            item.httpStatus = response.status;
+            await updateStoreEntry(CHECKIN_QUEUE_STORE, item);
+            await broadcastClientMessage({
+              type: 'CHECKIN_CONFLICT',
+              payload: { id: item.id, bookingId: item.bookingId, status: response.status, detail: item.error }
+            });
+          } else {
+            await updateStoreEntry(CHECKIN_QUEUE_STORE, item);
+            console.warn('[SW] Check-in sync transient, will retry', response.status, attempts);
+          }
         } else {
-          // 4xx iş hatası (oda dolu / geçersiz durum / yetki) → çakışma.
+          // Kalıcı 4xx (404 rezervasyon yok / oda dolu / geçersiz durum / yetki)
+          // → sonsuz tekrar denenmez, çakışma olarak yüzeye çıkar.
           let detail = null;
           try {
             const data = await response.json();
@@ -666,6 +687,7 @@ async function processCheckinQueue() {
           item.status = 'conflict';
           item.error = detail;
           item.httpStatus = response.status;
+          item.attempts = (item.attempts || 0) + 1;
           item.updatedAt = Date.now();
           await updateStoreEntry(CHECKIN_QUEUE_STORE, item);
           await broadcastClientMessage({

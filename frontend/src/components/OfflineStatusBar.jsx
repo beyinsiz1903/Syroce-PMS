@@ -7,12 +7,24 @@
  * - Eşitlenmeyi bekleyen / çakışan girişler için sayaç + işlem sunar.
  */
 import React from 'react';
-import { WifiOff, RefreshCw, AlertTriangle, Clock, CheckCircle2 } from 'lucide-react';
+import { WifiOff, RefreshCw, AlertTriangle, Clock, CheckCircle2, X } from 'lucide-react';
 import useOfflineCheckins from '@/hooks/useOfflineCheckins';
 
 const OfflineStatusBar = () => {
-  const { online, pendingCount, conflicts, conflictCount, syncing, sync, dismiss } =
-    useOfflineCheckins();
+  const {
+    online,
+    pendingCount,
+    conflicts,
+    conflictCount,
+    stalePending,
+    stalePendingCount,
+    now,
+    syncing,
+    sync,
+    retry,
+    cancel,
+    dismiss,
+  } = useOfflineCheckins();
 
   const hasQueue = pendingCount > 0 || conflictCount > 0;
 
@@ -73,6 +85,55 @@ const OfflineStatusBar = () => {
         </div>
       )}
 
+      {stalePendingCount > 0 && (
+        <div
+          className="bg-amber-600 px-4 py-2 text-sm text-white"
+          data-testid="offline-stale-bar"
+          role="alert"
+        >
+          <div className="flex items-center justify-center gap-2 font-medium">
+            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            <span>
+              {stalePendingCount} check-in uzun suredir eşitlenemedi — kontrol edin.
+            </span>
+          </div>
+          <ul className="mx-auto mt-1 max-w-3xl space-y-1">
+            {stalePending.map((item) => (
+              <li
+                key={item.id}
+                className="flex items-center justify-between gap-2 rounded bg-amber-700/60 px-2 py-1 text-xs"
+                data-testid="offline-stale-item"
+              >
+                <span className="truncate">
+                  Rezervasyon {item.bookingId}: {formatAge(item.createdAt, now)} bekliyor
+                  {item.attempts ? `, ${item.attempts} deneme` : ''}.
+                </span>
+                <span className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => retry(item.id)}
+                    className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-0.5 font-medium hover:bg-white/10"
+                    data-testid="offline-stale-retry"
+                  >
+                    <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                    Yeniden dene
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => cancel(item.id)}
+                    className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-0.5 font-medium hover:bg-white/10"
+                    data-testid="offline-stale-cancel"
+                  >
+                    <X className="h-3 w-3" aria-hidden="true" />
+                    Iptal
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {conflictCount > 0 && (
         <div
           className="bg-red-600 px-4 py-2 text-sm text-white"
@@ -92,16 +153,30 @@ const OfflineStatusBar = () => {
               >
                 <span className="truncate">
                   Rezervasyon {item.bookingId}: {conflictMessage(item)}
+                  {item.attempts ? ` (${item.attempts} deneme)` : ''}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => dismiss(item.id)}
-                  className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-0.5 font-medium hover:bg-white/10"
-                  data-testid="offline-conflict-dismiss"
-                >
-                  <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-                  Anladim
-                </button>
+                <span className="flex items-center gap-1">
+                  {isRetryableConflict(item) && (
+                    <button
+                      type="button"
+                      onClick={() => retry(item.id)}
+                      className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-0.5 font-medium hover:bg-white/10"
+                      data-testid="offline-conflict-retry"
+                    >
+                      <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                      Yeniden dene
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => dismiss(item.id)}
+                    className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-0.5 font-medium hover:bg-white/10"
+                    data-testid="offline-conflict-dismiss"
+                  >
+                    <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                    Anladim
+                  </button>
+                </span>
               </li>
             ))}
           </ul>
@@ -124,11 +199,34 @@ function conflictMessage(item) {
       return 'Rezervasyon durumu check-in icin uygun degil.';
     case 'NO_ROOM':
       return 'Rezervasyona oda atanmamis.';
+    case 'MAX_RETRIES_EXCEEDED':
+      return 'Tekrar tekrar denendi ama eşitlenemedi — yeniden deneyin veya iptal edin.';
     default:
+      if (item.httpStatus === 404) return 'Rezervasyon bulunamadi (silinmis olabilir).';
       if (typeof detail === 'string') return detail;
       if (typeof detail === 'object' && detail?.message) return detail.message;
       return 'Bilinmeyen cakisma — manuel kontrol edin.';
   }
+}
+
+// Sadece geçici-tükenmiş (deneme tavanı) çakışmalar manuel yeniden denemeye
+// uygundur; gerçek iş çakışmaları (404/409 vb.) tekrar denemekle düzelmez.
+function isRetryableConflict(item) {
+  const detail = item.error;
+  const code = (typeof detail === 'object' && detail?.code) || null;
+  return code === 'MAX_RETRIES_EXCEEDED';
+}
+
+// İlk kuyruğa alınma zamanından bu yana geçen süreyi insan-okunur Türkçe çevir.
+function formatAge(createdAt, now) {
+  if (!createdAt) return 'bir süredir';
+  const ms = Math.max(0, (now || Date.now()) - createdAt);
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 60) return `${minutes} dk`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} sa ${minutes % 60} dk`;
+  const days = Math.floor(hours / 24);
+  return `${days} gün ${hours % 24} sa`;
 }
 
 export default OfflineStatusBar;

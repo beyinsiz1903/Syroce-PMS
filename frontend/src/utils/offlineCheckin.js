@@ -24,6 +24,12 @@ import {
 export const CHECKIN_SYNC_TAG = 'sync-checkins';
 const CHECKIN_SYNC_ENDPOINT = '/frontdesk/v2/checkin';
 
+// Geçici (401/5xx) hatalar bu sayıya ulaşınca artık sonsuza dek tekrar
+// denenmez; operatör müdahalesi için çakışmaya dönüştürülür.
+export const MAX_CHECKIN_ATTEMPTS = 8;
+// Bu yaştan eski bekleyen girişler "uzun süredir bekliyor" uyarısı tetikler.
+export const STALE_CHECKIN_AGE_MS = 5 * 60 * 1000;
+
 // Sayfa içi dinleyicilerin (status bar) anında güncellenmesi için yayın.
 export const CHECKIN_QUEUE_EVENT = 'syroce:checkin-queue-changed';
 
@@ -112,6 +118,30 @@ export async function performCheckin(bookingId, { onlineRequest } = {}) {
 }
 
 /**
+ * Operatörün manuel "yeniden dene" eylemi: çakışan/takılan bir girişi tekrar
+ * bekleyene çevirir, deneme sayacını sıfırlar ve hata izini temizler. Çağıran
+ * (hook) ardından processQueuedCheckins'i tetikler.
+ */
+export async function requeueCheckin(id) {
+  const updated = await updateQueuedCheckin(id, {
+    status: 'pending',
+    error: null,
+    httpStatus: null,
+    attempts: 0,
+  });
+  emitQueueChanged({ id, requeued: true });
+  return updated;
+}
+
+/**
+ * Operatörün manuel "iptal" eylemi: girişi kuyruktan kaldırır.
+ */
+export async function cancelQueuedCheckin(id) {
+  await removeQueuedCheckin(id);
+  emitQueueChanged({ id, cancelled: true });
+}
+
+/**
  * Sayfa bağlamı yedek eşitleyici. Idempotent v2 ucuna replay eder; axios
  * interceptor'ları token enjekte eder + 401'de sessiz yeniler.
  * @returns {Promise<{synced: number, conflicts: number, remaining: number}>}
@@ -144,15 +174,32 @@ export async function processQueuedCheckins() {
         break;
       }
       const status = error.response?.status;
+      const attempts = (item.attempts || 0) + 1;
       if (status === 401 || (status && status >= 500)) {
-        // Geçici (token/sunucu) — kuyrukta bırak.
+        // Geçici (token/sunucu) — normalde kuyrukta bırakılır. Ancak deneme
+        // tavanına ulaşıldıysa sonsuz tekrarı durdur, çakışmaya çevir.
+        if (attempts >= MAX_CHECKIN_ATTEMPTS) {
+          await updateQueuedCheckin(item.id, {
+            status: 'conflict',
+            error: { code: 'MAX_RETRIES_EXCEEDED', httpStatus: status || null },
+            httpStatus: status || null,
+            attempts,
+          });
+          conflicts += 1;
+          emitQueueChanged({ bookingId: item.bookingId, conflict: true });
+        } else {
+          await updateQueuedCheckin(item.id, { attempts });
+        }
         continue;
       }
+      // Kalıcı hata (404 rezervasyon yok, 403 yetki, 409 oda dolu vb.) →
+      // sonsuz tekrar denenmez, operatöre çakışma olarak yüzeye çıkar.
       const detail = error.response?.data?.detail ?? null;
       await updateQueuedCheckin(item.id, {
         status: 'conflict',
         error: detail,
         httpStatus: status || null,
+        attempts,
       });
       conflicts += 1;
       emitQueueChanged({ bookingId: item.bookingId, conflict: true });
