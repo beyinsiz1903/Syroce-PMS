@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, apiRequest } from './client';
 
 export type FolioCharge = {
   id: string;
@@ -143,5 +143,70 @@ export async function postPayment(
     amount,
     method,
     payment_type: 'final',
+  });
+}
+
+// ── Folio-id detail + write actions (Task #457) ────────────────────────────
+// These mirror backend/routers/finance/folio.py. Unlike the frontdesk reads
+// above (keyed by booking_id), these are keyed by the FOLIO id surfaced by
+// `listFolios` so the cashier folio-detail screen — and the front-desk / POS
+// screens that link into it — share one source of truth. Writes pass an
+// Idempotency-Key header so a double-tap / retry never posts twice (the
+// backend replays the original response for the same key).
+
+// Charge categories the backend's ChargeCategory enum accepts.
+export type FolioChargeCategory =
+  | 'food'
+  | 'beverage'
+  | 'minibar'
+  | 'spa'
+  | 'laundry'
+  | 'phone'
+  | 'parking'
+  | 'service_charge'
+  | 'other';
+
+// Payment methods the backend's PaymentMethod enum accepts.
+export type FolioPaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'online';
+
+// GET /api/folio/{folio_id} → { folio, charges, payments, balance }
+export async function getFolioById(folioId: string): Promise<Folio | null> {
+  const res = await api.get<FolioResponse>(`/api/folio/${folioId}`);
+  return normalizeFolio(res);
+}
+
+// POST /api/folio/{folio_id}/charge — closed/unknown folios are rejected 404
+// server-side ("Folio not found or closed"); the caller surfaces that message.
+export async function postFolioCharge(
+  folioId: string,
+  body: {
+    charge_category: FolioChargeCategory;
+    description: string;
+    amount: number;
+    quantity?: number;
+  },
+  idempotencyKey: string,
+): Promise<FolioCharge> {
+  return apiRequest<FolioCharge>(`/api/folio/${folioId}/charge`, {
+    method: 'POST',
+    body: { quantity: 1, ...body },
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+}
+
+// POST /api/folio/{folio_id}/payment
+export async function postFolioPayment(
+  folioId: string,
+  body: {
+    amount: number;
+    method: FolioPaymentMethod;
+    payment_type?: string;
+  },
+  idempotencyKey: string,
+): Promise<FolioPayment> {
+  return apiRequest<FolioPayment>(`/api/folio/${folioId}/payment`, {
+    method: 'POST',
+    body: { payment_type: 'interim', ...body },
+    headers: { 'Idempotency-Key': idempotencyKey },
   });
 }

@@ -1,12 +1,19 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import { Redirect } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, H1, Muted } from '../../src/components/ui';
 import {
-  DepartmentListState,
-  SectionTitle,
-} from '../../src/components/department';
+  Badge,
+  Body,
+  Card,
+  Field,
+  H1,
+  ListGroup,
+  ListRow,
+  Muted,
+} from '../../src/components/ui';
+import { KpiCard, KpiRow } from '../../src/components/KpiCard';
+import { DepartmentListState, SectionTitle } from '../../src/components/department';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
@@ -28,13 +35,37 @@ function methodLabel(method?: string): string {
   return (method && map[method]) || method || tr.departments.cashier.methods.other;
 }
 
-// Read-only Cashier (Kasa) + open-folio finance surface. Both reads sit behind
-// require_op("view_finance_reports") / authenticated reads server-side; the
-// (departments) finance entitlement just decides whether we show this screen.
-// Writes (open/close/handover shift, post payment) are intentionally NOT here.
+type FolioTone = 'success' | 'default' | 'danger' | 'warning';
+
+function folioStatusTone(status?: string): FolioTone {
+  switch ((status || '').toLowerCase()) {
+    case 'open':
+      return 'success';
+    case 'closed':
+      return 'default';
+    case 'cancelled':
+    case 'canceled':
+      return 'danger';
+    default:
+      return 'warning';
+  }
+}
+
+function folioStatusLabel(status?: string): string {
+  const map = tr.departments.cashier.detail.status as Record<string, string>;
+  return map[(status || '').toLowerCase()] || status || '-';
+}
+
+// Cashier (Kasa) shift cockpit + open-folio finance surface. The shift reads
+// are read-only here; tapping a folio opens the shared folio-detail screen
+// (Task #457) where charge / payment writes happen. All reads sit behind
+// require_op("view_finance_reports") server-side; the (departments) finance
+// entitlement just decides whether we show this screen.
 export default function CashierScreen() {
   const c = useTheme();
+  const router = useRouter();
   const financeReports = useAuthStore((s) => s.financeReports);
+  const [query, setQuery] = useState('');
 
   const shiftQ = useQuery({
     queryKey: ['cashier-current-shift'],
@@ -49,6 +80,17 @@ export default function CashierScreen() {
     queryFn: () => listFolios({ status: 'open', limit: 100 }),
   });
 
+  const folios = foliosQ.data?.folios || [];
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return folios;
+    return folios.filter((f) =>
+      [f.guest_name, f.folio_number, f.room_number]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q)),
+    );
+  }, [folios, query]);
+
   // Hard guard: a user without the finance entitlement is bounced to the hub.
   // Cosmetic only — the backend still enforces every read/write.
   if (!financeReports) return <Redirect href={ROUTES.departments} />;
@@ -57,12 +99,13 @@ export default function CashierScreen() {
   const transactions = shiftQ.data?.transactions ?? [];
   const stats = statsQ.data;
 
-  const renderStat = (label: string, value: string) => (
-    <Card style={{ flex: 1, marginBottom: 0 }}>
-      <Muted>{label}</Muted>
-      <Body style={{ fontWeight: '700', marginTop: spacing.xs }}>{value}</Body>
-    </Card>
-  );
+  const openFolio = (f: FolioListItem) => {
+    const qs = new URLSearchParams();
+    if (f.guest_name) qs.set('guest', f.guest_name);
+    if (f.room_number) qs.set('room', f.room_number);
+    const suffix = qs.toString();
+    router.push(`${ROUTES.folioDetail}/${f.id}${suffix ? `?${suffix}` : ''}`);
+  };
 
   const renderTransaction = (t: CashierTransaction, idx: number) => {
     const isIn = (t.direction || '').toLowerCase() === 'in';
@@ -76,7 +119,7 @@ export default function CashierScreen() {
           }}
         >
           <View style={{ flex: 1, paddingRight: spacing.sm }}>
-            <Body style={{ fontWeight: '600' }}>{t.description || '—'}</Body>
+            <Body style={{ fontWeight: '600' }}>{t.description || '-'}</Body>
             <Muted style={{ marginTop: 2 }}>{methodLabel(t.method)}</Muted>
           </View>
           <View style={{ alignItems: 'flex-end', gap: 4 }}>
@@ -105,74 +148,58 @@ export default function CashierScreen() {
     );
   };
 
-  const renderFolio = (f: FolioListItem) => (
-    <Card key={f.id} style={{ marginBottom: spacing.sm }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-        }}
-      >
-        <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>
-            {f.guest_name || f.folio_number || '—'}
-          </Body>
-          <Muted style={{ marginTop: 2 }}>
-            {f.folio_number ? `${f.folio_number}` : ''}
-            {f.room_number ? ` · ${tr.departments.cashier.room} ${f.room_number}` : ''}
-          </Muted>
-        </View>
-        {typeof f.balance === 'number' ? (
-          <View style={{ alignItems: 'flex-end' }}>
-            <Muted>{tr.departments.cashier.balance}</Muted>
-            <Body style={{ fontWeight: '700' }}>{formatCurrency(f.balance)}</Body>
-          </View>
-        ) : null}
-      </View>
-      {f.check_in || f.check_out ? (
-        <Muted style={{ marginTop: spacing.xs }}>
-          {f.check_in ? formatDate(f.check_in) : ''}
-          {f.check_out ? ` – ${formatDate(f.check_out)}` : ''}
-        </Muted>
-      ) : null}
-    </Card>
-  );
-
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
+      testID="smoke-cashier"
     >
       <H1>{tr.departments.cashier.title}</H1>
 
-      {/* Folio dashboard KPIs */}
-      <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
-        {renderStat(
-          tr.departments.cashier.openFolios,
-          String(stats?.total_open_folios ?? 0),
-        )}
-        {renderStat(
-          tr.departments.cashier.outstanding,
-          formatCurrency(stats?.total_outstanding_balance ?? 0),
-        )}
-      </View>
-
-      {/* Current cashier shift */}
+      {/* ── Shift cockpit: single-glance cash status ───────────────────────── */}
       <SectionTitle title={tr.departments.cashier.shift} />
       {(() => {
-        const state = (
-          <DepartmentListState
-            loading={shiftQ.isLoading}
-            error={shiftQ.error}
-            isEmpty={!shift}
-            emptyText={tr.departments.cashier.noShift}
-          />
-        );
+        // DepartmentListState is a render FUNCTION returning null on data; CALL
+        // it (a JSX element would always be truthy) and only short-circuit on a
+        // non-null state node.
+        const state = DepartmentListState({
+          loading: shiftQ.isLoading,
+          error: shiftQ.error,
+          isEmpty: !shift,
+          emptyText: tr.departments.cashier.noShift,
+        });
+        if (state) return state;
+        if (!shift) return null;
         return (
-          state ??
-          (shift ? (
-            <Card style={{ marginBottom: spacing.sm }}>
+          <View style={{ gap: spacing.md }} testID="smoke-cashier-cockpit">
+            <KpiRow>
+              <KpiCard
+                label={tr.departments.cashier.expected}
+                value={formatCurrency(expectedCash(shift), shift.currency)}
+                icon="wallet-outline"
+                tone="info"
+              />
+              <KpiCard
+                label={tr.departments.cashier.openingAmount}
+                value={formatCurrency(shift.opening_amount ?? 0, shift.currency)}
+                icon="lock-open-outline"
+              />
+            </KpiRow>
+            <KpiRow>
+              <KpiCard
+                label={tr.departments.cashier.cashIn}
+                value={`+${formatCurrency(shift.cash_in ?? 0, shift.currency)}`}
+                icon="arrow-down-circle-outline"
+                tone="success"
+              />
+              <KpiCard
+                label={tr.departments.cashier.cashOut}
+                value={`-${formatCurrency(shift.cash_out ?? 0, shift.currency)}`}
+                icon="arrow-up-circle-outline"
+                tone="danger"
+              />
+            </KpiRow>
+            <Card>
               <View
                 style={{
                   flexDirection: 'row',
@@ -189,40 +216,8 @@ export default function CashierScreen() {
                   </Muted>
                 ) : null}
               </View>
-              <View style={{ marginTop: spacing.sm, gap: 4 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Muted>{tr.departments.cashier.openingAmount}</Muted>
-                  <Body>{formatCurrency(shift.opening_amount ?? 0, shift.currency)}</Body>
-                </View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Muted>{tr.departments.cashier.cashIn}</Muted>
-                  <Body style={{ color: c.success }}>
-                    +{formatCurrency(shift.cash_in ?? 0, shift.currency)}
-                  </Body>
-                </View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Muted>{tr.departments.cashier.cashOut}</Muted>
-                  <Body style={{ color: c.danger }}>
-                    -{formatCurrency(shift.cash_out ?? 0, shift.currency)}
-                  </Body>
-                </View>
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    marginTop: spacing.xs,
-                  }}
-                >
-                  <Body style={{ fontWeight: '700' }}>
-                    {tr.departments.cashier.expected}
-                  </Body>
-                  <Body style={{ fontWeight: '700' }}>
-                    {formatCurrency(expectedCash(shift), shift.currency)}
-                  </Body>
-                </View>
-              </View>
             </Card>
-          ) : null)
+          </View>
         );
       })()}
 
@@ -240,18 +235,74 @@ export default function CashierScreen() {
         </>
       ) : null}
 
-      {/* Open folios */}
+      {/* ── Open folios: searchable + status-coded, tap to open detail ─────── */}
       <SectionTitle title={tr.departments.cashier.folios} />
+      <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md }}>
+        <KpiCard
+          label={tr.departments.cashier.openFolios}
+          value={String(stats?.total_open_folios ?? 0)}
+          icon="documents-outline"
+        />
+        <KpiCard
+          label={tr.departments.cashier.outstanding}
+          value={formatCurrency(stats?.total_outstanding_balance ?? 0)}
+          icon="trending-up-outline"
+          tone="warning"
+        />
+      </View>
+
+      <View style={{ marginBottom: spacing.md }}>
+        <Field
+          value={query}
+          onChangeText={setQuery}
+          placeholder={tr.departments.cashier.searchFolios}
+          autoCapitalize="none"
+          autoCorrect={false}
+          testID="smoke-cashier-search"
+        />
+      </View>
+
       {(() => {
-        const state = (
-          <DepartmentListState
-            loading={foliosQ.isLoading}
-            error={foliosQ.error}
-            isEmpty={(foliosQ.data?.folios || []).length === 0}
-            emptyText={tr.departments.cashier.noFolios}
-          />
+        const state = DepartmentListState({
+          loading: foliosQ.isLoading,
+          error: foliosQ.error,
+          isEmpty: folios.length === 0,
+          emptyText: tr.departments.cashier.noFolios,
+        });
+        if (state) return state;
+        if (filtered.length === 0) {
+          return (
+            <Card>
+              <Muted>{tr.departments.cashier.noFolioMatch}</Muted>
+            </Card>
+          );
+        }
+        return (
+          <ListGroup>
+            {filtered.map((f, idx) => (
+              <ListRow
+                key={f.id}
+                icon="receipt-outline"
+                label={f.guest_name || f.folio_number || '-'}
+                sublabel={[
+                  f.folio_number || null,
+                  f.room_number ? `${tr.departments.cashier.room} ${f.room_number}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                value={
+                  typeof f.balance === 'number' ? formatCurrency(f.balance) : undefined
+                }
+                right={
+                  <Badge label={folioStatusLabel(f.status)} tone={folioStatusTone(f.status)} />
+                }
+                last={idx === filtered.length - 1}
+                onPress={() => openFolio(f)}
+                testID={`smoke-cashier-folio-${idx}`}
+              />
+            ))}
+          </ListGroup>
         );
-        return state ?? <View>{(foliosQ.data?.folios || []).map(renderFolio)}</View>;
       })()}
     </ScrollView>
   );

@@ -62,6 +62,7 @@ export const ROUTES = {
   spa: '/(departments)/spa',
   mice: '/(departments)/mice',
   cashier: '/(departments)/cashier',
+  folioDetail: '/(departments)/folio',
   accounting: '/(departments)/accounting',
   maintenance: '/(departments)/maintenance',
   procurement: '/(departments)/procurement',
