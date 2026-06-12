@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Redirect } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -307,6 +308,122 @@ function BookingCard({
   );
 }
 
+// Compact KPI tile for the occupancy strip: a soft-tinted icon chip, a large
+// number and a muted label. Derived entirely from the live appointment list —
+// no placeholder data. Tone drives the accent so the strip reads at a glance.
+function StatTile({
+  label,
+  value,
+  icon,
+  tone,
+}: {
+  label: string;
+  value: number;
+  icon: EmptyIcon;
+  tone: 'primary' | 'success' | 'warning' | 'info' | 'danger';
+}) {
+  const c = useTheme();
+  const toneColor: Record<string, string> = {
+    primary: c.primary,
+    success: c.success,
+    warning: c.warning,
+    info: c.info,
+    danger: c.danger,
+  };
+  const accent = toneColor[tone];
+  return (
+    <Card style={{ flexGrow: 1, flexBasis: '47%', minWidth: 140 }} accent={accent}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+        <View
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: radius.pill,
+            backgroundColor: accent + '1f',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Ionicons name={icon} size={20} color={accent} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: c.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.4 }}>
+            {value}
+          </Text>
+          <Muted numberOfLines={1}>{label}</Muted>
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+// A single agenda row on the time axis: the wall-clock start (and end) sit on a
+// left rail with a colored node + connector line, the appointment card to the
+// right. The node colour follows the therapist's colour when known, else the
+// status tone — so the timeline reads like a real day planner.
+function TimelineRow({
+  appt,
+  therapistColor,
+  isFirst,
+  isLast,
+  children,
+}: {
+  appt: SpaAppointment;
+  therapistColor?: string;
+  isFirst: boolean;
+  isLast: boolean;
+  children: React.ReactNode;
+}) {
+  const c = useTheme();
+  const toneMap: Record<string, string> = {
+    success: c.success,
+    info: c.info,
+    danger: c.danger,
+    warning: c.warning,
+    default: c.textMuted,
+  };
+  const nodeColor = therapistColor || toneMap[appointmentTone(appt.status)] || c.primary;
+  return (
+    <View style={{ flexDirection: 'row' }}>
+      {/* Time gutter */}
+      <View style={{ width: 52, alignItems: 'flex-end', paddingTop: 2 }}>
+        <Text style={{ color: c.text, fontSize: 15, fontWeight: '700' }}>
+          {formatTime(appt.starts_at)}
+        </Text>
+        {appt.ends_at ? (
+          <Text style={{ color: c.textMuted, fontSize: 11 }}>{formatTime(appt.ends_at)}</Text>
+        ) : null}
+      </View>
+      {/* Rail */}
+      <View style={{ width: 24, alignItems: 'center' }}>
+        <View
+          style={{
+            position: 'absolute',
+            top: isFirst ? 8 : 0,
+            bottom: isLast ? undefined : 0,
+            height: isLast ? 16 : undefined,
+            width: 2,
+            backgroundColor: c.border,
+          }}
+        />
+        <View
+          style={{
+            width: 12,
+            height: 12,
+            borderRadius: radius.pill,
+            backgroundColor: nodeColor,
+            borderWidth: 2,
+            borderColor: c.surface,
+            marginTop: 6,
+          }}
+        />
+      </View>
+      {/* Card */}
+      <View style={{ flex: 1, paddingBottom: spacing.sm }}>{children}</View>
+    </View>
+  );
+}
+
 // Spa & Wellness screen. Reads (appointments / services / therapists) are open
 // to any authenticated user; the (departments) entitlement just decides whether
 // the screen is shown. The "new appointment" form posts to a backend that still
@@ -337,6 +454,87 @@ export default function SpaScreen() {
     (therapistsQ.data || []).forEach((t) => m.set(t.id, t.name));
     return m;
   }, [therapistsQ.data]);
+
+  const therapistColor = useMemo(() => {
+    const m = new Map<string, string>();
+    (therapistsQ.data || []).forEach((t) => {
+      if (t.color) m.set(t.id, t.color);
+    });
+    return m;
+  }, [therapistsQ.data]);
+
+  // Appointment derivations for the calendar-centric layout. The agenda shows
+  // the live (scheduled / in_progress) appointments on the time axis; terminal
+  // ones (completed / cancelled / no_show) drop into the işlem geçmişi section.
+  // All sorted by start so the day reads top-to-bottom. Purely a view split —
+  // the same raw list the backend returned, never seeded or faked.
+  const sortedAppts = useMemo(() => {
+    const items = [...(apptsQ.data || [])];
+    items.sort((a, b) => (a.starts_at || '').localeCompare(b.starts_at || ''));
+    return items;
+  }, [apptsQ.data]);
+
+  const activeAppts = useMemo(
+    () =>
+      sortedAppts.filter(
+        (a) => (a.status || 'scheduled') === 'scheduled' || a.status === 'in_progress',
+      ),
+    [sortedAppts],
+  );
+  const historyAppts = useMemo(
+    () =>
+      sortedAppts.filter(
+        (a) =>
+          a.status === 'completed' || a.status === 'cancelled' || a.status === 'no_show',
+      ),
+    [sortedAppts],
+  );
+
+  // Per-day grouping for the agenda so the week range reads as a planner with
+  // day headers; a single day collapses to one group.
+  const agendaByDay = useMemo(() => {
+    const groups = new Map<string, SpaAppointment[]>();
+    activeAppts.forEach((a) => {
+      const key = (a.starts_at || '').slice(0, 10) || '—';
+      const arr = groups.get(key) || [];
+      arr.push(a);
+      groups.set(key, arr);
+    });
+    return Array.from(groups.entries()).map(([day, items]) => ({ day, items }));
+  }, [activeAppts]);
+
+  const occupancyStats = useMemo(() => {
+    let scheduled = 0;
+    let inProgress = 0;
+    let completed = 0;
+    let closed = 0;
+    sortedAppts.forEach((a) => {
+      switch (a.status) {
+        case 'in_progress':
+          inProgress += 1;
+          break;
+        case 'completed':
+          completed += 1;
+          break;
+        case 'cancelled':
+        case 'no_show':
+          closed += 1;
+          break;
+        default:
+          scheduled += 1;
+      }
+    });
+    return { total: sortedAppts.length, scheduled, inProgress, completed, closed };
+  }, [sortedAppts]);
+
+  // Active (non-terminal) load per therapist, surfaced on the therapist cards.
+  const therapistLoad = useMemo(() => {
+    const m = new Map<string, number>();
+    activeAppts.forEach((a) => {
+      if (a.therapist_id) m.set(a.therapist_id, (m.get(a.therapist_id) || 0) + 1);
+    });
+    return m;
+  }, [activeAppts]);
 
   // ── Activity scheduler state ──────────────────────────────────────────────
   const A = S.activities;
@@ -622,8 +820,18 @@ export default function SpaScreen() {
     );
   };
 
-  const renderAppointment = (a: SpaAppointment) => {
+  // Shared appointment card. `context='timeline'` drops the date line (the rail
+  // already carries the time) and the bottom margin (the row owns spacing);
+  // `context='history'` keeps a full date+time line and stacks with a margin.
+  // Tapping always opens the status sheet — the backend re-validates every
+  // transition, so a terminal appointment simply shows "no transitions".
+  const renderAppointmentCard = (
+    a: SpaAppointment,
+    context: 'timeline' | 'history',
+  ) => {
     const canManage = (SPA_TRANSITIONS[a.status || 'scheduled'] || []).length > 0;
+    const accent =
+      (a.therapist_id && therapistColor.get(a.therapist_id)) || c.primary;
     return (
       <Pressable
         key={a.id}
@@ -631,8 +839,12 @@ export default function SpaScreen() {
         accessibilityRole="button"
         accessibilityLabel={`${a.service_name || ''} ${S.manageAppointment}`}
         testID={`spa-appointment-${a.id}`}
+        style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
       >
-        <Card style={{ marginBottom: spacing.sm }} accent={c.primary}>
+        <Card
+          style={context === 'history' ? { marginBottom: spacing.sm } : undefined}
+          accent={accent}
+        >
           <View
             style={{
               flexDirection: 'row',
@@ -641,26 +853,41 @@ export default function SpaScreen() {
             }}
           >
             <View style={{ flex: 1, paddingRight: spacing.sm }}>
-              <Body style={{ fontWeight: '600' }}>{a.service_name || '—'}</Body>
+              <Body style={{ fontWeight: '700' }}>{a.service_name || '—'}</Body>
               {a.guest_name ? <Muted>{a.guest_name}</Muted> : null}
             </View>
             <Badge label={statusLabel(a.status)} tone={appointmentTone(a.status)} />
           </View>
           <View style={{ marginTop: spacing.sm, gap: 2 }}>
-            <Muted>
-              {formatDate(a.starts_at)} · {formatTime(a.starts_at)}
-              {a.ends_at ? ` – ${formatTime(a.ends_at)}` : ''}
-            </Muted>
-            <Muted>
-              {S.withTherapist}:{' '}
-              {(a.therapist_id && therapistName.get(a.therapist_id)) || S.unassigned}
-            </Muted>
+            {context === 'history' ? (
+              <Muted>
+                {formatDate(a.starts_at)} · {formatTime(a.starts_at)}
+                {a.ends_at ? ` – ${formatTime(a.ends_at)}` : ''}
+              </Muted>
+            ) : null}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="person-outline" size={13} color={c.textMuted} />
+              <Muted>
+                {(a.therapist_id && therapistName.get(a.therapist_id)) || S.unassigned}
+              </Muted>
+            </View>
             {typeof a.price === 'number' ? (
-              <Muted>{formatCurrency(a.price, a.currency)}</Muted>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="pricetag-outline" size={13} color={c.textMuted} />
+                <Muted>{formatCurrency(a.price, a.currency)}</Muted>
+              </View>
             ) : null}
           </View>
           {canManage ? (
-            <View style={{ marginTop: spacing.sm, flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+            <View
+              style={{
+                marginTop: spacing.sm,
+                flexDirection: 'row',
+                gap: 4,
+                alignItems: 'center',
+              }}
+            >
+              <Ionicons name="swap-horizontal" size={14} color={c.primary} />
               <Body style={{ color: c.primary, fontSize: 13, fontWeight: '600' }}>
                 {S.changeStatus}
               </Body>
@@ -668,6 +895,47 @@ export default function SpaScreen() {
           ) : null}
         </Card>
       </Pressable>
+    );
+  };
+
+  // The calendar-centric agenda: per-day groups (single day collapses to one),
+  // each appointment on the time rail. Day header only shows when more than one
+  // day is in range (week view) to keep a single day clean.
+  const renderAgenda = (groups: { day: string; items: SpaAppointment[] }[]) => {
+    const multiDay = groups.length > 1;
+    return (
+      <View>
+        {groups.map((group) => (
+          <View key={group.day} style={{ marginBottom: multiDay ? spacing.md : 0 }}>
+            {multiDay ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: spacing.sm,
+                  marginBottom: spacing.sm,
+                }}
+              >
+                <Ionicons name="calendar-outline" size={15} color={c.primary} />
+                <Body style={{ fontWeight: '700' }}>{formatDate(group.day)}</Body>
+              </View>
+            ) : null}
+            {group.items.map((a, idx) => (
+              <TimelineRow
+                key={a.id}
+                appt={a}
+                therapistColor={
+                  (a.therapist_id && therapistColor.get(a.therapist_id)) || undefined
+                }
+                isFirst={idx === 0}
+                isLast={idx === group.items.length - 1}
+              >
+                {renderAppointmentCard(a, 'timeline')}
+              </TimelineRow>
+            ))}
+          </View>
+        ))}
+      </View>
     );
   };
 
@@ -723,8 +991,9 @@ export default function SpaScreen() {
 
       {view === 'spa' ? (
         <>
-      {/* ── Appointments (date-selectable) ─────────────────────────────────── */}
-      <SectionTitle title={S.appointments} />
+      <Muted style={{ marginBottom: spacing.md }}>{S.subtitle}</Muted>
+
+      {/* ── Range + date selection (drives the calendar window) ────────────── */}
       <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm }}>
         <RangeTab value="today" label={S.today} />
         <RangeTab value="week" label={S.week} />
@@ -742,6 +1011,45 @@ export default function SpaScreen() {
         />
       </View>
 
+      {/* ── Occupancy strip (derived from the live appointment list) ───────── */}
+      {!apptsQ.isLoading && !apptsQ.error && occupancyStats.total > 0 ? (
+        <View style={{ marginBottom: spacing.sm }}>
+          <SectionTitle title={S.occupancy} />
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              gap: spacing.sm,
+            }}
+          >
+            <StatTile
+              label={S.statScheduled}
+              value={occupancyStats.scheduled}
+              icon="calendar-outline"
+              tone="warning"
+            />
+            <StatTile
+              label={S.statInProgress}
+              value={occupancyStats.inProgress}
+              icon="play"
+              tone="info"
+            />
+            <StatTile
+              label={S.statCompleted}
+              value={occupancyStats.completed}
+              icon="checkmark-circle-outline"
+              tone="success"
+            />
+            <StatTile
+              label={S.statClosed}
+              value={occupancyStats.closed}
+              icon="close-circle-outline"
+              tone="danger"
+            />
+          </View>
+        </View>
+      ) : null}
+
       <Button
         title={S.newAppointment}
         icon="add"
@@ -750,10 +1058,94 @@ export default function SpaScreen() {
         style={{ marginBottom: spacing.md }}
       />
 
+      {/* ── Agenda timeline (active appointments on the time axis) ─────────── */}
+      <SectionTitle title={S.agenda} />
       {renderSection(
-        apptsQ,
-        { icon: 'calendar-outline', title: S.noAppointments },
-        (items) => <View>{items.map(renderAppointment)}</View>,
+        { isLoading: apptsQ.isLoading, error: apptsQ.error, data: activeAppts },
+        { icon: 'calendar-outline', title: S.noActiveAppointments },
+        () => renderAgenda(agendaByDay),
+      )}
+
+      {/* ── İşlem geçmişi (terminal appointments in range) ─────────────────── */}
+      {!apptsQ.isLoading && !apptsQ.error && historyAppts.length > 0 ? (
+        <>
+          <SectionTitle title={S.history} />
+          <View>{historyAppts.map((a) => renderAppointmentCard(a, 'history'))}</View>
+        </>
+      ) : null}
+
+      {/* ── Therapists (premium cards with live load) ──────────────────────── */}
+      <SectionTitle title={S.therapists} />
+      {renderSection(
+        therapistsQ,
+        { icon: 'people-outline', title: S.noTherapists },
+        (items) => (
+          <View>
+            {items.map((t) => {
+              const load = therapistLoad.get(t.id) || 0;
+              return (
+                <Card
+                  key={t.id}
+                  style={{ marginBottom: spacing.sm }}
+                  accent={t.color || c.primary}
+                >
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: spacing.sm,
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: spacing.sm,
+                        flex: 1,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: radius.pill,
+                          backgroundColor: t.color || c.primary,
+                        }}
+                      />
+                      <Body style={{ fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
+                        {t.name}
+                      </Body>
+                    </View>
+                    {load > 0 ? (
+                      <Badge label={`${load} ${S.therapistLoad}`} tone="info" />
+                    ) : null}
+                  </View>
+                  {t.specialties && t.specialties.length > 0 ? (
+                    <Muted style={{ marginTop: spacing.sm }}>
+                      {t.specialties.join(', ')}
+                    </Muted>
+                  ) : null}
+                  {t.work_start && t.work_end ? (
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        marginTop: 4,
+                      }}
+                    >
+                      <Ionicons name="time-outline" size={13} color={c.textMuted} />
+                      <Muted>
+                        {t.work_start} – {t.work_end}
+                      </Muted>
+                    </View>
+                  ) : null}
+                </Card>
+              );
+            })}
+          </View>
+        ),
       )}
 
       {/* ── Service catalogue (list pattern) ───────────────────────────────── */}
@@ -781,36 +1173,6 @@ export default function SpaScreen() {
                     ? formatCurrency(s.price, s.currency)
                     : undefined
                 }
-                showChevron={false}
-                last={idx === items.length - 1}
-              />
-            ))}
-          </ListGroup>
-        ),
-      )}
-
-      {/* ── Therapists (list pattern) ──────────────────────────────────────── */}
-      <SectionTitle title={S.therapists} />
-      {renderSection(
-        therapistsQ,
-        { icon: 'people-outline', title: S.noTherapists },
-        (items) => (
-          <ListGroup>
-            {items.map((t, idx) => (
-              <ListRow
-                key={t.id}
-                icon="person-outline"
-                label={t.name}
-                sublabel={[
-                  t.specialties && t.specialties.length > 0
-                    ? t.specialties.join(', ')
-                    : undefined,
-                  t.work_start && t.work_end
-                    ? `${t.work_start} – ${t.work_end}`
-                    : undefined,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
                 showChevron={false}
                 last={idx === items.length - 1}
               />

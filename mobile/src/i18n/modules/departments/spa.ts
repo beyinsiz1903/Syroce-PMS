@@ -1,5 +1,6 @@
 export const spa = {
   title: 'Spa & Wellness',
+  subtitle: 'Takvim merkezli randevu yönetimi',
   tileSubtitle: 'Randevular, hizmet kataloğu ve terapistler',
   appointments: 'Randevular',
   today: 'Bugün',
@@ -15,6 +16,19 @@ export const spa = {
   unassigned: 'Atanmadı',
   specialties: 'Uzmanlık',
   workingHours: 'Çalışma saatleri',
+  // ── Calendar-centric layout (Task #516) ──────────────────────────────────
+  occupancy: 'Doluluk',
+  statTotal: 'Toplam',
+  statScheduled: 'Planlı',
+  statInProgress: 'Devam eden',
+  statCompleted: 'Tamamlanan',
+  statClosed: 'İptal/Gelmedi',
+  agenda: 'Ajanda',
+  history: 'İşlem Geçmişi',
+  noActiveAppointments: 'Seçili dönemde aktif randevu yok',
+  noHistory: 'Tamamlanan veya kapanan randevu yok',
+  therapistLoad: 'randevu',
+  allDay: 'Tüm gün',
   statuses: {
     scheduled: 'Planlandı',
     in_progress: 'Devam ediyor',
