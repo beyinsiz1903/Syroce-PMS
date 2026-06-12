@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 
+from core.atomic_booking import BookingConflictError, assign_room_atomic
 from core.database import db
 from core.security import get_current_user
 from models.schemas import User
@@ -154,33 +155,30 @@ async def assign_room_to_booking(
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
 
-    # Check room availability
-    check_in = datetime.fromisoformat(booking.get('check_in'))
-    check_out = datetime.fromisoformat(booking.get('check_out'))
+    # Atomic room-night claim (overbooking guard). Replaces the previous
+    # non-atomic count-then-update pre-check (TOCTOU race + incomplete overlap
+    # query that missed fully-nested bookings + never wrote room_night_locks).
+    check_in = booking.get('check_in')
+    check_out = booking.get('check_out')
+    if not check_in or not check_out:
+        raise HTTPException(
+            status_code=400,
+            detail="Booking has no check-in/check-out dates"
+        )
 
-    # Check for conflicts
-    conflicts = await db.bookings.count_documents({
-        'tenant_id': current_user.tenant_id,
-        'room_id': room_id,
-        'id': {'$ne': booking_id},
-        'status': {'$in': ['confirmed', 'guaranteed', 'checked_in']},
-        '$or': [
-            {
-                'check_in': {'$lte': check_in.isoformat()},
-                'check_out': {'$gt': check_in.isoformat()}
-            },
-            {
-                'check_in': {'$lt': check_out.isoformat()},
-                'check_out': {'$gte': check_out.isoformat()}
-            }
-        ]
-    })
-
-    if conflicts > 0:
+    try:
+        await assign_room_atomic(
+            tenant_id=current_user.tenant_id,
+            booking_id=booking_id,
+            room_id=room_id,
+            check_in=check_in,
+            check_out=check_out,
+        )
+    except BookingConflictError as exc:
         raise HTTPException(
             status_code=400,
             detail=f"Room {room_number} is not available for this period"
-        )
+        ) from exc
 
     # Update booking — v109 round-9 IDOR: scope by tenant.
     await db.bookings.update_one(

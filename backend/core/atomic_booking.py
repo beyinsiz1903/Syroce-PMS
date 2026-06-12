@@ -560,6 +560,159 @@ async def release_booking_nights(tenant_id: str, booking_id: str,
     return deleted
 
 
+async def assign_room_atomic(
+    *,
+    tenant_id: str,
+    booking_id: str,
+    room_id: str,
+    check_in: str,
+    check_out: str,
+    correlation_id: str | None = None,
+) -> dict[str, Any]:
+    """Atomically (re)assign a physical room to an EXISTING booking.
+
+    Brings the assign-room path under the same room-night-lock guarantee that
+    `create_booking_atomic` gives new bookings. The previous endpoint used a
+    non-atomic count-then-update pre-check (TOCTOU race) with an incomplete
+    overlap query (missed bookings fully nested inside the requested window) and
+    never wrote `room_night_locks`, so the primary unique-index guard never ran.
+
+    Steps:
+      1. Defense-in-depth: reject if an active booking already overlaps the
+         requested window on this room (correct half-open overlap, excludes the
+         booking itself and terminal-state bookings).
+      2. Claim one lock row per night in `room_night_locks` (unique index on
+         tenant_id, room_id, night_date). A night already owned by THIS booking
+         is idempotent (no conflict). Any other owner (booking or OOO/OOS/
+         maintenance block) -> BookingConflictError after rolling back only the
+         nights newly claimed in this call.
+      3. On success, release this booking's locks held on any OTHER room so a
+         room change does not leak stale locks on the previous room.
+
+    Raises:
+        BookingConflictError: room/night held by another booking or a block.
+        ValueError: missing room_id/check_in/check_out.
+    """
+    if not (room_id and check_in and check_out):
+        raise ValueError("assign_room_atomic requires room_id, check_in, check_out")
+
+    # Step 1 — bookings-level overlap net (correct single clause), excludes self.
+    overlap = await _find_overlapping_active_booking(
+        tenant_id=tenant_id,
+        room_id=room_id,
+        check_in=check_in,
+        check_out=check_out,
+        exclude_booking_id=booking_id,
+    )
+    if overlap is not None:
+        conflict_msg = (
+            f"Room {room_id} already booked for {check_in}..{check_out} "
+            f"by {overlap.get('id')}"
+        )
+        raise BookingConflictError(
+            conflict_msg,
+            conflicting_booking_id=overlap.get("id"),
+            conflict_type="booking",
+        )
+
+    nights = _night_dates(check_in, check_out)
+
+    # Step 2 — atomic per-night claim on the target room.
+    claimed_nights: list[str] = []
+    for night in nights:
+        lock_doc = {
+            "tenant_id": tenant_id,
+            "room_id": room_id,
+            "night_date": night,
+            "booking_id": booking_id,
+            "lock_type": "booking",
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        try:
+            await db.room_night_locks.insert_one(lock_doc)
+            claimed_nights.append(night)
+        except DuplicateKeyError:
+            existing = await db.room_night_locks.find_one(
+                {"tenant_id": tenant_id, "room_id": room_id, "night_date": night},
+                {"_id": 0, "booking_id": 1, "lock_type": 1},
+            )
+            existing_owner = existing.get("booking_id") if existing else None
+            # Idempotent: this booking already holds the night on this room.
+            if existing_owner == booking_id:
+                continue
+            # Conflict — roll back only the nights claimed in THIS call.
+            if claimed_nights:
+                await db.room_night_locks.delete_many({
+                    "tenant_id": tenant_id,
+                    "room_id": room_id,
+                    "night_date": {"$in": claimed_nights},
+                    "booking_id": booking_id,
+                })
+            lock_type = existing.get("lock_type", "booking") if existing else "booking"
+            if existing_owner and existing_owner.startswith(OOO_PREFIX):
+                conflict_type = "ooo"
+                conflict_msg = f"Room {room_id} is Out of Order for {night}"
+            elif existing_owner and existing_owner.startswith(OOS_PREFIX):
+                conflict_type = "oos"
+                conflict_msg = f"Room {room_id} is Out of Service for {night}"
+            elif existing_owner and existing_owner.startswith(MAINTENANCE_PREFIX):
+                conflict_type = "maintenance"
+                conflict_msg = f"Room {room_id} is under Maintenance for {night}"
+            else:
+                conflict_type = "booking"
+                conflict_msg = (
+                    f"Room not available for {check_in} to {check_out}. "
+                    f"Night {night} already booked"
+                    + (f" by {existing_owner}" if existing_owner else "")
+                )
+            await _timeline_event(
+                tenant_id=tenant_id,
+                stage="assign_lock_conflict",
+                status="rejected",
+                booking_id=booking_id,
+                room_id=room_id,
+                correlation_id=correlation_id or booking_id,
+                metadata={
+                    "conflict_night": night,
+                    "conflict_type": conflict_type,
+                    "conflicting_booking_id": existing_owner,
+                    "conflicting_lock_type": lock_type,
+                },
+            )
+            raise BookingConflictError(
+                conflict_msg,
+                conflicting_booking_id=existing_owner,
+                conflict_type=conflict_type,
+                conflicting_nights=[night],
+            )
+
+    # Step 3 — release this booking's locks on any other room (room change).
+    await db.room_night_locks.delete_many({
+        "tenant_id": tenant_id,
+        "booking_id": booking_id,
+        "room_id": {"$ne": room_id},
+    })
+
+    await _timeline_event(
+        tenant_id=tenant_id,
+        stage="assign_lock_acquired",
+        status="success",
+        booking_id=booking_id,
+        room_id=room_id,
+        correlation_id=correlation_id or booking_id,
+        metadata={
+            "nights_locked": nights,
+            "night_count": len(nights),
+            "room_id": room_id,
+        },
+    )
+    logger.info(
+        "Atomic room assign: booking=%s room=%s (%d nights locked)",
+        booking_id, room_id, len(nights),
+    )
+    return {"success": True, "nights_locked": nights, "room_id": room_id}
+
+
 # ── OOO / OOS / Maintenance Lock Management (INV-5) ─────────────────
 
 async def apply_room_block(tenant_id: str, room_id: str,
