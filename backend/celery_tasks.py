@@ -612,6 +612,142 @@ async def _folio_closed_event_sweep_async() -> dict[str, Any]:
         client.close()
 
 
+# ============= KBS (Konaklama Bildirim Sistemi) =============
+# Task #570: PMS-içi otomatik KBS gönderimi + 00:00 (kiracı yerel saati) güvenlik
+# taraması. Önceden kuyruğu harici masaüstü ajan/bot claim ediyordu; artık PMS'in
+# kendisi gönderiyor. Gönderim fail-closed (kimlik bilgisi yoksa no-op + operatör
+# uyarısı, sahte başarı YAZILMAZ). Tarama dispatcher'ı night-audit kalıbının aynısı:
+# her dakika tick'ler, kiracı yerel 00:00'ında atomik per-local-day claim ile bir
+# kez sweep enqueue eder.
+
+
+@celery_app.task(name='celery_tasks.kbs_dispatch_task')
+def kbs_dispatch_task():
+    """Beat task (her dakika): bekleyen KBS kuyruğunu claim et → gönder → complete/fail."""
+    return asyncio.run(_kbs_dispatch_async())
+
+
+async def _kbs_dispatch_async() -> dict[str, Any]:
+    from core.kbs_dispatch import dispatch_pending_kbs_jobs
+
+    client, raw_db = _fresh_mongo()
+    try:
+        try:
+            batch = int(os.environ.get("KBS_DISPATCH_BATCH", "50"))
+        except (TypeError, ValueError):
+            batch = 50
+        if batch <= 0:
+            batch = 50
+        result = await dispatch_pending_kbs_jobs(raw_db, limit=batch)
+        if result.get("processed"):
+            logger.info("[kbs_dispatch] %s", result)
+        return result
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("KBS dispatch task error: %s", exc)
+        return {"success": False, "error": str(exc)}
+    finally:
+        client.close()
+
+
+@celery_app.task(name='celery_tasks.kbs_nightly_sweep_dispatch_task')
+def kbs_nightly_sweep_dispatch_task():
+    """Beat dispatcher (her dakika): kiracı yerel 00:00'ında güvenlik taraması enqueue et.
+
+    night_audit_dispatch ile aynı kalıp: her enabled kiracının yerel saatini
+    DST-aware çözer; yerel saat 00:00 ise, kapanan günü ``kbs_sweep_state``
+    üzerinde atomik per-local-day claim ile bir kez tarar (overlapping beat
+    tick'lerine karşı güvenli).
+    """
+    return asyncio.run(_kbs_nightly_sweep_dispatch_async())
+
+
+async def _kbs_nightly_sweep_dispatch_async() -> dict[str, Any]:
+    from domains.pms.night_audit.scheduler import utc_to_local
+
+    from core.kbs_nightly_sweep import previous_local_day, sweep_tenant_kbs
+
+    if os.environ.get("KBS_NIGHTLY_SWEEP", "1") == "0":
+        return {"skipped": "disabled"}
+
+    client, raw_db = _fresh_mongo()
+    swept: list[str] = []
+    scanned = 0
+    try:
+        # Per-local-day claim'in atomikliği tenant_id unique index'e dayanır:
+        # state dokümanının upsert ile tekilliğini garanti eder (yoksa eşzamanlı
+        # ilk-kez upsert iki doküman üretip çift-sweep'e yol açabilir).
+        try:
+            await raw_db.kbs_sweep_state.create_index(
+                "tenant_id", unique=True, name="kbs_sweep_state_tenant_uq",
+                background=True,
+            )
+        except Exception as e:  # noqa: BLE001 — index bir optimizasyon, zorunlu değil
+            logger.debug("[kbs_nightly_sweep] index ensure skipped: %s", e)
+
+        now_utc = _now_utc()
+        now_iso = now_utc.isoformat()
+        # Sweep yalnızca KBS_NOTIFY feature'ı olan kiracılar için anlamlı; ama tenant
+        # listesini geniş tutup (aktif kullanıcılı kiracılar) yerel-saat eşleşmesinde
+        # daraltmak yeterli — eşleşmeyenler ucuzca atlanır.
+        tenant_ids = await raw_db.users.distinct("tenant_id", {"active": True})
+        for tenant_id in tenant_ids:
+            if not tenant_id:
+                continue
+            scanned += 1
+            tz_doc = await raw_db.tenant_settings.find_one(
+                {"tenant_id": tenant_id}, {"_id": 0, "timezone": 1}
+            ) or {}
+            tz_name = tz_doc.get("timezone") or "Europe/Istanbul"
+            local_now = utc_to_local(now_utc, tz_name)
+            if local_now.hour != 0 or local_now.minute != 0:
+                continue
+
+            # Atomik per-local-day claim. Yerel gün başlangıcı UTC instant'ı olarak
+            # boundary; last_sweep_run bundan eskiyse kazanırız.
+            local_day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+            boundary = local_day_start.astimezone(UTC).isoformat()
+
+            # 1) State dokümanının var olduğundan emin ol (koşulsuz, idempotent).
+            try:
+                await raw_db.kbs_sweep_state.update_one(
+                    {"tenant_id": tenant_id},
+                    {"$setOnInsert": {"tenant_id": tenant_id, "last_sweep_run": None}},
+                    upsert=True,
+                )
+            except Exception as e:  # noqa: BLE001 — eşzamanlı dup insert; doc artık var
+                logger.debug("[kbs_nightly_sweep] state ensure race: %s", e)
+
+            # 2) Koşullu CAS: yalnızca bu yerel gün için henüz koşulmadıysa modified=1.
+            claim = await raw_db.kbs_sweep_state.update_one(
+                {
+                    "tenant_id": tenant_id,
+                    "$or": [
+                        {"last_sweep_run": None},
+                        {"last_sweep_run": {"$lt": boundary}},
+                    ],
+                },
+                {"$set": {"last_sweep_run": now_iso}},
+            )
+            if claim.modified_count == 0:
+                # Zaten bugün için claim'li (race kaybı / re-tick).
+                continue
+
+            day_iso = previous_local_day(local_now)
+            result = await sweep_tenant_kbs(raw_db, tenant_id, day_iso)
+            swept.append(tenant_id)
+            logger.info(
+                "[kbs_nightly_sweep] tenant=%s day=%s enqueued=%s skipped=%s blocked=%s",
+                tenant_id, day_iso, result["enqueued"], result["skipped"],
+                result["blocked"],
+            )
+        return {"success": True, "scanned": scanned, "swept": swept}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("KBS nightly sweep dispatch error: %s", exc)
+        return {"success": False, "error": str(exc), "scanned": scanned, "swept": swept}
+    finally:
+        client.close()
+
+
 # ============= DATA ARCHIVAL TASKS =============
 
 @celery_app.task(name='celery_tasks.archive_old_data_task')

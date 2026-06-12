@@ -1296,6 +1296,31 @@ async def kbs_alerts_list(
         unack_count = await db.kbs_alerts.count_documents(
             {"tenant_id": tenant_id, "acknowledged": False},
         )
+
+    # KBS otomatik gönderici kimlik bilgisi sistem geneli olduğu için
+    # `send_unconfigured` config alarmı tenant_id="_system" ile yazılır.
+    # Bunu yalnızca platform yöneticisi (super_admin) görür; tenant proxy
+    # _system'i context'e çekemediğinden ayrı sistem-db sorgusuyla eklenir.
+    from core.security import _is_super_admin
+    if _is_super_admin(current_user):
+        from core.tenant_db import get_system_db
+        sys_db = get_system_db()
+        sys_q: dict = {"tenant_id": "_system"}
+        if acknowledged is not None:
+            sys_q["acknowledged"] = acknowledged
+        sys_alerts = await sys_db.kbs_alerts.find(sys_q, {"_id": 0}).sort(
+            "created_at", -1
+        ).to_list(limit)
+        if sys_alerts:
+            alerts = sorted(
+                alerts + sys_alerts,
+                key=lambda a: a.get("created_at") or "",
+                reverse=True,
+            )[:limit]
+            unack_count += await sys_db.kbs_alerts.count_documents(
+                {"tenant_id": "_system", "acknowledged": False},
+            )
+
     return {"alerts": alerts, "total": len(alerts), "unack_count": unack_count}
 
 

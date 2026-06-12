@@ -72,6 +72,25 @@ celery_app.conf.update(
             'schedule': crontab(minute='*/5'),
         },
 
+        # KBS dispatcher (Task #570) — PMS-içi otomatik polis konaklama bildirimi.
+        # Her dakika bekleyen KBS kuyruğunu claim eder, KBS uç noktasına gönderir
+        # ve complete/fail eder. Fail-closed: KBS_API_URL/KBS_API_TOKEN yoksa
+        # (ve KBS_TEST_MODE kapalıysa) no-op döner + operatörü throttled uyarır;
+        # sahte başarı YAZILMAZ. Harici masaüstü ajan/bot artık gerekmez.
+        'kbs-dispatch': {
+            'task': 'celery_tasks.kbs_dispatch_task',
+            'schedule': crontab(minute='*'),
+        },
+
+        # KBS gece güvenlik taraması (Task #570) — night-audit ile aynı kalıp:
+        # her dakika tick'ler, her kiracının YEREL saatiyle 00:00'ında kapanan
+        # günün gönderilmemiş konaklamalarını yeniden enqueue eder (DST-aware,
+        # atomik per-local-day claim). Gün içinde gözden kaçanları yakalar.
+        'kbs-nightly-sweep-dispatch': {
+            'task': 'celery_tasks.kbs_nightly_sweep_dispatch_task',
+            'schedule': crontab(minute='*'),
+        },
+
         # Data archival - runs weekly on Sunday at 3 AM
         'archive-old-data': {
             'task': 'celery_tasks.archive_old_data_task',

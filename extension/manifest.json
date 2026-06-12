@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Syroce PMS - KBS Gonderici",
+  "version": "1.0.0",
+  "description": "Syroce PMS icinden KBS (Emniyet konaklama bildirimi) gonderimini resepsiyon bilgisayarinin IP adresinden yapar.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://*.egm.gov.tr/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "action": {
+    "default_title": "Syroce KBS Gonderici"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.replit.app/*", "https://*.replit.dev/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

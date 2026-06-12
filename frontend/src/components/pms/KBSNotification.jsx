@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { pingExtension, sendViaExtension, buildKbsBody } from '@/lib/kbsExtensionBridge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,15 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
   });
   const [queueLoading, setQueueLoading] = useState(false);
   const [enqueuingId, setEnqueuingId] = useState(null);
+
+  // KBS tarayici eklentisi (otel IP'sinden gonderim) entegrasyonu
+  const [extInfo, setExtInfo] = useState({ present: false, state: 'absent', version: '', installId: '' });
+  const [autoSend, setAutoSend] = useState(() => {
+    try { return localStorage.getItem('kbs_ext_autosend') === '1'; } catch { return false; }
+  });
+  const [draining, setDraining] = useState(false);
+  const [lastDrain, setLastDrain] = useState(null);
+  const drainingRef = useRef(false);
 
   const fetchQueue = useCallback(async () => {
     setQueueLoading(true);
@@ -110,6 +120,120 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
       toast.error(err?.response?.data?.detail || tk('retryError'));
     }
   };
+
+  // --- KBS tarayici eklentisi: kuyrugu otel IP'sinden gonderme ---
+  const refreshExt = useCallback(async () => {
+    try {
+      const info = await pingExtension();
+      setExtInfo(info);
+    } catch {
+      setExtInfo({ present: false, state: 'absent', version: '', installId: '' });
+    }
+  }, []);
+
+  useEffect(() => { refreshExt(); }, [refreshExt]);
+
+  const extReady = extInfo.present && (extInfo.state === 'test' || extInfo.state === 'configured');
+
+  const newIdemKey = () => (
+    (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : String(Date.now()) + '-' + Math.random().toString(16).slice(2)
+  );
+
+  // Tek isi: claim -> eklenti ile EGM'ye gonder -> complete/fail.
+  const processJobViaExtension = useCallback(async (job, workerId) => {
+    let claimed = null;
+    try {
+      const c = await axios.post(`/kbs/queue/${job.id}/claim`, {
+        worker_id: workerId, lease_seconds: 300,
+      });
+      claimed = c.data?.job;
+    } catch {
+      return 'skipped'; // 409 (baska worker / backoff / kapali) -> atla
+    }
+    if (!claimed) return 'skipped';
+
+    const body = buildKbsBody(claimed.payload, claimed.action || 'checkin');
+    const sent = await sendViaExtension(body);
+    const idem = newIdemKey();
+
+    if (sent.ok && sent.reference) {
+      try {
+        await axios.post(`/kbs/queue/${job.id}/complete`,
+          { worker_id: workerId, kbs_reference: sent.reference },
+          { headers: { 'Idempotency-Key': idem } });
+        return 'ok';
+      } catch {
+        return 'fail';
+      }
+    }
+    try {
+      await axios.post(`/kbs/queue/${job.id}/fail`,
+        { worker_id: workerId, error: sent.error || 'extension_send_failed', retry: true },
+        { headers: { 'Idempotency-Key': idem } });
+    } catch {
+      // fail kaydi yazilamadi: lease suresi dolunca tekrar denenir
+    }
+    return 'fail';
+  }, []);
+
+  const drainViaExtension = useCallback(async () => {
+    if (!extReady || !extInfo.installId) return;
+    if (drainingRef.current) return;
+    drainingRef.current = true;
+    setDraining(true);
+    const workerId = `ext:${extInfo.installId}`;
+    let ok = 0, fail = 0;
+    try {
+      const res = await axios.get('/kbs/queue', { params: { status: 'pending', limit: 20 } });
+      const jobs = res.data?.jobs || [];
+      for (const job of jobs) {
+        const r = await processJobViaExtension(job, workerId);
+        if (r === 'ok') ok++;
+        else if (r === 'fail') fail++;
+      }
+    } catch {
+      // listeleme hatasi -> sessiz, sonraki turda tekrar denenir
+    } finally {
+      drainingRef.current = false;
+      setDraining(false);
+      setLastDrain({ ok, fail, at: new Date().toISOString() });
+      fetchQueue();
+    }
+  }, [extReady, extInfo.installId, processJobViaExtension, fetchQueue]);
+
+  const sendJobViaExtension = useCallback(async (job) => {
+    if (!extReady || !extInfo.installId) {
+      toast.error('KBS eklentisi kurulu/yapilandirilmis degil');
+      return;
+    }
+    const workerId = `ext:${extInfo.installId}`;
+    const r = await processJobViaExtension(job, workerId);
+    if (r === 'ok') toast.success('KBS gonderimi tamamlandi');
+    else if (r === 'fail') toast.error('KBS gonderimi basarisiz');
+    else toast.error('Is su anda claim edilemedi (baska worker / bekleme)');
+    fetchQueue();
+  }, [extReady, extInfo.installId, processJobViaExtension, fetchQueue]);
+
+  const toggleAutoSend = () => {
+    setAutoSend((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('kbs_ext_autosend', next ? '1' : '0'); } catch { /* yoksay */ }
+      return next;
+    });
+  };
+
+  // Eklenti durumunu periyodik tazele + otomatik gonderim acikken kuyrugu boalt.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.hidden) return;
+      refreshExt();
+      if (autoSend) drainViaExtension();
+    }, 30000);
+    if (!document.hidden && autoSend) drainViaExtension();
+    return () => clearInterval(id);
+  }, [autoSend, refreshExt, drainViaExtension]);
 
   useEffect(() => {
     const checkedIn = bookings.filter(b => b.status === 'checked_in');
@@ -326,6 +450,50 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
         </div>
       </div>
 
+      {/* KBS tarayici eklentisi: otelin IP adresinden gonderim */}
+      <div className="rounded-lg border bg-gray-50 p-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="text-xs font-semibold text-gray-700 flex items-center gap-2">
+            <Shield className="w-4 h-4 text-gray-500" />
+            KBS Tarayici Eklentisi
+            {extInfo.present ? (
+              <Badge className={
+                extInfo.state === 'configured' ? 'bg-green-100 text-green-800'
+                  : extInfo.state === 'test' ? 'bg-blue-100 text-blue-800'
+                    : 'bg-amber-100 text-amber-800'
+              }>
+                {extInfo.state === 'configured' ? `Bagli v${extInfo.version}`
+                  : extInfo.state === 'test' ? `Test modu v${extInfo.version}`
+                    : 'Yapilandirilmamis'}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-gray-500">Kurulu degil</Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {extReady && (
+              <>
+                <Button variant={autoSend ? 'default' : 'outline'} size="sm"
+                  className="h-7 px-2 text-xs" onClick={toggleAutoSend}>
+                  {autoSend ? 'Otomatik gonderim: Acik' : 'Otomatik gonderim: Kapali'}
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
+                  onClick={drainViaExtension} disabled={draining}>
+                  <Send className={`w-3 h-3 mr-1 ${draining ? 'animate-pulse' : ''}`} />
+                  Simdi gonder
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-500 mt-1">
+          {extInfo.present
+            ? 'Bildirimler resepsiyon bilgisayarinin tarayicisindan (otelin IP adresi) Emniyet KBS sistemine iletilir.'
+            : 'Eklenti kurulu degil. Kuyruktaki bildirimler eklenti kurulup acilana kadar bekler (kurulum: extension/ klasoru).'}
+          {lastDrain && ` Son gonderim: ${new Date(lastDrain.at).toLocaleTimeString()} - basarili ${lastDrain.ok}, hata ${lastDrain.fail}.`}
+        </p>
+      </div>
+
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
         <Input className="pl-9" placeholder={tk('searchPlaceholder')} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
@@ -491,11 +659,18 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
                       </div>
                     </div>
                   </div>
-                  {isRetryable && (
-                    <Button size="sm" variant="outline" onClick={() => retryDeadJob(job)}>
-                      <RefreshCw className="h-3 w-3 mr-1" /> {tk('retry')}
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {extReady && job.status === 'pending' && (
+                      <Button size="sm" variant="outline" onClick={() => sendJobViaExtension(job)}>
+                        <Send className="h-3 w-3 mr-1" /> Eklenti ile gonder
+                      </Button>
+                    )}
+                    {isRetryable && (
+                      <Button size="sm" variant="outline" onClick={() => retryDeadJob(job)}>
+                        <RefreshCw className="h-3 w-3 mr-1" /> {tk('retry')}
+                      </Button>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             );

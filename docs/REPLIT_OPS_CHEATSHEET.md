@@ -340,3 +340,72 @@ AFTER: two_factor_enabled=False has_secret=False backup_codes=0
 (±90s TOTP candidate window + tüm backup code fallback'leri); ancak
 SIGKILL-class cancel'lar hiçbir framework hook'unu çalıştırmadığından
 operator drenajı bu durumda zorunlu kalır.
+
+---
+
+## KBS Tarayıcı Eklentisi (Otel IP'sinden Emniyet Gönderimi)
+
+> **Neden eklenti?** EGM/KBS, konaklama bildirimini **otelin kendi internet
+> IP adresine** bağlar. Bulut sunucusunun IP'si reddedilir. Bu yüzden
+> bildirim, resepsiyon bilgisayarının tarayıcısından (= otelin IP'si)
+> gönderilir. Eklenti = saf EGM taşıyıcısı; PMS sayfası = kuyruk worker'ı
+> (staff JWT'yi o tutar). Kaynak: `extension/` klasörü.
+
+### Kurulum (her resepsiyon bilgisayarında bir kez)
+
+1. Chrome/Edge → `chrome://extensions` (Edge: `edge://extensions`).
+2. Sağ üstten **Geliştirici modu**'nu (Developer mode) aç.
+3. **Paketlenmemiş öğe yükle** (Load unpacked) → repo'daki `extension/`
+   klasörünü seç.
+4. Eklenti listede görünür: **Syroce PMS - KBS Gonderici**.
+
+### Yapılandırma
+
+1. Eklenti → **Ayrıntılar** → **Uzantı seçenekleri** (Options).
+2. **Mod** seç:
+   - **Test**: gerçek gönderim yok, `TEST-` referans üretir (prova için).
+     Backend de `KBS_TEST_MODE=1` ile uyumlu olmalı.
+   - **Oturum çerezi**: aynı tarayıcıda KBS portalında açık oturum gerekir.
+   - **API token**: entegratör/anahtar ile.
+3. **KBS ucu (URL)**: yalnızca `https` ve `*.egm.gov.tr` kabul edilir
+   (başka host kaydedilmez — fail-closed).
+4. Kaydet. PMS → Ön Büro → KBS panelinde durum rozeti **Bağlı / Test modu**
+   olmalı.
+
+### Çalıştırma
+
+- PMS KBS panelinde **Otomatik gönderim: Açık** seçilirse, sayfa açık
+  olduğu sürece kuyruktaki bekleyen bildirimler 30 sn'de bir otel IP'sinden
+  gönderilir. **Şimdi gönder** ile elle de boşaltılabilir; her bekleyen iş
+  için **Eklenti ile gönder** butonu vardır.
+- Tarayıcı/sayfa kapalıyken gönderim **durur** (bu beklenen davranıştır;
+  worker = sayfanın kendisi). Resepsiyon ekranı açık kalmalı.
+
+### Backend eşleştirmesi (ÖNEMLİ)
+
+```bash
+# Tarayıcı-taşıyıcı modunda PMS-içi otomatik gönderici KAPALI olmalı:
+KBS_AUTO_DISPATCH=0      # yoksa Celery dispatcher aynı işi bulut IP'sinden
+                         #   göndermeye çalışır → çift gönderim yarışı
+KBS_AUTO_ENQUEUE=1       # check-in/out anında kuyruğa otomatik ekleme açık
+```
+
+> **TUZAK:** `KBS_TEST_MODE=1` iken backend `kbs_dispatch_active()` True
+> döner (kimlik bilgisi olmasa bile) → Celery dispatcher devreye girip
+> kuyruğu çekebilir. Eklenti taşıyıcısıyla **çift gönderim** olmaması için
+> `KBS_AUTO_DISPATCH=0` zorunludur. Çift gönderim yine de atomik `claim`
+> (CAS) ile engellenir — aynı işi iki worker alamaz — ama dispatcher'ı
+> kapatmak doğru kurulumdur.
+
+### Sorun giderme
+
+- **Rozet "Kurulu değil":** Eklenti yüklü mü? Sayfa origin'i eklentinin
+  `content_scripts.matches` desenine uyuyor mu? Varsayılan:
+  `*.replit.app` + `*.replit.dev`. **Özel alan adı (custom domain)
+  kullanıyorsanız** `extension/manifest.json` içindeki `matches` listesine
+  kendi alan adınızı ekleyip eklentiyi yeniden yükleyin.
+- **Rozet "Yapılandırılmamış":** Options'ta uç + (token modunda) token girin.
+- **Gönderim "no_reference_in_response":** EGM yanıtından referans
+  çıkarılamadı. Options'ta **Referans regex** veya doğru **Alan eşleştirme**
+  girin.
+- **Gönderim "endpoint_not_allowed":** Uç `https://*.egm.gov.tr` değil.

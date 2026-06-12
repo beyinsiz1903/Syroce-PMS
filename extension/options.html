@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Syroce KBS Gonderici - Ayarlar</title>
+    <style>
+      body {
+        font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif;
+        max-width: 640px;
+        margin: 24px auto;
+        padding: 0 16px;
+        color: #1f2937;
+      }
+      h1 { font-size: 18px; }
+      p.help { color: #6b7280; font-size: 13px; }
+      label { display: block; margin: 14px 0 4px; font-weight: 600; font-size: 13px; }
+      input, select, textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      textarea { min-height: 84px; font-family: monospace; }
+      .row-help { color: #6b7280; font-size: 12px; margin-top: 2px; }
+      button {
+        margin-top: 18px;
+        background: #111827;
+        color: #fff;
+        border: 0;
+        border-radius: 6px;
+        padding: 9px 16px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      #status { margin-left: 12px; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <h1>Syroce KBS Gonderici - Ayarlar</h1>
+    <p class="help">
+      Bu eklenti, KBS konaklama bildirimlerini resepsiyon bilgisayarinin
+      tarayicisindan (otelin internet IP adresinden) Emniyet'e iletir. Gercek
+      uc, alan adi *.egm.gov.tr olmak zorundadir.
+    </p>
+
+    <label for="mode">Mod</label>
+    <select id="mode">
+      <option value="test">Test (gercek gonderim yok, TEST- referans)</option>
+      <option value="cookie">Oturum cerezi (KBS portalinda acik oturum)</option>
+      <option value="token">API token</option>
+    </select>
+    <div class="row-help">
+      Test: prova icin. Oturum cerezi: ayni tarayicida KBS portalinda oturum
+      acik olmali. API token: entegrator/anahtar ile.
+    </div>
+
+    <label for="endpoint">KBS ucu (URL)</label>
+    <input id="endpoint" type="url" placeholder="https://...egm.gov.tr/..." />
+    <div class="row-help">https ve *.egm.gov.tr disindaki adresler reddedilir.</div>
+
+    <label for="token">API token (yalnizca token modu)</label>
+    <input id="token" type="password" autocomplete="off" />
+
+    <label for="requestFormat">Istek bicimi</label>
+    <select id="requestFormat">
+      <option value="json">JSON</option>
+      <option value="form">Form (x-www-form-urlencoded)</option>
+    </select>
+
+    <label for="fieldMap">Alan eslestirme (opsiyonel, JSON)</label>
+    <textarea id="fieldMap" placeholder='{"guest_name": "AdSoyad", "id_number": "TCKN"}'></textarea>
+    <div class="row-help">
+      Bos birakilirsa payload oldugu gibi gonderilir. Format:
+      {"canonical_alan": "EGM_alan_adi"}.
+    </div>
+
+    <label for="referenceRegex">Referans regex (opsiyonel)</label>
+    <input id="referenceRegex" type="text" placeholder="Referans:\s*([A-Z0-9-]+)" />
+    <div class="row-help">
+      HTML yanitlardan referans cikarmak icin. Bos ise JSON anahtarlari denenir.
+    </div>
+
+    <div>
+      <button id="save">Kaydet</button>
+      <span id="status"></span>
+    </div>
+
+    <script src="options.js"></script>
+  </body>
+</html>
