@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Loader2, Map as MapIcon, Crown, Calendar, RefreshCw, Info, X as XIcon, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import EmptyState from '@/components/EmptyState';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -250,6 +251,15 @@ export default function RoomMapPage({ user, tenant, onLogout }) {
           <div className="text-center py-10 text-sm text-slate-500" data-testid="room-map-no-results">
             "{query.trim()}" için eşleşen oda veya misafir bulunamadı.
           </div>
+        )}
+
+        {data && !loading && !q && (data?.rooms || []).length === 0 && (
+          <EmptyState
+            icon={MapIcon}
+            setupRequired
+            title={t('emptyStates.roomMap.title')}
+            description={t('emptyStates.roomMap.desc')}
+          />
         )}
 
         {data && Object.entries(byFloor).sort().map(([floor, rooms]) => (

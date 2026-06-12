@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { Users, Plus, Calendar, Home, Building2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import EmptyState from '@/components/EmptyState';
 
 const GroupReservations = () => {
   const { t } = useTranslation();
@@ -119,6 +120,15 @@ const GroupReservations = () => {
       {/* {t('groups.title')} */}
       <div>
         <h2 className="text-xl font-bold mb-4">Group Reservations</h2>
+        {groups.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title={t('emptyStates.groupReservations.groupsTitle')}
+            description={t('emptyStates.groupReservations.groupsDesc')}
+            actionText={t('emptyStates.groupReservations.groupsAction')}
+            onAction={() => { setDialogType('group'); setShowDialog(true); }}
+          />
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {groups.map((group) => (
             <Card key={group.id} className="hover:shadow-lg transition">
@@ -166,11 +176,21 @@ const GroupReservations = () => {
             </Card>
           ))}
         </div>
+        )}
       </div>
 
       {/* Room Blocks */}
       <div>
         <h2 className="text-xl font-bold mb-4">Room Blocks</h2>
+        {blocks.length === 0 ? (
+          <EmptyState
+            icon={Building2}
+            title={t('emptyStates.groupReservations.blocksTitle')}
+            description={t('emptyStates.groupReservations.blocksDesc')}
+            actionText={t('emptyStates.groupReservations.blocksAction')}
+            onAction={() => { setDialogType('block'); setShowDialog(true); }}
+          />
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {blocks.map((block) => (
             <Card key={block.id} className="hover:shadow-lg transition">
@@ -211,6 +231,7 @@ const GroupReservations = () => {
             </Card>
           ))}
         </div>
+        )}
       </div>
 
       {/* Create Dialog */}

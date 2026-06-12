@@ -10,6 +10,7 @@ import {
   Bed, CheckCircle, AlertTriangle, Wrench, Search as SearchIcon,
   Eye, Filter, RefreshCw, ChevronDown
 } from 'lucide-react';
+import EmptyState from '@/components/EmptyState';
 
 const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
   const { t } = useTranslation();
@@ -184,7 +185,20 @@ const HousekeepingRoomGrid = ({ embedded = false, onChange }) => {
       {loading ? (
         <div className="text-center py-12 text-gray-400">{tg('loading')}</div>
       ) : filteredRooms.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">{tg('noRooms')}</div>
+        rooms.length === 0 ? (
+          <EmptyState
+            icon={Bed}
+            setupRequired
+            title={t('emptyStates.housekeeping.title')}
+            description={t('emptyStates.housekeeping.desc')}
+          />
+        ) : (
+          <EmptyState
+            icon={SearchIcon}
+            title={t('emptyStates.housekeeping.noResultsTitle')}
+            description={t('emptyStates.housekeeping.noResultsDesc')}
+          />
+        )
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {filteredRooms.map(room => {

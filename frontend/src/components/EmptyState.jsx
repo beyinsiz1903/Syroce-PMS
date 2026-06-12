@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Construction, Rocket, Settings, ExternalLink } from 'lucide-react';
+import { Construction, Rocket, Settings, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const EmptyState = ({ 
@@ -11,6 +11,7 @@ const EmptyState = ({
   icon: Icon = Construction,
   actionText,
   onAction,
+  actionIcon: ActionIcon = Plus,
   comingSoon = false,
   setupRequired = false
 }) => {
@@ -54,8 +55,8 @@ const EmptyState = ({
 
         {actionText && onAction && (
           <Button onClick={onAction} className="mt-2">
+            {ActionIcon && <ActionIcon className="w-4 h-4 mr-2" />}
             {actionText}
-            <ExternalLink className="w-4 h-4 ml-2" />
           </Button>
         )}
       </CardContent>

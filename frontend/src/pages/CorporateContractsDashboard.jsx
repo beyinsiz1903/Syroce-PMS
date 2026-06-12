@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Building2, TrendingUp, Percent, AlertTriangle, RefreshCw } from "lucide-react";
 import { useTranslation } from 'react-i18next';
+import EmptyState from '@/components/EmptyState';
 
 const CorporateContractsDashboard = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -105,9 +106,11 @@ const CorporateContractsDashboard = ({ user, tenant, onLogout }) => {
                 Yükleniyor...
               </div>
             ) : contracts.length === 0 ? (
-              <div className="py-10 text-center text-gray-500 text-sm">
-                Henüz room_nights_commitment alanı dolu aktif şirket bulunmuyor.
-              </div>
+              <EmptyState
+                icon={Building2}
+                title={t('emptyStates.corporateContracts.title')}
+                description={t('emptyStates.corporateContracts.desc')}
+              />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs md:text-sm">

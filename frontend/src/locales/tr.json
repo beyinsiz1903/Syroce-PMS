@@ -1,4 +1,52 @@
 {
+  "emptyStates": {
+    "mice": {
+      "eventsTitle": "Henüz etkinlik yok",
+      "eventsDesc": "İlk MICE etkinliğinizi oluşturarak teklif, BEO ve mutfak fişlerini buradan yönetin.",
+      "eventsAction": "İlk Etkinliği Oluştur",
+      "menusTitle": "Henüz menü yok",
+      "menusDesc": "F&B menüleri ile AV ve dekorasyon paketlerini ekleyerek etkinliklerde kullanın.",
+      "menusAction": "İlk Menü/Paketi Oluştur",
+      "spacesTitle": "Henüz mekan yok",
+      "spacesDesc": "Toplantı ve etkinlik mekanlarını tanımladığınızda kapasite ve fiyatlar burada görünecek."
+    },
+    "groupReservations": {
+      "groupsTitle": "Henüz grup rezervasyonu yok",
+      "groupsDesc": "Kurumsal gruplar için ilk grup rezervasyonunu oluşturun.",
+      "groupsAction": "İlk Grubu Oluştur",
+      "blocksTitle": "Henüz oda bloğu yok",
+      "blocksDesc": "Etkinlik veya grup için oda blokları oluşturarak envanteri ayırın.",
+      "blocksAction": "İlk Bloğu Oluştur"
+    },
+    "housekeeping": {
+      "title": "Henüz oda yok",
+      "desc": "Oda kurulumunu tamamladığınızda kat hizmetleri durumu burada görünecek.",
+      "noResultsTitle": "Eşleşen oda bulunamadı",
+      "noResultsDesc": "Arama veya filtre kriterlerinizi değiştirerek tekrar deneyin."
+    },
+    "roomMap": {
+      "title": "Henüz oda yok",
+      "desc": "Oda kurulumunu tamamladığınızda oda haritası burada görünecek."
+    },
+    "cityLedger": {
+      "title": "Henüz cari hesap yok",
+      "desc": "Kurumsal ve acente partnerleriniz için ilk doğrudan faturalama hesabını oluşturun.",
+      "action": "İlk Hesabı Oluştur",
+      "noResultsTitle": "Eşleşen hesap bulunamadı",
+      "noResultsDesc": "Arama kriterinizi değiştirerek tekrar deneyin."
+    },
+    "corporateContracts": {
+      "title": "Henüz kontratlı şirket yok",
+      "desc": "Taahhüt edilen oda gecesi tanımlı aktif kurumsal şirket bulunmuyor. Şirket kontratlarını ayarladığınızda performans burada görünecek."
+    },
+    "salesCrm": {
+      "title": "Henüz lead yok",
+      "desc": "İlk satış lead'inizi ekleyerek satış hunisini buradan takip edin.",
+      "action": "İlk Lead'i Oluştur",
+      "noResultsTitle": "Eşleşen lead bulunamadı",
+      "noResultsDesc": "Arama veya aşama filtrenizi değiştirerek tekrar deneyin."
+    }
+  },
   "common": {
     "welcome": "Hoş Geldiniz",
     "login": "Giriş Yap",

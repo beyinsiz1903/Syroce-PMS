@@ -32,6 +32,7 @@ import {
   History as HistoryIcon, Pencil, Send,
 } from 'lucide-react';
 import EntityHistoryDrawer from '@/components/EntityHistoryDrawer';
+import EmptyState from '@/components/EmptyState';
 
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { useTranslation } from 'react-i18next';
@@ -491,6 +492,15 @@ const MicePage = ({ user, tenant, onLogout }) => {
         </TabsList>
 
         <TabsContent value="events">
+          {events.length === 0 ? (
+            <EmptyState
+              icon={CalendarDays}
+              title={t('emptyStates.mice.eventsTitle')}
+              description={t('emptyStates.mice.eventsDesc')}
+              actionText={t('emptyStates.mice.eventsAction')}
+              onAction={openNew}
+            />
+          ) : (
           <Card><CardContent className="p-0 overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b text-left">
@@ -502,8 +512,6 @@ const MicePage = ({ user, tenant, onLogout }) => {
                 </tr>
               </thead>
               <tbody>
-                {events.length === 0 && <tr><td colSpan={8} className="p-6 text-center text-gray-500">
-                  Etkinlik yok.</td></tr>}
                 {events.map((ev) => {
                   const st = STATUS[ev.status] || STATUS.lead;
                   const acct = ev.client_account_id && accountById[ev.client_account_id];
@@ -570,6 +578,7 @@ const MicePage = ({ user, tenant, onLogout }) => {
               </tbody>
             </table>
           </CardContent></Card>
+          )}
         </TabsContent>
 
         <TabsContent value="kitchen-board">
@@ -589,6 +598,13 @@ const MicePage = ({ user, tenant, onLogout }) => {
         </TabsContent>
 
         <TabsContent value="spaces">
+          {spaces.length === 0 && (
+            <EmptyState
+              icon={Building2}
+              title={t('emptyStates.mice.spacesTitle')}
+              description={t('emptyStates.mice.spacesDesc')}
+            />
+          )}
           <div className="grid md:grid-cols-2 gap-3">
             {spaces.map((s) => (
               <Card key={s.id}>
@@ -631,9 +647,13 @@ const MicePage = ({ user, tenant, onLogout }) => {
             </Button>
           </div>
           {menus.length === 0 && (
-            <div className="text-center py-12 text-gray-500 text-sm">
-              {t('cm.pages_MicePage.henuz_menu_eklenmemis_yeni_menu_paket_bu')}
-            </div>
+            <EmptyState
+              icon={UtensilsCrossed}
+              title={t('emptyStates.mice.menusTitle')}
+              description={t('emptyStates.mice.menusDesc')}
+              actionText={t('emptyStates.mice.menusAction')}
+              onAction={openNewMenu}
+            />
           )}
           <div className="grid md:grid-cols-3 gap-3">
             {menus.map((m) => (

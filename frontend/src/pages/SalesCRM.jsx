@@ -13,7 +13,8 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from '@/components/ui/dialog';
-import { Mail, Phone, Trash2, Activity, RefreshCw } from 'lucide-react';
+import { Mail, Phone, Trash2, Activity, RefreshCw, Users, Search } from 'lucide-react';
+import EmptyState from '@/components/EmptyState';
 import { useTranslation } from 'react-i18next';
 
 const STAGES = [
@@ -403,11 +404,21 @@ const SalesCRM = ({ user, tenant, onLogout }) => {
         {loadingList ? (
           <div className="text-center text-gray-500 py-12">{t('cm.pages_SalesCRM.yukleniyor')}</div>
         ) : leads.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center text-gray-500">
-              {t('cm.pages_SalesCRM.filtreyle_eslesen_lead_yok_yeni_lead_ile')}
-            </CardContent>
-          </Card>
+          (search.trim() || statusFilter !== 'all') ? (
+            <EmptyState
+              icon={Search}
+              title={t('emptyStates.salesCrm.noResultsTitle')}
+              description={t('emptyStates.salesCrm.noResultsDesc')}
+            />
+          ) : (
+            <EmptyState
+              icon={Users}
+              title={t('emptyStates.salesCrm.title')}
+              description={t('emptyStates.salesCrm.desc')}
+              actionText={t('emptyStates.salesCrm.action')}
+              onAction={() => setShowCreate(true)}
+            />
+          )
         ) : (
           <div className="grid grid-cols-1 gap-3">
             {leads.map((lead) => (

@@ -17,6 +17,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import EmptyState from '@/components/EmptyState';
 
 const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
   const { t } = useTranslation();
@@ -222,11 +223,21 @@ const CityLedgerAccounts = ({ user, tenant, onLogout }) => {
           </CardHeader>
           <CardContent>
             {filteredAccounts.length === 0 ? (
-              <div className="py-10 text-center text-gray-500">
-                <AlertTriangle className="w-12 h-12 mx-auto mb-2" />
-                <p className="font-semibold">No city ledger accounts found</p>
-                <p className="text-sm mt-1">You can create a new account using the button above.</p>
-              </div>
+              accounts.length === 0 ? (
+                <EmptyState
+                  icon={Building2}
+                  title={t('emptyStates.cityLedger.title')}
+                  description={t('emptyStates.cityLedger.desc')}
+                  actionText={t('emptyStates.cityLedger.action')}
+                  onAction={() => setNewAccountDialogOpen(true)}
+                />
+              ) : (
+                <EmptyState
+                  icon={Search}
+                  title={t('emptyStates.cityLedger.noResultsTitle')}
+                  description={t('emptyStates.cityLedger.noResultsDesc')}
+                />
+              )
             ) : (
               <div className="space-y-4">
                 {filteredAccounts.map((account) => {
