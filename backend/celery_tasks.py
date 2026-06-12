@@ -1229,50 +1229,174 @@ def process_pending_efaturas_task():
     """Process pending e-fatura generations"""
     return asyncio.run(_process_pending_efaturas_async())
 
-async def _process_pending_efaturas_async():
-    """Async e-fatura processing"""
-    db, client = get_db()
+async def _dispatch_efatura_alert(invoice: dict, error: str, attempts: int) -> None:
+    """Best-effort ops alert when an invoice exhausts its e-Fatura retries.
 
+    The persisted ``efatura_status='error'`` is the durable signal (visible on
+    the accounting screen); this alert is the active notification. Never raises.
+    """
     try:
-        # Find invoices with pending e-fatura
+        from domains.channel_manager.monitoring.alert_dispatch import dispatch_alert
+        await dispatch_alert(
+            {
+                "alert_type": "efatura_cut_failed",
+                "severity": "high",
+                "provider": "system",
+                "title": "e-Fatura kesimi kalici olarak basarisiz",
+                "message": (
+                    f"Fatura {invoice.get('invoice_number')} {attempts} denemeden "
+                    "sonra saglayiciya gonderilemedi; durumu 'error' olarak isaretlendi."
+                ),
+                "runbook_hint": (
+                    "Saglayici kimlik bilgilerini/baglantiyi dogrulayin, sorunu "
+                    "giderdikten sonra faturayi yeniden 'pending' yapip kuyruga alin."
+                ),
+                "context": {
+                    "invoice_id": invoice.get("id"),
+                    "invoice_number": invoice.get("invoice_number"),
+                    "attempts": attempts,
+                    "last_error": str(error)[:300],
+                },
+            },
+            tenant_id=invoice.get("tenant_id") or "system",
+        )
+    except Exception as exc:  # noqa: BLE001 - alerting must never break the sweep
+        logger.warning("efatura alert dispatch failed: %s", exc)
+
+
+async def _upsert_efatura_record(db, invoice: dict, ettn: str, result: dict,
+                                 xml_content: str, profile: str) -> None:
+    """Mirror a successful cut into ``efatura_records`` for the status endpoint."""
+    now_iso = datetime.now(UTC).isoformat()
+    await db.efatura_records.update_one(
+        {"invoice_id": invoice.get("id"), "tenant_id": invoice.get("tenant_id")},
+        {
+            "$set": {
+                "tenant_id": invoice.get("tenant_id"),
+                "invoice_id": invoice.get("id"),
+                "invoice_number": invoice.get("invoice_number"),
+                "efatura_uuid": result["official_id"],
+                "official_number": result["official_id"],
+                "ettn": ettn,
+                "profile": profile,
+                "provider": result.get("provider"),
+                "xml_content": xml_content,
+                "status": result.get("status") or "generated",
+                "error": None,
+                "generated_at": now_iso,
+            },
+            "$setOnInsert": {"id": str(uuid.uuid4())},
+        },
+        upsert=True,
+    )
+
+
+async def _process_pending_efaturas_async():
+    """Cut real e-Fatura/e-Arsiv documents for pending sales invoices.
+
+    Fail-closed: if no provider is configured we write NOTHING (no fake
+    success). For each pending invoice we build a UBL-TR document and transmit
+    it to the configured provider; success stores the official ETTN/UUID, a
+    transient failure is retried on the next sweep, and a persistent failure
+    flips the invoice to ``error`` and alerts ops.
+    """
+    from core import efatura_provider as ep
+
+    if not ep.is_configured():
+        logger.warning(
+            "e-Fatura provider not configured; skipping cut (fail-closed, "
+            "no fake success written)"
+        )
+        return {
+            "success": False,
+            "reason": "not_configured",
+            "processed": 0,
+            "failed": 0,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+
+    db, client = get_db()
+    try:
+        cfg = ep.provider_config()
+        cap = ep.max_attempts()
+
         pending_invoices = await db.accounting_invoices.find({
             'efatura_status': 'pending',
-            'invoice_type': 'sales'
+            'invoice_type': 'sales',
         }).limit(100).to_list(100)
 
         processed = 0
+        failed = 0
+        errored = 0
         for invoice in pending_invoices:
+            inv_no = invoice.get('invoice_number')
+            ettn = invoice.get('efatura_ettn') or str(uuid.uuid4())
+            inv_filter = {'id': invoice.get('id'), 'tenant_id': invoice.get('tenant_id')}
             try:
-                # Generate e-fatura (mock - would call actual API)
-                efatura_uuid = f"EFATURA-{invoice['invoice_number']}"
-
-                await db.accounting_invoices.update_one(
-                    {'invoice_number': invoice['invoice_number']},
-                    {
-                        '$set': {
-                            'efatura_status': 'generated',
-                            'efatura_uuid': efatura_uuid,
-                            'efatura_generated_at': datetime.now(UTC)
-                        }
-                    }
+                profile = ep.document_profile(invoice)
+                xml = ep.build_ubl_tr_document(
+                    invoice,
+                    supplier_vkn=cfg['supplier_vkn'],
+                    supplier_name=cfg['supplier_name'],
+                    ettn=ettn,
+                    profile=profile,
                 )
+                result = await ep.submit_document(
+                    ubl_xml=xml,
+                    ettn=ettn,
+                    invoice_number=inv_no,
+                    document_profile=profile,
+                    config=cfg,
+                )
+            except ep.EFaturaSubmissionError as e:
+                attempts = int(invoice.get('efatura_attempts') or 0) + 1
+                update = {
+                    'efatura_attempts': attempts,
+                    'efatura_ettn': ettn,
+                    'efatura_last_error': str(e)[:500],
+                }
+                if attempts >= cap:
+                    update['efatura_status'] = 'error'
+                    await _dispatch_efatura_alert(invoice, str(e), attempts)
+                    errored += 1
+                else:
+                    failed += 1
+                await db.accounting_invoices.update_one(inv_filter, {'$set': update})
+                logger.error(
+                    "e-Fatura cut failed for %s (attempt %d/%d): %s",
+                    inv_no, attempts, cap, e,
+                )
+                continue
 
-                processed += 1
-
-            except Exception as e:
-                logger.error(f"E-fatura generation error for {invoice['invoice_number']}: {e}")
+            await db.accounting_invoices.update_one(inv_filter, {'$set': {
+                'efatura_status': 'generated',
+                'efatura_uuid': result['official_id'],
+                'efatura_official_number': result['official_id'],
+                'efatura_ettn': ettn,
+                'efatura_provider': result['provider'],
+                'efatura_profile': profile,
+                'efatura_generated_at': datetime.now(UTC).isoformat(),
+                'efatura_last_error': None,
+            }})
+            try:
+                await _upsert_efatura_record(db, invoice, ettn, result, xml, profile)
+            except Exception as exc:  # noqa: BLE001 - record mirror is best-effort
+                logger.warning("efatura_records upsert failed for %s: %s", inv_no, exc)
+            processed += 1
 
         return {
             'success': True,
             'processed': processed,
-            'timestamp': datetime.now(UTC).isoformat()
+            'failed': failed,
+            'errored': errored,
+            'timestamp': datetime.now(UTC).isoformat(),
         }
 
     except Exception as e:
         logger.error(f"E-fatura processing task failed: {e}")
         return {
             'success': False,
-            'error': str(e)
+            'error': str(e),
         }
     finally:
         await client.close()

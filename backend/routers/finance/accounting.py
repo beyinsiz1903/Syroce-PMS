@@ -1942,6 +1942,13 @@ async def generate_invoice_from_folio(
         'due_date': datetime.now(UTC).date().isoformat(),
         'status': 'pending',
         'source': 'pms_folio',
+        # invoice_type drives the e-Fatura sweep query (sales invoices only).
+        'invoice_type': 'sales',
+        # When e-Fatura is requested we QUEUE a real cut: the
+        # process_pending_efaturas_task picks up 'pending' sales invoices,
+        # builds the UBL-TR document and transmits it to the configured
+        # provider. No fake document/UUID is written here.
+        'efatura_status': 'pending' if request.include_efatura else None,
         'created_at': datetime.now(UTC).isoformat(),
         'created_by': current_user.id
     }
@@ -1955,43 +1962,11 @@ async def generate_invoice_from_folio(
         {'$set': {'invoice_id': invoice['id'], 'invoice_number': invoice_number}}
     )
 
-    # Generate E-Fatura if requested
-    if request.include_efatura:
-        # Bug AP (April 2026): every interpolation goes through xml.sax.saxutils
-        # so user-controlled fields can't break out of their elements/attributes
-        # and inject arbitrary UBL nodes (which would corrupt the GİB submission
-        # or, worse, smuggle alternate billing data past tax controls).
-        from xml.sax.saxutils import escape as _xe
-        from xml.sax.saxutils import quoteattr as _qa
-        efatura_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
-    <ID>{_xe(str(invoice_number))}</ID>
-    <IssueDate>{_xe(str(invoice['issue_date']))}</IssueDate>
-    <InvoiceTypeCode>SATIS</InvoiceTypeCode>
-    <DocumentCurrencyCode>{_xe(str(request.invoice_currency))}</DocumentCurrencyCode>
-    <LineCountNumeric>{len(invoice_items)}</LineCountNumeric>
-    <LegalMonetaryTotal>
-        <TaxExclusiveAmount currencyID={_qa(str(request.invoice_currency))}>{_xe(str(invoice['subtotal']))}</TaxExclusiveAmount>
-        <TaxInclusiveAmount currencyID={_qa(str(request.invoice_currency))}>{_xe(str(invoice['total']))}</TaxInclusiveAmount>
-    </LegalMonetaryTotal>
-</Invoice>"""
-
-        efatura_record = {
-            'id': str(uuid.uuid4()),
-            'tenant_id': current_user.tenant_id,
-            'invoice_id': invoice['id'],
-            'invoice_number': invoice_number,
-            'efatura_uuid': str(uuid.uuid4()),
-            'xml_content': efatura_xml,
-            'status': 'generated',
-            'generated_at': datetime.now(UTC).isoformat()
-        }
-
-        efatura_copy = efatura_record.copy()
-        await db.efatura_records.insert_one(efatura_copy)
-
-        invoice['efatura_uuid'] = efatura_record['efatura_uuid']
-        invoice['efatura_status'] = 'generated'
+    # E-Fatura: the invoice is persisted with efatura_status='pending' above so
+    # the process_pending_efaturas_task sweep performs the REAL cut against the
+    # configured provider (build UBL-TR -> transmit -> store official ETTN). No
+    # mock document/UUID is generated inline anymore: a fake "generated" here
+    # would silently hide the absence of a real fiscal document.
 
     # v95.1 parity — folio-sourced invoices must invalidate the same caches as
     # the manual create/update paths, otherwise a freshly generated invoice is
@@ -2032,22 +2007,38 @@ async def get_invoice_efatura_status(
         'tenant_id': current_user.tenant_id
     }, {'_id': 0})
 
+    # The accounting invoice itself carries the live lifecycle state set by the
+    # process_pending_efaturas_task sweep (pending -> generated | error). Surface
+    # it even before/without an efatura_records mirror so the accounting screen
+    # can show queued and failed states, not only successfully cut documents.
+    inv_status = invoice.get('efatura_status')
+
     if not efatura:
         return {
             'invoice_id': invoice_id,
             'invoice_number': invoice.get('invoice_number'),
-            'efatura_status': 'not_generated',
-            'message': 'E-Fatura has not been generated for this invoice'
+            'efatura_status': inv_status or 'not_generated',
+            'efatura_error': invoice.get('efatura_last_error'),
+            'efatura_attempts': invoice.get('efatura_attempts', 0),
+            'message': (
+                'E-Fatura kuyruga alindi, kesim bekleniyor' if inv_status == 'pending'
+                else 'E-Fatura kesimi basarisiz oldu' if inv_status == 'error'
+                else 'E-Fatura has not been generated for this invoice'
+            ),
         }
 
     return {
         'invoice_id': invoice_id,
         'invoice_number': invoice.get('invoice_number'),
         'efatura_uuid': efatura.get('efatura_uuid'),
-        'efatura_status': efatura.get('status'),
+        'efatura_status': inv_status or efatura.get('status'),
+        'official_number': efatura.get('official_number') or invoice.get('efatura_official_number'),
+        'provider': efatura.get('provider') or invoice.get('efatura_provider'),
+        'efatura_error': invoice.get('efatura_last_error'),
+        'efatura_attempts': invoice.get('efatura_attempts', 0),
         'generated_at': efatura.get('generated_at'),
         'sent_at': efatura.get('sent_at'),
-        'gib_response': efatura.get('gib_response')
+        'gib_response': efatura.get('gib_response'),
     }
 
 
@@ -2079,50 +2070,65 @@ async def generate_efatura_for_invoice(
             'status': existing_efatura.get('status')
         }
 
-    # Generate E-Fatura XML — Bug AP: customer_name (and every other field)
-    # comes from user input. xml.sax.saxutils.escape neutralizes `<`, `>`, `&`;
-    # quoteattr handles attribute values including embedded quotes. Without
-    # this, customer_name=`</Name>...<EVIL>...</EVIL><Name>x` smuggles arbitrary
-    # nodes into the UBL tree.
-    from xml.sax.saxutils import escape as _xe
-    from xml.sax.saxutils import quoteattr as _qa
-    currency = invoice.get('currency', 'TRY')
-    efatura_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">
-    <ID>{_xe(str(invoice.get('invoice_number') or ''))}</ID>
-    <IssueDate>{_xe(str(invoice.get('issue_date') or ''))}</IssueDate>
-    <InvoiceTypeCode>SATIS</InvoiceTypeCode>
-    <DocumentCurrencyCode>{_xe(str(currency))}</DocumentCurrencyCode>
-    <LineCountNumeric>{len(invoice.get('items', []))}</LineCountNumeric>
-    <AccountingSupplierParty>
-        <Party>
-            <PartyName>
-                <Name>Hotel Name</Name>
-            </PartyName>
-        </Party>
-    </AccountingSupplierParty>
-    <AccountingCustomerParty>
-        <Party>
-            <PartyName>
-                <Name>{_xe(str(invoice.get('customer_name') or 'N/A'))}</Name>
-            </PartyName>
-        </Party>
-    </AccountingCustomerParty>
-    <LegalMonetaryTotal>
-        <TaxExclusiveAmount currencyID={_qa(str(currency))}>{_xe(str(invoice.get('subtotal', 0)))}</TaxExclusiveAmount>
-        <TaxInclusiveAmount currencyID={_qa(str(currency))}>{_xe(str(invoice.get('total', 0)))}</TaxInclusiveAmount>
-    </LegalMonetaryTotal>
-</Invoice>"""
+    # Real cut against the configured provider. Fail-closed: with no provider
+    # credentials we refuse instead of writing a fake "generated" document. The
+    # provider helper escapes every user-controlled field (customer name, charge
+    # descriptions) before it reaches the UBL-TR tree.
+    from core import efatura_provider as ep
 
+    if not ep.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="E-Fatura saglayicisi yapilandirilmamis (fail-closed)",
+        )
+    cfg = ep.provider_config()
+    ettn = invoice.get('efatura_ettn') or str(uuid.uuid4())
+    profile = ep.document_profile(invoice)
+    efatura_xml = ep.build_ubl_tr_document(
+        invoice,
+        supplier_vkn=cfg['supplier_vkn'],
+        supplier_name=cfg['supplier_name'],
+        ettn=ettn,
+        profile=profile,
+    )
+    try:
+        result = await ep.submit_document(
+            ubl_xml=efatura_xml,
+            ettn=ettn,
+            invoice_number=invoice.get('invoice_number'),
+            document_profile=profile,
+            config=cfg,
+        )
+    except ep.EFaturaSubmissionError as e:
+        attempts = int(invoice.get('efatura_attempts') or 0) + 1
+        await db.accounting_invoices.update_one(
+            {'id': invoice_id, 'tenant_id': current_user.tenant_id},
+            {'$set': {
+                'efatura_status': 'error',
+                'efatura_attempts': attempts,
+                'efatura_ettn': ettn,
+                'efatura_last_error': str(e)[:500],
+            }},
+        )
+        raise HTTPException(
+            status_code=502, detail="E-Fatura saglayiciya gonderilemedi",
+        ) from e
+
+    now_iso = datetime.now(UTC).isoformat()
     efatura_record = {
         'id': str(uuid.uuid4()),
         'tenant_id': current_user.tenant_id,
         'invoice_id': invoice_id,
         'invoice_number': invoice.get('invoice_number'),
-        'efatura_uuid': str(uuid.uuid4()),
+        'efatura_uuid': result['official_id'],
+        'official_number': result['official_id'],
+        'ettn': ettn,
+        'profile': profile,
+        'provider': result['provider'],
         'xml_content': efatura_xml,
-        'status': 'generated',
-        'generated_at': datetime.now(UTC).isoformat()
+        'status': result['status'] or 'generated',
+        'error': None,
+        'generated_at': now_iso,
     }
 
     efatura_copy = efatura_record.copy()
@@ -2130,18 +2136,25 @@ async def generate_efatura_for_invoice(
 
     # Update invoice with E-Fatura reference
     await db.accounting_invoices.update_one(
-        {'id': invoice_id},
+        {'id': invoice_id, 'tenant_id': current_user.tenant_id},
         {
             '$set': {
-                'efatura_uuid': efatura_record['efatura_uuid'],
-                'efatura_status': 'generated'
+                'efatura_uuid': result['official_id'],
+                'efatura_official_number': result['official_id'],
+                'efatura_ettn': ettn,
+                'efatura_provider': result['provider'],
+                'efatura_profile': profile,
+                'efatura_status': 'generated',
+                'efatura_generated_at': now_iso,
+                'efatura_last_error': None,
             }
         }
     )
 
     return {
         'message': 'E-Fatura generated successfully',
-        'efatura_uuid': efatura_record['efatura_uuid'],
+        'efatura_uuid': result['official_id'],
+        'official_number': result['official_id'],
         'invoice_number': invoice.get('invoice_number')
     }
 

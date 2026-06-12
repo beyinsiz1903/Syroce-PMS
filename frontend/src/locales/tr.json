@@ -705,6 +705,12 @@
       "date": "Tarih",
       "payment": "Ödeme"
     },
+    "efatura": {
+      "pending": "E-Fatura: Kuyrukta",
+      "generated": "E-Fatura: Kesildi",
+      "error": "E-Fatura: Hata",
+      "no": "No"
+    },
     "kpi": {
       "collected": "Tahsil Edilen",
       "accrued": "Tahakkuk Eden",

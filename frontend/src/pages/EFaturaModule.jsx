@@ -61,9 +61,11 @@ const EFaturaModule = () => {
   const getStatusBadge = (status) => {
     const configs = {
       pending: { color: 'bg-yellow-100 text-yellow-700', icon: <Clock className="w-3 h-3" /> },
+      generated: { color: 'bg-green-100 text-green-700', icon: <CheckCircle className="w-3 h-3" /> },
       sent: { color: 'bg-blue-100 text-blue-700', icon: <Send className="w-3 h-3" /> },
       accepted: { color: 'bg-green-100 text-green-700', icon: <CheckCircle className="w-3 h-3" /> },
-      rejected: { color: 'bg-red-100 text-red-700', icon: <XCircle className="w-3 h-3" /> }
+      rejected: { color: 'bg-red-100 text-red-700', icon: <XCircle className="w-3 h-3" /> },
+      error: { color: 'bg-red-100 text-red-700', icon: <XCircle className="w-3 h-3" /> }
     };
     const config = configs[status] || configs.pending;
     return (

@@ -298,6 +298,24 @@ const InvoiceModule = ({ user, tenant, onLogout }) => {
                           {t('invoice.labels.issue')}: {new Date(invoice.issue_date).toLocaleDateString()} | {t('invoice.labels.due')}: {new Date(invoice.due_date).toLocaleDateString()}
                         </div>
                         <div className="text-xs text-gray-400 mt-1 capitalize">{t('invoice.labels.type')}: {invoice.invoice_type}</div>
+                        {invoice.efatura_status && (() => {
+                          const cfg = {
+                            pending: { cls: 'bg-yellow-100 text-yellow-700', label: t('invoice.efatura.pending') || 'E-Fatura: Kuyrukta' },
+                            generated: { cls: 'bg-green-100 text-green-700', label: t('invoice.efatura.generated') || 'E-Fatura: Kesildi' },
+                            error: { cls: 'bg-red-100 text-red-700', label: t('invoice.efatura.error') || 'E-Fatura: Hata' },
+                          }[invoice.efatura_status] || { cls: 'bg-gray-100 text-gray-600', label: `E-Fatura: ${invoice.efatura_status}` };
+                          return (
+                            <div className="mt-2">
+                              <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${cfg.cls}`}>{cfg.label}</span>
+                              {invoice.efatura_official_number && (
+                                <span className="ml-2 text-xs text-gray-500">{t('invoice.efatura.no') || 'No'}: {invoice.efatura_official_number}</span>
+                              )}
+                              {invoice.efatura_status === 'error' && invoice.efatura_last_error && (
+                                <div className="text-xs text-red-600 mt-1 break-all">{invoice.efatura_last_error}</div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="text-right">
                         <div className="text-2xl font-bold text-blue-600">{money(invoice.total)}</div>
