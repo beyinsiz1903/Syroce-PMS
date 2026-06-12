@@ -111,6 +111,8 @@ _EXTRACTED_ROUTERS: list[tuple[str, str, list[str], str | None, list | None]] = 
     ("domains.ai.router", "router", ["AI / ML"], None, None),
     ("domains.pms.night_audit_router", "router", ["PMS / Night Audit"], None, None),
     ("domains.guest.messaging.router", "router", ["Guest / Messaging"], None, None),
+    # Misafir Oda Talepleri — personel akışı + admin görünürlük ayarı
+    ("domains.guest.messaging.guest_requests_router", "router", ["Guest Requests"], None, None),
     ("domains.revenue.pricing_router", "router", ["Revenue / Pricing"], None, None),
     ("domains.admin.router", "router", ["Admin / Operations"], None, None),
     ("domains.pms.notification_router", "router", ["PMS / Notifications"], None, None),

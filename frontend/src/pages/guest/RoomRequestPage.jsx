@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,32 +34,189 @@ const UI = {
         low: "Düşük", normal: "Normal", high: "Yüksek", urgent: "Acil", submit: "Talebi Gönder",
         sent: "Talebiniz alındı!", sentDesc: "İlgili departmana iletildi, kısa sürede geri dönülecek.",
         newReq: "Yeni talep oluştur", name: "Adınız (opsiyonel)", phone: "Telefon (opsiyonel)",
-        sending: "Gönderiliyor...", language: "Dil", back: "Geri" },
+        sending: "Gönderiliyor...", language: "Dil", back: "Geri",
+        conversation: "Mesajlar", you: "Siz", team: "Otel Ekibi",
+        replyPlaceholder: "Bir mesaj yazın...", send: "Gönder", noMessages: "Henüz mesaj yok." },
   en: { title: "Room Request", room: "Room", welcome: "Welcome", pick: "What is your request about?",
         describe: "Details", placeholder: "Briefly describe your request...", priority: "Priority",
         low: "Low", normal: "Normal", high: "High", urgent: "Urgent", submit: "Submit Request",
         sent: "Request received!", sentDesc: "It has been forwarded to the right team. We'll get back to you shortly.",
         newReq: "Make another request", name: "Your name (optional)", phone: "Phone (optional)",
-        sending: "Sending...", language: "Language", back: "Back" },
+        sending: "Sending...", language: "Language", back: "Back",
+        conversation: "Messages", you: "You", team: "Hotel Team",
+        replyPlaceholder: "Write a message...", send: "Send", noMessages: "No messages yet." },
   de: { title: "Zimmeranfrage", room: "Zimmer", welcome: "Willkommen", pick: "Worum geht es?",
         describe: "Beschreibung", placeholder: "Beschreiben Sie Ihre Anfrage...", priority: "Priorität",
         low: "Niedrig", normal: "Normal", high: "Hoch", urgent: "Dringend", submit: "Anfrage senden",
         sent: "Anfrage erhalten!", sentDesc: "Wir haben sie an das Team weitergeleitet.",
         newReq: "Neue Anfrage", name: "Name (optional)", phone: "Telefon (optional)",
-        sending: "Senden...", language: "Sprache", back: "Zurück" },
+        sending: "Senden...", language: "Sprache", back: "Zurück",
+        conversation: "Nachrichten", you: "Sie", team: "Hotel-Team",
+        replyPlaceholder: "Nachricht schreiben...", send: "Senden", noMessages: "Noch keine Nachrichten." },
   ru: { title: "Запрос из номера", room: "Номер", welcome: "Добро пожаловать", pick: "Что вас интересует?",
         describe: "Описание", placeholder: "Опишите ваш запрос...", priority: "Приоритет",
         low: "Низкий", normal: "Обычный", high: "Высокий", urgent: "Срочно", submit: "Отправить",
         sent: "Запрос принят!", sentDesc: "Мы передали его в нужный отдел.",
         newReq: "Новый запрос", name: "Имя (необяз.)", phone: "Телефон (необяз.)",
-        sending: "Отправка...", language: "Язык", back: "Назад" },
+        sending: "Отправка...", language: "Язык", back: "Назад",
+        conversation: "Сообщения", you: "Вы", team: "Команда отеля",
+        replyPlaceholder: "Напишите сообщение...", send: "Отправить", noMessages: "Сообщений пока нет." },
   ar: { title: "طلب من الغرفة", room: "غرفة", welcome: "أهلاً بك", pick: "ما هو طلبك؟",
         describe: "التفاصيل", placeholder: "صف طلبك...", priority: "الأولوية",
         low: "منخفض", normal: "عادي", high: "مرتفع", urgent: "عاجل", submit: "إرسال الطلب",
         sent: "تم استلام طلبك!", sentDesc: "تم تحويله إلى القسم المختص.",
         newReq: "طلب جديد", name: "الاسم (اختياري)", phone: "الهاتف (اختياري)",
-        sending: "جارٍ الإرسال...", language: "اللغة", back: "رجوع" },
+        sending: "جارٍ الإرسال...", language: "اللغة", back: "رجوع",
+        conversation: "الرسائل", you: "أنت", team: "فريق الفندق",
+        replyPlaceholder: "اكتب رسالة...", send: "إرسال", noMessages: "لا توجد رسائل بعد." },
 };
+
+const LOCALE = { tr: "tr-TR", en: "en-US", de: "de-DE", ru: "ru-RU", ar: "ar" };
+
+function fmtGuestTime(iso, lang) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleString(LOCALE[lang] || "tr-TR", {
+      day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Misafir tarafı iki yönlü thread — BOOKING-SCOPED (backend belirler).
+ * Mesajlar 15s'de bir (sekme görünürken) tazelenir. Personel adı backend'de
+ * "Otel Ekibi" olarak maskelenir; burada da sender_type'a göre etiketlenir.
+ *
+ * `alwaysShow` true ise (talep gönderildikten sonra) thread + yanıt kutusu
+ * her zaman görünür; aksi halde yalnızca mevcut mesaj varsa render edilir
+ * (ziyarette devam eden konuşma).
+ */
+function GuestThread({ tenantId, roomId, token, t, lang, rtl, accent, alwaysShow }) {
+  const [messages, setMessages] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [reply, setReply] = useState("");
+  const [sending, setSending] = useState(false);
+  const mountedRef = useRef(true);
+  const scrollRef = useRef(null);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await axios.get(
+        `/public/room-qr/${tenantId}/${roomId}/thread`,
+        { params: { t: token } },
+      );
+      if (!mountedRef.current) return;
+      setMessages(r.data?.messages || []);
+    } catch {
+      /* thread opsiyonel — sessiz geç */
+    } finally {
+      if (mountedRef.current) setLoaded(true);
+    }
+  }, [tenantId, roomId, token]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    load();
+    let timer = null;
+    const start = () => {
+      if (timer === null && !document.hidden) timer = setInterval(load, 15000);
+    };
+    const stop = () => {
+      if (timer !== null) { clearInterval(timer); timer = null; }
+    };
+    const onVis = () => {
+      if (document.hidden) { stop(); } else { load(); start(); }
+    };
+    start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      mountedRef.current = false;
+      stop();
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [load]);
+
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    const n = scrollRef.current;
+    requestAnimationFrame(() => { n.scrollTop = n.scrollHeight; });
+  }, [messages]);
+
+  const send = async () => {
+    const text = reply.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      await axios.post(
+        `/public/room-qr/${tenantId}/${roomId}/thread/message`,
+        { body: text },
+        { params: { t: token } },
+      );
+      if (!mountedRef.current) return;
+      setReply("");
+      load();
+    } catch (e) {
+      alertDialog({ message: e.response?.data?.detail || "Gönderim hatası" });
+    } finally {
+      if (mountedRef.current) setSending(false);
+    }
+  };
+
+  if (!alwaysShow && (!loaded || messages.length === 0)) return null;
+
+  return (
+    <Card className="shadow-xl mt-4" data-testid="guest-thread-card">
+      <CardHeader>
+        <CardTitle className="text-lg">{t.conversation}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div ref={scrollRef} className="max-h-72 overflow-y-auto space-y-2 mb-3" data-testid="guest-thread-messages">
+          {messages.length === 0 ? (
+            <div className="text-center text-sm text-gray-500 py-6">{t.noMessages}</div>
+          ) : (
+            messages.map((m) => {
+              const isGuest = m.sender_type === "guest";
+              const alignEnd = rtl ? !isGuest : isGuest;
+              return (
+                <div key={m.id} className={`flex ${alignEnd ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${isGuest ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-900"}`}>
+                    <div className="text-[11px] font-medium opacity-80 mb-0.5">
+                      {isGuest ? t.you : t.team}
+                    </div>
+                    <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                    <div className="text-[10px] opacity-60 mt-0.5">{fmtGuestTime(m.created_at, lang)}</div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <div className="flex items-end gap-2">
+          <Textarea
+            value={reply}
+            onChange={(e) => setReply(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder={t.replyPlaceholder}
+            rows={2}
+            className="resize-none"
+            data-testid="input-guest-reply"
+          />
+          <Button
+            onClick={send}
+            disabled={!reply.trim() || sending}
+            className="text-white shrink-0"
+            style={{ background: accent }}
+            data-testid="button-guest-send"
+          >
+            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : t.send}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function RoomRequestPage() {
   const { tenantId, roomId } = useParams();
@@ -266,6 +423,17 @@ export default function RoomRequestPage() {
             </CardContent>
           </Card>
         )}
+
+        <GuestThread
+          tenantId={tenantId}
+          roomId={roomId}
+          token={token}
+          t={t}
+          lang={lang}
+          rtl={rtl}
+          accent={accent}
+          alwaysShow={done}
+        />
       </div>
     </div>
   );

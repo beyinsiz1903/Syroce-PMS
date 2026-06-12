@@ -13,10 +13,11 @@ import {
   Settings as SettingsIcon, Users, CreditCard, Shield, Plus, Trash2,
   Building2, Zap, Crown, ArrowRight, CheckCircle2, Lock, AlertTriangle,
   ArrowDown, Sparkles, Clock, Receipt, Save, Pencil, X, FileText, Upload, Image,
-  DoorOpen, RefreshCw, Infinity as InfinityIcon, UserCheck
+  DoorOpen, RefreshCw, Infinity as InfinityIcon, UserCheck, MessageSquare
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { PageHeader } from '@/components/ui/page-header';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -154,12 +155,19 @@ const Settings = ({ user, tenant, onLogout }) => {
 
   // Room management (super_admin only)
   const isSuperAdmin = user?.role === 'super_admin' || (Array.isArray(user?.roles) && user.roles.includes('super_admin'));
+  // Misafir Talepleri görünürlük ayarı: admin + super_admin yapılandırabilir.
+  const isAdmin = isSuperAdmin || user?.role === 'admin' || (Array.isArray(user?.roles) && user.roles.includes('admin'));
   const [roomsList, setRoomsList] = useState([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [showBulkRoomsDialog, setShowBulkRoomsDialog] = useState(false);
   const [showAddRoomDialog, setShowAddRoomDialog] = useState(false);
   const [newRoom, setNewRoom] = useState({ room_number: '', room_type: 'standard', floor: 1, capacity: 2, base_price: 100 });
   const [roomSaving, setRoomSaving] = useState(false);
+
+  // Misafir Talepleri görünürlüğü (admin)
+  const [grSettings, setGrSettings] = useState({ visible_roles: [], available_roles: [], always_allowed: [] });
+  const [grLoading, setGrLoading] = useState(false);
+  const [grSaving, setGrSaving] = useState(false);
 
   const currentTier = useMemo(() => {
     const t = tenant?.subscription_tier || 'basic';
@@ -248,13 +256,52 @@ const Settings = ({ user, tenant, onLogout }) => {
     } finally { setRoomsLoading(false); }
   }, [isSuperAdmin]);
 
+  const loadGuestRequestSettings = useCallback(async () => {
+    if (!isAdmin) return;
+    setGrLoading(true);
+    try {
+      const res = await axios.get('/messaging/guest-requests/settings');
+      setGrSettings({
+        visible_roles: res.data?.visible_roles || [],
+        available_roles: res.data?.available_roles || [],
+        always_allowed: res.data?.always_allowed || [],
+      });
+    } catch (err) {
+      console.error('Guest request settings load failed', err);
+      toast.error(err?.response?.data?.detail || 'Misafir talep ayarları alınamadı');
+    } finally { setGrLoading(false); }
+  }, [isAdmin]);
+
+  const toggleGuestRequestRole = useCallback((role, checked) => {
+    setGrSettings((prev) => {
+      const set = new Set(prev.visible_roles);
+      if (checked) set.add(role); else set.delete(role);
+      return { ...prev, visible_roles: Array.from(set) };
+    });
+  }, []);
+
+  const saveGuestRequestSettings = useCallback(async () => {
+    setGrSaving(true);
+    try {
+      const res = await axios.put('/messaging/guest-requests/settings', {
+        visible_roles: grSettings.visible_roles,
+      });
+      setGrSettings((prev) => ({ ...prev, visible_roles: res.data?.visible_roles || prev.visible_roles }));
+      toast.success('Misafir talep görünürlüğü kaydedildi');
+    } catch (err) {
+      console.error('Guest request settings save failed', err);
+      toast.error(err?.response?.data?.detail || 'Ayar kaydedilemedi');
+    } finally { setGrSaving(false); }
+  }, [grSettings.visible_roles]);
+
   useEffect(() => {
     loadTeam();
     loadSubscription();
     loadBillingHistory();
     loadInvoiceSettings();
     loadRooms();
-  }, [loadTeam, loadSubscription, loadBillingHistory, loadInvoiceSettings, loadRooms]);
+    loadGuestRequestSettings();
+  }, [loadTeam, loadSubscription, loadBillingHistory, loadInvoiceSettings, loadRooms, loadGuestRequestSettings]);
 
   // Init hotel form from tenant
   useEffect(() => {
@@ -653,6 +700,56 @@ const Settings = ({ user, tenant, onLogout }) => {
                 {teamMeta.tier !== 'enterprise' && <p className="text-[11px] text-slate-500 mt-2">Daha fazla rol için {teamMeta.tier === 'basic' ? 'Professional' : 'Enterprise'} plana yükseltin</p>}
               </CardContent>
             </Card>
+
+            {isAdmin && (
+              <Card data-testid="guest-request-visibility-card">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" /> Misafir Talepleri Görünürlüğü
+                  </CardTitle>
+                  <CardDescription>
+                    Oda QR taleplerini personel sohbetinde hangi rollerin göreceğini seçin. Yönetici rolleri her zaman görür.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {grLoading ? (
+                    <div className="text-sm text-slate-400">{t('common.loading')}</div>
+                  ) : grSettings.available_roles.length === 0 ? (
+                    <div className="text-sm text-slate-400">Seçilebilir rol bulunamadı</div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {grSettings.available_roles.map((r) => {
+                          const always = grSettings.always_allowed.includes(r.value);
+                          const checked = always || grSettings.visible_roles.includes(r.value);
+                          return (
+                            <label
+                              key={r.value}
+                              className={`flex items-center gap-2.5 p-2.5 rounded-lg border ${checked ? 'border-slate-300 bg-slate-50' : 'border-slate-200'} ${always ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:bg-slate-50'}`}
+                            >
+                              <Checkbox
+                                checked={checked}
+                                disabled={always}
+                                onCheckedChange={(v) => toggleGuestRequestRole(r.value, v === true)}
+                                data-testid={`gr-role-${r.value}`}
+                              />
+                              <span className="text-sm font-medium text-slate-800">{r.label}</span>
+                              {always && <span className="text-[11px] text-slate-500 ml-auto">Her zaman</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <div className="flex justify-end">
+                        <Button size="sm" onClick={saveGuestRequestSettings} disabled={grSaving} data-testid="button-save-gr-visibility">
+                          {grSaving ? <RefreshCw className="w-4 h-4 mr-1.5 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
+                          Kaydet
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* ═══════════ PLAN TAB ═══════════ */}

@@ -144,6 +144,13 @@ class WebSocketManager {
       this.emit('internal_user_typing', data);
     });
 
+    // Guest room requests — contentless ping; authorized clients re-fetch via
+    // REST (no PII on the wire). Forwarded into the internal pub/sub so the
+    // "Misafir Talepleri" panel can refresh instantly.
+    this.socket.on('guest_requests:updated', (data) => {
+      this.emit('guest_requests:updated', data);
+    });
+
     this.socket.on('pong', () => {});
   }
 

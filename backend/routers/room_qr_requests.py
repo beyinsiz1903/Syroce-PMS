@@ -21,7 +21,7 @@ import logging
 import os
 import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -487,6 +487,37 @@ async def public_submit_request(
             except Exception as exc:
                 logger.warning(f"[room_qr] complaint mirror failed: {exc}")
 
+    # ── Misafir Talepleri sohbet entegrasyonu ──
+    # Talep, personel iç-sohbet widget'ında oda bazlı thread olarak görünür
+    # (PII içeren gövde yalnızca ACL-kısıtlı guest_room_messages'ta) ve ilgili
+    # iç-sohbet departmanına PII-içermeyen bir bildirim düşer. Best-effort:
+    # entegrasyon hata verse bile talep zaten kalıcı (yukarıda insert edildi).
+    try:
+        from domains.guest.messaging import guest_requests as _gr
+        await _gr.add_guest_message(
+            tenant_id=tenant_id,
+            room_id=room_id,
+            room_number=doc.get("room_number"),
+            sender_type="guest",
+            body=doc["description"],
+            booking_id=doc.get("booking_id"),
+            sender_name=doc.get("guest_name") or "Misafir",
+            request_id=doc["_id"],
+            category=payload.category,
+            department=doc["department"],
+            priority=doc["priority"],
+        )
+        cat_label_tr = CATEGORY_LABELS.get(payload.category, {}).get("tr", payload.category)
+        await _gr.notify_department(
+            tenant_id=tenant_id,
+            room_number=doc.get("room_number"),
+            qr_department=doc["department"],
+            category_label=cat_label_tr,
+        )
+        await _gr.emit_guest_requests_ping(tenant_id, room_id)
+    except Exception as exc:
+        logger.warning("[room_qr] guest-requests chat entegrasyonu atlandı: %s", exc)
+
     # WebSocket yayını (opsiyonel — varsa)
     try:
         from core.ws_rooms import tenant_broadcast_room
@@ -510,6 +541,116 @@ async def public_submit_request(
         "request_id": doc["_id"],
         "department": doc["department"],
         "message": "Talebiniz alındı, ilgili departmana iletildi.",
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+# GUEST THREAD ENDPOINTS (public, QR token'lı — iki yönlü sohbet)
+# ═══════════════════════════════════════════════════════════════
+
+class GuestThreadMessage(BaseModel):
+    body: str = Field(..., min_length=1, max_length=2000)
+
+
+def _guest_facing_messages(messages: list[dict]) -> list[dict]:
+    """Misafire dönmeden önce personel kimliğini maskele.
+
+    Personel mesajlarında gerçek personel adı yerine jenerik "Otel Ekibi"
+    gösterilir (anonim misafire personel adını sızdırma). Okuma-takip alanı
+    (read) zaten viewer_user_id=None ile serileştirmede yok.
+    """
+    out = []
+    for m in messages:
+        mm = dict(m)
+        if mm.get("sender_type") == "staff":
+            mm["sender_name"] = "Otel Ekibi"
+        out.append(mm)
+    return out
+
+
+@router.get("/api/public/room-qr/{tenant_id}/{room_id}/thread")
+async def public_get_thread(
+    tenant_id: str,
+    room_id: str,
+    t: str = Query(...),
+):
+    """Misafir kendi mesaj thread'ini görür.
+
+    BOOKING-SCOPED: aktif booking varsa yalnızca o booking'in mesajları döner
+    (oda QR token'ı kalıcı olduğundan eski misafirin mesajı yeni misafire
+    SIZMAZ). Aktif booking yoksa son 24s + booking'siz mesajlarla sınırlı.
+    """
+    salt = await _get_qr_salt(tenant_id)
+    if not _verify_token(tenant_id, room_id, t, salt):
+        raise HTTPException(status_code=403, detail="Geçersiz QR token")
+
+    from domains.guest.messaging import guest_requests as _gr
+
+    booking = await _find_active_booking(tenant_id, room_id)
+    if booking and booking.get("id"):
+        messages = await _gr.get_thread_messages(
+            tenant_id, room_id, booking_id=booking["id"]
+        )
+    else:
+        since = datetime.now(UTC) - timedelta(
+            hours=_gr.GUEST_THREAD_FALLBACK_WINDOW_HOURS
+        )
+        messages = await _gr.get_thread_messages(
+            tenant_id, room_id, null_booking_only=True, since=since
+        )
+    return {"messages": _guest_facing_messages(messages)}
+
+
+@router.post("/api/public/room-qr/{tenant_id}/{room_id}/thread/message")
+async def public_post_thread_message(
+    tenant_id: str,
+    room_id: str,
+    payload: GuestThreadMessage,
+    request: Request,
+    t: str = Query(...),
+):
+    """Misafir mevcut thread'ine yanıt yazar (iki yönlü)."""
+    # Rate limit BEFORE token verify (submit ile aynı DoS-sentinel deseni).
+    client_ip = _client_ip(request)
+    if not _rl_check(f"{tenant_id}:{room_id}:{client_ip}"):
+        raise HTTPException(status_code=429, detail="Çok fazla mesaj — lütfen sonra deneyin")
+
+    salt = await _get_qr_salt(tenant_id)
+    if not _verify_token(tenant_id, room_id, t, salt):
+        raise HTTPException(status_code=403, detail="Geçersiz QR token")
+
+    text = (payload.body or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Mesaj boş olamaz")
+
+    room = await raw_db["rooms"].find_one({"id": room_id, "tenant_id": tenant_id})
+    if not room:
+        raise HTTPException(status_code=404, detail="Oda bulunamadı")
+
+    from domains.guest.messaging import guest_requests as _gr
+
+    booking = await _find_active_booking(tenant_id, room_id)
+    booking_id = booking.get("id") if booking else None
+    sender_name = (booking.get("guest_name") if booking else None) or "Misafir"
+
+    doc = await _gr.add_guest_message(
+        tenant_id=tenant_id,
+        room_id=room_id,
+        room_number=room.get("room_number"),
+        sender_type="guest",
+        body=text,
+        booking_id=booking_id,
+        sender_name=sender_name,
+    )
+    await _gr.emit_guest_requests_ping(tenant_id, room_id)
+    return {
+        "success": True,
+        "message": {
+            "id": doc["id"],
+            "sender_type": "guest",
+            "body": text,
+            "created_at": doc["created_at"].astimezone(UTC).isoformat(),
+        },
     }
 
 

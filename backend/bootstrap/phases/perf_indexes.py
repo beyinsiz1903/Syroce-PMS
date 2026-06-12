@@ -172,6 +172,19 @@ async def ensure_performance_indexes():
          "ux_folio_charges_pos_source",
          {"unique": True,
           "partialFilterExpression": {"source_pos_order_id": {"$type": "string"}}}),
+        # Misafir Oda Talepleri sohbet thread'i (guest_room_messages):
+        #   - (tenant_id, room_id, created_at): oda thread'i kronolojik getirme
+        #     + booking-scoped misafir GET + okunmamış sayımı için.
+        #   - (tenant_id, created_at): personel akışındaki oda-gruplama
+        #     aggregate'i (en son etkinliğe göre) için.
+        ("guest_room_messages",
+         [("tenant_id", 1), ("room_id", 1), ("created_at", -1)],
+         "ix_grm_tenant_room_created",
+         {}),
+        ("guest_room_messages",
+         [("tenant_id", 1), ("created_at", -1)],
+         "ix_grm_tenant_created",
+         {}),
     ]
     for coll_name, keys, name, kwargs in indexes:
         try:

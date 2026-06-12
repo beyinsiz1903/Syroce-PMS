@@ -28,6 +28,7 @@ import InboxList from './internalChat/InboxList';
 import ComposeForm from './internalChat/ComposeForm';
 import ConversationsList from './internalChat/ConversationsList';
 import ThreadView from './internalChat/ThreadView';
+import GuestRequestsPanel from './internalChat/GuestRequestsPanel';
 import { useVisibilityAwarePoller } from './internalChat/hooks/useVisibilityAwarePoller';
 import { useChatRealtime } from './internalChat/hooks/useChatRealtime';
 import {
@@ -53,6 +54,12 @@ const InternalChatTab = ({ currentUser }) => {
   const { socketEmit: wsSocketEmit } = useWebSocket();
   const [composeOpen, setComposeOpen] = useState(false);
   const [markingAllRead, setMarkingAllRead] = useState(false);
+
+  // "Misafir Talepleri" sekmesi yalnızca yetkili rollere görünür (server-side
+  // ACL ile çift korumalı). Erişim bilgisi mount'ta bir kez çekilir; rozet
+  // sayacı panel tarafından bildirilir.
+  const [canViewGuestRequests, setCanViewGuestRequests] = useState(false);
+  const [guestRequestsUnread, setGuestRequestsUnread] = useState(0);
 
   // "Acil" mesaj kanalı alıcıda alarm tetiklediği için ayrı bir izinle
   // korunuyor. Yetkisiz roller (front_desk, housekeeping, vb.) bu seçeneği
@@ -437,6 +444,21 @@ const InternalChatTab = ({ currentUser }) => {
     };
   }, [loadInbox, loadUsers, loadConversations]);
 
+  // Misafir Talepleri erişim bilgisi (sekmeyi gizlemek için; backend ayrıca
+  // 403 ile çift korur). Hata durumunda sekme gösterilmez (fail-closed UX).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await axios.get('/messaging/guest-requests/access');
+        if (!cancelled) setCanViewGuestRequests(!!res.data?.can_view);
+      } catch {
+        if (!cancelled) setCanViewGuestRequests(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   // Polling — Socket.IO ana iletim, polling güvenlik ağı (60s).
   // Sekme arka plana geçince timer'lar duraklar, geri gelince hemen tetikler.
   useVisibilityAwarePoller(useCallback(() => loadInbox(true), [loadInbox]), { intervalMs: POLL_INTERVAL_MS });
@@ -717,6 +739,21 @@ const InternalChatTab = ({ currentUser }) => {
                   </span>
                 )}
               </button>
+              {canViewGuestRequests && (
+                <button
+                  type="button"
+                  onClick={() => setView('guest_requests')}
+                  data-testid="button-view-guest-requests"
+                  className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${view === 'guest_requests' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  Misafir Talepleri
+                  {guestRequestsUnread > 0 && (
+                    <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-red-500 px-1 py-0.5 text-[10px] font-semibold leading-none text-white min-w-[16px]">
+                      {guestRequestsUnread > 99 ? '99+' : guestRequestsUnread}
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
 
             <div className="ml-auto flex items-center gap-0.5">
@@ -733,30 +770,34 @@ const InternalChatTab = ({ currentUser }) => {
                   {showUnreadOnly ? 'Tümü' : 'Okunmamış'}
                 </Button>
               )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={handleMarkAllRead}
-                disabled={markingAllRead || unreadCount === 0}
-                data-testid="button-mark-all-read"
-                title={t('cm.components_pms_InternalChatTab.gelen_kutusundaki_tum_okunmamis_mesajlar')}
-              >
-                <CheckCheck className={`h-4 w-4 ${markingAllRead ? 'animate-pulse' : ''}`} />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => { loadInbox(); loadConversations(); }}
-                disabled={loadingInbox || loadingConversations}
-                data-testid="button-refresh-inbox"
-                title={t('cm.components_pms_InternalChatTab.yenile')}
-              >
-                <RefreshCw className={`h-4 w-4 ${(loadingInbox || loadingConversations) ? 'animate-spin' : ''}`} />
-              </Button>
+              {view !== 'guest_requests' && (
+                <>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={handleMarkAllRead}
+                    disabled={markingAllRead || unreadCount === 0}
+                    data-testid="button-mark-all-read"
+                    title={t('cm.components_pms_InternalChatTab.gelen_kutusundaki_tum_okunmamis_mesajlar')}
+                  >
+                    <CheckCheck className={`h-4 w-4 ${markingAllRead ? 'animate-pulse' : ''}`} />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => { loadInbox(); loadConversations(); }}
+                    disabled={loadingInbox || loadingConversations}
+                    data-testid="button-refresh-inbox"
+                    title={t('cm.components_pms_InternalChatTab.yenile')}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${(loadingInbox || loadingConversations) ? 'animate-spin' : ''}`} />
+                  </Button>
+                </>
+              )}
               <Button
                 type="button"
                 size="icon"
@@ -794,7 +835,7 @@ const InternalChatTab = ({ currentUser }) => {
                 conversationFiltersActive={conversationFiltersActive}
                 jumpToFirstUnreadInDepartment={jumpToFirstUnreadInDepartment}
               />
-            ) : (
+            ) : view === 'inbox' ? (
               <InboxList
                 embedded
                 inbox={inbox}
@@ -804,6 +845,8 @@ const InternalChatTab = ({ currentUser }) => {
                 markAsRead={markAsRead}
                 handleReply={handleReply}
               />
+            ) : (
+              <GuestRequestsPanel onUnreadChange={setGuestRequestsUnread} />
             )}
           </div>
         </>
