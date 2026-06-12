@@ -2,11 +2,22 @@ import React, { useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge, Body, Button, Card, Field, H1, Muted } from '../../src/components/ui';
 import {
-  DepartmentListState,
+  ActionSheet,
+  Badge,
+  Body,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  FormActions,
+  H1,
+  Muted,
   SectionTitle,
-} from '../../src/components/department';
+  SegmentedActions,
+  ActionButton,
+  SkeletonCard,
+} from '../../src/components/ui';
 import { spacing, radius, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { haptic } from '../../src/hooks/useHaptic';
@@ -21,7 +32,7 @@ import {
   type WorkOrder,
 } from '../../src/api/maintenance';
 import { formatDate } from '../../src/utils/format';
-import { errorMessage } from '../../src/utils/errors';
+import { errorMessage, isOffline } from '../../src/utils/errors';
 
 const ISSUE_TYPES = [
   'plumbing',
@@ -76,18 +87,36 @@ function statusTone(s?: string): 'default' | 'success' | 'info' | 'warning' {
   }
 }
 
-// Maintenance department screen: work-order list (status filter) + create form +
-// mobile technician task submission. The create + submit actions are gated by the
-// backend require_module("housekeeping"); the mobile `maintenanceAccess`
-// entitlement mirrors that role set. Cosmetic only — the backend still enforces.
+// Maintenance department screen: work-order list (status filter + color-coded
+// cards) + create-work-order action sheet + single-tap technician task updates.
+// The create + submit actions are gated by the backend require_module
+// ("housekeeping"); the mobile `maintenanceAccess` entitlement mirrors that role
+// set. Cosmetic only — the backend still enforces every write.
 export default function MaintenanceScreen() {
   const c = useTheme();
   const qc = useQueryClient();
   const maintenanceAccess = useAuthStore((s) => s.maintenanceAccess);
 
+  // Accent colours give the field technician an at-a-glance read of the card's
+  // left edge — urgency for work orders, progress for assigned tasks.
+  const priorityAccent: Record<string, string> = {
+    urgent: c.danger,
+    high: c.warning,
+    normal: c.primary,
+    low: c.info,
+  };
+  const statusAccent: Record<string, string> = {
+    completed: c.success,
+    in_progress: c.info,
+    started: c.info,
+    needs_parts: c.warning,
+    open: c.primary,
+  };
+
   const [statusFilter, setStatusFilter] = useState<string>('');
 
-  // Create-work-order form state.
+  // Create-work-order sheet + form state.
+  const [createOpen, setCreateOpen] = useState(false);
   const [issueType, setIssueType] = useState<string>('');
   const [priority, setPriority] = useState<string>('normal');
   const [roomNumber, setRoomNumber] = useState('');
@@ -95,8 +124,8 @@ export default function MaintenanceScreen() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // Per-task technician-submit state.
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  // Technician-task update sheet state (one task at a time).
+  const [activeTask, setActiveTask] = useState<MaintenanceTask | null>(null);
   const [taskNotes, setTaskNotes] = useState('');
   const [taskTime, setTaskTime] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -115,6 +144,19 @@ export default function MaintenanceScreen() {
   // Hard guard — a user without maintenance entitlement is sent to the hub.
   if (!maintenanceAccess) return <Redirect href={ROUTES.departments} />;
 
+  const resetCreateForm = () => {
+    setIssueType('');
+    setPriority('normal');
+    setRoomNumber('');
+    setDescription('');
+    setCreateError(null);
+  };
+
+  const openCreate = () => {
+    resetCreateForm();
+    setCreateOpen(true);
+  };
+
   const onCreate = async () => {
     if (!issueType) {
       setCreateError(tr.departments.maintenance.issueTypeRequired);
@@ -132,10 +174,8 @@ export default function MaintenanceScreen() {
         source: 'other',
       });
       haptic.success();
-      setIssueType('');
-      setPriority('normal');
-      setRoomNumber('');
-      setDescription('');
+      setCreateOpen(false);
+      resetCreateForm();
       qc.invalidateQueries({ queryKey: ['maint-work-orders'] });
       Alert.alert(tr.app.success, tr.departments.maintenance.created);
     } catch (e: unknown) {
@@ -146,20 +186,24 @@ export default function MaintenanceScreen() {
     }
   };
 
-  const onSubmitTask = async (
-    taskId: string,
-    status: 'started' | 'completed' | 'needs_parts',
-  ) => {
+  const openTask = (t: MaintenanceTask) => {
+    setActiveTask(t);
+    setTaskNotes('');
+    setTaskTime('');
+  };
+
+  const onSubmitTask = async (status: 'started' | 'completed' | 'needs_parts') => {
+    if (!activeTask) return;
     setSubmitting(true);
     try {
       await submitTechnicianTask({
-        task_id: taskId,
+        task_id: activeTask.id,
         status,
         notes: taskNotes || undefined,
         time_spent_minutes: taskTime ? parseInt(taskTime, 10) || undefined : undefined,
       });
       haptic.success();
-      setActiveTaskId(null);
+      setActiveTask(null);
       setTaskNotes('');
       setTaskTime('');
       qc.invalidateQueries({ queryKey: ['maint-tasks'] });
@@ -172,6 +216,7 @@ export default function MaintenanceScreen() {
     }
   };
 
+  // Single-select chip for the create-form issue type / priority pickers.
   const Chip: React.FC<{ active: boolean; label: string; onPress: () => void }> = ({
     active,
     label,
@@ -180,6 +225,7 @@ export default function MaintenanceScreen() {
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
+      accessibilityState={{ selected: active }}
       style={{
         paddingVertical: spacing.xs,
         paddingHorizontal: spacing.md,
@@ -195,8 +241,33 @@ export default function MaintenanceScreen() {
     </Pressable>
   );
 
+  const StatusFilterChip: React.FC<{ value: string; label: string }> = ({ value, label }) => {
+    const active = statusFilter === value;
+    return (
+      <Pressable
+        onPress={() => setStatusFilter(value)}
+        accessibilityRole="button"
+        accessibilityState={{ selected: active }}
+        style={{
+          paddingVertical: spacing.sm,
+          paddingHorizontal: spacing.md,
+          borderRadius: radius.lg,
+          backgroundColor: active ? c.primary : c.surface,
+          borderWidth: 1,
+          borderColor: active ? c.primary : c.border,
+          minHeight: 36,
+          justifyContent: 'center',
+        }}
+      >
+        <Body style={{ color: active ? c.primaryText : c.text, fontWeight: '600', fontSize: 13 }}>
+          {label}
+        </Body>
+      </Pressable>
+    );
+  };
+
   const renderWorkOrder = (w: WorkOrder) => (
-    <Card key={w.id} style={{ marginBottom: spacing.sm }}>
+    <Card key={w.id} accent={priorityAccent[w.priority || ''] ?? c.border} style={{ marginBottom: spacing.sm }}>
       <View
         style={{
           flexDirection: 'row',
@@ -230,79 +301,67 @@ export default function MaintenanceScreen() {
     </Card>
   );
 
-  const renderTask = (t: MaintenanceTask) => {
-    const open = activeTaskId === t.id;
-    return (
-      <Card key={t.id} style={{ marginBottom: spacing.sm }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-          }}
-        >
-          <View style={{ flex: 1, paddingRight: spacing.sm }}>
-            <Body style={{ fontWeight: '600' }}>{issueTypeLabel(t.issue_type)}</Body>
-            {t.description ? <Muted>{t.description}</Muted> : null}
-            {t.room_number ? (
-              <Muted>
-                {tr.departments.maintenance.room}: {t.room_number}
-              </Muted>
-            ) : null}
-          </View>
-          <Badge label={statusLabel(t.status)} tone={statusTone(t.status)} />
+  const renderTask = (t: MaintenanceTask) => (
+    <Card key={t.id} accent={statusAccent[t.status || ''] ?? c.border} style={{ marginBottom: spacing.sm }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+        }}
+      >
+        <View style={{ flex: 1, paddingRight: spacing.sm }}>
+          <Body style={{ fontWeight: '600' }}>{issueTypeLabel(t.issue_type)}</Body>
+          {t.description ? <Muted>{t.description}</Muted> : null}
+          {t.room_number ? (
+            <Muted>
+              {tr.departments.maintenance.room}: {t.room_number}
+            </Muted>
+          ) : null}
         </View>
+        <Badge label={statusLabel(t.status)} tone={statusTone(t.status)} />
+      </View>
+      <View style={{ marginTop: spacing.md }}>
+        <Button
+          title={tr.departments.maintenance.submitUpdate}
+          variant="secondary"
+          icon="construct-outline"
+          onPress={() => openTask(t)}
+        />
+      </View>
+    </Card>
+  );
 
-        {open ? (
-          <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
-            <Field
-              label={tr.departments.maintenance.notes}
-              value={taskNotes}
-              onChangeText={setTaskNotes}
-              multiline
-            />
-            <Field
-              label={tr.departments.maintenance.timeSpent}
-              value={taskTime}
-              onChangeText={setTaskTime}
-              keyboardType="number-pad"
-            />
-            <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
-              <Button
-                title={tr.departments.maintenance.markStarted}
-                variant="secondary"
-                onPress={() => onSubmitTask(t.id, 'started')}
-                loading={submitting}
-              />
-              <Button
-                title={tr.departments.maintenance.markNeedsParts}
-                variant="secondary"
-                onPress={() => onSubmitTask(t.id, 'needs_parts')}
-                loading={submitting}
-              />
-              <Button
-                title={tr.departments.maintenance.markCompleted}
-                onPress={() => onSubmitTask(t.id, 'completed')}
-                loading={submitting}
-              />
-            </View>
-          </View>
-        ) : (
-          <View style={{ marginTop: spacing.sm }}>
-            <Button
-              title={tr.departments.maintenance.submitUpdate}
-              variant="secondary"
-              onPress={() => {
-                setActiveTaskId(t.id);
-                setTaskNotes('');
-                setTaskTime('');
-              }}
-            />
-          </View>
-        )}
-      </Card>
-    );
-  };
+  // Shared loading / error / empty / data renderer so both lists behave alike.
+  function renderList<T extends { id: string }>(
+    q: { isLoading: boolean; error: unknown; data?: T[] },
+    opts: { icon: 'construct-outline' | 'clipboard-outline'; emptyTitle: string; emptyHint: string },
+    renderItem: (item: T) => React.ReactNode,
+  ): React.ReactNode {
+    if (q.isLoading) {
+      return (
+        <View style={{ gap: spacing.sm }}>
+          <SkeletonCard />
+          <SkeletonCard />
+        </View>
+      );
+    }
+    if (q.error) {
+      const msg = isOffline(q.error)
+        ? tr.app.offline
+        : errorMessage(q.error, tr.departments.maintenance.loadError);
+      return (
+        <Card>
+          <Body>{msg}</Body>
+        </Card>
+      );
+    }
+    const items = q.data || [];
+    if (items.length === 0) {
+      return <EmptyState icon={opts.icon} title={opts.emptyTitle} message={opts.emptyHint} />;
+    }
+    return <View>{items.map(renderItem)}</View>;
+  }
 
   return (
     <ScrollView
@@ -310,12 +369,60 @@ export default function MaintenanceScreen() {
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
     >
       <H1>{tr.departments.maintenance.title}</H1>
+      <View style={{ marginTop: spacing.md }}>
+        <Button
+          title={tr.departments.maintenance.newWorkOrder}
+          icon="add"
+          onPress={openCreate}
+          fullWidth
+        />
+      </View>
 
-      {/* Create work order */}
-      <SectionTitle title={tr.departments.maintenance.newWorkOrder} />
-      <Card>
+      {/* Work orders list with status filter */}
+      <SectionTitle title={tr.departments.maintenance.workOrders} />
+      <View
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          gap: spacing.sm,
+          marginBottom: spacing.md,
+        }}
+      >
+        <StatusFilterChip value="" label={tr.departments.maintenance.filterAll} />
+        {STATUS_FILTERS.map((s) => (
+          <StatusFilterChip key={s} value={s} label={statusLabel(s)} />
+        ))}
+      </View>
+      {renderList(
+        workOrdersQ,
+        {
+          icon: 'construct-outline',
+          emptyTitle: tr.departments.maintenance.noWorkOrders,
+          emptyHint: tr.departments.maintenance.noWorkOrdersHint,
+        },
+        renderWorkOrder,
+      )}
+
+      {/* Technician tasks */}
+      <SectionTitle title={tr.departments.maintenance.tasks} />
+      {renderList(
+        tasksQ,
+        {
+          icon: 'clipboard-outline',
+          emptyTitle: tr.departments.maintenance.noTasks,
+          emptyHint: tr.departments.maintenance.noTasksHint,
+        },
+        renderTask,
+      )}
+
+      {/* Create work order sheet */}
+      <ActionSheet
+        visible={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title={tr.departments.maintenance.newWorkOrder}
+      >
         {createError ? (
-          <Body style={{ color: c.danger, marginBottom: spacing.sm }}>{createError}</Body>
+          <Body style={{ color: c.danger }}>{createError}</Body>
         ) : null}
         <Muted>{tr.departments.maintenance.issueType}</Muted>
         <View
@@ -323,8 +430,7 @@ export default function MaintenanceScreen() {
             flexDirection: 'row',
             flexWrap: 'wrap',
             gap: spacing.sm,
-            marginTop: spacing.sm,
-            marginBottom: spacing.md,
+            marginBottom: spacing.sm,
           }}
         >
           {ISSUE_TYPES.map((t) => (
@@ -343,8 +449,7 @@ export default function MaintenanceScreen() {
             flexDirection: 'row',
             flexWrap: 'wrap',
             gap: spacing.sm,
-            marginTop: spacing.sm,
-            marginBottom: spacing.md,
+            marginBottom: spacing.sm,
           }}
         >
           {PRIORITIES.map((p) => (
@@ -362,71 +467,77 @@ export default function MaintenanceScreen() {
           value={roomNumber}
           onChangeText={setRoomNumber}
         />
-        <View style={{ height: spacing.sm }} />
         <Field
           label={tr.departments.maintenance.description}
           value={description}
           onChangeText={setDescription}
           multiline
         />
-        <View style={{ height: spacing.md }} />
-        <Button
-          title={tr.departments.maintenance.create}
-          onPress={onCreate}
-          loading={creating}
-          fullWidth
-        />
-      </Card>
+        <FormActions>
+          <Button
+            title={tr.app.cancel}
+            variant="secondary"
+            onPress={() => setCreateOpen(false)}
+            fullWidth
+          />
+          <Button
+            title={tr.departments.maintenance.create}
+            onPress={onCreate}
+            loading={creating}
+            fullWidth
+          />
+        </FormActions>
+      </ActionSheet>
 
-      {/* Work orders list with status filter */}
-      <SectionTitle title={tr.departments.maintenance.workOrders} />
-      <View
-        style={{
-          flexDirection: 'row',
-          flexWrap: 'wrap',
-          gap: spacing.sm,
-          marginBottom: spacing.md,
-        }}
+      {/* Technician task update sheet — single-tap status actions */}
+      <ActionSheet
+        visible={activeTask !== null}
+        onClose={() => setActiveTask(null)}
+        title={
+          activeTask
+            ? `${issueTypeLabel(activeTask.issue_type)} · ${tr.departments.maintenance.updateTask}`
+            : tr.departments.maintenance.updateTask
+        }
       >
-        <Chip
-          active={statusFilter === ''}
-          label={tr.departments.maintenance.filterAll}
-          onPress={() => setStatusFilter('')}
+        <Field
+          label={tr.departments.maintenance.notes}
+          value={taskNotes}
+          onChangeText={setTaskNotes}
+          multiline
         />
-        {STATUS_FILTERS.map((s) => (
-          <Chip
-            key={s}
-            active={statusFilter === s}
-            label={statusLabel(s)}
-            onPress={() => setStatusFilter(s)}
+        <Field
+          label={tr.departments.maintenance.timeSpent}
+          value={taskTime}
+          onChangeText={setTaskTime}
+          keyboardType="number-pad"
+        />
+        <SegmentedActions>
+          <ActionButton
+            label={tr.departments.maintenance.markStarted}
+            icon="play"
+            onPress={() => onSubmitTask('started')}
+            bg={c.surfaceAlt}
+            fg={c.text}
+            loading={submitting}
           />
-        ))}
-      </View>
-      {(() => {
-        const state = (
-          <DepartmentListState
-            loading={workOrdersQ.isLoading}
-            error={workOrdersQ.error}
-            isEmpty={(workOrdersQ.data || []).length === 0}
-            emptyText={tr.departments.maintenance.noWorkOrders}
+          <ActionButton
+            label={tr.departments.maintenance.markNeedsParts}
+            icon="alert"
+            onPress={() => onSubmitTask('needs_parts')}
+            bg={c.surfaceAlt}
+            fg={c.text}
+            loading={submitting}
           />
-        );
-        return state ?? <View>{(workOrdersQ.data || []).map(renderWorkOrder)}</View>;
-      })()}
-
-      {/* Technician tasks */}
-      <SectionTitle title={tr.departments.maintenance.tasks} />
-      {(() => {
-        const state = (
-          <DepartmentListState
-            loading={tasksQ.isLoading}
-            error={tasksQ.error}
-            isEmpty={(tasksQ.data || []).length === 0}
-            emptyText={tr.departments.maintenance.noTasks}
+          <ActionButton
+            label={tr.departments.maintenance.markCompleted}
+            icon="checkmark"
+            onPress={() => onSubmitTask('completed')}
+            bg={c.primary}
+            fg={c.primaryText}
+            loading={submitting}
           />
-        );
-        return state ?? <View>{(tasksQ.data || []).map(renderTask)}</View>;
-      })()}
+        </SegmentedActions>
+      </ActionSheet>
     </ScrollView>
   );
 }
