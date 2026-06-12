@@ -18,6 +18,7 @@ except ImportError:
 from core.database import db
 from core.security import get_current_user
 from models.enums import RiskLevel
+from shared_kernel.idempotency import claim_short_window_dedup, release_idempotency
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
 
@@ -396,6 +397,23 @@ async def record_payment_mobile(
     from domains.pms.cashier_service import ensure_active_shift, record_cash_transaction
     await ensure_active_shift(current_user.tenant_id, payment_method)
 
+    # This endpoint carries NO Idempotency-Key, so a double-tap (same folio +
+    # amount + method, seconds apart) would post two payments. Server-side
+    # short-window guard rejects the suspected duplicate (409) instead of
+    # silently double-charging the guest.
+    dedup = await claim_short_window_dedup(
+        db,
+        tenant_id=current_user.tenant_id,
+        scope=f"auto_payment_dedup:folio:{folio_id}",
+        fingerprint=f"{round(float(amount), 2)}|{payment_method}|final",
+    )
+    if dedup["status"] == "duplicate":
+        raise HTTPException(
+            status_code=409,
+            detail="Olası çift ödeme: aynı tutar saniyeler içinde tekrar gönderildi",
+        )
+    auto_lock_id = dedup["lock_id"]
+
     # Create payment
     payment_id = str(uuid.uuid4())
     payment = {
@@ -411,7 +429,12 @@ async def record_payment_mobile(
         'created_by': current_user.username
     }
 
-    await db.payments.insert_one(payment)
+    try:
+        await db.payments.insert_one(payment)
+    except Exception:
+        # Payment never became durable -> free the auto-dedup slot for a retry.
+        await release_idempotency(db, lock_id=auto_lock_id)
+        raise
 
     # Kasa hareketine yaz — cash için race-safe rollback
     is_cash = (payment_method or "").lower() == "cash"
@@ -434,6 +457,8 @@ async def record_payment_mobile(
         if is_cash and he.status_code == 409:
             try:
                 await db.payments.delete_one({'id': payment_id, 'tenant_id': current_user.tenant_id})
+                # Row removed -> free the auto-dedup slot for a real retry.
+                await release_idempotency(db, lock_id=auto_lock_id)
             except Exception:
                 import logging as _lg
                 _lg.getLogger(__name__).exception("payment rollback failed after cashier 409")

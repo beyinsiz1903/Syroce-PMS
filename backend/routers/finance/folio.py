@@ -38,6 +38,7 @@ from modules.folio.services.open_folio_service import OpenFolioService
 from modules.pms_core.role_permission_service import require_op
 from shared_kernel.idempotency import (
     claim_idempotency,
+    claim_short_window_dedup,
     complete_idempotency,
     get_idempotency_key,
     release_idempotency,
@@ -675,6 +676,28 @@ async def post_payment_to_folio(
             )
         idem_lock_id = claim["lock_id"]
 
+    # No explicit Idempotency-Key -> server-side short-window guard so a cashier
+    # double-click (same folio + amount + method + type, seconds apart) cannot
+    # double-charge. Secondary to the explicit key above; rejected (409) not
+    # replayed (no verifiable client intent).
+    auto_lock_id = None
+    cached_auto_lock_id = None
+    if not idem_key:
+        _method = payment_data.method.value if hasattr(payment_data.method, 'value') else str(payment_data.method)
+        _ptype = payment_data.payment_type.value if hasattr(payment_data.payment_type, 'value') else str(payment_data.payment_type)
+        dedup = await claim_short_window_dedup(
+            db,
+            tenant_id=current_user.tenant_id,
+            scope=f"auto_payment_dedup:folio:{folio_id}",
+            fingerprint=f"{round(float(payment_data.amount), 2)}|{_method}|{_ptype}",
+        )
+        if dedup["status"] == "duplicate":
+            raise HTTPException(
+                status_code=409,
+                detail="Olası çift ödeme: aynı tutar saniyeler içinde tekrar gönderildi",
+            )
+        auto_lock_id = dedup["lock_id"]
+
     try:
         folio = await db.folios.find_one({
             'id': folio_id,
@@ -720,6 +743,12 @@ async def post_payment_to_folio(
         else:
             cached_idem_lock_id = None
 
+        # Auto-dedup slot: the payment row is durable. KEEP the slot (don't
+        # release) so a double-click within the window is still caught; stash it
+        # for the cashier-409 rollback path below.
+        cached_auto_lock_id = auto_lock_id
+        auto_lock_id = None
+
         # Kasa hareketine yaz (idempotent — aynı payment.id için tek kayıt)
         # Cash için vardiya zorunlu: TOCTOU race'inde 409 → ödemeyi geri al
         is_cash = method_str.lower() == "cash"
@@ -750,6 +779,11 @@ async def post_payment_to_folio(
                     if cached_idem_lock_id:
                         await release_idempotency(db, lock_id=cached_idem_lock_id)
                         cached_idem_lock_id = None
+                    # Row removed -> free the auto-dedup slot so the cashier can
+                    # retry the same payment after reopening a shift.
+                    if cached_auto_lock_id:
+                        await release_idempotency(db, lock_id=cached_auto_lock_id)
+                        cached_auto_lock_id = None
                 except Exception:
                     import logging as _lg
                     _lg.getLogger(__name__).exception("payment rollback failed after cashier 409")
@@ -770,10 +804,15 @@ async def post_payment_to_folio(
     except HTTPException:
         if idem_lock_id:
             await release_idempotency(db, lock_id=idem_lock_id)
+        # Non-None only when the payment never became durable -> free the slot.
+        if auto_lock_id:
+            await release_idempotency(db, lock_id=auto_lock_id)
         raise
     except Exception as exc:
         if idem_lock_id:
             await release_idempotency(db, lock_id=idem_lock_id, error=str(exc))
+        if auto_lock_id:
+            await release_idempotency(db, lock_id=auto_lock_id, error=str(exc))
         raise
 
 

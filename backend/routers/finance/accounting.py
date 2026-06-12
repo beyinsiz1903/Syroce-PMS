@@ -33,6 +33,7 @@ from models.schemas import (
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
 from modules.pms_core.role_permission_service import require_op
+from shared_kernel.invoice_guards import ensure_booking_invoiceable, is_status_invoiceable
 
 try:
     from cache_manager import cache, cached
@@ -1857,6 +1858,17 @@ async def generate_invoice_from_folio(
             'tenant_id': current_user.tenant_id
         }, {'_id': 0})
 
+    # Fiscal-document guard: refuse to mint a sales invoice for a CANCELLED
+    # reservation (no stay happened -> the cut would later need a credit note to
+    # unwind). The no-show penalty / checked-out invoicing stays allowed, and a
+    # missing booking (manual/legacy folio) is not blocked. Booking is read
+    # fresh just above, so this is a true last-second check.
+    if booking is not None and not is_status_invoiceable(booking.get('status')):
+        raise HTTPException(
+            status_code=409,
+            detail="Rezervasyon iptal edilmiş; fatura/e-Fatura kesilemez",
+        )
+
     # Convert charges to invoice items
     invoice_items = []
     for charge in charges:
@@ -2071,6 +2083,11 @@ async def generate_efatura_for_invoice(
             'efatura_uuid': existing_efatura.get('efatura_uuid'),
             'status': existing_efatura.get('status')
         }
+
+    # Last-second guard: do not cut a NEW e-Fatura against a reservation that has
+    # since been cancelled. An already-existing record (handled above) is
+    # returned as is — it cannot be un-cut; only a fresh cut is blocked here.
+    await ensure_booking_invoiceable(db, current_user.tenant_id, invoice.get('booking_id'))
 
     # Generate a flawless UBL-TR document and persist it. There is NO automatic
     # transmission to an integrator/GIB; the accountant downloads the XML and

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from core.database import db
 from core.security import get_current_user
+from shared_kernel.idempotency import claim_short_window_dedup, release_idempotency
 from models.schemas import User, _ensure_hotel_context
 from modules.pms_core.role_permission_service import (
     RolePermissionService,
@@ -421,23 +422,49 @@ async def record_payment(
                 )
             return {"success": True, "payment": existing, "idempotent": True}
 
-    # Find or create folio
-    folio = await db.folios.find_one({"booking_id": booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0})
-    if not folio:
-        from core.utils import generate_folio_number
-        folio_id = str(uuid.uuid4())
-        folio = {
-            "id": folio_id,
-            "tenant_id": tid,
-            "booking_id": booking_id,
-            "folio_number": await generate_folio_number(tid),
-            "folio_type": "guest",
-            "status": "open",
-            "guest_id": booking.get("guest_id"),
-            "balance": 0.0,
-            "created_at": datetime.now(UTC).isoformat(),
-        }
-        await db.folios.insert_one({**folio})
+    # No explicit reference -> server-side short-window guard so a double-click
+    # (same booking + amount + method + type, seconds apart) cannot double-credit
+    # the guest. Rejected (409), not replayed: without a client reference there
+    # is no verifiable intent for a deliberate identical second payment.
+    auto_lock_id = None
+    if not ref_key:
+        dedup = await claim_short_window_dedup(
+            db,
+            tenant_id=tid,
+            scope=f"auto_payment_dedup:booking:{booking_id}",
+            fingerprint=f"{round(float(data.amount), 2)}|{data.method}|{data.payment_type}",
+        )
+        if dedup["status"] == "duplicate":
+            raise HTTPException(
+                status_code=409,
+                detail="Olası çift ödeme: aynı tutar saniyeler içinde tekrar gönderildi",
+            )
+        auto_lock_id = dedup["lock_id"]
+
+    # Find or create folio. If this fails before the payment becomes durable,
+    # free the auto-dedup slot so a legitimate retry is not blocked for the
+    # whole window.
+    try:
+        folio = await db.folios.find_one({"booking_id": booking_id, "tenant_id": tid, "status": "open"}, {"_id": 0})
+        if not folio:
+            from core.utils import generate_folio_number
+            folio_id = str(uuid.uuid4())
+            folio = {
+                "id": folio_id,
+                "tenant_id": tid,
+                "booking_id": booking_id,
+                "folio_number": await generate_folio_number(tid),
+                "folio_type": "guest",
+                "status": "open",
+                "guest_id": booking.get("guest_id"),
+                "balance": 0.0,
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+            await db.folios.insert_one({**folio})
+    except Exception:
+        if auto_lock_id:
+            await release_idempotency(db, lock_id=auto_lock_id)
+        raise
 
     payment = {
         "id": str(uuid.uuid4()),
@@ -467,6 +494,9 @@ async def record_payment(
             if existing:
                 return {"success": True, "payment": existing, "idempotent": True}
             raise HTTPException(status_code=409, detail="Duplicate payment reference") from exc
+        # Payment never became durable -> free the auto-dedup slot for a retry.
+        if auto_lock_id:
+            await release_idempotency(db, lock_id=auto_lock_id)
         raise
 
     # Update booking paid_amount

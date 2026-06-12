@@ -1,5 +1,6 @@
 
 import hashlib
+import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -129,3 +130,128 @@ async def release_idempotency(db_handle, *, lock_id: str, error: str | None = No
     again with the same key"; keeping a 'failed' marker would block retries.
     """
     await db_handle.idempotency_keys.delete_one({"_id": lock_id})
+
+
+# ── Short-window auto-dedup (server-side anti-double-submit) ──────────────────
+#
+# claim_idempotency above protects requests that carry an EXPLICIT client key
+# (Idempotency-Key header / payment reference) with a 24h replay cache. That
+# does nothing for a cashier double-click that ships NO key. The guard below
+# fills that gap: it derives a fingerprint from the payment itself and rejects a
+# second identical payment that arrives within a short window. We REJECT (409)
+# rather than replay, because without an explicit client key there is no
+# verifiable intent — silently returning the prior payment would mask a possibly
+# legitimate second charge, while a 409 is trivially recoverable.
+PAYMENT_DEDUP_DEFAULT_WINDOW_SECONDS = 10
+
+
+def payment_dedup_window_seconds() -> int:
+    """Window (seconds) within which an unkeyed identical payment is a dup.
+
+    Env-tunable via ``PAYMENT_DEDUP_WINDOW_SECONDS``; floored at 1s. Kept short
+    so genuine, deliberately-repeated identical payments are only briefly
+    blocked, while double-clicks/network replays (sub-second) are caught.
+    """
+    raw = os.getenv("PAYMENT_DEDUP_WINDOW_SECONDS")
+    try:
+        value = int(raw) if raw is not None else PAYMENT_DEDUP_DEFAULT_WINDOW_SECONDS
+    except (TypeError, ValueError):
+        value = PAYMENT_DEDUP_DEFAULT_WINDOW_SECONDS
+    return max(1, value)
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+async def claim_short_window_dedup(
+    db_handle,
+    *,
+    tenant_id: str,
+    scope: str,
+    fingerprint: str,
+    window_seconds: int | None = None,
+) -> dict[str, Any]:
+    """Atomically claim a short-window dedup slot for an unkeyed payment.
+
+    Returns either:
+      - ``{"status": "acquired", "lock_id": ...}`` when this is the first
+        identical payment in the window (caller proceeds, then leaves the slot
+        on success so the window keeps catching repeats, or releases it on
+        failure so a real retry isn't blocked), or
+      - ``{"status": "duplicate"}`` when an identical payment is still inside
+        the window (caller returns 409).
+
+    Window precision comes from a ``created_at`` comparison plus a CONDITIONAL
+    (CAS) delete on stale reclaim — so two concurrent double-clicks can never
+    BOTH acquire. The TTL index on ``expires_at`` is only a backstop sweep
+    (Mongo's TTL monitor runs ~every 60s, too coarse to define the window).
+    """
+    from pymongo.errors import DuplicateKeyError  # type: ignore
+
+    window = (
+        window_seconds if window_seconds is not None
+        else payment_dedup_window_seconds()
+    )
+    lock_id = _lock_id(tenant_id, scope, fingerprint)
+    now = datetime.now(UTC)
+
+    def _fresh_doc() -> dict[str, Any]:
+        return {
+            "_id": lock_id,
+            "tenant_id": tenant_id,
+            "scope": scope,
+            "idempotency_key": fingerprint,
+            "status": "processing",
+            "auto": True,
+            "created_at": now.isoformat(),
+            # Backstop TTL well past the logical window; window precision is
+            # enforced by the created_at comparison below.
+            "expires_at": now + timedelta(
+                seconds=max(window, IDEMPOTENCY_PROCESSING_GRACE_SECONDS)
+            ),
+        }
+
+    try:
+        await db_handle.idempotency_keys.insert_one(_fresh_doc())
+        return {"status": "acquired", "lock_id": lock_id}
+    except DuplicateKeyError:
+        pass
+
+    existing = await db_handle.idempotency_keys.find_one({"_id": lock_id})
+    if not existing:
+        # Raced with an expiry/delete between our insert and read — one retry.
+        try:
+            await db_handle.idempotency_keys.insert_one(_fresh_doc())
+            return {"status": "acquired", "lock_id": lock_id}
+        except DuplicateKeyError:
+            return {"status": "duplicate"}
+
+    observed_created = existing.get("created_at")
+    created_dt = _parse_iso(observed_created)
+    if created_dt is None or (now - created_dt).total_seconds() <= window:
+        # Inside the window (or an unparseable timestamp -> fail-safe reject):
+        # this is the suspected double submit.
+        return {"status": "duplicate"}
+
+    # Stale lock from an earlier, distinct payment OUTSIDE the window. Reclaim
+    # with a CAS delete keyed on the OBSERVED created_at, so only one of several
+    # concurrent racers wins; the losers fall through to "duplicate".
+    deleted = await db_handle.idempotency_keys.delete_one(
+        {"_id": lock_id, "created_at": observed_created}
+    )
+    if deleted.deleted_count != 1:
+        return {"status": "duplicate"}
+    try:
+        await db_handle.idempotency_keys.insert_one(_fresh_doc())
+        return {"status": "acquired", "lock_id": lock_id}
+    except DuplicateKeyError:
+        return {"status": "duplicate"}

@@ -1469,6 +1469,7 @@ async def _process_pending_efaturas_async():
     persistent failure flips the invoice to ``error`` and alerts ops.
     """
     from core import efatura_provider as ep
+    from shared_kernel.invoice_guards import is_status_invoiceable, resolve_booking_status
 
     if not ep.is_configured():
         logger.warning(
@@ -1500,6 +1501,28 @@ async def _process_pending_efaturas_async():
             inv_no = invoice.get('invoice_number')
             ettn = invoice.get('efatura_ettn') or str(uuid.uuid4())
             inv_filter = {'id': invoice.get('id'), 'tenant_id': invoice.get('tenant_id')}
+
+            # Last-second guard: an invoice queued BEFORE its reservation was
+            # cancelled must not get its UBL-TR cut now. Terminal-fail it
+            # ('error') so the accounting screen surfaces it; no XML, no retry
+            # loop. no_show / checked_out / manual (no booking) stay invoiceable.
+            booking_id = invoice.get('booking_id')
+            if booking_id:
+                b_status = await resolve_booking_status(
+                    db, invoice.get('tenant_id'), booking_id
+                )
+                if not is_status_invoiceable(b_status):
+                    await db.accounting_invoices.update_one(inv_filter, {'$set': {
+                        'efatura_status': 'error',
+                        'efatura_last_error': 'Rezervasyon iptal edilmiş; e-Fatura kesilmedi',
+                    }})
+                    errored += 1
+                    logger.warning(
+                        "e-Fatura skipped for %s: reservation %s is cancelled",
+                        inv_no, booking_id,
+                    )
+                    continue
+
             try:
                 profile = ep.document_profile(invoice)
                 xml = ep.build_ubl_tr_document(
