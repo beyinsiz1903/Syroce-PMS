@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CheckCircle2, XCircle, AlertTriangle, Shield, RefreshCcw, Lock, Unlock } from 'lucide-react';
+import { toast } from 'sonner';
 
 const API = "";
 
@@ -87,8 +88,10 @@ const MappingCompletenessTab = () => {
         const list = data.connectors || data || [];
         setConnectors(list);
         if (list.length > 0 && !selectedConnector) setSelectedConnector(list[0].id);
+      } else {
+        toast.error('Konnektörler yüklenemedi');
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); toast.error('Konnektörler yüklenemedi'); }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 
@@ -97,8 +100,12 @@ const MappingCompletenessTab = () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/channel-manager/v2/mapping-completeness/${selectedConnector}`, { headers });
-      if (res.ok) setReport(await res.json());
-    } catch (e) { console.error(e); }
+      if (res.ok) {
+        setReport(await res.json());
+      } else {
+        toast.error('Eşleştirme tamlık raporu yüklenemedi');
+      }
+    } catch (e) { console.error(e); toast.error('Eşleştirme tamlık raporu yüklenemedi'); }
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, [selectedConnector]);

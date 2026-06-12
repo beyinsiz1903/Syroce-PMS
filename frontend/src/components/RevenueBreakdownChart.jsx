@@ -46,7 +46,7 @@ const RevenueBreakdownChart = () => {
           <div>
             <p className="text-sm text-gray-600">Total Revenue</p>
             <p className="text-3xl font-bold text-green-600">
-              ${data.total_revenue.toLocaleString()}
+              ${(data.total_revenue || 0).toLocaleString()}
             </p>
           </div>
           <TrendingUp className="w-12 h-12 text-green-600" />
@@ -68,7 +68,7 @@ const RevenueBreakdownChart = () => {
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip formatter={(value) => `$${value.toLocaleString()}`} />
+            <Tooltip formatter={(value) => `$${(value || 0).toLocaleString()}`} />
             <Legend />
           </PieChart>
         </ResponsiveContainer>
@@ -84,7 +84,7 @@ const RevenueBreakdownChart = () => {
                 <span className="text-sm font-medium">{item.category}</span>
               </div>
               <div className="text-right">
-                <p className="text-sm font-bold">${item.amount.toLocaleString()}</p>
+                <p className="text-sm font-bold">${(item.amount || 0).toLocaleString()}</p>
                 <p className="text-xs text-gray-500">{item.percentage}%</p>
               </div>
             </div>

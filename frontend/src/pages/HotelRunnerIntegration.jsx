@@ -87,7 +87,7 @@ const HotelRunnerIntegration = ({ user, tenant, onLogout }) => {
     try {
       const { data } = await axios.get(`/channel-manager/auto-map/status/hotelrunner`, { headers });
       setMappingStatus(data);
-    } catch { /* ignore */ }
+    } catch (e) { console.error(e); toast.error('Otomatik eşleştirme durumu alınamadı'); }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mevcut davranış korunuyor; toplu temizlik turunda eklendi, niyet inceleme bekliyor
   }, []);
 

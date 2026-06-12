@@ -237,7 +237,7 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
   const handleSyncReservations = async () => {
     setSyncing(true);
     try {
-      let totalImported = 0, totalCancelled = 0, synced = false;
+      let totalImported = 0, totalCancelled = 0, synced = false, failedConnectors = 0;
 
       try {
         const exelyRes = await axios.post('/channel-manager/exely/sync/reservations/pull');
@@ -262,15 +262,18 @@ const ReservationCalendar = ({ user, tenant, onLogout }) => {
             totalImported += result.data?.imported || result.data?.new || 0;
             totalCancelled += result.data?.cancelled || 0;
             synced = true;
-          } catch (e) { console.warn(`Sync failed for connector ${conn.id}:`, e); }
+          } catch (e) { failedConnectors++; console.warn(`Sync failed for connector ${conn.id}:`, e); }
         }
       } catch (e) { if (e.response?.status !== 404) console.warn('v2 connector sync error:', e); }
 
-      if (!synced) { toast.info('Aktif kanal bağlantısı bulunamadı'); setSyncing(false); return; }
-      if (totalImported > 0 || totalCancelled > 0) {
+      if (!synced && failedConnectors === 0) { toast.info('Aktif kanal bağlantısı bulunamadı'); setSyncing(false); return; }
+      if (synced && (totalImported > 0 || totalCancelled > 0)) {
         toast.success(`Senkronizasyon tamamlandi: ${totalImported} yeni, ${totalCancelled} iptal`);
-      } else {
+      } else if (synced) {
         toast.info('Yeni rezervasyon değişikliği bulunamadı');
+      }
+      if (failedConnectors > 0) {
+        toast.error(`${failedConnectors} kanal senkronize edilemedi`);
       }
       await loadCalendarData();
     } catch (error) {

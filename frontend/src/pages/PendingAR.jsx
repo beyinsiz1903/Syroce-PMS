@@ -147,7 +147,7 @@ const PendingAR = ({ user, tenant, onLogout }) => {
   const filteredData = arData
     .filter(item => {
       const matchesSearch = 
-        item.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (item.company_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (item.corporate_code || '').toLowerCase().includes(searchTerm.toLowerCase());
       
       if (filterDays === 'all') return matchesSearch;

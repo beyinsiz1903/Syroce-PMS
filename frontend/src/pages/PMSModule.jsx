@@ -488,7 +488,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
         const insights = Array.isArray(rawPatterns.insights) ? rawPatterns.insights.map((item) => typeof item === 'string' ? item : JSON.stringify(item)) : [];
         setAiPatterns({ insights });
       }
-    } catch (error) { console.error('AI insights not available'); }
+    } catch (error) { console.error('AI insights not available'); toast.error('AI içgörüleri yüklenemedi'); }
   };
 
   const loadHousekeepingData = async () => {
@@ -504,7 +504,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           ]);
           setDueOutRooms(dueOutRes.data.due_out_rooms || []); setStayoverRooms(stayoverRes.data.stayover_rooms || []);
           setArrivalRooms(arrivalsRes.data.arrival_rooms || []); setRoomBlocks(blocksRes.data.blocks || []);
-        } catch (error) { console.error('Failed to load additional housekeeping data:', error); }
+        } catch (error) { console.error('Failed to load additional housekeeping data:', error); toast.error('Ek kat hizmetleri verileri yüklenemedi'); }
       }, 500);
     } catch (error) { toast.error('Failed to load housekeeping data');
     } finally { setHkLoading(false); }
@@ -533,7 +533,7 @@ const PMSModule = ({ user, tenant, onLogout }) => {
       ]);
       setOtaReservations(otaRes.data.reservations || []); setRmsSuggestions(suggestionsRes.data.suggestions || []);
       setExceptions(exceptionsRes.data.exceptions || []);
-    } catch (error) { console.error('Failed to load channel manager data:', error); }
+    } catch (error) { if (error.response?.status !== 403) { console.error('Failed to load channel manager data:', error); toast.error('Kanal yöneticisi verileri yüklenemedi'); } }
   };
 
   const handleImportOTA = async (otaId) => {
