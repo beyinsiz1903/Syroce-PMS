@@ -29,9 +29,10 @@ import logging
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from core.database import db
@@ -57,6 +58,60 @@ def _kbs_test_mode() -> bool:
     """KBS_TEST_MODE=1 → reference 'TEST-' ile başlamayan complete'ler reddedilir,
     booking üzerine kbs_test=true bayrağı yazılır."""
     return os.environ.get("KBS_TEST_MODE", "0") == "1"
+
+
+def _kbs_extension_dir() -> Path:
+    """KBS tarayıcı eklentisi kaynak klasörü (repo kökündeki extension/).
+
+    KBS_EXTENSION_DIR env'i ile override edilebilir (test/farklı dağıtım için).
+    """
+    override = os.environ.get("KBS_EXTENSION_DIR")
+    if override:
+        return Path(override)
+    # backend/routers/kbs.py -> repo kökü/extension
+    return Path(__file__).resolve().parent.parent.parent / "extension"
+
+
+@router.get("/extension/download")
+async def download_kbs_extension(
+    current_user: User = Depends(get_current_user),
+):
+    """KBS tarayıcı eklentisini tek bir ZIP olarak indir.
+
+    Resepsiyon bilgisayarlarına kurulum için kullanılır (Chrome/Edge →
+    Eklentiler → Geliştirici modu → Paketlenmemiş yükle → açılan klasör).
+    Eklenti yalnızca transport kodu içerir; sır/secret taşımaz. Oturum açmış
+    her kullanıcı indirebilir. ZIP, canlı extension/ klasöründen üretilir
+    (bayatlama yok); yalnızca bilinen güvenli uzantılar paketlenir.
+    """
+    import io
+    import zipfile
+
+    ext_dir = _kbs_extension_dir()
+    if not ext_dir.is_dir():
+        raise HTTPException(404, "Eklenti paketi sunucuda bulunamadı")
+
+    allowed_suffixes = {".js", ".json", ".html", ".css", ".md", ".png", ".svg"}
+    buf = io.BytesIO()
+    file_count = 0
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(ext_dir.rglob("*")):
+            if not path.is_file() or path.suffix.lower() not in allowed_suffixes:
+                continue
+            arcname = "syroce-kbs-eklentisi/" + path.relative_to(ext_dir).as_posix()
+            zf.write(path, arcname)
+            file_count += 1
+    if file_count == 0:
+        raise HTTPException(404, "Eklenti dosyaları bulunamadı")
+    buf.seek(0)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="syroce-kbs-eklentisi.zip"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 async def _raise_kbs_alert(

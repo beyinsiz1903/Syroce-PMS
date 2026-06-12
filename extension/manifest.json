@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Syroce PMS - KBS Gonderici",
-  "version": "1.0.0",
-  "description": "Syroce PMS icinden KBS (Emniyet konaklama bildirimi) gonderimini resepsiyon bilgisayarinin IP adresinden yapar.",
+  "version": "1.1.0",
+  "description": "Syroce PMS icinden KBS (Polis/Emniyet ve Jandarma konaklama bildirimi) gonderimini resepsiyon bilgisayarinin IP adresinden yapar.",
   "permissions": ["storage"],
-  "host_permissions": ["https://*.egm.gov.tr/*"],
+  "host_permissions": ["https://*.egm.gov.tr/*", "https://*.jandarma.gov.tr/*"],
   "background": {
     "service_worker": "background.js"
   },

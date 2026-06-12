@@ -2,19 +2,27 @@
 
 // Syroce KBS Gonderici - arka plan servis worker'i (Manifest V3).
 //
-// Gorev: PMS sayfasindan gelen KBS payload'ini Emniyet (EGM) ucuna,
-// resepsiyon bilgisayarinin tarayicisi/IP'si uzerinden POST eder.
+// Gorev: PMS sayfasindan gelen KBS payload'ini secili makama (Polis/Emniyet
+// veya Jandarma) ait uca, resepsiyon bilgisayarinin tarayicisi/IP'si uzerinden
+// POST eder. KBS yonlendirmesi otelin kayitli adresine gore Polis ya da
+// Jandarma sistemine gider; her iki makam icin ayri profil tanimlanabilir.
 //
 // Guvenlik ilkeleri:
 // - Sayfadan ASLA bir URL kabul edilmez. Uc, yalnizca eklenti ayarlarindan
-//   (chrome.storage) okunur ve host'unun *.egm.gov.tr oldugu zorunlu kilinir.
+//   (chrome.storage) okunur ve host'unun secili makamin izinli alan adi
+//   (Polis -> *.egm.gov.tr, Jandarma -> *.jandarma.gov.tr) oldugu zorunlu
+//   kilinir.
 // - Yalnizca kendi content script'lerimizden gelen mesajlar islenir.
 // - Payload sahte basari URETMEZ: test modu acik degilse ve uc
 //   yapilandirilmamissa fail-closed (gonderim yok, hata doner).
 // - Misafir PII kalici saklanmaz / console'a yazilmaz.
 
-const EGM_HOST_SUFFIX = ".egm.gov.tr";
-const EGM_HOST_EXACT = "egm.gov.tr";
+const AUTHORITIES = ["polis", "jandarma"];
+const DEFAULT_AUTHORITY = "polis";
+const AUTHORITY_HOSTS = {
+  polis: { exact: "egm.gov.tr", suffix: ".egm.gov.tr" },
+  jandarma: { exact: "jandarma.gov.tr", suffix: ".jandarma.gov.tr" },
+};
 const DEFAULT_REFERENCE_KEYS = [
   "kbs_reference", "reference", "reference_no", "referans", "ref", "id"
 ];
@@ -29,21 +37,45 @@ function randHex(n) {
     .toUpperCase();
 }
 
-async function getConfig() {
-  const { kbsConfig } = await chrome.storage.local.get("kbsConfig");
-  const cfg = kbsConfig || {};
+function normalizeAuthority(a) {
+  return AUTHORITIES.includes(a) ? a : DEFAULT_AUTHORITY;
+}
+
+function normalizeProfile(cfg) {
+  const c = cfg && typeof cfg === "object" ? cfg : {};
   return {
-    mode: cfg.mode || "test", // test | cookie | token
-    endpoint: (cfg.endpoint || "").trim(),
-    token: (cfg.token || "").trim(),
-    requestFormat: cfg.requestFormat || "json", // json | form
-    fieldMap: cfg.fieldMap && typeof cfg.fieldMap === "object" ? cfg.fieldMap : null,
+    mode: c.mode || "test", // test | cookie | token
+    endpoint: (c.endpoint || "").trim(),
+    token: (c.token || "").trim(),
+    requestFormat: c.requestFormat || "json", // json | form
+    fieldMap: c.fieldMap && typeof c.fieldMap === "object" ? c.fieldMap : null,
     referenceKeys:
-      Array.isArray(cfg.referenceKeys) && cfg.referenceKeys.length
-        ? cfg.referenceKeys
+      Array.isArray(c.referenceKeys) && c.referenceKeys.length
+        ? c.referenceKeys
         : DEFAULT_REFERENCE_KEYS,
-    referenceRegex: (cfg.referenceRegex || "").trim(),
+    referenceRegex: (c.referenceRegex || "").trim(),
   };
+}
+
+async function getAllConfig() {
+  const { kbsConfig } = await chrome.storage.local.get("kbsConfig");
+  const raw = kbsConfig || {};
+  // Yeni bicim: { polis: {...}, jandarma: {...} }.
+  // Eski (tek profil) bicim duz alanlar tasir (mode/endpoint...) -> Polis
+  // profiline tasinir (geriye uyumluluk).
+  const isLegacyFlat =
+    !raw.polis && !raw.jandarma && ("mode" in raw || "endpoint" in raw);
+  const out = {};
+  for (const a of AUTHORITIES) {
+    if (isLegacyFlat && a === DEFAULT_AUTHORITY) out[a] = normalizeProfile(raw);
+    else out[a] = normalizeProfile(raw[a]);
+  }
+  return out;
+}
+
+async function getProfile(authority) {
+  const all = await getAllConfig();
+  return all[normalizeAuthority(authority)];
 }
 
 async function getInstallId() {
@@ -55,15 +87,23 @@ async function getInstallId() {
   return kbsInstallId;
 }
 
-function isEgmHost(hostname) {
-  return hostname === EGM_HOST_EXACT || hostname.endsWith(EGM_HOST_SUFFIX);
+function isAllowedHost(hostname, authority) {
+  const rule = AUTHORITY_HOSTS[normalizeAuthority(authority)];
+  return hostname === rule.exact || hostname.endsWith(rule.suffix);
 }
 
-function configState(cfg) {
-  if (cfg.mode === "test") return "test";
-  if (!cfg.endpoint) return "unconfigured";
-  if (cfg.mode === "token" && !cfg.token) return "unconfigured";
+function configState(profile) {
+  if (profile.mode === "test") return "test";
+  if (!profile.endpoint) return "unconfigured";
+  if (profile.mode === "token" && !profile.token) return "unconfigured";
   return "configured";
+}
+
+async function allStates() {
+  const all = await getAllConfig();
+  const states = {};
+  for (const a of AUTHORITIES) states[a] = configState(all[a]);
+  return states;
 }
 
 function applyFieldMap(body, fieldMap) {
@@ -107,8 +147,9 @@ function validBody(body) {
   return true;
 }
 
-async function sendToEgm(body) {
-  const cfg = await getConfig();
+async function sendToKbs(body, authority) {
+  const auth = normalizeAuthority(authority);
+  const cfg = await getProfile(auth);
   const state = configState(cfg);
 
   if (state === "test") {
@@ -124,7 +165,7 @@ async function sendToEgm(body) {
   } catch (_e) {
     return { ok: false, error: "endpoint_invalid" };
   }
-  if (url.protocol !== "https:" || !isEgmHost(url.hostname)) {
+  if (url.protocol !== "https:" || !isAllowedHost(url.hostname, auth)) {
     return { ok: false, error: "endpoint_not_allowed" };
   }
   if (!validBody(body)) {
@@ -188,12 +229,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "KBS_STATE") {
     (async () => {
-      const cfg = await getConfig();
+      const states = await allStates();
       const installId = await getInstallId();
       sendResponse({
         ok: true,
         version: chrome.runtime.getManifest().version,
-        state: configState(cfg),
+        states,
+        // Geriye uyumluluk: tekil 'state' alani Polis profiline isaret eder.
+        state: states[DEFAULT_AUTHORITY],
         installId,
       });
     })();
@@ -202,7 +245,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "KBS_SEND") {
     (async () => {
-      const result = await sendToEgm(msg.body);
+      const result = await sendToKbs(msg.body, msg.authority);
       sendResponse(result);
     })();
     return true;

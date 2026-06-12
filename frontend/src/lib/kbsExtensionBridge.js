@@ -61,21 +61,24 @@ function request(payload, timeoutMs) {
  */
 export async function pingExtension(timeoutMs = 1500) {
   const res = await request({ type: "PING" }, timeoutMs);
-  if (res.timedOut) return { present: false, state: "absent", version: "", installId: "" };
+  if (res.timedOut) return { present: false, state: "absent", states: {}, version: "", installId: "" };
   return {
     present: true,
     version: res.version || "",
+    // Geriye uyumlu tekil durum (Polis profili) + makam bazli durum haritasi.
     state: res.state || "unknown",
+    states: res.states && typeof res.states === "object" ? res.states : {},
     installId: res.installId || "",
   };
 }
 
 /**
- * Tek bir KBS payload'ini eklenti uzerinden EGM'ye gonderir.
+ * Tek bir KBS payload'ini eklenti uzerinden secili makama (Polis/Emniyet veya
+ * Jandarma) gonderir. authority = 'polis' (varsayilan) | 'jandarma'.
  * @returns {Promise<{ok:boolean, reference:string, error:string, test:boolean}>}
  */
-export async function sendViaExtension(body, timeoutMs = 35000) {
-  const res = await request({ type: "SEND", body }, timeoutMs);
+export async function sendViaExtension(body, authority = "polis", timeoutMs = 35000) {
+  const res = await request({ type: "SEND", body, authority }, timeoutMs);
   if (res.timedOut) return { ok: false, reference: "", error: "extension_timeout", test: false };
   return {
     ok: !!res.ok,

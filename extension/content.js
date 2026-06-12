@@ -35,6 +35,7 @@
           present: true,
           version: resp.version,
           state: resp.state,
+          states: resp.states,
           installId: resp.installId,
         });
       });
@@ -47,7 +48,7 @@
         post({ type: "RESULT", requestId: data.requestId, ok: false, error: "bad_body" });
         return;
       }
-      chrome.runtime.sendMessage({ type: "KBS_SEND", body }, (resp) => {
+      chrome.runtime.sendMessage({ type: "KBS_SEND", body, authority: data.authority }, (resp) => {
         if (chrome.runtime.lastError || !resp) {
           post({ type: "RESULT", requestId: data.requestId, ok: false, error: "extension_error" });
           return;

@@ -343,43 +343,74 @@ operator drenajı bu durumda zorunlu kalır.
 
 ---
 
-## KBS Tarayıcı Eklentisi (Otel IP'sinden Emniyet Gönderimi)
+## KBS Tarayıcı Eklentisi (Otel IP'sinden Polis/Jandarma Gönderimi)
 
-> **Neden eklenti?** EGM/KBS, konaklama bildirimini **otelin kendi internet
+> **Neden eklenti?** KBS, konaklama bildirimini **otelin kendi internet
 > IP adresine** bağlar. Bulut sunucusunun IP'si reddedilir. Bu yüzden
 > bildirim, resepsiyon bilgisayarının tarayıcısından (= otelin IP'si)
-> gönderilir. Eklenti = saf EGM taşıyıcısı; PMS sayfası = kuyruk worker'ı
+> gönderilir. Eklenti = saf KBS taşıyıcısı; PMS sayfası = kuyruk worker'ı
 > (staff JWT'yi o tutar). Kaynak: `extension/` klasörü.
+
+> **İki makam (Polis ve Jandarma):** KBS yönlendirmesi otelin kayıtlı
+> adresine göre **Polis (Emniyet, `*.egm.gov.tr`)** ya da **Jandarma
+> (`*.jandarma.gov.tr`)** sistemine gider. Eklentide her iki makam için
+> **ayrı profil** (uç + mod + token) tanımlanabilir. PMS KBS panelindeki
+> **Makam: Polis / Jandarma** seçici, gönderimin hangi profile gideceğini
+> belirler; durum rozeti seçili makamın profiline göre yanar.
 
 ### Kurulum (her resepsiyon bilgisayarında bir kez)
 
-1. Chrome/Edge → `chrome://extensions` (Edge: `edge://extensions`).
-2. Sağ üstten **Geliştirici modu**'nu (Developer mode) aç.
-3. **Paketlenmemiş öğe yükle** (Load unpacked) → repo'daki `extension/`
-   klasörünü seç.
-4. Eklenti listede görünür: **Syroce PMS - KBS Gonderici**.
+1. **Eklenti paketini indir:** PMS → Ön Büro → KBS paneli → **Eklentiyi
+   indir** butonu → `syroce-kbs-eklentisi.zip` iner. ZIP'i bir klasöre çıkar.
+   (Alternatif: repo'daki `extension/` klasörü.)
+2. Chrome/Edge → `chrome://extensions` (Edge: `edge://extensions`).
+3. Sağ üstten **Geliştirici modu**'nu (Developer mode) aç.
+4. **Paketlenmemiş öğe yükle** (Load unpacked) → çıkardığın
+   `syroce-kbs-eklentisi` klasörünü seç.
+5. Eklenti listede görünür: **Syroce PMS - KBS Gonderici**.
 
 ### Yapılandırma
 
 1. Eklenti → **Ayrıntılar** → **Uzantı seçenekleri** (Options).
-2. **Mod** seç:
+2. Ayarlar sayfasında **iki bölüm** vardır: **Polis KBS (Emniyet)** ve
+   **Jandarma KBS**. Otelinizin bağlandığı makam(lar) için ilgili bölümü
+   doldurun (sadece birini de doldurabilirsiniz).
+3. Her bölümde **Mod** seç:
    - **Test**: gerçek gönderim yok, `TEST-` referans üretir (prova için).
      Backend de `KBS_TEST_MODE=1` ile uyumlu olmalı.
    - **Oturum çerezi**: aynı tarayıcıda KBS portalında açık oturum gerekir.
    - **API token**: entegratör/anahtar ile.
-3. **KBS ucu (URL)**: yalnızca `https` ve `*.egm.gov.tr` kabul edilir
-   (başka host kaydedilmez — fail-closed).
-4. Kaydet. PMS → Ön Büro → KBS panelinde durum rozeti **Bağlı / Test modu**
-   olmalı.
+4. **KBS ucu (URL)**: Polis bölümünde yalnızca `https` + `*.egm.gov.tr`,
+   Jandarma bölümünde yalnızca `https` + `*.jandarma.gov.tr` kabul edilir
+   (başka host kaydedilmez — fail-closed, makam başına ayrı kontrol).
+5. Kaydet. PMS KBS panelinde **Makam** seçicisinden ilgili makamı seçtiğinde
+   durum rozeti **Bağlı / Test modu** olmalı.
 
 ### Çalıştırma
 
-- PMS KBS panelinde **Otomatik gönderim: Açık** seçilirse, sayfa açık
-  olduğu sürece kuyruktaki bekleyen bildirimler 30 sn'de bir otel IP'sinden
+- PMS → Ön Büro → KBS panelinde önce **Makam: Polis / Jandarma** seçicisinden
+  gönderimin gideceği makamı seç. Rozet o makamın profiline göre yanar.
+- **Otomatik gönderim: Açık** seçilirse, sayfa açık olduğu sürece kuyruktaki
+  bekleyen bildirimler 30 sn'de bir, **seçili makama** otel IP'sinden
   gönderilir. **Şimdi gönder** ile elle de boşaltılabilir; her bekleyen iş
   için **Eklenti ile gönder** butonu vardır.
 - Tarayıcı/sayfa kapalıyken gönderim **durur** (bu beklenen davranıştır;
   worker = sayfanın kendisi). Resepsiyon ekranı açık kalmalı.
+
+> **Not (makam seçimi):** Aynı kuyruk tek bir seçili makama gönderilir. Hem
+> Polis hem Jandarma'ya bildirim gereken (nadir) durumda, ilgili makamı seçip
+> kuyruğu boşalt, sonra diğer makama geçip tekrar gönder.
+
+> **UYARI (test modu tuzağı):** Bir makam profili Options'ta **gerçek uç ile
+> yapılandırılmadığında varsayılan olarak "Test" modundadır** ve rozet **"Test
+> modu"** (amber) gösterir. Bu durumda **otomatik gönderim açıksa** kuyruktaki
+> gerçek bildirimler o makama **gönderilmiş gibi** işaretlenir ama gerçekte
+> gönderim YOKTUR — referanslar `TEST-` ile başlar ve kayıt `kbs_test=true`
+> taşır. Yeni seçtiğiniz bir makamda (örn. ilk kez Jandarma) **rozet "Test
+> modu" iken otomatik gönderimi AÇMAYIN**; önce Options'ta o makamın gerçek
+> ucunu girip rozetin **"Bağlı"** olmasını bekleyin. Kayıtların gerçekten
+> gönderilip gönderilmediğini KBS referansının `TEST-` ile başlayıp
+> başlamadığından doğrulayın.
 
 ### Backend eşleştirmesi (ÖNEMLİ)
 
@@ -404,8 +435,16 @@ KBS_AUTO_ENQUEUE=1       # check-in/out anında kuyruğa otomatik ekleme açık
   `*.replit.app` + `*.replit.dev`. **Özel alan adı (custom domain)
   kullanıyorsanız** `extension/manifest.json` içindeki `matches` listesine
   kendi alan adınızı ekleyip eklentiyi yeniden yükleyin.
-- **Rozet "Yapılandırılmamış":** Options'ta uç + (token modunda) token girin.
-- **Gönderim "no_reference_in_response":** EGM yanıtından referans
-  çıkarılamadı. Options'ta **Referans regex** veya doğru **Alan eşleştirme**
-  girin.
-- **Gönderim "endpoint_not_allowed":** Uç `https://*.egm.gov.tr` değil.
+- **Rozet "Yapılandırılmamış":** Seçili makamın (Polis/Jandarma) Options
+  bölümünde uç + (token modunda) token girin. Rozet **seçili makama** göre
+  yanar — diğer makam dolu olsa da seçili makam boşsa "Yapılandırılmamış"
+  görünür.
+- **Gönderim "no_reference_in_response":** KBS yanıtından referans
+  çıkarılamadı. Options'ta ilgili makamın **Referans regex** veya doğru
+  **Alan eşleştirme** alanını girin.
+- **Gönderim "endpoint_not_allowed":** Uç seçili makamın izinli alan adında
+  değil — Polis için `https://*.egm.gov.tr`, Jandarma için
+  `https://*.jandarma.gov.tr` olmalı.
+- **"Eklentiyi indir" çalışmıyor:** Buton backend `GET /api/kbs/extension/download`
+  ucundan ZIP çeker (oturum gerektirir). 404 alıyorsanız sunucuda `extension/`
+  klasörü dağıtılmamış demektir; repo'daki klasörü doğrudan kullanın.

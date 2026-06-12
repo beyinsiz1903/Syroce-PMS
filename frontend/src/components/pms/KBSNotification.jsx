@@ -38,7 +38,14 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
   const [enqueuingId, setEnqueuingId] = useState(null);
 
   // KBS tarayici eklentisi (otel IP'sinden gonderim) entegrasyonu
-  const [extInfo, setExtInfo] = useState({ present: false, state: 'absent', version: '', installId: '' });
+  const [extInfo, setExtInfo] = useState({ present: false, state: 'absent', states: {}, version: '', installId: '' });
+  // Secili makam: 'polis' (Emniyet/EGM) | 'jandarma'. Otel adresine gore secilir.
+  const [authority, setAuthority] = useState(() => {
+    try {
+      return localStorage.getItem('kbs_ext_authority') === 'jandarma' ? 'jandarma' : 'polis';
+    } catch { return 'polis'; }
+  });
+  const [downloadingExt, setDownloadingExt] = useState(false);
   const [autoSend, setAutoSend] = useState(() => {
     try { return localStorage.getItem('kbs_ext_autosend') === '1'; } catch { return false; }
   });
@@ -127,13 +134,18 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
       const info = await pingExtension();
       setExtInfo(info);
     } catch {
-      setExtInfo({ present: false, state: 'absent', version: '', installId: '' });
+      setExtInfo({ present: false, state: 'absent', states: {}, version: '', installId: '' });
     }
   }, []);
 
   useEffect(() => { refreshExt(); }, [refreshExt]);
 
-  const extReady = extInfo.present && (extInfo.state === 'test' || extInfo.state === 'configured');
+  // Secili makamin durumu. Eski (v1.0) eklenti yalnizca tekil 'state' dondurur ->
+  // bu Polis profiline esittir (geriye uyumluluk).
+  const authorityState = (extInfo.states && extInfo.states[authority])
+    || (authority === 'polis' ? extInfo.state : 'absent')
+    || 'absent';
+  const extReady = extInfo.present && (authorityState === 'test' || authorityState === 'configured');
 
   const newIdemKey = () => (
     (typeof crypto !== 'undefined' && crypto.randomUUID)
@@ -155,7 +167,7 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
     if (!claimed) return 'skipped';
 
     const body = buildKbsBody(claimed.payload, claimed.action || 'checkin');
-    const sent = await sendViaExtension(body);
+    const sent = await sendViaExtension(body, authority);
     const idem = newIdemKey();
 
     if (sent.ok && sent.reference) {
@@ -176,7 +188,7 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
       // fail kaydi yazilamadi: lease suresi dolunca tekrar denenir
     }
     return 'fail';
-  }, []);
+  }, [authority]);
 
   const drainViaExtension = useCallback(async () => {
     if (!extReady || !extInfo.installId) return;
@@ -222,6 +234,31 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
       try { localStorage.setItem('kbs_ext_autosend', next ? '1' : '0'); } catch { /* yoksay */ }
       return next;
     });
+  };
+
+  const changeAuthority = (a) => {
+    const next = a === 'jandarma' ? 'jandarma' : 'polis';
+    setAuthority(next);
+    try { localStorage.setItem('kbs_ext_authority', next); } catch { /* yoksay */ }
+  };
+
+  // KBS tarayici eklenti paketini (ZIP) backend'den indir.
+  const downloadExtension = async () => {
+    setDownloadingExt(true);
+    try {
+      const res = await axios.get('/kbs/extension/download', { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'syroce-kbs-eklentisi.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Eklenti paketi indirildi');
+    } catch {
+      toast.error('Eklenti paketi indirilemedi');
+    } finally {
+      setDownloadingExt(false);
+    }
   };
 
   // Eklenti durumunu periyodik tazele + otomatik gonderim acikken kuyrugu boalt.
@@ -458,19 +495,35 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
             KBS Tarayici Eklentisi
             {extInfo.present ? (
               <Badge className={
-                extInfo.state === 'configured' ? 'bg-green-100 text-green-800'
-                  : extInfo.state === 'test' ? 'bg-blue-100 text-blue-800'
+                authorityState === 'configured' ? 'bg-green-100 text-green-800'
+                  : authorityState === 'test' ? 'bg-blue-100 text-blue-800'
                     : 'bg-amber-100 text-amber-800'
               }>
-                {extInfo.state === 'configured' ? `Bagli v${extInfo.version}`
-                  : extInfo.state === 'test' ? `Test modu v${extInfo.version}`
+                {authorityState === 'configured' ? `Bagli v${extInfo.version}`
+                  : authorityState === 'test' ? `Test modu v${extInfo.version}`
                     : 'Yapilandirilmamis'}
               </Badge>
             ) : (
               <Badge variant="outline" className="text-gray-500">Kurulu degil</Badge>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] text-gray-500">Makam:</span>
+              <Button variant={authority === 'polis' ? 'default' : 'outline'} size="sm"
+                className="h-7 px-2 text-xs" onClick={() => changeAuthority('polis')}>
+                Polis
+              </Button>
+              <Button variant={authority === 'jandarma' ? 'default' : 'outline'} size="sm"
+                className="h-7 px-2 text-xs" onClick={() => changeAuthority('jandarma')}>
+                Jandarma
+              </Button>
+            </div>
+            <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
+              onClick={downloadExtension} disabled={downloadingExt}>
+              <Download className={`w-3 h-3 mr-1 ${downloadingExt ? 'animate-pulse' : ''}`} />
+              Eklentiyi indir
+            </Button>
             {extReady && (
               <>
                 <Button variant={autoSend ? 'default' : 'outline'} size="sm"
@@ -488,8 +541,8 @@ const KBSNotification = ({ bookings = [], guests = [] }) => {
         </div>
         <p className="text-[11px] text-gray-500 mt-1">
           {extInfo.present
-            ? 'Bildirimler resepsiyon bilgisayarinin tarayicisindan (otelin IP adresi) Emniyet KBS sistemine iletilir.'
-            : 'Eklenti kurulu degil. Kuyruktaki bildirimler eklenti kurulup acilana kadar bekler (kurulum: extension/ klasoru).'}
+            ? `Bildirimler resepsiyon bilgisayarinin tarayicisindan (otelin IP adresi) secili makamin (${authority === 'jandarma' ? 'Jandarma' : 'Polis/Emniyet'}) KBS sistemine iletilir. Her makam icin uc ayri ayri yapilandirilir (eklenti ayarlari).`
+            : 'Eklenti kurulu degil. "Eklentiyi indir" ile paketi alip Chrome/Edge > Eklentiler > Gelistirici modu > Paketlenmemis yukle ile kurun. Kuyruktaki bildirimler eklenti kurulup acilana kadar bekler.'}
           {lastDrain && ` Son gonderim: ${new Date(lastDrain.at).toLocaleTimeString()} - basarili ${lastDrain.ok}, hata ${lastDrain.fail}.`}
         </p>
       </div>
