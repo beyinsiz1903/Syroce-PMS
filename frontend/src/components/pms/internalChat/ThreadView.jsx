@@ -104,7 +104,9 @@ const ThreadView = ({
           type="button"
           variant="ghost"
           size="sm"
-          className="md:hidden"
+          className="shrink-0"
+          title="Konuşmalara dön"
+          aria-label="Konuşmalara dön"
           onClick={() => {
             setSelectedConvUserId(null);
             setSelectedConvUserName('');

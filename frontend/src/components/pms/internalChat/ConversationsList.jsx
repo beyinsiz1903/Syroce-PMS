@@ -24,9 +24,11 @@ const ConversationsList = ({
   conversationUnreadByDept,
   conversationFiltersActive,
   jumpToFirstUnreadInDepartment,
+  embedded = false,
 }) => (
-  <div className="flex flex-col h-full border rounded-md bg-background">
+  <div className={`flex flex-col h-full bg-background ${embedded ? '' : 'border rounded-md'}`}>
     <div className="p-3 border-b space-y-2">
+      {!embedded && (
       <div className="flex items-center justify-between gap-2">
         <h3 className="font-medium text-sm flex items-center gap-1.5">
           <MessagesSquare className="h-4 w-4" />
@@ -53,6 +55,7 @@ const ConversationsList = ({
           <RefreshCw className={`h-4 w-4 ${loadingConversations ? 'animate-spin' : ''}`} />
         </Button>
       </div>
+      )}
       <div className="relative">
         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input

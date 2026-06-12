@@ -8,6 +8,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import usePushNotifications from "@/hooks/usePushNotifications";
 import { NotificationProvider, notifyAuthChanged } from "@/context/NotificationContext";
+import InternalChatWidget from "@/components/InternalChatWidget";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/sonner";
@@ -380,6 +381,7 @@ function App() {
               </PlanRouteGuard>
             </ErrorBoundary>
           </BrowserRouter>
+          {isAuthenticated && user && <InternalChatWidget user={user} />}
         </div>
       </QueryClientProvider>
       </CurrencyProvider>

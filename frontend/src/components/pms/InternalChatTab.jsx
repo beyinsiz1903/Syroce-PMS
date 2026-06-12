@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -13,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useWebSocket } from '@/lib/websocket';
 import { useNotifications } from '@/context/NotificationContext';
 import { canSendUrgentMessage } from '@/utils/authRoles';
-import { Send, RefreshCw, MessagesSquare, CheckCheck } from 'lucide-react';
+import { Send, RefreshCw, CheckCheck, Plus } from 'lucide-react';
 
 // R4 split: state'ler ve render orchestration burada kalır; ağır iş üç
 // yardımcı modüle çıkarıldı (visibility-aware polling, Socket.IO event
@@ -645,153 +644,168 @@ const InternalChatTab = ({ currentUser }) => {
     [messageText, priority, recipientType, toDepartment, toUserId, resetForm, loadInbox, toast],
   );
 
-  const totalUnread = (unreadCount || 0) + (totalConversationUnread || 0);
+  const [view, setView] = useState('conversations');
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <MessagesSquare className="h-5 w-5" /> {t('cm.components_pms_InternalChatTab.personel_mesajlasmasi')}
-            {totalUnread > 0 && (
-              <Badge variant="destructive" data-testid="badge-total-unread">
-                {totalUnread}
-              </Badge>
-            )}
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            {myDepartment && (
-              <>
-                {t('cm.components_pms_InternalChatTab.departmanim')} <span className="font-medium">{myDepartment}</span>
-                {' · '}
-              </>
-            )}
-            {t('cm.components_pms_InternalChatTab.canli_bildirim_acik_yedek_yenileme_60_sn')}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleMarkAllRead}
-            disabled={markingAllRead || unreadCount === 0}
-            data-testid="button-mark-all-read"
-            title={t('cm.components_pms_InternalChatTab.gelen_kutusundaki_tum_okunmamis_mesajlar')}
-          >
-            <CheckCheck className={`h-4 w-4 mr-1 ${markingAllRead ? 'animate-pulse' : ''}`} />
-            {markingAllRead ? 'İşaretleniyor…' : 'Tümünü okundu'}
-          </Button>
-          <Button
-            type="button"
-            variant={showUnreadOnly ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setShowUnreadOnly((v) => !v)}
-            data-testid="button-toggle-unread"
-          >
-            {showUnreadOnly ? 'Tümü' : 'Sadece okunmamış'}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => loadInbox()}
-            disabled={loadingInbox}
-            data-testid="button-refresh-inbox"
-          >
-            <RefreshCw className={`h-4 w-4 mr-1 ${loadingInbox ? 'animate-spin' : ''}`} />
-            {t('cm.components_pms_InternalChatTab.yenile')}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => setComposeOpen(true)}
-            data-testid="button-open-compose"
-          >
-            <Send className="h-4 w-4 mr-1" /> {t('cm.components_pms_InternalChatTab.yeni_mesaj')}
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-[340px_1fr] gap-3 md:h-[640px]">
-        <div
-          className={`${selectedConvUserId ? 'hidden md:block' : 'block'} h-[280px] md:h-full overflow-hidden`}
-          data-testid="pane-conversations-list"
-        >
-          <ConversationsList
-            conversations={conversations}
-            filteredConversations={filteredConversations}
-            loadingConversations={loadingConversations}
-            loadConversations={loadConversations}
+    <div className="flex flex-col h-full min-h-0 bg-background" data-testid="internal-chat-panel">
+      {selectedConvUserId ? (
+        <div className="flex-1 min-h-0 overflow-hidden" data-testid="pane-detail">
+          <ThreadView
             selectedConvUserId={selectedConvUserId}
-            handleSelectConversation={handleSelectConversation}
-            totalConversationUnread={totalConversationUnread}
-            conversationSearch={conversationSearch}
-            setConversationSearch={setConversationSearch}
-            conversationDeptFilter={conversationDeptFilter}
-            setConversationDeptFilter={setConversationDeptFilter}
-            conversationDeptOpen={conversationDeptOpen}
-            setConversationDeptOpen={setConversationDeptOpen}
-            conversationOnlyUnread={conversationOnlyUnread}
-            setConversationOnlyUnread={setConversationOnlyUnread}
-            conversationUnreadByDept={conversationUnreadByDept}
-            conversationFiltersActive={conversationFiltersActive}
-            jumpToFirstUnreadInDepartment={jumpToFirstUnreadInDepartment}
+            selectedConvUserName={selectedConvUserName}
+            setSelectedConvUserId={setSelectedConvUserId}
+            setSelectedConvUserName={setSelectedConvUserName}
+            setThreadMessages={setThreadMessages}
+            threadMessages={threadMessages}
+            loadingThread={loadingThread}
+            loadThread={loadThread}
+            threadScrollRef={threadScrollRef}
+            typingPartnerName={typingPartnerName}
+            usersAccessDenied={usersAccessDenied}
+            users={users}
+            handleStartConversationFromUser={handleStartConversationFromUser}
+            editingMessageId={editingMessageId}
+            editingDraft={editingDraft}
+            setEditingDraft={setEditingDraft}
+            savingEdit={savingEdit}
+            beginEditMessage={beginEditMessage}
+            cancelEditMessage={cancelEditMessage}
+            handleSubmitEditMessage={handleSubmitEditMessage}
+            handleRecallMessage={handleRecallMessage}
+            editHistoryByMsg={editHistoryByMsg}
+            fetchEditHistory={fetchEditHistory}
+            threadReply={threadReply}
+            setThreadReply={setThreadReply}
+            threadPriority={threadPriority}
+            setThreadPriority={setThreadPriority}
+            emitTyping={emitTyping}
+            handleSendThreadReply={handleSendThreadReply}
+            sendingThreadReply={sendingThreadReply}
+            canSendUrgent={canSendUrgent}
+            urgentConfirmOpen={urgentConfirmOpen}
+            setUrgentConfirmOpen={setUrgentConfirmOpen}
+            handleConfirmUrgentSend={handleConfirmUrgentSend}
           />
         </div>
-        <div
-          className="block h-[440px] md:h-full overflow-hidden"
-          data-testid="pane-detail"
-        >
-          {selectedConvUserId ? (
-            <ThreadView
-              selectedConvUserId={selectedConvUserId}
-              selectedConvUserName={selectedConvUserName}
-              setSelectedConvUserId={setSelectedConvUserId}
-              setSelectedConvUserName={setSelectedConvUserName}
-              setThreadMessages={setThreadMessages}
-              threadMessages={threadMessages}
-              loadingThread={loadingThread}
-              loadThread={loadThread}
-              threadScrollRef={threadScrollRef}
-              typingPartnerName={typingPartnerName}
-              usersAccessDenied={usersAccessDenied}
-              users={users}
-              handleStartConversationFromUser={handleStartConversationFromUser}
-              editingMessageId={editingMessageId}
-              editingDraft={editingDraft}
-              setEditingDraft={setEditingDraft}
-              savingEdit={savingEdit}
-              beginEditMessage={beginEditMessage}
-              cancelEditMessage={cancelEditMessage}
-              handleSubmitEditMessage={handleSubmitEditMessage}
-              handleRecallMessage={handleRecallMessage}
-              editHistoryByMsg={editHistoryByMsg}
-              fetchEditHistory={fetchEditHistory}
-              threadReply={threadReply}
-              setThreadReply={setThreadReply}
-              threadPriority={threadPriority}
-              setThreadPriority={setThreadPriority}
-              emitTyping={emitTyping}
-              handleSendThreadReply={handleSendThreadReply}
-              sendingThreadReply={sendingThreadReply}
-              canSendUrgent={canSendUrgent}
-              urgentConfirmOpen={urgentConfirmOpen}
-              setUrgentConfirmOpen={setUrgentConfirmOpen}
-              handleConfirmUrgentSend={handleConfirmUrgentSend}
-            />
-          ) : (
-            <InboxList
-              inbox={inbox}
-              unreadCount={unreadCount}
-              loadingInbox={loadingInbox}
-              showUnreadOnly={showUnreadOnly}
-              markAsRead={markAsRead}
-              handleReply={handleReply}
-            />
-          )}
-        </div>
-      </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-1.5 px-2.5 py-2 border-b shrink-0">
+            <div className="flex items-center rounded-lg bg-muted p-0.5">
+              <button
+                type="button"
+                onClick={() => setView('conversations')}
+                data-testid="button-view-conversations"
+                className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${view === 'conversations' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Konuşmalar
+                {totalConversationUnread > 0 && (
+                  <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-red-500 px-1 py-0.5 text-[10px] font-semibold leading-none text-white min-w-[16px]">
+                    {totalConversationUnread > 99 ? '99+' : totalConversationUnread}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('inbox')}
+                data-testid="button-view-inbox"
+                className={`relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${view === 'inbox' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Gelen Kutusu
+                {unreadCount > 0 && (
+                  <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-red-500 px-1 py-0.5 text-[10px] font-semibold leading-none text-white min-w-[16px]">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            <div className="ml-auto flex items-center gap-0.5">
+              {view === 'inbox' && (
+                <Button
+                  type="button"
+                  variant={showUnreadOnly ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  onClick={() => setShowUnreadOnly((v) => !v)}
+                  data-testid="button-toggle-unread"
+                  title="Sadece okunmamışları göster"
+                >
+                  {showUnreadOnly ? 'Tümü' : 'Okunmamış'}
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={handleMarkAllRead}
+                disabled={markingAllRead || unreadCount === 0}
+                data-testid="button-mark-all-read"
+                title={t('cm.components_pms_InternalChatTab.gelen_kutusundaki_tum_okunmamis_mesajlar')}
+              >
+                <CheckCheck className={`h-4 w-4 ${markingAllRead ? 'animate-pulse' : ''}`} />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => { loadInbox(); loadConversations(); }}
+                disabled={loadingInbox || loadingConversations}
+                data-testid="button-refresh-inbox"
+                title={t('cm.components_pms_InternalChatTab.yenile')}
+              >
+                <RefreshCw className={`h-4 w-4 ${(loadingInbox || loadingConversations) ? 'animate-spin' : ''}`} />
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 px-2.5"
+                onClick={() => setComposeOpen(true)}
+                data-testid="button-open-compose"
+              >
+                <Plus className="h-4 w-4 mr-1" /> {t('cm.components_pms_InternalChatTab.yeni_mesaj')}
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-hidden" data-testid="pane-detail">
+            {view === 'conversations' ? (
+              <ConversationsList
+                embedded
+                conversations={conversations}
+                filteredConversations={filteredConversations}
+                loadingConversations={loadingConversations}
+                loadConversations={loadConversations}
+                selectedConvUserId={selectedConvUserId}
+                handleSelectConversation={handleSelectConversation}
+                totalConversationUnread={totalConversationUnread}
+                conversationSearch={conversationSearch}
+                setConversationSearch={setConversationSearch}
+                conversationDeptFilter={conversationDeptFilter}
+                setConversationDeptFilter={setConversationDeptFilter}
+                conversationDeptOpen={conversationDeptOpen}
+                setConversationDeptOpen={setConversationDeptOpen}
+                conversationOnlyUnread={conversationOnlyUnread}
+                setConversationOnlyUnread={setConversationOnlyUnread}
+                conversationUnreadByDept={conversationUnreadByDept}
+                conversationFiltersActive={conversationFiltersActive}
+                jumpToFirstUnreadInDepartment={jumpToFirstUnreadInDepartment}
+              />
+            ) : (
+              <InboxList
+                embedded
+                inbox={inbox}
+                unreadCount={unreadCount}
+                loadingInbox={loadingInbox}
+                showUnreadOnly={showUnreadOnly}
+                markAsRead={markAsRead}
+                handleReply={handleReply}
+              />
+            )}
+          </div>
+        </>
+      )}
 
       <Dialog
         open={composeOpen}

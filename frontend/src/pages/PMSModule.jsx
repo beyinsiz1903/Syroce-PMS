@@ -18,7 +18,6 @@ const RoomsTab = lazy(() => import('@/components/pms/RoomsTab'));
 const GuestsTab = lazy(() => import('@/components/pms/GuestsTab'));
 const CashierTab = lazy(() => import('@/components/pms/CashierTab'));
 const UpsellTab = lazy(() => import('@/components/pms/UpsellTab'));
-const InternalChatTab = lazy(() => import('@/components/pms/InternalChatTab'));
 const ReportsTab = lazy(() => import('@/components/pms/ReportsTab'));
 const FlashReportContent = lazy(() => import('@/components/pms/FlashReportContent'));
 const LaundryTab = lazy(() => import('@/components/pms/LaundryTab'));
@@ -76,7 +75,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { 
   BedDouble, Users, Calendar, Plus, CheckCircle, DollarSign, 
   ClipboardList, BarChart3, TrendingUp, UserCheck, LogIn, LogOut, Home, FileText, 
-  Star, Send, MessageSquare, UserPlus, ArrowRight, RefreshCw, User, Search, CheckSquare, Download, Clock, Crown,
+  Star, Send, UserPlus, ArrowRight, RefreshCw, User, Search, CheckSquare, Download, Clock, Crown,
   Wallet, Wrench, ThumbsUp, Building2, UtensilsCrossed, Shirt,
   MapPin, Shield, Lock, Heart
 } from 'lucide-react';
@@ -182,7 +181,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
     { key: 'bookings', labelText: 'Rezervasyonlar', icon: Calendar, testId: 'tab-bookings' },
     { key: 'cashier', labelText: 'Kasa', icon: Wallet, testId: 'tab-cashier' },
     { key: 'upsell', labelText: 'Upsell', icon: TrendingUp, testId: 'tab-upsell' },
-    { key: 'internal_chat', labelText: 'İletişim', icon: MessageSquare, testId: 'tab-internal-chat' },
     { key: 'reports', labelText: 'Raporlar', icon: FileText, testId: 'tab-reports' },
     { key: 'flash', labelText: 'Flash Rapor', icon: BarChart3, testId: 'tab-flash' },
     { key: 'tasks', labelText: 'Görevler', icon: Wrench, testId: 'tab-tasks' },
@@ -882,7 +880,6 @@ const PMSModule = ({ user, tenant, onLogout }) => {
           )}
           {activeTab === 'cashier' && <TabsContent value="cashier" className="space-y-4"><CashierTab user={user} /></TabsContent>}
           {activeTab === 'upsell' && <TabsContent value="upsell" className="space-y-4"><UpsellTab bookings={bookings} /></TabsContent>}
-          {activeTab === 'internal_chat' && <TabsContent value="internal_chat" className="space-y-4"><InternalChatTab currentUser={user} /></TabsContent>}
           {activeTab === 'reports' && <TabsContent value="reports" className="space-y-4"><ReportsTab /></TabsContent>}
           {activeTab === 'flash' && <TabsContent value="flash" className="space-y-4"><FlashReportContent rooms={rooms} bookings={bookings} arrivals={arrivals} departures={departures} inhouse={inhouse} /></TabsContent>}
           {activeTab === 'tasks' && <TabsContent value="tasks" className="space-y-4"><StaffTaskManager /></TabsContent>}

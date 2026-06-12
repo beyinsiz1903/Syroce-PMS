@@ -12,8 +12,10 @@ const InboxList = ({
   showUnreadOnly,
   markAsRead,
   handleReply,
+  embedded = false,
 }) => (
-  <div className="flex flex-col h-full border rounded-md bg-background overflow-hidden">
+  <div className={`flex flex-col h-full bg-background overflow-hidden ${embedded ? '' : 'border rounded-md'}`}>
+    {!embedded && (
     <div className="px-3 py-2 border-b flex items-center justify-between gap-2 bg-muted/20">
       <div className="flex items-center gap-2 text-sm font-medium">
         <Inbox className="h-4 w-4" /> Gelen Kutusu
@@ -27,6 +29,7 @@ const InboxList = ({
         {showUnreadOnly ? 'Sadece okunmamış' : 'Tümü'}
       </div>
     </div>
+    )}
     <div className="flex-1 overflow-hidden">
       {loadingInbox && inbox.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">Yükleniyor…</div>

@@ -14,7 +14,7 @@ const FloatingActionButton = ({ actions = [] }) => {
   if (!actions || actions.length === 0) return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div className="fixed bottom-24 right-6 z-50">
       {/* Action Items (shown when open) */}
       {isOpen && (
         <div className="absolute bottom-20 right-0 space-y-3 mb-2 flex flex-col items-end">
