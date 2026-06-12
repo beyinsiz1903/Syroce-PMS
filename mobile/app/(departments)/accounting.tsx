@@ -16,6 +16,13 @@ import {
   SectionTitle,
 } from '../../src/components/ui';
 import { KpiCard, KpiRow } from '../../src/components/KpiCard';
+import {
+  BarList,
+  ChartLegend,
+  CompareBars,
+  DonutChart,
+  type ChartDatum,
+} from '../../src/components/charts';
 import { FilterChips, type FilterChipOption } from '../../src/components/FilterChips';
 import { DepartmentListState } from '../../src/components/department';
 import { spacing, radius, useTheme } from '../../src/theme';
@@ -373,6 +380,60 @@ export default function AccountingScreen() {
       )
     : [];
 
+  // ── Stripe-quality chart series (all real backend data) ───────────────────
+  // Gelir: günlük finansal özetteki kategori kırılımı (vergili toplam).
+  const revenueChartData: ChartDatum[] = useMemo(
+    () =>
+      revenueCategories
+        .map(([cat, v]) => ({ label: cat, value: v?.total ?? 0 }))
+        .filter((d) => d.value > 0),
+    [revenueCategories],
+  );
+
+  // Gider: ay içi giderlerin kategoriye göre toplamı (listExpenses verisi).
+  const expenseChartData: ChartDatum[] = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of expenses) {
+      const key = e.category || a.uncategorized;
+      m.set(key, (m.get(key) ?? 0) + (e.total_amount ?? e.amount ?? 0));
+    }
+    return Array.from(m, ([label, value]) => ({ label, value })).filter(
+      (d) => d.value > 0,
+    );
+  }, [expenses, a.uncategorized]);
+
+  // KDV: günlük özetteki vergi kırılımı (oran → tutar).
+  const vatChartData: ChartDatum[] = useMemo(() => {
+    if (!summary) return [];
+    return Object.entries(summary.tax.breakdown)
+      .map(([rate, amount]) => ({ label: `%${rate}`, value: amount ?? 0 }))
+      .filter((d) => d.value > 0);
+  }, [summary]);
+
+  // Kasa Akışı: ödeme yöntemine göre tahsilat dağılımı (günlük özet).
+  const paymentChartData: ChartDatum[] = useMemo(() => {
+    if (!summary) return [];
+    const labels = a.paymentMethodLabels;
+    return Object.entries(summary.payments.by_method)
+      .map(([method, v]) => ({
+        label: labels[method] || method,
+        value: v?.amount ?? 0,
+      }))
+      .filter((d) => d.value > 0);
+  }, [summary, a.paymentMethodLabels]);
+
+  // Kasa Akışı karşılaştırması: Vergili Gelir / Tahsilat / Net Pozisyon.
+  const cashFlowBars: ChartDatum[] = useMemo(() => {
+    if (!summary) return [];
+    return [
+      { label: a.revenueWithTax, value: summary.revenue.total_with_tax },
+      { label: a.payments, value: summary.payments.total },
+      { label: a.netPosition, value: summary.net_position },
+    ];
+  }, [summary, a.revenueWithTax, a.payments, a.netPosition]);
+
+  const fmtTRY = (n: number) => formatCurrency(n, 'TRY');
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
@@ -434,7 +495,8 @@ export default function AccountingScreen() {
             </KpiRow>
           </View>
 
-          <SectionTitle title={a.dailySummary} />
+          {/* ── Finansal Özet ── */}
+          <SectionTitle title={a.sectionSummary} />
           {summaryQ.isLoading || summaryQ.error ? (
             <DepartmentListState
               loading={summaryQ.isLoading}
@@ -467,6 +529,7 @@ export default function AccountingScreen() {
               <SummaryRow
                 label={a.openFolioBalance}
                 value={`${formatCurrency(summary.open_folios.balance.total, 'TRY')} · ${summary.open_folios.count}`}
+                last
               />
             </Card>
           ) : (
@@ -476,18 +539,117 @@ export default function AccountingScreen() {
             />
           )}
 
-          {revenueCategories.length > 0 ? (
+          {/* ── Gelir ── */}
+          {summary ? (
             <>
-              <SectionTitle title={a.revenueByCategory} />
+              <SectionTitle title={a.sectionRevenue} />
               <Card>
-                {revenueCategories.map(([cat, v], idx) => (
-                  <SummaryRow
-                    key={cat}
-                    label={cat}
-                    value={formatCurrency(v?.total ?? 0, 'TRY')}
-                    last={idx === revenueCategories.length - 1}
-                  />
-                ))}
+                {revenueChartData.length > 0 ? (
+                  <>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: spacing.lg,
+                      }}
+                    >
+                      <DonutChart
+                        data={revenueChartData}
+                        centerValue={formatCurrency(summary.revenue.total_with_tax, 'TRY')}
+                        centerLabel={a.centerTotal}
+                      />
+                      <ChartLegend data={revenueChartData} formatValue={fmtTRY} />
+                    </View>
+                    <View style={{ height: spacing.lg }} />
+                    <BarList data={revenueChartData} formatValue={fmtTRY} />
+                    <View style={{ height: spacing.md }} />
+                    <SummaryRow label={a.revenueNet} value={formatCurrency(summary.revenue.total, 'TRY')} />
+                    <SummaryRow label={a.revenueWithTax} value={formatCurrency(summary.revenue.total_with_tax, 'TRY')} last />
+                  </>
+                ) : (
+                  <EmptyState icon="cash-outline" title={a.noRevenueData} />
+                )}
+              </Card>
+            </>
+          ) : null}
+
+          {/* ── Gider ── */}
+          {!expensesQ.isLoading && !expensesQ.error ? (
+            <>
+              <SectionTitle title={a.sectionExpense} />
+              <Card>
+                {expenseChartData.length > 0 ? (
+                  <>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: spacing.md,
+                      }}
+                    >
+                      <Muted>{a.expenseByCategory}</Muted>
+                      <Body style={{ fontWeight: '700' }}>
+                        {formatCurrency(monthExpenseTotal, 'TRY')}
+                      </Body>
+                    </View>
+                    <BarList data={expenseChartData} formatValue={fmtTRY} />
+                  </>
+                ) : (
+                  <EmptyState icon="receipt-outline" title={a.noExpenseData} />
+                )}
+              </Card>
+            </>
+          ) : null}
+
+          {/* ── KDV ── */}
+          {summary ? (
+            <>
+              <SectionTitle title={a.sectionVat} />
+              <Card>
+                {vatChartData.length > 0 ? (
+                  <>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: spacing.lg,
+                      }}
+                    >
+                      <DonutChart
+                        data={vatChartData}
+                        centerValue={formatCurrency(summary.tax.total, 'TRY')}
+                        centerLabel={a.vat}
+                      />
+                      <ChartLegend data={vatChartData} formatValue={fmtTRY} />
+                    </View>
+                  </>
+                ) : (
+                  <EmptyState icon="pricetags-outline" title={a.noVatData} />
+                )}
+              </Card>
+            </>
+          ) : null}
+
+          {/* ── Kasa Akışı ── */}
+          {summary ? (
+            <>
+              <SectionTitle title={a.sectionCashFlow} />
+              <Card>
+                {cashFlowBars.length > 0 ? (
+                  <>
+                    <CompareBars data={cashFlowBars} formatValue={fmtTRY} />
+                    {paymentChartData.length > 0 ? (
+                      <>
+                        <View style={{ height: spacing.lg }} />
+                        <Muted style={{ marginBottom: spacing.md }}>{a.paymentMethods}</Muted>
+                        <BarList data={paymentChartData} formatValue={fmtTRY} />
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  <EmptyState icon="swap-horizontal-outline" title={a.noCashFlowData} />
+                )}
               </Card>
             </>
           ) : null}
