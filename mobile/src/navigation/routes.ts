@@ -1,6 +1,49 @@
 import type { Href } from 'expo-router';
 import type { AppRole } from '../state/authStore';
 
+// ── Navigation conventions (Task #454) ──────────────────────────────────────
+// Every route in the app is declared here in `ROUTES` and consumed via
+// `router.push(ROUTES.x)` / `<Redirect href={ROUTES.x} />`. NEVER hard-code a
+// path string at a call site — add it here so deep links and refactors stay in
+// one place. `satisfies Record<string, Href>` makes a typo a compile error.
+//
+// GROUP / TIER MODEL
+//   Tier-1 backbone:  `(home)` — the unified staff shell. Tabs only (no nested
+//                     stack). Staff land on the "Bugün" tab (see rootForRole).
+//   Tier-2 groups:    `(frontdesk)` `(housekeeping)` `(gm)` `(guest)` — each is
+//                     a role's native area, reachable INTO from the shell.
+//   Shared area:      `(departments)` — cross-role; admitted by entitlement,
+//                     not by role home (see GROUP_SEGMENTS comment below).
+//   Group folders use parentheses so the segment is hidden from the URL; the
+//   group's own `index.tsx` is what `/(group)` resolves to.
+//
+// HEADERS
+//   - Tab screens (group `_layout.tsx` with <Tabs>): the bottom tab bar is the
+//     navigation; per-tab titles come from the Tabs.Screen `title` option, and
+//     role-gated tabs are hidden with `href: null` (NOT unmounted) so the bar
+//     highlight stays correct and the screen is still reachable by URL.
+//   - Stack screens (list -> detail): set `headerTitle` on the detail screen so
+//     the platform back button + title come for free. The on-screen
+//     `<DetailHeader>` (components/ui.tsx) is the in-body masthead, separate
+//     from the navigator header — do not duplicate the title in both when a
+//     native header is shown.
+//
+// BACK
+//   - Prefer the navigator's implicit back (stack header / hardware) for
+//     list -> detail. Use `router.back()` only for explicit in-body controls.
+//   - To LEAVE a flow to a fixed home (e.g. a guard rejecting access), use
+//     `<Redirect href={ROUTES.departments} />` rather than `router.back()`,
+//     which could pop to an unexpected screen.
+//
+// DEEP LINKS
+//   - A linkable detail screen takes its id from the route param
+//     (`useLocalSearchParams`) and must render its own loading / empty / error
+//     states, because a cold deep link has no warm list cache to fall back on.
+//     The `<DepartmentListState>` / list->detail->action example pattern shows
+//     this (see components/ExampleDepartmentScreen.tsx).
+//   - Detail routes are declared WITHOUT the id segment here (e.g.
+//     `reservationDetail: '/(frontdesk)/reservation'`); append the id at the
+//     call site: `router.push(\`\${ROUTES.reservationDetail}/\${id}\`)`.
 export const ROUTES = {
   login: '/(auth)/login',
   home: '/(home)',

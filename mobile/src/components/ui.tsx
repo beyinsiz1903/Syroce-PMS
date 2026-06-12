@@ -2,8 +2,10 @@ import React from 'react';
 import {
   ActivityIndicator,
   DimensionValue,
+  Modal,
   Pressable,
   PressableProps,
+  ScrollView,
   StyleProp,
   StyleSheet,
   Text,
@@ -407,6 +409,253 @@ export const ListRow: React.FC<{
     >
       {inner}
     </Pressable>
+  );
+};
+
+// ── Section header (Task #454) ─────────────────────────────────────────────
+// Title for a block of content (a list group, a report section). Optional
+// `right` slot for a small action (e.g. "Tümünü gör"). This is the single
+// canonical source; `components/department.tsx` re-exports it for back-compat.
+export const SectionTitle: React.FC<{ title: string; right?: React.ReactNode }> = ({
+  title,
+  right,
+}) => (
+  <View
+    style={{
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: spacing.md,
+      marginBottom: spacing.sm,
+    }}
+  >
+    <H2>{title}</H2>
+    {right ?? null}
+  </View>
+);
+
+// ── Section-titled list group (Task #454) ──────────────────────────────────
+// Standard "section header + grouped rows" pattern. Wrap `ListRow`s (or any
+// rows) as children; they sit inside a single `Card padded={false}` so the
+// hairline dividers ListRow draws line up. Pass `last` on the final ListRow to
+// drop its trailing divider. Optional `footer` renders below the rows inside
+// the same card (e.g. a "load more" affordance).
+export const ListGroup: React.FC<{
+  title?: string;
+  right?: React.ReactNode;
+  footer?: React.ReactNode;
+  children: React.ReactNode;
+  testID?: string;
+}> = ({ title, right, footer, children, testID }) => (
+  <View testID={testID}>
+    {title ? <SectionTitle title={title} right={right} /> : null}
+    <Card padded={false}>
+      {children}
+      {footer ?? null}
+    </Card>
+  </View>
+);
+
+// ── Detail header block (Task #454) ────────────────────────────────────────
+// Standard top-of-detail-screen header: big title, optional muted subtitle, an
+// optional row of badges (status / tags) and an optional `right` slot for a
+// primary affordance. Keeps every detail screen's masthead identical.
+export const DetailHeader: React.FC<{
+  title: string;
+  subtitle?: string;
+  badges?: React.ReactNode;
+  right?: React.ReactNode;
+  testID?: string;
+}> = ({ title, subtitle, badges, right, testID }) => (
+  <View style={{ marginBottom: spacing.md }} testID={testID}>
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
+      <View style={{ flex: 1 }}>
+        <H1>{title}</H1>
+        {subtitle ? <Muted style={{ marginTop: spacing.xs }}>{subtitle}</Muted> : null}
+      </View>
+      {right ?? null}
+    </View>
+    {badges ? (
+      <View
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          gap: spacing.xs,
+          marginTop: spacing.sm,
+        }}
+      >
+        {badges}
+      </View>
+    ) : null}
+  </View>
+);
+
+// ── Detail field row (Task #454) ───────────────────────────────────────────
+// A label / value line for detail bodies. Stacks label above value so long
+// Turkish values wrap cleanly. Pair several inside a `Card`.
+export const DetailRow: React.FC<{
+  label: string;
+  value?: string | null;
+  children?: React.ReactNode;
+}> = ({ label, value, children }) => {
+  const c = useTheme();
+  return (
+    <View style={{ paddingVertical: 6 }}>
+      <Text style={{ color: c.textMuted, fontSize: 12, fontWeight: '600' }}>{label}</Text>
+      {children ?? (
+        <Text style={{ color: c.text, fontSize: 15, marginTop: 2 }}>{value ?? '—'}</Text>
+      )}
+    </View>
+  );
+};
+
+// ── Thumb-zone action button + segmented bar (Task #454) ───────────────────
+// Lifted from the Onaylarım (approvals) screen so every screen shares one
+// segmented action control. `ActionButton` is a big (52px) half; pass explicit
+// `bg`/`fg` (theme tokens) so callers tune intent. `SegmentedActions` joins N
+// buttons edge-to-edge with 1px dividers and rounded outer corners (no gaps).
+export const ActionButton: React.FC<{
+  label: string;
+  icon?: IoniconName;
+  onPress: () => void;
+  bg: string;
+  fg: string;
+  loading?: boolean;
+  disabled?: boolean;
+  testID?: string;
+}> = ({ label, icon, onPress, bg, fg, loading, disabled, testID }) => (
+  <Pressable
+    testID={testID}
+    onPress={onPress}
+    disabled={disabled || loading}
+    accessibilityRole="button"
+    accessibilityLabel={label}
+    accessibilityState={{ disabled: !!disabled || !!loading }}
+    style={({ pressed }) => ({
+      flex: 1,
+      minHeight: 52,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+      backgroundColor: bg,
+      opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
+    })}
+  >
+    {loading ? (
+      <ActivityIndicator color={fg} />
+    ) : (
+      <>
+        {icon ? <Ionicons name={icon} size={18} color={fg} /> : null}
+        <Text style={{ color: fg, fontSize: 16, fontWeight: '700' }}>{label}</Text>
+      </>
+    )}
+  </Pressable>
+);
+
+export const SegmentedActions: React.FC<{ children: React.ReactNode; testID?: string }> = ({
+  children,
+  testID,
+}) => {
+  const c = useTheme();
+  const items = React.Children.toArray(children);
+  return (
+    <View
+      testID={testID}
+      style={{
+        flexDirection: 'row',
+        borderRadius: radius.md,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: c.border,
+      }}
+    >
+      {items.map((child, idx) => (
+        <React.Fragment key={idx}>
+          {idx > 0 ? <View style={{ width: 1, backgroundColor: c.border }} /> : null}
+          {child}
+        </React.Fragment>
+      ))}
+    </View>
+  );
+};
+
+// ── Action sheet (Task #454) ───────────────────────────────────────────────
+// Bottom-anchored modal for a short list of actions or a compact form. Uses
+// RN `Modal` (works on Expo Web + native). Tapping the dimmed backdrop closes.
+// Put `Button`s / `ListRow`s / `Field`s as children.
+export const ActionSheet: React.FC<{
+  visible: boolean;
+  onClose: () => void;
+  title?: string;
+  children: React.ReactNode;
+  testID?: string;
+}> = ({ visible, onClose, title, children, testID }) => {
+  const c = useTheme();
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <Pressable
+        onPress={onClose}
+        accessibilityLabel={title}
+        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
+      >
+        {/* Stop the inner press from bubbling to the backdrop dismiss. */}
+        <Pressable
+          onPress={() => {}}
+          testID={testID}
+          style={{
+            backgroundColor: c.surface,
+            borderTopLeftRadius: radius.xl,
+            borderTopRightRadius: radius.xl,
+            paddingHorizontal: spacing.lg,
+            paddingTop: spacing.md,
+            paddingBottom: spacing.xl,
+            gap: spacing.sm,
+          }}
+        >
+          <View
+            style={{
+              alignSelf: 'center',
+              width: 44,
+              height: 5,
+              borderRadius: radius.pill,
+              backgroundColor: c.border,
+              marginBottom: spacing.sm,
+            }}
+          />
+          {title ? <H2 style={{ marginBottom: spacing.xs }}>{title}</H2> : null}
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ gap: spacing.sm }}
+            style={{ maxHeight: 480 }}
+          >
+            {children}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+};
+
+// ── Form action row (Task #454) ────────────────────────────────────────────
+// A row of buttons for the bottom of a form (e.g. Vazgeç / Kaydet). Children
+// share the row width evenly; pass `fullWidth` on each `Button`.
+export const FormActions: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const items = React.Children.toArray(children);
+  return (
+    <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+      {items.map((child, idx) => (
+        <View key={idx} style={{ flex: 1 }}>
+          {child}
+        </View>
+      ))}
+    </View>
   );
 };
 

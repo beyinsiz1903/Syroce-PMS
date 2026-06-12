@@ -10,23 +10,10 @@ import { listViewState } from '../utils/departmentScreens';
 // (Spa, MICE, and the upcoming Accounting / Maintenance task) render loading,
 // empty and error states identically without copy-pasting layout.
 
-export const SectionTitle: React.FC<{ title: string; right?: React.ReactNode }> = ({
-  title,
-  right,
-}) => (
-  <View
-    style={{
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginTop: spacing.md,
-      marginBottom: spacing.sm,
-    }}
-  >
-    <H2>{title}</H2>
-    {right ?? null}
-  </View>
-);
+// SectionTitle now lives in the shared kit (components/ui.tsx, Task #454).
+// Re-exported here so existing `from '.../components/department'` imports keep
+// working unchanged.
+export { SectionTitle } from './ui';
 
 // A tappable entry on the departments hub. `subtitle` describes the screen.
 export const DepartmentTile: React.FC<{
