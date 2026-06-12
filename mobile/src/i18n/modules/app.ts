@@ -12,4 +12,8 @@ export const app = {
   error: 'Hata',
   empty: 'Kayıt bulunamadı',
   send: 'Gönder',
+  nightScreen: {
+    title: 'Gece Ekranı',
+    hint: 'Çıkmak için ekrana dokun',
+  },
 };
