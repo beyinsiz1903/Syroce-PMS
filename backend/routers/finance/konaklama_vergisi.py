@@ -132,6 +132,11 @@ async def update_config(
         seen_recipients.add(key)
         clean_recipients.append(rs)
 
+    # Task #578 — konaklama vergisi (oran/muafiyet) düzeltmesi kritik bir
+    # uyum/finans mutasyonu. before/after snapshot için güncelleme ÖNCESİ
+    # aktif config'i oku.
+    before_cfg = await _load_config(current_user.tenant_id)
+
     payload = {
         "tenant_id": current_user.tenant_id,
         "rate_percent": cfg.rate_percent,
@@ -161,6 +166,43 @@ async def update_config(
         entity_id=current_user.tenant_id,
         changes=payload,
     )
+
+    # Task #578 — oran/aktiflik/muafiyet değişimini tamper-evident audit
+    # zincirine before/after snapshot ile yaz. Oran veya aktiflik değişirse
+    # severity yükseltilir (matrah/vergi tutarını doğrudan etkiler).
+    try:
+        rate_or_active_changed = (
+            before_cfg.get("rate_percent") != cfg.rate_percent
+            or bool(before_cfg.get("active", True)) != bool(cfg.active)
+        )
+        from core.audit import log_audit_event
+        await log_audit_event(
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            action="accommodation_tax_config_updated",
+            entity_type="city_tax_rules",
+            entity_id=current_user.tenant_id,
+            details=(
+                f"Konaklama vergisi config güncellendi (rate "
+                f"{before_cfg.get('rate_percent')} -> {cfg.rate_percent}, "
+                f"active {before_cfg.get('active', True)} -> {cfg.active})"
+            ),
+            before_value={
+                "rate_percent": before_cfg.get("rate_percent"),
+                "active": before_cfg.get("active", True),
+                "auto_post": before_cfg.get("auto_post", False),
+                "exempt_segments": before_cfg.get("exempt_segments", []),
+            },
+            after_value={
+                "rate_percent": cfg.rate_percent,
+                "active": cfg.active,
+                "auto_post": cfg.auto_post,
+                "exempt_segments": cfg.exempt_segments,
+            },
+            severity="warning" if rate_or_active_changed else "info",
+        )
+    except Exception:
+        logger.exception("audit log for konaklama vergisi config update failed")
     # Invalidate cached config so the next GET reads fresh values.
     try:
         _cache.safe_invalidate(current_user.tenant_id, "kvb_config")

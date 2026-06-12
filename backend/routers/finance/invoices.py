@@ -93,12 +93,48 @@ async def update_invoice(
     # invoice of another tenant when the update matched 0 docs. Fail-closed with
     # 404 when the invoice does not belong to the caller's tenant.
     tenant_filter = {'id': invoice_id, 'tenant_id': current_user.tenant_id}
+    # Task #578 — fatura iptali kritik bir finansal mutasyon. before/after
+    # snapshot alabilmek için güncelleme ÖNCESİ belgeyi oku.
+    before_doc = await db.invoices.find_one(tenant_filter, {'_id': 0})
     result = await db.invoices.update_one(tenant_filter, {'$set': updates})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Invoice not found")
     invoice_doc = await db.invoices.find_one(tenant_filter, {'_id': 0})
     if not invoice_doc:
         raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # Task #578 — fatura durumu değişikliklerini (özellikle iptal/void)
+    # tamper-evident audit trail'e before/after snapshot ile yaz. İptale
+    # geçişlerde severity yükseltilir; diğer güncellemeler "info" kalır.
+    try:
+        old_status = (before_doc or {}).get('status')
+        new_status = invoice_doc.get('status')
+        is_cancellation = (
+            old_status != new_status
+            and isinstance(new_status, str)
+            and new_status.lower() in {'cancelled', 'canceled', 'void', 'voided', 'iptal'}
+        )
+        from core.audit import log_audit_event
+        await log_audit_event(
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            action="invoice_cancelled" if is_cancellation else "invoice_updated",
+            entity_type="invoice",
+            entity_id=invoice_id,
+            details=(
+                f"Invoice {invoice_doc.get('invoice_number') or invoice_id} "
+                f"status {old_status} -> {new_status}"
+                if is_cancellation
+                else f"Invoice {invoice_doc.get('invoice_number') or invoice_id} updated"
+            ),
+            before_value={"status": old_status, "total": (before_doc or {}).get('total')},
+            after_value={"status": new_status, "changed_fields": sorted(updates.keys())},
+            severity="warning" if is_cancellation else "info",
+        )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("audit log for update_invoice failed")
+
     return invoice_doc
 
 

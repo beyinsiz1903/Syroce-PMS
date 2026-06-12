@@ -1209,14 +1209,35 @@ async def close_folio(
             detail=f"Cannot close folio with outstanding balance: {balance}"
         )
 
+    closed_at = datetime.now(UTC).isoformat()
     await db.folios.update_one(
         {'id': folio_id},
         {'$set': {
             'status': 'closed',
             'balance': 0.0,
-            'closed_at': datetime.now(UTC).isoformat()
+            'closed_at': closed_at
         }}
     )
+
+    # Task #578 — kritik operasyonel/finansal mutasyon: folio kapatma
+    # tamper-evident audit trail'e before/after snapshot ile yazılır
+    # (IP/UA + hash zinciri otomatik). Kapatılan bir folio'ya artık
+    # charge/payment eklenemediği için bu işlem geri-alınamaz kabul edilir.
+    try:
+        from core.audit import log_audit_event
+        await log_audit_event(
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            action="folio_closed",
+            entity_type="folio",
+            entity_id=folio_id,
+            details=f"Folio {folio.get('folio_number') or folio_id} closed",
+            before_value={"status": folio.get('status', 'open'), "balance": balance},
+            after_value={"status": "closed", "balance": 0.0, "closed_at": closed_at},
+            severity="warning",
+        )
+    except Exception:
+        logger.exception("audit log for close_folio failed")
 
     return {"message": "Folio closed successfully"}
 

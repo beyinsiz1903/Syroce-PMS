@@ -217,6 +217,27 @@ class FrontDeskService:
         await self._log_audit(tenant_id, "reservation", booking_id, "room_move", user_id,
                               {"old_room_id": old_room_id, "new_room_id": new_room_id, "reason": reason})
 
+        # Task #578 — oda atama değişikliği kritik operasyonel mutasyon. Yerel
+        # pms_audit_trail'e ek olarak tamper-evident audit zincirine before/after
+        # snapshot ile yaz (IP/UA + hash zinciri otomatik). Audit hatası taşımayı
+        # asla bozmaz.
+        try:
+            from core.audit import log_audit_event
+            await log_audit_event(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                action="room_move",
+                entity_type="booking",
+                entity_id=booking_id,
+                details=f"Room move: booking {booking_id} -> room {new_room['room_number']} ({reason})",
+                before_value={"room_id": old_room_id, "status": booking.get("status")},
+                after_value={"room_id": new_room_id, "new_room_number": new_room["room_number"], "reason": reason},
+                severity="warning",
+            )
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("audit log for room_move failed")
+
         return {"success": True, "booking_id": booking_id, "old_room": old_room.get("room_number") if old_room else None, "new_room": new_room["room_number"]}
 
     # ── WALK-IN ──
