@@ -662,9 +662,8 @@ def kbs_nightly_sweep_dispatch_task():
 
 
 async def _kbs_nightly_sweep_dispatch_async() -> dict[str, Any]:
-    from domains.pms.night_audit.scheduler import utc_to_local
-
     from core.kbs_nightly_sweep import previous_local_day, sweep_tenant_kbs
+    from domains.pms.night_audit.scheduler import utc_to_local
 
     if os.environ.get("KBS_NIGHTLY_SWEEP", "1") == "0":
         return {"skipped": "disabled"}

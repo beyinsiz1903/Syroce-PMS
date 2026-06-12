@@ -11,13 +11,13 @@ from pydantic import BaseModel, Field
 
 from core.database import db
 from core.security import get_current_user
-from shared_kernel.idempotency import claim_short_window_dedup, release_idempotency
 from models.schemas import User, _ensure_hotel_context
 from modules.pms_core.role_permission_service import (
     RolePermissionService,
     require_op,  # v97 DW
 )
 from modules.pms_core.role_permission_service import require_module as require_module_v97  # v97 DW
+from shared_kernel.idempotency import claim_short_window_dedup, release_idempotency
 
 # Bug CP fix — shared role-permission enforcement for financial endpoints
 _rps = RolePermissionService()

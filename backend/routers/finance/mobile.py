@@ -18,9 +18,9 @@ except ImportError:
 from core.database import db
 from core.security import get_current_user
 from models.enums import RiskLevel
-from shared_kernel.idempotency import claim_short_window_dedup, release_idempotency
 from modules.folio.services.folio_balance_read_service import FolioBalanceReadService
 from modules.folio.services.open_folio_service import OpenFolioService
+from shared_kernel.idempotency import claim_short_window_dedup, release_idempotency
 
 try:
     from cache_manager import cached
