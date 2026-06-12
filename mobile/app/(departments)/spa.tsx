@@ -3,6 +3,7 @@ import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ActionButton,
   ActionSheet,
   Badge,
   Body,
@@ -16,6 +17,7 @@ import {
   ListRow,
   Muted,
   SectionTitle,
+  SegmentedActions,
   SkeletonCard,
 } from '../../src/components/ui';
 import { DatePicker } from '../../src/components/DatePicker';
@@ -33,10 +35,12 @@ import {
   listSpaAppointments,
   listSpaServices,
   listSpaTherapists,
+  updateSpaAppointmentStatus,
   type Activity,
   type ActivityBooking,
   type ActivityResource,
   type SpaAppointment,
+  type SpaAppointmentStatus,
   type SpaAvailabilitySlot,
 } from '../../src/api/spa';
 import { searchGuests, type Guest } from '../../src/api/guests';
@@ -133,6 +137,37 @@ function activityTypeLabel(type?: string): string {
 function resourceKindLabel(kind?: string): string {
   const map = tr.departments.spa.activities.kinds as Record<string, string>;
   return (kind && map[kind]) || kind || '';
+}
+
+// Mirror of backend `_SPA_TRANSITIONS` (backend/domains/spa/router.py). Used
+// ONLY to decide which actions to surface — the backend remains the source of
+// truth and re-validates every transition (and the role gate on `completed`).
+const SPA_TRANSITIONS: Record<string, SpaAppointmentStatus[]> = {
+  scheduled: ['in_progress', 'completed', 'no_show', 'cancelled'],
+  in_progress: ['completed', 'cancelled'],
+  completed: [],
+  no_show: [],
+  cancelled: [],
+};
+
+function statusActionLabel(status: SpaAppointmentStatus): string {
+  const map = tr.departments.spa.statusActions as Record<string, string>;
+  return map[status] || statusLabel(status);
+}
+
+function statusActionIcon(status: SpaAppointmentStatus): EmptyIcon {
+  switch (status) {
+    case 'in_progress':
+      return 'play';
+    case 'completed':
+      return 'checkmark';
+    case 'no_show':
+      return 'close-circle-outline';
+    case 'cancelled':
+      return 'ban-outline';
+    default:
+      return 'ellipse-outline';
+  }
 }
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -370,6 +405,41 @@ export default function SpaScreen() {
     });
   };
 
+  // ── Status-transition state ───────────────────────────────────────────────
+  // Tapping an appointment card opens this sheet with only the transitions the
+  // backend would accept from its current status. The backend re-validates the
+  // transition and enforces require_finance on `completed`; any 403/409 is
+  // surfaced inline rather than swallowed.
+  const [activeAppt, setActiveAppt] = useState<SpaAppointment | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+
+  const statusMut = useMutation({
+    mutationFn: (vars: { id: string; status: SpaAppointmentStatus }) =>
+      updateSpaAppointmentStatus(vars.id, vars.status),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['spa-appointments'] });
+      setActiveAppt(null);
+      setStatusError(null);
+      Alert.alert(tr.app.success, S.statusUpdated);
+    },
+    onError: (e: unknown) => setStatusError(errorMessage(e, S.statusUpdateError)),
+  });
+
+  const openStatusSheet = (a: SpaAppointment) => {
+    setStatusError(null);
+    setActiveAppt(a);
+  };
+
+  const submitStatus = (status: SpaAppointmentStatus) => {
+    if (!activeAppt) return;
+    setStatusError(null);
+    statusMut.mutate({ id: activeAppt.id, status });
+  };
+
+  const activeTransitions = activeAppt
+    ? SPA_TRANSITIONS[activeAppt.status || 'scheduled'] || []
+    : [];
+
   // Hard guard: a user who somehow lands here without spa entitlement is sent
   // to the hub. This is cosmetic only — the backend still enforces every write.
   if (!spaAccess) return <Redirect href={ROUTES.departments} />;
@@ -435,36 +505,54 @@ export default function SpaScreen() {
     );
   };
 
-  const renderAppointment = (a: SpaAppointment) => (
-    <Card key={a.id} style={{ marginBottom: spacing.sm }} accent={c.primary}>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-        }}
+  const renderAppointment = (a: SpaAppointment) => {
+    const canManage = (SPA_TRANSITIONS[a.status || 'scheduled'] || []).length > 0;
+    return (
+      <Pressable
+        key={a.id}
+        onPress={() => openStatusSheet(a)}
+        accessibilityRole="button"
+        accessibilityLabel={`${a.service_name || ''} ${S.manageAppointment}`}
+        testID={`spa-appointment-${a.id}`}
       >
-        <View style={{ flex: 1, paddingRight: spacing.sm }}>
-          <Body style={{ fontWeight: '600' }}>{a.service_name || '—'}</Body>
-          {a.guest_name ? <Muted>{a.guest_name}</Muted> : null}
-        </View>
-        <Badge label={statusLabel(a.status)} tone={appointmentTone(a.status)} />
-      </View>
-      <View style={{ marginTop: spacing.sm, gap: 2 }}>
-        <Muted>
-          {formatDate(a.starts_at)} · {formatTime(a.starts_at)}
-          {a.ends_at ? ` – ${formatTime(a.ends_at)}` : ''}
-        </Muted>
-        <Muted>
-          {S.withTherapist}:{' '}
-          {(a.therapist_id && therapistName.get(a.therapist_id)) || S.unassigned}
-        </Muted>
-        {typeof a.price === 'number' ? (
-          <Muted>{formatCurrency(a.price, a.currency)}</Muted>
-        ) : null}
-      </View>
-    </Card>
-  );
+        <Card style={{ marginBottom: spacing.sm }} accent={c.primary}>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+            }}
+          >
+            <View style={{ flex: 1, paddingRight: spacing.sm }}>
+              <Body style={{ fontWeight: '600' }}>{a.service_name || '—'}</Body>
+              {a.guest_name ? <Muted>{a.guest_name}</Muted> : null}
+            </View>
+            <Badge label={statusLabel(a.status)} tone={appointmentTone(a.status)} />
+          </View>
+          <View style={{ marginTop: spacing.sm, gap: 2 }}>
+            <Muted>
+              {formatDate(a.starts_at)} · {formatTime(a.starts_at)}
+              {a.ends_at ? ` – ${formatTime(a.ends_at)}` : ''}
+            </Muted>
+            <Muted>
+              {S.withTherapist}:{' '}
+              {(a.therapist_id && therapistName.get(a.therapist_id)) || S.unassigned}
+            </Muted>
+            {typeof a.price === 'number' ? (
+              <Muted>{formatCurrency(a.price, a.currency)}</Muted>
+            ) : null}
+          </View>
+          {canManage ? (
+            <View style={{ marginTop: spacing.sm, flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+              <Body style={{ color: c.primary, fontSize: 13, fontWeight: '600' }}>
+                {S.changeStatus}
+              </Body>
+            </View>
+          ) : null}
+        </Card>
+      </Pressable>
+    );
+  };
 
   const renderBooking = (b: ActivityBooking) => (
     <Card key={b.id} style={{ marginBottom: spacing.sm }} accent={c.primary}>
@@ -1045,6 +1133,66 @@ export default function SpaScreen() {
             loading={createBookingMut.isPending}
           />
         </FormActions>
+      </ActionSheet>
+
+      {/* ── Appointment status-transition sheet ────────────────────────────── */}
+      <ActionSheet
+        visible={activeAppt !== null}
+        onClose={() => setActiveAppt(null)}
+        title={activeAppt ? activeAppt.service_name || S.manageAppointment : S.manageAppointment}
+        testID="spa-status-sheet"
+      >
+        {activeAppt ? (
+          <>
+            {activeAppt.guest_name ? <Muted>{activeAppt.guest_name}</Muted> : null}
+            <Muted>
+              {S.currentStatus}: {statusLabel(activeAppt.status)}
+            </Muted>
+
+            {statusError ? (
+              <Body style={{ color: c.danger, marginTop: spacing.sm }}>{statusError}</Body>
+            ) : null}
+
+            {activeTransitions.length === 0 ? (
+              <Body style={{ marginTop: spacing.md }}>{S.noTransitions}</Body>
+            ) : (
+              <View style={{ marginTop: spacing.md }}>
+                <Muted>{S.changeStatus}</Muted>
+                <View style={{ marginTop: spacing.sm }}>
+                  <SegmentedActions testID="spa-status-actions">
+                    {activeTransitions.map((next) => {
+                      const primary = next === 'completed' || next === 'in_progress';
+                      return (
+                        <ActionButton
+                          key={next}
+                          testID={`spa-status-${next}`}
+                          label={statusActionLabel(next)}
+                          icon={statusActionIcon(next)}
+                          onPress={() => submitStatus(next)}
+                          bg={primary ? c.primary : c.surfaceAlt}
+                          fg={primary ? c.primaryText : c.text}
+                          loading={statusMut.isPending}
+                        />
+                      );
+                    })}
+                  </SegmentedActions>
+                </View>
+                {activeTransitions.includes('completed') ? (
+                  <Muted style={{ marginTop: spacing.sm }}>{S.financeRequired}</Muted>
+                ) : null}
+              </View>
+            )}
+
+            <View style={{ marginTop: spacing.lg }}>
+              <Button
+                title={tr.app.cancel}
+                variant="secondary"
+                onPress={() => setActiveAppt(null)}
+                fullWidth
+              />
+            </View>
+          </>
+        ) : null}
       </ActionSheet>
     </ScrollView>
   );

@@ -102,4 +102,18 @@ export const spa = {
       other: 'Diğer',
     },
   },
+  // Appointment status actions
+  manageAppointment: 'Randevuyu yönet',
+  currentStatus: 'Mevcut durum',
+  changeStatus: 'Durumu değiştir',
+  statusUpdated: 'Randevu durumu güncellendi',
+  statusUpdateError: 'Durum güncellenemedi',
+  noTransitions: 'Bu randevu için durum değişikliği yapılamaz',
+  financeRequired: 'Tamamlandı durumu finans yetkisi gerektirir',
+  statusActions: {
+    in_progress: 'Başlat',
+    completed: 'Tamamla',
+    no_show: 'Gelmedi',
+    cancelled: 'İptal et',
+  },
 };

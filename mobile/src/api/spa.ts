@@ -211,3 +211,27 @@ export async function createActivityBooking(
 ): Promise<ActivityBooking> {
   return api.post<ActivityBooking>('/api/activities/bookings', input);
 }
+
+// Appointment lifecycle status. Backend `_SPA_TRANSITIONS` is the source of
+// truth for which transitions are legal; the client mirrors it only to decide
+// which actions to surface.
+export type SpaAppointmentStatus =
+  | 'scheduled'
+  | 'in_progress'
+  | 'completed'
+  | 'no_show'
+  | 'cancelled';
+
+// POST /api/spa/appointments/{id}/status — staff-only on the backend
+// (require_spa_ops + manage_sales); the `completed` transition additionally
+// requires require_finance. Allowed to throw so the caller can surface a 403
+// (insufficient role) or 409 (illegal transition) inline.
+export async function updateSpaAppointmentStatus(
+  appointmentId: string,
+  status: SpaAppointmentStatus,
+): Promise<{ ok: boolean; status: string }> {
+  return api.post<{ ok: boolean; status: string }>(
+    `/api/spa/appointments/${appointmentId}/status`,
+    { status },
+  );
+}
