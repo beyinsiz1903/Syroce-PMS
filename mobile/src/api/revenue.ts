@@ -49,6 +49,8 @@ export type PricingInsights = {
     avg_confidence?: number;
     total_rate_adjustment?: number;
     high_confidence_count?: number;
+    recommended_increase?: number;
+    recommended_decrease?: number;
   };
 };
 
@@ -127,4 +129,34 @@ export async function getOccupancyForecast(days = 7): Promise<OccupancyForecast>
     { days },
   );
   return { ...res, forecast: res?.forecast ?? [] };
+}
+
+// Channel mix & rate parity — backend computes booking/revenue share per source
+// channel plus the direct-booking share, which is the channel-parity health
+// signal we surface as the "Kanal Paritesi" KPI. Auth-only read.
+export type ChannelStat = {
+  channel?: string;
+  bookings?: number;
+  revenue?: number;
+  booking_share_pct?: number;
+  revenue_share_pct?: number;
+  avg_booking_value?: number;
+};
+
+export type ChannelPerformance = {
+  period_days?: number;
+  total_bookings?: number;
+  total_revenue?: number;
+  channels: ChannelStat[];
+  direct_booking_share?: number;
+  direct_booking_incentive?: boolean;
+};
+
+// GET /api/revenue-engine/channel-performance?days_back= → channel mix + parity
+export async function getChannelPerformance(daysBack = 30): Promise<ChannelPerformance> {
+  const res = await api.get<ChannelPerformance>(
+    '/api/revenue-engine/channel-performance',
+    { days_back: daysBack },
+  );
+  return { ...res, channels: res?.channels ?? [] };
 }
