@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, EmptyState, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import { Badge, Body, Card, EmptyState, FadeInView, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { getGuestMessages } from '../../src/api/guestMessaging';
@@ -33,7 +33,10 @@ export default function MessagesListScreen() {
         />
       }
     >
-      <H1>{tr.guest.messagesTitle}</H1>
+      <FadeInView>
+        <H1>{tr.guest.messagesTitle}</H1>
+        <Muted style={{ marginTop: spacing.xs }}>{tr.guest.messagesIntro}</Muted>
+      </FadeInView>
       {q.isLoading ? (
         <SkeletonCard />
       ) : conversations.length === 0 ? (

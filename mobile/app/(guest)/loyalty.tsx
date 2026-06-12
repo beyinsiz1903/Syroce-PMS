@@ -8,6 +8,7 @@ import {
   Card,
   DetailRow,
   EmptyState,
+  FadeInView,
   H1,
   H2,
   Muted,
@@ -49,7 +50,10 @@ export default function LoyaltyScreen() {
         />
       }
     >
-      <H1>{tr.guest.loyaltyTitle}</H1>
+      <FadeInView>
+        <H1>{tr.guest.loyaltyTitle}</H1>
+        <Muted style={{ marginTop: spacing.xs }}>{tr.guest.loyaltyIntro}</Muted>
+      </FadeInView>
 
       {q.isLoading ? (
         <SkeletonCard />
