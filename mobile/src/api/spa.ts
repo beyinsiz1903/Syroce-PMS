@@ -161,6 +161,7 @@ export type ActivityBooking = {
   activity_id: string;
   resource_id: string;
   guest_id: string;
+  guest_name?: string | null;
   starts_at: string;
   ends_at?: string;
   duration_min?: number;

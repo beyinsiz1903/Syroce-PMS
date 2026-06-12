@@ -14,7 +14,54 @@ from core.security import get_current_user
 from core.tenant_db import get_system_db
 from models.schemas import User
 
+try:  # pragma: no cover - mirrors guest read-path import guard
+    from security.field_encryption import get_field_encryption_service
+
+    _fenc = get_field_encryption_service()
+except Exception:  # pragma: no cover
+    _fenc = None
+
 router = APIRouter(prefix="/api/activities", tags=["Activity Scheduler"])
+
+_GUEST_COLLECTION = "guests"
+
+
+def _guest_display_name(doc: dict) -> str | None:
+    """Decrypt a guest doc at the read boundary and derive a display name only.
+
+    Mirrors the unified-search read path: only the guest's name is surfaced, no
+    email / phone / id, so this stays within existing PII read boundaries.
+    """
+    if not doc:
+        return None
+    if _fenc:
+        try:
+            doc = _fenc.decrypt_document(doc, collection=_GUEST_COLLECTION)
+        except Exception:  # pragma: no cover - never block the list on a bad doc
+            pass
+    if doc.get("first_name") or doc.get("last_name"):
+        name = f"{doc.get('first_name', '')} {doc.get('last_name', '')}".strip()
+        if name:
+            return name
+    return doc.get("name") or None
+
+
+async def _guest_names_by_id(tenant_id: str, guest_ids: list[str]) -> dict[str, str]:
+    """Resolve a batch of guest_ids to display names in a single tenant-scoped query."""
+    ids = [gid for gid in {g for g in guest_ids if g}]
+    if not ids:
+        return {}
+    db = get_system_db()
+    rows = await db.guests.find(
+        {"tenant_id": tenant_id, "id": {"$in": ids}}
+    ).to_list(len(ids))
+    out: dict[str, str] = {}
+    for r in rows:
+        name = _guest_display_name(r)
+        if name:
+            out[r["id"]] = name
+    return out
+
 
 ACTIVITY_TYPES = ("golf", "tennis", "yoga", "fitness", "bike", "diving", "kids", "other")
 
@@ -56,6 +103,7 @@ class ActivityBooking(ActivityBookingCreate):
     status: str = "booked"
     created_by: str
     created_at: str
+    guest_name: str | None = None
 
 
 async def _ensure_indexes() -> None:
@@ -170,6 +218,11 @@ async def list_bookings(
     docs = await db.activity_bookings.find(q).sort("starts_at", 1).to_list(500)
     for d in docs:
         d.pop("_id", None)
+    names = await _guest_names_by_id(
+        user.tenant_id, [d.get("guest_id") for d in docs]
+    )
+    for d in docs:
+        d["guest_name"] = names.get(d.get("guest_id"))
     return docs
 
 

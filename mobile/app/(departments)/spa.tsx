@@ -567,6 +567,7 @@ export default function SpaScreen() {
           <Body style={{ fontWeight: '600' }}>
             {activityName.get(b.activity_id) || A.activity}
           </Body>
+          {b.guest_name ? <Muted>{b.guest_name}</Muted> : null}
           <Muted>
             {A.resource}: {resourceName.get(b.resource_id) || '—'}
           </Muted>
