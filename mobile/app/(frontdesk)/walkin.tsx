@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Badge, Body, Button, Card, EmptyState, Field, H1, H2, Muted } from '../../src/components/ui';
+import { Badge, Body, Button, Card, EmptyState, Field, H1, H2, Muted, webCenter } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { haptic } from '../../src/hooks/useHaptic';
@@ -70,27 +70,32 @@ export default function WalkInScreen() {
 
   if (done) {
     return (
-      <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg, justifyContent: 'center' }}>
-        <EmptyState
-          icon="checkmark-circle"
-          title={tr.walkin.success}
-          message={tr.walkin.successHint}
-          action={
-            <Button title={tr.walkin.done} icon="arrow-back" onPress={() => router.back()} />
-          }
-        />
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <View style={[{ flex: 1, padding: spacing.lg, justifyContent: 'center' }, webCenter]}>
+          <EmptyState
+            icon="checkmark-circle"
+            title={tr.walkin.success}
+            message={tr.walkin.successHint}
+            action={
+              <Button title={tr.walkin.done} icon="arrow-back" onPress={() => router.back()} />
+            }
+          />
+        </View>
       </View>
     );
   }
 
   return (
     <ScrollView
-      contentContainerStyle={{
-        padding: spacing.lg,
-        gap: spacing.md,
-        backgroundColor: c.bg,
-        flexGrow: 1,
-      }}
+      style={{ flex: 1, backgroundColor: c.bg }}
+      contentContainerStyle={[
+        {
+          padding: spacing.lg,
+          gap: spacing.md,
+          flexGrow: 1,
+        },
+        webCenter,
+      ]}
     >
       <H1>{tr.walkin.title}</H1>
       {error ? (

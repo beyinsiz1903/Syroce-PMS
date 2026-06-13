@@ -12,6 +12,7 @@ import {
   H1,
   Muted,
   SkeletonCard,
+  webCenter,
 } from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { spacing, useTheme } from '../../src/theme';
@@ -54,7 +55,8 @@ export default function GuestsScreen() {
   const tooShort = q.trim().length < 2;
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg }}>
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
+      <View style={[{ flex: 1, padding: spacing.lg }, webCenter]}>
       <H1>{tr.guests.title}</H1>
       <View style={{ height: spacing.sm }} />
       <Field
@@ -156,6 +158,7 @@ export default function GuestsScreen() {
           )}
         />
       )}
+      </View>
     </View>
   );
 }

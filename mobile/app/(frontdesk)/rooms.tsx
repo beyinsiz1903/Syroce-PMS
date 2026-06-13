@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Button, Card, EmptyState, Field, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { Badge, Body, Button, Card, EmptyState, Field, H1, Muted, SkeletonCard, webCenter } from '../../src/components/ui';
 import { KpiPill } from '../../src/components/KpiCard';
 import { FilterChips, FilterChipOption } from '../../src/components/FilterChips';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -276,7 +276,8 @@ export default function RoomsScreen() {
   ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg }}>
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
+      <View style={[{ flex: 1, padding: spacing.lg }, webCenter]}>
       <H1>{tr.rooms.title}</H1>
       <View style={{ height: spacing.sm }} />
 
@@ -355,6 +356,7 @@ export default function RoomsScreen() {
           )}
         />
       )}
+      </View>
     </View>
   );
 }

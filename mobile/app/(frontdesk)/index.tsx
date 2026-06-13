@@ -13,6 +13,7 @@ import {
   Muted,
   SectionTitle,
   SkeletonCard,
+  webCenter,
 } from '../../src/components/ui';
 import { KpiCard } from '../../src/components/KpiCard';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -189,7 +190,7 @@ export default function TodayScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md }}
+        contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md }, webCenter]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />
         }

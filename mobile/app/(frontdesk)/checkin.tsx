@@ -17,6 +17,7 @@ import {
   H1,
   H2,
   Muted,
+  webCenter,
 } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -183,15 +184,17 @@ export default function CheckinScreen() {
 
   if (done) {
     return (
-      <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg, justifyContent: 'center' }}>
-        <EmptyState
-          icon="checkmark-circle"
-          title={tr.checkin.success}
-          message={tr.checkin.successHint}
-          action={
-            <Button title={tr.checkin.done} icon="arrow-back" onPress={() => router.back()} />
-          }
-        />
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <View style={[{ flex: 1, padding: spacing.lg, justifyContent: 'center' }, webCenter]}>
+          <EmptyState
+            icon="checkmark-circle"
+            title={tr.checkin.success}
+            message={tr.checkin.successHint}
+            action={
+              <Button title={tr.checkin.done} icon="arrow-back" onPress={() => router.back()} />
+            }
+          />
+        </View>
       </View>
     );
   }
@@ -215,32 +218,37 @@ export default function CheckinScreen() {
 
   if (step === 'scan' && !permission?.granted) {
     return (
-      <View style={{ flex: 1, padding: spacing.lg, backgroundColor: c.bg, gap: spacing.md }}>
-        <H1>{tr.checkin.title}</H1>
-        <Card accent={c.warning}>
-          <Muted>{tr.errors.permissionCamera}</Muted>
-        </Card>
-        <Button title={tr.app.retry} icon="refresh" onPress={() => requestPermission()} fullWidth />
-        <Button
-          title={tr.checkin.photo}
-          icon="camera"
-          variant="secondary"
-          onPress={pickAndScanId}
-          loading={busy}
-          fullWidth
-        />
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <View style={[{ flex: 1, padding: spacing.lg, gap: spacing.md }, webCenter]}>
+          <H1>{tr.checkin.title}</H1>
+          <Card accent={c.warning}>
+            <Muted>{tr.errors.permissionCamera}</Muted>
+          </Card>
+          <Button title={tr.app.retry} icon="refresh" onPress={() => requestPermission()} fullWidth />
+          <Button
+            title={tr.checkin.photo}
+            icon="camera"
+            variant="secondary"
+            onPress={pickAndScanId}
+            loading={busy}
+            fullWidth
+          />
+        </View>
       </View>
     );
   }
 
   return (
     <ScrollView
-      contentContainerStyle={{
-        padding: spacing.lg,
-        gap: spacing.md,
-        backgroundColor: c.bg,
-        flexGrow: 1,
-      }}
+      style={{ flex: 1, backgroundColor: c.bg }}
+      contentContainerStyle={[
+        {
+          padding: spacing.lg,
+          gap: spacing.md,
+          flexGrow: 1,
+        },
+        webCenter,
+      ]}
     >
       <H1>{tr.checkin.title}</H1>
       {bookingId ? (

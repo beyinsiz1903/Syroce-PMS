@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
+import { HeaderBackButton } from '../../src/components/HeaderBackButton';
+import { ROUTES } from '../../src/navigation/routes';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -16,6 +18,11 @@ function tabIcon(active: IoniconName, inactive: IoniconName) {
     <Ionicons name={focused ? active : inactive} size={size ?? 24} color={color} />
   );
 }
+
+// `href:null` ekranlar Tabs altinda router.push ile acilir; Tabs header'i geri
+// oku cizmez, bu yuzden detay sayfalari icin headerLeft'e ozel geri butonu
+// takiyoruz (gecmis yoksa on buro ana ekranina doner).
+const backOptions = { headerLeft: () => <HeaderBackButton fallback={ROUTES.frontdesk} /> };
 
 export default function FrontDeskLayout() {
   const c = useTheme();
@@ -71,11 +78,20 @@ export default function FrontDeskLayout() {
           tabBarIcon: tabIcon('ellipsis-horizontal-circle', 'ellipsis-horizontal-circle-outline'),
         }}
       />
-      <Tabs.Screen name="checkin" options={{ href: null, title: tr.checkin.title }} />
-      <Tabs.Screen name="checkout" options={{ href: null, title: tr.checkout.title }} />
-      <Tabs.Screen name="walkin" options={{ href: null, title: tr.walkin.title }} />
-      <Tabs.Screen name="reservation" options={{ href: null, title: tr.reservations.detailTitle }} />
-      <Tabs.Screen name="calendar" options={{ href: null, title: tr.calendar.title }} />
+      <Tabs.Screen name="checkin" options={{ href: null, title: tr.checkin.title, ...backOptions }} />
+      <Tabs.Screen
+        name="checkout"
+        options={{ href: null, title: tr.checkout.title, ...backOptions }}
+      />
+      <Tabs.Screen name="walkin" options={{ href: null, title: tr.walkin.title, ...backOptions }} />
+      <Tabs.Screen
+        name="reservation"
+        options={{ href: null, title: tr.reservations.detailTitle, ...backOptions }}
+      />
+      <Tabs.Screen
+        name="calendar"
+        options={{ href: null, title: tr.calendar.title, ...backOptions }}
+      />
     </Tabs>
   );
 }

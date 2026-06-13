@@ -3,7 +3,7 @@ import { FlatList, Pressable, RefreshControl, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Badge, Body, Button, Card, EmptyState, Field, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { Badge, Body, Button, Card, EmptyState, Field, H1, Muted, SkeletonCard, webCenter } from '../../src/components/ui';
 import { DatePicker } from '../../src/components/DatePicker';
 import { FilterChips } from '../../src/components/FilterChips';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -162,7 +162,8 @@ export default function ReservationsScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg }}>
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
+      <View style={[{ flex: 1, padding: spacing.lg }, webCenter]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm }}>
         <H1>{tr.reservations.title}</H1>
         <Pressable
@@ -260,6 +261,7 @@ export default function ReservationsScreen() {
           )}
         />
       )}
+      </View>
     </View>
   );
 }

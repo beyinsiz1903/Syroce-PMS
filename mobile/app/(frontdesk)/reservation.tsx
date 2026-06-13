@@ -15,6 +15,7 @@ import {
   Muted,
   SegmentedActions,
   SkeletonCard,
+  webCenter,
 } from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { spacing, useTheme } from '../../src/theme';
@@ -325,7 +326,7 @@ export default function ReservationDetailScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }}
+      contentContainerStyle={[{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }, webCenter]}
     >
       <OfflineBanner visible={offline} />
 

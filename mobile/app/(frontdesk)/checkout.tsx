@@ -14,6 +14,7 @@ import {
   Muted,
   SegmentedActions,
   Skeleton,
+  webCenter,
 } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -152,18 +153,20 @@ export default function CheckoutScreen() {
 
   if (done) {
     return (
-      <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg, justifyContent: 'center' }}>
-        <EmptyState
-          icon="checkmark-circle"
-          title={tr.checkout.success}
-          message={tr.checkout.successHint}
-          action={
-            <View style={{ gap: spacing.sm, alignItems: 'stretch' }}>
-              <Button title={tr.checkout.newCheckout} icon="refresh" variant="secondary" onPress={resetForNext} />
-              <Button title={tr.checkout.done} icon="arrow-back" onPress={() => router.back()} />
-            </View>
-          }
-        />
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <View style={[{ flex: 1, padding: spacing.lg, justifyContent: 'center' }, webCenter]}>
+          <EmptyState
+            icon="checkmark-circle"
+            title={tr.checkout.success}
+            message={tr.checkout.successHint}
+            action={
+              <View style={{ gap: spacing.sm, alignItems: 'stretch' }}>
+                <Button title={tr.checkout.newCheckout} icon="refresh" variant="secondary" onPress={resetForNext} />
+                <Button title={tr.checkout.done} icon="arrow-back" onPress={() => router.back()} />
+              </View>
+            }
+          />
+        </View>
       </View>
     );
   }
@@ -172,12 +175,15 @@ export default function CheckoutScreen() {
 
   return (
     <ScrollView
-      contentContainerStyle={{
-        padding: spacing.lg,
-        gap: spacing.md,
-        backgroundColor: c.bg,
-        flexGrow: 1,
-      }}
+      style={{ flex: 1, backgroundColor: c.bg }}
+      contentContainerStyle={[
+        {
+          padding: spacing.lg,
+          gap: spacing.md,
+          flexGrow: 1,
+        },
+        webCenter,
+      ]}
     >
       <H1>{tr.checkout.title}</H1>
 
