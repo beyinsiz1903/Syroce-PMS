@@ -25,6 +25,7 @@ import {
   SegmentedActions,
   SkeletonCard,
   SuccessCheck,
+  webCenter,
 } from '../../src/components/ui';
 import { FilterChips } from '../../src/components/FilterChips';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
@@ -703,7 +704,8 @@ export default function RoomsScreen() {
   const tasksRoomList: RoomTask[] = tasksRoom ? tasksByRoom.get(tasksRoom.id) || [] : [];
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg, padding: spacing.lg }}>
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
+      <View style={[{ flex: 1, padding: spacing.lg }, webCenter]}>
       <H1>{tr.housekeeping.title}</H1>
       <Muted>{tr.housekeeping.longPressHint}</Muted>
       <View style={{ height: spacing.md }} />
@@ -841,6 +843,7 @@ export default function RoomsScreen() {
           }
         />
       )}
+      </View>
 
       {/* ── Open-tasks viewer + one-tap start/complete ────────────────────── */}
       <ActionSheet

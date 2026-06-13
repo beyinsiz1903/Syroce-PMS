@@ -10,6 +10,7 @@ import {
   Field,
   FormActions,
   Muted,
+  webCenter,
 } from '../../src/components/ui';
 import { FilterChips } from '../../src/components/FilterChips';
 import { SignaturePad, SignaturePadHandle } from '../../src/components/SignaturePad';
@@ -122,12 +123,15 @@ export default function DamageScreen() {
 
   return (
     <ScrollView
-      contentContainerStyle={{
-        padding: spacing.lg,
-        gap: spacing.md,
-        backgroundColor: c.bg,
-        flexGrow: 1,
-      }}
+      style={{ flex: 1, backgroundColor: c.bg }}
+      contentContainerStyle={[
+        {
+          padding: spacing.lg,
+          gap: spacing.md,
+          flexGrow: 1,
+        },
+        webCenter,
+      ]}
       keyboardShouldPersistTaps="handled"
     >
       <DetailHeader title={tr.tabs.damage} subtitle={tr.housekeeping.damageSubtitle} />
