@@ -226,6 +226,22 @@ try:
 except Exception as _usl_err:
     logger.warning("Upload size-limit middleware skipped: %s", _usl_err)
 
+# Static client-disconnect silencer — swallow uvicorn's benign
+# "Response content shorter/longer than Content-Length" RuntimeError raised when
+# a client cancels a static-asset (/js, /assets, images, ...) download mid-flight
+# (mobile prefetch / fast navigation). Registered AFTER the upload guard and
+# BEFORE CORS, so CORS stays the OUTERMOST layer while this sits just inside it,
+# wrapping every other app middleware. It catches the benign error as it unwinds
+# so uvicorn never logs "Exception in ASGI application" and the duplicate Sentry
+# capture never fires (the before_send filter in cloud_observability remains as a
+# defense-in-depth backstop). A genuine API truncation still re-raises and pages.
+try:
+    from middleware.static_disconnect_silencer import StaticDisconnectSilencerMiddleware
+    app.add_middleware(StaticDisconnectSilencerMiddleware)
+    logger.info("Static disconnect silencer middleware activated")
+except Exception as _sds_err:
+    logger.warning("Static disconnect silencer middleware skipped: %s", _sds_err)
+
 # CORS — registered LAST so it is the OUTERMOST middleware (Starlette wraps in
 # reverse registration order). As the outermost layer it (a) answers OPTIONS
 # preflights before they reach the rate limiter, so preflights no longer burn
