@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { Badge, Body, Button, Card, EmptyState, Field, H1, Muted, SkeletonCard, webCenter } from '../../src/components/ui';
 import { KpiPill } from '../../src/components/KpiCard';
 import { FilterChips, FilterChipOption } from '../../src/components/FilterChips';
@@ -12,6 +13,7 @@ import { listRooms, listRoomTasks, Room, RoomTask } from '../../src/api/rooms';
 import { Booking, getInHouse } from '../../src/api/bookings';
 import { formatCurrency } from '../../src/utils/format';
 import { errorMessage, isOffline } from '../../src/utils/errors';
+import { ROUTES } from '../../src/navigation/routes';
 
 type StatusTone = 'success' | 'primary' | 'warning' | 'info' | 'danger' | 'default';
 
@@ -94,10 +96,12 @@ function RoomCard({
   room,
   booking,
   taskCount,
+  onPress,
 }: {
   room: Room;
   booking?: Booking;
   taskCount: number;
+  onPress?: () => void;
 }) {
   const c = useTheme();
   const accent = roomStatusColor(room.status, c);
@@ -106,7 +110,7 @@ function RoomCard({
   const balance = booking?.balance;
   const nights = nightsBetween(booking?.check_in, booking?.check_out);
 
-  return (
+  const content = (
     <Card accent={accent}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md }}>
         {/* Left: identity */}
@@ -176,13 +180,35 @@ function RoomCard({
             ) : null}
           </View>
         ) : null}
+        {onPress ? (
+          <Ionicons
+            name="chevron-forward"
+            size={18}
+            color={c.textMuted}
+            style={{ alignSelf: 'center' }}
+          />
+        ) : null}
       </View>
     </Card>
+  );
+
+  if (!onPress) return content;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${tr.rooms.title} ${room.room_number}${guest ? ` · ${guest}` : ''}`}
+      testID="smoke-room-card"
+      style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+    >
+      {content}
+    </Pressable>
   );
 }
 
 export default function RoomsScreen() {
   const c = useTheme();
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [floor, setFloor] = useState('');
@@ -267,6 +293,27 @@ export default function RoomsScreen() {
     setFloor('');
   };
 
+  // Occupied rooms carry an in-house booking (joined by room number); tapping
+  // the card opens the reservation detail prefilled from the booking so it
+  // renders instantly while the enhanced data loads by id.
+  const openBooking = (b: Booking) => {
+    router.push({
+      pathname: ROUTES.reservationDetail,
+      params: {
+        id: b.id,
+        guest_name: b.guest_name || '',
+        room_number: b.room_number || '',
+        room_type: b.room_type || '',
+        check_in: b.check_in || '',
+        check_out: b.check_out || '',
+        status: b.status || '',
+        total_amount: b.total_amount != null ? String(b.total_amount) : '',
+        paid_amount: b.paid_amount != null ? String(b.paid_amount) : '',
+        balance: b.balance != null ? String(b.balance) : '',
+      },
+    });
+  };
+
   const summaryPills: { cat: string; label: string; tone: StatusTone }[] = [
     { cat: 'available', label: tr.rooms.statusAvailable, tone: 'success' },
     { cat: 'occupied', label: tr.rooms.statusOccupied, tone: 'primary' },
@@ -347,13 +394,17 @@ export default function RoomsScreen() {
               title={allRooms.length === 0 ? tr.rooms.noRooms : tr.rooms.noResults}
             />
           }
-          renderItem={({ item }) => (
-            <RoomCard
-              room={item}
-              booking={bookingByRoomNo[String(item.room_number ?? '').trim()]}
-              taskCount={taskCountByRoom[item.id] || 0}
-            />
-          )}
+          renderItem={({ item }) => {
+            const booking = bookingByRoomNo[String(item.room_number ?? '').trim()];
+            return (
+              <RoomCard
+                room={item}
+                booking={booking}
+                taskCount={taskCountByRoom[item.id] || 0}
+                onPress={booking?.id ? () => openBooking(booking) : undefined}
+              />
+            );
+          }}
         />
       )}
       </View>

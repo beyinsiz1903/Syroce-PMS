@@ -237,6 +237,13 @@ export default function TodayScreen() {
             onPress={() => router.push(ROUTES.checkout)}
           />
           <QuickAction
+            icon="calendar-number-outline"
+            label={tr.calendar.openCta}
+            tone={c.vip}
+            onPress={() => router.push(ROUTES.reservationCalendar)}
+            testID="smoke-today-quick-calendar"
+          />
+          <QuickAction
             icon="calendar-outline"
             label={tr.today.actionNewReservation}
             tone={c.primary}

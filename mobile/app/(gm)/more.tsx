@@ -5,6 +5,7 @@ import type { Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, H1, H2, ListGroup, ListRow, Muted } from '../../src/components/ui';
 import { RoleSwitcher } from '../../src/components/RoleSwitcher';
+import ThemeModeSelector from '../../src/components/ThemeModeSelector';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useAuthStore } from '../../src/state/authStore';
@@ -198,6 +199,8 @@ export default function GMMoreScreen() {
       </Card>
 
       <RoleSwitcher />
+
+      <ThemeModeSelector />
 
       {/* ── Management shortcuts ── */}
       {visibleShortcuts.length === 0 ? (
