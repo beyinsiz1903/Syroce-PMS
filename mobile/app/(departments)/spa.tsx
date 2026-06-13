@@ -20,6 +20,7 @@ import {
   SectionTitle,
   SegmentedActions,
   SkeletonCard,
+  webCenter,
 } from '../../src/components/ui';
 import { DatePicker } from '../../src/components/DatePicker';
 import { spacing, radius, useTheme } from '../../src/theme';
@@ -978,7 +979,7 @@ export default function SpaScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
+      contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
     >
       <H1>{S.title}</H1>
 

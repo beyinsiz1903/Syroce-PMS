@@ -10,6 +10,7 @@ import {
   DetailRow,
   Muted,
   SkeletonCard,
+  webCenter,
 } from '../../../src/components/ui';
 import { SectionTitle } from '../../../src/components/department';
 import { spacing, useTheme } from '../../../src/theme';
@@ -74,7 +75,7 @@ export default function MiceDetailScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
+      contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
     >
       {eventQ.isLoading ? (
         <SkeletonCard />

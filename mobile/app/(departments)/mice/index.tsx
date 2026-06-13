@@ -15,6 +15,7 @@ import {
   ListRow,
   Muted,
   haptic,
+  webCenter,
 } from '../../../src/components/ui';
 import {
   DepartmentListState,
@@ -843,7 +844,7 @@ export default function MiceListScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
+      contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
     >
       <H1>{M.title}</H1>
 

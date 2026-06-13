@@ -20,6 +20,7 @@ import {
   ListRow,
   Muted,
   SegmentedActions,
+  webCenter,
 } from '../../src/components/ui';
 import { KpiCard, KpiRow } from '../../src/components/KpiCard';
 import { FilterChips } from '../../src/components/FilterChips';
@@ -359,7 +360,7 @@ export default function HrScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
+      contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
     >
       <H1>{tr.departments.hr.title}</H1>
       <Muted style={{ marginTop: 2 }}>{tr.departments.hr.subtitle}</Muted>
