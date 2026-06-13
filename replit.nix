@@ -1,5 +1,6 @@
 {pkgs}: {
   deps = [
+    pkgs.caddy
     pkgs.freetype
     pkgs.fontconfig
     pkgs.harfbuzz

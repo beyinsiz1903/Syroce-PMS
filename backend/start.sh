@@ -90,15 +90,35 @@ fi
 cd "$(dirname "$0")"
 # Production deployment expects port 5000 (mapped to external 80).
 # Local dev keeps 8000 (the Backend API workflow's waitForPort).
+#
+# Static-front topology (deployment ONLY): a Caddy reverse proxy owns the
+# EXTERNAL port and serves the hashed SPA bundles (/js,/assets,/logos)
+# straight from disk, while uvicorn runs on an INTERNAL port and handles
+# everything dynamic (/api,/ws,/graphql,SPA index). This guarantees static
+# SPA delivery is never starved by API/worker load — the white-screen cause
+# was a single worker serving BOTH the API and the static SPA being unable
+# to flush the /js bundle bodies under heavy load -> edge proxy 502. Dev is
+# unchanged: uvicorn binds the port directly and Vite serves the frontend on
+# its own port.
 if [ -n "$REPLIT_DEPLOYMENT" ]; then
-  PORT="${PORT:-5000}"
+  EXTERNAL_PORT="${PORT:-5000}"
+  UVICORN_PORT="${SYROCE_UVICORN_INTERNAL_PORT:-8001}"
+  UVICORN_HOST="127.0.0.1"
   # Replit autoscale port-open timeout (~60s) is shorter than our heavy
   # bootstrap (control plane + outbox + event bus + CM indexes). Defer
   # bootstrap to a background task so uvicorn opens the port immediately.
   export DEFER_STARTUP_BOOTSTRAP="${DEFER_STARTUP_BOOTSTRAP:-1}"
 else
-  PORT="${PORT:-8000}"
+  EXTERNAL_PORT="${PORT:-8000}"
+  UVICORN_PORT="${PORT:-8000}"
+  UVICORN_HOST="0.0.0.0"
 fi
+# Port that Celery's deferred-start loop (and, in deployment, the supervisor)
+# waits on. ALWAYS the uvicorn port: Celery's heavy `-A celery_app` import
+# must not race the uvicorn boot window. In deployment this is the INTERNAL
+# port — Caddy opens the external port near-instantly, so waiting on the
+# external port would defeat the boot-starvation guard.
+WAIT_PORT="$UVICORN_PORT"
 
 # WeasyPrint (PDF export) ve diğer native-lib bağımlı paketler libgobject/glib,
 # pango, cairo gibi paylaşımlı kütüphaneleri dlopen ile yükler. Replit dev
@@ -164,20 +184,20 @@ if [ "${SYROCE_START_CELERY:-1}" = "1" ] && [ -n "$REDIS_URL" ]; then
     (
       _ready=0
       for _ in $(seq 1 "$CELERY_PORT_WAIT"); do
-        if ( exec 3<>"/dev/tcp/127.0.0.1/$PORT" ) 2>/dev/null; then
+        if ( exec 3<>"/dev/tcp/127.0.0.1/$WAIT_PORT" ) 2>/dev/null; then
           _ready=1
           break
         fi
         sleep 1
       done
       if [ "$_ready" = "1" ]; then
-        echo "✅ Port $PORT open — starting Celery worker (concurrency=$CELERY_CONCURRENCY) + beat (deferred to protect port-open window)"
+        echo "✅ Port $WAIT_PORT open — starting Celery worker (concurrency=$CELERY_CONCURRENCY) + beat (deferred to protect port-open window)"
       else
-        echo "⚠️  Port $PORT not observed open after ${CELERY_PORT_WAIT}s — starting Celery anyway (night audit must run)"
+        echo "⚠️  Port $WAIT_PORT not observed open after ${CELERY_PORT_WAIT}s — starting Celery anyway (night audit must run)"
       fi
       _start_celery
     ) &
-    echo "ℹ️  Celery startup deferred until port $PORT is open (night audit dispatcher will activate shortly after boot)"
+    echo "ℹ️  Celery startup deferred until port $WAIT_PORT is open (night audit dispatcher will activate shortly after boot)"
   else
     _start_celery
     echo "✅ Celery worker (concurrency=$CELERY_CONCURRENCY) + beat started (night audit dispatcher active)"
@@ -186,4 +206,132 @@ else
   echo "ℹ️  Celery başlatılmadı (Redis yok veya SYROCE_START_CELERY=0); gece denetimi tetiklenmeyecek."
 fi
 
-exec "$PYTHON_BIN" -m uvicorn server:app --host 0.0.0.0 --port "$PORT"
+# ── Server launch ───────────────────────────────────────────────
+if [ -n "$REPLIT_DEPLOYMENT" ]; then
+  # Deployment: Caddy static-front + uvicorn on an internal port, supervised
+  # by THIS script (PID1). If EITHER process exits, kill the other and exit
+  # nonzero so the platform restarts the whole deployment — this avoids the
+  # "Caddy alive, API dead, but the deployment still looks healthy" failure
+  # mode (which would serve static but 502 every API call).
+  FRONTEND_BUILD_ABS="${FRONTEND_BUILD_DIR:-/home/runner/workspace/frontend/build}"
+  CADDYFILE="${SYROCE_CADDYFILE:-/tmp/syroce.Caddyfile}"
+
+  # 0) Fail fast on a missing/incomplete SPA build. Otherwise Caddy would
+  #    happily front a live API while serving 404 for every hashed chunk
+  #    (= white screen) — better to exit and let the platform surface the
+  #    bad deploy than to serve a half-broken app.
+  if [ ! -d "$FRONTEND_BUILD_ABS/js" ] || [ ! -d "$FRONTEND_BUILD_ABS/assets" ]; then
+    echo "ERROR: SPA build missing/incomplete at $FRONTEND_BUILD_ABS (no js/ or assets/) — refusing to start static-front"
+    exit 1
+  fi
+
+  # 1) uvicorn on the internal port. --proxy-headers trusted only from the
+  #    local Caddy hop (127.0.0.1) so the forwarded client IP still drives
+  #    rate limiting / audit, exactly as when uvicorn sat behind the edge.
+  "$PYTHON_BIN" -m uvicorn server:app \
+    --host "$UVICORN_HOST" --port "$UVICORN_PORT" \
+    --proxy-headers --forwarded-allow-ips=127.0.0.1 &
+  UVICORN_PID=$!
+
+  # 2) Wait for uvicorn to ACCEPT connections before binding the external
+  #    port, so the platform never observes external 502s during boot. With
+  #    DEFER_STARTUP_BOOTSTRAP the socket opens in a few seconds (heavy
+  #    bootstrap continues behind the warm-up gate). Bounded: if uvicorn
+  #    never opens (or dies) we exit and let the platform restart rather
+  #    than front a dead backend.
+  UVICORN_BOOT_WAIT="${SYROCE_UVICORN_BOOT_WAIT:-55}"
+  _uv_up=0
+  for _ in $(seq 1 "$UVICORN_BOOT_WAIT"); do
+    if ! kill -0 "$UVICORN_PID" 2>/dev/null; then
+      echo "ERROR: uvicorn exited during boot (before opening port $UVICORN_PORT)"
+      exit 1
+    fi
+    if ( exec 3<>"/dev/tcp/127.0.0.1/$UVICORN_PORT" ) 2>/dev/null; then
+      _uv_up=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$_uv_up" != "1" ]; then
+    echo "ERROR: uvicorn internal port $UVICORN_PORT not open after ${UVICORN_BOOT_WAIT}s — exiting for platform restart"
+    kill "$UVICORN_PID" 2>/dev/null || true
+    exit 1
+  fi
+  echo "✅ uvicorn up on ${UVICORN_HOST}:${UVICORN_PORT} — generating Caddy static-front for :${EXTERNAL_PORT}"
+
+  # 3) Generate the Caddyfile. file_server serves /js,/assets,/logos straight
+  #    from the build dir so they NEVER queue behind API work. The `file`
+  #    matcher means the immutable Cache-Control is only stamped on assets
+  #    that actually EXIST — a missing chunk stays a real 404 and must NOT be
+  #    cached. `encode` is scoped to the static handles ONLY: it must never
+  #    wrap the reverse_proxy, or it would buffer streaming downloads
+  #    (CSV/PDF exports) and the KBS SSE (text/event-stream) feed. Everything
+  #    dynamic proxies to uvicorn unchanged — warm-up gate, no-store
+  #    index.html, SPA 404 fallback, /api/uploads and /ws upgrade all stay
+  #    server-side.
+  cat > "$CADDYFILE" <<CADDY
+{
+        auto_https off
+        admin off
+}
+
+:${EXTERNAL_PORT} {
+        root * ${FRONTEND_BUILD_ABS}
+
+        @immutable_existing {
+                path /js/* /assets/*
+                file
+        }
+        header @immutable_existing Cache-Control "public, max-age=31536000, immutable"
+
+        @logos_existing {
+                path /logos/*
+                file
+        }
+        header @logos_existing Cache-Control "public, max-age=3600"
+
+        handle /js/* {
+                encode gzip zstd
+                file_server
+        }
+        handle /assets/* {
+                encode gzip zstd
+                file_server
+        }
+        handle /logos/* {
+                encode gzip zstd
+                file_server
+        }
+        handle {
+                reverse_proxy 127.0.0.1:${UVICORN_PORT}
+        }
+}
+CADDY
+
+  if ! caddy validate --config "$CADDYFILE" --adapter caddyfile; then
+    echo "ERROR: Caddyfile validation failed — exiting (uvicorn will be torn down)"
+    kill "$UVICORN_PID" 2>/dev/null || true
+    exit 1
+  fi
+
+  # 4) Start Caddy on the external port.
+  caddy run --config "$CADDYFILE" --adapter caddyfile &
+  CADDY_PID=$!
+  echo "✅ Caddy static-front on :${EXTERNAL_PORT} -> uvicorn 127.0.0.1:${UVICORN_PORT} (static /js,/assets,/logos from disk)"
+
+  # 5) Supervisor: forward termination, and if EITHER child exits, tear the
+  #    other down and exit nonzero so the platform restarts cleanly. `|| true`
+  #    keeps `set -e` from skipping the teardown when a child exits nonzero.
+  _shutdown() {
+    trap - TERM INT
+    kill "$UVICORN_PID" "$CADDY_PID" 2>/dev/null || true
+  }
+  trap _shutdown TERM INT
+  wait -n "$UVICORN_PID" "$CADDY_PID" || true
+  echo "ERROR: a supervised process exited (uvicorn=$UVICORN_PID caddy=$CADDY_PID) — tearing down for platform restart"
+  _shutdown
+  exit 1
+else
+  # Dev: uvicorn binds the port directly (Vite serves the SPA separately).
+  exec "$PYTHON_BIN" -m uvicorn server:app --host "$UVICORN_HOST" --port "$UVICORN_PORT"
+fi
