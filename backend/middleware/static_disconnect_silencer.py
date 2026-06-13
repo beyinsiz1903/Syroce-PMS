@@ -9,6 +9,13 @@ Why:
   client backpressure — there is nothing to send to a client that has already
   left.
 
+  The SAME root cause also surfaces as an ``OSError`` when the socket write
+  itself fails after the peer has gone — typically ``Errno 32`` (EPIPE / broken
+  pipe), ``Errno 104`` (ECONNRESET) or, behind the deploy reverse-proxy, ``Errno
+  5`` (EIO / Input/output error) when the upstream connection was closed
+  mid-flush. That ``OSError`` is the same benign disconnect, just a different
+  exception class, so it is swallowed under the identical static-path scope.
+
   The exception otherwise propagates all the way to uvicorn's ``run_asgi``,
   which logs ``ERROR: Exception in ASGI application``. That single disconnect
   produces TWO Sentry events:
@@ -27,14 +34,34 @@ Why:
   kept as a defense-in-depth backstop.
 
 Safety:
-  Only a ``RuntimeError`` whose message is exactly "Response content shorter
-  than Content-Length", only for GET/HEAD, and only for static-asset paths is
-  swallowed. We deliberately do NOT swallow the "...longer than..." variant: a
+  Only two disconnect signatures are swallowed, and only for GET/HEAD requests
+  to static-asset paths:
+    1. a ``RuntimeError`` whose message contains "Response content shorter
+       than Content-Length"; and
+    2. an ``OSError`` whose ``errno`` is a peer-gone code (EPIPE / ECONNRESET /
+       ESHUTDOWN / EIO) AND that was raised AFTER the response had already
+       started (``http.response.start`` was sent). The response-started gate is
+       what keeps an ambiguous ``EIO`` honest: a socket-write failure to a gone
+       peer can only happen once we have begun flushing the body, whereas a disk
+       / read ``EIO`` raised before any bytes leave (failed open / first read)
+       has ``response_started == False`` and is re-raised so a broken asset still
+       pages instead of silently white-screening the client.
+  We deliberately do NOT swallow the "...longer than..." RuntimeError variant: a
   response with MORE bytes than its declared Content-Length is a server-side
-  bug, not a client disconnect, and must still page. Anything else (a genuine
-  API truncation, any other exception) is re-raised unchanged. If the static-
-  path classifier cannot be imported we fail safe by re-raising (prefer paging
-  over silencing).
+  bug, not a client disconnect, and must still page. An ``OSError`` with any
+  other ``errno`` (or none), or any ``OSError`` before the response started, is
+  also re-raised. Anything else (a genuine API truncation, any other exception,
+  any non-static path) is re-raised unchanged. If the static-path classifier
+  cannot be imported we fail safe by re-raising (prefer paging over silencing).
+
+  When (and only when) a disconnect IS swallowed we also flip a per-request
+  ContextVar. uvicorn still logs ``ASGI callable returned without completing
+  response.`` afterwards (the response never completed and no middleware can stop
+  that log — the request scope is gone). The ``before_send`` backstop in
+  ``infra/cloud_observability`` reads this ContextVar to drop ONLY that follow-on
+  log, and only for a request we ourselves just classified as a benign static
+  disconnect — so a real streaming/export handler that returns mid-response (no
+  swallow, ContextVar unset) still pages.
 
   Registered just INSIDE CORSMiddleware (CORS stays the outermost layer) but
   OUTSIDE every other app middleware, so it intercepts the exception before it
@@ -43,7 +70,9 @@ Safety:
 
 from __future__ import annotations
 
+import errno as _errno
 import logging
+from contextvars import ContextVar
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -54,13 +83,44 @@ logger = logging.getLogger(__name__)
 # server bug — so it is intentionally NOT listed and will keep paging.
 _BENIGN_DISCONNECT_MSG = "Response content shorter than Content-Length"
 
+# OSError ``errno`` values that unambiguously mean "the peer went away while we
+# were writing the response". EIO(5) is included because behind the deploy
+# reverse-proxy a closed upstream socket surfaces as Input/output error; the
+# static-path scope (below) keeps a genuine disk/IO fault on a non-asset route
+# from ever being silenced.
+_BENIGN_DISCONNECT_ERRNOS = frozenset({
+    _errno.EPIPE,       # 32  broken pipe
+    _errno.ECONNRESET,  # 104 connection reset by peer
+    _errno.ESHUTDOWN,   # 108 cannot send after transport endpoint shutdown
+    _errno.EIO,         # 5   input/output error (proxied upstream closed)
+})
+
 # Cumulative count of swallowed disconnects in this process (resets on restart).
 _STATIC_DISCONNECT_SWALLOW_COUNT = 0
+
+# Per-request flag, flipped True ONLY when this request's exception was just
+# classified as a benign static client-disconnect and swallowed. uvicorn logs
+# the follow-on "ASGI callable returned without completing response." in the SAME
+# asyncio task/context right after ``app`` returns, so the ``before_send``
+# backstop can read this to drop that one log without suppressing a real
+# mid-response handler bug (which never swallows → flag stays False). Default
+# False; a fresh request runs in a fresh task context, so there is no staleness.
+_benign_static_disconnect_in_flight: ContextVar[bool] = ContextVar(
+    "benign_static_disconnect_in_flight", default=False
+)
 
 
 def get_static_disconnect_swallow_count() -> int:
     """Number of benign static client-disconnects swallowed since process start."""
     return _STATIC_DISCONNECT_SWALLOW_COUNT
+
+
+def benign_static_disconnect_in_flight() -> bool:
+    """True iff THIS request/context just swallowed a benign static disconnect."""
+    try:
+        return _benign_static_disconnect_in_flight.get()
+    except Exception:
+        return False
 
 
 class StaticDisconnectSilencerMiddleware:
@@ -72,11 +132,25 @@ class StaticDisconnectSilencerMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Track whether the response actually started (``http.response.start``
+        # was sent). A peer-gone OSError can only happen once we have begun
+        # flushing bytes; an OSError before that is a different (real) fault.
+        response_started = False
+
+        async def _tracking_send(message) -> None:
+            nonlocal response_started
+            if message.get("type") == "http.response.start":
+                response_started = True
+            await send(message)
+
         try:
-            await self.app(scope, receive, send)
-        except RuntimeError as exc:
-            if not _is_benign_static_disconnect(scope, exc):
+            await self.app(scope, receive, _tracking_send)
+        except (RuntimeError, OSError) as exc:
+            if not _is_benign_static_disconnect(scope, exc, response_started):
                 raise
+            # Mark THIS request so the before_send backstop drops only the
+            # uvicorn follow-on log that this swallow is about to produce.
+            _benign_static_disconnect_in_flight.set(True)
             global _STATIC_DISCONNECT_SWALLOW_COUNT
             _STATIC_DISCONNECT_SWALLOW_COUNT += 1
             method = str(scope.get("method", "GET")).upper()
@@ -89,8 +163,21 @@ class StaticDisconnectSilencerMiddleware:
             )
 
 
-def _is_benign_static_disconnect(scope: Scope, exc: BaseException) -> bool:
-    if _BENIGN_DISCONNECT_MSG not in str(exc):
+def _is_benign_static_disconnect(
+    scope: Scope, exc: BaseException, response_started: bool
+) -> bool:
+    # Classify the disconnect signature first. An OSError qualifies only when its
+    # ``errno`` is a peer-gone code AND the response had already started (a
+    # socket-write failure); an OSError with any other/absent errno, or before
+    # the response started, is a real I/O fault and must keep paging. A
+    # RuntimeError qualifies only when its message contains "shorter than
+    # Content-Length" ("longer than" is a server bug and is not matched).
+    if isinstance(exc, OSError):
+        if exc.errno not in _BENIGN_DISCONNECT_ERRNOS:
+            return False
+        if not response_started:
+            return False
+    elif _BENIGN_DISCONNECT_MSG not in str(exc):
         return False
     # Reuse the single source of truth for "what counts as a static asset path"
     # so this source-side silencer and the before_send backstop never drift.

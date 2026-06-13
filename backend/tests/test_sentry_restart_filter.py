@@ -13,11 +13,13 @@ Fix layers:
      different errno) still flow through.
 """
 import time
+from contextlib import contextmanager
 
 import pytest
 
 from infra import cloud_observability as obs
 from infra.cloud_observability import (
+    _is_asgi_incomplete_response_noise,
     _is_graphql_introspection_denied,
     _is_hotelrunner_pull_rate_limited,
     _is_nonprod_sustained_transient_db,
@@ -373,3 +375,99 @@ class TestStaticClientDisconnect:
         assert _sentry_before_send(self._static_event(), self._hint()) is None
         after = get_sentry_filter_stats()["static_client_disconnect_drops"]
         assert after == before + 1
+
+
+@contextmanager
+def _correlated():
+    """Simulate the StaticDisconnectSilencer having swallowed a benign static
+    disconnect for THIS request (flips its per-request ContextVar)."""
+    from middleware.static_disconnect_silencer import (
+        _benign_static_disconnect_in_flight as _cv,
+    )
+
+    tok = _cv.set(True)
+    try:
+        yield
+    finally:
+        _cv.reset(tok)
+
+
+class TestAsgiIncompleteResponse:
+    """uvicorn logs ``ASGI callable returned without completing response.`` on
+    ``uvicorn.error`` (no request context) when the app returns with the
+    response started but not completed and the disconnect was not yet observed —
+    the benign client-disconnect artifact left after the static silencer swallows
+    the underlying exception. It is dropped ONLY when correlated with that swallow
+    (the silencer's per-request ContextVar is True). Without the correlation the
+    same line may be a real mid-response handler bug and must page; the sibling
+    "...without STARTING response." always pages."""
+
+    _MSG = "ASGI callable returned without completing response."
+    _STARTING = "ASGI callable returned without starting response."
+
+    def test_detected_with_correlation_from_logentry_message(self):
+        with _correlated():
+            assert _is_asgi_incomplete_response_noise(
+                {"logentry": {"message": self._MSG}}
+            ) is True
+
+    def test_detected_with_correlation_from_formatted(self):
+        with _correlated():
+            assert _is_asgi_incomplete_response_noise(
+                {"logentry": {"formatted": "uvicorn.error ERROR " + self._MSG}}
+            ) is True
+
+    def test_detected_with_correlation_from_exception_value(self):
+        with _correlated():
+            assert _is_asgi_incomplete_response_noise(
+                {"exception": {"values": [{"value": self._MSG}]}}
+            ) is True
+
+    def test_not_dropped_without_correlation(self):
+        """No swallow → could be a real mid-response handler bug → must page."""
+        assert _is_asgi_incomplete_response_noise(
+            {"logentry": {"message": self._MSG}}
+        ) is False
+
+    def test_not_dropped_on_wrong_logger(self):
+        """Same template under a non-uvicorn logger is not the uvicorn artifact."""
+        with _correlated():
+            assert _is_asgi_incomplete_response_noise(
+                {"logger": "app.export", "logentry": {"message": self._MSG}}
+            ) is False
+
+    def test_starting_response_sibling_passes_through(self):
+        """The 'starting response' variant is a real fault and must page."""
+        with _correlated():
+            assert _is_asgi_incomplete_response_noise(
+                {"logentry": {"message": self._STARTING}}
+            ) is False
+
+    def test_unrelated_message_passes_through(self):
+        with _correlated():
+            assert _is_asgi_incomplete_response_noise(
+                {"logentry": {"message": "KeyError: tenant_id missing"}}
+            ) is False
+
+    def test_empty_event_safe(self):
+        with _correlated():
+            assert _is_asgi_incomplete_response_noise({}) is False
+
+    def test_before_send_drops_and_counts(self):
+        before = get_sentry_filter_stats()["asgi_incomplete_response_drops"]
+        with _correlated():
+            assert _sentry_before_send(
+                {"logger": "uvicorn.error", "logentry": {"message": self._MSG}}, {}
+            ) is None
+        after = get_sentry_filter_stats()["asgi_incomplete_response_drops"]
+        assert after == before + 1
+
+    def test_before_send_keeps_when_uncorrelated(self):
+        """A real incomplete-response (no swallow) must reach Sentry."""
+        out = _sentry_before_send({"logentry": {"message": self._MSG}}, {})
+        assert out is not None
+
+    def test_before_send_keeps_starting_response(self):
+        with _correlated():
+            out = _sentry_before_send({"logentry": {"message": self._STARTING}}, {})
+        assert out is not None

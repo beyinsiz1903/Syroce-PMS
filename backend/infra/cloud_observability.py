@@ -157,6 +157,7 @@ def get_sentry_filter_stats() -> dict[str, int]:
         "graphql_introspection_denied_drops": _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT,
         "hotelrunner_pull_rate_limit_drops": _HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT,
         "static_client_disconnect_drops": _STATIC_CLIENT_DISCONNECT_DROP_COUNT,
+        "asgi_incomplete_response_drops": _ASGI_INCOMPLETE_RESPONSE_DROP_COUNT,
     }
 
 
@@ -381,6 +382,72 @@ def _is_static_client_disconnect(event: dict, hint: dict) -> bool:
         return False
 
 
+# ── uvicorn "incomplete response" client-disconnect artifact ───────
+# Counter for filtered uvicorn incomplete-response events.
+_ASGI_INCOMPLETE_RESPONSE_DROP_COUNT = 0
+
+# uvicorn logs this EXACT message on the ``uvicorn.error`` logger when the ASGI
+# app returns after the response STARTED but before it COMPLETED, and the
+# disconnect was not yet observed (``response_complete is False and not
+# disconnected``). This is emitted in the SAME asyncio task right after ``app``
+# returns, AFTER the request scope is torn down — so the event carries no request
+# context to path-scope on, and the message ALONE cannot tell a benign static
+# client-disconnect apart from a real handler bug (a streaming/SSE/export route
+# that starts a response then returns without completing it logs the IDENTICAL
+# line). We therefore drop it ONLY when the StaticDisconnectSilencer just
+# swallowed a benign static disconnect for THIS same request (its per-request
+# ContextVar is True). A real mid-response handler bug never swallows → the flag
+# is False → it still pages. We additionally anchor on the FULL template (the
+# sibling "...without STARTING response." is a real no-response condition and is
+# NOT matched) and, when a logger field is present, require ``uvicorn.error``.
+# The ERROR still prints to the workflow console; only the Sentry page is dropped.
+_ASGI_INCOMPLETE_RESPONSE_RE = re.compile(
+    r"ASGI callable returned without completing response\."
+)
+
+
+def _is_asgi_incomplete_response_noise(event: dict) -> bool:
+    """Drop predicate for the benign uvicorn incomplete-response disconnect log.
+
+    Requires BOTH the exact uvicorn template AND a positive per-request
+    correlation with the StaticDisconnectSilencer (it just swallowed a benign
+    static disconnect in this same task/context). Without that correlation the
+    same log line may be a genuine mid-response handler bug, which must page.
+    """
+    try:
+        # Correlation gate first: only the static silencer's follow-on log.
+        try:
+            from middleware.static_disconnect_silencer import (
+                benign_static_disconnect_in_flight,
+            )
+        except Exception:
+            return False
+        if not benign_static_disconnect_in_flight():
+            return False
+        # If Sentry tagged a logger, it must be uvicorn's error logger; absent is
+        # tolerated (older SDKs may omit it) since the correlation already binds.
+        logger_name = event.get("logger")
+        if logger_name is not None and logger_name != "uvicorn.error":
+            return False
+        le = event.get("logentry") or {}
+        ev_msg = event.get("message")
+        candidates = [
+            le.get("message"),
+            le.get("formatted"),
+            ev_msg if isinstance(ev_msg, str) else None,
+        ]
+        exc = event.get("exception") or {}
+        for val in (exc.get("values") or []):
+            if isinstance(val, dict):
+                candidates.append(val.get("value"))
+        return any(
+            isinstance(c, str) and _ASGI_INCOMPLETE_RESPONSE_RE.search(c)
+            for c in candidates
+        )
+    except Exception:
+        return False
+
+
 def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     """Sentry SDK ``before_send`` hook — restart-noise filter + PII scrub.
 
@@ -396,6 +463,7 @@ def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     global _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT
     global _HOTELRUNNER_PULL_RATE_LIMIT_DROP_COUNT
     global _STATIC_CLIENT_DISCONNECT_DROP_COUNT
+    global _ASGI_INCOMPLETE_RESPONSE_DROP_COUNT
     try:
         if _is_graphql_introspection_denied(event):
             _GRAPHQL_INTROSPECTION_DENIED_DROP_COUNT += 1
@@ -422,6 +490,16 @@ def _sentry_before_send(event: dict, hint: dict) -> dict | None:
             logger.info(
                 "sentry before_send dropped benign static client-disconnect "
                 f"(cumulative={_STATIC_CLIENT_DISCONNECT_DROP_COUNT})"
+            )
+            return None
+    except Exception:
+        pass
+    try:
+        if _is_asgi_incomplete_response_noise(event):
+            _ASGI_INCOMPLETE_RESPONSE_DROP_COUNT += 1
+            logger.info(
+                "sentry before_send dropped benign uvicorn incomplete-response "
+                f"client-disconnect (cumulative={_ASGI_INCOMPLETE_RESPONSE_DROP_COUNT})"
             )
             return None
     except Exception:
