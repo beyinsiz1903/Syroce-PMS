@@ -15,6 +15,7 @@ import {
   SectionTitle,
   SegmentedActions,
   SkeletonCard,
+  webCenter,
 } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -41,7 +42,7 @@ export default function LoyaltyScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }}
+      contentContainerStyle={[{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }, webCenter]}
       refreshControl={
         <RefreshControl
           refreshing={q.isFetching && !q.isLoading}

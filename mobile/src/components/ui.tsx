@@ -34,6 +34,17 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 // web'de kapali calistir (animasyonlar her iki hedefte de guvenli).
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
+// Mobil uygulama web'de (Expo Web) genis masaustu ekranlarda (orn. 1024px+)
+// tum genisligi kaplayip gerilir; mockup'lar ise telefon kolonu genisligindedir.
+// `webCenter` ekran icerigini sabit bir maks. genislikte ortalar — yalnizca
+// web'de etkin (native'de bos, telefonda zaten tam genislik). ScrollView
+// `contentContainerStyle` dizisine eklenerek modul-modul yeniden kullanilir.
+export const webMaxWidth = 600;
+export const webCenter: ViewStyle =
+  Platform.OS === 'web'
+    ? ({ width: '100%', maxWidth: webMaxWidth, marginHorizontal: 'auto' } as ViewStyle)
+    : {};
+
 export const Screen: React.FC<ViewProps> = ({ style, children, ...rest }) => {
   const c = useTheme();
   return (

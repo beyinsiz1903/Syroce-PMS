@@ -12,6 +12,7 @@ import {
   H1,
   H2,
   Muted,
+  webCenter,
 } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -107,7 +108,7 @@ export default function EarlyLateScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }}
+      contentContainerStyle={[{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }, webCenter]}
     >
       <H1>{tr.guest.earlyLateTitle}</H1>
       {!booking ? (

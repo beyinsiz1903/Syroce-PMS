@@ -17,6 +17,7 @@ import {
   H2,
   Muted,
   SegmentedActions,
+  webCenter,
 } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -203,7 +204,7 @@ export default function GuestQrBadgeScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: 120 }}
+        contentContainerStyle={[{ padding: spacing.lg, gap: spacing.md, paddingBottom: 120 }, webCenter]}
         refreshControl={
           <RefreshControl
             refreshing={tokenQ.isFetching || pendingQ.isFetching}

@@ -12,6 +12,7 @@ import {
   H2,
   Muted,
   SkeletonCard,
+  webCenter,
 } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -43,7 +44,7 @@ export default function RoomServiceScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: 140 }}
+        contentContainerStyle={[{ padding: spacing.lg, gap: spacing.md, paddingBottom: 140 }, webCenter]}
       >
         <H1>{tr.guest.roomServiceTitle}</H1>
         <Muted>{tr.guest.roomServiceIntro}</Muted>
@@ -124,16 +125,20 @@ export default function RoomServiceScreen() {
         <View
           style={{
             position: 'absolute',
-            left: spacing.lg,
-            right: spacing.lg,
+            left: 0,
+            right: 0,
             bottom: spacing.lg,
+            paddingHorizontal: spacing.lg,
+            alignItems: 'center',
           }}
         >
-          <Button
-            title={`${tr.guest.cart} (${count()}) · ${formatCurrency(total())}`}
-            onPress={() => router.push(ROUTES.guestCart)}
-            fullWidth
-          />
+          <View style={[{ width: '100%' }, webCenter]}>
+            <Button
+              title={`${tr.guest.cart} (${count()}) · ${formatCurrency(total())}`}
+              onPress={() => router.push(ROUTES.guestCart)}
+              fullWidth
+            />
+          </View>
         </View>
       ) : null}
     </View>

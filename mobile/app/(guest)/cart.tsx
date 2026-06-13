@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Body, Button, Card, EmptyState, Field, H1, H2, Muted } from '../../src/components/ui';
+import { Body, Button, Card, EmptyState, Field, H1, H2, Muted, webCenter } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { useCartStore } from '../../src/state/cartStore';
@@ -57,7 +57,7 @@ export default function CartScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }}
+      contentContainerStyle={[{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }, webCenter]}
     >
       <H1>{tr.guest.cart}</H1>
       {lines.length === 0 ? (

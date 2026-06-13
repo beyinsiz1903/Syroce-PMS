@@ -13,6 +13,7 @@ import {
   ListRow,
   SectionTitle,
   SkeletonCard,
+  webCenter,
 } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -64,7 +65,7 @@ export default function GuestBookingDetail() {
 
   if (q.isLoading) {
     return (
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, backgroundColor: c.bg }}>
+      <ScrollView contentContainerStyle={[{ padding: spacing.lg, backgroundColor: c.bg }, webCenter]}>
         <SkeletonCard />
       </ScrollView>
     );
@@ -87,7 +88,7 @@ export default function GuestBookingDetail() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }}
+      contentContainerStyle={[{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }, webCenter]}
     >
       <DetailHeader
         title={booking.hotel?.property_name || 'Otel'}

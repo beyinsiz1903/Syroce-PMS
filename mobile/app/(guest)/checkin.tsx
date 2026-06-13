@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
-import { Badge, Body, Button, Card, FadeInView, Field, H1, H2, Muted } from '../../src/components/ui';
+import { Badge, Body, Button, Card, FadeInView, Field, H1, H2, Muted, webCenter } from '../../src/components/ui';
 import { SignaturePad } from '../../src/components/SignaturePad';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -161,7 +161,7 @@ export default function OnlineCheckinScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }}
+      contentContainerStyle={[{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }, webCenter]}
     >
       <FadeInView>
         <H1>{tr.guest.onlineCheckinTitle}</H1>

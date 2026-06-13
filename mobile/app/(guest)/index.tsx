@@ -14,6 +14,7 @@ import {
   Muted,
   SectionTitle,
   SkeletonCard,
+  webCenter,
 } from '../../src/components/ui';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { radius, spacing, useTheme } from '../../src/theme';
@@ -286,7 +287,7 @@ export default function GuestConciergeScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }}
+      contentContainerStyle={[{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }, webCenter]}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />
       }

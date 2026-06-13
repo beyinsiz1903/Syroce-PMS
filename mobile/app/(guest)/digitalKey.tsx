@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import * as Brightness from 'expo-brightness';
 import { useKeepAwakeSafe } from '../../src/hooks/useKeepAwakeSafe';
 import QRCode from 'react-native-qrcode-svg';
-import { Body, Card, EmptyState, H1, H2, Muted } from '../../src/components/ui';
+import { Body, Card, EmptyState, H1, H2, Muted, webCenter } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { getGuestBookings, GuestBooking } from '../../src/api/guestBookings';
@@ -133,12 +133,15 @@ export default function GuestDigitalKey() {
   return (
     <ScrollView
       testID="smoke-digital-key"
-      contentContainerStyle={{
-        padding: spacing.lg,
-        gap: spacing.lg,
-        backgroundColor: c.bg,
-        alignItems: 'center',
-      }}
+      contentContainerStyle={[
+        {
+          padding: spacing.lg,
+          gap: spacing.lg,
+          backgroundColor: c.bg,
+          alignItems: 'center',
+        },
+        webCenter,
+      ]}
     >
       <View style={{ alignSelf: 'stretch' }}>
         <H1>{tr.guest.digitalKeyTitle}</H1>

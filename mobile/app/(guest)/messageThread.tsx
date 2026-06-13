@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Body, EmptyState, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { Body, EmptyState, H1, Muted, SkeletonCard, webCenter } from '../../src/components/ui';
 import { spacing, useTheme, radius } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import {
@@ -80,7 +80,7 @@ export default function MessageThreadScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, gap: spacing.sm, paddingBottom: spacing.lg }}
+        contentContainerStyle={[{ padding: spacing.lg, gap: spacing.sm, paddingBottom: spacing.lg }, webCenter]}
         refreshControl={
           <RefreshControl
             refreshing={q.isFetching && !q.isLoading}

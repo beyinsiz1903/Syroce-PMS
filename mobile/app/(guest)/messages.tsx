@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Body, Card, EmptyState, FadeInView, H1, H2, Muted, SkeletonCard } from '../../src/components/ui';
+import { Badge, Body, Card, EmptyState, FadeInView, H1, H2, Muted, SkeletonCard, webCenter } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { getGuestMessages } from '../../src/api/guestMessaging';
@@ -24,7 +24,7 @@ export default function MessagesListScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, gap: spacing.sm, paddingBottom: spacing.xxl }}
+      contentContainerStyle={[{ padding: spacing.lg, gap: spacing.sm, paddingBottom: spacing.xxl }, webCenter]}
       refreshControl={
         <RefreshControl
           refreshing={q.isFetching && !q.isLoading}

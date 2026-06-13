@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Badge, Body, Button, Card, EmptyState, H1, Muted, SkeletonCard } from '../../src/components/ui';
+import { Badge, Body, Button, Card, EmptyState, H1, Muted, SkeletonCard, webCenter } from '../../src/components/ui';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
 import { getGuestBookings } from '../../src/api/guestBookings';
@@ -144,7 +144,7 @@ export default function GuestOrdersScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }}
+      contentContainerStyle={[{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl }, webCenter]}
       refreshControl={
         <RefreshControl
           refreshing={ordersQ.isFetching && !ordersQ.isLoading}

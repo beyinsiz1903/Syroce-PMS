@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, Switch, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Body, Button, Card, H1, H2, Muted } from '../../src/components/ui';
+import { Body, Button, Card, H1, H2, Muted, webCenter } from '../../src/components/ui';
 import { RoleSwitcher } from '../../src/components/RoleSwitcher';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -88,7 +88,7 @@ export default function MoreScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl }}
+      contentContainerStyle={[{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl }, webCenter]}
     >
       <H1>{tr.more.profile}</H1>
       <Card>
