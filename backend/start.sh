@@ -267,6 +267,43 @@ if [ -n "$REPLIT_DEPLOYMENT" ]; then
     echo "ERROR: SPA build missing/incomplete at $FRONTEND_BUILD_ABS (no js/ or assets/) — refusing to start static-front"
     exit 1
   fi
+  # 0b) Dirs present is NOT enough. A deploy-time bundler/write hiccup can leave
+  #     0-byte js chunks on disk (dirs exist, files empty), or index.html can
+  #     reference an entry chunk that was never written. Caddy would then serve
+  #     empty JS or 404 the entry chunk = white screen while the deploy looks
+  #     healthy. Verify (a) >=1 js chunk and ZERO empty (0-byte) chunks, and
+  #     (b) every /js chunk referenced by index.html exists and is non-empty.
+  #     Otherwise refuse to start so the platform keeps the previous good build.
+  _js_total=$(find "$FRONTEND_BUILD_ABS/js" -name '*.js' 2>/dev/null | wc -l | tr -d ' ')
+  _js_empty=$(find "$FRONTEND_BUILD_ABS/js" -name '*.js' -size 0 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$_js_total" -eq 0 ] || [ "$_js_empty" -ne 0 ]; then
+    echo "ERROR: SPA build has empty/zero js chunks at $FRONTEND_BUILD_ABS/js (total=$_js_total empty=$_js_empty) — refusing to start static-front (would serve white screen)"
+    exit 1
+  fi
+  if [ ! -f "$FRONTEND_BUILD_ABS/index.html" ]; then
+    echo "ERROR: SPA index.html missing at $FRONTEND_BUILD_ABS — refusing to start static-front"
+    exit 1
+  fi
+  _js_refs=$(grep -oE '/js/[A-Za-z0-9._-]+\.js' "$FRONTEND_BUILD_ABS/index.html" 2>/dev/null | sort -u)
+  if [ -z "$_js_refs" ]; then
+    echo "ERROR: index.html references no /js chunks at $FRONTEND_BUILD_ABS — refusing to start static-front"
+    exit 1
+  fi
+  _ref_bad=0
+  while IFS= read -r _r; do
+    [ -n "$_r" ] || continue
+    if [ ! -s "$FRONTEND_BUILD_ABS$_r" ]; then
+      echo "ERROR: index.html references missing/empty chunk: $_r"
+      _ref_bad=1
+    fi
+  done <<EOF
+$_js_refs
+EOF
+  if [ "$_ref_bad" -ne 0 ]; then
+    echo "ERROR: SPA entry/referenced chunks missing or empty at $FRONTEND_BUILD_ABS — refusing to start static-front (would serve white screen)"
+    exit 1
+  fi
+  echo "✅ SPA build verified: $_js_total js chunks, 0 empty, all index.html /js refs present+nonempty"
 
   # 1) uvicorn on the internal port. --proxy-headers trusted only from the
   #    local Caddy hop (127.0.0.1) so the forwarded client IP still drives
