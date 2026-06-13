@@ -27,6 +27,34 @@ _STATIC_EXEMPT_EXT = frozenset({
 })
 
 
+def is_static_exempt_path(path: str) -> bool:
+    """True when `path` is a public static SPA asset that must bypass the
+    per-IP rate limiter.
+
+    One SPA page load fetches the index.html shell plus many hashed JS/CSS
+    chunks; counting those against the per-IP `anonymous` budget (60/min in
+    prod) trips a 429 after a couple of loads/refreshes and the SPA never
+    boots (white screen). These are public files with no DB/auth cost.
+    `/api`, `/graphql`, `/ws` stay fully throttled. This mirrors app.py's
+    `_warmup_gate` static/dynamic split — keep the two in sync.
+    """
+    if (
+        path.startswith('/api')
+        or path.startswith('/graphql')
+        or path.startswith('/ws')
+    ):
+        return False
+    _, _ext = os.path.splitext(path)
+    return (
+        path == '/'
+        or path.startswith('/js/')
+        or path.startswith('/assets/')
+        or path.startswith('/logos/')
+        or path.startswith('/landing/')
+        or _ext in _STATIC_EXEMPT_EXT
+    )
+
+
 class APMMetricsStore:
     """Thread-safe in-memory metrics store for APM data"""
 
@@ -529,29 +557,13 @@ class EnhancedRateLimitMiddleware:
             return
 
         # Skip static SPA assets (index.html shell, hashed JS/CSS chunks,
-        # images, fonts, manifests, ...). These are public files with no
-        # DB/auth cost; counting them against the per-IP `anonymous` budget
-        # (60/min in prod) trips a 429 on the published app after a couple of
-        # SPA loads/refreshes — one page load fetches the shell plus many
-        # hashed chunks — and the SPA never boots. `/api`, `/graphql`, `/ws`
-        # stay fully throttled below. Mirrors app.py's static/dynamic split.
-        _is_dynamic = (
-            path.startswith('/api')
-            or path.startswith('/graphql')
-            or path.startswith('/ws')
-        )
-        if not _is_dynamic:
-            _, _ext = os.path.splitext(path)
-            if (
-                path == '/'
-                or path.startswith('/js/')
-                or path.startswith('/assets/')
-                or path.startswith('/logos/')
-                or path.startswith('/landing/')
-                or _ext in _STATIC_EXEMPT_EXT
-            ):
-                await self.app(scope, receive, send)
-                return
+        # images, fonts, manifests, ...) — see is_static_exempt_path. Counting
+        # them against the per-IP `anonymous` budget (60/min in prod) trips a
+        # 429 after a couple of SPA loads/refreshes and the app never boots
+        # (white screen). `/api`, `/graphql`, `/ws` stay fully throttled below.
+        if is_static_exempt_path(path):
+            await self.app(scope, receive, send)
+            return
 
         method = scope.get('method', 'GET')
         headers = dict(scope.get('headers', []))

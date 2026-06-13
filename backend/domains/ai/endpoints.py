@@ -34,11 +34,11 @@ async def get_daily_briefing(
         # Get data from database — all 4 collections in parallel (1 RTT).
         # Exclude virtual rooms so the briefing matches the dashboard KPI cards.
         # v95 — Projections: only fields actually used downstream (was full-doc fetch).
-        rooms, all_bookings, invoices, tenant = await _asyncio.gather(
-            db.rooms.find({
+        total_rooms, all_bookings, invoices, tenant = await _asyncio.gather(
+            db.rooms.count_documents({
                 "tenant_id": current_user.tenant_id,
                 "$or": [{"is_virtual": False}, {"is_virtual": {"$exists": False}}],
-            }, {"_id": 0, "id": 1}).to_list(None),
+            }),
             db.bookings.find(
                 {"tenant_id": current_user.tenant_id},
                 {"_id": 0, "status": 1, "check_in": 1, "check_out": 1, "total_amount": 1},
@@ -52,8 +52,6 @@ async def get_daily_briefing(
                 {"_id": 0, "property_name": 1},
             ),
         )
-
-        total_rooms = len(rooms)
 
         # Count today's date for overlap checks
         today = datetime.now().date()
