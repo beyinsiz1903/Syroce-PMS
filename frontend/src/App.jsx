@@ -244,17 +244,10 @@ function App() {
 
   if (loading) {
     return (
-      <div className="loading-screen" style={{
-        display: "flex", justifyContent: "center", alignItems: "center", height: "100vh",
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-      }}>
-        <div style={{ textAlign: "center", color: "white" }}>
-          <div className="spinner" style={{
-            border: "4px solid rgba(255,255,255,0.3)", borderTop: "4px solid white",
-            borderRadius: "50%", width: "40px", height: "40px",
-            animation: "spin 1s linear infinite", margin: "0 auto 1rem",
-          }} />
-          <p>Yukleniyor...</p>
+      <div className="loading-screen flex items-center justify-center h-screen bg-background text-foreground">
+        <div className="text-center">
+          <div className="spinner mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-muted border-t-primary" />
+          <p className="text-muted-foreground">Yukleniyor...</p>
         </div>
       </div>
     );
