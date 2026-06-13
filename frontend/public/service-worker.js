@@ -5,7 +5,7 @@
 
 // Bumped when caching topology değişiyor — eski client'lar otomatik yeni
 // CACHE_NAME'e geçer (activate handler eskileri siler).
-const CACHE_VERSION = 'v1.2.0';
+const CACHE_VERSION = 'v1.2.1';
 const CACHE_NAME = `hotel-pms-${CACHE_VERSION}`;
 // Auth ayrımı: kullanıcı değişimi sonrası tüm cache'i drop edebilmek için
 // client'lar `postMessage({ type: 'AUTH_CHANGED' })` gönderir → SW siler.
@@ -28,13 +28,16 @@ const CHECKIN_SYNC_ENDPOINT = '/api/frontdesk/v2/checkin';
 // içindeki MAX_CHECKIN_ATTEMPTS ile aynı tutulmalı.
 const MAX_CHECKIN_ATTEMPTS = 8;
 
-// Assets to cache immediately on install
+// Assets to cache immediately on install.
+// ÖNEMLİ: Bu liste yalnızca SUNUCUDA GERÇEKTEN VAR OLAN yolları içermeli.
+// Vite build'i `/static/...main.css|js` (CRA düzeni) ÜRETMEZ ve manifest.json
+// servis edilmez (404). Bunlar listede kalırsa cache.addAll() TEK 404'te bile
+// tüm install'ı reddeder → skipWaiting() çalışmaz → yeni SW asla aktive olmaz →
+// kullanıcı eski/bozuk SW'de takılı kalır (beyaz ekran). Listeyi gerçek
+// varlıklarla sınırlı tutuyoruz; install handler ayrıca hataya dayanıklıdır.
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
-  '/static/css/main.css',
-  '/static/js/main.js',
-  '/manifest.json',
 ];
 
 // Cache strategies
@@ -138,7 +141,19 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[SW] Precaching assets');
-      return cache.addAll(PRECACHE_ASSETS);
+      // cache.addAll() atomiktir: TEK bir varlık 404/başarısız olursa TÜM
+      // promise reddolur → install başarısız → skipWaiting() çalışmaz → YENİ SW
+      // hiç aktive olmaz ve kullanıcı eski SW'de takılı kalır (beyaz ekran).
+      // Bu yüzden her varlığı tek tek, hataya dayanıklı ekliyoruz: biri 404
+      // verse bile install tamamlanır ve skipWaiting() garanti çalışır.
+      return Promise.allSettled(
+        PRECACHE_ASSETS.map((asset) =>
+          cache.add(asset).catch((err) => {
+            console.warn('[SW] Precache atlandı:', asset, err && err.message);
+            return null;
+          })
+        )
+      );
     }).then(() => {
       console.log('[SW] Installation complete');
       return self.skipWaiting();
