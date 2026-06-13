@@ -281,7 +281,7 @@ class CacheWarmer:
             active_room_ids: set[str] = set()
             booking_occupied_count = 0  # for total_guests display
             today_checkins = 0
-            for b in bookings_today:
+            for _i, b in enumerate(bookings_today):
                 ci = str(b.get('check_in', ''))[:10]
                 co = str(b.get('check_out', ''))[:10]
                 rid = b.get('room_id')
@@ -291,6 +291,13 @@ class CacheWarmer:
                         active_room_ids.add(rid)
                 if ci == today:
                     today_checkins += 1
+                # Cooperative yield: this pass can iterate up to 5000 docs.
+                # Run on the single uvicorn event loop that also serves the
+                # SPA static chunks, an unbroken synchronous loop briefly
+                # blocks the loop and surfaces as intermittent chunk 502s /
+                # white screen. Yield control every 1024 iterations.
+                if (_i & 0x3FF) == 0x3FF:
+                    await asyncio.sleep(0)
 
             # Single source of truth: unique rooms with an overlapping booking.
             booking_occupied = len(active_room_ids)
@@ -433,10 +440,27 @@ class CacheWarmer:
 
 # Global cache warmer
 cache_warmer = None
+# Single background-refresh task per process. initialize_cache_warmer is
+# called from BOTH the d_perf and g_channels bootstrap phases; without this
+# guard each call replaced the global warmer and spawned ANOTHER
+# background_refresh loop via create_task — the prior loop was never
+# cancelled, so duplicate warmer loops accumulated in the one uvicorn event
+# loop, each doing cross-tenant scans + a synchronous pass over up to 5000
+# bookings every 120s. On the combined deployment a single uvicorn worker
+# serves BOTH the API and the static SPA chunks, so those piled-up loops
+# starve the event loop: the edge proxy can't reach the worker and the SPA
+# entry chunk 502s -> production white screen. Keep exactly one loop.
+_cache_warmer_task = None
 
 async def initialize_cache_warmer(db, tenant_id: str = None):
-    """Initialize and start cache warmer"""
-    global cache_warmer
+    """Initialize and start cache warmer (idempotent across bootstrap phases)."""
+    global cache_warmer, _cache_warmer_task
+
+    # If a background refresh loop is already running in this process, reuse
+    # it instead of replacing the warmer and spawning a duplicate loop.
+    if _cache_warmer_task is not None and not _cache_warmer_task.done():
+        return cache_warmer
+
     cache_warmer = CacheWarmer(db)
 
     # Get first tenant if not specified
@@ -449,7 +473,7 @@ async def initialize_cache_warmer(db, tenant_id: str = None):
         # Warm caches immediately
         await cache_warmer.warm_all_caches(tenant_id)
 
-        # Start background refresh
-        asyncio.create_task(cache_warmer.background_refresh(tenant_id))
+        # Start the single background refresh loop
+        _cache_warmer_task = asyncio.create_task(cache_warmer.background_refresh(tenant_id))
 
     return cache_warmer

@@ -131,6 +131,29 @@ _WARMUP_STATIC_EXT = frozenset({
 })
 
 
+class _CachedStaticFiles(StaticFiles):
+    """StaticFiles that stamps a fixed Cache-Control on 200 responses.
+
+    Used for the hashed SPA bundles (/js, /assets): Vite embeds a content
+    hash in every filename, so they can be cached immutably. Without an
+    explicit Cache-Control the browser revalidates/refetches all ~27 chunks
+    on every load; on the combined deployment (a single uvicorn worker
+    serving BOTH the API and the static SPA) that per-load request storm
+    helps tip the event loop over into edge-proxy 502s -> white screen.
+    304/404 responses are left untouched.
+    """
+
+    def __init__(self, *args, cache_control: str, **kwargs):
+        self._cache_control = cache_control
+        super().__init__(*args, **kwargs)
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = self._cache_control
+        return response
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application instance."""
 
@@ -347,10 +370,27 @@ Token almak icin `/api/auth/login` endpoint'ini kullanin.
         from starlette.responses import FileResponse as _FR
         from starlette.responses import JSONResponse as _JR
 
+        # Hashed SPA assets are content-addressed (Vite embeds a content hash
+        # in every /js and /assets filename) so they are safe to cache
+        # forever. Stamping immutable Cache-Control means a warm browser
+        # refetches nothing on reload, cutting the per-load chunk request
+        # storm that helps the single-worker event loop tip into edge-proxy
+        # 502s (white screen). /logos are not content-hashed (brand files
+        # served by path) so they get a modest TTL instead of immutable.
+        _IMMUTABLE_CC = "public, max-age=31536000, immutable"
+        _cc_by_sub = {
+            "assets": _IMMUTABLE_CC,
+            "js": _IMMUTABLE_CC,
+            "logos": "public, max-age=3600",
+        }
         for _sub in ("assets", "js", "logos"):
             _d = frontend_build / _sub
             if _d.is_dir():
-                application.mount(f"/{_sub}", StaticFiles(directory=str(_d)), name=f"spa_{_sub}")
+                application.mount(
+                    f"/{_sub}",
+                    _CachedStaticFiles(directory=str(_d), cache_control=_cc_by_sub[_sub]),
+                    name=f"spa_{_sub}",
+                )
 
         _SPA_PROTECTED_PREFIXES = ("/api", "/ws", "/docs", "/redoc", "/openapi", "/graphql")
 
