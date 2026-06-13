@@ -144,6 +144,49 @@ if [ ! -x "$PYTHON_BIN" ]; then
   PYTHON_BIN="python"
 fi
 
+# WeasyPrint native-lib resolvability guard (PDF export). The NIX_LDFLAGS
+# derivation above is enough in the dev Nix shell, but the Reserved-VM deploy
+# runtime has been observed to leave glib/pango/cairo unreachable (PDF endpoints
+# 503 with "cannot load library 'libgobject-2.0-0'") even though the packages
+# ARE declared in replit.nix and the derivation ran. A cheap dlopen probe
+# (honors LD_LIBRARY_PATH exactly like WeasyPrint's loader, ~0.5s, no slow
+# render) decides whether a LAST-resort Nix-store lib-dir lookup is needed.
+# NO-OP on the working path; the store glob is bounded by `timeout` so it can
+# never blow the deploy port-open window. The final echo makes the next deploy
+# log conclusive about PDF readiness.
+_pdf_libs_ok() {
+  "$PYTHON_BIN" - <<'PY' 2>/dev/null
+import ctypes, sys
+for _l in ("libgobject-2.0.so.0", "libpango-1.0.so.0", "libpangocairo-1.0.so.0",
+           "libcairo.so.2", "libgdk_pixbuf-2.0.so.0", "libfontconfig.so.1"):
+    try:
+        ctypes.CDLL(_l)
+    except OSError:
+        sys.exit(1)
+sys.exit(0)
+PY
+}
+if ! _pdf_libs_ok; then
+  echo "UYARI: WeasyPrint native kütüphaneleri LD_LIBRARY_PATH ile yüklenemedi -> Nix store fallback deneniyor (bounded)"
+  _wp_lib_dirs="$(timeout 20 bash -c '
+    dirs=""
+    for _p in glib pango cairo gdk-pixbuf harfbuzz fontconfig freetype libffi; do
+      for _d in /nix/store/*-"$_p"-[0-9]*/lib; do
+        [ -d "$_d" ] && dirs="${dirs:+$dirs:}$_d"
+      done
+    done
+    printf "%s" "$dirs"
+  ' 2>/dev/null || true)"
+  if [ -n "$_wp_lib_dirs" ]; then
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$_wp_lib_dirs"
+  fi
+fi
+if _pdf_libs_ok; then
+  echo "WeasyPrint native lib kontrolü: gobject/pango/cairo YÜKLENEBİLİYOR (native lib hazır; PDF render font/CSS/iş-kuralı hataları için ayrıca doğrulanmalı)"
+else
+  echo "HATA: WeasyPrint native lib kontrolü BAŞARISIZ -> PDF export (beo.pdf, reports/builder/export/pdf) 503 verecek; replit.nix glib/pango/cairo + LD_LIBRARY_PATH'i incele"
+fi
+
 # Celery worker + beat (Task #362). Night audit now runs as a per-tenant Celery
 # flow: a once-a-minute beat dispatcher (night_audit_dispatch_task) enqueues
 # per-tenant hardened audits at each tenant's LOCAL configured time, executed by
