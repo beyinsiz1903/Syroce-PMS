@@ -70,10 +70,10 @@ const SystemPerformanceMonitor = ({ user }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 dark:bg-slate-800/50 flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-3" />
-          <p className="text-gray-500">Monitoring verileri yükleniyor...</p>
+          <p className="text-gray-500 dark:text-slate-400">Monitoring verileri yükleniyor...</p>
         </div>
       </div>
     );
@@ -117,7 +117,7 @@ const SystemPerformanceMonitor = ({ user }) => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-800/50 pb-20">
       {/* Header */}
       <div className="bg-gradient-to-r from-slate-800 via-blue-900 to-indigo-900 text-white p-4 sticky top-0 z-50 shadow-lg">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
@@ -167,7 +167,7 @@ const SystemPerformanceMonitor = ({ user }) => {
       </div>
 
       {/* Tab Navigation */}
-      <div className="bg-white border-b shadow-sm sticky top-[72px] z-40">
+      <div className="bg-white dark:bg-card border-b shadow-sm sticky top-[72px] z-40">
         <div className="max-w-7xl mx-auto flex overflow-x-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -178,7 +178,7 @@ const SystemPerformanceMonitor = ({ user }) => {
                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
                   activeTab === tab.id
                     ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200'
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -282,14 +282,14 @@ const SystemPerformanceMonitor = ({ user }) => {
                           <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #f0f0f0)" />
                       <XAxis
                         dataKey="timestamp"
-                        tick={{ fontSize: 10 }}
+                        tick={{ fontSize: 10, fill: 'var(--dash-chart-axis, #666)' }}
                         tickFormatter={(v) => v ? v.split('T')[1] || v.slice(-5) : ''}
                       />
-                      <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
-                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+                      <YAxis yAxisId="left" tick={{ fontSize: 10, fill: 'var(--dash-chart-axis, #666)' }} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: 'var(--dash-chart-axis, #666)' }} />
                       <Tooltip
                         contentStyle={{ fontSize: 12 }}
                         labelFormatter={(v) => v ? v.replace('T', ' ') : ''}
@@ -386,10 +386,10 @@ const SystemPerformanceMonitor = ({ user }) => {
                 <CardContent>
                   <div className="space-y-2 max-h-[200px] overflow-y-auto">
                     {(api_metrics?.endpoints || []).slice(0, 8).map((ep, i) => (
-                      <div key={i} className="flex justify-between items-center p-2 bg-gray-50 rounded text-xs">
+                      <div key={i} className="flex justify-between items-center p-2 bg-gray-50 dark:bg-slate-800/50 rounded text-xs">
                         <div className="flex-1 min-w-0">
-                          <div className="font-mono truncate text-gray-700">{ep.endpoint}</div>
-                          <div className="text-gray-400">{ep.count} istek</div>
+                          <div className="font-mono truncate text-gray-700 dark:text-slate-200">{ep.endpoint}</div>
+                          <div className="text-gray-400 dark:text-slate-500">{ep.count} istek</div>
                         </div>
                         <div className="text-right ml-2">
                           <div className="font-bold">{ep.avg_ms}ms</div>
@@ -402,7 +402,7 @@ const SystemPerformanceMonitor = ({ user }) => {
                       </div>
                     ))}
                     {(!api_metrics?.endpoints || api_metrics.endpoints.length === 0) && (
-                      <div className="text-center text-gray-400 py-4 text-sm">
+                      <div className="text-center text-gray-400 dark:text-slate-500 py-4 text-sm">
                         Henüz yeterli veri yok
                       </div>
                     )}
@@ -435,15 +435,15 @@ const SystemPerformanceMonitor = ({ user }) => {
               <CardContent>
                 <div className="space-y-2">
                   {(api_metrics?.slowest_endpoints || []).map((ep, i) => (
-                    <div key={i} className="flex items-center gap-3 p-2 bg-gray-50 rounded">
+                    <div key={i} className="flex items-center gap-3 p-2 bg-gray-50 dark:bg-slate-800/50 rounded">
                       <div className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${
-                        i < 3 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'
+                        i < 3 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400'
                       }`}>
                         {i + 1}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-mono text-xs truncate">{ep.endpoint}</div>
-                        <div className="text-xs text-gray-400">{ep.count} istek</div>
+                        <div className="text-xs text-gray-400 dark:text-slate-500">{ep.count} istek</div>
                       </div>
                       <div className="text-right">
                         <div className={`font-bold text-sm ${ep.avg_ms > 500 ? 'text-red-600' : ep.avg_ms > 200 ? 'text-amber-600' : 'text-green-600'}`}>
@@ -453,7 +453,7 @@ const SystemPerformanceMonitor = ({ user }) => {
                     </div>
                   ))}
                   {(!api_metrics?.slowest_endpoints || api_metrics.slowest_endpoints.length === 0) && (
-                    <div className="text-center text-gray-400 py-6 text-sm">Henüz yeterli veri yok</div>
+                    <div className="text-center text-gray-400 dark:text-slate-500 py-6 text-sm">Henüz yeterli veri yok</div>
                   )}
                 </div>
               </CardContent>
@@ -474,7 +474,7 @@ const SystemPerformanceMonitor = ({ user }) => {
                       <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="font-mono text-xs truncate">{ep.endpoint}</div>
-                        <div className="text-xs text-gray-500">{ep.total_requests} toplam istek</div>
+                        <div className="text-xs text-gray-500 dark:text-slate-400">{ep.total_requests} toplam istek</div>
                       </div>
                       <div className="text-right">
                         <div className="font-bold text-red-600 text-sm">{ep.error_count} hata</div>
@@ -507,7 +507,7 @@ const SystemPerformanceMonitor = ({ user }) => {
                       <div key={i} className="flex items-center gap-2 p-2 bg-red-50 rounded text-xs">
                         <Badge className="bg-red-100 text-red-700 text-[10px]">{err.status_code}</Badge>
                         <span className="font-mono truncate flex-1">{err.method} {err.path}</span>
-                        <span className="text-gray-400">{err.duration_ms?.toFixed(0)}ms</span>
+                        <span className="text-gray-400 dark:text-slate-500">{err.duration_ms?.toFixed(0)}ms</span>
                       </div>
                     ))}
                   </div>
@@ -560,7 +560,7 @@ const SystemPerformanceMonitor = ({ user }) => {
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {Object.entries(rate_limiting?.limits_config || {}).map(([key, config]) => (
-                    <div key={key} className="p-3 bg-gray-50 rounded-lg border">
+                    <div key={key} className="p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg border">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-semibold text-sm capitalize">{key}</span>
                         <Badge className={`text-[10px] ${
@@ -574,10 +574,10 @@ const SystemPerformanceMonitor = ({ user }) => {
                       </div>
                       <div className="flex items-end justify-between">
                         <div>
-                          <div className="text-2xl font-bold text-gray-800">{config.max_requests}</div>
-                          <div className="text-xs text-gray-400">istek / {config.window_seconds}sn</div>
+                          <div className="text-2xl font-bold text-gray-800 dark:text-slate-100">{config.max_requests}</div>
+                          <div className="text-xs text-gray-400 dark:text-slate-500">istek / {config.window_seconds}sn</div>
                         </div>
-                        <div className="text-xs text-gray-400">
+                        <div className="text-xs text-gray-400 dark:text-slate-500">
                           {(config.max_requests / (config.window_seconds / 60)).toFixed(0)}/dk
                         </div>
                       </div>
@@ -615,12 +615,12 @@ const SystemPerformanceMonitor = ({ user }) => {
                 <CardTitle className="text-sm">Nasıl Çalışır?</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-xs text-gray-500 space-y-2">
+                <div className="text-xs text-gray-500 dark:text-slate-400 space-y-2">
                   <p>• Her API isteği, kullanıcı kimliği veya IP adresine göre takip edilir.</p>
                   <p>• Kayan pencere (sliding window) algoritması ile dakika başına istek sayısı kontrol edilir.</p>
-                  <p>• Limit aşıldığında <code className="bg-gray-100 px-1 py-0.5 rounded">429 Too Many Requests</code> yanıtı döner.</p>
-                  <p>• <code className="bg-gray-100 px-1 py-0.5 rounded">X-RateLimit-Limit</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">X-RateLimit-Remaining</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">X-RateLimit-Reset</code> header'ları her yanıtta yer alır.</p>
-                  <p>• Whitelist: <code className="bg-gray-100 px-1 py-0.5 rounded">/health</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">/api/health</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">/api/status</code></p>
+                  <p>• Limit aşıldığında <code className="bg-gray-100 dark:bg-slate-800 px-1 py-0.5 rounded">429 Too Many Requests</code> yanıtı döner.</p>
+                  <p>• <code className="bg-gray-100 dark:bg-slate-800 px-1 py-0.5 rounded">X-RateLimit-Limit</code>, <code className="bg-gray-100 dark:bg-slate-800 px-1 py-0.5 rounded">X-RateLimit-Remaining</code>, <code className="bg-gray-100 dark:bg-slate-800 px-1 py-0.5 rounded">X-RateLimit-Reset</code> header'ları her yanıtta yer alır.</p>
+                  <p>• Whitelist: <code className="bg-gray-100 dark:bg-slate-800 px-1 py-0.5 rounded">/health</code>, <code className="bg-gray-100 dark:bg-slate-800 px-1 py-0.5 rounded">/api/health</code>, <code className="bg-gray-100 dark:bg-slate-800 px-1 py-0.5 rounded">/api/status</code></p>
                 </div>
               </CardContent>
             </Card>
@@ -670,15 +670,15 @@ const SystemPerformanceMonitor = ({ user }) => {
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center p-3 bg-blue-50 rounded-lg">
                     <div className="text-2xl font-bold text-blue-600">{dbStats?.pool_config?.max_pool_size || 500}</div>
-                    <div className="text-xs text-gray-500">Max Pool Size</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400">Max Pool Size</div>
                   </div>
                   <div className="text-center p-3 bg-green-50 rounded-lg">
                     <div className="text-2xl font-bold text-green-600">{dbStats?.pool_config?.min_pool_size || 50}</div>
-                    <div className="text-xs text-gray-500">Min Pool Size</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400">Min Pool Size</div>
                   </div>
                   <div className="text-center p-3 bg-indigo-50 rounded-lg">
                     <div className="text-2xl font-bold text-indigo-600">{((dbStats?.pool_config?.max_idle_time_ms || 45000) / 1000).toFixed(0)}s</div>
-                    <div className="text-xs text-gray-500">Max Idle Time</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400">Max Idle Time</div>
                   </div>
                 </div>
               </CardContent>
@@ -696,9 +696,9 @@ const SystemPerformanceMonitor = ({ user }) => {
                 <CardContent>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {Object.entries(dbStats?.operations || database?.opcounters || {}).map(([op, count]) => (
-                      <div key={op} className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-xl font-bold text-gray-700">{(count || 0).toLocaleString()}</div>
-                        <div className="text-xs text-gray-400 uppercase">{op}</div>
+                      <div key={op} className="text-center p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg">
+                        <div className="text-xl font-bold text-gray-700 dark:text-slate-200">{(count || 0).toLocaleString()}</div>
+                        <div className="text-xs text-gray-400 dark:text-slate-500 uppercase">{op}</div>
                       </div>
                     ))}
                   </div>
@@ -719,7 +719,7 @@ const SystemPerformanceMonitor = ({ user }) => {
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr className="border-b text-gray-500">
+                        <tr className="border-b text-gray-500 dark:text-slate-400">
                           <th className="text-left py-2 px-2">Koleksiyon</th>
                           <th className="text-right py-2 px-2">Doküman</th>
                           <th className="text-right py-2 px-2">Boyut</th>
@@ -732,7 +732,7 @@ const SystemPerformanceMonitor = ({ user }) => {
                           .filter(([, v]) => typeof v === 'object' && v.count !== undefined)
                           .sort((a, b) => (b[1].count || 0) - (a[1].count || 0))
                           .map(([name, stats]) => (
-                            <tr key={name} className="border-b hover:bg-gray-50">
+                            <tr key={name} className="border-b hover:bg-gray-50 dark:hover:bg-slate-800/50">
                               <td className="py-2 px-2 font-mono">{name}</td>
                               <td className="text-right py-2 px-2 font-semibold">{(stats.count || 0).toLocaleString()}</td>
                               <td className="text-right py-2 px-2">{stats.size_mb || 0} MB</td>
@@ -761,14 +761,14 @@ const SystemPerformanceMonitor = ({ user }) => {
                     {Object.entries(dbStats.indexes)
                       .filter(([, v]) => typeof v === 'object' && v.count !== undefined)
                       .map(([col, info]) => (
-                        <div key={col} className="p-3 bg-gray-50 rounded-lg">
+                        <div key={col} className="p-3 bg-gray-50 dark:bg-slate-800/50 rounded-lg">
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-mono text-sm font-semibold">{col}</span>
                             <Badge className="bg-blue-100 text-blue-700">{info.count} indeks</Badge>
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {(info.indexes || []).map((idx, i) => (
-                              <span key={i} className="text-[10px] bg-white px-2 py-0.5 rounded border text-gray-500">
+                              <span key={i} className="text-[10px] bg-white dark:bg-card px-2 py-0.5 rounded border text-gray-500 dark:text-slate-400">
                                 {idx}
                               </span>
                             ))}
@@ -793,11 +793,11 @@ const ResourceCard = ({ icon, label, value, sub, percent, color }) => (
     <CardContent className="p-3">
       <div className="flex items-center gap-2 mb-2">
         {icon}
-        <span className="text-xs text-gray-500">{label}</span>
+        <span className="text-xs text-gray-500 dark:text-slate-400">{label}</span>
       </div>
       <div className={`text-2xl font-bold text-${color}-600`}>{value}</div>
-      {sub && <div className="text-xs text-gray-400 mt-0.5">{sub}</div>}
-      <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+      {sub && <div className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{sub}</div>}
+      <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-1.5 mt-2">
         <div
           className={`h-1.5 rounded-full transition-all duration-500 ${
             percent > 80 ? 'bg-red-500' :
@@ -815,10 +815,10 @@ const MetricCard = ({ icon, label, value, sub, color }) => (
     <CardContent className="p-3">
       <div className="flex items-center gap-1.5 mb-1">
         <span className={color}>{icon}</span>
-        <span className="text-xs text-gray-500">{label}</span>
+        <span className="text-xs text-gray-500 dark:text-slate-400">{label}</span>
       </div>
       <div className={`text-xl font-bold ${color}`}>{value}</div>
-      {sub && <div className="text-xs text-gray-400">{sub}</div>}
+      {sub && <div className="text-xs text-gray-400 dark:text-slate-500">{sub}</div>}
     </CardContent>
   </Card>
 );

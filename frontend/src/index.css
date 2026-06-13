@@ -78,6 +78,18 @@ code {
 }
 
 @layer base {
+    /* Faz 4 — Dashboard grafik yapisal token'lari (grid / eksen-yazisi).
+       YALNIZCA koyu tema override eder; acik tema bu degiskenleri TANIMLAMAZ.
+       Cagri yerleri var(--dash-chart-*, <mevcut-acik-hex>) fallback kullanir =>
+       acik tema BIT-BIT degismez, koyu temada grid/eksen okunur hale gelir.
+       Seri/marka renkleri (line/area/bar) bu token'lara DOKUNMAZ. */
+    .dark {
+        --dash-chart-grid: #334155; /* slate-700 — koyu zeminde okunur grid */
+        --dash-chart-axis: #94a3b8; /* slate-400 — tick/eksen yazisi */
+    }
+}
+
+@layer base {
     * {
         @apply border-border;
     }

@@ -17,6 +17,14 @@ from pydantic import BaseModel
 from core.database import db
 from core.security import get_current_user, security
 
+# Perf: GM mobil "kritik sorunlar" widget'i en güncel `limit` kadar overbooking
+# gösterir. Aday confirmed-booking taraması check_in<=yarın olan TÜM kayıtları
+# (geçmiş dahil) kapsadığından sınırsızdı; created_at desc + bounded top-k
+# (limit) ile belleğe yalnızca en güncel adaylar çekilir. sort+limit, server
+# tarafında top-k olarak çalışır → 32MB in-memory sort sınırına takılmaz.
+# Cap, widget limit'inden (varsayılan 5) bol bol büyük tutulur.
+_CRITICAL_CANDIDATE_CAP = 500
+
 # ============================================================================
 # MOBILE ENDPOINTS - Department-Based Mobile Dashboard APIs
 # ============================================================================
@@ -205,7 +213,7 @@ async def get_critical_issues_mobile(
         'tenant_id': current_user.tenant_id,
         'check_in': {'$lte': today + timedelta(days=1)},
         'status': 'confirmed'
-    }, {'_id': 0, 'id': 1, 'room_id': 1, 'room_number': 1, 'guest_name': 1, 'guest_id': 1, 'created_at': 1}).to_list(length=None)
+    }, {'_id': 0, 'id': 1, 'room_id': 1, 'room_number': 1, 'guest_name': 1, 'guest_id': 1, 'created_at': 1}).sort('created_at', -1).limit(_CRITICAL_CANDIDATE_CAP).to_list(_CRITICAL_CANDIDATE_CAP)
     occupied_room_ids: set = set()
     cb_room_ids = [b.get('room_id') for b in candidate_bookings if b.get('room_id')]
     if cb_room_ids:

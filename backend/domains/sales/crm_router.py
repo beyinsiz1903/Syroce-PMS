@@ -48,15 +48,18 @@ async def get_sales_customers(
     # büyük tenant'larda saniyeler sürüyordu. Aynı agregasyonu MongoDB tarafında
     # tek pipeline ile yapıyoruz; sadece guest başına 1 satır geri geliyor.
     # `booking_source` ($first) ile rezervasyon kanalı korunuyor → corporate
-    # sınıflandırması bozulmuyor. $sort+$limit'i Python tarafında bırakıyoruz
-    # çünkü VIP eşiği ($50k) total_revenue toplamından sonra hesaplanıyor.
+    # sınıflandırması bozulmuyor. $group öncesi `check_in` desc sıralama: en
+    # güncel rezervasyona göre kararlı misafir adı/iletişim/booking_source seçer.
     # Legacy `if not guest_id` skipped null **ve** boş string; aggregation'da
     # ikisini de elemek için $nin kullanılıyor.
-    # $first non-determinism: en güncel check_in'i temsil eden değerlerin
-    # alınması için $group öncesi `check_in` desc sıralama. Böylece misafir
-    # adı/iletişim/booking_source rezervasyon güncelliğine göre kararlı seçilir
-    # (eski .find() unsorted davranıştan daha deterministik).
-    pipeline = [
+    #
+    # Perf (Faz 4): VIP eşiği/korporat/returning sınıflandırması artık
+    # $addFields ile pipeline içinde hesaplanıyor; type filtresi + sıralama +
+    # sayfalama + sayımlar tek $facet'te yapılıyor. Böylece TÜM guest satırları
+    # belleğe çekilmiyor — sadece `limit` satır + sayım dökümanı dönüyor. Yanıt
+    # sözleşmesi (customers/count/vip_count/corporate_count + boşsa örnek veri)
+    # birebir korunur; count/vip_count/corporate_count tüm filtreli set üzerinden.
+    base_stages: list[dict] = [
         {"$match": {
             "tenant_id": current_user.tenant_id,
             "guest_id": {"$nin": [None, ""]},
@@ -72,47 +75,95 @@ async def get_sales_customers(
             "last_stay": {"$max": "$check_in"},
             "booking_source": {"$first": "$booking_source"},
         }},
+        {"$addFields": {
+            "is_vip": {"$gt": ["$total_revenue", 50000]},
+            "is_corporate": {"$eq": ["$booking_source", "corporate"]},
+        }},
     ]
-    customers_raw = await db.bookings.aggregate(pipeline, allowDiskUse=True).to_list(None)
+
+    # customer_type filtresi orijinal Python davranışını birebir korur:
+    # vip/corporate/returning/new -> ilgili computed koşul. Bilinmeyen bir tip
+    # -> hiçbir kayıt eşleşmez (orijinalde "type not in list" tüm müşterileri
+    # eler -> boş sonuç -> örnek veri fallback). `_id` her $group dökümanında
+    # daima vardır, dolayısıyla `{"_id": {"$exists": False}}` hiçbir şeyi seçmez.
+    type_match: dict | None = None
+    if customer_type:
+        if customer_type == 'vip':
+            type_match = {"is_vip": True}
+        elif customer_type == 'corporate':
+            type_match = {"is_corporate": True}
+        elif customer_type == 'returning':
+            type_match = {"total_bookings": {"$gt": 1}}
+        elif customer_type == 'new':
+            type_match = {"total_bookings": {"$lte": 1}}
+        else:
+            type_match = {"_id": {"$exists": False}}
+
+    page_stages = list(base_stages)
+    stats_stages = list(base_stages)
+    if type_match is not None:
+        page_stages.append({"$match": type_match})
+        stats_stages.append({"$match": type_match})
+
+    page_stages += [
+        {"$sort": {"total_revenue": -1}},
+        {"$limit": int(limit)},
+        {"$project": {
+            "_id": 0,
+            "guest_id": "$_id",
+            "guest_name": 1, "email": 1, "phone": 1,
+            "total_bookings": 1, "total_revenue": 1, "last_stay": 1,
+            "is_vip": 1, "is_corporate": 1,
+        }},
+    ]
+    stats_stages.append({"$group": {
+        "_id": None,
+        "count": {"$sum": 1},
+        "vip_count": {"$sum": {"$cond": ["$is_vip", 1, 0]}},
+        "corporate_count": {"$sum": {"$cond": ["$is_corporate", 1, 0]}},
+    }})
+
+    facet_docs = await db.bookings.aggregate(
+        [{"$facet": {"page": page_stages, "stats": stats_stages}}],
+        allowDiskUse=True,
+    ).to_list(1)
+    facet = facet_docs[0] if facet_docs else {}
+    page_rows = facet.get('page') or []
+    stats_list = facet.get('stats') or []
+    stats = stats_list[0] if stats_list else {}
+    count = int(stats.get('count') or 0)
+    vip_count = int(stats.get('vip_count') or 0)
+    corporate_count = int(stats.get('corporate_count') or 0)
 
     customers = []
-    for row in customers_raw:
-        customer = {
-            'guest_id': row['_id'],
+    for row in page_rows:
+        is_vip = bool(row.get('is_vip'))
+        is_corporate = bool(row.get('is_corporate'))
+        total_bookings = int(row.get('total_bookings') or 0)
+        customer_type_list = []
+        if is_vip:
+            customer_type_list.append('vip')
+        if is_corporate:
+            customer_type_list.append('corporate')
+        if total_bookings > 1:
+            customer_type_list.append('returning')
+        else:
+            customer_type_list.append('new')
+        customers.append({
+            'guest_id': row.get('guest_id'),
             'guest_name': row.get('guest_name') or 'Unknown',
             'email': row.get('email') or '',
             'phone': row.get('phone') or '',
-            'total_bookings': int(row.get('total_bookings') or 0),
+            'total_bookings': total_bookings,
             'total_revenue': row.get('total_revenue') or 0,
             'last_stay': row.get('last_stay'),
-            'is_vip': False,
-            'is_corporate': row.get('booking_source') == 'corporate',
-        }
-        # Classify customer type
-        if customer['total_revenue'] > 50000:
-            customer['is_vip'] = True
-
-        customer['customer_type'] = []
-        if customer['is_vip']:
-            customer['customer_type'].append('vip')
-        if customer['is_corporate']:
-            customer['customer_type'].append('corporate')
-        if customer['total_bookings'] > 1:
-            customer['customer_type'].append('returning')
-        else:
-            customer['customer_type'].append('new')
-
-        # Filter by type if specified
-        if customer_type and customer_type not in customer['customer_type']:
-            continue
-
-        customers.append(customer)
-
-    # Sort by revenue
-    customers.sort(key=lambda x: x['total_revenue'], reverse=True)
+            'is_vip': is_vip,
+            'is_corporate': is_corporate,
+            'customer_type': customer_type_list,
+        })
 
     # Sample data if empty
-    if len(customers) == 0:
+    if count == 0:
         customers = [
             {
                 'guest_id': str(uuid.uuid4()),
@@ -139,12 +190,17 @@ async def get_sales_customers(
                 'customer_type': ['vip', 'returning']
             }
         ]
+        # Boş sonuç -> örnek veri: sayımlar legacy ile birebir (count=2,
+        # vip_count=1, corporate_count=1) kalsın diye örnek listeden hesaplanır.
+        count = len(customers)
+        vip_count = len([c for c in customers if c['is_vip']])
+        corporate_count = len([c for c in customers if c['is_corporate']])
 
     return {
         'customers': customers[:limit],
-        'count': len(customers),
-        'vip_count': len([c for c in customers if c['is_vip']]),
-        'corporate_count': len([c for c in customers if c['is_corporate']])
+        'count': count,
+        'vip_count': vip_count,
+        'corporate_count': corporate_count,
     }
 
 

@@ -576,7 +576,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
           <h1 className="text-2xl md:text-3xl font-bold mb-1" style={{ fontFamily: 'Space Grotesk' }}>
             {t('dashboard.welcome')}, {user.name}
           </h1>
-          <p className="text-sm md:text-base text-gray-600">{tenant?.property_name || 'Hotel Management System'}</p>
+          <p className="text-sm md:text-base text-gray-600 dark:text-slate-300">{tenant?.property_name || 'Hotel Management System'}</p>
         </div>
 
         {loading ? (
@@ -774,13 +774,13 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
                       <AreaChart data={occupancyData}>
-                        <CartesianGrid strokeDasharray="3 3" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #ccc)" />
                         <XAxis 
                           dataKey="date" 
-                          tick={{ fontSize: 10 }}
+                          tick={{ fontSize: 10, fill: 'var(--dash-chart-axis, #666)' }}
                           tickFormatter={(value) => new Date(value).getDate()}
                         />
-                        <YAxis tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10, fill: 'var(--dash-chart-axis, #666)' }} />
                         <Tooltip 
                           labelFormatter={(value) => new Date(value).toLocaleDateString()}
                           formatter={(value) => `${(typeof value === 'number' ? value : 0).toFixed(1)}%`}
@@ -807,13 +807,13 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
                       <BarChart data={revenueData}>
-                        <CartesianGrid strokeDasharray="3 3" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #ccc)" />
                         <XAxis 
                           dataKey="date" 
-                          tick={{ fontSize: 10 }}
+                          tick={{ fontSize: 10, fill: 'var(--dash-chart-axis, #666)' }}
                           tickFormatter={(value) => new Date(value).getDate()}
                         />
-                        <YAxis tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10, fill: 'var(--dash-chart-axis, #666)' }} />
                         <Tooltip 
                           labelFormatter={(value) => new Date(value).toLocaleDateString()}
                           formatter={(value) => `$${(typeof value === 'number' ? value : 0).toFixed(0)}`}
@@ -839,14 +839,14 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
                       <LineChart data={trendData}>
-                        <CartesianGrid strokeDasharray="3 3" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #ccc)" />
                         <XAxis 
                           dataKey="date" 
-                          tick={{ fontSize: 10 }}
+                          tick={{ fontSize: 10, fill: 'var(--dash-chart-axis, #666)' }}
                           tickFormatter={(value) => new Date(value).getDate()}
                         />
-                        <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
-                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+                        <YAxis yAxisId="left" tick={{ fontSize: 10, fill: 'var(--dash-chart-axis, #666)' }} />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: 'var(--dash-chart-axis, #666)' }} />
                         <Tooltip 
                           labelFormatter={(value) => new Date(value).toLocaleDateString()}
                         />
@@ -881,13 +881,13 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                   <CardContent>
                     <ResponsiveContainer width="100%" height={250}>
                       <AreaChart data={trendData}>
-                        <CartesianGrid strokeDasharray="3 3" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #ccc)" />
                         <XAxis 
                           dataKey="date" 
-                          tick={{ fontSize: 10 }}
+                          tick={{ fontSize: 10, fill: 'var(--dash-chart-axis, #666)' }}
                           tickFormatter={(value) => new Date(value).getDate()}
                         />
-                        <YAxis tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10, fill: 'var(--dash-chart-axis, #666)' }} />
                         <Tooltip 
                           labelFormatter={(value) => new Date(value).toLocaleDateString()}
                           formatter={(value) => `$${(typeof value === 'number' ? value : 0).toFixed(2)}`}
@@ -977,10 +977,10 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
               <Accordion type="multiple" defaultValue={['ai']} className="space-y-3">
                 {Object.entries(categorizedModules).map(([categoryKey, category]) => (
                   category.modules.length > 0 && (
-                    <AccordionItem key={categoryKey} value={categoryKey} className="border rounded-lg bg-white shadow-sm">
-                      <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-gray-50">
+                    <AccordionItem key={categoryKey} value={categoryKey} className="border rounded-lg bg-white dark:bg-card shadow-sm">
+                      <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-gray-50 dark:hover:bg-slate-800/50">
                         <div className="flex items-center gap-3 flex-1">
-                          <h3 className="text-lg font-bold text-gray-800">{category.title}</h3>
+                          <h3 className="text-lg font-bold text-gray-800 dark:text-slate-100">{category.title}</h3>
                           <Badge variant="outline" className="text-xs">
                             {category.modules.length} {t('dashboard.modules')}
                           </Badge>
@@ -1030,7 +1030,7 @@ const Dashboard = ({ user, tenant, modules, onLogout }) => {
                                 <div className="grid grid-cols-2 gap-2 text-sm">
                                   {Object.entries(module.stats).slice(0, 2).map(([key, value]) => (
                                     <div key={key}>
-                                      <p className="text-gray-500 capitalize">{key.replace('_', ' ')}</p>
+                                      <p className="text-gray-500 dark:text-slate-400 capitalize">{key.replace('_', ' ')}</p>
                                       <p className="font-semibold">{typeof value === 'number' ? value.toFixed(0) : (typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? ''))}</p>
                                     </div>
                                   ))}
@@ -1068,7 +1068,7 @@ const DashboardLite = ({ user, tenant, stats }) => {
           <h1 className="text-2xl md:text-3xl font-bold mb-1" style={{ fontFamily: 'Space Grotesk' }}>
             {t('nav.dashboard')}
           </h1>
-          <p className="text-sm md:text-base text-gray-600">{t('dashboard.dailySummaryDesc')}</p>
+          <p className="text-sm md:text-base text-gray-600 dark:text-slate-300">{t('dashboard.dailySummaryDesc')}</p>
         </div>
 
         {/* Core stat cards */}
@@ -1080,8 +1080,8 @@ const DashboardLite = ({ user, tenant, stats }) => {
                   <div className="p-2 bg-blue-100 rounded-lg">
                     <BedDouble className="w-6 h-6 text-blue-500" />
                   </div>
-                  <div className="text-2xl font-bold text-gray-900">{stats.pms.total_rooms}</div>
-                  <div className="text-xs font-medium text-gray-600">{t('dashboard.totalRooms')}</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.pms.total_rooms}</div>
+                  <div className="text-xs font-medium text-gray-600 dark:text-slate-300">{t('dashboard.totalRooms')}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1092,8 +1092,8 @@ const DashboardLite = ({ user, tenant, stats }) => {
                   <div className="p-2 bg-green-100 rounded-lg">
                     <Hotel className="w-6 h-6 text-green-500" />
                   </div>
-                  <div className="text-2xl font-bold text-gray-900">{(typeof stats.pms.occupancy_rate === 'number' ? stats.pms.occupancy_rate : 0).toFixed(1)}%</div>
-                  <div className="text-xs font-medium text-gray-600">{t('dashboard.occupancyRate')}</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">{(typeof stats.pms.occupancy_rate === 'number' ? stats.pms.occupancy_rate : 0).toFixed(1)}%</div>
+                  <div className="text-xs font-medium text-gray-600 dark:text-slate-300">{t('dashboard.occupancyRate')}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1104,8 +1104,8 @@ const DashboardLite = ({ user, tenant, stats }) => {
                   <div className="p-2 bg-indigo-100 rounded-lg">
                     <Calendar className="w-6 h-6 text-indigo-500" />
                   </div>
-                  <div className="text-2xl font-bold text-gray-900">{stats.pms.today_checkins}</div>
-                  <div className="text-xs font-medium text-gray-600">{t('dashboard.todayCheckins')}</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.pms.today_checkins}</div>
+                  <div className="text-xs font-medium text-gray-600 dark:text-slate-300">{t('dashboard.todayCheckins')}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1116,8 +1116,8 @@ const DashboardLite = ({ user, tenant, stats }) => {
                   <div className="p-2 bg-amber-100 rounded-lg">
                     <Users className="w-6 h-6 text-amber-500" />
                   </div>
-                  <div className="text-2xl font-bold text-gray-900">{stats.pms.total_guests}</div>
-                  <div className="text-xs font-medium text-gray-600">{t('dashboard.totalGuests')}</div>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.pms.total_guests}</div>
+                  <div className="text-xs font-medium text-gray-600 dark:text-slate-300">{t('dashboard.totalGuests')}</div>
                 </div>
               </CardContent>
             </Card>
@@ -1125,7 +1125,7 @@ const DashboardLite = ({ user, tenant, stats }) => {
         )}
 
         {/* Quick actions */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="rounded-2xl border border-slate-200 bg-white dark:bg-card p-4">
           <div className="text-sm font-semibold text-slate-900">{t('dashboard.quickActions')}</div>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white" onClick={() => window.location.assign("/app/pms#frontdesk")}>

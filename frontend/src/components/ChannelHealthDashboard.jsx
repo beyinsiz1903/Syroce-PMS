@@ -53,13 +53,13 @@ function CustomTooltip({ active, payload, label }) {
   const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-gray-300 rounded-lg px-3 py-2 shadow-xl">
-      <p className="text-[10px] text-gray-500 mb-1">{formatBucketTime(label)}</p>
+    <div className="bg-white dark:bg-card border border-gray-300 dark:border-slate-700 rounded-lg px-3 py-2 shadow-xl">
+      <p className="text-[10px] text-gray-500 dark:text-slate-400 mb-1">{formatBucketTime(label)}</p>
       {payload.map((p, i) => (
         <div key={i} className="flex items-center gap-2 text-xs">
           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
-          <span className="text-gray-600">{p.name}:</span>
-          <span className="text-gray-900 font-mono font-medium">{typeof p.value === "number" ? p.value.toLocaleString("tr-TR") : p.value}{p.unit === "ms" ? "ms" : p.unit === "%" ? "%" : ""}</span>
+          <span className="text-gray-600 dark:text-slate-300">{p.name}:</span>
+          <span className="text-gray-900 dark:text-white font-mono font-medium">{typeof p.value === "number" ? p.value.toLocaleString("tr-TR") : p.value}{p.unit === "ms" ? "ms" : p.unit === "%" ? "%" : ""}</span>
         </div>
       ))}
     </div>
@@ -78,23 +78,23 @@ function FieldKPICard({ icon, label, kpi, invertTrend, testId }) {
   const isNegative = invertTrend ? trend === "up" : trend === "down";
 
   const trendIcon = trend === "up" ? <ArrowUpRight className="h-3 w-3" /> : trend === "down" ? <ArrowDownRight className="h-3 w-3" /> : <Minus className="h-3 w-3" />;
-  const trendColor = isPositive ? "text-emerald-600" : isNegative ? "text-red-600" : "text-gray-500";
-  const borderColor = isPositive ? "border-emerald-500/20" : isNegative ? "border-red-500/20" : "border-gray-200";
+  const trendColor = isPositive ? "text-emerald-600" : isNegative ? "text-red-600" : "text-gray-500 dark:text-slate-400";
+  const borderColor = isPositive ? "border-emerald-500/20" : isNegative ? "border-red-500/20" : "border-gray-200 dark:border-slate-700";
 
   return (
-    <div className={`bg-white/80 border ${borderColor} rounded-xl p-5 transition-all hover:border-gray-300`} data-testid={testId}>
+    <div className={`bg-white/80 dark:bg-card/80 border ${borderColor} rounded-xl p-5 transition-all hover:border-gray-300 dark:hover:border-slate-700`} data-testid={testId}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className="text-gray-500">{icon}</span>
-          <span className="text-xs text-gray-500 font-medium">{label}</span>
+          <span className="text-gray-500 dark:text-slate-400">{icon}</span>
+          <span className="text-xs text-gray-500 dark:text-slate-400 font-medium">{label}</span>
         </div>
         <div className={`flex items-center gap-1 text-xs font-mono ${trendColor}`}>
           {trendIcon}
           <span>{delta > 0 ? "+" : ""}{delta}{unit === "%" || unit === "saat" ? unit : ""}</span>
         </div>
       </div>
-      <div className="text-2xl font-bold font-mono text-gray-900">{val}{unit === "%" ? "%" : ""}<span className="text-sm text-gray-500 ml-1">{unit !== "%" ? unit : ""}</span></div>
-      <div className="text-[10px] text-gray-500 mt-1.5 font-mono">{t('cm.components_ChannelHealthDashboard.onceki_donem')} {prev}{unit === "%" ? "%" : ` ${unit}`}</div>
+      <div className="text-2xl font-bold font-mono text-gray-900 dark:text-white">{val}{unit === "%" ? "%" : ""}<span className="text-sm text-gray-500 dark:text-slate-400 ml-1">{unit !== "%" ? unit : ""}</span></div>
+      <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-1.5 font-mono">{t('cm.components_ChannelHealthDashboard.onceki_donem')} {prev}{unit === "%" ? "%" : ` ${unit}`}</div>
     </div>
   );
 }
@@ -104,9 +104,9 @@ function LatencyTrendChart({ data }) {
   return (
     <ResponsiveContainer width="100%" height={240}>
       <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-        <XAxis dataKey="timestamp" tickFormatter={formatBucketTime} tick={{ fontSize: 10, fill: "#71717a" }} interval="preserveStartEnd" />
-        <YAxis tick={{ fontSize: 10, fill: "#71717a" }} tickFormatter={(v) => `${v}ms`} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #27272a)" />
+        <XAxis dataKey="timestamp" tickFormatter={formatBucketTime} tick={{ fontSize: 10, fill: "var(--dash-chart-axis, #71717a)" }} interval="preserveStartEnd" />
+        <YAxis tick={{ fontSize: 10, fill: "var(--dash-chart-axis, #71717a)" }} tickFormatter={(v) => `${v}ms`} />
         <Tooltip content={<CustomTooltip />} />
         <Legend wrapperStyle={{ fontSize: 10 }} />
         <Line type="monotone" dataKey="push_latency.p50" name="p50" stroke={CHART_COLORS.p50} strokeWidth={2} dot={false} unit="ms" />
@@ -122,10 +122,10 @@ function SyncDriftChart({ data }) {
   return (
     <ResponsiveContainer width="100%" height={240}>
       <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-        <XAxis dataKey="timestamp" tickFormatter={formatBucketTime} tick={{ fontSize: 10, fill: "#71717a" }} interval="preserveStartEnd" />
-        <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "#71717a" }} tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
-        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "#71717a" }} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #27272a)" />
+        <XAxis dataKey="timestamp" tickFormatter={formatBucketTime} tick={{ fontSize: 10, fill: "var(--dash-chart-axis, #71717a)" }} interval="preserveStartEnd" />
+        <YAxis yAxisId="left" tick={{ fontSize: 10, fill: "var(--dash-chart-axis, #71717a)" }} tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
+        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: "var(--dash-chart-axis, #71717a)" }} />
         <Tooltip content={<CustomTooltip />} />
         <Legend wrapperStyle={{ fontSize: 10 }} />
         <Area yAxisId="left" type="monotone" dataKey="sync.success_rate" name="Sync Basari %" stroke={CHART_COLORS.sync} fill={CHART_COLORS.sync} fillOpacity={0.1} strokeWidth={2} dot={false} unit="%" />
@@ -140,9 +140,9 @@ function RetryFailureChart({ data }) {
   return (
     <ResponsiveContainer width="100%" height={200}>
       <BarChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-        <XAxis dataKey="timestamp" tickFormatter={formatBucketTime} tick={{ fontSize: 10, fill: "#71717a" }} interval="preserveStartEnd" />
-        <YAxis tick={{ fontSize: 10, fill: "#71717a" }} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--dash-chart-grid, #27272a)" />
+        <XAxis dataKey="timestamp" tickFormatter={formatBucketTime} tick={{ fontSize: 10, fill: "var(--dash-chart-axis, #71717a)" }} interval="preserveStartEnd" />
+        <YAxis tick={{ fontSize: 10, fill: "var(--dash-chart-axis, #71717a)" }} />
         <Tooltip content={<CustomTooltip />} />
         <Legend wrapperStyle={{ fontSize: 10 }} />
         <Bar dataKey="failures" name="Hatalar" fill={CHART_COLORS.failures} radius={[2, 2, 0, 0]} />
@@ -154,7 +154,7 @@ function RetryFailureChart({ data }) {
 
 function EmptyChart({ label }) {
   return (
-    <div className="flex items-center justify-center h-48 text-xs text-gray-500">
+    <div className="flex items-center justify-center h-48 text-xs text-gray-500 dark:text-slate-400">
       <BarChart3 className="h-5 w-5 mr-2 opacity-30" />{label}
     </div>
   );
@@ -163,11 +163,11 @@ function EmptyChart({ label }) {
 function FailureBreakdownBar({ data }) {
   const { t } = useTranslation();
   const total = Object.values(data).reduce((a, b) => a + b, 0);
-  if (total === 0) return <div className="text-center py-4 text-gray-500 text-xs" data-testid="failure-breakdown-empty">{t('cm.components_ChannelHealthDashboard.hata_kaydi_yok')}</div>;
+  if (total === 0) return <div className="text-center py-4 text-gray-500 dark:text-slate-400 text-xs" data-testid="failure-breakdown-empty">{t('cm.components_ChannelHealthDashboard.hata_kaydi_yok')}</div>;
   const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
   return (
     <div className="space-y-2" data-testid="failure-breakdown-chart">
-      <div className="h-6 bg-gray-100 rounded-lg overflow-hidden flex">
+      <div className="h-6 bg-gray-100 dark:bg-slate-800 rounded-lg overflow-hidden flex">
         {sorted.map(([key, count]) => (
           <div key={key} className="h-full transition-all duration-700 first:rounded-l-lg last:rounded-r-lg"
             style={{ width: `${(count / total) * 100}%`, backgroundColor: FAILURE_COLORS[key] || "#6b7280" }}
@@ -178,8 +178,8 @@ function FailureBreakdownBar({ data }) {
         {sorted.map(([key, count]) => (
           <div key={key} className="flex items-center gap-1.5 text-[10px]">
             <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: FAILURE_COLORS[key] || "#6b7280" }} />
-            <span className="text-gray-600">{FAILURE_LABELS[key] || key}</span>
-            <span className="text-gray-500 font-mono">{count}</span>
+            <span className="text-gray-600 dark:text-slate-300">{FAILURE_LABELS[key] || key}</span>
+            <span className="text-gray-500 dark:text-slate-400 font-mono">{count}</span>
           </div>
         ))}
       </div>
@@ -195,20 +195,20 @@ function ProviderSLACard({ provider, sla }) {
     { label: "Retry Basari", value: `${sla.retry_success_rate}%`, target: `>${sla.retry_target}%`, ok: sla.retry_ok },
   ];
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4" data-testid={`sla-card-${provider}`}>
+    <div className="bg-white dark:bg-card border border-gray-200 dark:border-slate-700 rounded-lg p-4" data-testid={`sla-card-${provider}`}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Shield className="h-4 w-4 text-gray-500" />
-          <span className="text-sm font-medium text-gray-900 capitalize">{provider}</span>
+          <Shield className="h-4 w-4 text-gray-500 dark:text-slate-400" />
+          <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">{provider}</span>
         </div>
         <Badge variant="outline" className={`text-xs border ${status.cls}`}>{status.text}</Badge>
       </div>
       <div className="space-y-2">
         {checks.map(({ label, value, target, ok }) => (
           <div key={label} className="flex items-center justify-between text-xs">
-            <span className="text-gray-500">{label}</span>
+            <span className="text-gray-500 dark:text-slate-400">{label}</span>
             <div className="flex items-center gap-2">
-              <span className="text-gray-600 font-mono text-[10px]">{target}</span>
+              <span className="text-gray-600 dark:text-slate-300 font-mono text-[10px]">{target}</span>
               <span className={`font-mono font-medium ${ok ? "text-emerald-600" : "text-red-600"}`}>{value}</span>
               {ok ? <CheckCircle className="h-3 w-3 text-emerald-500" /> : <XCircle className="h-3 w-3 text-red-500" />}
             </div>
@@ -221,13 +221,13 @@ function ProviderSLACard({ provider, sla }) {
 
 function KPISummaryCard({ icon, label, value, sub, ok, testId }) {
   return (
-    <div className={`bg-white border rounded-lg p-4 transition-colors ${ok ? "border-gray-200" : "border-red-500/30 bg-red-500/5"}`} data-testid={testId}>
+    <div className={`bg-white dark:bg-card border rounded-lg p-4 transition-colors ${ok ? "border-gray-200 dark:border-slate-700" : "border-red-500/30 bg-red-500/5"}`} data-testid={testId}>
       <div className="flex items-center gap-2 mb-2">
-        <span className={ok ? "text-gray-500" : "text-red-600"}>{icon}</span>
-        <span className="text-xs text-gray-500">{label}</span>
+        <span className={ok ? "text-gray-500 dark:text-slate-400" : "text-red-600"}>{icon}</span>
+        <span className="text-xs text-gray-500 dark:text-slate-400">{label}</span>
       </div>
-      <div className={`text-xl font-bold font-mono ${ok ? "text-gray-900" : "text-red-600"}`}>{value}</div>
-      {sub && <div className="text-[10px] text-gray-500 mt-1 font-mono">{sub}</div>}
+      <div className={`text-xl font-bold font-mono ${ok ? "text-gray-900 dark:text-white" : "text-red-600"}`}>{value}</div>
+      {sub && <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-1 font-mono">{sub}</div>}
     </div>
   );
 }
@@ -236,23 +236,23 @@ function DriftCard({ provider, drift }) {
   const byType = drift.by_type || {};
   const total = drift.total || 0;
   const severity = total >= 50 ? "critical" : total >= 10 ? "warning" : "ok";
-  const borderCls = severity === "critical" ? "border-red-500/30" : severity === "warning" ? "border-yellow-500/30" : "border-gray-200";
+  const borderCls = severity === "critical" ? "border-red-500/30" : severity === "warning" ? "border-yellow-500/30" : "border-gray-200 dark:border-slate-700";
   return (
-    <div className={`bg-white border ${borderCls} rounded-lg p-4`} data-testid={`drift-card-${provider}`}>
+    <div className={`bg-white dark:bg-card border ${borderCls} rounded-lg p-4`} data-testid={`drift-card-${provider}`}>
       <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-medium text-gray-900 capitalize">{provider}</span>
+        <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">{provider}</span>
         <span className={`text-xl font-bold font-mono ${severity === "critical" ? "text-red-600" : severity === "warning" ? "text-amber-600" : "text-emerald-600"}`}>{total}</span>
       </div>
       {Object.keys(byType).length > 0 ? (
         <div className="grid grid-cols-2 gap-1">
           {Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([type, count]) => (
-            <div key={type} className="flex items-center justify-between text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100/50">
-              <span className="text-gray-500 truncate">{type.replace(/_/g, " ")}</span>
-              <span className="text-gray-700 ml-1">{count}</span>
+            <div key={type} className="flex items-center justify-between text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100/50 dark:bg-slate-800/50">
+              <span className="text-gray-500 dark:text-slate-400 truncate">{type.replace(/_/g, " ")}</span>
+              <span className="text-gray-700 dark:text-slate-200 ml-1">{count}</span>
             </div>
           ))}
         </div>
-      ) : <div className="text-xs text-gray-500">Drift yok</div>}
+      ) : <div className="text-xs text-gray-500 dark:text-slate-400">Drift yok</div>}
     </div>
   );
 }
@@ -321,16 +321,16 @@ export function ChannelHealth() {
   if (loading) {
     return (
       <div className="space-y-4" data-testid="channel-health-loading">
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 bg-gray-100" />)}</div>
-        <Skeleton className="h-64 bg-gray-100" />
-        <Skeleton className="h-48 bg-gray-100" />
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 bg-gray-100 dark:bg-slate-800" />)}</div>
+        <Skeleton className="h-64 bg-gray-100 dark:bg-slate-800" />
+        <Skeleton className="h-48 bg-gray-100 dark:bg-slate-800" />
       </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="text-center py-16 text-gray-500" data-testid="channel-health-empty">
+      <div className="text-center py-16 text-gray-500 dark:text-slate-400" data-testid="channel-health-empty">
         <Activity className="h-12 w-12 mx-auto mb-3 opacity-30" />
         <p className="text-sm">{t('cm.components_ChannelHealthDashboard.kanal_sagligi_verisi_bulunamadi')}</p>
       </div>
@@ -362,19 +362,19 @@ export function ChannelHealth() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-xs text-gray-600 font-mono">
+          <span className="text-xs text-gray-600 dark:text-slate-300 font-mono">
             Son {data.period_hours} saat · {new Date(data.calculated_at).toLocaleTimeString("tr-TR")}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex bg-white border border-gray-200 rounded-lg p-0.5" data-testid="period-selector">
+          <div className="flex bg-white dark:bg-card border border-gray-200 dark:border-slate-700 rounded-lg p-0.5" data-testid="period-selector">
             {PERIOD_OPTIONS.map(opt => (
               <button key={opt.value} onClick={() => setHours(opt.value)}
-                className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${hours === opt.value ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-700"}`}
+                className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${hours === opt.value ? "bg-gray-900 text-white" : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"}`}
                 data-testid={`period-${opt.value}`}>{opt.label}</button>
             ))}
           </div>
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-500" onClick={handleRefresh} disabled={refreshing} data-testid="channel-health-refresh">
+          <Button variant="ghost" size="sm" className="h-7 text-xs text-gray-500 dark:text-slate-400" onClick={handleRefresh} disabled={refreshing} data-testid="channel-health-refresh">
             <RefreshCw className={`h-3 w-3 mr-1 ${refreshing ? "animate-spin" : ""}`} />{t('cm.components_ChannelHealthDashboard.yenile')}
           </Button>
         </div>
@@ -382,7 +382,7 @@ export function ChannelHealth() {
 
       {/* ── Field KPIs — Saha Performansi ────────────────── */}
       <div>
-        <h2 className="text-xs text-gray-500 uppercase tracking-widest font-medium mb-3 flex items-center gap-2">
+        <h2 className="text-xs text-gray-500 dark:text-slate-400 uppercase tracking-widest font-medium mb-3 flex items-center gap-2">
           <Target className="h-3.5 w-3.5" /> Saha Performans KPI
         </h2>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" data-testid="field-kpis-grid">
@@ -404,25 +404,25 @@ export function ChannelHealth() {
 
       {/* ── Historical Trends ────────────────────────────── */}
       <div>
-        <h2 className="text-xs text-gray-500 uppercase tracking-widest font-medium mb-3 flex items-center gap-2">
+        <h2 className="text-xs text-gray-500 dark:text-slate-400 uppercase tracking-widest font-medium mb-3 flex items-center gap-2">
           <Eye className="h-3.5 w-3.5" /> Tarihsel Trendler
-          {trendBuckets.length > 0 && <Badge variant="outline" className="text-gray-500 border-gray-300 text-[10px]">{trendBuckets.length} bucket</Badge>}
+          {trendBuckets.length > 0 && <Badge variant="outline" className="text-gray-500 dark:text-slate-400 border-gray-300 dark:border-slate-700 text-[10px]">{trendBuckets.length} bucket</Badge>}
         </h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="bg-white border-gray-200">
+          <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <Clock className="h-4 w-4 text-gray-500" /> Push Latency Trendi
+              <CardTitle className="text-sm font-medium text-gray-700 dark:text-slate-200 flex items-center gap-2">
+                <Clock className="h-4 w-4 text-gray-500 dark:text-slate-400" /> Push Latency Trendi
               </CardTitle>
             </CardHeader>
             <CardContent data-testid="chart-latency-trend">
               <LatencyTrendChart data={trendBuckets} />
             </CardContent>
           </Card>
-          <Card className="bg-white border-gray-200">
+          <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <Activity className="h-4 w-4 text-gray-500" /> Sync Basari & Drift Trendi
+              <CardTitle className="text-sm font-medium text-gray-700 dark:text-slate-200 flex items-center gap-2">
+                <Activity className="h-4 w-4 text-gray-500 dark:text-slate-400" /> Sync Basari & Drift Trendi
               </CardTitle>
             </CardHeader>
             <CardContent data-testid="chart-sync-drift-trend">
@@ -431,10 +431,10 @@ export function ChannelHealth() {
           </Card>
         </div>
         <div className="mt-4">
-          <Card className="bg-white border-gray-200">
+          <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-gray-500" /> {t('cm.components_ChannelHealthDashboard.hata_retry_hacmi')}
+              <CardTitle className="text-sm font-medium text-gray-700 dark:text-slate-200 flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-gray-500 dark:text-slate-400" /> {t('cm.components_ChannelHealthDashboard.hata_retry_hacmi')}
               </CardTitle>
             </CardHeader>
             <CardContent data-testid="chart-retry-failure-trend">
@@ -446,15 +446,15 @@ export function ChannelHealth() {
 
       {/* ── Current Period Detail ─────────────────────────── */}
       <div>
-        <h2 className="text-xs text-gray-500 uppercase tracking-widest font-medium mb-3 flex items-center gap-2">
+        <h2 className="text-xs text-gray-500 dark:text-slate-400 uppercase tracking-widest font-medium mb-3 flex items-center gap-2">
           <Gauge className="h-3.5 w-3.5" /> Mevcut Donem Detay
         </h2>
 
         {/* Failure Breakdown */}
-        <Card className="bg-white border-gray-200 mb-4">
+        <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700 mb-4">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-gray-500" /> {t('cm.components_ChannelHealthDashboard.hata_dagilimi')}
+            <CardTitle className="text-sm font-medium text-gray-700 dark:text-slate-200 flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-gray-500 dark:text-slate-400" /> {t('cm.components_ChannelHealthDashboard.hata_dagilimi')}
               {(failures.total_failures || 0) > 0 && (
                 <Badge variant="outline" className="text-red-600 border-red-500/30 text-[10px] ml-2">{failures.total_failures} hata</Badge>
               )}
@@ -463,8 +463,8 @@ export function ChannelHealth() {
           <CardContent>
             <FailureBreakdownBar data={failures.overall || {}} />
             {Object.entries(failures.by_provider || {}).filter(([k]) => k !== "unknown").map(([provider, pData]) => (
-              <div key={provider} className="mt-3 pt-3 border-t border-gray-200">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2 capitalize">{provider}</div>
+              <div key={provider} className="mt-3 pt-3 border-t border-gray-200 dark:border-slate-700">
+                <div className="text-[10px] text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2 capitalize">{provider}</div>
                 <FailureBreakdownBar data={pData} />
               </div>
             ))}
@@ -473,10 +473,10 @@ export function ChannelHealth() {
 
         {/* Drift + SLA row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="bg-white border-gray-200">
+          <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <TrendingDown className="h-4 w-4 text-gray-500" /> Reconciliation Drift
+              <CardTitle className="text-sm font-medium text-gray-700 dark:text-slate-200 flex items-center gap-2">
+                <TrendingDown className="h-4 w-4 text-gray-500 dark:text-slate-400" /> Reconciliation Drift
                 <Badge variant="outline" className={`text-[10px] ml-auto border ${(drift.total_open || 0) >= 50 ? "text-red-600 border-red-500/30" : (drift.total_open || 0) >= 10 ? "text-amber-600 border-yellow-500/30" : "text-emerald-600 border-emerald-500/30"}`}>{drift.total_open || 0} {t('cm.components_ChannelHealthDashboard.acik')}</Badge>
               </CardTitle>
             </CardHeader>
@@ -485,15 +485,15 @@ export function ChannelHealth() {
                 <DriftCard key={provider} provider={provider} drift={pDrift} />
               ))}
               {Object.keys(drift.by_provider || {}).filter(k => k !== "unknown").length === 0 && (
-                <div className="text-xs text-gray-500 text-center py-4">Drift verisi yok</div>
+                <div className="text-xs text-gray-500 dark:text-slate-400 text-center py-4">Drift verisi yok</div>
               )}
             </CardContent>
           </Card>
 
-          <Card className="bg-white border-gray-200">
+          <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <Shield className="h-4 w-4 text-gray-500" /> Provider SLA
+              <CardTitle className="text-sm font-medium text-gray-700 dark:text-slate-200 flex items-center gap-2">
+                <Shield className="h-4 w-4 text-gray-500 dark:text-slate-400" /> Provider SLA
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -501,7 +501,7 @@ export function ChannelHealth() {
                 <ProviderSLACard key={provider} provider={provider} sla={sla} />
               ))}
               {Object.keys(providerSla).filter(k => k !== "unknown").length === 0 && (
-                <div className="text-xs text-gray-500 text-center py-4">SLA verisi yok</div>
+                <div className="text-xs text-gray-500 dark:text-slate-400 text-center py-4">SLA verisi yok</div>
               )}
             </CardContent>
           </Card>
@@ -510,26 +510,26 @@ export function ChannelHealth() {
 
       {/* ── Provider Sync Detail ─────────────────────────── */}
       {Object.entries(syncM.by_provider || {}).filter(([k]) => k !== "unknown").length > 0 && (
-        <Card className="bg-white border-gray-200">
+        <Card className="bg-white dark:bg-card border-gray-200 dark:border-slate-700">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
-              <Activity className="h-4 w-4 text-gray-500" /> Provider Sync Detay
+            <CardTitle className="text-sm font-medium text-gray-700 dark:text-slate-200 flex items-center gap-2">
+              <Activity className="h-4 w-4 text-gray-500 dark:text-slate-400" /> Provider Sync Detay
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {Object.entries(syncM.by_provider || {}).filter(([k]) => k !== "unknown").map(([provider, pSync]) => (
-                <div key={provider} className="bg-gray-100/50 rounded-lg p-3 border border-gray-300/30" data-testid={`sync-detail-${provider}`}>
+                <div key={provider} className="bg-gray-100/50 dark:bg-slate-800/50 rounded-lg p-3 border border-gray-300/30 dark:border-slate-700/30" data-testid={`sync-detail-${provider}`}>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-gray-700 capitalize">{provider}</span>
+                    <span className="text-xs font-medium text-gray-700 dark:text-slate-200 capitalize">{provider}</span>
                     <span className={`text-sm font-bold font-mono ${pSync.success_rate >= 95 ? "text-emerald-600" : pSync.success_rate >= 80 ? "text-amber-600" : "text-red-600"}`}>{pSync.success_rate}%</span>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-[10px] font-mono">
-                    <div><div className="text-gray-500">{t('cm.components_ChannelHealthDashboard.toplam')}</div><div className="text-gray-700">{pSync.total}</div></div>
-                    <div><div className="text-gray-500">{t('cm.components_ChannelHealthDashboard.basarili')}</div><div className="text-emerald-600">{pSync.completed}</div></div>
-                    <div><div className="text-gray-500">Basarisiz</div><div className="text-red-600">{pSync.failed}</div></div>
+                    <div><div className="text-gray-500 dark:text-slate-400">{t('cm.components_ChannelHealthDashboard.toplam')}</div><div className="text-gray-700 dark:text-slate-200">{pSync.total}</div></div>
+                    <div><div className="text-gray-500 dark:text-slate-400">{t('cm.components_ChannelHealthDashboard.basarili')}</div><div className="text-emerald-600">{pSync.completed}</div></div>
+                    <div><div className="text-gray-500 dark:text-slate-400">Basarisiz</div><div className="text-red-600">{pSync.failed}</div></div>
                   </div>
-                  <div className="text-[10px] text-gray-500 mt-1 font-mono">avg duration: {pSync.avg_duration_ms}ms</div>
+                  <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-1 font-mono">avg duration: {pSync.avg_duration_ms}ms</div>
                 </div>
               ))}
             </div>
