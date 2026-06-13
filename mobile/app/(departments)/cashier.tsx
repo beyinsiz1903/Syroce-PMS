@@ -12,6 +12,7 @@ import {
   FadeInView,
   H1,
   Muted,
+  webCenter,
 } from '../../src/components/ui';
 import { KpiCard, KpiRow } from '../../src/components/KpiCard';
 import { DepartmentListState, SectionTitle } from '../../src/components/department';
@@ -288,7 +289,7 @@ export default function CashierScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
+      contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
       testID="smoke-cashier"
     >
       <H1>{t.title}</H1>

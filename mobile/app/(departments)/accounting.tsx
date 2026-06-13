@@ -14,6 +14,7 @@ import {
   H1,
   Muted,
   SectionTitle,
+  webCenter,
 } from '../../src/components/ui';
 import { KpiCard, KpiRow } from '../../src/components/KpiCard';
 import {
@@ -437,7 +438,7 @@ export default function AccountingScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
+      contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
     >
       <H1>{a.title}</H1>
 

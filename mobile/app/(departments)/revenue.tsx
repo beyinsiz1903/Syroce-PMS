@@ -3,7 +3,7 @@ import { ScrollView, Text, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { Badge, Body, Card, H1, Muted } from '../../src/components/ui';
+import { Badge, Body, Card, H1, Muted, webCenter } from '../../src/components/ui';
 import { KpiCard, KpiRow, type KpiTone } from '../../src/components/KpiCard';
 import {
   DepartmentListState,
@@ -410,7 +410,7 @@ export default function RevenueScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
+      contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
     >
       <H1>{t.title}</H1>
 

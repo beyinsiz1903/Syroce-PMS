@@ -14,6 +14,7 @@ import {
   Muted,
   SegmentedActions,
   SkeletonCard,
+  webCenter,
 } from '../../src/components/ui';
 import {
   DepartmentListState,
@@ -648,7 +649,7 @@ function DetailScaffold({
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
+      contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
     >
       <Pressable
         onPress={onBack}
@@ -1050,7 +1051,7 @@ export default function ProcurementScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
+      contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
     >
       <H1>{p.title}</H1>
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import type { Href } from 'expo-router';
-import { Card, H1, Muted } from '../../src/components/ui';
+import { Card, H1, Muted, webCenter } from '../../src/components/ui';
 import { DepartmentTile } from '../../src/components/department';
 import { spacing, useTheme } from '../../src/theme';
 import { tr } from '../../src/i18n/tr';
@@ -85,7 +85,10 @@ export default function DepartmentsHub() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl }}
+      contentContainerStyle={[
+        { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl },
+        webCenter,
+      ]}
     >
       <View>
         <H1>{tr.departments.title}</H1>

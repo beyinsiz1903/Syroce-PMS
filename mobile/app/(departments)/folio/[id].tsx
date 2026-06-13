@@ -16,6 +16,7 @@ import {
   Muted,
   SectionTitle,
   SegmentedActions,
+  webCenter,
 } from '../../../src/components/ui';
 import { DepartmentListState } from '../../../src/components/department';
 import { radius, spacing, useTheme } from '../../../src/theme';
@@ -358,7 +359,7 @@ export default function FolioDetailScreen() {
     return (
       <ScrollView
         style={{ flex: 1, backgroundColor: c.bg }}
-        contentContainerStyle={{ padding: spacing.lg }}
+        contentContainerStyle={[{ padding: spacing.lg }, webCenter]}
         testID="smoke-folio-detail"
       >
         {listState}
@@ -380,7 +381,7 @@ export default function FolioDetailScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xl }}
+      contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xl }, webCenter]}
       testID="smoke-folio-detail"
     >
       <DetailHeader
