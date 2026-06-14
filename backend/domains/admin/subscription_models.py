@@ -71,6 +71,8 @@ class FeatureFlag(str, Enum):
     # Operations Add-ons
     ROOM_QR_REQUESTS = "room_qr_requests"  # Oda QR talep sistemi (misafir → departman)
     QUICK_ID = "quick_id"  # Kimlik OCR taraması (Quick-ID microservice)
+    MARKETPLACE = "marketplace"  # Modül marketplace / eklenti mağazası
+    AF_SADAKAT = "af_sadakat"  # Sadakat & misafir inbox entegrasyonu (Afsadakat)
 
     # Mini-tier ek modülleri (Elektraweb Mini muadili — pansiyon/butik baseline)
     FOLIO_BASIC = "folio_basic"                  # basit folyo (split/route yok)
@@ -168,6 +170,8 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,
         "quick_id": True,           # Mini'de açık (Quick-ID = KBS akışı için kritik)
+        "marketplace": False,
+        "af_sadakat": False,
         # ADD-ON MODULES
         "spa": False,
         "mice": False,
@@ -229,6 +233,8 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,
         "quick_id": True,           # Basic'te de açık (KBS akışına bağlı)
+        "marketplace": False,
+        "af_sadakat": False,
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
         "spa": False,
         "mice": False,
@@ -290,6 +296,8 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,
         "quick_id": True,
+        "marketplace": False,
+        "af_sadakat": False,
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
         "spa": False,
         "mice": False,
@@ -351,6 +359,8 @@ PLAN_MODULE_DEFAULTS: dict[str, dict[str, bool]] = {
         # OPERATIONS ADD-ONS
         "room_qr_requests": True,
         "quick_id": True,
+        "marketplace": True,
+        "af_sadakat": True,
         # ADD-ON MODULES (sold separately, super-admin enables per-tenant)
         "spa": False,
         "mice": False,

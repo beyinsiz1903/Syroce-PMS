@@ -1,4 +1,4 @@
-import { Home, Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield, Sparkles, BedDouble, PlugZap, FileText, TrendingUp } from 'lucide-react';
+import { Home, Building2, Zap, Crown, Settings2, BarChart3, Bot, Users, Mail, Shield, Sparkles, BedDouble, PlugZap, FileText, TrendingUp, Smartphone, QrCode } from 'lucide-react';
 
 export const PLANS = {
   // Mini — Elektraweb Mini muadili: pansiyon, butik otel, apart için
@@ -124,14 +124,18 @@ export const MODULE_GROUPS = [
       { key: 'loyalty_program', label: 'Sadakat Programı', hint: 'Puan, tier, ödüller', tier: 'enterprise' },
       { key: 'api_access', label: 'API Erişimi', hint: 'Open API, webhook', tier: 'enterprise' },
       { key: 'audit_trail', label: 'Audit Trail', hint: 'Compliance logging', tier: 'enterprise' },
+      { key: 'gm_dashboards', label: 'GM / Yönetici Dashboardları', hint: 'Üst yönetim icra panelleri', tier: 'enterprise' },
+      { key: 'white_label', label: 'White Label', hint: 'Marka özelleştirme / beyaz etiket', tier: 'enterprise' },
     ],
   },
   {
     id: 'ops_security',
-    title: 'Operasyon & Güvenlik',
+    title: 'Operasyon, Güvenlik & Analitik',
     icon: Shield,
     color: 'rose',
+    description: 'Gelişmiş analitik ve altyapı/operasyon panelleri. "Gelişmiş Analitik & Altyapı" bu bölümün ana anahtarıdır.',
     items: [
+      { key: 'advanced_analytics', label: 'Gelişmiş Analitik & Altyapı', hint: 'Analitik raporlar + altyapı/operasyon panellerinin ana anahtarı', tier: 'enterprise' },
       { key: 'system_health', label: 'System Health', hint: 'Runtime izleme & operasyon konsolu', tier: 'enterprise' },
       { key: 'security_hardening', label: 'Güvenlik Sertleştirme', hint: 'Güvenlik kontrol paneli', tier: 'enterprise' },
       { key: 'encryption_management', label: 'Şifreleme Yönetimi', hint: 'Anahtar rotasyonu & şifreleme', tier: 'enterprise' },
@@ -152,6 +156,34 @@ export const MODULE_GROUPS = [
       { key: 'ai_chatbot', label: 'AI Chatbot', hint: 'Akıllı misafir asistanı', tier: 'enterprise' },
       { key: 'ai_pricing', label: 'AI Dynamic Pricing', hint: 'ML fiyat önerileri', tier: 'enterprise' },
       { key: 'ai_predictive', label: 'AI Tahminler', hint: 'No-show, demand prediction', tier: 'enterprise' },
+      { key: 'ai_whatsapp', label: 'AI WhatsApp Concierge', hint: 'WhatsApp üzerinden otomatik misafir asistanı', tier: 'enterprise' },
+      { key: 'ai_reputation', label: 'AI İtibar Yönetimi', hint: 'Yorum/itibar analizi ve yanıt önerileri', tier: 'enterprise' },
+      { key: 'ai_revenue_autopilot', label: 'AI Revenue Autopilot', hint: 'Otomatik fiyat/gelir optimizasyonu', tier: 'enterprise' },
+      { key: 'ai_social_radar', label: 'AI Social Radar', hint: 'Sosyal medya sinyal takibi', tier: 'enterprise' },
+    ],
+  },
+  {
+    id: 'mobile',
+    title: 'Mobil Uygulama Modülleri',
+    icon: Smartphone,
+    color: 'sky',
+    description: 'Personel mobil uygulamasında hangi rol modüllerinin açılacağını seçin.',
+    items: [
+      { key: 'mobile_housekeeping', label: 'Mobil Housekeeping', hint: 'Kat hizmetleri mobil uygulaması', tier: 'professional' },
+      { key: 'mobile_revenue', label: 'Mobil Revenue', hint: 'Gelir yönetimi mobil ekranları', tier: 'enterprise' },
+    ],
+  },
+  {
+    id: 'operations',
+    title: 'Operasyon & Entegrasyon Modülleri',
+    icon: QrCode,
+    color: 'teal',
+    description: 'Misafir self-servis ve harici entegrasyon modülleri.',
+    items: [
+      { key: 'room_qr_requests', label: 'Oda QR Talepleri', hint: 'Misafir → departman QR talep sistemi', tier: 'mini' },
+      { key: 'quick_id', label: 'Kimlik Tarama (Quick-ID)', hint: 'Kimlik OCR + KBS bildirim akışı', tier: 'mini' },
+      { key: 'af_sadakat', label: 'Sadakat & Inbox', hint: 'Sadakat programı & misafir inbox entegrasyonu', tier: 'enterprise' },
+      { key: 'marketplace', label: 'Marketplace', hint: 'Modül / eklenti mağazası', tier: 'enterprise' },
     ],
   },
   {
