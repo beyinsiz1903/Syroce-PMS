@@ -1054,6 +1054,14 @@ export const NAV_ITEMS = [
     navGroup: "admin",
   },
   {
+    key: "site_content",
+    label: "Landing İçeriği",
+    path: "/admin/site-content",
+    requireSuperAdmin: true,
+    group: "admin",
+    navGroup: "admin",
+  },
+  {
     key: "quick_id_settings",
     label: "Kimlik Tarama (Quick-ID)",
     path: "/admin/quick-id",

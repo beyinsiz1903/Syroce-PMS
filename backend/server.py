@@ -697,6 +697,12 @@ async def _startup():
         await ensure_demo_user(_db)
     except Exception as _e:
         logging.getLogger(__name__).warning("demo user seed skipped: %s", _e)
+    try:
+        from core.database import db as _db
+        from scripts.create_operator_admin import ensure_operator_admin
+        await ensure_operator_admin(_db)
+    except Exception as _e:
+        logging.getLogger(__name__).warning("operator admin seed skipped: %s", _e)
     # v109 Bug DAJ round-4 (architect P1 follow-up): startup security guardrails.
     # Several env vars exist as breakglass / dev escape hatches that silently
     # disable webhook signature checks, retention floors, or restore safety. If

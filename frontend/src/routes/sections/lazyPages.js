@@ -265,3 +265,4 @@ export const ProfileUdfPage = lazy(() => import("@/pages/ProfileUdfPage"));
 export const CateringMenuPage = lazy(() => import("@/pages/CateringMenuPage"));
 export const SuiteConnectingPage = lazy(() => import("@/pages/SuiteConnectingPage"));
 export const HurdleRatesPage = lazy(() => import("@/pages/HurdleRatesPage"));
+export const SiteContentEditor = lazy(() => import("@/pages/admin/SiteContentEditor"));

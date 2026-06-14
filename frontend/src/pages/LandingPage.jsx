@@ -8,6 +8,8 @@ import {
   Zap, Globe, Lock, RefreshCw, Star, Quote, ArrowUpRight,
 } from 'lucide-react';
 
+import { mergeLandingContent } from '@/config/landingContentDefaults';
+
 const HERO_IMG = '/landing/hero-hotel.png';
 
 const navLinks = [
@@ -43,14 +45,9 @@ const modules = [
   { n: '05', icon: Headphones, title: 'Canlı Destek ve Hızlı İşlemler',      desc: '7/24 destek ekibimizle her zaman yanınızdayız.' },
 ];
 
-const solutions = [
-  { icon: Hotel,       title: 'Otel Yönetimi',          desc: 'Rezervasyon, oda, ön büro, check-in ve check-out — tek ekrandan kontrol.' },
-  { icon: Sparkles,    title: 'Misafir Deneyimi',       desc: 'Talepler, mesajlaşma, QR çözümleri ve memnuniyet ölçümü bir arada.' },
-  { icon: Boxes,       title: 'Tedarik ve Satın Alma',  desc: 'Otelleri ve tedarikçileri aynı ekosistemde buluşturan akıllı yapı.' },
-  { icon: BarChart3,   title: 'Raporlama ve Kontrol',   desc: 'İşletmenizi anlık görün, daha hızlı ve daha sağlam kararlar verin.' },
-  { icon: Zap,         title: 'Satış ve Operasyon',     desc: 'İş akışını sadeleştirin, ekibinizin zamanını asıl işine ayırın.' },
-  { icon: Layers,      title: 'Çoklu İşletme Yönetimi', desc: 'Birden fazla tesisi tek panelden, sade ve düzenli şekilde yönetin.' },
-];
+// Çözüm kartı ikonları — içerik super_admin panelinden düzenlenebildiği için
+// metinler /api/site-content'ten gelir; ikonlar burada pozisyonel kalır.
+const solutionIcons = [Hotel, Sparkles, Boxes, BarChart3, Zap, Layers];
 
 const steps = [
   { n: '01', title: 'Kayıt olun veya giriş yapın', desc: 'Birkaç dakika içinde hesabınızı açın, hemen başlayın.' },
@@ -93,17 +90,6 @@ const testimonials = [
   { name: 'Operasyon Müdürü', role: 'Sahil Otel, Antalya',    text: 'Sabah panele bakıyorum, otelin tamamını tek ekranda görüyorum. Toplantılar daha kısa, kararlar daha net.' },
   { name: 'Genel Müdür',      role: 'Butik Otel, Bodrum',     text: 'Misafir talepleri artık hiçbir yerde kaybolmuyor. Memnuniyet skorumuz ilk ay belirgin şekilde yükseldi.' },
   { name: 'Satın Alma Şefi',  role: 'Tatil Tesisi, Muğla',    text: 'Tedarikçilerle yazışma, teklif ve sipariş süreci tek yerde. Hata payımız neredeyse sıfırlandı.' },
-];
-
-const faqs = [
-  { q: 'Bu sistem kimler için uygun?',          a: 'Oteller, apart tesisler, butik oteller, restoranlar, turizm firmaları ve tedarikçiler — operasyonunu dijitalleştirmek isteyen her ölçekte işletme için uygundur.' },
-  { q: 'Kurulum süreci zor mu?',                a: 'Hayır. Hesabınızı açtıktan sonra rehberli adımlarla işletmenizi tanıtırsınız ve aynı gün kullanmaya başlayabilirsiniz. Ekibimiz kurulumda yanınızdadır.' },
-  { q: 'Birden fazla işletme yönetebilir miyim?', a: 'Evet. Birden fazla tesisi veya markayı tek panelden yönetebilir, her biri için ayrı yetki ve raporlama tanımlayabilirsiniz.' },
-  { q: 'Tedarikçi olarak nasıl katılabilirim?', a: 'Üst menüden Tedarikçi Girişi alanına geçebilir, kayıt formunu doldurarak başvurunuzu birkaç dakikada tamamlayabilirsiniz.' },
-  { q: 'Mobil cihazda kullanılabiliyor mu?',    a: 'Evet. Tüm panel mobil ve tablet cihazlarda sorunsuz çalışır. Ekibiniz sahada da aynı verilere erişir.' },
-  { q: 'Teknik bilgi gerekir mi?',              a: 'Hayır. Arayüz sade Türkçe ile tasarlandı; günlük operasyonu yapan herkes ilk günden rahatça kullanabilir.' },
-  { q: 'Demo talep edebilir miyim?',            a: 'Elbette. İletişim formundan ulaştığınızda ekibimiz sizinle iletişime geçer ve işletmenize özel bir tanıtım planlar.' },
-  { q: 'Destek süreci nasıl işliyor?',          a: '7/24 erişebileceğiniz canlı destek hattı, e-posta ve telefon kanallarımız mevcuttur. Kritik durumlarda hızlı geri dönüş garantilidir.' },
 ];
 
 const dashboardTabs = [
@@ -159,6 +145,7 @@ const LandingPage = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState(0);
   const [activeTab, setActiveTab] = useState('rez');
+  const [content, setContent] = useState(() => mergeLandingContent(null));
   const heroRef = useRef(null);
 
   const { scrollY } = useScroll();
@@ -169,6 +156,17 @@ const LandingPage = () => {
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Public landing content overrides (super_admin tarafından düzenlenebilir).
+  // Herhangi bir hatada yerleşik varsayılanlara döner, sayfa asla boş kalmaz.
+  useEffect(() => {
+    let active = true;
+    fetch('/api/site-content')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (active && data) setContent(mergeLandingContent(data)); })
+      .catch(() => {});
+    return () => { active = false; };
   }, []);
 
   const goLogin = () => navigate('/auth');
@@ -212,7 +210,7 @@ const LandingPage = () => {
               decoding="async"
               className="h-10 w-10 rounded-full shadow-[0_0_32px_rgba(34,211,238,0.45)] ring-1 ring-white/15 transition group-hover:shadow-[0_0_44px_rgba(34,211,238,0.7)]"
             />
-            <span className="text-lg font-bold tracking-tight text-white">Syroce</span>
+            <span className="text-lg font-bold tracking-tight text-white">{content.brandName}</span>
           </a>
 
           <nav className="hidden items-center gap-1 lg:flex">
@@ -317,22 +315,23 @@ const LandingPage = () => {
           >
             <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-medium tracking-wider text-cyan-300 sm:px-3 sm:text-xs">
               <Sparkles className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" />
-              <span className="truncate">MODERN HOSPITALITY OPERATING SYSTEM</span>
+              <span className="truncate">{content.hero.badge}</span>
             </span>
 
             <h1 className="mt-4 break-words text-[1.75rem] font-semibold leading-[1.1] tracking-tight text-white sm:mt-6 sm:text-5xl sm:leading-[1.08] lg:text-[2.85rem] xl:text-[3.15rem]">
-              Konaklama{' '}
+              {content.hero.titlePre}{' '}
               <span className="inline-block bg-gradient-to-r from-cyan-300 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
-                Operasyonunun
+                {content.hero.titleAccent}
               </span>
               <br className="hidden sm:block" />
-              {' '}Yeni Merkezi
+              {' '}{content.hero.titlePost}
             </h1>
 
             <p className="mt-3.5 max-w-xl text-[13.5px] leading-relaxed text-slate-300/90 sm:mt-5 sm:text-lg">
-              Rezervasyondan gelire kadar tüm otel operasyonlarını tek akıllı platformda
-              birleştirin. PMS, misafir deneyimi, tedarik ağı ve raporlama —
-              <span className="text-cyan-200/90"> tek işletim sistemi.</span>
+              {content.hero.description}
+              {content.hero.descriptionAccent ? (
+                <span className="text-cyan-200/90">{content.hero.descriptionAccent}</span>
+              ) : null}
             </p>
 
             <div className="mt-5 grid grid-cols-2 gap-2.5 sm:mt-7 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
@@ -715,9 +714,11 @@ const LandingPage = () => {
           />
 
           <div className="mt-12 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {solutions.map((s, i) => (
+            {content.solutions.map((s, i) => {
+              const Icon = solutionIcons[i] || Layers;
+              return (
               <motion.div
-                key={s.title}
+                key={s.title || i}
                 initial={{ opacity: 0, y: reduce ? 0 : 16 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.3 }}
@@ -725,7 +726,7 @@ const LandingPage = () => {
               >
                 <GlassCard className="group h-full p-6 transition hover:-translate-y-1 hover:border-cyan-400/30 hover:bg-white/[0.06]">
                   <span className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-cyan-400/20 to-indigo-500/20 text-cyan-300 ring-1 ring-white/10">
-                    <s.icon className="h-6 w-6" />
+                    <Icon className="h-6 w-6" />
                   </span>
                   <h3 className="mt-5 text-lg font-semibold text-white">{s.title}</h3>
                   <p className="mt-2 text-sm leading-relaxed text-slate-400">{s.desc}</p>
@@ -734,7 +735,8 @@ const LandingPage = () => {
                   </a>
                 </GlassCard>
               </motion.div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -880,7 +882,7 @@ const LandingPage = () => {
                 <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-4 py-2.5">
                   <div className="flex items-center gap-2">
                     <span className="grid h-7 w-7 place-items-center rounded-md bg-gradient-to-br from-cyan-400 to-teal-300 text-[11px] font-bold text-[#05070f]">S</span>
-                    <span className="text-sm font-semibold text-white">Syroce · {dashboardTabs.find((t) => t.key === activeTab)?.label}</span>
+                    <span className="text-sm font-semibold text-white">{content.brandName} · {dashboardTabs.find((t) => t.key === activeTab)?.label}</span>
                   </div>
                   <div className="hidden items-center gap-2 sm:flex">
                     <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[10px] text-cyan-300">Canlı</span>
@@ -1106,7 +1108,7 @@ const LandingPage = () => {
             title="Aklınızdaki ilk sorulara hızlı cevaplar"
           />
           <div className="mt-10 space-y-3">
-            {faqs.map((f, i) => {
+            {content.faqs.map((f, i) => {
               const open = openFaq === i;
               return (
                 <GlassCard key={f.q} className="overflow-hidden">
@@ -1158,19 +1160,19 @@ const LandingPage = () => {
                   <span className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-400/10 text-cyan-300 ring-1 ring-cyan-400/20">
                     <Phone className="h-4 w-4" />
                   </span>
-                  +90 (212) 000 00 00
+                  {content.contact.phone}
                 </div>
                 <div className="flex items-center gap-3 text-slate-300">
                   <span className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-400/10 text-cyan-300 ring-1 ring-cyan-400/20">
                     <Mail className="h-4 w-4" />
                   </span>
-                  iletisim@syroce.com
+                  {content.contact.email}
                 </div>
                 <div className="flex items-center gap-3 text-slate-300">
                   <span className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-400/10 text-cyan-300 ring-1 ring-cyan-400/20">
                     <MapPin className="h-4 w-4" />
                   </span>
-                  İstanbul, Türkiye
+                  {content.contact.address}
                 </div>
               </div>
               <div className="mt-8 flex flex-wrap gap-3">
@@ -1255,7 +1257,7 @@ const LandingPage = () => {
                   className="h-10 w-10 rounded-full shadow-[0_0_28px_rgba(34,211,238,0.35)] ring-1 ring-white/15"
                 />
                 <div>
-                  <div className="text-lg font-bold tracking-tight text-white">Syroce</div>
+                  <div className="text-lg font-bold tracking-tight text-white">{content.brandName}</div>
                   <div className="text-[10px] uppercase tracking-[0.18em] text-cyan-300/70">Hospitality OS</div>
                 </div>
               </a>
@@ -1314,7 +1316,7 @@ const LandingPage = () => {
           </div>
 
           <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-white/10 py-6 text-xs text-slate-500 sm:flex-row">
-            <div>© {new Date().getFullYear()} Syroce. Tüm hakları saklıdır.</div>
+            <div>© {new Date().getFullYear()} {content.brandName}. Tüm hakları saklıdır.</div>
             <div className="flex items-center gap-4">
               <a href="/privacy-policy" className="hover:text-slate-300">Gizlilik</a>
               <a href="/privacy-policy" className="hover:text-slate-300">Şartlar</a>
