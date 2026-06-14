@@ -201,6 +201,17 @@ code {
     background-color: hsl(var(--secondary));
 }
 
+/* --- data-[state=active] notr sekme yuzeyleri (Radix Tabs) -> card/muted ---
+   Aktif sekmenin notr bg'si base bg-white/gray-50 ile AYNI tokena eslenir;
+   yoksa aktif sekme koyu modda parlak beyaz/acik gri kalirdi (renkli sekmeler
+   icin ayni variant matrisi asagidaki semantik bolumde zaten kapsanmis). */
+.dark .data-\[state\=active\]\:bg-white[data-state=active] {
+    background-color: hsl(var(--card));
+}
+.dark .data-\[state\=active\]\:bg-gray-50[data-state=active] {
+    background-color: hsl(var(--muted));
+}
+
 /* --- Birincil/koyu metin -> foreground --- */
 .dark .text-black,
 .dark .text-gray-900,
@@ -277,21 +288,33 @@ code {
 .dark .hover\:bg-neutral-200:hover,
 .dark .hover\:bg-zinc-50:hover,
 .dark .hover\:bg-zinc-100:hover,
-.dark .hover\:bg-zinc-200:hover {
+.dark .hover\:bg-zinc-200:hover,
+.dark .hover\:bg-gray-300:hover {
     background-color: hsl(var(--accent));
 }
 
-/* --- Hover metin -> foreground --- */
+/* --- Hover metin -> foreground ---
+   Orta-ton notr hover metinleri (gray/slate/zinc-600/700) de dahil: bunlar
+   eslenmezse koyu modda hover aninda metin koyu-gri kalip zemine karisiyordu
+   (base text-*-400/500 muted-foreground'a esliyken hover DAHA SONUK oluyordu). */
 .dark .hover\:text-gray-900:hover,
 .dark .hover\:text-gray-800:hover,
 .dark .hover\:text-gray-700:hover,
+.dark .hover\:text-gray-600:hover,
+.dark .hover\:text-slate-700:hover,
+.dark .hover\:text-slate-600:hover,
+.dark .hover\:text-zinc-700:hover,
+.dark .hover\:text-zinc-600:hover,
 .dark .hover\:text-black:hover {
     color: hsl(var(--foreground));
 }
 
 /* --- Hover kenarlik -> border --- */
 .dark .hover\:border-gray-200:hover,
-.dark .hover\:border-gray-300:hover {
+.dark .hover\:border-gray-300:hover,
+.dark .hover\:border-gray-400:hover,
+.dark .hover\:border-slate-300:hover,
+.dark .hover\:border-slate-400:hover {
     border-color: hsl(var(--border));
 }
 
@@ -342,10 +365,15 @@ code {
 }
 
 /* --- Yari-opak notr hover yuzeyleri -> accent --- */
+/* NOT: bg-white/60..95 (non-hover) -> card; ama yari-opak (>=/50) beyaz HOVER
+   yuzeyi notr-hover doktrini geregi accent'e duser (orn. B2BApiDocs sidebar
+   nav inaktif hover'i): aktif buton bg-white -> card oldugundan inaktif hover'in
+   da koyu kalmasi tutarliligi korur. /5../40 cam overlay'ler HEDEF DISI. */
 .dark .hover\:bg-gray-50\/50:hover,
 .dark .hover\:bg-gray-50\/60:hover,
 .dark .hover\:bg-slate-50\/50:hover,
-.dark .hover\:bg-slate-50\/60:hover {
+.dark .hover\:bg-slate-50\/60:hover,
+.dark .hover\:bg-white\/60:hover {
     background-color: hsl(var(--accent));
 }
 
